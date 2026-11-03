@@ -107,6 +107,7 @@ from .versions._0082_clean_stored_names import upgrade_sync as _m0082
 from .versions._0083_conversation_seen import upgrade_sync as _m0083
 from .versions._0084_scheduled_task_seen import upgrade_sync as _m0084
 from .versions._0085_judgment_run import upgrade_sync as _m0085
+from .versions._0086_route1_remove_routing import upgrade_sync as _m0086
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -190,6 +191,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0083", _m0083),
     ("0084", _m0084),
     ("0085", _m0085),
+    ("0086", _m0086),
 ]
 
 

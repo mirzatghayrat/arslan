@@ -117,9 +117,8 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
     // A save with no answer may still have landed: show what the server has, not a guess.
     if (e instanceof Error && e.message === "timeout") refresh();
   };
-  /** A pick is stored for this conversation, the primary's own model included: the default is whatever the
-   *  server's routing resolves to, which may be another config (v0.1.64), so "same as primary" is no reason to
-   *  clear. Only "use the default" clears. */
+  /** A pick is stored for this conversation, the primary's own model included: a stored pick stays put when the
+   *  primary changes later, so "same as primary" is no reason to clear. Only "use the default" clears. */
   async function save(next: ModelChoice) {
     const r = await withTimeout(conversationModelApi.set(conversationId, next.configId, next.model), lateSettled);
     setChoice({ configId: r.choice.config_id, model: r.choice.model }, r.effective);
@@ -150,8 +149,8 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
     }
   }
   /** "Set as default" on a model means "this one here, and as the default": the config becomes primary and this
-   *  conversation keeps the pick. Clearing it instead (as before PR 691's review) put it back on whatever routing
-   *  picks, which under a strategy can be another config. */
+   *  conversation keeps the pick. Clearing it instead (as before PR 691's review) left it on whatever the server
+   *  resolved as the default, which then was not always this config. */
   async function makeDefault() {
     if (!current) return;
     const pickNow = current;

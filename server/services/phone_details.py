@@ -147,9 +147,7 @@ def _connector_name(server) -> str:
 
 async def _model(db: AsyncSession, conversation_id: str) -> str | None:
     """The model the conversation's turns run on: its own choice while its provider config exists, else the
-    primary config's model (no choice is the default, models.ConversationModel). A routing strategy other
-    than the default "single" may pick another config per turn; this names the default's. The model id is
-    sent as it is: display names live only in the model catalog, which only Settings reads."""
+    primary config's model (no choice is the default, models.ConversationModel). The model id is sent as it is: display names live only in the model catalog, which only Settings reads."""
     chosen = await db.get(ConversationModel, conversation_id)
     if chosen is not None and await db.get(ProviderConfig, chosen.config_id) is not None:
         return chosen.model

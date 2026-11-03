@@ -169,8 +169,8 @@ describe("the model under the composer", () => {
     expect(conv.clear).not.toHaveBeenCalled();
   });
 
-  // #691 review 1: under a routing strategy the default can still be another config, so clearing after 设为默认 put the
-  // conversation back on it (and on its 402). Here clearing and saving give different answers.
+  // PR 691 review 1: clearing after 设为默认 put the conversation back on whatever the server resolved as the default
+  // (and on its 402). Here clearing and saving give different answers.
   it("设为默认 leaves the conversation on the pick even when the server's default is another config", async () => {
     conv.get.mockResolvedValue({ choice: { config_id: 2, model: "openai/gpt-4o-mini" } });
     conv.clear.mockResolvedValue({ choice: null, effective: { config_id: 1, model: "deepseek-chat", provider: "deepseek" } });
@@ -183,7 +183,7 @@ describe("the model under the composer", () => {
     expect(screen.getByTestId("model-chip").textContent).toContain("openrouter · openai/gpt-4o-mini");
   });
 
-  // #691 review 2: a provider test or a config change can move routing's pick; the chip asks again.
+  // PR 691 review 2: a config change can move the server's default; the chip asks again.
   it("asks the server again when the configs change", async () => {
     conv.get.mockResolvedValueOnce({ choice: null, effective: { config_id: 1, model: "deepseek-chat", provider: "deepseek" } })
       .mockResolvedValueOnce({ choice: null, effective: { config_id: 2, model: "openai/gpt-4o-mini", provider: "openrouter" } });
@@ -236,7 +236,7 @@ describe("the model under the composer", () => {
   });
 
   // v0.1.64 (user report): a chat that showed Claude kept running on DeepSeek. The default is the server's
-  // answer (routing can pick another config than the primary), and a pick is stored, never assumed.
+  // answer, not the configs the page holds, and a pick is stored, never assumed.
   it("with no choice, shows what the server says the next turn runs on, not the primary", async () => {
     conv.get.mockResolvedValue({ choice: null, effective: { config_id: 2, model: "openai/gpt-4o-mini", provider: "openrouter" } });
     chip();
@@ -370,7 +370,7 @@ describe("the model under the composer", () => {
 describe("模型分工", () => {
   it("the main row picks any model of any provider", async () => {
     const onMainChange = vi.fn();
-    render(<ModelRolesSection values={{}} onChange={() => {}} providerConfigs={configs} strategy="single" onMainChange={onMainChange} />);
+    render(<ModelRolesSection values={{}} onChange={() => {}} providerConfigs={configs} onMainChange={onMainChange} />);
     expect(screen.getByTestId("settings-slot-main").textContent).toContain("deepseek · deepseek-chat");
     fireEvent.click(screen.getByTestId("settings-slot-main"));
     fireEvent.click(screen.getByTestId("model-all-2"));
@@ -381,23 +381,23 @@ describe("模型分工", () => {
 
   it("a slot saves its config and, when it is not the config's own, the model", async () => {
     const onChange = vi.fn();
-    render(<ModelRolesSection values={{}} onChange={onChange} providerConfigs={configs} strategy="single" />);
-    fireEvent.click(screen.getByTestId("settings-slot-compaction"));
+    render(<ModelRolesSection values={{}} onChange={onChange} providerConfigs={configs} />);
+    fireEvent.click(screen.getByTestId("settings-slot-router"));
     fireEvent.click(screen.getByTestId("model-all-2"));
     const row = await screen.findByTestId("model-row-2-meta/llama-free");
     fireEvent.click(within(row).getAllByRole("button")[0]);
-    expect(onChange).toHaveBeenCalledWith("compactionConfigId", "2");
-    expect(onChange).toHaveBeenCalledWith("compactionModel", "meta/llama-free");
+    expect(onChange).toHaveBeenCalledWith("routerConfigId", "2");
+    expect(onChange).toHaveBeenCalledWith("routerModel", "meta/llama-free");
     onChange.mockClear();
-    fireEvent.click(screen.getByTestId("settings-slot-compaction"));
+    fireEvent.click(screen.getByTestId("settings-slot-router"));
     fireEvent.click(within(screen.getByTestId("model-row-2-openai/gpt-4o-mini")).getAllByRole("button")[0]);
-    expect(onChange).toHaveBeenCalledWith("compactionModel", "");                       // the config's own model
+    expect(onChange).toHaveBeenCalledWith("routerModel", "");                       // the config's own model
   });
 
   it("a slot shows the model it names, and 不单独设 clears both", () => {
     const onChange = vi.fn();
     render(<ModelRolesSection values={{ visionConfigId: "2", visionModel: "x/sees" }} onChange={onChange}
-      providerConfigs={configs} strategy="single" />);
+      providerConfigs={configs} />);
     expect(screen.getByTestId("settings-slot-vision").textContent).toContain("openrouter · x/sees");
     fireEvent.click(screen.getByTestId("settings-slot-vision"));
     fireEvent.click(screen.getByTestId("settings-slot-vision-unset"));

@@ -136,7 +136,8 @@ class DistilledSession(Base):
 
 
 class Setting(Base):
-    """Settings as key/value text. 0070 (v0.1.63): a stored shell_confirm_policy of ask_risky moved to ask_all once."""
+    """Settings as key/value text. 0070 (v0.1.63): a stored shell_confirm_policy of ask_risky moved to ask_all once.
+    0086 (v0.1.64 ROUTE1): the routing strategy and the old model-role pins were cleared once."""
     __tablename__ = "settings"
 
     key = Column(String(100), primary_key=True)

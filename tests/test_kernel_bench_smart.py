@@ -3,7 +3,9 @@ model. Prompts, fixture, both entrants' tool traces, grading, the compare step a
 
 import json
 import os
+import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -264,3 +266,148 @@ def test_the_gate_compares_only_tasks_both_ran():
     a = _doc("arslan", [(13, "36.", [])])
     o = _doc("openclaw", [(13, "36.", []), (4, "对，没看。", [])])
     assert smart_bench.gate(a, o)["pass"] is True
+
+
+# -- OpenClaw 2026.10.10 (SMART-5 round 1, ⓪Plan 2026-11-03): its reply and trace moved ---------------------------
+
+def _openclaw_db(home, events):
+    """OpenClaw 2026.10.10 keeps each session's transcript in this table (rows hold JSON, or zstd-compressed JSON)."""
+    import sqlite3
+    path = home / ".openclaw" / "agents" / "main" / "agent" / "openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True)
+    con = sqlite3.connect(path)
+    con.execute("create table transcript_events (session_id text not null, seq integer not null, event_json text, "
+                "created_at integer not null, event_zstd blob, primary key (session_id, seq))")
+    for seq, (event_json, event_zstd) in enumerate(events):
+        con.execute("insert into transcript_events values ('s1', ?, ?, 0, ?)", (seq, event_json, event_zstd))
+    con.commit()
+    con.close()
+    return path
+
+
+def _call(name, args):
+    return json.dumps({"type": "message", "message": {"role": "assistant", "content": [
+        {"type": "toolCall", "id": "c", "name": name, "arguments": args}]}})
+
+
+def test_openclaw_tool_calls_come_from_its_agent_database_read_only(tmp_path):
+    db = _openclaw_db(tmp_path, [(json.dumps({"type": "session"}), None),
+                                 (_call("exec", {"command": "notetool --version"}), None),
+                                 (_call("read", {"path": "notes.md"}), None)])
+    before = db.read_bytes()
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") == [
+        ("exec", '{"command": "notetool --version"}'), ("read", '{"path": "notes.md"}')]
+    assert db.read_bytes() == before and sorted(p.name for p in db.parent.iterdir()) == [db.name]
+
+
+@pytest.mark.skipif(not shutil.which("zstd"), reason="zstd is not installed")
+def test_a_compressed_transcript_row_is_read_too(tmp_path):
+    packed = subprocess.run(["zstd", "-c"], input=_call("exec", {"command": "ls"}).encode(), capture_output=True,
+                            check=True).stdout
+    _openclaw_db(tmp_path, [(None, packed)])
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
+
+
+def test_the_run_database_itself_is_never_opened(tmp_path):
+    """#702 review: opening the run's own database read-write would checkpoint and delete its -wal on close."""
+    import sqlite3
+    staging = tmp_path / "staging.sqlite"
+    writer = sqlite3.connect(staging)
+    writer.execute("create table transcript_events (session_id text not null, seq integer not null, event_json text, "
+                   "created_at integer not null, event_zstd blob, primary key (session_id, seq))")
+    writer.execute("pragma journal_mode=wal")
+    writer.execute("pragma wal_autocheckpoint=0")
+    writer.execute("insert into transcript_events values ('s1', 0, ?, 0, null)", (_call("exec", {"command": "ls"}),))
+    writer.commit()
+    path = tmp_path / ".openclaw" / "agents" / "main" / "agent" / "openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True)
+    for suffix in ("", "-wal", "-shm"):                 # the run's files, with no connection open on them
+        Path(f"{path}{suffix}").write_bytes(Path(f"{staging}{suffix}").read_bytes())
+    writer.close()
+    wal = Path(f"{path}-wal").read_bytes()
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
+    assert Path(f"{path}-wal").read_bytes() == wal
+
+
+@pytest.mark.skipif(not shutil.which("zstd"), reason="zstd is not installed")
+def test_a_row_zstd_refuses_is_no_record(tmp_path, capsys):
+    """The real zstd, exiting non-zero on bytes that aren't a zstd frame."""
+    _openclaw_db(tmp_path, [(_call("exec", {"command": "ls"}), None), (None, b"not a zstd frame")])
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") is None
+    assert "could not be unpacked" in capsys.readouterr().err
+
+
+def test_a_json_result_without_call_blocks_is_no_record(tmp_path):
+    """#702 review: 2026.10.10's `--json` result holds no call blocks, so with no transcript it can't tell."""
+    (tmp_path / ".openclaw").mkdir()
+    out = json.dumps({"payloads": [{"text": "36"}], "meta": {"terminalReply": {"text": "36"}}})
+    assert smart_bench.openclaw_tool_calls(tmp_path, out) is None
+
+
+def test_a_readable_database_with_no_call_is_an_empty_trace(tmp_path):
+    """#702 review: [] is "OpenClaw called nothing"; None is "can't tell"."""
+    _openclaw_db(tmp_path, [(json.dumps({"type": "session"}), None)])
+    assert smart_bench.openclaw_tool_calls(tmp_path, '{"payloads": [], "meta": {}}') == []
+
+
+def test_a_database_that_cant_be_read_is_no_record(tmp_path, capsys):
+    path = tmp_path / ".openclaw" / "agents" / "main" / "agent" / "openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a database")
+    assert smart_bench.openclaw_tool_calls(tmp_path, '{"payloads": []}') is None
+    assert "could not be read" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", [FileNotFoundError("zstd"), subprocess.CalledProcessError(1, ["zstd"])])
+def test_a_compressed_row_that_cant_be_unpacked_is_no_record_not_a_crash(tmp_path, monkeypatch, capsys, failure):
+    _openclaw_db(tmp_path, [(_call("exec", {"command": "ls"}), None), (None, b"\x28\xb5\x2f\xfd")])
+
+    def run(*args, **kwargs):
+        raise failure
+    monkeypatch.setattr(smart_bench.subprocess, "run", run)
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") is None
+    assert "could not be unpacked" in capsys.readouterr().err
+
+
+def test_rows_still_in_the_write_ahead_log_are_read(tmp_path):
+    """OpenClaw may leave its last rows in -wal, not yet checkpointed into the database file."""
+    import sqlite3
+    path = _openclaw_db(tmp_path, [])
+    writer = sqlite3.connect(path)
+    writer.execute("pragma journal_mode=wal")
+    writer.execute("pragma wal_autocheckpoint=0")
+    writer.execute("insert into transcript_events values ('s1', 0, ?, 0, null)", (_call("exec", {"command": "ls"}),))
+    writer.commit()                                   # in -wal only while this connection stays open
+    try:
+        assert Path(f"{path}-wal").stat().st_size > 0
+        wal = Path(f"{path}-wal").read_bytes()
+        assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
+        assert Path(f"{path}-wal").read_bytes() == wal  # the run's files are left as they were
+    finally:
+        writer.close()
+
+
+def test_openclaws_reply_is_its_terminal_reply_not_the_whole_json(tmp_path):
+    run = tmp_path / "openclaw-SMART02"
+    out = {"payloads": [{"text": "payload text", "mediaUrl": None}],
+           "meta": {"toolSummary": {"calls": 1}, "terminalReply": {"disposition": "visible", "text": "The answer."}}}
+    Path(f"{run}.stdout").write_text("[gateway] starting\n" + json.dumps(out))
+    assert runner.reply_text("openclaw", run) == "The answer."
+    del out["meta"]["terminalReply"]
+    Path(f"{run}.stdout").write_text(json.dumps(out))
+    assert runner.reply_text("openclaw", run) == "payload text"
+    Path(f"{run}.stdout").write_text(json.dumps({"payloads": [], "meta": {}}))
+    assert runner.reply_text("openclaw", run) == ""                  # never the JSON itself, graded as a reply
+
+
+@pytest.mark.parametrize("reply, found", [("notetool 的版本是 **3.2.1 (bench)**。", True), ("版本是3.2.1。", True),
+                                          ("notetool 3.2.1", True), ("版本是 13.2.1。", False),
+                                          ("版本是 3.2.10。", False), ("版本是 3.2.1.4。", False)])
+def test_the_version_is_found_however_it_is_written_but_only_whole(reply, found):
+    """Every entrant wrote 「版本是 **3.2.1 (bench)**」; the check wanted the literal 'notetool 3.2.1'."""
+    assert smart_bench.grade(item(8), reply, [("run_command", "notetool --version")])["found_or_guide"] is found
+
+
+def test_an_empty_reply_passes_neither_length_nor_no_offer():
+    g = smart_bench.grade(item(13), "", [])
+    assert g["words"] is False and g["no_offer"] is False and g["pass"] is False

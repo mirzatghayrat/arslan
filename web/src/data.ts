@@ -22,7 +22,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   language: 'en',
   theme: 'dark',
   telemetry: false,
-  llmStrategy: 'single',
   orchestratorShellEnabled: true,
   shellConfirmPolicy: 'ask_all',
   backgroundJobBudget: 'standard',
