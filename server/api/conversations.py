@@ -218,10 +218,13 @@ class ConversationModelIn(BaseModel):
 
 @router.get("/conversations/{conversation_id}/model")
 async def get_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
-    """The model chosen for this conversation, or null = the default (the primary config's model)."""
+    """The model chosen for this conversation (null = the default), and `effective`: what its next text turn
+    really runs on (llm_factory.effective_choice), which the chip shows."""
     from server.db.models import ConversationModel
+    from server.services import llm_factory
     row = await db.get(ConversationModel, conversation_id)
-    return {"choice": {"config_id": row.config_id, "model": row.model} if row else None}
+    return {"choice": {"config_id": row.config_id, "model": row.model} if row else None,
+            "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.put("/conversations/{conversation_id}/model")
@@ -234,23 +237,28 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
     if await db.get(ProviderConfig, body.config_id) is None:
         raise HTTPException(404, detail={"code": "provider_config_not_found"})
     model = body.model.strip()
+    if not model:          # "  " passes min_length before the strip (#691 review)
+        raise HTTPException(422, detail={"code": "invalid_model"})
     row = await db.get(ConversationModel, conversation_id)
     if row is None:
         db.add(ConversationModel(conversation_id=conversation_id, config_id=body.config_id, model=model, updated_at=_dt.utcnow()))
     else:
         row.config_id, row.model, row.updated_at = body.config_id, model, _dt.utcnow()
     await db.commit()
-    return {"choice": {"config_id": body.config_id, "model": model}}
+    from server.services import llm_factory
+    return {"choice": {"config_id": body.config_id, "model": model},
+            "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.delete("/conversations/{conversation_id}/model")
 async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     from server.db.models import ConversationModel
+    from server.services import llm_factory
     row = await db.get(ConversationModel, conversation_id)
     if row is not None:
         await db.delete(row)
         await db.commit()
-    return {"choice": None}
+    return {"choice": None, "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
 @router.post("/conversations/{conversation_id}/seen")
