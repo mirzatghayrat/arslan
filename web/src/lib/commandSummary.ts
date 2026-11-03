@@ -86,7 +86,8 @@ function parse(text: string): Step[] | null {
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (quote !== "'") {
-      const opens = text[i + 1] === "(" && text[i + 2] !== "(" && (ch === "$" || (!quote && (ch === "<" || ch === ">")));
+      const opens = text[i + 1] === "(" && text[i + 2] !== "("
+        && (ch === "$" || (!quote && (ch === "<" || ch === ">" || (ch === "=" && !inToken))));
       if (opens || ch === "`") {
         const end = ch === "`" ? text.indexOf("`", i + 1) : closing(text, i + 1);
         if (end < 0) return null;
@@ -189,6 +190,7 @@ function inlineLine(w: Words): string | null {
     return args.length ? args.join(" ") : null;
   }
   if (w.program === "eval") return w.args.length ? w.args.join(" ") : null;
+  if (w.program === "trap" && w.args[0] && w.args[0] !== "-") return w.args[0];
   if (w.program === "env") {
     const at = w.args.findIndex(a => a === "-S" || a === "--split-string");
     if (at >= 0) return at + 1 < w.args.length ? w.args[at + 1] : null;
@@ -246,23 +248,29 @@ function namesOnly(w: Words): boolean {
  *  token is matched by its basename, lower-cased (so `Curl`, run as the real binary on a case-insensitive volume, is
  *  caught too — F1); an INLINE_CODE interpreter counts only when its inline flag follows it. */
 function buriedNetwork(w: Words): string | null {
-  if (namesOnly(w)) return null;
   const toks = [w.program, ...w.args];
   for (let i = 0; i < toks.length; i++) {
-    const name = base(toks[i]).toLowerCase();
+    const tok = toks[i];
+    if (i > 0 && (tok.includes("/") || URL_LIKE.test(tok))) continue;      // a path or URL operand is not a program (Astra r2)
+    const name = base(tok).toLowerCase();
     if (NETWORK.has(name)) return name;
     if (Object.prototype.hasOwnProperty.call(INLINE_CODE, name) && i + 1 < toks.length && INLINE_CODE[name].test(toks[i + 1]))
       return name;
   }
   return null;
 }
+/** Common commands whose operands are files or data, never programs — their reading is kept, not scanned (Astra r2). */
+const BENIGN_LOCAL = new Set(["ls", "touch", "chmod", "chown", "chgrp", "mkdir", "ln", "tar", "stat", "file", "head",
+  "tail", "wc", "sort", "uniq", "cut", "du", "basename", "dirname", "realpath", "readlink", "cmp", "diff", "nl", "tac",
+  "rev", "vim", "vi", "nano", "emacs", "code", "subl", "pico", "ed", "vimdiff", "mate"]);
 
 function readStep(w: Words): Reading {
   const program = w.program.toLowerCase();                                 // the binary a case-insensitive volume runs
   const { args } = w;
   if (!program) return overNetwork(w.raw || "command");                    // a wrapper took everything (Astra r2, 1)
-  const buried = buriedNetwork(w);
-  if (buried) return overNetwork(buried);                                  // a network program anywhere in the step
+  if (NETWORK.has(program)) return overNetwork(program);                   // the program itself reaches the network
+  if (Object.prototype.hasOwnProperty.call(INLINE_CODE, program) && args.some(a => INLINE_CODE[program].test(a)))
+    return overNetwork(program);
   switch (program) {
     case "cat":
       return { purpose: { key: "run", params: { program } }, hosts: [], local: plain(args) };
@@ -275,6 +283,10 @@ function readStep(w: Words): Reading {
       const end = args.findIndex(a => /^[-(!)]/.test(a));
       const roots = end < 0 ? args : args.slice(0, end);
       const exec = args.findIndex(a => /^-(?:exec|execdir|ok|okdir)$/.test(a));
+      if (exec >= 0) {
+        const exe = base(args[exec + 1] ?? "").toLowerCase();
+        if (NETWORK.has(exe)) return overNetwork(exe);                     // find runs a network program (Astra r2, F2)
+      }
       if (args.includes("-delete") || (exec >= 0 && DELETERS.has(base(args[exec + 1] ?? "")))) {
         return { purpose: { key: "findDelete", params: { where: roots.join(", ") || "." } }, hosts: [], local: roots };
       }
@@ -332,7 +344,13 @@ function readStep(w: Words): Reading {
       if (SCRIPT_RUNNERS.has(program) && sub && !args.some(a => a === "-c" || a === "-e" || a === "-m") && !/^(?:[<>$]\(|`)/.test(sub)) {
         return { purpose: { key: "script", params: { program, file: base(sub) } }, hosts: [], local: [sub] };
       }
-      // #688 review 6i: an unknown program's operands that look like paths are what it touches.
+      // Astra r2: scan only an unknown program — a launcher (arch, script…), a compound (`{ }`, if/for), a function
+      // body, a shell keyword — for a network program it runs. A step that only names things, and the file-reading
+      // commands in BENIGN_LOCAL, keep their reading; their operands are never read as programs.
+      if (!namesOnly(w) && !BENIGN_LOCAL.has(program)) {
+        const buried = buriedNetwork(w);
+        if (buried) return overNetwork(buried);
+      }
       return { purpose: { key: "run", params: { program } }, hosts: [], local: plain(args).filter(a => PATH_LIKE.test(a)) };
     }
   }

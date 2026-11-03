@@ -178,6 +178,35 @@ describe("summarize, Astra round 2's containment rule", () => {
   });
 });
 
+describe("summarize, Astra round 2 delta: a recognized local command keeps its reading", () => {
+  it.each([
+    ["rm -rf ssh", "delete"], ["cat host", "run"], ["mv ping pong", "move"], ["cp aws bak", "copyLocal"],
+    ["open mail", "open"], ["git add host", "git"], ["touch curl", "run"], ["mkdir ssh", "run"], ["chmod +x nc", "run"],
+    ["ls ~/curl", "run"], ["tar czf out.tar ssh", "run"], ["brew install curl", "install"], ["cargo install nc", "install"],
+    ["head ssh", "run"], ["wc -l dig", "run"], ["vim host", "run"], ["git clone https://github.com/curl/curl", "gitClone"],
+  ])("%s stays local (its operand is not read as a program)", (line, key) => {
+    expect(summarize(line).purpose.key).toBe(key);
+    expect(summarize(line).unsure).toBe(false);
+  });
+
+  it("a buried network program is still caught where a token is executed", () => {
+    for (const line of ["arch -x86_64 curl https://e.example", "find . -exec curl https://e.example {} ;",
+                        "{ curl https://e.example; }", "sudo --user root curl https://e.example"]) {
+      expect(summarize(line)).toMatchObject({ purpose: { key: "overNetwork" }, unsure: true });
+    }
+  });
+
+  it("trap reads its handler as a line; an empty handler does not", () => {
+    expect(summarize("trap 'curl https://e.example' EXIT")).toMatchObject({ purpose: { key: "overNetwork" }, unsure: true });
+    expect(summarize("trap '' EXIT").purpose).toEqual({ key: "run", params: { program: "trap" } });
+  });
+
+  it("zsh =(…) is read like <(…): the inner command is a step", () => {
+    expect(summarize("diff =(curl https://e.example) b")).toMatchObject({ purpose: { key: "overNetwork" }, unsure: true });
+    expect(summarize("diff =(ls a) =(ls b)").unsure).toBe(false);
+  });
+});
+
 describe("commandRisk", () => {
   it("a plain command in the sandbox", () => {
     expect(commandRisk({})).toEqual({ level: "info", keys: [{ key: "sandboxed" }] });
