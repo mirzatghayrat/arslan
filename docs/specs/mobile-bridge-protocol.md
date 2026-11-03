@@ -469,18 +469,17 @@ with no `conversation_id` meant it. It is retired once the iPhone's Quick Ask sh
   way; they show the error, and the Mac never re-creates the pocket.
 - The Bridge never links it, so no `chat.event`, `job.event`, `approval.request`, file offer or Mac-typed
   message about it reaches a phone, and a card in it is answered on the Mac only. The Mac leaves it out of
-  `conversations.result` before the page is cut, `status.snapshot` leaves out its jobs, and `run.get` for one
-  of its runs is `not_found` (a run id is a number, so a phone could name one it was never sent). A run or
-  a job that names no conversation can't be told apart from one in the pocket, so it is refused or left out
-  too.
+  `conversations.result` before the page is cut, `status.snapshot` leaves out its jobs and its finished tasks
+  (`outcomes`) and does not count a card waiting there (`waiting_approvals`, `activity.waiting`, the mascot's
+  `approval`), and `run.get` for one of its runs is `not_found` (a run id is a number, so a phone could name one
+  it was never sent). A run or a job that names no conversation can't be told apart from one in the pocket, so
+  it is refused or left out too.
+- A file of one of its runs is `file_unavailable` on `file.get`, and such a run offers no files: `file.get`
+  names a file, not a conversation, and a phone may have kept an id from before. `task.stop` for one of its
+  jobs is refused, whatever conversation the frame names.
 - Builds up to 27 send a Share-sheet draft's files (`file.offer`, which names no conversation) before its
   `chat.send`: the Mac saves them in Inbox/iPhone and reads their text, then refuses the send, so those copies
   stay there.
-- Not covered: `status.snapshot.waiting_approvals` (and `activity.waiting`) count cards in every
-  conversation, the pocket's included; they name no conversation. `file.get` names a file: an id carries 60
-  random bits (`run_<n>_<16 hex>_<name>`: a UUID4's first 16 hex digits, one of them its fixed version)
-  and is learned only from a run result or an event, which no longer
-  name the pocket, so only a phone that kept one from before can fetch that file.
 
 ### 5.9 iPhone 1.0 part B: the week and the task results (added 2026-11-01; optional fields — additive within v1)
 

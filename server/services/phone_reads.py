@@ -369,5 +369,7 @@ async def start_task(goal: str, criteria: list[str]) -> dict:
 
 
 def stop_task(job_id: str) -> bool:
+    """Stop a running job for the phone; one in the retired pocket is not the phone's to stop (Q1 #4)."""
+    from server.services import phone_ids
     job = background_jobs._jobs.get(job_id)
-    return job is not None and background_jobs.stop(job.conversation_id, job_id)
+    return job is not None and job.conversation_id != phone_ids.POCKET and background_jobs.stop(job.conversation_id, job_id)

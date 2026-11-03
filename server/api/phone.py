@@ -253,8 +253,10 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
 
 @router.get("/phone/runs/{run_id}/files")
 async def phone_run_files(run_id: int, db: AsyncSession = Depends(get_session)):
-    """The files one turn made, offered to the phone when the turn ends (its stream_end names the run)."""
-    if await db.get(Run, run_id) is None:
+    """The files one turn made, offered to the phone when the turn ends (its stream_end names the run). A run in the
+    retired pocket is not there for a phone (Q1 #4)."""
+    run = await db.get(Run, run_id)
+    if run is None or run.conversation_id == phone_ids.POCKET:
         raise HTTPException(404, "run_not_found")
     return {"files": run_files(run_id)}
 
@@ -262,9 +264,12 @@ async def phone_run_files(run_id: int, db: AsyncSession = Depends(get_session)):
 @router.get("/phone/files/{file_id}")
 async def phone_file(file_id: str, db: AsyncSession = Depends(get_session)):
     """`file.get`: the bytes of one artifact, checked against its manifest (size and SHA-256)
-    before they leave. Only an artifact of a run that exists, as with the window's download."""
+    before they leave. Only an artifact of a run that exists, as with the window's download, and never one of a run in
+    the retired pocket (Q1 #4): `file.get` names no conversation, so the Bridge's door check can't see it, and older
+    phones still have these ids cached (#525 review)."""
     match = re.fullmatch(r"run_(\d+)_.+", file_id)
-    if match is None or await db.get(Run, int(match.group(1))) is None:
+    run = await db.get(Run, int(match.group(1))) if match is not None else None
+    if run is None or run.conversation_id == phone_ids.POCKET:
         raise HTTPException(404, "file_unavailable")
     try:
         metadata, data = artifact_store.read_owned(int(match.group(1)), file_id)

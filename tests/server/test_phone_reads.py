@@ -80,6 +80,32 @@ async def test_a_turns_files_and_a_files_bytes_match_the_reference(client, artif
     assert (await client.get("/api/v1/phone/runs/99/files")).status_code == 404
 
 
+async def test_a_file_from_a_run_in_the_retired_pocket_never_reaches_a_phone(client, artifacts):
+    """Q1 #4 (#525 review): `file.get` names no conversation, so the Bridge's door check can't see it, and older phones
+    still have these ids cached. A run in the pocket offers no files and serves no bytes; another run still does."""
+    from server.services import phone_ids
+    pocket_file = artifact_store.store_bytes(9, "rent.pdf", b"%PDF-1.7 rent")
+    trip_file = artifact_store.store_bytes(7, "report.pdf", b"%PDF-1.7 tiny")
+    await _seed(client, [Run(id=9, conversation_id=phone_ids.POCKET, user_message="pay")])
+    assert (await client.get("/api/v1/phone/runs/9/files")).status_code == 404
+    refused = await client.get(f"/api/v1/phone/files/{pocket_file['filename']}")
+    assert refused.status_code == 404 and refused.json()["detail"] == "file_unavailable"
+    assert (await client.get(f"/api/v1/phone/files/{trip_file['filename']}")).status_code == 200
+
+
+async def test_a_job_in_the_retired_pocket_cannot_be_stopped_from_a_phone(client, monkeypatch):
+    """Q1 #4 (#525 review): `task.stop` names a job id; one in the pocket is not the phone's to stop. Another job is."""
+    from server.services import background_jobs, phone_ids
+    from server.services.background_jobs import Job
+    stopped: list = []
+    monkeypatch.setattr(background_jobs, "stop", lambda conversation_id, job_id: stopped.append(job_id) or True)
+    monkeypatch.setitem(background_jobs._jobs, "j-pocket", Job("j-pocket", phone_ids.POCKET, "Pay the rent", [], phase="running"))
+    monkeypatch.setitem(background_jobs._jobs, "j-trip", Job("j-trip", "trip", "Plan", [], phase="running"))
+    assert (await client.post("/api/v1/phone/tasks/j-pocket/stop")).status_code == 404
+    assert (await client.post("/api/v1/phone/tasks/j-trip/stop")).status_code == 200
+    assert stopped == ["j-trip"]
+
+
 async def test_the_lists_file_count_is_what_the_phone_is_offered(client, artifacts, monkeypatch):
     """BR2 (①iOS review of #463): one path written three times is one file in the list's count,
     as in the run's offers; a file too big to travel is not counted either."""
