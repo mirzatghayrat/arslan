@@ -103,9 +103,15 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
           {t("kit.touchesMore", { count: touched.length - TOUCHES_MAX })}</span> : null}
       </span> : null}
       riskRow={{ level: risk.level, text: riskText }}
-      // #688 review 7: opened, the command is whole (the box scrolls), so no line of it waits behind a second click.
-      folded={{ testId: "runcmd-show-command", body: <CodeBox code={pretty} numbered={false} fold={Infinity} /> }}
-      detail={isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
+      // #688 review 7: opened, the command is whole (the box scrolls), so no line waits behind a second click. SMART-8
+      // (Astra, simplified): a card that uses the network shows the whole command unfolded, since its reading cannot
+      // say what it sends.
+      folded={summary.unsure ? undefined
+        : { testId: "runcmd-show-command", body: <CodeBox code={pretty} numbered={false} fold={Infinity} /> }}
+      detail={(summary.unsure || isRemote) ? <span className="flex flex-col gap-2">
+        {summary.unsure ? <span data-testid="runcmd-command"><CodeBox code={pretty} numbered={false} fold={Infinity} /></span> : null}
+        {isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
+      </span> : null}
       context={context}
       // A command card's "In this conversation" is a grant for its kind of command (the rules it matched: every `rm`, every
       // `git push`), not for this one text — the same set "Always" names (approvals._command_request). It says so.
