@@ -132,12 +132,25 @@ _CLAIMS_CHART_RE = re.compile(
 _NOT_SEARCHED = "".join(f"(?<!{no}{adverb})" for no in ("没", "未", "不", "不用", "无需", "不必", "需要", "没有")  # lang-check: allow
                         for adverb in ("", "再", "去"))
 _CLAIMS_SEARCH_RE = re.compile(
-    # K8a: 「没查到」 / 「未查到」 says nothing was found, not that a search ran. K8a follow-up (2026-11-03): 「查到」
-    # alone claims no web search either (memory, a command or a file finds things too; "say how it was found",
-    # 「说明是怎么查到的」, sent run 492 back three times). With a web word before it (「我在网上查到了」) it does.
-    r"我搜索|" + _NOT_SEARCHED + r"搜索了|(网上|在线|上网|联网|网页|网络上|搜索引擎|搜索)[^。！？\n]{0,6}(?<![没未])查到"  # lang-check: allow
-    r"|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",  # lang-check: allow
+    r"我搜索|" + _NOT_SEARCHED + r"搜索了|获取到(了|的)?数据|我已搜|i (just )?searched|let me search"  # lang-check: allow
+    r"|i looked it up",
     re.IGNORECASE)
+#: K8a: 「查到」 alone claims no web search (memory, a command or a file finds things too; "say how it was found",
+#: 「说明是怎么查到的」, sent run 492 back three times). It does after a web word in the same clause (「我在网上查到了」),
+#: unless the clause is advice or how-to (「你可以在网上查到」, 「怎么在网上查到」, 「建议上网查到…」) or says nothing was
+#: found (「网上没有查到」). #694 review.
+_WEB_FOUND_RE = re.compile(r"(网上|在线|上网|联网|网页|网络上|搜索引擎)[^。！？，、；\n]{0,6}查到")  # lang-check: allow
+_ADVICE_WORDS = ("可以", "能", "可", "怎么", "如何", "去", "建议")  # lang-check: allow
+_NOT_FOUND = ("没", "未", "没有", "未能")  # lang-check: allow
+
+
+def _claims_web_found(text: str) -> bool:
+    for match in _WEB_FOUND_RE.finditer(text):
+        clause = text[max(text.rfind(mark, 0, match.start()) for mark in "。！？，、；\n") + 1:match.end()]
+        before = text[:match.end() - 2]
+        if not any(word in clause for word in _ADVICE_WORDS) and not before.endswith(_NOT_FOUND):
+            return True
+    return False
 
 
 def _claims_chart(text: str) -> bool:
@@ -145,7 +158,7 @@ def _claims_chart(text: str) -> bool:
 
 
 def _claims_search(text: str) -> bool:
-    return bool(_CLAIMS_SEARCH_RE.search(text or ""))
+    return bool(_CLAIMS_SEARCH_RE.search(text or "")) or _claims_web_found(text or "")
 
 
 # Chart-as-code-fence: instead of calling render_chart, the model draws a DATA chart by writing a
