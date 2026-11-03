@@ -344,9 +344,15 @@ _BENIGN_LOCAL = {"ls", "touch", "chmod", "chown", "chgrp", "mkdir", "ln", "tar",
                  "rev", "vim", "vi", "nano", "emacs", "code", "subl", "pico", "ed", "vimdiff", "mate"}
 #: A benign command's option that makes it run another program (tar's compressor, an editor's command): the step may
 #: run anything, so it reads overNetwork; the value is not parsed (Astra r2 delta).
-_BENIGN_EXEC = {"tar": r"^(?:-I|--use-compress-program|--to-command)(?:=|$)",
+_BENIGN_EXEC = {"tar": r"^(?:-I|(?:--use-compress-program|--to-command)(?:=|$))",
                 "vim": r"^(?:-c|--cmd|\+)", "vi": r"^(?:-c|--cmd|\+)", "vimdiff": r"^(?:-c|--cmd|\+)",
                 "emacs": r"^--eval(?:=|$)", "sort": r"^--compress-program(?:=|$)", "ed": r"^!"}
+
+
+def _requote(tok: str) -> str:
+    """Re-quote a token so a slice of tokens can be read as a command line again (for `find -exec`): a word with a
+    space or other shell metacharacter is single-quoted; a plain word is left as is (Astra r2 delta³)."""
+    return tok if re.match(r"^[A-Za-z0-9_@%^:=+,./~-]+$", tok) else "'" + tok.replace("'", "'\\''") + "'"
 
 
 def _buried_network(w: dict) -> str | None:
@@ -385,14 +391,25 @@ def _step(w: dict) -> dict:
     if program == "find":
         end = next((k for k, a in enumerate(args) if re.match(r"^[-(!)]", a)), -1)
         roots = args if end < 0 else args[:end]
-        exe = next((k for k, a in enumerate(args) if re.match(r"^-(?:exec|execdir|ok|okdir)$", a)), -1)
-        if exe >= 0:
-            run_name = _base(args[exe + 1] if exe + 1 < len(args) else "").lower()
-            if run_name in _NETWORK:
-                return _over_network(run_name)                             # find runs a network program (Astra r2, F2)
-            if run_name in _INLINE_CODE and re.match(_INLINE_CODE[run_name], args[exe + 2] if exe + 2 < len(args) else ""):
-                return _over_network(run_name)                            # find runs inline code (Astra r2 delta)
-        if "-delete" in args or (exe >= 0 and _base(args[exe + 1] if exe + 1 < len(args) else "") in _DELETERS):
+        # Every -exec/-execdir/-ok/-okdir action (up to its ;/+) is a command find runs; read each as its own line so
+        # a wrapper, a shell, a second action or an interpreter flag anywhere in it is caught (Astra r2 delta³).
+        deletes = "-delete" in args
+        for i, a in enumerate(args):
+            if not re.match(r"^-(?:exec|execdir|ok|okdir)$", a):
+                continue
+            slice_: list[str] = []
+            j = i + 1
+            while j < len(args) and args[j] not in (";", "+"):
+                slice_.append(args[j])
+                j += 1
+            if not slice_:
+                continue
+            r = _read(" ".join(_requote(t) for t in slice_), [])
+            if r and r["unsure"]:
+                return _over_network(str(r["purpose"]["params"].get("program") or program))
+            if r and r["purpose"]["key"] in ("delete", "deleteSome", "findDelete"):
+                deletes = True
+        if deletes:
             return _reading("findDelete", {"where": ", ".join(roots) or "."}, [], roots)
         return _reading("run", {"program": program}, [], roots)
     if program == "mv":

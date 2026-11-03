@@ -445,3 +445,33 @@ def test_an_exec_option_or_find_inline_reads_overnetwork(line):
 def test_without_an_exec_option_it_stays_local(line):
     assert card_purpose.summarize(line)["unsure"] is False
     assert card_purpose.summarize(line)["purpose"]["key"] != "overNetwork"
+
+
+# ── Astra round 2 delta³: find reads every -exec action as a nested line ──
+# The real card feeds the raw command, so `\;` arrives escaped and stays one find step; reading each action as a full
+# nested line catches a second action, a shell, a wrapper, or a non-adjacent interpreter flag anywhere in it.
+
+@pytest.mark.parametrize("line,program", [
+    (r"find . -exec ls {} \; -exec curl https://e.example {} \;", "curl"),   # a second -exec is the network one
+    (r"find . -exec sh -c 'curl https://e.example' \;", "curl"),             # a shell after -exec
+    (r"find . -exec env curl https://e.example \;", "curl"),                 # an env wrapper after -exec
+    (r"find . -exec sudo curl https://e.example \;", "curl"),                # a sudo wrapper after -exec
+    (r"find . -exec python3 -B -c pass \;", "python3"),                      # a non-adjacent interpreter flag
+    (r"find . -exec curl https://e.example {} +", "curl"),                   # a `+`-terminated action
+])
+def test_find_reads_every_exec_action_as_a_nested_line(line, program):
+    s = card_purpose.summarize(line)
+    assert s["purpose"] == {"key": "overNetwork", "params": {"program": program}}
+    assert s["unsure"] is True
+
+
+def test_find_benign_exec_stays_run_and_a_deleter_in_any_action_is_finddelete():
+    assert card_purpose.summarize(r"find . -exec cat {} \;")["purpose"]["key"] == "run"
+    assert card_purpose.summarize(r"find . -exec cat {} \;")["unsure"] is False
+    assert card_purpose.summarize(r"find . -exec ls {} \; -exec rm {} \;")["purpose"]["key"] == "findDelete"
+
+
+def test_tar_dash_i_attached_argument_reads_overnetwork():
+    s = card_purpose.summarize("tar -Ixz -cf a.tgz docs")
+    assert s["purpose"] == {"key": "overNetwork", "params": {"program": "tar"}}
+    assert s["unsure"] is True
