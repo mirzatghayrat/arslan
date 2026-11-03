@@ -275,7 +275,9 @@ async def _get_adapter(conversation_id: str | None = None):
     """The compaction adapter: the conversation's own model, else the primary (v0.1.64 ROUTE1: there is no
     compaction slot; a summary is written by the model the conversation runs on, as its turns are)."""
     from server.orchestrator import tool_loop
-    return await tool_loop._adapter_for_turn(has_images=False, conversation_id=conversation_id)
+    adapter = await tool_loop._adapter_for_turn(has_images=False, conversation_id=conversation_id)
+    adapter.role = "summarize"    # a fresh adapter per call; a failed summary names itself (SMART-3)
+    return adapter
 
 
 async def _summarize(adapter, text: str) -> str:  # noqa: ANN001

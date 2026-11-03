@@ -58,6 +58,8 @@ async def test_compaction_follows_the_conversations_model(db):
     assert (picked.report_provider, picked.model) == ("deepseek", "deepseek-v4-pro")
     plain = await memory._get_adapter("c-none")
     assert (plain.report_provider, plain.model) == ("anthropic", "claude-sonnet-5-5")
+    # On the chat's model, but still named as a summary: a failed call says which call failed (SMART-3).
+    assert picked.role == plain.role == "summarize"
 
 
 async def test_the_settings_api_has_no_strategy_and_no_capability_endpoints(client):
