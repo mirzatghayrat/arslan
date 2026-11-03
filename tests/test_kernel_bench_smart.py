@@ -308,9 +308,47 @@ def test_a_compressed_transcript_row_is_read_too(tmp_path):
     assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
 
 
-def test_no_call_anywhere_is_no_record_not_an_empty_trace(tmp_path):
+def test_a_readable_database_with_no_call_is_an_empty_trace(tmp_path):
+    """#702 review: [] is "OpenClaw called nothing"; None is "can't tell"."""
     _openclaw_db(tmp_path, [(json.dumps({"type": "session"}), None)])
-    assert smart_bench.openclaw_tool_calls(tmp_path, '{"payloads": [], "meta": {}}') is None
+    assert smart_bench.openclaw_tool_calls(tmp_path, '{"payloads": [], "meta": {}}') == []
+
+
+def test_a_database_that_cant_be_read_is_no_record(tmp_path, capsys):
+    path = tmp_path / ".openclaw" / "agents" / "main" / "agent" / "openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a database")
+    assert smart_bench.openclaw_tool_calls(tmp_path, '{"payloads": []}') is None
+    assert "could not be read" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", [FileNotFoundError("zstd"), subprocess.CalledProcessError(1, ["zstd"])])
+def test_a_compressed_row_that_cant_be_unpacked_is_no_record_not_a_crash(tmp_path, monkeypatch, capsys, failure):
+    _openclaw_db(tmp_path, [(_call("exec", {"command": "ls"}), None), (None, b"\x28\xb5\x2f\xfd")])
+
+    def run(*args, **kwargs):
+        raise failure
+    monkeypatch.setattr(smart_bench.subprocess, "run", run)
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") is None
+    assert "could not be unpacked" in capsys.readouterr().err
+
+
+def test_rows_still_in_the_write_ahead_log_are_read(tmp_path):
+    """OpenClaw may leave its last rows in -wal, not yet checkpointed into the database file."""
+    import sqlite3
+    path = _openclaw_db(tmp_path, [])
+    writer = sqlite3.connect(path)
+    writer.execute("pragma journal_mode=wal")
+    writer.execute("pragma wal_autocheckpoint=0")
+    writer.execute("insert into transcript_events values ('s1', 0, ?, 0, null)", (_call("exec", {"command": "ls"}),))
+    writer.commit()                                   # in -wal only while this connection stays open
+    try:
+        assert Path(f"{path}-wal").stat().st_size > 0
+        wal = Path(f"{path}-wal").read_bytes()
+        assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
+        assert Path(f"{path}-wal").read_bytes() == wal  # the run's files are left as they were
+    finally:
+        writer.close()
 
 
 def test_openclaws_reply_is_its_terminal_reply_not_the_whole_json(tmp_path):
@@ -326,7 +364,14 @@ def test_openclaws_reply_is_its_terminal_reply_not_the_whole_json(tmp_path):
     assert runner.reply_text("openclaw", run) == ""                  # never the JSON itself, graded as a reply
 
 
-def test_the_version_is_found_however_it_is_written():
+@pytest.mark.parametrize("reply, found", [("notetool 的版本是 **3.2.1 (bench)**。", True), ("版本是3.2.1。", True),
+                                          ("notetool 3.2.1", True), ("版本是 13.2.1。", False),
+                                          ("版本是 3.2.10。", False), ("版本是 3.2.1.4。", False)])
+def test_the_version_is_found_however_it_is_written_but_only_whole(reply, found):
     """Every entrant wrote 「版本是 **3.2.1 (bench)**」; the check wanted the literal 'notetool 3.2.1'."""
-    reply = "notetool 的版本是 **3.2.1 (bench)**。"
-    assert smart_bench.grade(item(8), reply, [("run_command", "notetool --version")])["found_or_guide"] is True
+    assert smart_bench.grade(item(8), reply, [("run_command", "notetool --version")])["found_or_guide"] is found
+
+
+def test_an_empty_reply_passes_neither_length_nor_no_offer():
+    g = smart_bench.grade(item(13), "", [])
+    assert g["words"] is False and g["no_offer"] is False and g["pass"] is False
