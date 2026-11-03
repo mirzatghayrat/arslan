@@ -148,6 +148,36 @@ describe("summarize, Astra round 2's gaps are caught", () => {
   });
 });
 
+describe("summarize, Astra round 2's containment rule", () => {
+  it("case-folds the program (a case-insensitive volume runs Curl/SSH/GIT as the real binary) (F1)", () => {
+    for (const line of ["Curl https://example.org", "SSH host", "GIT -c x=y fetch", "Python3 -c pass", "NC host 1"]) {
+      expect(summarize(line).purpose.key).toBe("overNetwork");
+      expect(summarize(line).unsure).toBe(true);
+    }
+  });
+
+  it.each([
+    "arch -x86_64 curl https://example.org", "script -q /dev/null curl https://example.org", "noglob curl https://e.example",
+    "repeat 3 curl https://e.example", "find . -exec curl https://e.example {} ;", "f(){ curl https://e.example; }; f",
+    "{ curl https://e.example; }", "if true; then curl https://e.example; fi", "sudo --user root curl https://e.example",
+    "sudo -Eu root curl https://e.example", "stdbuf -o L curl https://e.example", "env -P curl https://e.example",
+    "command curl https://e.example",
+  ])("a network program buried in a step is caught: %s (F2)", (line) => {
+    expect(summarize(line)).toMatchObject({ purpose: { key: "overNetwork", params: { program: "curl" } }, unsure: true });
+  });
+
+  it.each(["grep curl notes.txt", "man ssh", "which curl", "type curl", "whence -p curl", "command -v curl",
+           "brew info curl", "brew search wget"])("a step that only names things stays plain: %s (F3)", (line) => {
+    expect(summarize(line).unsure).toBe(false);
+    expect(summarize(line).purpose.key).not.toBe("overNetwork");
+  });
+
+  it("an empty inline line keeps the wrapper node, not dropped (F5)", () => {
+    expect(summarize("bash -c ''").purpose).toEqual({ key: "run", params: { program: "bash" } });
+    expect(summarize("eval ''").purpose).toEqual({ key: "run", params: { program: "eval" } });
+  });
+});
+
 describe("commandRisk", () => {
   it("a plain command in the sandbox", () => {
     expect(commandRisk({})).toEqual({ level: "info", keys: [{ key: "sandboxed" }] });

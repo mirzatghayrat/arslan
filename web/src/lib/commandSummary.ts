@@ -161,8 +161,10 @@ function words(tokens: string[]): Words {
     while (i < rest.length && ASSIGNMENT.test(rest[i])) assigns.push(rest[i++].split("=")[0]);
     const name = base(rest[i] ?? "");
     if (!Object.prototype.hasOwnProperty.call(WRAPPERS, name)) break;      // never `toString` and its kin
-    // `env -S "…"` runs the string as a command line; keep env so inlineLine reads it (Astra r2, 1).
+    // `env -S "…"` runs the string as a command line; keep env so inlineLine reads it (Astra r2, 1). `command -v X`
+    // only names X, so keep command for the names-only check (Astra r2, F3).
     if (name === "env" && (rest[i + 1] === "-S" || rest[i + 1] === "--split-string")) break;
+    if (name === "command" && /^-[vV]$/.test(rest[i + 1] ?? "")) break;
     i++;
     listed = listed || name === "xargs";
     while (i < rest.length && rest[i].startsWith("-") && rest[i] !== "-") {
@@ -229,12 +231,38 @@ const INLINE_CODE: Record<string, RegExp> = { python: /^-[A-Za-z]*c/, python2: /
 
 /** One step's purpose and what it touches: `hosts` (other machines, web addresses, mail addresses) and `local`
  *  (paths on the machine it runs on). `rules` are the server's terminal rules for the line (upload, git-push…). */
+/** A step whose own program only names things (`grep curl`, `man ssh`, `command -v curl`) does not run its
+ *  arguments, so a network name among them is not reached (Astra r2, F3). */
+const NAMES_ONLY = new Set(["echo", "printf", "grep", "egrep", "fgrep", "rg", "man", "which", "type", "whence", "apropos"]);
+function namesOnly(w: Words): boolean {
+  if (NAMES_ONLY.has(w.program)) return true;
+  if (w.program === "command" && /^-[vV]$/.test(w.args[0] ?? "")) return true;
+  if (w.program === "brew" && (w.args[0] === "info" || w.args[0] === "search")) return true;
+  return false;
+}
+
+/** The network program a step runs, wherever it sits — the first token, or one buried by a wrapper option the reader
+ *  does not model (`arch … curl`, `sudo --user root curl`), by `find -exec`, or in a compound (Astra r2, F2). Each
+ *  token is matched by its basename, lower-cased (so `Curl`, run as the real binary on a case-insensitive volume, is
+ *  caught too — F1); an INLINE_CODE interpreter counts only when its inline flag follows it. */
+function buriedNetwork(w: Words): string | null {
+  if (namesOnly(w)) return null;
+  const toks = [w.program, ...w.args];
+  for (let i = 0; i < toks.length; i++) {
+    const name = base(toks[i]).toLowerCase();
+    if (NETWORK.has(name)) return name;
+    if (Object.prototype.hasOwnProperty.call(INLINE_CODE, name) && i + 1 < toks.length && INLINE_CODE[name].test(toks[i + 1]))
+      return name;
+  }
+  return null;
+}
+
 function readStep(w: Words): Reading {
-  const { program, args } = w;
+  const program = w.program.toLowerCase();                                 // the binary a case-insensitive volume runs
+  const { args } = w;
   if (!program) return overNetwork(w.raw || "command");                    // a wrapper took everything (Astra r2, 1)
-  if (NETWORK.has(program)) return overNetwork(program);
-  if (Object.prototype.hasOwnProperty.call(INLINE_CODE, program) && args.some(a => INLINE_CODE[program].test(a)))
-    return overNetwork(program);                                           // its inline code may reach the network
+  const buried = buriedNetwork(w);
+  if (buried) return overNetwork(buried);                                  // a network program anywhere in the step
   switch (program) {
     case "cat":
       return { purpose: { key: "run", params: { program } }, hosts: [], local: plain(args) };
@@ -333,7 +361,7 @@ function flatten(steps: Step[], container: Node | null, out: Node[], ctx: Ctx) {
     const node: Node = { w: words(step.tokens), from: step.piped ? prev : null, container, merged: false, run: false, ctx };
     const line = inlineLine(node.w);
     const inner = line === null ? null : parse(line);
-    if (inner) flatten(inner, container, out, { parent: ctx });            // `sh -c '…'`: its line, read once
+    if (inner && inner.length) flatten(inner, container, out, { parent: ctx });   // `sh -c '…'`: its line, read once
     else {
       flatten(step.subs, node, out, { parent: ctx });                      // what runs inside it runs first
       out.push(node);
