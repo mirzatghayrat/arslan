@@ -81,6 +81,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | **SUB** | 子会话的底子：一个子 agent 工具做成子会话，最多三层；先补 `delegate_work` 不传外部内容标记的洞；跑分题「拆开、分派、汇总」先过 | ②Main | 必须（用户 10-28） | SBX；M64 的那道题；和 Q1 共用迁移。**SUB1（补 `delegate_work` 的洞）并进 S64-0（§3.4）**；SUB3–SUB5 叠着做，跑分题在叠好的头上过了才合；SUB6 删 `delegate_work` 和 `TaskWorker` | [SUB](SUB-sub-sessions.md) |
 | **STY** | 回复风格：任务汇报用四条原则，闲聊保持温度，人情味但不假 | ②Main（⓪Plan 出测题） | 必须（用户 10-28） | ACM（卡片文案用同一套写法） | [STY](STY-reply-style.md) |
 | **M64** | 跑分：代码审查题、拆分派汇总题、Hermes 门槛、每版一次完整的 | ⓪Plan | 必须 | 无（可以最先做） | [M64](M64-bench.md) |
+| **HPW** | Hands refuses a paste only when a password field is known to take input (role `AXSecureTextField`), or, when focus is unknown, when system-wide secure input is on; the refusal says which (added 2026-11-03, the user via ④参谋) | ③Hands | must (user, 2026-11-03) | after ③Hands' SBX items; effort=max | [HPW](HPW-hands-password-refusal.md) |
 
 ### 3.2 领先路线里 v0.1.64 的大卡（还没写）
 

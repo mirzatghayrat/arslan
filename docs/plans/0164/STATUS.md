@@ -12,17 +12,17 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 - #680 (SMART-3/4);
 - #674 (SMART-1, merged by the user);
 - #698 (the 「查到」 follow-up);
-- #700 (ROUTE1 change 6: priced providers' seed comes from prices.py).
+- #700 (ROUTE1 change 6: priced providers' seed comes from prices.py);
+- #699 (ROUTE1: task routing removed; every role follows the conversation's model, else the primary);
+- #701 (SMART-5 gate fixes: closing lines only after work; version via `my_status`; the retry line);
+- #702 (SMART-5 bench: OpenClaw 2026.10.10's reply and trace).
 
-SMART-1 to SMART-4 are all on main.
+SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun (3 repeats) is next.
 
 **Open, and who has it:**
 
 | PR | State | Next |
 |---|---|---|
-| #699 ROUTE1 (②Main) | effort=max (migration 0086 clears settings, §5); first review OK with 6 findings, fixed at 725437e8 | ⓪Plan's max delta review is running; ②Main arms on the OK |
-| #701 SMART-5 fix: closing note only after work (⑥Helper) | reviewed at high, 3 findings | ⑥Helper fixes; delta review |
-| #702 SMART-5 bench: OpenClaw 2026.10.10 parser (⑥Helper) | reviewed at high, 1 blocking (zero calls read as "can't tell") | ⑥Helper fixes; delta review |
 | #693 cloud uploads ask (③Hands) | effort=max review: 2 blocking (quoted option values; options after the first word, gh/azcopy); fix pushed at cd962905 | ③Hands sends the head; max delta review with the same reviewer |
 | #686 delete to Trash (③Hands) | rebased at 03f60401 | max delta review when ③Hands sends it |
 | #661 CAP9 (⑤CAP, the user merges) | one focus finding | paused until the 11-07 reset |
@@ -46,7 +46,7 @@ SMART-1 to SMART-4 are all on main.
   - the note only after a turn that did work;
   - version and state questions go to `my_status`;
   - the retry line ends the guidance.
-- **Next:** once #701 and #702 land, ⓪Plan reruns the gate with 3 repeats per task.
+- **Next:** #701 and #702 have landed; ⓪Plan reruns the gate with 3 repeats per task.
 - **Results:** in the bench root outside the repo (`arslan-bench-smart5/results/`).
 
 **Decided by ⓪Plan today:**
@@ -59,6 +59,8 @@ SMART-1 to SMART-4 are all on main.
   - a turn of web searches and reads only gets no closing note;
   - the research rule already makes the reply cite what it read and say what it could not verify;
   - **condition:** the STY2 27-task "done without evidence" gate is rerun before the tag and must not regress.
+
+**New card: [HPW](HPW-hands-password-refusal.md)** (the user, 2026-11-03, via ④参谋; ③Hands after its SBX items; effort=max). Hands refused a paste into WeChat as a "password field" because WeChat doesn't report focus. Now only a known secure field, or system-wide secure input when focus is unknown, refuses; the refusal says which.
 
 **Found today, to card (none started before the reset unless the user says so):**
 - **Security, ③Hands after #693/#686:** a class of shell spellings gets past every command-word rule, layer ① included:
@@ -80,7 +82,8 @@ SMART-1 to SMART-4 are all on main.
   - OCR, PDF and attachments;
   - Q1c end to end with build 31;
   - **new:** ROUTE1's model switch on a real Mac (switch the main model; a new chat, a summary and an image turn all follow it);
-  - SBX-8, the bench on the user's Mac.
+  - SBX-8, the bench on the user's Mac;
+  - **new:** HPW: paste a WeChat message, and confirm a real password field is still refused.
 - **Gates:**
   - **SBX-6** is a hard condition: SBX-6 on main, or the one-line no-name-lookup fallback in any-declared mode;
   - **SMART-5** passes with 3 repeats;
