@@ -33,6 +33,9 @@
    "onHost": "{{what}} on {{host}}, over SSH",
    "uploadFile": "Send {{file}} to {{host}}",
    "mailFile": "Email {{file}} to {{to}}",
+   "unreadableSend": "Cannot fully read what {{program}} sends; it may send local data",
+   "uploadFileMore": "Send {{file}} and {{count}} more to {{host}}",
+   "mailFileMore": "Email {{file}} and {{count}} more to {{to}}",
    "more": " (and {{count}} more steps)",
    "more_one": " (and 1 more step)"
   },
@@ -42,6 +45,7 @@
    "onHost": "On {{host}}",
    "network": "Uses the network",
    "shortcutAsYou": "Runs as you, outside the sandbox; Arslan can't see what the Shortcut does",
+   "unsure": "May send local data",
    "join": " · "
   }
  },
@@ -78,6 +82,9 @@
    "onHost": "通过 SSH 在 {{host}} 上：{{what}}",
    "uploadFile": "把 {{file}} 发到 {{host}}",
    "mailFile": "用邮件把 {{file}} 发给 {{to}}",
+   "unreadableSend": "读不全 {{program}} 会发出什么，可能会发出本机数据",
+   "uploadFileMore": "把 {{file}} 和另外 {{count}} 个文件发到 {{host}}",
+   "mailFileMore": "用邮件把 {{file}} 和另外 {{count}} 个文件发给 {{to}}",
    "more": "（还有 {{count}} 步）",
    "more_one": "（还有 {{count}} 步）"
   },
@@ -87,6 +94,7 @@
    "onHost": "在 {{host}} 上",
    "network": "会联网",
    "shortcutAsYou": "以你的身份在沙盒外运行；Arslan 看不到这个快捷指令做什么",
+   "unsure": "可能发出本机数据",
    "join": " · "
   }
  },
@@ -123,6 +131,9 @@
    "onHost": "SSH で {{host}} 上：{{what}}",
    "uploadFile": "{{file}} を {{host}} に送信",
    "mailFile": "{{file}} をメールで {{to}} に送信",
+   "unreadableSend": "{{program}} が何を送るか読み切れません。ローカルのデータを送る可能性があります",
+   "uploadFileMore": "{{file}} ほか {{count}} 件を {{host}} に送信",
+   "mailFileMore": "{{file}} ほか {{count}} 件をメールで {{to}} に送信",
    "more": "（ほか {{count}} ステップ）",
    "more_one": "（ほか {{count}} ステップ）"
   },
@@ -132,6 +143,7 @@
    "onHost": "{{host}} 上で",
    "network": "ネットワークを使用",
    "shortcutAsYou": "あなたとしてサンドボックスの外で実行。Arslan にはショートカットの中身が見えません",
+   "unsure": "ローカルのデータを送る可能性",
    "join": " · "
   }
  },
@@ -168,6 +180,9 @@
    "onHost": "{{what}} en {{host}}, por SSH",
    "uploadFile": "Enviar {{file}} a {{host}}",
    "mailFile": "Enviar {{file}} por correo a {{to}}",
+   "unreadableSend": "No se puede leer del todo lo que envía {{program}}; puede enviar datos locales",
+   "uploadFileMore": "Enviar {{file}} y {{count}} más a {{host}}",
+   "mailFileMore": "Enviar {{file}} y {{count}} más por correo a {{to}}",
    "more": " (y {{count}} pasos más)",
    "more_one": " (y 1 paso más)"
   },
@@ -177,6 +192,7 @@
    "onHost": "En {{host}}",
    "network": "Usa la red",
    "shortcutAsYou": "Se ejecuta como tú, fuera del entorno aislado; Arslan no ve lo que hace el atajo",
+   "unsure": "Puede enviar datos locales",
    "join": " · "
   }
  },
@@ -213,6 +229,9 @@
    "onHost": "Auf {{host}} per SSH: {{what}}",
    "uploadFile": "{{file}} an {{host}} senden",
    "mailFile": "{{file}} per E-Mail an {{to}} senden",
+   "unreadableSend": "Nicht ganz lesbar, was {{program}} sendet; es kann lokale Daten senden",
+   "uploadFileMore": "{{file}} und {{count}} weitere an {{host}} senden",
+   "mailFileMore": "{{file}} und {{count}} weitere per E-Mail an {{to}} senden",
    "more": " (und {{count}} weitere Schritte)",
    "more_one": " (und 1 weiterer Schritt)"
   },
@@ -222,6 +241,7 @@
    "onHost": "Auf {{host}}",
    "network": "Nutzt das Netzwerk",
    "shortcutAsYou": "Läuft als du, außerhalb der Sandbox; Arslan sieht nicht, was der Kurzbefehl tut",
+   "unsure": "Kann lokale Daten senden",
    "join": " · "
   }
  },
@@ -258,6 +278,9 @@
    "onHost": "{{what}} sur {{host}}, en SSH",
    "uploadFile": "Envoyer {{file}} à {{host}}",
    "mailFile": "Envoyer {{file}} par e-mail à {{to}}",
+   "unreadableSend": "Impossible de lire entièrement ce que {{program}} envoie ; il peut envoyer des données locales",
+   "uploadFileMore": "Envoyer {{file}} et {{count}} de plus à {{host}}",
+   "mailFileMore": "Envoyer {{file}} et {{count}} de plus par e-mail à {{to}}",
    "more": " (et {{count}} étapes de plus)",
    "more_one": " (et 1 étape de plus)"
   },
@@ -267,6 +290,7 @@
    "onHost": "Sur {{host}}",
    "network": "Utilise le réseau",
    "shortcutAsYou": "S’exécute en votre nom, hors du bac à sable ; Arslan ne voit pas ce que fait le raccourci",
+   "unsure": "Peut envoyer des données locales",
    "join": " · "
   }
  }

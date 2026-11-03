@@ -1262,7 +1262,7 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
 
     Returns {"offline": bool, "note": str} or {"refused": model text}."""
     from server.orchestrator import untrusted as _untrusted
-    from server.services import background_jobs, command_sandbox, permissions, task_service
+    from server.services import background_jobs, command_sandbox, permissions, task_service, terminal_policy
     if not _untrusted.external_seen():
         return {}
     if unwrapped:
@@ -1277,7 +1277,8 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
         # review 3): the Mac's action card shows the title as the server's own words under it.
         request = permissions.Request(
             kind="network", target="network:*", title=card_purpose.phrase(
-                command, "", lang=await card_purpose.language(), network=True),
+                command, "", sorted(terminal_policy.ask_rules(command)), lang=await card_purpose.language(),
+                network=True),
             model_title=f"Let the Shortcut `{command[:80]}` use the network?",
             detail=command, why=why, conversation_ok=False, once_only=True)
         if permissions.current_asker() is None:
@@ -1296,8 +1297,9 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     from server.services import card_purpose
     why = str(args.get("why") or "").strip()[:300]
     decision = await permissions.decide(permissions.Request(   # SMART-8: the plain purpose, never `why` (as above)
-        kind="network", target="network:*", title=card_purpose.phrase(
-            command, "", lang=await card_purpose.language(), network=True), detail=command,
+        kind="network", target="network:*", title=card_purpose.phrase(   # read with its rules (Astra 5)
+            command, "", sorted(terminal_policy.ask_rules(command)), lang=await card_purpose.language(),
+            network=True), detail=command,
         model_title=f"Let `{command[:80]}` use the network?", why=why, conversation_ok=inside, once_only=not inside),
         permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
     if decision.allowed:
