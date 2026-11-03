@@ -351,6 +351,7 @@ describe("the model under the composer", () => {
       await act(async () => { land({ choice: { config_id: 2, model: "anthropic/claude-sonnet-4.5" } }); });
       expect(conv.get.mock.calls.length).toBeGreaterThan(afterTimeout);
       await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("claude-sonnet-4.5"));
+      expect(screen.queryByTestId("model-chip-error")).toBeNull();     // the save landed: no "couldn't switch" left behind
     } finally {
       vi.useRealTimers();
     }

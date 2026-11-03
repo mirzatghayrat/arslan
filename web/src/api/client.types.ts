@@ -503,7 +503,7 @@ export type ServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
   | { type: "message"; message_id: number; content: string; role: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "ping"; ts: number };
 
 export interface UserFact {
@@ -786,7 +786,7 @@ export type ArslanServerMessage =
       artifact?: { kind: string; content?: string; spec?: Record<string, unknown>;
                    filename?: string; bytes_b64?: string; slides?: number };
     }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
   | { type: "clarify_options"; question: string; options: ClarifyOption[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
@@ -1134,3 +1134,6 @@ export interface CardV2Fields {
   expires_at?: number;
   dedupe?: string;
 }
+
+/** SMART-3 (v0.1.64): which model call failed: the chat's own model ("chat") or a helper ("vision" and the like). */
+export interface ModelCall { role: string; provider: string; model: string }

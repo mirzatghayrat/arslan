@@ -93,13 +93,10 @@ async def _adapter_for_turn(*, has_images: bool, conversation_id: str | None = N
     where server/orchestrator/vision_errors.py left it: send, and make the failure
     legible.
     """
-    if has_images:
-        from server.services.llm_factory import build_slot_adapter
-
-        slotted = await build_slot_adapter("vision_config_id")
-        if slotted is not None:
-            return slotted
-    # 0.1.58 §6: the model chosen for this conversation, when there is one.
+    # 0.1.58 §6: the model chosen for this conversation, when there is one. v0.1.64 (⓪Plan's Q2, option c): it wins
+    # on an image turn too, over the vision slot. The user said "this chat runs on X"; if X can't read the image, its
+    # refusal names X and its provider (llm_errors.error_frame) and the window offers to switch. Whether a model can
+    # see is not known on this path (ModelCatalogCache is never read here, and the vision flag is unreliable).
     if conversation_id:
         from server.services.llm_factory import build_conversation_adapter
         try:
@@ -108,6 +105,12 @@ async def _adapter_for_turn(*, has_images: bool, conversation_id: str | None = N
             chosen = None
         if chosen is not None:
             return chosen
+    if has_images:
+        from server.services.llm_factory import build_slot_adapter
+
+        slotted = await build_slot_adapter("vision_config_id")
+        if slotted is not None:
+            return slotted
     adapter = _get_adapter()
     return await adapter if hasattr(adapter, "__await__") else adapter
 
