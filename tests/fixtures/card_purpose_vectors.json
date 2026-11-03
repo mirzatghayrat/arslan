@@ -99,14 +99,14 @@
   {
    "line": "git -c user.name=x push",
    "purpose": {
-    "key": "gitPush",
+    "key": "overNetwork",
     "params": {
-     "remote": "origin"
+     "program": "git"
     }
    },
    "touches": [],
    "more": 0,
-   "unsure": false
+   "unsure": true
   },
   {
    "line": "open -a Safari https://example.com",
@@ -723,6 +723,234 @@
     "old.log"
    ],
    "more": 1,
+   "unsure": true
+  },
+  {
+   "line": "env -S \"curl https://example.org\"",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "eval \"curl https://example.org\"",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "builtin eval \"curl https://example.org\"",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "git -c core.sshCommand=ssh fetch",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "git --upload-pack=x fetch origin",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "GIT_SSH_COMMAND=x git fetch",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "dig example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "dig"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "nslookup example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "nslookup"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ping -c 1 example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ping"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "traceroute example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "traceroute"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "openssl s_client -connect example.org:443",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "openssl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ssh-copy-id user@host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ssh-copy-id"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "docker push img",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "docker"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "kubectl get pods",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "kubectl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "twine upload dist/pkg.whl",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "twine"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "npm publish",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "npm"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "cargo publish",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "cargo"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gem push pkg.gem",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gem"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sudo",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "sudo"
+    }
+   },
+   "touches": [],
+   "more": 0,
    "unsure": true
   }
  ]

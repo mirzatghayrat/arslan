@@ -41,6 +41,7 @@ QUIET = {"echo", "printf", "true", "false", ":", "cd", "pushd", "popd", "sleep",
          "read", "wait", "clear"}
 #: Programs that run the rest of their words as another program, each with its options that take a value.
 WRAPPERS = {"sudo": "CDghpRrTUu", "env": "CSu", "command": "", "exec": "a", "nohup": "", "time": "", "nice": "n",
+            "builtin": "",
             "timeout": "ks", "xargs": "adEILnPs", "caffeinate": "tw", "stdbuf": ""}
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _FD_DUP = re.compile(r"^[0-9]*[<>]&(?:[0-9]+|-)$")
@@ -225,12 +226,17 @@ def _words(tokens: list[str]) -> dict:
         else:
             rest.append(tk)
         i += 1
-    i, listed = 0, False
+    i, listed, assigns = 0, False, []
+    raw = _program_of(next((tk for tk in rest if not _ASSIGNMENT.match(tk)), ""))
     while True:
         while i < len(rest) and _ASSIGNMENT.match(rest[i]):
+            assigns.append(rest[i].split("=", 1)[0])
             i += 1
         name = _base(rest[i]) if i < len(rest) else ""
         if name not in WRAPPERS:
+            break
+        # `env -S "…"` runs the string as a command line; keep env so _inline_line reads it (Astra r2, 1).
+        if name == "env" and (rest[i + 1] if i + 1 < len(rest) else "") in ("-S", "--split-string"):
             break
         i += 1
         listed = listed or name == "xargs"
@@ -244,7 +250,7 @@ def _words(tokens: list[str]) -> dict:
         if name == "timeout" and i < len(rest):
             i += 1                                                         # its duration
     return {"program": _program_of(rest[i]) if i < len(rest) else "", "args": rest[i + 1:], "writes": writes,
-            "inputs": inputs, "listed": listed}
+            "inputs": inputs, "assigns": assigns, "raw": raw, "listed": listed}
 
 
 def _inline_line(w: dict) -> str | None:
@@ -259,6 +265,12 @@ def _inline_line(w: dict) -> str | None:
             if re.match(r"^-[ndq]$", flag) and args:
                 args.pop(0)
         return " ".join(args) if args else None
+    if w["program"] == "eval":
+        return " ".join(w["args"]) if w["args"] else None
+    if w["program"] == "env":
+        at = next((k for k, a in enumerate(w["args"]) if a in ("-S", "--split-string")), -1)
+        if at >= 0:
+            return w["args"][at + 1] if at + 1 < len(w["args"]) else None
     return None
 
 
@@ -299,7 +311,8 @@ def _over_network(program: str) -> dict:
 #: Programs that reach another machine; a step of one is never read past "uses the network".
 _NETWORK = {"curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp", "tftp", "lftp",
             "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail", "msmtp",
-            "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd"}
+            "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
+            "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"}
 #: Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7).
 _INLINE_CODE = {"python": r"^-[A-Za-z]*c", "python2": r"^-[A-Za-z]*c", "python3": r"^-[A-Za-z]*c",
                 "node": r"^(?:-[A-Za-z]*[ep]|--eval|--print)", "perl": r"^-[A-Za-z]*[eE]", "ruby": r"^-[A-Za-z]*e",
@@ -310,6 +323,8 @@ def _step(w: dict) -> dict:
     """One step's purpose and what it touches. A step that reaches another machine is read only as overNetwork."""
     program, args = w["program"], w["args"]
     plain = _plain(args)
+    if not program:
+        return _over_network(w.get("raw") or "command")                   # a wrapper took everything (Astra r2, 1)
     if program in _NETWORK:
         return _over_network(program)
     if program in _INLINE_CODE and any(re.match(_INLINE_CODE[program], a) for a in args):
@@ -334,6 +349,9 @@ def _step(w: dict) -> dict:
     if program == "tee":
         return _reading("write", {"target": plain[0]}, [], plain) if plain else _run(program)
     if program == "git":
+        if (any(re.match(r"^-c$", a) or re.match(r"^--(?:config|upload-pack|receive-pack)(?:=|$)", a) for a in args)
+                or any(re.match(r"^GIT_(?:SSH|SSH_COMMAND|PROXY_COMMAND)$", v) for v in w.get("assigns", []))):
+            return _over_network("git")                                    # -c / hooks can run any program (Astra r2, 3)
         own = [a for k, a in enumerate(args) if not re.match(r"^-[Cc]$", a)
                and not (k and re.match(r"^-[Cc]$", args[k - 1]))]
         sub, *rest = _plain(own) or [None]
@@ -359,6 +377,8 @@ def _step(w: dict) -> dict:
     if program in ("kill", "killall", "pkill"):
         return _reading("kill", {"target": " ".join(plain)})
     sub = plain[0] if plain else None
+    if (program in ("npm", "pnpm", "yarn", "cargo") and sub == "publish") or (program == "gem" and sub == "push"):
+        return _over_network(program)                                      # uploads to a registry
     if program in _INSTALLERS and sub in ("install", "add"):
         names = [n for n in plain[1:] if "/" not in n or n.startswith("@")]
         return _reading("install", {"packages": ", ".join(names[:3]) or program})
@@ -443,7 +463,8 @@ def _read(text: str, rules: list[str]) -> dict | None:
         if program == "popd":
             dirs[id(node["ctx"])] = None
             continue
-        quiet = program in QUIET or not program
+        wrapped = not program and w.get("raw", "") in WRAPPERS         # `sudo`, `timeout 5` alone (Astra r2, 1)
+        quiet = program in QUIET or (not program and not wrapped)
         if node["merged"] or (quiet and not writes):
             continue
         r = _reading("write", {"target": writes[0]}) if quiet else _step(w)

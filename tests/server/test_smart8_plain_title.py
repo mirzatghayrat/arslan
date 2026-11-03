@@ -357,3 +357,26 @@ async def test_the_network_card_is_read_with_the_commands_rules(execution_db, mo
                                                    run_outside=False, unwrapped=False, conversation_id="c1")
     assert calls and "upload" in calls[0][2]
     assert seen[0].title == "Uses the network (curl): may send or receive data"
+
+
+# ── Astra round 2: env -S / eval / git -c / added network programs ──
+
+@pytest.mark.parametrize("shell, program", [
+    ('env -S "curl https://example.org"', "curl"), ('eval "curl https://example.org"', "curl"),
+    ('builtin eval "curl https://example.org"', "curl"), ("git -c core.sshCommand=ssh fetch", "git"),
+    ("git --upload-pack=x fetch origin", "git"), ("GIT_SSH_COMMAND=x git fetch", "git"),
+    ("git -c user.name=x push", "git"), ("dig example.org", "dig"), ("docker push img", "docker"),
+    ("npm publish", "npm"), ("cargo publish", "cargo"), ("gem push pkg.gem", "gem")])
+def test_a_hidden_or_network_step_reads_only_as_using_the_network(shell, program):
+    assert card_purpose.summarize(shell) == {"purpose": {"key": "overNetwork", "params": {"program": program}},
+                                             "touches": [], "more": 0, "unsure": True}
+
+
+def test_a_wrapper_that_took_its_program_is_never_a_plain_reading():
+    assert card_purpose.summarize("sudo")["unsure"] is True
+    assert card_purpose.summarize("timeout 5")["unsure"] is True
+
+
+def test_the_plain_git_and_eval_readings_are_unchanged():
+    assert card_purpose.summarize("git fetch origin")["purpose"]["key"] == "gitFetch"
+    assert card_purpose.summarize('eval "rm -rf build"')["purpose"] == {"key": "delete", "params": {"count": 1}}
