@@ -142,8 +142,8 @@ _CLAIMS_SEARCH_RE = re.compile(
 #: 「说明是怎么查到的」, sent run 492 back three times). It does after a web word in the same clause (「我在网上查到了」),
 #: unless the clause is advice or how-to (「你可以在网上查到」, 「怎么在网上查到」, 「建议上网查到…」) or says nothing was
 #: found (「网上没有查到」). #694 review.
-#: 「网络上」 / 「网络中」, never bare 「网络」: 「网络设置里查到…」 and 「网络日志里查到…」 are local (#698 review).
-_WEB_FOUND_RE = re.compile(r"(网上|在线|上网|联网|网页|网络[上中]|搜索引擎)[^。！？，、；\n]{0,6}查到")  # lang-check: allow
+#: 「网络上」 only, never bare 「网络」 or 「网络中」: 「网络设置里查到…」 and 「本地网络中查到…」 are local (#698 review).
+_WEB_FOUND_RE = re.compile(r"(网上|在线|上网|联网|网页|网络上|搜索引擎)[^。！？，、；\n]{0,6}查到")  # lang-check: allow
 _ADVICE_WORDS = ("可以", "怎么", "如何", "建议")  # lang-check: allow
 #: 「可」 / 「能」 / 「去」 are advice only right before the web word (「可在网上」, 「去网上」) or right before 「查到」
 #: (「都能查到」), and not as the end of 「可能」, 「功能」 or 「过去」 (#694 follow-up).
