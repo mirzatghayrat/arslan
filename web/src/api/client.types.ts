@@ -503,7 +503,7 @@ export type ServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
   | { type: "message"; message_id: number; content: string; role: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "ping"; ts: number };
 
 export interface UserFact {
@@ -624,6 +624,12 @@ export interface AuthoredSkillCard {
 export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
+/** K8a: text a reply showed and then replaced, with the server's label for it. */
+export interface EarlierDraft {
+  label: string;
+  text: string;
+}
+
 export interface ArslanThreadItem {
   id: number;
   kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
@@ -654,6 +660,9 @@ export interface ArslanThreadItem {
   lesson?: { id: number; status: string; notInEffect?: string | null };
   runId?: number | null; // trace+eval replay id (stream_end / history row)
   toolSteps?: ToolStep[]; // replies: folded tool activity
+  /** K8a (2026-11-03): text this reply showed and then replaced (stream_restart), in order. Live only: the
+   *  stored message is the final answer. */
+  drafts?: EarlierDraft[];
   /** HTML deliverable from the stream_end frame's kind:"html" artifact (HX-2 channel).
    *  🔒 Populated ONLY from the backend frame, NEVER from LLM message text. */
   artifactHtml?: HtmlArtifact;
@@ -713,6 +722,10 @@ export type ArslanServerMessage =
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
   | { type: "stream_chunk"; content: string }
+  // K8a (2026-11-03): a guard sent back a step's text that already went out; what follows replaces it. The reply
+  // starts over from `keep` (what earlier steps showed, which stays). `label` is the server's, in the language of
+  // the text it replaces; the window keeps that text as a collapsed earlier draft.
+  | { type: "stream_restart"; label: string; keep?: string }
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
   | { type: "run_cancelled"; run_id: number; message_id?: number }
@@ -735,7 +748,7 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } & CardV2Fields)
+  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; rule?: string; rules?: string[]; unreadable?: string; network?: boolean; unsandboxed?: boolean } & CardV2Fields)
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
@@ -773,7 +786,7 @@ export type ArslanServerMessage =
       artifact?: { kind: string; content?: string; spec?: Record<string, unknown>;
                    filename?: string; bytes_b64?: string; slides?: number };
     }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
   | { type: "clarify_options"; question: string; options: ClarifyOption[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
@@ -1121,3 +1134,6 @@ export interface CardV2Fields {
   expires_at?: number;
   dedupe?: string;
 }
+
+/** SMART-3 (v0.1.64): which model call failed: the chat's own model ("chat") or a helper ("vision" and the like). */
+export interface ModelCall { role: string; provider: string; model: string }

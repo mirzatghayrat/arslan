@@ -203,6 +203,7 @@ export default function App() {
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
+  const arslanStreamingDrafts = useArslanStore((s) => s.streamingDrafts);
 
   // Handler for incoming WS frames — routes to the proven store logic
   const handleArslanFrame = useCallback((raw: unknown) => {
@@ -221,7 +222,8 @@ export default function App() {
   const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems);
 
   // Append an optimistic streaming bubble while a reply is streaming
-  const orchestratorChatHistory: Message[] = arslanStreaming && arslanStreamingText
+  // K8a: a reply whose earlier text was replaced keeps its bubble (the drafts) until the new text arrives.
+  const orchestratorChatHistory: Message[] = arslanStreaming && (arslanStreamingText || arslanStreamingDrafts.length > 0)
     ? [
         ...liveOrchestratorHistory,
         {
@@ -231,6 +233,7 @@ export default function App() {
           senderAvatar: '🦁',
           text: arslanStreamingText,
           timestamp: '',
+          ...(arslanStreamingDrafts.length > 0 ? { drafts: arslanStreamingDrafts } : {}),
         },
       ]
     : liveOrchestratorHistory;

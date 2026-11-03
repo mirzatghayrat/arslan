@@ -20,7 +20,10 @@ import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
 import type { ProviderConfig, ProviderOption } from '../api/client.types';
 import ConversationModelChip from './models/ConversationModelChip';
-import { isModelSaving, useModelSaving } from './models/useConversationModel';
+import { MODEL_CHANGED_EVENT, beginModelSave, isModelSaving, useModelSaving } from './models/useConversationModel';
+import { conversationModelApi } from '../api/conversationModel';
+import { withTimeout } from './models/ConversationModelChip';
+import { lastSend, rememberSend } from '../lib/lastSend';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -58,6 +61,22 @@ function RunCancelledMarker() {
   return (
     <div data-testid="run-cancelled-marker" className="mt-2 text-[11px] font-mono text-danger/80 select-none">
       ⏸ {t('working.stalled')}
+    </div>
+  );
+}
+
+/** K8a (2026-11-03): text a reply showed and then replaced, because a check sent it back. Each is one quiet,
+ *  collapsed line above the answer, labelled by the server in the language of the text it replaces. */
+function EarlierDrafts({ drafts }: { drafts?: Message['drafts'] }) {
+  if (!drafts?.length) return null;
+  return (
+    <div data-testid="earlier-drafts" className="mb-2 space-y-1">
+      {drafts.map((draft, i) => (
+        <details key={i} className="text-[11px] text-subtle-foreground">
+          <summary className="cursor-pointer select-none">{draft.label}</summary>
+          <div className="mt-1 pl-3 border-l border-border whitespace-pre-line opacity-80">{draft.text}</div>
+        </details>
+      ))}
     </div>
   );
 }
@@ -121,6 +140,14 @@ export default function OrchestratorChat({
   header,
   footer,
 }: OrchestratorChatProps) {
+  // SMART-3 (PR 696's review): every send goes through here and is remembered (typed, voice, a clarify answer), so a
+  // retry on another model resends the newest message, never an older one.
+  const sendMessage: OrchestratorChatProps['onSendMessage'] = onSendMessage
+    ? (text, attached, opts) => {
+        rememberSend(conversationId ?? 'main', text, attached);
+        if (opts) onSendMessage(text, attached, opts); else onSendMessage(text, attached);
+      }
+    : undefined;
   const { t, i18n } = useTranslation();
   const settings = useSettingsStore((s) => s.settings);
   // What the recogniser should EXPECT to hear. Its own setting first, because
@@ -138,7 +165,7 @@ export default function OrchestratorChat({
     enabled: voiceMode === 'conversation' && conversationOn,
     locale: voiceLocale,
     silenceMs: clampEndpointSilenceMs(settings?.voice_endpoint_silence_ms),
-    onFinal: (text) => { setVoiceError(null); onSendMessage?.(text, undefined); },
+    onFinal: (text) => { setVoiceError(null); sendMessage?.(text, undefined); },
     onError: (msg) => { setVoiceError(msg); setConversationOn(false); },
     // The helper is gone (it exited, or the shell lost it). The toggle is ours,
     // so put it back — a lit button over a dead session takes two presses to
@@ -227,6 +254,48 @@ export default function OrchestratorChat({
   const llmError = useArslanStore((s) => s.error);
   const llmErrorTranslations = useArslanStore((s) => s.errorTranslations);
   const clearLlmError = useArslanStore((s) => s.clearError);
+  const llmErrorCall = useArslanStore((s) => s.errorCall);
+  // SMART-3: when the chat's own model failed, another configured model to offer (a different provider first, since
+  // a balance or key problem is the provider's).
+  const switchTo = llmErrorCall?.role === 'chat'
+    ? (providerConfigs ?? []).find((c) => c.provider !== llmErrorCall.provider)
+      ?? (providerConfigs ?? []).find((c) => c.model !== llmErrorCall.model)
+    : undefined;
+  const switching = useRef(false);
+  const announceModel = (id: string, choice: { config_id: number; model: string } | null) =>
+    window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, { detail: {
+      conversationId: id, choice: choice ? { configId: choice.config_id, model: choice.model } : null } }));
+  const switchAndRetry = async () => {
+    if (!switchTo || switching.current) return;    // a second click while the first is saving does nothing (PR 696's review)
+    switching.current = true;
+    const id = conversationId ?? 'main';
+    const epoch = useArslanStore.getState().epoch;
+    const done = beginModelSave(id);
+    try {
+      // A save that never answers gives up like the chip's; if it lands later, the chips ask the server again.
+      const r = await withTimeout(conversationModelApi.set(id, switchTo.id, switchTo.model), () => {
+        void conversationModelApi.get(id).then((g) => announceModel(id, g.choice)).catch(() => {});
+      });
+      announceModel(id, r.choice);
+    } catch {
+      return;          // the error stays, and nothing is sent on a model the server didn't store
+    } finally {
+      done();
+      switching.current = false;
+    }
+    if (useArslanStore.getState().epoch !== epoch) return;   // the user moved to another conversation meanwhile
+    clearLlmError();
+    // The last send as it was, attachments included (an image the first model refused must reach this one). With
+    // none remembered (after a reload) the text goes back in the composer rather than going out without them.
+    // Only when it is the newest user message: an unrecorded newer send must not lose out to an older one.
+    const last = [...chatHistory].reverse().find((m) => m.sender === 'user');
+    const sent = lastSend(id);
+    if (sent && sendMessage && (!last || sent.text === last.text)) {
+      sendMessage(sent.text, sent.attached);
+      return;
+    }
+    if (last) setInputValue(last.text);
+  };
   // Draft survives unmount. The composer used to hold its text in plain
   // component state, so switching to Settings (say, to fix an API key) and
   // back destroyed whatever was typed — reported from the first packaged
@@ -349,12 +418,13 @@ export default function OrchestratorChat({
       // `images` is OMITTED when empty, not passed as []: a text-only send must
       // stay byte-identical to what it was before vision existed — the same
       // principle build_user_blocks applies on the server.
-      onSendMessage(text, context || display.length || images.length
+      const attached = context || display.length || images.length
         ? {
             context, names, display,
             ...(images.length ? { images: images as NonNullable<typeof images[number]>[] } : {}),
           }
-        : undefined);
+        : undefined;
+      sendMessage!(text, attached);
       clearAttachments();
       return;
     }
@@ -559,7 +629,7 @@ export default function OrchestratorChat({
                       // fromClarify: answering Arslan's own question is not
                       // "moving on", so it must not implicitly decline the
                       // spawn invite sitting beside it.
-                      onSendMessage?.(label, undefined, { fromClarify: true });
+                      sendMessage?.(label, undefined, { fromClarify: true });
                     }}
                   />
                 </div>
@@ -620,7 +690,7 @@ export default function OrchestratorChat({
                             <SentAttachments attachments={msg.attachments} />
                             <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
                           </>
-                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                        : <><EarlierDrafts drafts={msg.drafts} /><MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" /></>
                       }
                       {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
@@ -755,7 +825,7 @@ export default function OrchestratorChat({
 
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
-                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                    : <><EarlierDrafts drafts={msg.drafts} /><MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" /></>
                   }
                   {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
@@ -857,6 +927,7 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
+                  {msg.drafts && <div className="pl-5"><EarlierDrafts drafts={msg.drafts} /></div>}
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
                   {msg.resultOfJob && <div className="pl-5"><JobResultLabel outcome={msg.jobOutcome} /></div>}
@@ -940,6 +1011,24 @@ export default function OrchestratorChat({
                 className="shrink-0 self-start rounded p-0.5 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}>
               <span className={`break-words ${taskKey ? '' : 'font-mono text-[12px]'}`}>
                 {taskKey ? t(taskKey) : runtimeErrorText(llmError, llmErrorTranslations, i18n?.resolvedLanguage)}</span>
+              {/* SMART-3: which call failed, and the way out. */}
+              {!taskKey && llmErrorCall && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+                  <span data-testid="chat-error-call" className="text-muted-foreground">
+                    {t(`ui.errorRole_${['chat', 'vision'].includes(llmErrorCall.role) ? llmErrorCall.role : 'helper'}`)}: {llmErrorCall.provider} · {llmErrorCall.model}
+                  </span>
+                  {llmErrorCall.role === 'chat' && switchTo && (
+                    <button type="button" data-testid="chat-error-switch" onClick={() => void switchAndRetry()} disabled={savingModel}
+                      className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">
+                      {t('ui.errorSwitchRetry', { model: `${switchTo.label} · ${switchTo.model}` })}</button>
+                  )}
+                  {llmErrorCall.role !== 'chat' && onOpenSettings && (
+                    <button type="button" data-testid="chat-error-settings" onClick={onOpenSettings}
+                      className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">
+                      {t('ui.errorOpenSettings')}</button>
+                  )}
+                </div>
+              )}
             </Notice>
           </div>
           );
