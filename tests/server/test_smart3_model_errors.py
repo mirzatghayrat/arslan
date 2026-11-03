@@ -36,6 +36,38 @@ async def test_a_failed_call_says_which_call_failed_on_which_model():
     assert helper.value.arslan_call["role"] == "router"
 
 
+async def test_the_turn_and_stream_paths_name_the_call_too():
+    """The tool loop's native path (chat_trajectory) and the streamed path (chat_stream) stamp a failure the same way."""
+    a = _failing(role="vision")
+    with pytest.raises(RuntimeError) as native:
+        await a.chat_trajectory("s", [{"role": "user", "content": "hi"}])
+    assert native.value.arslan_call["role"] == "vision"
+
+    async def broken_stream(*args, **kwargs):
+        raise RuntimeError(BALANCE)
+        yield ""   # unreachable: makes this an async generator
+    a._provider.chat_stream = broken_stream
+    with pytest.raises(RuntimeError) as streamed:
+        async for _ in a.chat_stream("s", "hi"):
+            pass
+    assert streamed.value.arslan_call == {"role": "vision", "provider": "deepseek", "model": "deepseek-v4-flash"}
+
+
+async def test_the_innermost_failed_call_is_the_one_named():
+    """A helper's failure that surfaces through the chat's call (a compaction or vision call inside a turn) keeps the
+    helper's name: the call that failed is the one to fix."""
+    inner = RuntimeError(BALANCE)
+    inner.arslan_call = {"role": "vision", "provider": "deepseek", "model": "deepseek-v4-flash"}
+    outer = _failing(provider="anthropic", model="claude-opus-5-5")
+
+    async def passes_it_on(*args, **kwargs):
+        raise inner
+    outer._provider.chat = passes_it_on
+    with pytest.raises(RuntimeError) as failed:
+        await outer.chat("s", "hi")
+    assert failed.value.arslan_call["role"] == "vision" and failed.value.arslan_call["provider"] == "deepseek"
+
+
 async def test_a_failed_run_records_the_model_it_tried():
     with usage_sink.collecting():
         with pytest.raises(RuntimeError):
