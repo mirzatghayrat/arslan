@@ -244,7 +244,7 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `status.snapshot` | Mac → phone | `presence` (online/sleeping/offline), `mascot`, `device_name`, `last_seen`, `jobs[]` (each a `job.event` body: the jobs still running), `waiting_approvals`, `high_risk_mac_only` |
 | `conversations.list` / `conversations.result` | phone → Mac / Mac → phone | `limit?` (1–100, default 20) / `conversations[]` (`id`, `title`, `updated_at`; optional `kind`, `state`, `origin`, `preview`, `files`, `job`), most recent first |
 | `chat.history` / `chat.history.result` | phone → Mac / Mac → phone | `conversation_id`, `limit` / `conversation_id`, `messages[]` (`id`, `role`, `text`, `ts`, `attachments[]`, `run_id?`) |
-| `chat.send` | phone → Mac | `conversation_id?` (absent = the pocket conversation), `text`, `attachments[]`, `client_msg_id` (UUID) |
+| `chat.send` | phone → Mac | `conversation_id?` (absent: `not_found` since the pocket was retired, §5.12; a new conversation names `new_conversation_id`, §5.8), `text`, `attachments[]`, `client_msg_id` (UUID) |
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
 | `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?`, `criteria[]?` |
 | `approval.request` | Mac → phone | `approval_id`, `action` (the card's `title` when it has one; an app, site or Shortcut card ends it with " (for this task)"), `target`, `risk` (write/send/delete/install/payment/publish; the card's `perm_kind` decides the word first, §5.3), `task_id`, `task_title`, `expires_at` (the card's own) |
@@ -301,8 +301,8 @@ For "I'm out, the Mac is at home": glance, review fast, hand over a whole task.
 
 - **`status.snapshot.activity`**: today on the Mac — `hours[24]` (per local hour `[chat turns, tasks,
   approvals]`), `done` (runs finished cleanly), `files` (files made), `waiting` (cards open).
-- **`conversations.result` items**: `kind` remote/chat/task/scheduled (the pocket conversation is
-  `remote` and is titled **Remote** on both sides), `state` idle/working/waiting/done/unfinished/failed
+- **`conversations.result` items**: `kind` chat/task/scheduled (until §5.12 also `remote`: the pocket
+  conversation, titled **Remote** on both sides, now retired), `state` idle/working/waiting/done/unfinished/failed
   (`unfinished`: the job ended without getting it done — partly, stuck, out of budget, or by its own
   account; `failed`: stopped), `origin`
   phone/mac (who started it — the Remote trace), `preview` (last message, one line), `files` (count),
@@ -398,8 +398,8 @@ conversation the Mac does not have).
   after a job that ended without one. A run's files are offered once.
 - **`conversation.delete`.** The Mac deletes the conversation as its own window does (`DELETE
   /api/v1/conversations/<id>`; its runs are kept), closes its live link and answers
-  `conversation.deleted`. `pocket` (Remote) is never deleted: `malformed`; since §5.8 (2026-10-29) a
-  phone that said `quick` may delete it. A conversation the Mac does not have: `not_found`. An older Mac
+  `conversation.deleted`. The retired pocket is `not_found` (§5.12; before it, `malformed`, and from §5.8 a
+  phone that said `quick` could delete it). A conversation the Mac does not have: `not_found`. An older Mac
   answers `unknown_type`.
 - **Live conversations.** At start, after each `conversations.list` and on `hello`, the Mac links the
   newest 20 conversations and every one with a running job (never a temporary one), so their answers,
@@ -452,8 +452,34 @@ New error codes (may travel in `error`, with `related_id` = the request): `bad_r
 - **Turning a quick question into a chat.** `conversation.update` with `kind: "chat"` gives it every tool
   from its next turn and answers `conversation.updated`. Only a quick question, or one already turned (a
   retry); any other id is `not_found`. While a turn runs: `mac_busy`.
-- **Remote.** A phone that said `quick` may delete the pocket (`conversation.delete`, §5.7). An older
-  phone keeps sending to it as before.
+- **Remote.** Superseded by §5.12 (2026-10-30): the pocket is retired, and no phone may send to, read or
+  delete it.
+
+### 5.12 The pocket, retired (added 2026-10-30; within v1, no new types)
+
+Before §5.8 every phone shared one conversation, `pocket` ("Remote"), and a `chat.send` or `chat.history`
+with no `conversation_id` meant it. It is retired once the iPhone's Quick Ask ships (Q1 card, #4; the user,
+2026-10-29):
+
+- On the Mac its old messages stay as an ordinary conversation, titled after its first message, not pinned
+  and not called Remote. The Mac window can read, continue or delete it. No message moves and no table changes.
+- Every phone frame that names `pocket` is answered `error` `not_found` before anything reaches the Mac:
+  `chat.send`, `chat.history`, `conversation.delete`, `conversation.update`, `task.stop` and any other. So are
+  a `chat.send` and a `chat.history` that name no conversation. Builds up to 27 send Share-sheet drafts that
+  way; they show the error, and the Mac never re-creates the pocket.
+- The Bridge never links it, so no `chat.event`, `job.event`, `approval.request`, file offer or Mac-typed
+  message about it reaches a phone, and a card in it is answered on the Mac only. The Mac leaves it out of
+  `conversations.result` before the page is cut, `status.snapshot` leaves out its jobs and its finished tasks
+  (`outcomes`) and does not count a card waiting there (`waiting_approvals`, `activity.waiting`, the mascot's
+  `approval`), and `run.get` for one of its runs is `not_found` (a run id is a number, so a phone could name one
+  it was never sent). A run or a job that names no conversation can't be told apart from one in the pocket, so
+  it is refused or left out too.
+- A file of one of its runs is `file_unavailable` on `file.get`, and such a run offers no files: `file.get`
+  names a file, not a conversation, and a phone may have kept an id from before. `task.stop` for one of its
+  jobs is refused, whatever conversation the frame names.
+- Builds up to 27 send a Share-sheet draft's files (`file.offer`, which names no conversation) before its
+  `chat.send`: the Mac saves them in Inbox/iPhone and reads their text, then refuses the send, so those copies
+  stay there.
 
 ### 5.9 iPhone 1.0 part B: the week and the task results (added 2026-11-01; optional fields — additive within v1)
 
@@ -524,6 +550,34 @@ state only.
 `conversation_exists`. A receiver never answers an `error` with an `error`. Codes in
 §4.7 are receiver-side drops and are not sent back (no oracle); the others may travel in `error`.
 
+### 5.10 iPhone 1.0 part B: one conversation's details (added 2026-11-01; optional fields — additive within v1)
+
+The phone's conversation details (docs/plans/0164/IPB-frame-list.md §3, OK'd by the user on 2026-11-01).
+`chat.history.result` gains an optional `details` block, sent with each history result. A result without
+it makes the phone keep its last value; an older phone ignores it. Inside the block every field is required
+unless marked `?`, and the Mac leaves out an optional field it doesn't know rather than sending `null`.
+
+- `folder?`: display only, the folder the conversation's turns run in (its project's, else the workspace),
+  with the home part shown as `~`. Never the absolute home path. A folder outside the home is shown by its
+  last part only (`proj` for `/Volumes/Work/proj`), so no volume or full path leaves the Mac.
+- `model?`: the id of the model the conversation runs on (its own choice, else the default's), as the
+  Mac's model picker shows an id with no display name; at most 200 characters, and only the file name of an
+  id that is a path. `mode?`: the approval mode's name in effect
+  (`careful` / `standard`; the phone may ignore it).
+- `connectors[]` (`[]` when none): each `name` (the connector's display name only, never its URL, command
+  or arguments; anything secret-looking typed into a name is masked, and the home folder shown as `~`), `kind` (`mcp` / `skill` / `hands`) and `on` (on for this conversation's turns: an MCP
+  server enabled and connected, a skill equipped, Hands on). At most 30: Hands first, then the ones that
+  are on.
+- `changes?`: what the conversation's edit and write steps changed over all its runs: `files` (distinct
+  paths), `added` and `removed` (lines), `last_run_id?` (the newest run that changed a file; the phone may
+  ignore it). **Changes made by a shell command aren't counted**, and a very large edit counts only the part
+  the Mac recorded. Absent when no step changed a file.
+- `spent_usd?`: the conversation's total in US dollars at list price; absent when nothing could be priced.
+- The context window (`context`) is not sent in v1 (the user, 2026-11-01); the phone hides that row.
+
+`details` is counted first against the history budget (§5.7), and the messages fit into what is left; the
+Bridge's own last-resort trim drops messages only, never `details`.
+
 ## 6. Mac side (summary; plan in the design doc §6)
 
 `Arslan.app/Contents/Helpers/ArslanBridge.app`, its own bundle id (`com.arslan.desktop.bridge`), a
@@ -543,8 +597,8 @@ the existing `confirm_*` / `cancel_*` frames. Its private keys live in its own K
   phone); device list (with each phone's `state` and `last_seen`, §3.3), revoke; the two switches
   (keep awake while a phone is connected, high-risk only on the Mac).
 - Conversation channel: one `/ws/arslan/{conversation_id}` per active conversation, mapped by
-  `FrameMapper` (BridgeCore). The pocket conversation (no `conversation_id`) is one fixed conversation
-  the Bridge creates on first use.
+  `FrameMapper` (BridgeCore). Until §5.12 the pocket conversation (no `conversation_id`) was one fixed
+  conversation the Bridge created on first use; it is retired and never linked.
 - The one backend change for messages: a `user_message` frame may carry `source: "phone"`; the message
   is stored and shown with "from iPhone". Since 2026-10-29 it also carries `sent_at`, the envelope's
   `ts`: the Mac counts the user as present for that turn only when the phone sent it a few minutes ago

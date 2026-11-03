@@ -77,10 +77,14 @@ class Confirmations:
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
+        from server.services import card_purpose
         risk = effective_risk(remote_host, command, argv)
         shell = terminal_policy.as_shell(command, argv)
         verdict = terminal_policy.assess(shell)
-        net = " It will use the network, this time." if network else ""
+        # SMART-8: every card's title is its plain purpose in the user's language (the iPhone's heading).
+        lang = await card_purpose.language()
+        rules = sorted(terminal_policy.ask_rules(shell))
+        net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         if sandbox in ("outside", "retry"):
             # S4a: this time, or every command of this conversation — a background job's too — for as long as
             # the conversation lasts (a stored grant, `outside` / `*`). No "Always". Only a Mac window gives
@@ -88,7 +92,9 @@ class Confirmations:
             # it at all. Always a card: the tool loop reads the stored grant itself, and writes its row when
             # the command runs (`permissions._ALWAYS_ASKS`).
             request = permissions.Request(
-                kind="outside", target="*", title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
+                kind="outside", target="*", title=card_purpose.phrase(shell, why, rules, lang=lang, outside=True,
+                                                                      network=network),
+                model_title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
                 why=why, frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
                     sandbox=sandbox, why=why, network=network))
@@ -97,7 +103,9 @@ class Confirmations:
             # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
             # time only (`permissions._ONCE_ONLY`): nothing is remembered.
             request = permissions.Request(
-                kind="remote", target=remote_target(host or remote_host), title=f"Run `{shell[:80]}` on {remote_host}?",
+                kind="remote", target=remote_target(host or remote_host),
+                title=card_purpose.phrase(shell, why, rules, lang=lang, host=remote_host),
+                model_title=f"Run `{shell[:80]}` on {remote_host}?",
                 detail=shell,
                 frame=protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
@@ -109,7 +117,6 @@ class Confirmations:
                 return (await permissions.decide(request, self._context())).allowed
         async with db_session.AsyncSessionLocal() as db:
             ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
-        rules = sorted(terminal_policy.ask_rules(shell))
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None, network=network)
@@ -117,6 +124,6 @@ class Confirmations:
         with self._surface():
             decision = await permissions.decide(
                 approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                           unsandboxed=unsandboxed),
+                                           unsandboxed=unsandboxed, lang=lang, why=why),
                 self._context())
         return decision.allowed

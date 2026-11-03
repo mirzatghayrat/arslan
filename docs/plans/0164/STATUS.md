@@ -2,12 +2,24 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-02 (UTC), evening (the twice-a-day update). **Today: 11 PRs merged** (list below), including SBX-3a (#520), SBX-4p (#670), IPB-2 (#652) and the first SMART pieces (#676, #679, #678). **SBX chain:** 3a is on main. 4a (#666) is yours to merge. 6p (#669), 5p (#671) and the gates notes (#654) have main merged in and recounted, and wait for you. 6a (#668) merges only after 6p is green on main. 5a and the MCP proxy open after #666. **New today:** SMART is a must (the user's 「全新的很酷很聪明的 Arslan」); delete cards move to the Trash; DEP1 (dependency alerts) is a release gate.
+**Updated:** 2026-11-02 (UTC), late evening. **Since the evening update: 12 more merged**, among them all three Codex SBX p-parts (#669, #671, #654), SMART-2 (#677), L11 (b) (#681), CAP4a-3d (#604), DEP1 (#683, #684, #687) and the privacy page (#667). Main is green at 8c3a899d (run 41421660022). Open Dependabot alerts went from 116 to 8 (0 critical, 0 high, 7 medium, 1 low). **Pacing (user, via ④参谋):** until the 11-07 quota reset, only the critical path runs (SBX 6a/4a/5a/7, SMART-1..4, DEP1, IPB and iOS 1.0), with 2–3 sessions and effort=max only for security reviews. CAP9 (#661) waits for the reset. **iOS completeness is a v0.1.64 must** (the user: 「我期待 0.1.64 发布跟 iOS 对应功能是完整的，因为我想把 iOS 尽快可以提审上架」); ①iOS's list is below.
 
 ## Merged for v0.1.64 (newest first)
 
 | PR | What | Merge commit |
 |---|---|---|
+| #667 | Privacy page: what the Mac sends the iPhone (IPB), in both languages | `8c3a899d` |
+| #654 | SBX gates: delta-review pin gaps and the release boundary (Codex) | `70fbeab7` |
+| #685 | Bridge vectors: `phone_drops` marks the block a phone drops by design | `fb6b7bc3` |
+| #687 | DEP1 Python: Pillow 13, pypdf 6.21.4, PyJWT, certifi, urllib3, filelock | `375c597a` |
+| #684 | DEP1 Rust: tauri-plugin-updater 2.14.1 (zip 9, tauri 2.12.5, rustls), the updater goes direct when proxy.rs does | `672af7c6` |
+| #683 | DEP1 npm: vite 6.4.5, source-map-js 1.2.2, undici 7.30.1 | `33d96e81` |
+| #604 | CAP4a-3d: a Registry server whose entry changed is parked until you keep it | `d0fae816` |
+| #681 | L11 (b): Arslan never writes a rules file on its own; the card goes | `846a5305` |
+| #677 | SMART-2: `my_status`, Arslan's own live state | `afb84061` |
+| #671 | SBX-5p: CAP6b and cache denial contracts (Codex) | `d480febb` |
+| #682 | Delete cards move to the Trash; DEP1 card; STATUS | `6d350f5a` |
+| #669 | SBX-6p: release-critical proxy and network denial gates (Codex) | `2347c542` |
 | #676 | SMART-7a: the chat input wraps and grows, then scrolls | `bc9cf50b` |
 | #679 | SMART-7b: a prose fence wraps; a code fence keeps its horizontal scroll | `625543b2` |
 | #652 | IPB-2: the Mac's own state on status.snapshot (mac) | `260b90a7` |
@@ -225,15 +237,19 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 **Who merges (docs/sessions.md, #644):** the author auto-merges after another session's review OK at the current head and all five checks green (effort=max on the security surface). **Still yours:** Codex's PRs, Bridge-frame PRs, and anything below marked "you".
 
-**Your list (evening), in this order:**
-1. **Codex PRs — you merge:** #654 (gates notes, 3e00bafd), #669 (6p, ece0781f, release-critical) and #671 (5p, 49fc63d3). Each has main merged in, and ⓪Plan recounted ci.yml by collection on the merged tree (552/88, 589/165 and 586/136). All three move the same counts, so after each merge ⓪Plan recounts the other two before you merge the next.
-2. **#666 (SBX-4a) — you merge,** after Codex's 4p device gates land and CI is green (Astra covered the tty and device reach).
-3. **Frame PR #650 (IPB-1b) — you merge,** once ②Main fixes its red backend (the macOS marker test at 7c8bb24e).
-4. **#667 — you, with or before the 0.1.64 release:** the privacy page's IPB paragraph, now with the two §04 lines (MCP Registry daily recheck, OSV.dev at install).
-5. **CAP drafts — you:** #661 (CAP9 server half, green, OK at 022c26b4) and #604 (CAP4a-3d; its web half was just pushed at 0396a90d and needs a re-review).
-6. **#658 (STY2):** waits for the bench, which is rerunning now at $2.50 per run.
+**Your list (late evening):**
+1. **#650 (IPB-1b), you merge:** on the iOS critical path. Main is merged in at b8af9a45 (724 / 261), and ①iOS's OK carries over by identity. Merge once CI is green.
+2. **Build 31:** ①iOS waits for your 「传」 to upload it to TestFlight; it can go before 0.1.64.
+3. **#525 (retire the pocket): in 0.1.64** (the user, 2026-11-02, "Yes, in 0.1.64"). ②Main merges main into it, takes it out of draft and gets a review; ①iOS re-checks the vectors. It's a Bridge PR, so you merge it.
+4. **#666 (SBX-4a), you merge,** after Codex's 4p device gates land and CI is green.
+5. **Before the tag (you present):** the real-Mac signed-feed update test from #684's body (a throwaway key, a separately named test app); the OCR / PDF / attachment smoke for DEP1; Q1c end to end with build 31.
 
-**Self-merging under #644 (no click needed):** #677 (SMART-2 my_status, re-OK'd at a22b5247), #680 (SMART-3/4), and #674 (SMART-1) once ③Hands' fixes pass an effort=max re-review.
+**Self-merging under #644:** #674 (SMART-1, OK at 63b0207c; ③Hands arms it). Authors arm right after the OK, while CI is still pending: GitHub won't arm a PR that is already CLEAN, and on 11-02 three OK'd PRs sat unarmed until you clicked them.
+
+**Reviewed, waiting:**
+- #686 (delete to Trash): two cd forms and the protected-target card wording are left.
+- #688 and #689 (SMART-8 cards and phone heading): every finding is fixed and pushed; the max re-reviews wait for your call, now or after the reset.
+- #661 (CAP9): one focus finding; paused until the reset.
 
 **Backup branches:** 6a is open as #668 (draft). 5a (`claude/0164-sbx5a-cap6b`) and the SBX-6 MCP proxy (`claude/0164-sbx6-mcp-proxy`) open once #666 lands. The review trails are saved for each.
 
@@ -250,6 +266,21 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 | ⓪Plan | This page; recounts ci.yml after each Codex merge; the STY2 and SMART-5 benches; reviews |
 
 ## Waiting on the user
+
+**iPhone 1.0 pre-submission list (①iOS, checked against main 8c3a899d):**
+- **From the Mac, needed:** Quick Chat (#479, #486), pairing speed (#462), one file card per file (#463), Overview week and results (#647), the Mac's own state (#652), the privacy page (#667) and `phone_drops` (#685) are all merged. Only **#650 (one conversation's details)** is open; the phone side is already in.
+- **The user decides:** #525 (retire the pocket; recommended for 0.1.64) and #689 (plain-purpose headings; the phone needs no change, and the review screenshots read better with it).
+- **`done_unseen`:** Mac-only in 0.1.64. Phones get the old states (`phone_state`, `server/api/phone.py:130`) until INB4's phone half, so phone 1.0 doesn't need it.
+- **Not in 1.0, by earlier decisions:** 「转成对话」 (conversation.update), the IPB context row, and narrowing push.
+- **The phone's own steps (①iOS):**
+  - build 31 (your 「传」);
+  - real-Mac end to end with build 31, and a check against a 0.1.63 Mac;
+  - the demo's Remote story moves to an ordinary conversation;
+  - remove ArslanComingSoon;
+  - screenshots, review notes and the pairing video (after 0.1.64 ships);
+  - you submit in App Store Connect.
+
+**New bug (user, via ④参谋), ②Main:** switching a chat's model doesn't take effect. The user's DB shows no `conversation_models` row for the thread, and the retry ran on DeepSeek again. ②Main reproduces it with a fake 402 provider and fixes it. Added to SMART-3: the error names the provider and model, failed runs record them, and a "switch this chat and retry" button.
 
 **Decided today (2026-11-02, relayed by ④参谋 unless noted):**
 - **trustd in proxy mode:** a Settings toggle, off by default, grants it in PROXY only (SBX card).

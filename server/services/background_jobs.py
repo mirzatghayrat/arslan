@@ -201,7 +201,7 @@ def _emit(job: Job) -> None:
 def _job_sink(job: Job, downstream):
     def sink(event: dict) -> None:
         kind = event.get("type")
-        if kind in {"stream_start", "stream_chunk", "stream_end", "task_state"}:
+        if kind in {"stream_start", "stream_chunk", "stream_restart", "stream_end", "task_state"}:
             # Never typed into the chat while the user talks, and never mistaken
             # for the conversation's own turn state: the job_update card says it.
             return

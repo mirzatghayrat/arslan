@@ -160,6 +160,17 @@ async def test_finished_tasks_newest_first_with_their_state_checks_cost_and_whet
     assert (by["partly"]["checks_passed"], by["partly"]["checks_total"]) == (1, 2)
 
 
+async def test_a_task_in_the_retired_pocket_never_reaches_the_phone(client):
+    """Q1 #4 (#525): nothing about the pocket reaches a phone; it stays an ordinary conversation on the Mac. A task
+    finished there is not listed (its goal would be its title), while another conversation's task still is."""
+    from server.services import phone_ids
+    await _add(client, task("t-pocket", NOON - timedelta(minutes=10), goal="Pay the rent", conversation=phone_ids.POCKET)
+               + task("t-other", NOON - timedelta(minutes=20), goal="Sort the invoices"))
+    for scope in ("today", "week"):
+        tasks = (await _blocks(client))["outcomes"][scope]["tasks"]
+        assert [t["conversation_id"] for t in tasks] == ["conv-t-other"], scope
+
+
 async def test_what_was_spent_in_each_range_and_what_no_listed_task_spent(client):
     paid = run(NOON, tokens=(1_000_000, 0))                                 # $2, a task's
     rows = [

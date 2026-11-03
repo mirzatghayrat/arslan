@@ -55,19 +55,50 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
     Phase B replaces the `chosen = primary` line with the routing engine.
     """
     async with db_session.AsyncSessionLocal() as db:
-        configs = await provider_config_service.list_for_routing(db)
-        if not configs:
+        chosen = await _default_config(db, role)
+        if chosen is None:
             return await _legacy_build_adapter(db)
-        cfg = await settings_service.get_settings(db)
-        strategy = cfg.get("llm_strategy") or "single"
-        language = cfg.get("language") or None
-        chosen = routing.select(role, strategy, configs, language) or next(
-            (c for c in configs if c["is_primary"]), configs[0])
         _guard_memory_destination(chosen["provider"], chosen["base_url"] or "")
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
-    return LLMAdapter(provider, _require_model(model, chosen["provider"]), api_key=key,
-                      base_url=base_url, report_provider=chosen["provider"])
+    adapter = LLMAdapter(provider, _require_model(model, chosen["provider"]), api_key=key,
+                         base_url=base_url, report_provider=chosen["provider"])
+    adapter.role = "chat" if role in (None, "execute") else role
+    return adapter
+
+
+async def _default_config(db, role: str | None) -> dict | None:
+    """The config a role runs on when nothing more specific was chosen: routing's pick under the user's
+    strategy, else the primary. None before any config exists. Not always the primary: with a strategy
+    other than "single" the execute role can land on another config (v0.1.64, a chat that showed Claude
+    ran on DeepSeek), so the window asks `effective_choice` instead of assuming."""
+    configs = await provider_config_service.list_for_routing(db)
+    if not configs:
+        return None
+    cfg = await settings_service.get_settings(db)
+    strategy = cfg.get("llm_strategy") or "single"
+    language = cfg.get("language") or None
+    return routing.select(role, strategy, configs, language) or next(
+        (c for c in configs if c["is_primary"]), configs[0])
+
+
+async def effective_choice(db, conversation_id: str | None) -> dict | None:
+    """What this conversation's next text turn runs on, as {config_id, model, provider}: its own choice
+    while that config exists, else the execute role's default (`_default_config`). The same decision as
+    `build_conversation_adapter` then `build_adapter("execute")`, which tool_loop._adapter_for_turn makes.
+    An image turn may still go to the vision slot. None when no config exists."""
+    if conversation_id:
+        from server.db.models import ConversationModel, ProviderConfig
+        row = await db.get(ConversationModel, conversation_id)
+        if row is not None and (config := await db.get(ProviderConfig, row.config_id)) is not None:
+            # As _config_adapter builds it: an empty stored model (older rows) runs the config's own.
+            return {"config_id": config.id, "model": row.model or config.model, "provider": config.provider}
+    chosen = await _default_config(db, "execute")
+    if chosen is None:
+        return None
+    # As build_adapter builds it: a preset fills a model the config left blank.
+    _, model, _ = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
+    return {"config_id": chosen["id"], "model": model, "provider": chosen["provider"]}
 
 
 async def primary_chat_endpoint() -> tuple[str, str, str] | None:
@@ -119,10 +150,10 @@ async def build_slot_adapter(slot: str) -> LLMAdapter | None:
             return None
         # 0.1.58 §6: a slot may name one model of its config ("<slot>" → "<slot minus _config_id>_model").
         override = str(cfg.get(slot.replace("_config_id", "_model")) or "").strip() or None
-        return await _config_adapter(db, sid, override)
+        return await _config_adapter(db, sid, override, role=slot.removesuffix("_config_id"))
 
 
-async def _config_adapter(db, config_id, model_override: str | None) -> LLMAdapter | None:
+async def _config_adapter(db, config_id, model_override: str | None, role: str = "chat") -> LLMAdapter | None:
     """An adapter for one provider config, optionally on another model it offers (0.1.58 §6).
     None when the config no longer exists."""
     for c in await provider_config_service.list_configs(db):
@@ -131,8 +162,10 @@ async def _config_adapter(db, config_id, model_override: str | None) -> LLMAdapt
             key = await provider_config_service.get_decrypted_key(db, c["id"])
             provider, model, base_url = expand_preset(
                 c["provider"], model_override or c["model"], c.get("base_url") or "")
-            return LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
-                              base_url=base_url, report_provider=c["provider"])
+            adapter = LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
+                                 base_url=base_url, report_provider=c["provider"])
+            adapter.role = role   # SMART-3: what it is for, said by a failed call
+            return adapter
     return None
 
 
@@ -163,7 +196,7 @@ async def build_synthesis_adapter() -> LLMAdapter | None:
         if not sid:
             return None
         override = str(cfg.get("synthesis_model") or "").strip() or None
-        return await _config_adapter(db, sid, override)
+        return await _config_adapter(db, sid, override, role="synthesis")
 
 
 async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001

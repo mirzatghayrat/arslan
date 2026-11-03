@@ -1357,10 +1357,86 @@
         "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
         "seq": 42,
         "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "chat.history.result",
+        "body": {
+          "conversation_id": "c1",
+          "messages": [
+            {
+              "id": "m1",
+              "role": "user",
+              "text": "Hi",
+              "ts": "2026-10-03T00:00:00Z",
+              "attachments": []
+            }
+          ],
+          "details": {
+            "folder": "~/Arslan/Projects/Trip",
+            "model": "claude-sonnet-5-5",
+            "mode": "standard",
+            "connectors": [
+              {
+                "name": "Hands",
+                "kind": "hands",
+                "on": true
+              },
+              {
+                "name": "Calendar",
+                "kind": "mcp",
+                "on": true
+              },
+              {
+                "name": "PDF tools",
+                "kind": "skill",
+                "on": false
+              }
+            ],
+            "changes": {
+              "files": 3,
+              "added": 168,
+              "removed": 2,
+              "last_run_id": 87
+            },
+            "spent_usd": 0.84
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "chat.history.result",
+        "body": {
+          "conversation_id": "c2",
+          "messages": [],
+          "details": {
+            "model": "claude-sonnet-5-5",
+            "connectors": []
+          }
+        }
+      },
+      "kind": "msg",
+      "notify": false
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
         "from": "iphone-vector",
         "to": "mac-vector",
         "type": "chat.send",
         "body": {
+          "conversation_id": "c1",
           "text": "Find flights",
           "attachments": [],
           "client_msg_id": "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB"
@@ -1551,9 +1627,45 @@
         "ts": "2026-10-03T00:00:00Z",
         "from": "mac-vector",
         "to": "iphone-vector",
+        "type": "error",
+        "body": {
+          "code": "not_found",
+          "message": "That conversation is no longer on the Mac.",
+          "related_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
+        "type": "error",
+        "body": {
+          "code": "mac_busy",
+          "message": "The Mac could not do that right now.",
+          "related_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        }
+      },
+      "kind": "msg",
+      "notify": true
+    },
+    {
+      "envelope": {
+        "v": 1,
+        "id": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        "seq": 42,
+        "ts": "2026-10-03T00:00:00Z",
+        "from": "mac-vector",
+        "to": "iphone-vector",
         "type": "chat.event",
         "body": {
-          "conversation_id": "pocket",
+          "conversation_id": "c1",
           "kind": "progress",
           "message_id": "reply-1",
           "text": "Searching flights",
@@ -1573,7 +1685,7 @@
         "to": "iphone-vector",
         "type": "chat.event",
         "body": {
-          "conversation_id": "pocket",
+          "conversation_id": "c1",
           "kind": "message",
           "message_id": "reply-1",
           "text": "Three options…",
@@ -1615,7 +1727,7 @@
         "to": "iphone-vector",
         "type": "chat.event",
         "body": {
-          "conversation_id": "pocket",
+          "conversation_id": "c1",
           "kind": "error",
           "message_id": "reply-1",
           "text": "The model is unreachable",
@@ -1636,7 +1748,7 @@
         "type": "job.event",
         "body": {
           "id": "job-1",
-          "conversation_id": "pocket",
+          "conversation_id": "c1",
           "state": "running",
           "title": "Tidy",
           "current_step": "Sorting",
@@ -1676,7 +1788,7 @@
         "type": "job.event",
         "body": {
           "id": "job-1",
-          "conversation_id": "pocket",
+          "conversation_id": "c1",
           "state": "partial",
           "title": "Tidy",
           "current_step": "",

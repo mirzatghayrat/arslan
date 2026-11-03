@@ -21,6 +21,9 @@ const GRANTS = new Set(["browser_site", "mac_script", "desktop_app", "desktop_ri
  * at an app and acting in it is ONE `desktop_app` card (③Hands moved onto permissions.decide), so
  * there is no `desktop_look` card: a frame of that kind would read as one this card has no words for.
  */
+/** Kinds whose frame title the server writes in the user's language (SMART-8: the command's plain purpose). */
+const LOCALIZED_TITLES = new Set(["network"]);
+
 export default function ActionApprovalCard({ kind, target, detail, expiresAt, options, alwaysLabel, title, why, permKind,
   background, busy, queue, onOpenContext, onConfirm, onCancel }: {
   kind: string; target: string; detail: string;
@@ -61,6 +64,9 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   // line as "Arslan says" (the way the command card shows a sandbox why) so it is not lost.
   const modelLine = (why ?? "").trim();
   const frameTitle = (title ?? "").trim();
+  // SMART-8 (PR 689's review, item 3): the server writes a network card's title in the user's language, so it is not marked
+  // as English.
+  const englishTitle = Boolean(frameTitle) && !LOCALIZED_TITLES.has(kind);
   const fromFrame = !known && !modelLine && Boolean(frameTitle);
   const heading = known ? t(`hands.title.${kind}`, { target }) : (modelLine || frameTitle || target);
   // The model's line may frame the ask; it is never the only description of it (a prompt-injected model could word a
@@ -75,7 +81,7 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
     <AskCard testId="action-card" attrs={{ "data-kind": kind, "data-risky": String(red) }}
       who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
       title={<span className="inline-flex max-w-full items-start gap-2">{lineIcon(Icon)}
-        <span data-testid="action-title" lang={fromFrame ? "en" : undefined} className="min-w-0 [overflow-wrap:anywhere]">{heading}</span></span>}
+        <span data-testid="action-title" lang={fromFrame && englishTitle ? "en" : undefined} className="min-w-0 [overflow-wrap:anywhere]">{heading}</span></span>}
       said={known && modelLine ? modelLine : null} saidTestId="action-said"
       risk={script ? scriptRiskLine(detail, t) : null}
       destructive={red}
@@ -83,7 +89,7 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
         ? <div data-testid="action-script"><CodeBox code={detail} marks={["delete", "send", "move", "do shell script", "quit"]} /></div>
         : subject ? (
           <div className="flex flex-col gap-1.5">
-            <p data-testid="action-subject" lang={frameTitle ? "en" : undefined}
+            <p data-testid="action-subject" lang={englishTitle ? "en" : undefined}
               className="break-words rounded-[10px] bg-surface-raised px-3 py-2.5 text-[15px] font-semibold leading-[1.4] text-foreground">{subject}</p>
             {detailLine}
           </div>)

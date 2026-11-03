@@ -1,9 +1,9 @@
 /** What each conversation is and how it stands (GET /conversations: kind, state, origin, job) —
- *  the sidebar's glyphs and the Remote trace. The phone's own conversation is "pocket", shown as
- *  Remote everywhere. */
+ *  the sidebar's glyphs and the Remote trace. The old pocket ("Remote") is retired (Q1 card, #4): it is an
+ *  ordinary conversation here. */
 import type { ServerConversation } from "./sessionPersistence";
 
-export type ConversationKind = "remote" | "chat" | "task" | "scheduled";
+export type ConversationKind = "chat" | "task" | "scheduled";
 /** INB4: `done_unseen` is a reply or a job done the window has not shown yet. */
 export type ConversationState = "idle" | "working" | "waiting" | "done" | "done_unseen" | "unfinished" | "failed";
 export interface ConversationJob { id: string; step: string; done: number; total: number }
@@ -39,9 +39,7 @@ export const mostUrgent = (reasons: (WaitingOn | undefined)[]): WaitingOn =>
 export const waitingLabel = (waitingOn?: WaitingOn) =>
   waitingOn === "reminder" ? "waiting_reminder" : waitingOn === "away" ? "waiting_away" : "waiting";
 
-// DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-export const REMOTE_ID = "pocket";
-const KINDS: ConversationKind[] = ["remote", "chat", "task", "scheduled"];
+const KINDS: ConversationKind[] = ["chat", "task", "scheduled"];
 const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "done_unseen", "unfinished", "failed"];
 
 /** The server writes times as naive UTC ("2026-10-30T07:00:00", no offset: server/api/conversations.py),
@@ -55,9 +53,7 @@ export function utcIso(time: string): string {
 export function metaFrom(rows: ServerConversation[]): Record<string, ConversationMeta> {
   const out: Record<string, ConversationMeta> = {};
   for (const row of rows) {
-    // DELETE-BY: with REMOTE_ID (Q1 card, #4): the pocket read as "remote" when the server says no kind.
-    const kind = KINDS.includes(row.kind as ConversationKind) ? (row.kind as ConversationKind)
-      : row.conversation_id === REMOTE_ID ? "remote" : "chat";
+    const kind = KINDS.includes(row.kind as ConversationKind) ? (row.kind as ConversationKind) : "chat";
     out[row.conversation_id] = {
       kind,
       state: STATES.includes(row.state as ConversationState) ? (row.state as ConversationState) : "idle",
@@ -71,11 +67,4 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
     };
   }
   return out;
-}
-
-/** Remote first, then the rest in the order given. */
-// DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-export function remoteFirst<T extends { id: string }>(threads: T[], meta: Record<string, ConversationMeta>): T[] {
-  const isRemote = (t: T) => t.id === REMOTE_ID || meta[t.id]?.kind === "remote";
-  return [...threads.filter(isRemote), ...threads.filter(t => !isRemote(t))];
 }

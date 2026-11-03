@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import ApprovalEvent, ArslanMessage, Judgment, Run
 from server.db.task_models import CompanionTask, TaskAttempt, TaskRevision
-from server.services import background_jobs, home_text, phone_reads
+from server.services import background_jobs, home_text, phone_ids, phone_reads
 
 DAYS = 7
 #: Finished tasks per set (today, week), newest first. The whole snapshot is written to iCloud on each
@@ -122,8 +122,10 @@ async def _build(db: AsyncSession, now: float) -> dict:
         # A conversation that was deleted keeps its task rows but not its messages: its goals are never sent
         # again, the conversation list's rule (#647 review F1). A task whose conversation never had a message
         # is not listed either: an Inbox "Do it" job that was stopped in a thread nothing was written to
-        # (#651 review N2; the spec says so). Undo (turn_undo) follows.
+        # (#651 review N2; the spec says so). Undo (turn_undo) follows. Nor is one in the retired pocket (Q1 #4):
+        # nothing about it reaches a phone.
         select(CompanionTask).where(background, CompanionTask.updated_at >= since, CompanionTask.phase.not_in(NOT_FINISHED),
+                                    CompanionTask.conversation_id != phone_ids.POCKET,
                                     exists().where(ArslanMessage.conversation_id == CompanionTask.conversation_id))
         .order_by(CompanionTask.updated_at.desc(), CompanionTask.id))).scalars() if row.id not in running][:TASK_CAP]
     tasks = await _tasks(db, rows)
