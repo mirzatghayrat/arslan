@@ -39,6 +39,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -190,24 +191,50 @@ def _calls_in(node) -> list[tuple[str, str]]:
     return found
 
 
+def _openclaw_db_calls(home: Path) -> list[tuple[str, str]]:
+    """OpenClaw 2026.10.10: each agent's transcript is the `transcript_events` table of
+    `<home>/.openclaw/agents/*/agent/openclaw-agent.sqlite`, a row's event as JSON or zstd-compressed JSON. Opened
+    read-only and immutable (the run's home is evidence). Checked on SMART-5's round 1: these counts matched OpenClaw's
+    own `meta.toolSummary.calls` on all 13 tasks."""
+    import sqlite3
+    found: list[tuple[str, str]] = []
+    for db in sorted((home / ".openclaw" / "agents").glob("*/agent/openclaw-agent.sqlite")):
+        con = sqlite3.connect(f"file:{db}?mode=ro&immutable=1", uri=True)
+        try:
+            rows = con.execute("select event_json, event_zstd from transcript_events order by session_id, seq").fetchall()
+        except sqlite3.Error:
+            rows = []
+        finally:
+            con.close()
+        for event_json, event_zstd in rows:
+            if event_json is None and event_zstd is not None:
+                unpacked = subprocess.run(["zstd", "-dc"], input=event_zstd, capture_output=True)
+                event_json = unpacked.stdout.decode("utf-8", errors="ignore") if unpacked.returncode == 0 else None
+            try:
+                found += _calls_in(json.loads(event_json or ""))
+            except ValueError:
+                continue
+    return found
+
+
 def openclaw_tool_calls(home: Path, stdout: str) -> list[tuple[str, str]] | None:
-    """OpenClaw's tool calls, best effort: from its session transcripts under `<home>/.openclaw` (`*.jsonl`), else
-    from the `--json` result on stdout. None when neither holds a record. Not yet checked against a real run (no
-    OpenClaw install on the machine this was written on): the first round should confirm the shape."""
-    sessions = sorted((home / ".openclaw").rglob("*.jsonl")) if (home / ".openclaw").is_dir() else []
-    if sessions:
-        found: list[tuple[str, str]] = []
-        for path in sessions:
+    """OpenClaw's tool calls: from its agent database (2026.10.10), else its session transcripts under
+    `<home>/.openclaw` (`*.jsonl`, older versions), else the `--json` result on stdout. None when none of them holds
+    a call: an empty trace can't be told from a trace that wasn't found (⓪Plan, SMART-5 round 1)."""
+    found = _openclaw_db_calls(home) if (home / ".openclaw").is_dir() else []
+    if not found and (home / ".openclaw").is_dir():
+        for path in sorted((home / ".openclaw").rglob("*.jsonl")):
             for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
                 try:
                     found += _calls_in(json.loads(line))
                 except ValueError:
                     continue
-        return found
-    try:
-        return _calls_in(json.loads(stdout[stdout.index("{"):]))
-    except ValueError:
-        return None
+    if not found:
+        try:
+            found = _calls_in(json.loads(stdout[stdout.index("{"):]))
+        except ValueError:
+            pass
+    return found or None
 
 
 # ---------------------------------------------------------------- reading results

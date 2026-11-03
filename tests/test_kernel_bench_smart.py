@@ -3,7 +3,9 @@ model. Prompts, fixture, both entrants' tool traces, grading, the compare step a
 
 import json
 import os
+import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -264,3 +266,67 @@ def test_the_gate_compares_only_tasks_both_ran():
     a = _doc("arslan", [(13, "36.", [])])
     o = _doc("openclaw", [(13, "36.", []), (4, "对，没看。", [])])
     assert smart_bench.gate(a, o)["pass"] is True
+
+
+# -- OpenClaw 2026.10.10 (SMART-5 round 1, ⓪Plan 2026-11-03): its reply and trace moved ---------------------------
+
+def _openclaw_db(home, events):
+    """OpenClaw 2026.10.10 keeps each session's transcript in this table (rows hold JSON, or zstd-compressed JSON)."""
+    import sqlite3
+    path = home / ".openclaw" / "agents" / "main" / "agent" / "openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True)
+    con = sqlite3.connect(path)
+    con.execute("create table transcript_events (session_id text not null, seq integer not null, event_json text, "
+                "created_at integer not null, event_zstd blob, primary key (session_id, seq))")
+    for seq, (event_json, event_zstd) in enumerate(events):
+        con.execute("insert into transcript_events values ('s1', ?, ?, 0, ?)", (seq, event_json, event_zstd))
+    con.commit()
+    con.close()
+    return path
+
+
+def _call(name, args):
+    return json.dumps({"type": "message", "message": {"role": "assistant", "content": [
+        {"type": "toolCall", "id": "c", "name": name, "arguments": args}]}})
+
+
+def test_openclaw_tool_calls_come_from_its_agent_database_read_only(tmp_path):
+    db = _openclaw_db(tmp_path, [(json.dumps({"type": "session"}), None),
+                                 (_call("exec", {"command": "notetool --version"}), None),
+                                 (_call("read", {"path": "notes.md"}), None)])
+    before = db.read_bytes()
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") == [
+        ("exec", '{"command": "notetool --version"}'), ("read", '{"path": "notes.md"}')]
+    assert db.read_bytes() == before and sorted(p.name for p in db.parent.iterdir()) == [db.name]
+
+
+@pytest.mark.skipif(not shutil.which("zstd"), reason="zstd is not installed")
+def test_a_compressed_transcript_row_is_read_too(tmp_path):
+    packed = subprocess.run(["zstd", "-c"], input=_call("exec", {"command": "ls"}).encode(), capture_output=True,
+                            check=True).stdout
+    _openclaw_db(tmp_path, [(None, packed)])
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
+
+
+def test_no_call_anywhere_is_no_record_not_an_empty_trace(tmp_path):
+    _openclaw_db(tmp_path, [(json.dumps({"type": "session"}), None)])
+    assert smart_bench.openclaw_tool_calls(tmp_path, '{"payloads": [], "meta": {}}') is None
+
+
+def test_openclaws_reply_is_its_terminal_reply_not_the_whole_json(tmp_path):
+    run = tmp_path / "openclaw-SMART02"
+    out = {"payloads": [{"text": "payload text", "mediaUrl": None}],
+           "meta": {"toolSummary": {"calls": 1}, "terminalReply": {"disposition": "visible", "text": "The answer."}}}
+    Path(f"{run}.stdout").write_text("[gateway] starting\n" + json.dumps(out))
+    assert runner.reply_text("openclaw", run) == "The answer."
+    del out["meta"]["terminalReply"]
+    Path(f"{run}.stdout").write_text(json.dumps(out))
+    assert runner.reply_text("openclaw", run) == "payload text"
+    Path(f"{run}.stdout").write_text(json.dumps({"payloads": [], "meta": {}}))
+    assert runner.reply_text("openclaw", run) == ""                  # never the JSON itself, graded as a reply
+
+
+def test_the_version_is_found_however_it_is_written():
+    """Every entrant wrote 「版本是 **3.2.1 (bench)**」; the check wanted the literal 'notetool 3.2.1'."""
+    reply = "notetool 的版本是 **3.2.1 (bench)**。"
+    assert smart_bench.grade(item(8), reply, [("run_command", "notetool --version")])["found_or_guide"] is True
