@@ -25,6 +25,7 @@ async def db(monkeypatch):
     maker = async_sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", maker)
     from server import crypto
+    monkeypatch.setenv("ARSLAN_ALLOW_INSECURE_SECRETS", "1")    # a test-only key under the public dev fallback
     key = crypto.encrypt("sk-test-not-a-real-key")       # a usable key, so a routing engine would be free to choose
     async with maker() as s:
         s.add(ProviderConfig(id=1, label="ds", provider="deepseek", model="deepseek-v4-flash", api_key=key, last_health="ok"))
@@ -105,3 +106,15 @@ def test_migration_0086_asks_for_no_notice_when_there_was_nothing_to_clear(tmp_p
     with engine.begin() as conn:
         m0086.upgrade_sync(conn)
         assert "model_roles_reset_notice" not in _settings(conn)
+
+
+def test_migration_0086_asks_for_no_notice_on_a_fresh_install(tmp_path):
+    """Migration 0006 seeds llm_strategy="single" on every install, and "single" already meant "the primary", so
+    clearing it changes nothing a user chose. A notice there would greet every new user with a reset they never had."""
+    from server.db.migrations.versions import _0086_route1_remove_routing as m0086
+    engine = _old_db(tmp_path, {"language": "en", "llm_strategy": "single"})
+    with engine.begin() as conn:
+        m0086.upgrade_sync(conn)
+        after = _settings(conn)
+    assert "llm_strategy" not in after, "still cleared"
+    assert "model_roles_reset_notice" not in after

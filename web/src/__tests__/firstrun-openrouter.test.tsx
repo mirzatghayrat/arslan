@@ -19,7 +19,6 @@ const status = vi.fn();
 vi.mock("../api/client", () => ({
   addProviderConfig: vi.fn(),
   api: { updateSettings: vi.fn(async () => ({})) },
-  getCatalog: vi.fn(async () => []),
   testLlm: vi.fn(),
   listProviderConfigs: vi.fn(async () => [
     { id: 1, label: "OpenRouter", provider: "openrouter", model: "deepseek/x:free" },

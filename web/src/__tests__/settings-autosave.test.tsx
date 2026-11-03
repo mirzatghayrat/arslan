@@ -37,8 +37,6 @@ vi.mock("../api/client", () => ({
   API_BASE: "",
   // TerminalRulesPanel (Advanced) lists the remembered terminal rules.
   request: vi.fn().mockResolvedValue({ rules: [] }),
-  suggestPrimary: vi.fn().mockResolvedValue(null),
-  getCatalog: vi.fn().mockResolvedValue([]),
   addProviderConfig: vi.fn().mockResolvedValue({}),
   updateProviderConfig: vi.fn().mockResolvedValue({}),
   setPrimaryProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
@@ -68,7 +66,6 @@ const defaultSettings: AppSettings = {
   language: "en",
   theme: "dark",
   telemetry: false,
-  llmStrategy: "single",
   orchestratorShellEnabled: false,
   shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
   mcpServerEnabled: false,

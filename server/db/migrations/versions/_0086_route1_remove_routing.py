@@ -3,8 +3,10 @@
 Every role now runs on the conversation's own model, else the primary. This clears what routing left in `settings`:
 the strategy (`llm_strategy`), the two removed slots (compaction and final answer: `compaction_*`, `synthesis_*`), and
 the pins on the two slots that stay (`router_*`, `vision_*`), which were all chosen under the old routing (the user's
-all pointed at the provider whose outage made a chat unusable). When anything was cleared it sets
+all pointed at the provider whose outage made a chat unusable). When a user's choice was cleared it sets
 `model_roles_reset_notice` to "pending", and Settings says once that the roles now follow each conversation's model.
+`llm_strategy="single"` is not a choice in that sense: migration 0006 seeds it on every install, and it already meant
+"the primary", so clearing it alone asks for no notice.
 
 Data only, in this table only; never the user's files. Idempotent: a second run finds nothing to clear and leaves the
 notice as it is ("seen" stays "seen"). A database without the table (a new install) is left alone.
@@ -23,7 +25,8 @@ def upgrade_sync(connection) -> None:
         return
     marks = ",".join("?" for _ in CLEARED)
     had = connection.exec_driver_sql(
-        f"SELECT COUNT(*) FROM settings WHERE key IN ({marks}) AND TRIM(COALESCE(value, '')) <> ''", CLEARED).scalar()
+        f"SELECT COUNT(*) FROM settings WHERE key IN ({marks}) AND TRIM(COALESCE(value, '')) <> '' "
+        "AND NOT (key = 'llm_strategy' AND TRIM(value) = 'single')", CLEARED).scalar()
     connection.exec_driver_sql(f"DELETE FROM settings WHERE key IN ({marks})", CLEARED)
     if had:
         connection.exec_driver_sql(
