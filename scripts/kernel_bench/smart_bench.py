@@ -245,8 +245,9 @@ def _openclaw_db_calls(home: Path) -> tuple[bool, list[tuple[str, str]] | None]:
 
 def openclaw_tool_calls(home: Path, stdout: str) -> list[tuple[str, str]] | None:
     """OpenClaw's tool calls: from its agent database (2026.10.10), else its session transcripts under
-    `<home>/.openclaw` (`*.jsonl`, older versions), else the `--json` result on stdout. [] when the record is there and
-    holds no call; None when there is no record, or it can't be read."""
+    `<home>/.openclaw` (`*.jsonl`, older versions), else the `--json` result on stdout. [] when a transcript is there
+    and holds no call; None when there is none, or it can't be read. The `--json` result is no transcript (2026.10.10's
+    holds no call blocks at all), so it gives calls or None, never []."""
     if (home / ".openclaw").is_dir():
         has_db, calls = _openclaw_db_calls(home)
         if has_db:
@@ -262,7 +263,7 @@ def openclaw_tool_calls(home: Path, stdout: str) -> list[tuple[str, str]] | None
                         continue
             return found
     try:
-        return _calls_in(json.loads(stdout[stdout.index("{"):]))
+        return _calls_in(json.loads(stdout[stdout.index("{"):])) or None
     except ValueError:
         return None
 

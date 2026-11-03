@@ -308,6 +308,42 @@ def test_a_compressed_transcript_row_is_read_too(tmp_path):
     assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
 
 
+def test_the_run_database_itself_is_never_opened(tmp_path):
+    """#702 review: opening the run's own database read-write would checkpoint and delete its -wal on close."""
+    import sqlite3
+    staging = tmp_path / "staging.sqlite"
+    writer = sqlite3.connect(staging)
+    writer.execute("create table transcript_events (session_id text not null, seq integer not null, event_json text, "
+                   "created_at integer not null, event_zstd blob, primary key (session_id, seq))")
+    writer.execute("pragma journal_mode=wal")
+    writer.execute("pragma wal_autocheckpoint=0")
+    writer.execute("insert into transcript_events values ('s1', 0, ?, 0, null)", (_call("exec", {"command": "ls"}),))
+    writer.commit()
+    path = tmp_path / ".openclaw" / "agents" / "main" / "agent" / "openclaw-agent.sqlite"
+    path.parent.mkdir(parents=True)
+    for suffix in ("", "-wal", "-shm"):                 # the run's files, with no connection open on them
+        Path(f"{path}{suffix}").write_bytes(Path(f"{staging}{suffix}").read_bytes())
+    writer.close()
+    wal = Path(f"{path}-wal").read_bytes()
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("exec", '{"command": "ls"}')]
+    assert Path(f"{path}-wal").read_bytes() == wal
+
+
+@pytest.mark.skipif(not shutil.which("zstd"), reason="zstd is not installed")
+def test_a_row_zstd_refuses_is_no_record(tmp_path, capsys):
+    """The real zstd, exiting non-zero on bytes that aren't a zstd frame."""
+    _openclaw_db(tmp_path, [(_call("exec", {"command": "ls"}), None), (None, b"not a zstd frame")])
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") is None
+    assert "could not be unpacked" in capsys.readouterr().err
+
+
+def test_a_json_result_without_call_blocks_is_no_record(tmp_path):
+    """#702 review: 2026.10.10's `--json` result holds no call blocks, so with no transcript it can't tell."""
+    (tmp_path / ".openclaw").mkdir()
+    out = json.dumps({"payloads": [{"text": "36"}], "meta": {"terminalReply": {"text": "36"}}})
+    assert smart_bench.openclaw_tool_calls(tmp_path, out) is None
+
+
 def test_a_readable_database_with_no_call_is_an_empty_trace(tmp_path):
     """#702 review: [] is "OpenClaw called nothing"; None is "can't tell"."""
     _openclaw_db(tmp_path, [(json.dumps({"type": "session"}), None)])
