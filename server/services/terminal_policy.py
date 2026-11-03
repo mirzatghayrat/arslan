@@ -113,6 +113,8 @@ _END = r"(?=$|[\s;&|)`'\"<>])"
 # HTTP methods that change something, and HTTPie / xh sending data: a method word, or a request
 # item (`key=value`, `key:=json`, `field@file`), a form, or a body on stdin.
 _WRITE = r"(?:POST|PUT|PATCH|DELETE)"
+# A cloud CLI's global options before its subcommand: `-m`, `--profile p`, `--region=eu-west-1`.
+_CLOUD_OPTS = r"(?:" + _H + r"+-\S+(?:" + _H + r"+[^\s-]\S*)?)*"
 _HTTPIE = r"(?:https?|xhs?)"
 # Apps that run what they are given (`open -a`/`-b`): terminals, script and automation apps.
 _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty|script\s+editor|automator"
@@ -145,6 +147,20 @@ _ASK = [
                       r"|" + _HTTPIE + r"(?:\s+-\S+)*\s+[\"']?" + _WRITE + r"\b"
                       r"|" + _HTTPIE + r"\b[^\n]*(?:\s--(?:form|multipart|raw)\b|\s-f\b|\s[A-Za-z_][\w.\-\[\]]*(?::=|=|@)(?!=))"
                       r"|aws" + _H + r"+s3" + _H + r"+(?:cp|mv|sync|rm)\b)", "sends data to a website or a cloud"),
+    # Cloud storage uploads (Astra on #688/#689, via ⓪Plan, 2026-11-03): the verb, not the direction, as `aws s3 cp`
+    # above (a download asks too). Global options may come first (`aws --profile p s3 cp`, `gsutil -m cp`).
+    ("upload", _CMD + r"(?:gcloud" + _CLOUD_OPTS + r"(?:" + _H + r"+(?:alpha|beta))?" + _H + r"+storage" + _H
+                      + r"+(?:cp|mv|rsync)"
+                      r"|gsutil" + _CLOUD_OPTS + _H + r"+(?:cp|mv|rsync)"
+                      r"|aws" + _CLOUD_OPTS + _H + r"+(?:s3" + _H + r"+(?:cp|mv|sync)|s3api" + _H
+                      + r"+(?:put-object|upload-part))"
+                      r"|gh" + _H + r"+release" + _H + r"+upload"
+                      r"|az" + _CLOUD_OPTS + _H + r"+storage" + _H + r"+(?:blob|file|fs" + _H + r"+file)" + _H
+                      + r"+upload(?:-batch)?"
+                      r"|azcopy" + _H + r"+(?:copy|cp|sync)"
+                      r"|rclone" + _CLOUD_OPTS + _H + r"+(?:copy|copyto|move|moveto|sync|bisync|rcat|copyurl)"
+                      r"|s3cmd" + _CLOUD_OPTS + _H + r"+(?:put|sync|cp|mv))" + _END,
+     "sends data to a website or a cloud"),
     # a body piped in or redirected in: `cat d.json | http url`, `http url < d.json`
     ("upload", r"\|\s*(?:[^\s=|]*/)?" + _HTTPIE + _END, "sends data to a website or a cloud"),
     ("upload", _CMD + _HTTPIE + r"\b[^\n|;&]*\s<\s*[^\s<]", "sends data to a website or a cloud"),
