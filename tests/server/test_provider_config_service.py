@@ -72,13 +72,6 @@ async def test_update_skips_masked_key_echo(db):
     assert await svc.get_decrypted_key(db, a["id"]) == "sk-aaaa1111bbbb"
 
 
-async def test_list_for_routing_has_no_key(db):
-    await svc.add_config(db, label="A", provider="deepseek", model="deepseek-chat",
-                         base_url="", api_key="sk-aaaa1111bbbb")
-    rows = await svc.list_for_routing(db)
-    assert rows[0]["provider"] == "deepseek" and "api_key" not in rows[0]
-
-
 async def test_delete_primary_promotes_survivor(db):
     a = await svc.add_config(db, label="A", provider="deepseek", model="deepseek-chat",
                              base_url="", api_key="sk-aaaa1111bbbb")

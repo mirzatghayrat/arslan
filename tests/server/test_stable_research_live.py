@@ -55,7 +55,7 @@ async def test_stable_research_host(case, execution_db, monkeypatch, tmp_path):
     adapter = StableAdapter(primary_adapter(Path.home() / "Library/Application Support/Arslan",
         Path.home() / ".arslan/secret_key", pricing), case, pricing, value["preflight_sha256"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    monkeypatch.setattr(memory, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: adapter)
 
     async def tools():
         return [tool for tool in await production_tools() if tool["key"] in {"web_extract", "write_file", "read_file"}]

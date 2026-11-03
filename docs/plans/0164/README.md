@@ -321,8 +321,9 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0083 | INB4 | The "seen" marks behind the sidebar's "done, not seen" dot (the INB card's read mark) | ②Main |
 | 0084 | INB5a | `scheduled_tasks.seen_at`: when you last opened a scheduled task. Its runs' "could not ask" entries newer than it wait on you (the INB card's count). The task's own column, so no conversation id can collide with it | #590 |
 | 0085 | INB7-c4b follow-up | `judgments.run_id`: the run a judgment was made for (nullable; older rows stay null), so Progress's 「诊断」 tab matches judgments by run, not by time (#634 review) | ③Hands |
+| 0086 | ROUTE1 | Data only: clears `llm_strategy`, the removed compaction and final-answer slots, and the old router/vision pins from `settings`; sets `model_roles_reset_notice` to "pending" when it cleared anything, so Settings says so once | ②Main |
 
-The next free number is 0086. Ask ②Main before taking it.
+The next free number is 0087. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 

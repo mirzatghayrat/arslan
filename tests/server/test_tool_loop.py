@@ -526,7 +526,7 @@ async def test_force_tools_runs_web_search_first(monkeypatch):
     from server.services.tool_intent import ToolIntent
     adapter = _ScriptedAdapter(["here is the answer using the data"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    async def fake_classify(task, keys): return ToolIntent(needs=True, tool="web_search", query="tsla price")
+    async def fake_classify(task, keys, conversation_id=None): return ToolIntent(needs=True, tool="web_search", query="tsla price")
     monkeypatch.setattr(tool_intent, "classify", fake_classify)
     seen = {}
     class _W:
@@ -553,7 +553,7 @@ async def test_force_tools_off_does_not_classify(monkeypatch):
     from server.services import tool_intent
     from server.services.tool_intent import ToolIntent
     called = {"n": 0}
-    async def fake_classify(task, keys):
+    async def fake_classify(task, keys, conversation_id=None):
         called["n"] += 1
         return ToolIntent(needs=True, tool="web_search", query="x")
     monkeypatch.setattr(tool_intent, "classify", fake_classify)
@@ -569,7 +569,7 @@ async def test_force_tools_off_does_not_classify(monkeypatch):
 async def test_force_tools_skips_when_intent_says_no(monkeypatch):
     from server.services import tool_intent
     from server.services.tool_intent import ToolIntent
-    async def fake_classify(task, keys): return ToolIntent(needs=False, tool=None, query=None)
+    async def fake_classify(task, keys, conversation_id=None): return ToolIntent(needs=False, tool=None, query=None)
     monkeypatch.setattr(tool_intent, "classify", fake_classify)
     adapter = _ScriptedAdapter(["just chatting"])
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)

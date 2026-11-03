@@ -77,17 +77,13 @@ async def test_a_deleted_config_falls_back_to_the_default(db):
     assert await llm_factory.build_conversation_adapter("c1") is None
 
 
-@pytest.mark.parametrize("slot", ["compaction", "router", "vision", "synthesis"])   # D8: no title slot
+@pytest.mark.parametrize("slot", ["router", "vision"])   # D8: no title slot; ROUTE1: no compaction or synthesis slot
 async def test_a_role_can_name_one_model_of_its_config(db, slot):
     cid = await _router_id(db)
     await settings_service.update_settings(db, {f"{slot}_config_id": str(cid)})
-    build = (llm_factory.build_synthesis_adapter() if slot == "synthesis"
-             else llm_factory.build_slot_adapter(f"{slot}_config_id"))
-    assert (await build).model == "openai/gpt-4o-mini"                      # the config's own model
+    assert (await llm_factory.build_slot_adapter(f"{slot}_config_id")).model == "openai/gpt-4o-mini"   # the config's own
     await settings_service.update_settings(db, {f"{slot}_model": "google/gemini-2.5-flash-lite"})
-    build = (llm_factory.build_synthesis_adapter() if slot == "synthesis"
-             else llm_factory.build_slot_adapter(f"{slot}_config_id"))
-    assert (await build).model == "google/gemini-2.5-flash-lite"
+    assert (await llm_factory.build_slot_adapter(f"{slot}_config_id")).model == "google/gemini-2.5-flash-lite"
 
 
 async def test_the_conversation_model_api(client):
@@ -104,20 +100,16 @@ async def test_the_conversation_model_api(client):
     assert (await client.delete("/api/v1/conversations/c1/model")).json()["choice"] is None
 
 
-async def test_the_model_api_says_what_the_next_turn_really_runs_on(client, monkeypatch):
-    """v0.1.64 (user report): the default is not always the primary config. With a routing strategy, the
-    execute role can land on another config, so the chip must show the server's answer, never assume the
-    primary: a chat that showed Claude kept running on DeepSeek."""
+async def test_the_model_api_says_what_the_next_turn_really_runs_on(client):
+    """v0.1.64 (user report): the chip shows the server's answer, never its own guess: a chat that showed Claude kept
+    running on DeepSeek. With no choice the next turn runs on the primary (ROUTE1: there is no routing); with one, on
+    the choice."""
     from sqlalchemy import select
-    from arslan.llm import routing
     async with client.db_maker() as s:
-        s.add(ProviderConfig(label="claude", provider="anthropic", model="claude-opus-5-5", api_key="", is_primary=True))
-        s.add(ProviderConfig(label="ds", provider="deepseek", model="deepseek-v4-flash", api_key=""))
+        s.add(ProviderConfig(label="ds", provider="deepseek", model="deepseek-v4-flash", api_key="", is_primary=True))
+        s.add(ProviderConfig(label="claude", provider="anthropic", model="claude-opus-5-5", api_key=""))
         await s.commit()
         ids = dict((await s.execute(select(ProviderConfig.label, ProviderConfig.id))).all())
-    def picked_by_routing(role, strategy, configs, language):
-        return next(c for c in configs if c["provider"] == "deepseek")
-    monkeypatch.setattr(routing, "select", picked_by_routing)
     got = (await client.get("/api/v1/conversations/thread-x/model")).json()
     assert got["choice"] is None
     assert got["effective"] == {"config_id": ids["ds"], "model": "deepseek-v4-flash", "provider": "deepseek"}
@@ -128,15 +120,12 @@ async def test_the_model_api_says_what_the_next_turn_really_runs_on(client, monk
     assert cleared["choice"] is None and cleared["effective"]["provider"] == "deepseek"
 
 
-async def test_the_effective_model_is_the_one_the_turn_builds(db, monkeypatch):
+async def test_the_effective_model_is_the_one_the_turn_builds(db):
     """`effective` and the turn's adapter come from one decision, so they can't drift apart."""
-    from arslan.llm import routing
-    monkeypatch.setattr(routing, "select", lambda role, strategy, configs, language: next(
-        c for c in configs if c["provider"] == "openrouter"))
     async with db_session.AsyncSessionLocal() as s:
         eff = await llm_factory.effective_choice(s, "c-none")
     turn = await tool_loop._adapter_for_turn(has_images=False, conversation_id="c-none")
-    assert (eff["provider"], eff["model"]) == ("openrouter", "openai/gpt-4o-mini") == (turn.report_provider, turn.model)
+    assert (eff["provider"], eff["model"]) == ("deepseek", "deepseek-chat") == (turn.report_provider, turn.model)
     db.add(ConversationModel(conversation_id="c-set", config_id=await _router_id(db), model="x/chosen"))
     await db.commit()
     async with db_session.AsyncSessionLocal() as s:

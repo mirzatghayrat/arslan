@@ -1039,7 +1039,7 @@ async def _handle_answer_body(
         job_running = any(job.phase != "finished" for job in background_jobs.jobs_for(conversation_id))
         check_generic = not result.get("tool_trace") and not job_running
         if full and check_generic:
-            outcome = await promise_guard.correct(full)
+            outcome = await promise_guard.correct(full, conversation_id=conversation_id)
             if outcome is not None:
                 correction = outcome["correction"]
                 emit({"type": "stream_chunk", "content": "\n\n" + correction})

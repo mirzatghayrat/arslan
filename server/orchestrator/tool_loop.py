@@ -2570,15 +2570,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
             return None
         from server.services import runtime_messages
         return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
-    # Synthesis may run on a dedicated stronger model (DeepSeek synthesizes weakly). Use it ONLY
-    # when configured; otherwise keep the tool-loop adapter `a`.
-    try:
-        from server.services.llm_factory import build_synthesis_adapter
-        synth = await build_synthesis_adapter()
-        if synth is not None:
-            a = synth
-    except Exception as exc:  # noqa: BLE001 — synthesis falls back to the tool-loop adapter, as when none is set
-        logger.warning("synthesis adapter unavailable, keeping the tool-loop model: %s", type(exc).__name__)
+    # ROUTE1 (v0.1.64): synthesis runs on the tool loop's own adapter `a`, the conversation's model; there is no
+    # final-answer slot.
     synth_system = (
         "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
@@ -3184,7 +3177,7 @@ async def _run_native(
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
         from server.services import tool_intent
         try:
-            intent = await tool_intent.classify(user_content, sorted(wired_keys))
+            intent = await tool_intent.classify(user_content, sorted(wired_keys), conversation_id=conversation_id)
         except Exception:  # noqa: BLE001
             intent = None
         if intent is not None and intent.needs and intent.tool == "web_search":

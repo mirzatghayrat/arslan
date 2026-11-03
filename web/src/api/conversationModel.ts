@@ -1,8 +1,8 @@
 import { request } from "./client";
 
 type Choice = { config_id: number; model: string };
-/** v0.1.64: what the conversation's next text turn really runs on (the server's routing may pick another config
- *  than the primary); null before any config exists. */
+/** v0.1.64: what the conversation's next text turn really runs on, as the server resolves it; null before any
+ *  config exists. */
 export type EffectiveModel = { config_id: number; model: string; provider: string } | null;
 
 /** 0.1.58 §6: the model this conversation runs on (null = the default), and what that resolves to. */

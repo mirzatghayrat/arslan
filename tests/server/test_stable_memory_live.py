@@ -44,7 +44,7 @@ async def test_stable_memory_host(case_id, execution_db, monkeypatch, tmp_path):
     adapter = StableAdapter(primary_adapter(Path.home() / "Library/Application Support/Arslan",
         Path.home() / ".arslan/secret_key", pricing), case_id, pricing, digest)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
-    monkeypatch.setattr(memory, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: adapter)
 
     async def no_tools():
         return []
