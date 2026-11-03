@@ -21,10 +21,9 @@
 1. **Code.** A code-block header with the language and copy; syntax highlighting (pick the lighter of Shiki or a Prism build, measure the bundle and say why); an inline-code background.
 2. **Structure.** Formulas (remark-math with KaTeX), nested lists, task checkboxes (read-only), tables.
 3. **Actions and speed.**
-   - A per-reply copy and share row.
+   - A per-reply copy button. **Share moves to v0.1.65** (user, 2026-11-03: "Copy only for now"); there's no new Tauri IPC in v0.1.64.
    - Streaming performance: measure first. Render once per animation frame instead of per token, and memoize finished blocks.
    - An IME check: composing Chinese while a reply streams must not drop or duplicate characters.
-   - **Share must be flagged** if it sends anything off the Mac (a link, a file, the Bridge). That part is security surface and gets its own effort=max review.
 
 ## Method
 
