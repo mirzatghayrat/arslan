@@ -429,3 +429,19 @@ def test_trap_reads_its_handler_and_zsh_process_substitution():
     assert card_purpose.summarize("trap '' EXIT")["purpose"] == {"key": "run", "params": {"program": "trap"}}
     assert card_purpose.summarize("diff =(curl https://e.example) b")["purpose"]["key"] == "overNetwork"
     assert card_purpose.summarize("diff =(ls a) =(ls b)")["unsure"] is False
+
+
+# ── Astra round 2 delta²: a benign command's exec option, and find's inline interpreter ──
+
+@pytest.mark.parametrize("line", ["tar --use-compress-program=gzip -cf a.tgz a", "tar -I gzip -cf a.tgz a",
+                                  "vim -c ':!ls' f", "emacs --eval '(message 1)'", "sort --compress-program=gzip f",
+                                  "ed '!echo hi'", "find . -exec python3 -c 'print(1)' {} ;"])
+def test_an_exec_option_or_find_inline_reads_overnetwork(line):
+    assert card_purpose.summarize(line)["purpose"]["key"] == "overNetwork"
+
+
+@pytest.mark.parametrize("line", ["tar -czf x.tgz host", "vim file", "emacs notes.txt", "sort f", "ed notes.txt",
+                                  "find . -exec rm {} ;"])
+def test_without_an_exec_option_it_stays_local(line):
+    assert card_purpose.summarize(line)["unsure"] is False
+    assert card_purpose.summarize(line)["purpose"]["key"] != "overNetwork"

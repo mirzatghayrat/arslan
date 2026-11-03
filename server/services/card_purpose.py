@@ -342,6 +342,11 @@ def _names_only(w: dict) -> bool:
 _BENIGN_LOCAL = {"ls", "touch", "chmod", "chown", "chgrp", "mkdir", "ln", "tar", "stat", "file", "head", "tail", "wc",
                  "sort", "uniq", "cut", "du", "basename", "dirname", "realpath", "readlink", "cmp", "diff", "nl", "tac",
                  "rev", "vim", "vi", "nano", "emacs", "code", "subl", "pico", "ed", "vimdiff", "mate"}
+#: A benign command's option that makes it run another program (tar's compressor, an editor's command): the step may
+#: run anything, so it reads overNetwork; the value is not parsed (Astra r2 delta).
+_BENIGN_EXEC = {"tar": r"^(?:-I|--use-compress-program|--to-command)(?:=|$)",
+                "vim": r"^(?:-c|--cmd|\+)", "vi": r"^(?:-c|--cmd|\+)", "vimdiff": r"^(?:-c|--cmd|\+)",
+                "emacs": r"^--eval(?:=|$)", "sort": r"^--compress-program(?:=|$)", "ed": r"^!"}
 
 
 def _buried_network(w: dict) -> str | None:
@@ -381,8 +386,12 @@ def _step(w: dict) -> dict:
         end = next((k for k, a in enumerate(args) if re.match(r"^[-(!)]", a)), -1)
         roots = args if end < 0 else args[:end]
         exe = next((k for k, a in enumerate(args) if re.match(r"^-(?:exec|execdir|ok|okdir)$", a)), -1)
-        if exe >= 0 and _base(args[exe + 1] if exe + 1 < len(args) else "").lower() in _NETWORK:
-            return _over_network(_base(args[exe + 1]).lower())             # find runs a network program (Astra r2, F2)
+        if exe >= 0:
+            run_name = _base(args[exe + 1] if exe + 1 < len(args) else "").lower()
+            if run_name in _NETWORK:
+                return _over_network(run_name)                             # find runs a network program (Astra r2, F2)
+            if run_name in _INLINE_CODE and re.match(_INLINE_CODE[run_name], args[exe + 2] if exe + 2 < len(args) else ""):
+                return _over_network(run_name)                            # find runs inline code (Astra r2 delta)
         if "-delete" in args or (exe >= 0 and _base(args[exe + 1] if exe + 1 < len(args) else "") in _DELETERS):
             return _reading("findDelete", {"where": ", ".join(roots) or "."}, [], roots)
         return _reading("run", {"program": program}, [], roots)
@@ -420,6 +429,8 @@ def _step(w: dict) -> dict:
         return _run(program)
     if program in ("kill", "killall", "pkill"):
         return _reading("kill", {"target": " ".join(plain)})
+    if program in _BENIGN_EXEC and any(re.match(_BENIGN_EXEC[program], a) for a in args):
+        return _over_network(program)                                      # an option that runs another program
     sub = plain[0] if plain else None
     if (program in ("npm", "pnpm", "yarn", "cargo") and sub == "publish") or (program == "gem" and sub == "push"):
         return _over_network(program)                                      # uploads to a registry
