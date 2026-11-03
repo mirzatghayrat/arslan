@@ -19,9 +19,6 @@ from server.services import artifact_store, background_jobs, conversation_seen, 
 
 #: A file travels to the phone inside one CloudKit record (protocol §4.6).
 PHONE_FILE_MAX = 20 * 1024 * 1024
-# DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-REMOTE_ID = "pocket"            # the phone's own conversation; shown everywhere as "Remote"
-REMOTE_TITLE = "Remote"
 STEPS_SHOWN = 40                # the newest steps of a run; `total` says how many there were
 DIFF_LINES = 160                # lines of one change sent to the phone
 CONTEXT = 2                     # unchanged lines kept around a change
@@ -265,9 +262,7 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         jobs = background_jobs.jobs_for(cid)
         running_job = next((j for j in jobs if j.phase != "finished"), None)
         latest_job = max(jobs, key=lambda j: j.started_at) if jobs else None
-        if cid == REMOTE_ID:                 # DELETE-BY: with REMOTE_ID (Q1 card, #4)
-            kind = "remote"
-        elif jobs or cid in outcomes or cid.startswith("task-"):
+        if jobs or cid in outcomes or cid.startswith("task-"):
             kind = "task"
         elif cid.startswith("scheduled-") or (cid in scheduled and cid not in first_user):
             kind = "scheduled"
@@ -345,7 +340,10 @@ async def activity(db: AsyncSession, now: float | None = None) -> dict:
     directory = artifact_store.root()
     if directory.exists():
         files = sum(1 for path in directory.glob("run_*.manifest.json") if path.stat().st_mtime >= midnight.timestamp())
-    return {"hours": hours, "done": done, "files": files, "waiting": desktop_status.snapshot()["awaiting"]}
+    # The cards waiting now, for the phone: the retired pocket's are answered on the Mac only (Q1 #4).
+    from server.services import phone_ids
+    waiting = desktop_status.awaiting_count(excluding=phone_ids.POCKET)
+    return {"hours": hours, "done": done, "files": files, "waiting": waiting}
 
 
 # ------------------------------------------------------------------ tasks from the phone
@@ -371,5 +369,7 @@ async def start_task(goal: str, criteria: list[str]) -> dict:
 
 
 def stop_task(job_id: str) -> bool:
+    """Stop a running job for the phone; one in the retired pocket is not the phone's to stop (Q1 #4)."""
+    from server.services import phone_ids
     job = background_jobs._jobs.get(job_id)
-    return job is not None and background_jobs.stop(job.conversation_id, job_id)
+    return job is not None and job.conversation_id != phone_ids.POCKET and background_jobs.stop(job.conversation_id, job_id)

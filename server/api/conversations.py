@@ -103,8 +103,8 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
         ConversationContext.id.in_([c.conversation_id for c in out])))).all())
     # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
     out = [c for c in out if (phone_ids.kind_of(c.conversation_id, kinds.get(c.conversation_id)) == "quick") is quick]
-    # What each one is and how it stands — the sidebar's glyphs, the phone's task list — and the
-    # phone's own conversation named Remote rather than after its first message.
+    # What each one is and how it stands — the sidebar's glyphs, the phone's task list. The retired pocket
+    # (Q1 card, #4) is an ordinary conversation here, named after its first message; the Bridge keeps it from phones.
     from server.services import phone_reads
     extra = await phone_reads.describe(db, [c.conversation_id for c in out])
     projects = dict((await db.execute(
@@ -120,9 +120,6 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
             item.kind = "quick"                 # Q1: the stored kind wins; describe works out the rest as before
         item.project_id = projects.get(item.conversation_id)
         item.pinned = item.conversation_id in pinned
-        # DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-        if item.conversation_id == phone_reads.REMOTE_ID:
-            item.title = phone_reads.REMOTE_TITLE
     return out
 
 
