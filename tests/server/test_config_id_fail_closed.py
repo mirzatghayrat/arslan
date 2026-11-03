@@ -46,48 +46,6 @@ async def test_embedding_override_pointing_at_a_missing_config_degrades_to_fts(c
         "through to whatever other provider happens to be configured")
 
 
-async def test_synthesis_override_pointing_at_a_missing_config_keeps_the_normal_adapter(
-        client, monkeypatch):
-    """llm_factory.build_synthesis_adapter: same shape. Returning None means the caller
-    keeps its own adapter — the documented contract — rather than being handed some other
-    provider's."""
-    from server.db import session as db_session
-    from server.services import llm_factory
-
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
-    async with client.db_maker() as s:
-        # Same discriminating setup: a usable config exists, it is simply not the one
-        # named. Without it the assertion is satisfied by an empty list.
-        s.add(ProviderConfig(label="other", provider="deepseek", model="deepseek-chat",
-                             api_key="enc", is_primary=True))
-        s.add(Setting(key="synthesis_config_id", value="99999"))   # names no config
-        await s.commit()
-
-    assert await llm_factory.build_synthesis_adapter() is None, (
-        "a dangling synthesis override must leave the caller's adapter alone, not hand "
-        "back some other configured provider")
-
-
-async def test_empty_override_is_not_treated_as_a_dangling_one(client, monkeypatch):
-    """The discriminating case. Empty means 'no override, use the normal resolution' —
-    a different state from 'override set but broken'. An implementation that treats them
-    alike would make the two tests above pass while the feature never worked at all."""
-    from server.db import session as db_session
-    from server.services import llm_factory
-
-    monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
-    async with client.db_maker() as s:
-        s.add(ProviderConfig(label="other", provider="deepseek", model="deepseek-chat",
-                             api_key="enc", is_primary=True))
-        s.add(Setting(key="synthesis_config_id", value=""))
-        await s.commit()
-
-    # Empty → None too, but for the "not configured" reason; the point is that reaching
-    # this line means the empty branch is taken BEFORE the lookup loop, so no provider
-    # config is consulted at all.
-    assert await llm_factory.build_synthesis_adapter() is None
-
-
 async def test_status_reports_which_models_the_existing_vectors_came_from(client, monkeypatch):
     """🔴 A warning that a switch MIGHT split the corpus is only half the information;
     the user also needs to know whether it already did. The column exists and the count

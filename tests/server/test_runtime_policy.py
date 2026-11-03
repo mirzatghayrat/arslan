@@ -111,9 +111,6 @@ async def test_only_transient_model_errors_retry(monkeypatch, error, retries):
 @pytest.mark.parametrize("error", [BudgetExceeded("model_requests"), TaskError("task_attempt_stale")])
 @pytest.mark.parametrize("salvage", ["plain", "findings"])
 async def test_answer_salvage_never_swallows_runtime_control(monkeypatch, error, salvage):
-    async def unavailable():
-        return None
-    monkeypatch.setattr("server.services.llm_factory.build_synthesis_adapter", unavailable)
     class Adapter:
         async def chat(self, *args, **kwargs):
             raise error

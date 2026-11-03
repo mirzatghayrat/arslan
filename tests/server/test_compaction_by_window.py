@@ -42,7 +42,7 @@ async def _summaries(execution_db):
 
 async def test_compaction_waits_for_three_quarters_of_the_budget(execution_db, monkeypatch):
     summarizer = _Summarizer()
-    monkeypatch.setattr(memory, "_get_adapter", lambda: summarizer)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: summarizer)
     await _seed("c70", 7)                              # about 70% of the budget
     await memory.maybe_compact("c70", budget=BUDGET)
     assert summarizer.calls == []
@@ -50,7 +50,7 @@ async def test_compaction_waits_for_three_quarters_of_the_budget(execution_db, m
 
 async def test_compaction_runs_once_and_keeps_the_latest_turns_as_they_were(execution_db, monkeypatch):
     summarizer = _Summarizer()
-    monkeypatch.setattr(memory, "_get_adapter", lambda: summarizer)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: summarizer)
     await _seed("c80", 8)                              # about 80%
     await memory.maybe_compact("c80", budget=BUDGET)
     await memory.maybe_compact("c80", budget=BUDGET)
@@ -62,7 +62,7 @@ async def test_compaction_runs_once_and_keeps_the_latest_turns_as_they_were(exec
 
 async def test_the_summary_is_structured_and_updated_not_retold(execution_db, monkeypatch):
     summarizer = _Summarizer()
-    monkeypatch.setattr(memory, "_get_adapter", lambda: summarizer)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: summarizer)
     await _seed("cs", 8)
     await memory.maybe_compact("cs", budget=BUDGET)
     await _seed("cs", 8, start=8)
@@ -79,7 +79,7 @@ async def test_two_compactions_at_once_write_one_summary(execution_db, monkeypat
     """K2b: compaction runs after the turn, outside its lock, so two can read the same latest
     summary (none, or an earlier one). The one that writes second is stale and is dropped."""
     summarizer = _Summarizer()
-    monkeypatch.setattr(memory, "_get_adapter", lambda: summarizer)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: summarizer)
     await _seed("cr", 8)
     if prior:
         await memory.maybe_compact("cr", budget=BUDGET)
@@ -93,7 +93,7 @@ async def test_two_compactions_at_once_write_one_summary(execution_db, monkeypat
             await release.wait()
             return await super().chat(system, user, **kwargs)
 
-    monkeypatch.setattr(memory, "_get_adapter", lambda: _Slow())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: _Slow())
     both = [asyncio.create_task(memory.maybe_compact("cr", budget=BUDGET)) for _ in range(2)]
     try:
         async with asyncio.timeout(5):
@@ -121,7 +121,7 @@ async def test_a_conversation_deleted_while_it_is_summarized_gets_no_summary_bac
                 await db.commit()
             return await super().chat(system, user, **kwargs)
 
-    monkeypatch.setattr(memory, "_get_adapter", lambda: _Deleting())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: _Deleting())
     await _seed("cd", 8)
     await memory.maybe_compact("cd", budget=BUDGET)
     assert await _summaries(execution_db) == []

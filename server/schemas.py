@@ -35,7 +35,6 @@ class SettingsIn(BaseModel):
     # The frontend sends it and has passing tests that say so — two sides tested
     # in isolation with nothing testing the seam.
     github_token: str | None = None
-    llm_strategy: str | None = None
     # Desktop shell while its window is hidden (0.1.41). Default ON.
     keep_awake_enabled: bool | None = None
     desktop_notifications_enabled: bool | None = None
@@ -49,6 +48,7 @@ class SettingsIn(BaseModel):
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     shell_policy_switch_notice: str | None = None   # v0.1.63: "pending" / "seen" (migration 0070's notice)
+    model_roles_reset_notice: str | None = None     # v0.1.64 ROUTE1: "pending" / "seen" (migration 0086's notice)
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
     run_debug_retention_days: int | None = None
@@ -58,13 +58,9 @@ class SettingsIn(BaseModel):
     # sending embedding_config_id since the embedding settings shipped; the value
     # never reached the database. Same defect class as the D-round write-only int
     # keys, mirrored: that one lost the READ side, this one lost the WRITE side.
-    synthesis_config_id: str | None = None
-    compaction_model: str | None = None
-    synthesis_model: str | None = None
     router_model: str | None = None
     vision_model: str | None = None
     embedding_config_id: str | None = None
-    compaction_config_id: str | None = None
     router_config_id: str | None = None
     vision_config_id: str | None = None
     mcp_server_enabled: bool | None = None
@@ -116,7 +112,6 @@ class SettingsOut(BaseModel):
     llm_api_key_status: str = "unset"
     search_api_key_status: str = "unset"
     github_token_status: str = "unset"
-    llm_strategy: str = "single"
     keep_awake_enabled: bool = True
     desktop_notifications_enabled: bool = True
     island_enabled: bool = True
@@ -129,16 +124,13 @@ class SettingsOut(BaseModel):
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""
     shell_policy_switch_notice: str = ""            # v0.1.63: "pending" after 0070 switched this user, then "seen"
+    model_roles_reset_notice: str = ""              # v0.1.64 ROUTE1: "pending" after 0086 cleared the old roles, then "seen"
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
     run_debug_retention_days: int = 30
-    synthesis_config_id: str = ""
-    compaction_model: str = ""
-    synthesis_model: str = ""
     router_model: str = ""
     vision_model: str = ""
     embedding_config_id: str = ""
-    compaction_config_id: str = ""
     router_config_id: str = ""
     vision_config_id: str = ""
     mcp_server_enabled: bool = False
@@ -389,12 +381,6 @@ class RegistryOut(BaseModel):
     tool_calling_note: str | None = None
 
 
-class SuggestPrimaryOut(BaseModel):
-    id: int
-    provider: str
-    rationale: str
-
-
 class TestLLMIn(BaseModel):
     """Body for POST /settings/test-llm."""
 
@@ -429,20 +415,6 @@ class SearchProbeOut(BaseModel):
     verdict: str
     detail: str = ""
     result_count: int | None = None
-
-
-class CatalogCapabilities(BaseModel):
-    cost: int
-    speed: int
-    tool_calling: int
-    reasoning: int
-    long_context: int
-
-
-class CatalogEntryOut(BaseModel):
-    provider: str
-    capabilities: CatalogCapabilities
-    languages: dict[str, int]
 
 
 class ModelInfoOut(BaseModel):

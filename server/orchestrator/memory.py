@@ -12,7 +12,6 @@ from arslan.context_budget import clip as clip_context, estimate_tokens
 
 from server.db import session as db_session
 from server.db.models import ArslanMessage, ArslanSummary
-from server.services.llm_factory import build_adapter
 from server.services.memory_history import eligible_messages
 
 logger = logging.getLogger(__name__)
@@ -232,7 +231,7 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
         # Sync-or-awaitable, the same shape router.py uses. This seam has always
         # accepted a plain object from a test stub; making it await-only would have been
         # the code demanding that six existing tests change to suit it.
-        adapter = _get_adapter()
+        adapter = _get_adapter(conversation_id)
         adapter = await adapter if hasattr(adapter, "__await__") else adapter
         # S3-M3 usage ledger: compaction runs at orchestration level (after the turn,
         # never inside a dispatch's collecting region) — ledger its 1-2 summarize calls
@@ -272,24 +271,15 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
         return
 
 
-async def _get_adapter():
-    """The adapter for this task, honouring its per-task slot if one is set.
-
-    🔴 The slot is consulted FIRST and only overrides when the user set one — an unset
-    slot returns None from build_slot_adapter, and this falls through to exactly the
-    call that happened before. A hook that rerouted unconditionally would move this
-    task, and its cost, onto another model with no symptom but the bill.
-    """
-    from server.services.llm_factory import build_slot_adapter
-
-    slotted = await build_slot_adapter("compaction_config_id")
-    if slotted is not None:
-        return slotted
-    return await build_adapter(role="summarize")
+async def _get_adapter(conversation_id: str | None = None):
+    """The compaction adapter: the conversation's own model, else the primary (v0.1.64 ROUTE1: there is no
+    compaction slot; a summary is written by the model the conversation runs on, as its turns are)."""
+    from server.orchestrator import tool_loop
+    return await tool_loop._adapter_for_turn(has_images=False, conversation_id=conversation_id)
 
 
 async def _summarize(adapter, text: str) -> str:  # noqa: ANN001
-    """One compaction LLM call. `adapter` may be an awaitable (build_adapter())."""
+    """One compaction LLM call. `adapter` may be an awaitable (_get_adapter())."""
     a = await adapter if hasattr(adapter, "__await__") else adapter
     resp = await a.chat(
         system="Update the running summary of this conversation. Keep exactly these sections, each a few "

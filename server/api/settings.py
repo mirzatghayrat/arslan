@@ -6,7 +6,6 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from arslan.llm.catalog import CATALOG
 from arslan.llm.presets import provider_options
 from server import auth, config, token_bootstrap
 import logging
@@ -14,7 +13,7 @@ import logging
 from server.auth import require_auth
 from server.db.session import get_session
 from server.registry.search_providers import list_providers as list_search_providers
-from server.schemas import AccessTokenOut, CatalogEntryOut, McpTokenOut, ModelListOut, SearchProbeIn, SearchProbeOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, SuggestPrimaryOut, TestLLMIn, TestLLMOut
+from server.schemas import AccessTokenOut, McpTokenOut, ModelListOut, SearchProbeIn, SearchProbeOut, ProviderConfigIn, ProviderConfigOut, ProviderConfigUpdateIn, ProviderOption, SettingsIn, SettingsOut, TestLLMIn, TestLLMOut
 # model_catalog + provider_health are Settings-only: this module is their ONLY
 # allowed import site outside their own tests (Provider-round iron rule —
 # never from the chat path).
@@ -467,28 +466,10 @@ async def test_saved_provider_config(
         base_url=row.base_url or "",
         api_key=api_key,
     )
-    # Persist it: this one call is both what the dot shows and what routing
-    # believes, so the answer has to outlive the request that produced it.
+    # Persist it: this one call is what the dot shows, so the answer has to outlive the request that produced it.
     provider_config_service.record_test_verdict(
         row, ok=bool(result["ok"]), detail=result.get("error"))
     await session.commit()
     return TestLLMOut(**result)
 
 
-@router.get("/settings/suggest-primary", response_model=SuggestPrimaryOut | None)
-async def suggest_primary(session: AsyncSession = Depends(get_session)):
-    cfg = await settings_service.get_settings(session)
-    return await provider_config_service.suggest_primary(session, cfg.get("language"))
-
-
-@router.get("/settings/catalog", response_model=list[CatalogEntryOut])
-async def get_catalog() -> list[CatalogEntryOut]:
-    """Read-only provider capability catalog for the transparency table."""
-    return [
-        CatalogEntryOut(
-            provider=provider,
-            capabilities=entry["capabilities"],
-            languages=entry["languages"],
-        )
-        for provider, entry in CATALOG.items()
-    ]
