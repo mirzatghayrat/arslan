@@ -7,6 +7,39 @@ lives in the per-provider `languages` map and is resolved at runtime via languag
 """
 from __future__ import annotations
 
+import re
+
+from arslan.llm.prices import PRICES
+
+# v0.1.64 ROUTE1 change 6: for the providers prices.py prices, the seed is the newest priced model of each
+# family, read from PRICES (families in PRICES order), so there is no second hand-kept list where prices.py has
+# data. Providers prices.py leaves unpriced by design (K4a: no official-page price, no row) keep a hand-kept seed.
+# An id these patterns don't read (e.g. DeepSeek's legacy "deepseek-flash" prefix) is not a seed model.
+_PRICED_ID = {
+    "anthropic": re.compile(r"claude-(?P<family>[a-z]+)-(?P<version>\d+(?:-\d+)?)"),
+    "openai": re.compile(r"gpt-(?P<version>\d+\.\d+)-(?P<family>[a-z]+)"),
+    "deepseek": re.compile(r"deepseek-v(?P<version>\d+)-(?P<family>[a-z]+)"),
+    "gemini": re.compile(r"gemini-(?P<version>\d+\.\d+)-(?P<family>[a-z]+)"),
+}
+#: The unpriced ids a priced provider still seeds, ahead of its priced ones. ⓪Plan, 2026-11-03 (option b): only
+#: Gemini's preset default, which presets.NATIVE keeps; prices.py: "gemini-3.5-flash has no price on the page
+#: (it routes to gemini-3.6-flash)". Adding a second one is a decision, not a refresh.
+UNPRICED_SEED_EXCEPTIONS: dict[str, tuple[str, ...]] = {"gemini": ("gemini-3.5-flash",)}
+
+
+def _priced_seed(provider: str) -> list[str]:
+    """The newest priced model of each of `provider`'s families, in PRICES order."""
+    newest: dict[str, tuple[tuple[int, ...], str]] = {}
+    for model in PRICES:
+        m = _PRICED_ID[provider].fullmatch(model)
+        if m is None:
+            continue
+        version = tuple(int(n) for n in re.split(r"[.-]", m["version"]))
+        if m["family"] not in newest or version > newest[m["family"]][0]:
+            newest[m["family"]] = (version, model)
+    return [*UNPRICED_SEED_EXCEPTIONS.get(provider, ()), *(model for _, model in newest.values())]
+
+
 # Universal, language-neutral dimensions (0..10).
 CAPABILITY_DIMENSIONS = ("cost", "speed", "tool_calling", "reasoning", "long_context")
 
@@ -53,12 +86,12 @@ def normalize_language(value: str | None) -> str | None:
 # tests/llm/test_catalog_freshness.py — extend that list when refreshing here.
 CATALOG: dict[str, dict] = {
     "openai": {
-        "models": ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+        "models": _priced_seed("openai"),
         "capabilities": {"cost": 4, "speed": 7, "tool_calling": 9, "reasoning": 9, "long_context": 8},
         "languages": {"en": 10, "zh": 7, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
     "deepseek": {
-        "models": ["deepseek-v4-pro", "deepseek-v4-flash"],
+        "models": _priced_seed("deepseek"),
         "capabilities": {"cost": 9, "speed": 7, "tool_calling": 7, "reasoning": 8, "long_context": 8},
         "languages": {"en": 8, "zh": 9, "de": 6, "es": 6, "fr": 6, "ja": 6},
     },
@@ -113,12 +146,12 @@ CATALOG: dict[str, dict] = {
         "languages": {"en": 8, "zh": 6, "de": 6, "es": 6, "fr": 6, "ja": 5},
     },
     "anthropic": {
-        "models": ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
+        "models": _priced_seed("anthropic"),
         "capabilities": {"cost": 3, "speed": 6, "tool_calling": 9, "reasoning": 10, "long_context": 9},
         "languages": {"en": 10, "zh": 8, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
     "gemini": {
-        "models": ["gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
+        "models": _priced_seed("gemini"),
         "capabilities": {"cost": 7, "speed": 8, "tool_calling": 8, "reasoning": 9, "long_context": 10},
         "languages": {"en": 10, "zh": 7, "de": 8, "es": 8, "fr": 8, "ja": 7},
     },
