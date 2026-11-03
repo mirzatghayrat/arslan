@@ -16,7 +16,7 @@ export const SAVE_TIMEOUT_MS = 15_000;
 
 /** The request, or a "timeout" error after SAVE_TIMEOUT_MS. When the timeout wins, `whenSettled` still runs once the
  *  request does settle, since a save that lands late changes what the server has (PR 691's review). */
-function withTimeout<T>(p: Promise<T>, whenSettled: (landed: boolean) => void): Promise<T> {
+export function withTimeout<T>(p: Promise<T>, whenSettled: (landed: boolean) => void): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {

@@ -3,6 +3,7 @@ vision, router, compaction, synthesis) on which provider and model; a failed run
 image turn the chat's explicit model wins over the vision slot (⓪Plan's Q2, option c), with a refusal that names it.
 
 User report: a chat switched to Claude kept failing on DeepSeek's balance; every helper slot pointed at DeepSeek too."""
+import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -82,6 +83,54 @@ async def test_the_error_frame_names_the_call():
         await _failing(role="vision").chat("s", "hi")
     frame = await llm_errors.error_frame(failed.value)
     assert frame["call"] == {"role": "vision", "provider": "deepseek", "model": "deepseek-v4-flash"}
+
+
+def _http_error(status: int, body: str) -> httpx.HTTPStatusError:
+    """As the providers raise it: the status line plus the provider's own words (providers/errors.with_body)."""
+    from arslan.llm.providers import errors as provider_errors
+    request = httpx.Request("POST", "https://api.example.invalid/v1/chat/completions")
+    response = httpx.Response(status, request=request, text=body)
+    bare = httpx.HTTPStatusError(f"Client error '{status}'", request=request, response=response)
+    return httpx.HTTPStatusError(provider_errors.with_body(bare), request=request, response=response)
+
+
+async def test_the_name_survives_the_real_wrapper():
+    """#696 review 1: providers raise httpx errors and call_with_recovery re-raises them as ModelCallError(...) from
+    exc. The frame must still name the call (a RuntimeError raised straight skipped that wrapper)."""
+    from server.orchestrator.model_call import ModelCallError, TurnRecovery, call_with_recovery
+    a = _failing()
+
+    async def balance(*args, **kwargs):
+        raise _http_error(402, '{"error": {"message": "Insufficient Balance"}}')
+    a._provider.chat = balance
+    with pytest.raises(ModelCallError) as failed:
+        await call_with_recovery(lambda: a.chat("s", "hi"), TurnRecovery())
+    frame = await llm_errors.error_frame(failed.value)
+    assert frame["call"] == {"role": "chat", "provider": "deepseek", "model": "deepseek-v4-flash"}
+
+
+async def test_an_image_refusal_through_the_real_wrapper_names_the_model():
+    from server.orchestrator.model_call import TurnRecovery, call_with_recovery
+    a = _failing()
+
+    async def refuses(*args, **kwargs):
+        raise _http_error(400, "Failed to deserialize the JSON body: messages[1]: unknown variant `image_url`, expected `text`")
+    a._provider.chat = refuses
+    with pytest.raises(Exception) as failed:
+        await call_with_recovery(lambda: a.chat("s", "hi"), TurnRecovery())
+    frame = await llm_errors.error_frame(failed.value, had_images=True)
+    assert frame.get("call", {}).get("model") == "deepseek-v4-flash"
+    assert "deepseek-v4-flash" in frame["message"]
+
+
+async def test_when_the_image_model_refuses_the_text_points_to_settings_not_to_this_chat():
+    """#696 review: the banner offers settings for a helper; the message says the same."""
+    refusal = "Failed to deserialize the JSON body: messages[1]: unknown variant `image_url`, expected `text`"
+    with pytest.raises(RuntimeError) as failed:
+        await _failing(role="vision", error=refusal).chat("s", "hi")
+    frame = await llm_errors.error_frame(failed.value, had_images=True)
+    assert "deepseek-v4-flash" in frame["message"] and "this chat" not in frame["message"]
+    assert "Settings" in frame["message"]
 
 
 async def test_an_image_refusal_names_the_model_and_its_provider():

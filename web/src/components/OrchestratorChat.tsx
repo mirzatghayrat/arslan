@@ -22,6 +22,8 @@ import type { ProviderConfig, ProviderOption } from '../api/client.types';
 import ConversationModelChip from './models/ConversationModelChip';
 import { MODEL_CHANGED_EVENT, beginModelSave, isModelSaving, useModelSaving } from './models/useConversationModel';
 import { conversationModelApi } from '../api/conversationModel';
+import { withTimeout } from './models/ConversationModelChip';
+import { lastSend, rememberSend } from '../lib/lastSend';
 import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -235,22 +237,39 @@ export default function OrchestratorChat({
     ? (providerConfigs ?? []).find((c) => c.provider !== llmErrorCall.provider)
       ?? (providerConfigs ?? []).find((c) => c.model !== llmErrorCall.model)
     : undefined;
+  const switching = useRef(false);
+  const announceModel = (id: string, choice: { config_id: number; model: string } | null) =>
+    window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, { detail: {
+      conversationId: id, choice: choice ? { configId: choice.config_id, model: choice.model } : null } }));
   const switchAndRetry = async () => {
-    if (!switchTo) return;
+    if (!switchTo || switching.current) return;    // a second click while the first is saving does nothing (PR 696's review)
+    switching.current = true;
     const id = conversationId ?? 'main';
+    const epoch = useArslanStore.getState().epoch;
     const done = beginModelSave(id);
     try {
-      const r = await conversationModelApi.set(id, switchTo.id, switchTo.model);
-      window.dispatchEvent(new CustomEvent(MODEL_CHANGED_EVENT, { detail: {
-        conversationId: id, choice: { configId: r.choice.config_id, model: r.choice.model } } }));
+      // A save that never answers gives up like the chip's; if it lands later, the chips ask the server again.
+      const r = await withTimeout(conversationModelApi.set(id, switchTo.id, switchTo.model), () => {
+        void conversationModelApi.get(id).then((g) => announceModel(id, g.choice)).catch(() => {});
+      });
+      announceModel(id, r.choice);
     } catch {
       return;          // the error stays, and nothing is sent on a model the server didn't store
     } finally {
       done();
+      switching.current = false;
     }
+    if (useArslanStore.getState().epoch !== epoch) return;   // the user moved to another conversation meanwhile
     clearLlmError();
+    // The last send as it was, attachments included (an image the first model refused must reach this one). With
+    // none remembered (after a reload) the text goes back in the composer rather than going out without them.
+    const sent = lastSend(id);
+    if (sent && onSendMessage) {
+      onSendMessage(sent.text, sent.attached);
+      return;
+    }
     const last = [...chatHistory].reverse().find((m) => m.sender === 'user');
-    if (last && onSendMessage) onSendMessage(last.text, undefined);
+    if (last) setInputValue(last.text);
   };
   // Draft survives unmount. The composer used to hold its text in plain
   // component state, so switching to Settings (say, to fix an API key) and
@@ -374,12 +393,14 @@ export default function OrchestratorChat({
       // `images` is OMITTED when empty, not passed as []: a text-only send must
       // stay byte-identical to what it was before vision existed — the same
       // principle build_user_blocks applies on the server.
-      onSendMessage(text, context || display.length || images.length
+      const attached = context || display.length || images.length
         ? {
             context, names, display,
             ...(images.length ? { images: images as NonNullable<typeof images[number]>[] } : {}),
           }
-        : undefined);
+        : undefined;
+      rememberSend(conversationId ?? 'main', text, attached);   // SMART-3: a retry on another model sends this again
+      onSendMessage(text, attached);
       clearAttachments();
       return;
     }
@@ -972,7 +993,7 @@ export default function OrchestratorChat({
                     {t(`ui.errorRole_${['chat', 'vision'].includes(llmErrorCall.role) ? llmErrorCall.role : 'helper'}`)}: {llmErrorCall.provider} · {llmErrorCall.model}
                   </span>
                   {llmErrorCall.role === 'chat' && switchTo && (
-                    <button type="button" data-testid="chat-error-switch" onClick={() => void switchAndRetry()}
+                    <button type="button" data-testid="chat-error-switch" onClick={() => void switchAndRetry()} disabled={savingModel}
                       className="rounded-md bg-fill px-2 py-1 font-medium text-foreground hover:bg-fill-strong">
                       {t('ui.errorSwitchRetry', { model: `${switchTo.label} · ${switchTo.model}` })}</button>
                   )}

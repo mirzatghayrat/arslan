@@ -16,6 +16,9 @@ vi.mock('../api/client', async (orig) => ({ ...(await orig<object>()), fetchProv
 
 import OrchestratorChat from '../components/OrchestratorChat';
 import { useArslanStore } from '../stores/arslanStore';
+import { rememberSend } from '../lib/lastSend';
+import { isModelSaving } from '../components/models/useConversationModel';
+import { SAVE_TIMEOUT_MS } from '../components/models/ConversationModelChip';
 import type { ProviderConfig } from '../api/client.types';
 import type { Message } from '../types';
 
@@ -43,10 +46,12 @@ describe('the error frame says which call failed', () => {
 });
 
 describe('the error banner', () => {
-  it("names the chat's model and switches this chat to another one, then sends the last message again", async () => {
+  it("names the chat's model and switches this chat to another one, then sends the last message again, attachments too", async () => {
     conv.get.mockResolvedValue({ choice: null });
     conv.set.mockResolvedValue({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } });
     const onSendMessage = vi.fn();
+    const attached = { context: '', names: ['photo.png'], images: [{ mime_type: 'image/png', data: 'AAAA' }] };
+    rememberSend('c1', 'What is in this photo?', attached as never);
     render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage} conversationId="c1" providerConfigs={configs} />);
     failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
     expect(screen.getByTestId('chat-error-call').textContent).toContain('deepseek · deepseek-v4-flash');
@@ -54,8 +59,70 @@ describe('the error banner', () => {
     expect(button.textContent).toContain('claude-sonnet-5-5');
     await act(async () => { fireEvent.click(button); });
     expect(conv.set).toHaveBeenCalledWith('c1', 3, 'claude-sonnet-5-5');
-    expect(onSendMessage).toHaveBeenCalledWith('Plan my week', undefined);
+    expect(onSendMessage).toHaveBeenCalledWith('What is in this photo?', attached);
     expect(useArslanStore.getState().error).toBeNull();
+  });
+
+  it('with no remembered send (after a reload), switches and puts the text back instead of sending it bare', async () => {
+    conv.get.mockResolvedValue({ choice: null });
+    conv.set.mockResolvedValue({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } });
+    const onSendMessage = vi.fn();
+    const { container } = render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage} conversationId="c-reloaded"
+      providerConfigs={configs} />);
+    failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+    await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
+    expect(conv.set).toHaveBeenCalledWith('c-reloaded', 3, 'claude-sonnet-5-5');
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect((container.querySelector('#chat-message-input') as HTMLTextAreaElement).value).toBe('Plan my week');
+  });
+
+  it('a double click switches and sends once', async () => {
+    conv.get.mockResolvedValue({ choice: null });
+    let land!: (v: unknown) => void;
+    conv.set.mockImplementation(() => new Promise((resolve) => { land = resolve; }));
+    const onSendMessage = vi.fn();
+    rememberSend('c1', 'Plan my week', undefined);
+    render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage} conversationId="c1" providerConfigs={configs} />);
+    failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+    const button = screen.getByTestId('chat-error-switch');
+    await act(async () => { fireEvent.click(button); fireEvent.click(button); });
+    await act(async () => { land({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } }); });
+    expect(conv.set).toHaveBeenCalledTimes(1);
+    expect(onSendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends nothing if the conversation changed while the switch was saving', async () => {
+    conv.get.mockResolvedValue({ choice: null });
+    let land!: (v: unknown) => void;
+    conv.set.mockImplementation(() => new Promise((resolve) => { land = resolve; }));
+    const onSendMessage = vi.fn();
+    rememberSend('c1', 'Plan my week', undefined);
+    render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage} conversationId="c1" providerConfigs={configs} />);
+    failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+    await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
+    act(() => useArslanStore.getState().resetForNewConversation());
+    await act(async () => { land({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } }); });
+    expect(onSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('a switch with no answer gives up after a while, keeps the error and sends nothing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      conv.get.mockResolvedValue({ choice: null });
+      conv.set.mockImplementation(() => new Promise(() => {}));
+      const onSendMessage = vi.fn();
+      rememberSend('c1', 'Plan my week', undefined);
+      render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage} conversationId="c1" providerConfigs={configs} />);
+      failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+      await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
+      expect(isModelSaving('c1')).toBe(true);
+      await act(async () => { vi.advanceTimersByTime(SAVE_TIMEOUT_MS + 10); });
+      expect(isModelSaving('c1')).toBe(false);
+      expect(onSendMessage).not.toHaveBeenCalled();
+      expect(useArslanStore.getState().error).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("with only one provider configured, offers that provider's other model", () => {

@@ -28,7 +28,8 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                        "budget_closing_unsaved": {"reason", "sources"},
                        "turn_long": {"minutes"},   # K4b
                        "links_not_verified": {"links"},   # K8a
-                       "image_refused_named": {"model", "provider"}}   # SMART-3
+                       "image_refused_named": {"model", "provider"},   # SMART-3
+                       "image_refused_slot": {"model", "provider"}}
             assert fields == allowed.get(key, set())
             if locale != "en":
                 assert text != copy.MESSAGES["en"][key]
