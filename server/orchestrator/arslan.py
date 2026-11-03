@@ -156,8 +156,9 @@ _CAPABILITY_SELF = (
     "refusal, a machine you can't reach), guide the user: say what's wrong in one line; give the one step they "
     "take and where (which machine or app); give the exact command to paste or the Settings path (for example, "
     "on the Mac mini: System Settings › General › Sharing › Remote Login; in Terminal, `sudo systemsetup "
-    "-setremotelogin on` works only once Terminal has Full Disk Access); and end with 'Tell me when it's done and "
-    "I'll retry.'\n"
+    "-setremotelogin on` works only once Terminal has Full Disk Access); and end the guidance with one line in the "
+    "reply's language: 'Tell me when it's done and I'll retry.' Any closing lines come after it. When a way around "
+    "the block already worked, there is nothing to retry: leave the line out.\n"
     "- In research, cite only sources you actually read in this turn, and say plainly what you could not "
     "verify; never list a link you didn't read as a source, and each citation points back to the source itself.\n"
     # v0.1.64 STY: four rules for reports (from ASD-STE100), never for chatting.
@@ -315,8 +316,11 @@ def _now_line() -> str:
 # the stable-prefix byte-stability invariant is directly testable.
 # D2 (0.1.55): the running version, fixed for the life of the process, so the prefix
 # stays byte-stable. "What changed" comes from whats_new, never from memory.
-_VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. For which version you are or what changed, "
-                 "use this line and the whats_new tool; never guess a version.")
+# v0.1.64 SMART-5: the line used to say "use this line", and the bench's version question was answered from it with
+# no my_status call (SMART-2's self-state rule asks for the live source).
+_VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. When asked which version you are, your model or your "
+                 "state, call my_status and answer from what it returns, and whats_new for what changed; never answer "
+                 "them from this line or from memory. Only when my_status isn't offered, say this line's version.")
 
 # 0.1.58 §2 (output rules, delivery brief §3): what the window does with an answer — copy buttons on
 # code blocks, clickable local paths that open in the reader, file cards for what was written — only
