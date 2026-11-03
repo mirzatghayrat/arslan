@@ -1570,6 +1570,92 @@
    ],
    "more": 0,
    "unsure": false
+  },
+  {
+   "line": "find . -exec ls {} \\; -exec curl https://example.org {} \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec sh -c 'curl https://example.org' \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec env curl https://example.org \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec sudo curl https://example.org \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec python3 -B -c pass \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec cat {} \\;",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "find"
+    }
+   },
+   "touches": [
+    "."
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "tar -Ixz -cf a.tgz docs",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
   }
  ]
 }

@@ -136,6 +136,9 @@ const base = (word: string) => word.slice(word.lastIndexOf("/") + 1);
 const programOf = (word: string) => (/^(?:\$\(|`)/.test(word) ? word : base(word));
 const plain = (args: string[]) => args.filter(a => !a.startsWith("-"));
 const unique = <T,>(list: T[]) => [...new Set(list)];
+/** Re-quote a token so a token slice can be read as a command line again (for `find -exec`): a word with a space or
+ *  a shell metacharacter is wrapped in single quotes, so `sh -c "cmd"` survives the round trip. */
+const requote = (tok: string) => (/^[A-Za-z0-9_@%^:=+,./~-]+$/.test(tok) ? tok : `'${tok.replace(/'/g, "'\\''")}'`);
 
 interface Words { program: string; args: string[]; writes: string[]; inputs: string[]; assigns: string[]; raw: string; listed: boolean }
 
@@ -266,7 +269,7 @@ const BENIGN_LOCAL = new Set(["ls", "touch", "chmod", "chown", "chgrp", "mkdir",
 /** A benign command's option that makes it run another program (tar's compressor, an editor's command): the step may
  *  run anything, so it reads overNetwork; the value is not parsed (Astra r2 delta). */
 const BENIGN_EXEC: Record<string, RegExp> = {
-  tar: /^(?:-I|--use-compress-program|--to-command)(?:=|$)/,
+  tar: /^(?:-I|(?:--use-compress-program|--to-command)(?:=|$))/,
   vim: /^(?:-c|--cmd|\+)/, vi: /^(?:-c|--cmd|\+)/, vimdiff: /^(?:-c|--cmd|\+)/,
   emacs: /^--eval(?:=|$)/, sort: /^--compress-program(?:=|$)/, ed: /^!/,
 };
@@ -289,16 +292,19 @@ function readStep(w: Words): Reading {
     case "find": {
       const end = args.findIndex(a => /^[-(!)]/.test(a));
       const roots = end < 0 ? args : args.slice(0, end);
-      const exec = args.findIndex(a => /^-(?:exec|execdir|ok|okdir)$/.test(a));
-      if (exec >= 0) {
-        const exe = base(args[exec + 1] ?? "").toLowerCase();
-        if (NETWORK.has(exe)) return overNetwork(exe);                     // find runs a network program (Astra r2, F2)
-        if (Object.prototype.hasOwnProperty.call(INLINE_CODE, exe) && INLINE_CODE[exe].test(args[exec + 2] ?? ""))
-          return overNetwork(exe);                                         // find runs inline code (Astra r2 delta)
+      // Every -exec/-execdir/-ok/-okdir action (up to its `;`/`+`) is a command find runs; read each as its own line
+      // so a wrapper, a shell, a second action or an interpreter flag anywhere in it is caught (Astra r2 delta³).
+      let deletes = args.includes("-delete");
+      for (let i = 0; i < args.length; i++) {
+        if (!/^-(?:exec|execdir|ok|okdir)$/.test(args[i])) continue;
+        const slice: string[] = [];
+        for (let j = i + 1; j < args.length && args[j] !== ";" && args[j] !== "+"; j++) slice.push(args[j]);
+        if (!slice.length) continue;
+        const r = read(slice.map(requote).join(" "), []);
+        if (r?.unsure) return overNetwork(String(r.purpose.params.program ?? program));
+        if (r && ["delete", "deleteSome", "findDelete"].includes(r.purpose.key)) deletes = true;
       }
-      if (args.includes("-delete") || (exec >= 0 && DELETERS.has(base(args[exec + 1] ?? "")))) {
-        return { purpose: { key: "findDelete", params: { where: roots.join(", ") || "." } }, hosts: [], local: roots };
-      }
+      if (deletes) return { purpose: { key: "findDelete", params: { where: roots.join(", ") || "." } }, hosts: [], local: roots };
       return { purpose: { key: "run", params: { program } }, hosts: [], local: roots };
     }
     case "mv": {

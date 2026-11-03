@@ -228,6 +228,31 @@ describe("summarize, Astra round 2 delta²: a benign command's exec option, and 
   });
 });
 
+describe("summarize, Astra round 2 delta³: find reads every -exec action as a nested line", () => {
+  // The real card feeds the raw command, so `\;` arrives escaped and stays one find step; reading each action as a
+  // full nested line catches a second action, a shell, a wrapper, or a non-adjacent interpreter flag anywhere in it.
+  it.each([
+    ["find . -exec ls {} \\; -exec curl https://e.example {} \\;", "curl"],   // a second -exec is the network one
+    ["find . -exec sh -c 'curl https://e.example' \\;", "curl"],              // a shell after -exec
+    ["find . -exec env curl https://e.example \\;", "curl"],                  // an env wrapper after -exec
+    ["find . -exec sudo curl https://e.example \\;", "curl"],                 // a sudo wrapper after -exec
+    ["find . -exec python3 -B -c pass \\;", "python3"],                       // a non-adjacent interpreter flag
+    ["find . -exec curl https://e.example {} +", "curl"],                     // a `+`-terminated action
+  ])("%s → overNetwork(%s)", (line, program) => {
+    expect(summarize(line)).toMatchObject({ purpose: { key: "overNetwork", params: { program } }, unsure: true });
+  });
+
+  it("a benign -exec action stays a plain run; a deleter in any action is findDelete", () => {
+    expect(summarize("find . -exec cat {} \\;").purpose.key).toBe("run");
+    expect(summarize("find . -exec cat {} \\;").unsure).toBe(false);
+    expect(summarize("find . -exec ls {} \\; -exec rm {} \\;").purpose.key).toBe("findDelete");
+  });
+
+  it("tar's -I with an attached argument (-Ixz) still reads as may-run-another-program", () => {
+    expect(summarize("tar -Ixz -cf a.tgz docs")).toMatchObject({ purpose: { key: "overNetwork", params: { program: "tar" } }, unsure: true });
+  });
+});
+
 describe("commandRisk", () => {
   it("a plain command in the sandbox", () => {
     expect(commandRisk({})).toEqual({ level: "info", keys: [{ key: "sandboxed" }] });
