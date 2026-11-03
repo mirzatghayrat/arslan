@@ -14,9 +14,16 @@ export { _resetChipCatalogs } from "./useConversationModel";
 /** PR 691's review: how long a save may take before the chip stops waiting (send is held meanwhile). */
 export const SAVE_TIMEOUT_MS = 15_000;
 
-function withTimeout<T>(p: Promise<T>): Promise<T> {
+/** The request, or a "timeout" error after SAVE_TIMEOUT_MS. When the timeout wins, `whenSettled` still runs once the
+ *  request does settle, since a save that lands late changes what the server has (PR 691's review). */
+function withTimeout<T>(p: Promise<T>, whenSettled: () => void): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("timeout")), SAVE_TIMEOUT_MS); });
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      p.then(whenSettled, whenSettled);
+      reject(new Error("timeout"));
+    }, SAVE_TIMEOUT_MS);
+  });
   return Promise.race([p, late]).finally(() => clearTimeout(timer));
 }
 
@@ -108,7 +115,7 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
    *  server's routing resolves to, which may be another config (v0.1.64), so "same as primary" is no reason to
    *  clear. Only "use the default" clears. */
   async function save(next: ModelChoice) {
-    const r = await withTimeout(conversationModelApi.set(conversationId, next.configId, next.model));
+    const r = await withTimeout(conversationModelApi.set(conversationId, next.configId, next.model), refresh);
     setChoice({ configId: r.choice.config_id, model: r.choice.model }, r.effective);
   }
   async function pick(next: ModelChoice) {
@@ -128,7 +135,7 @@ export default function ConversationModelChip({ conversationId, configs, llmProv
     setSaveError(null);
     const done = beginModelSave(conversationId);
     try {
-      const r = await withTimeout(conversationModelApi.clear(conversationId));
+      const r = await withTimeout(conversationModelApi.clear(conversationId), refresh);
       setChoice(null, r.effective);
     } catch (e) {
       failed(e);

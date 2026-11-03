@@ -333,6 +333,29 @@ describe("the model under the composer", () => {
     }
   });
 
+  // PR 691's review: a save that timed out and then landed must not leave the chip on the old choice.
+  it("a save that lands after the chip gave up is asked about again when it lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let land!: (v: unknown) => void;
+      conv.set.mockImplementation(() => new Promise((resolve) => { land = resolve; }));
+      chip();
+      await act(async () => {});
+      fireEvent.click(screen.getByTestId("model-chip"));
+      fireEvent.click(screen.getByTestId("model-all-2"));
+      const row = await screen.findByTestId("model-row-2-anthropic/claude-sonnet-4.5");
+      await act(async () => { fireEvent.click(within(row).getAllByRole("button")[0]); });
+      await act(async () => { vi.advanceTimersByTime(SAVE_TIMEOUT_MS + 10); });
+      const afterTimeout = conv.get.mock.calls.length;
+      conv.get.mockResolvedValue({ choice: { config_id: 2, model: "anthropic/claude-sonnet-4.5" } });
+      await act(async () => { land({ choice: { config_id: 2, model: "anthropic/claude-sonnet-4.5" } }); });
+      expect(conv.get.mock.calls.length).toBeGreaterThan(afterTimeout);
+      await waitFor(() => expect(screen.getByTestId("model-chip").textContent).toContain("claude-sonnet-4.5"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("switching conversations loads that conversation's choice", async () => {
     conv.get.mockImplementation(async (id: string) => ({ choice: id === "c2" ? { config_id: 2, model: "x/two" } : null }));
     const { rerender } = chip("c1");
