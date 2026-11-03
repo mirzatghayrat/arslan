@@ -380,3 +380,27 @@ def test_a_wrapper_that_took_its_program_is_never_a_plain_reading():
 def test_the_plain_git_and_eval_readings_are_unchanged():
     assert card_purpose.summarize("git fetch origin")["purpose"]["key"] == "gitFetch"
     assert card_purpose.summarize('eval "rm -rf build"')["purpose"] == {"key": "delete", "params": {"count": 1}}
+
+
+# ── Astra round 2 F1/F2/F3: case-folding and the containment rule ──
+
+@pytest.mark.parametrize("line", ["Curl https://example.org", "SSH host", "GIT -c x=y fetch", "Python3 -c pass",
+                                  "arch -x86_64 curl https://example.org", "script -q /dev/null curl https://example.org",
+                                  "find . -exec curl https://example.org {} ;", "sudo --user root curl https://example.org",
+                                  "env -P curl https://example.org", "command curl https://example.org",
+                                  "f(){ curl https://example.org; }; f", "{ curl https://example.org; }"])
+def test_a_network_program_anywhere_in_a_step_is_caught(line):
+    assert card_purpose.summarize(line)["purpose"]["key"] == "overNetwork"
+    assert card_purpose.summarize(line)["unsure"] is True
+
+
+@pytest.mark.parametrize("line", ["grep curl notes.txt", "man ssh", "which curl", "type curl", "whence -p curl",
+                                  "command -v curl", "brew info curl", "brew search wget"])
+def test_a_step_that_only_names_things_stays_plain(line):
+    s = card_purpose.summarize(line)
+    assert s["unsure"] is False and s["purpose"]["key"] != "overNetwork"
+
+
+def test_an_empty_inline_line_keeps_the_wrapper_node():
+    assert card_purpose.summarize("bash -c ''")["purpose"] == {"key": "run", "params": {"program": "bash"}}
+    assert card_purpose.summarize("eval ''")["purpose"] == {"key": "run", "params": {"program": "eval"}}

@@ -62,10 +62,9 @@ _URL_LIKE = re.compile(r"^[a-z][a-z0-9+.-]*://", re.I)
 _REMOTE = re.compile(r"^(?:[^@/\s]+@)?([^:/\s]+):")
 _REMOTE_PATH = re.compile(r"^[^/:\s]+:")
 #: What is most at stake in a step, by its purpose: the step with the most names the line (ties: the first).
-STAKES = {"overNetwork": 9, "delete": 9, "deleteSome": 9, "findDelete": 9,
-          "onHost": 7, "gitPush": 7, "kill": 6, "copyRemote": 6, "ssh": 5, "sshTimeout": 5, "appleScript": 5,
-          "shortcut": 5, "install": 5, "write": 4, "move": 4, "open": 3, "copyLocal": 3, "gitClone": 3, "fetch": 2,
-          "gitFetch": 2, "script": 2}
+STAKES = {"overNetwork": 9, "delete": 9, "deleteSome": 9, "findDelete": 9, "gitPush": 7, "kill": 6, "appleScript": 5,
+          "shortcut": 5, "install": 5, "write": 4, "move": 4, "open": 3, "copyLocal": 3, "gitClone": 3, "gitFetch": 2,
+          "script": 2}
 
 
 def _closing(text: str, open_at: int) -> int:
@@ -238,6 +237,8 @@ def _words(tokens: list[str]) -> dict:
         # `env -S "…"` runs the string as a command line; keep env so _inline_line reads it (Astra r2, 1).
         if name == "env" and (rest[i + 1] if i + 1 < len(rest) else "") in ("-S", "--split-string"):
             break
+        if name == "command" and re.match(r"^-[vV]$", rest[i + 1] if i + 1 < len(rest) else ""):
+            break
         i += 1
         listed = listed or name == "xargs"
         while i < len(rest) and rest[i].startswith("-") and rest[i] != "-":
@@ -319,16 +320,46 @@ _INLINE_CODE = {"python": r"^-[A-Za-z]*c", "python2": r"^-[A-Za-z]*c", "python3"
                 "php": r"^-[A-Za-z]*r", "bun": r"^(?:-e|--eval)", "deno": r"^eval$"}
 
 
+_NAMES_ONLY = {"echo", "printf", "grep", "egrep", "fgrep", "rg", "man", "which", "type", "whence", "apropos"}
+
+
+def _names_only(w: dict) -> bool:
+    """A step whose own program only names things (`grep curl`, `command -v curl`) does not run its arguments."""
+    program, args = w["program"], w["args"]
+    if program in _NAMES_ONLY:
+        return True
+    if program == "command" and re.match(r"^-[vV]$", args[0] if args else ""):
+        return True
+    if program == "brew" and (args[0] if args else "") in ("info", "search"):
+        return True
+    return False
+
+
+def _buried_network(w: dict) -> str | None:
+    """The network program a step runs, wherever it sits (a wrapper option not modeled, `find -exec`, a compound);
+    each token is matched by its basename, lower-cased, so `Curl` is caught too (Astra r2, F1/F2/F3)."""
+    if _names_only(w):
+        return None
+    toks = [w["program"], *w["args"]]
+    for i, tok in enumerate(toks):
+        name = _base(tok).lower()
+        if name in _NETWORK:
+            return name
+        if name in _INLINE_CODE and i + 1 < len(toks) and re.match(_INLINE_CODE[name], toks[i + 1]):
+            return name
+    return None
+
+
 def _step(w: dict) -> dict:
     """One step's purpose and what it touches. A step that reaches another machine is read only as overNetwork."""
-    program, args = w["program"], w["args"]
+    program = w["program"].lower()                                         # the binary a case-insensitive volume runs
+    args = w["args"]
     plain = _plain(args)
     if not program:
         return _over_network(w.get("raw") or "command")                   # a wrapper took everything (Astra r2, 1)
-    if program in _NETWORK:
-        return _over_network(program)
-    if program in _INLINE_CODE and any(re.match(_INLINE_CODE[program], a) for a in args):
-        return _over_network(program)                                      # its inline code may reach the network
+    buried = _buried_network(w)
+    if buried:
+        return _over_network(buried)                                       # a network program anywhere in the step
     if program == "cat":
         return _reading("run", {"program": program}, [], plain)
     if program in _DELETERS:

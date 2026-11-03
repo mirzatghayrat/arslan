@@ -952,6 +952,210 @@
    "touches": [],
    "more": 0,
    "unsure": true
+  },
+  {
+   "line": "Curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "SSH host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ssh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "arch -x86_64 curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "script -q /dev/null curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec curl https://example.org {} ;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sudo --user root curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "stdbuf -o L curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "env -P curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "command curl https://example.org",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "grep curl notes.txt",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "grep"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "man ssh",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "man"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "which curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "which"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "command -v curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "command"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "brew info curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "brew"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "brew search wget",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "brew"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "bash -c ''",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "bash"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "eval ''",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "eval"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
   }
  ]
 }
