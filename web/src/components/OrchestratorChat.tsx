@@ -65,6 +65,22 @@ function RunCancelledMarker() {
   );
 }
 
+/** K8a (2026-11-03): text a reply showed and then replaced, because a check sent it back. Each is one quiet,
+ *  collapsed line above the answer, labelled by the server in the language of the text it replaces. */
+function EarlierDrafts({ drafts }: { drafts?: Message['drafts'] }) {
+  if (!drafts?.length) return null;
+  return (
+    <div data-testid="earlier-drafts" className="mb-2 space-y-1">
+      {drafts.map((draft, i) => (
+        <details key={i} className="text-[11px] text-subtle-foreground">
+          <summary className="cursor-pointer select-none">{draft.label}</summary>
+          <div className="mt-1 pl-3 border-l border-border whitespace-pre-line opacity-80">{draft.text}</div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 // Composer drafts by conversation — module scope so they outlive the component.
 
 interface OrchestratorChatProps {
@@ -674,7 +690,7 @@ export default function OrchestratorChat({
                             <SentAttachments attachments={msg.attachments} />
                             <p className="whitespace-pre-line font-sans leading-relaxed">{msg.text}</p>
                           </>
-                        : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                        : <><EarlierDrafts drafts={msg.drafts} /><MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-[12.5px] leading-relaxed font-sans [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" /></>
                       }
                       {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
@@ -809,7 +825,7 @@ export default function OrchestratorChat({
 
                   {isUser
                     ? <p className="whitespace-pre-line text-muted-foreground font-mono leading-relaxed">{msg.text}</p>
-                    : <MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
+                    : <><EarlierDrafts drafts={msg.drafts} /><MessageBody text={msg.text} streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-muted-foreground font-sans leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" /></>
                   }
                   {msg.cancelled && <RunCancelledMarker />}
 {msg.resultOfJob && <JobResultLabel outcome={msg.jobOutcome} />}
@@ -911,6 +927,7 @@ export default function OrchestratorChat({
                   </div>
 
                   {/* Body Content */}
+                  {msg.drafts && <div className="pl-5"><EarlierDrafts drafts={msg.drafts} /></div>}
                   <MessageBody text={msg.text} indent streaming={msg.id === '__streaming__'} hasMessageActions={isSpawn && !!msg.spawnId} footerActions={isArslan} className="text-foreground font-sans leading-relaxed text-[12.5px] pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0" />
                   {msg.cancelled && <div className="pl-5"><RunCancelledMarker /></div>}
                   {msg.resultOfJob && <div className="pl-5"><JobResultLabel outcome={msg.jobOutcome} /></div>}

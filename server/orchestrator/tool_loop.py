@@ -130,10 +130,30 @@ def _summarize_result(result: dict) -> str:
 _CLAIMS_CHART_RE = re.compile(
     r"上图|已生成图|已为您生成|已绘制|图表已|chart (is )?(generated|ready|done)|here('s| is) (the|your) chart",
     re.IGNORECASE)
+#: "No search was needed" (「不需要搜索了」, 「无需再搜索了」, 「不用去搜索了」) is no claim: each negation, bare or with
+#: 「再」 / 「去」 before the verb, as its own fixed-width lookbehind.
+_NOT_SEARCHED = "".join(f"(?<!{no}{adverb})" for no in ("没", "未", "不", "不用", "无需", "不必", "需要", "没有")  # lang-check: allow
+                        for adverb in ("", "再", "去"))
 _CLAIMS_SEARCH_RE = re.compile(
-    # K8a: 没查到 / 未查到 says nothing was found, not that a search ran.
-    r"我搜索|搜索了|(?<![没未])查到了?|获取到(了|的)?数据|我已搜|i (just )?searched|let me search|i looked it up",
+    r"我搜索|" + _NOT_SEARCHED + r"搜索了|获取到(了|的)?数据|我已搜|i (just )?searched|let me search"  # lang-check: allow
+    r"|i looked it up",
     re.IGNORECASE)
+#: K8a: 「查到」 alone claims no web search (memory, a command or a file finds things too; "say how it was found",
+#: 「说明是怎么查到的」, sent run 492 back three times). It does after a web word in the same clause (「我在网上查到了」),
+#: unless the clause is advice or how-to (「你可以在网上查到」, 「怎么在网上查到」, 「建议上网查到…」) or says nothing was
+#: found (「网上没有查到」). #694 review.
+_WEB_FOUND_RE = re.compile(r"(网上|在线|上网|联网|网页|网络上|搜索引擎)[^。！？，、；\n]{0,6}查到")  # lang-check: allow
+_ADVICE_WORDS = ("可以", "能", "可", "怎么", "如何", "去", "建议")  # lang-check: allow
+_NOT_FOUND = ("没", "未", "没有", "未能")  # lang-check: allow
+
+
+def _claims_web_found(text: str) -> bool:
+    for match in _WEB_FOUND_RE.finditer(text):
+        clause = text[max(text.rfind(mark, 0, match.start()) for mark in "。！？，、；\n") + 1:match.end()]
+        before = text[:match.end() - 2]
+        if not any(word in clause for word in _ADVICE_WORDS) and not before.endswith(_NOT_FOUND):
+            return True
+    return False
 
 
 def _claims_chart(text: str) -> bool:
@@ -141,7 +161,7 @@ def _claims_chart(text: str) -> bool:
 
 
 def _claims_search(text: str) -> bool:
-    return bool(_CLAIMS_SEARCH_RE.search(text or ""))
+    return bool(_CLAIMS_SEARCH_RE.search(text or "")) or _claims_web_found(text or "")
 
 
 # Chart-as-code-fence: instead of calling render_chart, the model draws a DATA chart by writing a
@@ -2509,13 +2529,16 @@ def _unverified_claim(text: str, tool_trace: list, wired_keys: set[str]) -> str 
     return None
 
 
-async def _synthesize_from_findings(a, system: str, user_content: str, tool_trace: list) -> str:
+async def _synthesize_from_findings(a, system: str, user_content: str, tool_trace: list, *,
+                                    or_none: bool = False) -> str | None:
     """Forced-step / salvage synthesis. Instead of asking the model to answer from the messy
     tool-loop convo (which DeepSeek resists — it keeps wanting to search), hand it its OWN gathered
     findings in a CLEAN, isolated prompt and demand the finished answer. Falls back to an honest
-    findings digest only if even this refuses."""
+    findings digest only if even this refuses (or_none: None instead, for a caller with a better fallback)."""
     digest = _clean_findings(tool_trace)
     if not digest.strip():
+        if or_none:
+            return None
         from server.services import runtime_messages
         return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
     # Synthesis may run on a dedicated stronger model (DeepSeek synthesizes weakly). Use it ONLY
@@ -2549,6 +2572,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
         if isinstance(exc, TaskError):
             raise
         pass
+    if or_none:
+        return None
     from server.services import runtime_messages
     return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
 
@@ -2641,11 +2666,33 @@ def _shown(turn_text: "_TurnText | None") -> str | None:
     return turn_text.text if turn_text is not None and turn_text.parts else None
 
 
+#: The reply languages (arslan.reply_language) that have a runtime_messages table.
+_LABEL_LOCALES = {"English": "en", "Chinese": "zh", "Japanese": "ja", "Spanish": "es", "German": "de", "French": "fr"}
+
+
+def _label_locale(text: str) -> str | None:
+    """The locale of the language `text` is written in, or None when it can't be told or has no table."""
+    from server.orchestrator.arslan import reply_language
+    return _LABEL_LOCALES.get(reply_language(text))
+
+
 async def _correct(turn_text: "_TurnText | None", shown: bool) -> None:
-    """K8a: once a step's text went out, a guard that sends it back says so to the user first."""
-    if shown and turn_text is not None:
+    """K8a: once a step's text went out, a guard that sends it back replaces that step's text with the text that
+    follows. Until 2026-11-03 a correction line and the new text followed it, so one message could hold the same
+    answer four times (user report via ①iOS). The label is in the language of the text it replaces (the interface
+    language only when that can't be told)."""
+    if shown and turn_text is not None and turn_text.step_text:
         from server.services import runtime_messages
-        turn_text.append(runtime_messages.render("stream_correction", await runtime_messages.selected_locale()))
+        locale = _label_locale(turn_text.step_text) or await runtime_messages.selected_locale()
+        turn_text.replace_step(runtime_messages.render("stream_correction", locale))
+
+
+async def _kept_note(turn_text: "_TurnText") -> str:
+    """K8a (#694 review, ⓪Plan's decision): nothing usable replaced a step that was sent back, so what the user saw
+    stays, followed by this one note in its language (never a bare generic answer instead)."""
+    from server.services import runtime_messages
+    return runtime_messages.render("stream_unverified_note",
+                                   _label_locale(turn_text.text) or await runtime_messages.selected_locale())
 
 
 async def _not_verified(turn_text: "_TurnText", links: list[str]) -> None:
@@ -2654,7 +2701,7 @@ async def _not_verified(turn_text: "_TurnText", links: list[str]) -> None:
     if new:
         turn_text.listed.update(new)
         turn_text.append(runtime_messages.render("links_not_verified", await runtime_messages.selected_locale(),
-                                                 links=", ".join(new)))
+                                                 links=", ".join(new)), answer=False)
 
 
 class TextShown(Exception):
@@ -2663,20 +2710,59 @@ class TextShown(Exception):
 
 
 class _TurnText:
-    """K8a: everything this turn showed through on_chunk, corrections included: the stored answer is this
-    (every joiner, the window, the phone's Bridge and the run record, concatenates the chunks)."""
+    """K8a: what this turn showed through on_chunk: the stored answer is this. Every joiner (the window, the phone's
+    Bridge, the run record, a window that reattaches) concatenates the chunks; at a `stream_restart` frame it starts
+    over from the frame's `keep` (what earlier steps showed). The frame's label is what the window shows on the text
+    it replaced, kept there as a collapsed earlier draft.
 
-    def __init__(self, on_chunk: Callable[[str], None]):
-        self.on_chunk, self.parts = on_chunk, []
+    A replaced step goes only when the text that replaces it is shown (`replace_step` waits): a turn that ends with
+    nothing better keeps what the user saw (#694 review, finding 2)."""
+
+    def __init__(self, on_chunk: Callable[[str], None], on_restart: Callable[[str, str], None] | None = None):
+        self.on_chunk, self.on_restart, self.parts = on_chunk, on_restart, []
         self.listed: set[str] = set()       # links already said to be unverified
+        self.step_at = 0                    # where the current step's text begins in `parts`
+        self.pending: tuple[str, int] | None = None     # a replaced step waiting for its replacement: (label, at)
+
+    def begin_step(self) -> None:
+        self.step_at = len(self.parts)
+
+    @property
+    def step_text(self) -> str:
+        return "".join(self.parts[self.step_at:])
+
+    def replace_step(self, label: str) -> None:
+        """The current step's text goes once the text replacing it is shown; earlier steps' text stays."""
+        if self.pending is None:
+            self.pending = (label, self.step_at)
+
+    def after(self, text: str) -> str:
+        """The answer once `text` is appended as answer text (a step waiting to be replaced goes then)."""
+        base = "".join(self.parts[:self.pending[1]] if text and self.pending is not None else self.parts)
+        return base + ("\n\n" if base and text else "") + text
+
+    def keep_shown(self) -> None:
+        """Nothing replaces it after all: what was shown stays."""
+        self.pending = None
+
+    def _restart(self) -> None:
+        label, at = self.pending
+        keep = "".join(self.parts[:at])
+        if self.on_restart is not None:
+            self.on_restart(label, keep)
+        self.parts, self.listed, self.pending = ([keep] if keep else []), set(), None
+        self.step_at = len(self.parts)
 
     def show(self, text: str) -> None:
         if text:
             self.on_chunk(text)
             self.parts.append(text)
 
-    def append(self, text: str) -> None:
-        """A new part of the answer (a step's text, a correction): after a blank line."""
+    def append(self, text: str, *, answer: bool = True) -> None:
+        """A new part of the answer (a step's text, a note): after a blank line. Answer text replaces a step
+        waiting to be replaced (a step's first text always comes here); a note doesn't."""
+        if text and answer and self.pending is not None:
+            self._restart()
         self.show(("\n\n" if self.parts and text else "") + text)
 
     @property
@@ -2709,6 +2795,7 @@ class _StepStream:
 
     def __init__(self, turn: _TurnText, window: int = _DEFERRAL_MAX):
         self.turn, self.window = turn, window
+        turn.begin_step()
         self.held = self.pending = ""
         self.released = self.stopped = False
         self._started = False
@@ -2870,7 +2957,7 @@ async def run_native(**kwargs) -> dict:
         if task is not None:
             _stop_for_limit(task, "task_budget_exhausted", trace)
         if (turn_text := facts.get("turn_text")) is not None and turn_text.parts:
-            turn_text.append(text)              # K8a: after what this turn already showed
+            turn_text.append(text, answer=False)    # K8a: after what this turn already showed
             text = turn_text.text
         elif text:
             kwargs["on_chunk"](text)
@@ -3058,7 +3145,8 @@ async def _run_native(
     turn_started = agent_status.now()
     ws_root, own_folder = await _status_workspace(wired_keys)
     # K8a: what this turn shows as it is written (None: every answer shown whole, as before).
-    turn_text = _TurnText(on_chunk) if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None
+    turn_text = (_TurnText(on_chunk, lambda label, keep: emit({"type": "stream_restart", "label": label, "keep": keep}))
+                 if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None)
     if _facts is not None:
         _facts.update(ws_root=ws_root, started=turn_started, turn_text=turn_text)
     unseen_start = len(convo)
@@ -3260,7 +3348,8 @@ async def _run_native(
             # would drop the text the phone kept).
             from server.services import host_run, runtime_messages
             step.finish()
-            turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()))
+            turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
+                             answer=False)
             host_run.note_failure("model_error_after_text")
             if acceptance_runtime is not None:
                 acceptance_runtime.pause_reason = "model_error_after_text"
@@ -3591,18 +3680,23 @@ async def _run_native(
             from server.services import runtime_messages
             notice_locale = await runtime_messages.selected_locale()
             await _correct(turn_text, streamed)
-            if tool_trace:
-                final_text = await _synthesize_from_findings(a, system, user_content, tool_trace)
+            replacement = (await _synthesize_from_findings(a, system, user_content, tool_trace, or_none=True)
+                           if tool_trace else await _salvage_plain(a, system, user_content))
+            if replacement and _unverified_claim(replacement, tool_trace, wired_keys):
+                replacement = None
+            if replacement:
+                final_text = replacement
+            elif turn_text is not None and turn_text.pending is not None:
+                # K8a (#694 review): nothing usable replaces what the user saw, so it stays, with one note.
+                turn_text.keep_shown()
+                final_text = await _kept_note(turn_text)
             else:
-                final_text = (await _salvage_plain(a, system, user_content)
-                              or _chat_miss_message(user_content, locale=notice_locale))
-            if _unverified_claim(final_text, tool_trace, wired_keys):
                 final_text = (_fallback_with_digest(user_content, tool_trace, locale=notice_locale)
                               if tool_trace else _chat_miss_message(user_content, locale=notice_locale))
         # K8a: what is still to be shown at the end (nothing when this step's text already went out), and
         # the whole answer as the user will have read it.
         to_show = final_text if replaced or not streamed else ""
-        answer = final_text if turn_text is None else turn_text.text + ("\n\n" if turn_text.parts and to_show else "") + to_show
+        answer = final_text if turn_text is None else turn_text.after(to_show)
         if acceptance_runtime is not None:
             from server.services import task_validation
             report = await task_validation.validate_output(acceptance_runtime, answer, tool_trace, model_adapter=a)
