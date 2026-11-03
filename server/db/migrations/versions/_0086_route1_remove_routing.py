@@ -25,7 +25,7 @@ def upgrade_sync(connection) -> None:
         return
     marks = ",".join("?" for _ in CLEARED)
     had = connection.exec_driver_sql(
-        f"SELECT COUNT(*) FROM settings WHERE key IN ({marks}) AND TRIM(COALESCE(value, '')) <> '' "
+        f"SELECT COUNT(*) FROM settings WHERE key IN ({marks}) AND TRIM(value) <> '' "
         "AND NOT (key = 'llm_strategy' AND TRIM(value) = 'single')", CLEARED).scalar()
     connection.exec_driver_sql(f"DELETE FROM settings WHERE key IN ({marks})", CLEARED)
     if had:

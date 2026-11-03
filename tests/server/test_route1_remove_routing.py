@@ -120,3 +120,13 @@ def test_migration_0086_asks_for_no_notice_on_a_fresh_install(tmp_path):
         after = _settings(conn)
     assert "llm_strategy" not in after, "still cleared"
     assert "model_roles_reset_notice" not in after
+
+
+def test_the_turn_side_calls_pass_the_conversation_id_on():
+    """The promise correction (appended to the reply) and the pre-search check both run on the conversation's
+    model; their call sites are what hand it the conversation, so dropping the argument there fails here."""
+    import inspect
+    from server.orchestrator import arslan, tool_loop
+    assert "promise_guard.correct(full, conversation_id=conversation_id)" in inspect.getsource(arslan)
+    assert ("tool_intent.classify(user_content, sorted(wired_keys), conversation_id=conversation_id)"
+            in inspect.getsource(tool_loop))

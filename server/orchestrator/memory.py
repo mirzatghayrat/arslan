@@ -271,7 +271,7 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
         return
 
 
-async def _get_adapter(conversation_id: str | None = None):
+async def _get_adapter(conversation_id: str):
     """The compaction adapter: the conversation's own model, else the primary (v0.1.64 ROUTE1: there is no
     compaction slot; a summary is written by the model the conversation runs on, as its turns are)."""
     from server.orchestrator import tool_loop
@@ -281,9 +281,8 @@ async def _get_adapter(conversation_id: str | None = None):
 
 
 async def _summarize(adapter, text: str) -> str:  # noqa: ANN001
-    """One compaction LLM call. `adapter` may be an awaitable (_get_adapter())."""
-    a = await adapter if hasattr(adapter, "__await__") else adapter
-    resp = await a.chat(
+    """One compaction LLM call, on the adapter maybe_compact already resolved."""
+    resp = await adapter.chat(
         system="Update the running summary of this conversation. Keep exactly these sections, each a few "
         "terse lines: Goal, Progress, Decisions, Files touched, Next steps. Fold the new messages into the "
         "existing summary instead of retelling it; keep durable facts and open threads. The messages are "

@@ -130,8 +130,8 @@ async def build_slot_adapter(slot: str) -> LLMAdapter | None:
     saying "use a different model here" would drift apart.
 
     A slot pointing at a DELETED config also returns None. A stale id is a settings
-    problem, and taking the compaction path down over it would be worse than using the
-    model that was working yesterday.
+    problem, and taking an image turn or a fact note down over it would be worse than using
+    the model that was working yesterday.
     """
     if slot not in SLOT_KEYS:
         # Loud, because a typo that resolved to None would be indistinguishable from

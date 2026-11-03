@@ -133,3 +133,20 @@ async def test_older_turns_tool_details_are_masked_and_the_latest_kept(execution
     replies = [m["content"] for m in history if m["role"] == "assistant"]
     assert all(turn_tools.OPEN not in r and memory.TOOLS_MASK in r for r in replies[:2])
     assert all(turn_tools.OPEN in r for r in replies[2:])
+
+
+async def test_compaction_asks_for_the_conversations_own_model(execution_db, monkeypatch):
+    """v0.1.64 ROUTE1: memory._get_adapter is left real here, so maybe_compact's call site is what passes the
+    conversation id on; every other test in this file stubs _get_adapter and would not notice it dropped."""
+    from server.orchestrator import tool_loop
+    summarizer, asked = _Summarizer(), []
+
+    async def _adapter_for_turn(*, has_images, conversation_id=None):
+        asked.append((has_images, conversation_id))
+        return summarizer
+
+    monkeypatch.setattr(tool_loop, "_adapter_for_turn", _adapter_for_turn)
+    await _seed("c-own", 8)
+    await memory.maybe_compact("c-own", budget=BUDGET)
+    assert asked == [(False, "c-own")]
+    assert len(summarizer.calls) == 1 and summarizer.role == "summarize"

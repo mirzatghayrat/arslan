@@ -3167,7 +3167,7 @@ async def _run_native(
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
         from server.services import tool_intent
         try:
-            intent = await tool_intent.classify(user_content, sorted(wired_keys))
+            intent = await tool_intent.classify(user_content, sorted(wired_keys), conversation_id=conversation_id)
         except Exception:  # noqa: BLE001
             intent = None
         if intent is not None and intent.needs and intent.tool == "web_search":

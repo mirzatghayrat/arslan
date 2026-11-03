@@ -52,8 +52,8 @@ class SettingsIn(BaseModel):
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
     run_debug_retention_days: int | None = None
-    # 🔴 These two were in _PLAIN_KEYS (so update_settings would store them) but on
-    # NEITHER schema, and the PUT route feeds update_settings `body.model_dump()` —
+    # 🔴 The slot and embedding keys below were once in _PLAIN_KEYS (so update_settings would
+    # store them) but on NEITHER schema, and the PUT route feeds update_settings `body.model_dump()` —
     # so pydantic dropped them and the write path was dead. The frontend has been
     # sending embedding_config_id since the embedding settings shipped; the value
     # never reached the database. Same defect class as the D-round write-only int
