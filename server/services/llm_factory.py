@@ -66,8 +66,10 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
         _guard_memory_destination(chosen["provider"], chosen["base_url"] or "")
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
-    return LLMAdapter(provider, _require_model(model, chosen["provider"]), api_key=key,
-                      base_url=base_url, report_provider=chosen["provider"])
+    adapter = LLMAdapter(provider, _require_model(model, chosen["provider"]), api_key=key,
+                         base_url=base_url, report_provider=chosen["provider"])
+    adapter.role = "chat" if role in (None, "execute") else role
+    return adapter
 
 
 async def primary_chat_endpoint() -> tuple[str, str, str] | None:
@@ -119,10 +121,10 @@ async def build_slot_adapter(slot: str) -> LLMAdapter | None:
             return None
         # 0.1.58 §6: a slot may name one model of its config ("<slot>" → "<slot minus _config_id>_model").
         override = str(cfg.get(slot.replace("_config_id", "_model")) or "").strip() or None
-        return await _config_adapter(db, sid, override)
+        return await _config_adapter(db, sid, override, role=slot.removesuffix("_config_id"))
 
 
-async def _config_adapter(db, config_id, model_override: str | None) -> LLMAdapter | None:
+async def _config_adapter(db, config_id, model_override: str | None, role: str = "chat") -> LLMAdapter | None:
     """An adapter for one provider config, optionally on another model it offers (0.1.58 §6).
     None when the config no longer exists."""
     for c in await provider_config_service.list_configs(db):
@@ -131,8 +133,10 @@ async def _config_adapter(db, config_id, model_override: str | None) -> LLMAdapt
             key = await provider_config_service.get_decrypted_key(db, c["id"])
             provider, model, base_url = expand_preset(
                 c["provider"], model_override or c["model"], c.get("base_url") or "")
-            return LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
-                              base_url=base_url, report_provider=c["provider"])
+            adapter = LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
+                                 base_url=base_url, report_provider=c["provider"])
+            adapter.role = role   # SMART-3: what it is for, said by a failed call
+            return adapter
     return None
 
 
@@ -163,7 +167,7 @@ async def build_synthesis_adapter() -> LLMAdapter | None:
         if not sid:
             return None
         override = str(cfg.get("synthesis_model") or "").strip() or None
-        return await _config_adapter(db, sid, override)
+        return await _config_adapter(db, sid, override, role="synthesis")
 
 
 async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001

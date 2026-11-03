@@ -52,7 +52,9 @@ async def test_a_conversation_runs_on_its_chosen_model(db):
     assert await llm_factory.build_conversation_adapter("c2") is None      # only that conversation
 
 
-async def test_the_turn_uses_the_choice_but_vision_still_takes_image_turns(db, monkeypatch):
+async def test_the_turn_uses_the_choice_and_vision_takes_image_turns_only_without_one(db, monkeypatch):
+    """v0.1.64 (⓪Plan's Q2, option c): a conversation's own model takes its image turns too; the vision slot takes the
+    image turns of a conversation with no choice (until v0.1.63 it took every image turn)."""
     cid = await _router_id(db)
     db.add(ConversationModel(conversation_id="c1", config_id=cid, model="x/chosen"))
     await db.commit()
@@ -61,7 +63,8 @@ async def test_the_turn_uses_the_choice_but_vision_still_takes_image_turns(db, m
     assert (await tool_loop._adapter_for_turn(has_images=False, conversation_id="c1")).model == "x/chosen"
     assert await tool_loop._adapter_for_turn(has_images=False, conversation_id="other") is default
     await settings_service.update_settings(db, {"vision_config_id": str(cid), "vision_model": "x/sees"})
-    assert (await tool_loop._adapter_for_turn(has_images=True, conversation_id="c1")).model == "x/sees"
+    assert (await tool_loop._adapter_for_turn(has_images=True, conversation_id="c1")).model == "x/chosen"
+    assert (await tool_loop._adapter_for_turn(has_images=True, conversation_id="other")).model == "x/sees"
     assert (await tool_loop._adapter_for_turn(has_images=False, conversation_id="c1")).model == "x/chosen"
 
 

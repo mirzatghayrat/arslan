@@ -106,11 +106,18 @@ async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> 
     from server.orchestrator import vision_errors
 
     raw = str(exc) or type(exc).__name__   # a bare TimeoutError() has no text
+    # SMART-3 (v0.1.64): which call failed, on which provider and model (LLMAdapter._attribute), so the window can
+    # name it and offer the way out (switch this chat, or open that helper's setting).
+    call = getattr(exc, "arslan_call", None)
     messages = None
     if isinstance(exc, provider.ModelNotConfiguredError):
         messages = {locale: provider.render("not_configured", locale) for locale in provider.MESSAGES}
     elif vision_errors.explain(raw, had_images=had_images):
-        messages = {locale: runtime_messages.render("image_refused", locale) for locale in provider.MESSAGES}
+        if call:   # Q2 (c): the chat's own model may be the one that can't see; say which
+            messages = {locale: runtime_messages.render("image_refused_named", locale, model=call["model"],
+                                                        provider=call["provider"]) for locale in provider.MESSAGES}
+        else:
+            messages = {locale: runtime_messages.render("image_refused", locale) for locale in provider.MESSAGES}
     else:
         category = classify(raw)
         if category:
@@ -122,6 +129,8 @@ async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> 
             "model_retried", locale, attempts=attempts, seconds=round(getattr(exc, "waited_s", 0) or 0))
             for locale, text in messages.items()}
     frame = {"type": "error", "code": code, "message": raw, "recoverable": True}
+    if call:
+        frame["call"] = dict(call)
     if messages:
         frame["message"] = messages[await runtime_messages.selected_locale()]
         frame["message_i18n"] = messages

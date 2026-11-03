@@ -23,6 +23,7 @@ MESSAGES = {
         "stream_correction": "Correction: part of the answer above was not right; the corrected answer follows.",  # K8a
         "links_not_verified": "These links were not verified: {links}",  # K8a
         "image_refused": "The model you configured could not read the image. It may not support image input. Choose a model with image support, or describe the picture in words.",
+        "image_refused_named": "{model} ({provider}) can't read images. Switch this chat to a model that can, or describe the picture in words.",
         "proposal_handled": "This proposal has already been handled, or there is no pending proposal. Tell me what you would like to do next.",
         "round_incomplete": 'I didn\'t finish this one in a single round. Reply "continue" and I\'ll keep going — or narrow the scope a little for a faster answer.',
         "findings_header": "[Findings so far] (gathered this round, not yet written up)",
@@ -58,6 +59,7 @@ MESSAGES = {
         "stream_correction": "更正：上面的回答有一部分不对，下面是更正后的回答。",  # K8a
         "links_not_verified": "这些链接未经验证：{links}",  # K8a
         "image_refused": "当前模型无法读取这张图片，可能不支持图片输入。请选择支持图片的模型，或用文字描述图片。",
+        "image_refused_named": "{model}（{provider}）无法读取图片。请把这个对话换成能看图的模型，或用文字描述图片。",
         "proposal_handled": "这个提案已经处理过了，或目前没有待处理的提案。直接告诉我接下来要做什么就好。",
         "round_incomplete": "这个任务这一轮还没做完。回复“继续”我就接着做;也可以把范围缩小一点,会更快。",
         "findings_header": "【阶段性发现】(本轮已查到的资料,尚未成稿)",
@@ -93,6 +95,7 @@ MESSAGES = {
         "stream_correction": "訂正：上の回答の一部は正しくありませんでした。訂正した回答を続けます。",  # K8a
         "links_not_verified": "次のリンクは検証されていません：{links}",  # K8a
         "image_refused": "設定したモデルは画像を読み取れませんでした。画像入力に対応していない可能性があります。画像対応モデルを選ぶか、画像の内容を文章で説明してください。",
+        "image_refused_named": "{model}（{provider}）は画像を読み取れません。この会話を画像対応のモデルに切り替えるか、画像の内容を文章で説明してください。",
         "proposal_handled": "この提案はすでに処理済みか、現在保留中の提案はありません。次に行いたいことを教えてください。",
         "round_incomplete": "このタスクは今回の応答では完了しませんでした。「続けて」と返信すると再開できます。範囲を絞ると、より早く回答できます。",
         "findings_header": "【これまでの調査結果】（今回収集した資料。最終回答は未作成）",
@@ -128,6 +131,7 @@ MESSAGES = {
         "stream_correction": "Corrección: parte de la respuesta anterior no era correcta; sigue la respuesta corregida.",  # K8a
         "links_not_verified": "Estos enlaces no se verificaron: {links}",  # K8a
         "image_refused": "El modelo configurado no pudo leer la imagen. Es posible que no admita imágenes. Elige un modelo compatible o describe la imagen con palabras.",
+        "image_refused_named": "{model} ({provider}) no puede leer imágenes. Cambia esta conversación a un modelo que pueda, o describe la imagen con palabras.",
         "proposal_handled": "Esta propuesta ya se ha gestionado o no hay ninguna pendiente. Dime qué quieres hacer a continuación.",
         "round_incomplete": 'No he terminado esta tarea en este turno. Responde «continúa» para retomarla, o reduce el alcance para obtener una respuesta más rápida.',
         "findings_header": "[Hallazgos hasta ahora] (recopilados en este turno, aún sin redactar)",
@@ -163,6 +167,7 @@ MESSAGES = {
         "stream_correction": "Korrektur: Ein Teil der Antwort oben war nicht richtig; die korrigierte Antwort folgt.",  # K8a
         "links_not_verified": "Diese Links wurden nicht geprüft: {links}",  # K8a
         "image_refused": "Das konfigurierte Modell konnte das Bild nicht lesen. Möglicherweise unterstützt es keine Bildeingaben. Wähle ein Modell mit Bildunterstützung oder beschreibe das Bild mit Worten.",
+        "image_refused_named": "{model} ({provider}) kann keine Bilder lesen. Stelle diese Unterhaltung auf ein Modell um, das es kann, oder beschreibe das Bild mit Worten.",
         "proposal_handled": "Dieser Vorschlag wurde bereits bearbeitet, oder es gibt keinen ausstehenden Vorschlag. Sag mir, was du als Nächstes tun möchtest.",
         "round_incomplete": 'Ich habe diese Aufgabe in dieser Runde nicht abgeschlossen. Antworte mit „Weiter“, um fortzufahren, oder grenze den Umfang für eine schnellere Antwort ein.',
         "findings_header": "[Bisherige Erkenntnisse] (in dieser Runde gesammelt, noch nicht ausgearbeitet)",
@@ -198,6 +203,7 @@ MESSAGES = {
         "stream_correction": "Correction : une partie de la réponse ci-dessus n’était pas juste ; la réponse corrigée suit.",  # K8a
         "links_not_verified": "Ces liens n’ont pas été vérifiés : {links}",  # K8a
         "image_refused": "Le modèle configuré n’a pas pu lire l’image. Il ne prend peut-être pas en charge les images. Choisis un modèle compatible ou décris l’image avec des mots.",
+        "image_refused_named": "{model} ({provider}) ne peut pas lire les images. Passe cette conversation sur un modèle qui le peut, ou décris l’image avec des mots.",
         "proposal_handled": "Cette proposition a déjà été traitée, ou aucune proposition n’est en attente. Dis-moi ce que tu souhaites faire ensuite.",
         "round_incomplete": 'Je n’ai pas terminé cette tâche pendant ce tour. Réponds « continue » pour reprendre, ou réduis le périmètre pour obtenir une réponse plus rapidement.',
         "findings_header": "[Résultats recueillis] (rassemblés pendant ce tour, pas encore rédigés)",
