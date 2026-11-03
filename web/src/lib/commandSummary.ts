@@ -263,6 +263,13 @@ function buriedNetwork(w: Words): string | null {
 const BENIGN_LOCAL = new Set(["ls", "touch", "chmod", "chown", "chgrp", "mkdir", "ln", "tar", "stat", "file", "head",
   "tail", "wc", "sort", "uniq", "cut", "du", "basename", "dirname", "realpath", "readlink", "cmp", "diff", "nl", "tac",
   "rev", "vim", "vi", "nano", "emacs", "code", "subl", "pico", "ed", "vimdiff", "mate"]);
+/** A benign command's option that makes it run another program (tar's compressor, an editor's command): the step may
+ *  run anything, so it reads overNetwork; the value is not parsed (Astra r2 delta). */
+const BENIGN_EXEC: Record<string, RegExp> = {
+  tar: /^(?:-I|--use-compress-program|--to-command)(?:=|$)/,
+  vim: /^(?:-c|--cmd|\+)/, vi: /^(?:-c|--cmd|\+)/, vimdiff: /^(?:-c|--cmd|\+)/,
+  emacs: /^--eval(?:=|$)/, sort: /^--compress-program(?:=|$)/, ed: /^!/,
+};
 
 function readStep(w: Words): Reading {
   const program = w.program.toLowerCase();                                 // the binary a case-insensitive volume runs
@@ -286,6 +293,8 @@ function readStep(w: Words): Reading {
       if (exec >= 0) {
         const exe = base(args[exec + 1] ?? "").toLowerCase();
         if (NETWORK.has(exe)) return overNetwork(exe);                     // find runs a network program (Astra r2, F2)
+        if (Object.prototype.hasOwnProperty.call(INLINE_CODE, exe) && INLINE_CODE[exe].test(args[exec + 2] ?? ""))
+          return overNetwork(exe);                                         // find runs inline code (Astra r2 delta)
       }
       if (args.includes("-delete") || (exec >= 0 && DELETERS.has(base(args[exec + 1] ?? "")))) {
         return { purpose: { key: "findDelete", params: { where: roots.join(", ") || "." } }, hosts: [], local: roots };
@@ -333,6 +342,8 @@ function readStep(w: Words): Reading {
     case "kill": case "killall": case "pkill":
       return { purpose: { key: "kill", params: { target: plain(args).join(" ") } }, hosts: [], local: [] };
     default: {
+      if (Object.prototype.hasOwnProperty.call(BENIGN_EXEC, program) && args.some(a => BENIGN_EXEC[program].test(a)))
+        return overNetwork(program);                                       // an option that runs another program
       const [sub, ...pkgs] = plain(args);
       if ((["npm", "pnpm", "yarn", "cargo"].includes(program) && sub === "publish") || (program === "gem" && sub === "push")) {
         return overNetwork(program);                                       // uploads to a registry

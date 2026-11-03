@@ -207,6 +207,27 @@ describe("summarize, Astra round 2 delta: a recognized local command keeps its r
   });
 });
 
+describe("summarize, Astra round 2 delta²: a benign command's exec option, and find's inline interpreter", () => {
+  it.each([
+    "tar --use-compress-program=gzip -cf a.tgz a", "tar --to-command=cat -cf a.tgz a", "tar -I gzip -cf a.tgz a",
+    "vim -c ':!ls' f", "emacs --eval '(message 1)'", "sort --compress-program=gzip f", "ed '!echo hi'",
+  ])("%s may run another program → overNetwork", (line) => {
+    expect(summarize(line)).toMatchObject({ purpose: { key: "overNetwork" }, unsure: true });
+  });
+
+  it.each(["tar -czf x.tgz host", "vim file", "emacs notes.txt", "sort f", "ed notes.txt"])(
+    "%s without an exec option stays a plain run", (line) => {
+      expect(summarize(line).purpose.key).toBe("run");
+      expect(summarize(line).unsure).toBe(false);
+    });
+
+  it("find -exec with an inline interpreter is caught", () => {
+    expect(summarize("find . -exec python3 -c 'print(1)' {} ;")).toMatchObject({ purpose: { key: "overNetwork", params: { program: "python3" } }, unsure: true });
+    expect(summarize("find . -exec node -e x {} ;").purpose.params.program).toBe("node");
+    expect(summarize("find . -exec rm {} ;").purpose.key).toBe("findDelete");
+  });
+});
+
 describe("commandRisk", () => {
   it("a plain command in the sandbox", () => {
     expect(commandRisk({})).toEqual({ level: "info", keys: [{ key: "sandboxed" }] });

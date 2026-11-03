@@ -1412,6 +1412,164 @@
    "touches": [],
    "more": 1,
    "unsure": true
+  },
+  {
+   "line": "tar --use-compress-program=gzip -cf a.tgz a",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "tar -I gzip -cf a.tgz a",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "tar -czf x.tgz host",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "vim -c ':!ls' f",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "vim"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "vim file",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "vim"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "emacs --eval '(message 1)'",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "emacs"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "emacs notes.txt",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "emacs"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "sort --compress-program=gzip f",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "sort"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sort f",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "sort"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ed '!echo hi'",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ed"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ed notes.txt",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ed"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "find . -exec python3 -c 'print(1)' {} ;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec rm {} ;",
+   "purpose": {
+    "key": "findDelete",
+    "params": {
+     "where": "."
+    }
+   },
+   "touches": [
+    "."
+   ],
+   "more": 0,
+   "unsure": false
   }
  ]
 }
