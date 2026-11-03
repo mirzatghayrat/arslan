@@ -96,12 +96,120 @@ async def test_the_conversation_model_api(client):
         await s.commit()
         from sqlalchemy import select
         cid = (await s.execute(select(ProviderConfig.id))).scalar_one()
-    assert (await client.get("/api/v1/conversations/c1/model")).json() == {"choice": None}
+    assert (await client.get("/api/v1/conversations/c1/model")).json()["choice"] is None
     assert (await client.put("/api/v1/conversations/c1/model", json={"config_id": 999, "model": "x"})).status_code == 404
     r = await client.put("/api/v1/conversations/c1/model", json={"config_id": cid, "model": "deepseek/deepseek-chat:free"})
-    assert r.json() == {"choice": {"config_id": cid, "model": "deepseek/deepseek-chat:free"}}   # ':' in an id is fine
+    assert r.json()["choice"] == {"config_id": cid, "model": "deepseek/deepseek-chat:free"}   # ':' in an id is fine
     assert (await client.get("/api/v1/conversations/c1/model")).json()["choice"]["model"] == "deepseek/deepseek-chat:free"
-    assert (await client.delete("/api/v1/conversations/c1/model")).json() == {"choice": None}
+    assert (await client.delete("/api/v1/conversations/c1/model")).json()["choice"] is None
+
+
+async def test_the_model_api_says_what_the_next_turn_really_runs_on(client, monkeypatch):
+    """v0.1.64 (user report): the default is not always the primary config. With a routing strategy, the
+    execute role can land on another config, so the chip must show the server's answer, never assume the
+    primary: a chat that showed Claude kept running on DeepSeek."""
+    from sqlalchemy import select
+    from arslan.llm import routing
+    async with client.db_maker() as s:
+        s.add(ProviderConfig(label="claude", provider="anthropic", model="claude-opus-5-5", api_key="", is_primary=True))
+        s.add(ProviderConfig(label="ds", provider="deepseek", model="deepseek-v4-flash", api_key=""))
+        await s.commit()
+        ids = dict((await s.execute(select(ProviderConfig.label, ProviderConfig.id))).all())
+    def picked_by_routing(role, strategy, configs, language):
+        return next(c for c in configs if c["provider"] == "deepseek")
+    monkeypatch.setattr(routing, "select", picked_by_routing)
+    got = (await client.get("/api/v1/conversations/thread-x/model")).json()
+    assert got["choice"] is None
+    assert got["effective"] == {"config_id": ids["ds"], "model": "deepseek-v4-flash", "provider": "deepseek"}
+    put = await client.put("/api/v1/conversations/thread-x/model", json={"config_id": ids["claude"], "model": "claude-opus-5-5"})
+    assert put.json()["effective"] == {"config_id": ids["claude"], "model": "claude-opus-5-5", "provider": "anthropic"}
+    assert (await client.get("/api/v1/conversations/thread-x/model")).json()["effective"]["provider"] == "anthropic"
+    cleared = (await client.delete("/api/v1/conversations/thread-x/model")).json()
+    assert cleared["choice"] is None and cleared["effective"]["provider"] == "deepseek"
+
+
+async def test_the_effective_model_is_the_one_the_turn_builds(db, monkeypatch):
+    """`effective` and the turn's adapter come from one decision, so they can't drift apart."""
+    from arslan.llm import routing
+    monkeypatch.setattr(routing, "select", lambda role, strategy, configs, language: next(
+        c for c in configs if c["provider"] == "openrouter"))
+    async with db_session.AsyncSessionLocal() as s:
+        eff = await llm_factory.effective_choice(s, "c-none")
+    turn = await tool_loop._adapter_for_turn(has_images=False, conversation_id="c-none")
+    assert (eff["provider"], eff["model"]) == ("openrouter", "openai/gpt-4o-mini") == (turn.report_provider, turn.model)
+    db.add(ConversationModel(conversation_id="c-set", config_id=await _router_id(db), model="x/chosen"))
+    await db.commit()
+    async with db_session.AsyncSessionLocal() as s:
+        eff = await llm_factory.effective_choice(s, "c-set")
+    turn = await tool_loop._adapter_for_turn(has_images=False, conversation_id="c-set")
+    assert (eff["model"], turn.model) == ("x/chosen", "x/chosen")
+
+
+async def test_a_blank_model_is_refused_and_effective_never_reports_an_empty_name(client):
+    """#691 review 3: "  " passed the length check before the strip and stored "", so `effective` said "" while the
+    turn ran the config's own model. A blank is refused; a stored one (older rows) reads as the config's model, and the
+    default reports the model the turn really builds (a preset fills a blank one)."""
+    from sqlalchemy import select
+    async with client.db_maker() as s:
+        s.add(ProviderConfig(label="ds", provider="deepseek", model="", api_key="", is_primary=True))
+        s.add(ProviderConfig(label="or", provider="openrouter", model="openai/gpt-4o-mini", api_key=""))
+        await s.commit()
+        rid = (await s.execute(select(ProviderConfig.id).where(ProviderConfig.label == "or"))).scalar_one()
+        s.add(ConversationModel(conversation_id="c-old", config_id=rid, model=""))
+        await s.commit()
+    assert (await client.put("/api/v1/conversations/c-blank/model", json={"config_id": rid, "model": "   "})).status_code == 422
+    async with client.db_maker() as s:
+        old = await llm_factory.effective_choice(s, "c-old")
+        default = await llm_factory.effective_choice(s, "c-none")
+    assert old["model"] == "openai/gpt-4o-mini"
+    turn = await tool_loop._adapter_for_turn(has_images=False, conversation_id="c-none")
+    assert default["model"] and default["model"] == turn.model
+
+
+async def test_a_switch_takes_the_next_turn_at_each_point_the_user_can_make_it(client, monkeypatch):
+    """v0.1.64 (user report: a DeepSeek balance error kept blocking a chat switched to Claude). DeepSeek is the
+    default and answers 402; the user switches through the API the chip calls. The next turn runs on the pick:
+    in a fresh chat before its first message, right after a failed turn, and on a turn that carries an image
+    (with no vision slot set; the slot's precedence is unchanged here)."""
+    from sqlalchemy import select
+    from server.orchestrator import arslan
+    async with client.db_maker() as s:
+        s.add(ProviderConfig(label="ds", provider="deepseek", model="deepseek-v4-flash", api_key="", is_primary=True))
+        s.add(ProviderConfig(label="claude", provider="anthropic", model="claude-opus-5-5", api_key=""))
+        await s.commit()
+        claude = (await s.execute(select(ProviderConfig.id).where(ProviderConfig.label == "claude"))).scalar_one()
+    turns: list[tuple] = []
+
+    async def fake_run_native(*, on_chunk, **kw):
+        a = await tool_loop._adapter_for_turn(has_images=kw.get("has_images", False), conversation_id=kw.get("conversation_id"))
+        turns.append((kw.get("conversation_id"), a.report_provider, a.model))
+        if a.report_provider == "deepseek":
+            raise RuntimeError("Error code: 402 - {'error': {'message': 'Insufficient Balance'}}")
+        on_chunk("ok")
+        return {"final": "ok", "tool_trace": []}
+    monkeypatch.setattr(tool_loop, "run_native", fake_run_native)
+
+    async def turn(cid: str):
+        try:
+            await arslan._handle_answer(cid, "hi", lambda e: None)
+        except Exception:  # noqa: BLE001 — the 402 turn; what matters is which model it ran on
+            pass
+
+    async def switch(cid: str):
+        r = await client.put(f"/api/v1/conversations/{cid}/model", json={"config_id": claude, "model": "claude-opus-5-5"})
+        assert r.status_code == 200 and r.json()["effective"]["provider"] == "anthropic"
+
+    await switch("thread-fresh")                       # 1. a fresh chat, before its first message
+    await turn("thread-fresh")
+    await turn("thread-failed")                        # 2. a turn fails on the default (402) ...
+    await switch("thread-failed")                      #    ... and the user switches right after
+    await turn("thread-failed")
+    assert turns == [("thread-fresh", "anthropic", "claude-opus-5-5"),
+                     ("thread-failed", "deepseek", "deepseek-v4-flash"),
+                     ("thread-failed", "anthropic", "claude-opus-5-5")]
+    await switch("thread-image")                       # 3. a turn that carries an image, no vision slot set
+    image_turn = await tool_loop._adapter_for_turn(has_images=True, conversation_id="thread-image")
+    assert (image_turn.report_provider, image_turn.model) == ("anthropic", "claude-opus-5-5")
 
 
 async def test_openrouter_entries_carry_name_price_tools_and_vision():

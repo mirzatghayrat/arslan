@@ -158,3 +158,21 @@ describe('both composers', () => {
     expect(onSendMessage).toHaveBeenCalledWith(lines(6), undefined);
   });
 });
+
+// #691 review 4: while the chip is saving this conversation's model, a send would race the row, so it waits.
+describe('a send while the model is being saved', () => {
+  it('is held until the save is done', async () => {
+    const { beginModelSave } = await import('../components/models/useConversationModel');
+    const onSendMessage = vi.fn();
+    const { container } = render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage}
+      conversationId="c-save" />);
+    const end = beginModelSave('c-save');
+    const input = container.querySelector('#chat-message-input') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'hello' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSendMessage).not.toHaveBeenCalled();
+    end();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onSendMessage).toHaveBeenCalledTimes(1);
+  });
+});

@@ -55,14 +55,9 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
     Phase B replaces the `chosen = primary` line with the routing engine.
     """
     async with db_session.AsyncSessionLocal() as db:
-        configs = await provider_config_service.list_for_routing(db)
-        if not configs:
+        chosen = await _default_config(db, role)
+        if chosen is None:
             return await _legacy_build_adapter(db)
-        cfg = await settings_service.get_settings(db)
-        strategy = cfg.get("llm_strategy") or "single"
-        language = cfg.get("language") or None
-        chosen = routing.select(role, strategy, configs, language) or next(
-            (c for c in configs if c["is_primary"]), configs[0])
         _guard_memory_destination(chosen["provider"], chosen["base_url"] or "")
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
@@ -70,6 +65,40 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
                          base_url=base_url, report_provider=chosen["provider"])
     adapter.role = "chat" if role in (None, "execute") else role
     return adapter
+
+
+async def _default_config(db, role: str | None) -> dict | None:
+    """The config a role runs on when nothing more specific was chosen: routing's pick under the user's
+    strategy, else the primary. None before any config exists. Not always the primary: with a strategy
+    other than "single" the execute role can land on another config (v0.1.64, a chat that showed Claude
+    ran on DeepSeek), so the window asks `effective_choice` instead of assuming."""
+    configs = await provider_config_service.list_for_routing(db)
+    if not configs:
+        return None
+    cfg = await settings_service.get_settings(db)
+    strategy = cfg.get("llm_strategy") or "single"
+    language = cfg.get("language") or None
+    return routing.select(role, strategy, configs, language) or next(
+        (c for c in configs if c["is_primary"]), configs[0])
+
+
+async def effective_choice(db, conversation_id: str | None) -> dict | None:
+    """What this conversation's next text turn runs on, as {config_id, model, provider}: its own choice
+    while that config exists, else the execute role's default (`_default_config`). The same decision as
+    `build_conversation_adapter` then `build_adapter("execute")`, which tool_loop._adapter_for_turn makes.
+    An image turn may still go to the vision slot. None when no config exists."""
+    if conversation_id:
+        from server.db.models import ConversationModel, ProviderConfig
+        row = await db.get(ConversationModel, conversation_id)
+        if row is not None and (config := await db.get(ProviderConfig, row.config_id)) is not None:
+            # As _config_adapter builds it: an empty stored model (older rows) runs the config's own.
+            return {"config_id": config.id, "model": row.model or config.model, "provider": config.provider}
+    chosen = await _default_config(db, "execute")
+    if chosen is None:
+        return None
+    # As build_adapter builds it: a preset fills a model the config left blank.
+    _, model, _ = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
+    return {"config_id": chosen["id"], "model": model, "provider": chosen["provider"]}
 
 
 async def primary_chat_endpoint() -> tuple[str, str, str] | None:
