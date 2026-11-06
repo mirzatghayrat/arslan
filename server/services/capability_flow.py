@@ -33,6 +33,7 @@ from arslan.aio import within
 logger = logging.getLogger(__name__)
 
 TEST_TIMEOUT_S = 90
+SIGN_IN_CHECK_S = 20         # the whole check: `oauth_flow`'s own timeout is per read, and a chat turn waits on this
 
 
 def installable(c: dict) -> str | None:
@@ -104,7 +105,7 @@ async def _waits_for_sign_in(server_id: int, line: str) -> bool:
         return False
     async with db_session.AsyncSessionLocal() as db:
         server = await db.get(MCPServer, server_id)
-    return server is not None and bool(server.url) and await oauth_flow.offers_sign_in(server.url)
+    return server is not None and await oauth_flow.offers_sign_in(server.url)
 
 
 async def test_mcp(source_id: str) -> dict:
@@ -119,11 +120,13 @@ async def test_mcp(source_id: str) -> dict:
     at = datetime.utcnow().isoformat() + "Z"
     try:
         result = await within(mcp_service.start_now(row.mcp_server_id), TEST_TIMEOUT_S)
+        waiting = result.state == "needs_auth" and await within(
+            _waits_for_sign_in(row.mcp_server_id, result.last_error or ""), SIGN_IN_CHECK_S)
     except Exception as exc:  # noqa: BLE001 — a failed start is the test's answer
         await supervisor.set_enabled(row.mcp_server_id, False)
         detail = getattr(exc, "detail", None) or str(exc)
         return {"ok": False, "stage": "start", "detail": detail[-400:] or type(exc).__name__, "at": at}
-    if result.state == "needs_auth" and await _waits_for_sign_in(row.mcp_server_id, result.last_error or ""):
+    if waiting:
         await supervisor.set_enabled(row.mcp_server_id, False)
         return {"ok": False, "needs_sign_in": True, "stage": "sign_in", "detail": SIGN_IN_LINE, "at": at}
     if result.state != "ready":

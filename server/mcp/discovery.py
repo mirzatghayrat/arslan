@@ -91,6 +91,12 @@ def runtime_dict(srv) -> dict:
             "sandbox": getattr(srv, "sandbox", None)}
 
 
+_NO_CREDENTIALS = "authorization failed (HTTP {code}): no credentials"
+#: How a 401 reads for a server with no key and no sign-in stored. A fresh OAuth server reads the same, so
+#: `capability_flow` asks it (`oauth_flow.offers_sign_in`).
+NO_CREDENTIALS_401 = _NO_CREDENTIALS.format(code=401)
+
+
 def _describe_failure(exc: BaseException, *, has_headers: bool) -> str:
     """last_error for a failed connect — classified, and never empty.
 
@@ -118,10 +124,7 @@ def _describe_failure(exc: BaseException, *, has_headers: bool) -> str:
                     f"authorization failed (HTTP {code}): the server rejected the "
                     "configured headers — re-check the token/key on this server"
                 )
-            return (
-                f"authorization failed (HTTP {code}): no credentials are configured "
-                "for this server — it requires authentication"
-            )
+            return _NO_CREDENTIALS.format(code=code) + " are configured for this server — it requires authentication"
         seen.extend(getattr(e, "exceptions", ()) or ())
         for link in (e.__cause__, e.__context__):
             if link is not None and link not in seen:
@@ -243,11 +246,6 @@ async def held(server_id: int) -> dict | None:
     async with db_session.AsyncSessionLocal() as db:
         source = await _source_of(db, server_id)
     return (source.test or {}).get("tools_changed") if source is not None else None
-
-
-#: How a 401 reads for a server with no key and no sign-in stored (`_describe_failure`). A fresh OAuth server reads
-#: the same, so `capability_flow` asks it (`oauth_flow.offers_sign_in`).
-NO_CREDENTIALS_401 = "authorization failed (HTTP 401): no credentials"
 
 
 async def _check_pin(db, server_id: int, tools: list, rows_by_name: dict, *, complete: bool) -> None:

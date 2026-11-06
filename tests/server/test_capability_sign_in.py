@@ -1,6 +1,7 @@
 """A remote connection that asks the user to sign in at its install test: not failed, and not working. It stays
 installed and switched off, says it needs sign-in, and switches on at its first listing after the sign-in, which is
 also where its tools are pinned (CAP5a)."""
+import asyncio
 import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -85,9 +86,9 @@ RESOURCE = "https://mcp.example.test/.well-known/oauth-protected-resource/mcp"
 AS_METADATA = "https://mcp.example.test/.well-known/oauth-authorization-server"
 
 
-def _http(monkeypatch, answers: dict, *, status=401, challenge=None):
+def _http(monkeypatch, answers: dict, *, status=401, challenge=None, moved=None):
     """The real streamablehttp_client and `oauth_flow`'s own requests, on one MockTransport: the MCP endpoint answers
-    `status`, and each address in `answers` gives its body. Every request is kept."""
+    `status`, each address in `answers` gives its body, and each in `moved` redirects. Every request is kept."""
     seen = []
 
     def handler(request):
@@ -97,6 +98,8 @@ def _http(monkeypatch, answers: dict, *, status=401, challenge=None):
                                   headers={"WWW-Authenticate": challenge} if challenge else None)
         if str(request.url) in answers:
             return httpx.Response(200, json=answers[str(request.url)], request=request)
+        if str(request.url) in (moved or {}):
+            return httpx.Response(302, headers={"Location": moved[str(request.url)]}, request=request)
         return httpx.Response(404, request=request)
     transport = httpx.MockTransport(handler)
     real = httpx.AsyncClient                # `oauth_flow.httpx` is this module, so the SDK's factory keeps the real one
@@ -160,6 +163,36 @@ async def test_the_check_only_reads_and_registers_no_client(fresh_remote, monkey
     await capability_flow.test_mcp("src1")
     assert not [line for line in seen if "register" in line or "token" in line or "auth.example" in line]
     assert not [line for line in seen if line.startswith("POST") and not line.endswith(URL)]
+
+
+ELSEWHERE = "https://elsewhere.example.test/metadata"
+
+
+@pytest.mark.parametrize("kw, waits", [({"challenge": f'Bearer resource_metadata="{ELSEWHERE}"'}, True),
+                                       ({"moved": {RESOURCE: ELSEWHERE}}, False)])
+async def test_the_check_goes_nowhere_the_server_points(fresh_remote, monkeypatch, kw, waits):
+    """Not the address a challenge names, and not a redirect: only the server's own well-known addresses."""
+    seen = _http(monkeypatch, {ELSEWHERE: {"authorization_servers": ["https://auth.example.test"]}}, **kw)
+    test = await capability_flow.test_mcp("src1")
+    assert bool(test.get("needs_sign_in")) is waits
+    assert not [line for line in seen if "elsewhere" in line]
+
+
+@pytest.mark.parametrize("trouble", ["slow", "broken"])
+async def test_a_check_that_hangs_or_breaks_is_a_failed_test(fresh_remote, monkeypatch, trouble):
+    """A chat turn waits on this, and whatever a server's metadata does, the test records its answer."""
+    _http(monkeypatch, {})
+    monkeypatch.setattr(capability_flow, "SIGN_IN_CHECK_S", 0.05)
+
+    async def offers_sign_in(url):
+        if trouble == "slow":
+            await asyncio.sleep(30)
+        raise RecursionError("a very deeply nested body")
+    monkeypatch.setattr(oauth_flow, "offers_sign_in", offers_sign_in)
+    test = await asyncio.wait_for(capability_flow.test_mcp("src1"), 10)
+    assert test["ok"] is False and test["stage"] == "start" and "needs_sign_in" not in test
+    async with fresh_remote() as db:
+        assert (await db.get(MCPServer, 1)).state == "off"
 
 
 async def test_a_rejected_key_doesnt_ask_whether_it_is_oauth(fresh_remote, monkeypatch):

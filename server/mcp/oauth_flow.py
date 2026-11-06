@@ -106,10 +106,7 @@ async def offers_sign_in(url: str) -> bool:
     reads as "no credentials", the same as one that wants a key. What it publishes tells them apart: the 401's challenge
     naming its metadata (RFC 9728), or that metadata at the well-known addresses on its own origin. Read-only and only
     what it says about itself: no client is registered, and no address its metadata names is visited."""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return False
+    parts = urlsplit(url)
     origin = f"{parts.scheme}://{parts.netloc}"
     known = ((f"{origin}/.well-known/oauth-protected-resource{parts.path.rstrip('/')}", "authorization_servers"),
              (f"{origin}/.well-known/oauth-protected-resource", "authorization_servers"),
