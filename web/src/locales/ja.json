@@ -691,7 +691,14 @@
     "openActivityBtn": "進捗を開く",
     "whatsNewEmpty": "このバージョンの説明はありません。",
     "modelRolesResetNotice": "モデルの役割は各会話のモデルに従うようになりました。以前の役割の設定はクリアされました。",
-    "modelRolesResetOk": "OK"
+    "modelRolesResetOk": "OK",
+    "addModelKeyHint": "{{provider}} に利用できるモデルを問い合わせるためだけに使います。「追加」を押すまで何も保存されません。",
+    "addModelLive": "{{provider}} の最新リスト · {{count}} モデル",
+    "addModelLoading": "{{provider}} にモデルを問い合わせ中…",
+    "addModelBuiltIn": "内蔵リスト",
+    "addModelFallback": "{{provider}} に接続できません。Arslan の内蔵リストを表示しています。",
+    "addModelRetry": "再試行",
+    "addModelChooseProvider": "プロバイダを選択"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

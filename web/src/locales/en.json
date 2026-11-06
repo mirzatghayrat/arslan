@@ -691,7 +691,14 @@
     "openActivityBtn": "Open Progress",
     "whatsNewEmpty": "No notes for this version.",
     "modelRolesResetNotice": "Model roles now follow each conversation's model. Your earlier role choices were cleared.",
-    "modelRolesResetOk": "OK"
+    "modelRolesResetOk": "OK",
+    "addModelKeyHint": "Used only to ask {{provider}} which models it has. Nothing is saved until you press Add.",
+    "addModelLive": "Live from {{provider}} · {{count}} models",
+    "addModelLoading": "Asking {{provider}} for its models…",
+    "addModelBuiltIn": "Built-in list",
+    "addModelFallback": "Couldn't reach {{provider}}; showing Arslan's built-in list.",
+    "addModelRetry": "Try again",
+    "addModelChooseProvider": "Choose a provider"
   },
   "errors": {
     "load_failed": "Failed to load data.",
