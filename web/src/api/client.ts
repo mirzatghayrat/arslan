@@ -643,6 +643,11 @@ export const listProviderConfigs = () =>
 export const addProviderConfig = (body: Omit<ProviderConfig, "id" | "is_primary">) =>
   request<ProviderConfig>("/settings/provider-configs", { method: "POST", body: JSON.stringify(body) });
 
+/** MODEL1 (v0.1.64): the provider's live model list for Add model, fetched once with the key just typed. The key
+ *  goes in the POST body only and is not stored; a failure answers with the built-in list (source "static"). */
+export const previewProviderModels = (body: { provider: string; base_url: string; api_key: string }) =>
+  request<ModelListResult>("/settings/provider-models/preview", { method: "POST", body: JSON.stringify(body) });
+
 export const updateProviderConfig = (id: number, body: Partial<ProviderConfig>) =>
   request<ProviderConfig>(`/settings/provider-configs/${id}`, { method: "PUT", body: JSON.stringify(body) });
 

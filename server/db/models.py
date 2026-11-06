@@ -340,7 +340,7 @@ class CapabilitySource(Base):
     what it may touch, and what the scan and the first test said."""
     __tablename__ = "capability_sources"
     __table_args__ = (
-        CheckConstraint("kind IN ('mcp','skill')", name="ck_capability_source_kind"),
+        CheckConstraint("kind IN ('mcp','skill','plugin')", name="ck_capability_source_kind"),
         CheckConstraint("state IN ('proposed','installed','failed','removed')", name="ck_capability_source_state"),
     )
     id = Column(String(36), primary_key=True)
