@@ -148,8 +148,13 @@ def _outside_no_callback(env):
     env.monkeypatch.setattr(permissions, "current_asker", lambda: object())
 
 
-def _outside_declined(env):
+def _outside_no_why(env):
     env.args["outside_sandbox"] = True
+    env.args.pop("why", None)
+
+
+def _outside_declined(env):
+    env.args.update(outside_sandbox=True, why="it needs the keychain")
     env.confirm_command = env._card("command", False)
 
 
@@ -235,6 +240,7 @@ CHAINS = {
         BUDGET, CREDENTIALS, WORKER, Gate("nobody to ask", _nobody, "Scheduled runs don't run commands"), UNAVAILABLE,
         Gate("forbidden", _forbidden, "Arslan never runs this"), Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
         Gate("outside, no click", _outside_no_callback, "needs the user's click"),
+        Gate("outside, no why", _outside_no_why, "outside_sandbox needs a why"),
         Gate("outside declined", _outside_declined, "user declined running this command outside", card="command"),
         Gate("network refused", _network_refused, "the network was refused"), HERMETIC_GATE]),
     "run_command#ask": ({"command": "ls"}, [
