@@ -7,7 +7,7 @@ type Expert = { id: number; name: string; domain: string; skill_key: string; con
 
 // 0.1.44 one Arslan: experts are no longer a runtime path. Each former expert can
 // be turned into a skill (its prompt becomes the method Arslan reads when the
-// work matches). Nothing is deleted here.
+// work matches). Nothing is deleted here. DELETE-BY: v0.1.64, with C7c-4.
 export default function LegacyExperts() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<Expert[] | null>(null);

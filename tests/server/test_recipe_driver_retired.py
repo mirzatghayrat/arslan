@@ -1,10 +1,11 @@
-"""C7b-3 (v0.1.63): recipes were removed; a task saved with a recipe driver fails closed.
+"""C7b-3 (v0.1.63): recipes were removed; a task saved with a recipe driver fails closed. So does an expert
+driver, since C7c-3a (v0.1.64).
 
 `recipes.execute` was the only thing that created recipe-driven tasks, and the resume path
 (`ws/arslan.py` resume_task -> `task_service.resume_turn`) was the one place the chat path
 still reached it. ⓪Plan's conditions for removing that branch, pinned here:
 
-1. every driver kind that remains (host, background, expert) resumes exactly as before;
+1. every driver kind that remains (host, background) resumes exactly as before;
 2. an old recipe-driven task fails closed with `task_invalid_driver` and is left untouched
    (no new attempt, same version, same phase) — never a 500 or a crash;
 3. the `resume_task` WS handler turns that refusal into a recoverable error frame and the
@@ -43,16 +44,16 @@ async def _paused_task(conversation_id: str, driver: dict | None) -> int:
         return row.version
 
 
-async def _make_it_an_old_recipe_task(maker) -> None:
-    """New code cannot create a recipe-driven task any more (checked_driver refuses it), so
+async def _make_it_an_old_recipe_task(maker, driver=_RECIPE_DRIVER) -> None:
+    """New code cannot create a recipe-driven or expert-driven task any more (checked_driver refuses both), so
     write the driver straight into the stored row, the way an old database holds it."""
     async with maker() as db:
         row = await db.get(CompanionTask, "entry-task")
-        row.privacy = {**(row.privacy or {}), "driver": dict(_RECIPE_DRIVER)}
+        row.privacy = {**(row.privacy or {}), "driver": dict(driver)}
         await db.commit()
 
 
-@pytest.mark.parametrize("driver", [None, {"kind": "host"}, {"kind": "background"}, {"kind": "expert", "id": 7}])
+@pytest.mark.parametrize("driver", [None, {"kind": "host"}, {"kind": "background"}])
 async def test_every_remaining_driver_kind_resumes_as_before(execution_db, active_context, monkeypatch, driver):
     version = await _paused_task("entry", driver)
     from server.orchestrator import arslan
@@ -73,13 +74,15 @@ async def test_every_remaining_driver_kind_resumes_as_before(execution_db, activ
         assert row.phase == "succeeded" and row.budget["used"]["tool_calls"] == 2
 
 
-async def test_an_old_recipe_task_fails_closed_and_is_left_untouched(execution_db, active_context, monkeypatch):
+@pytest.mark.parametrize("old", [_RECIPE_DRIVER, {"kind": "expert", "id": 7}], ids=["recipe", "expert"])
+async def test_an_old_retired_driver_task_fails_closed_and_is_left_untouched(execution_db, active_context, monkeypatch,
+                                                                             old):
     version = await _paused_task("entry", None)
-    await _make_it_an_old_recipe_task(execution_db)
+    await _make_it_an_old_recipe_task(execution_db, old)
     from server.orchestrator import arslan
 
     async def answer(*a, **k):
-        raise AssertionError("a recipe task must not turn into an Arslan turn either")
+        raise AssertionError("a retired driver's task must not turn into an Arslan turn either")
     monkeypatch.setattr(arslan, "_handle_answer", answer)
 
     with pytest.raises(TaskError, match="task_invalid_driver"):
@@ -90,7 +93,7 @@ async def test_an_old_recipe_task_fails_closed_and_is_left_untouched(execution_d
         row = await db.get(CompanionTask, "entry-task")
         assert row.version == version and row.phase == "waiting_user"
         assert row.pause_reason == "task_no_progress"
-        assert row.privacy["driver"] == _RECIPE_DRIVER                     # kept as data
+        assert row.privacy["driver"] == old                                # kept as data
 
 
 def test_resume_task_over_the_socket_reports_the_refusal_and_keeps_the_socket(tmp_path, monkeypatch, portal,

@@ -1,7 +1,7 @@
-"""Spawn persistence and DTO mapping over the database."""
+"""Spawn persistence and DTO mapping over the database. DELETE-BY: v0.1.64, with C7c-4."""
 from __future__ import annotations
 
-from sqlalchemy import delete as sa_delete, exists, select, update as sa_update
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.db.models import ChatMessage, Spawn
@@ -63,10 +63,6 @@ async def list_spawns(session: AsyncSession) -> list[SpawnOut]:
     return out_list
 
 
-async def get_spawn(session: AsyncSession, spawn_id: int) -> Spawn | None:
-    return await session.get(Spawn, spawn_id)
-
-
 async def get_detail(session: AsyncSession, spawn_id: int) -> SpawnDetailOut | None:
     spawn = await session.get(Spawn, spawn_id)
     if spawn is None:
@@ -85,59 +81,6 @@ async def get_detail(session: AsyncSession, spawn_id: int) -> SpawnDetailOut | N
         resolved = await persona_seed_service.get_by_slugs([str(s) for s in seed_refs])
         detail.seeds = [SeedRefOut(**r) for r in resolved]
     return detail
-
-
-async def update_config(
-    session: AsyncSession,
-    spawn_id: int,
-    *,
-    system_prompt: str | None = None,
-    persona_tone: str | None = None,
-    persona_role: str | None = None,
-    config: dict | None = None,
-) -> Spawn | None:
-    spawn = await session.get(Spawn, spawn_id)
-    if spawn is None:
-        return None
-    if system_prompt is not None:
-        spawn.system_prompt = system_prompt
-    if persona_tone is not None:
-        spawn.persona_tone = persona_tone
-    if persona_role is not None:
-        spawn.persona_role = persona_role
-    if config is not None:
-        spawn.config = config
-    await session.commit()
-    await session.refresh(spawn)
-    return spawn
-
-
-class BuiltInSpawnError(Exception):
-    """Raised when a delete targets a built-in (is_default) spawn."""
-
-
-async def delete_spawn(session: AsyncSession, spawn_id: int) -> bool:
-    spawn = await session.get(Spawn, spawn_id)
-    if spawn is None:
-        return False
-    if bool(getattr(spawn, "is_default", False)):
-        raise BuiltInSpawnError("built-in agents cannot be deleted")
-    # Deterministic cleanup, independent of SQLite FK pragma state:
-    # the orchestrator thread keeps its rows (display history) but unlinks them;
-    # spawn-scoped rows go with the spawn.
-    from server.db.models import ArslanMessage, SpawnCapability
-
-    await session.execute(
-        sa_update(ArslanMessage)
-        .where(ArslanMessage.spawn_id == spawn_id)
-        .values(spawn_id=None)
-    )
-    await session.execute(
-        sa_delete(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id)
-    )
-    await session.delete(spawn)  # ORM cascades chat_messages + feedback
-    await session.commit()
-    return True
 
 
 async def load_all_spawns() -> list[Spawn]:

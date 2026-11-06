@@ -158,6 +158,7 @@ async def assemble_working_context(conversation_id: str, *, budget: int | None =
             # A specialist spawn's relayed output. Frame it in the third person so the answer
             # model treats it as a teammate's message and never adopts the spawn's identity
             # (otherwise Arslan continues a spawn's first-person voice, e.g. "我是 Mermer").
+            # DELETE-BY: v0.1.64, with C7c-4.
             history.append(
                 {"role": "assistant", "content": f"(relayed output from a specialist spawn) {text}"}
             )
