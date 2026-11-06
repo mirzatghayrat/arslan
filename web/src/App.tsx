@@ -120,9 +120,8 @@ export default function App() {
   activeThreadIdRef.current = activeThreadId;
 
   // A clicked desktop notification (0.1.41), or a link to an earlier conversation in a reply (0.1.52 S3), opens a conversation the
-  // user has and has not archived; a proactive notice opens the page that shows what was noticed (useNotificationRoutes).
-  useNotificationRoutes({ threads, selectConversation,
-    openSection: (section) => { setActiveSection(section); setPanelView('default'); } });
+  // user has and has not archived (useNotificationRoutes).
+  useNotificationRoutes({ threads, selectConversation });
   useEffect(() => {
     const onOpen = (event: Event) => {
       const asked = readOpenSection((event as CustomEvent<unknown>).detail);

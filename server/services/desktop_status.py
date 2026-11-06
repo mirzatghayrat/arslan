@@ -26,7 +26,7 @@ from typing import Callable, Iterator
 from urllib.parse import urlsplit
 
 # lesson_learned (0.1.52 S5): quiet — the island counts it ("+1 practice"); no notification.
-KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused", "proactive",
+KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused",
                    "lesson_learned"})
 OUTCOMES = frozenset({"ok", "error", "needs_review", "cancelled"})
 MAX_EVENTS = 100

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_auth
 from server.db.models import ScheduledTask
 from server.db.session import get_session
-from server.services import desktop_status, settings_service
+from server.services import desktop_status, proactive_service, settings_service
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -33,6 +33,7 @@ async def get_desktop_status(after: int = Query(0, ge=0),
         event["task_name"] = names.get(event.get("task_id"), "") if event.get("task_id") else ""
     snapshot["keep_awake"] = await settings_service.keep_awake_enabled(db)
     snapshot["notifications"] = await settings_service.desktop_notifications_enabled(db)
+    snapshot["quiet_hours"] = await proactive_service.in_quiet_hours_now()
     # Mobile bridge §6.1: the shell starts the Arslan Bridge only while this is on.
     snapshot["phone_bridge"] = await settings_service.phone_bridge_enabled(db)
     return snapshot

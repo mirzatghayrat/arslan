@@ -6,7 +6,6 @@ import WatchesPanel from '../proactive/WatchesPanel';
 import { proactiveErrorText } from '../../lib/proactive';
 
 export { WATCH_INTERVALS } from '../proactive/WatchesPanel';
-const CAPS = [1, 2, 3, 5, 10, 20];
 const field = 'rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground';
 const divider = <div className="h-[1px] bg-border/40" />;
 
@@ -53,7 +52,6 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
     {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : <p role="status" className="text-xs text-muted-foreground">{t('companion.loading')}</p>}
   </div>;
 
-  const caps = CAPS.includes(config.notify_daily_cap) ? CAPS : [...CAPS, config.notify_daily_cap].sort((a, b) => a - b);
   const sources: [keyof ProactiveConfig, string][] = [['job_followups', 'jobFollowups'], ['scheduled_problems', 'scheduledProblems'], ['watches', 'watches']];
   // 0.1.55 §11: notify + quiet hours live in General › Notifications; looking out in Background; watches and mutes are managed
   // on the Scheduled page (INB3; the Inbox is gone, INB5). Without `only`, all.
@@ -71,12 +69,7 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
         </fieldset>
         <p className="text-[11px] text-muted-foreground max-w-xl">{t('proactive.settings.diagnosisPointer')}</p>
     </>}
-    {show('notify') && <>
-        <Toggle id="proactive-toggle-notify" label={t('proactive.settings.notify')} desc={t('proactive.settings.notifyDesc')}
-          checked={config.notify} onChange={(v) => void save({ notify: v })} />
-        <div className="space-y-3 text-xs" aria-disabled={!config.notify}>
-          <select aria-label={t('proactive.settings.notify')} data-testid="proactive-notify-cap" className={field} disabled={!config.notify} value={config.notify_daily_cap}
-            onChange={(e) => void save({ notify_daily_cap: Number(e.target.value) })}>{caps.map((n) => <option key={n} value={n}>{t('proactive.settings.notifyCap', { n })}</option>)}</select>
+    {show('notify') && <div className="space-y-3 text-xs">
           {/* One unit that wraps as a whole: "Quiet hours  From [..]  To [..]" never splits mid-range. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="font-bold text-foreground">{t('proactive.settings.quiet')}</span>
@@ -88,8 +81,7 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
             </span>
           </div>
           <p className="text-[11px] text-muted-foreground max-w-xl">{t('proactive.settings.quietDesc')}</p>
-        </div>
-    </>}
+    </div>}
     {show('watches') && <WatchesPanel watchesOn={config.enabled && config.watches} />}
   </div>;
   if (bare) return <div data-testid="settings-proactive">{content}</div>;

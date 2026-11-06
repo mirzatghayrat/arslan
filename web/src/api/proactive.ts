@@ -26,13 +26,13 @@ export interface ProactiveSummary {
 /** INB5: units, never rows: a conversation, a project, or a scheduled task. */
 export interface Waiting { count: number; conversations: string[]; projects: string[]; scheduled: number[] }
 export interface ProactiveConfig {
-  enabled: boolean; notify: boolean; notify_daily_cap: number; quiet_start: string; quiet_end: string;
+  enabled: boolean; quiet_start: string; quiet_end: string;
   job_followups: boolean; scheduled_problems: boolean; watches: boolean; brief_enabled: boolean; brief_time: string;
   diagnosis_daily_usd: number;
 }
 export interface ProactiveWatch {
   id: number; kind: "web" | "folder"; target: string; label: string; enabled: boolean; interval_s: number;
-  notify: boolean; last_error: string | null; last_checked_at: string | null; last_changed_at: string | null;
+  last_error: string | null; last_checked_at: string | null; last_changed_at: string | null;
 }
 export type ProactiveScope = "open" | "snoozed" | "done" | "all";
 export type MuteChoice = "source" | "kind";
@@ -63,9 +63,9 @@ export const proactiveApi = {
   config: () => request<ProactiveConfig>("/proactive/config"),
   saveConfig: (patch: Partial<ProactiveConfig>) => changed(request<ProactiveConfig>("/proactive/config", send("PUT", patch))),
   watches: () => request<{ watches: ProactiveWatch[] }>("/proactive/watches"),
-  addWatch: (body: { kind: "web" | "folder"; target: string; label?: string; interval_s: number; notify: boolean }) =>
+  addWatch: (body: { kind: "web" | "folder"; target: string; label?: string; interval_s: number }) =>
     changed(request<ProactiveWatch>("/proactive/watches", send("POST", body))),
-  updateWatch: (id: number, patch: Partial<Pick<ProactiveWatch, "enabled" | "notify" | "interval_s" | "label">>) =>
+  updateWatch: (id: number, patch: Partial<Pick<ProactiveWatch, "enabled" | "interval_s" | "label">>) =>
     changed(request<ProactiveWatch>(`/proactive/watches/${id}`, send("PATCH", patch))),
   deleteWatch: (id: number) => changed(request<{ ok: boolean }>(`/proactive/watches/${id}`, send("DELETE"))),
   mutes: () => request<{ mutes: string[] }>("/proactive/mutes"),

@@ -28,8 +28,8 @@ def found(*candidates, ack=None):
     return [det.Found(c, ack) for c in candidates]
 
 
-async def ingest(items, config=None, now=NOON):
-    return await svc.ingest(items, now_utc=now, now_local=now, config=config or ProactiveConfig())
+async def ingest(items, now=NOON):
+    return await svc.ingest(items, now_utc=now)
 
 
 async def rows(execution_db):
@@ -53,10 +53,10 @@ async def test_config_defaults_spend_nothing(execution_db):
 
 
 async def test_config_patch_merges_and_persists(execution_db):
-    await svc.save_config({"notify_daily_cap": 2})
+    await svc.save_config({"quiet_start": "23:15"})
     saved = await svc.save_config({"brief_enabled": True})
-    assert (saved.notify_daily_cap, saved.brief_enabled) == (2, True)
-    assert (await svc.load_config()).notify_daily_cap == 2
+    assert (saved.quiet_start, saved.brief_enabled) == ("23:15", True)
+    assert (await svc.load_config()).quiet_start == "23:15"
 
 
 @pytest.mark.parametrize("patch", [{"quiet_start": "25:00"}, {"diagnosis_daily_usd": 50}, {"surprise": 1}])
@@ -125,39 +125,29 @@ async def test_a_failing_ack_does_not_hide_the_stored_item_from_the_caller(execu
     assert len(await rows(execution_db)) == 1          # stored; the next scan sees a duplicate, not a loss
 
 
-# ── notifications ────────────────────────────────────────────────────────────
+# ── notifications ─────────────────────────────────
 
-async def test_a_notifying_kind_raises_one_quiet_notification(execution_db, events):
-    result = await ingest(found(cand(1)))
-    [item] = await rows(execution_db)
-    assert result["notified"] == 1 and item.notified_at == NOON
-    assert events == [("proactive", {"outcome": "ok"})]
-
-
-async def test_quiet_hours_store_the_item_but_stay_silent(execution_db, events):
-    night = datetime(2026, 9, 30, 23, 30)
-    result = await ingest(found(cand(1)), now=night)
-    [item] = await rows(execution_db)
-    assert len(result["created"]) == 1 and item.notified_at is None and events == []
+async def test_nothing_it_notices_raises_a_notification(execution_db, events):
+    """INB8: a stopped job and a failed schedule notify when they end, and a second ping would be noise. What it notices
+    shows where it belongs."""
+    await ingest(found(cand(1), cand(2, kind="folder_change"), cand(3, kind="job_followup")))
+    assert events == [] and len(await rows(execution_db)) == 3
 
 
-async def test_the_daily_cap_counts_today_only(execution_db, events):
-    config = ProactiveConfig(notify_daily_cap=2)
-    await ingest(found(cand(1), cand(2), cand(3)), config)
-    assert len(events) == 2
-    tomorrow = NOON + timedelta(days=1)
-    await ingest(found(cand(4)), config, now=tomorrow)
-    assert len(events) == 3
+async def test_a_config_saved_before_inb8_keeps_the_users_other_choices(execution_db):
+    """ProactiveConfig refuses a key it doesn't know, so these two would otherwise reset everything to the defaults."""
+    async with execution_db() as db:
+        db.add(Setting(key=svc.CONFIG_KEY, value=json.dumps({"notify": False, "notify_daily_cap": 2, "quiet_start": "23:15"})))
+        await db.commit()
+    assert (await svc.load_config()).quiet_start == "23:15"
+    saved = await svc.save_config({"quiet_end": "07:00"})
+    assert (saved.quiet_start, saved.quiet_end) == ("23:15", "07:00")
 
 
-async def test_job_followups_never_interrupt(execution_db, events):
-    await ingest(found(cand(1, kind="job_followup")))
-    assert events == [] and len(await rows(execution_db)) == 1
-
-
-async def test_notify_off_keeps_the_inbox_but_not_the_pop_up(execution_db, events):
-    await ingest(found(cand(1)), ProactiveConfig(notify=False))
-    assert events == [] and len(await rows(execution_db)) == 1
+@pytest.mark.parametrize("hour,quiet", [(23, True), (12, False)])
+async def test_quiet_hours_follow_the_config_and_the_local_clock(execution_db, monkeypatch, hour, quiet):
+    monkeypatch.setattr(svc, "local_now", lambda: datetime(2026, 9, 30, hour, 0))
+    assert await svc.in_quiet_hours_now() is quiet
 
 
 # ── the brief ────────────────────────────────────────────────────────────────
@@ -167,7 +157,7 @@ async def test_no_brief_when_there_is_nothing_to_say(execution_db):
 
 
 async def test_the_brief_counts_what_is_open_running_and_due_soon(execution_db, monkeypatch):
-    await ingest(found(cand(1), cand(2, kind="job_followup")), ProactiveConfig(notify=False))
+    await ingest(found(cand(1), cand(2, kind="job_followup")))
     async with execution_db() as db:
         db.add(ScheduledTask(name="Weekly numbers", prompt="p", schedule_kind="interval", interval_s=3600, enabled=True,
                              next_due_at=NOON + timedelta(hours=3)))
@@ -188,7 +178,7 @@ async def test_the_brief_counts_what_is_open_running_and_due_soon(execution_db, 
 async def test_the_scan_makes_no_brief_even_when_it_was_switched_on(execution_db):
     """The user's Q9 (#605 review F2): the morning brief goes. Since the Inbox went (INB5) nothing shows a brief, so the scan makes
     none and no notice leads nowhere. build_brief, brief_due and the config's brief fields go with the brief in INB7-e."""
-    await ingest(found(cand(1)), ProactiveConfig(notify=False))
+    await ingest(found(cand(1)))
     await svc.save_config({"brief_enabled": True, "brief_time": "08:30", "watches": False})
     await svc.scan_once(now_utc=NOON, now_local=NOON)
     await svc.scan_once(now_utc=NOON + timedelta(hours=1), now_local=NOON + timedelta(hours=1))
@@ -258,7 +248,7 @@ def started(monkeypatch):
 
 
 async def one_item(execution_db, **over):
-    await ingest(found(cand(1, **over)), ProactiveConfig(notify=False))
+    await ingest(found(cand(1, **over)))
     return (await rows(execution_db))[0].id
 
 
@@ -370,7 +360,7 @@ async def test_model_configured_asks_what_the_job_would_ask(execution_db):
 
 
 async def test_a_brief_is_read_not_run(execution_db, started):
-    await ingest(found(cand(1, kind="brief", goal="")), ProactiveConfig(notify=False))
+    await ingest(found(cand(1, kind="brief", goal="")))
     with pytest.raises(ProactiveError) as err:
         await svc.accept((await rows(execution_db))[0].id, "c")
     assert err.value.code == "nothing_to_do" and started == []
@@ -411,7 +401,7 @@ async def test_a_set_aside_item_is_not_expired_before_it_comes_back_and_counts_i
     # PR 615 review F1: a job's reminder made 5 days ago and set aside for 7 read "expired" at the first scan past its kind's 7 days,
     # days before the date its row showed; and the scan that woke it would have expired it at once.
     monkeypatch.setattr(svc, "utc_now", lambda: NOON)
-    await ingest(found(cand(1, kind="job_followup", source_key="job:1")), ProactiveConfig(notify=False), now=NOON - timedelta(days=5))
+    await ingest(found(cand(1, kind="job_followup", source_key="job:1")), now=NOON - timedelta(days=5))
     [item] = await rows(execution_db)
     await svc.snooze(item.id, 7)                                       # until NOON + 7 days, day 12 of its life
     await svc.maintain(NOON + timedelta(days=3))                       # day 8: past its kind's 7 days, before that date
@@ -446,7 +436,7 @@ async def test_dismiss_can_mute_the_source_and_that_stops_its_watch(execution_db
         db.add(ProactiveWatch(id=5, kind="web", target="https://example.com/", label="Example", interval_s=3600,
                               enabled=True, created_at=NOON))
         await db.commit()
-    await ingest(found(cand(5)), ProactiveConfig(notify=False))
+    await ingest(found(cand(5)))
     await svc.dismiss((await rows(execution_db))[0].id, mute="source")
     assert await svc.list_mutes() == ["watch:5"]
     assert (await svc.list_watches())[0]["enabled"] is False
@@ -475,14 +465,14 @@ async def test_dismiss_can_mute_a_whole_kind_and_unmute_undoes_it(execution_db):
 
 
 async def test_unread_and_high_counts_follow_the_user_reading(execution_db):
-    await ingest(found(cand(1, priority="high"), cand(2)), ProactiveConfig(notify=False))
+    await ingest(found(cand(1, priority="high"), cand(2)))
     assert await svc.summary() == {"open": 2, "unread": 2, "high": 1, "approvals": 0, "waiting": {"count": 0, "conversations": [], "projects": [], "scheduled": []}}
     await svc.mark_seen([i.id for i in await rows(execution_db)])
     assert await svc.summary() == {"open": 2, "unread": 0, "high": 0, "approvals": 0, "waiting": {"count": 0, "conversations": [], "projects": [], "scheduled": []}}
 
 
 async def test_list_puts_the_urgent_first_and_scopes_done_items_apart(execution_db):
-    await ingest(found(cand(1), cand(2, priority="high"), cand(3)), ProactiveConfig(notify=False))
+    await ingest(found(cand(1), cand(2, priority="high"), cand(3)))
     ids = [i["id"] for i in await svc.list_items("open")]
     assert ids[0] == (await rows(execution_db))[1].id
     await svc.dismiss(ids[0])
@@ -492,14 +482,14 @@ async def test_list_puts_the_urgent_first_and_scopes_done_items_apart(execution_
 # ── maintenance: everything is bounded ───────────────────────────────────────
 
 async def test_stale_open_items_expire_but_are_kept(execution_db):
-    await ingest(found(cand(1, kind="brief", goal="")), ProactiveConfig(notify=False), now=NOON - timedelta(days=3))
-    await ingest(found(cand(2)), ProactiveConfig(notify=False), now=NOON - timedelta(days=3))
+    await ingest(found(cand(1, kind="brief", goal="")), now=NOON - timedelta(days=3))
+    await ingest(found(cand(2)), now=NOON - timedelta(days=3))
     await svc.maintain(NOON)
     assert {i.kind: i.status for i in await rows(execution_db)} == {"brief": "expired", "web_change": "new"}
 
 
 async def test_old_finished_items_are_deleted_open_ones_never(execution_db):
-    await ingest(found(cand(1), cand(2)), ProactiveConfig(notify=False), now=NOON - timedelta(days=100))
+    await ingest(found(cand(1), cand(2)), now=NOON - timedelta(days=100))
     async with execution_db() as db:
         first = (await db.execute(select(ProactiveItem).order_by(ProactiveItem.id))).scalars().first()
         first.status = "dismissed"
@@ -542,7 +532,7 @@ async def test_only_https_pages_can_be_watched(execution_db, url):
 
 async def test_a_web_watch_gets_a_readable_default_label(execution_db):
     watch = await svc.add_watch("web", "https://example.com/pricing", interval_s=3600)
-    assert (watch["label"], watch["interval_s"], watch["enabled"], watch["notify"]) == ("example.com", 3600, True, True)
+    assert (watch["label"], watch["interval_s"], watch["enabled"]) == ("example.com", 3600, True)
 
 
 @pytest.mark.parametrize("interval", [59, 1799, 7 * 86400 + 1, "3600", True, None])
@@ -584,8 +574,8 @@ async def test_unknown_kind_and_the_watch_cap(execution_db, monkeypatch):
 
 async def test_update_and_delete_a_watch(execution_db):
     watch = await svc.add_watch("web", "https://example.com/")
-    out = await svc.update_watch(watch["id"], {"interval_s": 7200, "notify": False, "label": "  My   page "})
-    assert (out["interval_s"], out["notify"], out["label"]) == (7200, False, "My page")
+    out = await svc.update_watch(watch["id"], {"interval_s": 7200, "label": "  My   page "})
+    assert (out["interval_s"], out["label"]) == (7200, "My page")
     with pytest.raises(ProactiveError):
         await svc.update_watch(watch["id"], {"interval_s": 5})
     with pytest.raises(ProactiveError) as err:
