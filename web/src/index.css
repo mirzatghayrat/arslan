@@ -3059,6 +3059,10 @@ button:disabled {
 .md-code .token.parameter { color: var(--muted-foreground); }
 
 /* FMT1 PR 2: a reply's lists, task checkboxes and formulas (the iPhone mock). */
+/* A formula's boxes and kerns can move anything anywhere, over the chat around the reply and under its clicks, so a reply stops
+   at its own box. clip isn't a scroll container and keeps margins collapsing; WebKit before 16 keeps hidden. A long word or URL
+   used to reach the chat's scroller, and would be lost here, so it wraps. break-word, not anywhere: a table keeps its width and scrolls. */
+.md-root { overflow: hidden; overflow: clip; overflow-wrap: break-word; }
 .md-ul,
 .md-ol { margin: 0.6em 0; display: flex; flex-direction: column; gap: 0.3em; color: inherit; }
 .md-ul { padding-left: 0.25em; list-style: none; }

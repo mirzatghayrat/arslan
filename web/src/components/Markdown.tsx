@@ -14,7 +14,7 @@ import { openExternal, shellAvailable } from '../lib/shell';
 import PathChip, { isLocalPath } from './PathChip';
 import Formula from './Formula';
 import HighlightedCode from './HighlightedCode';
-import { texDelimiters } from '../lib/texDelimiters';
+import { remarkTexDelimiters } from '../lib/texDelimiters';
 import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame, Image as ImageIcon } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ const components: import('react-markdown').Components = {
       if (match) lang = match[1];
       rawCode = extractText(codeEl.props?.children);
     }
-    if (codeClass?.includes('math-display')) return <Formula tex={rawCode} display />;
+    if (codeClass?.split(' ').includes('math-display')) return <Formula tex={rawCode} display />;
 
     return (
       <div style={{
@@ -352,7 +352,7 @@ const components: import('react-markdown').Components = {
   ul: ({ children, className }) => <ul className={`md-ul ${className ?? ''}`.trim()}>{children}</ul>,
 
   // Ordered lists
-  ol: ({ children }) => <ol className="md-ol">{children}</ol>,
+  ol: ({ children, start }) => <ol className="md-ol" start={start}>{children}</ol>,
 
   // List items: the stylesheet draws the markers. In a task item, GFM puts a lone space after the checkbox, and a done item's
   // strike-through would cross it. The checkbox has its own margin.
@@ -364,7 +364,7 @@ const components: import('react-markdown').Components = {
 
   // Task-list checkboxes
   input: ({ type, checked }) => (type === 'checkbox'
-    ? <input type="checkbox" className="md-check" checked={checked} disabled readOnly />
+    ? <input type="checkbox" className="md-check" checked={checked} disabled />
     : <input type={type} />),
 
   // Blockquotes — detect GFM alerts, else premium callout
@@ -509,12 +509,12 @@ interface MarkdownProps {
 // be tokenized again each time.
 // A single $ is never math (Streamdown's default too): "it costs $5 and $10" would come out garbled, and a formula left in
 // single dollars shows its source, which is ugly but true.
-const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'] = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]];
+const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'] = [remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkTexDelimiters];
 
 export default React.memo(function Markdown({ children, className = '' }: MarkdownProps) {
   return (
     <div
-      className={className}
+      className={`md-root ${className}`.trim()}
       style={{
         // Cascade color tokens so palette/mode theming works via CSS vars
         '--md-heading': 'inherit',
@@ -527,7 +527,7 @@ export default React.memo(function Markdown({ children, className = '' }: Markdo
         components={components}
         urlTransform={urlTransform}
       >
-        {texDelimiters(children)}
+        {children}
       </ReactMarkdown>
     </div>
   );
