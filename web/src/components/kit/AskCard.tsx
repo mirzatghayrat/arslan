@@ -96,7 +96,7 @@ export function AskCard(p: AskCardProps) {
     if (!p.safeDefault) return;
     const active = document.activeElement;
     const typing = active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
-    // #661 review: don't pull focus out of another surface — an open dialog or another card owns its own focus.
+    // CAP9 review: don't pull focus out of another surface — an open dialog or another card owns its own focus.
     const onAnother = active instanceof Element && active.closest(SURFACE) !== null && active.closest(SURFACE) !== root.current;
     if (!typing && !onAnother) root.current?.querySelector<HTMLButtonElement>(`[data-testid="${p.declineTestId ?? "ask-decline"}"]`)?.focus();
   }, [p.safeDefault, p.declineTestId]);
