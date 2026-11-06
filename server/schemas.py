@@ -390,6 +390,15 @@ class TestLLMIn(BaseModel):
     api_key: str = ""
 
 
+class ModelPreviewIn(BaseModel):
+    """Body for POST /settings/provider-models/preview (MODEL1): the Add model form's fields before Add.
+    The key travels in this body only, never in a URL, and is not stored."""
+
+    provider: str
+    base_url: str = ""
+    api_key: str = ""
+
+
 class TestLLMOut(BaseModel):
     """Response from both test-connection endpoints."""
 
