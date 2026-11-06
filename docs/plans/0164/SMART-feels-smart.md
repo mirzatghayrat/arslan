@@ -19,7 +19,7 @@ What a real chat showed (deepseek-v4-flash; the user asked how Claude Code compa
    - Its "what Arslan lacks" answer missed what v0.1.64 already has.
 3. **It didn't follow the user's focus.**
    - One-line questions got full-screen reports.
-   - A pointed 「你没去看GitHub仓库是吧」 got a long reply.
+   - A pointed challenge about not having read the GitHub repository got a long reply.
    - Four of five replies ended in unrequested offers.
    - It assumed the CLI when "Claude Code" was ambiguous.
 4. **It read another app's private config** (Claude desktop's trusted folders and browser settings) without being asked.
@@ -85,7 +85,7 @@ What a real chat showed (deepseek-v4-flash; the user asked how Claude Code compa
 
 ### SMART-4: follow the user's focus (⑥Helper; an addendum to STY)
 - **Short questions:** answer the asked question first, in 1–3 sentences. A short question gets a short answer.
-- **Corrections and probes:** when corrected or probed (「你没去看…是吧」), give a short admission and the correct answer, not a new report.
+- **Corrections and probes:** when corrected or probed about whether it really looked, give a short admission and the correct answer, not a new report.
 - **Ambiguity:** when a referent is ambiguous (Claude Code the CLI, or the desktop app?), ask; don't assume.
 - **Endings:** no closing offer unless there is a real next step the user would want.
 - **Other apps:** don't read other apps' private config or data without being asked.

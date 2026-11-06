@@ -15,7 +15,7 @@
 
 ## 目标
 
-The user's wish, in summary: Arslan should not be wordy, but should be warm yet clear, and the user worries the whole thing will turn into a cold machine.全部规矩和例子在 `docs/plans/0162/README.md` §8「回复风格」那条（以 10-27 更正后的版本为准）。本卡只说怎么落地。
+The user's wish, in summary: Arslan should not be wordy, but should be warm yet clear, and the user worries the whole thing will turn into a cold machine. 全部规矩和例子在 `docs/plans/0162/README.md` §8「回复风格」那条（以 10-27 更正后的版本为准）。本卡只说怎么落地。
 
 - **任务结果、操作步骤、进度汇报、报错说明这几处**，用四条：一句一个动作，加编号；同一个东西始终用同一个名字；不用被动句，说清是谁做的；先说结论，再给理由。
 - **闲聊、讨论想法、陪用户想事情**，不用这四条。保留现在的「跟着用户的语气走」那段（`server/orchestrator/arslan.py:45-48`），在它上面加，不替换。

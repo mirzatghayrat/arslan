@@ -26,7 +26,7 @@
 
 ## What to build
 
-The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Working folder (first called Files), Progress and Browser, then any side chats. Anything added later opens from "+" (「面板页签保持一排，浏览器 也放到默认的一排里吧 这样默认就是 file progress 和 browser 以后再多加什么功能加到从面板的『+』打开」). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
+The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Working folder (first called Files), Progress and Browser, then any side chats. Anything added later opens from "+" (the user asked for the tabs to stay in one row, with the browser in the default row too, so the default is Files, Progress and Browser, and anything added later opens from the panel's "+" menu). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
 
 1. **Working folder (always there; renamed from Files, user, 2026-10-30):** the user observed that the "files from this conversation" list is really the output, and asked what the tab should be called instead: project directory, or something else. The tab is the folder only:
    - the existing name `workbench.folder` ("Working folder");

@@ -1,6 +1,6 @@
 # 0.1.55 — One surface kit, Island v2, Settings in seven places, and the four app pages
 
-Status: spec. Direction approved by the user on 2026-10-08 after three mock rounds ("都可以，按你建议的版本排，开工吧").
+Status: spec. Direction approved by the user on 2026-10-08 after three mock rounds (all fine: lay it out as suggested and start work).
 Mock: https://claude.ai/artifact/Y7bbsGqK21DxeX2h3BrzH3 (v13; boards named below). Release order agreed the same day:
 
 | Version | Content |

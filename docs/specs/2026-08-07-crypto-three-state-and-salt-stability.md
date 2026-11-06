@@ -1,19 +1,19 @@
 # spec ⓪ 解密三态 + 盐稳定性 —— 任务书
 
-**状态**:🟢 **已批(用户 2026-08-08,「方向全批」)。开工顺序第一。**
+**状态**:🟢 **已批(用户 2026-08-08, the whole direction approved)。开工顺序第一。**
 **优先级**:插队最前(用户 2026-08-07 裁决)。它是 ① 的前置 —— 两者都改
 `server/registry/executors.py` 的搜索错误路径,见 §6.1 接缝。
 
-> **用户 2026-08-08 裁决原文(逐条批)**
-> - 盐进数据库与密文同居 —— **批**(盐不是秘密,PBKDF2 盐可公开,同生死靠同址)
-> - 恢复走「只读试解 → 报告 → 我们点头才 rekey」—— **批,一个字节都不许在点头前写**
-> - `_FALLBACK_SALT` 只许读不许写 —— **批**
-> - 病因诊断不用固定句 —— **批**,`en.json:463` 那句就是反面教材,它把盐的事故说成 secret 的事故
+> **The user's rulings of 2026-08-08, approved item by item (summary):**
+> - The salt moves into the database and lives with the ciphertext: approved (the salt is not a secret, a PBKDF2 salt can be public, and they live and die together at one address).
+> - Recovery goes read-only trial decryption, then a report, then a rekey only after a person agrees: approved, with nothing written before that agreement.
+> - `_FALLBACK_SALT` is read-only, never written: approved.
+> - The cause diagnosis does not use a fixed sentence: approved; the sentence at `en.json:463` is the counter-example, since it reports a salt incident as a secret incident.
 >
-> **补充裁决(2026-08-08,拆掉我问错的那个二选一)**:
-> 🔴 **解密已经成功的写是迁移,解密还没成功的写是赌博。**
-> 迁移(当前钥匙能解开)**自动、不设人闸**,拦它会让 legacy 格式永生;
-> 恢复(当前钥匙解不开 → 候选盐试解)**纯只读 + 报告 + 人闸**。详见 §3① 与 §2.2。
+> **Supplementary ruling (2026-08-08, undoing the two-way choice that was asked wrongly):**
+> A write after a successful decryption is a migration; a write before one is a gamble.
+> A migration (the current key opens the value) is **automatic with no human gate**, since gating it would keep the legacy format alive forever;
+> recovery (the current key cannot open it, so candidate salts are tried) is **read-only, with a report and a human gate**. Details in §3① and §2.2.
 >
 > **开工顺序(用户 2026-08-08)**:cryptography 升级 + 全量 → 盐进 DB + 三态 + 诊断;
 > 验收带上三场景(换目录启动 / 缺环境变量启动 / 备份恢复到新机器,§4.1–4.3)。
@@ -288,12 +288,12 @@ rekey 走一个显式的人闸(§3① 与 §3②)。
 
 我原来问的是一个二选一,而它**问错了** —— 把两种性质不同的写当成一件事。用户拆开了:
 
-> 🔴 **解密已经成功的写是迁移,解密还没成功的写是赌博。**
+> 🔴 **A write after a successful decryption is a migration; a write before one is a gamble.**
 
-| | 触发条件 | 裁决 | Reason (the user's, summarized) |
+| | 触发条件 | 裁决 | Reason |
 |---|---|---|---|
-| **迁移** | **当前钥匙**能解开 ⇒ 重加密进「盐入库」新方案 | 🟢 **允许自动,不设人闸** | **拦它会让 legacy 格式永生** |
-| **恢复** | **当前钥匙解不开** ⇒ 去试候选盐 | 🟢 **纯只读 + 报告 + 人闸才 rekey** | 得先看清再动用户的数据 |
+| **迁移** | **当前钥匙**能解开 ⇒ 重加密进「盐入库」新方案 | 🟢 **允许自动,不设人闸** | **Gating it would keep the legacy format alive forever** |
+| **恢复** | **当前钥匙解不开** ⇒ 去试候选盐 | 🟢 **纯只读 + 报告 + 人闸才 rekey** | Look first, then touch the user's data |
 
 **「当前钥匙」的精确定义(实现必须照这个分,§2.2 落地)**:
 钥匙串被**划成两半**,而这一刀就是自动/人闸的分界线 ——
@@ -329,7 +329,7 @@ rekey 走一个显式的人闸(§3① 与 §3②)。
 
 ### ③ 三个 `*_status` 字段进 `GET /settings`,还是单开一个只读端点? → 🟢 **A**
 
-用户「方向全批」覆盖这一条(我原倾向 A)。
+The user's approval of the whole direction overrides this one(我原倾向 A)。
 
 - 🟢 **A(采纳)**:进 `GET /settings`,和 provider 那边的 `key_status` 形状对齐。
   一次往返、一个心智模型。
@@ -379,14 +379,14 @@ The user's requirement, in summary: **starting from a different directory, start
    mutation:去掉校验 / 让它在失败时也写,必须红。
 6. **候选盐命中后,第二次启动走的是主钥匙**(证明 rekey 真落了盘,不是每次都靠回退)。
 7. `_looks_masked` 的 GET→PUT 回显守卫不回归(`settings_service.py:35-46`)。
-8. 🔴 **恢复路径(组 B)纯只读**(裁决 §3①:「解密还没成功的写是赌博」)。
+8. 🔴 **恢复路径(组 B)纯只读**(ruling §3①: a write before a successful decryption is a gamble)。
    断言形状:诊断 + 候选试解全程用一个**会对任何写操作抛异常**的 session(或对
    `_set_raw` / `commit` 打桩计数并断言为 0),跑一遍全部四类诊断分支。
    mutation:在诊断路径里塞一次 `_set_raw`,测试必须红。
    ⚠️ 这一条不能靠「读代码没看见写」来满足 —— 那是源码断言,而缺陷形状恰恰是
    「顺手修一下」这种在别的分支里才触发的写(见 [[arslan-assert-behaviour-not-source]])。
 9. 🔴 **迁移路径(组 A)必须真的发生 —— 第 8 条的反面守卫**
-   (裁决 §3①:「拦它会让 legacy 格式永生」)。
+   (ruling §3①: gating the migration would keep the legacy format alive forever)。
    断言形状:写一条**legacy 无盐**格式的密文进库 → 启动一次 →
    ①它被重写成主钥匙格式;②**把 legacy 钥匙从钥匙串里拿掉后仍然解得开**
    (这一半才是「真的迁移了」的证据,只断言「读得到」的话读时回退也满足);
