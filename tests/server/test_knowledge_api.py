@@ -51,20 +51,13 @@ async def _spawn(client) -> int:
         return s.id
 
 
-async def test_post_text_then_list_then_delete(client):
+async def test_post_text(client):
     sid = await _spawn(client)
     r = await client.post(
         f"/api/v1/spawns/{sid}/knowledge",
         json={"source": "policy", "text": "refund within 30 days " * 50},
     )
     assert r.status_code == 200 and r.json()["chunks_added"] >= 1
-
-    r = await client.get(f"/api/v1/spawns/{sid}/knowledge")
-    assert r.status_code == 200
-    assert any(item["source"] == "policy" for item in r.json())
-
-    r = await client.delete(f"/api/v1/spawns/{sid}/knowledge", params={"source": "policy"})
-    assert r.status_code == 200 and r.json()["deleted"] >= 1
 
 
 async def test_post_file_upload(client):

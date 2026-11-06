@@ -1053,7 +1053,7 @@ _FETCH_TOOLS = frozenset({"web_search", "web_extract"})
 #: So the allowance spans the whole attempt, and it is smaller than the live one
 #: because an evaluation is not supposed to be doing research — a candidate that
 #: needs fifty pages is a candidate worth refusing.
-HERMETIC_FETCH_BUDGET = 50
+HERMETIC_FETCH_BUDGET = 50      # DELETE-BY: v0.1.64, with C7c-3b.
 
 #: Spent-so-far per hermetic sentinel. Module state rather than a threaded
 #: parameter because every dispatch in an attempt already shares one sentinel

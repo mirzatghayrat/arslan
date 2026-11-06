@@ -813,8 +813,6 @@
     "collapse_results": "Einklappen",
     "stdout_label": "Standardausgabe:",
     "exec_validated": "Ausführung bestätigt; die isolierte Verbindung endete mit Code 0.",
-    "equipped_capabilities": "Verfügbare Fähigkeiten:",
-    "capabilities_matrix": "Fähigkeitenübersicht:",
     "hide_rail": "Seitenbereich ausblenden",
     "show_rail": "Seitenbereich anzeigen",
     "confirm_direction": "Richtung bestätigen · Los",
