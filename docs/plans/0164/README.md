@@ -346,8 +346,9 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0087 | ASK1 | Reserved for ASK1; the card fills in what it does | ②Main, for ASK1 |
 | 0088 | ASK1 | Reserved for ASK1; the card fills in what it does | ②Main, for ASK1 |
 | 0089 | CAP7a | Rebuilds `capability_sources` so the `kind` CHECK also allows `plugin` (CAP7b stores a plugin as one source); copy-rename like 0069, schema otherwise unchanged, rows preserved, no-op downgrade | ⑤CAP |
+| 0090 | ⑤CAP | Data only: removes stored MCP sign-ins from `settings` whose server no longer exists | ⑤CAP |
 
-The next free number is 0090. Ask ②Main before taking it.
+The next free number is 0091. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 

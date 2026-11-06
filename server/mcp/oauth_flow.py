@@ -24,7 +24,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAu
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import Setting
+from server.db.models import MCPServer, Setting
 from server import crypto
 
 logger = logging.getLogger(__name__)
@@ -60,26 +60,39 @@ async def _write(key: str, payload: dict) -> None:
         await db.commit()
 
 
+def stored_keys(server_id: int) -> list[str]:
+    """Where one server's sign-in is kept: they go with the server (`mcp_service.delete_server`)."""
+    return [_TOKENS_KEY.format(server_id=server_id), _CLIENT_KEY.format(server_id=server_id)]
+
+
 class EncryptedTokenStorage:
-    """The SDK's TokenStorage protocol over Arslan's one crypto path."""
+    """The SDK's TokenStorage protocol over Arslan's one crypto path. A sign-in is only stored for a server that
+    exists: a browser flow or a token refresh can finish after its server was removed."""
 
     def __init__(self, server_id: int) -> None:
+        self._server_id = server_id
         self._tokens_key = _TOKENS_KEY.format(server_id=server_id)
         self._client_key = _CLIENT_KEY.format(server_id=server_id)
+
+    async def _exists(self) -> bool:
+        async with db_session.AsyncSessionLocal() as db:
+            return await db.get(MCPServer, self._server_id) is not None
 
     async def get_tokens(self) -> OAuthToken | None:
         data = await _read(self._tokens_key)
         return OAuthToken.model_validate(data) if data else None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
-        await _write(self._tokens_key, tokens.model_dump(mode="json", exclude_none=True))
+        if await self._exists():
+            await _write(self._tokens_key, tokens.model_dump(mode="json", exclude_none=True))
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         data = await _read(self._client_key)
         return OAuthClientInformationFull.model_validate(data) if data else None
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        await _write(self._client_key, client_info.model_dump(mode="json", exclude_none=True))
+        if await self._exists():
+            await _write(self._client_key, client_info.model_dump(mode="json", exclude_none=True))
 
 
 async def has_tokens(server_id: int) -> bool:
