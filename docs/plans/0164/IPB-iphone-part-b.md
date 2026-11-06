@@ -4,7 +4,7 @@
 |---|---|
 | Grade | Must (user, 2026-11-01, relayed by ④参谋: option (b)). iPhone 1.0 goes to App Store review after v0.1.64, with parts A and B of round 2 complete, as the user decided on 10-26. |
 | Lanes | ②Main: Bridge and server. ①iOS: reviews the frame list and each PR's frames, and builds nothing new on the phone (part B is built and waits for data). |
-| Hard gate | **The user's explicit OK on the frame change list** (step 2 below). No code that touches a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md` starts before it (the user's standing rule; `docs/sessions.md` §2). **Met on 2026-11-01** (about 13:45 UTC, relayed by ④参谋): 「帧 OK，1/2/4 按推荐，3 选 b」, for the list in [IPB-frame-list](IPB-frame-list.md) (#640). |
+| Hard gate | **The user's explicit OK on the frame change list** (step 2 below). No code that touches a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md` starts before it (the user's standing rule; `docs/sessions.md` §2). **Met on 2026-11-01** (about 13:45 UTC, relayed by ④参谋): the frames are OK, items 1, 2 and 4 as recommended, option b for item 3, for the list in [IPB-frame-list](IPB-frame-list.md) (#640). |
 | Order | After the INB7 chain (#622 → #636), on ②Main's lane. Off the SBX → CLS critical path. |
 | Effort | high for the build and ordinary reviews. effort=max only for the security-surface review of the Bridge PRs (what leaves the Mac, and over which channel). |
 

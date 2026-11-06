@@ -134,7 +134,7 @@ line with the routing engine" —— 而 `:36` **已经在调 `routing.select`**
    vision 由用户 2026-08-08 裁决加入(§3①);压缩那个槽盖一处还是两处看 §3②。
 2. **fallback 链**,🔴 **与 `routing.select()` 合并设计,不许旁边再长一套**(用户硬要求)。
 3. **降级可见** —— 🔴 **不许默默换模型花用户的钱**(用户硬要求)。
-   动机照用户原话:**可见性不是新要求,是把 §0.5 / §0.6 两条已存在的不可见修掉。**
+   The motivation, per the user: **visibility is not a new requirement; it fixes the two invisibilities that already exist in §0.5 / §0.6.**
 
 ### 不做
 
@@ -211,7 +211,7 @@ line with the routing engine" —— 而 `:36` **已经在调 `routing.select`**
 
 ### ① 🔴 vision:要不要给它一个槽? → 🟢 **B(显式 `vision_config_id`)**
 
-**用户 2026-08-08 裁决:B。理由(原话):显式优于猜测,与其它槽形状一致。**
+**用户 2026-08-08 裁决:B。Reason, in summary: explicit beats guessing, and it matches the shape of the other slots.**
 
 ⇒ 槽位从三个变成**四个**:`compaction` / `title` / `router` / **`vision`**。
 ⇒ §0.3 那条「刻意不 gate」的决定**不动** —— B 不是 gate,它不猜哪个模型能看,
@@ -298,7 +298,7 @@ B(失败后自动重试换模型)与后者直接冲突。**若你要的是 C(失
 7. **`run.provider` 在 RunReplay 里真的被渲染**(它今天在传、没人画)。
 8. **每一个新字段都有一条渲染断言**(§2.3 末的 `containment` 前车之鉴)。
 9. 🔴 **`WORKER_ROLES` 那条过期注释和 `llm_factory.py:22-28` 那句 Phase A docstring
-   一起修掉 —— 用户 2026-08-08 点名:「它是『注释描述没发生的事』第五例,别让它活过这轮。」**
+   一起修掉 —— 用户 2026-08-08 named it: **it is the fifth case of a comment describing something that did not happen, and it should not survive this round.**
    一条描述着没发生的事的注释,和一个坏掉的功能一样会误导下一个人。
    ⚠️ 精确位置:`build_adapter` 定义在 `:22`,docstring 在 `:23-28`,
    "Phase A … Phase B replaces the `chosen = primary` line" 那两句在 `:25-27`,
