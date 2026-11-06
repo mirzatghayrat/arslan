@@ -164,7 +164,7 @@ Checked on main `6c0f42c9` (2026-10-08).
   real correction after a wrong route still takes effect at once). The pending proposal "PERM_DENIED → use
   osascript" seen on the same Mac is checked against the same rule.
 
-## 11. Settings: eleven sections → seven (board Settings-General / -Permissions / -Background; user: "方向可以")
+## 11. Settings: eleven sections → seven (board Settings-General / -Permissions / -Background; the user approved the direction)
 
 Today: eleven nav entries in three groups (`web/src/components/settings/sectionRegistry.ts:46-67`), and
 "Advanced" holds eleven unrelated controls (telemetry, shell, confirm policy, sandbox, job budget, workspace
