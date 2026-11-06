@@ -170,16 +170,22 @@ def tool_calls(frames: Path) -> list[tuple[str, str]] | None:
 
 
 _CALL_TYPES = {"toolcall", "tool_call", "tool_use", "function_call"}
+#: OpenClaw 2026.10.10: the tool `dispatch_action` ran is an event of its own, not a block in the assistant's message.
+_NESTED_CALL = "openclaw.nested-tool.v1"
 
 
 def _calls_in(node) -> list[tuple[str, str]]:
-    """Tool calls anywhere in a JSON value, in document order: a block typed as a call with a `name`, or an
-    OpenAI-style `{"function": {"name", "arguments"}}`."""
+    """Tool calls anywhere in a JSON value, in document order: a block typed as a call with a `name`, an OpenAI-style
+    `{"function": {"name", "arguments"}}`, or OpenClaw's nested-tool event (not searched further: its result is data)."""
     found: list[tuple[str, str]] = []
     if isinstance(node, dict):
         kind = str(node.get("type", "")).replace("-", "_").lower()
         fn = node.get("function")
-        if kind in _CALL_TYPES and isinstance(node.get("name"), str):
+        details = node.get("details")
+        if (node.get("customType") == _NESTED_CALL and isinstance(details, dict)
+                and isinstance(details.get("toolName"), str)):
+            found.append((details["toolName"], json.dumps(details.get("input", ""), ensure_ascii=False)))
+        elif kind in _CALL_TYPES and isinstance(node.get("name"), str):
             args = node.get("arguments", node.get("input", node.get("args", "")))
             found.append((node["name"], args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)))
         elif isinstance(fn, dict) and isinstance(fn.get("name"), str):

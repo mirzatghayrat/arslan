@@ -36,6 +36,7 @@ def test_protected_paths_are_arslans_own_plus_the_users_secrets():
         assert real(path) in ours, path
     for name in (".ssh", "Library/Keychains", ".aws", ".config/gcloud", ".kube", ".docker/config.json", ".netrc",
                  ".npmrc", ".pypirc", ".config/gh", ".git-credentials", ".gnupg", ".azure",
+                 ".config/rclone", ".rclone.conf", ".s3cfg", ".boto", ".gsutil",
                  "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
                  "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
                  "Library/Application Support/Arc", "Library/Safari", "Library/Cookies"):
