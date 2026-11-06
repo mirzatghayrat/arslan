@@ -102,10 +102,8 @@ class TurnTracker:
     jobs_open: set = field(default_factory=set)
     final_text: list = field(default_factory=list)
     approvals: int = 0
-    # SBX-7: cards to run outside the sandbox, apart: asked up front, or a re-run after it stopped a command.
-    outside_cards: int = 0
-    retry_cards: int = 0
-    run_commands: int = 0          # SBX-7: run_command calls, the re-run share's denominator (report.py)
+    leave_cards: int = 0           # SBX-7: cards to run a command outside the sandbox, whatever the answer
+    run_commands: int = 0          # SBX-7: run_command calls, what those cards are a share of (report.py)
     declined: int = 0
     actions_declined: int = 0
     last_activity: float = 0.0
@@ -198,7 +196,14 @@ class TurnTracker:
         kind, target, detail = frame.get("kind") or "", frame.get("target") or "", frame.get("detail") or ""
         return any(tag in self.run_dir and ok(kind, target, detail) for tag, ok in ACTION_OK.items())
 
+    def counts(self) -> dict:
+        """SBX-7, for the record. With Arslan's own sandbox off (the bench's is on) there is nothing to leave."""
+        return {"leave_cards": self.leave_cards if CARDS == "sandboxed" else None,
+                "run_commands": self.run_commands, "approvals": self.approvals}
+
     def _approve_command(self, frame: dict) -> bool:
+        if frame.get("sandbox"):
+            self.leave_cards += 1
         if DECLINE_CARDS:
             return False
         if CARDS != "sandboxed":
@@ -206,10 +211,6 @@ class TurnTracker:
             # outside the bench folder): declined, except Reminders for T1, which is the task.
             return frame.get("rule") != "apple-events" or "-T1-" in self.run_dir
         if frame.get("sandbox"):
-            if frame["sandbox"] == "retry":
-                self.retry_cards += 1
-            else:
-                self.outside_cards += 1
             return False
         rule = frame.get("rule") or ""
         if rule == "apple-events":
@@ -291,9 +292,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
                     break
                 if n < len(prompts):
                     snapshot(run_dir, n)
-    return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
-            "outside_cards": tracker.outside_cards, "retry_cards": tracker.retry_cards,
-            "run_commands": tracker.run_commands, "declined": tracker.declined,
+    return {"secs": round(time.monotonic() - started), **tracker.counts(), "declined": tracker.declined,
             "actions_declined": tracker.actions_declined,
             "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}

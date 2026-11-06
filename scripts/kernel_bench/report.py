@@ -103,37 +103,45 @@ def render_totals(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def sandbox_cards(records: list[dict]) -> dict:
-    """SBX-7: per entrant and model, the runs that counted cards to run outside the sandbox, their run_command
-    calls and the cards: a re-run after the sandbox stopped a command, or asked up front."""
+def sandbox_cards(records: list[dict], *, per_task: bool = False) -> dict:
+    """SBX-7: per entrant and model (and, for SBX-8, per policy and task), the runs under Arslan's own sandbox, their
+    run_command calls, every card, and the cards to leave the sandbox."""
     out: dict = {}
     for r in records:
         cards = r.get("sandbox_cards") or {}
-        if cards.get("retry") is None and cards.get("outside") is None:
+        if cards.get("leave") is None:
             continue
-        seen = out.setdefault((r["entrant"], r.get("model", "?")),
-                              {"runs": 0, "retry": 0, "outside": 0, "run_commands": 0})
+        key = (r["entrant"], r.get("model", "?"), *((r.get("shell_policy") or "?", r["task"]) if per_task else ()))
+        seen = out.setdefault(key, {"runs": 0, "run_commands": 0, "asked": 0, "leave": 0})
         seen["runs"] += 1
-        for key in ("retry", "outside", "run_commands"):
-            seen[key] += cards.get(key) or 0
+        for name in ("run_commands", "asked", "leave"):
+            seen[name] += cards.get(name) or 0
     return out
 
 
-def rerun_share(c: dict) -> float | None:
-    """The SBX card's number 2 (docs/plans/0164/SBX-sandbox.md, "The two numbers"): re-run cards ÷ run_command
-    calls that ran in the sandbox. The stand-in user declines every card, so a call asked up front never ran, and
-    every other call ran in the sandbox first. None when no call ran there."""
-    ran = c["run_commands"] - c["outside"]
-    return c["retry"] / ran if ran > 0 else None
+def leave_share(c: dict) -> float | None:
+    """The SBX card's number 2 ("The two numbers"): of the run_command calls, how many asked to leave the sandbox. A
+    denial goes back to the model, so leaving is its own request, and each card is one call. None with no calls."""
+    return c["leave"] / c["run_commands"] if c["run_commands"] else None
+
+
+def _cards_row(c: dict) -> str:
+    share = leave_share(c)
+    return f"{c['runs']} | {c['run_commands']} | {c['asked']} | {c['leave']} | {'–' if share is None else f'{share:.0%}'} |"
 
 
 def render_sandbox_cards(records: list[dict]) -> str:
-    lines = ["| entrant | model | runs | run_command calls | re-run cards | re-run share | asked up front |",
+    lines = ["| entrant | model | runs | run_command calls | cards | cards to leave the sandbox | share |",
              "| --- | --- | --- | --- | --- | --- | --- |"]
-    for (who, model), c in sorted(sandbox_cards(records).items()):
-        share = rerun_share(c)
-        lines.append(f"| {who} | {model} | {c['runs']} | {c['run_commands']} | {c['retry']} | "
-                     f"{'–' if share is None else f'{share:.0%}'} | {c['outside']} |")
+    lines += [f"| {who} | {model} | {_cards_row(c)}" for (who, model), c in sorted(sandbox_cards(records).items())]
+    return "\n".join(lines)
+
+
+def render_cards_per_task(records: list[dict]) -> str:
+    lines = ["| entrant | model | policy | task | runs | run_command calls | cards | cards to leave the sandbox | share |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines += [f"| {who} | {model} | {policy} | {task} | {_cards_row(c)}"
+              for (who, model, policy, task), c in sorted(sandbox_cards(records, per_task=True).items())]
     return "\n".join(lines)
 
 
@@ -155,3 +163,5 @@ if __name__ == "__main__":
     print(render_totals(rows))
     print()
     print(render_sandbox_cards(recs))
+    print()
+    print(render_cards_per_task(recs))

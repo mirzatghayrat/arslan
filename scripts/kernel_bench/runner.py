@@ -376,6 +376,12 @@ def driver_out(who: str, run: Path) -> dict:
         return {}
 
 
+def sandbox_cards(summary: dict) -> dict:
+    """SBX-7: what a record keeps of the driver's summary (report.py reads it); all None for other entrants."""
+    return {"leave": summary.get("leave_cards"), "asked": summary.get("approvals"),
+            "run_commands": summary.get("run_commands")}
+
+
 def driver_end(who: str, run: Path) -> str | None:
     """How Arslan's run ended (`done`, `task_waiting_user`, `timeout`, ...); None for others."""
     return driver_out(who, run).get("end")
@@ -576,9 +582,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
               # v0.1.63: the command policy Arslan's instance ran under (ask_risky unless the run asked for
               # ask_all), so the final M1's ask_all reference run is labelled; None for other entrants.
               "shell_policy": driver_out(who, run).get("shell_policy"),
-              # SBX-7: Arslan's cards to run outside the sandbox (the stand-in user declines them); None elsewhere.
-              "sandbox_cards": {**{k: driver_out(who, run).get(f"{k}_cards") for k in ("outside", "retry")},
-                                "run_commands": driver_out(who, run).get("run_commands")},
+              "sandbox_cards": sandbox_cards(driver_out(who, run)),
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
     record["passed"] = judge(verdict, end, who)
