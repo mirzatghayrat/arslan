@@ -1,6 +1,6 @@
 # CAPX: three capability follow-ups (skill framing, one name sanitizer, connection secrets)
 
-⓪Plan, 2026-10-30. The user asked, relayed by ④参谋 (「转给 ⓪Plan」), for the long-term approach over minimal patches, with "no over-defence" (`docs/sessions.md` §12) and mainstream practice weighed in each card. ④参谋 drafted the scope. ⓪Plan re-checked the references at main `b3f31303`. Lane: ⑤CAP for all three. Each card is its own PR, written at effort=max with an independent effort=max review, and the user merges (security surface).
+⓪Plan, 2026-10-30. The user asked, relayed by ④参谋 (to pass to ⓪Plan), for the long-term approach over minimal patches, with "no over-defence" (`docs/sessions.md` §12) and mainstream practice weighed in each card. ④参谋 drafted the scope. ⓪Plan re-checked the references at main `b3f31303`. Lane: ⑤CAP for all three. Each card is its own PR, written at effort=max with an independent effort=max review, and the user merges (security surface).
 
 **Decided on 2026-10-30 (user, relayed by ④参谋): mainstream practice for all three.** SKF1 changes meaning (below), UNI1b is a notice only, and SEC1 is an optional offer. The decisions are recorded in full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-30".
 

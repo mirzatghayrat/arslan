@@ -1,4 +1,4 @@
-"""Q1b, #486 review G1 (the user, 2026-10-29: "Server fails closed"). A quick question whose store failed could
+"""Q1b, #486 review G1 (the user, 2026-10-29: the server fails closed). A quick question whose store failed could
 still run as an ordinary chat with every tool: by a follow-up naming its id, by a new message starting it again
 without the kind, or by any message after the Bridge restarted (the Bridge remembered messages, not the
 conversation). So the server decides by the conversation:

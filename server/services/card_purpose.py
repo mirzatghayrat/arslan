@@ -306,7 +306,7 @@ def _run(program: str) -> dict:
 
 
 def _over_network(program: str) -> dict:
-    """SMART-8 (#688/#689 reviews, Astra's two rounds; the user: 「简化吧」): a step that reaches another machine is
+    """SMART-8 (#688/#689 reviews, Astra's two rounds; the user asked for the simpler version): a step that reaches another machine is
     read only as a fixed line — no host, no file — because what it sends cannot be told from the command. `unsure` is
     set, so the risk row and the card say so, and the Mac card shows the whole command."""
     return _reading("overNetwork", {"program": program}, unsure=True)

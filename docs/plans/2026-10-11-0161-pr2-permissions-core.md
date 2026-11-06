@@ -251,7 +251,7 @@ Take the pattern from the file that `tests/server/test_inbox_approvals.py`'s
 
 Run:
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_permission_store.py tests/server/test_migration_runner.py -q
+cd <worktrees>/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_permission_store.py tests/server/test_migration_runner.py -q
 ```
 Expected: FAIL. `permission_store` and the `_0067` module do not exist, and the registry list
 check fails once `"0067"` is added to the test.
@@ -590,7 +590,7 @@ Remove `ALWAYS_ALLOW_KEY` only if nothing else imports it (check with
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_permission_store.py tests/server/test_migration_runner.py tests/server/test_terminal_policy.py tests/server/test_run_command_confirm_flow.py -q
+cd <worktrees>/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_permission_store.py tests/server/test_migration_runner.py tests/server/test_terminal_policy.py tests/server/test_run_command_confirm_flow.py -q
 ```
 Expected: PASS. If other tests seeded `terminal_always_allow` directly and now fail, switch them
 to `terminal_policy.allow_always`. Find them with `grep -rln "terminal_always_allow" tests`.
@@ -606,7 +606,7 @@ On a `cp` backup (scratchpad), make each change one at a time and confirm a test
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/ruff check server tests && git add -A server/db server/services/permission_store.py server/services/terminal_policy.py tests/server && git commit -m "permissions: the store — rules, grants, ledger (migration 0067); legacy don't-ask-again rules live there (0.1.61 §A5, §A8)"
+cd <worktrees>/arslan-0161-core && .venv/bin/ruff check server tests && git add -A server/db server/services/permission_store.py server/services/terminal_policy.py tests/server && git commit -m "permissions: the store — rules, grants, ledger (migration 0067); legacy don't-ask-again rules live there (0.1.61 §A5, §A8)"
 ```
 
 ---
@@ -1147,7 +1147,7 @@ On a `cp` backup, make each change one at a time and confirm a test fails:
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/ruff check server tests && git add server/services/permissions.py tests/server/test_permissions.py && git commit -m "permissions: one decide() — money, rule, grant, card; scopes by kind; no surface means no; one ledger row each (0.1.61 §3, §A11)"
+cd <worktrees>/arslan-0161-core && .venv/bin/ruff check server tests && git add server/services/permissions.py tests/server/test_permissions.py && git commit -m "permissions: one decide() — money, rule, grant, card; scopes by kind; no surface means no; one ledger row each (0.1.61 §3, §A11)"
 ```
 
 ---
@@ -1512,7 +1512,7 @@ def _command_request(shell: str, rules: list[str], frame: dict | None):
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_approvals_v2.py tests/server/test_inbox_approvals.py tests/server/test_island_approvals.py tests/server/test_phone_turn_cards.py tests/server/test_judgment_cards.py tests/server/test_hands_card_in_turn.py tests/server/test_permissions.py -q
+cd <worktrees>/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_approvals_v2.py tests/server/test_inbox_approvals.py tests/server/test_island_approvals.py tests/server/test_phone_turn_cards.py tests/server/test_judgment_cards.py tests/server/test_hands_card_in_turn.py tests/server/test_permissions.py -q
 ```
 Expected: PASS. Update assertions that encode 300 s, for example
 `listed["expires_at"] - listed["opened_at"] == approvals.TIMEOUT_S`; those keep working. Update
@@ -1529,7 +1529,7 @@ On a `cp` backup, make each change one at a time and confirm a test fails:
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/ruff check server tests && git add server/services/approvals.py tests/server && git commit -m "approvals: cards wait 30 minutes and carry a scope and a note; identical requests share one card; a job asks like a window (0.1.61 §A4)"
+cd <worktrees>/arslan-0161-core && .venv/bin/ruff check server tests && git add server/services/approvals.py tests/server && git commit -m "approvals: cards wait 30 minutes and carry a scope and a note; identical requests share one card; a job asks like a window (0.1.61 §A4)"
 ```
 
 ---
@@ -1684,7 +1684,7 @@ def test_always_on_a_two_rule_command_silences_it_next_time(app_client, monkeypa
 
 Run:
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_window_permissions.py tests/server/test_run_command_confirm_flow.py -q
+cd <worktrees>/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_window_permissions.py tests/server/test_run_command_confirm_flow.py -q
 ```
 Expected: FAIL. The cards carry no options, a new socket asks again, a typed message waits behind
 the card, and the expired text says "declined".
@@ -1771,7 +1771,7 @@ def _declined(refused: str, subject: str) -> str:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_window_permissions.py tests/server/test_run_command_confirm_flow.py tests/server/test_inbox_approvals.py tests/server/test_island_approvals.py tests/server/test_phone_turn_cards.py tests/server/test_tool_loop_confirm.py tests/server/test_sandbox_script_cards.py tests/server/test_ws_arslan.py tests/server/test_hands_card_in_turn.py -q
+cd <worktrees>/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_window_permissions.py tests/server/test_run_command_confirm_flow.py tests/server/test_inbox_approvals.py tests/server/test_island_approvals.py tests/server/test_phone_turn_cards.py tests/server/test_tool_loop_confirm.py tests/server/test_sandbox_script_cards.py tests/server/test_ws_arslan.py tests/server/test_hands_card_in_turn.py -q
 ```
 Expected: PASS. Some existing tests encode removed behaviour: the per-socket workspace or
 schedule grant, or the exact-text "remember" set. Update each to the conversation-grant
@@ -1788,7 +1788,7 @@ On a `cp` backup, make each change one at a time and confirm a test fails:
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/ruff check server tests && git add server tests && git commit -m "chat and jobs ask through permissions.decide; a typed message answers a waiting card; expired cards are reported as no answer (0.1.61 §A4, §A9)"
+cd <worktrees>/arslan-0161-core && .venv/bin/ruff check server tests && git add server tests && git commit -m "chat and jobs ask through permissions.decide; a typed message answers a waiting card; expired cards are reported as no answer (0.1.61 §A4, §A9)"
 ```
 
 ---
@@ -1898,13 +1898,13 @@ Expected: FAIL with 404 / 422 responses (the routes and fields are missing).
 - [ ] **Step 4: Run the tests to verify they pass, plus the approvals suites.**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_permissions_api.py tests/server/test_inbox_approvals.py tests/server/test_island_approvals.py -q
+cd <worktrees>/arslan-0161-core && .venv/bin/python -m pytest tests/server/test_permissions_api.py tests/server/test_inbox_approvals.py tests/server/test_island_approvals.py -q
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/mirzatghayrat/Documents/aralem_dev/Arslan/.claude/worktrees/wonderful-chandrasekhar-022909/arslan-0161-core && .venv/bin/ruff check server tests && git add server tests && git commit -m "api: answers carry a scope and a note; rules listed, created, withdrawn; what a scheduled run could not ask for (0.1.61 §A4, §A5)"
+cd <worktrees>/arslan-0161-core && .venv/bin/ruff check server tests && git add server tests && git commit -m "api: answers carry a scope and a note; rules listed, created, withdrawn; what a scheduled run could not ask for (0.1.61 §A4, §A5)"
 ```
 
 ---
