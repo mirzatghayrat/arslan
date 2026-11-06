@@ -3025,3 +3025,35 @@ button:disabled {
   backdrop-filter: blur(10px); box-shadow: var(--kit-shadow);
 }
 .brain-nav--floating .brain-nav__search { padding: 10px 10px 6px; }
+
+/* ── Highlighted code (FMT1) ──────────────────────────────────────────────────
+   HighlightedCode renders Prism's tokens as <span class="token TYPE ALIAS">; the colours are tokens in theme/tokens.css. */
+/* A token's type is also its class, and Tailwind has utilities of the same names: a TOML [section] is `table`
+   (display: table, so it broke onto three lines). Every token is inline text. */
+.md-code .token { display: inline; }
+.md-code .token.comment,
+.md-code .token.prolog,
+.md-code .token.doctype,
+.md-code .token.cdata { color: var(--code-comment); }
+.md-code .token.keyword,
+.md-code .token.builtin,
+.md-code .token.function,
+.md-code .token.class-name,
+.md-code .token.tag,
+.md-code .token.selector,
+.md-code .token.atrule { color: var(--code-keyword); }
+.md-code .token.number,
+.md-code .token.boolean,
+.md-code .token.constant,
+.md-code .token.symbol,
+.md-code .token.attr-name,
+.md-code .token.property { color: var(--code-number); }
+.md-code .token.string,
+.md-code .token.char,
+.md-code .token.attr-value,
+.md-code .token.regex { color: var(--code-string); }
+.md-code .token.inserted { color: var(--code-inserted); }
+.md-code .token.deleted { color: var(--code-deleted); }
+.md-code .token.operator,
+.md-code .token.punctuation,
+.md-code .token.parameter { color: var(--muted-foreground); }

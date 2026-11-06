@@ -91,7 +91,7 @@ def _closing(text: str, open_at: int) -> int:
     return -1
 
 
-def _parse(text: str) -> list[dict] | None:
+def _parse(text: str, depth: int = 0) -> list[dict] | None:
     """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
     is never closed (as commandSummary's `parse`)."""
     steps: list[dict] = []
@@ -121,7 +121,7 @@ def _parse(text: str) -> list[dict] | None:
                 end = text.find("`", i + 1) if ch == "`" else _closing(text, i + 1)
                 if end < 0:
                     return None
-                inner = _parse(text[i + 1 if ch == "`" else i + 2:end])
+                inner = _parse(text[i + 1 if ch == "`" else i + 2:end], depth + 1) if depth < 64 else None
                 if inner is None:
                     return None
                 step["subs"].extend(inner)

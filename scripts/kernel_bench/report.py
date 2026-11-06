@@ -103,6 +103,48 @@ def render_totals(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def sandbox_cards(records: list[dict], *, per_task: bool = False) -> dict:
+    """SBX-7: per entrant and model (and, for SBX-8, per policy and task), the runs under Arslan's own sandbox, their
+    run_command calls, every card, and the cards to leave the sandbox."""
+    out: dict = {}
+    for r in records:
+        cards = r.get("sandbox_cards") or {}
+        if cards.get("leave") is None:
+            continue
+        key = (r["entrant"], r.get("model", "?"), *((r.get("shell_policy") or "?", r["task"]) if per_task else ()))
+        seen = out.setdefault(key, {"runs": 0, "run_commands": 0, "asked": 0, "leave": 0})
+        seen["runs"] += 1
+        for name in ("run_commands", "asked", "leave"):
+            seen[name] += cards.get(name) or 0
+    return out
+
+
+def leave_share(c: dict) -> float | None:
+    """The SBX card's number 2 ("The two numbers"): of the run_command calls, how many asked to leave the sandbox. A
+    denial goes back to the model, so leaving is its own request, and each card is one call. None with no calls."""
+    return c["leave"] / c["run_commands"] if c["run_commands"] else None
+
+
+def _cards_row(c: dict) -> str:
+    share = leave_share(c)
+    return f"{c['runs']} | {c['run_commands']} | {c['asked']} | {c['leave']} | {'–' if share is None else f'{share:.0%}'} |"
+
+
+def render_sandbox_cards(records: list[dict]) -> str:
+    lines = ["| entrant | model | runs | run_command calls | cards | cards to leave the sandbox | share |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
+    lines += [f"| {who} | {model} | {_cards_row(c)}" for (who, model), c in sorted(sandbox_cards(records).items())]
+    return "\n".join(lines)
+
+
+def render_cards_per_task(records: list[dict]) -> str:
+    lines = ["| entrant | model | policy | task | runs | run_command calls | cards | cards to leave the sandbox | share |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines += [f"| {who} | {model} | {policy} | {task} | {_cards_row(c)}"
+              for (who, model, policy, task), c in sorted(sandbox_cards(records, per_task=True).items())]
+    return "\n".join(lines)
+
+
 def in_round(records: list[dict], name: str) -> list[dict]:
     return [r for r in records if str(r.get("run", "")).endswith(f"-{name}")]
 
@@ -119,3 +161,7 @@ if __name__ == "__main__":
     print(render(rows))
     print()
     print(render_totals(rows))
+    print()
+    print(render_sandbox_cards(recs))
+    print()
+    print(render_cards_per_task(recs))
