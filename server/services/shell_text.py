@@ -39,6 +39,9 @@ def _strip_ansi(text: str) -> str:
 # ── adapted from Hermes ───────────────────────────────────────────────────────
 
 _MAX_DETECTION_COMMAND_CHARS, _MAX_SEPARATOR_FREE_COMMAND_CHARS, _MAX_DETECTION_SEGMENTS = 128_000, 4_096, 25_000
+# Each nested `$(` is one Python frame deeper in the scan: well under the recursion limit, with room for the stack a turn
+# has already used.
+_MAX_DETECTION_SUBSTITUTIONS = 256
 
 # Start of a command: start of text, a newline, `$(` or a backtick, past sudo/env/exec/nohup/setsid/time.
 # ; & | are made newlines by the quote-aware _mark_command_starts pass, so quoted data never counts.
@@ -56,7 +59,9 @@ _SHELL_NAMES = ("bash", "sh", "zsh", "ksh", "dash")
 
 
 def _contains_shell_carrier(command: str) -> bool:
-    """Return whether any command-position word is a shell-carrying command."""
+    """Return whether any command-position word is a shell-carrying command (past the limit: yes, read it raw)."""
+    if _command_parser_limit_exceeded(command):
+        return True
     return any(
         os.path.basename(_deobfuscate_shell_word_for_detection(word)).lower() in _SHELL_CARRIER_NAMES
         for _, _, word in _iter_shell_command_word_spans(command)
@@ -213,9 +218,10 @@ _BASH_SHORT_OPTION_LETTERS = frozenset("ilrsDcabefhkmnptuvxBCEHPTOo")
 
 
 def _command_parser_limit_exceeded(command: str) -> bool:
-    """Bound all parser work: too long, long with no separator, or too many separators (quoted ones
-    over-count, which fails closed)."""
-    if len(command) > _MAX_DETECTION_COMMAND_CHARS:
+    """Bound all parser work: too long, long with no separator, too many separators, or too many
+    substitutions to scan (quoted ones over-count, which fails closed)."""
+    if len(command) > _MAX_DETECTION_COMMAND_CHARS or max(
+            command.count("$("), _normalize_command_for_detection(command).count("$(")) >= _MAX_DETECTION_SUBSTITUTIONS:
         return True
     # Long separator-free input has no compound-command utility and makes every regex inspect one giant token.
     if len(command) > _MAX_SEPARATOR_FREE_COMMAND_CHARS and not any(char in command for char in ";&|\n"):
@@ -632,7 +638,8 @@ def _iter_shell_command_starts(command: str):
                     skip = i + 1 if repeated else skip
                     starts.append(i + 1 + repeated)
 
-    scan(0, len(command))
+    if command.count("$(") < _MAX_DETECTION_SUBSTITUTIONS:      # past it `too_complex` says it isn't read at all
+        scan(0, len(command))
     seen = set()
     for start in starts:
         start = _skip_shell_whitespace(command, start)

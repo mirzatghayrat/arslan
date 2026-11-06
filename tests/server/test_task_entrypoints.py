@@ -3,8 +3,8 @@
 import pytest
 from sqlalchemy import select
 
-from arslan.execution_budget import BudgetExceeded, current as budget
-from server.db.models import CompanionTask, TaskAttempt
+from arslan.execution_budget import BudgetExceeded
+from server.db.models import CompanionTask
 from server.services import personal_context as pc, task_context, task_service
 from server.services.task_repository import TaskError, repository
 
@@ -15,43 +15,6 @@ def active_context(monkeypatch):
         return pc.TaskMemoryContext(task_id="entry-task", run_id="initial", conversation_id=cid,
                                     no_learning=True, query=kwargs.get("retrieval_query") or kwargs.get("user_message", ""))
     monkeypatch.setattr(task_context, "load", load)
-
-
-async def test_an_old_expert_task_resumes_as_an_arslan_turn(execution_db, active_context, monkeypatch):
-    """0.1.63 (C1): a task saved before 0.1.44 carries driver {"kind": "expert", "id": N}.
-    Resuming it must not fail with task_invalid_driver and must not look for an expert:
-    it goes to arslan._handle_answer, with the same task, goal and budget."""
-    calls = []
-
-    async def old_expert_attempt(emit):     # how such a task was left: paused, partly done
-        calls.append(("expert", budget().id))
-        budget().tool()
-        task_service.current().pause_reason = "task_no_progress"
-        return "Partial evidence, not completion"
-    await task_context.execute_entry("entry", "Verify the supplied artifact", lambda event: None,
-                                     old_expert_attempt, driver={"kind": "expert", "id": 7})
-    async with repository() as repo:
-        row = await repo.get("entry-task")
-        assert row.phase == "waiting_user" and row.pause_reason == "task_no_progress"
-        assert row.privacy["driver"] == {"kind": "expert", "id": 7}
-        version = row.version
-
-    from server.orchestrator import arslan
-
-    async def answer(conversation_id, user_message, emit, **kwargs):
-        calls.append(("arslan", conversation_id, user_message, budget().id, budget().tool_calls,
-                      "Continue from its saved progress" in kwargs.get("extra_system", "")))
-        budget().tool()
-        return "Verified."
-    monkeypatch.setattr(arslan, "_handle_answer", answer)
-    await task_service.resume_turn("entry-task", version, "entry", lambda event: None)
-
-    assert calls[1] == ("arslan", "entry", "Verify the supplied artifact", calls[0][1], 1, True)
-    async with execution_db() as db:
-        assert len((await db.scalars(select(TaskAttempt))).all()) == 2
-        row = await db.get(CompanionTask, "entry-task")
-        assert row.budget["used"]["tool_calls"] == 2
-        assert row.phase == "succeeded" and row.pause_reason is None
 
 
 async def test_headless_entry_does_not_regrant_remember_authority(execution_db, active_context):

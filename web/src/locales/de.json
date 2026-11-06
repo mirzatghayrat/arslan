@@ -813,8 +813,6 @@
     "collapse_results": "Einklappen",
     "stdout_label": "Standardausgabe:",
     "exec_validated": "Ausführung bestätigt; die isolierte Verbindung endete mit Code 0.",
-    "equipped_capabilities": "Verfügbare Fähigkeiten:",
-    "capabilities_matrix": "Fähigkeitenübersicht:",
     "hide_rail": "Seitenbereich ausblenden",
     "show_rail": "Seitenbereich anzeigen",
     "confirm_direction": "Richtung bestätigen · Los",
@@ -1005,9 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "Diesen Befehl außerhalb der Sandbox ausführen?",
-    "sandboxOutsideNote": "Befehle schreiben normalerweise nur in Arslans Arbeitsordner. Dieser muss Dateien an anderer Stelle auf deinem Mac ändern.",
-    "sandboxRetryLabel": "Die Sandbox hat diesen Befehl gestoppt",
-    "sandboxRetryNote": "Er wollte außerhalb des Arbeitsordners schreiben oder eine geschützte Datei lesen. Außerhalb der Sandbox startet er noch einmal von vorn.",
+    "sandboxOutsideNote": "Befehle schreiben normalerweise nur in Arslans Arbeitsordner und können geschützte Dateien nicht lesen. Dieser möchte ohne diese Grenzen laufen. Hat er es schon in der Sandbox versucht, beginnt er wieder von vorn, und was er bereits getan hat, bleibt bestehen.",
     "sandboxConversation": "Befehle, auch die von Hintergrundaufgaben, dürfen außerhalb der Sandbox laufen",
     "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",
@@ -1041,13 +1037,14 @@
       "deleteSome": "Dateien oder Ordner löschen",
       "overNetwork": "Nutzt das Netzwerk ({{program}}): kann Daten senden oder empfangen",
       "more": " (und {{count}} weitere Schritte)",
-      "more_one": " (und 1 weiterer Schritt)"
+      "more_one": " (und 1 weiterer Schritt)",
+      "toTrash": "{{count}} Dateien oder Ordner in den Papierkorb legen",
+      "toTrash_one": "1 Datei oder Ordner in den Papierkorb legen"
     },
     "risk": {
       "sandboxed": "Läuft in der Sandbox: kann nur Dateien im Arbeitsordner ändern",
       "remote": "Läuft auf {{host}}, nicht auf diesem Mac",
       "outside": "Läuft diesmal außerhalb der Sandbox",
-      "retry": "Die Sandbox hat es gestoppt; erneut ausführen beginnt von vorn",
       "unsandboxed": "Läuft ohne Sandbox",
       "network": "Nutzt diesmal das Netzwerk",
       "rule": {
@@ -1073,7 +1070,10 @@
         "unreadable-script-reach": "Sein Skript greift nach außen, startet Programme oder steuert Apps",
         "unreadable-quoting": "Seine Anführungszeichen schließen nicht, daher ist nicht lesbar, was läuft",
         "unreadable-complex": "Zu komplex, um ihn vor dem Ausführen zu lesen",
-        "unreadable-send": "Arslan kann nicht ganz lesen, was das sendet; es kann lokale Daten senden"
+        "unreadable-send": "Arslan kann nicht ganz lesen, was das sendet; es kann lokale Daten senden",
+        "delete-outside-trash": "Legt sie in den Papierkorb; von dort kannst du sie wiederherstellen",
+        "delete-outside-protected": "Arslans eigene Daten und Schlüssel bleiben, wo sie sind; der Rest kommt in den Papierkorb",
+        "delete-outside-sandboxed": "Läuft in der Sandbox; was es dort löscht, ist endgültig gelöscht"
       }
     }
   },

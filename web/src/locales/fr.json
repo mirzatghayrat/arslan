@@ -813,8 +813,6 @@
     "collapse_results": "Réduire",
     "stdout_label": "Sortie standard :",
     "exec_validated": "Exécution vérifiée ; la connexion isolée s’est terminée avec le code 0.",
-    "equipped_capabilities": "Capacités disponibles :",
-    "capabilities_matrix": "Matrice des capacités :",
     "hide_rail": "Masquer le panneau latéral",
     "show_rail": "Afficher le panneau latéral",
     "confirm_direction": "Confirmer la direction · Allons-y",
@@ -1005,9 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "Exécuter ceci hors du bac à sable ?",
-    "sandboxOutsideNote": "Les commandes n’écrivent normalement que dans le dossier de travail d’Arslan. Celle-ci doit modifier des fichiers ailleurs sur votre Mac.",
-    "sandboxRetryLabel": "Le bac à sable a arrêté cette commande",
-    "sandboxRetryNote": "Elle a essayé d’écrire hors du dossier de travail ou de lire un fichier protégé. L’exécuter hors du bac à sable la relance depuis le début.",
+    "sandboxOutsideNote": "Les commandes n’écrivent normalement que dans le dossier de travail d’Arslan et ne peuvent pas lire les fichiers protégés. Celle-ci demande à s’exécuter sans ces limites. Si elle a déjà essayé dans le bac à sable, elle repart du début, et ce qu’elle a déjà fait reste en place.",
     "sandboxConversation": "les commandes, y compris celles des tâches en arrière-plan, peuvent s’exécuter hors du bac à sable",
     "runOutside": "Exécuter hors du bac à sable",
     "label": "Exécuter cette commande ?",
@@ -1041,13 +1037,14 @@
       "deleteSome": "Supprimer des fichiers ou dossiers",
       "overNetwork": "Utilise le réseau ({{program}}) : peut envoyer ou recevoir des données",
       "more": " (et {{count}} étapes de plus)",
-      "more_one": " (et 1 étape de plus)"
+      "more_one": " (et 1 étape de plus)",
+      "toTrash": "Placer {{count}} fichiers ou dossiers dans la corbeille",
+      "toTrash_one": "Placer 1 fichier ou dossier dans la corbeille"
     },
     "risk": {
       "sandboxed": "S’exécute dans le bac à sable : ne peut modifier que les fichiers du dossier de travail",
       "remote": "S’exécute sur {{host}}, pas sur ce Mac",
       "outside": "S’exécute hors du bac à sable, cette fois",
-      "retry": "Le bac à sable l’a arrêtée ; la relancer repart du début",
       "unsandboxed": "S’exécute sans bac à sable",
       "network": "Utilise le réseau, cette fois",
       "rule": {
@@ -1073,7 +1070,10 @@
         "unreadable-script-reach": "Son script se connecte, lance des programmes ou pilote des apps",
         "unreadable-quoting": "Ses guillemets ne se ferment pas : on ne peut pas lire ce qui s’exécute",
         "unreadable-complex": "Trop complexe pour être lue avant de s’exécuter",
-        "unreadable-send": "Arslan ne peut pas lire entièrement ce que cela envoie ; cela peut envoyer des données locales"
+        "unreadable-send": "Arslan ne peut pas lire entièrement ce que cela envoie ; cela peut envoyer des données locales",
+        "delete-outside-trash": "Les place dans la corbeille ; vous pouvez les y récupérer",
+        "delete-outside-protected": "Les données et clés d'Arslan restent en place ; le reste va dans la corbeille",
+        "delete-outside-sandboxed": "S'exécute dans le bac à sable ; ce qu'il y supprime est supprimé définitivement"
       }
     }
   },

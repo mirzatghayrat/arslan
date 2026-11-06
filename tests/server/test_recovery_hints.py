@@ -13,7 +13,9 @@ APPLE = {"ok": False, "exit_code": 1, "stdout": "",
 @pytest.mark.parametrize("tool,result,fragment", [
     ("run_command", APPLE, "EventKit"),
     ("mac_applescript", {"ok": False, "error": "Not authorized to send Apple events to Reminders. (-1743)"}, "EventKit"),
-    ("run_command", {"ok": False, "stderr": "zsh:1: command not found: remindctl", "exit_code": 127}, "not installed"),
+    ("run_command", {"ok": False, "stderr": "/bin/bash: remindctl: command not found", "exit_code": 127}, "not installed"),
+    ("run_command", {"ok": False, "stderr": "/bin/bash: /opt/x/remindctl: No such file or directory", "exit_code": 127},
+     "not installed"),
     ("run_command", {"ok": False, "stderr": "touch: /Library/x: Permission denied"}, "workspace"),
     ("web_extract", {"ok": False, "error": "no extractable text — do not retry this URL"}, "browser_open"),
     ("web_extract", {"ok": False, "error": "fetch failed: http 403"}, "another source"),
@@ -25,6 +27,7 @@ def test_known_failures_name_an_alternative(tool, result, fragment):
 @pytest.mark.parametrize("tool,result", [
     ("run_command", {"ok": True, "stdout": "privilege violation discussed in docs"}),   # success: no hint
     ("run_command", {"ok": False, "stderr": "ValueError: bad input"}),                 # unknown failure
+    ("run_command", {"ok": False, "stderr": "cat: notes.txt: No such file or directory"}),   # a file, not a program
     ("web_extract", {"ok": False, "error": "fetch failed: timeout"}),
 ])
 def test_no_hint_without_a_known_signature(tool, result):

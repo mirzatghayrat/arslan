@@ -45,13 +45,13 @@ async def test_put_equipment_empty_clears(client):
 async def test_put_equipment_non_assignable_is_422_all_or_nothing(client):
     sid = await _seed(client)
     ts, _, bad = await _keys(client)
-    before = (await client.get(f"/api/v1/spawns/{sid}")).json()["equipment"]
+    before = (await client.get("/api/v1/spawns")).json()[0]["equipment"]
     resp = await client.put(
         f"/api/v1/spawns/{sid}/equipment", json={"toolsets": [ts[0], bad[0]], "skills": []}
     )
     assert resp.status_code == 422
     assert bad[0] in resp.json()["detail"]
-    after = (await client.get(f"/api/v1/spawns/{sid}")).json()["equipment"]
+    after = (await client.get("/api/v1/spawns")).json()[0]["equipment"]
     assert after == before  # no partial write
 
 

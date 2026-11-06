@@ -18,13 +18,16 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import urlsplit
 
+import httpx
 from mcp.client.auth import OAuthClientProvider
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
-from sqlalchemy import select
+from sqlalchemy import literal, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from server.db import session as db_session
-from server.db.models import Setting
+from server.db.models import MCPServer, Setting
 from server import crypto
 
 logger = logging.getLogger(__name__)
@@ -47,23 +50,28 @@ async def _read(key: str) -> dict | None:
         return None
 
 
-async def _write(key: str, payload: dict) -> None:
+async def _write(key: str, payload: dict, server_id: int) -> None:
+    """Stored only for a server that exists, in one statement: a browser flow or a token refresh can finish while its
+    server is being removed, and a separate check could pass just before the remove and write just after it."""
     value = crypto.encrypt(json.dumps(payload))
+    exists = select(MCPServer.id).where(MCPServer.id == server_id).exists()
+    insert = sqlite_insert(Setting).from_select(["key", "value"], select(literal(key), literal(value)).where(exists))
     async with db_session.AsyncSessionLocal() as db:
-        row = (
-            await db.execute(select(Setting).where(Setting.key == key))
-        ).scalar_one_or_none()
-        if row is None:
-            db.add(Setting(key=key, value=value))
-        else:
-            row.value = value
+        await db.execute(insert.on_conflict_do_update(index_elements=[Setting.key],
+                                                      set_={"value": insert.excluded.value}))
         await db.commit()
+
+
+def stored_keys(server_id: int) -> list[str]:
+    """Where one server's sign-in is kept: they go with the server (`mcp_service.delete_server`)."""
+    return [_TOKENS_KEY.format(server_id=server_id), _CLIENT_KEY.format(server_id=server_id)]
 
 
 class EncryptedTokenStorage:
     """The SDK's TokenStorage protocol over Arslan's one crypto path."""
 
     def __init__(self, server_id: int) -> None:
+        self._server_id = server_id
         self._tokens_key = _TOKENS_KEY.format(server_id=server_id)
         self._client_key = _CLIENT_KEY.format(server_id=server_id)
 
@@ -72,14 +80,14 @@ class EncryptedTokenStorage:
         return OAuthToken.model_validate(data) if data else None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
-        await _write(self._tokens_key, tokens.model_dump(mode="json", exclude_none=True))
+        await _write(self._tokens_key, tokens.model_dump(mode="json", exclude_none=True), self._server_id)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         data = await _read(self._client_key)
         return OAuthClientInformationFull.model_validate(data) if data else None
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        await _write(self._client_key, client_info.model_dump(mode="json", exclude_none=True))
+        await _write(self._client_key, client_info.model_dump(mode="json", exclude_none=True), self._server_id)
 
 
 async def has_tokens(server_id: int) -> bool:
@@ -94,6 +102,40 @@ def _metadata(redirect_uri: str) -> OAuthClientMetadata:
         response_types=["code"],
         token_endpoint_auth_method="none",  # public client + PKCE (RFC 8252)
     )
+
+
+SIGN_IN_CHECK_TIMEOUT_S = 5.0
+
+
+async def offers_sign_in(url: str) -> bool:
+    """Does this server say it takes OAuth? A server with no stored sign-in gets no provider (`session`), so its 401
+    reads as "no credentials", the same as one that wants a key. What it publishes tells them apart: the 401's challenge
+    naming its metadata (RFC 9728), or that metadata at the well-known addresses on its own origin. Read-only and only
+    what it says about itself: no client is registered, and no address its metadata names is visited."""
+    parts = urlsplit(url)
+    origin = f"{parts.scheme}://{parts.netloc}"
+    known = ((f"{origin}/.well-known/oauth-protected-resource{parts.path.rstrip('/')}", "authorization_servers"),
+             (f"{origin}/.well-known/oauth-protected-resource", "authorization_servers"),
+             (f"{origin}/.well-known/oauth-authorization-server", "authorization_endpoint"))
+    try:
+        async with httpx.AsyncClient(timeout=SIGN_IN_CHECK_TIMEOUT_S, follow_redirects=False) as client:
+            r = await client.post(url, json={"jsonrpc": "2.0", "id": 0, "method": "ping"},
+                                  headers={"Accept": "application/json, text/event-stream"})
+            if r.status_code == 401 and "resource_metadata" in r.headers.get("www-authenticate", "").lower():
+                return True
+            for address, field in known:
+                r = await client.get(address)
+                if r.status_code != 200:
+                    continue
+                try:
+                    body = r.json()
+                except ValueError:
+                    continue
+                if isinstance(body, dict) and body.get(field):
+                    return True
+    except httpx.HTTPError:
+        return False
+    return False
 
 
 class NeedsInteractiveAuth(RuntimeError):

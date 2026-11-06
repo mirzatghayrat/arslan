@@ -44,7 +44,7 @@ DECLINE_CARDS = os.environ.get("BENCH_DECLINE_CARDS") == "1"
 CARDS = os.environ.get("BENCH_CARDS", "")
 # Without the bench's outer sandbox (BENCH_SANDBOX=none, U10 choice A), Arslan's own sandbox is the only
 # thing between a command and the user's real disk: a card that would let a command out of it (run outside
-# the sandbox, or re-run after a stop) must be declined, whatever BENCH_CARDS says (③Hands' review of #234:
+# the sandbox) must be declined, whatever BENCH_CARDS says (③Hands' review of #234:
 # 8 such cards were approved in the first option-A rounds and ran as the user on the real disk).
 if os.environ.get("BENCH_SANDBOX") == "none":
     CARDS = "sandboxed"
@@ -102,7 +102,8 @@ class TurnTracker:
     jobs_open: set = field(default_factory=set)
     final_text: list = field(default_factory=list)
     approvals: int = 0
-    sandbox_cards: int = 0
+    leave_cards: int = 0           # SBX-7: cards to run a command outside the sandbox, whatever the answer
+    run_commands: int = 0          # SBX-7: run_command calls, what those cards are a share of (report.py)
     declined: int = 0
     actions_declined: int = 0
     last_activity: float = 0.0
@@ -156,6 +157,8 @@ class TurnTracker:
                     self.end_reason = f"job_{frame.get('outcome')}"
             else:
                 self.jobs_open.add(job)
+        elif t == "tool_call" and frame.get("tool") == "run_command":
+            self.run_commands += 1
         elif t == "propose_run_command":
             self.approvals += 1
             if any(re.search(p, frame.get("rule") or "") for p in self.decline_rules):
@@ -193,7 +196,14 @@ class TurnTracker:
         kind, target, detail = frame.get("kind") or "", frame.get("target") or "", frame.get("detail") or ""
         return any(tag in self.run_dir and ok(kind, target, detail) for tag, ok in ACTION_OK.items())
 
+    def counts(self) -> dict:
+        """SBX-7, for the record. With Arslan's own sandbox off (the bench's is on) there is nothing to leave."""
+        return {"leave_cards": self.leave_cards if CARDS == "sandboxed" else None,
+                "run_commands": self.run_commands, "approvals": self.approvals}
+
     def _approve_command(self, frame: dict) -> bool:
+        if frame.get("sandbox"):
+            self.leave_cards += 1
         if DECLINE_CARDS:
             return False
         if CARDS != "sandboxed":
@@ -201,7 +211,6 @@ class TurnTracker:
             # outside the bench folder): declined, except Reminders for T1, which is the task.
             return frame.get("rule") != "apple-events" or "-T1-" in self.run_dir
         if frame.get("sandbox"):
-            self.sandbox_cards += 1
             return False
         rule = frame.get("rule") or ""
         if rule == "apple-events":
@@ -283,8 +292,7 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
                     break
                 if n < len(prompts):
                     snapshot(run_dir, n)
-    return {"secs": round(time.monotonic() - started), "approvals": tracker.approvals,
-            "sandbox_cards": tracker.sandbox_cards, "declined": tracker.declined,
+    return {"secs": round(time.monotonic() - started), **tracker.counts(), "declined": tracker.declined,
             "actions_declined": tracker.actions_declined,
             "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
             "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}
@@ -304,9 +312,8 @@ SHELL_POLICIES = ("ask_risky", "ask_all")
 
 def settings_body(run_dir: str) -> dict:
     """The test instance's settings: its workspace is the run folder, its command policy BENCH_SHELL_POLICY
-    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell (e.g.
-    {"tools_all_resident": "true"} for K7's DELETE-BY comparison; 0.1.63). Values must be strings, as the
-    settings API stores them; the workspace and the policy cannot be set that way."""
+    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell. Values
+    must be strings, as the settings API stores them; the workspace and the policy cannot be set that way."""
     extra = json.loads(os.environ.get("BENCH_ARSLAN_SETTINGS") or "{}")
     if not isinstance(extra, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in extra.items()):
         raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")

@@ -91,6 +91,12 @@ def runtime_dict(srv) -> dict:
             "sandbox": getattr(srv, "sandbox", None)}
 
 
+_NO_CREDENTIALS = "authorization failed (HTTP {code}): no credentials"
+#: How a 401 reads for a server with no key and no sign-in stored. A fresh OAuth server reads the same, so
+#: `capability_flow` asks it (`oauth_flow.offers_sign_in`).
+NO_CREDENTIALS_401 = _NO_CREDENTIALS.format(code=401)
+
+
 def _describe_failure(exc: BaseException, *, has_headers: bool) -> str:
     """last_error for a failed connect — classified, and never empty.
 
@@ -118,10 +124,7 @@ def _describe_failure(exc: BaseException, *, has_headers: bool) -> str:
                     f"authorization failed (HTTP {code}): the server rejected the "
                     "configured headers — re-check the token/key on this server"
                 )
-            return (
-                f"authorization failed (HTTP {code}): no credentials are configured "
-                "for this server — it requires authentication"
-            )
+            return _NO_CREDENTIALS.format(code=code) + " are configured for this server — it requires authentication"
         seen.extend(getattr(e, "exceptions", ()) or ())
         for link in (e.__cause__, e.__context__):
             if link is not None and link not in seen:
@@ -261,7 +264,14 @@ async def _check_pin(db, server_id: int, tools: list, rows_by_name: dict, *, com
     listed = tools_pin(tools)
     pinned = (source.test or {}).get("tools_pin")
     if pinned is None:                          # the first listing: its install test (or, once, after an upgrade)
-        source.test = {**(source.test or {}), "tools_pin": listed}
+        test = {**(source.test or {}), "tools_pin": listed}
+        # The first listing while it waits for a sign-in: that install test's yes. Only what the user presses (Connect,
+        # Authorize, Reconnect) starts a server that is off, so this is the sign-in, or nothing else to wait for.
+        if test.pop("needs_sign_in", False):
+            test = {k: v for k, v in test.items() if k not in ("stage", "detail")}
+            test.update(ok=True, tools=[t.name for t in tools][:60], at=datetime.utcnow().isoformat() + "Z")
+            (await db.get(MCPServer, server_id)).host_allowed = True
+        source.test = test
         return
     changes = _changes(pinned, listed, complete=complete)
     if changes is None:

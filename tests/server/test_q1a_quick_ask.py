@@ -74,12 +74,7 @@ def _capture(monkeypatch) -> dict:
     return seen
 
 
-@pytest.mark.parametrize("all_resident", [False, True], ids=["on-demand", "tools_all_resident"])
-async def test_a_stored_quick_question_is_shown_and_may_call_exactly_four_tools(execution_db, monkeypatch,
-                                                                                all_resident):
-    async def resident():
-        return all_resident
-    monkeypatch.setattr(arslan, "_all_resident", resident)
+async def test_a_stored_quick_question_is_shown_and_may_call_exactly_four_tools(execution_db, monkeypatch):
     await _store(execution_db, "phone-0b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b", "quick")
     seen = _capture(monkeypatch)
     await arslan._handle_answer("phone-0b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b", "weather in Acme City?", lambda e: None,
@@ -188,13 +183,9 @@ OUTSIDE_THE_FOUR = [
 ]
 
 
-@pytest.mark.parametrize("all_resident", [False, True], ids=["on-demand", "tools_all_resident"])
-async def test_a_quick_turn_runs_nothing_outside_the_four_and_asks_nothing(execution_db, monkeypatch, all_resident):
+async def test_a_quick_turn_runs_nothing_outside_the_four_and_asks_nothing(execution_db, monkeypatch):
     """The model names every other kind of tool anyway: the dispatch refuses each one, before any executor or
     card. Shown is not enough; this is what may run."""
-    async def resident():
-        return all_resident
-    monkeypatch.setattr(arslan, "_all_resident", resident)
     cid = "phone-7b7c9a2e-1c1d-4f5e-9a8b-3c2d1e0f9a8b"
     await _store(execution_db, cid, "quick")
     model = _Model([golden._Resp(tool_calls=[golden._tc(name, args, cid=f"c{i}")

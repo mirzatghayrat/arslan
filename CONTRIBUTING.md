@@ -143,7 +143,6 @@ Schema changes are **not** run via `alembic upgrade` (alembic is gone). They are
 
 1. Create `server/db/migrations/versions/_00NN_<name>.py` (bump `NN` past the latest — currently `_0031_*`). Expose an **idempotent** `upgrade_sync(connection)`: guard every change so re-running is a net no-op — the pattern is to read `PRAGMA table_info(<table>)` and only `connection.exec_driver_sql("ALTER TABLE … ADD COLUMN …")` for columns that don't exist yet. (See `_0027_mcp_health.py` for a minimal example.)
 2. **Register it** in `server/db/migrations/runner.py`: add `from .versions._00NN_<name> import upgrade_sync as _m00NN` and append `("00NN", _m00NN)` to `MIGRATIONS` — **at the end, in order; never reorder existing entries** (the order is the zero-behavior-change guarantee).
-3. **Update the hardcoded id list** in `tests/server/test_migration_runner.py::test_registry_matches_boot_chain_verbatim`.
 
 > **Gotcha:** a version file that is *not* registered in `MIGRATIONS` never runs. The completeness test (`test_every_upgrade_sync_file_is_registered_or_documented_subsumed`) turns that into a **CI failure** rather than a silent runtime skip — so a forgotten registration is caught before merge. (`_0001`–`_0005` predate `create_all` and are allow-listed as `SUBSUMED`.)
 

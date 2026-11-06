@@ -160,12 +160,17 @@ async def _mcp_rows() -> list[dict]:
     page must not say "on" while the model is offered none of its tools."""
     from server.mcp.supervisor import ready_now
     from server.services import mcp_service
-    from server.db.models import MCPServer
+    from server.db.models import CapabilitySource, MCPServer
     from server.mcp.discovery import runtime_dict
     rows = []
     installed = await _installed_servers()
     async with db_session.AsyncSessionLocal() as db:            # each server's own secrets, to mask `reach`
         runtimes = {srv.id: runtime_dict(srv) for srv in (await db.execute(select(MCPServer))).scalars()}
+        tests = dict((await db.execute(select(CapabilitySource.id, CapabilitySource.test).where(
+            CapabilitySource.id.in_(installed.values())))).all())
+    # Its install test stopped at a sign-in. The source's record, not the server's state: a restart writes `off` over
+    # `needs_auth`.
+    waiting = {server for server, source in installed.items() if (tests.get(source) or {}).get("needs_sign_in")}
     # the stored legacy status: "never connected" (registered) and an old error decide the row below;
     # `last_error` comes masked (final review I-2)
     for server in await mcp_service.list_servers(stored_status=True):
@@ -186,6 +191,9 @@ async def _mcp_rows() -> list[dict]:
             allowed and connected and not ready_now(server["id"], server.get("state")))
         if missing:
             rows.append(_row(key, "na", reason="runtime_missing", detail=missing, name=name, **where))
+        elif server["id"] in waiting:
+            rows.append(_row(key, "setup", reason="needs_sign_in", fix="open_tab:mcps", name=name, **where,
+                             switch="mcp"))
         elif not allowed and server.get("state") == "off":
             # switched off reads "off" whatever its old status says (an install whose test failed is
             # left off with `status` error); the old error stays visible as the detail (Task 8 review M-1)

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from server.db import session as db_session
 from server.db.migrations.versions._0028_evolution_real import upgrade_sync
-from server.db.models import ArslanMessage, Base, Run, RunEvaluation
+from server.db.models import ArslanMessage, Base, Run, RunEvaluation, Spawn
 
 
 @pytest.fixture
@@ -132,6 +132,9 @@ async def _seed_run(Session, *, kind: str, epoch: int, spawn_id: int, spawn_name
 @pytest.mark.asyncio
 async def test_replay_run_absent_from_catalog(client):
     async with client.db_maker() as db:
+        for sid, name in ((1, "LiveBot"), (2, "ReplayBot")):   # runs.spawn_id is a foreign key: spawns first
+            db.add(Spawn(id=sid, name=name, domain_category="g", system_prompt="sp"))
+        await db.flush()
         for kind, name in (("live", "LiveBot"), ("replay", "ReplayBot")):
             db.add(Run(conversation_id="c1", spawn_id=(1 if kind == "live" else 2),
                        spawn_name=name, user_message="t", status="recorded",
