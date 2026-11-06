@@ -8,9 +8,9 @@ import logging
 import os
 import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from contextvars import ContextVar
-from typing import TYPE_CHECKING
+from dataclasses import replace
 
 from arslan.execution_budget import BudgetExceeded, governed
 from arslan.llm import tool_names, trajectory, usage_sink
@@ -20,6 +20,7 @@ from server.orchestrator import run_trace
 from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
 from server.orchestrator.json_protocol import first_json_object, parse_json_object
 from server.orchestrator import on_demand, parallel_reads, turn_context
+from server.orchestrator.turn_state import TOOL_TIMEOUT_S, ResolveTools, ToolTurn, TurnRequest, TurnState  # noqa: F401
 from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry.executors import EXECUTORS, resolve_executor
@@ -29,10 +30,6 @@ from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    from server.orchestrator.tool_caller import ToolCaller
-
-TOOL_TIMEOUT_S = 20.0
 # 0.1.62 F1: run_command's backstop stops this much before the turn's own timeout, so the order
 # is fixed: the command's limit first (with its output), this backstop next, the turn last.
 _RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
@@ -61,11 +58,6 @@ _REFUSED_STEP = {
 # a tool that slips out of this set would be a silently ungated writer.
 _WORKSPACE_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 
-
-
-ResolveTools = Callable[[], Awaitable[list[dict]]]
-# (command, argv, *, remote_host=, fingerprints=, sandbox=, why=) -> approved
-ConfirmCommand = Callable[..., Awaitable[bool]]
 
 
 def _get_adapter():
@@ -1425,17 +1417,12 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
     return result
 
 
-async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
-                         tool_timeout_s, tool_trace, convo, confirm_command=None,
-                        confirm_workspace_write=None,
-                        confirm_schedule=None,
-                         mcp_fail_counts: dict | None = None,
-                         mcp_hint_logged: set | None = None,
-                         conversation_id: str | None = None,
-                         log_events: bool = True,
-                         caller: ToolCaller | None = None,
-                         turn_adapter=None,
-                         resolve_callable=None) -> dict:
+async def _dispatch_tool(tool_key, args, assistant_content, **turn) -> dict:
+    """`_run_tool` by keyword, the way tests call it. DELETE-BY: v0.1.64, with LOOP1's slice z."""
+    return await _run_tool(tool_key, args, assistant_content, ToolTurn(**turn))
+
+
+async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append one
     framed tool-result record into convo. Returns the raw result dict.
 
@@ -1443,6 +1430,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default).
     Since 0.1.51 it also runs inside the workspace sandbox; leaving it is a click
     (confirm_command(..., sandbox="outside")), never the model's say-so."""
+    resolve_tools, resolve_callable, tool_timeout_s = turn.resolve_tools, turn.resolve_callable, turn.tool_timeout_s
+    emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
+    confirm_command, confirm_workspace_write, confirm_schedule = (
+        turn.confirm_command, turn.confirm_workspace_write, turn.confirm_schedule)
+    mcp_fail_counts, mcp_hint_logged = turn.mcp_fail_counts, turn.mcp_hint_logged
+    conversation_id, log_events, caller, turn_adapter = (
+        turn.conversation_id, turn.log_events, turn.caller, turn.turn_adapter)
     from arslan.execution_budget import BudgetExceeded, current
     budget = current()
     if budget is not None:
@@ -2989,48 +2983,47 @@ async def run_native(**kwargs) -> dict:
     hides a deliverable already on disk. No model call: the limit is reached.
     Background jobs and delegated workers still raise; their machinery records
     the stop itself."""
-    facts: dict = {}
+    request, state = TurnRequest(**kwargs), TurnState()
     from server.orchestrator import untrusted as _untrusted
     from server.services import tool_outputs
     seen = _untrusted.track_turn()
-    if _untrusted.history_from_outside(kwargs.get("history")) or _untrusted.context_from_outside(
-            kwargs.get("user_content")):
+    if _untrusted.history_from_outside(request.history) or _untrusted.context_from_outside(request.user_content):
         _untrusted.mark_external()       # S64-0b: a job's result framed as outside content, or a summary of one
     sent_is_final = _SENT_IS_FINAL.set(False)
     # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).
-    copies_of = tool_outputs.conversation.set(kwargs.get("conversation_id"))
+    copies_of = tool_outputs.conversation.set(request.conversation_id)
     try:
-        result = await _run_native(**kwargs, _facts=facts)
+        result = await _run_native(request, state)
         if isinstance(result, dict):
             result["external_seen"] = _untrusted.external_seen()
-            _learn_after(kwargs, facts, result)
+            _learn_after(request, state, result)
         return result
     except BudgetExceeded:
         from server.services import background_jobs
-        trace = facts.get("tool_trace") or []
+        trace = state.tool_trace
         # 0.1.52: the chat path passes ToolCaller(actor="host"); checking for no caller
         # at all left this closing message unreachable from a real chat turn.
-        host_turn = _host_turn(kwargs.get("caller"), kwargs.get("progress_lane"))
+        host_turn = _host_turn(request.caller, request.progress_lane)
         if not host_turn or background_jobs.inside_job() \
                 or not any((t.get("result") or {}).get("ok") for t in trace):
             raise                       # workers and jobs record the stop themselves
-        text = await _budget_closing(trace, facts.get("ws_root"), facts.get("started", 0.0))
+        text = await _budget_closing(trace, state.ws_root, state.started)
         from server.services.task_service import current as current_task
         task = current_task()
         if task is not None:
             _stop_for_limit(task, "task_budget_exhausted", trace)
-        if (turn_text := facts.get("turn_text")) is not None and turn_text.parts:
+        if (turn_text := state.turn_text) is not None and turn_text.parts:
             turn_text.append(text, answer=False)    # K8a: after what this turn already showed
             text = turn_text.text
         elif text:
-            kwargs["on_chunk"](text)
+            request.on_chunk(text)
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
                 "external_seen": _untrusted.external_seen()}
     finally:
         # K9b: a message read after the last batch that no request carried (the turn stopped, hit its limit
         # or failed first) goes back to its sender, to run once as a turn of its own.
-        for steer in facts.pop("steers", None) or []:
+        for steer in state.steers:
             steer.hand_back()
         known_local = _untrusted.known_local()      # read before end_turn drops the holder
         _untrusted.end_turn(seen)
@@ -3039,19 +3032,19 @@ async def run_native(**kwargs) -> dict:
         tool_outputs.conversation.reset(copies_of)
 
 
-def _learn_after(kwargs: dict, facts: dict, result: dict) -> None:
+def _learn_after(request: TurnRequest, state: TurnState, result: dict) -> None:
     """0.1.52 S5: after a host turn, off the reply path — counters for the lessons this
     turn recalled, then any detour worth keeping (lessons.after_turn)."""
-    if not _host_turn(kwargs.get("caller"), kwargs.get("progress_lane")):
+    if not _host_turn(request.caller, request.progress_lane):
         return
     from server.services import lessons, personal_context
     ctx = personal_context.current()
-    lessons.note_turn(kwargs.get("conversation_id"), list(facts.get("tool_trace") or []))
+    lessons.note_turn(request.conversation_id, list(state.tool_trace))
     lessons.later(lessons.after_turn(
-        conversation_id=kwargs.get("conversation_id"), user_request=(ctx.query if ctx else "") or "",
-        trace=list(facts.get("tool_trace") or []), external_seen=bool(result.get("external_seen")),
-        recalled=list(facts.get("recalled_lessons") or []),
-        ok=bool(result.get("final")) and not result.get("stop_reason"), emit=kwargs.get("emit")))
+        conversation_id=request.conversation_id, user_request=(ctx.query if ctx else "") or "",
+        trace=list(state.tool_trace), external_seen=bool(result.get("external_seen")),
+        recalled=list(state.recalled_lessons),
+        ok=bool(result.get("final")) and not result.get("stop_reason"), emit=request.emit))
 
 
 async def _budget_closing(trace: list, ws_root, started: float) -> str:
@@ -3072,33 +3065,7 @@ async def _budget_closing(trace: list, ws_root, started: float) -> str:
                                    files=", ".join(saved) + where)
 
 
-async def _run_native(
-    *,
-    _facts: dict | None = None,
-    system: str,
-    user_content: str,
-    history: list[dict],
-    emit: Callable[[dict], None],
-    on_chunk: Callable[[str], None],
-    resolve_tools: ResolveTools,
-    resolve_callable: ResolveTools | None = None,
-    allow_escalation: bool = True,
-    max_tool_calls: int | None = None,
-    tool_timeout_s: float = TOOL_TIMEOUT_S,
-    force_tools: bool = False,
-    confirm_command: ConfirmCommand | None = None,
-    confirm_workspace_write=None,
-    confirm_schedule=None,
-    conversation_id: str | None = None,
-    log_events: bool = True,
-    caller: ToolCaller | None = None,
-    has_images: bool = False,
-    adapter_override=None,
-    stream_without_tools: bool = False,
-    progress_lane=None,
-    turn_notes: list[str] | None = None,
-    steerable: bool = False,
-) -> dict:
+async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     """Canonical native tool loop. Same signature and core return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
 
@@ -3112,6 +3079,19 @@ async def _run_native(
     Production calls use the shared task budget, with no fixed eight-round cap.
     max_tool_calls is an optional explicit compatibility ceiling, never a default.
     """
+    # The request's fields by name, until the phases read them (LOOP1 c3).
+    system, user_content, history, emit, on_chunk = (
+        request.system, request.user_content, request.history, request.emit, request.on_chunk)
+    resolve_tools, resolve_callable, tool_timeout_s = (
+        request.resolve_tools, request.resolve_callable, request.tool_timeout_s)
+    allow_escalation, max_tool_calls, force_tools, stream_without_tools = (
+        request.allow_escalation, request.max_tool_calls, request.force_tools, request.stream_without_tools)
+    confirm_command, confirm_workspace_write, confirm_schedule = (
+        request.confirm_command, request.confirm_workspace_write, request.confirm_schedule)
+    conversation_id, log_events, caller, progress_lane, turn_notes, steerable = (
+        request.conversation_id, request.log_events, request.caller, request.progress_lane, request.turn_notes,
+        request.steerable)
+    has_images, adapter_override = request.has_images, request.adapter_override
     # The vision slot needs to know whether this turn carries an image, and this
     # signature is the only place that fact is available — hence a parameter rather
     # than something guessed further down.
@@ -3176,9 +3156,7 @@ async def _run_native(
     # evicts whole call groups.
     current_request = trajectory.request(user_content)
     convo: list[dict] = list(history) + [current_request]
-    tool_trace: list[dict] = []
-    if _facts is not None:
-        _facts["tool_trace"] = tool_trace
+    tool_trace = state.tool_trace
     # 0.1.52 S5: practices learned before that match this request ride in the status
     # block (never the system prompt). Host turns only; recall applies memory's permissions.
     lesson_notes: list[str] = []
@@ -3190,8 +3168,7 @@ async def _run_native(
         if not all(item["users"] for item in recalled):
             from server.orchestrator import untrusted as _untrusted
             _untrusted.mark_off_the_list()   # #475 H1: a practice in view that came from a run off the list
-        if _facts is not None:
-            _facts["recalled_lessons"] = recalled
+        state.recalled_lessons = recalled
     research_source_feedback: list = []
     # PB-3 (条件2): consecutive-failure counts per mcp_* tool key. These are LOCALS of this
     # run_native invocation — one invocation = one turn — so a new turn starts at zero by
@@ -3210,9 +3187,15 @@ async def _run_native(
     # K8a: what this turn shows as it is written (None: every answer shown whole, as before).
     turn_text = (_TurnText(on_chunk, lambda label, keep: emit({"type": "stream_restart", "label": label, "keep": keep}))
                  if on_chunk is not None and _streams_answer(a, acceptance_runtime) else None)
-    if _facts is not None:
-        _facts.update(ws_root=ws_root, started=turn_started, turn_text=turn_text)
+    state.ws_root, state.started, state.turn_text = ws_root, turn_started, turn_text
     unseen_start = len(convo)
+
+    def tool_turn() -> ToolTurn:
+        return ToolTurn(resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s, tool_trace=tool_trace,
+                        convo=convo, confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
+                        confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
+                        mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id, log_events=log_events,
+                        caller=caller, turn_adapter=a, resolve_callable=resolve_callable)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
@@ -3223,16 +3206,9 @@ async def _run_native(
             intent = None
         if intent is not None and intent.needs and intent.tool == "web_search":
             q = (intent.query or user_content)[:400]
-            result = await _dispatch_tool(
-                "web_search", {"query": q},
-                json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
-                resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
-                tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
-                confirm_workspace_write=confirm_workspace_write,
-                confirm_schedule=confirm_schedule,
-                mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id, log_events=log_events, caller=caller, turn_adapter=a,
-                resolve_callable=resolve_callable)
+            result = await _run_tool("web_search", {"query": q},
+                                     json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
+                                     tool_turn())
             policy.observe("web_search", {"query": q}, result)
 
     pending_feedback = len(convo) - unseen_start
@@ -3396,11 +3372,11 @@ async def _run_native(
         except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
             logger.warning("context parts not measured", exc_info=True)
             usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
-        if _facts is not None and _facts.get("steers"):
+        if state.steers:
             # K9b: this request carries them, once it is sure to go (its tokens and dollars too, which the
             # provider checks as it sends; a stop here hands them back).
             budget.check_request()
-            await _commit_steers(_facts["steers"], conversation_id)
+            await _commit_steers(state.steers, conversation_id)
         stream = _StepStream(turn_text) if turn_text is not None else None
         try:
             resp = await _model_call(a, system, convo, current_request, tools=step_tools,
@@ -3626,23 +3602,16 @@ async def _run_native(
                 from server.services import terminal_exec
                 offline = terminal_exec.OFFLINE.set(True) if wrap_up and name == "run_command" else None
                 try:
-                    gated = dict(resolve_tools=resolve_tools, tool_timeout_s=tool_timeout_s,
-                                 confirm_command=confirm_command,
-                                 confirm_workspace_write=confirm_workspace_write,
-                                 confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
-                                 mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                                 log_events=log_events, caller=caller, turn_adapter=a,
-                                 resolve_callable=resolve_callable)
+                    turn = tool_turn()
                     if reads is not None and reads.launchable(index):
-                        await reads.run(index, lambda key, arguments, **own: _dispatch_tool(
+                        await reads.run(index, lambda key, arguments, **own: _run_tool(
                             key, arguments, json.dumps({"tool": key, "args": arguments}, ensure_ascii=False),
-                            **gated, **own),
+                            replace(turn, **own)),
                             exhausted=lambda: budget.tool_calls >= budget.limits.tool_calls)
                     if reads is not None and reads.has(index):
                         result = reads.take(index, emit=emit, tool_trace=tool_trace, convo=convo)
                     else:
-                        result = await _dispatch_tool(name, args, assistant_content, emit=emit,
-                                                      tool_trace=tool_trace, convo=convo, **gated)
+                        result = await _run_tool(name, args, assistant_content, turn)
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)
@@ -3675,9 +3644,9 @@ async def _run_native(
             # Gemini provider pair and the old "invocation completed" text are now
             # renderings of this trajectory (trajectory.to_legacy), not rewrites.
             _claim_results(convo, marks)
-            if steerable and conversation_id and not cut_off and _facts is not None:
+            if steerable and conversation_id and not cut_off:
                 # The boundary after the batch: what waits joins the turn (no await between take and read).
-                _read_steers(steering.take(conversation_id), convo, _facts.setdefault("steers", []))
+                _read_steers(steering.take(conversation_id), convo, state.steers)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
             # passed the window and went out as the answer, where it stays (and in the stored answer).
             narration = agent_status.strip_echo((resp.content or "").strip())
