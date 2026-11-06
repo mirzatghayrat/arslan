@@ -1,4 +1,4 @@
-"""SMART-8 delete cards (the user, 2026-11-02: 「把“允许”从直接彻底删掉 改成 移到废纸篓」): when the user allows a
+"""SMART-8 delete cards (the user's decision, 2026-11-02): when the user allows a
 delete outside the working folder, the targets go to the Trash instead of being deleted outright, as Finder does.
 
 Only a delete that reads with certainty is moved: the whole command is one `rm`, `rmdir` or `unlink` with literal
@@ -27,15 +27,15 @@ from pathlib import Path
 # sandbox and reads with certainty: the executor moves its targets to the Trash and runs nothing.
 TRASH: contextvars.ContextVar[bool] = contextvars.ContextVar("delete_to_trash", default=False)
 
-_VERBS = {"rm", "rmdir", "unlink"}
-_VERB_PATHS = {"/bin/rm": "rm", "/bin/rmdir": "rmdir", "/bin/unlink": "unlink", "/usr/bin/unlink": "unlink"}
+_VERBS = {"rm", "rmdir", "unlink", "trash"}
+_VERB_PATHS = {"/bin/rm": "rm", "/bin/rmdir": "rmdir", "/bin/unlink": "unlink", "/usr/bin/unlink": "unlink",
+               "/usr/bin/trash": "trash"}
 # Anything a shell could expand or redirect, even quoted: a target is only ever the literal text.
 _NOT_LITERAL = re.compile(r"[*?\[\]{}$`!;&|<>()\\\n\r#\x00]")
 # A `~` the shell would not expand (`'~/x'` is the literal folder `./~/x`): quotes strip away in the parse, so
 # such a delete is not read as one (#686 review F2).
 _QUOTED_TILDE = re.compile(r"[\"']~|~[\"']")
 _RM_SHORT = set("rRfdv")
-_RM_LONG = {"--recursive": "r", "--force": "f", "--dir": "d", "--verbose": "v"}
 
 
 @dataclass(frozen=True)
@@ -67,14 +67,10 @@ def plan(command: str) -> Plan | None:
     for word in words[1:]:
         if options and word == "--":
             options = False
-        elif options and word.startswith("--"):
-            if verb != "rm" or word not in _RM_LONG:
-                return None
-            flags.add(_RM_LONG[word])
         elif options and word.startswith("-") and word != "-":
             letters = set(word[1:])
             if verb != "rm" or not letters <= _RM_SHORT:
-                return None               # -i asks, -P overwrites, rmdir -p removes parents: not a plain delete
+                return None               # -i asks, -P overwrites, rmdir -p removes parents, BSD rm has no long options
             flags |= letters
         else:
             targets.append(word)
@@ -82,6 +78,8 @@ def plan(command: str) -> Plan | None:
         return None
     if verb == "unlink" and len(targets) != 1:
         return None
+    if verb == "trash":
+        flags = {"r"}                     # it takes folders whole, as a move does
     return Plan(verb, recursive=bool(flags & {"r", "R"}), force="f" in flags, empty_dirs="d" in flags,
                 targets=tuple(targets))
 
@@ -89,6 +87,8 @@ def plan(command: str) -> Plan | None:
 def _literal_target(word: str) -> bool:
     if not word or word.endswith("/"):
         return False                      # `link/` reaches through the link: not what a move of `link` does
+    if word.startswith("/.vol/"):
+        return False                      # a file by device and inode: what it is inside can't be read from it
     if word.startswith("~") and not (word == "~" or word.startswith("~/")):
         return False                      # ~user
     return os.path.basename(word) not in (".", "..")
@@ -166,17 +166,42 @@ def touches_protected(path: Path) -> bool:
     case, as the Mac's disk finds `.ARSLAN` too."""
     from server.services import command_sandbox
     mine = str(path).rstrip("/").casefold()
+    ancestors = [info for info in map(_identity, (path, *path.parents)) if info]    # the link itself, if it is one
+    target = _identity(path)
     for protected in command_sandbox.arslan_protected():
         theirs = str(protected).rstrip("/").casefold()
         if mine == theirs or theirs.startswith(mine + "/") or mine.startswith(theirs + "/"):
             return True
+        # #686 review: the same folder by another name (/System/Volumes/Data…) only its identity gives away.
+        own = _identity(protected)
+        if own and any(os.path.samestat(own, info) for info in ancestors):
+            return True
+        if target and any(os.path.samestat(target, info) for info in filter(None, map(_identity, protected.parents))):
+            return True
     return False
+
+
+def _identity(path: Path) -> os.stat_result | None:
+    try:
+        return os.lstat(path)
+    except OSError:
+        return None
+
+
+def _taken(path: Path) -> bool:
+    """Whether a name in the Trash is taken. Anything but "no such file" raises: lexists would call an error (EPERM)
+    free, and the rename would then overwrite an earlier item (#686 review)."""
+    try:
+        os.lstat(path)
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def _move(path: Path) -> Path:
     folder = trash_folder(path)
     target, n = folder / path.name, 1
-    while os.path.lexists(target):
+    while _taken(target):
         n += 1
         stem, dot, ext = path.name.partition(".") if not path.name.startswith(".") else (path.name, "", "")
         target = folder / (f"{stem} {n}{dot}{ext}")
@@ -215,8 +240,11 @@ def move(command: str, cwd: Path) -> dict:
         note = "The user allowed this delete; what was moved is in the Trash, where the user can restore it."
     if errors:
         note += (" " if note else "") + "Not moved, and not deleted: " + "; ".join(errors) + "."
-    return {"ok": not errors, "exit_code": 0 if not errors else 1, "stdout": stdout,
-            "stderr": "".join(f"{e}\n" for e in errors), "cwd": str(cwd), "trashed": moved, "note": note}
+    result = {"ok": not errors, "exit_code": 0 if not errors else 1, "stdout": stdout,
+              "stderr": "".join(f"{e}\n" for e in errors), "cwd": str(cwd), "trashed": moved, "note": note}
+    if errors:      # a failure partway says so: some targets may be in the Trash already (#686 review)
+        result["error"] = f"{len(moved)} moved to the Trash, {len(errors)} not moved"
+    return result
 
 
 def _refusal(found: Plan, path: Path) -> str:

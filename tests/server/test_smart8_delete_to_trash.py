@@ -32,7 +32,7 @@ def _folder(path: Path) -> Path:
 
 @pytest.mark.parametrize("command,targets", [
     ("rm -r /tmp/x", ("/tmp/x",)), ("rm -rf ~/old", ("~/old",)), ("rm a '/b c'", ("a", "/b c")),
-    ("rm -- -odd", ("-odd",)), ("/bin/rm -Rv x", ("x",)), ("rm --recursive --force x", ("x",)),
+    ("rm -- -odd", ("-odd",)), ("/bin/rm -Rv x", ("x",)), ("trash ~/x", ("~/x",)), ("/usr/bin/trash a b", ("a", "b")),
     ("rmdir /tmp/empty", ("/tmp/empty",)), ("unlink /tmp/f", ("/tmp/f",)), ("rm -d /tmp/e", ("/tmp/e",)),
 ])
 def test_a_plain_delete_reads_with_certainty(command, targets):
@@ -43,7 +43,8 @@ def test_a_plain_delete_reads_with_certainty(command, targets):
     "rm -rf ~/x/*", "rm -rf ~/x/[ab]", 'rm -rf "$DIR"', "rm $(cat list)", "rm `cat list`", "ls | xargs rm",
     "rm a; echo done", "rm a && ls", "rm a > log", "find ~/x -delete", "rm -i ~/x", "rm -P ~/x", "rmdir -p a/b",
     "unlink a b", "rm ~bob/x", "rm ~/x/", "rm ..", "rm ~/x/.", "rm", "rm -rf", "sudo rm x", "command rm x",
-    "rm 'a\nb'", "rm a\\ b", "srm ~/x", "trash ~/x", "rm {a,b}", "rm 'unclosed",
+    "rm 'a\nb'", "rm a\\ b", "srm ~/x", "trash -s ~/x", "rm {a,b}", "rm 'unclosed", "rm --recursive x",
+    "rm /.vol/16777220/12345",
     "rm -rf '~/Library'", 'rm -rf "~/Library"', 'rm -rf ~"/Library"', "rm '~'",     # a ~ the shell would not expand
 ])
 def test_anything_else_does_not(command):
@@ -123,6 +124,11 @@ def test_another_disk_without_a_trash_is_refused_and_nothing_is_copied(home, tmp
     "cd ~/.Trash && rm -rf *", "cd ~/.Trash; find . -delete", "pushd ~/.Trash && rm old.txt",
     'cd "$HOME/.Trash" && rm -rf -- *', "cd /Volumes/X/.Trashes/501 && rmdir old",
     "builtin cd ~/.Trash && rm -rf *", "CDPATH=/x cd ~/.Trash && rm -rf *", "A=1 B=2 builtin cd ~/.Trash; rm x",
+    "chdir ~/.Trash && rm -rf *", "builtin chdir ~/.Trash && rm -rf *",
+    "/bin/rm -rf ~/.Trash/x", "command rm -rf ~/.Trash/x", "FOO=1 rm -rf ~/.Trash/x", "timeout 5 rm -rf ~/.Trash/x",
+    "rm -rf ~/.Trash*", "find ~/.Trash -execdir rm {} +",
+    "osascript -e 'tell application \"Finder\" to empty'",
+    "osascript <<'EOF'\ntell application \"Finder\"\n  empty\nend tell\nEOF",
     "osascript -e 'tell application \"Finder\" to «event fndrempt»'",
 ])
 def test_a_delete_from_the_trash_or_emptying_it_is_forbidden(command):
@@ -130,7 +136,11 @@ def test_a_delete_from_the_trash_or_emptying_it_is_forbidden(command):
 
 
 @pytest.mark.parametrize("command", ["ls ~/.Trash", "mv old.txt ~/.Trash/", "du -sh ~/.Trash", "rm notes-on-trash.txt",
-                                     "cd ~/.Trash && ls -la", "cd ~/Desktop && rm old.txt"])
+                                     "cd ~/.Trash && ls -la", "cd ~/Desktop && rm old.txt",
+                                     # hard refusals read commands, not quoted text or a read-only find
+                                     "git commit -m 'Finder: fix the empty trash button'",
+                                     "find ~/.Trash -exec stat {} +", "echo 'tell Finder to empty'",
+                                     "osascript -e 'tell application \"Notes\" to count notes'"])
 def test_looking_at_or_moving_into_the_trash_is_not(command):
     assert tp.assess(command).rule != "trash"
 
@@ -277,7 +287,8 @@ async def test_the_card_says_how_allow_deletes(tmp_path, monkeypatch, mode, word
         return permissions.Decision(allowed=False, by="user")
     monkeypatch.setattr(permissions, "decide", decide)
     assert await command_confirm.Confirmations("c1").command("rm -rf ~/smart8/old", [], delete=mode) is False
-    assert words in seen[0].title_for_model and words in seen[0].frame["reason"]   # the model's English text
+    assert words in seen[0].title_for_model                                  # the model's English text
+    assert words not in seen[0].frame["reason"]                              # the phone's risk words stay the rule's
     assert seen[0].frame["delete_mode"] == mode and seen[0].frame["delete_targets"] == ["~/smart8/old"]
 
 
@@ -304,6 +315,7 @@ async def test_the_mac_frame_carries_the_mode_and_targets_on_every_delete_card(t
 @pytest.mark.parametrize("script", [
     'tell application "Finder" to empty trash', 'tell application "Finder"\n  empty the trash\nend tell',
     'tell application "Finder" to empty trash without warning', 'tell application "Finder" to «event fndrempt»',
+    'tell application "Finder" to empty', 'tell application "Finder"\n  empty\nend tell',
 ])
 async def test_an_applescript_that_empties_the_trash_is_refused_before_any_card(monkeypatch, script):
     """mac_applescript (and Hands' scripts through it): refused, never carded, in a job or not."""
@@ -318,7 +330,8 @@ async def test_an_applescript_that_empties_the_trash_is_refused_before_any_card(
 
 
 @pytest.mark.parametrize("script", ['tell application "Finder" to open trash',
-                                    'tell application "Notes" to make new note with properties {name:"empty"}'])
+                                    'tell application "Notes" to make new note with properties {name:"empty"}',
+                                    'tell application "Finder" to get name of window 1 as string'])
 def test_looking_at_the_trash_in_a_script_is_not_refused(script):
     from server.services import hands_service
     assert not hands_service.empties_trash(script)
@@ -396,7 +409,7 @@ def test_another_disks_trash_that_is_a_link_is_refused(home, tmp_path, monkeypat
 
     class Stat:
         def __init__(self, st, dev):
-            self.st_dev, self.st_mode, self._st = dev, st.st_mode, st
+            self.st_dev, self.st_mode, self.st_ino = dev, st.st_mode, st.st_ino
 
     def lstat(path, *a, **k):
         st = real_lstat(path, *a, **k)
@@ -417,3 +430,79 @@ def test_the_card_says_when_arslan_s_own_files_are_among_the_targets(protected, 
 async def test_a_card_with_a_protected_target_still_moves_the_rest(monkeypatch, protected):
     ex, asked = await _run(monkeypatch, {"command": "rm -rf ~/smart8-old ~/.arslan"}, sandbox_on=False)
     assert asked == [{"delete": "protected"}] and ex.ran == [True]
+
+
+# ── #686 delta review: the same folder by another name; both surfaces word the mode ─
+
+@pytest.mark.parametrize("word", ["{alias}/.arslan", "{alias}/.arslan/secret_key", "{alias}/Library"])
+def test_a_protected_folder_by_another_name_is_refused_by_identity(home, tmp_path, protected, monkeypatch, word):
+    """A name only a stat can tell is the same folder (/System/Volumes/Data…). A link stands in for that firmlink
+    here, with the resolving step off, since realpath would see through a link."""
+    (tmp_path / "alias").symlink_to(home)
+    monkeypatch.setattr(dt, "_absolute", lambda given, cwd: Path(given))
+    out = dt.move("rm -rf " + word.format(alias=tmp_path / "alias"), tmp_path)
+    assert not out["ok"] and "Arslan's own data or keys" in out["stderr"]
+    assert (home / ".arslan" / "secret_key").read_text() == "k"
+
+
+def test_a_name_the_trash_can_t_answer_for_is_not_overwritten(home, tmp_path, monkeypatch):
+    """An error asking whether a Trash name is free is not "free": lexists would say so, and rename overwrite."""
+    (home / ".Trash").mkdir()
+    (home / ".Trash" / "a.log").write_text("earlier")
+    (tmp_path / "a.log").write_text("now")
+    real = os.lstat
+
+    def lstat(path, *a, **k):
+        if str(path).endswith(".Trash/a.log"):
+            raise PermissionError(1, "Operation not permitted")
+        return real(path, *a, **k)
+    monkeypatch.setattr(dt.os, "lstat", lstat)
+    out = dt.move(f"rm {tmp_path / 'a.log'}", tmp_path)
+    monkeypatch.undo()
+    assert not out["ok"] and (tmp_path / "a.log").read_text() == "now"
+    assert (home / ".Trash" / "a.log").read_text() == "earlier"
+
+
+def test_a_failure_partway_says_how_many_moved(home, tmp_path):
+    (tmp_path / "a.log").write_text("x")
+    out = dt.move(f"rm {tmp_path / 'a.log'} {tmp_path / 'missing'}", tmp_path)
+    assert out["error"] == "1 moved to the Trash, 1 not moved" and out["trashed"]
+
+
+@pytest.mark.parametrize("mode,lead,reading", [
+    ("trash", None, "Move 1 file or folder to the Trash"),
+    ("protected", "Arslan's own files stay", "Move 1 file or folder to the Trash"),
+    ("permanent", "Deletes permanently", "Delete 1 file or folder"),
+    ("sandboxed", "Deletes permanently where the sandbox allows", "Delete 1 file or folder"),
+    ("", None, "Delete 1 file or folder"),
+])
+def test_the_phones_heading_words_each_mode(mode, lead, reading):
+    from server.services import card_purpose
+    title = card_purpose.phrase("rm -rf ~/x", lang="en", delete_mode=mode)
+    assert reading in title and (lead is None or title.startswith(lead)), title
+
+
+@pytest.mark.parametrize("lang", ["en", "zh", "ja", "es", "de", "fr"])
+def test_every_language_has_the_delete_wording(lang):
+    from server.services import card_purpose
+    assert "{" not in card_purpose.phrase("rm -rf ~/x ~/y", lang=lang, delete_mode="protected")
+    for mode in ("permanent", "sandboxed"):
+        assert card_purpose.phrase("rm ~/x", lang=lang, delete_mode=mode) != card_purpose.phrase("rm ~/x", lang=lang)
+    assert card_purpose.phrase("rm ~/x", lang=lang, delete_mode="trash") != card_purpose.phrase("rm ~/x", lang=lang)
+
+
+async def test_both_titles_carry_the_mode(tmp_path, monkeypatch):
+    from server.services import card_purpose, command_confirm, permissions
+    from tests.server.test_workspace_tool_gate import _wire
+    await _wire(tmp_path, monkeypatch, workspace=str(tmp_path))
+    seen = []
+
+    async def decide(request, context):
+        seen.append(request)
+        return permissions.Decision(allowed=False, by="user")
+    monkeypatch.setattr(permissions, "decide", decide)
+    confirm = command_confirm.Confirmations("c1")
+    await confirm.command("rm -r /tmp/smart8", [], delete="trash")
+    await confirm.command("rm -r /tmp/smart8", [], delete="trash", sandbox="outside")
+    for request in seen:
+        assert card_purpose.phrase("rm", lang="en") and "to the Trash" in request.title, request.title

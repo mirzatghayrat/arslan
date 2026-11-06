@@ -110,11 +110,11 @@ class Confirmations:
             # the command runs (`permissions._ALWAYS_ASKS`).
             request = permissions.Request(
                 kind="outside", target="*", title=card_purpose.phrase(shell, why, rules, lang=lang, outside=True,
-                                                                      network=network),
+                                                                      network=network, delete_mode=delete),
                 model_title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
                 why=why, frame={**protocol.propose_run_command(
                     uuid.uuid4().hex, command, argv,
-                    reason=_with_delete(verdict.reason if verdict.level == "ask" else "", deletes),
+                    reason=verdict.reason if verdict.level == "ask" else "",
                     sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
                     **_delete_keys(delete, shell)})
         elif remote_host:
@@ -138,23 +138,19 @@ class Confirmations:
         async with db_session.AsyncSessionLocal() as db:
             ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
         frame = protocol.propose_run_command(
-            uuid.uuid4().hex, command, argv, reason=_with_delete(verdict.reason or f"risk: {risk}", deletes),
+            uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable)
         frame.update(_delete_keys(delete, shell))
         unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                             unsandboxed=unsandboxed, lang=lang, why=why)
-        if deletes:     # the model's English text; the card itself words `delete_mode` (⑤CAP's shared card)
+                                             unsandboxed=unsandboxed, lang=lang, why=why,
+                                             delete_mode=delete)
+        if deletes:     # the model's English text; the title and the card word `delete_mode` themselves
             request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
         with self._surface():
             decision = await permissions.decide(request, self._context())
         return decision.allowed
-
-
-def _with_delete(reason: str, deletes: str) -> str:
-    """The card's reason with how allow deletes appended (SMART-8)."""
-    return f"{reason}; {deletes}" if reason and deletes else (reason or deletes)
 
 
 def _delete_keys(mode: str, shell: str) -> dict:

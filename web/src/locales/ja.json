@@ -1034,7 +1034,9 @@
       "deleteSome": "ファイルまたはフォルダを削除",
       "overNetwork": "ネットワークを使用（{{program}}）：データを送受信する可能性",
       "more": "（ほか {{count}} ステップ）",
-      "more_one": "（ほか {{count}} ステップ）"
+      "more_one": "（ほか {{count}} ステップ）",
+      "toTrash": "{{count}} 件のファイルまたはフォルダをゴミ箱に移動",
+      "toTrash_one": "{{count}} 件のファイルまたはフォルダをゴミ箱に移動"
     },
     "risk": {
       "sandboxed": "サンドボックス内で実行：作業フォルダ内のファイルしか変更できません",
@@ -1066,7 +1068,10 @@
         "unreadable-script-reach": "スクリプトが外部に接続したり、プログラムを起動したり、アプリを操作したりします",
         "unreadable-quoting": "引用符が閉じていないため、何が実行されるか読めません",
         "unreadable-complex": "複雑すぎて実行前に読み切れません",
-        "unreadable-send": "Arslan にはこのコマンドが何を送るか読み切れません。ローカルのデータを送る可能性があります"
+        "unreadable-send": "Arslan にはこのコマンドが何を送るか読み切れません。ローカルのデータを送る可能性があります",
+        "delete-outside-trash": "ゴミ箱に移動します。そこから元に戻せます",
+        "delete-outside-protected": "Arslan 自身のデータとキーはそのままで、残りはゴミ箱に移動します",
+        "delete-outside-sandboxed": "サンドボックス内で実行します。そこで削除したものは完全に削除されます"
       }
     }
   },

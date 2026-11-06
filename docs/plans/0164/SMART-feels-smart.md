@@ -148,7 +148,7 @@ The user's request, in summary: the allow button should not delete for good but 
     - Allow moves to the Trash only when the command would run outside the sandbox: the outside card, the retry card, a conversation grant, or the sandbox off or unable to start.
     - A command the sandbox holds keeps the sandbox's limits, including the folders the user closed. A move made by the server would bypass those limits.
     - Its card says that what it deletes there is deleted permanently. If the sandbox stops it, the retry card runs it outside, and then it goes to the Trash.
-  - **Frame keys:** the Mac's frame carries `delete_mode` (trash | permanent | sandboxed, and later permanent_requested) and `delete_targets`, for the shared card. The Bridge's FrameMapper doesn't read them, so the phone keeps the English `title`.
+  - **Wording:** the Mac's frame carries `delete_mode` (trash | protected | permanent | sandboxed, and later permanent_requested) and `delete_targets`. The Mac card's reader and the phone's heading (`card_purpose.phrase`) both word every mode; FrameMapper reads neither key.
 - **An explicit permanent delete.**
   - When the user's own chat message in this conversation explicitly asks to delete specific paths permanently (for example 「把 ~/Downloads/旧安装包 彻底删掉」), 「允许」 really deletes those paths.
   - The card says so: 「你说要彻底删除，这次不进废纸篓」.
