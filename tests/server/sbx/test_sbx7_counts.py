@@ -136,7 +136,7 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
         await task_service.run_turn(function, CID, "run it", lambda e: None)
 
     seen = json.dumps(model.requests["S64-HOST"][1], ensure_ascii=False)
-    assert "Operation not permitted" in seen                    # the command's own words
+    assert "Operation not permitted" in seen, seen[:1500]       # the command's own words
     async with db_session.AsyncSessionLocal() as db:
         run = (await db.execute(select(Run).order_by(Run.id.desc()))).scalars().first()
         step = (await db.execute(select(RunStep).where(RunStep.run_id == run.id,
