@@ -1,6 +1,6 @@
 # DIFF2: Changes for a working folder that is a git repo
 
-⑥Helper, 2026-10-31. README row DIFF2 (the user, 2026-10-30: 「我要做的跟Claude 一样的」). The user's picks on the DIFF2-0 mock (2026-10-31, relayed by ④参谋): all three as recommended, and 「借鉴主流agent产品做法，不要过度防御」.
+⑥Helper, 2026-10-31. README row DIFF2 (the user, 2026-10-30: it should work the way Claude's does). The user's picks on the DIFF2-0 mock (2026-10-31, relayed by ④参谋): all three as recommended, plus the standing request to follow mainstream agent products and not over-defend.
 
 | | |
 |---|---|

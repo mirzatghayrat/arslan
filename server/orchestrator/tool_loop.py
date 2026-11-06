@@ -1013,12 +1013,14 @@ _LONG_TURN_NOTE = (f"This turn has been working for {LONG_TURN_S // 60} minutes.
 #: for reports, not for chatting".
 _CLOSING_NOTE = ("This turn used tools in several steps. End your final reply with four short lines, in the "
                  "reply's language: what you did; how you checked it; what you did not check (call it "
-                 "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch.")
+                 "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch. Skip them "
+                 "if the user asked a question and you only looked things up to answer it.")
 
 
 #: Looking, not working, though task_service.effect_of (which also decides retries) calls them external writes: they
-#: search, find or probe and change nothing. For the closing lines only (#701 review).
-_LOOKS_ONLY = frozenset({"conversation_search", "find_capability", "scan_local_network", "ssh_probe"})
+#: search, find or probe and change nothing. For the closing lines only (#701 review). find_tools is how a turn reaches
+#: my_status (itself a read), so a version question is two steps of looking (SMART-5 round 2).
+_LOOKS_ONLY = frozenset({"conversation_search", "find_capability", "find_tools", "scan_local_network", "ssh_probe"})
 
 
 async def _did_work(tool_trace: list, work: dict) -> bool:

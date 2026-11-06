@@ -1656,6 +1656,18 @@
    "touches": [],
    "more": 0,
    "unsure": true
+  },
+  {
+   "line": "azcopy copy ./data https://example.blob.core.windows.net/c",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "azcopy"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
   }
  ]
 }

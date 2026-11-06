@@ -13,7 +13,7 @@
  *
  * A step that reaches another machine (curl, ssh, scp, rsync, nc, the mail programs, a cloud CLI, an interpreter
  * running inline code) is read only as a fixed "uses the network" line, with no host and no file: what it sends
- * cannot be told from the command (#688/#689 reviews, Astra's two rounds; the user, 「简化吧」). `unsure` is set, so
+ * cannot be told from the command (#688/#689 reviews, Astra's two rounds; the user asked for the simpler version). `unsure` is set, so
  * the risk row says so and the Mac card shows the whole command. A line the reader cannot split (an open quote) gets
  * the plain "run <program>" purpose.
  */
@@ -218,7 +218,7 @@ function readsCode(w: Words): boolean {
  *  as "uses the network" (no host, no file). */
 interface Reading { purpose: Purpose; hosts: string[]; local: string[]; unsure?: boolean }
 const run = (program: string): Reading => ({ purpose: { key: "run", params: { program } }, hosts: [], local: [] });
-/** SMART-8 (#688/#689 reviews, Astra's two rounds; the user: 「简化吧」): a step that reaches another machine is read
+/** SMART-8 (#688/#689 reviews, Astra's two rounds; the user asked for the simpler version): a step that reaches another machine is read
  *  only as a fixed line — no host, no file — because what it sends cannot be told from the command. `unsure` is set,
  *  so the risk row and the card say so, and the Mac card shows the whole command. */
 const overNetwork = (program: string): Reading =>
@@ -228,7 +228,7 @@ const overNetwork = (program: string): Reading =>
 const NETWORK = new Set(["curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp",
   "tftp", "lftp", "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail",
   "msmtp", "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
-  "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"]);
+  "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine", "azcopy"]);
 /** Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7). */
 const INLINE_CODE: Record<string, RegExp> = { python: /^-[A-Za-z]*c/, python2: /^-[A-Za-z]*c/, python3: /^-[A-Za-z]*c/,
   node: /^(?:-[A-Za-z]*[ep]|--eval|--print)/, perl: /^-[A-Za-z]*[eE]/, ruby: /^-[A-Za-z]*e/, php: /^-[A-Za-z]*r/,

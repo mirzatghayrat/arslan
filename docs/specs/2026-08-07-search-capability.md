@@ -230,7 +230,7 @@ import 时的静态 dict,**没有任何配置检查**;`arslan.py:1716-1718` 只�
 (用户填的地址)接进来。为了一个自称「仅供学习」的上游,换掉我们唯一的网络边界控制,
 不划算。代价(HTML 解析会碎)由 §2.4 的**出处标注**变成可见的,而不是静默的。
 
-甲的硬要求(用户原话「必须如实披露」):
+甲的硬要求(the user's requirement: it must be honestly disclosed):
 - 界面**明说**它抓 HTML、会被限流、只适合兜底;
 - 它服务的每一次结果**带上出处标注**;
 - **不许**把它包装得像一个正式 provider。
@@ -258,7 +258,7 @@ import 时的静态 dict,**没有任何配置检查**;`arslan.py:1716-1718` 只�
 
 ### 2.5 SSRF helper 复用的形状:挪进共享模块
 
-**决定(用户授权我定,但要求「两处行为一致有测试钉住」)**:
+**决定(用户授权我定,but requires a test that pins the two places to the same behaviour)**:
 
 新开 `server/registry/net_pin.py`,把 `executors.py` 的
 `_is_blocked_ip` / `_resolve_pinned` / `_ascii_host` / `_pinning_disabled_by_proxy` /
@@ -296,11 +296,10 @@ mutation:只放宽其中一条路径,测试必须红。
 - **B**:抱怨的实质是「免费额度耗尽」⇒ 重点应是**额度可见性**(§2.6 的 402/429 语义 +
   Settings 可见),甲只是附带。
 
-**用户 2026-08-08 裁决:(c) —— 两个都要,不是二选一。** 原话:
+**用户 2026-08-08 裁决:(c) —— 两个都要,不是二选一。** In summary:
 
-> **(a) 裸装不配任何 key 也能搜** —— 「下载就能用」是产品承诺,零 key 兜底是核心交付;
-> **(b) 配了 key 之后,坏了/额度用完了必须大声** —— 「我自己就是被『钥匙碎了却报没配置』
-> 坑了一个月的人,三态可见、每次搜索标明由哪个 provider 服务,是底线。」
+> **(a) A bare install with no key configured still searches** — working as soon as it is downloaded is the product promise, and the zero-key fallback is a core deliverable;
+> **(b) once a key is configured, a break or an exhausted quota must be loud** — the user had been bitten for a month by a broken key being reported as not configured, so a three-state display and naming the serving provider on every search are the floor.
 
 ⇒ 我提这个拍板项时把它设成了二选一,**那个前提本身是错的**:我把「抱怨从哪来」
 当成了「重心放哪」,而两条其实是同一个缺陷的两端 —— **(a) 是没有钥匙时不该死,
