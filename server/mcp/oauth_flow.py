@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import urlsplit
 
+import httpx
 from mcp.client.auth import OAuthClientProvider
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 from sqlalchemy import literal, select
@@ -100,6 +102,40 @@ def _metadata(redirect_uri: str) -> OAuthClientMetadata:
         response_types=["code"],
         token_endpoint_auth_method="none",  # public client + PKCE (RFC 8252)
     )
+
+
+SIGN_IN_CHECK_TIMEOUT_S = 5.0
+
+
+async def offers_sign_in(url: str) -> bool:
+    """Does this server say it takes OAuth? A server with no stored sign-in gets no provider (`session`), so its 401
+    reads as "no credentials", the same as one that wants a key. What it publishes tells them apart: the 401's challenge
+    naming its metadata (RFC 9728), or that metadata at the well-known addresses on its own origin. Read-only and only
+    what it says about itself: no client is registered, and no address its metadata names is visited."""
+    parts = urlsplit(url)
+    origin = f"{parts.scheme}://{parts.netloc}"
+    known = ((f"{origin}/.well-known/oauth-protected-resource{parts.path.rstrip('/')}", "authorization_servers"),
+             (f"{origin}/.well-known/oauth-protected-resource", "authorization_servers"),
+             (f"{origin}/.well-known/oauth-authorization-server", "authorization_endpoint"))
+    try:
+        async with httpx.AsyncClient(timeout=SIGN_IN_CHECK_TIMEOUT_S, follow_redirects=False) as client:
+            r = await client.post(url, json={"jsonrpc": "2.0", "id": 0, "method": "ping"},
+                                  headers={"Accept": "application/json, text/event-stream"})
+            if r.status_code == 401 and "resource_metadata" in r.headers.get("www-authenticate", "").lower():
+                return True
+            for address, field in known:
+                r = await client.get(address)
+                if r.status_code != 200:
+                    continue
+                try:
+                    body = r.json()
+                except ValueError:
+                    continue
+                if isinstance(body, dict) and body.get(field):
+                    return True
+    except httpx.HTTPError:
+        return False
+    return False
 
 
 class NeedsInteractiveAuth(RuntimeError):

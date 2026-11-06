@@ -33,6 +33,7 @@ from arslan.aio import within
 logger = logging.getLogger(__name__)
 
 TEST_TIMEOUT_S = 90
+SIGN_IN_CHECK_S = 20         # the whole check: `oauth_flow`'s own timeout is per read, and a chat turn waits on this
 
 
 def installable(c: dict) -> str | None:
@@ -92,20 +93,42 @@ async def _update(source_id: str, **fields) -> None:
         await db.commit()
 
 
+async def _waits_for_sign_in(server_id: int, line: str) -> bool:
+    """A start that needs the user's browser, not a key. Stored tokens that need it again say so themselves. A fresh
+    install has none, so no OAuth provider, and its 401 reads as "no credentials": there the server has to say it takes
+    OAuth. A key it rejects and a 403 aren't this: a browser can't fix them."""
+    from server.mcp import discovery, oauth_flow
+    from server.mcp.supervisor import SIGN_IN_PREFIX
+    if line.startswith(SIGN_IN_PREFIX):
+        return True
+    if not line.startswith(discovery.NO_CREDENTIALS_401):
+        return False
+    async with db_session.AsyncSessionLocal() as db:
+        server = await db.get(MCPServer, server_id)
+    return server is not None and await oauth_flow.offers_sign_in(server.url)
+
+
 async def test_mcp(source_id: str) -> dict:
     """Start it in its sandbox and list its tools; on success switch it on (0.1.61: through the
     supervisor, so the row is `ready` and its tools are offered in the same reply, spec §B3). A
-    start that does not pass leaves it `off`, its process stopped."""
-    from server.mcp.supervisor import supervisor
+    start that does not pass leaves it `off`, its process stopped. One that asks the user to sign in
+    is off too, but it hasn't failed: `discovery._check_pin` switches it on and pins its tools at the
+    first listing after the sign-in."""
+    from server.mcp.supervisor import SIGN_IN_LINE, supervisor
     from server.services import mcp_service
     row = await _source(source_id)
     at = datetime.utcnow().isoformat() + "Z"
     try:
         result = await within(mcp_service.start_now(row.mcp_server_id), TEST_TIMEOUT_S)
+        waiting = result.state == "needs_auth" and await within(
+            _waits_for_sign_in(row.mcp_server_id, result.last_error or ""), SIGN_IN_CHECK_S)
     except Exception as exc:  # noqa: BLE001 — a failed start is the test's answer
         await supervisor.set_enabled(row.mcp_server_id, False)
         detail = getattr(exc, "detail", None) or str(exc)
         return {"ok": False, "stage": "start", "detail": detail[-400:] or type(exc).__name__, "at": at}
+    if waiting:
+        await supervisor.set_enabled(row.mcp_server_id, False)
+        return {"ok": False, "needs_sign_in": True, "stage": "sign_in", "detail": SIGN_IN_LINE, "at": at}
     if result.state != "ready":
         await supervisor.set_enabled(row.mcp_server_id, False)
         return {"ok": False, "stage": "start", "detail": (result.last_error or result.state)[-400:],
@@ -141,6 +164,9 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict
     test = await test_mcp(row.id)
     # CAP5a: the test's listing pinned the tools (discovery._check_pin, in `test`); the result is added to it.
     test = {**((await _source(row.id)).test or {}), **test}
+    if test.get("needs_sign_in"):
+        await _update(row.id, test=test)
+        return {"state": "needs_sign_in", "source_id": row.id, "scan": scan}
     await _update(row.id, test=test, **({} if test["ok"] else {"state": "failed", "error": f"test: {test['stage']}"}))
     if not test["ok"]:
         return {"state": "failed", "stage": "test", "source_id": row.id, "detail": test["detail"]}
@@ -352,6 +378,12 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         _outside_text()
         return {"ok": True, "installed": outside_label(cand.get("name")), **found, "refresh": True,
                 "note": f"Installed, tested and switched on: {what}. Retry the step that failed now."}
+    if result["state"] == "needs_sign_in":
+        _outside_text()
+        return {"ok": False, "needs_sign_in": True, "added": outside_label(cand.get("name")),
+                "note": "Added (`added`), but it stays off until the user signs in to it: in Capabilities, open it and "
+                        "choose Authorize. Its tools aren't available yet, so don't retry the step. Say this in your "
+                        "answer."}
     if result["state"] == "blocked":
         rules = ", ".join(f["rule"] for f in result["scan"]["findings"] if f["level"] == "high")
         return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); it was removed again"}
