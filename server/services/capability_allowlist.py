@@ -10,6 +10,8 @@
   lock, the scan and the sandbox.
 
 Skills are not held to this list: they keep the pinned commit, the scan, the hashes and the card (CAP4a-1).
+A plugin's connections are (CAP7b, ⓪Plan's ruling on the card's point 1): a package by the plugin's own repository
+(`confirm_repository`), never a marketplace's, and a remote by its address (`listed_remote`).
 Installed servers' updates are not held to the list either (the user approved that source), but an update published
 by a listed organization is checked by its id like a new card (#584 review 2): a login can change hands.
 
@@ -261,7 +263,20 @@ async def confirm_account(c: dict, allow: dict) -> str | None:
     who = capability_search.publisher_of(c)
     if who is None or who["kind"] != "github":
         return None
-    login = who["value"].lower()
+    return await _confirm_login(who["value"].lower(), allow)
+
+
+async def confirm_repository(c: dict, allow: dict) -> str | None:
+    """CAP7b: a plugin's package has no Registry publisher, so the plugin's own repository answers: one of the listed
+    GitHub organizations, still the one the list names."""
+    from server.services import capability_search
+    who = capability_search.publisher_of(c)
+    if who is None or who["kind"] != "github":
+        return PUBLISHER_UNKNOWN
+    return await _confirm_login(who["value"].lower(), allow)
+
+
+async def _confirm_login(login: str, allow: dict) -> str | None:
     pinned = allow["accounts"].get(login)
     if pinned is None:
         return PUBLISHER_NOT_LISTED

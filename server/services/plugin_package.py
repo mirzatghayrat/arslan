@@ -10,6 +10,10 @@ that row, and each MCP server its own `kind="mcp"` row (`candidate_id` "plugin:<
 per-server lock, scan, test, tool pin and sign-in. No folder of the plugin's is kept: every file lands where a single
 install's does, inside Arslan's data folder, so what needs `${CLAUDE_PLUGIN_ROOT}` is refused. The group switches and
 goes as one, and a changed tool list on any server stops the whole plugin.
+
+The one-click list applies to its connections, as it does to a single one (`capability_allowlist`): a package by the
+plugin's own repository, a remote by its address. One off the list makes the whole plugin "add by hand". Skills aren't
+held to the list, as a single skill isn't.
 """
 from __future__ import annotations
 
@@ -18,10 +22,10 @@ import hashlib
 import io
 import json
 import logging
-import os
 import re
 import tarfile
 import uuid
+import zlib
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -30,6 +34,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import CapabilitySource, SkillPack
+from server.orchestrator import untrusted
 from server.services import capability_allowlist, capability_install, capability_runtime, mcp_pin, skill_import
 
 logger = logging.getLogger(__name__)
@@ -46,9 +51,23 @@ _KEY_CODES = {"hooks": "hooks", "commands": "commands", "agents": "agents", "lsp
 _PARTS = (("hooks/", "hooks"), ("commands/", "commands"), ("agents/", "agents"), (".lsp.json", "lsp"),
           ("output-styles/", "other"), ("themes/", "other"), ("workflows/", "other"), ("monitors/", "other"),
           ("bin/", "other"), ("settings.json", "other"), (".app.json", "other"))
-_FOLDER_VARS = re.compile(r"\$\{(?:CLAUDE_PLUGIN_ROOT|CLAUDE_PLUGIN_DATA|CLAUDE_SKILL_DIR|PLUGIN_ROOT|PLUGIN_DATA)\}")
+_FOLDER_VARS = re.compile(r"\$\{?(?:CLAUDE_PLUGIN_ROOT|CLAUDE_PLUGIN_DATA|CLAUDE_SKILL_DIR|PLUGIN_ROOT|PLUGIN_DATA)\b")
 _ANY_VAR = re.compile(r"\$\{")
 _WHOLE_VAR = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_HEADER_NAME = re.compile(r"[A-Za-z0-9_-]+")
+#: Env a plugin's connection can't set, fixed or asked for: it would load other code into the program the card shows,
+#: send the program's traffic somewhere else, or stop checking who answers. Any case. The card's fixed values show the
+#: rest, and the lock only holds what the runtime is told to load.
+_UNSAFE_ENV = re.compile(
+    r"(DYLD_|LD_|GIT_|NPM_CONFIG_).*|.*_PROXY"
+    r"|NODE_(OPTIONS|PATH|COMPILE_CACHE|TLS_REJECT_UNAUTHORIZED|EXTRA_CA_CERTS|USE_ENV_PROXY)"
+    r"|PYTHON(PATH|HOME|STARTUP|USERBASE|WARNINGS|BREAKPOINT|INSPECT|PYCACHEPREFIX|EXECUTABLE|HTTPSVERIFY)"
+    r"|PATH|BASH_ENV|ENV|ZDOTDIR|PERL5(OPT|LIB)|RUBY(OPT|LIB)|_?JAVA_(TOOL_)?OPTIONS|JDK_JAVA_OPTIONS|CLASSPATH"
+    r"|SSL_CERT_(FILE|DIR)|REQUESTS_CA_BUNDLE|CURL_CA_BUNDLE"
+    r"|(UV|PIP)_(INDEX|INDEX_URL|DEFAULT_INDEX|EXTRA_INDEX_URL|FIND_LINKS|CONFIG_FILE)", re.I)
+#: Headers that ask the remote's front end to route the call somewhere other than the address on the card.
+_UNSAFE_HEADER = re.compile(r"host|forwarded|x-forwarded-host|x-original-url|x-rewrite-url", re.I)
 _PINNED = re.compile(r"(@?[^@=\s]+)(?:@|==)([^@=\s]+)")
 _REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 _SHA = re.compile(r"[0-9a-f]{40}")
@@ -61,14 +80,16 @@ MAX_ARCHIVE_BYTES = 30 * 1024 * 1024
 MAX_UNPACKED_BYTES = 120 * 1024 * 1024
 MAX_FILE_BYTES = 1_000_000
 MAX_CONNECTIONS = 10
+MAX_VALUE_CHARS = 500         # an argument's limit too (`capability_install.start_arguments`)
 
 
 class Refused(Exception):
-    """This plugin can't be added: `code` says why, `part` names which part."""
+    """This plugin can't be added: `code` says why, `part` names which part. `by_hand`: why the one-click list doesn't
+    cover that part, when the code is "add_by_hand"."""
 
-    def __init__(self, code: str, part: str = ""):
+    def __init__(self, code: str, part: str = "", by_hand: str | None = None):
         super().__init__(f"{code}: {part}" if part else code)
-        self.code, self.part = code, part
+        self.code, self.part, self.by_hand = code, part, by_hand
 
 
 @dataclass
@@ -88,17 +109,20 @@ def read_archive(repo: str, data: bytes) -> Snapshot:
     names the commit it was made from (GitHub writes it there), as `capability_search.index_archive` reads it."""
     files: dict[str, bytes] = {}
     total = 0
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
-        for member in archive:
-            total += member.size
-            if total > MAX_UNPACKED_BYTES:
-                raise Refused("too_large", repo)
-            rel = member.name.split("/", 1)[1] if "/" in member.name else ""
-            if member.isfile() and member.size <= MAX_FILE_BYTES and skill_import._plain_path(rel):
-                content = archive.extractfile(member)
-                if content is not None:
-                    files[rel] = content.read()
-        sha = (archive.pax_headers or {}).get("comment") or ""
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+            for member in archive:
+                total += member.size
+                if total > MAX_UNPACKED_BYTES:
+                    raise Refused("too_large", repo)
+                rel = member.name.split("/", 1)[1] if "/" in member.name else ""
+                if member.isfile() and member.size <= MAX_FILE_BYTES and skill_import._plain_path(rel):
+                    content = archive.extractfile(member)
+                    if content is not None:
+                        files[rel] = content.read()
+            sha = (archive.pax_headers or {}).get("comment") or ""
+    except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:       # a download cut short, or not an archive
+        raise Refused("unreadable", repo) from exc
     if not _SHA.fullmatch(sha):
         raise Refused("not_pinned", repo)
     return Snapshot(repo=repo, sha=sha, files=files)
@@ -110,16 +134,19 @@ async def snapshot(repo: str, ref: str | None = None) -> Snapshot:
         raise Refused("not_github", str(repo))
     if ref and not _SHA.fullmatch(ref):
         raise Refused("not_pinned", ref)
+    body = bytearray()
     try:
         async with httpx.AsyncClient(timeout=ARCHIVE_TIMEOUT_S, follow_redirects=True) as client:
-            r = await client.get(f"{CODELOAD}/{repo}/tar.gz/{ref or 'HEAD'}")
+            async with client.stream("GET", f"{CODELOAD}/{repo}/tar.gz/{ref or 'HEAD'}") as r:
+                if r.status_code != 200:
+                    raise Refused("unreachable", repo)
+                async for chunk in r.aiter_bytes():
+                    body += chunk
+                    if len(body) > MAX_ARCHIVE_BYTES:
+                        raise Refused("too_large", repo)
     except httpx.HTTPError as exc:
         raise Refused("unreachable", repo) from exc
-    if r.status_code != 200:
-        raise Refused("unreachable", repo)
-    if len(r.content) > MAX_ARCHIVE_BYTES:
-        raise Refused("too_large", repo)
-    return read_archive(repo, r.content)
+    return await asyncio.to_thread(read_archive, repo, bytes(body))
 
 
 def _join(root: str, rel: str) -> str:
@@ -233,48 +260,74 @@ def _part_candidate(plugin: dict, name: str, **fields) -> dict:
             "license": {"spdx": None, "read_from": None, "verdict": "unknown"}, **fields}
 
 
+def _whole(name: str, value) -> str:
+    """A value a connection starts with, which the card shows as it runs: one the card couldn't show whole (hidden
+    characters, or too long to show) refuses the plugin, since nothing is cut or cleaned between the two."""
+    if not isinstance(value, str) or untrusted.clean_name(value, MAX_VALUE_CHARS) != value:
+        raise Refused("unreadable", name)
+    return value
+
+
+def _settings(name: str, settings, valid: re.Pattern, unsafe: re.Pattern) -> dict[str, str]:
+    """A connection's `env` or `headers`, read: its shape, and no name `unsafe` holds. Absent is none."""
+    if settings is None:
+        return {}
+    if not isinstance(settings, dict):
+        raise Refused("unreadable", name)
+    for key, value in settings.items():
+        if not valid.fullmatch(key):
+            raise Refused("unreadable", name)
+        if unsafe.fullmatch(key):
+            raise Refused("unsafe_setting", f"{name}: {key}")
+        _whole(name, value)
+    return settings
+
+
 def _env_keys(name: str, env) -> tuple[list[dict], dict]:
     """What the config asks the user for, and what it says itself. Only a value that is wholly one variable can be
     asked for: anything else with a variable in it can't be read."""
     keys, fixed = [], {}
-    for key, value in (env or {}).items():
-        if _WHOLE_VAR.fullmatch(str(value)):
-            keys.append({"name": str(key), "required": True, "secret": True, "description": ""})
-        elif _ANY_VAR.search(str(value)):
+    for key, value in _settings(name, env, _ENV_NAME, _UNSAFE_ENV).items():
+        if _WHOLE_VAR.fullmatch(value):
+            keys.append({"name": key, "required": True, "secret": True, "description": ""})
+        elif _ANY_VAR.search(value):
             raise Refused("cannot_pin", name)
         else:
-            fixed[str(key)] = str(value)
+            fixed[key] = value
     return keys, fixed
 
 
-async def _remote(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
-    if spec.get("type") not in _REMOTE_TYPES:
+def _remote(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
+    url = spec.get("url")
+    if spec.get("type") not in _REMOTE_TYPES or not isinstance(url, str) or _ANY_VAR.search(url):
         raise Refused("cannot_pin", name)
-    url = str(spec.get("url") or "")
-    if capability_allowlist.listed_remote(url, allow):
-        from urllib.parse import urlsplit
-        try:
-            host = urlsplit(url).hostname or url
-        except ValueError:
-            host = url
-        raise Refused("remote_not_listed", host)
+    _whole(name, url)
+    why = capability_allowlist.listed_remote(url, allow)
+    if why:
+        raise Refused("add_by_hand", name, by_hand=why)
     keys, fixed = [], {}
-    for header, value in (spec.get("headers") or {}).items():
-        if _ANY_VAR.search(str(value)):
-            keys.append({"name": str(header), "required": True, "secret": True, "description": str(value)[:200]})
+    for header, value in _settings(name, spec.get("headers"), _HEADER_NAME, _UNSAFE_HEADER).items():
+        if _ANY_VAR.search(value):
+            keys.append({"name": header, "required": True, "secret": True, "description": value})
         else:
-            fixed[str(header)] = str(value)
+            fixed[header] = value
     return {"candidate": _part_candidate(plugin, name, runtime="remote", version=None, package=None,
                                          remote={"url": url}, needs={"keys": keys, "network": True}), "env": fixed}
 
 
-async def _package(plugin: dict, name: str, spec: dict) -> dict:
-    """`npx` or `uvx` and one package, locked as a Registry package is. Only the plain form is read: its options
-    decide which argument is the package, and a variable in an argument can't be locked or asked for."""
-    command = os.path.basename(str(spec.get("command") or "")).lower()
+async def _package(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
+    """`npx` or `uvx`, by those bare names, and one package, locked as a Registry package is. Only the plain form is
+    read: its options decide which argument is the package, and a variable in an argument can't be locked or asked
+    for. A package has no Registry publisher here, so the plugin's own repository answers to the list."""
+    command = spec.get("command")
+    if not isinstance(command, str) and command is not None:
+        raise Refused("unreadable", name)
     if command not in _RUNTIMES:
         raise Refused("runs_from_source", name)
-    args = [str(a) for a in spec.get("args") or []]
+    args = spec.get("args", [])
+    if not isinstance(args, list):
+        raise Refused("unreadable", name)
+    args = [_whole(name, a) for a in args]
     if any(_ANY_VAR.search(a) for a in args):
         raise Refused("cannot_pin", name)
     while args and args[0] in ("-y", "--yes"):
@@ -282,6 +335,9 @@ async def _package(plugin: dict, name: str, spec: dict) -> dict:
     if not args or args[0].startswith("-"):
         raise Refused("cannot_pin", name)
     keys, fixed = _env_keys(name, spec.get("env"))
+    why = await capability_allowlist.confirm_repository(plugin, allow)
+    if why:
+        raise Refused("add_by_hand", name, by_hand=why)
     try:
         pinned = (await mcp_pin.pin(command, [args[0]], fixed))[0]
     except mcp_pin.PinRefused as exc:
@@ -325,6 +381,11 @@ def discard(prepared: dict | None) -> None:
         capability_install.discard(connection.get("locked"))
 
 
+def _file_hashes(snap: Snapshot, prefix: str) -> dict[str, str]:
+    return {path[len(prefix):]: hashlib.sha256(data).hexdigest() for path, data in snap.files.items()
+            if path.startswith(prefix)}
+
+
 async def prepare(candidate: dict) -> dict:
     """Everything before the card. Raises Refused, naming the part, with nothing kept."""
     snap = await snapshot(candidate.get("repo") or "", candidate.get("ref"))
@@ -338,19 +399,19 @@ async def prepare(candidate: dict) -> dict:
     allow = await capability_allowlist.current()
     prefix = f"{root}/" if root else ""
     prepared = {"commit": snap.sha, "license": license_, "skills": skills, "connections": [], "manifest": manifest,
-                "files": {path[len(prefix):]: hashlib.sha256(data).hexdigest() for path, data in snap.files.items()
-                          if path.startswith(prefix)}}
+                "files": await asyncio.to_thread(_file_hashes, snap, prefix)}
     try:
         for name, spec in servers.items():
             if not isinstance(spec, dict):
-                raise Refused("unreadable", str(name))
-            remote = spec.get("url") or spec.get("type")
-            connection = await (_remote(candidate, str(name), spec, allow) if remote
-                                else _package(candidate, str(name), spec))
+                raise Refused("unreadable", name)
+            if _FOLDER_VARS.search(json.dumps(spec)):
+                raise Refused("needs_plugin_folder", name)
+            connection = (_remote(candidate, name, spec, allow) if spec.get("url") or spec.get("type")
+                          else await _package(candidate, name, spec, allow))
             try:
                 connection["locked"] = await capability_install.prepare(connection["candidate"])
             except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
-                raise Refused(exc.code, str(name)) from exc
+                raise Refused(exc.code, name) from exc
             prepared["connections"].append(connection)
     except BaseException:
         discard(prepared)
@@ -359,7 +420,8 @@ async def prepare(candidate: dict) -> dict:
 
 
 def card_fields(prepared: dict) -> dict:
-    """What the card adds to `capability_flow.card_for`: every part, by its own name."""
+    """What the card adds to `capability_flow.card_for`: every part, by its own name, and each connection with what it
+    is started with: its fixed `env` or `headers` and the `keys` it gets (a key two of them name is asked for once)."""
     spdx, read_from = prepared["license"]
     keys: dict[str, dict] = {}
     connections = []
@@ -367,12 +429,14 @@ def card_fields(prepared: dict) -> dict:
         c, locked = connection["candidate"], connection["locked"]
         for key in c["needs"]["keys"]:
             keys.setdefault(key["name"], key)
-        connections.append({"name": c["name"], "runtime": c["runtime"], "version": c.get("version"),
-                            "remote_host": (c.get("remote") or {}).get("url"),
+        remote = c["runtime"] == "remote"
+        connections.append({"name": untrusted.clean_name(c["name"], 120), "runtime": c["runtime"],
+                            "version": c.get("version"), "remote_host": (c.get("remote") or {}).get("url"),
                             "network": capability_install.grants_for([], c["needs"])["network"],
                             "arguments": [a["value"] for a in (c.get("package") or {}).get("arguments") or []],
+                            "env": {} if remote else connection["env"], "headers": connection["env"] if remote else {},
+                            "keys": [key["name"] for key in c["needs"]["keys"]],
                             "lock": capability_install.lock_summary(locked)})
-    from server.orchestrator import untrusted
     skills = [{"key": s["key"], "name": s["info"]["name"], "summary": s["info"]["description"],
                "scripts": sorted(s["scripts"]), "references": sorted(s["references"]), "skipped": s["skipped"],
                "scan": s["scan"],
@@ -421,7 +485,8 @@ async def _undo(source_ids: list[str], skill_keys: list[str]) -> None:
 
 async def install(candidate: dict, prepared: dict, keys: dict, owner_id: str = "local") -> dict:
     """Every part, connections first (the test is what most often fails). One that doesn't pass takes the others with
-    it: "on" here means the whole plugin, or `failed` / `blocked` with nothing kept."""
+    it: "on" here means the whole plugin, or `failed` / `blocked` with nothing kept. A connection's tool list changing
+    while the rest go in stops the plugin as it would later (`stop_for`): `stopped`, installed with every part off."""
     from server.services import capability_flow
     source_id = uuid.uuid4().hex
     spdx, read_from = prepared["license"]
@@ -433,7 +498,7 @@ async def install(candidate: dict, prepared: dict, keys: dict, owner_id: str = "
         db.add(CapabilitySource(
             id=source_id, owner_id=owner_id, kind="plugin", name=str(candidate.get("name"))[:120],
             candidate_id=str(candidate.get("id"))[:300], source_url=candidate.get("source_url"),
-            repo=candidate.get("repo"), version=str(manifest.get("version") or prepared["commit"][:12])[:80],
+            repo=candidate.get("repo"), version=untrusted.clean_name(manifest.get("version") or prepared["commit"][:12], 80),
             commit_sha=prepared["commit"], license_spdx=spdx, license_path=read_from, stars=candidate.get("stars"),
             pushed_days=candidate.get("pushed_days"), checked_at=now, runtime="plugin",
             needs={"keys": card_fields(prepared)["keys"], "network": None}, grants={}, candidate=candidate,
@@ -472,16 +537,16 @@ async def install(candidate: dict, prepared: dict, keys: dict, owner_id: str = "
                 waiting.append(part_name)
         for skill in prepared["skills"]:
             part_name = skill["key"]
-            out = await skill_import.install_prepared(skill)
-            written.append(out["key"])
-            async with db_session.AsyncSessionLocal() as db:
-                (await db.get(SkillPack, out["key"])).source_id = source_id
-                await db.commit()
+            written.append((await skill_import.install_prepared(skill, source_id=source_id))["key"])
         async with db_session.AsyncSessionLocal() as db:
             row = await db.get(CapabilitySource, source_id)
             row.state, row.installed_at = "installed", datetime.utcnow()
-            row.test = {"ok": True, "stage": "parts", "at": datetime.utcnow().isoformat() + "Z"}
+            row.test = {**(row.test or {}), "ok": True, "stage": "parts", "at": datetime.utcnow().isoformat() + "Z"}
+            stopped = row.test.get("stopped")
             await db.commit()
+        if stopped:                             # the parts that went in after the stop stop with the rest
+            await _switch_parts(source_id, False)
+            return {"state": "stopped", "stage": "tools_changed", "source_id": source_id}
     except asyncio.CancelledError:              # half a plugin would be parts nothing can reach: no row holds them
         await asyncio.shield(failed({"state": "failed", "stage": "install", "part": part_name}))
         raise
@@ -507,8 +572,8 @@ async def _switch_parts(source_id: str, on: bool, *, except_server: int | None =
 
 
 async def switch(source_id: str, on: bool) -> bool:
-    """The group's one switch. False when there is no such plugin. Switching on ends a stop: a part whose tool list
-    still differs is parked again by its own pin, and stops the group again."""
+    """The group's one switch. False when there is no such plugin. Switching on ends a stop: the rest come back, and
+    the part whose tool list changed stays parked by its own pin (`discovery.held`) until the user reviews it."""
     row = await _plugin(source_id)
     if row is None or row.state != "installed":
         return False
@@ -537,6 +602,24 @@ async def remove(source_id: str) -> bool:
         stored.state = "removed"
         await db.commit()
     return True
+
+
+async def finish_interrupted() -> None:
+    """At boot, before any server starts. A plain Quit kills the server, so an install it cut short ran no undo: its
+    row is still `proposed`, its finished parts are on, and only a group's switch and delete reach them, which a row
+    that never finished doesn't have. They go now. One that can't is tried again at the next boot."""
+    async with db_session.AsyncSessionLocal() as db:
+        ids = (await db.execute(select(CapabilitySource.id).where(CapabilitySource.kind == "plugin",
+                                                                  CapabilitySource.state == "proposed"))).scalars().all()
+    for source_id in ids:
+        try:
+            await remove(source_id)
+            async with db_session.AsyncSessionLocal() as db:
+                row = await db.get(CapabilitySource, source_id)
+                row.state, row.error = "failed", "interrupted"
+                await db.commit()
+        except Exception as exc:  # noqa: BLE001 — never a reason to stop the boot, or the next one
+            logger.warning("a plugin install cut short was not undone at boot (%s): %s", source_id, exc)
 
 
 async def stop_for(child: CapabilitySource, server_id: int) -> None:

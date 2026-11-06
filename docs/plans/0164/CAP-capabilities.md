@@ -301,9 +301,10 @@
 - **Changed on 2026-11-07 (⓪Plan's OK of the design note; these replace the folder in point 2 and the storage line above):**
   - **No plugin folder.** Its skills land where any imported skill's do, and each MCP server gets its own folder under `capabilities/`, all inside Arslan's data folder. So a skill or connection that names `${CLAUDE_PLUGIN_ROOT}` is refused. A manifest's paths still can't leave the plugin. Each file's hash at the pinned commit is kept in the plugin row's `files`.
   - **Storage.** One `kind="plugin"` row, and ordinary children rather than JSON parts: each skill has `SkillPack.source_id` set to that row, and each MCP server is its own `kind="mcp"` row with `candidate_id` `plugin:<parent id>:<name>`. That keeps the per-server lock, scan, test, tool pin and recheck. A part can't be switched or removed alone.
-  - **MCP shapes.** `npx` and `uvx` with one package (locked like a Registry package), and an https remote on the one-click list's domains. Everything else refuses the plugin, including whatever runs from the plugin's own source.
+  - **MCP shapes.** `npx` and `uvx` by those bare names with one package (locked like a Registry package), and an https remote on the one-click list's domains. Everything else refuses the plugin, including whatever runs from the plugin's own source. A connection's fixed `env` and `headers` and its key names are on the card, per connection. Names that load code or redirect traffic refuse the plugin.
+  - **One-click list (⓪Plan's ruling on point 1).** A plugin isn't a way round the list. A package answers by the plugin's own repository (a listed GitHub organization, checked by its id), a remote by its address, and one part off the list makes the whole plugin "add by hand". Skills aren't held to the list, as a single skill isn't.
   - **Source.** GitHub only, read from one archive at one commit. A marketplace is only a phonebook: an entry resolves to its own repository.
-  - **Merge timing.** Not before SBX-5a and SBX-4a (line 12 above), unless the user decides otherwise.
+  - **Merge timing (⓪Plan, 2026-11-07; replaces "not before SBX-5a and SBX-4a" for this half).** The server half can merge once OK'd: search doesn't offer plugins, so it reaches no user and adds no exposure. The web half is what waits for SBX-5a and SBX-4a (line 12 above), so no user reaches a plugin before then.
 
 ### CAP8 导入 Claude Code / Codex 的设置（import-agent）
 

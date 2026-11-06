@@ -415,9 +415,10 @@ async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str
             "files": files, "sizes": sizes, "skipped": skipped}
 
 
-async def install_prepared(prepared: dict) -> dict:
+async def install_prepared(prepared: dict, *, source_id: str | None = None) -> dict:
     """Write exactly what `prepare_skill` fetched: its scripts and references under data_dir/skill_scripts/<key>/,
-    then the row. No second fetch, so what was scanned and shown is what is installed (CAP4a-1).
+    then the row. No second fetch, so what was scanned and shown is what is installed (CAP4a-1). `source_id`: the
+    plugin it belongs to (CAP7b), in the row's one commit, so a hard stop never leaves it outside its group.
 
     #539 review 2 and 8: a folder already under the key has no row (checked first), so it is a removed or failed
     import's leftover; it goes to the Trash before anything is written, or its files would join the skill
@@ -436,7 +437,7 @@ async def install_prepared(prepared: dict) -> dict:
     try:
         if stored or stored_refs:
             _write_folder(folder, prepared)
-        return await _install_row(prepared, key, info, sha, stored, stored_refs)
+        return await _install_row(prepared, key, info, sha, stored, stored_refs, source_id)
     except BaseException:
         capability_install.to_trash(folder, prefix="Arslan failed skill import")
         raise
@@ -461,7 +462,8 @@ def _write_folder(folder: Path, prepared: dict) -> None:
         raise ValueError("the skill's folder does not match what was checked")
 
 
-async def _install_row(prepared: dict, key: str, info: dict, sha: str, stored: list, stored_refs: list) -> dict:
+async def _install_row(prepared: dict, key: str, info: dict, sha: str, stored: list, stored_refs: list,
+                       source_id: str | None = None) -> dict:
     spdx, source = prepared["license"], prepared["license_source"]
     today = datetime.now(timezone.utc).date().isoformat()
     # "verbatim" only when nothing went (UNI1: Tag and control characters do).
@@ -483,7 +485,7 @@ async def _install_row(prepared: dict, key: str, info: dict, sha: str, stored: l
     async with db_session.AsyncSessionLocal() as db:
         row = SkillPack(key=key, name=info["name"], category="imported",
                         description=info["description"], tier="safe",
-                        status="registered", body=body)
+                        status="registered", body=body, source_id=source_id)
         db.add(row)
         await db.commit()
     return {"key": key, "name": info["name"], "description": info["description"],

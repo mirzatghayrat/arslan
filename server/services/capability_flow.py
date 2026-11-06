@@ -286,11 +286,17 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         except plugin_package.Refused as exc:
             _outside_text()
             emit({"type": "capability_result", "call_id": None, "source_id": None, "state": "refused",
-                  "name": cand["name"], "tools": 0, "code": exc.code, "detail": exc.part})
-            return {"ok": False, "error": f"cannot be added: {exc.code}", "code": exc.code,
-                    "part": outside_label(exc.part, 200),
-                    "note": "This plugin can't be added (`code`, in `part`), and nothing was installed. Say which part "
-                            "and why; do not propose it again."}
+                  "name": cand["name"], "tools": 0, "code": exc.code, "detail": untrusted.clean_name(exc.part, 200)})
+            refused = {"ok": False, "error": f"cannot be added: {exc.code}", "code": exc.code,
+                       "part": outside_label(exc.part, 200),
+                       "note": "This plugin can't be added (`code`, in `part`), and nothing was installed. Say which "
+                               "part and why; do not propose it again."}
+            if exc.code == "add_by_hand":
+                refused.update(by_hand=exc.by_hand,
+                               note="The user's one-click list does not cover this part of the plugin (`part`), so "
+                                    "nothing was installed and only the user can add it: by hand, in Capabilities "
+                                    "(Connections, add by hand). Say so; do not propose it again.")
+            return refused
         card.update(plugin_package.card_fields(plugin))
     elif cand["kind"] == "mcp":
         # CAP4a-3c: the user's one-click list as it is now (it may have changed since the search), and a listed GitHub
