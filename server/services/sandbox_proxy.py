@@ -318,7 +318,7 @@ class LocalProxy:
             if left <= 0:
                 raise TimeoutError("idle")
             try:
-                block = await asyncio.wait_for(reader.read(65536), left)
+                block = await within(reader.read(65536), left)
             except TimeoutError:
                 continue                                     # the loop's check decides
             if not block:
@@ -327,7 +327,7 @@ class LocalProxy:
             writer.write(block)
             # A peer that stops reading would hold drain() forever, and with it a slot (6a delta review):
             # it gets the same idle time to take the block.
-            await asyncio.wait_for(writer.drain(), _IDLE_S)
+            await within(writer.drain(), _IDLE_S)
         with suppress(OSError):
             writer.write_eof()
 
