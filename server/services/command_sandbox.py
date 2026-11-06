@@ -158,6 +158,7 @@ def arslan_protected() -> list[Path]:
 # lets out of it (ssh, git push, gh, aws) needs them, so they are not part of `arslan_protected`.
 _SECRETS = (".ssh", "Library/Keychains", ".aws", ".config/gcloud", ".kube", ".docker/config.json", ".netrc",
             ".npmrc", ".pypirc", ".config/gh", ".git-credentials", ".gnupg", ".azure",
+            ".config/rclone", ".rclone.conf", ".s3cfg", ".boto", ".gsutil",
             "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
             "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
             "Library/Application Support/Arc", "Library/Safari", "Library/Cookies")
