@@ -35,6 +35,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from server.db import session as db_session
 from arslan.aio import within
@@ -59,7 +60,8 @@ CONFLICTS_WITH = "conflicts_with"
 # folder of every correction so far ("" once they came from more than one place, or from no chosen folder, or when
 # the practice replaced one for everywhere); FOLDER_SCOPE is set when that folder saw the correction again, and then
 # the practice applies only there (recall). A practice with no CORRECTED_IN (from before v0.1.64, or born from a
-# detour) is never narrowed.
+# detour) is never narrowed. Narrowing says nothing when it happens (a merge sends no frame and no line): the scope
+# reaches the web only through present() (scope_of), and Memory's row that shows it is L11-3b.
 CORRECTED_IN = "corrected_in"
 FOLDER_SCOPE = "folder_scope"
 # INB1: failed turns in a row that followed a practice (memory.applied said it was followed);
@@ -139,10 +141,18 @@ def switched_on(row) -> None:
     row.evidence = {k: v for k, v in (row.evidence or {}).items() if k not in _NOT_IN_EFFECT_KEYS}
 
 
+def scope_of(row) -> dict | None:
+    """L11 (b): where a practice applies: {"folder": the folder as Overview names it} when it is scoped to one (PR-B),
+    else None (everywhere). The web has it through present(); Memory's row that shows it is L11-3b."""
+    from server.services import folder_rules
+    scope = _scope(row)
+    return {"folder": folder_rules._shown(Path(scope), folder_rules._home())} if scope else None
+
+
 def present(row) -> dict:
     return {"id": row.id, "situation": row.situation, "advice": row.advice, "polarity": row.polarity,
             "source": row.source, "status": row.status, "pinned": bool(row.pinned), "text": render(row),
-            "not_in_effect": not_in_effect(row),
+            "not_in_effect": not_in_effect(row), "scope": scope_of(row),
             "recalled": row.recalled, "followed": row.followed, "succeeded": row.succeeded, "failed": row.failed,
             "evidence": row.evidence or {},
             "last_used_at": row.last_used_at.isoformat() + "Z" if row.last_used_at else None,
