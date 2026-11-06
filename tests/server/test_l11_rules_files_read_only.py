@@ -1,4 +1,4 @@
-"""L11 (b) (v0.1.64; the user, 2026-11-02, relayed by ④参谋: 「选 b，只记在 Arslan 自己那儿」): Arslan never writes a
+"""L11 (b) (v0.1.64; the user, 2026-11-02, relayed by ④参谋: option b, record it only on Arslan's side): Arslan never writes a
 folder's rules file on its own and never offers to. The "make this a rule for this folder?" card (L11-2, #603) is gone,
 with the server-side writer behind it (add, remove, the record, and the D3 trust it fed, L11-3a/3d). A rules file is
 read (K10-1) and listed in Overview (L11-0), never edited by Arslan; one is written only when the user asks, through

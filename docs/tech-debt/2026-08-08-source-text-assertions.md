@@ -1,6 +1,6 @@
 # 工程债:拿源码文本当测试的存量(2026-08-08 清点,不修)
 
-用户 2026-08-08 要求:「列个数进工程债,别让它们一个个等着被撞见。」
+The user asked on 2026-08-08 to list the count in the engineering debt so they do not wait to be run into one by one.
 起因是 `tests/server/test_startup_backfill.py` 里那条
 `test_main_lifespan_calls_backfill` —— 它 grep `main.py` 的源码来断言启动链的接线,
 本轮把同族的另一条(salt resolver 的启动次序)改成了**真驱动 `lifespan`**,

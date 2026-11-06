@@ -1,6 +1,6 @@
 # SIDE: side chat (ask a one-off question beside the main conversation)
 
-> ⓪Plan, 2026-10-28. The user put side chat into v0.1.64 that day (relayed by ④参谋): "旁聊进 0.1.64 … 就按 Claude 现在这种方式我觉得很方便". This settles item 7 of `docs/plans/0164/README.md` §2 ("still unconfirmed").
+> ⓪Plan, 2026-10-28. The user put side chat into v0.1.64 that day (relayed by ④参谋): side chat goes into v0.1.64, done the way Claude does it now, which the user finds convenient. This settles item 7 of `docs/plans/0164/README.md` §2 ("still unconfirmed").
 
 | Item | Content |
 |---|---|
@@ -19,7 +19,7 @@
 - It reads the main conversation **up to that point**. It never writes back into the main conversation.
 - Mainstream reference: Claude Code's `/btw` answers from the current context and does not enter the conversation's history.
 
-## Rules (④参谋's additions; the user said "or a better plan if you have one"; ⓪Plan adopts them)
+## Rules (④参谋's additions; the user said a better plan is welcome if there is one; ⓪Plan adopts them)
 
 1. **Bring back to main** is the only way anything moves to the main conversation. It is an action on a side-chat reply: it puts the reply into the main input box as a quote, and the user decides whether to send. Nothing is sent automatically.
 2. **Permissions inherit from the main conversation and are never broader.** By default only read-only tools (read files, search). Mechanism: SIDE-1 extends SUB2's `effective_settings` and its 422 `sub_session_inherits` (specified for `kind="sub"`) to `kind="side"`, and forces `no_memory` and `no_learning` there. The permission mode is global today (`server/services/permissions.py:575`), so "inherited" in practice means the read-only tool set, which the global mode can only narrow. No commands, file writes, memory or lesson writes, schedules or outward actions. (A later version may allow more, only by the user's explicit choice per side chat.)

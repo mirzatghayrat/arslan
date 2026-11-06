@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Grade | **Should** for v0.1.64 (user, 2026-11-03, relayed by ④参谋: 「先让 ②Main 按推荐 A：保持网页，补 3 个 PR」). It goes in if it's done before the tag and doesn't block the tag; whatever isn't done moves to v0.1.65. |
+| Grade | **Should** for v0.1.64 (user, 2026-11-03, relayed by ④参谋: ②Main goes ahead with the recommended option A, staying web, with 3 more PRs). It goes in if it's done before the tag and doesn't block the tag; whatever isn't done moves to v0.1.65. |
 | Lane | ②Main, after its critical-path cards (the model-switch PR B, ROUTE1, MODEL1). |
 | Review | High; any part that touches sharing or the Bridge is reviewed at effort=max. |
 | Mock | The reference is the iPhone mock the user confirmed (https://claude.ai/artifact/MtEknoVwLtd5bL5vtesNLz). A Mac before/after screenshot goes to the user before the first merge. |
@@ -21,7 +21,7 @@
 1. **Code.** A code-block header with the language and copy; syntax highlighting (pick the lighter of Shiki or a Prism build, measure the bundle and say why); an inline-code background.
 2. **Structure.** Formulas (remark-math with KaTeX), nested lists, task checkboxes (read-only), tables.
 3. **Actions and speed.**
-   - A per-reply copy button. **Share moves to v0.1.65** (user, 2026-11-03: "Copy only for now"); there's no new Tauri IPC in v0.1.64.
+   - A per-reply copy button. **Share moves to v0.1.65** (user, 2026-11-03: copy only for now); there's no new Tauri IPC in v0.1.64.
    - Streaming performance: measure first. Render once per animation frame instead of per token, and memoize finished blocks.
    - An IME check: composing Chinese while a reply streams must not drop or duplicate characters.
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Decided | The user, 2026-11-03, relayed by ④参谋. The user had called the refusal over-defensive (「是不是过度防御了」), approved the change below, and passed it to ⓪Plan. |
+| Decided | The user, 2026-11-03, relayed by ④参谋. The user had asked whether the refusal was over-defensive, approved the change below, and passed it to ⓪Plan. |
 | Version | v0.1.64 |
 | Lane | ③Hands, after its SBX items |
 | Review | effort=max (Hands' policy is security surface, `docs/sessions.md` §5) |

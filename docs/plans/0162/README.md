@@ -297,7 +297,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
     - **结论怎么到 PR 上：** Codex 不评论，由用户把结论原样贴到 PR 上（带模型那一行），各会话再逐条回应。具体的危险命令照旧只写在测试和 PR 评论里。Claude 会话处理 Codex 的结论时被安全检查拦下，照旧停下、不换说法重试；Codex 不是绕过它的路。
     - **额度：** 用 Plus 不另花钱。安全审查做到一半额度用完，就等额度恢复，不跳过这道审查；要不要改用 API（那是 DeepSeek 以外的钱）由用户定。
 - **提议：安全改成「硬规则 + 沙箱 + 分类器」，加上权限模式（用户 10-28 同意转，④参谋 提；⓪Plan 补了要审的问题。⚠️ 还没定：先给云端审计看，再由用户定。它会改 v0.1.64 的范围和排序。）**
-  - **为什么：** 用户的原话是「安全重要，但主流 agent 都解决了，我们不该卡在功能上」。安全和能力怎么取舍，先对照主流 agent（用户 10 月定的规矩）。今天的现状（⓪Plan 核过 main）：
+  - **为什么：** The user's reasoning: security matters, but mainstream agents have already solved it, so Arslan should not be held up on features. 安全和能力怎么取舍，先对照主流 agent（用户 10 月定的规矩）。今天的现状（⓪Plan 核过 main）：
     - v0.1.63 默认每条命令都出卡（`settings_service.shell_confirm_policy`，迁移 0070 把 ask_risky 改成 ask_all）。
     - 「只问有风险的」靠手写清单判断（`server/services/command_policy.py` 的程序白名单加正则）。清单补不完，所以只能默认全问。
     - 按上面「只在有风险时问」的条件，v0.1.64 合不进 S2a-3 和 #406，这一档就继续禁用。
@@ -356,7 +356,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
     - **D:** reversing D8 needs B, all of C with tests, D7's existing constraints (only cards that would be asked anyway; no tool results; repeated denials go back to the user; errors never approve; off by default, on only after the user agrees), pass lines for misses and false blocks written down by the user **before** measuring, a readable ledger and a one-click off.
     - **E:** merge S64-0 on its own. Of the three extra leaks, fold in two (attachment and OCR text inlined without the mark; background job results posted as Arslan's own words); record `run_command` reading files as a known limit, with the classifier off in turns that used `run_command`.
     - **F:** case B's order gets the decision point from A; S5 splits into S5a (plan / ask every step / auto-edit / full access; after SBX, e and S3 undo) and S5b (auto; after the classifier); in plan mode "start" returns to the user's previous mode; the classifier's prerequisites (b, a, h, S64-0 and the two leaks) go into the order chart; and a fallback if the classifier's review is blocked.
-  - **User decision (2026-10-28, relayed by ④参谋; supersedes the audit where they differ).** The user's reason, in substance: "I'm not rushing; I want it done properly in one go. The mainstream agents do it this way, and we already planned sandbox + classifier, so the completeness of the whole project comes first."
+  - **User decision (2026-10-28, relayed by ④参谋; supersedes the audit where they differ).** The user's reason, in substance: there is no rush and the user wants it done properly in one go; the mainstream agents do it this way, and the sandbox and classifier are already planned, so the completeness of the whole project comes first.
     1. **Sandbox and classifier are both "must" in v0.1.64.** Order as the audit says: SBX merges first, the classifier after, because a classifier "yes" relies on the sandbox to hold; that is a safety precondition, not a scheduling choice. A's steps (SBX → measure on a Mac → bring back "ask only when risky" → measure cards again) are still done, but they now set the classifier's **baseline** (how many more cards it saves than "ask only when risky" alone); they no longer decide **whether** to build it. The precondition from correction A still holds and gates both "ask only when risky" and the classifier, not only the baseline: "run directly in the sandbox" stays off until SBX's allowlisted profile has been measured on a Mac, and the parser's rules stay the first line until then.
     2. **All five modes in v0.1.64,** split per F2: S5a (plan / ask every step / auto-edit / full access) after SBX and S3; S5b (auto) after the classifier. "Start" in plan mode returns to the previous mode. UI: the current mode sits next to the input box, one click to switch, per conversation; Settings keeps only "default mode for new conversations". A clickable demo goes to the user before UI code. Sub-sessions only inherit, never widen.
     3. **D8 is reversed now, with conditions** (the timing differs from the audit on purpose: the audit advised reversing only when the classifier PR arrives with measured numbers; the user reversed it now, with every condition binding). The conditions are everything in B and D:
@@ -556,7 +556,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
     4. **改动：** 这一轮改了哪些文件、+/− 行数，加上撤销（S3）；
     5. **后台任务：** 定时任务（离下次运行还有多久）、正在跑的、已完成的数量。
 - **收件箱怎么改，加「进展」页（用户 10-28 逐条同意的八条，④参谋 转）：**
-  - **为什么：** 用户的原话：「看 Inbox 70 多条就头疼，agent 反而给我加了这么多活」。④参谋 只读查过用户本机：角标几十条，全是「记忆等你确认」，一部分是关于用户的记忆提案（10-22 以后不再生成，但旧的没清），一部分是 Arslan 自己学到的做法（还在继续生成）；没有一条真要用户决定。精简方案早就定了记忆提案不再推给用户审（`reduce-proposal.md:109`），但攒下的没清。
+  - **为什么：** The user's concern, in summary: 70-odd items in the Inbox is a headache, and the agent has added that much work instead of removing it. ④参谋 只读查过用户本机：角标几十条，全是「记忆等你确认」，一部分是关于用户的记忆提案（10-22 以后不再生成，但旧的没清），一部分是 Arslan 自己学到的做法（还在继续生成）；没有一条真要用户决定。精简方案早就定了记忆提案不再推给用户审（`reduce-proposal.md:109`），但攒下的没清。
   - **八条：**
     1. **去掉收件箱列表页。**
     2. **侧边栏用状态点代替列表：** 每个对话、项目标出「在干活 / 需要你 / 做完未看」。角标数的是「几个对话或项目在等你」，不是条数。
@@ -569,7 +569,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
        - **不做成固定对话**，免得重蹈 Remote / pocket 的覆辙。在任何对话里问「进展怎么样」，用的都是同一份数据。
        - **iPhone：** 在快问输入框下面显示「要你做」的几件和四行简报。
        - **比 agentplay 好在：** 用人话说，报错附上「Arslan 的猜测 + 下一步」；正在跑的也实时显示，在时间线上就能停止、插话、「撤回到这里」（S3）；总指挥、子会话、定时任务在同一条时间线上；每件事旁边是验收单和能点开的证据；花费对照预算显示；长会话的地图能折叠、能按任务分组。
-       - **agentplay 是什么：** Apache-2.0，本地运行，读 Claude Code、Codex 等的会话记录做回放。左边是会话和任务列表（时间、花费），中间是放射状地图，右边是详情（用时、调用数、花费、token、读改了几个文件）、结果框、产出列表和报错归类，下面是能播放、能 4 倍速、按报错 / 改动 / 工具 / 技能 / MCP / 花费 / 上下文分轨道的时间线。用户看了说「很喜欢」。Arslan 的数据本来就自己记，不用解析别家的记录。真要搬它的代码，先回源核许可证。
+       - **agentplay 是什么：** Apache-2.0，本地运行，读 Claude Code、Codex 等的会话记录做回放。左边是会话和任务列表（时间、花费），中间是放射状地图，右边是详情（用时、调用数、花费、token、读改了几个文件）、结果框、产出列表和报错归类，下面是能播放、能 4 倍速、按报错 / 改动 / 工具 / 技能 / MCP / 花费 / 上下文分轨道的时间线。The user looked at it and liked it a lot. Arslan 的数据本来就自己记，不用解析别家的记录。真要搬它的代码，先回源核许可证。
     5. **推送只推「要你做」的。** 点开推送直接到那个对话或进展页；夜里可以免打扰。
     6. **Arslan 自己学到的做法不再问用户：** 直接生效；连续失败就自动停用；在 Memory 页能看、能删。
     7. **关于用户的记忆不再排队等批：** 普通的直接记下，用户在 Memory 页能看、能改、能删；敏感的（健康、钱、家人等）在当时那段对话里问一句。攒下的旧提案挪到 Memory 页的「待整理」，v0.1.65 记忆文件化时并进去。
@@ -600,7 +600,7 @@ K9（回合中从 iPhone 插话）如果发现必须改，②Main 会先来问�
     - **没核：** `lesson_learned` 和主动提醒的 `desktop_status` 推送会不会弹 macOS 通知。
     - **D1 有三个：** 总计划的决定 D1、v0.1.63 的 D1 卡（送文件）、领先路线里的「卡片与文案大合并」。这里说的是最后一个，v0.1.64 计划里把它叫 ACM。
 - **旁聊进 v0.1.64（④参谋 建议，用户还没确认）：** 以前给分身用过，专家删掉后就没了。和「子 agent 统一成一个工具」一起做：开一个临时小对话，能读当前上下文，但不写回主对话。v0.1.64 先用最简的样子，界面版再统一外观。
-- **回复风格：有人情味，也能说清楚（v0.1.64；用户 10-27 定，④参谋 转，同日更正过一次）：** 用户不想让 Arslan 啰嗦，但要它「有人情味，又能明确表达」，担心整体变成冷冰冰的机器。
+- **回复风格：有人情味，也能说清楚（v0.1.64；用户 10-27 定，④参谋 转，同日更正过一次）：** The user does not want Arslan to be wordy but wants it warm and clear, and worries it will turn into a cold machine.
   - **借 ASD-STE100 的四条，只用在任务结果、操作步骤、进度汇报、报错说明这几处：**
     1. 一句一个动作，步骤加编号；
     2. 同一个东西始终用同一个名字（不在「文件 / 文档 / 工作区 / 项目目录」之间换）；
