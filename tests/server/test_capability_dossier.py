@@ -90,6 +90,27 @@ async def test_update_installs_beside_and_removes_the_old_only_when_the_new_one_
     assert out["state"] == "on" and removed == [row.id]
 
 
+async def test_an_update_waiting_for_sign_in_goes_and_the_old_one_stays(execution_db, monkeypatch, tmp_path):
+    """Sign-ins are kept per server, so the new row always asks; it would sit beside the old one and never replace it."""
+    row = await _installed(execution_db, tmp_path, monkeypatch)
+
+    async def latest(sid):
+        return {"current": "1.1.2", "latest": "1.2.0", "newer": True,
+                "candidate": {**CAND, "id": "registry:io.github.haris-musa/excel-mcp-server@1.2.0", "version": "1.2.0"}}
+    monkeypatch.setattr(cd, "check_update", latest)
+    removed = []
+
+    async def remove(sid):
+        removed.append(sid)
+    monkeypatch.setattr(capability_install, "remove", remove)
+
+    async def waiting(c, *, folders, keys):
+        return {"state": "needs_sign_in", "source_id": "new"}
+    monkeypatch.setattr(capability_flow, "install_mcp", waiting)
+    out = await cd.update(row.id)
+    assert removed == ["new"] and out["state"] == "failed" and out["stage"] == "sign_in"
+
+
 async def test_check_update_compares_with_the_registry(execution_db, monkeypatch, tmp_path):
     row = await _installed(execution_db, tmp_path, monkeypatch)
     real = httpx.AsyncClient

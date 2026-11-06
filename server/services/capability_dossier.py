@@ -226,6 +226,10 @@ async def update(source_id: str) -> dict:
     result = await capability_flow.install_mcp(cand, folders=(row.grants or {}).get("folders") or [], keys=keys)
     if result["state"] == "on":
         await capability_install.remove(source_id)
+    elif result["state"] == "needs_sign_in":
+        # Sign-ins are kept per server, so the new row always asks; beside the old one, it would never replace it.
+        await capability_install.remove(result["source_id"])
+        return {"state": "failed", "stage": "sign_in", "source_id": result["source_id"]}
     return result
 
 

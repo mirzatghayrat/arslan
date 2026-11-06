@@ -261,7 +261,12 @@ async def _check_pin(db, server_id: int, tools: list, rows_by_name: dict, *, com
     listed = tools_pin(tools)
     pinned = (source.test or {}).get("tools_pin")
     if pinned is None:                          # the first listing: its install test (or, once, after an upgrade)
-        source.test = {**(source.test or {}), "tools_pin": listed}
+        test = {**(source.test or {}), "tools_pin": listed}
+        if test.pop("needs_sign_in", False):    # the sign-in its install test stopped at is done: that test's yes
+            test = {k: v for k, v in test.items() if k not in ("stage", "detail")}
+            test.update(ok=True, tools=[t.name for t in tools][:60], at=datetime.utcnow().isoformat() + "Z")
+            (await db.get(MCPServer, server_id)).host_allowed = True
+        source.test = test
         return
     changes = _changes(pinned, listed, complete=complete)
     if changes is None:

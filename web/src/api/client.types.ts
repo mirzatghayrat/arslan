@@ -617,7 +617,7 @@ export interface AuthoredSkillCard {
    *  card is the check. */
   outside: boolean;
 }
-export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
+export interface CapabilityResult { state: "on" | "failed" | "blocked" | "needs_sign_in"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
 /** K8a: text a reply showed and then replaced, with the server's label for it. */
@@ -750,7 +750,7 @@ export type ArslanServerMessage =
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
   | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard))
-  | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked";
+  | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked" | "needs_sign_in";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
       detail: string; background?: boolean } & CardV2Fields)

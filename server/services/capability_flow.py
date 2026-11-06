@@ -95,8 +95,10 @@ async def _update(source_id: str, **fields) -> None:
 async def test_mcp(source_id: str) -> dict:
     """Start it in its sandbox and list its tools; on success switch it on (0.1.61: through the
     supervisor, so the row is `ready` and its tools are offered in the same reply, spec §B3). A
-    start that does not pass leaves it `off`, its process stopped."""
-    from server.mcp.supervisor import supervisor
+    start that does not pass leaves it `off`, its process stopped. One that asks the user to sign in
+    is off too, but it hasn't failed: `discovery._check_pin` switches it on and pins its tools at the
+    first listing after the sign-in. A key the server rejects still fails: a browser can't fix that."""
+    from server.mcp.supervisor import SIGN_IN_PREFIX, supervisor
     from server.services import mcp_service
     row = await _source(source_id)
     at = datetime.utcnow().isoformat() + "Z"
@@ -106,6 +108,9 @@ async def test_mcp(source_id: str) -> dict:
         await supervisor.set_enabled(row.mcp_server_id, False)
         detail = getattr(exc, "detail", None) or str(exc)
         return {"ok": False, "stage": "start", "detail": detail[-400:] or type(exc).__name__, "at": at}
+    if result.state == "needs_auth" and (result.last_error or "").startswith(SIGN_IN_PREFIX):
+        await supervisor.set_enabled(row.mcp_server_id, False)
+        return {"ok": False, "needs_sign_in": True, "stage": "sign_in", "detail": result.last_error[-400:], "at": at}
     if result.state != "ready":
         await supervisor.set_enabled(row.mcp_server_id, False)
         return {"ok": False, "stage": "start", "detail": (result.last_error or result.state)[-400:],
@@ -141,6 +146,9 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict
     test = await test_mcp(row.id)
     # CAP5a: the test's listing pinned the tools (discovery._check_pin, in `test`); the result is added to it.
     test = {**((await _source(row.id)).test or {}), **test}
+    if test.get("needs_sign_in"):
+        await _update(row.id, test=test)
+        return {"state": "needs_sign_in", "source_id": row.id, "scan": scan}
     await _update(row.id, test=test, **({} if test["ok"] else {"state": "failed", "error": f"test: {test['stage']}"}))
     if not test["ok"]:
         return {"state": "failed", "stage": "test", "source_id": row.id, "detail": test["detail"]}
@@ -352,6 +360,12 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         _outside_text()
         return {"ok": True, "installed": outside_label(cand.get("name")), **found, "refresh": True,
                 "note": f"Installed, tested and switched on: {what}. Retry the step that failed now."}
+    if result["state"] == "needs_sign_in":
+        _outside_text()
+        return {"ok": False, "needs_sign_in": True, "added": outside_label(cand.get("name")),
+                "note": "Added (`added`), but it stays off until the user signs in to it: in Capabilities, open it and "
+                        "choose Authorize. Its tools aren't available yet, so don't retry the step. Say this in your "
+                        "answer."}
     if result["state"] == "blocked":
         rules = ", ".join(f["rule"] for f in result["scan"]["findings"] if f["level"] == "high")
         return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); it was removed again"}
