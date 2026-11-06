@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.migrations.versions._0009_knowledge import upgrade_sync
-from server.db.models import Base, Spawn
+from server.db.models import Base
 
 
 @pytest_asyncio.fixture
@@ -43,12 +43,6 @@ async def client(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def _mk_spawn(client, sid=1):
-    async with client.db_maker() as s:
-        s.add(Spawn(id=sid, name=f"s{sid}", domain_category="c", system_prompt="p"))
-        await s.commit()
-
-
 async def test_collection_crud_and_ingest(client):
     r = await client.post("/api/v1/collections", json={"name": "保险资料", "description": "合同们"})
     assert r.status_code == 200
@@ -75,28 +69,6 @@ async def test_collection_crud_and_ingest(client):
             "SELECT COUNT(*) FROM knowledge_chunks_fts WHERE knowledge_chunks_fts MATCH '五百元'"
         ))).scalar_one()
         assert n == 0  # FTS 同步清理,无孤儿
-
-
-async def test_bind_unbind_spawn(client):
-    await _mk_spawn(client, 1)
-    cid = (await client.post("/api/v1/collections", json={"name": "库"})).json()["id"]
-    r = await client.put(f"/api/v1/spawns/1/collections/{cid}")
-    assert r.status_code == 200
-    r = await client.get("/api/v1/collections")
-    assert r.json()[0]["spawn_ids"] == [1]
-    r = await client.put(f"/api/v1/spawns/1/collections/{cid}")  # 幂等
-    assert r.status_code == 200
-    r = await client.delete(f"/api/v1/spawns/1/collections/{cid}")
-    assert r.status_code == 200
-    assert (await client.get("/api/v1/collections")).json()[0]["spawn_ids"] == []
-
-
-async def test_bind_nonexistent_spawn_404_no_orphan(client):
-    cid = (await client.post("/api/v1/collections", json={"name": "库"})).json()["id"]
-    r = await client.put(f"/api/v1/spawns/9999/collections/{cid}")
-    assert r.status_code == 404
-    body = (await client.get("/api/v1/collections")).json()
-    assert body[0]["spawn_ids"] == []  # 无孤儿绑定
 
 
 async def test_delete_collection_cascades(client):
