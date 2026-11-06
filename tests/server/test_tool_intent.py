@@ -49,3 +49,25 @@ async def test_tool_not_in_available_dropped(monkeypatch):
     r = await tool_intent.classify("x", ["web_search"])   # carrier_pigeon not available
     assert r.tool is None      # unknown tool → dropped
     assert r.needs is False     # needs forced False when no usable tool resolved
+
+
+async def test_runs_on_the_conversations_model_else_the_primary(monkeypatch):
+    """v0.1.64 ROUTE1: the pre-search check runs on the conversation's own model; a conversation with no
+    choice, or a choice that can't be built, uses the primary."""
+    picked = _adapter('{"needs": true, "tool": "web_search", "query": "from the picked model"}')
+    primary = _adapter('{"needs": true, "tool": "web_search", "query": "from the primary"}')
+
+    async def conversation(cid):
+        if cid == "c-broken":
+            raise RuntimeError("config gone")
+        return picked if cid == "c-picked" else None
+
+    async def build(role=None): return primary
+    monkeypatch.setattr(tool_intent, "build_conversation_adapter", conversation)
+    monkeypatch.setattr(tool_intent, "build_adapter", build)
+    async def query(cid=None):
+        return (await tool_intent.classify("x", ["web_search"], conversation_id=cid)).query
+    assert await query("c-picked") == "from the picked model"
+    assert await query("c-none") == "from the primary"
+    assert await query("c-broken") == "from the primary"      # not the outer fail-open (no query at all)
+    assert await query() == "from the primary"

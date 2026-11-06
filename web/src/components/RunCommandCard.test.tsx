@@ -50,7 +50,8 @@ describe("RunCommandCard", () => {
       />,
     );
     expect(screen.getByTestId("runcmd-remote-note")).toBeInTheDocument();
-    expect(screen.getByText(/192\.168\.1\.8/)).toBeInTheDocument();
+    expect(screen.getByTestId("ask-touches")).toHaveTextContent("me@192.168.1.8");          // the machine, read by code
+    expect(screen.getByTestId("ask-risk-row")).toHaveTextContent("Runs on me@192.168.1.8, not on this Mac");
     expect(screen.getByText("256 SHA256:abc123 (ED25519)")).toBeInTheDocument();
   });
 

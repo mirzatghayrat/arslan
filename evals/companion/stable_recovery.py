@@ -89,7 +89,7 @@ async def run_phase(phase, profile, evidence, adapter):
             trace.append({"tool": self.key, "args": args, "result": result})
             return result
 
-    tool_loop._get_adapter = memory._get_adapter = lambda: adapter
+    tool_loop._get_adapter = memory._get_adapter = lambda *_: adapter
     arslan._arslan_tools, knowledge.retrieve_scoped = tools, no_knowledge
     for delegate in (ReadFileExecutor(), WriteFileExecutor()):
         tool_loop.EXECUTORS[delegate.key] = Restricted(delegate)

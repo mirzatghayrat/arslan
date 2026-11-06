@@ -116,8 +116,8 @@ class Harness:
             finally:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass  # The entire group has already exited.
+                except (ProcessLookupError, PermissionError):
+                    pass  # The entire group has already exited (EPERM: only zombies left, on macOS).
                 process.wait()
                 execution["returncode"] = process.returncode
         return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
@@ -194,5 +194,5 @@ def _mcp_profile(self, **parameters) -> str:
 BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
 
 # SBX-5a builds the CAP6b protections (`command_sandbox.cap6b_folders`, the outside floor's closure, MCP's write
-# refusal, `workspace_paths`' refusal), so the feature is claimed in the same commit.
-BUILT_FEATURES = frozenset({"cap6b"})
+# refusal, `workspace_paths`' refusal) and the shared caches' exclusions, so both features are claimed with it.
+BUILT_FEATURES = frozenset({"cap6b", "shared-cache-exclusions"})

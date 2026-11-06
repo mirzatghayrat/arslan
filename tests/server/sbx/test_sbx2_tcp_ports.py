@@ -124,7 +124,7 @@ def test_complete_network_and_mach_allow_lists(mode):
     network = [line for line in lines if re.match(
         r"\(allow\b.*\b(?:network|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
     mach = [line for line in lines if re.match(
-        r"\(allow\b.*\b(?:mach-lookup|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
+        r"\(allow\b.*\b(?:mach|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
     expected_network = {
         NetworkMode.NONE: [],
         NetworkMode.PROXY: ['(allow network-outbound (remote tcp "localhost:*"))',
@@ -140,3 +140,14 @@ def test_complete_network_and_mach_allow_lists(mode):
         expected_mach += ['(allow mach-lookup (global-name "com.apple.trustd.agent"))']
     assert network == expected_network[mode], "complete network allow list changed"
     assert mach == expected_mach, "complete mach-lookup allow list changed"
+
+
+def test_complete_mach_selector_rejects_wildcard_grant(monkeypatch):
+    original = default_deny_profile
+
+    def mutated(**options):
+        return original(**options) + '(allow mach*)\n'
+
+    monkeypatch.setattr(sys.modules[__name__], "default_deny_profile", mutated)
+    with pytest.raises(AssertionError, match="complete mach-lookup allow list changed"):
+        test_complete_network_and_mach_allow_lists(NetworkMode.ANY_DECLARED)

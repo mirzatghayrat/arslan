@@ -73,7 +73,7 @@ async def test_compaction_folds_old_messages(maker, monkeypatch):
     class _FakeAdapter:  # not used because _summarize is stubbed
         pass
 
-    monkeypatch.setattr(memory, "_get_adapter", lambda: _FakeAdapter())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: _FakeAdapter())
 
     await memory.add_message("main", "user", "a long-ish first message here")
     await memory.add_message("main", "user", "second message also fairly long")
@@ -128,7 +128,7 @@ async def test_compaction_caps_summary(maker, monkeypatch):
         return "X" * 200 if len(calls) == 1 else "short"
 
     monkeypatch.setattr(memory, "_summarize", _fake_summarize)
-    monkeypatch.setattr(memory, "_get_adapter", lambda: object())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: object())
 
     await memory.add_message("main", "user", "aaaa aaaa aaaa aaaa")
     await memory.add_message("main", "user", "bbbb bbbb bbbb bbbb")

@@ -53,7 +53,7 @@ const openDiag = async (id = 11) => {
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "24h", filter: {}, openRunId: null, pickedRunId: null, pickedRun: null, replayStep: null,
+  useActivityStore.setState({ range: "24h", filter: {}, pickedRunId: null, pickedRun: null, replayStep: null,
     replayPlaying: false, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockImplementation((range: string) => Promise.resolve(summary(range)));
   listRuns.mockResolvedValue(RUNS);
@@ -131,10 +131,15 @@ describe("the 「诊断」 tab", () => {
     expect(triggerDownload).toHaveBeenCalledWith("run-11.md", expect.stringContaining("Run 11"), "text/markdown;charset=utf-8");
   });
 
-  it("keeps the drawer one click away until the user decides on its charts", async () => {
+  it("has what the old drawer offered, now that it is gone: the score and badge, clear and export (the user, 2026-11-02)", async () => {
     render(<ActivityView waiting={waiting()} />);
     await openDiag();
-    expect(within(inspector()).getByRole("button", { name: "Details" })).toBeTruthy();
+    await waitFor(() => expect(within(panel()).getByTestId("diag-facts")).toHaveTextContent("8.4/10"));
+    expect(within(panel()).getByTestId("diag-facts")).toHaveTextContent("good");
+    expect(within(panel()).getByRole("button", { name: "Export md" })).toBeTruthy();
+    expect(within(panel()).getByRole("button", { name: /Clear/ })).toBeTruthy();
+    expect(within(inspector()).queryByRole("button", { name: "Details" })).toBeNull();
+    expect(screen.queryByTestId("run-drawer")).toBeNull();
   });
 });
 

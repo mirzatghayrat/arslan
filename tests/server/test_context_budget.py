@@ -17,7 +17,7 @@ async def test_compaction_second_oversized_cjk_summary_is_actually_bounded(execu
     monkeypatch.setenv("ARSLAN_WORKING_TOKEN_BUDGET", "20")
     async def summarize(*args):
         return "中" * 1000
-    monkeypatch.setattr(memory, "_get_adapter", lambda: object())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: object())
     monkeypatch.setattr(memory, "_summarize", summarize)
     await memory.add_message("compact-cjk", "user", "中" * 100)
     await memory.add_message("compact-cjk", "user", "国" * 100)

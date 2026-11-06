@@ -18,8 +18,8 @@ coming out. The frontend sends it correctly and has its own passing tests saying
 Two sides each tested in isolation, the seam between them untested, and a settings
 field that looked saveable and was not.
 
-schemas.py:29-34 documents the same thing happening to synthesis_config_id and
-embedding_config_id. That comment was written by someone who had just been bitten;
+A comment in schemas.py, above the slot and embedding keys, documents the same thing happening to
+synthesis_config_id (a slot removed in v0.1.64 ROUTE1) and embedding_config_id. That comment was written by someone who had just been bitten;
 this is the third instance. So the round-trip test below covers ALL of _SECRET_KEYS,
 derived from the tuple rather than listed, because a hand-written list is how the
 third instance became possible.

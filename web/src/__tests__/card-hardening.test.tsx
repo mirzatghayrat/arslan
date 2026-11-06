@@ -48,10 +48,11 @@ describe("the model's own line under \"Arslan says\", whatever it is", () => {
     expect(screen.getByTestId("action-said").className).toContain("overflow-wrap:anywhere");
   });
 
-  it("so does the command card's sandbox why", () => {
+  it("so does the command card's why, now its purpose line (SMART-8)", () => {
     render(<AskSlot send={vi.fn()} />);
     frame({ type: "propose_run_command", call_id: "c1", pretty: "mv a ~/b", reason: "", sandbox: "outside", why: URL_WHY, options: ["once", "conversation"] });
-    expect(screen.getByTestId("runcmd-why").className).toContain("overflow-wrap:anywhere");
+    expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent(URL_WHY);
+    expect(screen.getByTestId("runcmd-purpose").closest("h3")!.className).toContain("overflow-wrap:anywhere");
   });
 });
 

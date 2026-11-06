@@ -34,17 +34,17 @@ def _message(id_, cid, role, text, at, run_id=None, display=None):
 async def test_the_list_is_newest_first_with_protocol_timestamps(client):
     await _seed(client, [
         _message(1, "trip", "user", "Plan a  trip to Acme City", "2026-10-01T08:00:00"),
-        _message(2, "pocket", "user", "remind me", "2026-10-03T09:30:15.123456"),
+        _message(2, "c-remind", "user", "remind me", "2026-10-03T09:30:15.123456"),
         _message(3, "trip", "arslan", "Sure", "2026-10-02T08:00:00"),
     ])
     got = (await client.get("/api/v1/phone/conversations")).json()
     assert got == {"conversations": [
-        {"id": "pocket", "title": "Remote", "updated_at": "2026-10-03T09:30:15Z",
-         "kind": "remote", "state": "idle", "origin": "mac", "preview": "remind me", "files": 0},
+        {"id": "c-remind", "title": "remind me", "updated_at": "2026-10-03T09:30:15Z",
+         "kind": "chat", "state": "idle", "origin": "mac", "preview": "remind me", "files": 0},
         {"id": "trip", "title": "Plan a trip to Acme City", "updated_at": "2026-10-02T08:00:00Z",
          "kind": "chat", "state": "idle", "origin": "mac", "preview": "Sure", "files": 0},
-    ], "has_more": False}, "the phone's own conversation is named Remote, everywhere"
-    assert [c["id"] for c in (await client.get("/api/v1/phone/conversations?limit=1")).json()["conversations"]] == ["pocket"]
+    ], "has_more": False}
+    assert [c["id"] for c in (await client.get("/api/v1/phone/conversations?limit=1")).json()["conversations"]] == ["c-remind"]
     assert (await client.get("/api/v1/phone/conversations?limit=0")).status_code == 422
 
 
@@ -78,6 +78,32 @@ async def test_a_turns_files_and_a_files_bytes_match_the_reference(client, artif
     assert got["file"] == offered[0]
     assert base64.b64decode(got["data"]) == b"%PDF-1.7 tiny"
     assert (await client.get("/api/v1/phone/runs/99/files")).status_code == 404
+
+
+async def test_a_file_from_a_run_in_the_retired_pocket_never_reaches_a_phone(client, artifacts):
+    """Q1 #4 (#525 review): `file.get` names no conversation, so the Bridge's door check can't see it, and older phones
+    still have these ids cached. A run in the pocket offers no files and serves no bytes; another run still does."""
+    from server.services import phone_ids
+    pocket_file = artifact_store.store_bytes(9, "rent.pdf", b"%PDF-1.7 rent")
+    trip_file = artifact_store.store_bytes(7, "report.pdf", b"%PDF-1.7 tiny")
+    await _seed(client, [Run(id=9, conversation_id=phone_ids.POCKET, user_message="pay")])
+    assert (await client.get("/api/v1/phone/runs/9/files")).status_code == 404
+    refused = await client.get(f"/api/v1/phone/files/{pocket_file['filename']}")
+    assert refused.status_code == 404 and refused.json()["detail"] == "file_unavailable"
+    assert (await client.get(f"/api/v1/phone/files/{trip_file['filename']}")).status_code == 200
+
+
+async def test_a_job_in_the_retired_pocket_cannot_be_stopped_from_a_phone(client, monkeypatch):
+    """Q1 #4 (#525 review): `task.stop` names a job id; one in the pocket is not the phone's to stop. Another job is."""
+    from server.services import background_jobs, phone_ids
+    from server.services.background_jobs import Job
+    stopped: list = []
+    monkeypatch.setattr(background_jobs, "stop", lambda conversation_id, job_id: stopped.append(job_id) or True)
+    monkeypatch.setitem(background_jobs._jobs, "j-pocket", Job("j-pocket", phone_ids.POCKET, "Pay the rent", [], phase="running"))
+    monkeypatch.setitem(background_jobs._jobs, "j-trip", Job("j-trip", "trip", "Plan", [], phase="running"))
+    assert (await client.post("/api/v1/phone/tasks/j-pocket/stop")).status_code == 404
+    assert (await client.post("/api/v1/phone/tasks/j-trip/stop")).status_code == 200
+    assert stopped == ["j-trip"]
 
 
 async def test_the_lists_file_count_is_what_the_phone_is_offered(client, artifacts, monkeypatch):

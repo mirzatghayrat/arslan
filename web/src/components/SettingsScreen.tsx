@@ -219,20 +219,12 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           llmProviders={llmProviders}
           providerConfigs={providerConfigs}
           onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
-          strategy={localSettings.llmStrategy}
-          onStrategyChange={(s) =>
-            saveField({ llmStrategy: s as AppSettings['llmStrategy'] })
-          }
         />
       </section>
       <ModelRolesSection
         values={{
-          synthesisConfigId: localSettings.synthesisConfigId ?? '',
-          compactionConfigId: localSettings.compactionConfigId ?? '',
           routerConfigId: localSettings.routerConfigId ?? '',
           visionConfigId: localSettings.visionConfigId ?? '',
-          synthesisModel: localSettings.synthesisModel ?? '',
-          compactionModel: localSettings.compactionModel ?? '',
           routerModel: localSettings.routerModel ?? '',
           visionModel: localSettings.visionModel ?? '',
         }}
@@ -245,7 +237,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         }}
         onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
         providerConfigs={providerConfigs ?? []}
-        strategy={localSettings.llmStrategy ?? 'single'}
         // Without this the "no models configured yet" line is a dead end: it
         // names the problem and offers nothing to do about it.
         onGoToProviders={() => setActiveSection('models')}

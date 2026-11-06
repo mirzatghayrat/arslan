@@ -81,18 +81,6 @@ describe("toUiSettings", () => {
     expect(ui.apiKeySearch).toBe("");
   });
 
-  // ── T6 FIX 1: llm_strategy must round-trip (was never hydrated → auto-save
-  // clobbered the stored value back to the 'single' default) ───────────────────
-  it("hydrates llmStrategy from the backend llm_strategy field", () => {
-    const ui = toUiSettings({ ...backendBase, llm_strategy: "balanced" });
-    expect((ui as { llmStrategy: string }).llmStrategy).toBe("balanced");
-  });
-
-  it("defaults llmStrategy to 'single' when llm_strategy is absent", () => {
-    const ui = toUiSettings(backendBase);
-    expect((ui as { llmStrategy: string }).llmStrategy).toBe("single");
-  });
-
   it("task_usd_cap reads as dollars: $2 by default or when unusable, at most $100 (K4a)", () => {
     const read = (v: string | undefined) => toUiSettings({ task_usd_cap: v } as any).taskUsdCap;
     expect(read("5")).toBe(5);
@@ -126,7 +114,6 @@ describe("toBackendSettings", () => {
     language: "en",
     theme: "dark",
     telemetry: false,
-    llmStrategy: "single",
     orchestratorShellEnabled: false,
     shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
     mcpServerEnabled: false,
@@ -193,25 +180,8 @@ describe("toBackendSettings", () => {
     const body = toBackendSettings(baseUi);
     expect(body.search_provider).toBe("tavily");
     expect(body.language).toBe("en");
-    expect(body.llm_strategy).toBe("single");
   });
 
-  // ── T6 FIX 1: a GET→hydrate→PUT round-trip must preserve the stored strategy,
-  // so an auto-save where the user changed nothing does NOT downgrade it ────────
-  it("round-trips llm_strategy through toUiSettings → toBackendSettings", () => {
-    const backend = {
-      llm_provider: "anthropic",
-      language: "en",
-      search_provider: "tavily",
-      search_base_url: '',
-      search_api_key: "tvly-••••••••",
-      github_token: "",
-      llm_strategy: "balanced",
-    } as unknown as Parameters<typeof toUiSettings>[0];
-    const ui = { ...baseUi, ...toUiSettings(backend) };
-    const body = toBackendSettings(ui);
-    expect(body.llm_strategy).toBe("balanced");
-  });
 });
 
 // ── toUiMessages ─────────────────────────────────────────────────────────────
