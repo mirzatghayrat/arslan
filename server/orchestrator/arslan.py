@@ -795,8 +795,8 @@ async def _background_callable() -> list[dict]:
 
 
 #: Q1 (v0.1.64): a quick question is shown, and may call, these four read-only tools and nothing else: an
-#: allowlist over every tool, with no find_tools or use_tool, whatever `tools_all_resident` says. Read from the
-#: conversation's stored kind (migration 0071), never from a frame, so a Bridge error can't widen it.
+#: allowlist over every tool, with no find_tools or use_tool. Read from the conversation's stored kind (migration
+#: 0071), never from a frame, so a Bridge error can't widen it.
 QUICK_TOOLS = frozenset({"web_search", "web_extract", "recall", "conversation_search"})
 #: Short and sourced is said here, in the turn's own notes; the system prompt stays byte-stable (K3).
 QUICK_NOTE = ("This is a quick question from the user's iPhone: answer in a few sentences and name your sources "
@@ -1170,22 +1170,12 @@ def _resident(key: str) -> bool:
     return key in RESIDENT or key.startswith("desktop_")
 
 
-async def _all_resident() -> bool:
-    """`tools_all_resident`: every tool on every request, as before K7, for M1's comparison and as
-    the rollback. DELETE-BY: v0.1.64, once two v0.1.63 M1 rounds in a row show on demand no worse."""
-    from server.services import settings_service
-    async with db_session.AsyncSessionLocal() as db:
-        return await settings_service.tools_all_resident(db)
-
-
 async def _arslan_tools() -> list[dict]:
     """The tools a request is shown: the resident ones, find_tools and use_tool, then the tools this
     conversation used on demand, in first-use order (marked `appended`: they follow the sorted table)."""
     from server.orchestrator import on_demand
     from server.services import personal_context
     every = await _every_tool()
-    if await _all_resident():
-        return every
     shown = [tool for tool in every if _resident(tool["key"])] + [on_demand.FIND_TOOLS, on_demand.USE_TOOL]
     keys = {tool["key"] for tool in shown}
     by_key = {tool["key"]: tool for tool in every}

@@ -41,21 +41,6 @@ _PLAIN_KEYS = (
                "workspace_dir", "heartbeat_enabled", "heartbeat_checklist",
                # 0.1.58 §1: raw tool input/output under a reply's steps ("true" | "false"; default off).
                "show_technical_details",
-               # 0.1.63 K7: every tool on every request ("true" | "false"; default off). No UI: M1's A/B
-               # and the rollback. DELETE-BY: v0.1.64 (see arslan.RESIDENT).
-               "tools_all_resident",
-               # 0.1.63 K8a: show an answer only once it is complete ("true" | "false"; default off: answers
-               # go out as they are written). No UI yet. DELETE-BY: v0.1.64, when v0.1.63's M1 shows streaming
-               # no worse than buffering two rounds running and no issue was opened for it (card K8).
-               "answer_when_complete",
-               # 0.1.63 K9a: run every tool call one at a time ("true" | "false"; default off: consecutive reads
-               # run together). No UI: the rollback. DELETE-BY: v0.1.64, when v0.1.63's M1 shows parallel no
-               # worse than serial twice running and the pairing tests stay green (card K9).
-               "tools_serial",
-               # 0.1.63 K9b: a message sent while a turn runs waits for the next turn, as before K9b ("true" |
-               # "false"; default off: the running turn reads it at its next tool boundary). No UI: the rollback.
-               # DELETE-BY: v0.1.64, when M3 #10 passes and v0.1.63 has no steering issue (card K9).
-               "steering_off",
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                # K10-1: a folder's rules in each turn ("true" | "false"; default on). The UI comes with L11-0.
                "folder_rules_enabled",
@@ -268,33 +253,6 @@ async def terminal_sandbox_enabled(session: AsyncSession) -> bool:
     ON; only an explicit 'false' turns it off (back to the 0.1.50 behaviour)."""
     raw = await _get_raw(session, "terminal_sandbox_enabled")
     return raw is None or str(raw).strip().lower() != "false"
-
-
-async def answer_when_complete(session: AsyncSession) -> bool:
-    """K8a: answers shown only when complete, as before K8. Default off. DELETE-BY: v0.1.64 (card K8)."""
-    raw = await _get_raw(session, "answer_when_complete")
-    return str(raw).strip().lower() == "true" if raw is not None else False
-
-
-async def tools_serial(session: AsyncSession) -> bool:
-    """K9a: every tool call one at a time, as before reads ran together. Default off. DELETE-BY: v0.1.64
-    (card K9)."""
-    raw = await _get_raw(session, "tools_serial")
-    return str(raw).strip().lower() == "true" if raw is not None else False
-
-
-async def steering_off(session: AsyncSession) -> bool:
-    """K9b: messages sent during a turn wait for the next one, as before K9b. Default off. DELETE-BY: v0.1.64
-    (card K9)."""
-    raw = await _get_raw(session, "steering_off")
-    return str(raw).strip().lower() == "true" if raw is not None else False
-
-
-async def tools_all_resident(session: AsyncSession) -> bool:
-    """K7: every tool on every request, as before tools were found on demand. Default off.
-    DELETE-BY: v0.1.64, with the key (see arslan.RESIDENT)."""
-    raw = await _get_raw(session, "tools_all_resident")
-    return str(raw).strip().lower() == "true" if raw is not None else False
 
 
 async def lan_discovery_enabled(session: AsyncSession) -> bool:

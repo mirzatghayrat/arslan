@@ -304,9 +304,8 @@ SHELL_POLICIES = ("ask_risky", "ask_all")
 
 def settings_body(run_dir: str) -> dict:
     """The test instance's settings: its workspace is the run folder, its command policy BENCH_SHELL_POLICY
-    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell (e.g.
-    {"tools_all_resident": "true"} for K7's DELETE-BY comparison; 0.1.63). Values must be strings, as the
-    settings API stores them; the workspace and the policy cannot be set that way."""
+    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell. Values
+    must be strings, as the settings API stores them; the workspace and the policy cannot be set that way."""
     extra = json.loads(os.environ.get("BENCH_ARSLAN_SETTINGS") or "{}")
     if not isinstance(extra, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in extra.items()):
         raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")

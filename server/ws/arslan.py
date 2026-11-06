@@ -297,7 +297,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     await _send_or_gone({"type": "queued"})
                     # K9b: no card of this window waited (one that did keeps the rule above): the running
                     # turn reads it at its next tool boundary, and tells this socket `dequeued` + inserted.
-                    if not had_cards and steering.insertable(data) and await steering.enabled() and steering.put(
+                    if not had_cards and steering.insertable(data) and steering.put(
                             conversation_id, steering.Steer(str(data.get("content") or ""), message_source(data),
                                                             data, _send_or_gone, inbox, sink)):
                         continue
