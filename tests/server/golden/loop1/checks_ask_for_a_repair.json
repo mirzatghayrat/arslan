@@ -1,0 +1,94 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "validated",
+  "First try."
+ ],
+ [
+  "checkpoint",
+  "validation_repair"
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "First try.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "Deterministic validation failed: missing part. Repair only within the existing task scope, permissions and remaining budget. Do not repeat successful or uncertain external writes. If repair is unavailable, state the failed checks and remaining work; do not claim acceptance.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "validated",
+  "Second try."
+ ],
+ [
+  "chunk",
+  "Second try."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Second try.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ],
+ [
+  "job",
+  {
+   "limit_reason": null,
+   "pause_reason": null,
+   "repairs": 1
+  }
+ ]
+]

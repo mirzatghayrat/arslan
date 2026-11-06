@@ -1,0 +1,37 @@
+[
+ [
+  "stream request",
+  {
+   "history": [],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "user": "the request"
+  }
+ ],
+ [
+  "validated",
+  "plain streamed answer"
+ ],
+ [
+  "chunk",
+  "plain streamed answer\n[checks failed: ['bad']]"
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "plain streamed answer\n[checks failed: ['bad']]",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ],
+ [
+  "job",
+  {
+   "limit_reason": null,
+   "pause_reason": "task_validation_failed",
+   "repairs": 0
+  }
+ ]
+]
