@@ -33,7 +33,7 @@
 | 文件 | 规矩 |
 |---|---|
 | `server/orchestrator/arslan.py`、`server/orchestrator/tool_loop.py`、`server/orchestrator/memory.py` | 当轮 K 线主改。其他 PR 只做小改动，合并时排在当前打开的 K 线 PR 之后；rebase 时两边都保留 |
-| `web/src/locales/*.json`（6 种语言） | 新加的 key，6 种语言同一个 PR 一起加；不改别人的 key；冲突在文件末尾，rebase 时两边都留；`web/src/__tests__/locale-parity.test.ts` 通过才算完 |
+| `web/src/locales/*.json`（6 种语言） | 新加的 key，6 种语言同一个 PR 一起加；不改别人的 key；`web/src/__tests__/locale-parity.test.ts` 通过才算完。Merged key by key by `scripts/dev/merge_json_keys.py`, so the place a key is added no longer matters. Set it up once per clone: `git config merge.json-keys.driver "python3 scripts/dev/merge_json_keys.py %O %A %B"`. A clone without it merges as text. A page on GitHub still shows a conflict until someone merges main locally |
 | `docs/CAPABILITY_INVENTORY.md` | 生成物，不手改、不手工解冲突。rebase 后重新生成：`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`（在仓库根目录、用项目的虚拟环境运行）。C5b 合并后，只在发版 PR 里生成 |
 | `server/db/migrations/**`、`server/db/models.py` | 迁移号按 §4 处理 |
 | `server/main.py`、`web/src/App.tsx` | 只做小改动。路由和启动步骤加在末尾，不重排；rebase 时两边都留 |
