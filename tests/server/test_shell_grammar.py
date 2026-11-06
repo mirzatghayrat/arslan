@@ -4,6 +4,8 @@ features, written with harmless commands; how far the reader agrees with the rea
 """
 from __future__ import annotations
 
+import inspect
+import sys
 import time
 
 import pytest
@@ -140,6 +142,22 @@ def test_reading_is_linear_in_the_text():
 # ── the policy ──────────────────────────────────────────────────────────────
 
 
-def test_nesting_past_what_python_can_recurse_is_not_understood():
+def test_nesting_past_the_cap_is_not_understood():
     reading = shell_grammar.read("$(x " * 1000)
     assert not reading.understood and reading.capped
+
+
+def test_running_out_of_stack_is_not_understood():
+    """A turn's dispatch is already some frames deep when it reads a command, so even a nesting under the cap can run out."""
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(len(inspect.stack()) + 12)
+    try:
+        reading = shell_grammar.read("echo $(echo $(echo $(echo x)))")
+    finally:
+        sys.setrecursionlimit(limit)
+    assert not reading.understood and reading.capped
+
+
+@pytest.mark.parametrize("command", ["echo a )", "echo a ) ; ls", "echo a }", "echo a ; fi", "echo a ; done"])
+def test_text_left_over_after_the_commands_is_not_understood(command):
+    assert not shell_grammar.read(command).understood
