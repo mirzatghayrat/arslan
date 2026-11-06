@@ -1003,9 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "在沙盒外运行这条命令？",
-    "sandboxOutsideNote": "命令平时只能写 Arslan 的工作文件夹。这条需要改动 Mac 上别处的文件。",
-    "sandboxRetryLabel": "沙盒拦下了这条命令",
-    "sandboxRetryNote": "它想写工作文件夹以外的地方，或读受保护的文件。在沙盒外运行会从头再跑一遍。",
+    "sandboxOutsideNote": "命令平时只能写 Arslan 的工作文件夹，也读不了受保护的文件。这条请求不受这些限制地运行。如果它已经在沙盒里试过，这次会从头再跑一遍，之前已经做的不会撤销。",
     "sandboxConversation": "命令（包括后台任务）都可以在沙盒外运行",
     "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",
@@ -1039,13 +1037,14 @@
       "deleteSome": "删除文件或文件夹",
       "overNetwork": "用到网络（{{program}}）：可能发出或收到数据",
       "more": "（还有 {{count}} 步）",
-      "more_one": "（还有 {{count}} 步）"
+      "more_one": "（还有 {{count}} 步）",
+      "toTrash": "把 {{count}} 个文件或文件夹移到废纸篓",
+      "toTrash_one": "把 {{count}} 个文件或文件夹移到废纸篓"
     },
     "risk": {
       "sandboxed": "在沙盒里运行：只能改工作文件夹里的文件",
       "remote": "在 {{host}} 上运行，不是这台 Mac",
       "outside": "这一次在沙盒外运行",
-      "retry": "沙盒拦下了它；重跑会从头开始",
       "unsandboxed": "运行时没有沙盒",
       "network": "会联网，仅这一次",
       "rule": {
@@ -1071,7 +1070,10 @@
         "unreadable-script-reach": "里面的脚本会联网、启动程序或操控 App",
         "unreadable-quoting": "引号没有闭合，读不出会运行什么",
         "unreadable-complex": "太复杂，运行前读不清",
-        "unreadable-send": "Arslan 读不全这条命令会发出什么，可能会发出本机数据"
+        "unreadable-send": "Arslan 读不全这条命令会发出什么，可能会发出本机数据",
+        "delete-outside-trash": "移到废纸篓，你可以从那里找回",
+        "delete-outside-protected": "Arslan 自己的数据和密钥留在原处，其余的移到废纸篓",
+        "delete-outside-sandboxed": "在沙盒里运行；它在那里删掉的东西是彻底删除"
       }
     }
   },

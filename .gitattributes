@@ -1,0 +1,2 @@
+# Merged key by key once a clone has the setting in docs/sessions.md section 3; as text until then.
+web/src/locales/??.json merge=json-keys

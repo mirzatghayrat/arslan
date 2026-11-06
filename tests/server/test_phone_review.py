@@ -135,6 +135,7 @@ async def test_a_run_still_in_flight_reads_from_its_recorder(client):
 async def test_history_names_each_reply_s_run(client):
     async with client.db_maker() as db:
         db.add(Run(id=5, conversation_id="trip", user_message="plan"))
+        await db.flush()      # the run first: messages.run_id is a foreign key, and it is enforced
         db.add(ArslanMessage(id=1, conversation_id="trip", role="arslan", content="done", run_id=5))
         db.add(ArslanMessage(id=2, conversation_id="trip", role="user", content="thanks"))
         await db.commit()
@@ -147,6 +148,7 @@ async def test_history_names_each_reply_s_run(client):
 async def test_each_conversation_says_its_kind_state_and_origin(client, artifacts):
     async with client.db_maker() as db:
         db.add(Run(id=9, conversation_id="trip", user_message="x"))
+        await db.flush()      # the run first: messages.run_id is a foreign key, and it is enforced
         for i, (cid, role, source, text, run_id, outcome) in enumerate([
             ("c-phone", "user", "phone", "在干嘛", None, None),
             ("task-ab", "user", "phone", "整理发票", None, None),

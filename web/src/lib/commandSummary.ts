@@ -481,6 +481,8 @@ export const RULES = new Set(["delete-outside", "send-mail", "send-message", "up
   "open-app", "screen-clipboard", "protected-write", "unreadable"]);
 /** Why the server could not read a command (server/services/command_confirm.py `UNREADABLE`), each with its line. */
 export const UNREADABLE_KINDS = new Set(["fetched-code", "script-reach", "quoting", "complex"]);
+/** The delete modes with a line of their own; "permanent" is the rule's plain line. */
+const DELETE_MODE_LINES = new Set(["trash", "protected", "sandboxed"]);
 
 /**
  * The card's 「风险」 row, from what the server decided about the command (never the model's words): every terminal
@@ -489,19 +491,24 @@ export const UNREADABLE_KINDS = new Set(["fetched-code", "script-reach", "quotin
  * the card has no line for still asks, in amber, never as "sandboxed" (#688 review 3, 4).
  */
 export function commandRisk(f: { rule?: string; rules?: string[]; unreadable?: string; network?: boolean;
-                                 sandbox?: "outside" | "retry"; remoteHost?: string; unsandboxed?: boolean;
-                                 unsure?: boolean }): CommandRisk {
+                                 sandbox?: "outside"; remoteHost?: string; unsandboxed?: boolean;
+                                 unsure?: boolean; deleteMode?: string }): CommandRisk {
   const keys: CommandRisk["keys"] = [];
   let level: RiskLevel = "info";
   const raise = (to: RiskLevel) => { if (to === "irreversible" || (to === "warn" && level === "info")) level = to; };
   // Leaving the sandbox is said first on the card (S4a), so it leads the row.
   if (f.sandbox === "outside") { keys.push({ key: "outside" }); raise("warn"); }
-  else if (f.sandbox === "retry") { keys.push({ key: "retry" }); raise("warn"); }
   if (f.remoteHost) { keys.push({ key: "remote", params: { host: f.remoteHost } }); raise("warn"); }
   const rules = f.rules?.length ? f.rules : f.rule ? [f.rule] : [];
   const ordered = [...rules.filter(r => IRREVERSIBLE.has(r)), ...rules.filter(r => !IRREVERSIBLE.has(r))];
   let unknown = false;
   for (const rule of ordered) {
+    // SMART-8: how Allow deletes, from the server (`delete_to_trash.card_mode`). What goes to the Trash can come back.
+    if (rule === "delete-outside" && f.deleteMode && DELETE_MODE_LINES.has(f.deleteMode)) {
+      keys.push({ key: `rule.delete-outside-${f.deleteMode}` });
+      raise(f.deleteMode === "sandboxed" ? "irreversible" : "warn");
+      continue;
+    }
     if (rule === "unreadable" && f.unreadable && UNREADABLE_KINDS.has(f.unreadable)) keys.push({ key: `rule.unreadable-${f.unreadable}` });
     else if (RULES.has(rule)) keys.push({ key: `rule.${rule}` });
     else if (!unknown) { keys.push({ key: "rule.unknown" }); unknown = true; }
@@ -513,6 +520,11 @@ export function commandRisk(f: { rule?: string; rules?: string[]; unreadable?: s
   if (f.network) { keys.push({ key: "network" }); raise("warn"); }
   if (!keys.length) keys.push({ key: f.remoteHost ? "remote" : "sandboxed" });
   return { level, keys };
+}
+
+/** A delete that moves its targets to the Trash says so: word for word with server/services/card_purpose.py. */
+export function deletePurpose(p: Purpose, deleteMode?: string): Purpose {
+  return p.key === "delete" && (deleteMode === "trash" || deleteMode === "protected") ? { ...p, key: "toTrash" } : p;
 }
 
 /** A purpose in the user's words: a step run on another machine says that step inside its own sentence. */
