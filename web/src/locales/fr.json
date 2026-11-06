@@ -806,8 +806,6 @@
     "collapse_results": "Réduire",
     "stdout_label": "Sortie standard :",
     "exec_validated": "Exécution vérifiée ; la connexion isolée s’est terminée avec le code 0.",
-    "equipped_capabilities": "Capacités disponibles :",
-    "capabilities_matrix": "Matrice des capacités :",
     "hide_rail": "Masquer le panneau latéral",
     "show_rail": "Afficher le panneau latéral",
     "confirm_direction": "Confirmer la direction · Allons-y",

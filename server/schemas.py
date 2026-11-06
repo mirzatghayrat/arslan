@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -294,13 +294,6 @@ class SpawnDetailOut(SpawnOut):
 class EquipmentUpdateIn(BaseModel):
     toolsets: list[str] = []
     skills: list[str] = []
-
-
-class ConfigUpdateIn(BaseModel):
-    system_prompt: str | None = None
-    persona_tone: str | None = None
-    persona_role: str | None = None
-    config: dict[str, Any] | None = None
 
 
 class FactIn(BaseModel):

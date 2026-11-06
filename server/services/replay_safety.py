@@ -1,4 +1,4 @@
-"""Replay-safe tool whitelist (S2 E3 — hermetic replay).
+"""Replay-safe tool whitelist (S2 E3 — hermetic replay). DELETE-BY: v0.1.64, with C7c-3b.
 
 An evolution replay must run a spawn on a task WITHOUT touching real state, so the
 model may only see tools that are read-only or fully sandboxed and produce nothing

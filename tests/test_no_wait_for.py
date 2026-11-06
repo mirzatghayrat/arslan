@@ -16,9 +16,6 @@ from arslan import aio
 from arslan.aio import within
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-#: Files still waiting to be converted, with how many calls each still has; the count may only go down.
-#: ③Hands converted its two (hands_tools.py, hands_client.py), so none is left. DELETE-BY: v0.1.64.
-NOT_YET: dict[str, int] = {}
 _IMPORT = re.compile(r"from\s+asyncio(?:\.tasks)?\s+import\s*(?:\([^)]*|[^\n]*)\bwait_for\b")
 
 
@@ -34,13 +31,8 @@ def test_no_product_code_uses_asyncio_wait_for():
     found = sorted(f"{path.relative_to(ROOT)}: {_uses(path.read_text(encoding='utf-8'))}"
                    for base in ("server", "arslan")
                    for path in (ROOT / base).rglob("*.py")
-                   if str(path.relative_to(ROOT)) not in NOT_YET and _uses(path.read_text(encoding="utf-8")))
+                   if _uses(path.read_text(encoding="utf-8")))
     assert found == [], "use arslan.aio.within, which never drops a cancellation"
-
-
-def test_the_files_still_waiting_have_no_more_calls_than_counted():
-    """A new call there fails too; when ③Hands converts one, its entry goes (the list never outlives it)."""
-    assert {name: _uses((ROOT / name).read_text(encoding="utf-8")) for name in NOT_YET} == NOT_YET
 
 
 @pytest.mark.parametrize("text,count", [

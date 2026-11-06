@@ -806,8 +806,6 @@
     "collapse_results": "Contraer",
     "stdout_label": "Salida estándar:",
     "exec_validated": "Ejecución verificada; la conexión aislada terminó con código 0.",
-    "equipped_capabilities": "Capacidades disponibles:",
-    "capabilities_matrix": "Matriz de capacidades:",
     "hide_rail": "Ocultar panel lateral",
     "show_rail": "Mostrar panel lateral",
     "confirm_direction": "Confirmar dirección · Adelante",
