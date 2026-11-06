@@ -245,6 +245,11 @@ async def held(server_id: int) -> dict | None:
     return (source.test or {}).get("tools_changed") if source is not None else None
 
 
+#: How a 401 reads for a server with no key and no sign-in stored (`_describe_failure`). A fresh OAuth server reads
+#: the same, so `capability_flow` asks it (`oauth_flow.offers_sign_in`).
+NO_CREDENTIALS_401 = "authorization failed (HTTP 401): no credentials"
+
+
 async def _check_pin(db, server_id: int, tools: list, rows_by_name: dict, *, complete: bool) -> None:
     """CAP5a (rug pull): a server Arslan installed is pinned to the tools its first test listed (the pin lives in
     its capability source's `test`). Every later listing, on each connect and each tools/list_changed, is
@@ -262,7 +267,9 @@ async def _check_pin(db, server_id: int, tools: list, rows_by_name: dict, *, com
     pinned = (source.test or {}).get("tools_pin")
     if pinned is None:                          # the first listing: its install test (or, once, after an upgrade)
         test = {**(source.test or {}), "tools_pin": listed}
-        if test.pop("needs_sign_in", False):    # the sign-in its install test stopped at is done: that test's yes
+        # The first listing while it waits for a sign-in: that install test's yes. Only what the user presses (Connect,
+        # Authorize, Reconnect) starts a server that is off, so this is the sign-in, or nothing else to wait for.
+        if test.pop("needs_sign_in", False):
             test = {k: v for k, v in test.items() if k not in ("stage", "detail")}
             test.update(ok=True, tools=[t.name for t in tools][:60], at=datetime.utcnow().isoformat() + "Z")
             (await db.get(MCPServer, server_id)).host_allowed = True

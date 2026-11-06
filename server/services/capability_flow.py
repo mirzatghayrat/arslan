@@ -92,13 +92,28 @@ async def _update(source_id: str, **fields) -> None:
         await db.commit()
 
 
+async def _waits_for_sign_in(server_id: int, line: str) -> bool:
+    """A start that needs the user's browser, not a key. Stored tokens that need it again say so themselves. A fresh
+    install has none, so no OAuth provider, and its 401 reads as "no credentials": there the server has to say it takes
+    OAuth. A key it rejects and a 403 aren't this: a browser can't fix them."""
+    from server.mcp import discovery, oauth_flow
+    from server.mcp.supervisor import SIGN_IN_PREFIX
+    if line.startswith(SIGN_IN_PREFIX):
+        return True
+    if not line.startswith(discovery.NO_CREDENTIALS_401):
+        return False
+    async with db_session.AsyncSessionLocal() as db:
+        server = await db.get(MCPServer, server_id)
+    return server is not None and bool(server.url) and await oauth_flow.offers_sign_in(server.url)
+
+
 async def test_mcp(source_id: str) -> dict:
     """Start it in its sandbox and list its tools; on success switch it on (0.1.61: through the
     supervisor, so the row is `ready` and its tools are offered in the same reply, spec §B3). A
     start that does not pass leaves it `off`, its process stopped. One that asks the user to sign in
     is off too, but it hasn't failed: `discovery._check_pin` switches it on and pins its tools at the
-    first listing after the sign-in. A key the server rejects still fails: a browser can't fix that."""
-    from server.mcp.supervisor import SIGN_IN_PREFIX, supervisor
+    first listing after the sign-in."""
+    from server.mcp.supervisor import SIGN_IN_LINE, supervisor
     from server.services import mcp_service
     row = await _source(source_id)
     at = datetime.utcnow().isoformat() + "Z"
@@ -108,9 +123,9 @@ async def test_mcp(source_id: str) -> dict:
         await supervisor.set_enabled(row.mcp_server_id, False)
         detail = getattr(exc, "detail", None) or str(exc)
         return {"ok": False, "stage": "start", "detail": detail[-400:] or type(exc).__name__, "at": at}
-    if result.state == "needs_auth" and (result.last_error or "").startswith(SIGN_IN_PREFIX):
+    if result.state == "needs_auth" and await _waits_for_sign_in(row.mcp_server_id, result.last_error or ""):
         await supervisor.set_enabled(row.mcp_server_id, False)
-        return {"ok": False, "needs_sign_in": True, "stage": "sign_in", "detail": result.last_error[-400:], "at": at}
+        return {"ok": False, "needs_sign_in": True, "stage": "sign_in", "detail": SIGN_IN_LINE, "at": at}
     if result.state != "ready":
         await supervisor.set_enabled(row.mcp_server_id, False)
         return {"ok": False, "stage": "start", "detail": (result.last_error or result.state)[-400:],

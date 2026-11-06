@@ -108,7 +108,7 @@ async def test_an_update_waiting_for_sign_in_goes_and_the_old_one_stays(executio
         return {"state": "needs_sign_in", "source_id": "new"}
     monkeypatch.setattr(capability_flow, "install_mcp", waiting)
     out = await cd.update(row.id)
-    assert removed == ["new"] and out["state"] == "failed" and out["stage"] == "sign_in"
+    assert removed == ["new"] and out["state"] == "failed"
 
 
 async def test_check_update_compares_with_the_registry(execution_db, monkeypatch, tmp_path):

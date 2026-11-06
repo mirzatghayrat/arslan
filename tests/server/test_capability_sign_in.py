@@ -1,14 +1,19 @@
 """A remote connection that asks the user to sign in at its install test: not failed, and not working. It stays
 installed and switched off, says it needs sign-in, and switches on at its first listing after the sign-in, which is
 also where its tools are pinned (CAP5a)."""
+import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from mcp import types
+from mcp.client.streamable_http import streamablehttp_client as real_streamablehttp_client
 
+from server import crypto
 from server.db.models import CapabilitySource, MCPServer
 from server.mcp import discovery, oauth_flow, session
+from server.mcp import supervisor as sm
 from server.mcp.supervisor import SIGN_IN_LINE, StartResult, supervisor
 from server.services import capability_flow, capability_install, capability_list
 
@@ -71,6 +76,100 @@ async def test_a_real_start_keeps_the_line_the_authorize_button_reads(execution_
     async with execution_db() as db:
         server = await db.get(MCPServer, 1)
         assert server.state == "off" and server.host_allowed is False and server.last_error == SIGN_IN_LINE
+
+
+# ── through the real transport, with no stored tokens: what a fresh install meets ──────────────────────────────────
+
+URL = "https://mcp.example.test/mcp"
+RESOURCE = "https://mcp.example.test/.well-known/oauth-protected-resource/mcp"
+AS_METADATA = "https://mcp.example.test/.well-known/oauth-authorization-server"
+
+
+def _http(monkeypatch, answers: dict, *, status=401, challenge=None):
+    """The real streamablehttp_client and `oauth_flow`'s own requests, on one MockTransport: the MCP endpoint answers
+    `status`, and each address in `answers` gives its body. Every request is kept."""
+    seen = []
+
+    def handler(request):
+        seen.append(f"{request.method} {request.url}")
+        if str(request.url) == URL:
+            return httpx.Response(status if request.method == "POST" else 405, request=request,
+                                  headers={"WWW-Authenticate": challenge} if challenge else None)
+        if str(request.url) in answers:
+            return httpx.Response(200, json=answers[str(request.url)], request=request)
+        return httpx.Response(404, request=request)
+    transport = httpx.MockTransport(handler)
+    real = httpx.AsyncClient                # `oauth_flow.httpx` is this module, so the SDK's factory keeps the real one
+
+    def factory(headers=None, timeout=None, auth=None):
+        return real(transport=transport, headers=headers, timeout=timeout, auth=auth, follow_redirects=True)
+
+    def client(url, headers=None, auth=None, **kw):
+        return real_streamablehttp_client(url, headers=headers, auth=auth, httpx_client_factory=factory, **kw)
+    monkeypatch.setattr(session, "streamablehttp_client", client)
+    monkeypatch.setattr(oauth_flow.httpx, "AsyncClient", lambda **kw: real(transport=transport, **kw))
+    return seen
+
+
+@pytest.fixture
+async def fresh_remote(execution_db, tmp_path, monkeypatch):
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(sm, "FIRST_START_GAPS_S", (0.0, 0.0, 0.0))
+    async with execution_db() as db:
+        db.add(MCPServer(id=1, label="notes", transport="http", command="", args=[], url=URL, status="registered",
+                         state="off", host_allowed=False))
+        await db.flush()
+        db.add(CapabilitySource(id="src1", kind="mcp", name="notes", candidate_id="c", runtime="remote", needs={},
+                                grants={}, state="installed", mcp_server_id=1, test={},
+                                created_at=datetime.utcnow(), installed_at=datetime.utcnow()))
+        await db.commit()
+    yield execution_db
+    await session.manager.aclose_all()
+
+
+async def test_a_fresh_oauth_server_saying_so_in_its_challenge_waits_for_sign_in(fresh_remote, monkeypatch):
+    _http(monkeypatch, {}, challenge=f'Bearer resource_metadata="{RESOURCE}"')
+    test = await capability_flow.test_mcp("src1")
+    assert test["needs_sign_in"] is True and test["stage"] == "sign_in"
+    async with fresh_remote() as db:
+        server = await db.get(MCPServer, 1)
+        assert server.host_allowed is False and server.state == "off" and "authorization" in server.last_error
+
+
+@pytest.mark.parametrize("address, body", [(RESOURCE, {"authorization_servers": ["https://auth.example.test"]}),
+                                           (AS_METADATA, {"authorization_endpoint": "https://auth.example.test/a"})])
+async def test_a_fresh_oauth_server_saying_so_in_its_metadata_waits_for_sign_in(fresh_remote, monkeypatch, address, body):
+    _http(monkeypatch, {address: body})
+    assert (await capability_flow.test_mcp("src1"))["needs_sign_in"] is True
+
+
+@pytest.mark.parametrize("answers, kw", [
+    ({}, {}),                                                            # a 401 and nothing says OAuth: it wants a key
+    ({}, {"challenge": "Bearer realm=\"api\""}),                          # a plain bearer key
+    ({RESOURCE: {"something": "else"}, AS_METADATA: ["not", "this"]}, {}),  # an address answering with something else
+    ({RESOURCE: {"authorization_servers": ["https://auth.example.test"]}}, {"status": 403}),   # signed in or not, no
+])
+async def test_a_server_that_doesnt_show_oauth_still_fails(fresh_remote, monkeypatch, answers, kw):
+    _http(monkeypatch, answers, **kw)
+    test = await capability_flow.test_mcp("src1")
+    assert test["ok"] is False and "needs_sign_in" not in test
+
+
+async def test_the_check_only_reads_and_registers_no_client(fresh_remote, monkeypatch):
+    seen = _http(monkeypatch, {RESOURCE: {"authorization_servers": ["https://auth.example.test"]}})
+    await capability_flow.test_mcp("src1")
+    assert not [line for line in seen if "register" in line or "token" in line or "auth.example" in line]
+    assert not [line for line in seen if line.startswith("POST") and not line.endswith(URL)]
+
+
+async def test_a_rejected_key_doesnt_ask_whether_it_is_oauth(fresh_remote, monkeypatch):
+    seen = _http(monkeypatch, {RESOURCE: {"authorization_servers": ["https://auth.example.test"]}})
+    async with fresh_remote() as db:
+        (await db.get(MCPServer, 1)).env = crypto.encrypt(json.dumps({"Authorization": "Bearer wrong"}))
+        await db.commit()
+    test = await capability_flow.test_mcp("src1")
+    assert test["ok"] is False and "needs_sign_in" not in test
+    assert not [line for line in seen if ".well-known" in line]
 
 
 async def test_a_rejected_key_is_still_a_failed_test(execution_db, monkeypatch, remote_install):
