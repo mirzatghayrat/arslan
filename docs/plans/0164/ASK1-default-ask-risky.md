@@ -42,11 +42,16 @@
   - **The known issue is closed, not just its sheet.** The sheet warns about a real gap: #406 closed unmerged on 2026-10-24, and it covered `cd` plus `rm` of a relative name running with no card. Before the sheet goes, the PR body names what closes that gap (S2a-3, or #686 for Trash and protected targets) with a test, or #406 is reopened.
 - **Markers this PR clears or moves:** `_0070:21`, `settings_service.py:26`, `ShellPolicySwitchNotice.tsx:13`, `AdvancedSection.tsx:377`, and the locale strings they use. They name "S2a-3 and #406" today.
 
-## Sandbox first: what `ask_risky` means (the user, 2026-11-07, relayed by ④参谋; part of ASK1-a)
+## Sandbox first: what `ask_risky` means (the user, 2026-11-07, relayed by ④参谋)
+
+This is what ASK1-a turns on by default, but it lands earlier, with ③Hands' S2a-3 work (design OK'd by ⓪Plan, 2026-11-07). The denial change loosens nothing and can land at any time. The rest takes effect only after SBX-6a and SBX-4a are on main, in S2a-3's wire step.
 
 - Inside the sandbox a command that isn't dangerous runs without a card. A card appears only for leaving the sandbox, a real danger, or an explicit rule.
-- A sandbox denial goes back to the model as a tool result, so it can find another way. No card is made from it.
-- Asking to leave the sandbox is a deliberate request from the model, with a reason, through a field on the command tool. That field is `outside_sandbox` (`tool_loop.py:1613`, a bare flag today); the card shows the reason.
+- A sandbox denial goes back to the model as a tool result, so it can find another way. No card is made from it; the automatic re-run card goes.
+- Asking to leave the sandbox is a deliberate request from the model, with a reason: `outside_sandbox` plus a required `why` on the command tool. Without `why` the model gets an error, not a card. The card shows the reason.
+- **The command reader decides the network, not whether a command runs.** With no named rule, a command the reader can't understand runs in the sandbox with no card and offline, with a note saying why. If it needs the network, the model passes `network: true`, which shows the existing network card. Commands the reader understands keep the proxy.
+- **Kept:** forbid, named layer ② rules (including on unreadable text), a card when there's no sandbox, S2a-1, and a stored `ask_all`.
+- **Exception:** when the working folder is home or contains it, unreadable text still gets a card, because the sandbox doesn't hold there.
 - CLS and S5b keep the breakers already on their cards (3 denials in a row in a turn, 20 in total per conversation and per job, then back to cards). The classifier doesn't see tool output, so a denial's text never reaches it.
 - `ask_all` is unchanged: every command still asks.
 - References: Codex's `exec_policy.rs` and Claude Code's sandboxing docs (below).

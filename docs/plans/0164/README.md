@@ -285,6 +285,8 @@ CLS + S5a ──→ S5b
 
 HR also needs SBX-4a, 5a and 6a on main: "After SBX" means SBX-1 to SBX-7, and the first line above draws only 3a and SBX-7.
 
+SBX-8 runs after S2a-3's wire step as well as 6a, 4a, 5a and SBX-7, because that step changes the card numbers it measures, and one bench sitting on the user's Mac is enough (⓪Plan, 2026-11-07). ASK1-a still follows SBX-8, so the default doesn't change until it's measured.
+
 SUB, S5a and SIDE start once LOOP1's slices `b` and `a1`, and any tool family they extend, are on main ([LOOP1](LOOP1-agent-loop.md)). Nothing else waits for LOOP1.
 
 The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until SBX-2 lands, and STATUS says where the chain is stuck. Cards that don't depend on SBX go ahead as before.
