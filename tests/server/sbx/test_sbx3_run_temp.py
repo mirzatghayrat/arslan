@@ -72,9 +72,11 @@ def test_each_data_folder_has_its_own_root(tmp_path, monkeypatch):
 
 async def test_the_commands_of_a_run_share_its_folder_as_tmpdir(tmp_path):
     with execution_context.bind_run(5):
-        first = await _env('printf "%s" "$TMPDIR"', tmp_path)
+        first = await _env('printf "%s\\n%s" "$TMPDIR" "$TMPPREFIX"', tmp_path)
         second = await _env('printf "%s" "$TMPDIR"', tmp_path)
-    assert first["stdout"] == second["stdout"] == str(run_temp.folder(5))
+    tmpdir, prefix = first["stdout"].splitlines()
+    assert tmpdir == second["stdout"] == str(run_temp.folder(5))
+    assert prefix.startswith(tmpdir + os.sep)                          # a nested zsh's here-documents land there too
 
 
 async def test_a_command_outside_any_run_gets_a_folder_that_goes_with_it(tmp_path):
@@ -206,3 +208,6 @@ async def test_a_sandboxed_command_uses_its_own_tmpdir(tmp_path):
     with execution_context.bind_run(4):                                # bash writes a here-document under TMPDIR
         heredoc = await _env("python3 - <<'PY'\nprint('from a here-document')\nPY", tmp_path, sandbox=True)
     assert heredoc["ok"] and heredoc["stdout"].strip() == "from a here-document", heredoc
+    with execution_context.bind_run(4):                                # a nested zsh writes one under TMPPREFIX
+        nested = await _env("zsh -c 'cat <<E\nnested\nE'", tmp_path, sandbox=True)
+    assert nested["ok"] and nested["stdout"].strip() == "nested", nested

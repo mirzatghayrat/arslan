@@ -35,6 +35,7 @@ OUTSIDE_SANDBOX: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal
 # the user approved and whose command is one plain call (task_service.unwrapped_once): no wrapper.
 UNWRAPPED: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_unwrapped", default=False)
 
+SHELL = ("/bin/bash", "-p")
 DEFAULT_TIMEOUT_S = 120
 MIN_TIMEOUT_S = 5
 MAX_TIMEOUT_S = 600
@@ -139,11 +140,6 @@ async def _cancel(tasks) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def _shell() -> list[str]:
-    """Privileged bash wherever it exists (3.2 on macOS); /bin/sh elsewhere."""
-    return ["/bin/bash", "-p"] if os.path.exists("/bin/bash") else ["/bin/sh"]
-
-
 def _reads_a_saved_output(result: dict) -> bool:
     from server.services import tool_outputs
     folder = str(tool_outputs.outputs_dir())
@@ -172,11 +168,12 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
 
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
                readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int) -> dict:
-    # bash writes here-document temp files under TMPDIR, the run's own folder: where /tmp is not writable
-    # a `python3 - <<'PY'` save would fail (0.1.49 bench).
+    # bash writes here-document temp files under TMPDIR and a nested zsh (`zsh -c`, a `#!/bin/zsh` script) under
+    # TMPPREFIX: where /tmp is not writable a `python3 - <<'PY'` save would fail (0.1.49 bench). Both stay in the run's folder.
     # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
     env = child_environment({}, {"PATH": await asyncio.to_thread(merged_path), "TERM": "dumb", "NO_COLOR": "1",
-                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp)})
+                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
+                                 "TMPPREFIX": os.path.join(tmp, "zsh")})
     from server.services import command_sandbox, run_temp
     prefix: list[str] = []
     mode = "off"
@@ -192,7 +189,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                 "error": "commands run without network now, and this run cannot isolate the network — "
                          "save the deliverable with write_file instead"}
     proc = await asyncio.create_subprocess_exec(
-        *prefix, *_shell(), "-c", command, cwd=str(cwd), env=env,
+        *prefix, *SHELL, "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
     run_temp.started(temp_key, proc.pid)  # §1a: the run's folder stays while this group has a process left

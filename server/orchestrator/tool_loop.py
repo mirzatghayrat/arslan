@@ -1597,6 +1597,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
+        if terminal_policy.heredoc_in_substitution(command):
+            # No card either: it would show text that reads as data, and some of that text would run.
+            result = {"ok": False, "error": "A here-document inside $( ) can't run here: in bash 3.2 its text can end the "
+                      "substitution early, and the rest of the text runs as commands. Nothing ran.",
+                      "note": "Write the text to a file with write_file, then use the file: for a commit message, "
+                              "git commit -F <file>; for a variable, NOTE=$(cat <file>)."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
         if terminal_policy.other_osa_language(command):
             # S2a-2 (K5's gate, T1): a JXA script cannot reach an app from here, inside the sandbox or out (its
             # Apple Events are blocked; only plain AppleScript runs bare, U11), so no card is shown for it.

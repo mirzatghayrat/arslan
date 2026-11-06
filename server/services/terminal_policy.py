@@ -181,6 +181,8 @@ _ASK = [
      + _END
      + r"|" + _CMD
      + r"rsync\b[^\n]*\S:", "connects to another machine"),
+    # bash opens the connection itself, with no program named (zsh has no such path).
+    ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
     ("publish", _CMD + r"(?:npm\s+publish|pnpm\s+publish|yarn\s+publish|twine\s+upload|cargo\s+publish"
                        r"|gh\s+(?:pr|issue|release|repo|gist)\s+(?:create|delete|merge|close|edit|comment)"
@@ -481,6 +483,17 @@ def ask_rules(command: str) -> set[str]:
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to
 # Objective-C, so U11's bare run is plain AppleScript only: wrapped, its Apple Events are blocked.
 _OTHER_OSA_LANGUAGE = re.compile(_CMD + r"osascript\b[^\n;&|]*\s-l\s*[\"']?(?!applescript\b)\w", re.I)
+
+
+# bash 3.2 scans a substitution without knowing here-documents, so text in one can end it early and the rest runs: a
+# numbered list in a commit message can delete a folder (#723 review). `$((` is arithmetic and `<<<` a here-string.
+_HEREDOC_IN_SUBSTITUTION = re.compile(r"""(?:\$\((?!\()|[<>]\()[^)]*(?<!<)<<-?\s*[\\'"]?\w""")
+
+
+def heredoc_in_substitution(command: str) -> bool:
+    """A here-document inside `$( )`, `<( )` or `>( )`. Misses one after a `)` in the same substitution, which text
+    inside the body can't write."""
+    return bool(_HEREDOC_IN_SUBSTITUTION.search(str(command or "")))
 
 
 def other_osa_language(command: str) -> bool:

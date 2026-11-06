@@ -79,14 +79,6 @@ async def test_output_is_untrusted_not_external_false(own_folder):
     assert r.get("external") is not False
 
 
-def test_the_shell_is_privileged_bash_where_it_exists_and_sh_elsewhere(monkeypatch):
-    from server.services import terminal_exec
-    monkeypatch.setattr(terminal_exec.os.path, "exists", lambda p: p == "/bin/bash")
-    assert terminal_exec._shell() == ["/bin/bash", "-p"]
-    monkeypatch.setattr(terminal_exec.os.path, "exists", lambda p: False)
-    assert terminal_exec._shell() == ["/bin/sh"]
-
-
 async def test_a_command_runs_in_that_shell(tmp_path):
     from server.services import terminal_exec
     out = await terminal_exec.run('printf "%s" "${BASH_VERSION:+bash}${ZSH_VERSION:+zsh}"', cwd=tmp_path)
