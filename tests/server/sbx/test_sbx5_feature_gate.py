@@ -89,8 +89,21 @@ def test_only_measured_future_cases_use_feature_gates():
     } | {("test_links_do_not_open_write_paths", "npm", kind, None) for kind in ("symlink", "hardlink")} | {
         ("test_peer_cache_inside_a_grant_stays_closed", None, None, None)
     }
+    # SBX-4a builds mcp and run-python, so what they wait for from 5a moved from base gates to feature gates.
+    cap6b_built_bases = {
+        ("cap6b", base, "test_cap6b_symlink_root", None, None, alias)
+        for base in ("mcp", "run-python") for alias in (False, True)
+    }
+    cache_mcp = {
+        ("test_shared_cache_is_not_writable", target, None, None) for target in ("npm", "cache", "Library-Caches")
+    } | {
+        (name, None, None, None)
+        for name in ("test_commands_cache_is_not_visible_to_mcp", "test_peer_cache_inside_a_grant_stays_closed")
+    }
     assert selected == ({("cap6b", "outside-floor", *row) for row in outside}
                         | {("cap6b", "commands", *row) for row in cap6b_commands}
+                        | cap6b_built_bases
+                        | {("shared-cache-exclusions", "mcp", *row) for row in cache_mcp}
                         | {("shared-cache-exclusions", "commands", *row) for row in cache_commands})
     assert real_commands == {
         ("test_cap6b_write_denied", target, None, None) for target in ("skills", "plugin", "data")
