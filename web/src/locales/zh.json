@@ -1071,7 +1071,7 @@
         "unreadable-send": "Arslan 读不全这条命令会发出什么，可能会发出本机数据",
         "delete-outside-trash": "移到废纸篓，你可以从那里找回",
         "delete-outside-protected": "Arslan 自己的数据和密钥留在原处，其余的移到废纸篓",
-        "delete-outside-sandboxed": "在沙箱里运行；它在那里删掉的东西是彻底删除"
+        "delete-outside-sandboxed": "在沙盒里运行；它在那里删掉的东西是彻底删除"
       }
     }
   },

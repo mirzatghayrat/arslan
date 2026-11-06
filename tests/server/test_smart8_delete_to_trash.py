@@ -6,12 +6,13 @@ the sandbox's limits. Arslan never deletes from the Trash or empties it.
 """
 import os
 import re
+import time
 from pathlib import Path
 
 import pytest
 
 from server.orchestrator import tool_loop
-from server.services import command_sandbox, delete_to_trash as dt, terminal_exec, terminal_policy as tp
+from server.services import command_sandbox, delete_to_trash as dt, task_service, terminal_exec, terminal_policy as tp
 
 
 @pytest.fixture
@@ -44,7 +45,6 @@ def test_a_plain_delete_reads_with_certainty(command, targets):
     "rm a; echo done", "rm a && ls", "rm a > log", "find ~/x -delete", "rm -i ~/x", "rm -P ~/x", "rmdir -p a/b",
     "unlink a b", "rm ~bob/x", "rm ~/x/", "rm ..", "rm ~/x/.", "rm", "rm -rf", "sudo rm x", "command rm x",
     "rm 'a\nb'", "rm a\\ b", "srm ~/x", "trash -s ~/x", "rm {a,b}", "rm 'unclosed", "rm --recursive x",
-    "rm /.vol/16777220/12345",
     "rm -rf '~/Library'", 'rm -rf "~/Library"', 'rm -rf ~"/Library"', "rm '~'",     # a ~ the shell would not expand
 ])
 def test_anything_else_does_not(command):
@@ -119,17 +119,12 @@ def test_another_disk_without_a_trash_is_refused_and_nothing_is_copied(home, tmp
 @pytest.mark.parametrize("command", [
     "rm -rf ~/.Trash/*", "rm ~/.Trash/old.txt", "rm -rf ~/.Trash", "rm -r '/Volumes/X/.Trashes/501'",
     "find ~/.Trash -mindepth 1 -delete", "find ~/.Trash -exec rm {} +", "unlink ~/.Trash/x",
-    "osascript -e 'tell application \"Finder\" to empty trash'", "osascript -e 'tell app \"Finder\" to empty the trash'",
-    "osascript <<'EOF'\ntell application \"Finder\"\n  empty trash without warning\nend tell\nEOF",
     "cd ~/.Trash && rm -rf *", "cd ~/.Trash; find . -delete", "pushd ~/.Trash && rm old.txt",
     'cd "$HOME/.Trash" && rm -rf -- *', "cd /Volumes/X/.Trashes/501 && rmdir old",
     "builtin cd ~/.Trash && rm -rf *", "CDPATH=/x cd ~/.Trash && rm -rf *", "A=1 B=2 builtin cd ~/.Trash; rm x",
     "chdir ~/.Trash && rm -rf *", "builtin chdir ~/.Trash && rm -rf *",
     "/bin/rm -rf ~/.Trash/x", "command rm -rf ~/.Trash/x", "FOO=1 rm -rf ~/.Trash/x", "timeout 5 rm -rf ~/.Trash/x",
     "rm -rf ~/.Trash*", "find ~/.Trash -execdir rm {} +",
-    "osascript -e 'tell application \"Finder\" to empty'",
-    "osascript <<'EOF'\ntell application \"Finder\"\n  empty\nend tell\nEOF",
-    "osascript -e 'tell application \"Finder\" to «event fndrempt»'",
 ])
 def test_a_delete_from_the_trash_or_emptying_it_is_forbidden(command):
     assert (tp.assess(command).level, tp.assess(command).rule) == ("forbid", "trash")
@@ -143,6 +138,26 @@ def test_a_delete_from_the_trash_or_emptying_it_is_forbidden(command):
                                      "osascript -e 'tell application \"Notes\" to count notes'"])
 def test_looking_at_or_moving_into_the_trash_is_not(command):
     assert tp.assess(command).rule != "trash"
+
+
+@pytest.mark.parametrize("command", [
+    "osascript -e 'tell application \"Finder\" to empty trash'",
+    "osascript <<'EOF'\ntell application \"Finder\"\n  empty\nend tell\nEOF",
+    "osascript -e 'tell application \"Finder\" to «event fndrempt»'",
+])
+def test_finder_through_osascript_is_a_card_because_the_kernel_holds_it(command):
+    """Both profiles deny Apple Events and a Finder script never runs bare, so a text rule here adds only cost: it was
+    the one that froze the server (below). `mac_applescript` keeps its refusal."""
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("ask", "apple-events")
+    assert not task_service.unwrapped_once(command)
+
+
+@pytest.mark.parametrize("command", ["osascript\n" * 200 + "Finder\n" * 850, "osascript Finder\n" * 470])
+def test_a_command_cant_freeze_the_server_reading_it(command):
+    """`assess` runs on the event loop. A lazy Finder match inside a lazy osascript match took 50 to 68 s on these."""
+    start = time.perf_counter()
+    tp.assess(command)
+    assert time.perf_counter() - start < 5
 
 
 def test_the_move_refuses_a_target_in_the_trash(home, tmp_path):
@@ -506,3 +521,12 @@ async def test_both_titles_carry_the_mode(tmp_path, monkeypatch):
     await confirm.command("rm -r /tmp/smart8", [], delete="trash", sandbox="outside")
     for request in seen:
         assert card_purpose.phrase("rm", lang="en") and "to the Trash" in request.title, request.title
+
+
+@pytest.mark.parametrize("word", ["/.vol/16777220/12345", "/.vol/16777220/12345/secret.key", "//.vol/16777220/12345/f",
+                                  "/./.vol/16777220/12345/f", "/private/../.vol/16777220/12345/f"])
+def test_a_file_by_device_and_inode_stays_where_it_is(word, tmp_path):
+    """What it is can't be read from its name, whichever way the path spells it, so it's treated as Arslan's own."""
+    assert dt.card_mode(f"rm {word}", outside=True) == "protected"
+    out = dt.move(f"rm {word}", tmp_path)
+    assert out["ok"] is False

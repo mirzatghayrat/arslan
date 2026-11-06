@@ -1,7 +1,7 @@
 """SMART-8 delete cards (the user's decision, 2026-11-02): when the user allows a
 delete outside the working folder, the targets go to the Trash instead of being deleted outright, as Finder does.
 
-Only a delete that reads with certainty is moved: the whole command is one `rm`, `rmdir` or `unlink` with literal
+Only a delete that reads with certainty is moved: the whole command is one `rm`, `rmdir`, `unlink` or `trash` with literal
 targets (no glob, variable, substitution, operator, redirection or xargs). Anything else runs as it always has, and
 its card says the delete is permanent; this never implies a safety net that isn't there.
 
@@ -87,8 +87,6 @@ def plan(command: str) -> Plan | None:
 def _literal_target(word: str) -> bool:
     if not word or word.endswith("/"):
         return False                      # `link/` reaches through the link: not what a move of `link` does
-    if word.startswith("/.vol/"):
-        return False                      # a file by device and inode: what it is inside can't be read from it
     if word.startswith("~") and not (word == "~" or word.startswith("~/")):
         return False                      # ~user
     return os.path.basename(word) not in (".", "..")
@@ -163,8 +161,11 @@ def in_a_trash(path: Path) -> bool:
 def touches_protected(path: Path) -> bool:
     """Whether `path` is, is inside, or holds a path of `command_sandbox.arslan_protected()` (Arslan's data, keys
     and Hands' folder), which a command outside the sandbox can't touch either (#686 review F1). Compared without
-    case, as the Mac's disk finds `.ARSLAN` too."""
+    case, as the Mac's disk finds `.ARSLAN` too. A file by device and inode (`/.vol`) counts: what it is can't be read
+    from its name."""
     from server.services import command_sandbox
+    if path.parts[1:2] == (".vol",):
+        return True
     mine = str(path).rstrip("/").casefold()
     ancestors = [info for info in map(_identity, (path, *path.parents)) if info]    # the link itself, if it is one
     target = _identity(path)
