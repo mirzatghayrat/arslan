@@ -141,6 +141,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onLanDiscoveryChange={(v) => saveField({ lanDiscoveryEnabled: v })}
         defaultReadEnabled={localSettings.defaultReadEnabled ?? true}
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
+        folderRulesEnabled={localSettings.folderRulesEnabled ?? true}
+        onFolderRulesChange={(v) => saveField({ folderRulesEnabled: v })}
         voiceInputLocale={localSettings.voiceInputLocale ?? ''}
         onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
         voiceMode={localSettings.voiceMode ?? 'push_to_talk'}
@@ -217,20 +219,12 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
           llmProviders={llmProviders}
           providerConfigs={providerConfigs}
           onConfigsChange={(updated) => onProviderConfigsChange?.(updated)}
-          strategy={localSettings.llmStrategy}
-          onStrategyChange={(s) =>
-            saveField({ llmStrategy: s as AppSettings['llmStrategy'] })
-          }
         />
       </section>
       <ModelRolesSection
         values={{
-          synthesisConfigId: localSettings.synthesisConfigId ?? '',
-          compactionConfigId: localSettings.compactionConfigId ?? '',
           routerConfigId: localSettings.routerConfigId ?? '',
           visionConfigId: localSettings.visionConfigId ?? '',
-          synthesisModel: localSettings.synthesisModel ?? '',
-          compactionModel: localSettings.compactionModel ?? '',
           routerModel: localSettings.routerModel ?? '',
           visionModel: localSettings.visionModel ?? '',
         }}
@@ -243,7 +237,6 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         }}
         onChange={(key, v) => saveField({ [key]: v } as Partial<AppSettings>)}
         providerConfigs={providerConfigs ?? []}
-        strategy={localSettings.llmStrategy ?? 'single'}
         // Without this the "no models configured yet" line is a dead end: it
         // names the problem and offers nothing to do about it.
         onGoToProviders={() => setActiveSection('models')}
@@ -254,7 +247,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     abilities: (
       <div className="space-y-6" data-testid="settings-abilities">
         {intro('abilities')}
-        <SettingsGroup title={t('settings.grpFiles')}>{advanced(['defaultRead', 'workspace'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpFiles')}>{advanced(['defaultRead', 'folderRules', 'workspace'])}</SettingsGroup>
         <SettingsGroup title={t('settings.grpTerminal')}>{advanced(['terminal'])}</SettingsGroup>
         <SettingsGroup title={t('settings.grpApps')}>
           <HandsSection />
@@ -266,8 +259,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
     background: (
       <div className="space-y-6" data-testid="settings-background">
         {intro('background')}
-        <SettingsGroup title={t('settings.grpLookingOut')} note={t('settings.watchesInInbox')}>
-          <ProactiveSection bare only={['looking', 'brief']} />
+        <SettingsGroup title={t('settings.grpLookingOut')} note={t('settings.watchesOnScheduled')}>
+          <ProactiveSection bare only={['looking']} />
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpSpends')}>
       <AutomationSection

@@ -1,14 +1,12 @@
 """Per-task model slots: set one and that task uses it; leave it and nothing changes.
 
-Four slots — compaction, title, router, vision — built on the shape
-``build_synthesis_adapter`` already established: a settings key holding a
-provider_config id, resolved to an adapter, and **None when unset** so the caller
-keeps exactly the behaviour it had. Copying that shape rather than inventing a second
-one is deliberate; two ways to say "use a different model here" would drift.
+Two slots — router ("remembering facts") and vision — since v0.1.64 ROUTE1 removed compaction and synthesis (the
+title slot went in D8): a settings key holding a provider_config id, resolved to an adapter, and **None when unset**
+so the caller keeps exactly the behaviour it had. Two ways to say "use a different model here" would drift.
 
 🔴 THE ASSERTION THAT MATTERS MOST is the negative one. "Unset changes nothing" is what
 makes this feature safe to ship, and it is the one a careless implementation breaks
-silently — a slot that quietly takes over when empty would move every compaction call
+silently — a slot that quietly takes over when empty would move every call it covers
 onto some other model and the only symptom would be the bill.
 
 🔴 AND VISION IS TWO-SIDED, per the ruling. `vision_config_id` applies only to turns
@@ -25,7 +23,7 @@ import server.db.session as db_session
 from server.db.models import Base, ProviderConfig
 from server.services import llm_factory, settings_service
 
-SLOTS = ("compaction_config_id", "router_config_id", "vision_config_id")   # D8: no title slot
+SLOTS = ("router_config_id", "vision_config_id")   # D8: no title slot; ROUTE1: no compaction slot
 
 
 @pytest_asyncio.fixture
@@ -93,7 +91,7 @@ class TestSetSlotIsUsed:
         await settings_service.update_settings(db, {"router_config_id": str(sid)})
 
         assert await llm_factory.build_slot_adapter("router_config_id") is not None
-        for other in ("compaction_config_id", "vision_config_id"):
+        for other in ("vision_config_id",):
             assert await llm_factory.build_slot_adapter(other) is None, other
 
     async def test_only_registered_slots_are_accepted(self, db):

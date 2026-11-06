@@ -29,7 +29,7 @@ class Harness:
         self.work = self.root / "work"
         self.home = self.root / "home"
         self.temp = self.root / "temp"
-        self.protected = self.work / "protected"
+        self.protected = self.home / ".ssh" if base == "commands" else self.work / "protected"
         for path in (self.work, self.home, self.temp, self.protected):
             path.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.ipc_prefix = "/arslan-" + os.urandom(8).hex() + "-"
@@ -54,6 +54,17 @@ class Harness:
         }
 
     def profile(self, **parameters) -> str:
+        if self.base not in BUILT_BASES:
+            raise NotImplementedError(f"no profile adapter for {self.base}")
+        if self.base in {"commands", "outside-floor"}:
+            with pytest.MonkeyPatch.context() as environment:
+                for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
+                    environment.setenv(name, self.env[name])
+                environment.setattr(tempfile, "tempdir", str(self.temp))
+                return BUILT_BASES[self.base](self, **parameters)
+        return BUILT_BASES[self.base](self, **parameters)
+
+    def _measurement_profile(self, **parameters) -> str:
         if self.base == "default-deny":
             options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
             if self.network == NetworkMode.PROXY:
@@ -125,3 +136,23 @@ class Harness:
             folder.mkdir(parents=True, exist_ok=True)
             for execution in self.executions:
                 (folder / (execution["profile_sha256"] + ".sb")).write_bytes(execution["profile_text"].encode())
+
+
+# SBX-3a's commands entry calls its real product preset, under scratch
+# HOME/TMPDIR, with this harness's work/temp, IPC prefix, mode and denied_ports.
+# It must not delegate commands to the candidate.
+def _commands_profile(self, **parameters) -> str:
+    options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
+    if self.network == NetworkMode.PROXY:
+        options["proxy_port"] = 49151  # no listener; actual proxy is SBX-6
+    options.update(parameters)
+    return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
+
+
+BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
+BUILT_BASES["commands"] = _commands_profile
+
+# Feature keys are declared only when their protections land: SBX-6a adds "trustd-toggle" and
+# "trusted-lan" with the settings; SBX-5a adds "cap6b" and "shared-cache-exclusions". The existing
+# commands/outside-floor adapters alone do not claim any of them.
+BUILT_FEATURES = frozenset()

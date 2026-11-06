@@ -6,11 +6,12 @@
  */
 import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import MarkdownLink from './MarkdownLink';
+import { openExternal, shellAvailable } from '../lib/shell';
 import PathChip, { isLocalPath } from './PathChip';
-import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame } from 'lucide-react';
+import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame, Image as ImageIcon } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
 // remark-gfm 4.x does NOT parse GitHub-style alerts ([!NOTE] etc.) natively.
@@ -96,6 +97,10 @@ function stripAlertPrefix(children: React.ReactNode): React.ReactNode {
   }
   return children;
 }
+
+// SMART (the user, 2026-11-02): a fence of prose wraps, so a "message to send" block reads without scrolling
+// sideways; a fence of code keeps its horizontal scroll, as Claude and ChatGPT do. No language at all counts as prose.
+const PROSE_FENCES = new Set(['', 'text', 'txt', 'plaintext', 'markdown', 'md']);
 
 // ─── Copy button for code blocks ──────────────────────────────────────────────
 
@@ -335,7 +340,9 @@ const components: import('react-markdown').Components = {
           fontSize: '12px',
           lineHeight: 1.6,
           color: 'var(--color-foreground)',
-          whiteSpace: 'pre',
+          ...(PROSE_FENCES.has(lang.toLowerCase())
+            ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
+            : { whiteSpace: 'pre' }),
           WebkitOverflowScrolling: 'touch',
         }}>
           {children}
@@ -539,21 +546,56 @@ const components: import('react-markdown').Components = {
     }} />
   ),
 
-  // Images
-  img: ({ src, alt }) => (
-    <img
-      src={src}
-      alt={alt}
-      loading="lazy"
-      style={{
-        maxWidth: '100%',
-        borderRadius: '8px',
-        display: 'block',
-        margin: '0.8em 0',
-      }}
-    />
-  ),
+  // Images: only data:image/ loads; anything else is a chip (IMG1)
+  img: ({ src, alt }) => <MarkdownImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
 };
+
+// ─── Images (IMG1, 0.1.64) ────────────────────────────────────────────────────
+// A reply is the model's text, and outside content can steer the model, so an image from the web
+// would send its URL (and whatever the reply put in it) to that server the moment it renders,
+// with no click. Only an image that needs no request loads: data:image/. A web image is a chip
+// that opens in the browser on click, through the same native gate as links; anything else
+// (a relative path would hit Arslan's own server; no Markdown source can carry a live blob:)
+// is a chip that does nothing.
+const INLINE_IMAGE = /^data:image\//i;
+const WEB_IMAGE = /^(https?:)?\/\//i;
+
+/** react-markdown drops data: everywhere; keep data:image/ for an <img>'s src only. */
+const urlTransform: UrlTransform = (url, key, node) =>
+  key === 'src' && node.tagName === 'img' && INLINE_IMAGE.test(url) ? url : defaultUrlTransform(url);
+
+function hostOf(url: string): string {
+  try { return new URL(url, 'https://invalid.invalid').hostname; } catch { return url; }
+}
+
+const CHIP = 'inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-fill px-1.5 py-0.5 align-middle text-[0.85em]';
+
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const { t } = useTranslation();
+  const [failed, setFailed] = useState(false);
+  if (src && INLINE_IMAGE.test(src)) {
+    return <img src={src} alt={alt} loading="lazy"
+      style={{ maxWidth: '100%', borderRadius: '8px', display: 'block', margin: '0.8em 0' }} />;
+  }
+  const web = !!src && WEB_IMAGE.test(src);
+  const label = <>
+    <ImageIcon size={13} className="shrink-0" aria-hidden />
+    {alt && <span className="truncate text-foreground">{alt}</span>}
+    <span className="truncate text-subtle-foreground">
+      {web ? t('workbench.imageFrom', { host: hostOf(src!) }) : t('workbench.imageNotShown')}</span>
+  </>;
+  if (!web) return <span data-testid="md-image-chip" title={src || undefined} className={CHIP}>{label}</span>;
+  // A button, not a link: inside a Markdown link (`[![x](img)](url)`) one click must open only
+  // the image's URL, so the click stops here and never reaches the enclosing <a>.
+  return <><button type="button" data-testid="md-image-chip" title={src} className={`${CHIP} cursor-pointer hover:border-primary`}
+    onClick={async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!shellAvailable()) { window.open(src, '_blank', 'noopener,noreferrer'); return; }
+      // The native command enforces HTTPS and the maintenance gates, as for links.
+      setFailed(!await openExternal(src!));
+    }}>{label}</button>{failed && <span role="alert" className="ml-2 text-danger">{t('externalLink.failed')}</span>}</>;
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -577,6 +619,7 @@ export default function Markdown({ children, className = '' }: MarkdownProps) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={components}
+        urlTransform={urlTransform}
       >
         {children}
       </ReactMarkdown>

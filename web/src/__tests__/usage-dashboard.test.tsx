@@ -1,8 +1,8 @@
 /**
  * Activity › Usage dashboard (0.1.50): numbers first, then three rows on one time
- * axis (tokens, duration heatmap, outcome), then the per-model list.
+ * axis (tokens, duration heatmap, outcome). The per-model list opens from the cost tile (INB7-a).
  */
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
@@ -27,6 +27,7 @@ vi.mock("../api/client", () => ({
   },
 }));
 import UsageCard from "../components/UsageCard";
+import { useActivityStore } from "../stores/activityStore";
 
 describe("Usage dashboard", () => {
   it("leads with the five numbers", async () => {
@@ -66,7 +67,9 @@ describe("Usage dashboard", () => {
 
 describe("Usage dashboard model list", () => {
   it("hides model lines with no tokens; the totals still count everything", async () => {
+    useActivityStore.setState({ byModelOpen: false, modelSlots: {} });
     render(<UsageCard />);
+    fireEvent.click(await screen.findByTestId("usage-cost"));                  // INB7-a: the model rows open from the cost tile
     await screen.findByText("deepseek-v4-pro");
     expect(screen.getAllByTestId("usage-row")).toHaveLength(1);
     expect(screen.getByTestId("usage-kpis").textContent).toContain("120k");

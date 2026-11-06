@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import { announceProactiveChange } from "../api/proactive";
 import type { ServerConversation } from "../lib/sessionPersistence";
 import { metaFrom, type ConversationMeta } from "../lib/conversationMeta";
 
@@ -45,8 +46,12 @@ export function useConversationIndex(intervalMs = 8000, section: string | null =
     const prior = marked.current;
     marked.current = { id: openId, state: openState };       // what it reads now, marked or not, so the next reply or card marks again
     if (prior?.id === openId && (prior.state === openState || !ATTENTION.has(openState ?? ""))) return;
-    api.markConversationSeen(openId).then(() => setMeta((all) => all[openId]?.state !== "done_unseen" ? all
-      : { ...all, [openId]: { ...all[openId], state: all[openId].kind === "task" ? "done" : "idle" } }),
+    api.markConversationSeen(openId).then(() => {
+      // #605 review F4: opening a conversation counts as handling what it held (Q8), so the badge on Progress follows at once.
+      announceProactiveChange();
+      setMeta((all) => all[openId]?.state !== "done_unseen" ? all
+        : { ...all, [openId]: { ...all[openId], state: all[openId].kind === "task" ? "done" : "idle" } });
+    },
     () => { marked.current = null; /* tried again after the next poll */ });
   }, [openId, known, openState, visible, polls]);
   return { rows, meta };

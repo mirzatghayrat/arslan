@@ -73,6 +73,14 @@ async def lesson_pin(lesson_id: int, body: LessonPin):
     return await _change(lesson_id, pinned=body.pinned)
 
 
+@router.get("/conversations/{conversation_id}/folder-rules")
+async def conversation_folder_rules(conversation_id: str):
+    """K10-1 / L11-0: the rules files this conversation follows, for Overview (each with its text), and whether the
+    switch is on. Read only; the same exact-name, no-link reads as the turn's block."""
+    from server.services import folder_rules
+    return await folder_rules.listing(conversation_id)
+
+
 @router.delete("/lessons/{lesson_id}")
 async def delete_lesson(lesson_id: int):
     async with db_session.AsyncSessionLocal() as db:

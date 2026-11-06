@@ -146,7 +146,8 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
           ? <DiffReader key={`${reader.kind === "diff" ? reader.runId : "repo"}/${reader.folder}/${reader.path}`}
             conversationId={reader.conversationId} runId={reader.kind === "diff" ? reader.runId : undefined}
             folder={reader.folder} path={reader.path} onBack={closeReader} />
-          : <Reader key={reader.kind === "path" ? reader.path : `${reader.file.run_id}/${reader.file.filename}`}
+          : <Reader key={reader.kind === "path" ? reader.path : reader.kind === "text" ? `text:${reader.name}`
+            : `${reader.file.run_id}/${reader.file.filename}`}
             source={reader} onBack={closeReader} />}</div>}
       </div>
     </aside>

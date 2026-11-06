@@ -113,10 +113,10 @@ describe("drag onto a project", () => {
     expect(onMoveToProject).not.toHaveBeenCalled();
   });
 
-  it("does not drag the phone's conversation or an archived one", () => {
-    render(<Sidebar {...baseProps} threads={[{ id: "pocket", title: "Remote" }, { id: "z", title: "z", archived: true }]}
-      meta={{ pocket: meta(1, { kind: "remote" }) }} onMoveToProject={vi.fn()} />);
-    expect(document.getElementById("active-thread-btn-pocket")).not.toHaveAttribute("draggable");
+  it("does not drag an archived conversation; the retired pocket drags like any other (Q1 card, #4)", () => {
+    render(<Sidebar {...baseProps} threads={[{ id: "pocket", title: "what's on today?" }, { id: "z", title: "z", archived: true }]}
+      meta={{ pocket: meta(1) }} onMoveToProject={vi.fn()} />);
+    expect(document.getElementById("active-thread-btn-pocket")).toHaveAttribute("draggable", "true");
     act(() => { fireEvent.click(document.getElementById("btn-toggle-archived-threads")!); });
     expect(document.getElementById("active-thread-btn-z")).not.toHaveAttribute("draggable");
   });

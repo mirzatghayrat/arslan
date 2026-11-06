@@ -22,6 +22,8 @@ import json
 import logging
 import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -171,13 +173,38 @@ async def _tokens_today(db, budget: str = "judgment") -> int:
     return int(total or 0)
 
 
+# v0.1.64 (0085): the run what is judged in here belongs to, for work that runs after its run has ended (the
+# after-turn job, project evidence), where execution_context is no longer bound. Tasks started inside copy it.
+_bound_run: ContextVar[int | None] = ContextVar("judgment_run", default=None)
+
+
+@contextmanager
+def of_run(run_id: int | None):
+    token = _bound_run.set(run_id)
+    try:
+        yield
+    finally:
+        _bound_run.reset(token)
+
+
+def _run_for(explicit) -> int | None:
+    """The run a judgment belongs to: the caller's own id (a job's), else the one `of_run` bound, else the run being
+    executed. Only ints count; none of them is the model's."""
+    from server.services import execution_context
+    for run_id in (explicit, _bound_run.get(), execution_context.current_run_id()):
+        if type(run_id) is int:
+            return run_id
+    return None
+
+
 async def judge(point_name: str, state: dict, *, ref: str | None = None,
-                conversation_id: str | None = None) -> Verdict | None:
+                conversation_id: str | None = None, run_id: int | None = None) -> Verdict | None:
     """Ask, record, answer. None = no answer (off, cap, timeout, error): the caller falls back. A point marked
-    `redact` is recorded as digests of its fields (and `ref`), never the fields."""
+    `redact` is recorded as digests of its fields (and `ref`), never the fields. The row names its run (`_run_for`)."""
     point = REGISTRY.get(point_name)
     if point is None or point.mode == "off":
         return None
+    run = _run_for(run_id)
     small = minimal_state(point, state)
     kept = {key: "sha256:" + hashlib.sha256(str(value).encode()).hexdigest()[:16]
             for key, value in small.items()} if point.redact else small
@@ -218,7 +245,8 @@ async def judge(point_name: str, state: dict, *, ref: str | None = None,
         async with db_session.AsyncSessionLocal() as db:
             row = Judgment(point=point.name, mode=point.mode, state=kept, state_hash=digest, verdict=verdict,
                            probability=probability, latency_ms=latency, model=(str(model)[:80] if model else None),
-                           error=error, ref=(ref or None) and str(ref)[:80], conversation_id=conversation_id)
+                           error=error, ref=(ref or None) and str(ref)[:80], conversation_id=conversation_id,
+                           run_id=run)
             db.add(row)
             await db.commit()
             judgment_id = row.id
@@ -254,7 +282,7 @@ async def recent(limit: int = 100, point: str | None = None, *, before_id: int |
         rows = (await db.scalars(q)).all()
     return [{"id": r.id, "point": r.point, "mode": r.mode, "verdict": r.verdict, "probability": r.probability,
              "latency_ms": r.latency_ms, "model": r.model, "error": r.error, "outcome": r.outcome,
-             "conversation_id": r.conversation_id, "created_at": r.created_at.isoformat() + "Z",
+             "conversation_id": r.conversation_id, "run_id": r.run_id, "created_at": r.created_at.isoformat() + "Z",
              "state": r.state} for r in rows]
 
 

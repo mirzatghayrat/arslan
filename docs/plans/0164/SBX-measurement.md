@@ -238,3 +238,317 @@ Every two-run cache row on the candidate fails before it uses its cache: offline
 - **SBX-3:** `multiprocessing-none-default-deny`. The hardcoded `/tmp` cost stands (§1a).
 - **Probe fixes** (Codex), for rows that fail on every base: brew-list, brew-info, darwin-user-temp and darwin-user-cache.
 - **The SBX-2 harness's `legacy-commands` adapter** may go now: its DELETE-BY reads "after SBX-M records the historical baseline", and this report records it. It must go before SBX-3 replaces the commands preset.
+
+## Gate 4 follow-up for SBX-8 (Codex, 2026-11-01; Astra chose option b)
+
+`multiprocessing-none-default-deny` is now isolated by
+`test_pool_refusal_is_sem_open_outside_the_run_namespace`. On macOS 26.6.2
+(25G83), arm64, CPython 3.11.15, stock `multiprocessing.get_context('fork').Pool(2)`
+fails at its first `SemLock` allocation. A direct libc call using that same
+fresh test-owned name confirms **`sem_open(O_CREAT | O_EXCL)` returns EPERM**.
+It fails before worker computation, not at process fork or file access.
+
+With the exact same profile, a test-local change generating semaphore names
+inside the existing run namespace lets the Pool map complete (six allocations).
+This is a diagnostic control, not a product adapter or a deployed naming hook.
+The existing IPC confinement gate still passes. A mutation granting the shared
+stock semaphore namespace makes the new refusal test red even though the older
+confinement gate stays green; a blanket namespace mutation makes both red.
+
+**Recommendation: option (b), retain the IPC rule and record the cost.** A shared
+stock semaphore namespace does not separate runs or protect other processes'
+objects. Option (a) needs a reviewed runtime design that gives each supported
+process tree run-specific names, including its child processes and libraries;
+a service allowlist entry or a blanket IPC grant cannot supply that isolation.
+[The independent Astra review](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559505333)
+chose option (b): keep the refusal and record this cost for SBX-8. No IPC product
+rule changes in this follow-up.
+
+**Cost for SBX-8:** Python tools using a stock multiprocessing Pool cannot start
+that pool inside the sandbox. The measured user-visible result is a
+`PermissionError: [Errno 1] Operation not permitted` traceback and a nonzero
+command exit; the model may offer the existing re-run-outside card. Parallel
+Python work using semaphore-backed locks/queues is also at risk (inferred from
+the shared primitive, not separately measured). Ordinary computation, worker
+threads and tools that do not need those IPC objects are not shown to break.
+
+Verification uses pytest with a pinned scratch HOME, a test-owned namespace,
+full-path backup restoration and SHA-256 checks. The new diagnosis and existing
+IPC gate pass after restoration. This covers the measured fork Pool and syscall,
+not spawn/forkserver, all Python versions, a run-name integration, or the other
+SBX-3a lifecycle gates. macOS CI run id: pending. This entry preserves the
+original report's results; it does not change its historical counts or claim
+that the corpus's multiprocessing row now passes.
+
+## Port-22 DNS (Codex, 2026-11-01)
+
+Measured on macOS 26.6.2 (25G83), arm64, OpenSSH 10.3p1 / LibreSSL 3.3.6,
+against the candidate before gate 2 added its service grants. The original
+pytest logs were retained; the stderr below is copied from those logs, not
+reconstructed. Only the hostname and resolved address are replaced by
+`<HOST>` and `<RESOLVED_ADDRESS>`. UID 501 is retained as printed.
+
+The exact command was identical in all three stages (the profile changed):
+
+```sh
+/usr/bin/sandbox-exec -p '<PROFILE>' /usr/bin/ssh -vv -F /dev/null -o BatchMode=yes -o IdentityAgent=none -o IdentityFile=none -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes -o ConnectTimeout=1 '<HOST>'
+```
+
+`<PROFILE>` was the harness's default-deny profile in PORT_22 mode, with the
+stage's exact additions below. Harness execution used its scratch HOME and
+working folder, DEVNULL stdin and a ten-second process-group timeout. The
+measurement ran only through pytest with the outer HOME pinned to
+`/private/tmp/arslan-sbx-check-home`. No user name, key, agent or known-hosts
+file was supplied. All three SSH processes returned 255.
+
+1. **Original profile, no directory-service grant.** This stops before DNS,
+   both with and without the resolver socket:
+
+```text
+No user exists for uid 501
+```
+
+2. **Add only `com.apple.system.opendirectoryd.libinfo` as an exact test-only
+   Mach lookup grant.** This removes the earlier lookup obstacle; without the
+   resolver socket, SSH reaches its hostname lookup and is refused:
+
+```text
+debug1: OpenSSH_10.3p1, LibreSSL 3.3.6
+debug1: Reading configuration data /dev/null
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+debug1: Authenticator provider $SSH_SK_PROVIDER did not resolve; disabling
+debug2: resolving "<HOST>" port 22
+ssh: Could not resolve hostname <HOST>: nodename nor servname provided, or not known
+```
+
+3. **Hold that directory-service grant constant and add the exact resolver
+   socket `/private/var/run/mDNSResponder`.** SSH resolves the name and reaches
+   connection setup; it then times out during banner exchange:
+
+```text
+debug1: OpenSSH_10.3p1, LibreSSL 3.3.6
+debug1: Reading configuration data /dev/null
+Pseudo-terminal will not be allocated because stdin is not a terminal.
+debug1: Authenticator provider $SSH_SK_PROVIDER did not resolve; disabling
+debug2: resolving "<HOST>" port 22
+debug1: Connecting to <HOST> [<RESOLVED_ADDRESS>] port 22.
+debug2: fd 5 setting O_NONBLOCK
+debug1: fd 5 clearing O_NONBLOCK
+debug1: Connection established.
+debug1: Local version string SSH-2.0-OpenSSH_10.3
+Connection timed out during banner exchange
+Connection to <RESOLVED_ADDRESS> port 22 timed out
+```
+
+**Review correction: not granted in PORT_22.** These retained logs used a
+hostname that the product deliberately refuses: `ssh_exec.is_valid_host`
+accepts only IPv4 literals, and its no-DNS property is load-bearing. Card §1
+keeps SSH unchanged. The review measured that an IPv4 literal reaches connect
+with or without this socket once the test-only user-lookup obstacle is removed.
+The hostname measurement therefore does not justify a product PORT_22 grant;
+that mode now refuses the socket. These logs establish neither a successful
+SSH login nor an authenticated session. The directory-service grant was a test-only
+constant in stages 2 and 3 and **is not in the product allowlist**. The stock
+user-lookup restriction therefore remains. The separate preference-daemon
+case is also unaddressed: the historical preference-read row fails on every
+base and does not justify opening that daemon. No new SSH-running test or
+product grant is added by this documentation follow-up. CI run id for the
+gates branch remains pending.
+
+The D2 transition now has 17 commands any-declared denial cases (16 live services
+and one listener/unsupported-port-exclusion case), alongside NONE and PROXY and
+without PORT_22. Review removed stale aliases from the original 16-case
+addition, then the delta follow-up retained four CI-live siblings. DELETE-BY: v0.1.64
+when SBX-6's proxy mode lands: remove those 17 transitional cases. Product online-mode wiring remains SBX-3a's work.
+
+
+## Gate 2 review: accepted daemon interface (2026-11-01)
+
+**DELETE-BY: SBX-6.** ANY_DECLARED keeps the exact Unix socket
+`/private/var/run/mDNSResponder` until the proxy replaces this transitional
+network mode for commands. This is the daemon's **whole client interface**,
+including service registration, NAT port mapping and browsing, not a DNS-only
+capability. Seatbelt filters the socket path at connect(); it does not constrain
+which daemon operation the client requests after connecting. Direct bind/listen
+refusal does not prevent the daemon from acting on the client's behalf.
+
+The user accepted this broader ANY_DECLARED interface on 2026-11-01, about
+14:50 UTC, [recorded on #645](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559502552).
+The [follow-up correction](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559518365)
+assigns the opt-in measurement to Codex. PORT_22 loses the socket; NONE and
+PROXY also refuse it. The product SSH path accepts IPv4 literals, so the earlier
+hostname measurement does not justify granting the interface to PORT_22.
+
+Raw IPv4 and IPv6 UDP sends are refused in all four modes, with successful
+allow-default controls against test-owned loopback receivers. The mDNSResponder
+interface is the only UDP-capable path identified in this measured allowlist;
+its daemon-mediated traffic is the accepted exception to direct UDP refusal.
+This is not a proof that every RPC on every granted daemon is harmless.
+In particular, the trust agent remains a daemon interface, not a certificate-only
+sandbox primitive. Complete network and Mach allow-list pins prevent an extra
+entry from silently joining the measured policy.
+
+The existing DNS row succeeds only in ANY_DECLARED. FSEvents still restores
+Node watch in every mode and withholding it restores failure. With DNS held
+constant, Swift HTTPS succeeds with `com.apple.trustd.agent`, fails when only
+that entry is withheld, and succeeds again when it is restored. The directory,
+logging and preference daemons remain ungranted.
+
+### Live refusal controls and counts
+
+On macOS 26.6.2 (25G83), the two live keychain endpoints are
+`com.apple.SecurityServer` and `com.apple.securityd.xpc`. Their historical
+controls must return lookup 0 before candidate refusal can count. The same
+requirement applies to every retained service case. The absent
+`com.apple.securityd` name is replaced with those two endpoints; the absent
+launchd, Shortcuts-events, notifications-agent and background-session-system
+aliases are removed. Actual launch submission remains a separate refusal gate;
+its commands policy check uses an explicitly synthetic name, not a claim of
+service reachability. No control sends service RPCs or reads credentials.
+
+At that review, the matrix had 12 live services: 48 candidate cases across
+four modes and 36 commands cases across NONE, ANY_DECLARED and PROXY. Review changes the
+macOS total from 450 to 433 (+4 raw UDP cases, -12 candidate service cases,
+-9 commands cases); strict xfails change from 72 to 63. No xfail became a real
+pass. The unchanged commands adapter is still absent. Historical SBX-M results
+above retain their original counts and outcomes.
+
+### dns_sd client operations under any-declared
+
+**Development-window acceptance only (user decision, 2026-11-01).** An
+ANY_DECLARED command can ask the router to forward an internet port to **any
+port on this Mac**. If the router honors that request, it can expose listeners
+bound to all interfaces; the command need not create its own listener. A service
+registration can advertise to the **whole LAN**, not just this process or Mac.
+These are consequences of opening the daemon's whole client interface, not a
+claim that this measurement demonstrated external reachability.
+
+**SBX-6's proxy is a hard release condition for v0.1.64.** This socket acceptance
+covers development only. If SBX-6 is not on main at release, the fallback is a
+one-line change before the tag: remove the ANY_DECLARED mDNSResponder socket
+grant, leaving **no name lookup in any-declared mode**. Do not release the
+transitional daemon interface as an implicit extension of this acceptance.
+
+Measured on 2026-11-01 after the user replied "run the dns_sd probe" in the
+authoring thread, on macOS 26.6.2 (25G83), arm64. The opt-in pytest used scratch
+HOME/TMPDIR and `ARSLAN_SECRET_KEY_FILE=` empty in both children. It ran the
+same sequence first under the ANY_DECLARED candidate and then unsandboxed:
+registration of the test service, an immediately released NAT request, and
+browse. Registration and browse each observed callbacks for five seconds.
+Only numeric return/callback codes and callback-fired booleans were retained;
+no LAN names, addresses or callback payloads were recorded.
+
+The initial invocation failed at library loading, before any daemon operation:
+`/usr/lib/libdns_sd.dylib` does not exist on this host. A no-operation startup
+check reproduced that failure. The installed SDK identifies these exports in
+libSystem; changing the loader to `/usr/lib/libSystem.B.dylib` made the import,
+library-load and symbol-resolution check pass. No DNS-SD operation is called
+by that startup check. After the correction, the call sequence ran **once per
+profile**, with no repeated operation measurement.
+
+```sh
+HOME=/private/tmp/arslan-sbx-check-home ARSLAN_SECRET_KEY_FILE= ARSLAN_DNSSD_PROBE=1 .venv/bin/python -m pytest scripts/dev/test_dnssd_probe.py -q -s
+```
+
+Result: **1 passed in 20.28 seconds**, no skips or xfails. This pytest result
+means the measurement completed, not that every daemon action completed.
+The exact retained codes were:
+
+| Profile | Operation | API return | Callback fired | Callback error codes | Process-result codes |
+| --- | --- | --- | --- | --- | --- |
+| ANY_DECLARED | Register | 0 | true | `[0]` | `[0]` |
+| ANY_DECLARED | NAT port mapping | 0 | false | `[]` | `[]` |
+| ANY_DECLARED | Browse | 0 | true | `[0, 0, 0, 0, 0, 0, 0, 0]` | `[0, 0]` |
+| Unsandboxed | Register | 0 | true | `[0]` | `[0]` |
+| Unsandboxed | NAT port mapping | 0 | false | `[]` | `[]` |
+| Unsandboxed | Browse | 0 | true | `[0, 0, 0, 0, 0, 0, 0, 0]` | `[0, 0]` |
+
+The candidate and baseline have identical recorded results. Registration and
+browse returned success and delivered success callbacks under the candidate;
+they are therefore not refused by this profile. The NAT API accepted the
+request, but its reference was released immediately without processing
+callbacks. **"NAT callback fired: false" reflects how the probe was built, not
+a refusal. Holding the NAT request open was not measured. No completed router
+mapping is established.** No peer-side advertisement visibility, router state,
+discovered service identity or Local
+Network prompt outcome was recorded. Callback multiplicity does not establish
+a count of distinct services. These limits leave the user's broader-interface
+acceptance and `DELETE-BY: SBX-6` unchanged.
+
+The named `DNSSD-missing-library` mutation restores the original invalid loader
+and fails the no-operation startup check. Its full-path-keyed backup was copied
+back and SHA-256 verified, then the restored startup check passed (two local
+verification tests passed). The operation measurement was not repeated for
+mutation testing. No product rule, adapter, workflow or CI selection changed:
+**433 macOS cases, 63 strict xfails** at that measurement head. Its results
+remain unchanged by the subsequent coverage additions below.
+
+
+### Delta-review coverage follow-up
+
+The follow-up to [the Claude delta review](https://github.com/mirzatghayrat/arslan/pull/645#issuecomment-6559978316)
+initially added five siblings live on the user's Mac: `com.apple.siriactionsd.xpc`,
+`com.apple.siri.VoiceShortcuts.xpc`, `com.apple.notificationcenterui.main`,
+`com.apple.nsurlsessiond-launchondemand` and `com.apple.securityd.systemkeychain`.
+Each uses the existing successful live-lookup controls before candidate refusal
+can count. No service RPCs are sent by these gates. The portable Mach pin now
+also selects wildcard operation grants, with a committed regression test.
+
+The initial addition produced 17 names and 468 macOS cases with 78 strict
+xfails. **Headless CI correction (2026-11-02):**
+[macOS CI run 41323691687](https://github.com/mirzatghayrat/arslan/actions/runs/41323691687)
+reported 4 failed, 386 passed and 78 xfailed. All four failures were
+`test_service_policy_and_reachability[notifications-main-<mode>-default-deny]`,
+in NONE, PROXY, ANY_DECLARED and PORT_22. The live control returned policy 0,
+lookup 1102: `com.apple.notificationcenterui.main` is live in the user's Mac
+session but is not registered on the headless runner. Its user-session denial
+was measured **locally only**; it is not a CI gate and is removed from SERVICES.
+Notifications remain covered by
+`com.apple.usernotifications.usernotificationservice` (`notifications`).
+No skip, xfail or relaxed live-control assertion is added.
+
+The same CI run confirms both historical lookup controls returned 0 and the
+candidate gate passed for all four retained siblings in all four modes:
+
+| Service | Case id in `test_service_policy_and_reachability` |
+| --- | --- |
+| `com.apple.siriactionsd.xpc` | `shortcuts-actions-<mode>-default-deny` |
+| `com.apple.siri.VoiceShortcuts.xpc` | `shortcuts-voice-<mode>-default-deny` |
+| `com.apple.nsurlsessiond-launchondemand` | `background-network-launch-<mode>-default-deny` |
+| `com.apple.securityd.systemkeychain` | `keychain-system-<mode>-default-deny` |
+
+Here `<mode>` is each of `none`, `proxy`, `any-declared` and `port-22`: 16 passing
+CI cases, with successful live controls, rather than an inference from the
+interactive Mac. These names did not have the UI sibling's absence in that run.
+
+The retained matrix has 16 names: 64 candidate cases across four modes and
+48 commands cases across three modes. Removing the UI sibling changes
+**468 -> 461 macOS cases, 78 -> 75 strict xfails**. Claude updates the workflow
+counts again after the user pushes. No product rule changes, and the dns_sd
+probe is not rerun. New-head macOS CI run id: pending.
+
+### Pre-existing hard-link alias in an MCP root (2026-11-02)
+
+`test_preexisting_hardlink_measurement` in `tests/server/sbx/test_sbx5_paths.py`
+is an SBX-M measurement, not a denial gate. It belongs to SBX-5's path/lifecycle
+work: the test creates the same-volume alias before the sandbox starts. The
+SBX-4p gate separately requires refusal when the sandbox tries to create a new
+external hard link.
+
+On macOS 26.6.2 (25G83), arm64, a read-only copy of SBX-5a's MCP profile at
+`d3deeed6` allowed the write through that pre-existing alias. The parent observed
+the outside sentinel change; the row records `hardlink_outcome=exposed` and
+`denial_gate=false`, together with the exact executed profile hash. The explicit
+SBX-5 reference gives the same result. Both files are disposable test-owned
+sentinels; no user file was used. Reproduction uses pytest with
+`HOME=/private/tmp/arslan-sbx-check-home` and the committed
+`scripts.dev.sbx5_reference` plugin, selecting `preexisting` in that test file.
+
+This remains a follow-up for Hands under §1 and Acceptance's hard-link clause:
+a path-only allowlist does not establish confinement for aliases already inside
+a writable root. A kernel-side rule or a pre-run rejection/staging decision is
+needed before claiming that boundary. This tests-only block does not choose or
+implement that product change. An eventual refusal is recorded as `refused` by
+the same measurement. As built, the row is base-keyed pending MCP, just like the
+other MCP cases; registering the adapter must execute the row and retain its
+outcome in the evidence.

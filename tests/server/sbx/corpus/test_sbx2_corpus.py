@@ -183,8 +183,27 @@ with socket.socket() as server:
 @macos
 @pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
 def test_hardlink_measurement(sbx, record_property):
-    target = sbx.root / "outside-file"
+    # The outside floor permits ordinary writes by design. Use scratch Arslan
+    # data, closed by both historical bases and outside the candidate's roots.
+    target = sbx.home / ".arslan" / "hardlink-target"
+    target.parent.mkdir(exist_ok=True)
     target.write_text("original")
+    with pytest.MonkeyPatch.context() as environment:
+        environment.setenv("HOME", str(sbx.home))
+        profile = sbx.profile()
+    direct = sbx.python("""
+import errno, pathlib, sys
+try:
+    pathlib.Path(sys.argv[1]).write_text('changed')
+except OSError as exc:
+    assert exc.errno in (errno.EPERM, errno.EACCES), exc
+    print('refused')
+else:
+    print('writable')
+""", target, profile=profile, probe="hardlink-direct-write-control")
+    assert direct.returncode == 0, direct.stderr
+    assert direct.stdout.strip() == "refused", "target is directly writable; not a boundary"
+    assert target.read_text() == "original"
     result = sbx.python("""
 import errno, os, pathlib, sys
 try:
@@ -195,7 +214,7 @@ except OSError as exc:
     print('refused')
 else:
     print('writable')
-""", target, probe="hardlink-write")
+""", target, profile=profile, probe="hardlink-write")
     assert result.returncode == 0, result.stderr
     record_property("outcome", "boundary-open" if target.read_text() != "original" else "refused")
     # SBX-M must open a follow-up before SBX-3 if the candidate says boundary-open.

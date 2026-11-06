@@ -13,9 +13,10 @@ past that the outermost files are left out first, and one file larger on its own
 
 The rules go into the turn's reference block, never the system prompt (K3's cache), in a frame of their own: the
 folder owner's preferences, below Arslan's rules and the user, never a permission (not untrusted.wrap_external's
-"data only" frame, which would tell the model to ignore them). Loading any counts as outside content (⓪Plan, K10; D3);
-the exception D3 gives a file exactly as the user added it through L11-2's card comes with L11-2. The classifier
-never sees them (D1).
+"data only" frame, which would tell the model to ignore them). Loading any counts as outside content (⓪Plan, K10; D3).
+The classifier never sees them (D1). Arslan's server never writes these files (user, 2026-11-02, L11 (b)): a
+correction that recurs in a folder becomes a practice in Arslan's own memory. The model's writes to them go through
+write_file's usual gate, like any other file.
 """
 from __future__ import annotations
 
@@ -135,6 +136,12 @@ def note_touch(conversation_id: str | None, path: Path) -> None:
 
 def block(folder: Path, home: Path, *, conversation_id: str | None = None) -> tuple[str, int]:
     """The rules block for `folder` (and the subfolders this conversation touched), and how many files are in it."""
+    text, count, _ = _block(folder, home, conversation_id=conversation_id)
+    return text, count
+
+
+def _found(folder: Path, home: Path, conversation_id: str | None) -> tuple[list[tuple[str, str, Path]], list[str]]:
+    """(shown path, text, path) for each rules file that applies, outermost first, and the notes on refused ones."""
     folders = _walk(folder, home)
     below: list[Path] = []
     for touched in sorted(_touched.get(conversation_id or "", ())):
@@ -147,35 +154,46 @@ def block(folder: Path, home: Path, *, conversation_id: str | None = None) -> tu
             step = step / part
             if step not in below:
                 below.append(step)
-    found: list[tuple[str, str]] = []
+    found: list[tuple[str, str, Path]] = []
     notes: list[str] = []
     for where in [*folders, *below]:
         name, text, why = _read(where)
         if why:
             notes.append(f"{_shown(where / name, home)} {why}")
         elif text is not None and text.strip():
-            found.append((_shown(where / name, home), text))
+            found.append((_shown(where / name, home), text, where / name))
+    return found, notes
+
+
+def _block(folder: Path, home: Path, *, conversation_id: str | None) -> tuple[str, int, int]:
+    """The block, how many files are in it, and how many of those are outside content: all of them (D3; L11 (b)
+    dropped the one exception, a file holding only lines the user added through the card). A note on a refused file
+    carries an on-disk name, so it counts as outside too."""
+    found, notes = _found(folder, home, conversation_id)
     if not found and not notes:
-        return "", 0
-    total, kept = 0, []
-    for shown, text in reversed(found):                    # nearest first: it matters most
+        return "", 0, 0
+    total, kept, outside = 0, [], 0
+    for shown, text, _path in reversed(found):             # nearest first: it matters most
         size = len(text.encode())
         if total + size > MAX_BYTES:
             if not kept:
                 cut = text.encode()[:MAX_BYTES].decode("utf-8", errors="ignore")
                 kept.append((shown, cut + "\n[cut: the rest of this file is over the 16 KB limit]"))
                 total = MAX_BYTES
+                outside += 1
             else:
                 notes.append(f"{shown} left out (the 16 KB limit)")
             continue
         kept.append((shown, text))
         total += size
+        outside += 1
     # Paths come from the folder names on disk, so they are cleaned like the text (#595 review: folders named "<" and
     # "folder_rules>" would otherwise spell the closing tag).
     body = "\n\n".join(f"## {_clean(shown)}\n{_clean(text).strip()}" for shown, text in reversed(kept))
     if notes:
         body += "\n\n" + "\n".join(f"(Note: {_clean(n)}.)" for n in notes)
-    return f"{OPEN}\n{body.strip()}\n{CLOSE}", len(kept)
+        outside += 1
+    return f"{OPEN}\n{body.strip()}\n{CLOSE}", len(kept), outside
 
 
 async def conversation_folder(db, conversation_id: str | None) -> Path | None:
@@ -194,8 +212,8 @@ async def conversation_folder(db, conversation_id: str | None) -> Path | None:
 
 
 async def for_turn(conversation_id: str | None) -> tuple[str, int]:
-    """This turn's rules block and how many files it holds; ("", 0) when switched off or there are none. It is
-    context: a failure leaves it out and the turn goes on."""
+    """This turn's rules block and how many of its files are outside content (D3: all of them); ("", 0) when switched
+    off or there are none. It is context: a failure leaves it out and the turn goes on."""
     from server.db import session as db_session
     from server.services import settings_service
     try:
@@ -206,7 +224,38 @@ async def for_turn(conversation_id: str | None) -> tuple[str, int]:
         if folder is None:
             return "", 0
         import asyncio
-        return await asyncio.to_thread(block, folder, _home(), conversation_id=conversation_id)
+        text, _count, outside = await asyncio.to_thread(_block, folder, _home(), conversation_id=conversation_id)
+        return text, outside
     except Exception:  # noqa: BLE001 — the rules are context: without them the turn goes on
         logger.warning("folder rules not read", exc_info=True)
         return "", 0
+
+
+# -- L11 (b): the folder a correction happened in -------------------------------------------------------------------
+
+async def chosen_folder(db, conversation_id: str | None) -> Path | None:
+    """The folder the user chose for this conversation: its project's folder, or a workspace the user set. Not Arslan's
+    default ~/Arslan in a plain chat (#603 review, F7). A practice learned from corrections made only there applies
+    only there (L11 (b), the next PR)."""
+    from server.db.companion_models import ConversationContext
+    from server.services import settings_service
+    if conversation_id:
+        ctx = await db.get(ConversationContext, conversation_id)
+        if ctx is not None and ctx.project_id:
+            return await conversation_folder(db, conversation_id)
+    raw = await settings_service._get_raw(db, "workspace_dir")
+    return await conversation_folder(db, conversation_id) if raw and str(raw).strip() else None
+
+
+async def listing(conversation_id: str | None) -> dict:
+    """What Overview shows: whether the switch is on, and each rules file this conversation follows, with its text."""
+    import asyncio
+    from server.db import session as db_session
+    from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        enabled = await settings_service.folder_rules_enabled(db)
+        folder = await conversation_folder(db, conversation_id)
+    if not enabled or folder is None:
+        return {"enabled": enabled, "files": []}
+    found, notes = await asyncio.to_thread(_found, folder, _home(), conversation_id)
+    return {"enabled": True, "notes": notes, "files": [{"file": shown, "text": text[:MAX_BYTES]} for shown, text, _ in found]}

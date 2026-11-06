@@ -136,7 +136,8 @@ class DistilledSession(Base):
 
 
 class Setting(Base):
-    """Settings as key/value text. 0070 (v0.1.63): a stored shell_confirm_policy of ask_risky moved to ask_all once."""
+    """Settings as key/value text. 0070 (v0.1.63): a stored shell_confirm_policy of ask_risky moved to ask_all once.
+    0086 (v0.1.64 ROUTE1): the routing strategy and the old model-role pins were cleared once."""
     __tablename__ = "settings"
 
     key = Column(String(100), primary_key=True)
@@ -881,6 +882,7 @@ class Judgment(Base):
     error = Column(String(40), nullable=True)
     ref = Column(String(80), nullable=True)              # e.g. the card's call_id
     conversation_id = Column(String(50), nullable=True)
+    run_id = Column(Integer, nullable=True)              # v0.1.64 (0085): the run it belongs to; older rows null
     outcome = Column(String(20), nullable=True)          # approved | declined | timeout | followed | ...
     outcome_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -941,6 +943,9 @@ class ScheduledTask(Base):
     consecutive_failures = Column(Integer, nullable=False, default=0)
     paused_reason = Column(Text, nullable=True)          # set on auto-pause (3 fails)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # INB5 (migration 0084): when you last opened this task on the Scheduled page. Its runs' "could not ask" entries newer
+    # than this wait on you (progress.waiting_on_user). The task's own column, so no conversation id can collide with it.
+    seen_at = Column(DateTime, nullable=True)
 
 
 class ScheduledTaskRun(Base):

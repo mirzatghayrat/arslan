@@ -34,7 +34,6 @@ const base: AppSettings = {
   language: "en",
   theme: "dark",
   telemetry: false,
-  llmStrategy: "single",
   orchestratorShellEnabled: false,
   shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
   embeddingConfigId: "",

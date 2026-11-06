@@ -384,10 +384,10 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                         evidence.pop(CONFLICTS_WITH, None)
                         if rival is not None:
                             rival.status, rival.updated_at = "archived", now     # the user's newer words win
-                    row.evidence = evidence
                     if takes_effect and row.status == "proposed":
                         row.status = "active"
                     row.updated_at = now
+                    row.evidence = evidence
                     await db.commit()
                     continue
             status, rival_id = ("active" if immediate else "proposed"), None

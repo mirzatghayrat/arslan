@@ -36,20 +36,22 @@ def script(path: Path, text: str) -> None:
     path.chmod(0o755)
 
 
-def signed_commit(root: Path, signer: Path, tries: int = 5) -> None:
-    """LOAD5: on Linux, exec of a file that some process still holds open for writing fails with ETXTBSY. A fork
-    elsewhere in the xdist worker can hold the signer's write fd until it execs, so git's run of the signer can fail
-    once (#604's run 41229345300, exit 128). Retry only that; any other failure ends the setup with git's stderr."""
-    for _ in range(tries):
-        done = subprocess.run(["git", "-c", f"gpg.program={signer}", "-c", "user.signingkey=synthetic",
-                               "commit", "-qS", "-m", "signed"], cwd=root, capture_output=True, text=True,
-                              env={**os.environ, **GIT_ENV})
-        if done.returncode == 0:
-            return
-        if "text file busy" not in done.stderr.lower():
-            break
-        time.sleep(0.2)
-    pytest.fail(f"the signed commit failed in setup (exit {done.returncode}): {done.stderr.strip()}")
+SIGNATURE = "-----BEGIN PGP SIGNATURE-----\nc3lu\n-----END PGP SIGNATURE-----"   # synthetic, never verified
+
+
+def signed_commit(root: Path, signature: str = SIGNATURE) -> None:
+    """LOAD6: commit the index as a signed commit, built with plumbing so no signer runs. `commit -S` had to exec a
+    signer, and that exec failed in setup three times on CI with nothing after git's "gpg failed to sign the data:"
+    (#604's run 41229345300, #639's 41300011917). git only needs the gpgsig header to try to verify the commit, so
+    the header is written directly: write-tree, hash-object of the commit text, update-ref."""
+    tree = git(root, "write-tree").strip()
+    parent = git(root, "rev-parse", "HEAD").strip()
+    header = "gpgsig " + signature.replace("\n", "\n ") + "\n" if signature else ""
+    text = (f"tree {tree}\nparent {parent}\nauthor t <t@t> 1700000000 +0000\n"
+            f"committer t <t@t> 1700000000 +0000\n{header}\nsigned\n")
+    sha = subprocess.run(["git", "hash-object", "-w", "-t", "commit", "--stdin"], cwd=root, input=text, check=True,
+                         capture_output=True, text=True, env={**os.environ, **GIT_ENV}).stdout.strip()
+    git(root, "update-ref", "HEAD", sha)
 
 
 def write(root: Path, rel: str, text: str) -> None:
@@ -138,12 +140,9 @@ def test_programs_named_in_the_repos_config_never_run(repo):
     marks = repo.parent / "marks"
     marks.mkdir()
     # A signed commit on the branch, so `log` would verify it if it were allowed to (gpg.program below marks).
-    signer = repo.parent / "signer"
-    script(signer, "#!/bin/sh\necho '[GNUPG:] SIG_CREATED D 1 8 00 1 X' >&2\n"
-                   "printf -- '-----BEGIN PGP SIGNATURE-----\\nc3lu\\n-----END PGP SIGNATURE-----\\n'\n")
     write(repo, "signed.md", "signed\n")
     git(repo, "add", "-A")
-    signed_commit(repo, signer)
+    signed_commit(repo)
     for key, name in (("filter.evil.clean", "clean"), ("filter.evil.smudge", "smudge"), ("filter.evil.process", "process"),
                       ("core.fsmonitor", "fsmonitor"), ("diff.evil.textconv", "textconv"), ("diff.evil.command", "extdiff"),
                       ("diff.external", "external"), ("core.pager", "pager")):
@@ -165,27 +164,19 @@ def test_programs_named_in_the_repos_config_never_run(repo):
     assert sorted(p.name for p in marks.iterdir()) == []
 
 
-def test_load5_a_busy_signer_is_retried(repo, monkeypatch):
-    """LOAD5: ETXTBSY can't be forced on macOS, so git's answer is replayed: busy once, then signed."""
-    real, answers = subprocess.run, ["error: cannot run signer: Text file busy\n", ""]
-
-    def run(args, **kw):
-        if "commit" not in args:
-            return real(args, **kw)
-        err = answers.pop(0)
-        return subprocess.CompletedProcess(args, 128 if err else 0, "", err)
-    monkeypatch.setattr(subprocess, "run", run)
-    signed_commit(repo, repo.parent / "signer")
-    assert answers == []
-
-
-def test_load5_any_other_signing_failure_shows_gits_stderr(repo):
-    signer = repo.parent / "signer"
-    script(signer, "#!/bin/sh\nexit 1\n")
+@pytest.mark.parametrize("signature", [SIGNATURE, ""], ids=["signed", "unsigned"])
+def test_load6_git_tries_to_verify_the_plumbing_commit(repo, signature):
+    """LOAD6's positive control: the marker test's "never ran" means something only if git, left to itself, would run
+    gpg.program on that commit. Unsigned, the same commit gives git nothing to verify."""
     write(repo, "signed.md", "signed\n")
     git(repo, "add", "-A")
-    with pytest.raises(pytest.fail.Exception, match=r"exit 128\).*gpg failed to sign"):
-        signed_commit(repo, signer)
+    signed_commit(repo, signature)
+    assert ("gpgsig " in git(repo, "cat-file", "-p", "HEAD")) is bool(signature)
+    mark = repo.parent / "verified"
+    verifier = repo.parent / "verifier"
+    script(verifier, f"#!/bin/sh\ntouch {mark}\n")
+    git(repo, "-c", f"gpg.program={verifier}", "log", "--show-signature", "-1")
+    assert mark.exists() is bool(signature)
 
 
 def test_the_working_file_is_hashed_once_until_it_changes(repo, monkeypatch):

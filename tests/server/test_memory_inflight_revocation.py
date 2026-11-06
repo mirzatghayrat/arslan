@@ -230,7 +230,7 @@ async def test_inflight_summary_cannot_restore_deleted_snapshot(selected, execut
                 await repo.delete_entry(ref.id, ref.revision, MemoryActor(origin="user"))
         return "Stale derived summary" * (1000 if oversized else 1)
     monkeypatch.setattr(memory, "_summarize", summarize)
-    monkeypatch.setattr(memory, "_get_adapter", lambda: object())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: object())
     await memory.maybe_compact("summary-race")
     assert len(calls) == 1
     async with execution_db() as db:

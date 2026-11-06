@@ -41,7 +41,7 @@ describe("actual sidebar service status in six languages", () => {
     expect(line).toContain(SANDBOX[language]);
   });
   // 0.1.50 (user ruling): a permanent "Online" said nothing. Online shows no status
-  // at all; offline and connecting show on the Activity row, in every language.
+  // at all; offline and connecting show on the Progress row (Activity until v0.1.64), in every language.
   it.each(SUPPORTED_LANGUAGES)("shows the connection only when it is not fine, in %s", async language => {
     await i18n.changeLanguage(language);
     const view = render(<Sidebar {...props} />);
@@ -49,16 +49,16 @@ describe("actual sidebar service status in six languages", () => {
     expect(screen.queryByText(labels[language][0])).toBeNull();
     view.rerender(<Sidebar {...props} backendStatus="offline" />);
     expect(screen.getByText(labels[language][1])).toBeVisible();
-    expect(screen.getByTestId("backend-status").closest("button")?.id).toBe("nav-btn-activity-footer");
+    expect(screen.getByTestId("backend-status").closest("button")?.id).toBe("nav-btn-progress-footer");
     view.rerender(<Sidebar {...props} backendStatus="checking" />);
     expect(screen.getByText(labels[language][2])).toBeVisible();
   });
 
-  it("puts Activity last in the footer, where the service line used to be", () => {
+  it("puts Progress last in the footer, where the service line used to be", () => {
     render(<Sidebar {...props} />);
     const footer = document.querySelector("footer")!;
     const buttons = Array.from(footer.querySelectorAll("button")).map(b => b.id);
-    expect(buttons).toEqual(["nav-btn-settings-footer", "nav-btn-activity-footer"]);
+    expect(buttons).toEqual(["nav-btn-settings-footer", "nav-btn-progress-footer"]);
   });
 
   // 0.1.42: the composer invites doing work, and no longer describes Arslan

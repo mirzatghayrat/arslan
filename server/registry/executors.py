@@ -517,7 +517,9 @@ class FindCapabilityExecutor:
         return {"ok": True, "external": True, **out,
                 "note": "Candidates only; nothing is installed. Prefer not_here null; a skill needs license_verdict "
                         "'usable', and an MCP server's license is read at its version when proposed. "
-                        "Never install by other means (no pip/npm/git clone in the terminal for this)."}
+                        "not_here 'add_by_hand': the user's one-click list does not cover it; only the user can add "
+                        "it, by hand in Capabilities. Never install by other means (no pip/npm/git clone in the "
+                        "terminal for this)."}
 
 
 class WhatsNewExecutor:
@@ -535,6 +537,19 @@ class WhatsNewExecutor:
             count = 3
         return {"ok": True, "version": release_notes.settings.app_version,
                 "releases": release_notes.recent(count)}
+
+
+class MyStatusExecutor:
+    """SMART-2 (v0.1.64): Arslan's own state, read live (server/services/self_status.py): version and what's new,
+    the models, the sandbox and approvals, phones and SSH hosts, the last failures, and where its own code and
+    plans are (GitHub main)."""
+
+    key = "my_status"
+
+    async def execute(self, args: dict) -> dict:
+        from server.services import personal_context, self_status
+        ctx = personal_context.current()
+        return {"ok": True, **await self_status.snapshot(ctx.conversation_id if ctx else None)}
 
 
 _CHART_MAX_POINTS = 50
@@ -931,7 +946,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
-    RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(),
+    RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(), MyStatusExecutor(),
     FindCapabilityExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),

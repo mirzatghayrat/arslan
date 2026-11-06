@@ -249,6 +249,17 @@ async def resume_scheduled_task(task_id: int) -> ScheduledTaskOut:
                          last_outcome=outcome)
 
 
+@router.post("/scheduled-tasks/{task_id}/seen")
+async def mark_scheduled_task_seen(task_id: int) -> dict:
+    """INB5: you opened this task, so the runs that could not ask you something up to now stop waiting on you
+    (progress.waiting_on_user). They stay listed on the Scheduled page until they expire."""
+    async with db_session.AsyncSessionLocal() as db:
+        task = await _load_task(db, task_id)
+        task.seen_at = datetime.utcnow()
+        await db.commit()
+        return {"seen_at": task.seen_at.isoformat()}
+
+
 @router.post("/scheduled-tasks/{task_id}/fire-now", status_code=202)
 async def fire_scheduled_task_now(task_id: int) -> dict:
     """Fire immediately, bypassing next_due — the same supervised _fire the loop

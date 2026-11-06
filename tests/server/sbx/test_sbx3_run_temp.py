@@ -165,6 +165,22 @@ def test_the_sweep_removes_only_what_is_over():
         run_temp._remove(foreign)
 
 
+
+def test_the_sweep_leaves_a_link_in_the_root_and_what_it_points_to(tmp_path):
+    """A link in the runs' root is never a run's folder: the sweep neither follows nor counts it."""
+    base = run_temp.root()
+    base.mkdir(mode=0o700, exist_ok=True)
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    (target / "keep.txt").write_text("x")
+    link = base / "run-link-test"
+    link.symlink_to(target, target_is_directory=True)
+    try:
+        assert run_temp.sweep() == 0
+        assert link.is_symlink() and (target / "keep.txt").read_text() == "x"
+    finally:
+        link.unlink()
+
 # ── what the profile writes ──────────────────────────────────────────────────
 
 def test_the_commands_profile_writes_the_runs_folder_not_the_shared_temp(tmp_path):

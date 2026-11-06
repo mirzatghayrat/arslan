@@ -1,14 +1,14 @@
 import BrandMark from './BrandMark';
 import React, { useEffect, useState } from "react";
 import type { Section } from "../lib/sections";
-import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Inbox, Activity, PanelLeft, Clock } from "lucide-react";
+import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Activity, PanelLeft, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ThreadRowMenu from "./ThreadRowMenu";
 import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
 import ConversationGlyph from "./ConversationGlyph";
-import { REMOTE_ID, remoteFirst, type ConversationMeta } from "../lib/conversationMeta";
+import { mostUrgent, waitingLabel, type ConversationMeta } from "../lib/conversationMeta";
 import { groupByDay, newestFirst } from "../lib/sidebarOrder";
 import { useRecency } from "../stores/recencyStore";
 import { useSidebar } from "../stores/sidebarStore";
@@ -41,8 +41,8 @@ interface SidebarProps {
   onUnarchiveThread: (id: string) => void; onDeleteThread: (id: string) => void;
   backendStatus: BackendStatus;
   onOpenConversation?: (conversationId: string) => void;
-  /** Inbox badge: items not yet looked at, and how many of those need a look. */
-  inboxUnread?: number; inboxHigh?: number;
+  /** INB5: what is waiting on you, counted once by the server (conversations, projects, scheduled tasks), on Progress. */
+  waiting?: number;
   /** INB3: something on the Scheduled page needs a look. */
   scheduledDot?: boolean;
   /** Each conversation's kind and state (GET /conversations), for the glyphs and the Remote trace. */
@@ -60,7 +60,7 @@ const DRAG_TYPE = "application/x-arslan-conversation";
 export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
     activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
-    onDeleteThread, backendStatus, onOpenConversation, inboxUnread = 0, inboxHigh = 0, scheduledDot = false, meta = {},
+    onDeleteThread, backendStatus, onOpenConversation, waiting = 0, scheduledDot = false, meta = {},
     projects = [], onStartInProject, onOpenProject, onMoveToProject, onPinThread } = props;
   const { t, i18n } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -95,21 +95,20 @@ export default function Sidebar(props: SidebarProps) {
   // then the ones without any by when they changed; the top few form the group.
   const rank = new Map<string, number>();
   live.forEach((thread, i) => { const p = projectOf(thread); if (p && !rank.has(p)) rank.set(p, i); });
-  const shownProjects = [...projects].sort((a, b) =>
-    (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
-    .slice(0, SIDEBAR_PROJECTS);
+  const ranked = [...projects].sort((a, b) =>
+    (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
+  // INB5b-3 ("Not covered" in PR 590): a project with a conversation waiting on you is listed even past the most recent few, so what
+  // the badge on Progress counts always has a row to open.
+  const waitingProjects = new Set(live.filter(thread => meta[thread.id]?.state === "waiting").map(projectOf));
+  const shownProjects = [...ranked.slice(0, SIDEBAR_PROJECTS), ...ranked.slice(SIDEBAR_PROJECTS).filter(p => waitingProjects.has(p.id))];
   const grouped = new Set(shownProjects.map(p => p.id));
   // 最近 keeps only conversations that are not under a project shown above.
-  // DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-  // DELETE-BY: with remoteFirst below: Remote stays above the date sections.
-  const isRemote = (thread: ArslanThread) => thread.id === REMOTE_ID || meta[thread.id]?.kind === "remote";
   // SB1-2: pinned, by this window's latest choice, else the server's; a conversation in a project stays in its
   // project, so only one outside any can be pinned (the row menu offers the pin there only).
-  const isPinned = (thread: ArslanThread) => !projectOf(thread) && !isRemote(thread)
-    && (pins[thread.id] ?? meta[thread.id]?.pinned ?? false);
+  const isPinned = (thread: ArslanThread) => !projectOf(thread) && (pins[thread.id] ?? meta[thread.id]?.pinned ?? false);
   const pinnedThreads = live.filter(isPinned);                 // newest first, as `live` is
-  const activeThreads = remoteFirst(live.filter(thread => !grouped.has(projectOf(thread) ?? "") && !isPinned(thread)), meta);
-  const sections = groupByDay(activeThreads.filter(thread => !isRemote(thread)), at, new Date(), i18n?.resolvedLanguage || i18n?.language);
+  const activeThreads = live.filter(thread => !grouped.has(projectOf(thread) ?? "") && !isPinned(thread));
+  const sections = groupByDay(activeThreads, at, new Date(), i18n?.resolvedLanguage || i18n?.language);
   // The month holding the open conversation opens with it, once per conversation (⓪Plan's review of
   // PR 543): the open row is never hidden in a fold; the user can still fold it again.
   const activeMonth = sections.months.find(month => month.rows.some(thread => thread.id === activeThreadId))?.id ?? null;
@@ -130,6 +129,9 @@ export default function Sidebar(props: SidebarProps) {
     });
   }
   const archivedThreads = threads.filter(thread => thread.archived);
+  // INB5b-2's review (F5): a card in an archived conversation has no other way in (a notice and the Island refuse an archived one),
+  // so the fold says something in it waits on you.
+  const archivedWaiting = archivedThreads.filter(thread => meta[thread.id]?.state === "waiting").length;
   // 0.1.44 one Arslan: the sidebar lists conversations only; former experts are
   // turned into skills from Capabilities.
   const navClass = (active: boolean) => `w-full flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-left text-xs transition-colors ${active
@@ -141,7 +143,7 @@ export default function Sidebar(props: SidebarProps) {
   function renderThread(thread: ArslanThread, archived: boolean) {
     const active = activeSection === "arslan" && activeThreadId === thread.id;
     // SB1-2: a conversation row drags onto a project (the same move as "Move to project…").
-    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary && !isRemote(thread);
+    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary;
     return <div key={thread.id} id={`active-thread-btn-${thread.id}`} role="button" tabIndex={0}
       draggable={draggable || undefined}
       onDragStart={draggable ? event => { event.dataTransfer.setData(DRAG_TYPE, thread.id); event.dataTransfer.effectAllowed = "move"; } : undefined}
@@ -150,13 +152,13 @@ export default function Sidebar(props: SidebarProps) {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
       }} className={rowClass(active)}>
       {active && marker}<ConversationGlyph meta={meta[thread.id]} />
-      <span className={`min-w-0 flex-1 truncate ${meta[thread.id]?.kind === "remote" ? "font-semibold" : ""}`}>{threadDisplayTitle(thread, t, meta[thread.id]?.kind)}</span>
-      {meta[thread.id]?.origin === "phone" && meta[thread.id]?.kind !== "remote" &&
+      <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread, t)}</span>
+      {meta[thread.id]?.origin === "phone" &&
         <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
       {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
         onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
         projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject}
-        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) && !isRemote(thread) ? onPinThread : undefined} />}
+        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) ? onPinThread : undefined} />}
     </div>;
   }
   function toggleMonth(id: string) {
@@ -169,6 +171,10 @@ export default function Sidebar(props: SidebarProps) {
     const chats = live.filter(thread => projectOf(thread) === project.id);      // newest first (SB1)
     // INB4: the row carries its most urgent conversation: waiting, then working, then done, not seen.
     const urgent = (["waiting", "working", "done_unseen"] as const).find(state => chats.some(thread => meta[thread.id]?.state === state));
+    // INB5b-3: and what it waits on, rolled up the same way: the bell only when every waiting conversation under it waits on a
+    // reminder (⓪Plan's review of PR 614, N1).
+    const waitingOn = urgent === "waiting"
+      ? mostUrgent(chats.filter(thread => meta[thread.id]?.state === "waiting").map(thread => meta[thread.id]?.waitingOn)) : undefined;
     const takes = (event: React.DragEvent) => Boolean(onMoveToProject) && event.dataTransfer.types.includes(DRAG_TYPE);
     return <div key={project.id} data-testid={`sidebar-project-${project.id}`}>
       <div data-testid={`sidebar-project-drop-${project.id}`} data-drop={dropTarget === project.id || undefined}
@@ -188,9 +194,10 @@ export default function Sidebar(props: SidebarProps) {
           {open ? <ChevronDown size={12} className="shrink-0 text-subtle-foreground" /> : <ChevronRight size={12} className="shrink-0 text-subtle-foreground" />}
           <Folder size={13} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate font-medium">{project.name}</span>
-          {urgent && <span data-testid={`project-state-${project.id}`} role="img" aria-label={t(`sidebar.glyph.${urgent}`)} className="flex shrink-0">
+          {urgent && <span data-testid={`project-state-${project.id}`} role="img"
+            aria-label={t(`sidebar.glyph.${waitingOn ? waitingLabel(waitingOn) : urgent}`)} className="flex shrink-0">
             {urgent === "done_unseen" ? <span aria-hidden className="h-[7px] w-[7px] rounded-full bg-info-strong" />
-              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0 }} size={13} />}</span>}
+              : <ConversationGlyph meta={{ kind: "task", state: urgent, origin: "mac", files: 0, waitingOn }} size={13} />}</span>}
         </button>
         {onStartInProject && <button type="button" onClick={() => onStartInProject(project.id)}
           aria-label={t("sidebar.newInProject", { name: project.name })} title={t("sidebar.newInProject", { name: project.name })}
@@ -229,10 +236,6 @@ export default function Sidebar(props: SidebarProps) {
         <Plus size={15} /><span>{t("workspace.newConversation")}</span>
       </button>
       <nav aria-label={t("workspace.navigation")} className="mt-2 shrink-0 space-y-1">
-        <button id="nav-btn-inbox-deck" onClick={() => onChangeSection("inbox")} className={navClass(activeSection === "inbox")}>
-          <Inbox size={15} /><span className="flex-1">{t("nav.inbox")}</span>
-          {inboxUnread > 0 && <span data-testid="inbox-badge" aria-label={`${inboxUnread}`}
-            className={`min-w-[18px] rounded-full px-1.5 text-center text-[10px] leading-[18px] tabular-nums ${inboxHigh > 0 ? "bg-warning text-background" : "bg-primary text-primary-foreground"}`}>{inboxUnread > 99 ? "99+" : inboxUnread}</span>}</button>
         <button id="nav-btn-projects-deck" onClick={() => onChangeSection("projects")} className={navClass(activeSection === "projects")}>
           <FolderOpen size={15} /><span>{t("companion.projects")}</span></button>
         <button id="nav-btn-scheduled-deck" onClick={() => onChangeSection("scheduled")} className={navClass(activeSection === "scheduled")}>
@@ -259,7 +262,6 @@ export default function Sidebar(props: SidebarProps) {
             {projects.length > shownProjects.length && onOpenProject && <button type="button" onClick={() => onChangeSection("projects")}
               className="px-3 py-1 text-[11px] text-subtle-foreground hover:text-foreground">{t("sidebar.allProjects")} ›</button>}
           </div>}
-          {activeThreads.filter(isRemote).map(thread => renderThread(thread, false))}
           {/* SB1: the iPhone's sections (lib/sidebarOrder); time in the headings only, none on rows. */}
           {sections.today.length > 0 && <>{heading("today")}{sections.today.map(thread => renderThread(thread, false))}</>}
           {sections.yesterday.length > 0 && <>{heading("yesterday")}{sections.yesterday.map(thread => renderThread(thread, false))}</>}
@@ -281,6 +283,8 @@ export default function Sidebar(props: SidebarProps) {
             <button id="btn-toggle-archived-threads" onClick={() => setArchivedOpen(value => !value)} aria-expanded={archivedOpen}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted-foreground">
               <Archive size={13} /><span className="flex-1">{t("sidebar.archived_section")} ({archivedThreads.length})</span>
+              {archivedWaiting > 0 && <span role="img" aria-label={t("waiting.count", { count: archivedWaiting })}
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" />}
               {archivedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {archivedOpen && archivedThreads.map(thread => renderThread(thread, true))}
@@ -293,10 +297,12 @@ export default function Sidebar(props: SidebarProps) {
     <footer className="shrink-0 space-y-1 border-t border-border/60 p-3">
       <button id="nav-btn-settings-footer" onClick={() => onChangeSection("settings")} className={navClass(activeSection === "settings")}>
         <Settings2 size={15} /><span>{t("nav.settings")}</span></button>
-      {/* 0.1.50 (user ruling): Activity takes the old "Local service · Online" slot. A
+      {/* 0.1.50 (user ruling): Activity, called Progress since v0.1.64 (INB7-a), takes the old "Local service · Online" slot. A
           permanent "Online" said nothing; the connection only shows when it is NOT fine. */}
-      <button id="nav-btn-activity-footer" onClick={() => onChangeSection("activity")} className={navClass(activeSection === "activity")}>
-        <Activity size={15} /><span className="flex-1">{t("nav.activity")}</span>
+      <button id="nav-btn-progress-footer" onClick={() => onChangeSection("progress")} className={navClass(activeSection === "progress")}>
+        <Activity size={15} /><span className="flex-1">{t("nav.progress")}</span>
+        {waiting > 0 && <span data-testid="progress-badge" aria-label={t("waiting.count", { count: waiting })}
+          className="min-w-[18px] rounded-full bg-warning px-1.5 text-center text-[10px] leading-[18px] tabular-nums text-background">{waiting > 99 ? "99+" : waiting}</span>}
         {backendStatus !== "online" && <span data-testid="backend-status"
           className={`flex items-center gap-1 text-[10px] ${backendStatus === "offline" ? "text-danger" : "text-warning"}`}>
           <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${backendStatus === "offline" ? "bg-danger" : "bg-warning animate-pulse"}`} />

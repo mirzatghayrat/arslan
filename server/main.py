@@ -465,6 +465,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001 — proactivity start must never block boot
         logger.warning("proactive loop start failed (non-fatal): %s", exc)
 
+    # CAP5b (#606 review F2, F5): a one-click install's leftover download cache, and the caches every
+    # install shared before CAP5b. In a thread, since a cache can be large; never blocks boot.
+    try:
+        import asyncio
+
+        from server.services import capability_install
+
+        await asyncio.to_thread(capability_install.sweep_leftover_caches)
+    except Exception as exc:  # noqa: BLE001 — a cache sweep must never block boot
+        logger.warning("capability cache sweep failed (non-fatal): %s", exc)
+
     # Drive the inbound MCP server's streamable-http session manager for the app's
     # lifetime (Nail 1: a mounted sub-app's lifespan is NOT auto-run by Starlette).
     mcp_server = getattr(app.state, "mcp_server", None)

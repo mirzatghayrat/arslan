@@ -19,9 +19,6 @@ from server.services import artifact_store, background_jobs, conversation_seen, 
 
 #: A file travels to the phone inside one CloudKit record (protocol §4.6).
 PHONE_FILE_MAX = 20 * 1024 * 1024
-# DELETE-BY: v0.1.64 if the iPhone's Quick Ask (Q1c) ships with it, else v0.1.65 (Q1 card, #4; the user, 2026-10-29): the pocket ("Remote") stays only for phones that don't say `quick`.
-REMOTE_ID = "pocket"            # the phone's own conversation; shown everywhere as "Remote"
-REMOTE_TITLE = "Remote"
 STEPS_SHOWN = 40                # the newest steps of a run; `total` says how many there were
 DIFF_LINES = 160                # lines of one change sent to the phone
 CONTEXT = 2                     # unchanged lines kept around a change
@@ -85,13 +82,15 @@ def _json_size(value) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
 
 
-def fit_history(conversation_id: str, messages: list[dict]) -> tuple[list[dict], bool]:
+def fit_history(conversation_id: str, messages: list[dict], details: dict | None = None) -> tuple[list[dict], bool]:
     """The newest messages whose `chat.history.result` body fits HISTORY_BUDGET, oldest first,
     and whether any were left out (§5.7). The oldest go first; a single message bigger than
-    the whole budget keeps its start, cut with "…", rather than vanishing."""
+    the whole budget keeps its start, cut with "…", rather than vanishing. `details` (IPB, §5.10)
+    is counted first, whole, and the messages fit into what is left."""
     budget = HISTORY_BUDGET
+    shell = {"conversation_id": conversation_id, "messages": [], **({"details": details} if details is not None else {})}
     sizes = [_json_size(m) for m in messages]
-    total = _json_size({"conversation_id": conversation_id, "messages": []}) + sum(sizes) + max(len(sizes) - 1, 0)
+    total = _json_size(shell) + sum(sizes) + max(len(sizes) - 1, 0)
     if total <= budget:
         return messages, False
     start = 0
@@ -105,7 +104,7 @@ def fit_history(conversation_id: str, messages: list[dict]) -> tuple[list[dict],
         while low < high:                              # the longest start of the text that fits
             middle = (low + high + 1) // 2
             trial = kept[:-1] + [{**last, "text": text[:middle] + "…"}]
-            if _json_size({"conversation_id": conversation_id, "messages": trial}) <= budget:
+            if _json_size({**shell, "messages": trial}) <= budget:
                 low = middle
             else:
                 high = middle - 1
@@ -254,6 +253,8 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
     per_run = artifact_counts()
     # INB4: what the window has shown, and the replies whose run failed (no finished turn).
     seen = await conversation_seen.marks(db, ids)
+    from server.services import progress
+    asking = await progress.waiting_reasons(db)                # INB5: the same rule as the badge's count, with its reason
     reply_runs = [m.run_id for m in messages.values() if m.role == "arslan" and m.run_id is not None]
     failed = set((await db.execute(select(Run.id).where(Run.id.in_(reply_runs), Run.error_kind.is_not(None)))).scalars())
     out = {}
@@ -261,14 +262,13 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         jobs = background_jobs.jobs_for(cid)
         running_job = next((j for j in jobs if j.phase != "finished"), None)
         latest_job = max(jobs, key=lambda j: j.started_at) if jobs else None
-        if cid == REMOTE_ID:                 # DELETE-BY: with REMOTE_ID (Q1 card, #4)
-            kind = "remote"
-        elif jobs or cid in outcomes or cid.startswith("task-"):
+        if jobs or cid in outcomes or cid.startswith("task-"):
             kind = "task"
         elif cid.startswith("scheduled-") or (cid in scheduled and cid not in first_user):
             kind = "scheduled"
         else:
             kind = "chat"
+        outcome = None
         if cid in waiting:
             state = "waiting"
         elif running_job or run_registry.active_for(cid) or turn_journal.active(cid):
@@ -287,8 +287,17 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         clean_reply = kind == "chat" and state == "idle" and last is not None and last.role == "arslan" and last.run_id not in failed
         if (clean_reply or state == "done") and last_ids.get(cid, 0) > seen.get(cid, 0):
             state = "done_unseen"
+        # INB7: a restart cut the job short (`outcome` is set only when nothing runs or waits there). Phones keep idle (phone_state).
+        if outcome == "interrupted":
+            state = "unfinished"
+        if cid in asking:                    # INB5: the badge counts it, so its row says so (#590 review F3a)
+            state = "waiting"
+        # INB5b-3: what a waiting row waits on, a card, an away entry or a stopped job's reminder (which hides the job's own outcome),
+        # for the window's list only: phones build their list field by field and are not sent it (api/phone.py). The island's open
+        # card wins, as a card does in waiting_reasons.
+        waiting_on = ("card" if cid in waiting else asking.get(cid)) if state == "waiting" else None
         files = sum(per_run.get(run_id, 0) for run_id in set(runs.get(cid, [])))
-        item = {"kind": kind, "state": state, "phone_state": phone_state,
+        item = {"kind": kind, "state": state, "phone_state": phone_state, "waiting_on": waiting_on,
                 "origin": "phone" if (first is not None and first.source == "phone") else "mac",
                 "preview": one_line(last.display_content or last.content) if last is not None else "", "files": files}
         if running_job is not None:
@@ -331,7 +340,10 @@ async def activity(db: AsyncSession, now: float | None = None) -> dict:
     directory = artifact_store.root()
     if directory.exists():
         files = sum(1 for path in directory.glob("run_*.manifest.json") if path.stat().st_mtime >= midnight.timestamp())
-    return {"hours": hours, "done": done, "files": files, "waiting": desktop_status.snapshot()["awaiting"]}
+    # The cards waiting now, for the phone: the retired pocket's are answered on the Mac only (Q1 #4).
+    from server.services import phone_ids
+    waiting = desktop_status.awaiting_count(excluding=phone_ids.POCKET)
+    return {"hours": hours, "done": done, "files": files, "waiting": waiting}
 
 
 # ------------------------------------------------------------------ tasks from the phone
@@ -357,5 +369,7 @@ async def start_task(goal: str, criteria: list[str]) -> dict:
 
 
 def stop_task(job_id: str) -> bool:
+    """Stop a running job for the phone; one in the retired pocket is not the phone's to stop (Q1 #4)."""
+    from server.services import phone_ids
     job = background_jobs._jobs.get(job_id)
-    return job is not None and background_jobs.stop(job.conversation_id, job_id)
+    return job is not None and job.conversation_id != phone_ids.POCKET and background_jobs.stop(job.conversation_id, job_id)

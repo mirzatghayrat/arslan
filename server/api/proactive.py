@@ -64,8 +64,10 @@ async def summary():
 
 
 @router.get("/proactive/items")
-async def list_items(scope: str = Query("open", pattern="^(open|done|snoozed|all)$"), limit: int = Query(100, ge=1, le=200)):
-    return {"items": await service.list_items(scope, limit)}
+async def list_items(scope: str = Query("open", pattern="^(open|done|snoozed|all)$"), limit: int = Query(100, ge=1, le=200),
+                     conversation_id: str | None = Query(None, min_length=1, max_length=100),
+                     kind: str | None = Query(None, pattern="^(job_followup|scheduled_problem|web_change|folder_change|brief)$")):
+    return {"items": await service.list_items(scope, limit, conversation_id=conversation_id, kind=kind)}
 
 
 @router.post("/proactive/items/seen")

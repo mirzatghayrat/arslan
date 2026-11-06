@@ -9,10 +9,12 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string, o?: Record<string, unknown>) => (o ? `${key}:${JSON.stringify(o)}` : key) }),
 }));
 
+import * as client from "../api/client";
 import * as discovery from "../api/discovery";
 import AskSlot from "../components/AskSlot";
 import CapabilitySheet from "../components/CapabilitySheet";
 import SkillImportPanel from "../components/SkillImportPanel";
+import NotDoneList from "../components/proactive/NotDoneList";
 import { Escaped, isolate } from "../lib/outsideText";
 import { useArslanStore, initialArslanState } from "../stores/arslanStore";
 
@@ -77,12 +79,27 @@ describe("outside text on the web", () => {
     shownEscaped(screen.getByTestId("cap-sheet").querySelector("bdi")!.parentElement as HTMLElement);
   });
 
+  it("an away entry shows what was attempted as stored and the rule's name isolated in Arslan's sentence (#602 review)", async () => {
+    // What was attempted is a command, or one of Arslan's sentences around a UI element's or a file's name; the rule's label is an app's name.
+    vi.spyOn(client, "request").mockImplementation((async (path: string) => path.startsWith("/approvals/refused") ? [{
+      id: 7, created_at: "2026-11-01T09:00:00Z", first_at: "2026-11-01T09:00:00Z", count: 1, conversation_id: "c", kind: "app",
+      target: "app:x", detail: MIXED, always_ok: true, always: [{ kind: "app", target: "x", label: MIXED }], unattended: false,
+    }] : {}) as never);
+    render(<NotDoneList conversationId="c" />);
+    const what = await screen.findByTestId("inbox-refused-what");
+    shownEscaped(what);
+    expect(what.parentElement!.getAttribute("title")).toBe(isolate(MIXED));
+    const rule = screen.getByTestId("inbox-refused-rule");
+    expect(rule.getAttribute("title")).toBe(isolate(MIXED));
+    expect(rule.textContent).toBe(`inbox.alwaysStores:${JSON.stringify({ what: isolate(MIXED) })}`);
+  });
+
   it("every component that shows outside skill or connection text uses lib/outsideText", () => {
     // A new one fails here until it is listed, with a test above. Names come from the server already cleaned
     // (untrusted.clean_name at every write, models.py; migration 0082 for those stored before; the tools list),
     // so this list is for text shown as stored (a skill's text) and names inside Arslan's own sentences.
     for (const file of ["CapabilitySwitches.tsx", "CapabilitySheet.tsx", "SkillImportPanel.tsx",
-      "capabilities/SkillSaveCard.tsx", "capabilities/CapabilityProposeCard.tsx"]) {
+      "capabilities/SkillSaveCard.tsx", "capabilities/CapabilityProposeCard.tsx", "proactive/NotDoneList.tsx"]) {
       expect(readFileSync(`src/components/${file}`, "utf8"), file).toMatch(/from "(\.\.\/)+lib\/outsideText"|from '\.\.\/lib\/outsideText'/);
     }
   });

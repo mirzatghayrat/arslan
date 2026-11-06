@@ -59,6 +59,18 @@ def is_continuation(run_id: int) -> bool:
     return run_id in _continuation_run_ids
 
 
+def shown_text(events) -> str:
+    """The answer the frames showed: the stream_chunk contents, where a stream_restart starts over from its `keep`
+    (K8a: a guard that sends back a step's text which already went out replaces that step's text)."""
+    parts: list[str] = []
+    for ev in events:
+        if ev.get("type") == "stream_restart":
+            parts = [str(ev.get("keep") or "")]
+        elif ev.get("type") == "stream_chunk":
+            parts.append(str(ev.get("content") or ""))
+    return "".join(parts)
+
+
 class RunRecorder:
     def __init__(self, run_id: int, started_at: datetime, route_ms: int | None,
                  spawn_name: str | None = None, continuation: bool = False,
@@ -170,8 +182,7 @@ class RunRecorder:
         """
         if self._finalizing or self._finalized:
             return
-        text = "".join(str(ev.get("content") or "") for _, ev in self._events
-                       if ev.get("type") == "stream_chunk")
+        text = shown_text(ev for _, ev in self._events)
         if len(text) > CHECKPOINT_CHARS:
             text = text[:CHECKPOINT_CHARS] + "\n[partial output checkpoint truncated]"
         values = {"final_output": text}

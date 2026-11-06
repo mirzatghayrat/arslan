@@ -181,6 +181,29 @@ async def test_test_saved_config_success(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_refused_test_is_stored_as_failed_with_its_reason(client, monkeypatch):
+    """test_connection's reason reaches last_health_detail through record_test_verdict, end to end.
+
+    Kept from the deleted routing tests (v0.1.64 ROUTE1): each half is tested alone, and a "failed"
+    dot with no stored cause is only marginally more useful than a green dot that lies."""
+    async def _refuse(self, system, user, **kwargs):  # noqa: ARG001
+        raise _http_error(403, '{"error":{"message":"Key limit exceeded"}}')
+
+    monkeypatch.setattr("arslan.llm.adapter.LLMAdapter.chat", _refuse)
+    r = await client.post("/api/v1/settings/provider-configs", json={
+        "label": "Capped", "provider": "deepseek", "model": "deepseek-chat",
+        "base_url": "", "api_key": "sk-real9999zzzz",
+    })
+    cid = r.json()["id"]
+    assert (await client.post(f"/api/v1/settings/provider-configs/{cid}/test")).json()["ok"] is False
+
+    row = next(c for c in (await client.get("/api/v1/settings/provider-configs")).json() if c["id"] == cid)
+    assert row["last_health"] == "failed"
+    assert "usage limit" in (row["last_health_detail"] or "")
+    assert "account may still have a balance" in row["last_health_detail"]
+
+
+@pytest.mark.asyncio
 async def test_test_saved_config_unknown_id(client):
     """Unknown config id → 404."""
     r = await client.post("/api/v1/settings/provider-configs/99999/test")

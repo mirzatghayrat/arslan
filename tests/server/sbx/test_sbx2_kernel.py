@@ -20,21 +20,22 @@ pytestmark = [pytest.mark.sbx_mac,
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
 PROBE = Path(__file__).parent / "corpus" / "service_probe.py"
 SERVICES = {
-    "launchd": "com.apple.xpc.launchd",
     "launchservices": "com.apple.coreservices.launchservicesd",
     "launchservices-map": "com.apple.lsd.mapdb",
     "shortcuts": "com.apple.WorkflowKit.ShortcutsViewService",
-    "shortcuts-events": "com.apple.siriactionsd",
+    "shortcuts-actions": "com.apple.siriactionsd.xpc",
+    "shortcuts-voice": "com.apple.siri.VoiceShortcuts.xpc",
     "pasteboard": "com.apple.pasteboard.1",
     "windowserver": "com.apple.windowserver.active",
     "tcc": "com.apple.tccd",
     "tcc-system": "com.apple.tccd.system",
-    "keychain": "com.apple.securityd",
+    "keychain": "com.apple.SecurityServer",
+    "keychain-xpc": "com.apple.securityd.xpc",
+    "keychain-system": "com.apple.securityd.systemkeychain",
     "keychain-agent": "com.apple.security.agent",
     "notifications": "com.apple.usernotifications.usernotificationservice",
-    "notifications-agent": "com.apple.notificationcenterui.agent",
     "background-network": "com.apple.nsurlsessiond",
-    "background-network-system": "com.apple.nsurlsessiond.system",
+    "background-network-launch": "com.apple.nsurlsessiond-launchondemand",
 }
 
 
@@ -44,14 +45,14 @@ SERVICES = {
 @pytest.mark.parametrize("service", SERVICES.values(), ids=SERVICES.keys())
 def test_service_policy_and_reachability(sbx, mode, service, record_property):
     sbx.network = mode
-    argv = [sys.executable, "-I", str(PROBE), "mach-lookup", service]
+    argv = [sys.executable, "-I", "-c", PROBE.read_text(), "mach-lookup", service]
     # This control queries reachability only: no RPC, no credential or UI access.
     for base in ("legacy-commands", "outside-floor"):
         control = Harness(sbx.root, base, mode, executions=sbx.executions).run(
             argv, probe="mach-lookup-control")
         assert control.returncode == 0, control.stderr
         observed = json.loads(control.stdout)
-        assert observed["policy"] == 0
+        assert observed == {"policy": 0, "lookup": 0}, observed
         record_property(base + "-lookup", observed["lookup"])
     result = sbx.run(argv, probe="mach-lookup")
     assert result.returncode == 0, result.stderr
@@ -107,7 +108,7 @@ def test_launch_submission_is_refused(sbx):
 
 @pytest.mark.macos
 @macos
-def test_unlisted_unix_socket_is_refused_in_every_network_mode(sbx):
+def test_unlisted_unix_socket_is_refused_in_every_network_mode(sbx, modes=tuple(NetworkMode)):
     # A short path also works with AF_UNIX's 104-byte path limit on macOS.
     import tempfile
     with tempfile.TemporaryDirectory(prefix="sbx-", dir="/private/tmp") as directory:
@@ -128,7 +129,7 @@ with socket.socket(socket.AF_UNIX) as sock:
             control = sbx.python(source, path, profile="(version 1)(allow default)",
                                  probe="unix-socket-control")
             assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
-            for mode in NetworkMode:
+            for mode in modes:
                 sbx.network = mode
                 result = sbx.python(source, path, probe="unix-socket-refusal")
                 assert result.returncode == 0, result.stderr

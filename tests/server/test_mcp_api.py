@@ -24,7 +24,7 @@ async def test_create_list_masks_env(client):
     c, m = client
     async with c:
         r = await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "npx",
-                                                       "args": ["-y", "x"], "env": {"TOKEN": "secret123"}})
+                                                       "args": ["-y", "x@1.0.0"], "env": {"TOKEN": "secret123"}})
         assert r.status_code == 200
         sid = r.json()["id"]
         lst = (await c.get("/api/v1/mcp/servers")).json()
@@ -157,8 +157,8 @@ async def test_add_server_dedup_stdio(client):
     c, m = client
     from server.services import mcp_service
     async with c:
-        first = await mcp_service.add_server("myserver", "npx", ["-y", "tool"], {}, transport="stdio")
-        second = await mcp_service.add_server("myserver", "npx", ["-y", "tool"], {}, transport="stdio")
+        first = await mcp_service.add_server("myserver", "npx", ["-y", "tool@1.0.0"], {}, transport="stdio")
+        second = await mcp_service.add_server("myserver", "npx", ["-y", "tool@1.0.0"], {}, transport="stdio")
     assert first["id"] == second["id"], "dedup guard must return the existing row, not insert a new one"
     # Verify only one row in DB
     from sqlalchemy import select
@@ -188,8 +188,8 @@ async def test_add_server_different_args_not_deduped(client):
     c, m = client
     from server.services import mcp_service
     async with c:
-        first = await mcp_service.add_server("tool", "npx", ["-y", "toolA"], {}, transport="stdio")
-        second = await mcp_service.add_server("tool", "npx", ["-y", "toolB"], {}, transport="stdio")
+        first = await mcp_service.add_server("tool", "npx", ["-y", "toolA@1.0.0"], {}, transport="stdio")
+        second = await mcp_service.add_server("tool", "npx", ["-y", "toolB@1.0.0"], {}, transport="stdio")
     assert first["id"] != second["id"], "different args must produce separate server entries"
 
 
@@ -206,7 +206,7 @@ async def test_connect_failure_returns_classified_502_not_500(client, monkeypatc
     monkeypatch.setattr(session.manager, "list_tools", fail)
     async with c:
         sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "npx",
-                                                          "args": [], "env": {}})).json()["id"]
+                                                          "args": ["-y", "x@1.0.0"], "env": {}})).json()["id"]
         r = await c.post(f"/api/v1/mcp/servers/{sid}/connect")
     assert r.status_code == 502
     assert "npx" in r.json()["detail"]            # the classified text, not a generic banner
@@ -228,7 +228,7 @@ async def test_connect_failure_with_empty_str_exc_uses_stored_classification(cli
     monkeypatch.setattr(session.manager, "list_tools", fail)
     async with c:
         sid = (await c.post("/api/v1/mcp/servers", json={"label": "fs", "command": "npx",
-                                                          "args": [], "env": {}})).json()["id"]
+                                                          "args": ["-y", "x@1.0.0"], "env": {}})).json()["id"]
         r = await c.post(f"/api/v1/mcp/servers/{sid}/connect")
     assert r.status_code == 502
     assert r.json()["detail"] == "_Mute (no message)"   # the stored classification, verbatim

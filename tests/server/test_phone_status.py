@@ -76,6 +76,19 @@ async def test_the_snapshot_has_the_running_jobs_and_the_waiting_cards(client):
     assert (after["mascot"], after["waiting_approvals"]) == ("searching", 0)
     assert [j["job_id"] for j in got["jobs"]] == ["j0", "j1"], "unfinished only, oldest first"
     assert got["jobs"][1] == running.frame()
-    assert set(got) == {"presence", "mascot", "jobs", "waiting_approvals", "high_risk_mac_only", "activity"}, \
-        "device_name and last_seen are the Bridge's to add"
+    assert set(got) == {"presence", "mascot", "jobs", "waiting_approvals", "high_risk_mac_only", "activity",
+                        "week", "outcomes", "mac"}, "device_name and last_seen are the Bridge's to add"
     assert len(got["activity"]["hours"]) == 24 and got["activity"]["waiting"] == 1
+
+
+async def test_a_card_waiting_in_the_retired_pocket_is_not_a_waiting_card_for_the_phone(client):
+    """Q1 #4 (#525): the phone hears nothing about the pocket, so a card waiting there is answered on the Mac only and
+    is not counted for the phone (a count it couldn't open), nor does it turn the mascot to "approval"."""
+    from server.services import phone_ids
+    with desktop_status.awaiting_approval(phone_ids.POCKET):
+        alone = (await client.get("/api/v1/phone/status")).json()
+        with desktop_status.awaiting_approval("trip"):
+            both = (await client.get("/api/v1/phone/status")).json()
+    assert (alone["waiting_approvals"], alone["activity"]["waiting"]) == (0, 0)
+    assert alone["mascot"] != "approval"
+    assert (both["waiting_approvals"], both["activity"]["waiting"], both["mascot"]) == (1, 1, "approval")

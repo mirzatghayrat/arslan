@@ -74,6 +74,8 @@ export interface Message {
   /** S3-M1: true when this bubble is the partial output of a run the user cancelled
    *  mid-stream — renders the muted interrupted marker under the body. */
   cancelled?: boolean;
+  /** K8a (2026-11-03): text this reply showed and then replaced; collapsed above the answer. */
+  drafts?: import('./api/client.types').EarlierDraft[];
   /** S3-M3: the turn's usage (from the stream_end frame) — renders the small
    *  muted usage chip under the bubble body. */
   usage?: {
@@ -202,7 +204,6 @@ export interface AppSettings {
   language: string;
   theme: 'dark' | 'light';
   telemetry: boolean;
-  llmStrategy: 'single' | 'cost' | 'balanced' | 'performance';
   /** Orchestrator (Arslan) may run whitelisted shell commands. Off by default. */
   orchestratorShellEnabled: boolean;
   /** Confirmation posture for shell commands. */
@@ -236,13 +237,9 @@ export interface AppSettings {
   /** Per-task model slots. Empty or absent = unset, and that task keeps the exact
    *  behaviour it has today (server/services/llm_factory.py build_slot_adapter
    *  returns None, and every consumer falls through unchanged). */
-  synthesisConfigId?: string;
-  compactionConfigId?: string;
   routerConfigId?: string;
   visionConfigId?: string;
   /** 0.1.58 §6: one model of the slot's config ("" = the config's own model). */
-  synthesisModel?: string;
-  compactionModel?: string;
   routerModel?: string;
   visionModel?: string;
   /** Days a run's sensitive/bulky debug detail is kept before the boot sweep redacts it. Default 30. */

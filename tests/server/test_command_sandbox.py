@@ -75,7 +75,7 @@ def test_protected_files_are_literal_and_folders_subpaths(tmp_path):
 def test_default_writable_and_protected_cover_the_plan(tmp_path):
     home = Path.home()
     writable = {r.path for r in command_sandbox.writable_roots(tmp_path)}
-    # SBX-3 §1: /dev is narrowed to the listed devices (tests/server/sbx/test_sbx3_commands.py).
+    # SBX-3 §1: /dev is narrowed to the listed devices (tests/server/sbx/test_sbx3a_commands_profile.py).
     assert str(tmp_path.resolve()) in writable and "/dev/null" in writable and "/dev" not in writable
     assert str(command_sandbox._real(home / "Library" / "Caches")) in writable
     protected = command_sandbox.default_protected()
@@ -234,7 +234,11 @@ async def test_a_tool_that_brings_its_own_sandbox_is_seen_as_stopped(tmp_path):
 @macos
 async def test_a_socket_in_a_protected_folder_cannot_be_reached(monkeypatch):
     """Measured 2026-10-03: the file rule alone lets connect() through; the
-    network-outbound rule is what closes Arslan Hands' socket to commands."""
+    network-outbound rule is what closes Arslan Hands' socket to commands. Since SBX-3's
+    default-deny base the first refusal is the base's socket allowlist: every socket that
+    isn't listed is closed (SBX-3p tests that). The protected-path rule stays as a second
+    lock, for a socket the allowlist might ever name. So the control that shows the probe
+    works runs outside the sandbox."""
     import os
     import tempfile
     import threading
@@ -266,8 +270,7 @@ async def test_a_socket_in_a_protected_folder_cannot_be_reached(monkeypatch):
         assert out["ok"] is False and "GOT" not in out["stdout"] and out["sandbox_denied"] is True, out
         token = await terminal_exec.run(f"cat '{folder}/s.sock'", cwd=ws, sandbox=True)
         assert token["ok"] is False
-        monkeypatch.setattr(command_sandbox, "default_protected", lambda: [])
-        control = await terminal_exec.run(probe, cwd=ws, sandbox=True)
+        control = await terminal_exec.run(probe, cwd=ws, unwrapped=True)
         assert control["ok"] is True and "GOT b'hello'" in control["stdout"], "the probe itself works"
     finally:
         srv.close()

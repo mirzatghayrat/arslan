@@ -128,7 +128,8 @@ export default function SkillImportPanel({ onImported }: { onImported?: () => vo
                 {s.description && (
                   <p className="text-[10.5px] text-subtle-foreground font-sans mt-0.5 line-clamp-1"><Escaped text={s.description} /></p>
                 )}
-                {/* UNI1b (the user's option B): which runs, as the markers show them; importing is not blocked. */}
+                {/* UNI1b (the user's option B): which runs, as the markers show them. The count blocks nothing; what the import's
+                    scan would block is listed as not importable, with its reason (#586 review F3). */}
                 {(s.hidden?.count ?? 0) > 0 && (
                   <p data-testid="import-hidden-runs" className="text-[10px] text-ask font-sans mt-0.5">
                     {t('capabilities.import.hiddenRuns', { runs: [s.hidden!.runs.join(', '), s.hidden!.more

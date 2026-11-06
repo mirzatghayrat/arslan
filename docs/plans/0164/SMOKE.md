@@ -50,3 +50,14 @@ The card's external evidence (`docs/plans/0164/SB1-sidebar.md`, Four lines §4) 
    - **Expected:** it moves into that project, as "Move to project…" does.
 8. **Drag one that is running:** drag a conversation onto a project while its reply is still coming.
    - **Expected:** it stays where it was, and the notice says it couldn't move because it may be working ("Couldn't move it — it may be working right now.").
+
+## K10 + L11 (#594, #603, #681; `docs/plans/0164/L11-3-rule-followups.md` §L11-3c; L11 (b), the user's 2026-11-02 pick)
+
+1. **Rules load:** in a project folder that has an `AGENTS.md`, start a conversation and open Overview.
+   - **Expected:** Environment shows "Folder rules · 1 file"; expanding it lists the file, and clicking it opens the reader.
+2. **No card, no write:** copy the `AGENTS.md` first. In that conversation, correct Arslan on the same thing twice (for example "write the summary as a bullet list", two turns apart).
+   - **Expected:** no card appears; `AGENTS.md` is byte for byte the copy; Memory lists the practice. (Lines a dev build's card added earlier stay in the file and are removed by hand.)
+3. **The switch:** Settings → Advanced, turn "Follow folder rules" off.
+   - **Expected:** Overview says "Folder rules: off", and the next turn doesn't follow the file's rules.
+4. **Language (L11-1):** in a folder whose `AGENTS.md` says "Write files in English", ask in Chinese for a short note saved as a file.
+   - **Expected:** the reply is in Chinese and the file is in English.
