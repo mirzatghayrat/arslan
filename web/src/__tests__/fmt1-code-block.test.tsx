@@ -7,7 +7,8 @@
  * - inline code is a filled chip, not orange text in a bordered box;
  * - the colours are tokens defined for light and dark, not literals in the component.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import React from 'react';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 import Markdown from '../components/Markdown';
+import Prism from 'prismjs';                                            // after Markdown: it loads Prism with auto-highlight off
+import { buildStandaloneHtml } from '../components/MessageBody';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const writeText = vi.fn(() => Promise.resolve());
@@ -71,6 +74,9 @@ describe('highlighting', () => {
     ['sh', 'echo hi # c\n'],
     ['shell', 'echo hi # c\n'],
     ['zsh', 'echo hi # c\n'],
+    ['rs', 'fn main() { let a = 1; }\n'],
+    ['golang', 'func main() { a := 1 }\n'],
+    ['c++', 'int a = 1;\n'],
     ['jsonc', '{"a": 1}\n'],
     ['python', 'def f(x):\n    return x + 1  # c\n'],
     ['py', 'def f(x):\n    return x + 1\n'],
@@ -178,6 +184,136 @@ describe('inline code', () => {
     expect(style).toContain('--color-fill');
     expect(style).not.toMatch(/(^|;)\s*border\s*:/);                  // border-radius is fine, a border is not
     expect(style).not.toContain('--color-primary');
+  });
+});
+
+
+describe('review fixes', () => {
+  it('the code element keeps the md-code class the stylesheet colours by', () => {
+    expect(fence('bash', BASH).querySelector('pre')!.classList.contains('md-code')).toBe(true);
+  });
+
+  it('the label shows the language exactly as written, capitals included', () => {
+    expect(fence('Python', 'x = 1\n').querySelector('[data-testid=code-lang]')!.textContent).toBe('Python');
+  });
+
+  it('a long info string is clipped in the label and cannot push Copy out of the header', () => {
+    const lang = `${'very/long/path/'.repeat(10)}file.py`;
+    const c = fence(lang, 'x = 1\n');
+    const label = c.querySelector('[data-testid=code-lang]') as HTMLElement;
+    expect(label.textContent).toBe(lang);
+    expect(label.getAttribute('title')).toBe(lang);                   // the whole name is still there on hover
+    expect(label.style.overflow).toBe('hidden');
+    expect(label.style.textOverflow).toBe('ellipsis');
+    expect(label.style.minWidth).toBe('0px');
+    expect(c.querySelector('button')!.style.flexShrink).toBe('0');
+  });
+
+  it('JSX text inside a tag is not coloured as code (Prism needs its after-tokenize hook)', () => {
+    const c = fence('tsx', 'const a = <b>return if</b>;\n');
+    expect(tokens(c, 'keyword').map((t) => t.textContent)).toEqual(['const']);
+  });
+
+  it('the exported HTML defines the inline-code fill', () => {
+    expect(buildStandaloneHtml('<p>x</p>', 't')).toContain('--color-fill:');
+  });
+
+  it('highlights without innerHTML', () => {
+    const src = readFileSync(resolve(here, '../components/HighlightedCode.tsx'), 'utf8');
+    expect(src).not.toMatch(/dangerouslySetInnerHTML|innerHTML/);
+  });
+
+  it('the stylesheet colours tokens only under .md-code, and resets Tailwind\'s .table', () => {
+    const sheet = readFileSync(resolve(here, '../index.css'), 'utf8');
+    for (const kind of ['comment', 'keyword', 'number', 'string', 'inserted', 'deleted']) {
+      const rule = sheet.match(new RegExp(`([^{}]+)\\{\\s*color: var\\(--code-${kind}\\);\\s*\\}`));
+      expect(rule, kind).not.toBeNull();
+      for (const selector of rule![1].split(',').map((x) => x.trim())) expect(selector).toMatch(/^\.md-code \.token\.[a-z-]+$/);
+    }
+    // Prism's token type `table` (a TOML [section]) would otherwise get Tailwind's `.table { display: table }`.
+    expect(sheet).toMatch(/\.md-code \.token\s*\{[^}]*display:\s*inline/);
+  });
+
+  it('a TOML section header is a token that needs that reset', () => {
+    const c = fence('toml', '[package]\nname = "x"\n');
+    expect(tokens(c, 'table').map((t) => t.textContent)).toEqual(['package']);
+  });
+});
+
+describe('a hostile fence cannot freeze the window', () => {
+  // Prism's grammars backtrack: this input takes tens of seconds to tokenize as bash (22 s at 8 kB on a laptop).
+  const HOSTILE = `${'"`'.repeat(4500)}\n`;                              // 9,001 characters
+
+  it('a fence over the size cap renders as plain text, at once', () => {
+    const t0 = performance.now();
+    const c = fence('bash', HOSTILE);
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(tokens(c)).toHaveLength(0);
+    expect((c.querySelector('pre') as HTMLPreElement).textContent).toBe(HOSTILE);
+  });
+
+  it('the cap is 8 KiB: a fence of exactly that is highlighted, one more character is not', () => {
+    const at = `# ${'a'.repeat(8192 - 3)}\n`;
+    expect(at).toHaveLength(8192);
+    expect(tokens(fence('bash', at), 'comment')).toHaveLength(1);
+    cleanup();
+    expect(tokens(fence('bash', `# ${'a'.repeat(8192 - 2)}\n`))).toHaveLength(0);
+  });
+
+  describe('after a slow tokenize', () => {
+    /** A fresh copy of the module (the flag is module state), with Prism's tokenize taking `ms` of fake time. */
+    async function fresh(ms: number) {
+      vi.resetModules();
+      vi.useFakeTimers({ toFake: ['performance'] });
+      const { default: HighlightedCode } = await import('../components/HighlightedCode');
+      const { default: P } = await import('prismjs');
+      const real = P.tokenize.bind(P);
+      const spy = vi.spyOn(P, 'tokenize').mockImplementation((...a: Parameters<typeof P.tokenize>) => {
+        vi.advanceTimersByTime(ms);
+        return real(...a);
+      });
+      return { HighlightedCode, spy };
+    }
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+    it('a tokenize over 200 ms turns highlighting off for the rest of the session', async () => {
+      const { HighlightedCode, spy } = await fresh(201);
+      const a = render(<HighlightedCode code={'echo 1 # a\n'} lang="bash" />);
+      expect(a.container.querySelectorAll('.token').length).toBeGreaterThan(0);   // the slow one itself is shown
+      a.unmount();
+      const b = render(<HighlightedCode code={'echo 2 # b\n'} lang="bash" />);
+      expect(b.container.querySelectorAll('.token')).toHaveLength(0);
+      expect(b.container.textContent).toBe('echo 2 # b\n');
+      expect(spy).toHaveBeenCalledTimes(1);                               // and it did not even try
+    });
+
+    it('200 ms exactly is still fast', async () => {
+      const { HighlightedCode, spy } = await fresh(200);
+      render(<HighlightedCode code={'echo 1\n'} lang="bash" />).unmount();
+      const b = render(<HighlightedCode code={'echo 2 # b\n'} lang="bash" />);
+      expect(b.container.querySelectorAll('.token').length).toBeGreaterThan(0);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('a re-render with the same reply does not tokenize again (typing in the composer re-renders the history)', () => {
+    const spy = vi.spyOn(Prism, 'tokenize');
+    let bump: () => void = () => {};
+    function History({ text }: { text: string }) {
+      const [n, setN] = React.useState(0);
+      bump = () => setN((v) => v + 1);
+      return <div data-n={n}><Markdown>{text}</Markdown></div>;
+    }
+    const reply = '```bash\necho hi # a\n```\n';
+    const { rerender } = render(<History text={reply} />);
+    const first = spy.mock.calls.length;
+    expect(first).toBeGreaterThan(0);
+    act(() => bump());
+    act(() => bump());
+    expect(spy.mock.calls.length).toBe(first);
+    rerender(<History text={`${reply}\nmore\n`} />);                    // a changed reply is still rendered
+    expect(spy.mock.calls.length).toBeGreaterThan(first);
+    spy.mockRestore();
   });
 });
 

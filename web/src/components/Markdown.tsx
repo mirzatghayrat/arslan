@@ -124,6 +124,7 @@ function CopyButton({ code }: { code: string }) {
         display: 'flex',
         alignItems: 'center',
         gap: '4px',
+        flexShrink: 0,
         padding: '4px',
         fontSize: '12px',
         background: 'none',
@@ -253,12 +254,8 @@ const components: import('react-markdown').Components = {
   ),
 
   // Inline code
-  code: ({ children, className }) => {
-    // Block code is handled by `pre` below; inline code has no className
-    const isBlock = Boolean(className);
-    if (isBlock) {
-      return <code className={className}>{children}</code>;
-    }
+  // (Block code never reaches this override: `pre` below renders it through HighlightedCode.)
+  code: ({ children }) => {
     // 0.1.58 §2: a local path in backticks opens in the reader (or reveals in Finder).
     const plain = (
       <code style={{
@@ -302,15 +299,20 @@ const components: import('react-markdown').Components = {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: '8px',
           padding: '4px 10px 4px 12px',
           background: 'var(--color-fill)',
           borderBottom: '1px solid color-mix(in srgb, var(--color-border-strong) 80%, transparent)',
           minHeight: '32px',
         }}>
-          <span data-testid="code-lang" style={{
+          <span data-testid="code-lang" title={lang || undefined} style={{
             fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
             fontSize: '12px',
             color: 'var(--color-muted-foreground)',
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}>
             {lang || <UiText id="ui.code" />}
           </span>
@@ -590,7 +592,9 @@ interface MarkdownProps {
   className?: string;
 }
 
-export default function Markdown({ children, className = '' }: MarkdownProps) {
+// Memoized: the chat re-renders its whole history on every keystroke and stream token, and a finished reply must not
+// be tokenized again each time.
+export default React.memo(function Markdown({ children, className = '' }: MarkdownProps) {
   return (
     <div
       className={className}
@@ -610,4 +614,4 @@ export default function Markdown({ children, className = '' }: MarkdownProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});

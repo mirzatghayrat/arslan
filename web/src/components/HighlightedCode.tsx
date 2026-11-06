@@ -25,16 +25,18 @@ import 'prismjs/components/prism-tsx';
 import 'prismjs/components/prism-yaml';
 
 /** Names the models use that Prism does not define itself. */
-const ALIASES: Record<string, string> = { zsh: 'bash', jsonc: 'json' };
+const ALIASES: Record<string, string> = { zsh: 'bash', jsonc: 'json', rs: 'rust', golang: 'go', 'c++': 'cpp' };
 
 /**
- * The language name comes from the model, so it is only ever a key into Prism's table. A name with no grammar
- * (or one of Prism's own helpers, such as `extend`, or `__proto__`) tokenizes to plain text; the tests pin that.
+ * Prism's grammars backtrack: some inputs of a few kB take tens of seconds, and a reply can carry text from outside
+ * content, so one fence could freeze the window. Two bounds, neither exact (a worker that can be terminated is the
+ * exact one, left for PR 3 if the frame-time measurement asks for it):
+ * - a fence over 8 KiB is shown as plain text;
+ * - once any tokenize takes over 200 ms, nothing is highlighted for the rest of this window's session.
  */
-function grammarFor(lang: string): Prism.Grammar | undefined {
-  const name = lang.toLowerCase();
-  return Prism.languages[ALIASES[name] ?? name];
-}
+const MAX_CHARS = 8 * 1024;
+const SLOW_MS = 200;
+let tooSlow = false;
 
 function pieces(list: Prism.TokenStream): React.ReactNode {
   if (typeof list === 'string') return list;
@@ -44,6 +46,16 @@ function pieces(list: Prism.TokenStream): React.ReactNode {
 }
 
 export default function HighlightedCode({ code, lang, className }: { code: string; lang: string; className?: string }) {
-  const grammar = grammarFor(lang);
-  return <code className={className}>{grammar ? pieces(Prism.tokenize(code, grammar)) : code}</code>;
+  // The language name comes from the model, so it is only ever a key into Prism's table. A name with no grammar
+  // (or one of Prism's own helpers, such as `extend`, or `__proto__`) shows plain text; the tests pin that.
+  const name = lang.toLowerCase();
+  const language = ALIASES[name] ?? name;
+  const grammar = tooSlow || code.length > MAX_CHARS ? undefined : Prism.languages[language];
+  if (!grammar) return <code className={className}>{code}</code>;
+  const started = performance.now();
+  // What Prism.highlight does around tokenize; JSX's hook (it fixes the text between tags) lives in after-tokenize.
+  const env = { code, grammar, language, tokens: Prism.tokenize(code, grammar) };
+  Prism.hooks.run('after-tokenize', env);
+  if (performance.now() - started > SLOW_MS) tooSlow = true;
+  return <code className={className}>{pieces(env.tokens)}</code>;
 }
