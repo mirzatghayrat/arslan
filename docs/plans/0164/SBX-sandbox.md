@@ -274,29 +274,29 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
       - When it is on, bind is `(local ip "*:*")`, inbound is `(local ip "localhost:*")` and outbound is `(remote ip "localhost:*")`.
     - **Neither restricts the bind to loopback.** Codex's inbound `(local ip "localhost:*")` comes closest to "never all interfaces". Whether it refuses a connection that doesn't come over loopback is an SBX-M measurement (§M, loopback). Given the any-address note above, it may not.
   - until that is decided, the bind and inbound bullets below describe the goal, not the preset, and a dev server inside the sandbox gets the usual re-run card.
-- **Decided (user, 2026-11-01, relayed by ④参谋: 「D1、D2 按推荐」).** Both are the recommended options in #520's "Decisions for the user, before the flip":
+- **Decided (user, 2026-11-01, relayed by ④参谋: D1 and D2 as recommended).** Both are the recommended options in #520's "Decisions for the user, before the flip":
   - **D1, listening:** SBX-3a wires the base into commands with listening still denied. This keeps the 10-30 decision and adds no code. Codex's `allow_local_binding` and sandbox-runtime's `allowLocalBinding` are also off by default. How listening comes back moves to NET (v0.1.65), choosing between option 4 above (a per-run listen card, which is cheap but opens every interface for that run) and option 2 (a Network Extension filter, a per-process boundary in the kernel but heavy). The precondition above ("before SBX-3 wires the base into commands") is met by this decision.
   - **D2, online-mode commands between SBX-3 and SBX-6:** offline until Codex's DNS entry (SBX-3a gate 2) exists, then any-declared until SBX-6. Outbound TCP behaves as in v0.1.63, and UDP is denied. The gap it keeps, a command reaching Arslan's own ports over loopback, is v0.1.63's (any-declared can't take `denied_ports`, #570), and SBX-6's proxy-port-only mode closes it. #619's commands mode list also needs any-declared.
-- **Decided (user, 2026-11-01, about 14:50 UTC, relayed by ④参谋: 「A 放行，B 测」), after #645's reviews.**
+- **Decided (user, 2026-11-01, about 14:50 UTC, relayed by ④参谋: A allowed, B measured), after #645's reviews.**
   - **A:** until SBX-6's proxy, any-declared mode keeps the mDNSResponder socket (gate 2's DNS entry). The trade-off is accepted: the socket is the daemon's whole client interface (registration, NAT port mapping, browse), and seatbelt can't filter individual requests. Recorded in SBX-measurement.md with `DELETE-BY: SBX-6`.
   - **Port-22 mode doesn't get the socket.** Product ssh takes only IPv4 literals (`server/services/ssh_exec.py:68-80`), as this card's "ssh: unchanged" says.
   - **B:** the three daemon calls are measured once on the user's Mac, with the user present. Codex writes the opt-in runner, which isn't collected by CI, and only return and callback codes are recorded.
-  - **Measured, then re-confirmed (user, about 15:35 UTC, relayed by ④参谋: 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」).** Under any-declared, Register, Browse and NATPortMappingCreate all succeed, as they do unsandboxed. So a sandboxed command can ask the router to forward an internet port to this Mac, which exposes all-interface listeners.
+  - **Measured, then re-confirmed (user, about 15:35 UTC, relayed by ④参谋: take the recommendation on #645, merge it first and make SBX-6 a hard release condition; option a for #650's folder).** Under any-declared, Register, Browse and NATPortMappingCreate all succeed, as they do unsandboxed. So a sandboxed command can ask the router to forward an internet port to this Mac, which exposes all-interface listeners.
     - The user accepts this **only for the development window on main.**
     - **SBX-6, the proxy that closes it, is a hard release condition for v0.1.64** (README §7).
     - If SBX-6 isn't on main at release, the fallback ships instead: no name lookup in any-declared mode. That's a one-line Codex change before the tag.
-- **Decided (user, 2026-11-02, relayed by ④参谋: 「代理端口选 a」): the loopback proxy.** Loopback stays open for dev servers; in proxy and port-22 modes the profile denies the system proxy's own loopback port(s), read via `proxy_resolve` (HTTP, HTTPS, SOCKS). Built in 6a, which also refuses a sandbox proxy port equal to a system proxy's port. Any-declared is retired for commands.
-- **Decided (user, 2026-11-02, relayed by ④参谋): trustd in proxy mode,** verbatim 「trustd 照 Anthropic：默认不给，加开关」 then 「定了」.
+- **Decided (user, 2026-11-02, relayed by ④参谋: option a for the proxy port): the loopback proxy.** Loopback stays open for dev servers; in proxy and port-22 modes the profile denies the system proxy's own loopback port(s), read via `proxy_resolve` (HTTP, HTTPS, SOCKS). Built in 6a, which also refuses a sandbox proxy port equal to a system proxy's port. Any-declared is retired for commands.
+- **Decided (user, 2026-11-02, relayed by ④参谋): trustd in proxy mode:** follow Anthropic's default (not granted by default, with a setting to turn it on); confirmed.
   - `com.apple.trustd.agent` is denied in every mode by default.
   - A user setting, off by default (`sandbox_system_certificates`), grants it in PROXY only. That mirrors sandbox-runtime's `enableWeakerNetworkIsolation`; Codex grants trustd and ocspd by default, and the user chose Anthropic's default.
   - The re-run card for a certificate failure mentions the setting.
   - A per-project grant is a v0.1.65 candidate.
-- **Decided (user, 2026-11-02): the LAN through the proxy,** verbatim 「选 c」.
+- **Decided (user, 2026-11-02): the LAN through the proxy:** option c.
   - Private and shared ranges are denied by default (literals and names that resolve there).
   - A "Trusted local devices" setting lists specific hosts or IPs. Names are pinned to their recorded address and re-checked per connect. This Mac's own addresses can't be listed.
   - Trusting a device trusts all its ports.
   - Both settings are backend in 6a (#668); the Settings UI and cards go in one mock first.
-- **Decided (user, 2026-11-02): other apps' private data,** verbatim 「我选 推荐：默认挡住，用到时弹卡问你」. It's denied by default via the protected list, with an allow-once card. Built as SBX-5b.
+- **Decided (user, 2026-11-02): other apps' private data:** the recommended option, blocked by default with a card asking when it is needed. It's denied by default via the protected list, with an allow-once card. Built as SBX-5b.
 - **SBX-6's release gate covers MCP** (⓪Plan with ③Hands, 2026-11-02, from #666's review): MCP with network moves from any-declared to proxy mode (6p's `mcp-proxy` base) in the "SBX-6 MCP proxy" PR, before v0.1.64 ships.
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
@@ -401,7 +401,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 
 - On the merged SBX stack, run the bench twice on the same tasks, once with "ask for every command" and once with "ask only when risky" (a bench setting; no product change). Record the cards per task.
 - **That card count is the classifier's baseline** (user, 2026-10-28): how many more cards CLS must save than "ask only when risky" alone (pass line "saves cards against 'ask only when risky' alone", `docs/plans/0164/README.md:80`). It is not a go/no-go for SBX or for CLS.
-- SBX-8 does not change Settings or the default. Re-offering "ask only when risky" without the known-issue sheet belongs to S2a-3's rebase (its `DELETE-BY` names S2a-3 and #406, `AdvancedSection.tsx:353-354`) and S5a, after B-1's measurement exists (Q5).
+- SBX-8 does not change Settings or the default. Re-offering "ask only when risky" without the known-issue sheet belongs to S2a-3's rebase (its `DELETE-BY` names S2a-3 and #406, `AdvancedSection.tsx:353-354`) and S5a, after B-1's measurement exists (Q5). **Changed 2026-11-07:** the sheet's removal and the default both belong to [ASK1](ASK1-default-ask-risky.md).
 
 ## PR split (each ≤ ~800 product lines, `docs/sessions.md:58`)
 
@@ -517,7 +517,7 @@ About 1,430–1,880 product lines added and 390 removed across 7 code PRs, plus 
 10. **e's owner:** `docs/plans/0164/README.md:78` puts e in SBX ("e (files written now and run later become a hard rule)") and `:79` puts it in HR too; `:81` makes S5a wait on "SBX, e and S3". ③Hands' review of #444 puts e in HR only. The README rows need the same change (⓪Plan's to make), and S5a's dependency becomes "SBX, HR's e, S3".
 11. **"Temp" in the plan** means the run's own space (③Hands), but `temp_roots()` is the shared per-user folder with the `C` cache plus `/private/tmp` and `/private/var/tmp` (`command_sandbox.py:67-76`), and commands share the server's temp as `TMPDIR` (`terminal_exec.py:165-168`).
 
-## User decisions (2026-10-28, ~15:20 UTC; the user said 「都同意」, relayed by ④参谋)
+## User decisions (2026-10-28, ~15:20 UTC; the user agreed with all of them, relayed by ④参谋)
 
 These were the card's seven questions (Q1–Q7, referenced above).
 

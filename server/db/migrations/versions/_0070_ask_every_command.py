@@ -14,7 +14,7 @@ value, what Settings writes); any other spelling already reads as ask_all.
 
 It also leaves `shell_policy_switch_notice = pending` for every existing install that v0.1.62 read as ask_risky,
 whether the value was stored or not: the window tells them once that they were switched, how to switch back, and
-the known issue (R63, the user's decision on 10-24: "in practice, every old user"). v0.1.62 read everything but
+the known issue (R63, the user's decision on 10-24: in practice, every old user). v0.1.62 read everything but
 ask_all, in any case and spacing, as ask_risky, its default, so an install that never touched the setting was on
 it too. A new install gets no notice: it was never on ask_risky. The runner says which this is
 (runner.EXISTED_BEFORE_THIS_BOOT, taken before create_all); called on its own, an install counts as existing.

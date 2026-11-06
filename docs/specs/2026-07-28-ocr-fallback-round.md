@@ -24,7 +24,7 @@ base main = `2f76f7c`（v0.1.10）。落地路径：`docs/specs/2026-07-28-ocr-f
 - `pyproject.toml:99-104`：它在 **`ocr` extra**，打包版不装。
 - `ingest.py:194-209` `_ocr_image` / `:34-75` `_ocr_pdf`：函数内 `import pytesseract`，**`except → return ""`**。⇒ 打包版走到这里**永远返回空字符串**，这是**常态路径不是异常路径**。
 
-⇒ 用户口中的「tesseract 幻觉」有确切代码形状：**一个永远静默返回空的能力**。本轮的验收条款②正是钉死这一点。
+⇒ the user's complaint about tesseract hallucination,有确切代码形状：**一个永远静默返回空的能力**。本轮的验收条款②正是钉死这一点。
 
 ### 0.3 macOS Vision 可行性——**实测，不是查文档**（2026-07-28，本机 macOS 26.4.1）
 
@@ -90,7 +90,7 @@ base main = `2f76f7c`（v0.1.10）。落地路径：`docs/specs/2026-07-28-ocr-f
 - **C**：用户在 Settings 里选。
 
 ### ② Vision 结果怎么标出处？
-**🟢 定：A（用户 2026-07-28 裁决）。** 用户原话的定性值得留在 spec 里：前者是**"逐字提取、无理解"**，后者是**"有理解、非逐字"**，可信度语义相反，**合并就是撒谎**。
+**🟢 定：A（用户 2026-07-28 裁决）。** The user's characterization is worth keeping in the spec: the former is **verbatim extraction with no understanding**, the latter is **understanding but not verbatim**, 可信度语义相反，**合并就是撒谎**。
 视觉轮拍板④的附加条款要求"模型描述"必须带 provenance 标记，防止被当 verbatim 引用。**但 Vision 的输出恰恰是 verbatim 原文**（不是描述）。
 - **A（推荐）**：**新增一个不同的标记**（如 `[OCR:文件名]` 对应 `[图片描述:文件名]`），因为二者的可信度语义**相反**：一个是"图上原文"，一个是"模型的转述"。混用同一个标记会把刚建立的诚实性搞坏。
 - **B**：复用现有标记。
@@ -98,7 +98,7 @@ base main = `2f76f7c`（v0.1.10）。落地路径：`docs/specs/2026-07-28-ocr-f
 ### ③ 🔴 维语（及任何不在 Vision 支持列表里的语言）怎么办？
 **🟢 定：A 的收敛版（用户 2026-07-28 裁决）——硬闸只有一条：`语言不在支持列表 ⇒ 直接不跑`。confidence 只进日志，绝不作放行判据。**
 
-**🔴 用户立场变更（如实记录）**：用户最初的倾向是「运行时查询 **+ 置信度阈值**」两层。读到 0.6 的实测后**主动撤回了"置信度阈值"那半句**，理由用他的原话：**"挂一个测量证明无效的闸比没有闸更糟"**。
+**🔴 用户立场变更（如实记录）**：用户最初的倾向是「运行时查询 **+ 置信度阈值**」两层。读到 0.6 的实测后**主动撤回了"置信度阈值"那半句**，his reason, in summary: **a gate that measurement has shown to be ineffective is worse than no gate.**
 
 Vision 的 30 种语言**不含 `ug`**（0.4 实测）。
 - **A（推荐）**：**运行时查询支持列表**；用户界面语言不在列表内时，二级兜底**明确告知"本机系统 OCR 不支持你的语言，这张图的文字未被读取"**，而不是给一段错误识别结果。**宁可空，不可假**。
