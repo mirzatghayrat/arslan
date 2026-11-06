@@ -251,7 +251,7 @@ Reliability and safety here rest on a handful of load-bearing rules. Preserve th
 
 - **Single-throat capability gate.** All capability grants pass through `assert_assignable`; MCP off by default; **orchestrator-tier is Arslan-only** (spawns can't get it).
 - **Untrusted tool output.** Every tool result goes through `wrap_external` and is treated as untrusted data.
-- **Sandbox fails closed.** No kernel sandbox → refuse to run (the macOS seatbelt is the only kernel sandbox today; other platforms are unavailable and fail closed).
+- **The Python sandbox fails closed.** No kernel sandbox → `run_python` refuses to run (the macOS seatbelt is the only kernel sandbox today). Terminal commands then run with no sandbox after a click, marked `sandbox: unavailable` (or `off` outside the sandbox); see the command surface above.
 - **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks**.
 - **Evolution is human-gated.** Tier-2 edits are bounded, position-bias-corrected, and only ship on an explicit human promote.
 - **Safe-by-default auth.** Dev + localhost is unauthenticated on purpose; `prod` / packaged / non-loopback binds require a bearer token (auto-minted if unset), and cross-site requests are blocked by TrustedHost + CORS + WebSocket-Origin checks. See [SECURITY.md](../SECURITY.md).
