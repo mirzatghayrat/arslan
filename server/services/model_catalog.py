@@ -28,6 +28,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arslan.llm import catalog
+from arslan.llm.locality import loopback_endpoint
 from arslan.llm.presets import expand_preset
 from server.db.models import ModelCatalogCache, ProviderConfig
 from server.services import provider_config_service
@@ -232,7 +233,9 @@ async def fetch_models(provider: str, base_url: str, api_key: str, *,
     expanded protocol name; ``base_url`` is the already-expanded real base URL.
     ``transport`` is a test seam (httpx.MockTransport).
     """
-    async with httpx.AsyncClient(timeout=_TIMEOUT_S, transport=transport) as client:
+    # A loopback endpoint never goes through the environment's proxy, as the chat path's client (openai_provider).
+    async with httpx.AsyncClient(timeout=_TIMEOUT_S, transport=transport,
+                                 trust_env=not loopback_endpoint(base_url)) as client:
         if provider == "anthropic":
             return await _fetch_anthropic(client, base_url, api_key)
         if provider == "gemini":
@@ -258,11 +261,29 @@ def _static_fallback(provider: str, error: str) -> dict:
     }
 
 
+def _without_key(text: str, api_key: str) -> str:
+    """`text` with the key taken out, as written and as Python's repr of a str or bytes writes it (h11's refusal of an
+    illegal header value escapes what it quotes). A key no header can carry never gets this far: _sendable."""
+    if api_key:
+        for form in (repr(api_key.encode("utf-8", "replace"))[2:-1], repr(api_key)[1:-1], api_key):
+            text = text.replace(form, "[redacted]")
+    return text
+
+
+def _sendable(api_key: str) -> bool:
+    """Whether a header can carry this key. Real keys are printable ASCII with no spaces; anything else is a bad paste,
+    and sending it would only earn an error that quotes it."""
+    return all(33 <= ord(c) < 127 for c in api_key)
+
+
+async def _preview_message(key: str) -> str:
+    from server.services import provider_error_messages, runtime_messages
+    return provider_error_messages.render(key, await runtime_messages.selected_locale())
+
+
 async def _preview_error(exc: BaseException, api_key: str) -> str:
     """A failed preview's reason, in the provider test's words, with the typed key taken out of it."""
-    raw = str(exc) or type(exc).__name__   # str(TimeoutError()) is ""
-    if api_key:
-        raw = raw.replace(api_key, "[redacted]")
+    raw = _without_key(str(exc) or type(exc).__name__, api_key)   # str(TimeoutError()) is ""
     from server.orchestrator import llm_errors          # heavy package init: imported where it is used
     from server.services import runtime_messages
     return llm_errors.explain(raw, locale=await runtime_messages.selected_locale()) or raw
@@ -276,8 +297,10 @@ async def preview_models(provider: str, base_url: str, api_key: str, *,
     The key is used for this one request and kept nowhere: nothing is written (no provider config, no
     model_catalog_cache row, no setting), and it reaches only the endpoint the saved config would use
     (``fetch_models`` puts it in a header, never the URL). A failure, or an empty list, answers with the built-in
-    list (source="static") and the reason, with the key taken out of it.
+    list (source="static") and the reason, with the key taken out of it. A key no header can carry isn't sent.
     """
+    if not _sendable(api_key):
+        return _static_fallback(provider, await _preview_message("key_unusable"))
     _, _, real_base = expand_preset(provider, "", base_url or "")
     try:
         models = await within(fetch_models(provider, real_base, api_key, transport=transport),
@@ -285,9 +308,14 @@ async def preview_models(provider: str, base_url: str, api_key: str, *,
     except Exception as exc:  # noqa: BLE001 — degrade to the built-in list, never 500 the form
         return _static_fallback(provider, await _preview_error(exc, api_key))
     if not models:
-        return _static_fallback(provider, "the provider listed no models")
+        return _static_fallback(provider, await _preview_message("models_none"))
     return {"models": models, "fetched_at": datetime.utcnow().isoformat(),
             "stale": False, "error": None, "source": "api"}
+
+
+async def preview_unreadable(provider: str) -> dict:
+    """The built-in list, for a provider's answer that couldn't be read as a model list."""
+    return _static_fallback(provider, await _preview_message("models_none"))
 
 
 def _from_cache(row: ModelCatalogCache, *, stale: bool, error: str | None) -> dict:

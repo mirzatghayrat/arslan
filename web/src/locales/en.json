@@ -697,7 +697,8 @@
     "addModelLoading": "Asking {{provider}} for its models…",
     "addModelBuiltIn": "Built-in list",
     "addModelFallback": "Couldn't reach {{provider}}; showing Arslan's built-in list.",
-    "addModelRetry": "Try again"
+    "addModelRetry": "Try again",
+    "addModelChooseProvider": "Choose a provider"
   },
   "errors": {
     "load_failed": "Failed to load data.",

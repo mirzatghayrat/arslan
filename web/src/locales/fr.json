@@ -697,7 +697,8 @@
     "addModelLoading": "Demande des modèles à {{provider}}…",
     "addModelBuiltIn": "Liste intégrée",
     "addModelFallback": "Impossible de joindre {{provider}} ; affichage de la liste intégrée d'Arslan.",
-    "addModelRetry": "Réessayer"
+    "addModelRetry": "Réessayer",
+    "addModelChooseProvider": "Choisir un fournisseur"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",

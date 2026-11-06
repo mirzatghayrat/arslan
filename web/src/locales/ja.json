@@ -697,7 +697,8 @@
     "addModelLoading": "{{provider}} にモデルを問い合わせ中…",
     "addModelBuiltIn": "内蔵リスト",
     "addModelFallback": "{{provider}} に接続できません。Arslan の内蔵リストを表示しています。",
-    "addModelRetry": "再試行"
+    "addModelRetry": "再試行",
+    "addModelChooseProvider": "プロバイダを選択"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",

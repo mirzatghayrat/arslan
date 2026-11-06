@@ -33,6 +33,8 @@ export interface DraftConfig {
   provider: string;
   model: string;
   base_url: string;
+  /** MODEL1: the address once its field was left; the only one a typed key may go to. */
+  committed_base_url: string;
   api_key: string;
   testState: 'idle' | 'testing' | 'ok' | 'failed';
   testError?: string;
@@ -54,6 +56,7 @@ export interface ProviderDetailPaneProps {
   onDraftProviderChange: (key: string) => void;
   onDraftModelChange: (v: string) => void;
   onDraftBaseUrlChange: (v: string) => void;
+  onDraftBaseUrlBlur: () => void;
   onDraftApiKeyChange: (v: string) => void;
   onDraftConfirm: () => void;
   onDraftCancel: () => void;
@@ -128,22 +131,24 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             value={draft.provider}
             onChange={props.onDraftProviderChange}
             options={providerSelectOptions}
+            placeholder={t('settings.addModelChooseProvider')}
             ariaLabel="Provider"
           />
         </div>
 
         {/* Shown while choosing, not only after saving: the point is to catch
             someone before they pick a provider whose tools will never fire. */}
-        <ToolTransportWarning provider={draft.provider} />
+        {draft.provider && <ToolTransportWarning provider={draft.provider} />}
 
         {/* Base URL (non-native providers only) — part of the draft payload, and where the key below is sent */}
-        {!isNative(draft.provider) && (
+        {draft.provider && !isNative(draft.provider) && (
           <div className="sm:col-span-2 min-w-0">
             <input
               type="text"
               data-testid="provider-draft-baseurl"
               value={draft.base_url}
               onChange={(e) => props.onDraftBaseUrlChange(e.target.value)}
+              onBlur={props.onDraftBaseUrlBlur}
               placeholder={baseUrlFor(draft.provider) || t('settings.labelBaseUrl')}
               aria-label={t('settings.labelBaseUrl')}
               className={INPUT_CLS}
@@ -160,14 +165,17 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
             type="password"
             autoComplete="new-password"
             spellCheck={false}
+            disabled={!draft.provider}
             value={draft.api_key}
             onChange={(e) => props.onDraftApiKeyChange(e.target.value)}
             placeholder={t('settings.labelConfigApiKey')}
             className={INPUT_CLS}
           />
-          <p data-testid="provider-draft-key-hint" className="mt-1 text-xs text-muted-foreground">
-            {t('settings.addModelKeyHint', { provider: providerLabel })}
-          </p>
+          {draft.provider && (
+            <p data-testid="provider-draft-key-hint" className="mt-1 text-xs text-muted-foreground">
+              {t('settings.addModelKeyHint', { provider: providerLabel })}
+            </p>
+          )}
         </div>
 
         {/* A failed fetch: the built-in list, marked, with the reason and a way to ask again. */}
@@ -190,20 +198,23 @@ export default function ProviderDetailPane(props: ProviderDetailPaneProps) {
         <div className="sm:col-span-2 min-w-0">
           <div className="flex items-baseline justify-between gap-2">
             <span className={LABEL_CLS}>{t('settings.modelLabel')}</span>
-            <span data-testid="provider-draft-model-source" data-source={modelSource}
-              className={`text-xs ${modelSource === 'live' ? 'text-success' : 'text-muted-foreground'}`}>
-              {modelSource === 'live'
-                ? t('settings.addModelLive', { provider: providerLabel, count: draftModels.length })
-                : modelSource === 'loading'
-                  ? t('settings.addModelLoading', { provider: providerLabel })
-                  : t('settings.addModelBuiltIn')}
-            </span>
+            {draft.provider && (
+              <span data-testid="provider-draft-model-source" data-source={modelSource}
+                className={`text-xs ${modelSource === 'live' ? 'text-success' : 'text-muted-foreground'}`}>
+                {modelSource === 'live'
+                  ? t('settings.addModelLive', { provider: providerLabel, count: draftModels.length })
+                  : modelSource === 'loading'
+                    ? t('settings.addModelLoading', { provider: providerLabel })
+                    : t('settings.addModelBuiltIn')}
+              </span>
+            )}
           </div>
           <ModelCombobox
             data-testid="provider-draft-model"
             value={draft.model}
             onChange={props.onDraftModelChange}
             options={draftModels}
+            disabled={!draft.provider}
             ariaLabel="Model"
           />
         </div>

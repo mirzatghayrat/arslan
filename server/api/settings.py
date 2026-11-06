@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
+from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -347,12 +348,18 @@ async def delete_provider_config(config_id: int, session: AsyncSession = Depends
 async def preview_provider_models(body: ModelPreviewIn) -> ModelListOut:
     """MODEL1 (v0.1.64): the provider's live model list for Add model, fetched once with the key just typed.
 
-    Nothing is stored, and the key reaches only that provider's models endpoint. A failure answers with the
-    built-in list (source="static") and the reason, never a 5xx. A masked echo is refused (422) rather than sent.
+    Nothing is stored, and the key goes only where the saved config would send it: a preset's own endpoint, or the
+    base URL typed for a custom provider. A failure answers with the built-in list (source="static") and the reason,
+    never a 5xx. A masked echo is refused (422) rather than sent.
     """
-    if body.api_key and _looks_masked(body.api_key):
+    api_key = body.api_key.strip()          # what was pasted: a trailing newline is not part of a key
+    if api_key and _looks_masked(api_key):
         raise HTTPException(status_code=422, detail="enter the real API key, not a masked one")
-    return ModelListOut(**await model_catalog.preview_models(body.provider, body.base_url, body.api_key))
+    result = await model_catalog.preview_models(body.provider, body.base_url, api_key)
+    try:
+        return ModelListOut(**result)
+    except ValidationError:                 # a list the provider sent in a shape we can't show; its text may quote the key
+        return ModelListOut(**await model_catalog.preview_unreadable(body.provider))
 
 
 @router.get("/settings/provider-configs/{config_id}/models", response_model=ModelListOut)

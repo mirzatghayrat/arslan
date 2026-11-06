@@ -459,29 +459,24 @@ export default function ProviderConfigList({
 
   // --- Draft (add-new) flow ---
 
+  // MODEL1 (max review): no provider is preselected, so a key can't go anywhere the user didn't pick.
   const openDraft = () => {
-    const firstProvider = llmProviders[0];
-    if (!firstProvider) return;
-    setDraft({
-      provider: firstProvider.key,
-      model: firstProvider.default_model,
-      base_url: firstProvider.base_url,
-      api_key: '',
-      testState: 'idle',
-    });
+    if (llmProviders.length === 0) return;
+    setDraft({ provider: '', model: '', base_url: '', committed_base_url: '', api_key: '', testState: 'idle' });
   };
 
   // MODEL1 (v0.1.64): once a key is typed, ask the provider for its live model list, once per provider, base URL
   // and key (debounced while typing). Nothing is stored. An answer for an older key, or one that lands after
-  // Cancel, is dropped: each run of this effect takes a new number and only the latest may write.
+  // Cancel, is dropped: each run of this effect takes a new number and only the latest may write. The base URL
+  // counts once the field is left (committed_base_url), so a key never goes to an address still being typed.
   const [previewRetry, setPreviewRetry] = useState(0);
   const previewSeq = useRef(0);
   const draftProvider = draft?.provider;
-  const draftBaseUrl = draft?.base_url ?? '';
+  const draftBaseUrl = draft?.committed_base_url ?? '';
   const draftKey = draft?.api_key ?? '';
   useEffect(() => {
     const seq = ++previewSeq.current;
-    if (!draftProvider || !draftKey.trim()) {
+    if (!draftProvider || !draftKey.trim() || (draftProvider === 'custom' && !draftBaseUrl.trim())) {
       setDraft((prev) => (prev?.preview ? { ...prev, preview: undefined } : prev));
       return;
     }
@@ -510,6 +505,9 @@ export default function ProviderConfigList({
             provider: providerKey,
             model: defaultModelFor(providerKey),
             base_url: baseUrlFor(providerKey),
+            committed_base_url: baseUrlFor(providerKey),
+            api_key: '',                 // MODEL1 (max review): a key typed for one provider never goes to another
+            preview: undefined,
             testState: 'idle',
             testError: undefined,
           }
@@ -609,10 +607,12 @@ export default function ProviderConfigList({
     baseUrlInputRefs.current.get(config.id)?.focus();
   };
 
+  /** Fills the field and focuses it, as on a saved row: the address counts when the field is left. */
   const handleChipFillDraft = (url: string) => {
     setDraft((prev) =>
       prev ? { ...prev, base_url: url, testState: 'idle', testError: undefined } : prev,
     );
+    document.querySelector<HTMLInputElement>('[data-testid="provider-draft-baseurl"]')?.focus();
   };
 
   /** P3 custom-row extras: required-base_url hint + quick-pick chips + static
@@ -741,6 +741,7 @@ export default function ProviderConfigList({
               onDraftApiKeyChange={() => {}}
               onDraftConfirm={handleDraftConfirm}
               onDraftCancel={handleDraftCancel}
+              onDraftBaseUrlBlur={() => {}}
               onDraftRetryPreview={() => {}}
               draftCustomExtras={null}
               config={config}
@@ -812,6 +813,7 @@ export default function ProviderConfigList({
               }
               onDraftConfirm={handleDraftConfirm}
               onDraftCancel={handleDraftCancel}
+              onDraftBaseUrlBlur={() => setDraft((prev) => (prev ? { ...prev, committed_base_url: prev.base_url } : prev))}
               onDraftRetryPreview={() => setPreviewRetry((n) => n + 1)}
               draftCustomExtras={
                 draft.provider === 'custom'

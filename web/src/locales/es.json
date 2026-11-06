@@ -697,7 +697,8 @@
     "addModelLoading": "Preguntando a {{provider}} por sus modelos…",
     "addModelBuiltIn": "Lista integrada",
     "addModelFallback": "No se pudo contactar con {{provider}}; se muestra la lista integrada de Arslan.",
-    "addModelRetry": "Reintentar"
+    "addModelRetry": "Reintentar",
+    "addModelChooseProvider": "Elige un proveedor"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",

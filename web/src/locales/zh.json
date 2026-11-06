@@ -697,7 +697,8 @@
     "addModelLoading": "正在向 {{provider}} 查询模型…",
     "addModelBuiltIn": "内置列表",
     "addModelFallback": "连不上 {{provider}}，先显示 Arslan 的内置列表。",
-    "addModelRetry": "重试"
+    "addModelRetry": "重试",
+    "addModelChooseProvider": "选择服务商"
   },
   "errors": {
     "load_failed": "加载数据失败。",

@@ -4,7 +4,7 @@
  * marked as such, with the reason and a way to try again (card docs/plans/0164/MODEL1-add-model-key-first.md).
  */
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({
@@ -35,12 +35,15 @@ vi.mock("../api/client", () => ({
   probeProviderHealth: vi.fn().mockResolvedValue({ state: "reachable_models", latency_ms: 1, detail: null, last_health_at: null }),
 }));
 
-import ProviderConfigList from "../components/ProviderConfigList";
+import ProviderConfigList, { PREVIEW_DEBOUNCE_MS } from "../components/ProviderConfigList";
 import type { ProviderOption } from "../api/client.types";
 
 const providers: ProviderOption[] = [
   { key: "anthropic", label: "Anthropic Claude", base_url: "", default_model: "claude-sonnet-5-5", native: true,
     models: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] },
+  { key: "deepseek", label: "DeepSeek", base_url: "https://api.deepseek.com", default_model: "deepseek-v4-flash", native: false,
+    models: ["deepseek-v4-pro", "deepseek-v4-flash"] },
+  { key: "custom", label: "OpenAI-compatible (custom)", base_url: "", default_model: "", native: false, models: [] },
 ];
 const KEY = "sk-ant-model1-typed";
 const live = (ids: string[]) => ({
@@ -48,9 +51,17 @@ const live = (ids: string[]) => ({
   fetched_at: "2026-11-03T00:00:00", stale: false, error: null, source: "api",
 });
 
-function openDraft() {
+function openEmptyDraft() {
   render(<ProviderConfigList llmProviders={providers} providerConfigs={[]} onConfigsChange={vi.fn()} />);
   fireEvent.click(screen.getByTestId("provider-add-model"));
+}
+function pick(label: string) {
+  fireEvent.click(screen.getByLabelText("Provider"));
+  fireEvent.pointerDown(screen.getByRole("option", { name: new RegExp(label) }));
+}
+function openDraft(label = "Anthropic Claude") {
+  openEmptyDraft();
+  pick(label);
 }
 const keyInput = () => screen.getByTestId("provider-draft-key") as HTMLInputElement;
 async function optionTexts() {
@@ -77,6 +88,68 @@ describe("the key comes before the model", () => {
     openDraft();
     await new Promise((r) => setTimeout(r, 800));
     expect(preview).not.toHaveBeenCalled();
+  });
+});
+
+describe("a key goes only to the provider the user picked (max review, finding 1)", () => {
+  it("starts with no provider, and the key can't be typed until one is picked", () => {
+    openEmptyDraft();
+    expect(screen.getByLabelText("Provider").textContent).toContain("settings.addModelChooseProvider");
+    expect(keyInput().disabled).toBe(true);
+    pick("DeepSeek");
+    expect(keyInput().disabled).toBe(false);
+  });
+
+  it("clears the key when the provider changes, so nothing goes to the new one", async () => {
+    openDraft("DeepSeek");
+    fireEvent.change(keyInput(), { target: { value: KEY } });
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    pick("Anthropic Claude");
+    expect(keyInput().value).toBe("");
+    await new Promise((r) => setTimeout(r, 800));
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("provider-draft-model-source").dataset.source).toBe("built-in");
+  });
+});
+
+describe("a base URL is used once it is finished (max review, finding 2)", () => {
+  const url = () => screen.getByTestId("provider-draft-baseurl") as HTMLInputElement;
+
+  it("sends nothing to a host still being typed, and fetches once when the field is left", async () => {
+    openDraft("OpenAI-compatible");
+    fireEvent.change(keyInput(), { target: { value: KEY } });
+    await new Promise((r) => setTimeout(r, 700));
+    expect(preview).not.toHaveBeenCalled();                  // no address yet: nowhere to send it
+    fireEvent.change(url(), { target: { value: "http://192.168" } });
+    await new Promise((r) => setTimeout(r, 700));
+    fireEvent.change(url(), { target: { value: "http://192.168.1.20:1234/v1" } });
+    await new Promise((r) => setTimeout(r, 700));
+    expect(preview).not.toHaveBeenCalled();
+    fireEvent.blur(url());
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    expect(preview).toHaveBeenCalledWith({ provider: "custom", base_url: "http://192.168.1.20:1234/v1", api_key: KEY });
+  });
+
+  it("a preset's address counts as finished until it is edited", async () => {
+    openDraft("DeepSeek");
+    fireEvent.change(keyInput(), { target: { value: KEY } });
+    await waitFor(() => expect(preview).toHaveBeenCalledWith(
+      { provider: "deepseek", base_url: "https://api.deepseek.com", api_key: KEY }), { timeout: 2000 });
+  });
+});
+
+describe("the wait while typing (max review, finding 6)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("does not use a key until typing has paused", async () => {
+    openDraft();
+    vi.useFakeTimers();
+    fireEvent.change(keyInput(), { target: { value: KEY } });
+    await act(async () => { vi.advanceTimersByTime(PREVIEW_DEBOUNCE_MS - 1); });
+    expect(preview).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(PREVIEW_DEBOUNCE_MS).toBeGreaterThanOrEqual(300);
   });
 });
 
@@ -138,5 +211,9 @@ describe("nothing is kept", () => {
     await act(async () => { land(live(["claude-opus-5-5"])); });
     expect(add).not.toHaveBeenCalled();
     expect(screen.queryByTestId("provider-draft-key")).toBeNull();
+    for (const store of [window.localStorage, window.sessionStorage]) {   // max review, finding 6
+      for (let i = 0; i < store.length; i += 1) expect(store.getItem(store.key(i)!) ?? "").not.toContain(KEY);
+    }
+    expect(window.location.href).not.toContain(KEY);
   });
 });
