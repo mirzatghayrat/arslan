@@ -5,7 +5,7 @@ expected failures (docs/plans/0164/SBX-sandbox.md, "Who writes what" and its
 correction). pytest 9.1.1 writes such a test to JUnit as `<skipped type="pytest.xfail">`,
 a real skip as `<skipped type="pytest.skip">`, and a strict xfail that passes as
 `<failure>`. The step must count the first as ran and still fail on the other two.
-The script is read out of ci.yml itself, so this tests the step that runs, not a copy.
+The step is scripts/check_macos_counts.py, run here as ci.yml runs it.
 """
 from __future__ import annotations
 
@@ -16,84 +16,126 @@ import sys
 
 import pytest
 
-CI = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+CI = ROOT / ".github" / "workflows" / "ci.yml"
+CHECK = ROOT / "scripts" / "check_macos_counts.py"
+A, B = "tests.server.test_a", "tests.server.sbx.test_b"
+MANIFEST = """
+["server/sbx/test_b.py"]
+markers = 1
+cases = 6
+xfail = 0
+
+["server/test_a.py"]
+markers = 2
+cases = 5
+xfail = 2
+"""
 
 
-def _step() -> tuple[str, int]:
-    text = CI.read_text(encoding="utf-8")
-    start = text.index("- name: Assert they RAN, and did not skip")
-    body = text[start:text.index("\n          PY\n", start)]
-    script = body[body.index("<<'PY'\n") + len("<<'PY'\n"):]
-    script = "\n".join(line[10:] for line in script.splitlines())
-    return script, int(re.search(r"^EXPECTED = (\d+)$", script, re.M).group(1))
+def _passed(n: int, classname: str = A) -> list[str]:
+    return [f'<testcase classname="{classname}" name="p{i}" />' for i in range(n)]
 
 
-def _expected_xfail() -> int:
-    script, _ = _step()
-    return int(re.search(r"^EXPECTED_XFAIL = (\d+)$", script, re.M).group(1))
+def _xfail(n: int = 1, classname: str = A) -> list[str]:
+    return [f'<testcase classname="{classname}" name="x{i}"><skipped type="pytest.xfail" message="not built" /></testcase>'
+            for i in range(n)]
 
 
-def _run(tmp_path, cases: list[str]) -> subprocess.CompletedProcess:
-    script, _ = _step()
-    skipped = sum("<skipped" in c for c in cases)
-    failures = sum("<failure" in c for c in cases)
+SKIP = f'<testcase classname="{A}" name="s"><skipped type="pytest.skip" message="no seatbelt">why</skipped></testcase>'
+XPASS = f'<testcase classname="{A}" name="x"><failure message="[XPASS(strict)] not built">x</failure></testcase>'
+ERROR = f'<testcase classname="{A}" name="e"><error message="fixture">x</error></testcase>'
+
+
+def _run(tmp_path, cases: list[str], manifest: str = MANIFEST) -> subprocess.CompletedProcess:
     (tmp_path / "macos-results.xml").write_text(
-        '<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests">'
-        f'<testsuite name="pytest" errors="0" failures="{failures}" skipped="{skipped}" tests="{len(cases)}">'
+        '<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest">'
         + "".join(cases) + "</testsuite></testsuites>", encoding="utf-8")
-    return subprocess.run([sys.executable, "-I", "-c", script], cwd=tmp_path,
+    (tmp_path / "expected.toml").write_text(manifest, encoding="utf-8")
+    return subprocess.run([sys.executable, "-I", str(CHECK), "macos-results.xml", "expected.toml"], cwd=tmp_path,
                           capture_output=True, text=True, timeout=60)
 
 
-def _passed(n: int) -> list[str]:
-    return [f'<testcase classname="t" name="p{i}" />' for i in range(n)]
-
-
-XFAIL = '<testcase classname="t" name="x"><skipped type="pytest.xfail" message="not built" /></testcase>'
-SKIP = '<testcase classname="t" name="s"><skipped type="pytest.skip" message="no seatbelt">why</skipped></testcase>'
-XPASS = '<testcase classname="t" name="x"><failure message="[XPASS(strict)] not built">x</failure></testcase>'
-
-
-def _expected_mix(missing: int = 0) -> list[str]:
-    """Every case ran: EXPECTED_XFAIL strict xfails and the rest passed, less `missing` passes."""
-    _, expected = _step()
-    xfails = _expected_xfail()
-    return _passed(expected - xfails - missing) + [XFAIL] * xfails
+def _good() -> list[str]:
+    return _passed(3) + _xfail(2) + _passed(6, B)
 
 
 def test_the_expected_mix_is_green(tmp_path):
-    result = _run(tmp_path, _expected_mix())
+    result = _run(tmp_path, _good())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ran=11 skipped=0 xfailed=2 failed=0" in result.stdout
+
+
+def test_a_class_in_the_classname_still_counts_for_its_file(tmp_path):
+    result = _run(tmp_path, _passed(3, f"{A}.TestThing") + _xfail(2, f"{A}.TestThing") + _passed(6, B))
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_a_strict_xfail_counts_as_ran(tmp_path):
-    result = _run(tmp_path, _expected_mix())
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert f"xfailed={_expected_xfail()}" in result.stdout
-
-
-@pytest.mark.parametrize("bad", [SKIP, XPASS], ids=["a real skip", "a strict xfail that passed"])
-def test_a_skip_or_an_unexpected_pass_is_red(tmp_path, bad):
-    assert _run(tmp_path, _expected_mix(missing=1) + [bad]).returncode != 0
-
-
-def test_a_missing_case_is_red(tmp_path):
-    assert _run(tmp_path, _expected_mix(missing=1)).returncode != 0
-
-
-@pytest.mark.parametrize("change", ["one fewer xfail", "one more xfail"])
-def test_the_xfail_count_is_pinned(tmp_path, change):
-    """#620 review: an adapter registered under the wrong key keeps all of a p PR's cases xfailing, and a
-    gate whose failure an xfail absorbs adds one. Either way the total still matches, so only the pinned
-    number of xfails catches it."""
-    _, expected = _step()
-    xfails = _expected_xfail() + (-1 if change == "one fewer xfail" else 1)
-    if xfails < 0:                                   # none expected, so none to take away: "one more" covers it
-        assert _expected_xfail() == 0
-        return
-    result = _run(tmp_path, _passed(expected - xfails) + [XFAIL] * xfails)
+@pytest.mark.parametrize("bad", [SKIP, XPASS, ERROR], ids=["a real skip", "a strict xfail that passed", "an error"])
+def test_a_skip_or_an_unexpected_pass_is_red_even_when_every_count_matches(tmp_path, bad):
+    """In place of a pass, so the failure can only come from the case itself. A skip isn't a case that ran, so the count
+    moves for it too, and the message has to name it."""
+    result = _run(tmp_path, _passed(2) + _xfail(2) + _passed(6, B) + [bad])
     assert result.returncode != 0
-    assert "strict xfails, expected" in result.stdout + result.stderr
+    assert ("SKIPPED" if bad is SKIP else "failed or errored") in result.stdout
+
+
+@pytest.mark.parametrize("cases", [_passed(2) + _xfail(2) + _passed(6, B), _passed(4) + _xfail(2) + _passed(6, B)],
+                         ids=["one fewer", "one more"])
+def test_a_file_whose_cases_differ_from_its_pin_is_red(tmp_path, cases):
+    result = _run(tmp_path, cases)
+    assert result.returncode != 0
+    assert "server/test_a.py:" in result.stdout and "pinned 5" in result.stdout
+
+
+def test_dropping_tests_in_one_file_and_adding_as_many_in_another_is_red(tmp_path):
+    """The one total this replaced let this through: the sum still matched."""
+    result = _run(tmp_path, _passed(1) + _xfail(2) + _passed(8, B))
+    assert result.returncode != 0
+    assert "server/test_a.py:" in result.stdout and "server/sbx/test_b.py:" in result.stdout
+
+
+@pytest.mark.parametrize("cases", [_passed(4) + _xfail(1) + _passed(6, B), _passed(2) + _xfail(3) + _passed(6, B)],
+                         ids=["one fewer xfail", "one more xfail"])
+def test_the_xfail_count_is_pinned(tmp_path, cases):
+    """#620 review: an adapter registered under the wrong key keeps all of a p PR's cases xfailing, and a gate whose
+    failure an xfail absorbs adds one. Either way the cases still match, so only the pinned xfails catch it."""
+    result = _run(tmp_path, cases)
+    assert result.returncode != 0
+    assert "strict xfails, pinned 2" in result.stdout
+
+
+def test_a_file_in_the_manifest_with_no_results_is_red(tmp_path):
+    result = _run(tmp_path, _passed(3) + _xfail(2))
+    assert result.returncode != 0
+    assert "server/sbx/test_b.py: in the manifest but no case of it ran" in result.stdout
+
+
+def test_results_from_a_file_with_no_table_are_red(tmp_path):
+    result = _run(tmp_path, _good() + _passed(1, "tests.server.test_new"))
+    assert result.returncode != 0
+    assert "server/test_new.py: results but no table" in result.stdout and "cases = 1" in result.stdout
+
+
+def test_results_that_name_no_test_file_are_red(tmp_path):
+    result = _run(tmp_path, _good() + ['<testcase classname="" name="tests.server.test_broken" />'])
+    assert result.returncode != 0
+    assert "(no test file)" in result.stdout and "results but no table" in result.stdout
+
+
+def test_a_strict_xfail_that_also_really_skipped_is_red(tmp_path):
+    """Its fixture calls pytest.skip in teardown, so the case has two <skipped>; reading only the first would count it as
+    an xfail that ran."""
+    both = (f'<testcase classname="{A}" name="b"><skipped type="pytest.xfail" message="not built" />'
+            '<skipped type="pytest.skip" message="teardown">why</skipped></testcase>')
+    result = _run(tmp_path, _passed(3) + _xfail(1) + [both] + _passed(6, B))
+    assert result.returncode != 0
+    assert "1 SKIPPED" in result.stdout
+
+
+def test_a_failure_says_how_to_read_it(tmp_path):
+    result = _run(tmp_path, _passed(2) + _xfail(2) + _passed(6, B))
+    assert "two PRs combined: the second PR's author recounts that file in a pin-only PR" in result.stdout
 
 
 def test_the_macos_run_makes_every_xfail_strict():
@@ -102,7 +144,6 @@ def test_the_macos_run_makes_every_xfail_strict():
     run = re.search(r"run: (\.venv/bin/pytest tests/ -m macos .*)", text).group(1)
     assert "-o xfail_strict=true" in run
     assert "x" in re.search(r" -r(\w+)", run).group(1), "the log lists each xfail (-rx)"
-
 
 
 def _misuses_in(source: str, where: str) -> list[str]:

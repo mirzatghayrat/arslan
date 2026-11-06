@@ -1,6 +1,7 @@
 """SMART-5 (v0.1.64, docs/plans/0164/SMART-feels-smart.md): the "feels smart" bench, Arslan against OpenClaw on the same
 model. Prompts, fixture, both entrants' tool traces, grading, the compare step and the gate. No model calls."""
 
+import contextlib
 import json
 import os
 import shutil
@@ -193,6 +194,60 @@ def test_tool_calls_are_read_from_the_frames_file(tmp_path):
     frames.write_text("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
     assert smart_bench.tool_calls(frames) == [("read_file", "notes.md"), ("whats_new", "")]
     assert smart_bench.tool_calls(tmp_path / "missing.frames.jsonl") is None
+
+
+def card_frames(tmp_path: Path) -> Path:
+    frames = tmp_path / "run.frames.jsonl"
+    rows = [{"type": "clarify_options", "question": "An earlier card?", "options": []},
+            {"type": "tool_call", "tool": "read_file", "args_summary": "notes.md"},
+            {"type": "clarify_options", "question": "Which notes do you mean?",
+             "options": [{"label": "The Notes app", "hint": "a new note"}, {"label": "notes.md"}]}]
+    frames.write_text("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
+    return frames
+
+
+CARD = "Which notes do you mean?\n- The Notes app: a new note\n- notes.md"
+
+
+def test_the_clarify_card_a_turn_ended_on_is_its_reply(tmp_path):
+    assert smart_bench.with_card("", card_frames(tmp_path)) == CARD
+    assert smart_bench.with_card("First, this.", card_frames(tmp_path)) == f"First, this.\n\n{CARD}"
+
+
+def test_a_turn_without_a_card_keeps_its_reply(tmp_path):
+    frames = tmp_path / "run.frames.jsonl"
+    frames.write_text(json.dumps({"type": "stream_chunk", "content": "x"}) + "\n")
+    assert smart_bench.with_card("Done.", frames) == "Done."
+    assert smart_bench.with_card("Done.", tmp_path / "missing.frames.jsonl") == "Done."
+
+
+def test_a_card_naming_both_readings_counts_as_asking(tmp_path):
+    reply = smart_bench.with_card("", card_frames(tmp_path))
+    assert smart_bench.grade(item(7), reply, [])["ask"] is True
+    assert smart_bench.grade(item(7), "", [])["ask"] is False
+
+
+def test_an_arslan_run_keeps_the_card_as_its_reply(tmp_path, monkeypatch):
+    """Round 3: two turns that asked through a card were saved, and graded, as empty replies."""
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    monkeypatch.setattr(runner, "ROUND", "t")
+
+    @contextlib.contextmanager
+    def instance(*_a, **_k):
+        yield tmp_path
+
+    def driver_ran(_cmd, _env, run):
+        shutil.copy(card_frames(tmp_path), f"{run}.frames.jsonl")
+        return 0
+    monkeypatch.setattr(runner, "fresh_instance", instance)
+    monkeypatch.setattr(runner, "command", lambda *_a, **_k: (["true"], {}))
+    monkeypatch.setattr(runner, "_run", driver_ran)
+    monkeypatch.setattr(runner, "driver_out", lambda *_a: {"end": "task_waiting_user"})
+    monkeypatch.setattr(runner, "reply_text", lambda *_a: "")
+    monkeypatch.setattr(runner, "settle", lambda *_a: 0.0)
+    monkeypatch.setattr(runner, "usage", lambda *_a: {})
+    row = smart_bench.run_prompt({"id": 7, "pattern": "ambiguous", "prompt": "p"}, "after", "m")
+    assert row["reply"] == CARD and row["end"] == "task_waiting_user"
 
 
 def test_compare_reports_each_task_and_names_regressions():
