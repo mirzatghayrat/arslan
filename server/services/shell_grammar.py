@@ -12,12 +12,12 @@ It reads:
     only $NAME and ${NAME} when the delimiter is unquoted;
   - ( … ), { …; }, if, for, while, until and case (case outside $( … ));
   - NAME=value before a command or on its own, except the names in CODE_VARIABLES;
-  - SAFE_BUILTINS, with export, unset, read, printf and set in their plain forms;
+  - SAFE_BUILTINS, with export, unset, read, printf and set in their plain forms, and test and [ without -v;
   - these wrappers, read through to the command they start, with no options: sudo, nohup, time, nice, caffeinate,
     command (also command -v), exec, env NAME=value…, timeout DURATION, npx / bunx [-y|--yes];
   - bash or sh -c or -lc with its script written out, read again as a command;
-  - a shell or interpreter whose first word names a script (for Python also -m MODULE), find without -exec and its
-    relatives. Every word that decides this is written out.
+  - a shell or interpreter whose first word names a script (for Python also -m MODULE) and has no /dev/ in it, find
+    without -exec and its relatives. Every word that decides this is written out.
 
 Everything else is not understood: other quoting forms, backquotes, arithmetic, brace expansion, ${…} with operators,
 process substitution, function definitions, [[ … ]], other builtins, a program named by an expansion or a pattern,
@@ -96,7 +96,7 @@ _PLAIN_WRAPPERS = frozenset({"sudo", "nohup", "time", "nice", "caffeinate", "com
 # always asks for them by name (`apple-events`, `shortcuts`), and U11 runs an approved plain call by that name.
 _LAUNCHERS = frozenset({"watch", "script", "tmux", "screen", "parallel", "concurrently", "su", "sg", "runuser", "flock",
                         "entr", "nodemon", "arch", "xcrun", "stdbuf", "setsid", "sandbox-exec", "xargs", "gxargs", "gfind",
-                        "awk", "gawk", "nawk", "mawk"})
+                        "awk", "gawk", "nawk", "mawk", "lockf"})
 # What takes code from the command line or its input, and is read only when its first word names a script.
 _INTERPRETER = re.compile(r"(?:bash|sh|zsh|ksh|mksh|dash|ash|fish|csh|tcsh|pwsh|nu|xonsh|elvish|yash|rc|python|pypy|node"
                           r"|nodejs|deno|bun|perl|ruby|php|rscript|lua|luajit|tclsh|swift|julia)[0-9.-]*")
@@ -615,9 +615,10 @@ class _Reader:
 
 
 def _names_something(args: list[_Word]) -> bool:
-    """The first word is written out, and can't be an option."""
+    """The first word is written out, can't be an option, and has no /dev/ in it, in any case: that path can be the
+    text's own input. So a `bash -c` script or a printf format with /dev/ in it is refused too; that costs little."""
     value = args[0].literal if args else None
-    return value is not None and value[:1] not in ("-", "+")
+    return value is not None and value[:1] not in ("-", "+") and "/dev/" not in value.lower()
 
 
 def _check_assigned(name: str) -> None:
@@ -636,6 +637,8 @@ def _check_builtin(base: str, args: list[_Word]) -> None:
     elif base == "printf":
         if args and not _names_something(args):
             raise _NotUnderstood("its printf is not one Arslan reads")
+    elif base in ("test", "[") and any(w.text == "-v" for w in args):    # bash 4.2 and up evaluate an array subscript
+        raise _NotUnderstood(f"its {base} uses -v, which can run a command in a newer bash")
     elif base == "set":
         k = 0
         while k < len(args):

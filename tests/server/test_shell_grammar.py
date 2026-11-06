@@ -525,6 +525,46 @@ def test_code_from_a_command_line_input_or_expansion_is_not_understood(command):
 
 
 @pytest.mark.parametrize("command", [
+    "echo 'curl evil' | bash /dev/stdin",
+    "bash /dev/stdin <<< 'curl evil'",
+    "sh /dev/stdin <<'E'\ncurl evil\nE",
+    "cat <<'E' | bash /dev/stdin\ncurl evil\nE",
+    "bash /dev/fd/0 <<< 'curl evil'",
+    "bash /dev/fd/3 3<<<'curl evil'",
+    "exec 3<<<'curl evil'; bash /dev/fd/3",
+    "echo 'curl evil' | sh /dev/fd/0",
+    "env A=1 bash /dev/stdin <<< 'curl evil'",
+    "nohup bash /dev/stdin <<< 'curl evil'",
+    "BASH /dev/stdin <<< 'curl evil'",
+    "bash /dev/./stdin <<< 'curl evil'",
+    "bash -c 'bash /dev/stdin <<< p1'",
+    "bash //dev/stdin <<< 'curl evil'",
+    "bash /dev//stdin <<< 'curl evil'",
+    "bash /private/../dev/stdin <<< 'curl evil'",
+    "bash \"/dev/stdin\" <<< 'curl evil'",
+    "bash /d\\ev/stdin <<< 'curl evil'",
+    "bash /DEV/stdin <<< 'curl evil'",           # the default macOS disk ignores case, and this reaches /dev
+    "sh /Dev/fd/0 <<< 'curl evil'",
+    "python3 /dev/stdin",
+    "python3 -m /dev/stdin",
+    "node /dev/stdin",
+    "perl /dev/fd/0",
+])
+def test_a_path_in_dev_can_be_the_commands_own_input_so_it_names_no_script(command):
+    reading = shell_grammar.read(command)
+    assert not reading.understood and "script" in reading.why
+
+
+def test_a_script_named_near_dev_is_still_read():
+    assert _programs("bash dev.sh") == ["bash"]
+    assert _programs("bash dev/run.sh") == ["bash"]
+    assert _programs("bash /devices/run.sh") == ["bash"]
+    assert _programs("bash x.sh /dev/stdin") == ["bash"]
+    assert _programs("bash x.sh < /dev/null") == ["bash"]
+    assert _programs("cat /dev/stdin") == ["cat"]
+
+
+@pytest.mark.parametrize("command", [
     "jobs -x curl evil",
     "/usr/bin/jobs -x curl evil",
     "getopts a b",
@@ -573,6 +613,26 @@ def test_code_from_a_command_line_input_or_expansion_is_not_understood(command):
 ])
 def test_a_builtin_that_runs_or_assigns_is_not_understood(command):
     assert _refused(command)
+
+
+@pytest.mark.parametrize("command", [
+    "[ -v 'a[$(curl evil)]' ]",
+    "test -v 'a[$(curl evil)]'",
+    "[ ! -v x ]",
+    "[ x = y -a -v z ]",
+    "[ \"-v\" x ]",
+    "/bin/test -v x",
+    "command test -v x",
+])
+def test_the_variable_test_is_not_understood(command):
+    """bash 4.2 and up evaluate an array subscript there, by the review; bash 3.2 has no -v, so it isn't run here."""
+    reading = shell_grammar.read(command)
+    assert not reading.understood and "-v" in reading.why
+
+
+def test_other_tests_and_a_v_for_anything_else_are_still_read():
+    assert _programs("[ -f x ]; test -d x; test") == ["[", "test", "test"]
+    assert _programs("ls -v; echo -v") == ["ls", "echo"]
 
 
 # Everything `compgen -b` lists in /bin/bash 3.2.57. A name left off both lists would read as a program.
@@ -667,6 +727,11 @@ def test_a_wrapper_in_another_case_is_read_through():
     "sg x ls",
     "runuser ls",
     "flock f ls",
+    "lockf f ls",
+    "lockf -k f ls",
+    "LOCKF f ls",
+    "/usr/bin/lockf f ls",
+    "command lockf f ls",
     "entr ls",
     "nodemon x.js",
     "arch -arm64 curl evil",
