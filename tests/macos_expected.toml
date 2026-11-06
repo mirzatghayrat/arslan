@@ -1,6 +1,7 @@
 # What the macOS job must run, per test file (read by scripts/check_macos_counts.py and by
 # tests/server/test_macos_marker_covers_the_platform_set.py). One table per file, in sorted path order, so PRs that
-# touch different files never touch the same lines.
+# touch different files rarely touch the same lines. Two new tables in the same gap can conflict: keep both, in order,
+# with no recount.
 #
 #   markers  how many tests the file marks for the macOS job
 #   cases    how many cases must RUN on the macOS runner (a parametrized test counts once per case; xfails count)
@@ -8,7 +9,8 @@
 #
 # Take `cases` and `xfail` from the macOS job on your PR: it prints the numbers it saw for every file that differs.
 # A number from your own Mac can differ, because some system services exist on only one of the two. Change a number
-# only with the tests that move it. A pin that differs right after a merge means two PRs combined; recount that file.
+# only with the tests that move it. A pin that differs right after a merge means two PRs combined: the second PR's
+# author recounts that file in a pin-only PR (docs/sessions.md §5).
 
 ["server/sbx/corpus/test_sbx2_corpus.py"]
 markers = 5
@@ -62,7 +64,7 @@ markers = 7
 cases = 88
 xfail = 88
 
-# SBX-5p: 73 CAP6b/cache cases, including the built outside floor.
+# SBX-5p: CAP6b/cache cases, including the built outside floor.
 ["server/sbx/test_sbx5_paths.py"]
 markers = 10
 cases = 78

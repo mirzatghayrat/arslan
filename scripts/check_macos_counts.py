@@ -19,15 +19,15 @@ import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-RECOUNT = ("A pin that differs right after a merge means two PRs combined; recount that file. Otherwise a number moves "
-           "only with the tests that move it, from what this job printed.")
+RECOUNT = ("A pin that differs right after a merge means two PRs combined: the second PR's author recounts that file in a "
+           "pin-only PR (docs/sessions.md §5). Otherwise a number moves only with the tests that move it, from what this "
+           "job printed.")
 
 
 def file_of(classname: str) -> str | None:
     """The test file a JUnit classname comes from, relative to tests/: `tests.server.test_x.TestY` is
     `server/test_x.py`. None when it names no test file."""
-    parts = classname.split(".")
-    parts = parts[1:] if parts[:1] == ["tests"] else parts
+    parts = classname.removeprefix("tests.").split(".")
     for index, part in enumerate(parts):
         if part.startswith("test_"):
             return "/".join(parts[:index + 1]) + ".py"
@@ -38,7 +38,8 @@ def read_results(junit: Path) -> tuple[dict[str, dict[str, int]], list[str], lis
     """Per file {cases, xfail}, the cases that were really skipped, and the ones that failed.
 
     pytest writes a strict xfail that failed as expected as `<skipped type="pytest.xfail">`: it ran, so it counts as ran.
-    A strict xfail that passed is a `<failure>`."""
+    A strict xfail that passed is a `<failure>`. A case can carry more than one `<skipped>`: a strict xfail whose fixture
+    skips in teardown has both, and that skip is real."""
     seen: dict[str, dict[str, int]] = {}
     skipped: list[str] = []
     failed: list[str] = []
@@ -47,13 +48,13 @@ def read_results(junit: Path) -> tuple[dict[str, dict[str, int]], list[str], lis
         label = f"{classname}::{case.get('name', '')}"
         if case.find("failure") is not None or case.find("error") is not None:
             failed.append(label)
-        skip = case.find("skipped")
-        if skip is not None and skip.get("type") != "pytest.xfail":
+        skips = case.findall("skipped")
+        if any(skip.get("type") != "pytest.xfail" for skip in skips):
             skipped.append(label)
             continue
         counts = seen.setdefault(file_of(classname) or f"(no test file) {classname}", {"cases": 0, "xfail": 0})
         counts["cases"] += 1
-        counts["xfail"] += skip is not None
+        counts["xfail"] += bool(skips)
     return seen, skipped, failed
 
 

@@ -40,7 +40,7 @@
 | `docs/releases/*.md` | 只有发版 PR 写。每一句对用户的承诺旁边，写出对应的测试名 |
 | `docs/plans/**`、`docs/specs/**` | 计划只由 ⓪Plan 改；任务卡的状态由 ②Main 更新；spec 只在决定变化时改，并注明日期 |
 
-- **macOS test counts (2026-11-07):** what the macOS job must run is pinned per test file in `tests/macos_expected.toml` (`markers`, `cases`, `xfail`; tables in sorted path order). A PR changes only the tables of the files it touches, so it no longer recounts or rebases for other PRs. Take the numbers from the macOS job on the PR, which prints what it saw; a Mac can differ, because some system services exist on only one of the two. The job is red on any skip or failure, on a file whose numbers differ from its pins, on a manifest file with no results, and on results from a file with no table. A pin that differs right after a merge means two PRs combined: recount that file (§5 covers watching main after a merge).
+- **macOS test counts (2026-11-07):** what the macOS job must run is pinned per test file in `tests/macos_expected.toml` (`markers`, `cases`, `xfail`; tables in sorted path order). A PR changes only the tables of the files it touches, so it doesn't recount for other PRs. Two new tables landing in the same gap can still conflict: keep both, in order, with no recount. Take the numbers from the macOS job on the PR, which prints what it saw; `pytest tests/ -m macos --collect-only -q` gives `cases` in about a minute, and a Mac can differ, because some system services exist on only one of the two. The job is red on any skip or failure, on a file whose numbers differ from its pins, on a manifest file with no results, and on results from a file with no table. A pin that differs right after a merge means two PRs combined: §5 says who fixes it, and how.
 
 ## 4. 迁移号
 
@@ -79,7 +79,7 @@
     - capability and MCP install checks;
     - memory and learned-practice writes;
     - Hands' policy;
-    - CI and repository settings (`.github/workflows/`, branch protection, required checks);
+    - CI and repository settings (`.github/workflows/`, branch protection, required checks), including `scripts/check_macos_counts.py` and, in `tests/macos_expected.toml`, any lowered `cases`, raised `xfail` or removed table. Adding a table, or raising `cases` with the tests that do it, isn't security surface by itself;
     - dependency and lock changes (`pyproject.toml`, `uv.lock`, `package.json` and lockfiles);
     - migrations that drop data.
 
@@ -99,7 +99,7 @@
     - **Stacked PRs:** enable auto-merge only once the PR's base is `main`. Auto-merge on a stacked PR merges it into its parent's branch, not main.
   - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
-  - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
+  - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red only because two PRs combined on a macOS count pin, the second PR's author fixes it forward with a pin-only PR. If it goes red for anything else, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
   - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
   - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.
 - **rebase 纪律：**

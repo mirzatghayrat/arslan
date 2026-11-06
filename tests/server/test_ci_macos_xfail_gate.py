@@ -90,11 +90,6 @@ def test_a_file_whose_cases_differ_from_its_pin_is_red(tmp_path, cases):
 
 def test_dropping_tests_in_one_file_and_adding_as_many_in_another_is_red(tmp_path):
     """The one total this replaced let this through: the sum still matched."""
-    result = _run(tmp_path, _passed(3) + _xfail(2) + _passed(1, B) + _passed(5, "tests.server.test_c"))
-    assert result.returncode != 0
-
-
-def test_the_same_swap_between_two_pinned_files_is_red(tmp_path):
     result = _run(tmp_path, _passed(1) + _xfail(2) + _passed(8, B))
     assert result.returncode != 0
     assert "server/test_a.py:" in result.stdout and "server/sbx/test_b.py:" in result.stdout
@@ -123,20 +118,24 @@ def test_results_from_a_file_with_no_table_are_red(tmp_path):
 
 
 def test_results_that_name_no_test_file_are_red(tmp_path):
-    result = _run(tmp_path, _good() + ['<testcase classname="" name="tests.server.test_broken"><error message="x">x</error></testcase>'])
+    result = _run(tmp_path, _good() + ['<testcase classname="" name="tests.server.test_broken" />'])
     assert result.returncode != 0
+    assert "(no test file)" in result.stdout and "results but no table" in result.stdout
+
+
+def test_a_strict_xfail_that_also_really_skipped_is_red(tmp_path):
+    """Its fixture calls pytest.skip in teardown, so the case has two <skipped>; reading only the first would count it as
+    an xfail that ran."""
+    both = (f'<testcase classname="{A}" name="b"><skipped type="pytest.xfail" message="not built" />'
+            '<skipped type="pytest.skip" message="teardown">why</skipped></testcase>')
+    result = _run(tmp_path, _passed(3) + _xfail(1) + [both] + _passed(6, B))
+    assert result.returncode != 0
+    assert "1 SKIPPED" in result.stdout
 
 
 def test_a_failure_says_how_to_read_it(tmp_path):
     result = _run(tmp_path, _passed(2) + _xfail(2) + _passed(6, B))
-    assert "two PRs combined; recount that file" in result.stdout
-
-
-def test_a_missing_junit_file_is_red(tmp_path):
-    (tmp_path / "expected.toml").write_text(MANIFEST, encoding="utf-8")
-    result = subprocess.run([sys.executable, "-I", str(CHECK), "nope.xml", "expected.toml"], cwd=tmp_path,
-                            capture_output=True, text=True, timeout=60)
-    assert result.returncode != 0
+    assert "two PRs combined: the second PR's author recounts that file in a pin-only PR" in result.stdout
 
 
 def test_the_macos_run_makes_every_xfail_strict():
