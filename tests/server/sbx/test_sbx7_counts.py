@@ -113,6 +113,7 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
     from tests.server.test_s64_0_outside_content_gaps import CID, _Asker, _Cards, _ctx, _Model, _turn
 
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **kw: ["/usr/bin/env"])     # runs it as "workspace"
+    monkeypatch.setattr(command_sandbox, "outside_wrapper", lambda *a, **kw: ["/usr/bin/env"])     # and outside
     model = _Model(**{"S64-HOST": _turn(("run_command", {"command": f"printf '{DENIED}' >&2; exit 1"}))})
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
     events = []
