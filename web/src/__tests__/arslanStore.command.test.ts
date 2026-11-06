@@ -28,9 +28,9 @@ describe("propose_run_command frame", () => {
                      sandbox: "outside", why: "move it to Pictures" } as any);
     let pc = card("s1");
     expect([pc.sandbox, pc.why]).toEqual(["outside", "move it to Pictures"]);
-    st.handleFrame({ type: "propose_run_command", call_id: "s2", pretty: "mv a ~/b", sandbox: "retry" } as any);
+    st.handleFrame({ type: "propose_run_command", call_id: "s2", pretty: "mv a ~/b", sandbox: "outside" } as any);
     pc = card("s2");
-    expect([pc.sandbox, pc.why]).toEqual(["retry", ""]);
+    expect([pc.sandbox, pc.why]).toEqual(["outside", ""]);
     st.handleFrame({ type: "propose_run_command", call_id: "s3", pretty: "ls", sandbox: "sideways" } as any);
     pc = card("s3");
     expect(pc.sandbox).toBeUndefined();

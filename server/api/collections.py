@@ -1,4 +1,4 @@
-"""Shared knowledge collections (layer A): CRUD, ingest, sources, spawn binding.
+"""Shared knowledge collections (layer A): CRUD, ingest, sources.
 Ingest mirrors the per-spawn knowledge endpoint (JSON text/url or multipart)."""
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from sqlalchemy import text as sa_text
 from server.api.media_type import is_multipart_form
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import Collection, Spawn, SpawnCollection
+from server.db.models import Collection
 from server.schemas import CollectionIn, CollectionOut, CollectionPatch, IngestOut, KnowledgeIn, KnowledgeSourceOut
 from server.services import ingest
 
@@ -150,28 +150,3 @@ async def delete_collection_source(collection_id: int, source: str) -> dict:
             {"cid": collection_id, "src": source})
         await db.commit()
     return {"deleted": len(ids)}
-
-
-@router.put("/spawns/{spawn_id}/collections/{collection_id}")
-async def bind_collection(spawn_id: int, collection_id: int) -> dict:
-    async with db_session.AsyncSessionLocal() as db:
-        await _get_or_404(db, collection_id)
-        if await db.get(Spawn, spawn_id) is None:
-            raise HTTPException(status_code=404, detail="spawn not found")
-        exists = (await db.execute(sa_text(
-            "SELECT 1 FROM spawn_collections WHERE spawn_id = :sid AND collection_id = :cid"),
-            {"sid": spawn_id, "cid": collection_id})).first()
-        if not exists:
-            db.add(SpawnCollection(spawn_id=spawn_id, collection_id=collection_id))
-            await db.commit()
-    return {"bound": True}
-
-
-@router.delete("/spawns/{spawn_id}/collections/{collection_id}")
-async def unbind_collection(spawn_id: int, collection_id: int) -> dict:
-    async with db_session.AsyncSessionLocal() as db:
-        await db.execute(sa_text(
-            "DELETE FROM spawn_collections WHERE spawn_id = :sid AND collection_id = :cid"),
-            {"sid": spawn_id, "cid": collection_id})
-        await db.commit()
-    return {"bound": False}

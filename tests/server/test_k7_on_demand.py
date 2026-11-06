@@ -12,14 +12,12 @@
 - **Not callable means no card**: the check comes before any approval (Q4).
 - **A server's text in find_tools' results is data** (tool poisoning), and the query is asked for in
   English keywords.
-- **`tools_all_resident`** puts every tool back (DELETE-BY: v0.1.64; see arslan.RESIDENT).
 """
 import asyncio
 import json
 
 import pytest
 
-from server.db.models import Setting
 from server.orchestrator import arslan, on_demand, tool_loop, untrusted
 from server.registry import hands_tools
 from server.services import capability_flow
@@ -61,13 +59,6 @@ async def test_with_hands_on_the_whole_desktop_family_stays_resident(mac_with_mc
     desktop = {t["key"] for t in await arslan._callable_tools() if t["key"].startswith("desktop_")}
     assert desktop and desktop <= {t["key"] for t in tools}
     print(f"\nK7 tool JSON, chat, Mac with Hands, 3 MCP servers: {rendered_tool_json_chars(tools):,} characters")
-
-
-async def test_tools_all_resident_puts_every_tool_back(mac_with_mcp):  # noqa: F811
-    async with mac_with_mcp() as db:
-        db.add(Setting(key="tools_all_resident", value="true"))
-        await db.commit()
-    assert [t["key"] for t in await arslan._arslan_tools()] == [t["key"] for t in await arslan._callable_tools()]
 
 
 async def test_a_file_for_the_user_is_one_search_away(mac_with_mcp):  # noqa: F811

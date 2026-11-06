@@ -205,8 +205,11 @@ async def conversation_folder(db, conversation_id: str | None) -> Path | None:
         if ctx is not None and ctx.project_id:
             project = await db.get(Project, ctx.project_id)
             raw = (project.workspace_ref or "").strip() if project is not None else ""
-            if raw and Path(raw).expanduser().is_dir():
-                return Path(raw).expanduser().resolve()
+            try:
+                if raw and Path(raw).expanduser().is_dir():
+                    return Path(raw).expanduser().resolve()
+            except (RuntimeError, OSError):     # ~someone_unknown/…, or an unreadable parent: read as a folder that's gone
+                pass
     ws = await settings_service.workspace_dir(db)
     return ws.resolve() if ws else None
 
@@ -234,17 +237,16 @@ async def for_turn(conversation_id: str | None) -> tuple[str, int]:
 # -- L11 (b): the folder a correction happened in -------------------------------------------------------------------
 
 async def chosen_folder(db, conversation_id: str | None) -> Path | None:
-    """The folder the user chose for this conversation: its project's folder, or a workspace the user set. Not Arslan's
-    default ~/Arslan in a plain chat (#603 review, F7). A practice learned from corrections made only there applies
-    only there (L11 (b), the next PR)."""
-    from server.db.companion_models import ConversationContext
+    """The folder the user chose for this conversation: its project's folder, or a workspace the user set. Never home,
+    and never Arslan's default ~/Arslan on its own, which a project with no usable folder falls back to (#603 review,
+    F7; #718's review). A practice learned from corrections made only there applies only there (L11 (b))."""
     from server.services import settings_service
-    if conversation_id:
-        ctx = await db.get(ConversationContext, conversation_id)
-        if ctx is not None and ctx.project_id:
-            return await conversation_folder(db, conversation_id)
-    raw = await settings_service._get_raw(db, "workspace_dir")
-    return await conversation_folder(db, conversation_id) if raw and str(raw).strip() else None
+    folder = await conversation_folder(db, conversation_id)
+    if folder is None or folder == _home():
+        return None
+    if folder == settings_service.default_workspace().resolve() and await settings_service.workspace_is_default(db):
+        return None
+    return folder
 
 
 async def listing(conversation_id: str | None) -> dict:

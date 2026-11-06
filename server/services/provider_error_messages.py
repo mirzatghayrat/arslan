@@ -13,6 +13,8 @@ MESSAGES = {
         "rate": "The provider is rate-limiting requests. Wait before retrying, or choose another available model.",
         "key_required": "The server rejected an unauthenticated request (HTTP {status}). Check whether this connection requires an API key and the necessary permissions.",
         "connection_failed": "The model connection test failed without a detailed error. Check the connection settings and try again.",
+        "models_none": "The provider listed no models.",
+        "key_unusable": "This API key contains spaces or characters a key can't have, so it wasn't sent. Check what you pasted.",
     },
     "zh": {
         "not_configured": "尚未配置模型连接。请先在连接设置中选择服务商和模型，再发送消息。",
@@ -25,6 +27,8 @@ MESSAGES = {
         "rate": "服务商正在限流。请稍后再试，或选择其他可用模型。",
         "key_required": "服务器拒绝了未认证的请求（HTTP {status}）。请确认这个连接是否要求 API key，以及所需权限。",
         "connection_failed": "模型连接测试失败，未返回详细原因。请检查连接设置后重试。",
+        "models_none": "服务商没有列出任何模型。",
+        "key_unusable": "这个 API 密钥里有空格或密钥不该有的字符，所以没有发送。请检查粘贴的内容。",
     },
     "ja": {
         "not_configured": "モデル接続が設定されていません。送信前に接続設定でプロバイダーとモデルを選択してください。",
@@ -37,6 +41,8 @@ MESSAGES = {
         "rate": "プロバイダーがリクエストを制限しています。時間を置いて再試行するか、別の利用可能なモデルを選んでください。",
         "key_required": "サーバーが未認証のリクエストを拒否しました（HTTP {status}）。この接続に API キーと必要な権限が求められるか確認してください。",
         "connection_failed": "モデルの接続テストに失敗しましたが、詳細な原因は返されませんでした。接続設定を確認して再試行してください。",
+        "models_none": "プロバイダはモデルを返しませんでした。",
+        "key_unusable": "この API キーには空白やキーに使えない文字が含まれているため、送信しませんでした。貼り付けた内容を確認してください。",
     },
     "es": {
         "not_configured": "No hay ninguna conexión de modelo configurada. Elige un proveedor y un modelo en los ajustes de conexión antes de enviar.",
@@ -49,6 +55,8 @@ MESSAGES = {
         "rate": "El proveedor está limitando las solicitudes. Espera antes de reintentarlo o elige otro modelo disponible.",
         "key_required": "El servidor rechazó una solicitud sin autenticar (HTTP {status}). Comprueba si esta conexión requiere una clave API y los permisos necesarios.",
         "connection_failed": "La prueba de conexión del modelo falló sin indicar un error detallado. Revisa los ajustes de conexión y vuelve a intentarlo.",
+        "models_none": "El proveedor no indicó ningún modelo.",
+        "key_unusable": "Esta clave de API contiene espacios o caracteres que una clave no puede tener, así que no se envió. Revisa lo que pegaste.",
     },
     "de": {
         "not_configured": "Es ist keine Modellverbindung eingerichtet. Wähle vor dem Senden in den Verbindungseinstellungen einen Anbieter und ein Modell.",
@@ -61,6 +69,8 @@ MESSAGES = {
         "rate": "Der Anbieter begrenzt die Anfragerate. Warte vor einem erneuten Versuch oder wähle ein anderes verfügbares Modell.",
         "key_required": "Der Server hat eine nicht authentifizierte Anfrage abgelehnt (HTTP {status}). Prüfe, ob diese Verbindung einen API-Schlüssel und die nötigen Berechtigungen erfordert.",
         "connection_failed": "Der Modell-Verbindungstest ist ohne detaillierte Fehlermeldung fehlgeschlagen. Prüfe die Verbindungseinstellungen und versuche es erneut.",
+        "models_none": "Der Anbieter hat keine Modelle aufgelistet.",
+        "key_unusable": "Dieser API-Schlüssel enthält Leerzeichen oder Zeichen, die ein Schlüssel nicht haben kann, und wurde nicht gesendet. Prüfe, was du eingefügt hast.",
     },
     "fr": {
         "not_configured": "Aucune connexion à un modèle n’est configurée. Choisis un fournisseur et un modèle dans les paramètres de connexion avant l’envoi.",
@@ -73,6 +83,8 @@ MESSAGES = {
         "rate": "Le fournisseur limite la fréquence des requêtes. Attends avant de réessayer ou choisis un autre modèle disponible.",
         "key_required": "Le serveur a refusé une requête non authentifiée (HTTP {status}). Vérifie si cette connexion nécessite une clé API et les autorisations requises.",
         "connection_failed": "Le test de connexion au modèle a échoué sans erreur détaillée. Vérifie les paramètres de connexion et réessaie.",
+        "models_none": "Le fournisseur n'a indiqué aucun modèle.",
+        "key_unusable": "Cette clé d'API contient des espaces ou des caractères qu'une clé ne peut pas avoir ; elle n'a donc pas été envoyée. Vérifiez ce que vous avez collé.",
     },
 }
 

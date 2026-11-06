@@ -12,6 +12,7 @@ Every rule card, the workspace write and the schedule are decided by `permission
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import uuid
 
 from server.ws import protocol
@@ -76,12 +77,12 @@ class Confirmations:
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
                       fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
-                      network: bool = False, host: str | None = None) -> bool:
+                      network: bool = False, host: str | None = None, delete: str = "") -> bool:
         """Called, a card is shown: which commands need none (layer ③ in the sandbox) is the tool loop's to
         decide, once (S2a-2). `sandbox` (0.1.51 P3): "outside" — the model asks to run this command
-        outside the sandbox; "retry" — the sandbox stopped it and it would run again outside, from the
-        start. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
-        machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`)."""
+        outside the sandbox. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
+        machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`). `delete` (SMART-8):
+        for a delete outside the working folder, how allow deletes (`delete_to_trash.card_mode`); the card says it."""
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
@@ -96,7 +97,11 @@ class Confirmations:
         rules = sorted(terminal_policy.ask_rules(shell))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
-        if sandbox in ("outside", "retry"):
+        from server.services import delete_to_trash
+        deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
+        if deletes:
+            net = f" {deletes}{net}"
+        if sandbox == "outside":
             # S4a: this time, or every command of this conversation — a background job's too — for as long as
             # the conversation lasts (a stored grant, `outside` / `*`). No "Always". Only a Mac window gives
             # more than this time (the Inbox, the phone and the island: this time); the island never answers
@@ -104,11 +109,13 @@ class Confirmations:
             # the command runs (`permissions._ALWAYS_ASKS`).
             request = permissions.Request(
                 kind="outside", target="*", title=card_purpose.phrase(shell, why, rules, lang=lang, outside=True,
-                                                                      network=network),
+                                                                      network=network, delete_mode=delete),
                 model_title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
-                why=why, frame=protocol.propose_run_command(
-                    uuid.uuid4().hex, command, argv, reason=verdict.reason if verdict.level == "ask" else "",
-                    sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable))
+                why=why, frame={**protocol.propose_run_command(
+                    uuid.uuid4().hex, command, argv,
+                    reason=verdict.reason if verdict.level == "ask" else "",
+                    sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
+                    **_delete_keys(delete, shell)})
         elif remote_host:
             # A remote command takes none of the shortcuts: the local risk grade describes a binary on THIS
             # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
@@ -133,10 +140,25 @@ class Confirmations:
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable)
+        frame.update(_delete_keys(delete, shell))
         unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
+        request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
+                                             unsandboxed=unsandboxed, lang=lang, why=why,
+                                             delete_mode=delete)
+        if deletes:     # the model's English text; the title and the card word `delete_mode` themselves
+            request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
         with self._surface():
-            decision = await permissions.decide(
-                approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
-                                           unsandboxed=unsandboxed, lang=lang, why=why),
-                self._context())
+            decision = await permissions.decide(request, self._context())
         return decision.allowed
+
+
+def _delete_keys(mode: str, shell: str) -> dict:
+    """SMART-8: the delete card's mode and targets for the Mac card (⑤CAP's shared component), on the Mac's WS
+    frame only. The Bridge's FrameMapper reads named keys (title, perm_kind, expires_at…), so neither reaches the
+    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written; [] when
+    the delete can't be read, and the card then reads rm's plain arguments itself."""
+    if not mode:
+        return {}
+    from server.services import delete_to_trash
+    found = delete_to_trash.plan(shell)
+    return {"delete_mode": mode, "delete_targets": list(found.targets) if found else []}

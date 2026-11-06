@@ -7,7 +7,6 @@ Over the real socket, reader and tool loop, with a scripted model and one fixtur
 - the iPhone: a message from another socket (source "phone") reaches the turn running on the window's socket,
   is stored with its source, and the window is shown it;
 - a turn already writing its answer has no boundary left: the message runs once, as the next turn;
-- `steering_off` (DELETE-BY v0.1.64) leaves it waiting for the next turn, as before.
 (A card waiting in the window keeps its rule, a typed message answers it No with the note and runs next:
 test_window_permissions.py::test_a_message_typed_while_a_card_waits_answers_it, unchanged.)
 
@@ -302,28 +301,6 @@ def test_a_message_waiting_for_the_lock_leaves_the_running_turns_box_alone(app_c
             _collect_until(phone, "stream_end", max_frames=80)
     assert STEER in model.inputs[1]                   # the running turn read it
     assert tool.ran == ["a"]
-
-
-def test_steering_off_leaves_the_message_for_the_next_turn(app_client, monkeypatch):
-    from server.services import settings_service
-
-    async def off():
-        async with app_client.db_maker() as db:
-            await settings_service.update_settings(db, {"steering_off": "true"})
-    app_client.portal.call(off)
-    model = _Model()
-    tool = _wire(monkeypatch, model)
-    with app_client.websocket_connect("/ws/arslan/k9b-off") as ws:
-        ws.receive_json()
-        ws.send_json({"type": "user_message", "content": "WANTS-TOOLS: two waits"})
-        assert tool.started.wait(5)
-        ws.send_json({"type": "user_message", "content": STEER})
-        _collect_until(ws, "queued")
-        tool.release.set()
-        first = _collect_until(ws, "stream_end")
-        second = _collect_until(ws, "stream_end")
-    assert tool.ran == ["a", "b"] and {"type": "dequeued", "inserted": True} not in first + second
-    assert len(model.inputs) == 3 and STEER not in model.inputs[1]
 
 
 # ── S3b's undo, ⓪Plan's Q5 ─────────────────────────────────────────────────────────────────────────────

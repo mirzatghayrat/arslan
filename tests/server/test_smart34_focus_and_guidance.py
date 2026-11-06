@@ -57,9 +57,10 @@ def test_each_point_extends_an_existing_line():
 
 def test_the_examples_name_the_cases_the_card_lists():
     failing = _bullet_with(BLOCKED)
-    for case in ("no SSH", "a missing permission", "a tool that isn't installed", "a sandbox refusal",
-                 "a machine you can't reach"):
+    for case in ("no SSH", "a missing permission", "a tool that isn't installed", "a machine you can't reach"):
         assert case in failing, case
+    # A sandbox stop has its own note (find a way, or ask to leave with a reason), not a command to hand the user.
+    assert "sandbox" not in failing
     # Settings first: the command fails in Terminal without Full Disk Access (#673 review).
     assert failing.index("System Settings ›") < failing.index("sudo systemsetup")
     assert "Claude Code: the CLI or the desktop app?" in _bullet_with(AMBIGUOUS)
