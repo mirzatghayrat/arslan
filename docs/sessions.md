@@ -40,6 +40,8 @@
 | `docs/releases/*.md` | 只有发版 PR 写。每一句对用户的承诺旁边，写出对应的测试名 |
 | `docs/plans/**`、`docs/specs/**` | 计划只由 ⓪Plan 改；任务卡的状态由 ②Main 更新；spec 只在决定变化时改，并注明日期 |
 
+- **macOS test counts (2026-11-07):** what the macOS job must run is pinned per test file in `tests/macos_expected.toml` (`markers`, `cases`, `xfail`; tables in sorted path order). A PR changes only the tables of the files it touches, so it no longer recounts or rebases for other PRs. Take the numbers from the macOS job on the PR, which prints what it saw; a Mac can differ, because some system services exist on only one of the two. The job is red on any skip or failure, on a file whose numbers differ from its pins, on a manifest file with no results, and on results from a file with no table. A pin that differs right after a merge means two PRs combined: recount that file (§5 covers watching main after a merge).
+
 ## 4. 迁移号
 
 - **谁分配：** ②Main，在当轮 README 的登记表里分配。一个 PR 最多带一个迁移。
