@@ -81,6 +81,32 @@ describe("AskCard", () => {
     expect(document.activeElement).toBe(inDialog);                 // focus stayed in the dialog
     expect(screen.getByTestId("ask-decline")).not.toHaveFocus();
   });
+
+  it("safeDefault leaves focus in another card that owns it (#661)", () => {
+    // A card already up (role=alertdialog, a surface) owns its focus; a safeDefault card coming up must not grab it.
+    render(<AskCard who="w" title="first" testId="first-card" allowTestId="first-allow" declineTestId="first-decline"
+      onAllow={() => {}} onDecline={() => {}} />);
+    screen.getByTestId("first-allow").focus();
+    card({ safeDefault: true });
+    expect(screen.getByTestId("first-allow")).toHaveFocus();       // focus stayed on the first card
+    expect(screen.getByTestId("ask-decline")).not.toHaveFocus();
+  });
+
+  it("safeDefault skips when a modal is open, even with focus outside it (#661)", () => {
+    // The guard is not only about where focus is now: an open modal owns the screen even with focus on the body.
+    render(<div role="dialog" aria-modal="true" data-testid="a-modal"><p>x</p></div>);
+    (document.activeElement as HTMLElement | null)?.blur?.();       // focus on the body, not in the modal
+    card({ safeDefault: true });
+    expect(screen.getByTestId("ask-decline")).not.toHaveFocus();
+  });
+
+  it("a re-render does not pull focus back to No (#661)", () => {
+    const { rerender } = render(<AskCard who="w" title="t" safeDefault onAllow={() => {}} onDecline={() => {}} />);
+    expect(screen.getByTestId("ask-decline")).toHaveFocus();       // focused on mount
+    screen.getByTestId("ask-allow").focus();                       // the user moves to Allow
+    rerender(<AskCard who="w" title="t" safeDefault onAllow={() => {}} onDecline={() => {}} />);
+    expect(screen.getByTestId("ask-allow")).toHaveFocus();         // a re-render with the same props does not refocus
+  });
 });
 
 describe("AskQueue", () => {

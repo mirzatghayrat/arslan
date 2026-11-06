@@ -299,7 +299,8 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         spdx, read_from = locked["license"]
         card.update(lock=capability_install.lock_summary(locked), license={"spdx": spdx, "read_from": read_from})
         # CAP9: what OSV.dev knows of every locked package, between the lock and the card. Facts only: what the card
-        # does with a hit is the user's question 5, still open. A stop here leaves no staged lock behind.
+        # does with a hit is the user's decision 5 ("as drawn": it warns, No the default; see osv_check). A stop here
+        # leaves no staged lock behind.
         try:
             card["vulns"] = await osv_check.check(cand, locked)
         except BaseException:

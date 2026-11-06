@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Lock } from "lucide-react";
 import { Button } from "./Button";
@@ -69,9 +69,10 @@ export interface AskCardProps {
   saidTestId?: string;
   declineTestId?: string;
   /** CAP9: No is the safe answer, so it leads as the primary wide button and is focused on mount — unless the user is
-   *  typing or another surface owns focus. */
+   *  typing, another surface owns focus, or a modal is open. */
   safeDefault?: boolean;
-  /** ⌘⏎ allows only when true (the default). A risky install (CAP9) sets it false, so no keypress can confirm it. */
+  /** ⌘⏎ allows only when true (the default). A risky install (CAP9) sets it false, so no key can confirm the install
+   *  (Esc still declines). */
   allowKey?: boolean;
   className?: string;
 }
@@ -86,6 +87,7 @@ export function AskCard(p: AskCardProps) {
   const [open, setOpen] = useState(false);
   const top = useLayer(p.keys !== false);
   const root = useRef<HTMLElement>(null);
+  const saidId = useId();
   // Within ANSWER_GUARD_MS of this card coming up in a queue, no answer is for it (see guard.ts).
   const guarded = useAnswerGuard();
   const held = useAnswerHeld();                                     // the same hold, to be seen: Allow and No look disabled while it lasts
@@ -96,12 +98,16 @@ export function AskCard(p: AskCardProps) {
     if (!p.safeDefault) return;
     const active = document.activeElement;
     const typing = active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
-    // CAP9 review: don't pull focus out of another surface — an open dialog or another card owns its own focus.
+    // CAP9 review: don't pull focus out of another surface — an open dialog or another card owns its own focus, and a
+    // modal owns it even when nothing in it is focused yet, so skip if focus is on another surface or any modal is open
+    // outside this card.
     const onAnother = active instanceof Element && active.closest(SURFACE) !== null && active.closest(SURFACE) !== root.current;
-    if (!typing && !onAnother) root.current?.querySelector<HTMLButtonElement>(`[data-testid="${p.declineTestId ?? "ask-decline"}"]`)?.focus();
+    const modalOutside = Array.from(document.querySelectorAll('[aria-modal="true"]')).some((m) => !root.current?.contains(m));
+    if (!typing && !onAnother && !modalOutside) root.current?.querySelector<HTMLButtonElement>(`[data-testid="${p.declineTestId ?? "ask-decline"}"]`)?.focus();
   }, [p.safeDefault, p.declineTestId]);
   return (
-    <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
+    <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who}
+      aria-describedby={p.said ? saidId : undefined} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
       {/* The default asker ("Arslan is asking") is no longer printed (the user: 「去掉小标题」); another one (a background
           job) still is, as it is the only place some cards say who is asking. */}
@@ -128,7 +134,7 @@ export function AskCard(p: AskCardProps) {
           {t(p.purposeFrom === "arslan" ? "kit.purposeFromArslan" : "kit.purposeFromCommand")}</span> : null}
       </div>
       {p.said ? (
-        <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
+        <p id={saidId} data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
           <span className="text-subtle-foreground">{t("kit.arslanSays")}</span>{p.said}
         </p>
       ) : null}
