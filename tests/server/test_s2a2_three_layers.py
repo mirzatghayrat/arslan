@@ -278,6 +278,7 @@ async def test_with_no_outside_content_the_card_does_not_mention_the_network(mon
     "cp evil ~/.ssh/authorized_keys", "echo x >> ~/.zshrc", "tee -a ~/.bashrc < x", "sed -i '' 's/a/b/' ~/.zshrc",
     'echo hi > "$HOME/.zprofile"', "echo x >| ${HOME}/.profile", "cp a ~/Library/LaunchAgents/x.plist",
     "dd if=x of=~/.netrc", "ln -sf evil ~/.ssh/config", "install -m 600 k ~/.aws/credentials", "cp a /etc/hosts",
+    "cp x ~/.config/rclone/rclone.conf", "echo x >> ~/.rclone.conf", "cp x ~/.s3cfg", "tee ~/.boto < x", "cp x ~/.gsutil/credstore2",
     "touch ~/.config/fish/config.fish", "mv x /Users/someone/.zshenv", "cp mcp.json ~/.cursor/mcp.json",
     "echo '{}' > ~/.claude/settings.json", "git config --global core.hooksPath /tmp/h",
     "git config --system alias.x '!sh'",
@@ -293,6 +294,7 @@ def test_a_write_into_startup_ssh_credential_or_agent_files_asks_this_time_only(
 
 @pytest.mark.parametrize("command", [
     "cat ~/.zshrc", "ls ~/.ssh", "cat ~/.ssh/config", "cp ~/.zshrc.bak notes/", "echo x > ~/.zshrc_notes",
+    "cat ~/.s3cfg", "cat ~/.config/rclone/rclone.conf", "echo x > ~/.boto_notes", "echo x > ~/.s3cfg.bak",
     "git config --global --get user.name", "git config --global -l", "git config user.name x",
     "ssh-keygen -t ed25519 -f ./k", "ssh-add -l", "watch ls", "watch -n 2 'ls -la'", 'find . -name "*.pyc" -delete',
     "concurrently 'npm run dev' 'npm run api'", "watch ls; echo 'rm -rf ~ is bad'", "screen -ls",

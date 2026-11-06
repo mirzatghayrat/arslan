@@ -186,7 +186,7 @@ contracts now bind current unit inputs; original paid manifests/ledgers remain
 unchanged. Source/input mutation rejection stays tested. This does not certify
 the historical baseline against today's source or alter live acceptance results.
 
-User explicitly approved: “批准：最多 60 次／US$6”. Old pilot and repair
+User explicitly approved the spend, up to 60 runs or US$6. Old pilot and repair
 ledgers remain separate and immutable. This grant permits separately registered
 repair rounds, not automatic retry of failed paid requests. Canonical cumulative
 ledger: `../stable-0140-release-evidence-20260924/budget.jsonl`.

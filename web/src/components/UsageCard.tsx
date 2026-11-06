@@ -277,7 +277,7 @@ function Kpi({ label, value, sub, tone, subTone }: { label: string; value: strin
 }
 
 /** Rows on one time axis: tokens, then over 7 and 30 days the duration heatmap and outcome; over 24 hours (INB7-b, board F) one bar
- *  per run instead, and the picked run's steps with their replay. The user: 「热力图只在 7 天和 30 天显示」. */
+ *  per run instead, and the picked run's steps with their replay. The user: the heatmap shows only for 7 and 30 days. */
 function Timeline({ bins, bands, binSeconds, range, locale, selected, onPick }:
   { bins: UsageBin[]; bands: string[]; binSeconds: number; range: RangeKey; locale: string;
     selected?: number; onPick?: (b: UsageBin) => void }) {

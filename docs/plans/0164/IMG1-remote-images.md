@@ -25,7 +25,7 @@ A reply is the model's text, and the model reads outside content (web pages, fil
 
 ## Decided (user, 2026-11-01, relayed by ④参谋)
 
-The user's words, verbatim: 「直接按 A + C 做 确实听着靠谱些」. So:
+In summary, the user chose to go straight with A + C. So:
 
 - **A + C, as described below.** No mock first: it's built straight from this card.
 - **B** is a follow-up once A has run on a real Mac.

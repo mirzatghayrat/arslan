@@ -1,6 +1,6 @@
 /**
  * INB7-a (v0.1.64): Activity is now Progress (「进展」), and its top row is board F's (the INB7 board; the user's go-ahead, relayed
- * 2026-11-01: 「INB7 a–f can go ahead on F as drawn」). It leads with what waits on you, keeps the four work tiles, and the cost tile
+ * 2026-11-01: INB7 a–f can go ahead on F as drawn). It leads with what waits on you, keeps the four work tiles, and the cost tile
  * carries a bar of the cost by model that opens the by-model table in place. A model keeps its colour when the range changes, so a
  * reader who learned "Claude is blue" is not misled by a repaint. Real English (and two other languages), so a raw key fails.
  */

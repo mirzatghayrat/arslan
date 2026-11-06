@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Grade | **Must** for v0.1.64 (user, 2026-11-03, relayed by ④参谋: 「第1条也在0.1.64做了呗，3，4可以放到0.1.65」). |
+| Grade | **Must** for v0.1.64 (user, 2026-11-03, relayed by ④参谋: item 1 is also done in v0.1.64; items 3 and 4 can wait for v0.1.65). |
 | Lane | ②Main, after ROUTE1. ROUTE1 already carries item 2: the seed's model ids come from `prices.py`. |
 | Review | It handles an API key before anything is stored, so it's security surface: an effort=max review from another session, then a self-merge under #644. |
 | Mock | A UI reorder, so a small before/after mock goes to the user for an OK **before any code**. |
