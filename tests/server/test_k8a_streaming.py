@@ -308,34 +308,15 @@ async def test_an_interrupted_answer_records_a_failed_run_and_task(turn, executi
 
 async def test_whether_a_turn_streams(execution_db, monkeypatch):
     a = SimpleNamespace(_provider=SimpleNamespace(model="deepseek-v4-flash", base_url=BASE))
-    assert await tool_loop._streams_answer(a, None) is True
-    assert await tool_loop._streams_answer(a, object()) is False          # explicit criteria, jobs
+    assert tool_loop._streams_answer(a, None) is True
+    assert tool_loop._streams_answer(a, object()) is False          # explicit criteria, jobs
     token = task_service._answer_only.set(True)
     try:
-        assert await tool_loop._streams_answer(a, object()) is True       # only "an answer was delivered"
+        assert tool_loop._streams_answer(a, object()) is True       # only "an answer was delivered"
     finally:
         task_service._answer_only.reset(token)
     monkeypatch.setattr(tool_loop, "BUFFERED_MODELS", frozenset({"deepseek-v4-flash"}))
-    assert await tool_loop._streams_answer(a, None) is False
-
-
-async def test_answers_only_when_complete_is_the_old_path(turn, monkeypatch):
-    from server.services import settings_service
-
-    async def yes(db):
-        return True
-    monkeypatch.setattr(settings_service, "answer_when_complete", yes)
-    sent, at_first = [], []
-    original = tool_loop._TurnText.show
-
-    def show(self, text):
-        at_first.append(len(sent))
-        original(self, text)
-    monkeypatch.setattr(tool_loop._TurnText, "show", show)
-    result, chunks, _, _ = await turn([_reply(PROSE)], sent=sent)
-    total = len([e for e in _reply(PROSE).split(b"\n\n") if e])
-    # K8c: shown only once the model finished, and in one piece (no simulated typing)
-    assert chunks == [result["final"]] and all(at == total for at in at_first)
+    assert tool_loop._streams_answer(a, None) is False
 
 
 def test_nothing_found_is_not_a_search_claim():

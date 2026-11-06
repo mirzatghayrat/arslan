@@ -13,9 +13,6 @@ today's call, result, call, result. The run's lines arrive when it ends.
 
 The whole run finishes before the loop records its first call, so nothing of it outlives the batch;
 stopping the turn while it runs stops every call of it.
-
-`tools_serial` (setting, no UI) runs everything one at a time again. DELETE-BY: v0.1.64, when v0.1.63's
-M1 shows parallel no worse than serial twice running and the pairing tests stay green (card K9 §9).
 """
 from __future__ import annotations
 
@@ -92,16 +89,6 @@ async def _mcp_reads(keys: set[str]) -> set[str]:
         return {key for key, hints in rows if read_only(hints)}
     except Exception:  # noqa: BLE001 — not knowing is not a read
         return set()
-
-
-async def _serial() -> bool:
-    try:
-        from server.db import session as db_session
-        from server.services import settings_service
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.tools_serial(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default: together
-        return False
 
 
 class Batch:
@@ -193,6 +180,4 @@ async def plan(calls: list[tuple[str, dict] | None]) -> Batch | None:
         return None
     reads = (candidates & READS) | await _mcp_reads({key for key in candidates if _server(key) is not None})
     batch = Batch(calls, reads)
-    if not any(batch.launchable(index) for index in range(len(calls))) or await _serial():
-        return None
-    return batch
+    return batch if any(batch.launchable(index) for index in range(len(calls))) else None
