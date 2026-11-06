@@ -361,12 +361,15 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
         # F2: what Arslan finds again merges into a stopped row, which only counts up and stays stopped.
         # A stopped row is never a rival (it failed three times in a row), and the user's own correction
         # is the user's choice, so it never looks at stopped rows.
-        for row in await _nearest(text, stopped=cand.source != "user_correction"):
-            pair = {"candidate": text, "existing": render(row)}
+        near = await _nearest(text, stopped=cand.source != "user_correction")
+        # L11 (b): its own row first, or a restatement in one folder would hit another folder's opposite practice.
+        for row in near:
             # JUDGE1: each row names its lesson, so deleting the lesson deletes what the ledger kept of it.
-            if await _yes("memory.merge", pair, conversation_id, ref=f"lesson:{row.id}"):
+            if await _yes("memory.merge", {"candidate": text, "existing": render(row)}, conversation_id, ref=f"lesson:{row.id}"):
                 merged = row
                 break
+        for row in near if merged is None else ():
+            pair = {"candidate": text, "existing": render(row)}
             # L11 (b): the user's correction doesn't rival a practice that applies only in another folder. A detour
             # still does: it never narrows, so it would stand in that folder for good, against what the user said there.
             if cand.source == "user_correction" and _scope(row) not in ("", here):
@@ -388,13 +391,16 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                 if row.status == "proposed" and evidence.get(CONFLICTS_WITH) is not None:
                     rival = await db.get(Lesson, evidence[CONFLICTS_WITH])
                     rival = rival if rival is not None and rival.status == "active" else None
-                takes_effect = immediate and (rival is None or (cand.source == "user_correction"
-                                                                and not rival.pinned))
+                # L11 (b): as on the conflict path, a rival scoped to another folder doesn't apply here, so a user's
+                # correction neither waits on it nor retires it: it is kept as its own lesson.
+                elsewhere = cand.source == "user_correction" and rival is not None and _scope(rival) not in ("", here)
+                takes_effect = immediate and not elsewhere and (rival is None or (cand.source == "user_correction"
+                                                                                  and not rival.pinned))
                 if immediate and cand.source == "user_correction" and not takes_effect:
                     # INB1 (S64-0's recheck, N2): the user's correction against a pinned lesson is not
                     # folded into the waiting one, where nobody would see it: it is kept as its own
                     # lesson, waiting against the pinned one in the user's words (the conflict path).
-                    merged, conflicting = None, rival
+                    merged, conflicting = None, None if elsewhere else rival
                 else:
                     if takes_effect and (cand.source == "user_correction" or row.status == "proposed"):
                         row.situation, row.advice, row.polarity = cand.situation, cand.advice, cand.polarity
@@ -403,6 +409,8 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                         evidence.pop(CONFLICTS_WITH, None)
                         if rival is not None:
                             rival.status, rival.updated_at = "archived", now     # the user's newer words win
+                            if not _scope(rival):
+                                evidence[CORRECTED_IN] = ""     # it replaces a practice for everywhere: it stays so
                     if takes_effect and row.status == "proposed":
                         row.status = "active"
                     row.updated_at = now

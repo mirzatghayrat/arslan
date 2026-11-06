@@ -190,6 +190,31 @@ async def test_a_project_folder_that_cant_be_expanded_doesnt_lose_the_correction
     assert await recalled_in("c-tilde") == [row.id]
 
 
+@pytest.fixture
+def behind_a_locked_folder(tmp_path):
+    locked = tmp_path / "locked"
+    (locked / "inside").mkdir(parents=True)
+    locked.chmod(0)
+    yield locked / "inside"
+    locked.chmod(0o700)
+
+
+async def test_a_project_folder_that_cant_be_checked_doesnt_lose_the_correction(execution_db, judge, folders,
+                                                                                behind_a_locked_folder):
+    await project(execution_db, "c-locked", str(behind_a_locked_folder))
+    await correct("c-locked")
+    assert lessons.FOLDER_SCOPE not in (await only(execution_db)).evidence
+
+
+async def test_a_workspace_that_cant_be_checked_doesnt_lose_a_detour(execution_db, judge, folders,
+                                                                     behind_a_locked_folder):
+    async with execution_db() as s:
+        await settings_service._set_raw(s, "workspace_dir", str(behind_a_locked_folder))
+        await s.commit()
+    await correct(CN, source="detour")
+    assert (await only(execution_db)).source == "detour"
+
+
 # -- #718's review, finding 2: a practice scoped elsewhere isn't a rival here ------------------------------------------
 
 async def test_folders_with_opposite_practices_each_keep_their_own(execution_db, judge, folders):
@@ -229,6 +254,83 @@ async def test_a_detour_still_waits_on_a_practice_scoped_elsewhere(execution_db,
     rows = await by_advice(execution_db)
     assert rows[ADVICE].status == "active" and rows[OPPOSITE].status == "proposed"
     assert rows[OPPOSITE].evidence[lessons.CONFLICTS_WITH] == rows[ADVICE].id
+
+
+async def all_rows(db) -> list[Lesson]:
+    async with db() as s:
+        return list((await s.scalars(select(Lesson).order_by(Lesson.id))).all())
+
+
+async def test_a_restatement_finds_its_own_row_before_a_rival_in_another_folder(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)
+    await correct(CA)                                           # newest first, B's row comes up before A's own
+    rows = await by_advice(execution_db)
+    assert rows[OPPOSITE].status == "active" and rows[ADVICE].evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+    assert await recalled_in(CB) == [rows[OPPOSITE].id]
+
+
+async def test_restating_in_each_folder_settles_each_there(execution_db, judge, folders):
+    for cid, advice in ((CA, ADVICE), (CA, ADVICE), (CB, OPPOSITE), (CA, ADVICE), (CB, OPPOSITE), (CB, OPPOSITE)):
+        await correct(cid, advice=advice)
+    rows = await by_advice(execution_db)
+    assert await recalled_in(CA) == [rows[ADVICE].id] and await recalled_in(CB) == [rows[OPPOSITE].id]
+    assert await recalled_in(CN) == []
+
+
+@pytest.mark.parametrize("pinned", [False, True], ids=["plain", "pinned"])
+async def test_a_correction_on_a_waiting_detour_leaves_a_practice_scoped_elsewhere(execution_db, judge, folders, pinned):
+    await correct(CA)
+    await correct(CA)
+    if pinned:
+        await pin_only(execution_db)
+    await correct(CB, advice=OPPOSITE, source="detour")
+    await correct(CB, advice=OPPOSITE)
+    scoped, detour, correction = await all_rows(execution_db)
+    assert scoped.status == "active" and scoped.evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+    assert detour.status == "proposed" and detour.source == "detour"
+    assert correction.status == "active" and correction.source == "user_correction"
+    assert await recalled_in(CB) == [correction.id]
+
+
+async def test_replacing_a_practice_for_everywhere_through_a_waiting_row_stays_for_everywhere(execution_db, judge, folders):
+    await correct(CN)
+    await pin_only(execution_db)
+    await correct(CA, advice=OPPOSITE)                          # waits on the pinned one
+    async with execution_db() as s:
+        (await s.scalars(select(Lesson).where(Lesson.advice == ADVICE))).one().pinned = False
+        await s.commit()
+    await correct(CA, advice=OPPOSITE)
+    rows = await by_advice(execution_db)
+    assert rows[ADVICE].status == "archived" and rows[OPPOSITE].status == "active"
+    assert lessons.FOLDER_SCOPE not in rows[OPPOSITE].evidence and await recalled_in(CB) == [rows[OPPOSITE].id]
+
+
+async def test_replacing_a_practice_scoped_here_through_a_waiting_row_can_scope_here(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await pin_only(execution_db)
+    await correct(CA, advice=OPPOSITE)                          # waits on the pinned one
+    async with execution_db() as s:
+        (await s.scalars(select(Lesson).where(Lesson.advice == ADVICE))).one().pinned = False
+        await s.commit()
+    await correct(CA, advice=OPPOSITE)
+    rows = await by_advice(execution_db)
+    assert rows[ADVICE].status == "archived" and rows[OPPOSITE].evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+
+
+async def test_a_correction_that_merges_asks_no_conflict_question(execution_db, judge, folders, monkeypatch):
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)
+    asked, fake = [], judgment.judge
+
+    async def counting(point, state, **kwargs):
+        asked.append(point)
+        return await fake(point, state, **kwargs)
+    monkeypatch.setattr(judgment, "judge", counting)
+    await correct(CA)
+    assert "memory.merge" in asked and "memory.conflict" not in asked
 
 
 async def test_what_replaces_a_practice_for_everywhere_stays_for_everywhere(execution_db, judge, folders):

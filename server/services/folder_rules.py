@@ -208,7 +208,7 @@ async def conversation_folder(db, conversation_id: str | None) -> Path | None:
             try:
                 if raw and Path(raw).expanduser().is_dir():
                     return Path(raw).expanduser().resolve()
-            except RuntimeError:        # ~someone_unknown/… : read as a folder that's gone
+            except (RuntimeError, OSError):     # ~someone_unknown/…, or an unreadable parent: read as a folder that's gone
                 pass
     ws = await settings_service.workspace_dir(db)
     return ws.resolve() if ws else None

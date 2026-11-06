@@ -390,9 +390,9 @@ async def workspace_dir(session: AsyncSession):
             return None
     try:
         path = Path(str(raw).strip()).expanduser().resolve()
+        return path if path.is_dir() else None
     except (OSError, RuntimeError):
         return None
-    return path if path.is_dir() else None
 
 
 async def workspace_is_default(session: AsyncSession) -> bool:
