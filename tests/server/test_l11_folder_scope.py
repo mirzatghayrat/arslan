@@ -322,7 +322,8 @@ async def test_replacing_a_practice_scoped_here_through_a_waiting_row_can_scope_
 
 async def test_a_correction_that_merges_asks_no_conflict_question(execution_db, judge, folders, monkeypatch):
     await correct(CA)
-    await correct(CB, advice=OPPOSITE)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)                          # the nearer row, newest first, is the other folder's
     asked, fake = [], judgment.judge
 
     async def counting(point, state, **kwargs):
