@@ -2,9 +2,9 @@ import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { useArslanStore } from '../stores/arslanStore';
 
 /**
- * FMT1 (0.1.64): the reply being streamed, at most once per animation frame. Each chunk is its own WebSocket message, and each
- * message re-rendered the chat before this, so a reattach replaying a turn's frames took 20 s to drain (measured in the PR). The
- * store stays exact: this only decides when the window looks.
+ * FMT1 (0.1.64): the reply being streamed, at most once per animation frame. Each chunk is its own WebSocket message, and
+ * rendering the chat for each one is how the text falls behind a fast model, or a reattach replaying a turn's frames (the
+ * numbers are in the PR). The store stays exact: this only decides when the window looks.
  *
  * A reply that shrinks shows at once: a new one must not start by showing the last one, and one a guard sent back must not
  * linger. A hidden window gets no frames and needs none: the finished reply comes from the store's items, not from here.

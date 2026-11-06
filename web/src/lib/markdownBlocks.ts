@@ -1,7 +1,7 @@
 /**
  * FMT1 (0.1.64): a reply still streaming, cut into top-level Markdown blocks, so a finished block is parsed once and the cost of
- * a token doesn't grow with the reply. Streamdown and the AI SDK's memoized Markdown do the same with a full lexer; this needs
- * only to find a safe place to cut, and a cut it misses only costs a bigger block.
+ * a token doesn't grow with the reply. Streamdown does the same with marked's lexer; this needs only to find a safe place to
+ * cut, with no new dependency, and a cut it misses only costs a bigger block.
  *
  * A block ends at a blank line, if the next line can't belong to it: not inside a fence, not indented (more of a list item, or
  * indented code), not a list marker (the next item of a loose list). What a cut can't show while streaming, such as a reference
