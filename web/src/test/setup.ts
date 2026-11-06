@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom";
+import { vi } from "vitest";
 
 // Recent Node versions expose their own Web Storage globals. Vitest keeps
 // pre-existing globals when populating jsdom, so bare localStorage can otherwise
@@ -22,3 +23,12 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
     disconnect() {}
   };
 }
+
+// jsdom has no Worker, and a window always does. This one gives up at once, so a fence stays plain text, as it does when a
+// real worker gives up, with no budget timer left running. fmt1-code-block.test.tsx has one that really highlights.
+vi.stubGlobal("Worker", class {
+  onmessage: ((event: { data: null }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  postMessage() { this.onmessage?.({ data: null }); }
+  terminate() {}
+});
