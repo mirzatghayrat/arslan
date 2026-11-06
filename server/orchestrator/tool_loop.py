@@ -3385,17 +3385,17 @@ async def _run_native(
             # provider checks as it sends; a stop here hands them back).
             budget.check_request()
             await _commit_steers(_facts["steers"], conversation_id)
-        step = _StepStream(turn_text) if turn_text is not None else None
+        stream = _StepStream(turn_text) if turn_text is not None else None
         try:
             resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                      schemas=schemas, forced=forced, state=turn_state, status=status,
-                                     drops=drops, conversation_id=conversation_id, step=step)
+                                     drops=drops, conversation_id=conversation_id, step=stream)
         except TextShown:
             # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
             # what was shown and says so, and the run records a failure (no `error` frame: the window
             # would drop the text the phone kept).
             from server.services import host_run, runtime_messages
-            step.finish()
+            stream.finish()
             turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
                              answer=False)
             host_run.note_failure("model_error_after_text")
@@ -3403,8 +3403,8 @@ async def _run_native(
                 acceptance_runtime.pause_reason = "model_error_after_text"
             return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
                     "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
-        if step is not None:
-            step.finish()
+        if stream is not None:
+            stream.finish()
         if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
             drops.changed = False
             wired = drops.keep(wired)
@@ -3665,7 +3665,7 @@ async def _run_native(
             # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
             # passed the window and went out as the answer, where it stays (and in the stored answer).
             narration = agent_status.strip_echo((resp.content or "").strip())
-            if narration and not (step is not None and step.released):
+            if narration and not (stream is not None and stream.released):
                 emit({"type": "note", "text": narration[:400]})
             pending_feedback = len(convo) - history_start
             continue
@@ -3681,10 +3681,10 @@ async def _run_native(
         # The reply's continuation replays its own text verbatim (Claude: byte for byte); once the host
         # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
         own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
-        streamed = step is not None and step.released          # K8a: this step's text already went out
+        streamed = stream is not None and stream.released          # K8a: this step's text already went out
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
-        protocol_text = _embeds_protocol(final_text) or (step is not None and step.stopped)
+        protocol_text = _embeds_protocol(final_text) or (stream is not None and stream.stopped)
         # 0.1.50: an answer that denies a capability this turn had (bench: "no file
         # write ability" with write_file offered) gets one correction.
         from server.orchestrator import capability_truth
