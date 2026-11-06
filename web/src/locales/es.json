@@ -691,7 +691,14 @@
     "openActivityBtn": "Abrir Progreso",
     "whatsNewEmpty": "No hay notas para esta versión.",
     "modelRolesResetNotice": "Los roles de modelo ahora siguen el modelo de cada conversación. Se borraron tus elecciones de roles anteriores.",
-    "modelRolesResetOk": "Entendido"
+    "modelRolesResetOk": "Entendido",
+    "addModelKeyHint": "Solo se usa para preguntar a {{provider}} qué modelos tiene. No se guarda nada hasta que pulses Agregar.",
+    "addModelLive": "En directo de {{provider}} · {{count}} modelos",
+    "addModelLoading": "Preguntando a {{provider}} por sus modelos…",
+    "addModelBuiltIn": "Lista integrada",
+    "addModelFallback": "No se pudo contactar con {{provider}}; se muestra la lista integrada de Arslan.",
+    "addModelRetry": "Reintentar",
+    "addModelChooseProvider": "Elige un proveedor"
   },
   "errors": {
     "load_failed": "No se pudieron cargar los datos.",
@@ -806,8 +813,6 @@
     "collapse_results": "Contraer",
     "stdout_label": "Salida estándar:",
     "exec_validated": "Ejecución verificada; la conexión aislada terminó con código 0.",
-    "equipped_capabilities": "Capacidades disponibles:",
-    "capabilities_matrix": "Matriz de capacidades:",
     "hide_rail": "Ocultar panel lateral",
     "show_rail": "Mostrar panel lateral",
     "confirm_direction": "Confirmar dirección · Adelante",

@@ -15,10 +15,9 @@ as SUBSUMED). The two data-writing migrations (``0006``, ``0018``) are
 idempotency-guarded, so the whole chain is a safe net no-op re-run on an existing
 install.
 
-🔴 MAINTAINER: adding a migration (e.g. 0032) requires updating THREE places in
-lockstep — the version file under versions/, ``MIGRATIONS`` here, and the
-hardcoded id list in ``test_registry_matches_boot_chain_verbatim`` — a mismatch
-is a deliberate CI red, not a bug to be worked around.
+🔴 MAINTAINER: adding a migration (e.g. 0032) requires updating TWO places in
+lockstep — the version file under versions/ and ``MIGRATIONS`` here. A version
+file with no line here is a deliberate CI red, not a bug to be worked around.
 """
 from __future__ import annotations
 
@@ -108,6 +107,7 @@ from .versions._0083_conversation_seen import upgrade_sync as _m0083
 from .versions._0084_scheduled_task_seen import upgrade_sync as _m0084
 from .versions._0085_judgment_run import upgrade_sync as _m0085
 from .versions._0086_route1_remove_routing import upgrade_sync as _m0086
+from .versions._0089_capability_sources_plugin_kind import upgrade_sync as _m0089
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -192,6 +192,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0084", _m0084),
     ("0085", _m0085),
     ("0086", _m0086),
+    ("0089", _m0089),
 ]
 
 

@@ -176,9 +176,9 @@
   - 「做完未看」（`done_unseen`）进 v0.1.64，但要按手机的能力降级：手机的 `hello` 里说了 `done_unseen` 才发新值，否则发 `done`。旧版手机会把不认识的状态当成 idle，做完了却显示灰点。
   - 进展的四行简报在手机上顺延 v0.1.65：它会拖慢 iPhone 1.0 送审；字段是可选的，Mac 可以先发。
   - 子会话上手机放 v0.1.65。
-  - notify 收窄（INB 第 5 条）会改变所有手机（包括旧版）收到的推送，单独让用户定。
+  - The notify narrowing (INB item 5): answered 2026-11-07 (the user, relayed by ④参谋). `notify=1` doesn't change; see INB8.
 
-**用户 10-28 定：照 ①iOS 的建议。** 翻页这一版做；改名先不做（`conversation.update` 不带 `title`，`conversation.rename` 撤掉）；「做完未看」按手机的 `hello` 降级；四行简报和子会话上手机顺延 v0.1.65。**notify 收窄（「推送只推要你做的」）还没定，单独问用户。** 10-26 §4b 的两点（`phone-<uuid>`、`outcomes` 只放已结束的任务）仍由 ②Main 定。
+**用户 10-28 定：照 ①iOS 的建议。** 翻页这一版做；改名先不做（`conversation.update` 不带 `title`，`conversation.rename` 撤掉）；「做完未看」按手机的 `hello` 降级；四行简报和子会话上手机顺延 v0.1.65。**notify 收窄（「推送只推要你做的」）:** decided 2026-11-07, no frame change (INB8). 10-26 §4b 的两点（`phone-<uuid>`、`outcomes` 只放已结束的任务）仍由 ②Main 定。
 
 ## Frame names, fixed (②Main, 2026-10-29)
 

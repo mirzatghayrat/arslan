@@ -24,7 +24,6 @@ import { MODEL_CHANGED_EVENT, beginModelSave, isModelSaving, useModelSaving } fr
 import { conversationModelApi } from '../api/conversationModel';
 import { withTimeout } from './models/ConversationModelChip';
 import { lastSend, rememberSend } from '../lib/lastSend';
-import { useCapabilityLabel } from '../stores/registryStore';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
 import { SpawnAvatar } from './SpawnAvatar';
@@ -210,7 +209,6 @@ export default function OrchestratorChat({
     />
   ) : null;
   // Real capability display names (key → name) for equipped-capability chips.
-  const capabilityLabel = useCapabilityLabel();
   // Client-side user display name for the greeting + own-message sender label.
   const displayName = useProfileStore((s) => s.displayName);
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
@@ -712,53 +710,6 @@ export default function OrchestratorChat({
                       )}
                     </div>
 
-                    {/* 1. Spawn Intro Card Sub-Component (specifically asked in prompt) */}
-                    {msg.spawnIntro && (
-                      <div className="bg-gradient-to-b from-surface/90 to-background/95 border border-primary/30 rounded-2xl p-4 shadow-xl shadow-primary/5 space-y-3.5 relative overflow-hidden group">
-                        {/* Decorative background glow for card */}
-                        <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 blur-xl group-hover:bg-primary/10 transition-all rounded-full pointer-events-none"></div>
-
-                        <div className="flex items-start gap-3.5">
-                          <SpawnAvatar seed={msg.spawnIntro.name} size={44} />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-xs font-bold text-foreground font-sans">{msg.spawnIntro.name}</h4>
-                              <span className="text-[9px] bg-primary/15 text-primary font-mono px-2 py-0.5 rounded font-bold uppercase tracking-widest">{t('ui.introduced')}</span>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground font-mono mt-0.5">{msg.spawnIntro.domain}</p>
-                          </div>
-                        </div>
-
-                        {/* Equipped Capabilities Rendering */}
-                        <div className="space-y-2">
-                          <div className="text-[10px] text-subtle-foreground font-mono font-medium tracking-wide uppercase">{t('orchestrator.equipped_capabilities')}</div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {/* Render Tool tags with lucide icon */}
-                            {msg.spawnIntro.tools.map(toolId => (
-                                <span
-                                  key={toolId}
-                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-surface text-muted-foreground px-2 py-0.5 rounded-lg hover:text-foreground transition-all"
-                                >
-                                  {getIcon(toolId, 'w-3 h-3')}
-                                  <span className="font-semibold">{capabilityLabel(toolId)}</span>
-                                </span>
-                            ))}
-                            {/* Render Skill tags with lucide icon */}
-                            {msg.spawnIntro.skills.map(skillId => (
-                                <span
-                                  key={skillId}
-                                  className="inline-flex items-center gap-1 text-[10.5px] font-mono bg-primary/10 text-primary px-2 py-0.5 rounded-lg transition-all"
-                                >
-                                  {getIcon(skillId, 'w-3 h-3')}
-                                  <span className="font-semibold">{capabilityLabel(skillId)}</span>
-                                </span>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-
                     {/* 🔒 HTML deliverable card — artifactHtml comes ONLY from the backend
                         stream_end frame's kind:"html" artifact (HX-2), never LLM text.
                         Keep the card's own copy button here: the message row copies the
@@ -839,33 +790,6 @@ export default function OrchestratorChat({
                     </div>
                   )}
 
-                  {/* Spawn Intro Brutalist version */}
-                  {msg.spawnIntro && (
-                    <div className="mt-4 border-2 border-primary bg-background p-3 space-y-2 text-[11px]">
-                      <div className="flex items-center gap-2 font-bold text-primary">
-                        <span>{t('ui.expertCreated', { name: msg.spawnIntro.name })}</span>
-                      </div>
-                      <p className="text-muted-foreground text-[10px]">{t('ui.domain', { domain: msg.spawnIntro.domain })}</p>
-
-                      <div className="pt-2 border-t border-border space-y-1">
-                        <span className="text-subtle-foreground font-bold">{t('orchestrator.equipped_capabilities')}</span>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {msg.spawnIntro.tools.map(toolId => (
-                            <span key={toolId} className="px-2 py-0.5 bg-background text-muted-foreground">
-                              [{t('capabilities.tabs.tools')}] {toolId.toUpperCase()}
-                            </span>
-                          ))}
-                          {msg.spawnIntro.skills.map(skillId => (
-                            <span key={skillId} className="px-2 py-0.5 bg-background text-primary">
-                              [{t('capabilities.hero.kind.skill')}] {skillId.toUpperCase()}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (
                     <div className="mt-4">
@@ -943,34 +867,6 @@ export default function OrchestratorChat({
                       </span>
                     </div>
                   )}
-
-                  {/* Linear Minimal Spawn intro */}
-                  {msg.spawnIntro && (
-                    <div className="pl-5 pt-2">
-                      <div className="border border-border bg-background rounded-lg p-3 space-y-2.5 max-w-xl">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-foreground text-[11px]">{t('ui.expertEntry', { name: msg.spawnIntro.name })}</span>
-                          </div>
-                          <span className="text-[9px] bg-surface text-muted-foreground px-2 py-0.5 rounded font-mono">{t('ui.active')}</span>
-                        </div>
-                        <div className="text-[10px] text-subtle-foreground">{t('orchestrator.capabilities_matrix')}</div>
-                        <div className="flex flex-wrap gap-1">
-                          {msg.spawnIntro.tools.map(toolId => (
-                            <span key={toolId} className="text-[10px] bg-surface text-muted-foreground px-2 py-0.5 rounded">
-                              {toolId}
-                            </span>
-                          ))}
-                          {msg.spawnIntro.skills.map(skillId => (
-                            <span key={skillId} className="text-[10px] bg-primary/15 text-primary px-2 py-0.5 rounded">
-                              {skillId}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
 
                   {/* 🔒 HTML deliverable card — backend stream_end kind:"html" artifact only (HX-2). */}
                   {msg.artifactHtml && (

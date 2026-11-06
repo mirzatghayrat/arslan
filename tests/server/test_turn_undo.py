@@ -18,7 +18,6 @@ from server.db.models import (
     MemorySource, MemorySuppression, PermissionGrant, Run, TaskAttempt,
 )
 from server.orchestrator import arslan, memory
-from server.registry import service as registry_service
 from server.services import background_jobs, run_registry, turn_undo
 from server.services.memory_repository import repository
 from server.ws import arslan as ws_arslan
@@ -255,15 +254,13 @@ async def test_the_recap_drops_only_the_removed_turns_memory_events(execution_db
     assert left == {(CID, "memory", before), (OTHER, "memory", after), (CID, "distill", after)}
 
 
-async def test_after_an_undo_no_expired_grant_comes_back_no_turn_grant_survives_and_conversation_grants_stay(
+async def test_after_an_undo_the_turn_clock_holds_no_turn_grant_survives_and_conversation_grants_stay(
         execution_db):
     """⓪Plan's Q6: the turn clock (user turns so far) must never run backwards."""
     await _turn(execution_db, CID, "one")
     second = await _turn(execution_db, CID, "two")
     await _turn(execution_db, CID, "three")
     clock = await memory.user_turn_count(CID)
-    expired = SimpleNamespace(ref_key="old_tools", grant="temporary", expires_turn=clock - 1)
-    assert registry_service._active_toolset_keys([expired], clock) == []
     async with execution_db() as db:
         # the turn's own task starts just before its message is stored: found by its run, not its time
         db.add(CompanionTask(id="turn-two", conversation_id=CID, attempt_id="a", budget={}, phase="succeeded",
@@ -280,7 +277,6 @@ async def test_after_an_undo_no_expired_grant_comes_back_no_turn_grant_survives_
     await turn_undo.undo(second.run)
     after = await memory.user_turn_count(CID)
     assert after == clock                                                # (i) the clock did not go back
-    assert registry_service._active_toolset_keys([expired], after) == []
     await memory.add_message(CID, "user", "four")
     assert await memory.user_turn_count(CID) == clock + 1
     async with execution_db() as db:

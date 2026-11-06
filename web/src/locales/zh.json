@@ -691,7 +691,14 @@
     "openActivityBtn": "打开进展",
     "whatsNewEmpty": "这一版没有更新说明。",
     "modelRolesResetNotice": "模型分工现在跟着每个对话自己的模型走，之前设的分工已清空。",
-    "modelRolesResetOk": "知道了"
+    "modelRolesResetOk": "知道了",
+    "addModelKeyHint": "只用来问 {{provider}} 有哪些模型。点「添加」之前什么都不会保存。",
+    "addModelLive": "来自 {{provider}} 的实时列表 · {{count}} 个模型",
+    "addModelLoading": "正在向 {{provider}} 查询模型…",
+    "addModelBuiltIn": "内置列表",
+    "addModelFallback": "连不上 {{provider}}，先显示 Arslan 的内置列表。",
+    "addModelRetry": "重试",
+    "addModelChooseProvider": "选择服务商"
   },
   "errors": {
     "load_failed": "加载数据失败。",
@@ -806,8 +813,6 @@
     "collapse_results": "收起",
     "stdout_label": "标准输出返回：",
     "exec_validated": "指令执行已验证。沙盒套接字正常返回 0。",
-    "equipped_capabilities": "已装备能力：",
-    "capabilities_matrix": "能力矩阵：",
     "hide_rail": "隐藏侧栏",
     "show_rail": "显示侧栏",
     "confirm_direction": "确认方向 · 开干",

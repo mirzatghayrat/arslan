@@ -1,13 +1,11 @@
-"""Per-spawn knowledge base: ingest (text or file), list sources, delete a source."""
+"""Per-spawn knowledge ingest (text or file). DELETE-BY: v0.1.64, with C7c-4 (the repo card moves off this route)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
-from sqlalchemy import text as sa_text
 
 from server.api.media_type import is_multipart_form
 from server.auth import require_auth
-from server.db import session as db_session
-from server.schemas import IngestOut, KnowledgeIn, KnowledgeSourceOut
+from server.schemas import IngestOut, KnowledgeIn
 from server.services import ingest
 
 router = APIRouter(dependencies=[Depends(require_auth)])
@@ -53,44 +51,3 @@ async def add_knowledge(spawn_id: int, request: Request) -> IngestOut:
         n = await ingest.ingest_text(spawn_id, body.source or "text", body.text, compress=body.compress)
         return IngestOut(source=body.source or "text", chunks_added=n)
     raise HTTPException(status_code=400, detail="provide url, text, or a file")
-
-
-@router.get("/spawns/{spawn_id}/knowledge", response_model=list[KnowledgeSourceOut])
-async def list_knowledge(spawn_id: int) -> list[KnowledgeSourceOut]:
-    async with db_session.AsyncSessionLocal() as db:
-        rows = await db.execute(
-            sa_text(
-                "SELECT source, COUNT(*) AS n FROM knowledge_chunks "
-                "WHERE spawn_id = :sid GROUP BY source"
-            ),
-            {"sid": spawn_id},
-        )
-        return [KnowledgeSourceOut(source=r[0], chunks=r[1]) for r in rows.all()]
-
-
-@router.delete("/spawns/{spawn_id}/knowledge")
-async def delete_knowledge(spawn_id: int, source: str) -> dict:
-    async with db_session.AsyncSessionLocal() as db:
-        ids = [
-            r[0]
-            for r in (
-                await db.execute(
-                    sa_text(
-                        "SELECT id FROM knowledge_chunks WHERE spawn_id = :sid AND source = :src"
-                    ),
-                    {"sid": spawn_id, "src": source},
-                )
-            ).all()
-        ]
-        for rid in ids:
-            await db.execute(
-                sa_text("DELETE FROM knowledge_chunks_fts WHERE rowid = :rid"), {"rid": rid}
-            )
-        await db.execute(
-            sa_text(
-                "DELETE FROM knowledge_chunks WHERE spawn_id = :sid AND source = :src"
-            ),
-            {"sid": spawn_id, "src": source},
-        )
-        await db.commit()
-    return {"deleted": len(ids)}
