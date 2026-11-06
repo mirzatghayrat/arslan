@@ -304,6 +304,11 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
         # #490 review, 5: a quick question learns nothing until the user turns it into a chat (phone.py, Q1 #3).
         # Read as every turn reads it (#486 review, G1): one the phone made with no kind stored counts as one.
         raise HTTPException(409, detail={"code": "quick_question_learns_nothing"})
+    if row and row.kind == "sub":
+        from server.services import sub_sessions
+        # SUB2: a sub-session can be stricter than the conversation that started it, never looser.
+        if await sub_sessions.looser_than_chain(repo.db, row, body.model_dump()):
+            raise HTTPException(422, detail={"code": "sub_session_inherits"})
     if body.temporary:
         from server.db.models import ArslanMessage
         if await repo.db.scalar(select(ArslanMessage.id).where(
@@ -331,6 +336,13 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
         from server.db.models import Run
         await repo.db.execute(update(Run).where(Run.conversation_id == conversation_id)
                               .values(no_learning=True))
+    if row and row.project_id != body.project_id:
+        # SUB2: a sub-session follows the conversation that started it into a project.
+        from server.services import sub_sessions
+        below = [cid for cid in await sub_sessions.tree(repo.db, conversation_id) if cid != conversation_id]
+        if below:
+            await repo.db.execute(update(ConversationContext).where(ConversationContext.id.in_(below))
+                                  .values(project_id=body.project_id).execution_options(synchronize_session=False))
     await repo.db.flush()
     if row:
         await repo.db.refresh(row)

@@ -35,7 +35,7 @@ async def list_conversations(
     db: AsyncSession = Depends(get_session),
 ) -> list[ConversationListItem]:
     """Every conversation that has messages, most recently active first; quick questions (Q1) are left
-    out: they have a list of their own on the phone and never reach the sidebar."""
+    out: they have a list of their own on the phone and never reach the sidebar. So are sub-sessions (SUB2)."""
     return await conversation_list(db)
 
 
@@ -102,7 +102,7 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
     kinds = dict((await db.execute(select(ConversationContext.id, ConversationContext.kind).where(
         ConversationContext.id.in_([c.conversation_id for c in out])))).all())
     # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
-    out = [c for c in out if (phone_ids.kind_of(c.conversation_id, kinds.get(c.conversation_id)) == "quick") is quick]
+    out = [c for c in out if phone_ids.in_list(c.conversation_id, kinds.get(c.conversation_id), quick=quick)]
     # What each one is and how it stands — the sidebar's glyphs, the phone's task list. The retired pocket
     # (Q1 card, #4) is an ordinary conversation here, named after its first message; the Bridge keeps it from phones.
     from server.services import phone_reads

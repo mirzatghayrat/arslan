@@ -31,6 +31,7 @@ from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
 from server.services import (artifact_store, background_jobs, desktop_status, phone_details, phone_ids, phone_reads,
                              phone_stats, settings_service)
+from server.services import sub_sessions
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
@@ -292,8 +293,10 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     # nor sees the mascot turn to "approval" for it.
     feed = desktop_status.island_feed()
     feed["awaiting"] = desktop_status.awaiting_count(excluding=phone_ids.POCKET)
+    running = background_jobs.active()
+    subs = await sub_sessions.sub_ids(db, [job.conversation_id for job in running])     # SUB2
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
-            "jobs": [_clean_job(job.frame()) for job in background_jobs.active()],
+            "jobs": [_clean_job(job.frame()) for job in running if job.conversation_id not in subs],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,
             "activity": await phone_reads.activity(db), **await _stats(db),
             # IPB (§5.11): the one part of `mac` only Arslan knows; the Bridge adds the Mac's own readings.
@@ -447,6 +450,8 @@ async def phone_live(limit: int = Query(20, ge=1, le=50), db: AsyncSession = Dep
     from server.api.conversations import list_conversations
     newest = [r.conversation_id for r in await list_conversations(db)]
     jobs = [job.conversation_id for job in background_jobs.active()]
+    subs = await sub_sessions.sub_ids(db, jobs)           # SUB2: a running sub-session stays off the phone too
+    jobs = [cid for cid in jobs if cid not in subs]
     temporary = set((await db.execute(
         select(ConversationContext.id).where(ConversationContext.id.in_(newest + jobs),
                                              ConversationContext.temporary.is_(True)))).scalars())

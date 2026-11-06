@@ -224,6 +224,7 @@ async def conversations(project_id: str, repo=Depends(_repository, scope="functi
     project = await _project(repo, project_id)
     ids = (await repo.db.execute(select(ConversationContext.id).where(
         ConversationContext.project_id == project.id, ConversationContext.owner_id == USER.owner_id,
+        ConversationContext.kind.is_distinct_from("sub"),          # SUB2: reached through what started it
     ))).scalars().all()
     if not ids:
         return []
