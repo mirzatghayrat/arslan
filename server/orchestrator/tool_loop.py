@@ -1584,6 +1584,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     sandbox_on = False
     unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
+    deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
+
+    def delete_kw(outside: bool) -> dict:
+        """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
+        from server.services import delete_to_trash
+        return {"delete": delete_to_trash.card_mode(command, outside=outside or not confined)} if deletes_outside else {}
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
@@ -1594,6 +1600,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         if verdict.level == "forbid":
             result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
                       "note": "Tell the user what you wanted to do and let them run it themselves."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        if terminal_policy.heredoc_in_substitution(command):
+            # No card either: it would show text that reads as data, and some of that text would run.
+            result = {"ok": False, "error": "A here-document inside $( ) can't run here: in bash 3.2 its text can end the "
+                      "substitution early, and the rest of the text runs as commands. Nothing ran.",
+                      "note": "Write the text to a file with write_file, then use the file: for a commit message, "
+                              "git commit -F <file>; for a variable, NOTE=$(cat <file>)."}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -1609,6 +1624,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
         sandbox_on = await _sandbox_enabled()
+        deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
+        confined = sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
         from server.services import task_service as _task_service
         # S2a-2: a plain osascript that U11 runs bare takes its own card, the one way it works; asking to run it
         # outside the sandbox would show a card that cannot help (its Apple Events stay blocked there).
@@ -1644,7 +1661,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             from server.services import approvals as _approvals
             _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
             _approvals.LAST_ANSWERED_BY.set(None)
-            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw):
+            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw, **delete_kw(True)):
                 result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
@@ -1690,7 +1707,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
             # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
             said = str(args.get("why") or "").strip()[:300]
-            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw)
+            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw,
+                                             **delete_kw(run_outside))
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -1882,8 +1900,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
             async def run_once(outside: bool) -> dict:
                 from server.services import terminal_exec
+                from server.services import delete_to_trash
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
                 bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
+                # SMART-8: allowed, outside the sandbox and read with certainty: its targets go to the Trash.
+                trash = delete_to_trash.TRASH.set(tool_key == "run_command" and deletes_outside
+                                                  and (outside or not confined)
+                                                  and delete_to_trash.plan(command) is not None)
                 # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
                 cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
                 try:
@@ -1891,6 +1914,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 finally:
                     if cut is not None:
                         terminal_exec.OFFLINE.reset(cut)
+                    delete_to_trash.TRASH.reset(trash)
                     terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             if result is None:
@@ -1912,7 +1936,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             if (tool_key == "run_command" and sandbox_on and not ran_outside and confirm_command is not None
                     and isinstance(result, dict) and result.get("sandbox_denied")):
                 # Stopped by the sandbox: offer ONE re-run outside it, from the start.
-                if await confirm_command(command, argv, sandbox="retry"):
+                if await confirm_command(command, argv, sandbox="retry", **delete_kw(True)):
                     # S2a-1: outside, the network rule is decided again as for an outside run (this time
                     # only, a stored grant does not count): the retry card is about files.
                     network = await _network_after_outside_content(

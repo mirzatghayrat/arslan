@@ -107,6 +107,21 @@ _LAUNCHED = (r"(?:command" + _H + r"+(?:-p" + _H + r"+)?"
              r"|xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+)*"
              r"(?:[^\s=]*/)?")         # a path, never a VAR=value assignment
 _CMD = _ONCE_POS + _LAUNCHED
+# SMART-8: a delete reaching into a Trash. Finder emptying it needs Apple Events, which both profiles deny, and
+# mac_applescript refuses it itself (`hands_service`). A permanent delete from the Trash is the user's own act;
+# allowed deletes go to the Trash (`delete_to_trash`), so Arslan never takes them out of it. It reads commands: a
+# launcher (`/bin/rm`, `command rm`, `FOO=1 rm`, `timeout 5 rm`) is read through, and prose or a read-only `find` that
+# only names the Trash is not refused. Forms this can't prove (a glob or variable naming the folder) stay on the
+# delete card, which no grant answers (#686 review).
+_DELETER = r"(?:rm|rmdir|unlink|srm)\b"
+_FORBID.append(
+    ("trash", r"(?:" + _CMD + _DELETER + r"[^\n;&|]*\.Trash(?:es)?(?:[/\"'\s)`*]|$)"
+              r"|" + _CMD + r"find\b[^\n;&|]*\.Trash(?:es)?\b[^\n;&|]*\s(?:-delete\b|-exec(?:dir)?\s+(?:[^\s]*/)?"
+              + _DELETER + r")"
+              # a delete after changing into a Trash (`cd ~/.Trash && rm -rf *`)
+              + r"|" + _CMD + r"(?:builtin" + _H + r"+)?(?:cd|chdir|pushd)\b[^\n;&|]*\.Trash(?:es)?\b.*?(?:\b"
+              + _DELETER + r"|\s-delete\b))",
+     "deletes from or empties the Trash; that's yours to do", False))
 # The program itself, not a longer name that starts with it (osascript.sh, osascriptx); a
 # redirection may follow it directly (osascript<<EOF, osascript>/dev/null).
 _END = r"(?=$|[\s;&|)`'\"<>])"
@@ -181,6 +196,8 @@ _ASK = [
      + _END
      + r"|" + _CMD
      + r"rsync\b[^\n]*\S:", "connects to another machine"),
+    # bash opens the connection itself, with no program named (zsh has no such path).
+    ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
     ("publish", _CMD + r"(?:npm\s+publish|pnpm\s+publish|yarn\s+publish|twine\s+upload|cargo\s+publish"
                        r"|gh\s+(?:pr|issue|release|repo|gist)\s+(?:create|delete|merge|close|edit|comment)"
@@ -483,6 +500,17 @@ def ask_rules(command: str) -> set[str]:
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to
 # Objective-C, so U11's bare run is plain AppleScript only: wrapped, its Apple Events are blocked.
 _OTHER_OSA_LANGUAGE = re.compile(_CMD + r"osascript\b[^\n;&|]*\s-l\s*[\"']?(?!applescript\b)\w", re.I)
+
+
+# bash 3.2 scans a substitution without knowing here-documents, so text in one can end it early and the rest runs: a
+# numbered list in a commit message can delete a folder (#723 review). `$((` is arithmetic and `<<<` a here-string.
+_HEREDOC_IN_SUBSTITUTION = re.compile(r"""(?:\$\((?!\()|[<>]\()[^)]*(?<!<)<<-?\s*[\\'"]?\w""")
+
+
+def heredoc_in_substitution(command: str) -> bool:
+    """A here-document inside `$( )`, `<( )` or `>( )`. Misses one after a `)` in the same substitution, which text
+    inside the body can't write."""
+    return bool(_HEREDOC_IN_SUBSTITUTION.search(str(command or "")))
 
 
 def other_osa_language(command: str) -> bool:
