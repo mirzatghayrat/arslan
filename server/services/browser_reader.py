@@ -69,7 +69,7 @@ class ReaderSession:
         self.expiry_task: asyncio.Task | None = None
 
     async def start(self):
-        state = managed_browser.status()
+        state = await asyncio.to_thread(managed_browser.status)          # it reads the user's PATH (#674 review)
         if not state["ready"]:
             raise ReaderError("browser." + state["reason"])
         root = managed_browser.runtime_root()
@@ -79,8 +79,9 @@ class ReaderSession:
         try:
             await self.proxy.__aenter__()
             runner = Path(__file__).resolve().parent.parent / "resources/browser_reader.cjs"
+            node = await asyncio.to_thread(spawn_env.resolve_command, "node")
             self.process = await asyncio.create_subprocess_exec(
-                spawn_env.resolve_command("node"), str(runner), str(root / "node_modules/playwright"), str(executable),
+                node, str(runner), str(root / "node_modules/playwright"), str(executable),
                 f"http://127.0.0.1:{self.proxy.port}", cwd=self.temp.name,
                 env={"PATH": "/usr/bin:/bin", "HOME": self.temp.name, "TMPDIR": self.temp.name},
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,

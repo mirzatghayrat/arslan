@@ -5,7 +5,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   AccessTokenInfo,
   AnomalyDto,
   AppSettings,
-  CatalogEntry,
   CollectionOut,
   ConversationUsage,
   EmbeddingStatus,
@@ -33,7 +32,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   ScheduledTaskUpdateBody,
   SpawnDetail,
   SpawnSummary,
-  SuggestPrimaryResult,
   UsageSummary,
   UserFact,
   SshAuditEntry,
@@ -438,7 +436,7 @@ export const api = {
   /** 0.1.58 §7: Activity's list — a page of 20 back from `beforeId`, narrowed to a chart
    *  slice (epoch seconds) and/or one model. */
   listRuns: (o: { limit?: number; beforeId?: number; since?: number; until?: number; model?: string;
-    outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone" } = {}) => {
+    outcome?: "failed" | "waiting"; origin?: "scheduled" | "phone"; used?: "apps" } = {}) => {
     const qs = new URLSearchParams({ limit: String(o.limit ?? 20) });
     if (o.beforeId != null) qs.set("before_id", String(o.beforeId));
     if (o.since != null) qs.set("since", new Date(o.since * 1000).toISOString());
@@ -446,6 +444,7 @@ export const api = {
     if (o.model) qs.set("model", o.model);
     if (o.outcome) qs.set("outcome", o.outcome);         // INB7-c2: board F's chips
     if (o.origin) qs.set("origin", o.origin);
+    if (o.used) qs.set("used", o.used);                  // INB7-c4c: 「应用」
     return request<RunListItem[]>(`/runs?${qs.toString()}`);
   },
   /** INB7-c2: how many runs each chip would list, in the list's span and model. */
@@ -454,7 +453,7 @@ export const api = {
     if (o.since != null) qs.set("since", new Date(o.since * 1000).toISOString());
     if (o.until != null) qs.set("until", new Date(o.until * 1000).toISOString());
     if (o.model) qs.set("model", o.model);
-    return request<Record<"waiting" | "failed" | "scheduled" | "phone", number>>(`/runs/counts?${qs.toString()}`);
+    return request<Record<"waiting" | "failed" | "scheduled" | "phone" | "apps", number>>(`/runs/counts?${qs.toString()}`);
   },
   /** INB7-c3: what one run changed in your folders, from its own checkpoint, and in which state (server: GET /runs/{id}/changes). */
   runChanges: (runId: number) => request<RunChangesOut>(`/runs/${runId}/changes`),
@@ -653,18 +652,12 @@ export const setPrimaryProviderConfig = (id: number) =>
 export const deleteProviderConfig = (id: number) =>
   request<{ ok: boolean }>(`/settings/provider-configs/${id}`, { method: "DELETE" });
 
-export const suggestPrimary = () =>
-  request<SuggestPrimaryResult | null>("/settings/suggest-primary");
-
 /** Dynamic model catalog for a saved provider config. `refresh=true` forces a
  *  live re-fetch from the provider (doubles as an API-key sanity check). */
 export const fetchProviderModels = (id: number, refresh = false) =>
   request<ModelListResult>(
     `/settings/provider-configs/${id}/models${refresh ? "?refresh=true" : ""}`,
   );
-
-export const getCatalog = () =>
-  request<CatalogEntry[]>("/settings/catalog");
 
 // ── Conversation actions: delete ──────────────
 

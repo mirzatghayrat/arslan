@@ -92,6 +92,15 @@ def test_every_type_has_an_example_with_its_kind_and_notify_bit():
     assert ("approval.request", None) in notify and ("job.event", "partial") in notify
 
 
+def test_only_the_mac_block_without_taken_at_is_marked_as_dropped_by_the_phone():
+    """Test-only, never on the wire (#652, ①iOS): `phone_drops` lists the body keys a part-B phone drops by
+    design, so its round-trip test strips exactly those and still fails on any drop it doesn't list."""
+    marked = [e for e in load("messages.json")["examples"] if "phone_drops" in e]
+    assert [e["phone_drops"] for e in marked] == [["mac"]]
+    body = marked[0]["envelope"]["body"]
+    assert marked[0]["envelope"]["type"] == "status.snapshot" and "mac" in body and "taken_at" not in body["mac"]
+
+
 @pytest.mark.parametrize("body,ok", [
     ({"approval_id": "a", "decision": "approve", "auth": "faceid", "ts": "t"}, True),
     ({"approval_id": "a", "decision": "deny", "auth": "none", "ts": "t"}, True),

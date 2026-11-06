@@ -6,7 +6,7 @@
  * edited, using a value that may not be what the server holds:
  *
  *   ① a MASKED key written back as the real secret     (looksMasked guards it)
- *   ② llm_strategy clobbered by an unhydrated default  (adapters.ts: "T6 FIX 1")
+ *   ② llm_strategy clobbered by an unhydrated default  (field removed in v0.1.64 ROUTE1)
  *   ③ search_provider="tavily" on a fresh install      (broke keyless search)
  *
  * Each was fixed where it was found, per field. That kills the instance and leaves
@@ -34,11 +34,6 @@ describe("a patch of one field is a body of one field", () => {
     expect(body).not.toHaveProperty("search_provider");
   });
 
-  it("cannot smuggle llm_strategy — family member ②", () => {
-    const body = toBackendSettingsPatch({ language: "en" });
-    expect(body).not.toHaveProperty("llm_strategy");
-  });
-
   it("cannot smuggle a key the user did not retype — family member ①", () => {
     const body = toBackendSettingsPatch({ language: "en" });
     expect(body).not.toHaveProperty("search_api_key");
@@ -48,8 +43,8 @@ describe("a patch of one field is a body of one field", () => {
 
 describe("what IS touched still travels correctly", () => {
   it("maps camelCase to the backend name", () => {
-    expect(toBackendSettingsPatch({ llmStrategy: "balanced" })).toEqual({
-      llm_strategy: "balanced",
+    expect(toBackendSettingsPatch({ backgroundJobBudget: "lean" })).toEqual({
+      background_job_budget: "lean",
     });
   });
 
@@ -101,7 +96,6 @@ describe("every settings field the UI can edit is mappable", () => {
       apiKeySearch: "",
       githubToken: "",
       language: "en",
-      llmStrategy: "single",
       orchestratorShellEnabled: false,
       shellConfirmPolicy: "ask_all",
       mcpServerEnabled: false,
@@ -112,14 +106,11 @@ describe("every settings field the UI can edit is mappable", () => {
       search_base_url: { searchBaseUrl: "http://x" },
       search_provider_role: { searchProviderRole: "backup" },
       language: { language: "en" },
-      llm_strategy: { llmStrategy: "single" },
       orchestrator_shell_enabled: { orchestratorShellEnabled: false },
       shell_confirm_policy: { shellConfirmPolicy: "ask_all" },
       background_job_budget: { backgroundJobBudget: "lean" },
       task_usd_cap: { taskUsdCap: 5 },
       embedding_config_id: { embeddingConfigId: "1" },
-      synthesis_config_id: { synthesisConfigId: "1" },
-      compaction_config_id: { compactionConfigId: "1" },
       router_config_id: { routerConfigId: "1" },
       vision_config_id: { visionConfigId: "1" },
       keep_awake_enabled: { keepAwakeEnabled: false },
@@ -136,8 +127,6 @@ describe("every settings field the UI can edit is mappable", () => {
       heartbeat_enabled: { heartbeatEnabled: true },
       heartbeat_checklist: { heartbeatChecklist: "- x" },
       show_technical_details: { showTechnicalDetails: true },
-      synthesis_model: { synthesisModel: "x/y" },
-      compaction_model: { compactionModel: "x/y" },
       router_model: { routerModel: "x/y" },
       vision_model: { visionModel: "x/y" },
       lan_discovery_enabled: { lanDiscoveryEnabled: true },

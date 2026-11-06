@@ -56,7 +56,7 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base == "commands":
+        if self.base in {"commands", "outside-floor"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -115,8 +115,8 @@ class Harness:
             finally:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass  # The entire group has already exited.
+                except (ProcessLookupError, PermissionError):
+                    pass  # The entire group has already exited (EPERM: only zombies left, on macOS).
                 process.wait()
                 execution["returncode"] = process.returncode
         return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
@@ -138,10 +138,19 @@ class Harness:
                 (folder / (execution["profile_sha256"] + ".sb")).write_bytes(execution["profile_text"].encode())
 
 
-# SBX-3a adds a commands entry calling its real product preset, under scratch
+# SBX-3a's commands entry calls its real product preset, under scratch
 # HOME/TMPDIR, with this harness's work/temp, IPC prefix, mode and denied_ports.
-# It must not delegate commands to the candidate. Until then no adapter exists.
+# It must not delegate commands to the candidate.
+def _commands_profile(self, **parameters) -> str:
+    options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
+    if self.network == NetworkMode.PROXY:
+        options["proxy_port"] = 49151  # no listener; actual proxy is SBX-6
+    options.update(parameters)
+    return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
+
+
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
+BUILT_BASES["commands"] = _commands_profile
 
 
 # SBX-4a's entries call the real product presets: `code_sandbox.computation_profile` for run_python (with its
@@ -175,3 +184,8 @@ def _mcp_profile(self, **parameters) -> str:
 
 
 BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
+
+# Feature keys are declared only when their protections land: SBX-6a adds "trustd-toggle" and
+# "trusted-lan" with the settings; SBX-5a adds "cap6b" and "shared-cache-exclusions". The existing
+# commands/outside-floor adapters alone do not claim any of them.
+BUILT_FEATURES = frozenset()

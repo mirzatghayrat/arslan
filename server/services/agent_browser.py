@@ -67,7 +67,7 @@ class _Worker:
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
         try:
-            state = managed_browser.status()
+            state = await asyncio.to_thread(managed_browser.status)      # it reads the user's PATH (#674 review)
             if not state["ready"]:
                 raise BrowserUnavailable(state["reason"] or "setup_required")
             root = managed_browser.runtime_root()
@@ -82,7 +82,8 @@ class _Worker:
                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp"]},
                 "contextOptions": {"acceptDownloads": False, "ignoreHTTPSErrors": False}}}))
             async with PublicTunnel(byte_limit=2 * 1024 ** 3, connection_limit=100_000) as proxy:
-                args = [spawn_env.resolve_command("node"), str(root / "node_modules/@playwright/mcp/cli.js"),
+                node = await asyncio.to_thread(spawn_env.resolve_command, "node")
+                args = [node, str(root / "node_modules/@playwright/mcp/cli.js"),
                         "--sandbox", "--executable-path", chromium, "--user-data-dir", str(profile),
                         "--config", str(cfg), "--proxy-server", f"http://127.0.0.1:{proxy.port}",
                         "--proxy-bypass", "<-loopback>", "--output-dir", str(output),
@@ -134,8 +135,12 @@ _worker = _Worker()
 def available() -> bool:
     """Offered when ready, and also when it only needs the one-time setup: the
     tool then says where to set it up, instead of Arslan silently lacking a browser."""
-    state = managed_browser.status()
-    return state["ready"] or state["reason"] == "setup_required"
+    return offered(managed_browser.status())
+
+
+def offered(state: dict) -> bool:
+    """`available()` for a status already read (in a thread: it looks node and npm up on the user's PATH)."""
+    return bool(state["ready"] or state["reason"] == "setup_required")
 
 
 def current_url() -> str | None:

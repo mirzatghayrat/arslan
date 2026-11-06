@@ -1,48 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bookmark, CircleCheckBig, Flag, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { request } from "../api/client";
+import { judgmentIcon, judgmentVerdict, POINT_KEY, type JudgmentRow } from "../lib/judgments";
 import { formatUiDateTime } from "../lib/localeFormatting";
 import ScrollBox from "./activity/ScrollBox";
 
-/** One row of the judgment ledger (server/services/judgment.py). */
-export interface JudgmentRow {
-  id: number;
-  point: string;
-  mode: string;
-  verdict: boolean | null;
-  probability: number | null;
-  latency_ms: number | null;
-  outcome: string | null;
-  created_at: string;
-}
-
-const POINT_KEY: Record<string, string> = {
-  "memory.worth": "activityPage.pointWorth",
-  "memory.merge": "activityPage.pointMerge",
-  "memory.same": "activityPage.pointSame",
-  "memory.applied": "activityPage.pointApplied",
-  "memory.conflict": "activityPage.pointConflict",
-  "job.accomplished": "activityPage.pointAccomplished",
-  "project.progress": "activityPage.pointProgress",
-  "project.progress.item": "activityPage.pointProgressItem",
-};
-
-/**
- * Activity › Judgments (0.1.52 S2): what Arslan's fast model was asked and what it said.
- * Hidden until there is something to show. (The command cards' shadow question, "ask before
- * this command?", was removed in v0.1.63 C4; the server no longer lists its old rows.)
- */
-/** 0.1.58 §7: one small icon per family of question. */
-export function judgmentIcon(point: string): LucideIcon {
-  if (point.startsWith("memory.")) return Bookmark;
-  if (point.startsWith("project.")) return Flag;
-  return CircleCheckBig;
-}
-
 const PAGE = 20;
 
-export default function JudgmentsCard() {
+/**
+ * Activity › Judgments (0.1.52 S2): what Arslan's fast model was asked and what it said, every one of them. Since INB7-c4c a run's
+ * own judgments show in its 「诊断」; this full ledger is a record of its own at the foot of Progress (the user, 2026-11-02).
+ * `embedded`: the row above it is its title, and an empty ledger says so instead of showing nothing.
+ */
+export default function JudgmentsCard({ embedded = false }: { embedded?: boolean }) {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<JudgmentRow[] | null>(null);
   const [more, setMore] = useState(false);
@@ -65,15 +35,13 @@ export default function JudgmentsCard() {
       .finally(() => { loading.current = false; });
   }, [more, rows]);
 
-  if (!rows || rows.length === 0) return null;
-  const verdict = (r: JudgmentRow) => r.verdict == null || r.probability == null
-    ? t("activityPage.judgeNoAnswer")
-    : t(r.verdict ? "activityPage.judgeYes" : "activityPage.judgeNo",
-        { p: Math.round((r.verdict ? r.probability : 1 - r.probability) * 100) });
+  if (!rows) return null;
+  if (rows.length === 0) return embedded ? <p className="text-xs text-muted-foreground">{t("activityPage.noRecords")}</p> : null;
+  const verdict = (r: JudgmentRow) => judgmentVerdict(t, r);
   return (
     <section data-testid="judgments-card">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-sm font-medium text-foreground">{t("activityPage.judgments")}</h2>
+        {!embedded && <h2 className="text-sm font-medium text-foreground">{t("activityPage.judgments")}</h2>}
         <span className="font-mono text-[11px] text-subtle-foreground">{more ? t("activityPage.shownMore", { n: rows.length }) : rows.length}</span>
       </div>
       <p className="text-xs text-muted-foreground mt-0.5 mb-3">{t("activityPage.judgmentsHint")}</p>

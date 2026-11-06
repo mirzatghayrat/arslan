@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
 const { getUsageSummary, listRuns, request } = vi.hoisted(() => ({ getUsageSummary: vi.fn(), listRuns: vi.fn(), request: vi.fn() }));
-vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts: () => new Promise(() => {}) }, request }));
+vi.mock("../api/client", () => ({ api: { getUsageSummary, listRuns, runCounts: () => new Promise(() => {}), listScheduledTasks: () => new Promise(() => {}) }, request }));
 
 import ActivityView from "../components/ActivityView";
 import Sidebar from "../components/Sidebar";
@@ -45,7 +45,7 @@ const OLD_NAMES: Record<string, string[]> = { en: ["Activity"], zh: ["活动", "
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
-  useActivityStore.setState({ range: "7d", filter: {}, openRunId: null, scroll: {}, byModelOpen: false, modelSlots: {} });
+  useActivityStore.setState({ range: "7d", filter: {}, scroll: {}, byModelOpen: false, modelSlots: {} });
   getUsageSummary.mockResolvedValue(summary(WEEK));
   listRuns.mockResolvedValue([]);
   request.mockResolvedValue({ items: [], entries: [] });

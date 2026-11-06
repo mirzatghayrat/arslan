@@ -1,24 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { CatalogEntry, ModelInfo, ModelListResult, ProviderOption, ProviderConfig, SuggestPrimaryResult } from '../api/client.types';
+import type { ModelInfo, ModelListResult, ProviderOption, ProviderConfig } from '../api/client.types';
 import {
   addProviderConfig,
   updateProviderConfig,
   setPrimaryProviderConfig,
   deleteProviderConfig,
-  suggestPrimary,
-  getCatalog,
   fetchProviderModels,
   testLlm,
   testProviderConfig,
 } from '../api/client';
 import type { TestLlmResult } from '../api/client';
-import { Loader2, FlaskConical, ChevronDown, Plus, AlertCircle, Info, Network, Sliders } from 'lucide-react';
+import { Loader2, FlaskConical, ChevronDown, Plus, AlertCircle, Info, Sliders } from 'lucide-react';
 import ProviderStatusPill from './settings/ProviderStatusPill';
 import type { SelectOption } from './Select';
 import ProviderCard from './settings/ProviderCard';
 import ProviderDetailPane, { type DraftConfig } from './settings/ProviderDetailPane';
-import RoutingStrategyCard from './settings/RoutingStrategyCard';
 import { purgeCapabilityOverrides } from './settings/CapabilityBadges';
 import { formatRelativeTime } from './settings/relativeTime';
 import { providerStatus, type LiveTest } from '../lib/providerStatus';
@@ -30,10 +27,6 @@ interface ProviderConfigListProps {
   providerConfigs: ProviderConfig[];
   /** Called after any mutation so the parent can refresh the list. */
   onConfigsChange: (updated: ProviderConfig[]) => void;
-  /** Current routing strategy (default "single"). */
-  strategy?: string;
-  /** Called when the user picks a different strategy. */
-  onStrategyChange?: (strategy: string) => void;
   /** Show the overview first; details open when a model is selected. */
   startCollapsed?: boolean;
 }
@@ -64,16 +57,10 @@ export default function ProviderConfigList({
   llmProviders,
   providerConfigs,
   onConfigsChange,
-  strategy = 'single',
-  onStrategyChange,
   startCollapsed = false,
 }: ProviderConfigListProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<number | null>(null);
-  const [suggestion, setSuggestion] = useState<SuggestPrimaryResult | null>(null);
-  const [suggestBusy, setSuggestBusy] = useState(false);
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
-  const [catalogOpen, setCatalogOpen] = useState(false);
   const [testStatus, setTestStatus] = useState<TestStatusMap>({});
   const [draft, setDraft] = useState<DraftConfig | null>(null);
   // Fresh-entry API-key drafts per saved config id. The saved-config key input
@@ -109,10 +96,6 @@ export default function ProviderConfigList({
   // FIX 3: saved-row base_url inputs, so a quick-pick chip can focus the
   // field for review instead of auto-persisting a template value.
   const baseUrlInputRefs = useRef<Map<number, HTMLInputElement | null>>(new Map());
-
-  useEffect(() => {
-    getCatalog().then(setCatalog).catch(() => setCatalog([]));
-  }, []);
 
   // Keep the selection valid as the config list changes (e.g. deleting the
   // selected row moves selection to a survivor; an external refresh that drops
@@ -468,29 +451,6 @@ export default function ProviderConfigList({
       }),
     );
     setTestAllBusy(false);
-  };
-
-  const handleSuggest = async () => {
-    setSuggestBusy(true);
-    try {
-      const result = await suggestPrimary();
-      setSuggestion(result);
-    } finally {
-      setSuggestBusy(false);
-    }
-  };
-
-  const handleUseThis = async () => {
-    if (!suggestion) return;
-    setBusy(suggestion.id);
-    try {
-      await setPrimaryProviderConfig(suggestion.id);
-      const updated = providerConfigs.map((c) => ({ ...c, is_primary: c.id === suggestion.id }));
-      onConfigsChange(updated);
-      setSuggestion(null);
-    } finally {
-      setBusy(null);
-    }
   };
 
   // --- Draft (add-new) flow ---
@@ -854,18 +814,6 @@ export default function ProviderConfigList({
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground"><Info className="w-4 h-4 shrink-0" />{t('settings.modelsPrivateHint')}</p>
 
-      <details className="border-y border-border group/routing" open={startCollapsed ? undefined : true}>
-        <summary className="flex items-center gap-3 py-5 cursor-pointer list-none text-sm">
-          <Network className="w-4 h-4 text-muted-foreground" />{t('settings.taskRouting')}
-          <span className="text-xs text-muted-foreground">{t(`settings.strategyOptions.${strategy}`)}</span>
-          <ChevronDown className="w-4 h-4 ml-auto -rotate-90 group-open/routing:rotate-0" />
-        </summary>
-        <div className="pb-5"><RoutingStrategyCard
-          strategy={strategy} onStrategyChange={onStrategyChange} configCount={providerConfigs.length}
-          onSuggestPrimary={handleSuggest} suggestBusy={suggestBusy} suggestion={suggestion}
-          onUseThis={handleUseThis} useThisBusy={suggestion ? busy === suggestion.id : false}
-        /></div>
-      </details>
       <details className="border-b border-border group/advanced">
         <summary className="flex items-center gap-3 pb-5 cursor-pointer list-none text-sm">
           <Sliders className="w-4 h-4 text-muted-foreground" />{t('settings.advancedConnections')}
@@ -875,67 +823,6 @@ export default function ProviderConfigList({
           className="mb-4 flex items-center gap-2 px-3 py-2 text-xs border border-border rounded-lg disabled:opacity-50">
           {testAllBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FlaskConical className="w-3.5 h-3.5" />}{t('settings.btnTestAll')}
         </button>}
-
-      {/* ── Provider capability comparison table ── */}
-      {catalog.length > 0 && (
-        <div className="pt-2 border-t border-border/40">
-          <button
-            type="button"
-            data-testid="capability-table-toggle"
-            onClick={() => setCatalogOpen((o) => !o)}
-            className="flex items-center gap-2 w-full cursor-pointer group"
-          >
-            <ChevronDown
-              className={`w-3.5 h-3.5 text-subtle-foreground group-hover:text-foreground transition-transform duration-200 ${catalogOpen ? 'rotate-0' : '-rotate-90'}`}
-            />
-            <span className="text-[10.5px] font-mono font-medium text-subtle-foreground group-hover:text-foreground uppercase tracking-wide transition-colors">
-              {t('settings.capabilityTable')}
-              {' '}
-              <span className="normal-case text-[10px] font-normal opacity-70">
-                · {t('settings.capabilityTableCount', { count: catalog.length })}
-              </span>
-            </span>
-          </button>
-          {catalogOpen && (
-            <div className="mt-2 overflow-x-auto">
-              <table className="w-full text-[10px] font-mono border-collapse">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left py-1.5 pr-3 text-subtle-foreground font-medium">{t('settings.capColProvider')}</th>
-                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColCost')}</th>
-                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColSpeed')}</th>
-                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColTools')}</th>
-                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColReasoning')}</th>
-                    <th className="text-center py-1.5 px-2 text-subtle-foreground font-medium">{t('settings.capColContext')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {catalog.map((entry) => (
-                    <tr key={entry.provider} className="border-b border-border/50 hover:bg-surface">
-                      <td className="py-1.5 pr-3 text-foreground">{entry.provider}</td>
-                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.cost}</td>
-                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.speed}</td>
-                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.tool_calling}</td>
-                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.reasoning}</td>
-                      <td className="py-1.5 px-2 text-center text-muted-foreground">{entry.capabilities.long_context}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {/* These five columns are hand-authored 0-10 ROUTING scores from
-                  arslan/llm/catalog.py, used to pick a model for a job. The
-                  "Tool aptitude" one collides in wording with a completely
-                  different fact shown elsewhere in Settings — whether Arslan
-                  transmits tool definitions to the provider at all. A user
-                  could otherwise read "9" and "tools will not run" on one
-                  screen and reasonably conclude the app contradicts itself. */}
-              <p className="mt-2 text-[10px] leading-relaxed text-subtle-foreground">
-                {t('settings.capabilityTableNote')}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
 
       </details>
 

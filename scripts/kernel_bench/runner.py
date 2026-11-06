@@ -273,9 +273,13 @@ def reply_text(who: str, run: Path) -> str:
     if who == "openclaw":
         try:
             data = json.loads(text[text.index("{"):])
-            return data.get("result", {}).get("terminalReply", {}).get("text", "") or text
         except Exception:
             return text
+        # 2026.10.10: `meta.terminalReply.text`, else the payloads' text. Never the JSON itself: SMART-5's first
+        # round graded the whole ~14 KB result as the reply and wrongly passed the gate.
+        meta, result = data.get("meta") or {}, data.get("result") or {}
+        reply = (meta.get("terminalReply") or {}).get("text") or (result.get("terminalReply") or {}).get("text")
+        return reply or "\n\n".join(p.get("text") or "" for p in data.get("payloads") or [] if isinstance(p, dict))
     return text
 
 
@@ -445,14 +449,19 @@ def _alive(pid: int) -> bool:
 
 
 @contextlib.contextmanager
-def fresh_instance(label: str, who: str, ready_s: float = 90.0):
-    """Start Arslan on an empty data folder for this run; stop it (whole process group) after."""
+def fresh_instance(label: str, who: str, ready_s: float = 90.0, prepare_home=None):
+    """Start Arslan on an empty data folder for this run; stop it (whole process group) after.
+    `prepare_home(home)` (SMART-5) writes into the instance's empty HOME before it starts, as a user's
+    machine would already have it (a `~/.zshrc`, a tool in `~/.local/bin`)."""
     api = ARSLAN_API if who == "arslan" else ARSLAN_LEGACY_API
     if _healthy(api):
         raise SystemExit(f"{api} already answers: stop that instance first, or this run would use it")
     name = f"fresh-{label}"
     for sub in ("data", "home"):
         shutil.rmtree(ROOT / sub / name, ignore_errors=True)
+    if prepare_home is not None:
+        (ROOT / "home" / name).mkdir(parents=True)
+        prepare_home(ROOT / "home" / name)
     (ROOT / "runs").mkdir(parents=True, exist_ok=True)
     log = open(ROOT / "runs" / f"{label}.instance.log", "w")
     proc = subprocess.Popen([str(START_ARSLAN), name, str(urllib.parse.urlparse(api).port)],

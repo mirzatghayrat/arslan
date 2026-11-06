@@ -22,7 +22,6 @@ from server.services import settings_service
 
 SITES = (
     # (module path, the _get_adapter to call, the slot that overrides it)
-    ("server.orchestrator.memory", "compaction_config_id"),
     ("server.services.turn_facts", "router_config_id"),  # 0.1.48: the router slot now notes facts
 )
 

@@ -330,3 +330,20 @@ async def test_pa4_answer_system_prompt_carries_no_repaste_rule(maker, monkeypat
     await arslan.handle_user_message("main", "随便聊聊", lambda e: None)
 
     assert "is never re-pasted whole" in adapter.chat_calls[0]["system"]
+
+
+@pytest.mark.asyncio
+async def test_correct_runs_on_the_conversations_model(monkeypatch):
+    """v0.1.64 ROUTE1: the correction is appended to this conversation's reply, so it is written by the model
+    that wrote the reply (its own choice, else the primary), not by the primary regardless."""
+    from server.orchestrator import tool_loop
+    adapter, asked = _SeqAdapter([HONEST_FIX]), []
+
+    async def _for_turn(*, has_images, conversation_id=None):
+        asked.append((has_images, conversation_id))
+        return adapter
+
+    monkeypatch.setattr(tool_loop, "_adapter_for_turn", _for_turn)
+    out = await promise_guard.correct(PROMISING, conversation_id="c-picked")
+    assert asked == [(False, "c-picked")]
+    assert out is not None and out["corrected"] is True

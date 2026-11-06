@@ -383,10 +383,10 @@ export interface AppSettings {
   search_provider_role?: string; // "" | "only" | "backup" (0.1.63 D5)
   search_api_key: string; // masked on read
   github_token: string; // masked on read
-  llm_strategy?: string;
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   shell_policy_switch_notice?: string; // v0.1.63: "pending" after migration 0070 switched this user, then "seen"
+  model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
   workspace_dir?: string;   // "" = unset = file tools not offered
@@ -404,12 +404,8 @@ export interface AppSettings {
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
-  synthesis_config_id?: string;
-  synthesis_model?: string;
-  compaction_model?: string;
   router_model?: string;
   vision_model?: string;
-  compaction_config_id?: string;
   router_config_id?: string;
   vision_config_id?: string;
   keep_awake_enabled?: boolean;
@@ -503,7 +499,7 @@ export type ServerMessage =
   | { type: "stream_chunk"; content: string }
   | { type: "stream_end"; message_id: number }
   | { type: "message"; message_id: number; content: string; role: string }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "ping"; ts: number };
 
 export interface UserFact {
@@ -624,9 +620,15 @@ export interface AuthoredSkillCard {
 export interface CapabilityResult { state: "on" | "failed" | "blocked"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
+/** K8a: text a reply showed and then replaced, with the server's label for it. */
+export interface EarlierDraft {
+  label: string;
+  text: string;
+}
+
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability" | "rule_offer";
+  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
   /** kind === "capability" (0.1.57): how an install the user approved ended. */
   capabilityResult?: CapabilityResult;
   /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
@@ -650,12 +652,13 @@ export interface ArslanThreadItem {
   replyMessageId?: number | null;
   /** A user message forwarded from a paired iPhone (history row source "phone"). */
   fromPhone?: boolean;
-  /** kind === "rule_offer" (L11-2): "make this a rule for this folder?" for a lesson corrected twice. */
-  ruleOffer?: { lessonId: number; file: string };
   /** kind === "lesson" (0.1.52 S5): the practice just learned. */
   lesson?: { id: number; status: string; notInEffect?: string | null };
   runId?: number | null; // trace+eval replay id (stream_end / history row)
   toolSteps?: ToolStep[]; // replies: folded tool activity
+  /** K8a (2026-11-03): text this reply showed and then replaced (stream_restart), in order. Live only: the
+   *  stored message is the final answer. */
+  drafts?: EarlierDraft[];
   /** HTML deliverable from the stream_end frame's kind:"html" artifact (HX-2 channel).
    *  🔒 Populated ONLY from the backend frame, NEVER from LLM message text. */
   artifactHtml?: HtmlArtifact;
@@ -715,6 +718,10 @@ export type ArslanServerMessage =
   // POST /runs/{id}/cancel. Omitted on unrecorded streams.
   | { type: "stream_start"; source: "arslan" | "spawn"; spawn_id?: number | null; run_id?: number; temporary?: boolean }
   | { type: "stream_chunk"; content: string }
+  // K8a (2026-11-03): a guard sent back a step's text that already went out; what follows replaces it. The reply
+  // starts over from `keep` (what earlier steps showed, which stays). `label` is the server's, in the language of
+  // the text it replaces; the window keeps that text as a collapsed earlier draft.
+  | { type: "stream_restart"; label: string; keep?: string }
   // S3-M1: the server cancelled this run mid-flight. message_id is present when a
   // partial spawn_summary (已中断 marker) was persisted server-side.
   | { type: "run_cancelled"; run_id: number; message_id?: number }
@@ -737,7 +744,7 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string } & CardV2Fields)
+  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside" | "retry"; why?: string; rule?: string; rules?: string[]; unreadable?: string; network?: boolean; unsandboxed?: boolean } & CardV2Fields)
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
@@ -752,7 +759,6 @@ export type ArslanServerMessage =
       proposal_id?: number | null; reason?: string | null }
   | { type: "plan_proposed"; project_id: string; proposal_id: string; diff: import("./projects").PlanDiffLine[]; reason: string; cleared: number }
   | { type: "lesson_learned"; lesson: { id: number; text: string; status: string; not_in_effect?: string | null } }
-  | { type: "rule_offer"; lesson_id: number; text: string; file: string }
   // source "phone": the paired iPhone's message, shown live in a window open on its conversation.
   | { type: "message"; message_id: number; content: string; role: string; job_id?: string; outcome?: JobOutcome | null;
       source?: string | null }
@@ -776,31 +782,11 @@ export type ArslanServerMessage =
       artifact?: { kind: string; content?: string; spec?: Record<string, unknown>;
                    filename?: string; bytes_b64?: string; slides?: number };
     }
-  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string> }
+  | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
   | { type: "clarify_options"; question: string; options: ClarifyOption[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
       current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string };
-
-export interface SuggestPrimaryResult {
-  id: number;
-  provider: string;
-  rationale: string;
-}
-
-export interface CatalogCapabilities {
-  cost: number;
-  speed: number;
-  tool_calling: number;
-  reasoning: number;
-  long_context: number;
-}
-
-export interface CatalogEntry {
-  provider: string;
-  capabilities: CatalogCapabilities;
-  languages: Record<string, number>;
-}
 
 export interface RunStepDto {
   seq: number;
@@ -910,6 +896,8 @@ export interface RunListItem {
   waiting?: boolean;
   /** INB7-b: when it ended (naive UTC, like created_at); a run the boot sweep interrupted has this and no total_ms. */
   ended_at?: string | null;
+  /** INB7-c4c: it used Mac apps (Hands), by the 「应用」 chip's rule. Older backends omit it. */
+  used_apps?: boolean;
 }
 
 /** Per-spawn aggregate over scored runs (GET /runs/summary). */
@@ -1122,3 +1110,6 @@ export interface CardV2Fields {
   expires_at?: number;
   dedupe?: string;
 }
+
+/** SMART-3 (v0.1.64): which model call failed: the chat's own model ("chat") or a helper ("vision" and the like). */
+export interface ModelCall { role: string; provider: string; model: string }

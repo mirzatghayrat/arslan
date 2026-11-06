@@ -74,7 +74,7 @@ async def test_config_id_keys_round_trip(client):
     Asserted through the API in both directions, because that is the path that was broken;
     a service-level test would have passed the whole time.
     """
-    for key in ("synthesis_config_id", "embedding_config_id"):
+    for key in ("router_config_id", "embedding_config_id"):
         for value in ("7", ""):
             r = await client.put("/api/v1/settings", json={key: value}, headers=AUTH)
             assert r.status_code == 200, r.text

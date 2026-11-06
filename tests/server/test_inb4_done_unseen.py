@@ -84,7 +84,8 @@ async def test_phones_keep_todays_values_whatever_the_kind(client):
                ArslanMessage(conversation_id="pocket", role="arslan", content="copied", job_outcome="done"))
     window, phone = await _window(client), await _phone(client)
     assert (window["trip"], window["task-ab"]) == ("done_unseen", "done_unseen")
-    assert (phone["trip"], phone["task-ab"], phone["pocket"]) == ("idle", "done", "done")      # the pocket's job too (#589 F2)
+    assert (phone["trip"], phone["task-ab"]) == ("idle", "done")
+    assert "pocket" not in phone          # Q1 #4 (#525): the retired pocket never reaches a phone
 
 
 async def test_quick_questions_keep_todays_values_on_the_phone(client):
@@ -98,12 +99,13 @@ async def test_quick_questions_keep_todays_values_on_the_phone(client):
     assert (states["q-1"], states["q-2"]) == ("idle", "done")
 
 
-async def test_scheduled_and_remote_conversations_keep_their_glyphs(client):
+async def test_scheduled_conversations_keep_their_glyph_and_the_retired_pocket_is_an_ordinary_chat(client):
     await _add(client, ArslanMessage(conversation_id="scheduled-3", role="arslan", content="today's news"),
                ArslanMessage(conversation_id="pocket", role="user", source="phone", content="hi"),
                ArslanMessage(conversation_id="pocket", role="arslan", content="hello"))
     window = await _window(client)
-    assert (window["scheduled-3"], window["pocket"]) == ("idle", "idle")
+    # Q1 #4 (#525): the pocket lists as an ordinary chat on the Mac, so an unseen reply there is news like any chat's.
+    assert (window["scheduled-3"], window["pocket"]) == ("idle", "done_unseen")
 
 
 async def test_marking_a_conversation_that_does_not_exist_is_refused(client):

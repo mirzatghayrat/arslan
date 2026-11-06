@@ -87,26 +87,16 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
   const { needs, readyCount } = connectorSummary(servers ?? []);
 
   // L11-0 (the user's pick): the rules files this conversation follows, as one row in Environment.
-  type RuleFile = { file: string; text: string; added?: { lesson_id: number; line: string }[] };
+  type RuleFile = { file: string; text: string };
   const [rules, setRules] = useState<{ id: string; enabled: boolean; files: RuleFile[] } | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
-  const [rulesTick, setRulesTick] = useState(0);
   useEffect(() => {
     let alive = true;
     Promise.resolve().then(() => lessonsApi.folderRules(conversationId))
       .then((r) => { if (alive) setRules({ id: conversationId, enabled: r.enabled, files: r.files }); })
       .catch(() => { /* no row: rules are context */ });
     return () => { alive = false; };
-  }, [conversationId, files.length, home, rulesTick]);
-  // L11-2 (#603 review, F3): a line the card added can be taken back out here, after a reload or a switch too.
-  // L11-3a: from the rules record, so it still works once the lesson was deleted in Memory.
-  const removeRule = async (file: string, added: { lesson_id: number; line: string }) => {
-    try {
-      const r = await lessonsApi.removeFolderRule(conversationId, file, added.lesson_id, added.line);
-      if (!r.in_file) toast(t("workbench.ruleNotInFile"));             // #621 review, F3
-    } catch { toast(t("workbench.ruleFailed")); }
-    setRulesTick((n) => n + 1);
-  };
+  }, [conversationId, files.length, home]);
   const shownRules = rules?.id === conversationId ? rules : null;
 
   // WB1-3: what each turn changed in the user's folders (the S3 checkpoints), and its undo.
@@ -204,11 +194,7 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
               <ul className="space-y-0.5">{shownRules.files.map((f) => <li key={f.file} data-testid="overview-rules-file">
                 <button type="button" className="max-w-full truncate text-left font-mono text-[11.5px] hover:underline"
                   onClick={() => openReader({ kind: "text", name: f.file, text: f.text })}>{isolate(f.file)}</button>
-                {(f.added ?? []).map((a, i) => <div key={`${i}-${a.lesson_id}`} className="ml-3 flex min-w-0 items-center gap-2 text-[11.5px]"
-                  data-testid="overview-rules-added">
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{isolate(a.line)}</span>
-                  <button type="button" className={link} onClick={() => void removeRule(f.file, a)}>{t("workbench.ruleRemove")}</button>
-                </div>)}</li>)}</ul>
+              </li>)}</ul>
               <p className="mt-0.5 text-[11px] leading-snug text-subtle-foreground">{t("workbench.rulesNote")}</p>
             </div>}
           </div>}

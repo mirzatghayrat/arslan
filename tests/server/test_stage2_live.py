@@ -158,7 +158,7 @@ async def test_live_deleted_memory_summary(live_host, live_memory, execution_db,
         await memory.add_message(case_id, "user", "Prepare an inventory report for this task.")
         await memory.add_message(case_id, "arslan", "This task concerns an inventory report.")
         await memory.add_message(case_id, "user", "Regenerate the working summary.")
-        monkeypatch.setattr(memory, "_get_adapter", tool_loop._get_adapter)
+        monkeypatch.setattr(memory, "_get_adapter", lambda *_: tool_loop._get_adapter())
         monkeypatch.setattr(memory, "_token_budget", lambda: 1)
         monkeypatch.setattr(memory, "_summary_token_cap", lambda: 200)
         await memory.maybe_compact(case_id)

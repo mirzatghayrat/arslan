@@ -16,8 +16,7 @@ import { Escaped, isolate } from "../lib/outsideText";
 /**
  * S3-M4 Diagnostics 定时任务卡 — list + create/edit form + execution history.
  * Follows the UsageCard section idiom (usage-card head + diag-table). History
- * rows link to RunReplay via onOpenRun (the same view-level overlay the
- * evolution inbox uses).
+ * rows open their run via onOpenRun (the Scheduled page opens it on Progress, picked in the inspector).
  *
  * Honesty rules mirrored from the backend:
  * - last_outcome == null means "no runs yet" OR "in flight" — render "—",
@@ -284,7 +283,7 @@ function TaskForm({
 
 // ── the card ───────────────────────────────────────────────────────────────────
 interface Props {
-  /** Open a run in RunReplay (wired to DiagnosisView's run overlay). */
+  /** Open a run (the Scheduled page opens it on Progress, picked in the inspector). */
   onOpenRun?: (runId: number) => void;
   /** INB3: a dot on the task's row when it needs a look (the Scheduled page decides): red when it failed or paused itself. */
   attention?: (task: ScheduledTaskDto) => "failing" | "look" | null;
