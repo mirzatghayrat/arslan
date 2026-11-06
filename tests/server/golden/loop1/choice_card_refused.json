@@ -1,0 +1,105 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "ask_user_choice"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": null,
+   "summary": "ask_user_choice needs a question plus 2-4 DISTINCT options (each {label, hint?}). Give at least 2 real options, or just answer the user directly.",
+   "tool": "ask_user_choice",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "options": [
+         "only one"
+        ],
+        "question": "Which?"
+       },
+       "arguments_raw": "{\"question\": \"Which?\", \"options\": [\"only one\"]}",
+       "id": "c1",
+       "name": "ask_user_choice"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"error\": \"ask_user_choice needs a question plus 2-4 DISTINCT options (each {label, hint?}). Give at least 2 real options, or just answer the user directly.\"}",
+     "name": "ask_user_choice",
+     "role": "tool",
+     "tool_call_id": "c1"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "ask_user_choice"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Plain question instead."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Plain question instead.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": [
+    {
+     "args": {
+      "options": [
+       "only one"
+      ],
+      "question": "Which?"
+     },
+     "result": {
+      "error": "ask_user_choice needs a question plus 2-4 DISTINCT options (each {label, hint?}). Give at least 2 real options, or just answer the user directly.",
+      "external": false,
+      "ok": false
+     },
+     "tool": "ask_user_choice"
+    }
+   ]
+  }
+ ]
+]

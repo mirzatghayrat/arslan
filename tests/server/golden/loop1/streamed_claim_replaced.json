@@ -1,0 +1,122 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "I searched everywhere. This is a long answer that goes out while it is written. This is a long a"
+ ],
+ [
+  "chunk",
+  "nswer that goes out while it is written."
+ ],
+ [
+  "chunk",
+  " This is a long answer that goes out whi"
+ ],
+ [
+  "chunk",
+  "le it is written. This is a long answer "
+ ],
+ [
+  "chunk",
+  "that goes out while it is written. This "
+ ],
+ [
+  "chunk",
+  "is a long answer that goes out while it "
+ ],
+ [
+  "chunk",
+  "is written. This is a long answer that g"
+ ],
+ [
+  "chunk",
+  "oes out while it is written. This is a l"
+ ],
+ [
+  "chunk",
+  "ong answer that goes out while it is wr"
+ ],
+ [
+  "chunk",
+  "itten. This is a long answer that goes out while it is written. "
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "I searched everywhere. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "The proposed answer lacks a successful web_search receipt. Use an available native tool if needed, or give an honest answer stating the limitation. Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "keep": "",
+   "label": "Earlier draft, replaced: part of it was not right.",
+   "type": "stream_restart"
+  }
+ ],
+ [
+  "chunk",
+  "A corrected answer."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "A corrected answer.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ]
+]
