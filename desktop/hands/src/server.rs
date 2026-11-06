@@ -721,6 +721,14 @@ pub fn secure_input_stand_in_for_tests(asker: Option<SecureInputAsker>) {
         .unwrap_or_else(|p| p.into_inner()) = asker;
 }
 
+/// In tests: which app is in front (None: macOS).
+type FrontAsker = fn() -> Option<i64>;
+static FRONT_STAND_IN: std::sync::Mutex<Option<FrontAsker>> = std::sync::Mutex::new(None);
+
+pub fn front_stand_in_for_tests(asker: Option<FrontAsker>) {
+    *FRONT_STAND_IN.lock().unwrap_or_else(|p| p.into_inner()) = asker;
+}
+
 /// Whether system-wide secure input is on now (HPW: it answers when the app won't say what has focus).
 fn secure_input_on() -> bool {
     let stand_in = *SECURE_INPUT_STAND_IN
@@ -732,9 +740,51 @@ fn secure_input_on() -> bool {
     }
 }
 
+/// Whether app `pid` is the one in front now.
+fn in_front(pid: i64) -> bool {
+    let stand_in = *FRONT_STAND_IN.lock().unwrap_or_else(|p| p.into_inner());
+    match stand_in {
+        Some(asker) => asker() == Some(pid),
+        None => frontmost_pid().map(i64::from) == Some(pid),
+    }
+}
+
 /// Why these keys don't go to app `pid` now, asking its focused element and secure input.
-fn press_refused(keys: &str, pid: i64) -> Option<policy::Refusal> {
-    policy::press_refusal(keys, focused_password_field(pid), secure_input_on())
+/// `coming_forward`: it will be in front for these keys, and `press_refused_once_forward` asks then.
+fn press_refused(keys: &str, pid: i64, coming_forward: bool) -> Option<policy::Refusal> {
+    let focused = focused_password_field(pid);
+    policy::press_refusal(
+        keys,
+        focused,
+        secure_input_on(),
+        coming_forward || in_front(pid),
+    )
+}
+
+/// How long an app told to come forward gets to be in front: as long as agent-desktop then waits for focus.
+const FORWARD_WAIT: std::time::Duration = std::time::Duration::from_millis(500);
+/// Secure input and the focused element follow a moment later, when the app's window becomes key.
+const FOCUS_SETTLE: std::time::Duration = std::time::Duration::from_millis(100);
+const FORWARD_POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// Why these keys don't go to app `pid`, told to come forward: telling it returns before it's in front,
+/// so the question is only worth asking once it is. A window that hasn't become key yet can't answer,
+/// so unknown focus is asked until FOCUS_SETTLE has passed.
+fn press_refused_once_forward(keys: &str, pid: i64) -> Option<policy::Refusal> {
+    let deadline = std::time::Instant::now() + FORWARD_WAIT;
+    while !in_front(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(FORWARD_POLL);
+    }
+    let settled = std::time::Instant::now() + FOCUS_SETTLE;
+    loop {
+        if let Some(refused) = press_refused(keys, pid, false) {
+            return Some(refused);
+        }
+        if focused_password_field(pid).is_some() || std::time::Instant::now() >= settled {
+            return None;
+        }
+        std::thread::sleep(FORWARD_POLL);
+    }
 }
 
 /// Whether app `pid`'s focused element is a password field, asked of accessibility now. None when
@@ -997,7 +1047,8 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     // (type and set_value check their target above).
     if op == "press" {
         let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
-        if let Some((code, why)) = press_refused(keys, app.pid) {
+        let coming_forward = args.get("front").and_then(Value::as_bool) == Some(true);
+        if let Some((code, why)) = press_refused(keys, app.pid, coming_forward) {
             return Err(refuse(code, why));
         }
     }
@@ -1068,10 +1119,10 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         }
     }
     // A borrow may have waited (up to borrow::WAIT_MAX) and the app has come forward since the press
-    // was checked: its focused element is asked again right before the keys go.
-    if op == "press" && borrowed.is_some() {
+    // was checked, in a takeover too: it is asked again right before the keys go.
+    if op == "press" && wants_front {
         let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
-        if let Some((code, why)) = press_refused(keys, app.pid) {
+        if let Some((code, why)) = press_refused_once_forward(keys, app.pid) {
             if let Some(borrowed) = borrowed {
                 crate::borrow::end(borrowed);
             }
@@ -1376,6 +1427,7 @@ fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
         item.shortcut.as_ref(),
         focused_password_field(app.pid),
         secure_input_on(),
+        in_front(app.pid),
     ) {
         return Err(refuse(code, why));
     }

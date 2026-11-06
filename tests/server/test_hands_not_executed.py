@@ -295,3 +295,11 @@ def test_the_unknown_focus_refusal_doesnt_call_it_a_password_field_and_says_what
     assert "secure input" in text and "Secure Keyboard Entry" in text and "try again" in text
     assert text != hands_contract.REFUSALS["password_field"]
     assert "focus_unknown_secure_input" in hands_tools.NOT_EXECUTED
+
+
+def test_the_background_refusal_says_to_bring_the_app_forward():
+    """HPW: secure input says nothing about an app behind the front one, so the way on is to bring it forward."""
+    text = hands_contract.REFUSALS["focus_unknown_background"]
+    assert "front: true" in text and "Nothing was typed" in text
+    assert text != hands_contract.REFUSALS["password_field"]
+    assert "focus_unknown_background" in hands_tools.NOT_EXECUTED

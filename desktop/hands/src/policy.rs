@@ -204,17 +204,21 @@ pub const PASSWORD_FIELD: &str = "password_field";
 /// The app didn't say what has focus, and system-wide secure input is on, so a password field may be
 /// taking input (HPW). Usually another app holds it on: Terminal's Secure Keyboard Entry, a password manager.
 pub const FOCUS_UNKNOWN_SECURE_INPUT: &str = "focus_unknown_secure_input";
+/// The app didn't say what has focus and it isn't in front. Secure input only goes on for the app in
+/// front, so for this one it says nothing (HPW's review measured it).
+pub const FOCUS_UNKNOWN_BACKGROUND: &str = "focus_unknown_background";
 
 /// Why `press` is refused, given whether the app's focused element is a password field (None: the
-/// app did not say) and whether system-wide secure input is on. "Arslan never types into password
-/// fields" holds for keys too (0.1.63): type and set_value check their target; a press has none, so
-/// the focused element is asked. When the app doesn't say (WeChat doesn't), secure input answers: off
-/// means no password field is taking input anywhere (HPW). Only keys that may type are refused then,
-/// so return and tab still work.
+/// app did not say), whether system-wide secure input is on, and whether the app is in front. "Arslan
+/// never types into password fields" holds for keys too (0.1.63): type and set_value check their
+/// target; a press has none, so the focused element is asked. When the app doesn't say (WeChat
+/// doesn't), secure input answers, but only for the app in front (HPW). Only keys that may type are
+/// refused then, so return and tab still work.
 pub fn press_refusal(
     keys: &str,
     focused_secure: Option<bool>,
     secure_input: bool,
+    in_front: bool,
 ) -> Option<Refusal> {
     match focused_secure {
         Some(true) => Some((
@@ -222,9 +226,14 @@ pub fn press_refusal(
             "the focused field is a password field; Arslan never types into password fields",
         )),
         Some(false) => None,
-        None if secure_input && keys_may_type(keys) => Some((
+        None if !keys_may_type(keys) => None,
+        None if secure_input => Some((
             FOCUS_UNKNOWN_SECURE_INPUT,
             "this app did not say what has focus and secure input is on, and these keys may type",
+        )),
+        None if !in_front => Some((
+            FOCUS_UNKNOWN_BACKGROUND,
+            "this app did not say what has focus and it is not in front, and these keys may type",
         )),
         None => None,
     }
@@ -241,14 +250,15 @@ pub fn menu_item_may_type(path: &[String], shortcut: Option<&(String, i64)>) -> 
     paste_key || paste_title
 }
 
-/// Why a menu item is not pressed, given whether the app's focused element is a password field and
-/// whether secure input is on: a menu item acts on that element as keys do (Edit › Paste is cmd+v), so
-/// the same rule as press.
+/// Why a menu item is not pressed, given whether the app's focused element is a password field,
+/// whether secure input is on and whether the app is in front: a menu item acts on that element as
+/// keys do (Edit › Paste is cmd+v), so the same rule as press.
 pub fn menu_refusal(
     path: &[String],
     shortcut: Option<&(String, i64)>,
     focused_secure: Option<bool>,
     secure_input: bool,
+    in_front: bool,
 ) -> Option<Refusal> {
     match focused_secure {
         Some(true) => Some((
@@ -256,9 +266,14 @@ pub fn menu_refusal(
             "the focused field is a password field; Arslan presses no menu item into it",
         )),
         Some(false) => None,
-        None if secure_input && menu_item_may_type(path, shortcut) => Some((
+        None if !menu_item_may_type(path, shortcut) => None,
+        None if secure_input => Some((
             FOCUS_UNKNOWN_SECURE_INPUT,
             "this app did not say what has focus and secure input is on, and this item pastes",
+        )),
+        None if !in_front => Some((
+            FOCUS_UNKNOWN_BACKGROUND,
+            "this app did not say what has focus and it is not in front, and this item pastes",
         )),
         None => None,
     }
@@ -298,25 +313,33 @@ mod tests {
             // A known password field is refused whatever secure input says, as a password field.
             for secure_input in [false, true] {
                 assert_eq!(
-                    press_refusal(keys, Some(true), secure_input).map(|r| r.0),
+                    press_refusal(keys, Some(true), secure_input, false).map(|r| r.0),
                     refused_when_secure.then_some(PASSWORD_FIELD),
                     "{keys} secure"
                 );
                 assert!(
-                    press_refusal(keys, Some(false), secure_input).is_none(),
+                    press_refusal(keys, Some(false), secure_input, false).is_none(),
                     "{keys} not secure"
                 );
             }
-            // Unknown: secure input off lets every key go; on refuses the typing ones, by its own code.
+            // Unknown: in front, secure input off lets every key go; on refuses the typing ones, by
+            // its own code, wherever the app is. Behind the front one, off says nothing.
             assert!(
-                press_refusal(keys, None, false).is_none(),
-                "{keys} unknown, secure input off"
+                press_refusal(keys, None, false, true).is_none(),
+                "{keys} unknown, secure input off, in front"
             );
             assert_eq!(
-                press_refusal(keys, None, true).map(|r| r.0),
-                refused_when_unknown.then_some(FOCUS_UNKNOWN_SECURE_INPUT),
-                "{keys} unknown, secure input on"
+                press_refusal(keys, None, false, false).map(|r| r.0),
+                refused_when_unknown.then_some(FOCUS_UNKNOWN_BACKGROUND),
+                "{keys} unknown, secure input off, behind"
             );
+            for in_front in [false, true] {
+                assert_eq!(
+                    press_refusal(keys, None, true, in_front).map(|r| r.0),
+                    refused_when_unknown.then_some(FOCUS_UNKNOWN_SECURE_INPUT),
+                    "{keys} unknown, secure input on"
+                );
+            }
         }
     }
 
@@ -337,24 +360,31 @@ mod tests {
         for (p, k, pastes) in cases {
             for secure_input in [false, true] {
                 assert_eq!(
-                    menu_refusal(&p, k.as_ref(), Some(true), secure_input).map(|r| r.0),
+                    menu_refusal(&p, k.as_ref(), Some(true), secure_input, false).map(|r| r.0),
                     Some(PASSWORD_FIELD),
                     "{p:?} secure"
                 );
                 assert!(
-                    menu_refusal(&p, k.as_ref(), Some(false), secure_input).is_none(),
+                    menu_refusal(&p, k.as_ref(), Some(false), secure_input, false).is_none(),
                     "{p:?} not secure"
                 );
             }
             assert!(
-                menu_refusal(&p, k.as_ref(), None, false).is_none(),
-                "{p:?} unknown, secure input off"
+                menu_refusal(&p, k.as_ref(), None, false, true).is_none(),
+                "{p:?} unknown, secure input off, in front"
             );
             assert_eq!(
-                menu_refusal(&p, k.as_ref(), None, true).map(|r| r.0),
-                pastes.then_some(FOCUS_UNKNOWN_SECURE_INPUT),
-                "{p:?} unknown, secure input on"
+                menu_refusal(&p, k.as_ref(), None, false, false).map(|r| r.0),
+                pastes.then_some(FOCUS_UNKNOWN_BACKGROUND),
+                "{p:?} unknown, secure input off, behind"
             );
+            for in_front in [false, true] {
+                assert_eq!(
+                    menu_refusal(&p, k.as_ref(), None, true, in_front).map(|r| r.0),
+                    pastes.then_some(FOCUS_UNKNOWN_SECURE_INPUT),
+                    "{p:?} unknown, secure input on"
+                );
+            }
         }
     }
 
