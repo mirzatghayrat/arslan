@@ -491,14 +491,13 @@ const DELETE_MODE_LINES = new Set(["trash", "protected", "sandboxed"]);
  * the card has no line for still asks, in amber, never as "sandboxed" (#688 review 3, 4).
  */
 export function commandRisk(f: { rule?: string; rules?: string[]; unreadable?: string; network?: boolean;
-                                 sandbox?: "outside" | "retry"; remoteHost?: string; unsandboxed?: boolean;
+                                 sandbox?: "outside"; remoteHost?: string; unsandboxed?: boolean;
                                  unsure?: boolean; deleteMode?: string }): CommandRisk {
   const keys: CommandRisk["keys"] = [];
   let level: RiskLevel = "info";
   const raise = (to: RiskLevel) => { if (to === "irreversible" || (to === "warn" && level === "info")) level = to; };
   // Leaving the sandbox is said first on the card (S4a), so it leads the row.
   if (f.sandbox === "outside") { keys.push({ key: "outside" }); raise("warn"); }
-  else if (f.sandbox === "retry") { keys.push({ key: "retry" }); raise("warn"); }
   if (f.remoteHost) { keys.push({ key: "remote", params: { host: f.remoteHost } }); raise("warn"); }
   const rules = f.rules?.length ? f.rules : f.rule ? [f.rule] : [];
   const ordered = [...rules.filter(r => IRREVERSIBLE.has(r)), ...rules.filter(r => !IRREVERSIBLE.has(r))];

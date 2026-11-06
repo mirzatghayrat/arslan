@@ -101,7 +101,7 @@ describe("card v2 in the chat", () => {
 
   it("a frame without expires_at counts down the thirty minutes the Mac waits, not five", () => {
     render(<AskSlot send={vi.fn()} />);
-    frame({ type: "propose_run_command", call_id: "o1", command: "mv", argv: ["a", "b"], pretty: "mv a b", reason: "", sandbox: "retry" });
+    frame({ type: "propose_run_command", call_id: "o1", command: "mv", argv: ["a", "b"], pretty: "mv a b", reason: "", sandbox: "outside" });
     expect(screen.getByTestId("ask-countdown")).toHaveAccessibleName(/^(30:00|29:\d\d)$/);
   });
 

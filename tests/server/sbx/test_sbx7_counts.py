@@ -37,6 +37,16 @@ async def test_a_command_the_sandbox_stopped_notes_its_code_off_the_result(tmp_p
     assert result["sandbox"] == "workspace" and bool(result.get("sandbox_denied")) is (code is not None)
     assert "denial" not in json.dumps(result) and "eperm" not in json.dumps(result)
     assert trace[0].get("denial") == code
+    # A stop shows no card, so the failed step says what stopped it. Any other failure is its exit code, as before.
+    assert result["error"] == ("the sandbox stopped this command (exit code 1)" if code else "exit code 1")
+
+
+async def test_a_time_limit_keeps_its_exact_text_when_the_output_reads_like_a_stop(tmp_path, monkeypatch):
+    """M2 counts "stopped after N s": a command that printed the words and then ran out of time is still a time limit."""
+    monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **kw: ["/usr/bin/env"])     # runs it as "workspace"
+    result = await terminal_exec.run(f"printf '{DENIED}' >&2; sleep 30", cwd=tmp_path, sandbox=True, timeout_s=1)
+    assert result["sandbox_denied"] is True and result["code"] == "time_limit"
+    assert result["error"] == "stopped after 1 s"
 
 
 def test_the_code_reaches_the_run_step_of_its_own_tool_however_long_the_output():
@@ -93,12 +103,12 @@ def test_the_weekly_report_counts_denials_and_cards_to_leave_the_sandbox(ledger,
     assert "## Sandbox" in out and "SECRET" not in out
 
 
-@pytest.mark.parametrize("rerun", [True, False], ids=["re-run outside", "nobody to ask"])
-async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory, monkeypatch, rerun):  # noqa: F811
+@pytest.mark.parametrize("someone_to_ask", [True, False], ids=["someone to ask", "nobody to ask"])
+async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory, monkeypatch, someone_to_ask):  # noqa: F811
     """Card §"The two numbers": the code is shown only by the weekly report and the local run detail, and is
-    absent from every outgoing payload. A whole host turn runs a command the sandbox stops, and the user lets it
-    re-run outside, or nobody can be asked (a scheduled run), which puts the re-run card in the Inbox's refused
-    list. Then each payload that leaves the process today is read: the model's next
+    absent from every outgoing payload. A whole host turn runs a command the sandbox stops, with someone to ask or
+    with nobody (a scheduled run). A stop goes back to the model and opens no card either way, so nothing joins the
+    Inbox's refused list. Then each payload that leaves the process today is read: the model's next
     request, the phone's run detail and live steps, the judge's evidence and the Inbox's refused list. The
     model still sees the command's own words, and the step's `ref` keeps the code either way."""
     from datetime import datetime
@@ -112,11 +122,18 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
     from server.services import personal_context as pc, trace_evidence
     from tests.server.test_s64_0_outside_content_gaps import CID, _Asker, _Cards, _ctx, _Model, _turn
 
+    class _RecordedCards(_Cards):
+        calls: list = []
+
+        async def __call__(self, command, argv, **kw):
+            self.calls.append(kw)
+            return await super().__call__(command, argv, **kw)
+
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **kw: ["/usr/bin/env"])     # runs it as "workspace"
-    monkeypatch.setattr(command_sandbox, "outside_wrapper", lambda *a, **kw: ["/usr/bin/env"])     # and outside
     model = _Model(**{"S64-HOST": _turn(("run_command", {"command": f"printf '{DENIED}' >&2; exit 1"}))})
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
     events = []
+    cards, asker = _RecordedCards(), _Asker()
 
     async def tools():
         return [{"key": "run_command", "description": "Run a command"}]
@@ -129,11 +146,11 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
             result = await tool_loop.run_native(
                 system="S64-HOST", user_content=message, history=[], emit=both, on_chunk=lambda c: None,
                 resolve_tools=tools, conversation_id=cid,
-                confirm_command=_Cards() if rerun else command_confirm.Confirmations(cid).command,
+                confirm_command=cards if someone_to_ask else command_confirm.Confirmations(cid).command,
                 caller=ToolCaller(actor="host", spawn_id=None, conversation_id=cid))
             return result["final"]
         return await host_run.execute(cid, message, emit, body)
-    with pc.bind(_ctx()), permissions.asking_with(_Asker() if rerun else None):
+    with pc.bind(_ctx()), permissions.asking_with(asker if someone_to_ask else None):
         await task_service.run_turn(function, CID, "run it", lambda e: None)
 
     seen = json.dumps(model.requests["S64-HOST"][1], ensure_ascii=False)
@@ -147,7 +164,7 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
     outgoing["phone live"] = phone_reads.live_steps([(None, event) for event in events])
     outgoing["judge"] = await trace_evidence.build_evidence(run.id)
     assert step.ref.get("denial") == "eperm"                    # kept locally, whatever the user answered
-    assert rerun or outgoing["refused"], "the re-run card nobody could answer is in the Inbox's refused list"
+    assert cards.calls == [] and asker.frames == [] and outgoing["refused"] == []    # a stop shows no card, to anyone
     for name, payload in outgoing.items():
         text = json.dumps(payload, ensure_ascii=False, default=str)
         assert "eperm" not in text and "denial" not in text, name

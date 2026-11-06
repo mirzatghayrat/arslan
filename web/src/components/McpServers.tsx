@@ -160,6 +160,7 @@ export default function McpServers({ only, form = false, onChanged }:
       const discovered = await connectMcpServer(id);
       setTools((prev) => ({ ...prev, [id]: discovered }));
       await loadServers();
+      onChanged?.();
     } catch (e) {
       setError(String(e));
     } finally {

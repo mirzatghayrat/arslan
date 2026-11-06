@@ -54,7 +54,7 @@ async def test_a_jobs_outside_card_nobody_answered_is_not_reported_as_a_refusal(
     monkeypatch.setattr(approvals, "TIMEOUT_S", 0.05)
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: None)
     job = approvals.JobConfirmations("c10", job_id="job-c10")
-    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False
+    assert await job.command("touch ~/Downloads/a", [], sandbox="outside") is False
     assert approvals.LAST_OUTCOME.get() == "expired"
     text = tool_loop._declined("user declined this command", "this command")
     assert text.startswith("Nobody answered the card for Run `touch ~/Downloads/a` outside the sandbox?")
@@ -83,7 +83,7 @@ async def test_after_one_unanswered_card_a_job_opens_no_more(execution_db, monke
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: lambda f: (
         opened.append(f["call_id"]) if f["type"].startswith("propose_") else None))
     job = approvals.JobConfirmations("c7", job_id="job-c7")
-    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False
+    assert await job.command("touch ~/Downloads/a", [], sandbox="outside") is False
     assert await job.command("touch ~/Downloads/a", [], sandbox="outside", why="again") is False
     assert await job.schedule("daily", "08:00") is False
     assert len(opened) == 1, "the person is away: one card, not one per retry"
@@ -99,8 +99,8 @@ async def test_a_refused_card_does_not_close_the_job_to_later_cards(execution_db
             approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
     job = approvals.JobConfirmations("c8")
-    await job.command("touch ~/Downloads/a", [], sandbox="retry")
-    await job.command("touch ~/Downloads/b", [], sandbox="retry")
+    await job.command("touch ~/Downloads/a", [], sandbox="outside")
+    await job.command("touch ~/Downloads/b", [], sandbox="outside")
     assert len(opened) == 2, "a person who answered is there: a different request may still ask"
 
 
@@ -118,7 +118,7 @@ async def test_a_jobs_card_is_told_its_own_answer_not_an_earlier_one(execution_d
     job = approvals.JobConfirmations("c9", job_id="job-c9")
     assert await job.schedule("daily", "08:00") is False
     assert tool_loop._declined("user declined to schedule this task", "scheduling this task").endswith("not daily")
-    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is False      # S4a: a decide card too
+    assert await job.command("touch ~/Downloads/a", [], sandbox="outside") is False      # S4a: a decide card too
     told = tool_loop._declined("user declined this command", "this command")
     assert told.startswith("The user said no to: Run `touch ~/Downloads/a` outside the sandbox?")
     assert "not daily" not in told

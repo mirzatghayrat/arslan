@@ -19,15 +19,15 @@ interface Props {
   fingerprints?: string[];
   /** 0.1.42: a background job is asking. */
   background?: boolean;
-  /** 0.1.51 P3: "outside" — leave the sandbox; "retry" — the sandbox stopped it. */
-  sandbox?: "outside" | "retry";
+  /** 0.1.51 P3: "outside" — leave the sandbox. */
+  sandbox?: "outside";
   /** Arslan's one-line reason for the step (the model's words, cleaned by the server). SMART-8: when present it is
    *  the card's purpose, marked as Arslan's; else the purpose is read from the command. */
   why?: string;
   /** The terminal rule the server matched (`rule`), whether the card also asks for the network (`network`), and
    *  whether it would run with no sandbox around it (`unsandboxed`): the 「风险」 row, never the model's words. */
   rule?: string;
-  /** Every terminal rule the server matched (#688 review 1, 3): on every command card, the outside, retry and remote
+  /** Every terminal rule the server matched (#688 review 1, 3): on every command card, the outside and remote
    *  ones too. An older frame has only `rule`. */
   rules?: string[];
   /** Why the server could not read it (fetched-code, script-reach, quoting, complex), when one of its rules is
@@ -91,7 +91,7 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
   const context = [
     ...(background ? [{ icon: lineIcon(Terminal), text: <span data-testid="runcmd-background">{t("jobs.askingBadge")}</span> }] : []),
     ...(sandbox ? [{ icon: lineIcon(ShieldAlert), text: <span data-testid="runcmd-sandbox-note">
-      {t(sandbox === "outside" ? "runcmd.sandboxOutsideNote" : "runcmd.sandboxRetryNote")}</span> }] : []),
+      {t("runcmd.sandboxOutsideNote")}</span> }] : []),
     ...(isRemote ? [{ icon: lineIcon(Globe2), text: <span data-testid="runcmd-remote-note">{t("runcmd.remoteWarning")}</span> }] : []),
   ];
   return (

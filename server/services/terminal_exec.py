@@ -245,6 +245,10 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                           "command. A command may read only the copies saved in this conversation.")
     elif command_sandbox.stopped_by_sandbox(result):
         result["sandbox_denied"] = True
+        # What a failed step shows the user, with no card now (the calibration of 2026-11-07), and what the model reads.
+        # A time limit keeps its own text (M2 counts it).
+        if not timed_out:
+            result["error"] = f"the sandbox stopped this command ({result.get('error')})"
         # SBX-7: the denial's code (EPERM, the one SBX-3 detects so far) goes to the run step's `ref` through
         # run_trace, never onto this result: the model and every other payload read the result.
         from server.orchestrator import run_trace
