@@ -114,7 +114,8 @@ _END = r"(?=$|[\s;&|)`'\"<>])"
 # item (`key=value`, `key:=json`, `field@file`), a form, or a body on stdin.
 _WRITE = r"(?:POST|PUT|PATCH|DELETE)"
 # One shell word: plain characters, a backslash escape, or a quoted part (`"Cache-Control:public, max-age=3600"`).
-_WORD = r"""(?:\\.|[^\s"'\\]|"[^"\n]*"|'[^'\n]*')"""
+# `;`, `&` and `|` end the command, so an option never takes the next command's words as its value.
+_WORD = r"""(?:\\.|[^\s"'\\;&|]|"[^"\n]*"|'[^'\n]*')"""
 
 
 def _opts(stop: str) -> str:
@@ -164,12 +165,12 @@ _ASK = [
                       r"|aws" + _opts(r"s3|s3api") + r"(?:s3" + _opts(r"cp|mv|sync|rm") + r"(?:cp|mv|sync|rm)"
                       r"|s3api" + _opts(r"put-object|upload-part") + r"(?:put-object|upload-part))"
                       r"|gh" + _opts(r"release") + r"release" + _opts(r"upload") + r"upload"
-                      r"|azcopy" + _opts(r"copy|cp|sync") + r"(?:copy|cp|sync)"
+                      r"|azcopy" + _opts(r"copy|cp|c|sync|sc|s") + r"(?:copy|cp|c|sync|sc|s)"
                       r"|az" + _opts(r"storage") + r"storage" + _opts(r"blob|file|fs") + r"(?:blob|file|fs" + _opts(r"file")
-                      + r"file)" + _opts(r"upload|upload-batch") + r"upload(?:-batch)?"
+                      + r"file)" + _opts(r"upload|upload-batch|sync") + r"(?:upload(?:-batch)?|sync)"
                       r"|rclone" + _opts(r"copy|copyto|move|moveto|sync|bisync|rcat|copyurl")
                       + r"(?:copy|copyto|move|moveto|sync|bisync|rcat|copyurl)"
-                      r"|s3cmd" + _opts(r"put|sync|cp|mv") + r"(?:put|sync|cp|mv))" + _END,
+                      r"|s3cmd" + _opts(r"put|sync|cp|mv") + r"(?:put|sync|cp|mv))(?:" + _END + r"|(?=\$))",
      "sends data to a website or a cloud"),
     # a body piped in or redirected in: `cat d.json | http url`, `http url < d.json`
     ("upload", r"\|\s*(?:[^\s=|]*/)?" + _HTTPIE + _END, "sends data to a website or a cloud"),

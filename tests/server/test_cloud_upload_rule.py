@@ -11,7 +11,7 @@ reads the verb, not the direction, as `aws s3 cp` always has.
 """
 import pytest
 
-from server.services import terminal_policy as tp
+from server.services import card_purpose, task_service, terminal_policy as tp
 
 
 @pytest.mark.parametrize("command", [
@@ -69,6 +69,43 @@ def test_a_gist_already_asks_as_publishing():
     assert (tp.assess("gh gist create notes.txt").level, tp.assess("gh gist create notes.txt").rule) == ("ask", "publish")
 
 
+@pytest.mark.parametrize("command", [
+    "azcopy c ./d https://x.example/c", "azcopy s ./d https://x.example/c", "azcopy sc ./d https://x.example/c",
+    "azcopy --log-level=ERROR c ./d https://x.example/c",
+    "az storage blob sync -c c -s ./d",
+])
+def test_short_azcopy_subcommands_and_a_blob_sync_ask_too(command):
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", "upload"), command
+
+
+@pytest.mark.parametrize("command", ["aws s3 cp$X f s3://b/f", "gsutil rsync${X} d gs://b", "s3cmd put$X f s3://b/f"])
+def test_a_variable_glued_to_the_verb_still_asks(command):
+    """The verb's end isn't a word boundary because `put-object-tagging` isn't `put-object`, but `$` can't be part of
+    a verb, so a variable there doesn't change what runs."""
+    assert tp.assess(command).rule == "upload", command
+
+
+@pytest.mark.parametrize("command", [
+    "s3cmd --version && cp a b", "rclone --version; mv a b", "azcopy --version || cp a b", "aws --version | cp a b",
+    "gsutil --version & cp a b",
+])
+def test_an_option_doesnt_read_past_the_end_of_its_command(command):
+    """`&&`, `;`, `|` and `&` end the command, so the next command's `cp` isn't the cloud tool's verb."""
+    assert tp.assess(command).rule != "upload", command
+
+
+def test_a_run_of_options_with_no_values_stays_linear():
+    """An option's value can't start with `-` (`_opts`'s lookahead). Without that each option could be read two ways,
+    which grows the work about 1.6 times per option: a few seconds at this length, so it fails rather than hangs."""
+    import re
+    import time
+    rule = [re.compile(p, re.I) for key, p, _ in tp._ASK if key == "upload" and "gsutil" in p][0]
+    start = time.perf_counter()
+    assert rule.search("aws " + "-x " * 34 + "ls") is None
+    assert time.perf_counter() - start < 0.25
+
+
 @pytest.mark.parametrize("command", ["aws " + "-x s3 " * 3600 + "ls", "gcloud " + "-x storage " * 2000 + "ls",
                                      "gh " + "-x release " * 2000 + "view", "rclone " + "--e 'a b' " * 2500 + "lsd"])
 def test_the_cloud_rule_stays_linear_on_long_option_chains(command):
@@ -81,3 +118,27 @@ def test_the_cloud_rule_stays_linear_on_long_option_chains(command):
     start = time.perf_counter()
     assert rule.search(command) is None
     assert time.perf_counter() - start < 0.25
+
+
+@pytest.mark.parametrize("depth", [256, 1000, 2000])
+def test_commands_nested_past_what_can_be_read_ask_as_unreadable(depth):
+    """Each nested `$(` was one Python frame deeper, so past the recursion limit every reader raised and ended the turn
+    with no run and no card."""
+    command = "$(x " * depth
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", tp.UNREADABLE)
+    assert tp.ask_rules(command) == {tp.UNREADABLE}
+    assert tp.other_osa_language(command) is False
+    assert task_service.unwrapped_once(command) is False
+    assert card_purpose.phrase(command, "")
+
+
+def test_a_forbidden_first_command_stays_forbidden_past_the_limit():
+    assert tp.assess("rm -rf / ; " + "$(x " * 1000).level == "forbid"
+
+
+def test_nesting_under_the_limit_is_still_read_with_the_stack_a_turn_has_used():
+    """The limit has to leave room: a turn's dispatch is already some frames deep when it reads a command."""
+    def deep(frames: int):
+        return deep(frames - 1) if frames else tp.assess("$(" * 255 + "git push")
+    assert deep(200).rule == "git-push"
