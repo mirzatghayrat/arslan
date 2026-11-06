@@ -709,6 +709,34 @@ pub fn focused_password_stand_in_for_tests(asker: Option<FocusedAsker>) {
     *FOCUSED_STAND_IN.lock().unwrap_or_else(|p| p.into_inner()) = asker;
 }
 
+/// In tests: what answers the secure-input question, so none depends on this Mac's real state
+/// (None: macOS).
+type SecureInputAsker = fn() -> bool;
+static SECURE_INPUT_STAND_IN: std::sync::Mutex<Option<SecureInputAsker>> =
+    std::sync::Mutex::new(None);
+
+pub fn secure_input_stand_in_for_tests(asker: Option<SecureInputAsker>) {
+    *SECURE_INPUT_STAND_IN
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = asker;
+}
+
+/// Whether system-wide secure input is on now (HPW: it answers when the app won't say what has focus).
+fn secure_input_on() -> bool {
+    let stand_in = *SECURE_INPUT_STAND_IN
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    match stand_in {
+        Some(asker) => asker(),
+        None => crate::keyhold::secure_input(),
+    }
+}
+
+/// Why these keys don't go to app `pid` now, asking its focused element and secure input.
+fn press_refused(keys: &str, pid: i64) -> Option<policy::Refusal> {
+    policy::press_refusal(keys, focused_password_field(pid), secure_input_on())
+}
+
 /// Whether app `pid`'s focused element is a password field, asked of accessibility now. None when
 /// it cannot say (no focused element, no grant, not macOS): policy::press_refusal decides then.
 fn focused_password_field(pid: i64) -> Option<bool> {
@@ -969,8 +997,8 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     // (type and set_value check their target above).
     if op == "press" {
         let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
-        if let Some(why) = policy::press_refusal(keys, focused_password_field(app.pid)) {
-            return Err(refuse("password_field", why));
+        if let Some((code, why)) = press_refused(keys, app.pid) {
+            return Err(refuse(code, why));
         }
     }
     let argv = argv::build(op, &call, session.as_deref())?;
@@ -1043,11 +1071,11 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     // was checked: its focused element is asked again right before the keys go.
     if op == "press" && borrowed.is_some() {
         let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
-        if let Some(why) = policy::press_refusal(keys, focused_password_field(app.pid)) {
+        if let Some((code, why)) = press_refused(keys, app.pid) {
             if let Some(borrowed) = borrowed {
                 crate::borrow::end(borrowed);
             }
-            return Err(refuse("password_field", why));
+            return Err(refuse(code, why));
         }
     }
     if acts(op) {
@@ -1343,12 +1371,13 @@ fn menu_op(ctx: &Ctx, args: &Value) -> Result<Value, Refusal> {
             ))
         }
     };
-    if let Some(why) = policy::menu_refusal(
+    if let Some((code, why)) = policy::menu_refusal(
         &item.path,
         item.shortcut.as_ref(),
         focused_password_field(app.pid),
+        secure_input_on(),
     ) {
-        return Err(refuse("password_field", why));
+        return Err(refuse(code, why));
     }
     press_item(&app, tier, &item.path, None)
 }

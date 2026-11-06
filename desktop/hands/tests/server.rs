@@ -810,6 +810,12 @@ fn not_secure(_pid: i64) -> Option<bool> {
 fn no_answer(_pid: i64) -> Option<bool> {
     None
 }
+fn input_is_secure() -> bool {
+    true
+}
+fn input_not_secure() -> bool {
+    false
+}
 static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 fn secure_from_the_second_ask(_pid: i64) -> Option<bool> {
     Some(ASKED.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 0)
@@ -830,10 +836,17 @@ fn keys_never_go_into_a_focused_password_field() {
         "nothing pressed: {:?}",
         hands.calls()
     );
-    // The app does not say: keys that may type are refused, the others go.
+    // Secure input doesn't change that: a known password field is refused with it off or on.
+    arslan_hands::server::secure_input_stand_in_for_tests(Some(input_is_secure));
+    assert_eq!(code(&press("cmd+v")), "password_field");
+    arslan_hands::server::secure_input_stand_in_for_tests(Some(input_not_secure));
+    assert_eq!(code(&press("cmd+v")), "password_field");
+    // The app does not say, and secure input is on: keys that may type are refused, by their own
+    // code, and the others go.
     arslan_hands::server::focused_password_stand_in_for_tests(Some(no_answer));
+    arslan_hands::server::secure_input_stand_in_for_tests(Some(input_is_secure));
     for keys in ["a", "shift+a", "option+e", "space", "cmd+v", "ctrl+y"] {
-        assert_eq!(code(&press(keys)), "password_field", "{keys}");
+        assert_eq!(code(&press(keys)), "focus_unknown_secure_input", "{keys}");
     }
     assert!(
         hands.acted().is_empty(),
@@ -842,11 +855,18 @@ fn keys_never_go_into_a_focused_password_field() {
     );
     assert_eq!(press("tab")["ok"], true);
     assert_eq!(press("cmd+b")["ok"], true);
-    // Not a password field: letters go too.
-    arslan_hands::server::focused_password_stand_in_for_tests(Some(not_secure));
+    // The app does not say, and secure input is off (WeChat): no password field is taking input, so a
+    // paste goes.
+    arslan_hands::server::secure_input_stand_in_for_tests(Some(input_not_secure));
+    assert_eq!(press("cmd+v")["ok"], true);
     assert_eq!(press("a")["ok"], true);
-    assert_eq!(hands.acted(), ["press", "press", "press"]);
+    // Not a password field: letters go too, whatever secure input says.
+    arslan_hands::server::focused_password_stand_in_for_tests(Some(not_secure));
+    arslan_hands::server::secure_input_stand_in_for_tests(Some(input_is_secure));
+    assert_eq!(press("a")["ok"], true);
+    assert_eq!(hands.acted(), ["press", "press", "press", "press", "press"]);
     arslan_hands::server::focused_password_stand_in_for_tests(None);
+    arslan_hands::server::secure_input_stand_in_for_tests(None);
 }
 
 #[test]
@@ -861,13 +881,17 @@ fn a_menu_item_never_pastes_into_a_focused_password_field() {
     assert_eq!(code(&menu(paste)), "password_field");
     assert_eq!(code(&menu(bold)), "password_field");
     arslan_hands::server::focused_password_stand_in_for_tests(Some(no_answer));
-    assert_eq!(code(&menu(paste)), "password_field");
+    arslan_hands::server::secure_input_stand_in_for_tests(Some(input_is_secure));
+    assert_eq!(code(&menu(paste)), "focus_unknown_secure_input");
     assert!(PRESSED.lock().unwrap().is_empty(), "no item pressed");
     assert_eq!(menu(bold)["ok"], true);
+    arslan_hands::server::secure_input_stand_in_for_tests(Some(input_not_secure));
+    assert_eq!(menu(paste)["ok"], true);
     arslan_hands::server::focused_password_stand_in_for_tests(Some(not_secure));
     assert_eq!(menu(paste)["ok"], true);
-    assert_eq!(PRESSED.lock().unwrap().len(), 2);
+    assert_eq!(PRESSED.lock().unwrap().len(), 3);
     arslan_hands::server::focused_password_stand_in_for_tests(None);
+    arslan_hands::server::secure_input_stand_in_for_tests(None);
     arslan_hands::menus::set_stand_in_for_tests(None);
 }
 

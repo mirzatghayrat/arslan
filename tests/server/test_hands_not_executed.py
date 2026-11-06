@@ -287,3 +287,11 @@ async def test_a_batch_that_stopped_after_a_step_ran_may_have_run(hands, asks, i
     result = await hands_tools.DesktopBatchExecutor().execute(
         {"app": "Notes", "steps": [{"action": "click", "ref": "@sfixture0:e3"}, {"action": "press", "keys": "tab"}]})
     assert result["code"] == "batch_stopped" and "executed" not in result and hands.ops("click") == ["click"]
+
+
+def test_the_unknown_focus_refusal_doesnt_call_it_a_password_field_and_says_what_to_do():
+    """HPW: "couldn't tell what has focus, and secure input is on" is its own text, with a next step."""
+    text = hands_contract.REFUSALS["focus_unknown_secure_input"]
+    assert "secure input" in text and "Secure Keyboard Entry" in text and "try again" in text
+    assert text != hands_contract.REFUSALS["password_field"]
+    assert "focus_unknown_secure_input" in hands_tools.NOT_EXECUTED

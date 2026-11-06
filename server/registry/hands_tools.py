@@ -67,7 +67,7 @@ NOT_EXECUTED = frozenset({
     "bad_request", "no_such_file", "app_not_found", "no_apps", "hands_unavailable", "no_passwords", "no_page",
     "too_long", "append_unreadable", "window_not_found",
     # Hands' refusals before the action (server.rs, borrow.rs, visit.rs, takeover.rs, argv.rs)
-    "app_denied", "app_look_only", "app_click_only", "ref_wrong_app", "ref_unknown", "bad_ref", "password_field",
+    "app_denied", "app_look_only", "app_click_only", "ref_wrong_app", "ref_unknown", "bad_ref", "password_field", "focus_unknown_secure_input",
     "borrow_off", "waiting_for_pause", "secure_input", "window_elsewhere", "window_unreachable", "borrow_declined",
     "screen_locked", "takeover_unsafe", "target_unreadable", "app_not_running", "apps_unreadable", "app_ambiguous",
     "op_not_allowed", "changed", "menu_unreadable", "menu_disabled", "menu_ambiguous", "menu_not_found",
