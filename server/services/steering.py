@@ -12,9 +12,6 @@ here when the turn ends goes back to the inbox of the socket that sent it and ru
 turn that was already writing its answer has no boundary left. A socket that closes takes its messages back
 first (`withdraw`), and waits for the ones a turn already took to be part of it or back (`settled`), all
 ahead of the close. `put` refuses when no turn is open, so a message never waits in a closed box.
-
-`steering_off` (setting, no UI) leaves every such message queued, as before K9b. DELETE-BY: v0.1.64, when
-M3 #10 passes and v0.1.63 has no steering issue (card K9).
 """
 from __future__ import annotations
 
@@ -123,13 +120,3 @@ def insertable(frame: dict) -> bool:
     """Plain text only: a message with images or an attachment waits for its own turn, as before."""
     return bool(str(frame.get("content") or "").strip()) and not frame.get("images") \
         and not str(frame.get("attached_context") or "").strip()
-
-
-async def enabled() -> bool:
-    try:
-        from server.db import session as db_session
-        from server.services import settings_service
-        async with db_session.AsyncSessionLocal() as db:
-            return not await settings_service.steering_off(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default: steering on
-        return True

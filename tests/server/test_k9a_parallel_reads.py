@@ -6,7 +6,6 @@ Driven through the real run_native and _dispatch_tool, with executors that log w
 - every gate still runs per call, in the reply's order: a refused fetch budget lands on the same call;
 - the frames, the trace and the history keep the reply's order and pairing, whatever finished first (Q3);
 - two calls to one MCP server never overlap; a server that does not say it only reads is not a read;
-- `tools_serial` runs everything one at a time again (Q4; DELETE-BY v0.1.64);
 - stopping the turn stops every call of the group.
 """
 import asyncio
@@ -16,7 +15,7 @@ import pytest
 
 from arslan import execution_budget
 from arslan.models import LLMResponse
-from server.db.models import MCPServer, Setting, Tool, Toolset
+from server.db.models import MCPServer, Tool, Toolset
 from server.orchestrator import parallel_reads, tool_loop
 
 
@@ -243,17 +242,6 @@ async def test_one_server_twice_or_a_tool_that_may_change_things_runs_alone(monk
     read = _Read(log, delay=0.03)
     await _turn(monkeypatch, log, _Script(("mcp_7__look", {"tag": "x"}), (second, {"tag": "y"})),
                 {"mcp_7__look": read, second: read})
-    assert log.most == 1
-
-
-async def test_tools_serial_runs_one_at_a_time_again(monkeypatch, execution_db):
-    async with execution_db() as db:
-        db.add(Setting(key="tools_serial", value="true"))
-        await db.commit()
-    log = _Log()
-    read = _Read(log, delay=0.03)
-    await _turn(monkeypatch, log, _Script(("read_file", {"path": "a"}), ("list_dir", {"path": "b"})),
-                {"read_file": read, "list_dir": read})
     assert log.most == 1
 
 

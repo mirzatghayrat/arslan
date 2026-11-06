@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Globe2, ShieldAlert, Terminal } from "lucide-react";
 import { AskCard, CodeBox } from "./kit";
 import { DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
-import { TOUCHES_MAX, commandRisk, purposeText, summarize } from "../lib/commandSummary";
+import { TOUCHES_MAX, commandRisk, deletePurpose, purposeText, summarize } from "../lib/commandSummary";
 import { Escaped } from "../lib/outsideText";
 
 interface Props {
@@ -33,6 +33,10 @@ interface Props {
   /** Why the server could not read it (fetched-code, script-reach, quoting, complex), when one of its rules is
    *  `unreadable` (#688 review 5). */
   unreadable?: string;
+  /** SMART-8: how Allow deletes (trash, protected, permanent, sandboxed), and the targets as written ([] when the
+   *  delete can't be read, and the card reads them itself). On the Mac's frame only. */
+  deleteMode?: string;
+  deleteTargets?: string[];
   network?: boolean;
   unsandboxed?: boolean;
   expiresAt?: number | null;
@@ -64,7 +68,7 @@ interface Props {
  * and takes a note on No. (S4a deleted the old "remember" tick: every command card carries choices.)
  */
 export default function RunCommandCard({ callId, pretty, remoteHost, fingerprints, background,
-                                         sandbox, why, rule, rules, unreadable, network, unsandboxed, expiresAt, options, alwaysLabel,
+                                         sandbox, why, rule, rules, unreadable, deleteMode, deleteTargets, network, unsandboxed, expiresAt, options, alwaysLabel,
                                          permKind, busy, queue, onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
@@ -78,10 +82,11 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
   const matched = rules?.length ? rules : rule ? [rule] : [];
   const summary = summarize(pretty, matched);
   const said = (why ?? "").trim();
-  const reading = purposeText(t, summary.purpose) + (summary.more ? t("runcmd.purpose.more", { count: summary.more }) : "");
+  const reading = purposeText(t, deletePurpose(summary.purpose, deleteMode)) + (summary.more ? t("runcmd.purpose.more", { count: summary.more }) : "");
   const purpose = said || reading;
-  const touched = [...new Set([...(remoteHost ? [remoteHost] : []), ...summary.touches])];
-  const risk = commandRisk({ rules: matched, unreadable, network, sandbox, remoteHost, unsandboxed, unsure: summary.unsure });
+  const touched = [...new Set([...(remoteHost ? [remoteHost] : []), ...(deleteTargets?.length ? deleteTargets : summary.touches)])];
+  const risk = commandRisk({ rules: matched, unreadable, network, sandbox, remoteHost, unsandboxed, unsure: summary.unsure,
+                             deleteMode });
   const riskText = risk.keys.map(k => t(`runcmd.risk.${k.key}`, k.params)).join(t("kit.riskJoin"));
   const context = [
     ...(background ? [{ icon: lineIcon(Terminal), text: <span data-testid="runcmd-background">{t("jobs.askingBadge")}</span> }] : []),

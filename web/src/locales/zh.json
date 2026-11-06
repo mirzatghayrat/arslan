@@ -813,8 +813,6 @@
     "collapse_results": "收起",
     "stdout_label": "标准输出返回：",
     "exec_validated": "指令执行已验证。沙盒套接字正常返回 0。",
-    "equipped_capabilities": "已装备能力：",
-    "capabilities_matrix": "能力矩阵：",
     "hide_rail": "隐藏侧栏",
     "show_rail": "显示侧栏",
     "confirm_direction": "确认方向 · 开干",
@@ -1040,7 +1038,9 @@
       "deleteSome": "删除文件或文件夹",
       "overNetwork": "用到网络（{{program}}）：可能发出或收到数据",
       "more": "（还有 {{count}} 步）",
-      "more_one": "（还有 {{count}} 步）"
+      "more_one": "（还有 {{count}} 步）",
+      "toTrash": "把 {{count}} 个文件或文件夹移到废纸篓",
+      "toTrash_one": "把 {{count}} 个文件或文件夹移到废纸篓"
     },
     "risk": {
       "sandboxed": "在沙盒里运行：只能改工作文件夹里的文件",
@@ -1071,7 +1071,10 @@
         "unreadable-script-reach": "里面的脚本会联网、启动程序或操控 App",
         "unreadable-quoting": "引号没有闭合，读不出会运行什么",
         "unreadable-complex": "太复杂，运行前读不清",
-        "unreadable-send": "Arslan 读不全这条命令会发出什么，可能会发出本机数据"
+        "unreadable-send": "Arslan 读不全这条命令会发出什么，可能会发出本机数据",
+        "delete-outside-trash": "移到废纸篓，你可以从那里找回",
+        "delete-outside-protected": "Arslan 自己的数据和密钥留在原处，其余的移到废纸篓",
+        "delete-outside-sandboxed": "在沙盒里运行；它在那里删掉的东西是彻底删除"
       }
     }
   },

@@ -813,8 +813,6 @@
     "collapse_results": "Collapse",
     "stdout_label": "Stdout returns:",
     "exec_validated": "Instruction execution validated. Sandbox socket gracefully returned 0.",
-    "equipped_capabilities": "Equipped Capabilities:",
-    "capabilities_matrix": "Capabilities Matrix:",
     "hide_rail": "Hide Rail",
     "show_rail": "Show Rail",
     "confirm_direction": "Confirm direction · Go",
@@ -1040,7 +1038,9 @@
       "deleteSome": "Delete files or folders",
       "overNetwork": "Uses the network ({{program}}): may send or receive data",
       "more": " (and {{count}} more steps)",
-      "more_one": " (and 1 more step)"
+      "more_one": " (and 1 more step)",
+      "toTrash": "Move {{count}} files or folders to the Trash",
+      "toTrash_one": "Move 1 file or folder to the Trash"
     },
     "risk": {
       "sandboxed": "Runs in the sandbox: it can change files only in the work folder",
@@ -1071,7 +1071,10 @@
         "unreadable-script-reach": "Its script reaches out, starts programs or drives apps",
         "unreadable-quoting": "Its quoting doesn't close, so what runs can't be read",
         "unreadable-complex": "Too complex to read before it runs",
-        "unreadable-send": "Arslan can't fully read what this sends; it may send local data"
+        "unreadable-send": "Arslan can't fully read what this sends; it may send local data",
+        "delete-outside-trash": "Moves them to the Trash; you can restore them from there",
+        "delete-outside-protected": "Arslan's own data and keys stay where they are; the rest go to the Trash",
+        "delete-outside-sandboxed": "Runs in the sandbox; what it deletes there is deleted permanently"
       }
     }
   },

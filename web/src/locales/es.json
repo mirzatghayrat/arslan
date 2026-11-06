@@ -813,8 +813,6 @@
     "collapse_results": "Contraer",
     "stdout_label": "Salida estándar:",
     "exec_validated": "Ejecución verificada; la conexión aislada terminó con código 0.",
-    "equipped_capabilities": "Capacidades disponibles:",
-    "capabilities_matrix": "Matriz de capacidades:",
     "hide_rail": "Ocultar panel lateral",
     "show_rail": "Mostrar panel lateral",
     "confirm_direction": "Confirmar dirección · Adelante",
@@ -1040,7 +1038,9 @@
       "deleteSome": "Borrar archivos o carpetas",
       "overNetwork": "Usa la red ({{program}}): puede enviar o recibir datos",
       "more": " (y {{count}} pasos más)",
-      "more_one": " (y 1 paso más)"
+      "more_one": " (y 1 paso más)",
+      "toTrash": "Mover {{count}} archivos o carpetas a la Papelera",
+      "toTrash_one": "Mover 1 archivo o carpeta a la Papelera"
     },
     "risk": {
       "sandboxed": "Se ejecuta en el entorno aislado: solo puede cambiar archivos de la carpeta de trabajo",
@@ -1071,7 +1071,10 @@
         "unreadable-script-reach": "Su script se conecta, inicia programas o controla apps",
         "unreadable-quoting": "Sus comillas no cierran, así que no se puede leer qué se ejecuta",
         "unreadable-complex": "Demasiado complejo para leerlo antes de ejecutarlo",
-        "unreadable-send": "Arslan no puede leer del todo lo que envía; puede enviar datos locales"
+        "unreadable-send": "Arslan no puede leer del todo lo que envía; puede enviar datos locales",
+        "delete-outside-trash": "Los mueve a la Papelera; puedes recuperarlos desde allí",
+        "delete-outside-protected": "Los datos y claves de Arslan se quedan donde están; el resto va a la Papelera",
+        "delete-outside-sandboxed": "Se ejecuta en el sandbox; lo que borra allí se borra de forma permanente"
       }
     }
   },

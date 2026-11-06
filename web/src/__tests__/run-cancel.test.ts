@@ -47,6 +47,21 @@ describe("run cancel wiring (S3-M1)", () => {
     expect(last.role).toBe("arslan");
   });
 
+  it("run_cancelled closes a step that was still running, and leaves finished ones as they were", () => {
+    const frames = [
+      { type: "stream_start", source: "arslan", run_id: 44 },
+      { type: "tool_call", tool: "web_search", args_summary: "{}" },
+      { type: "tool_result", tool: "web_search", ok: true, summary: "1 result" },
+      { type: "tool_call", tool: "run_command", args_summary: "{}" },
+      { type: "stream_chunk", content: "partial " },
+      { type: "run_cancelled", run_id: 44 },
+    ];
+    for (const frame of frames) useArslanStore.getState().handleFrame(frame as never);
+    const st = useArslanStore.getState();
+    const steps = st.items[st.items.length - 1].toolSteps ?? [];
+    expect(steps.map((step) => [step.tool, step.status])).toEqual([["web_search", "ok"], ["run_command", "error"]]);
+  });
+
   it("run_cancelled with message_id uses it as the item id (server persisted copy)", () => {
     useArslanStore.getState().handleFrame({ type: "stream_start", source: "spawn", spawn_id: 2, run_id: 44 } as never);
     useArslanStore.getState().handleFrame({ type: "stream_chunk", content: "cut short" } as never);
