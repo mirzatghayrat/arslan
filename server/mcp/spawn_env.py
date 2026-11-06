@@ -10,8 +10,7 @@ from the child's PATH, so the child env needs the merged PATH too.
 The user's PATH is fetched once per process from an INTERACTIVE login shell (the user's dotfiles are where
 Homebrew, nvm and installers like `claude`'s append themselves; SMART-1: a zsh login shell alone never reads
 ~/.zshrc), with hard fallbacks for when that resolution fails. It runs in the server, outside every sandbox, with a
-minimal environment. The commands run later read neither ~/.zshrc nor ~/.zprofile; `zsh -c` still reads
-~/.zshenv for every command, as it always has.
+minimal environment. The commands run later read none of the user's shell startup files (`bash -p -c`).
 """
 from __future__ import annotations
 

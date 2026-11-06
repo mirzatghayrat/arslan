@@ -1,9 +1,12 @@
 """Run one shell command for Arslan (0.1.48).
 
-A real shell (zsh -c) in the user's folder, with the user's PATH (Homebrew
+A real shell (`bash -p -c`) in the user's folder, with the user's PATH (Homebrew
 included, which a Finder-launched app does not inherit) and only the ambient
 basics in its environment: provider keys and Arslan's own secret never reach a
-command. Whether a command may run at all is decided before this, by
+command. S2a-3: bash because it's the one grammar shell_grammar reads, and
+privileged mode because it skips $ENV and $BASH_ENV, imports no functions and
+ignores SHELLOPTS, so nothing outside the command's text changes how it is read.
+It was `zsh -c`, which read ~/.zshenv first. Whether a command may run at all is decided before this, by
 terminal_policy and the confirmation card; this only runs it, bounded in time
 and output — since 0.1.51 inside the workspace sandbox (command_sandbox) unless
 the user clicked to let it out.
@@ -136,9 +139,9 @@ async def _cancel(tasks) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def _shell() -> str:
-    """zsh, the macOS login shell, wherever it exists; /bin/sh elsewhere (CI runs on Linux)."""
-    return "/bin/zsh" if os.path.exists("/bin/zsh") else "/bin/sh"
+def _shell() -> list[str]:
+    """Privileged bash wherever it exists (3.2 on macOS); /bin/sh elsewhere."""
+    return ["/bin/bash", "-p"] if os.path.exists("/bin/bash") else ["/bin/sh"]
 
 
 def _reads_a_saved_output(result: dict) -> bool:
@@ -169,13 +172,11 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
 
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
                readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int) -> dict:
-    # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
-    # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
-    # failed (0.1.49 bench). Keep both inside the run's own folder.
+    # bash writes here-document temp files under TMPDIR, the run's own folder: where /tmp is not writable
+    # a `python3 - <<'PY'` save would fail (0.1.49 bench).
     # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
     env = child_environment({}, {"PATH": await asyncio.to_thread(merged_path), "TERM": "dumb", "NO_COLOR": "1",
-                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
-                                 "TMPPREFIX": os.path.join(tmp, "zsh")})
+                                 "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp)})
     from server.services import command_sandbox, run_temp
     prefix: list[str] = []
     mode = "off"
@@ -191,7 +192,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                 "error": "commands run without network now, and this run cannot isolate the network — "
                          "save the deliverable with write_file instead"}
     proc = await asyncio.create_subprocess_exec(
-        *prefix, _shell(), "-c", command, cwd=str(cwd), env=env,
+        *prefix, *_shell(), "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
     run_temp.started(temp_key, proc.pid)  # §1a: the run's folder stays while this group has a process left

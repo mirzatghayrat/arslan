@@ -1590,7 +1590,7 @@ async def _every_tool() -> list[dict]:
         nobody_to_ask = current_task() is not None and permissions.current_asker() is None
         if await settings_service.shell_enabled(db) and not nobody_to_ask:
             tools.append({"key": "run_command", "description":
-                "Run a shell command on the user's Mac (zsh, in Arslan's working folder, the user's PATH "
+                "Run a shell command on the user's Mac (bash 3.2, Arslan's working folder, the user's PATH "
                 "incl. Homebrew). Use it for anything a command-line tool does: files, conversions "
                 "(pandoc, ffmpeg), scripts (python3, node, swift), Apple data (Reminders/Calendar via "
                 "a Swift script using EventKit, or osascript), git, curl for reading. It can create "
