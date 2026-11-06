@@ -60,7 +60,12 @@ async def test_status_reports_which_models_the_existing_vectors_came_from(client
     from server.db import session as db_session
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
+    from server.db.models import Spawn
+
     async with client.db_maker() as s:
+        # the chunks' owner; knowledge_chunks.spawn_id is a foreign key
+        s.add(Spawn(id=1, name="owner", domain_category="g", system_prompt="sp"))
+        await s.flush()
         for i, model in enumerate(["old-model", "old-model", "new-model"]):
             await s.execute(sa_text(
                 "INSERT INTO knowledge_chunks (spawn_id, source, chunk_index, text, "

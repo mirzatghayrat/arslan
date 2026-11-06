@@ -1003,9 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "Exécuter ceci hors du bac à sable ?",
-    "sandboxOutsideNote": "Les commandes n’écrivent normalement que dans le dossier de travail d’Arslan. Celle-ci doit modifier des fichiers ailleurs sur votre Mac.",
-    "sandboxRetryLabel": "Le bac à sable a arrêté cette commande",
-    "sandboxRetryNote": "Elle a essayé d’écrire hors du dossier de travail ou de lire un fichier protégé. L’exécuter hors du bac à sable la relance depuis le début.",
+    "sandboxOutsideNote": "Les commandes n’écrivent normalement que dans le dossier de travail d’Arslan et ne peuvent pas lire les fichiers protégés. Celle-ci demande à s’exécuter sans ces limites. Si elle a déjà essayé dans le bac à sable, elle repart du début, et ce qu’elle a déjà fait reste en place.",
     "sandboxConversation": "les commandes, y compris celles des tâches en arrière-plan, peuvent s’exécuter hors du bac à sable",
     "runOutside": "Exécuter hors du bac à sable",
     "label": "Exécuter cette commande ?",
@@ -1047,7 +1045,6 @@
       "sandboxed": "S’exécute dans le bac à sable : ne peut modifier que les fichiers du dossier de travail",
       "remote": "S’exécute sur {{host}}, pas sur ce Mac",
       "outside": "S’exécute hors du bac à sable, cette fois",
-      "retry": "Le bac à sable l’a arrêtée ; la relancer repart du début",
       "unsandboxed": "S’exécute sans bac à sable",
       "network": "Utilise le réseau, cette fois",
       "rule": {

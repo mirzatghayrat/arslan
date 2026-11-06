@@ -1003,9 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "在沙盒外运行这条命令？",
-    "sandboxOutsideNote": "命令平时只能写 Arslan 的工作文件夹。这条需要改动 Mac 上别处的文件。",
-    "sandboxRetryLabel": "沙盒拦下了这条命令",
-    "sandboxRetryNote": "它想写工作文件夹以外的地方，或读受保护的文件。在沙盒外运行会从头再跑一遍。",
+    "sandboxOutsideNote": "命令平时只能写 Arslan 的工作文件夹，也读不了受保护的文件。这条请求不受这些限制地运行。如果它已经在沙盒里试过，这次会从头再跑一遍，之前已经做的不会撤销。",
     "sandboxConversation": "命令（包括后台任务）都可以在沙盒外运行",
     "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",
@@ -1047,7 +1045,6 @@
       "sandboxed": "在沙盒里运行：只能改工作文件夹里的文件",
       "remote": "在 {{host}} 上运行，不是这台 Mac",
       "outside": "这一次在沙盒外运行",
-      "retry": "沙盒拦下了它；重跑会从头开始",
       "unsandboxed": "运行时没有沙盒",
       "network": "会联网，仅这一次",
       "rule": {

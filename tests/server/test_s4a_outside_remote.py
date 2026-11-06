@@ -110,14 +110,6 @@ async def test_the_outside_card_offers_this_time_or_this_conversation_and_writes
         "outside", "*", "user", "allow", "conversation")
 
 
-async def test_the_retry_card_is_the_same_request(execution_db):
-    asker = _Asker(scope="conversation")
-    with permissions.asking_with(asker):
-        assert await command_confirm.Confirmations("c1").command("mv a ~/b", [], sandbox="retry") is True
-    assert asker.frames[0]["perm_kind"] == "outside" and asker.frames[0]["sandbox"] == "retry"
-    assert await _grants() == [("c1", "", "outside", "*")]
-
-
 async def test_once_stores_nothing(execution_db):
     with permissions.asking_with(_Asker(scope="once")):
         assert await command_confirm.Confirmations("c1").command("mv a ~/b", [], sandbox="outside") is True
@@ -147,7 +139,7 @@ async def test_a_jobs_outside_card_offers_this_conversation_and_its_answer_is_th
     job = approvals.JobConfirmations("c1", job_id="job-1")
     asker = _Asker(scope="conversation")
     monkeypatch.setattr(job, "asker", asker)
-    assert await job.command("mv a ~/b", [], sandbox="retry") is True
+    assert await job.command("mv a ~/b", [], sandbox="outside") is True
     assert asker.frames[0]["options"] == ["once", "conversation"]
     assert await _grants() == [("c1", "", "outside", "*")]
     [row] = await _rows()
@@ -176,7 +168,7 @@ async def test_the_grant_is_one_conversations(execution_db, monkeypatch):
     with permissions.asking_with(asker):
         await _dispatch(monkeypatch, {"command": "ls"}, executor=ex,
                         cards=command_confirm.Confirmations("c2").command, cid="c2")
-    assert ex.outside == [False] and [f["sandbox"] for f in asker.frames] == ["retry"]
+    assert ex.outside == [False] and asker.frames == []
 
 
 async def test_the_grant_survives_a_restart(execution_db, monkeypatch):
@@ -414,7 +406,7 @@ async def test_the_outside_grants_are_listed_by_conversation_and_can_be_taken_ba
     with permissions.asking_with(asker):
         await _dispatch(monkeypatch, {"command": "ls"}, executor=ex,
                         cards=command_confirm.Confirmations("c1").command, cid="c1")
-    assert ex.outside == [False] and [f["sandbox"] for f in asker.frames] == ["retry"]
+    assert ex.outside == [False] and asker.frames == []
     assert (await api.get("/api/v1/permissions/grants", params={"kind": "outside"})).json() == []
     assert (await api.delete(f"/api/v1/permissions/grants/{listed[0]['id']}")).status_code == 404
 
@@ -451,7 +443,7 @@ async def test_every_command_card_carries_its_choices(execution_db, monkeypatch,
         await ladder.command("ls", [])                                         # layer ③ / ask for everything
         await ladder.command("curl https://example.com", [], network=True)     # with the network
         await ladder.command("mv a ~/b", [], sandbox="outside", why="w")       # leave the sandbox
-        await ladder.command("mv a ~/b", [], sandbox="retry")                  # stopped by it
+        await ladder.command("mv a ~/b", [], sandbox="outside")                  # stopped by it
         await ladder.command("uptime", [], remote_host="me@10.0.0.2", host="10.0.0.2", fingerprints=[])
     assert [f["type"] for f in asker.frames] == ["propose_run_command"] * 6
     assert all(f.get("options") for f in asker.frames)
@@ -478,7 +470,7 @@ async def test_review_2_a_grant_taken_back_while_a_card_waits_lets_nothing_out(e
     assert await _rows() == []
 
 
-async def test_review_2_after_falling_back_into_the_sandbox_a_stop_offers_the_retry(execution_db, monkeypatch):
+async def test_review_2_after_falling_back_into_the_sandbox_a_stop_goes_back_to_the_model(execution_db, monkeypatch):
     await _give_outside_grant("c1")
     answers = []
 
@@ -494,7 +486,7 @@ async def test_review_2_after_falling_back_into_the_sandbox_a_stop_offers_the_re
     with permissions.asking_with(_Asker()):
         r = await _dispatch(monkeypatch, {"command": "git push origin main"}, executor=ex,
                             cards=take_back_then_yes, cid="c1")
-    assert answers == [None, "retry"] and ex.outside == [False, True] and r["ran_outside_sandbox"] is True
+    assert answers == [None] and ex.outside == [False] and r["sandbox_denied"] is True
     assert [x.kind for x in await _rows()] == []
 
 
@@ -534,18 +526,18 @@ async def test_review_2_only_the_users_click_on_the_outside_card_answers_the_net
     asker = _Asker(approved=False)
     ex = _Exec(stop=False)
     with permissions.asking_with(asker):
-        await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True, "network": True}, executor=ex,
+        await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True, "network": True, "why": "w"}, executor=ex,
                         cards=yes_without_a_click, cid="c1")
     assert [f["perm_kind"] for f in asker.frames] == ["network"] and ex.outside == []
 
 
 async def test_review_3_the_outside_card_is_shown_even_with_a_grant_and_writes_no_grant_row(execution_db):
     """Fix 3: decide never answers the outside card from a stored grant (`_ALWAYS_ASKS`): every grant row comes
-    from the tool loop, written when the command runs — not from the retry card, before its network check."""
+    from the tool loop, written when the command runs, not from the card, before its network check."""
     await _give_outside_grant("c1")
     asker = _Asker(scope="once")
     with permissions.asking_with(asker):
-        assert await command_confirm.Confirmations("c1").command("mv a ~/b", [], sandbox="retry") is True
+        assert await command_confirm.Confirmations("c1").command("mv a ~/b", [], sandbox="outside") is True
     assert len(asker.frames) == 1
     assert [(r.decided_by, r.scope) for r in await _rows()] == [("user", "once")]
 
@@ -582,7 +574,7 @@ async def test_review_4_with_the_sandbox_off_an_approved_card_writes_no_grant_ro
 
 @pytest.mark.parametrize("ask", [
     lambda job: job.command("uptime", [], remote_host="me@10.0.0.2", host="10.0.0.2", fingerprints=[]),
-    lambda job: job.command("mv a ~/b", [], sandbox="retry"),
+    lambda job: job.command("mv a ~/b", [], sandbox="outside"),
 ], ids=["remote", "outside"])
 async def test_review_5_two_identical_asks_get_two_cards(execution_db, monkeypatch, ask):
     """Fix 5: as before S4a, a card to leave the sandbox or to reach another machine never joins an identical

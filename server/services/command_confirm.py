@@ -80,8 +80,7 @@ class Confirmations:
                       network: bool = False, host: str | None = None, delete: str = "") -> bool:
         """Called, a card is shown: which commands need none (layer ③ in the sandbox) is the tool loop's to
         decide, once (S2a-2). `sandbox` (0.1.51 P3): "outside" — the model asks to run this command
-        outside the sandbox; "retry" — the sandbox stopped it and it would run again outside, from the
-        start. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
+        outside the sandbox. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
         machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`). `delete` (SMART-8):
         for a delete outside the working folder, how allow deletes (`delete_to_trash.card_mode`); the card says it."""
         from server.db import session as db_session
@@ -102,7 +101,7 @@ class Confirmations:
         deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
         if deletes:
             net = f" {deletes}{net}"
-        if sandbox in ("outside", "retry"):
+        if sandbox == "outside":
             # S4a: this time, or every command of this conversation — a background job's too — for as long as
             # the conversation lasts (a stored grant, `outside` / `*`). No "Always". Only a Mac window gives
             # more than this time (the Inbox, the phone and the island: this time); the island never answers
