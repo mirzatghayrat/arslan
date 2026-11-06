@@ -77,7 +77,8 @@ dependencies = [
     # at source for this bump: the 6.15.0 LICENSE is byte-identical to 6.14.2's.
     # Guarded by tests/server/test_pypdf_is_at_the_patched_version.py.
     # 6.16.1 additionally fixes GHSA-23w6-3w8w-8484 and GHSA-763m-79hh-57f2.
-    "pypdf>=6.16.1",
+    # 6.21.4 closes the 13 high Dependabot alerts open on 6.18.1 (v0.1.64 DEP1).
+    "pypdf>=6.21.4",
     "python-docx>=1.1",
     "python-pptx>=0.6.23",
     "python-multipart>=0.0.18",
@@ -86,7 +87,8 @@ dependencies = [
     # ModuleNotFoundError without it (artifact_inspector reads .pptx with it). It was briefly listed under the `ocr`
     # extra on the mistaken basis that ingest.py:39,61 were its only importers
     # — true of OUR code, false of the dependency graph.
-    "pillow>=10.0",
+    # >=13.0: the 5 critical and 23 high Dependabot alerts open on 12.3.0 (v0.1.64 DEP1).
+    "pillow>=13.0",
     "mcp>=1.0",
     # RUNTIME, macOS only: the OCR fallback (tier 2) reads text with the
     # system's own Vision framework. pyobjc is BINDINGS — the recogniser is
@@ -221,4 +223,4 @@ line-length = 100
 # Exported from uv.lock into the standalone desktop compute runtime at build time.
 # Never installed over the frozen server or downloaded on a packaged user's first run.
 sandbox = ["numpy>=1.26", "pandas>=2.2", "matplotlib>=3.9",
-           "pypdf>=6.16.1", "python-docx>=1.1", "python-pptx>=0.6.23"]
+           "pypdf>=6.21.4", "python-docx>=1.1", "python-pptx>=0.6.23"]

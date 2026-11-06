@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from server.db.models import ArslanMessage, Run, ScheduledTask, ScheduledTaskRun
-from server.services import approvals
+from server.services import approvals, hands_service
 
 
 def _run(conversation_id: str, status: str = "recorded", **kw) -> Run:
@@ -81,11 +81,12 @@ async def test_the_phone_chip_pages_back_like_the_rest(client, monkeypatch):
 
 async def test_the_counts_follow_the_same_scope(client, monkeypatch):
     monkeypatch.setattr(approvals, "all_pending", lambda: [{"call_id": "c1", "conversation_id": "asking"}])
+    monkeypatch.setattr(hands_service, "read_trace", lambda *a, **k: [])   # INB7-c4c's 「应用」 count: no Hands calls here
     await _seed(client)
-    assert (await client.get("/api/v1/runs/counts")).json() == {"waiting": 1, "failed": 1, "scheduled": 2, "phone": 3}
+    assert (await client.get("/api/v1/runs/counts")).json() == {"waiting": 1, "failed": 1, "scheduled": 2, "phone": 3, "apps": 0}
     later = (datetime.utcnow() + timedelta(minutes=5)).isoformat()
     assert (await client.get("/api/v1/runs/counts", params={"since": later})).json() == {
-        "waiting": 0, "failed": 0, "scheduled": 0, "phone": 0}
+        "waiting": 0, "failed": 0, "scheduled": 0, "phone": 0, "apps": 0}
     async with client.db_maker() as db:
         db.add(_run("c", "failed", model="claude-sonnet-5-5"))
         await db.commit()

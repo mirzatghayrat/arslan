@@ -303,7 +303,7 @@ async def test_summary_regeneration_excludes_deleted_memory_sources_from_later_t
         async def chat(self, system, user, **kwargs):
             summarizer_requests.append(user)
             return LLMResponse(content="Current task: prepare an inventory report.", usage={})
-    monkeypatch.setattr(memory, "_get_adapter", lambda: Summarizer())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: Summarizer())
     monkeypatch.setattr(memory, "_token_budget", lambda: 1)
     monkeypatch.setattr(memory, "_summary_token_cap", lambda: 200)
     await memory.maybe_compact(conversation)

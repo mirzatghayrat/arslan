@@ -23,15 +23,19 @@ SERVICES = {
     "launchservices": "com.apple.coreservices.launchservicesd",
     "launchservices-map": "com.apple.lsd.mapdb",
     "shortcuts": "com.apple.WorkflowKit.ShortcutsViewService",
+    "shortcuts-actions": "com.apple.siriactionsd.xpc",
+    "shortcuts-voice": "com.apple.siri.VoiceShortcuts.xpc",
     "pasteboard": "com.apple.pasteboard.1",
     "windowserver": "com.apple.windowserver.active",
     "tcc": "com.apple.tccd",
     "tcc-system": "com.apple.tccd.system",
     "keychain": "com.apple.SecurityServer",
     "keychain-xpc": "com.apple.securityd.xpc",
+    "keychain-system": "com.apple.securityd.systemkeychain",
     "keychain-agent": "com.apple.security.agent",
     "notifications": "com.apple.usernotifications.usernotificationservice",
     "background-network": "com.apple.nsurlsessiond",
+    "background-network-launch": "com.apple.nsurlsessiond-launchondemand",
 }
 
 
@@ -41,7 +45,7 @@ SERVICES = {
 @pytest.mark.parametrize("service", SERVICES.values(), ids=SERVICES.keys())
 def test_service_policy_and_reachability(sbx, mode, service, record_property):
     sbx.network = mode
-    argv = [sys.executable, "-I", str(PROBE), "mach-lookup", service]
+    argv = [sys.executable, "-I", "-c", PROBE.read_text(), "mach-lookup", service]
     # This control queries reachability only: no RPC, no credential or UI access.
     for base in ("legacy-commands", "outside-floor"):
         control = Harness(sbx.root, base, mode, executions=sbx.executions).run(
@@ -105,7 +109,6 @@ def test_launch_submission_is_refused(sbx):
 @pytest.mark.macos
 @macos
 def test_unlisted_unix_socket_is_refused_in_every_network_mode(sbx, modes=tuple(NetworkMode)):
-    # SBX-6a: a surface that has fewer modes (commands: none and proxy) passes its own `modes`.
     # A short path also works with AF_UNIX's 104-byte path limit on macOS.
     import tempfile
     with tempfile.TemporaryDirectory(prefix="sbx-", dir="/private/tmp") as directory:

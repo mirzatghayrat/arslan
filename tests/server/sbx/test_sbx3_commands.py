@@ -33,7 +33,8 @@ APP_DATA = (
 
 @pytest.mark.macos
 @macos
-# SBX-6a: commands have no any-declared mode any more (online is the proxy), so its cases went with it.
+# SBX-6 contract: online commands use PROXY; retirement itself is gated in
+# test_sbx6_network.py. The 13 transitional ANY_DECLARED cases are retired.
 @pytest.mark.parametrize("mode", [NetworkMode.NONE, NetworkMode.PROXY])
 @pytest.mark.parametrize("service", gates.SERVICES.values(), ids=gates.SERVICES.keys())
 def test_commands_services(sbx, mode, service, record_property):
@@ -62,7 +63,8 @@ def test_commands_launch_submission(sbx):
 @pytest.mark.macos
 @macos
 def test_commands_unlisted_unix_socket(sbx):
-    gates.test_unlisted_unix_socket_is_refused_in_every_network_mode(sbx, modes=(NetworkMode.NONE, NetworkMode.PROXY))
+    gates.test_unlisted_unix_socket_is_refused_in_every_network_mode(
+        sbx, modes=(NetworkMode.NONE, NetworkMode.PROXY))
 
 
 @pytest.mark.macos
@@ -94,7 +96,7 @@ def test_commands_apple_events(sbx):
 @macos
 @pytest.mark.parametrize("mode", [NetworkMode.PROXY])
 def test_commands_listener_and_arslan_port(sbx, mode):
-    # Proxy is the one mode with an enforced port denial; it must also refuse listeners.
+    # Commands use the proxy branch: listeners and Arslan ports stay refused.
     gates.test_listener_refusal_and_arslan_port_exclusion(sbx, mode)
 
 

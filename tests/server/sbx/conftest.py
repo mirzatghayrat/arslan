@@ -36,16 +36,17 @@ def sbx(tmp_path, request, record_property):
     if request.node.get_closest_marker("macos") is None:
         pytest.fail("tests using sbx must carry the macos marker and their own platform skip")
     base = getattr(request, "param", "default-deny")
-    if base == "commands":
+    if base in {"commands", "run-python", "artifact", "mcp"}:
         record_property("base", base)
         # The one deliberate expected failure, before any smoke/probe runs.
         # Once registered, fixture or probe failures are ordinary test failures.
-        assert base in BUILT_BASES, "SBX-3a commands adapter is not built"
+        stage = "SBX-3a" if base == "commands" else "SBX-4a"
+        assert base in BUILT_BASES, f"{stage} {base} adapter is not built"
     parameters = getattr(getattr(request.node, "callspec", None), "params", {})
     harness = Harness(tmp_path, base, parameters.get("mode", NetworkMode.NONE))
     try:
         # Syntax errors and nested/unavailable seatbelt are failures on macOS.
-        result = harness.run(["/usr/bin/true"], probe="fixture-smoke")
+        result = harness.python("pass", probe="fixture-smoke")
         assert result.returncode == 0, result.stderr
         record_property("macos", platform.mac_ver()[0])
         record_property("hardware", platform.machine())

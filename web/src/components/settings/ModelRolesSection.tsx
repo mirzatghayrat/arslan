@@ -9,12 +9,18 @@
  * controls in one place is the entire reason that section exists.
  *
  * The empty-slot sentence is computed by `slotFallback`, not written per slot here:
- * the four slots have three different empty meanings, and duplicating that judgement
+ * the two slots have different empty meanings, and duplicating that judgement
  * in the view is how one of them would quietly drift into a false line on screen.
+ *
+ * v0.1.64 ROUTE1: when migration 0086 cleared the old roles it set `model_roles_reset_notice` to "pending"; this
+ * section says so once, and writes "seen" when the note is dismissed.
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Cpu } from 'lucide-react';
+
+import { api } from '../../api/client';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 import RolePicker from '../models/RolePicker';
 import type { ProviderConfig } from '../../api/client.types';
@@ -31,8 +37,6 @@ export interface ModelRolesSectionProps {
   values: Record<string, string>;
   onChange: (settingsKey: string, value: string) => void;
   providerConfigs: SlotConfig[];
-  /** AppSettings.llmStrategy — decides whether an unset slot is routed. */
-  strategy: string;
   onGoToProviders?: () => void;
   /** 0.1.58 §6: the main model (the default for new conversations) — any model of any config. */
   onMainChange?: (configId: number, model: string) => void;
@@ -42,7 +46,6 @@ export default function ModelRolesSection({
   values,
   onChange,
   providerConfigs,
-  strategy,
   onGoToProviders,
   onMainChange,
 }: ModelRolesSectionProps) {
@@ -50,14 +53,8 @@ export default function ModelRolesSection({
 
   const fallbackText = (f: SlotFallback): string => {
     switch (f.kind) {
-      case 'pinned-primary':
-        return t('settings.slotFallbackPinnedPrimary').replace('{model}', f.modelLabel);
       case 'follows-primary':
         return t('settings.slotFallbackFollowsPrimary').replace('{model}', f.modelLabel);
-      case 'routed':
-        // No parenthetical naming the primary: the strategy may pick something else,
-        // and naming it here would re-imply that the primary is doing the work.
-        return t('settings.slotFallbackRouted');
       case 'follows-conversation':
         return t('settings.slotFallbackFollowsConversation');
       default:
@@ -67,6 +64,12 @@ export default function ModelRolesSection({
 
   const configs = providerConfigs as ProviderConfig[];
   const primary = configs.find((c) => c.is_primary) ?? configs[0];
+  const resetNotice = useSettingsStore((s) => s.settings?.model_roles_reset_notice);
+  const dismissResetNotice = () => {
+    const store = useSettingsStore.getState();
+    if (store.settings) store.setSettings({ ...store.settings, model_roles_reset_notice: 'seen' });
+    void api.updateSettings({ model_roles_reset_notice: 'seen' }).catch(() => { /* hidden now; at worst once more */ });
+  };
 
   return (
     <div className="bg-surface/60 border border-border rounded-2xl p-6 space-y-6">
@@ -79,6 +82,14 @@ export default function ModelRolesSection({
       <p className="text-[11px] text-muted-foreground font-sans leading-relaxed">
         {t('settings.modelRolesLede')}
       </p>
+      {resetNotice === 'pending' && (
+        <div role="status" data-testid="model-roles-reset-notice"
+          className="flex items-start gap-3 rounded-lg border border-border bg-fill px-3 py-2 text-[11.5px] text-foreground">
+          <span className="flex-1">{t('settings.modelRolesResetNotice')}</span>
+          <button type="button" onClick={dismissResetNotice} data-testid="model-roles-reset-notice-ok"
+            className="shrink-0 rounded-md px-2 py-0.5 font-medium hover:bg-fill-strong">{t('settings.modelRolesResetOk')}</button>
+        </div>
+      )}
 
       {/* One way out, not five. Rendering it per slot stacked five identical
           links — noise, and noise is how a real prompt stops being read. */}
@@ -104,7 +115,7 @@ export default function ModelRolesSection({
       </div>}
 
       {MODEL_SLOTS.map((slot) => {
-        const f = slotFallback(slot.id, { strategy, configs: providerConfigs });
+        const f = slotFallback(slot.id, { configs: providerConfigs });
         return (
           <div key={slot.id} className="space-y-2">
             <label

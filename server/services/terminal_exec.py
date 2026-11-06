@@ -183,7 +183,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     # zsh writes here-document temp files under $TMPPREFIX (default /tmp/zsh),
     # ignoring TMPDIR: where /tmp is not writable every `python3 - <<'PY'` save
     # failed (0.1.49 bench). Keep both inside the run's own folder.
-    env = child_environment({}, {"PATH": merged_path(), "TERM": "dumb", "NO_COLOR": "1",
+    # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
+    env = child_environment({}, {"PATH": await asyncio.to_thread(merged_path), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
     from server.services import command_sandbox, run_temp, sandbox_proxy

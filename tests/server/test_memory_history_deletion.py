@@ -90,7 +90,7 @@ async def test_deleted_source_not_in_context_or_new_summary(selected, execution_
         assert "violet" not in text
         return "A new report was requested."
     monkeypatch.setattr(memory, "_summarize", summarize)
-    monkeypatch.setattr(memory, "_get_adapter", lambda: object())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: object())
     await memory.maybe_compact(cid)
     assert len(calls) == 1
     async with execution_db() as db:

@@ -56,7 +56,7 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base in ("commands", "commands-proxy"):
+        if self.base in {"commands", "commands-proxy", "outside-floor"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -155,6 +155,7 @@ def _commands_profile(self, **parameters) -> str:
 def _sbx6_base_profile(self, **parameters) -> str:
     from server.services import sandbox_proxy
     proxy_port = parameters.pop("proxy_port", getattr(self, "proxy_port", None))
+    parameters.pop("trust_service", None)       # the base has no such setting: only online commands can grant it
     denied = sandbox_proxy.excluded_ports(parameters.pop("bound_ports", []), parameters.pop("system_proxies", []),
                                           proxy_port=proxy_port or 0)
     return default_deny_profile([self.work, self.temp], [self.protected], network=self.network,
@@ -166,3 +167,7 @@ BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
 BUILT_BASES["commands"] = _commands_profile
 BUILT_BASES["commands-proxy"] = _commands_profile
 BUILT_BASES["network-sbx6"] = _sbx6_base_profile
+
+# Feature keys are declared only when their protections land: SBX-6a's settings bring "trustd-toggle" and
+# "trusted-lan"; SBX-5a adds "cap6b" and "shared-cache-exclusions".
+BUILT_FEATURES = frozenset({"trustd-toggle", "trusted-lan"})

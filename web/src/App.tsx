@@ -203,6 +203,7 @@ export default function App() {
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
   const arslanStreamingText = useArslanStore((s) => s.streamingText);
+  const arslanStreamingDrafts = useArslanStore((s) => s.streamingDrafts);
 
   // Handler for incoming WS frames — routes to the proven store logic
   const handleArslanFrame = useCallback((raw: unknown) => {
@@ -221,7 +222,8 @@ export default function App() {
   const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems);
 
   // Append an optimistic streaming bubble while a reply is streaming
-  const orchestratorChatHistory: Message[] = arslanStreaming && arslanStreamingText
+  // K8a: a reply whose earlier text was replaced keeps its bubble (the drafts) until the new text arrives.
+  const orchestratorChatHistory: Message[] = arslanStreaming && (arslanStreamingText || arslanStreamingDrafts.length > 0)
     ? [
         ...liveOrchestratorHistory,
         {
@@ -231,6 +233,7 @@ export default function App() {
           senderAvatar: '🦁',
           text: arslanStreamingText,
           timestamp: '',
+          ...(arslanStreamingDrafts.length > 0 ? { drafts: arslanStreamingDrafts } : {}),
         },
       ]
     : liveOrchestratorHistory;
@@ -424,12 +427,12 @@ export default function App() {
   const workbench = useWorkbench();
   const sidebarCollapsed = useSidebar((s) => s.collapsed);
   const runningJobs = useArslanStore((s) => Object.values(s.jobs).filter((j) => j.phase !== 'finished').length);
-  // 0.1.58 §1: a reply's ⋯ → "在「动态」里看这一轮" opens Activity with that run in its drawer.
+  // 0.1.58 §1: a reply's ⋯ → "在「动态」里看这一轮", or a scheduled run, opens Progress with that run picked in the inspector.
   useEffect(() => {
     const open = (e: Event) => {
       const runId = (e as CustomEvent<number>).detail;
       if (typeof runId !== 'number') return;
-      useActivityStore.getState().showRun(runId);   // the drawer, and the pick for the inspector (INB7-c1)
+      useActivityStore.getState().showRun(runId);   // the pick for the inspector (INB7-c1)
       setActiveSection('progress');
     };
     window.addEventListener(OPEN_ACTIVITY_RUN_EVENT, open);
@@ -659,7 +662,7 @@ export default function App() {
                       three words of chrome saying what a green dot already says. */}
                   <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
                   <span className="text-xs font-sans text-foreground font-medium truncate">
-                    {threadDisplayTitle(activeThread, t, conversationIndex.meta[activeThreadId]?.kind)}
+                    {threadDisplayTitle(activeThread, t)}
                   </span>
                   {/* 0.1.42: one header row — title · project (opens project and
                       memory settings) · a status chip only for work that needs a look. */}

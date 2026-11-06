@@ -30,7 +30,7 @@ from server.orchestrator import run_trace
 #: Reads that never show a card and share no state with each other (⓪Plan's Q2). Not render_chart,
 #: delegate_work, update_plan, browser_* or desktop_* (one browser, one desktop).
 READS = frozenset({"web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir", "search_files",
-                   "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "task_progress",
+                   "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "my_status", "task_progress",
                    "background_status", "mac_list_shortcuts"})
 CONCURRENCY = 4
 

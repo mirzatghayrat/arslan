@@ -1,5 +1,5 @@
 /**
- * Task A9 — Settings multi-config list + strategy dropdown.
+ * Task A9 — Settings multi-config list.
  *
  * Tests the ProviderConfigList presentational child component extracted from
  * SettingsScreen. This keeps the test clean and the component focused.
@@ -47,8 +47,6 @@ vi.mock("../api/client", () => ({
   setPrimaryProviderConfig: (...args: unknown[]) => mockSetPrimaryProviderConfig(...args),
   deleteProviderConfig: (...args: unknown[]) => mockDeleteProviderConfig(...args),
   fetchProviderModels: (...args: unknown[]) => mockFetchProviderModels(...args),
-  suggestPrimary: vi.fn().mockResolvedValue(null),
-  getCatalog: vi.fn().mockResolvedValue([]),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
   testProviderConfig: (...args: unknown[]) => mockTestProviderConfig(...args),
 }));
@@ -183,55 +181,6 @@ describe("ProviderConfigList", () => {
     // First focus lazily fetched the dynamic model list for that row
     expect(mockFetchProviderModels).toHaveBeenCalledWith(1, false);
   });
-
-  it("renders a strategy dropdown with 4 options", async () => {
-    const user = userEvent.setup();
-    const onUpdate = vi.fn();
-    render(
-      <ProviderConfigList
-        llmProviders={providers}
-        providerConfigs={configs}
-        onConfigsChange={onUpdate}
-        strategy="single"
-        onStrategyChange={vi.fn()}
-      />
-    );
-    // Custom Select: trigger is a button with id "provider-strategy-select"
-    const strategyTrigger = document.getElementById("provider-strategy-select") as HTMLButtonElement;
-    await user.click(strategyTrigger);
-    // All 4 strategy options should appear in the listbox
-    const options = screen.getAllByRole("option").map((o) => o.getAttribute("data-value") ?? o.textContent?.trim());
-    // Check via text content matching i18n key
-    const optionTexts = screen.getAllByRole("option").map((o) => o.textContent?.trim());
-    expect(optionTexts.some((t) => /single/i.test(t ?? ""))).toBe(true);
-    expect(optionTexts.some((t) => /cost/i.test(t ?? ""))).toBe(true);
-    expect(optionTexts.some((t) => /balanced/i.test(t ?? ""))).toBe(true);
-    expect(optionTexts.some((t) => /performance/i.test(t ?? ""))).toBe(true);
-  });
-
-  it("calls onStrategyChange when strategy option is clicked", async () => {
-    const user = userEvent.setup();
-    const onStrategyChange = vi.fn();
-    render(
-      <ProviderConfigList
-        llmProviders={providers}
-        providerConfigs={configs}
-        onConfigsChange={vi.fn()}
-        strategy="single"
-        onStrategyChange={onStrategyChange}
-      />
-    );
-    // Open the strategy custom select
-    const strategyTrigger = document.getElementById("provider-strategy-select") as HTMLButtonElement;
-    await user.click(strategyTrigger);
-    // Click "balanced" option (2 configs so not disabled)
-    const balancedOpt = screen.getAllByRole("option").find((o) =>
-      /balanced/i.test(o.textContent ?? ""),
-    );
-    expect(balancedOpt).toBeTruthy();
-    await user.click(balancedOpt!);
-    expect(onStrategyChange).toHaveBeenCalledWith("balanced");
-  });
 });
 
 // ── Change 1: base_url is updated when a saved row's provider changes ─────────
@@ -279,8 +228,6 @@ describe("base_url update on provider change (Change 1)", () => {
         llmProviders={providersWithUrls}
         providerConfigs={oneConfig}
         onConfigsChange={vi.fn()}
-        strategy="single"
-        onStrategyChange={vi.fn()}
       />
     );
 

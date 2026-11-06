@@ -67,19 +67,19 @@ def _fallback_template(locale="zh") -> str:
     return runtime_messages.render("correction", locale)
 
 
-async def correct(full_text: str) -> dict | None:
+async def correct(full_text: str, conversation_id: str | None = None) -> dict | None:
     """Detect + bounded-correct. Returns None when `full_text` carries no promise
     language; otherwise {"correction": str, "pattern": matched snippet, "corrected":
     bool} where corrected=True means the LLM re-synthesis passed the same regex gate
-    (False = deterministic template). At most ONE extra LLM call, never loops."""
+    (False = deterministic template). At most ONE extra LLM call, never loops. The correction is appended
+    to this conversation's reply, so it runs on the model the reply ran on (v0.1.64 ROUTE1)."""
     snippet = find_promise(full_text)
     if snippet is None:
         return None
     locale = await runtime_messages.selected_locale()
     try:
         from server.orchestrator import tool_loop
-        adapter = tool_loop._get_adapter()
-        a = await adapter if hasattr(adapter, "__await__") else adapter
+        a = await tool_loop._adapter_for_turn(has_images=False, conversation_id=conversation_id)
         resp = await a.chat(_CORRECTION_SYS + f"\nWrite this product notice in locale {locale}.",
                             _correction_user(full_text))
         candidate = (getattr(resp, "content", None) or "").strip()

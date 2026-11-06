@@ -124,7 +124,7 @@ def excluded_ports(bound, system, *, proxy_port: int) -> tuple[int, ...]:
     return tuple(sorted(p for p in {*bound, *theirs} if p != proxy_port and 1 <= p <= 65535))
 
 
-# ── trusted local devices (the user, 2026-11-02: 「选 c」) ──────────────────────
+# ── trusted local devices (the user's decision, 2026-11-02) ─────────────────
 # The LAN stays refused through the proxy, except the specific devices the user listed (a NAS, a Mac mini): never a
 # range. A listed name is pinned to the address recorded when it was added (or to a listed IP), and re-checked on
 # every connect, so a name rebound to another private address is refused. Loopback and link-local are never

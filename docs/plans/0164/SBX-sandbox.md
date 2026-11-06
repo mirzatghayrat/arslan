@@ -286,6 +286,17 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
     - **SBX-6, the proxy that closes it, is a hard release condition for v0.1.64** (README §7).
     - If SBX-6 isn't on main at release, the fallback ships instead: no name lookup in any-declared mode. That's a one-line Codex change before the tag.
 - **Decided (user, 2026-11-02, relayed by ④参谋: 「代理端口选 a」): the loopback proxy.** Loopback stays open for dev servers; in proxy and port-22 modes the profile denies the system proxy's own loopback port(s), read via `proxy_resolve` (HTTP, HTTPS, SOCKS). Built in 6a, which also refuses a sandbox proxy port equal to a system proxy's port. Any-declared is retired for commands.
+- **Decided (user, 2026-11-02, relayed by ④参谋): trustd in proxy mode,** verbatim 「trustd 照 Anthropic：默认不给，加开关」 then 「定了」.
+  - `com.apple.trustd.agent` is denied in every mode by default.
+  - A user setting, off by default (`sandbox_system_certificates`), grants it in PROXY only. That mirrors sandbox-runtime's `enableWeakerNetworkIsolation`; Codex grants trustd and ocspd by default, and the user chose Anthropic's default.
+  - The re-run card for a certificate failure mentions the setting.
+  - A per-project grant is a v0.1.65 candidate.
+- **Decided (user, 2026-11-02): the LAN through the proxy,** verbatim 「选 c」.
+  - Private and shared ranges are denied by default (literals and names that resolve there).
+  - A "Trusted local devices" setting lists specific hosts or IPs. Names are pinned to their recorded address and re-checked per connect. This Mac's own addresses can't be listed.
+  - Trusting a device trusts all its ports.
+  - Both settings are backend in 6a (#668); the Settings UI and cards go in one mock first.
+- **Decided (user, 2026-11-02): other apps' private data,** verbatim 「我选 推荐：默认挡住，用到时弹卡问你」. It's denied by default via the protected list, with an allow-once card. Built as SBX-5b.
 - **SBX-6's release gate covers MCP** (⓪Plan with ③Hands, 2026-11-02, from #666's review): MCP with network moves from any-declared to proxy mode (6p's `mcp-proxy` base) in the "SBX-6 MCP proxy" PR, before v0.1.64 ships.
 - **Loopback, in both modes** (②Main, ③Hands): local dev servers and test databases are fine; Arslan's own port is not. (Listening: see the decision above.)
   - allow `network-bind` and inbound only on localhost (never all interfaces, so a sandboxed server is not reachable from the LAN);
