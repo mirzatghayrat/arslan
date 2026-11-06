@@ -313,6 +313,18 @@ From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes
 
 **Changed on 2026-11-07 (⓪Plan's OK):** a kept line is the user's own words, and MEM1 never folds those away (`MemoryRepository.merge_into` refuses that write). So a line that says the same as a stored entry starts unticked and names that entry, and ticking it stores it as its own entry. The text is this turn's own message, never the model's words, and it's split by lines with no model call. The tool is registered with the web half, so the app never gets a card it can't draw.
 
+**From the review of #735:** a message going to the card leaves post-turn learning (`learns_after_message_id`), so the card is the only way in for its lines, and a no or an unticked line holds. A kept line is `cloud_allowed` when "Remember me" allows and it isn't sensitive.
+
+**Before registering the tool:** a phone-started turn has `broadcast=False`, so no Mac window sees the card and the turn waits up to 30 minutes unless someone says no (`create_skill` has this too). The web card shows a kept line's format characters as UNI1a's cards do, since `clean_body` keeps them, and says what `too_many` and `beside_the_list` mean.
+
+**On the list:**
+- A clicked `ask_user_choice` label is a user row, so a multi-line label becomes entries; so does an image's placeholder in a message with no list. The card shows every line.
+- With a fast judge, one import can use the whole `memory.same` day (about 56.7k tokens against 50k, by arithmetic).
+- Deleting one imported line suppresses that conversation's source, so its history goes and later writes there get `memory_source_deleted`. Any turn-sourced entry does this, but the result's note invites deletes.
+- A previous turn's job that builds its prompt after the paste is stored and before the card can still read the paste. Closing it means bounding every job to its own turn's messages, which changes ordinary learning.
+- `lessons.after_turn` gives a detour's writer the first 300 characters of the message, and `project_evidence.after_turn` can tick a checkpoint quoting it. Neither stores the line as a memory.
+- In the same turn the model can still call `remember` with a line it read, as with any words. INB2's rules apply.
+
 ### CAP9 OSV.dev 检查
 
 - 新建 `server/services/osv_check.py`，向 OSV.dev 的批量查询接口发包名、生态和版本，不发任何用户数据。

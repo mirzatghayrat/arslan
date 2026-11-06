@@ -238,7 +238,7 @@ def _extras(frame: dict, data: dict) -> dict:
     kept = [f for f in data.get("folders") or [] if f in offered] if isinstance(data.get("folders"), list) else offered
     lines = {e.get("id") for e in frame.get("entries") or [] if isinstance(e, dict)}
     answer = data.get("kept") if isinstance(data.get("kept"), list) else []
-    return {"keys": keys, "folders": kept, **({"kept": [i for i in answer if i in lines]} if lines else {})}
+    return {"keys": keys, "folders": kept, **({"kept": [i for i in answer if isinstance(i, str) and i in lines]} if lines else {})}
 
 
 def _same_kind(reply: str, card: str) -> bool:
