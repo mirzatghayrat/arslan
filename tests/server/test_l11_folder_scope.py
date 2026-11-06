@@ -334,6 +334,67 @@ async def test_a_correction_that_merges_asks_no_conflict_question(execution_db, 
     assert "memory.merge" in asked and "memory.conflict" not in asked
 
 
+async def settled_in_both():
+    for cid, advice in ((CA, ADVICE), (CA, ADVICE), (CB, OPPOSITE), (CB, OPPOSITE)):
+        await correct(cid, advice=advice)
+
+
+async def test_a_folder_retires_its_own_practice_when_another_row_has_the_new_words(execution_db, judge, folders,
+                                                                                    monkeypatch):
+    await settled_in_both()
+    asked, fake = [], judgment.judge
+
+    async def recording(point, state, **kwargs):
+        asked.append((point, state))
+        return await fake(point, state, **kwargs)
+    monkeypatch.setattr(judgment, "judge", recording)
+    await correct(CB, advice=ADVICE)
+    rows = await by_advice(execution_db)
+    assert rows[OPPOSITE].status == "archived" and rows[ADVICE].status == "active"
+    assert await recalled_in(CB) == [rows[ADVICE].id]
+    assert not [s for point, s in asked if point == "memory.conflict" and s["candidate"] == s["existing"]]
+
+
+async def test_a_folder_retires_a_practice_it_has_corrected_only_once_too(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)
+    await correct(CB)
+    rows = await by_advice(execution_db)
+    assert rows[OPPOSITE].status == "archived" and await recalled_in(CB) == [rows[ADVICE].id]
+
+
+async def test_a_pinned_practice_of_this_folder_isnt_retired_after_a_merge(execution_db, judge, folders):
+    await settled_in_both()
+    async with execution_db() as s:
+        (await s.scalars(select(Lesson).where(Lesson.advice == OPPOSITE))).one().pinned = True
+        await s.commit()
+    await correct(CB, advice=ADVICE)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
+async def test_a_merge_doesnt_retire_a_practice_scoped_to_a_third_folder(execution_db, judge, folders):
+    await settled_in_both()
+    await project(execution_db, "c-third", str(folders[CA].parent))
+    await correct("c-third", advice=ADVICE)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
+async def test_a_merge_in_a_plain_chat_doesnt_retire_a_practice_for_everywhere(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CN, advice=OPPOSITE)                          # skips A's, and stays for everywhere
+    await correct(CN)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
+@pytest.mark.parametrize("kwargs", [{"answers": False}, {"source": "detour"}], ids=["not-a-correction", "detour"])
+async def test_only_a_correction_retires_a_folders_practice_after_a_merge(execution_db, judge, folders, kwargs):
+    await settled_in_both()
+    await correct(CB, advice=ADVICE, **kwargs)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
 async def test_what_replaces_a_practice_for_everywhere_stays_for_everywhere(execution_db, judge, folders):
     await correct(CN)
     await correct(CA, advice=OPPOSITE)

@@ -368,7 +368,13 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
             if await _yes("memory.merge", {"candidate": text, "existing": render(row)}, conversation_id, ref=f"lesson:{row.id}"):
                 merged = row
                 break
-        for row in near if merged is None else ():
+        for row in near:
+            if row is merged:
+                continue
+            # After a merge, only this folder's own practice is still asked about: the user's newer words retire it.
+            if merged is not None and not (cand.source == "user_correction" and immediate and here
+                                           and (row.evidence or {}).get(CORRECTED_IN) == here):
+                continue
             pair = {"candidate": text, "existing": render(row)}
             # L11 (b): the user's correction doesn't rival a practice that applies only in another folder. A detour
             # still does: it never narrows, so it would stand in that folder for good, against what the user said there.
@@ -424,6 +430,10 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                             evidence.pop(FOLDER_SCOPE, None)
                         elif not row.pinned:
                             evidence[FOLDER_SCOPE] = here
+                    if conflicting is not None:     # this folder's own practice, in the opposite words
+                        old = await db.get(Lesson, conflicting.id)
+                        if not old.pinned:
+                            old.status, old.updated_at = "archived", now
                     row.evidence = evidence
                     await db.commit()
                     continue
