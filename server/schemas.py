@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -296,13 +296,6 @@ class EquipmentUpdateIn(BaseModel):
     skills: list[str] = []
 
 
-class ConfigUpdateIn(BaseModel):
-    system_prompt: str | None = None
-    persona_tone: str | None = None
-    persona_role: str | None = None
-    config: dict[str, Any] | None = None
-
-
 class FactIn(BaseModel):
     content: str
     sensitive: bool = False
@@ -386,6 +379,15 @@ class TestLLMIn(BaseModel):
 
     provider: str
     model: str = ""
+    base_url: str = ""
+    api_key: str = ""
+
+
+class ModelPreviewIn(BaseModel):
+    """Body for POST /settings/provider-models/preview (MODEL1): the Add model form's fields before Add.
+    The key travels in this body only, never in a URL, and is not stored."""
+
+    provider: str
     base_url: str = ""
     api_key: str = ""
 

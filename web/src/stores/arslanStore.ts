@@ -488,7 +488,7 @@ function makeActions(set: SetState, get: GetState) {
           // An old expert's answer, kept so old conversations still show it. Delete this branch in
           // the same change that drops the expert tables (C1 card): before that, turn the stored
           // answers into plain replies, or confirm none are left. No frame names an expert any
-          // more (C1c-2), so the bubble shows the neutral label (adapters: "Spawn").
+          // more (C1c-2), so the bubble shows the neutral label (adapters: "Spawn"). DELETE-BY: v0.1.64, with C7c-4.
           return {
             id: row.message_id,
             kind: "message",

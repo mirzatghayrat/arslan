@@ -691,7 +691,14 @@
     "openActivityBtn": "Ouvrir Avancement",
     "whatsNewEmpty": "Pas de notes pour cette version.",
     "modelRolesResetNotice": "Les rôles des modèles suivent désormais le modèle de chaque conversation. Vos anciens choix de rôles ont été effacés.",
-    "modelRolesResetOk": "OK"
+    "modelRolesResetOk": "OK",
+    "addModelKeyHint": "Sert uniquement à demander à {{provider}} quels modèles sont disponibles. Rien n'est enregistré avant que vous cliquiez sur Ajouter.",
+    "addModelLive": "En direct de {{provider}} · {{count}} modèles",
+    "addModelLoading": "Demande des modèles à {{provider}}…",
+    "addModelBuiltIn": "Liste intégrée",
+    "addModelFallback": "Impossible de joindre {{provider}} ; affichage de la liste intégrée d'Arslan.",
+    "addModelRetry": "Réessayer",
+    "addModelChooseProvider": "Choisir un fournisseur"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -806,8 +813,6 @@
     "collapse_results": "Réduire",
     "stdout_label": "Sortie standard :",
     "exec_validated": "Exécution vérifiée ; la connexion isolée s’est terminée avec le code 0.",
-    "equipped_capabilities": "Capacités disponibles :",
-    "capabilities_matrix": "Matrice des capacités :",
     "hide_rail": "Masquer le panneau latéral",
     "show_rail": "Afficher le panneau latéral",
     "confirm_direction": "Confirmer la direction · Allons-y",

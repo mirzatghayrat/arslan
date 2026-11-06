@@ -89,16 +89,6 @@ export interface Message {
     spawnId: string;
     spawnName: string;
   };
-  /** Unreachable since C1c-2: only the spawn_created / spawn_updated frames set it, and their handling is gone.
-   *  Delete it with the three intro cards in OrchestratorChat (and the ui.* / orchestrator.* words only they use)
-   *  in a follow-up; they were left out of C1c-2 to keep it under the 800-line rule. */
-  spawnIntro?: {
-    name: string;
-    domain: string;
-    avatarEmoji: string;
-    tools: string[];
-    skills: string[];
-  };
   toolActivity?: ToolActivity;
   /** 0.1.58 §1: the footer row under the reply and the steps it opens. */
   process?: import('./components/reply/ReplyFooter').ReplyProcess;

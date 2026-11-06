@@ -613,7 +613,7 @@ async def brain_usage_events(
 # appending or deleting a note; every other card keeps its audit row but is refused (409), because it
 # has no target revision. These three endpoints use the FastAPI get_session dependency (unlike the
 # three read endpoints above) so tests can override it via app.dependency_overrides, matching the
-# rest of the proposal-shaped routers (server/api/evolution.py). DELETE-BY: v0.1.64, with the v1 tables.
+# rest of the proposal-shaped routers (server/api/evolution.py). DELETE-BY: v0.1.65, with the Brain page (C7c Q3).
 # ---------------------------------------------------------------------------------
 
 
@@ -730,6 +730,7 @@ _UNDO_TABLES = {"profile": "user_facts", "learning": "learnings"}
 _UNDO_REF_PREFIX = {"profile": "fact", "learning": "learning"}
 
 
+# DELETE-BY: v0.1.65, with the Brain page (C7c Q3).
 @router.post("/brain/undo-supersede")
 async def undo_supersede(
     body: UndoSupersedeIn, session: AsyncSession = Depends(db_session.get_session)

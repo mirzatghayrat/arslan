@@ -15,10 +15,9 @@ as SUBSUMED). The two data-writing migrations (``0006``, ``0018``) are
 idempotency-guarded, so the whole chain is a safe net no-op re-run on an existing
 install.
 
-🔴 MAINTAINER: adding a migration (e.g. 0032) requires updating THREE places in
-lockstep — the version file under versions/, ``MIGRATIONS`` here, and the
-hardcoded id list in ``test_registry_matches_boot_chain_verbatim`` — a mismatch
-is a deliberate CI red, not a bug to be worked around.
+🔴 MAINTAINER: adding a migration (e.g. 0032) requires updating TWO places in
+lockstep — the version file under versions/ and ``MIGRATIONS`` here. A version
+file with no line here is a deliberate CI red, not a bug to be worked around.
 """
 from __future__ import annotations
 
