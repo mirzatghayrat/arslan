@@ -57,7 +57,7 @@ describe("最近的工作", () => {
     expect(origins).toEqual(["job", "phone", "chat"]);
   });
 
-  it("picks a run while the list stays, with no drawer (the user, 2026-11-02: 「去掉」)", async () => {
+  it("picks a run while the list stays, with no drawer", async () => {
     listRuns.mockResolvedValue([run(3), run(2), run(1)]);
     render(<ActivityView waiting={WAITING} />);
     fireEvent.click(await screen.findByTestId("activity-run-2"));

@@ -1,4 +1,4 @@
-"""JUDGE1 follow-up (the user, 2026-10-31: "the text outlives the lessons you deleted"; a one-time clean at boot): rows
+"""JUDGE1 follow-up (the user, 2026-10-31: the ledger text outlived the lessons the user had deleted; a one-time clean at boot): rows
 the judgment ledger recorded before JUDGE1 can hold a lesson's words. At boot, after the prune, the ledger drops every
 row of a `redact` point with a field that isn't a digest, and every row naming a lesson that is gone (or older than the
 lesson that now has its id). Rows `judge` writes today, and other points' rows of live lessons, stay. Fixture text is

@@ -1,7 +1,7 @@
 # 主动性循环 spec（检测 → 预算内诊断 → 带证据提案 → 人闸）
 
 base main = `fc9a279`。上游：作战图 §0.3（`docs/specs/2026-07-31-product-gap-assessment.md`），
-用户 D4 裁决"立 spec"。排期：**门外第三批**（G1 工具传输层、G2 spawn 强化之后）——
+The user ruled in D4 that a spec be written. 排期：**门外第三批**（G1 工具传输层、G2 spawn 强化之后）——
 本 spec 只定形状，等审，不实现。
 
 **一句话**：让 Arslan 自己发现问题、自己上 GitHub 找方案、自己写成提案 ——
@@ -62,7 +62,7 @@ base main = `fc9a279`。上游：作战图 §0.3（`docs/specs/2026-07-31-produc
 |---|---|---|
 | ① | **A** | 检测信号首批收三个：run 失败率 · 同形错误去抖 · MCP 持续 failing |
 | ② | **A** | **第三个独立箱**（沿"两箱不混"既有裁决，Diagnostics 里加一节） |
-| ③ | 见 §3.1 | 预算数值 —— 用户"按你建议"，但**推导推翻了我建议的数字**，见下 |
+| ③ | 见 §3.1 | Budget figures: the user accepted the recommendation, but **推导推翻了我建议的数字**，见下 |
 | ④ | **A** | GitHub **只搜 issues/discussions，不搜代码** |
 
 ### ①：三个信号，各自的"可修性预判"是规则不是模型
