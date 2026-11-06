@@ -82,6 +82,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | **STY** | 回复风格：任务汇报用四条原则，闲聊保持温度，人情味但不假 | ②Main（⓪Plan 出测题） | 必须（用户 10-28） | ACM（卡片文案用同一套写法） | [STY](STY-reply-style.md) |
 | **M64** | 跑分：代码审查题、拆分派汇总题、Hermes 门槛、每版一次完整的 | ⓪Plan | 必须 | 无（可以最先做） | [M64](M64-bench.md) |
 | **HPW** | Hands refuses a paste only when a password field is known to take input (role `AXSecureTextField`), or, when focus is unknown, when system-wide secure input is on; the refusal says which (added 2026-11-03, the user via ④参谋) | ③Hands | must (user, 2026-11-03) | after ③Hands' SBX items; effort=max | [HPW](HPW-hands-password-refusal.md) |
+| **ASK1** | The default goes back to asking only when a command is risky, and scheduled runs get commands back (S2a-3's unclaimed PR4). Added 2026-11-07: the user put closing this chain first | ③Hands | must | ASK1-a after S2a-3 and SBX-8; ASK1-b after ASK1-a and HR's e rule; effort=max | [ASK1](ASK1-default-ask-risky.md) |
 
 ### 3.2 领先路线里 v0.1.64 的大卡（还没写）
 
@@ -267,6 +268,16 @@ SBX-2 (Codex) ─────────────┐   meanwhile Claude draf
                            ▼
    3a ──→ SBX-7 ──→ S2a-3 (split: Claude structure, Codex tests) ──→ HR ──→ CLS ──→ S5a ──→ S5b
    3a … 6a + SBX-7 ──→ SBX-8
+```
+
+**Corrected 2026-11-07 (⓪Plan, against the rows in §3):** the chart above draws the chain as one line, but nothing makes it serial past HR, and 4a, 5a, 6a and SBX-7 don't wait on each other.
+
+```
+3a (merged) ──→ SBX-7 ──→ S2a-3 ──→ ASK1-a (the default; needs SBX-8 too) ──→ HR ──→ ASK1-b (scheduled runs)
+6a, 4a, 5a, SBX-7 (parallel) ──→ SBX-8
+HR (+ S64-0b, pass lines) ──→ CLS ──┐
+HR's e rule + S3 ──→ S5a ───────────┼──→ S5b
+                       S5a ──→ ACM  ┘ (ACM needs S5a only)
 ```
 
 The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until SBX-2 lands, and STATUS says where the chain is stuck. Cards that don't depend on SBX go ahead as before.
