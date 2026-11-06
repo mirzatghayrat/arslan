@@ -63,32 +63,36 @@ async def _dispatch(monkeypatch, args, *, executor, cards=None, cid="c1"):
         tool_trace=[], convo=[], confirm_command=cards, conversation_id=cid)
 
 
-async def test_a_stopped_command_is_offered_one_rerun_outside(monkeypatch):
-    # S2a-2: layer ③ runs in the sandbox with no card (the tool loop decides that, once); a stop
-    # offers the retry card.
+async def test_a_stopped_command_goes_back_to_the_model_with_no_card(monkeypatch):
+    """The calibration of 2026-11-07: a denial goes back to the model to find another way. Layer ③ runs in the sandbox
+    with no card (S2a-2), and a stop shows none either."""
     ex, cards = _Exec(), _Cards(True)
     r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=cards)
-    assert ex.outside == [False, True]
-    assert [c.get("sandbox") for c in cards.calls] == ["retry"]
-    assert r["ok"] is True and r["ran_outside_sandbox"] is True
-
-
-async def test_declining_the_rerun_leaves_it_stopped_with_the_note(monkeypatch):
-    ex = _Exec()
-    cards = _Cards()                              # every card: no
-
-    async def ordinary_yes(command, argv, **kw):
-        cards.calls.append({"command": command, **kw})
-        return kw.get("sandbox") is None          # the ordinary card says yes, the retry no
-    r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=ordinary_yes)
-    assert ex.outside == [False]
+    assert ex.outside == [False] and cards.calls == []
     assert r["ok"] is False and r["sandbox_denied"] is True and "ran_outside_sandbox" not in r
-    assert cards.calls[-1]["sandbox"] == "retry"
+
+
+async def test_after_a_stop_leaving_is_the_models_own_request_with_its_reason(monkeypatch):
+    ex, cards = _Exec(), _Cards(True)
+    await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=cards)
+    r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True, "why": "it writes to ~/Library"},
+                        executor=ex, cards=cards)
+    assert [(c.get("sandbox"), c.get("why")) for c in cards.calls] == [("outside", "it writes to ~/Library")]
+    assert ex.outside == [False, True] and r["ran_outside_sandbox"] is True
+
+
+@pytest.mark.parametrize("why", [None, "", "   "], ids=["missing", "empty", "blank"])
+async def test_asking_to_leave_needs_a_reason_the_user_can_read(monkeypatch, why):
+    ex, cards = _Exec(stop=False), _Cards(True)
+    args = {"command": "ls", "outside_sandbox": True, **({} if why is None else {"why": why})}
+    r = await _dispatch(monkeypatch, args, executor=ex, cards=cards)
+    assert cards.calls == [] and ex.outside == []
+    assert r["ok"] is False and "why" in r["error"]
 
 
 async def test_without_a_window_a_stop_is_final(execution_db, monkeypatch):
-    """A turn with someone to ask but no card callback for the rerun: the sandbox's stop stands. (A run with
-    nobody to ask at all, a scheduled one, runs no command since v0.1.63: test_scheduled_run_no_command.)"""
+    """A turn with someone to ask but no card callback: the sandbox's stop stands. (A run with nobody to ask at
+    all, a scheduled one, runs no command since v0.1.63: test_scheduled_run_no_command.)"""
     from server.services import permissions
 
     async def no_card(frame):
@@ -110,7 +114,7 @@ async def test_asking_up_front_takes_one_card_that_covers_the_command_too(monkey
 
 async def test_asking_up_front_always_cards_even_a_harmless_command(monkeypatch):
     ex, cards = _Exec(stop=False), _Cards(False)
-    r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex, cards=cards)
+    r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True, "why": "w"}, executor=ex, cards=cards)
     assert cards.calls[0]["sandbox"] == "outside"
     assert ex.outside == [] and r["ok"] is False and "declined" in r["error"]
 
@@ -138,7 +142,7 @@ async def test_a_conversation_grant_runs_outside_from_the_start_there_only(execu
         other = _Exec()
         other_cards = _Cards(False)
         await _dispatch(monkeypatch, {"command": "ls"}, executor=other, cards=other_cards, cid="c2")
-    assert other.outside == [False] and other_cards.calls[-1]["sandbox"] == "retry"
+    assert other.outside == [False] and other_cards.calls == []
 
 
 async def test_with_the_sandbox_switched_off_nothing_about_it_asks(monkeypatch):
@@ -178,8 +182,8 @@ async def test_a_background_job_asks_with_a_card_and_a_bare_yes_grants_nothing(e
     frames = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _window(frames, True))
     job = approvals.JobConfirmations("c9")
-    assert await job.command("mv a ~/b", [], sandbox="retry") is True
-    assert frames[0]["sandbox"] == "retry" and frames[0]["options"] == ["once", "conversation"]
+    assert await job.command("mv a ~/b", [], sandbox="outside") is True
+    assert frames[0]["sandbox"] == "outside" and frames[0]["options"] == ["once", "conversation"]
     from sqlalchemy import select
     from server.db.models import PermissionGrant
     async with execution_db() as db:

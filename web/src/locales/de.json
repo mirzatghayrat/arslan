@@ -1000,7 +1000,6 @@
     "sandboxOutsideLabel": "Diesen Befehl außerhalb der Sandbox ausführen?",
     "sandboxOutsideNote": "Befehle schreiben normalerweise nur in Arslans Arbeitsordner. Dieser muss Dateien an anderer Stelle auf deinem Mac ändern.",
     "sandboxRetryLabel": "Die Sandbox hat diesen Befehl gestoppt",
-    "sandboxRetryNote": "Er wollte außerhalb des Arbeitsordners schreiben oder eine geschützte Datei lesen. Außerhalb der Sandbox startet er noch einmal von vorn.",
     "sandboxConversation": "Befehle, auch die von Hintergrundaufgaben, dürfen außerhalb der Sandbox laufen",
     "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",
@@ -1040,7 +1039,6 @@
       "sandboxed": "Läuft in der Sandbox: kann nur Dateien im Arbeitsordner ändern",
       "remote": "Läuft auf {{host}}, nicht auf diesem Mac",
       "outside": "Läuft diesmal außerhalb der Sandbox",
-      "retry": "Die Sandbox hat es gestoppt; erneut ausführen beginnt von vorn",
       "unsandboxed": "Läuft ohne Sandbox",
       "network": "Nutzt diesmal das Netzwerk",
       "rule": {

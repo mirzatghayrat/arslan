@@ -96,13 +96,12 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     is what "don't ask again" would remember, so the card can name it.
     `remote_host` non-empty means the command runs on ANOTHER machine (P3b), and the
     card must say so. `fingerprints` are that machine's host keys.
-    `sandbox` (0.1.51 P3) is "outside" (the model asks to leave the workspace sandbox) or "retry" (the sandbox
-    stopped it; running again starts over). `why` is the model's reason for the step, on any card (SMART-8).
+    `sandbox` (0.1.51 P3) is "outside": the model asks to leave the workspace sandbox. `why` is the model's reason for the step, on any card (SMART-8).
     `network` (S2a-2): this turn read outside content and the command would use the network, so the
     card asks for that too, this time (one card, not two); the reason says so, and the island never
     answers it (an extra key the web and the phone ignore).
-    `rules` (SMART-8, #688 review 1): every terminal rule the command matched, on every command card (the outside,
-    retry and remote ones too), so the card's risk row names each; `unreadable`, why it could not be read
+    `rules` (SMART-8, #688 review 1): every terminal rule the command matched, on every command card (the outside
+    and remote ones too), so the card's risk row names each; `unreadable`, why it could not be read
     (`command_confirm.UNREADABLE`). Extra keys: the phone reads `rule` and `reason` as before."""
     if network:
         reason = f"{reason}; uses the network" if reason else "uses the network"
@@ -110,7 +109,7 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
              "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
     if network:
         frame["network"] = True
-    if sandbox in ("outside", "retry"):
+    if sandbox == "outside":
         frame["sandbox"] = sandbox
     # SMART-8 (the card mock the user OK'd): Arslan's reason for the step, on every command card (the card leads with
     # it, marked as Arslan's words), cleaned as a name is (UNI1): no bidi or zero-width character, one line.

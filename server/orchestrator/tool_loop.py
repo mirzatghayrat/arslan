@@ -1442,7 +1442,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     run_command is special: it requires per-command user confirmation via the injected
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default).
     Since 0.1.51 it also runs inside the workspace sandbox; leaving it is a click
-    (confirm_command(..., sandbox="outside"|"retry")), never the model's say-so."""
+    (confirm_command(..., sandbox="outside")), never the model's say-so."""
     from arslan.execution_budget import BudgetExceeded, current
     budget = current()
     if budget is not None:
@@ -1641,6 +1641,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
             why = str(args.get("why") or "").strip()[:300]
+            if not why:
+                # Leaving the sandbox is a deliberate request (the calibration of 2026-11-07), and the card leads with why.
+                result = {"ok": False, "error": "outside_sandbox needs a why: one short sentence on why this has to run "
+                                                "outside the sandbox. The user reads it on the card."}
+                return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                            assistant_content, convo,
+                                            mcp_fail_counts=mcp_fail_counts)
             from server.services import approvals as _approvals
             _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
             _approvals.LAST_ANSWERED_BY.set(None)
@@ -1909,22 +1916,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 if by_grant and not ran_outside and isinstance(result, dict):
                     result["grant_note"] = ("this conversation's permission to run commands outside the sandbox was "
                                             "taken back; it ran in the sandbox")
-            if (tool_key == "run_command" and sandbox_on and not ran_outside and confirm_command is not None
-                    and isinstance(result, dict) and result.get("sandbox_denied")):
-                # Stopped by the sandbox: offer ONE re-run outside it, from the start.
-                if await confirm_command(command, argv, sandbox="retry"):
-                    # S2a-1: outside, the network rule is decided again as for an outside run (this time
-                    # only, a stored grant does not count): the retry card is about files.
-                    network = await _network_after_outside_content(
-                        command, args, sandbox_on=sandbox_on, run_outside=True, unwrapped=False,
-                        conversation_id=conversation_id)
-                    if network.get("refused"):
-                        result = {"ok": False, "error": network["refused"]}
-                    else:
-                        result = await run_once(True)
-                    if isinstance(result, dict) and not network.get("refused"):
-                        result["ran_outside_sandbox"] = True
-            elif tool_key == "run_command" and ran_outside and isinstance(result, dict):
+            # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
+            if tool_key == "run_command" and ran_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True
             if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
                 result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
@@ -2170,7 +2163,8 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                    "outside_sandbox": {"type": "boolean",
                                                        "description": "Only when the command must write outside "
                                                                       "the working folder (moving the user's files, "
-                                                                      "installing software). The user is asked."},
+                                                                      "installing software). Needs why; the user is "
+                                                                      "asked."},
                                    "network": {"type": "boolean",
                                                "description": "The command needs the network (a download, an "
                                                               "API). After you read outside content in this turn, "

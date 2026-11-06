@@ -1000,7 +1000,6 @@
     "sandboxOutsideLabel": "¿Ejecutar esto fuera del entorno aislado?",
     "sandboxOutsideNote": "Los comandos normalmente solo escriben dentro de la carpeta de trabajo de Arslan. Este necesita cambiar archivos en otro lugar de tu Mac.",
     "sandboxRetryLabel": "El entorno aislado detuvo este comando",
-    "sandboxRetryNote": "Intentó escribir fuera de la carpeta de trabajo o leer un archivo protegido. Ejecutarlo fuera del entorno aislado lo vuelve a empezar desde el principio.",
     "sandboxConversation": "los comandos, incluidos los de tareas en segundo plano, pueden ejecutarse fuera del entorno aislado",
     "runOutside": "Ejecutar fuera del entorno aislado",
     "label": "¿Ejecutar este comando?",
@@ -1040,7 +1039,6 @@
       "sandboxed": "Se ejecuta en el entorno aislado: solo puede cambiar archivos de la carpeta de trabajo",
       "remote": "Se ejecuta en {{host}}, no en este Mac",
       "outside": "Se ejecuta fuera del entorno aislado, esta vez",
-      "retry": "El entorno aislado lo detuvo; ejecutarlo de nuevo empieza desde el principio",
       "unsandboxed": "Se ejecuta sin entorno aislado",
       "network": "Usa la red, esta vez",
       "rule": {

@@ -299,7 +299,7 @@ def island_may_answer(frame: dict) -> bool:
         perm_kind = frame.get("perm_kind")
         return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
     if kind == "propose_run_command":
-        if (frame.get("remote_host") or frame.get("sandbox") in ("outside", "retry") or frame.get("unsandboxed")
+        if (frame.get("remote_host") or frame.get("sandbox") == "outside" or frame.get("unsandboxed")
                 or frame.get("network")):
             return False                   # another machine, outside the sandbox, or the network too (S2a-2)
         from server.services import terminal_policy

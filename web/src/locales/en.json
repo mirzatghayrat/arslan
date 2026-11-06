@@ -1000,7 +1000,6 @@
     "sandboxOutsideLabel": "Run this outside the sandbox?",
     "sandboxOutsideNote": "Commands normally write only inside Arslan's working folder. This one needs to change files elsewhere on your Mac.",
     "sandboxRetryLabel": "The sandbox stopped this command",
-    "sandboxRetryNote": "It tried to write outside the working folder or read a protected file. Running it outside the sandbox starts it again from the beginning.",
     "sandboxConversation": "commands, background tasks included, may run outside the sandbox",
     "runOutside": "Run outside the sandbox",
     "label": "Run this command?",
@@ -1040,7 +1039,6 @@
       "sandboxed": "Runs in the sandbox: it can change files only in the work folder",
       "remote": "Runs on {{host}}, not on this Mac",
       "outside": "Runs outside the sandbox, this time",
-      "retry": "The sandbox stopped it; running it again starts over",
       "unsandboxed": "Runs with no sandbox around it",
       "network": "Uses the network, this time",
       "rule": {

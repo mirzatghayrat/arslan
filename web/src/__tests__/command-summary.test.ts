@@ -274,7 +274,6 @@ describe("commandRisk", () => {
   it("another machine, outside the sandbox, or with no sandbox at all", () => {
     expect(commandRisk({ remoteHost: "me@box" }).keys).toEqual([{ key: "remote", params: { host: "me@box" } }]);
     expect(commandRisk({ sandbox: "outside" }).keys).toEqual([{ key: "outside" }]);
-    expect(commandRisk({ sandbox: "retry" }).keys).toEqual([{ key: "retry" }]);
     expect(commandRisk({ unsandboxed: true }).keys).toEqual([{ key: "unsandboxed" }]);
   });
 
@@ -309,10 +308,9 @@ describe("commandRisk", () => {
     expect(commandRisk({ rules: ["delete-outside"], unsure: true }).level).toBe("irreversible");
   });
 
-  it("the outside, retry and remote cards keep the rule's line after their own (#688 review 1)", () => {
+  it("the outside and remote cards keep the rule's line after their own (#688 review 1)", () => {
     expect(commandRisk({ sandbox: "outside", rules: ["delete-outside"] })).toEqual({
       level: "irreversible", keys: [{ key: "outside" }, { key: "rule.delete-outside" }] });
-    expect(commandRisk({ sandbox: "retry", rules: ["delete-outside"] }).level).toBe("irreversible");
     expect(commandRisk({ remoteHost: "me@box", rules: ["delete-outside"] }).keys).toEqual([
       { key: "remote", params: { host: "me@box" } }, { key: "rule.delete-outside" }]);
   });

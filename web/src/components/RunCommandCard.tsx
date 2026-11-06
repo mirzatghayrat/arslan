@@ -19,8 +19,8 @@ interface Props {
   fingerprints?: string[];
   /** 0.1.42: a background job is asking. */
   background?: boolean;
-  /** 0.1.51 P3: "outside" — leave the sandbox; "retry" — the sandbox stopped it. */
-  sandbox?: "outside" | "retry";
+  /** 0.1.51 P3: "outside" — leave the sandbox. */
+  sandbox?: "outside";
   /** Arslan's one-line reason for the step (the model's words, cleaned by the server). SMART-8: when present it is
    *  the card's purpose, marked as Arslan's; else the purpose is read from the command. */
   why?: string;
@@ -86,7 +86,7 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
   const context = [
     ...(background ? [{ icon: lineIcon(Terminal), text: <span data-testid="runcmd-background">{t("jobs.askingBadge")}</span> }] : []),
     ...(sandbox ? [{ icon: lineIcon(ShieldAlert), text: <span data-testid="runcmd-sandbox-note">
-      {t(sandbox === "outside" ? "runcmd.sandboxOutsideNote" : "runcmd.sandboxRetryNote")}</span> }] : []),
+      {t("runcmd.sandboxOutsideNote")}</span> }] : []),
     ...(isRemote ? [{ icon: lineIcon(Globe2), text: <span data-testid="runcmd-remote-note">{t("runcmd.remoteWarning")}</span> }] : []),
   ];
   return (

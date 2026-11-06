@@ -42,7 +42,7 @@ describe('which line a held card gets', () => {
     expect(heldNoteKey(card({ type: 'propose_action', kind: 'desktop_risky', target: 'Mail · Send', detail: '' }))).toBe('riskyNote');
     expect(heldNoteKey(card({ type: 'propose_run_command', pretty: 'ls', remote_host: 'mini' }))).toBe('heldRemote');
     expect(heldNoteKey(card({ type: 'propose_run_command', pretty: 'mv a b', sandbox: 'outside' }))).toBe('heldOutside');
-    expect(heldNoteKey(card({ type: 'propose_run_command', pretty: 'mv a b', sandbox: 'retry' }))).toBe('heldOutside');
+    expect(heldNoteKey(card({ type: 'propose_run_command', pretty: 'mv a b', sandbox: 'outside' }))).toBe('heldOutside');
     expect(heldNoteKey(card({ type: 'propose_run_command', pretty: 'rm a' }))).toBe('heldGeneric');
     expect(heldNoteKey(card({ type: 'propose_action', kind: 'desktop_look', target: 'Notes', detail: '' }))).toBe('heldGeneric');
   });

@@ -1,13 +1,13 @@
-"""The chat window's side of leaving the sandbox (0.1.51 P3): a stopped command
-gets a retry card; its "In this conversation" is a stored grant of this conversation
-(S4a: `outside` / `*`), never a terminal rule."""
+"""The chat window's side of leaving the sandbox (0.1.51 P3): a stopped command goes back to the model, and the card
+is its request to leave; that card's "In this conversation" is a stored grant of this conversation (S4a: `outside` / `*`),
+never a terminal rule."""
 import pytest
 
 import server.orchestrator.tool_loop as tool_loop_mod
 from server.services import command_sandbox, terminal_exec
 from tests.server.conftest import build_ws_client
 from tests.server.test_run_command_confirm_flow import (
-    _collect_until, _enable_shell, _stub_run_command_executor, _stub_tool_loop_adapter)
+    _collect_until, _enable_shell, _stub_run_command_executor, _stub_tool_loop_adapter, _ToolThenAnswerAdapter)
 
 
 @pytest.fixture
@@ -52,11 +52,32 @@ class _StopsInside:
         return {"ok": True, "exit_code": 0, "stdout": "moved", "stderr": "", "sandbox": "off"}
 
 
-def test_retry_card_runs_it_outside_and_in_this_conversation_grants_this_conversation(app_client, monkeypatch):
+class _StoppedThenAsksToLeave(_ToolThenAnswerAdapter):
+    """The model runs a command, the sandbox stops it, and it comes back asking to leave, with its reason."""
+
+    def __init__(self):
+        super().__init__("mv", ["~/Downloads/a.png", "~/Pictures/"])
+        self.saw_the_stop = False
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):  # noqa: ANN001
+        from arslan.models import LLMResponse
+        self._turn += 1
+        self.saw_the_stop = self.saw_the_stop or "operation not permitted" in f"{user} {history}"
+        if self._turn > 2:
+            return LLMResponse(content="done", tool_calls=[], usage={})
+        args = {"command": "mv ~/Downloads/a.png ~/Pictures/"}
+        if self._turn == 2:
+            args |= {"outside_sandbox": True, "why": "it moves a file out of the working folder"}
+        return LLMResponse(content=None, usage={}, tool_calls=[{
+            "id": f"c{self._turn}", "function": {"name": "run_command", "arguments": args}}])
+
+
+def test_a_stop_shows_no_card_and_asking_to_leave_shows_one_with_the_models_reason(app_client, monkeypatch):
     # S2a-2 (R4): layer ③ runs with no card only where the sandbox can start; pinned so CI's Linux runs it too.
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     _enable_shell(app_client, policy="ask_risky")
-    _stub_tool_loop_adapter(monkeypatch, "mv", ["~/Downloads/a.png", "~/Pictures/"])
+    adapter = _StoppedThenAsksToLeave()
+    monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: adapter)
     fake = _stub_run_command_executor(monkeypatch)
     stops = _StopsInside()
     tool_loop_mod.EXECUTORS["run_command"] = stops     # the patched dict both modules now share
@@ -64,8 +85,13 @@ def test_retry_card_runs_it_outside_and_in_this_conversation_grants_this_convers
     with app_client.websocket_connect("/ws/arslan/main") as ws:
         ws.receive_json()  # history
         ws.send_json({"type": "user_message", "content": "move my screenshot to Pictures"})
-        card = _collect_until(ws, "propose_run_command")[-1]
-        assert card["sandbox"] == "retry" and "rule" not in card
+        frames = _collect_until(ws, "propose_run_command")
+        card = frames[-1]
+        assert [f["type"] for f in frames].count("propose_run_command") == 1
+        assert [f["ok"] for f in frames if f.get("type") == "tool_result"] == [False]    # the stop, no card for it
+        assert adapter.saw_the_stop
+        assert card["sandbox"] == "outside" and "rule" not in card
+        assert card["why"] == "it moves a file out of the working folder"
         assert card["perm_kind"] == "outside" and card["options"] == ["once", "conversation"]
         ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"], "scope": "conversation"})
         after = _collect_until(ws, "stream_end")
