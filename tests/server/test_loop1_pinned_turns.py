@@ -296,7 +296,7 @@ SCENARIOS: dict[str, dict] = {
                      allow_escalation=True, expect='"escalation"'),
     "escalate_not_allowed": dict(replies=[_call("escalate", {"need": "a scanner"}), Reply("I can't.")],
                                  expect="tool_unavailable"),
-    "credentials_in_arguments": dict(replies=[
+    "secret_in_arguments": dict(replies=[
         _call("web_search", {"query": "x", "password": "not-a-real-one"}),
         Reply("Done.")], expect="credentials_not_tool_data"),
     # ── on demand ──
