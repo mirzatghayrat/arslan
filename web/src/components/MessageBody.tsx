@@ -295,7 +295,7 @@ function ProseBody({ text, className, indent, streaming, hasMessageActions, foot
         ref={ref}
         style={collapsed ? { position: 'relative', maxHeight: CLAMP_PX, overflow: 'hidden' } : { position: 'relative' }}
       >
-        <div data-md-root>
+        <div data-md-root className="md-root">
           {streaming
             // Only the block still growing is parsed again. `contents`: the blocks lay out as one, like the finished reply.
             ? <div className={className}>{splitBlocks(text).map((block, i) => <Markdown key={i} className="contents">{block}</Markdown>)}</div>

@@ -11,7 +11,8 @@
  * depend on the blocks around them, so the parser says: it reads the reply first, with no $$ to swallow anything, and what it calls
  * literal is blanked out before anything here looks. A formula must open and close outside the blanks, and may hold some in a line:
  * it opened first, as math does in the real parse, and TeX can look like a link. That's a second parse, so only a reply with
- * something to rewrite pays it: 2 x 13 ms for 17 kB of formulas, measured in WKWebView.
+ * something to rewrite pays it: 2 x 13 ms for 17 kB of formulas, measured in WKWebView. A reply with one block too long to read
+ * twice is left as written.
  *
  * No lookbehind: the app runs on WebKit 14 (macOS 11). Every span below stops at the next opener, so openers cost linear time.
  */
@@ -29,7 +30,9 @@ const LITERAL = new Set(['code', 'inlineCode', 'html', 'definition', 'image', 'i
 const CONTAINERS = String.raw`[ \t]*(?:>[ \t]*|(?:[-*+]|\d{1,9}[.)])[ \t]+)*`;
 const LINE_END = String.raw`[ \t]*(?=\r?\n|$)`;
 const NEXT_LINE = String.raw`\n(?![ \t>]*(?:\r?\n|\0))`;                                // not a blank line, nor a code block's
-const FENCE_LINE = new RegExp(String.raw`((?:^|\n)${CONTAINERS})\$\$(?=${LINE_END})`, 'g');
+const FENCE_LINE = new RegExp(String.raw`((?:^|\n)${CONTAINERS})\$\$(?=[^\n$]*(?:\n|$))`, 'g');
+const BLANK_LINE = /\n[ \t>]*\r?\n/;
+const MAX_BLOCK = 64 * 1024;
 const PIECES = new RegExp([
   String.raw`\\[^([\n]`,                                                              // any other escape: what follows is text
   String.raw`(^|\n)(${CONTAINERS})(?:` + [
@@ -101,6 +104,8 @@ export function texDelimiters(text: string, parse: (doc: string) => Node): strin
   // Nothing to rewrite even if nothing were literal: most replies, and any run of openers with no closer, never pay for the parse.
   // A stray alone doesn't count: it only matters beside a new $$, and a formula still streaming has one on most tokens.
   if (rewrite(text, text, () => true, '$$') === text) return text;
+  // The parser is quadratic in a block's length (256 kB of short lines takes 10 to 25 s, measured), and no reply should make it do that twice.
+  if (text.split(BLANK_LINE).some((block) => block.length > MAX_BLOCK)) return text;
 
   let mask = '';
   const blank = (from: number, to: number) => { mask += text.slice(mask.length, from) + text.slice(from, to).replace(/[^\n]/g, '\0'); };
@@ -120,9 +125,9 @@ export function texDelimiters(text: string, parse: (doc: string) => Node): strin
       blank(last?.position?.end.offset ?? from, to);                                   // [text] stays readable; (target) doesn't
     }
   };
-  // A fence's own line reads as a block of one line, as an empty heading, so the next line isn't its paragraph's. Any other $$ is <,
-  // which ends a bare URL, so that a URL doesn't take a closing $$.
-  walk(parse(text.replace(FENCE_LINE, '$1##').replaceAll('$$', '<<')));
+  // A line remark-math would read as a fence reads here as a block of one line, a heading, so it builds no long paragraph. Any other
+  // $$ is <, which ends a bare URL, so that a URL doesn't take a closing $$.
+  walk(parse(text.replace(FENCE_LINE, '$1# ').replaceAll('$$', '<<')));
   mask += text.slice(mask.length);
   return rewrite(text, mask, (offset) => blockStarts.has(offset), '\\$\\$');
 }

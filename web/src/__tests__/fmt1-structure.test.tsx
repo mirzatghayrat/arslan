@@ -27,7 +27,7 @@ vi.mock('react-i18next', () => ({
 
 import Formula from '../components/Formula';
 import Markdown from '../components/Markdown';
-import { buildStandaloneHtml } from '../components/MessageBody';
+import MessageBody, { buildStandaloneHtml } from '../components/MessageBody';
 import { texDelimiters } from '../lib/texDelimiters';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -276,10 +276,16 @@ describe('a formula that defines macros never reaches KaTeX', () => {
 });
 
 describe('a reply cannot paint outside its own box', () => {
-  it('the root clips what a formula moves or widens, in old WebKit too', () => {
-    const root = show('$$\\kern-40em x$$').firstElementChild!;
-    expect(root.classList.contains('md-root')).toBe(true);
+  it('the box that clips is a real box, finished or streaming: a block in `display: contents` has none, and clips nothing', () => {
     expect(sheet()).toMatch(/\.md-root\s*\{\s*overflow:\s*hidden;\s*overflow:\s*clip;/);
+    for (const streaming of [false, true]) {
+      const { container } = render(<MessageBody text={'one $$x$$\n\ntwo $$y$$\n'} streaming={streaming} />);
+      const box = container.querySelector('.md-root')!;
+      expect(box.classList.contains('contents')).toBe(false);
+      expect(box.querySelectorAll('.md-math')).toHaveLength(2);
+      expect(container.querySelector('.contents .md-root, .md-root.contents')).toBeNull();
+      cleanup();
+    }
   });
 
   it('a long word or URL wraps, since nothing can scroll to it now', () => {
@@ -292,9 +298,6 @@ describe('a reply cannot paint outside its own box', () => {
     expect(c.querySelector<HTMLElement>('.katex-rule')!.style.borderTopWidth).toBe('50em');
   });
 
-  it('keeps the class it was given', () => {
-    expect(render(<Markdown className="extra">x</Markdown>).container.firstElementChild!.className).toBe('md-root extra');
-  });
 });
 
 describe('texDelimiters', () => {
@@ -459,6 +462,38 @@ describe('texDelimiters', () => {
     expect(spy).toHaveBeenCalledTimes(5);
   });
 
+  // The parser is quadratic in a block's length: 256 kB of `$$ a` lines read as one paragraph took 20 s, twice.
+  it('a block too long for the parser to read twice is left as written', () => {
+    const spy = vi.fn(parse);
+    const text = '$$ a\n'.repeat(52_429);
+    expect(texDelimiters(text, spy)).toBe(text);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('the limit is on one block, at 64 KiB', () => {
+    const noParse = () => ({ type: 'root', children: [] });
+    const filler = (size: number) => 'y'.repeat(size - '\\(x\\) '.length);
+    expect(texDelimiters(`\\(x\\) ${filler(65_536)}`, noParse)).toBe(`$$x$$ ${filler(65_536)}`);
+    const over = `\\(x\\) ${filler(65_537)}`;
+    expect(texDelimiters(over, noParse)).toBe(over);
+    for (const blank of ['\n\n', '\n \n', '\n>\n', '\r\n\r\n']) {
+      expect(texDelimiters(`\\(x\\) ${'y'.repeat(40_000)}${blank}${'z'.repeat(40_000)}`, noParse)).toContain('$$x$$');
+    }
+  });
+
+  it('reads a line that starts with $$ as a block of its own, as the fence it would be, so it builds no long paragraph', () => {
+    const spy = vi.fn(parse);
+    texDelimiters('$$ a\n$$b\n$$\nc\n$$ d $ e\n$$f$$', spy);
+    expect(spy.mock.calls[0][0]).toBe('#  a\n# b\n# \nc\n<< d $ e\n<<f<<');
+  });
+
+  it('stays quick through the whole pipeline on 256 kB of $$ lines, where the first fence takes the rest', () => {
+    const started = Date.now();
+    const c = show('$$ a\n'.repeat(52_429));
+    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(c.textContent!.length).toBeGreaterThan(200_000);
+  }, 120_000);
+
   // Reading the source of each: unfixed, the first takes many seconds. The limit is wide because these machines are loaded.
   it.each([
     ['\\[ with no closer', '\\['.repeat(128_000)],
@@ -603,6 +638,36 @@ describe('what the rewrite does to a reply', () => {
     const c = show('$$x$$\n\nand $$y$$ here\n');
     expect(c.querySelectorAll('.katex-display')).toHaveLength(1);
     expect(typeset(c)).toHaveLength(2);
+  });
+});
+
+describe('while a reply streams in blocks', () => {
+  const reply = '1. First:\n   \\[ a \\]\n2. Second\n\nThen \\(b\\) and\n\n$$ text\n\n3. Third $$c$$\n';
+  const formulas = (root: ParentNode) => Array.from(root.querySelectorAll('annotation')).map((a) => a.textContent);
+
+  it('shows what the finished reply shows: the rewrite reads each block as it reads the whole', async () => {
+    await katexLoaded();
+    const finished = render(<MessageBody text={reply} />).container;
+    const whole = { formulas: formulas(finished), starts: Array.from(finished.querySelectorAll('ol')).map((ol) => ol.getAttribute('start')), text: finished.textContent };
+    cleanup();
+    const streaming = render(<MessageBody text={reply} streaming />).container;
+    expect(formulas(streaming)).toEqual(whole.formulas);
+    expect(formulas(streaming)).toEqual(['a', 'b', 'c']);
+    expect(Array.from(streaming.querySelectorAll('ol')).map((ol) => ol.getAttribute('start'))).toEqual(whole.starts);
+    expect(whole.starts).toEqual([null, '3']);
+    expect(streaming.textContent!.replace(/\s/g, '')).toBe(whole.text!.replace(/\s/g, ''));   // only the newlines between blocks differ
+    expect(streaming.textContent).toContain('$$ text');
+  });
+
+  it('a finished block is not typeset or read again when the next one grows', async () => {
+    await katexLoaded();
+    const render_ = vi.spyOn(katex, 'render');
+    const first = 'One \\(a\\) here.\n\n';
+    const view = render(<MessageBody text={`${first}Two`} streaming />);
+    expect(render_).toHaveBeenCalledTimes(1);
+    view.rerender(<MessageBody text={`${first}Two \\(b\\)`} streaming />);
+    view.rerender(<MessageBody text={`${first}Two \\(b\\) and three`} streaming />);
+    expect(render_).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -514,7 +514,7 @@ const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'
 export default React.memo(function Markdown({ children, className = '' }: MarkdownProps) {
   return (
     <div
-      className={`md-root ${className}`.trim()}
+      className={className}
       style={{
         // Cascade color tokens so palette/mode theming works via CSS vars
         '--md-heading': 'inherit',
