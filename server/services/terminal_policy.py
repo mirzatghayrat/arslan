@@ -107,6 +107,21 @@ _LAUNCHED = (r"(?:command" + _H + r"+(?:-p" + _H + r"+)?"
              r"|xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+)*"
              r"(?:[^\s=]*/)?")         # a path, never a VAR=value assignment
 _CMD = _ONCE_POS + _LAUNCHED
+# SMART-8: a delete reaching into a Trash. Finder emptying it needs Apple Events, which both profiles deny, and
+# mac_applescript refuses it itself (`hands_service`). A permanent delete from the Trash is the user's own act;
+# allowed deletes go to the Trash (`delete_to_trash`), so Arslan never takes them out of it. It reads commands: a
+# launcher (`/bin/rm`, `command rm`, `FOO=1 rm`, `timeout 5 rm`) is read through, and prose or a read-only `find` that
+# only names the Trash is not refused. Forms this can't prove (a glob or variable naming the folder) stay on the
+# delete card, which no grant answers (#686 review).
+_DELETER = r"(?:rm|rmdir|unlink|srm)\b"
+_FORBID.append(
+    ("trash", r"(?:" + _CMD + _DELETER + r"[^\n;&|]*\.Trash(?:es)?(?:[/\"'\s)`*]|$)"
+              r"|" + _CMD + r"find\b[^\n;&|]*\.Trash(?:es)?\b[^\n;&|]*\s(?:-delete\b|-exec(?:dir)?\s+(?:[^\s]*/)?"
+              + _DELETER + r")"
+              # a delete after changing into a Trash (`cd ~/.Trash && rm -rf *`)
+              + r"|" + _CMD + r"(?:builtin" + _H + r"+)?(?:cd|chdir|pushd)\b[^\n;&|]*\.Trash(?:es)?\b.*?(?:\b"
+              + _DELETER + r"|\s-delete\b))",
+     "deletes from or empties the Trash; that's yours to do", False))
 # The program itself, not a longer name that starts with it (osascript.sh, osascriptx); a
 # redirection may follow it directly (osascript<<EOF, osascript>/dev/null).
 _END = r"(?=$|[\s;&|)`'\"<>])"
