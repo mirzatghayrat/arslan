@@ -33,7 +33,7 @@ def test_key_level_merges_in_real_git(tmp_path):
 
     # Next to each other, and each side's last key in `a` gains a comma: a text merge conflicts on both.
     _git(repo, "checkout", "-q", "-b", "pr")
-    _commit(repo, {"a": {"one": "1", "two": "2", "mine": "m"}, "b": {"gone": "x", "kept": "y"}}, "pr")
+    _commit(repo, {"a": {"one": "1", "two": "2", "mine": "m"}, "b": {"gone": "x", "kept": "y", "added": "z"}}, "pr")
     _git(repo, "checkout", "-q", "main")
     _commit(repo, {"a": {"one": "1", "two": "2", "theirs": "t"}, "b": {"kept": "y"}, "c": {"clé": "gardée"}}, "main")
     assert _git(repo, "merge-tree", "--write-tree", "pr", "main", driver=None).returncode == 1
@@ -42,7 +42,8 @@ def test_key_level_merges_in_real_git(tmp_path):
     assert merged.returncode == 0, merged.stdout + merged.stderr
     text = (repo / LOCALE).read_text(encoding="utf-8")
     doc = json.loads(text)
-    assert doc == {"a": {"one": "1", "two": "2", "mine": "m", "theirs": "t"}, "b": {"kept": "y"}, "c": {"clé": "gardée"}}
+    assert doc == {"a": {"one": "1", "two": "2", "mine": "m", "theirs": "t"}, "b": {"kept": "y", "added": "z"},
+                   "c": {"clé": "gardée"}}
     assert list(doc) == ["a", "b", "c"] and list(doc["a"]) == ["one", "two", "theirs", "mine"]
     assert text == json.dumps(doc, ensure_ascii=False, indent=2) + "\n"          # no reformatting, no \uXXXX
 
