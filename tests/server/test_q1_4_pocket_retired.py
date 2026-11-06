@@ -1,4 +1,4 @@
-"""Q1 card, #4 (the user, 2026-10-29: "Keep as a conversation"): the pocket, the one conversation every phone shared
+"""Q1 card, #4 (the user, 2026-10-29: keep it as a conversation): the pocket, the one conversation every phone shared
 before §5.8 ("Remote"), is retired. On the Mac its old messages stay as an ordinary conversation, named after its
 first message, not pinned and not called Remote; the window can read, continue or delete it. Phones never see it:
 the Bridge refuses every frame that names it and never links it (desktop/bridge, PocketRetiredTests)."""

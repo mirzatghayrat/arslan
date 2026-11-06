@@ -5,7 +5,7 @@
 > protocol-spec code starts until the user OKs this list.** Four choices are marked **Decide**; each has a
 > recommendation.
 >
-> **OK'd by the user on 2026-11-01, about 13:45 UTC, relayed by ④参谋:** 「帧 OK，1/2/4 按推荐，3 选 b」. The frames stand as listed
+> **OK'd by the user on 2026-11-01, about 13:45 UTC, relayed by ④参谋:** the frames are OK, items 1, 2 and 4 as recommended, option b for item 3. The frames stand as listed
 > below. Decides 1, 2 and 4 go as recommended (4 is option (a)). Decide 3 takes the alternative: `details.context`
 > is left out of 1.0, so nothing new is recorded and there is no migration 0086 for it. The phone hides that row.
 

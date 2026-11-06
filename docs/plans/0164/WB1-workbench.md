@@ -1,6 +1,6 @@
 # WB1: the right-hand workbench, tidied
 
-⓪Plan, 2026-10-29. The user approved this via ④参谋 on 2026-10-29 (「可以 转给 ⓪Plan」). It is in v0.1.64. Interface work, so **one clickable mock, shared with SIDE-0, goes to the user before any UI code** (user, 2026-10-28). Web only, not the security surface. **Merging:** the user's approval says 「纯前端，不碰安全面，另一个会话 OK 后由作者会话开自动合并」 (front end only, not the security surface; after another session's OK the author session turns on auto-merge). So WB1's PRs auto-merge after another session's OK on the current head and green checks, an exception the user made to `docs/sessions.md` §5.
+⓪Plan, 2026-10-29. The user approved this via ④参谋 on 2026-10-29 (fine, pass to ⓪Plan). It is in v0.1.64. Interface work, so **one clickable mock, shared with SIDE-0, goes to the user before any UI code** (user, 2026-10-28). Web only, not the security surface. **Merging:** the user's approval says: front end only, not the security surface, and after another session's OK the author session turns on auto-merge. So WB1's PRs auto-merge after another session's OK on the current head and green checks, an exception the user made to `docs/sessions.md` §5.
 
 | | |
 |---|---|
@@ -20,15 +20,15 @@
 - **Task's project link** dispatches `OPEN_PROJECT_EVENT` (`TaskTab.tsx:17`, `:75`), which App listens for (`App.tsx:45`, `:434-441`). The project also opens from the conversation's header row (`App.tsx:667-670`, `ConversationControls`).
 - **Repeated:** the conversation's files and its working folder are in both Task and Files.
 - **"Task"** doesn't say what is in it.
-- **The resize handle** (`Workbench.tsx:85-86`) is a `tabIndex=0` strip with `hover:bg-primary/25 focus:bg-primary/25`: on hover or focus the whole strip turns orange. A pointer-down focuses it, so after a drag it stays lit until blur (the code confirms ④参谋's reading of the screenshot). The user: 「很丑，要 Apple 风格」.
+- **The resize handle** (`Workbench.tsx:85-86`) is a `tabIndex=0` strip with `hover:bg-primary/25 focus:bg-primary/25`: on hover or focus the whole strip turns orange. A pointer-down focuses it, so after a drag it stays lit until blur (the code confirms ④参谋's reading of the screenshot). The user found it ugly and asked for an Apple-style look.
 - **Section headings** are `text-[11px] font-semibold uppercase tracking-wider` (`TaskTab.tsx:14`).
 - **Kept as is:** the reader slides over the tabs (`Workbench.tsx:106-107`). The panel opens only on a click (`workbenchStore.ts:22`, the 0.1.42 rule). Width is remembered (`:8`, `:55`).
 
 ## What to build
 
-The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Working folder (first called Files), Progress and Browser, then any side chats. Anything added later opens from "+" (「面板页签保持一排，浏览器 也放到默认的一排里吧 这样默认就是 file progress 和 browser 以后再多加什么功能加到从面板的『+』打开」). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
+The panel holds only things that sit next to the conversation, the way Claude desktop does it. **Decided by the user on 2026-10-30:** a fixed row of Working folder (first called Files), Progress and Browser, then any side chats. Anything added later opens from "+" (the user asked for the tabs to stay in one row, with the browser in the default row too, so the default is Files, Progress and Browser, and anything added later opens from the panel's "+" menu). This replaces the earlier "a tab appears only when it has content" for Progress and Browser.
 
-1. **Working folder (always there; renamed from Files, user, 2026-10-30):** the user's words: 「我看 files from this conversation 就是 output 你看看files改成啥？项目目录？还是怎么说」. The tab is the folder only:
+1. **Working folder (always there; renamed from Files, user, 2026-10-30):** the user observed that the "files from this conversation" list is really the output, and asked what the tab should be called instead: project directory, or something else. The tab is the folder only:
    - the existing name `workbench.folder` ("Working folder");
    - a folder bar with today's "Reveal in Finder" (moved from `TaskTab.tsx:84-85`);
    - the filter, and the list with today's touched dot, with `workbench.touched` ("Touched in this conversation") as the dot's legend.
@@ -65,7 +65,7 @@ The panel holds only things that sit next to the conversation, the way Claude de
 
 ## WB1-2: Overview tab and icon tabs (user, 2026-10-30, in ⑥Helper's chat; chosen on the mock as "Go with it")
 
-The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 session rail」, 「这个概览可以是默认，不过这样以来 那个一排就太挤了」.
+The user asked for Claude desktop's side rail (its session rail), and said the overview could be the default, but then the row of tabs would be too crowded.
 1. **A new fixed tab, Overview, comes first and is the default.** It replaces Working folder as the default and as the fallback when a selected side chat closes. The row is Overview, Working folder, Progress, Browser, then side chats; later additions still come from "+".
 2. **The four fixed tabs are icons**, each with a tooltip and an aria-label, like Claude desktop's pane icons. Progress carries its count as a small badge. Side chats stay as words, since four words plus side chats overflow the row.
 3. **Overview has four parts, all built from data the app already has, and a fifth (Changes, WB1-3) that needs one read-only endpoint.** The first four need no new endpoint (⓪Plan checked main):
@@ -73,14 +73,14 @@ The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 s
      - the conversation's model, with today's picker as "Change";
      - the project folder, with "Show in Finder";
      - the iPhone remote (Bridge) on or off: `phone_bridge_enabled` in the settings (`web/src/api/adapters.ts:123`).
-   - **Deliverables**, right after Environment. The user said 「概览里 再加一个 output 我觉得很有用」, and when asked, chose 「产出的东西（交付物）」. It lists every file this conversation produced, newest first, and is the one place they are listed (they leave the Working folder tab in this PR). Clicking one opens it in the reader. The heading reuses `validation.artifacts` ("Deliverables"), and the empty sentence reuses `workbench.noConvFiles`. A reply's "more files" now opens Overview.
+   - **Deliverables**, right after Environment. The user said an output list in the overview would be very useful, and when asked, chose the name "deliverables". It lists every file this conversation produced, newest first, and is the one place they are listed (they leave the Working folder tab in this PR). Clicking one opens it in the reader. The heading reuses `validation.artifacts` ("Deliverables"), and the empty sentence reuses `workbench.noConvFiles`. A reply's "more files" now opens Overview.
    - **Context:** "Context N% used" with used/window, a bar, and five rows using the ring's existing strings (`models.partSystem`, `partTools`, `partContext`, `partHistory`, `partTurn`) and the `contextEstimated` note (`web/src/locales/models.ts:25-27`). It reuses `ringRows()` from `ConversationModelChip.tsx`, the K4b breakdown.
    - **Connectors:** only the MCP servers that need something: "Needs sign-in" with "Sign in", and "Can't connect" with "Retry". Then "The other N are connected" with "Manage", which opens Capabilities.
      - The data is `GET /mcp/servers` (`web/src/api/mcp.ts:7`). It already returns `state` and `shown` (`server/services/mcp_service.py`, `_to_dict`), with `needs_auth`, `failed` and `parked` among the states (`server/mcp/supervisor.py:78-79`).
      - The web type `McpServer` (`web/src/api/client.types.ts:990`) still lacks `state` and `shown`, so WB1-2 adds them to the type.
 
    Background jobs aren't repeated here, because they are in Progress.
-   - **Changes (WB1-3)**, right after Deliverables, shown only when a turn in this conversation changed something. The user asked 「然后 changes 那？」 and picked "Add it" on the mock.
+   - **Changes (WB1-3)**, right after Deliverables, shown only when a turn in this conversation changed something. The user asked where the changes would go, and picked "Add it" on the mock.
      - Per turn, newest first, it lists what the turn did in the user's folders. Each path is tagged "Made", "Edited" or "Deleted".
      - Each turn row carries today's `process.undoTurn` ("Undo this turn…"), which opens the existing UndoTurnSheet for that run. A turn already undone shows no undo.
      - **Data: not readable today (⓪Plan checked main).** `GET /runs/{run_id}/checkpoint` (`server/api/runs.py:567`) returns `checkpoints.summary()` (`server/services/checkpoints.py:634`) plus `turn_undo.preview()`. That gives counts only, `changed` and `created`: no path list, no deleted-versus-edited split, and nothing per conversation.
@@ -115,10 +115,10 @@ The user asked for Claude desktop's side rail: 「我还想要Claude 的这个 s
   - **BRW2:** the user and the agent see the same browser, as Claude desktop's pane does. Hands' pages show in the workbench, and the user can take over.
 
   Both are on the security surface: each needs its own card, and the user merges. They are recorded in the v0.1.64 README §3.13.
-- **Not taken:** a single view menu in place of the row of tabs. The user said 「左上角只放一个 这个不对 这里还是变回原来的」, so the panel keeps its row of tabs.
-- **Title bar: one button** (user, 2026-10-30: 「标题栏只留一个按钮」). Only the panel button stays, and the globe goes. The blue Background chip still shows while a job runs.
-  - **Icon: the mirrored pair** (user, 2026-10-30: 「可以那先保持左右镜像吧」), as Xcode does for its navigator and inspector. The sidebar's collapse button sits at the top left with the line on the left (lucide `PanelLeft`). The panel's button sits at the top right with the line on the right (`PanelRight`, as today).
-- **Not taken:** marking up a page or screenshot and sending it, as in Claude desktop's annotation bar (user: 「2在页面上画标记再发给我 我用的不多 可以不做」). The /btw-style side question is SIDE, and the shared browser is BRW2.
+- **Not taken:** a single view menu in place of the row of tabs. The user said a single control at the top left was wrong and the original layout should come back, so the panel keeps its row of tabs.
+- **Title bar: one button** (user, 2026-10-30: leave only one button in the title bar). Only the panel button stays, and the globe goes. The blue Background chip still shows while a job runs.
+  - **Icon: the mirrored pair** (user, 2026-10-30: keep the left-right mirror for now), as Xcode does for its navigator and inspector. The sidebar's collapse button sits at the top left with the line on the left (lucide `PanelLeft`). The panel's button sits at the top right with the line on the right (`PanelRight`, as today).
+- **Not taken:** marking up a page or screenshot and sending it, as in Claude desktop's annotation bar (user: option 2, drawing marks on the page and sending it, is rarely used, so it can be skipped). The /btw-style side question is SIDE, and the shared browser is BRW2.
 
 ## Not here
 

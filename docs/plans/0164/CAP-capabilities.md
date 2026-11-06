@@ -436,7 +436,7 @@ From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes
 
 ## Decided on 2026-10-30 (user, relayed by ④参谋)
 
-The user's words: 「1. 接受建议改成 a；2.（1）现在就跟你说 直接按主流做法： Claude Code 和 Codex 对装过的技能一律信任，读的时候不加框。（2）也按主流做法；3.也按主流做法」. These override the sections above where they differ.
+In summary: accept the suggestion and switch item 1 to option (a); for item 2(1), follow mainstream practice (Claude Code and Codex trust every installed skill and read it unframed); follow mainstream practice for item 2(2) and for item 3 as well. These override the sections above where they differ.
 
 - **D1, CAP4a-2: option (a).** Arslan ships or fetches its own pinned, checksummed uv and Node runtime, as Claude Desktop ships a built-in Node runtime for `.mcpb` extensions. The lock is resolved with it before the card, so CAP4's order "resolve → lock → OSV → card → install from the lock" holds with one card that shows the locked versions. "Nothing third-party is installed before a yes" stays. Arslan's own pinned runtime counts as part of the app, not as third-party code. The runtime's pin and checksum live in the repository and are checked before use.
 - **D2(1), skills follow mainstream practice: every skill the user has is trusted and read unframed,** as Claude Code and Codex do with installed skills.
@@ -448,7 +448,7 @@ The user's words: 「1. 接受建议改成 a；2.（1）现在就跟你说 直�
 
 ## Decided on 2026-10-31 (user, relayed by ④参谋)
 
-The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI1b 草图推荐选 B（我还是那个要求 借鉴主流agent产品做法，不要过度防御）」. These override the sections above where they differ.
+In summary: all recommendations taken; DIFF1 uses a side-by-side view; the allowlist is option D; UNI1b is option B of the sketch; and the standing request stands to follow mainstream agent products and not over-defend. These override the sections above where they differ.
 
 - **CAP4a-3, the allowlist: option D** (⑤CAP's Registry walk, #563 comment 6527457019: 2,583 one-click). Packages from any verified domain are one-click. The lock, the scan and the sandbox still apply. Remote servers are one-click only from B's list of about 40 vendors' own domains and GitHub orgs.
 - **CAP4a-3, Q2:** a remote server whose publisher has no verified domain (`io.github.<account>`) is manual-only, as the card says.
@@ -457,7 +457,7 @@ The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI
   - **A keep** holds until the entry changes again, with no expiry (the user, 2026-11-01), and a clean answer ends it (#604 review F4).
 - **CAP4a-2, the runtimes:** fetched on first need against the SHA-256 pinned in the repository, not shipped in the app.
 - **UNI1b:** option B of ⑤CAP's mock. A notice only, never blocking (D3).
-- **Skills from before CAP4's checks (D2's remaining half):** left as they are, with no one-time rescan (the user, 2026-10-31 about 14:45 UTC, 「都按推荐」). This is what Claude Code and Codex do: they don't rescan installed skills. The skills keep their origin mark in Capabilities and stay deletable.
+- **Skills from before CAP4's checks (D2's remaining half):** left as they are, with no one-time rescan (the user, 2026-10-31 about 14:45 UTC: all as recommended). This is what Claude Code and Codex do: they don't rescan installed skills. The skills keep their origin mark in Capabilities and stay deletable.
 - **INB2 and skills:** INB2's allowlist (`server/orchestrator/untrusted.py:241-276` on main `2876f11a`) still counts a skill read as off the list. So after a skill read, "about you" memories wait for the user. Kept, and recorded as a stated limit: D2 covers reading, not memory writes.
 - **The standing rule:** follow mainstream agent products, and don't over-defend (`docs/sessions.md` §12).
 
@@ -467,7 +467,7 @@ The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI
 
 ## Decided on 2026-11-01 (user, relayed by ④参谋)
 
-The user's words: 「1A，2 已知限制，3 去掉，额度按你的建议」.
+In summary: option A for item 1, item 2 a known limit, item 3 dropped, and the quota as recommended.
 
 - **CAP4a-3d (#604), KEEP_FOR: removed.** When the user keeps a server that the Registry shows as withdrawn, the keep holds until the Registry entry changes again. There is no 30-day re-park.
 - **CAP4a-3d (#604), F3: a stated limit** (below).
