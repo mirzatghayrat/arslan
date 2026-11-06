@@ -26,7 +26,7 @@
 ## Method
 1. **Pin first, on today's main (`L0`, tests only).** Scripted turns through `run_native` with a fake adapter and a fake tool table: every frame in order, every request's messages and tools, and the return value, byte for byte, as per-scenario JSON. A pairwise gate-order matrix: a call that trips two gates is answered by the earlier one. Both exist only to carry LOOP1 (`DELETE-BY: v0.1.64`, with slice z).
 2. **Move, then prove.** Each PR passes the same pinned tests. Test files change only where a patch must follow a moved function. `run_native(**kwargs)` and `_dispatch_tool(...)` keep their keyword forms; each builds its typed object once.
-3. **Definitions move, they are not copied.** A family's description, schema and traits leave the old place in the PR that adds its `Tool`, so nothing is defined twice and no other lane's edit has two homes. `scripts/loop1_tool_table.py` dumps the offered table and schemas across the offer matrix (job, someone to ask, Hands, browser, workspace, read default, LAN, SSH, shell, project). The dump is identical before and after, and each PR gives both hashes.
+3. **Definitions move, they are not copied.** A family's description, schema and traits leave the old place in the PR that adds its `Tool`, so nothing is defined twice and no other lane's edit has two homes. `tests/server/test_loop1_tool_table.py` dumps the offered table and schemas across 54 cases of the offer conditions (job, someone to ask, Hands, browser, workspace, read default, LAN, SSH, shell, project). The dump is identical on a PR's base and head, and the PR gives both hashes.
 4. **Mutation on every gate move.** Swap two gates, drop a refusal, flip a default: the pinned tests go red, and the PR says which.
 
 ## External evidence
