@@ -101,3 +101,35 @@ async def test_a_call_whose_effect_cant_be_judged_counts_as_work(monkeypatch):
         raise RuntimeError("no tools table")
     monkeypatch.setattr(task_service, "effect_of", broken)
     assert await tool_loop._did_work(_trace("mcp_4__fetch"), {"done": False, "seen": 0}) is True
+
+
+# -- Round 2 of the gate (3 repeats): still behind on length, 15/33 against 20/33 ------------------------------------
+
+@pytest.mark.asyncio
+async def test_finding_a_tool_and_reading_arslans_own_state_are_not_work():
+    """A version question goes find_tools, then my_status. That is two steps, and find_tools wasn't a read, so one-line
+    answers got four more lines (tasks 1 and 2). Reading Arslan's own state is looking too."""
+    from server.orchestrator import tool_loop
+    trace = _trace("find_tools", "my_status", "whats_new", "list_my_capabilities")
+    assert await tool_loop._did_work(trace, {"done": False, "seen": 0}) is False
+
+
+def test_the_closing_lines_step_aside_for_an_answer():
+    """A command can't always be told from a read (a GET with curl), so the note says so itself (tasks 3, 4 and 5)."""
+    from server.orchestrator import tool_loop
+    assert "Skip them if the user asked a question and you only looked things up to answer it" in tool_loop._CLOSING_NOTE
+
+
+def _report_rule() -> str:
+    return next(b for b in arslan._CAPABILITY_SELF.split("\n- ") if "lead with the outcome, then the reason" in b)
+
+
+def test_answer_first_holds_after_looking_things_up():
+    rule = _report_rule()
+    assert "Looking things up doesn't change that: the reply is still the answer to what was asked, not all you found." in rule
+    assert rule.index("a short question gets one to three sentences") < rule.index("Looking things up doesn't change that")
+
+
+def test_a_correction_gets_the_admission_and_a_short_right_answer():
+    rule = _report_rule()
+    assert "give the right answer in one or two sentences, not a new report or a list" in rule
