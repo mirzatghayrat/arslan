@@ -338,7 +338,7 @@ async def _compact(chat, monkeypatch, *messages) -> str:
     from server.orchestrator import memory
     for role, content, display in messages:
         await memory.add_message(CID, role, content, display_content=display)
-    monkeypatch.setattr(memory, "_get_adapter", lambda: _Summarizer())
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: _Summarizer())
     await memory.maybe_compact(CID, budget=40)
     async with chat.db() as db:
         summary = await db.scalar(select(ArslanSummary.summary).where(ArslanSummary.conversation_id == CID)

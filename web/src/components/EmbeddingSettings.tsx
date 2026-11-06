@@ -141,7 +141,7 @@ export default function EmbeddingSettings({
             )}
           </div>
 
-          {/* Override select — which provider config backs embeddings (mirrors the synthesis-config-style pattern: auto / local / each saved provider config). */}
+          {/* Override select — which provider config backs embeddings (auto / local / each saved provider config). */}
           <div className="space-y-1.5 pt-1">
             <label
               htmlFor="settings-embedding-config"

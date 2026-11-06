@@ -382,7 +382,7 @@ def test_another_unicode_form_is_the_same_home_even_where_the_disk_cannot_tell()
     ("/", "/"),
 ])
 def test_a_folder_outside_the_home_is_only_its_last_part(folder, shown):
-    """The user, 2026-11-01 (「#650 文件夹选 a」): no volume and no full path leave the Mac."""
+    """The user, 2026-11-01 (option a for #650's folder): no volume and no full path leave the Mac."""
     assert phone_details.shown_folder(folder, "/Users/alice") == shown
 
 

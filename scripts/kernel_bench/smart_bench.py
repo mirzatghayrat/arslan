@@ -39,6 +39,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -115,12 +116,13 @@ def grade(item: dict, reply: str, tools: list | None, who: str = "arslan") -> di
     """Each rubric key → True/False (None when it needs a trace the run didn't leave), plus `no_offer` and `pass`.
     `tools` is [(name, args), ...], or None when there's no trace."""
     reply = reply or ""
+    empty = not reply.strip()             # no reply passes nothing: not the length, not "no closing offer"
     rubric = item["rubric"]
     trace = list(tools) if tools is not None else None
     names = [t[0] for t in trace or []]
     out: dict = {}
     if "words" in rubric:
-        out["words"] = words(reply) <= rubric["words"]
+        out["words"] = not empty and words(reply) <= rubric["words"]
     if "self_state" in rubric:
         out["self_state"] = None if trace is None else any(_self(n, who, rubric["self_state"]) for n in names)
     if rubric.get("admit"):
@@ -132,7 +134,9 @@ def grade(item: dict, reply: str, tools: list | None, who: str = "arslan") -> di
     if "guide" in rubric:
         out["guide"] = _guides(reply, rubric["guide"])
     if "found_or_guide" in rubric:
-        out["found_or_guide"] = rubric["found_or_guide"] in reply or _guides(reply, DEFAULT_PLACES)
+        # The value as a whole token: 3.2.1, not 13.2.1 or 3.2.10 (entrants wrote 「版本是 **3.2.1 (bench)**」).
+        value = re.compile(r"(?<![\d.])" + re.escape(rubric["found_or_guide"]) + r"(?!\d|\.\d)")
+        out["found_or_guide"] = bool(value.search(reply)) or _guides(reply, DEFAULT_PLACES)
     if rubric.get("verified"):
         if not MISSING.search(reply):
             out["verified"] = True
@@ -143,7 +147,7 @@ def grade(item: dict, reply: str, tools: list | None, who: str = "arslan") -> di
     if "unread_url" in rubric:
         host = rubric["unread_url"]
         out["unread_url"] = all(UNREADABLE.search(ln) for ln in reply.splitlines() if host in ln)
-    out["no_offer"] = not offer_at_end(reply)
+    out["no_offer"] = not empty and not offer_at_end(reply)
     out["pass"] = all(v for v in out.values() if v is not None)
     return out
 
@@ -190,22 +194,76 @@ def _calls_in(node) -> list[tuple[str, str]]:
     return found
 
 
-def openclaw_tool_calls(home: Path, stdout: str) -> list[tuple[str, str]] | None:
-    """OpenClaw's tool calls, best effort: from its session transcripts under `<home>/.openclaw` (`*.jsonl`), else
-    from the `--json` result on stdout. None when neither holds a record. Not yet checked against a real run (no
-    OpenClaw install on the machine this was written on): the first round should confirm the shape."""
-    sessions = sorted((home / ".openclaw").rglob("*.jsonl")) if (home / ".openclaw").is_dir() else []
-    if sessions:
-        found: list[tuple[str, str]] = []
-        for path in sessions:
-            for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+def _warn(text: str) -> None:
+    print(f"smart_bench: {text}", file=sys.stderr)
+
+
+def _openclaw_db_calls(home: Path) -> tuple[bool, list[tuple[str, str]] | None]:
+    """OpenClaw 2026.10.10 keeps each agent's transcript in the `transcript_events` table of
+    `<home>/.openclaw/agents/*/agent/openclaw-agent.sqlite`; a row's event is JSON or zstd-compressed JSON. Returns
+    (whether there is such a database, its calls). Calls are None when a database can't be read: a SQLite error, or a
+    compressed row with `zstd` missing or failing. A database that reads cleanly with no call gives [].
+    The run's home is evidence: each database is copied with its -wal and -shm (a WAL that wasn't checkpointed holds
+    the last rows) and only the copy is opened, read-only. On SMART-5's round 1 the counts matched OpenClaw's own
+    `meta.toolSummary.calls` on all 13 tasks."""
+    import sqlite3
+    import tempfile
+    dbs = sorted((home / ".openclaw" / "agents").glob("*/agent/openclaw-agent.sqlite"))
+    if not dbs:
+        return False, None
+    found: list[tuple[str, str]] = []
+    for db in dbs:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy = Path(tmp) / db.name
+            for suffix in ("", "-wal", "-shm"):
+                if Path(f"{db}{suffix}").is_file():
+                    shutil.copyfile(f"{db}{suffix}", f"{copy}{suffix}")
+            try:
+                con = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
                 try:
-                    found += _calls_in(json.loads(line))
-                except ValueError:
-                    continue
-        return found
+                    rows = con.execute("select event_json, event_zstd from transcript_events "
+                                       "order by session_id, seq").fetchall()
+                finally:
+                    con.close()
+            except sqlite3.Error as exc:
+                _warn(f"{db} could not be read ({exc}); OpenClaw's trace is unknown")
+                return True, None
+        for event_json, event_zstd in rows:
+            if event_json is None and event_zstd is not None:
+                try:
+                    unpacked = subprocess.run(["zstd", "-dc"], input=event_zstd, capture_output=True, check=True)
+                except (OSError, subprocess.CalledProcessError) as exc:
+                    _warn(f"a compressed row of {db} could not be unpacked ({exc}); OpenClaw's trace is unknown")
+                    return True, None
+                event_json = unpacked.stdout.decode("utf-8", errors="ignore")
+            try:
+                found += _calls_in(json.loads(event_json or ""))
+            except ValueError:
+                continue
+    return True, found
+
+
+def openclaw_tool_calls(home: Path, stdout: str) -> list[tuple[str, str]] | None:
+    """OpenClaw's tool calls: from its agent database (2026.10.10), else its session transcripts under
+    `<home>/.openclaw` (`*.jsonl`, older versions), else the `--json` result on stdout. [] when a transcript is there
+    and holds no call; None when there is none, or it can't be read. The `--json` result is no transcript (2026.10.10's
+    holds no call blocks at all), so it gives calls or None, never []."""
+    if (home / ".openclaw").is_dir():
+        has_db, calls = _openclaw_db_calls(home)
+        if has_db:
+            return calls
+        sessions = sorted((home / ".openclaw").rglob("*.jsonl"))
+        if sessions:
+            found: list[tuple[str, str]] = []
+            for path in sessions:
+                for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    try:
+                        found += _calls_in(json.loads(line))
+                    except ValueError:
+                        continue
+            return found
     try:
-        return _calls_in(json.loads(stdout[stdout.index("{"):]))
+        return _calls_in(json.loads(stdout[stdout.index("{"):])) or None
     except ValueError:
         return None
 

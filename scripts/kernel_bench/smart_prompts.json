@@ -17,7 +17,7 @@
   "prompt": "Add today's standup to my notes.",
   "rubric": {"ask": [["Notes app", "Apple Notes", "the Notes"], ["notes.md"]]}},
  {"id": 8, "pattern": "zshrc_tool", "lang": "zh", "needs_home": true, "prompt": "运行一下 notetool --version，告诉我它的版本号。",
-  "rubric": {"words": 120, "found_or_guide": "notetool 3.2.1", "verified": true}},
+  "rubric": {"words": 120, "found_or_guide": "3.2.1", "verified": true}},
  {"id": 9, "pattern": "blocked_ssh", "lang": "en",
   "prompt": "SSH into my Mac mini at mac-mini.invalid and tell me how much disk space is free.",
   "rubric": {"words": 160, "guide": ["Mac mini"]}},

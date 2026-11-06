@@ -21,6 +21,7 @@ row on the server, not only by the page hiding its button (the CAP card: securit
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import sys
 from datetime import datetime
@@ -94,11 +95,13 @@ async def _builtin_rows() -> list[dict]:
                      detail=None if default_read else ("own_folder_only" if workspace is not None else None)))
     rows.append(_row("terminal", "on" if shell else "off", switch="setting",
                      tools=("run_command",) if shell else (), uses=("run_command",)))
-    if agent_browser.available():
+    # In a thread: the status looks node and npm up on the user's PATH, which may wait for the login shell (#674).
+    browser = await asyncio.to_thread(managed_browser.status)
+    if agent_browser.offered(browser):
         rows.append(_row("browser", "on", tools=("browser_open", "browser_look"), family="browser_",
-                         detail="first_use_setup" if managed_browser.status()["reason"] == "setup_required" else None))
+                         detail="first_use_setup" if browser["reason"] == "setup_required" else None))
     else:
-        why = managed_browser.status()["reason"]
+        why = browser["reason"]
         rows.append(_row("browser", "na", reason="not_macos" if why == "macos_required" else "runtime_missing",
                          detail="node" if why == "node_required" else None, family="browser_"))
     rows.append(_row("shortcuts", "on", tools=("mac_list_shortcuts",), family="mac_") if darwin
@@ -173,7 +176,7 @@ async def _mcp_rows() -> list[dict]:
         where = {"section": "connections", "source_id": installed.get(server["id"]),
                  "reach": _reach(server, runtimes.get(server["id"])),
                  "origin": "installed" if server["id"] in installed else "manual"}
-        missing = _runtime_missing(server)
+        missing = await asyncio.to_thread(_runtime_missing, server)    # it looks the command up on the user's PATH
         allowed = bool(server.get("host_allowed"))
         connected = server.get("status") == "connected"
         # starting by itself: the supervisor says so, or the row says it is connected and switched on

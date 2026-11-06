@@ -273,9 +273,13 @@ def reply_text(who: str, run: Path) -> str:
     if who == "openclaw":
         try:
             data = json.loads(text[text.index("{"):])
-            return data.get("result", {}).get("terminalReply", {}).get("text", "") or text
         except Exception:
             return text
+        # 2026.10.10: `meta.terminalReply.text`, else the payloads' text. Never the JSON itself: SMART-5's first
+        # round graded the whole ~14 KB result as the reply and wrongly passed the gate.
+        meta, result = data.get("meta") or {}, data.get("result") or {}
+        reply = (meta.get("terminalReply") or {}).get("text") or (result.get("terminalReply") or {}).get("text")
+        return reply or "\n\n".join(p.get("text") or "" for p in data.get("payloads") or [] if isinstance(p, dict))
     return text
 
 

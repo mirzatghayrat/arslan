@@ -33,8 +33,6 @@ vi.mock("../api/client", () => ({
   setPrimaryProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
   deleteProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
   fetchProviderModels: vi.fn().mockResolvedValue({ models: [], fetched_at: null, stale: false, error: null, source: "static" }),
-  suggestPrimary: vi.fn().mockResolvedValue(null),
-  getCatalog: vi.fn().mockResolvedValue([]),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
   testProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
 }));

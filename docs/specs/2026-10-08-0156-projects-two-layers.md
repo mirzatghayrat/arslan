@@ -2,7 +2,7 @@
 
 Status: draft for review (2026-10-08). Boards: Projects-Board-v3, Project-Templates, Project-New,
 Project-LevelMap, Project-Habits, Project-Replan (canvas round 3, approved by the user 2026-10-08:
-"都可以，按你建议的版本排，开工吧", shadow threshold 10).
+all fine: lay it out as suggested and start work; shadow threshold 10).
 
 ## 0. What is there today (measured)
 

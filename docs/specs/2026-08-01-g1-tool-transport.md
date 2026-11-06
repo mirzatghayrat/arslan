@@ -1,7 +1,7 @@
 # G1 · 工具传输层 —— spec（门外第一批）
 
 base main = `bebb87a`（v0.1.14）。上游：作战图 §G1（`docs/specs/2026-07-31-product-gap-assessment.md`），
-用户 2026-08-01「开 G1」。**本 spec 只定形状，等审，不实现。**
+用户 2026-08-01 told the session to start G1. **本 spec 只定形状，等审，不实现。**
 
 **一句话**：Anthropic 和 Gemini 收下 `tools` 参数然后**原样丢弃**，
 所以在这两家上，装备好的工具**一个都不会触发，而且没有任何东西告诉用户**。

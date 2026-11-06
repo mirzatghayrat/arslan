@@ -17,7 +17,7 @@ export type AskRiskLevel = "info" | "warn" | "irreversible";
 export interface AskAction { label: string; onClick: () => void; testId?: string; destructive?: boolean }
 
 export interface AskCardProps {
-  /** Who is asking: "Arslan 在问你" / "后台作业在问你". The card's accessible name; SMART-8 (the user: 「去掉小标题」)
+  /** Who is asking: "Arslan 在问你" / "后台作业在问你". The card's accessible name; SMART-8 (the user: drop the small heading)
    *  no longer prints it as a heading. */
   who: string;
   /** One plain sentence: what Arslan wants to do. */
@@ -89,7 +89,7 @@ export function AskCard(p: AskCardProps) {
   return (
     <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
-      {/* The default asker ("Arslan is asking") is no longer printed (the user: 「去掉小标题」); another one (a background
+      {/* The default asker ("Arslan is asking") is no longer printed (the user: drop the small heading); another one (a background
           job) still is, as it is the only place some cards say who is asking. */}
       {(p.queue && p.queue.total > 1) || p.expiresAt || p.who !== t("kit.whoArslan") ? <header
         className="flex items-center justify-between gap-3">

@@ -6,8 +6,6 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from arslan.llm import routing
-from arslan.llm.catalog import capabilities_for
 from server import crypto
 from server.db.models import ProviderConfig
 from server.services.secret_state import secret_state
@@ -66,46 +64,6 @@ async def list_configs(session: AsyncSession) -> list[dict]:
     return [_to_public(r) for r in rows]
 
 
-async def list_for_routing(session: AsyncSession) -> list[dict]:
-    rows = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.id))).scalars().all()
-    # 🔴 healthy + key_state are here because routing cannot filter on what it cannot
-    # see. Without them arslan.llm.routing.usable() is a no-op that looks like a
-    # feature: a config whose key will not decrypt scores exactly as well as one that
-    # works, gets chosen, and fails at the provider with a 401 that blames the
-    # provider.
-    return [{"id": r.id, "provider": r.provider, "model": r.model,
-             "base_url": r.base_url or "", "is_primary": bool(r.is_primary),
-             "healthy": _last_health_ok(r),
-             "key_state": _key_status(r.api_key)} for r in rows]
-
-
-#: The producer's vocabulary, mapped to the routing predicate. The ONLY writer of
-#: ProviderConfig.last_health is record_test_verdict() below, which turns one
-#: chat-test result into one of these two words — so these keys are not a
-#: convention, they are that function's literals.
-#:
-#: 🔴 History, twice over. This first tested the column against ("ok","healthy",
-#: "true","1") — words no producer ever wrote — so every probed config read as
-#: healthy=False and routing filtered out the very configs the user had tested.
-#: It was then pinned to the /models probe's three words. That probe is now gone:
-#: it answered "did /models list anything", which for a public model-list endpoint
-#: (OpenRouter's is public) returns 200 with no key at all — so a dead, capped or
-#: region-blocked key still read as reachable. The question was never "does the
-#: list endpoint answer", it is "can this LLM answer a message", so the chat test
-#: is the only producer now. tests/server/test_health_vocabulary_reaches_routing.py
-#: derives these keys from record_test_verdict's source and fails on any drift.
-_HEALTH_OK: dict[str, bool] = {
-    # A real chat round-trip came back. The only evidence that means anything.
-    "ok": True,
-    # The provider refused, or nothing came back. Unlike the old probe's
-    # "reachable_no_list", this is not an ambiguous signal to fail open on: the
-    # exact call the user's turn would make was made, and it did not work.
-    # select() still keeps the primary regardless, so a transient failure at
-    # launch cannot lock anyone out of their own default model.
-    "failed": False,
-}
-
-
 def record_test_verdict(row, *, ok: bool, detail: str | None) -> None:
     """Persist one chat-test verdict on a config row. The ONLY writer of
     last_health / last_health_at / last_health_detail.
@@ -118,22 +76,6 @@ def record_test_verdict(row, *, ok: bool, detail: str | None) -> None:
     row.last_health = "ok" if ok else "failed"
     row.last_health_at = datetime.utcnow()
     row.last_health_detail = detail
-
-
-def _last_health_ok(row) -> bool | None:
-    """Tri-state: True/False from the last probe, None when none has run.
-
-    None is NOT False. "Never checked" and "checked and down" call for different
-    behaviour, and collapsing them would make a fresh install look broken.
-
-    An unrecognised state also reads None rather than False — if a fourth state ever
-    reaches a build whose mapping predates it, "unknown" is the honest answer and the
-    fail-open one. The drift guard makes that a red test, not a silent demotion.
-    """
-    value = getattr(row, "last_health", None)
-    if value is None or value == "":
-        return None
-    return _HEALTH_OK.get(str(value))
 
 
 async def add_config(session: AsyncSession, *, label: str, provider: str, model: str,
@@ -223,14 +165,3 @@ async def delete_config(session: AsyncSession, config_id: int) -> bool:
 async def get_decrypted_key(session: AsyncSession, config_id: int) -> str:
     row = await session.get(ProviderConfig, config_id)
     return _safe(row.api_key) if row else ""
-
-
-async def suggest_primary(session: AsyncSession, language: str | None) -> dict | None:
-    configs = await list_for_routing(session)
-    pick = routing.suggest_primary(configs, language)
-    if pick is None:
-        return None
-    caps = capabilities_for(pick["provider"])
-    rationale = (f"Best all-round quality among your keys "
-                 f"(reasoning {caps['reasoning']}/10, tool-calling {caps['tool_calling']}/10).")
-    return {"id": pick["id"], "provider": pick["provider"], "rationale": rationale}
