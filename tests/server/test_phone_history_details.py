@@ -1,6 +1,7 @@
 """IPB (v0.1.64): `chat.history.result.details` for iPhone 1.0's part B (docs/plans/0164/IPB-frame-list.md §3):
 one conversation as the Mac runs it. The Mac sums what changed over every run (the phone sees at most 40
 steps of a run and 200 messages), prices what it spent, and keeps `details` inside the one envelope."""
+import sqlite3
 from datetime import datetime
 
 import pytest
@@ -164,7 +165,18 @@ async def test_the_model_is_the_conversations_choice_else_the_primary_configs(cl
                         ConversationModel(conversation_id="picked", config_id=1, model="claude-haiku-5-5")])
     assert (await _details(client, "picked"))["model"] == "claude-haiku-5-5"
     assert (await _details(client))["model"] == "claude-sonnet-5-5", "no choice: the primary config's model"
-    await _add(client, [ConversationModel(conversation_id="orphan", config_id=99, model="gone-model")])
+    # A choice whose config is gone: the row is written on its own connection, which has foreign keys
+    # off (SQLite's default), because the app's connections refuse a choice with no config. The
+    # reader must still treat one as the default (a row left over from before the cascade existed).
+    async with client.db_maker() as db:
+        path = db.get_bind().url.database
+    side = sqlite3.connect(path)
+    try:
+        side.execute("INSERT INTO conversation_models (conversation_id, config_id, model, updated_at)"
+                     " VALUES ('orphan', 99, 'gone-model', CURRENT_TIMESTAMP)")
+        side.commit()
+    finally:
+        side.close()
     assert (await _details(client, "orphan"))["model"] == "claude-sonnet-5-5", "a choice whose config is gone is the default"
 
 
