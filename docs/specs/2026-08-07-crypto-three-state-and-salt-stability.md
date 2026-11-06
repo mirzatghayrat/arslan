@@ -56,7 +56,7 @@
 
 **在真实事故里 `ARSLAN_SECRET_KEY` 没有变 —— 变的是盐。**
 这句话把人送去检查/重设 secret key(那半是好的),而真正丢的那半它一个字都没提。
-用户那条「谎报病因比不报还坏 —— 用户会去解错的题」在这里有一个**已经出货的实例**:
+The user's principle (misreporting a cause is worse than reporting none, because users go and solve the wrong problem) 在这里有一个**已经出货的实例**:
 一句具体、可信、可执行、并且错的诊断,比 `"no API key set"` 更能浪费人的时间。
 
 ⇒ 本轮的三态不能是「贴一个 `undecryptable` 标签」,必须是**推断出哪半丢了**(§2.4)。
@@ -290,7 +290,7 @@ rekey 走一个显式的人闸(§3① 与 §3②)。
 
 > 🔴 **解密已经成功的写是迁移,解密还没成功的写是赌博。**
 
-| | 触发条件 | 裁决 | 理由(用户原话) |
+| | 触发条件 | 裁决 | Reason (the user's, summarized) |
 |---|---|---|---|
 | **迁移** | **当前钥匙**能解开 ⇒ 重加密进「盐入库」新方案 | 🟢 **允许自动,不设人闸** | **拦它会让 legacy 格式永生** |
 | **恢复** | **当前钥匙解不开** ⇒ 去试候选盐 | 🟢 **纯只读 + 报告 + 人闸才 rekey** | 得先看清再动用户的数据 |
@@ -305,7 +305,7 @@ rekey 走一个显式的人闸(§3① 与 §3②)。
 
 🔴 **我原来的写法在这里是错的,记一笔**:我把 legacy 无盐那把
 **并进了「候选」并一刀切上人闸**。那会让 `d6d8afa8` 之前写入的密文
-**永远靠读时回退活着**、永远不被重加密 —— 正是用户点出的「legacy 格式永生」,
+**永远靠读时回退活着**、永远不被重加密 —— 正是用户点出的 problem of a legacy format living forever,
 也正是这份 spec §0.4 批评 `d6d8afa8` 的那件事本身。**一刀切的保守是错的保守。**
 
 **落到实现上的两条硬约束**(各有测试,§4.4 第 8/9 条):
@@ -342,8 +342,7 @@ rekey 走一个显式的人闸(§3① 与 §3②)。
 
 ## 4. 验收(用户给定三场景,逐条落成可执行断言)
 
-用户原话:**「换目录启动、缺环境变量启动、备份恢复到新机器,三个场景下要么照常解密、
-要么大声说清哪半丢了 —— 不许再有静默换钥匙。」**
+The user's requirement, in summary: **starting from a different directory, starting with a missing environment variable, and restoring a backup onto a new machine must each either decrypt as usual or say loudly which half is missing; no more silent key replacement.**
 
 ### 4.1 场景一:换数据目录启动
 
@@ -436,7 +435,7 @@ rekey 走一个显式的人闸(§3① 与 §3②)。
 
 ### 6.1 🔴 ⓪ 和 ① 都改 `executors.py` 的搜索错误路径 —— 不是无冲突的
 
-用户裁决时说「①②③ 动的文件互不重叠,可并行」。**⓪ 插进来之后这条对 ① 不再成立**:
+At the ruling the user held that ①②③ touch files that do not overlap and can run in parallel. **⓪ 插进来之后这条对 ① 不再成立**:
 
 - ⓪ 拥有:`executors.py:226-233 _search_provider` 的 `if not key` 那个 gate ——
   把「没设置 / 解不开」分开。

@@ -4,9 +4,9 @@ Status: approved 2026-10-09 — all six decisions as recommended (§13). Boards:
 "Capability-Dossier" (design canvas, approved direction 2026-10-08). Hands v2 (cua-driver) also rides
 0.1.57 on its own spec (`2026-10-08-0157-hands-v2.md`); no file of this spec overlaps it.
 
-The user's words (2026-10-08): keep the GitHub search; Arslan should *itself* find GitHub projects,
-skills and MCP servers and use them in the user's projects or the capability library; "务必最优解 …
-用户体验很重要". The boards: when a step fails for want of a capability, Arslan finds one, checks
+The user's request (2026-10-08, in summary): keep the GitHub search; Arslan should *itself* find GitHub projects,
+skills and MCP servers and use them in the user's projects or the capability library; the best solution
+and the user experience both matter. The boards: when a step fails for want of a capability, Arslan finds one, checks
 it, asks with a card ("装上并重试"), installs it pinned and sandboxed, tests it once, and retries the
 step; a rail "Arslan 找到的" keeps what it found for later; each capability has a dossier.
 
@@ -237,7 +237,7 @@ red lines stay (the search code lives in a new module; the importer still takes 
 - **P4 Rail, dossier, projects, updates**: "Arslan 找到的" (from declines, jobs, level starts), dossier
   page, use in project, update check with what changed, nav count.
 
-## 13. Decisions (user, 2026-10-09: "都按你的建议" — each as recommended)
+## 13. Decisions (user, 2026-10-09: each as recommended)
 
 1. **Runtimes**: download pinned **uv and Node** on first need (recommended — most registry servers
    are pypi or npm), or uv only (npm servers then show "要 Node").

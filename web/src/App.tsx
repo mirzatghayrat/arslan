@@ -715,7 +715,7 @@ export default function App() {
                   <PanelRight className="w-3.5 h-3.5" />
                 </button>
               )}
-              {/* WB1 (user, 2026-10-30: 「标题栏只留一个按钮」): the globe button is gone; Browser is a fixed tab in the workbench. */}
+              {/* WB1 (user, 2026-10-30: leave only one button in the title bar): the globe button is gone; Browser is a fixed tab in the workbench. */}
             </div>
           </div>
 

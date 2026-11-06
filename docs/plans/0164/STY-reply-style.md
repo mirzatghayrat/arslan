@@ -15,7 +15,7 @@
 
 ## 目标
 
-用户的原话：不想让 Arslan 啰嗦，但希望它「有人情味，又能明确表达」，担心整体变成冷冰冰的机器。全部规矩和例子在 `docs/plans/0162/README.md` §8「回复风格」那条（以 10-27 更正后的版本为准）。本卡只说怎么落地。
+The user's wish, in summary: Arslan should not be wordy, but should be warm yet clear, and the user worries the whole thing will turn into a cold machine.全部规矩和例子在 `docs/plans/0162/README.md` §8「回复风格」那条（以 10-27 更正后的版本为准）。本卡只说怎么落地。
 
 - **任务结果、操作步骤、进度汇报、报错说明这几处**，用四条：一句一个动作，加编号；同一个东西始终用同一个名字；不用被动句，说清是谁做的；先说结论，再给理由。
 - **闲聊、讨论想法、陪用户想事情**，不用这四条。保留现在的「跟着用户的语气走」那段（`server/orchestrator/arslan.py:45-48`），在它上面加，不替换。
@@ -69,7 +69,7 @@
 
 ## STY2: how Arslan does work, "deeper, not bigger" (user, 2026-10-28; relayed by ④参谋)
 
-⓪Plan, 2026-10-28. The user's clarification: this is about **how Arslan does work** (the user said "办事风格"), not how it talks, and it applies to tasks, not chit-chat. It edits the same prompt section as STY, so it is a second PR on this card, after STY's.
+⓪Plan, 2026-10-28. The user's clarification: this is about **how Arslan does work** (the user called it its working style), not how it talks, and it applies to tasks, not chit-chat. It edits the same prompt section as STY, so it is a second PR on this card, after STY's.
 
 | Item | Content |
 |---|---|

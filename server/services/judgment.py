@@ -303,7 +303,7 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{16}")      # exactly what `judge` keeps f
 
 
 async def drop_unredacted() -> int:
-    """JUDGE1 follow-up (the user, 2026-10-31: "the text outlives the lessons you deleted"; a one-time clean at boot).
+    """JUDGE1 follow-up (the user, 2026-10-31: the ledger text outlived the lessons the user had deleted; a one-time clean at boot).
     Two kinds of rows from before JUDGE1 hold a lesson's words: a `redact` point's row with a field that isn't a digest,
     and any row naming a lesson that is gone (`memory.applied` keeps its text; before JUDGE1 deleting a lesson left
     them, and DELETE /lessons now answers 404 for it). Lesson ids are reused, so a row older than the lesson that
