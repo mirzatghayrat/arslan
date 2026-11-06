@@ -6,7 +6,7 @@
  * stayed green. So every assertion here reads the screen.
  */
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import enJson from "../locales/en.json";
 import { modelsMessages } from "../locales/models";
@@ -29,8 +29,13 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
+const updateSettings = vi.fn().mockResolvedValue({});
+vi.mock("../api/client", () => ({ api: { updateSettings: (...a: unknown[]) => updateSettings(...a) } }));
+
 import ModelRolesSection from "../components/settings/ModelRolesSection";
 import { MODEL_SLOTS } from "../lib/modelSlots";
+import { useSettingsStore } from "../stores/settingsStore";
+import type { AppSettings } from "../api/client.types";
 
 const cfg = (id: number, label: string, primary = false) => ({
   id,
@@ -44,10 +49,9 @@ const base = {
   values: {},
   onChange: () => {},
   providerConfigs: [cfg(1, "Main", true), cfg(2, "Cheap")],
-  strategy: "single",
 };
 
-describe("the five dropdowns", () => {
+describe("the dropdowns", () => {
   it("renders one per slot", () => {
     render(<ModelRolesSection {...base} />);
     for (const s of MODEL_SLOTS) {
@@ -65,39 +69,30 @@ describe("the five dropdowns", () => {
     }
   });
 
-  it("gives the four purposes four DIFFERENT texts", () => {
+  it("gives every slot a DIFFERENT purpose text", () => {
     // One sentence reused five times is not an explanation; it would pass a
     // non-empty check while telling the user nothing.
     render(<ModelRolesSection {...base} />);
     const texts = MODEL_SLOTS.map((s) =>
       (screen.getByTestId(`slot-purpose-${s.id}`).textContent ?? "").trim(),
     );
-    expect(new Set(texts).size).toBe(4);
+    expect(new Set(texts).size).toBe(MODEL_SLOTS.length);
   });
 });
 
 describe("the empty-slot sentence is true", () => {
-  it("says the router is pinned, not following", () => {
-    render(<ModelRolesSection {...base} strategy="balanced" />);
+  it("says the router follows the primary, by name", () => {
+    render(<ModelRolesSection {...base} />);
     const el = screen.getByTestId("slot-fallback-router");
-    expect(el.dataset.kind).toBe("pinned-primary");
+    expect(el.dataset.kind).toBe("follows-primary");
     expect(el.textContent).toMatch(/Main/);
   });
 
-  it("says synthesis follows the conversation", () => {
+  it("says vision follows the conversation, without naming the primary", () => {
     render(<ModelRolesSection {...base} />);
-    expect(screen.getByTestId("slot-fallback-synthesis").dataset.kind).toBe(
-      "follows-conversation",
-    );
-  });
-
-  it("gives router and synthesis different sentences from the routable two", () => {
-    render(<ModelRolesSection {...base} />);
-    const text = (id: string) =>
-      (screen.getByTestId(`slot-fallback-${id}`).textContent ?? "").trim();
-    expect(text("router")).not.toBe(text("compaction"));
-    expect(text("synthesis")).not.toBe(text("compaction"));
-    expect(text("router")).not.toBe(text("synthesis"));
+    const el = screen.getByTestId("slot-fallback-vision");
+    expect(el.dataset.kind).toBe("follows-conversation");
+    expect(el.textContent).not.toMatch(/Main/);
   });
 
   it("mentions the image condition on the vision slot", () => {
@@ -107,30 +102,40 @@ describe("the empty-slot sentence is true", () => {
     const text = screen.getByTestId("slot-purpose-vision").textContent ?? "";
     expect(text).toMatch(/image/i);
   });
+});
 
-  it("says 'assigned by the routing strategy' WITHOUT naming the primary", () => {
-    // Naming the primary here re-implies "the primary is doing the work", which is
-    // exactly what this wording exists to stop implying.
-    render(<ModelRolesSection {...base} strategy="balanced" />);
-    const el = screen.getByTestId("slot-fallback-compaction");
-    expect(el.dataset.kind).toBe("routed");
-    expect(el.textContent).not.toMatch(/Main/);
+describe("the one-time reset notice (ROUTE1, migration 0086)", () => {
+  const settingsWith = (notice?: string) =>
+    ({ model_roles_reset_notice: notice } as unknown as AppSettings);
+
+  it("shows once when the migration cleared role choices", () => {
+    useSettingsStore.setState({ settings: settingsWith("pending") });
+    render(<ModelRolesSection {...base} />);
+    const el = screen.getByTestId("model-roles-reset-notice");
+    expect(el.textContent).toMatch(/cleared/);
   });
 
-  it("still follows the primary with ONE config under a routing strategy", () => {
-    render(
-      <ModelRolesSection {...base} strategy="balanced" providerConfigs={[cfg(1, "Main", true)]} />,
-    );
-    const el = screen.getByTestId("slot-fallback-compaction");
-    expect(el.dataset.kind).toBe("follows-primary");
-    expect(el.textContent).toMatch(/Main/);
+  it.each([undefined, "seen"])("stays hidden when the notice is %s", (notice) => {
+    useSettingsStore.setState({ settings: settingsWith(notice) });
+    render(<ModelRolesSection {...base} />);
+    expect(screen.queryByTestId("model-roles-reset-notice")).toBeNull();
+  });
+
+  it("OK hides it and saves 'seen' so it does not come back", () => {
+    updateSettings.mockClear();
+    useSettingsStore.setState({ settings: settingsWith("pending") });
+    render(<ModelRolesSection {...base} />);
+    fireEvent.click(screen.getByTestId("model-roles-reset-notice-ok"));
+    expect(screen.queryByTestId("model-roles-reset-notice")).toBeNull();
+    expect(updateSettings).toHaveBeenCalledWith({ model_roles_reset_notice: "seen" });
+    expect(useSettingsStore.getState().settings?.model_roles_reset_notice).toBe("seen");
   });
 });
 
 describe("nothing configured yet", () => {
   it("points at the provider section instead of rendering empty brackets", () => {
     render(<ModelRolesSection {...base} providerConfigs={[]} />);
-    const el = screen.getByTestId("slot-fallback-compaction");
+    const el = screen.getByTestId("slot-fallback-router");
     expect(el.dataset.kind).toBe("no-configs");
     expect(el.textContent).not.toMatch(/\(\s*\)/);
   });
@@ -184,9 +189,7 @@ describe("locale coverage", () => {
 
   it("ships the fallback sentences and the pointer in all six languages", async () => {
     const KEYS = [
-      "slotFallbackPinnedPrimary",
       "slotFallbackFollowsPrimary",
-      "slotFallbackRouted",
       "slotFallbackFollowsConversation",
       "slotFallbackNoConfigs",
       "modelRolesEmbeddingPointer",
@@ -194,6 +197,8 @@ describe("locale coverage", () => {
       "slotUnset",
       "slotGoToProviders",
       "navModelRoles",
+      "modelRolesResetNotice",
+      "modelRolesResetOk",
     ];
     for (const lang of ["de", "en", "es", "fr", "ja", "zh"]) {
       const mod = await import(`../locales/${lang}.json`);
@@ -205,13 +210,13 @@ describe("locale coverage", () => {
     }
   });
 
-  it("keeps the {model} placeholder in the two sentences that name a model", async () => {
+  it("keeps the {model} placeholder in the sentence that names a model", async () => {
     // A translation that drops it renders "follows your main model ." with the name
     // silently gone — which is the empty-bracket failure in another shape.
     for (const lang of ["de", "en", "es", "fr", "ja", "zh"]) {
       const mod = await import(`../locales/${lang}.json`);
       const settings = (mod.default as Record<string, Record<string, string>>).settings;
-      for (const k of ["slotFallbackPinnedPrimary", "slotFallbackFollowsPrimary"]) {
+      for (const k of ["slotFallbackFollowsPrimary"]) {
         expect(settings[k], `${lang}.${k}`).toMatch(/\{model\}/);
       }
     }
@@ -229,13 +234,13 @@ describe("the section is wired into Settings", () => {
   it("gives every slot a home in FIELD_HOMES", async () => {
     // A section with no fields behind it is exactly what the deleted `scheduled`
     // and `usage` placeholder tabs were, and the existing field-homes guard fails
-    // on one. Four entries, one per slot, all on the Models page (D8: no title slot).
+    // on one. One entry per slot, all on the Models page (ROUTE1: two slots left).
     const { FIELD_HOMES } = await import("../components/settings/sectionRegistry");
     const homed = Object.entries(FIELD_HOMES).filter(([k, v]) => k.startsWith("slot.") && v === "models");
-    expect(homed).toHaveLength(4);
+    expect(homed).toHaveLength(MODEL_SLOTS.length);
   });
 
-  it("is rendered by SettingsScreen with values, a handler, configs and the strategy", async () => {
+  it("is rendered by SettingsScreen with every prop it declares", async () => {
     // Reading the call site is the only way to see an omitted prop: with optional
     // props a missing one is not a type error, and nothing looks wrong until a user
     // changes a dropdown that saves nowhere.

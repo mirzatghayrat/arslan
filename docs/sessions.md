@@ -82,7 +82,7 @@
     - migrations that drop data.
 
     Deleting a guard, a hard rule or a test of the security surface counts as security surface, not deletion-only.
-  - **Security-surface PRs the author may auto-merge (user, 2026-11-01, in ⓪Plan's chat, verbatim: 「以后碰安全面的 PR，只要另一个会话用 effort=max 审过、在当前 head 上 OK、五项检查全绿，作者就可以开 auto-merge 自己合。Codex 的 PR 和改 Bridge 帧的 PR 还是我来合。」):**
+  - **Security-surface PRs the author may auto-merge (user, 2026-11-01, in ⓪Plan's chat; in summary: from now on, a PR that touches the security surface may be merged by its author through auto-merge once another session has reviewed it at effort=max, OK'd it at the current head, and all five checks are green; Codex's PRs and PRs that change a Bridge frame are still merged by the user):**
     - Conditions, all three:
       - another session reviewed it at effort=max;
       - that session posted its OK **at the current head**;
@@ -91,7 +91,7 @@
     - **Still the user's:**
       - Codex's PRs, including any Claude commit added on a Codex branch;
       - any PR that changes a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md`.
-    - **Ordinary product code too (user, 2026-11-01, in ⓪Plan's chat, verbatim: 「普通产品代码也一样：另一个会话审过、在当前 head 上 OK、五项检查全绿，作者就可以开 auto-merge。」):**
+    - **Ordinary product code too (user, 2026-11-01, in ⓪Plan's chat; in summary: the same applies to ordinary product code):**
       the author may enable auto-merge once another session reviewed it (effort=high, unless it is on the security surface, where the effort=max rule above applies), that session OK'd it at the current head, and all five checks are green.
       The two exceptions above (Codex's PRs; Bridge frames) stay the user's.
     - **Stacked PRs:** enable auto-merge only once the PR's base is `main`. Auto-merge on a stacked PR merges it into its parent's branch, not main.

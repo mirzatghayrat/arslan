@@ -2,7 +2,11 @@
 # Install the outside entrants into $BENCH_ROOT only: Node 24 (checksum-verified), OpenClaw,
 # DeepSeek Harness, goose, Claude Code (pinned). Nothing global is changed. Hermes is used from its normal install,
 # run with its own HOME under $BENCH_ROOT so the user's ~/.hermes is never read or written.
+#   install_entrants.sh                 all of them
+#   install_entrants.sh openclaw        only the ones named (openclaw, dsh, goose, claude-code); Node is always checked
 set -euo pipefail
+WANTED=" ${*:-openclaw dsh goose claude-code} "
+want() { case "$WANTED" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 ROOT=${BENCH_ROOT:-/tmp/arslan-kernel-bench}
 mkdir -p "$ROOT/pkgs" "$ROOT/tmp"
 cd "$ROOT"
@@ -13,15 +17,18 @@ if [ ! -x node24/bin/node ]; then
   tar xzf "node-$V-darwin-arm64.tar.gz" && mv "node-$V-darwin-arm64" node24
 fi
 export PATH="$ROOT/node24/bin:$PATH"
-npm install --prefix "$ROOT/pkgs/openclaw" "openclaw@${OPENCLAW_VERSION:-latest}" --no-fund --no-audit
-npm install --prefix "$ROOT/pkgs/dsh" "@deepseek-ai/dsh@${DSH_VERSION:-latest}" --no-fund --no-audit
-mkdir -p "$ROOT/pkgs/goose" && cd "$ROOT/pkgs/goose"
-gh release download "${GOOSE_VERSION:-$(gh release view --repo block/goose --json tagName -q .tagName)}" \
-  --repo block/goose --pattern "goose-aarch64-apple-darwin.tar.gz" --clobber
-tar xzf goose-aarch64-apple-darwin.tar.gz
+want openclaw && npm install --prefix "$ROOT/pkgs/openclaw" "openclaw@${OPENCLAW_VERSION:-latest}" --no-fund --no-audit
+want dsh && npm install --prefix "$ROOT/pkgs/dsh" "@deepseek-ai/dsh@${DSH_VERSION:-latest}" --no-fund --no-audit
+if want goose; then
+  mkdir -p "$ROOT/pkgs/goose" && cd "$ROOT/pkgs/goose"
+  gh release download "${GOOSE_VERSION:-$(gh release view --repo block/goose --json tagName -q .tagName)}" \
+    --repo block/goose --pattern "goose-aarch64-apple-darwin.tar.gz" --clobber
+  tar xzf goose-aarch64-apple-darwin.tar.gz
+  cd "$ROOT"
+fi
 # Claude Code is pinned: its flags change between versions, and runner.py records the version with
 # every result. It runs with the bench's own HOME, so the user's ~/.claude is never read.
-npm install --prefix "$ROOT/pkgs/claude-code" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:-2.1.96}" --no-fund --no-audit
+want claude-code && npm install --prefix "$ROOT/pkgs/claude-code" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION:-2.1.96}" --no-fund --no-audit
 # DeepSeek Harness defaults to deepseek-flash; every entrant must use the same model.
 mkdir -p "$ROOT/home/dsh/.dsh/profiles/headless"
 cat > "$ROOT/home/dsh/.dsh/profiles/headless/cordis.patch.yml" <<YML

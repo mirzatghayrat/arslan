@@ -383,10 +383,10 @@ export interface AppSettings {
   search_provider_role?: string; // "" | "only" | "backup" (0.1.63 D5)
   search_api_key: string; // masked on read
   github_token: string; // masked on read
-  llm_strategy?: string;
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky"
   shell_policy_switch_notice?: string; // v0.1.63: "pending" after migration 0070 switched this user, then "seen"
+  model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
   workspace_dir?: string;   // "" = unset = file tools not offered
@@ -404,12 +404,8 @@ export interface AppSettings {
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
   /** Embedding provider override: "" (or absent) = auto, "local", or a provider-config id. */
   embedding_config_id?: string;
-  synthesis_config_id?: string;
-  synthesis_model?: string;
-  compaction_model?: string;
   router_model?: string;
   vision_model?: string;
-  compaction_config_id?: string;
   router_config_id?: string;
   vision_config_id?: string;
   keep_awake_enabled?: boolean;
@@ -791,26 +787,6 @@ export type ArslanServerMessage =
   | { type: "clarify_options"; question: string; options: ClarifyOption[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
       current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string };
-
-export interface SuggestPrimaryResult {
-  id: number;
-  provider: string;
-  rationale: string;
-}
-
-export interface CatalogCapabilities {
-  cost: number;
-  speed: number;
-  tool_calling: number;
-  reasoning: number;
-  long_context: number;
-}
-
-export interface CatalogEntry {
-  provider: string;
-  capabilities: CatalogCapabilities;
-  languages: Record<string, number>;
-}
 
 export interface RunStepDto {
   seq: number;

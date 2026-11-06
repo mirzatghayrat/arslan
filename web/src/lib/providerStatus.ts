@@ -55,8 +55,7 @@ export function providerStatus(config: HealthFields, live?: LiveTest): StatusVie
 
   // null, "", or a word retired by migration 0043 (a row written by an older
   // build, or one the migration missed). Fail OPEN to "untested": claiming a
-  // verdict we cannot vouch for is the whole defect we are removing. The
-  // backend's _last_health_ok makes the same call for the same reason.
+  // verdict we cannot vouch for is the whole defect we are removing.
   return { status: 'untested', reason: null, at: null };
 }
 

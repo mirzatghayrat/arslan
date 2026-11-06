@@ -58,11 +58,6 @@ export function clampEndpointSilenceMs(raw: string | number | undefined): number
  * Legacy flat LLM fields (llm_provider / llm_model / llm_api_key) are no longer
  * mapped to UI state — the multi-config provider list is the single source of truth.
  *
- * llmStrategy DOES have a backend counterpart (GET /settings returns llm_strategy,
- * defaulting to "single"). It MUST be hydrated here — otherwise localSettings keeps
- * the client default and every debounced auto-save PUTs llm_strategy:'single',
- * silently clobbering the user's stored routing strategy (T6 FIX 1).
- *
  * UI-only fields with no backend counterpart are kept at their current UI value
  * and therefore should NOT be overwritten on fetch; callers must merge:
  *   theme, telemetry
@@ -75,8 +70,6 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     apiKeySearch: backend.search_api_key ?? "",
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
-    // Routing strategy round-trips through the backend (default "single").
-    llmStrategy: (backend.llm_strategy ?? "single") as AppSettings["llmStrategy"],
     // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
     // both default OFF / most-cautious when absent.
     // Mirrors settings_service.shell_enabled / shell_confirm_policy: unset means ON (0.1.48) and ask_all (v0.1.63).
@@ -108,12 +101,8 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     voiceEndpointSilenceMs: clampEndpointSilenceMs(backend.voice_endpoint_silence_ms),
     taskUsdCap: readTaskUsdCap(backend.task_usd_cap),
     embeddingConfigId: backend.embedding_config_id ?? "",
-  synthesisConfigId: backend.synthesis_config_id ?? "",
-  compactionConfigId: backend.compaction_config_id ?? "",
   routerConfigId: backend.router_config_id ?? "",
   visionConfigId: backend.vision_config_id ?? "",
-  synthesisModel: backend.synthesis_model ?? "",
-  compactionModel: backend.compaction_model ?? "",
   routerModel: backend.router_model ?? "",
   visionModel: backend.vision_model ?? "",
     keepAwakeEnabled: backend.keep_awake_enabled ?? true,
@@ -148,7 +137,6 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   searchBaseUrl: { key: "search_base_url", to: (v) => (v as string) ?? "" },
   searchProviderRole: { key: "search_provider_role", to: (v) => (v as string) ?? "" },
   language: { key: "language" },
-  llmStrategy: { key: "llm_strategy" },
   orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
   shellConfirmPolicy: { key: "shell_confirm_policy" },
   backgroundJobBudget: { key: "background_job_budget" },
@@ -165,12 +153,8 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   voiceMode: { key: "voice_mode", to: (v) => String(v) },
   voiceEndpointSilenceMs: { key: "voice_endpoint_silence_ms", to: (v) => String(v) },
   embeddingConfigId: { key: "embedding_config_id", to: (v) => (v as string) ?? "" },
-  synthesisConfigId: { key: "synthesis_config_id", to: (v) => (v as string) ?? "" },
-  compactionConfigId: { key: "compaction_config_id", to: (v) => (v as string) ?? "" },
   routerConfigId: { key: "router_config_id", to: (v) => (v as string) ?? "" },
   visionConfigId: { key: "vision_config_id", to: (v) => (v as string) ?? "" },
-  synthesisModel: { key: "synthesis_model", to: (v) => (v as string) ?? "" },
-  compactionModel: { key: "compaction_model", to: (v) => (v as string) ?? "" },
   routerModel: { key: "router_model", to: (v) => (v as string) ?? "" },
   visionModel: { key: "vision_model", to: (v) => (v as string) ?? "" },
   keepAwakeEnabled: { key: "keep_awake_enabled", to: (v) => (v as boolean) ?? true },
@@ -197,7 +181,7 @@ const SECRET_WIRE: Record<string, keyof BackendAppSettings> = {
  * 🔴 THE POINT: a PUT must not write back a field the user never edited. Three
  * separate bugs came from doing so, each fixed per field:
  *   ① a masked key round-tripped as the real secret;
- *   ② llm_strategy clobbered by a client default that was never hydrated;
+ *   ② a routing strategy (removed in v0.1.64) clobbered by a client default that was never hydrated;
  *   ③ search_provider="tavily" on a fresh install, which broke keyless search
  *      the moment the user changed anything at all.
  * Per-field fixes kill the instance and leave the family. Sending only what was

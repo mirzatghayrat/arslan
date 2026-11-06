@@ -6,7 +6,7 @@ at boot, ungated, because gating it would keep the legacy format alive forever. 
 is the other half: salts we went LOOKING for, in files that may or may not be the right
 ones. Even when a candidate opens a value, the rewrite waits for a person.
 
-The user's words for the boundary: "not one byte before we nod."
+The boundary, as the user put it: nothing is written before a person agrees.
 
 🔴 WHY "IT WROTE NOTHING" IS THE HARD PART TO TEST. It is the assertion most easily
 satisfied by accident — a function that does nothing at all passes it. So this file

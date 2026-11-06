@@ -142,16 +142,26 @@ _CLAIMS_SEARCH_RE = re.compile(
 #: 「说明是怎么查到的」, sent run 492 back three times). It does after a web word in the same clause (「我在网上查到了」),
 #: unless the clause is advice or how-to (「你可以在网上查到」, 「怎么在网上查到」, 「建议上网查到…」) or says nothing was
 #: found (「网上没有查到」). #694 review.
+#: 「网络上」 only, never bare 「网络」 or 「网络中」: 「网络设置里查到…」 and 「本地网络中查到…」 are local (#698 review).
 _WEB_FOUND_RE = re.compile(r"(网上|在线|上网|联网|网页|网络上|搜索引擎)[^。！？，、；\n]{0,6}查到")  # lang-check: allow
-_ADVICE_WORDS = ("可以", "能", "可", "怎么", "如何", "去", "建议")  # lang-check: allow
+_ADVICE_WORDS = ("可以", "怎么", "如何", "建议")  # lang-check: allow
+#: 「可」 / 「能」 / 「去」 are advice only right before the web word (「可在网上」, 「去网上」) or right before 「查到」
+#: (「都能查到」), and not as the end of 「可能」, 「功能」 or 「过去」 (#694 follow-up).
+_ADVICE_BEFORE_WEB = re.compile(r"(?:(?<![可功])能|可|(?<!过)去)[在到]?$")  # lang-check: allow
+_ADVICE_BEFORE_FOUND = re.compile(r"(?:(?<![可功])能|可)$")  # lang-check: allow
 _NOT_FOUND = ("没", "未", "没有", "未能")  # lang-check: allow
 
 
 def _claims_web_found(text: str) -> bool:
     for match in _WEB_FOUND_RE.finditer(text):
-        clause = text[max(text.rfind(mark, 0, match.start()) for mark in "。！？，、；\n") + 1:match.end()]
+        clause_start = max(text.rfind(mark, 0, match.start()) for mark in "。！？，、；\n") + 1
+        clause = text[clause_start:match.end()]
         before = text[:match.end() - 2]
-        if not any(word in clause for word in _ADVICE_WORDS) and not before.endswith(_NOT_FOUND):
+        # The single-character checks look only at the few characters before (lookbehind still sees past `pos`).
+        advice = (any(word in clause for word in _ADVICE_WORDS)
+                  or _ADVICE_BEFORE_WEB.search(text, max(clause_start, match.start() - 3), match.start())
+                  or _ADVICE_BEFORE_FOUND.search(text, max(match.start(), len(before) - 2), len(before)))
+        if not advice and not before.endswith(_NOT_FOUND):
             return True
     return False
 
@@ -998,9 +1008,32 @@ _LONG_TURN_NOTE = (f"This turn has been working for {LONG_TURN_S // 60} minutes.
 #: block asks for four closing lines. Arslan's own turns only (never a delegated worker, which answers in
 #: JSON). "Unverified" in the reply's language, never 没查到: _CLAIMS_SEARCH_RE reads that as a claim to
 #: have searched (K8 fixes the pattern).
+#: v0.1.64 SMART-5: and only once the turn did work (a call that succeeded and is not a read): the bench found the
+#: lines on answers to questions (two reads, then a one-line answer and four lines of footer), against "These rules are
+#: for reports, not for chatting".
 _CLOSING_NOTE = ("This turn used tools in several steps. End your final reply with four short lines, in the "
                  "reply's language: what you did; how you checked it; what you did not check (call it "
                  "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch.")
+
+
+#: Looking, not working, though task_service.effect_of (which also decides retries) calls them external writes: they
+#: search, find or probe and change nothing. For the closing lines only (#701 review).
+_LOOKS_ONLY = frozenset({"conversation_search", "find_capability", "scan_local_network", "ssh_probe"})
+
+
+async def _did_work(tool_trace: list, work: dict) -> bool:
+    """SMART-5: whether a call of this turn succeeded and was not a read (task_service.effect_of: a write, a command
+    that isn't a read, a job started, an MCP tool not known to only read). Each call is judged once."""
+    from server.services import task_service
+    for step in tool_trace[work["seen"]:]:
+        if not work["done"] and (step.get("result") or {}).get("ok") is True and step.get("tool") not in _LOOKS_ONLY:
+            try:
+                effect = await task_service.effect_of(str(step.get("tool")), step.get("args") or {})
+            except Exception:  # noqa: BLE001 — the footer is never a reason to fail a turn; unknown is not a read
+                effect = "external_write"
+            work["done"] = effect != "read"
+    work["seen"] = len(tool_trace)
+    return work["done"]
 
 
 #: 0.1.63 K4b: a live run has no allowance of its own any more (it was 25); a web read is one tool
@@ -2560,15 +2593,8 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
             return None
         from server.services import runtime_messages
         return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
-    # Synthesis may run on a dedicated stronger model (DeepSeek synthesizes weakly). Use it ONLY
-    # when configured; otherwise keep the tool-loop adapter `a`.
-    try:
-        from server.services.llm_factory import build_synthesis_adapter
-        synth = await build_synthesis_adapter()
-        if synth is not None:
-            a = synth
-    except Exception as exc:  # noqa: BLE001 — synthesis falls back to the tool-loop adapter, as when none is set
-        logger.warning("synthesis adapter unavailable, keeping the tool-loop model: %s", type(exc).__name__)
+    # ROUTE1 (v0.1.64): synthesis runs on the tool loop's own adapter `a`, the conversation's model; there is no
+    # final-answer slot.
     synth_system = (
         "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
         "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
@@ -3174,7 +3200,7 @@ async def _run_native(
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
         from server.services import tool_intent
         try:
-            intent = await tool_intent.classify(user_content, sorted(wired_keys))
+            intent = await tool_intent.classify(user_content, sorted(wired_keys), conversation_id=conversation_id)
         except Exception:  # noqa: BLE001
             intent = None
         if intent is not None and intent.needs and intent.tool == "web_search":
@@ -3208,6 +3234,7 @@ async def _run_native(
     wrap_refused = 0
     long_turn_told = False
     tool_steps = 0              # K5: steps whose calls are not only update_plan
+    work = {"done": False, "seen": 0}   # SMART-5: whether a call so far changed something, and how far that was checked
     link_hints: dict[str, int] = {}
     offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
     can_save = bool(WRAP_UP_TOOLS & wired_keys)
@@ -3280,7 +3307,7 @@ async def _run_native(
             from server.services import runtime_messages
             emit({"type": "note", "text": runtime_messages.render(
                 "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
-        if tool_steps >= 2 and _host_turn(caller, progress_lane):
+        if tool_steps >= 2 and _host_turn(caller, progress_lane) and await _did_work(tool_trace, work):
             notes.append(_CLOSING_NOTE)
         # Deliver one new tool batch atomically before normal old-history
         # eviction. Keep a bounded 96k research window so a <=96k source batch

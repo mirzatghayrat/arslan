@@ -63,7 +63,7 @@ function toChoice(e: EffectiveModel | undefined): ModelChoice | null {
  */
 export function useConversationModel(conversationId: string, configs: ProviderConfig[]) {
   const [choice, setChoiceState] = useState<ModelChoice | null>(null);
-  // v0.1.64: the server's answer for "the default" (routing, not always the primary config).
+  // v0.1.64: the server's answer for "the default", read rather than assumed from the configs held here.
   const [effective, setEffective] = useState<ModelChoice | null>(null);
   // PR 691's review: each stored change counts here, so an answer to a GET asked before it is dropped instead of
   // overwriting it with an older state. `refresh` asks again on demand (after a save that timed out).

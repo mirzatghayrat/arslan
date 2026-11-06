@@ -278,7 +278,7 @@ function problemsOf(run: UiRun | null, anomalies: AnomalyDto[], steps: Step[], t
 /**
  * INB7-c4a, board F's 「诊断」: the picked run's facts (run, model, tokens in and out, cost, duration, score), its problems, and
  * the old drawer's two tools: clearing its debug details (asked first; it cannot be undone) and exporting it as Markdown. The
- * drawer itself, with its fleet radar and history sparkline, is gone (the user, 2026-11-02: 「去掉」).
+ * drawer itself, with its fleet radar and history sparkline, is gone (the user, 2026-11-02: remove it).
  */
 function RunDiagnosis({ detail, usd, problems, hands, judgments, sidelightsLoaded, onCleared }: {
   detail: RunDetail; usd: number | null; problems: string[]; onCleared: () => void;

@@ -13,6 +13,11 @@ vi.mock('react-i18next', () => ({
 const { conv } = vi.hoisted(() => ({ conv: { get: vi.fn(), set: vi.fn(), clear: vi.fn() } }));
 vi.mock('../api/conversationModel', () => ({ conversationModelApi: conv }));
 vi.mock('../api/client', async (orig) => ({ ...(await orig<object>()), fetchProviderModels: vi.fn(async () => ({ models: [] })) }));
+// The voice conversation's final transcript is a send of its own; holding onFinal lets a test speak one.
+const { voice } = vi.hoisted(() => ({ voice: { onFinal: undefined as undefined | ((text: string) => void) } }));
+vi.mock('../hooks/useConversationMode', () => ({
+  useConversationMode: (o: { onFinal: (text: string) => void }) => { voice.onFinal = o.onFinal; return { phase: 'idle', partial: '' }; },
+}));
 
 import OrchestratorChat from '../components/OrchestratorChat';
 import { useArslanStore } from '../stores/arslanStore';
@@ -105,6 +110,37 @@ describe('the error banner', () => {
     await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
     expect(onSendMessage).not.toHaveBeenCalled();
     expect((container.querySelector('#chat-message-input') as HTMLTextAreaElement).value).toBe('Newer spoken message');
+  });
+
+  it('a voice send is remembered, so the retry sends the spoken message itself', async () => {
+    conv.get.mockResolvedValue({ choice: null });
+    conv.set.mockResolvedValue({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } });
+    const onSendMessage = vi.fn();
+    rememberSend('c-spoken', 'Older typed message', undefined);
+    const { rerender } = render(<OrchestratorChat {...props} chatHistory={history} onSendMessage={onSendMessage}
+      conversationId="c-spoken" providerConfigs={configs} />);
+    act(() => voice.onFinal?.('Newer spoken message'));
+    expect(onSendMessage).toHaveBeenCalledWith('Newer spoken message', undefined);
+    onSendMessage.mockClear();
+    const spoken: Message[] = [{ id: 'u9', sender: 'user', senderName: 'You', senderAvatar: '🙂', text: 'Newer spoken message', timestamp: '10:02' }];
+    rerender(<OrchestratorChat {...props} chatHistory={spoken} onSendMessage={onSendMessage} conversationId="c-spoken" providerConfigs={configs} />);
+    failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+    await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
+    expect(onSendMessage).toHaveBeenCalledWith('Newer spoken message', undefined);
+  });
+
+  it("compares with the newest USER message, so an Arslan message after it does not block the retry", async () => {
+    conv.get.mockResolvedValue({ choice: null });
+    conv.set.mockResolvedValue({ choice: { config_id: 3, model: 'claude-sonnet-5-5' } });
+    const onSendMessage = vi.fn();
+    const attached = { context: '', names: ['a.png'], images: [{ mime_type: 'image/png', data: 'AA' }] };
+    rememberSend('c-after', 'Plan my week', attached as never);
+    const answered: Message[] = [...history,
+      { id: 'a1', sender: 'arslan', senderName: 'Arslan', senderAvatar: '🦁', text: 'Looking at your calendar…', timestamp: '10:00' }];
+    render(<OrchestratorChat {...props} chatHistory={answered} onSendMessage={onSendMessage} conversationId="c-after" providerConfigs={configs} />);
+    failed({ role: 'chat', provider: 'deepseek', model: 'deepseek-v4-flash' });
+    await act(async () => { fireEvent.click(screen.getByTestId('chat-error-switch')); });
+    expect(onSendMessage).toHaveBeenCalledWith('Plan my week', attached);
   });
 
   it('remembers one send only, for the conversation it was in', () => {

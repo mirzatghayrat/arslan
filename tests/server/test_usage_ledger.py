@@ -277,7 +277,7 @@ async def test_memory_compaction_writes_memory_row(memdb, monkeypatch):
     monkeypatch.setattr(memory, "_token_budget", lambda: 0)
     monkeypatch.setattr(memory, "_summary_token_cap", lambda: 10000)
     adapter = _ReportingAdapter(content="compact summary", tokens_in=55, tokens_out=20)
-    monkeypatch.setattr(memory, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: adapter)
 
     await memory.maybe_compact("c-m")
     rows = await _rows(memdb)
