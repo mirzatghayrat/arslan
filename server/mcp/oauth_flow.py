@@ -21,7 +21,8 @@ import logging
 
 from mcp.client.auth import OAuthClientProvider
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
-from sqlalchemy import select
+from sqlalchemy import literal, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from server.db import session as db_session
 from server.db.models import MCPServer, Setting
@@ -47,16 +48,15 @@ async def _read(key: str) -> dict | None:
         return None
 
 
-async def _write(key: str, payload: dict) -> None:
+async def _write(key: str, payload: dict, server_id: int) -> None:
+    """Stored only for a server that exists, in one statement: a browser flow or a token refresh can finish while its
+    server is being removed, and a separate check could pass just before the remove and write just after it."""
     value = crypto.encrypt(json.dumps(payload))
+    exists = select(MCPServer.id).where(MCPServer.id == server_id).exists()
+    insert = sqlite_insert(Setting).from_select(["key", "value"], select(literal(key), literal(value)).where(exists))
     async with db_session.AsyncSessionLocal() as db:
-        row = (
-            await db.execute(select(Setting).where(Setting.key == key))
-        ).scalar_one_or_none()
-        if row is None:
-            db.add(Setting(key=key, value=value))
-        else:
-            row.value = value
+        await db.execute(insert.on_conflict_do_update(index_elements=[Setting.key],
+                                                      set_={"value": insert.excluded.value}))
         await db.commit()
 
 
@@ -66,33 +66,26 @@ def stored_keys(server_id: int) -> list[str]:
 
 
 class EncryptedTokenStorage:
-    """The SDK's TokenStorage protocol over Arslan's one crypto path. A sign-in is only stored for a server that
-    exists: a browser flow or a token refresh can finish after its server was removed."""
+    """The SDK's TokenStorage protocol over Arslan's one crypto path."""
 
     def __init__(self, server_id: int) -> None:
         self._server_id = server_id
         self._tokens_key = _TOKENS_KEY.format(server_id=server_id)
         self._client_key = _CLIENT_KEY.format(server_id=server_id)
 
-    async def _exists(self) -> bool:
-        async with db_session.AsyncSessionLocal() as db:
-            return await db.get(MCPServer, self._server_id) is not None
-
     async def get_tokens(self) -> OAuthToken | None:
         data = await _read(self._tokens_key)
         return OAuthToken.model_validate(data) if data else None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
-        if await self._exists():
-            await _write(self._tokens_key, tokens.model_dump(mode="json", exclude_none=True))
+        await _write(self._tokens_key, tokens.model_dump(mode="json", exclude_none=True), self._server_id)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         data = await _read(self._client_key)
         return OAuthClientInformationFull.model_validate(data) if data else None
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        if await self._exists():
-            await _write(self._client_key, client_info.model_dump(mode="json", exclude_none=True))
+        await _write(self._client_key, client_info.model_dump(mode="json", exclude_none=True), self._server_id)
 
 
 async def has_tokens(server_id: int) -> bool:

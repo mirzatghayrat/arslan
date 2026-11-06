@@ -1,4 +1,5 @@
 """Removing an MCP server removes its stored sign-in, on every path that removes one."""
+import asyncio
 from datetime import datetime
 
 import httpx
@@ -110,6 +111,25 @@ async def test_a_sign_in_finishing_after_the_remove_stores_nothing(db):
     assert await _keys(db) == set()
 
 
+async def test_a_sign_in_finishing_during_the_remove_leaves_nothing(db):
+    """The write and the remove at the same moment: whichever runs first, no key outlives the server."""
+    for _ in range(40):
+        await _server(db, 1)
+        storage = oauth_flow.EncryptedTokenStorage(1)
+        await asyncio.gather(storage.set_tokens(OAuthToken(access_token="-".join(["racing", "access"]))),
+                             mcp_service.delete_server(1))
+        assert await _keys(db) == set()
+
+
+async def test_a_second_write_replaces_the_first(db):
+    await _server(db, 1)
+    storage = oauth_flow.EncryptedTokenStorage(1)
+    await storage.set_tokens(OAuthToken(access_token="-".join(["first", "access"])))
+    await storage.set_tokens(OAuthToken(access_token="-".join(["second", "access"])))
+    assert (await storage.get_tokens()).access_token == "-".join(["second", "access"])
+    assert await _keys(db) == {"mcp_oauth_tokens_1"}
+
+
 async def test_a_live_server_keeps_and_can_read_its_sign_in(db):
     await _server(db, 1)
     await _signed_in(1)
@@ -125,14 +145,16 @@ async def test_the_migration_removes_only_sign_ins_with_no_server(db):
     await _signed_in(1)
     async with db() as s:
         s.add_all([Setting(key="mcp_oauth_tokens_7", value="x"), Setting(key="mcp_oauth_client_7", value="x"),
-                   Setting(key="mcp_oauth_tokens_notanumber", value="keep"), Setting(key="some_other_setting", value="keep")])
+                   Setting(key="mcp_oauth_tokens_notanumber", value="keep"), Setting(key="mcp_oauth_tokens_5x", value="keep"),
+                   Setting(key="some_other_setting", value="keep")])
         await s.commit()
     async with db.kw["bind"].begin() as connection:
         await connection.run_sync(m0090.upgrade_sync)
         await connection.run_sync(m0090.upgrade_sync)      # a re-run changes nothing
     async with db() as s:
         left = set((await s.execute(select(Setting.key))).scalars())
-    assert {"mcp_oauth_tokens_1", "mcp_oauth_client_1", "mcp_oauth_tokens_notanumber", "some_other_setting"} <= left
+    assert {"mcp_oauth_tokens_1", "mcp_oauth_client_1", "mcp_oauth_tokens_notanumber", "mcp_oauth_tokens_5x",
+            "some_other_setting"} <= left
     assert not {"mcp_oauth_tokens_7", "mcp_oauth_client_7"} & left
 
 
