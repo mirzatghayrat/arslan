@@ -374,7 +374,17 @@ jobs:
           # 0.1.64 SBX-5p (#671) after the merge of SBX-4p (#670): both p sets, by collection.
           # 0.1.64 SBX-5p (#671) after the merge of SBX-6p (#669): SBX-4p, SBX-5p and SBX-6p, by collection.
           # 0.1.64 L11 (b) (#681): −1, the rules writer went, and with it L11-3d's /var-link write test.
-          EXPECTED = 666
+          # 0.1.64 SBX-3a gates notes (#654, Codex), after the flip: +28 against 433 (five live services, less notificationcenterui.main, which the CI runner lacks): the kernel gates over 4 modes, and the commands cases over 3 modes now run for real.
+          # 0.1.64 SBX gates notes (#654) after the merge of SBX-4p (#670): 552 by collection, 508 + 28 + 16 SBX-4p cases from #654's wider service list.
+          # 0.1.64 SBX gates notes (#654) after the merge of SBX-6p (#669): by collection, with SBX-6's two commands modes over #654's wider service list.
+          # 0.1.64 SBX gates notes (#654) after the merge of SBX-5p (#671): 723 by collection, 645 + SBX-5p's 78.
+          # 0.1.64 SBX gates notes (#654) after the merge of L11 (b) (#681): 722 by collection, 723 − 1.
+          # 0.1.64 IPB-1b (#650): +2, a home through the Data firmlink or in another Unicode form is ~.
+          # 0.1.64 IPB-1b (#650) after the merge of main (SBX-4p/5p/6p, L11 (b)): 666 + 2 = 668, by collection.
+          # 0.1.64 IPB-1b (#650) after the merge of the SBX gates notes (#654): 722 + 2 = 724, by collection.
+          # 0.1.64 SMART-1: +10, run_command sees what ~/.zshrc adds to PATH; rc output, prompts, hangs, a `.` on PATH,
+          # a child that leaves the group, and the server's secrets can't break it or leak into it.
+          EXPECTED = 734
           # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
           # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
           # job green (#620 review). The PR that builds the surface moves this down with its evidence;
@@ -390,7 +400,11 @@ jobs:
           # 0.1.64 SBX-5p follow-ups (#671) (Codex): 64 strict xfails for surfaces not built yet.
           # 0.1.64 SBX-5p (#671) after the merge of SBX-4p (#670): 136, SBX-4p's 72 plus SBX-5p's 64.
           # 0.1.64 SBX-5p (#671) after the merge of SBX-6p (#669): 229, SBX-4p's 72, SBX-5p's 64 and SBX-6p's 93.
-          EXPECTED_XFAIL = 229
+          # 0.1.64 SBX-3a gates notes (#654): still 0. Its added commands cases pass on the flipped base.
+          # 0.1.64 SBX gates notes (#654) after the merge of SBX-4p (#670): 88, SBX-4p's 72 plus 16 more SBX-4p cases over #654's wider service list.
+          # 0.1.64 SBX gates notes (#654) after the merge of SBX-6p (#669): 197 by collection, 165 + 16 SBX-4p + 16 SBX-6p cases over #654's wider service list.
+          # 0.1.64 SBX gates notes (#654) after the merge of SBX-5p (#671): 261 by collection, 197 + SBX-5p's 64.
+          EXPECTED_XFAIL = 261
           suite = ET.parse("macos-results.xml").getroot().find("testsuite")
           total = int(suite.get("tests", 0))
           # A strict xfail that failed as expected (SBX's p tests before Na lands) is

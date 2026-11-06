@@ -5,7 +5,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   AccessTokenInfo,
   AnomalyDto,
   AppSettings,
-  CatalogEntry,
   CollectionOut,
   ConversationUsage,
   EmbeddingStatus,
@@ -33,7 +32,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   ScheduledTaskUpdateBody,
   SpawnDetail,
   SpawnSummary,
-  SuggestPrimaryResult,
   UsageSummary,
   UserFact,
   SshAuditEntry,
@@ -654,18 +652,12 @@ export const setPrimaryProviderConfig = (id: number) =>
 export const deleteProviderConfig = (id: number) =>
   request<{ ok: boolean }>(`/settings/provider-configs/${id}`, { method: "DELETE" });
 
-export const suggestPrimary = () =>
-  request<SuggestPrimaryResult | null>("/settings/suggest-primary");
-
 /** Dynamic model catalog for a saved provider config. `refresh=true` forces a
  *  live re-fetch from the provider (doubles as an API-key sanity check). */
 export const fetchProviderModels = (id: number, refresh = false) =>
   request<ModelListResult>(
     `/settings/provider-configs/${id}/models${refresh ? "?refresh=true" : ""}`,
   );
-
-export const getCatalog = () =>
-  request<CatalogEntry[]>("/settings/catalog");
 
 // ── Conversation actions: delete ──────────────
 

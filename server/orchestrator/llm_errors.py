@@ -96,6 +96,20 @@ async def explain_current(raw_error: str, *, had_images=False) -> str | None:
     return vision_errors.explain(raw_error, had_images=had_images, locale=locale) or explain(raw_error, locale=locale)
 
 
+def _call_of(exc: BaseException) -> dict | None:
+    """The failed call's {role, provider, model} (LLMAdapter._attribute), along the explicit `raise ... from` chain: the
+    provider's httpx error carries it, and call_with_recovery re-raises that as ModelCallError(...) from it (#696
+    review). Only __cause__: an unrelated error raised while handling a model failure (__context__) is not that model's."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        call = getattr(exc, "arslan_call", None)
+        if call:
+            return call
+        exc = exc.__cause__
+    return None
+
+
 async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> dict:
     """Keep legacy display text while adding only product-owned translations.
 
@@ -106,11 +120,19 @@ async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> 
     from server.orchestrator import vision_errors
 
     raw = str(exc) or type(exc).__name__   # a bare TimeoutError() has no text
+    # SMART-3 (v0.1.64): which call failed, on which provider and model (LLMAdapter._attribute), so the window can
+    # name it and offer the way out (switch this chat, or open that helper's setting).
+    call = _call_of(exc)
     messages = None
     if isinstance(exc, provider.ModelNotConfiguredError):
         messages = {locale: provider.render("not_configured", locale) for locale in provider.MESSAGES}
     elif vision_errors.explain(raw, had_images=had_images):
-        messages = {locale: runtime_messages.render("image_refused", locale) for locale in provider.MESSAGES}
+        if call:   # Q2 (c): the chat's own model may be the one that can't see; say which, and where to change it
+            key = "image_refused_named" if call.get("role") == "chat" else "image_refused_slot"
+            messages = {locale: runtime_messages.render(key, locale, model=call["model"], provider=call["provider"])
+                        for locale in provider.MESSAGES}
+        else:
+            messages = {locale: runtime_messages.render("image_refused", locale) for locale in provider.MESSAGES}
     else:
         category = classify(raw)
         if category:
@@ -122,6 +144,8 @@ async def error_frame(exc: Exception, *, code="LLM_ERROR", had_images=False) -> 
             "model_retried", locale, attempts=attempts, seconds=round(getattr(exc, "waited_s", 0) or 0))
             for locale, text in messages.items()}
     frame = {"type": "error", "code": code, "message": raw, "recoverable": True}
+    if call:
+        frame["call"] = dict(call)
     if messages:
         frame["message"] = messages[await runtime_messages.selected_locale()]
         frame["message_i18n"] = messages

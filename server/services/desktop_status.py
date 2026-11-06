@@ -255,6 +255,13 @@ def snapshot(after: int = 0) -> dict:
                 "events": events}
 
 
+def awaiting_count(*, excluding: str | None = None) -> int:
+    """Cards waiting now, leaving out the ones in conversation `excluding` (the phone's count leaves out the retired
+    pocket, Q1 #4: a card there is answered on the Mac only). A card with no conversation still counts."""
+    with _lock:
+        return sum(1 for conversation in _awaiting.values() if excluding is None or conversation != excluding)
+
+
 def island_feed(after: int = 0) -> dict:
     """What the on-screen island shows: work in flight with its latest step and
     plan, cards waiting, and recent events with their title and summary."""

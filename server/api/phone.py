@@ -29,7 +29,8 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
 from server.db.session import get_session
-from server.services import artifact_store, background_jobs, desktop_status, phone_ids, phone_reads, phone_stats, settings_service
+from server.services import (artifact_store, background_jobs, desktop_status, phone_details, phone_ids, phone_reads,
+                             phone_stats, settings_service)
 from server.services.phone_bridge import BridgeUnavailable, hub
 from server.services.phone_reads import PHONE_FILE_MAX, file_reference, iso as _iso, run_files  # noqa: F401
 
@@ -120,7 +121,8 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
         older = _iso(before) if before else None
     except (ValueError, OverflowError):        # OverflowError: a valid time with no UTC, like year 1 at +05:00
         raise HTTPException(400, "bad_request") from None
-    rows = [r for r in await conversation_list(db, quick=kind == "quick") if older is None or _iso(r.last_at) < older]
+    rows = [r for r in await conversation_list(db, quick=kind == "quick")
+            if r.conversation_id != phone_ids.POCKET and (older is None or _iso(r.last_at) < older)]
     page = rows[:limit]
     if len(rows) > limit and _iso(rows[limit].last_at) == _iso(page[-1].last_at):
         edge = _iso(page[-1].last_at)
@@ -242,15 +244,19 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
          # §5.7: who typed it — the phone ("from iPhone") or a Mac window.
          **({"source": "phone" if m.source == "phone" else "mac"} if m.role == "user" else {})}
         for m in reversed(rows)]
-    # §5.7: one envelope holds it all; the oldest go first, and the phone is told.
-    messages, truncated = phone_reads.fit_history(conversation_id, messages)
-    return {"conversation_id": conversation_id, "messages": messages, **({"truncated": True} if truncated else {})}
+    # §5.7: one envelope holds it all; the oldest go first, and the phone is told. §5.10: `details` first.
+    details = await phone_details.details(db, conversation_id)
+    messages, truncated = phone_reads.fit_history(conversation_id, messages, details)
+    return {"conversation_id": conversation_id, "messages": messages, "details": details,
+            **({"truncated": True} if truncated else {})}
 
 
 @router.get("/phone/runs/{run_id}/files")
 async def phone_run_files(run_id: int, db: AsyncSession = Depends(get_session)):
-    """The files one turn made, offered to the phone when the turn ends (its stream_end names the run)."""
-    if await db.get(Run, run_id) is None:
+    """The files one turn made, offered to the phone when the turn ends (its stream_end names the run). A run in the
+    retired pocket is not there for a phone (Q1 #4)."""
+    run = await db.get(Run, run_id)
+    if run is None or run.conversation_id == phone_ids.POCKET:
         raise HTTPException(404, "run_not_found")
     return {"files": run_files(run_id)}
 
@@ -258,9 +264,12 @@ async def phone_run_files(run_id: int, db: AsyncSession = Depends(get_session)):
 @router.get("/phone/files/{file_id}")
 async def phone_file(file_id: str, db: AsyncSession = Depends(get_session)):
     """`file.get`: the bytes of one artifact, checked against its manifest (size and SHA-256)
-    before they leave. Only an artifact of a run that exists, as with the window's download."""
+    before they leave. Only an artifact of a run that exists, as with the window's download, and never one of a run in
+    the retired pocket (Q1 #4): `file.get` names no conversation, so the Bridge's door check can't see it, and older
+    phones still have these ids cached (#525 review)."""
     match = re.fullmatch(r"run_(\d+)_.+", file_id)
-    if match is None or await db.get(Run, int(match.group(1))) is None:
+    run = await db.get(Run, int(match.group(1))) if match is not None else None
+    if run is None or run.conversation_id == phone_ids.POCKET:
         raise HTTPException(404, "file_unavailable")
     try:
         metadata, data = artifact_store.read_owned(int(match.group(1)), file_id)
@@ -279,7 +288,10 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
     Bridge maps to job.event bodies like every other job update) and the cards waiting.
     Presence is "online" because this answered; the phone marks a Mac silent for 90 s offline.
     `high_risk_mac_only` stays false until that switch exists (§6.1)."""
+    # Q1 #4 (#525): a card waiting in the retired pocket is answered on the Mac only, so the phone neither counts it
+    # nor sees the mascot turn to "approval" for it.
     feed = desktop_status.island_feed()
+    feed["awaiting"] = desktop_status.awaiting_count(excluding=phone_ids.POCKET)
     return {"presence": "online", "mascot": phone_mascot(feed, time.time()),
             "jobs": [_clean_job(job.frame()) for job in background_jobs.active()],
             "waiting_approvals": feed["awaiting"], "high_risk_mac_only": False,

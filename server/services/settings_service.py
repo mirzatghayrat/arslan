@@ -20,19 +20,21 @@ _PLAIN_KEYS = (
     "llm_provider", "llm_model", "llm_base_url", "language", "first_run_seen", "search_provider", "search_base_url",
                # 0.1.63 D5: how a chosen Tavily / SearXNG is used: "" or "only" (as before D5) | "backup".
                "search_provider_role",
-               "llm_strategy", "orchestrator_shell_enabled",
-               "shell_confirm_policy", "background_job_budget", "task_usd_cap", "synthesis_config_id",
+               "orchestrator_shell_enabled",
+               "shell_confirm_policy", "background_job_budget", "task_usd_cap",
                # v0.1.63 (R63): "pending" when migration 0070 switched this user from ask_risky; the window shows a
                # one-time notice and writes "seen". DELETE-BY: v0.1.64, with the notice.
                "shell_policy_switch_notice",
+               # v0.1.64 ROUTE1: "pending" when migration 0086 cleared the old model roles; Settings says so once, then
+               # writes "seen".
+               "model_roles_reset_notice",
                "embedding_config_id",
                # Per-task model slots (spec ②). Registered here AND on both
                # pydantic schemas — being on only one is how github_token became
                # a settings field that looked saveable and was not.
-               "compaction_config_id",
                "router_config_id", "vision_config_id",
                # 0.1.58 §6: one model of the slot's config (empty = the config's own model).
-               "compaction_model", "synthesis_model", "router_model", "vision_model",
+               "router_model", "vision_model",
                "mcp_server_enabled", "keep_awake_enabled",
                "desktop_notifications_enabled", "island_enabled", "terminal_sandbox_enabled",
                "memory_in_conversations", "learned_practices_take_effect", "phone_bridge_enabled", "ocr_languages",

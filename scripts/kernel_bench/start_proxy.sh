@@ -3,14 +3,15 @@
 #   start_proxy.sh              DeepSeek on :8900, key from ARSLAN_SPIKE_DEEPSEEK_KEY
 #   start_proxy.sh anthropic    Claude models on :8901, key from ARSLAN_SPIKE_ANTHROPIC_KEY
 # Both log to the same usage.jsonl; each has its own caps (BENCH_CAP_USD, BENCH_RUN_CAP_USD).
+# BENCH_PORT moves either one (the default port may be taken by another round's proxy).
 set -euo pipefail
 ROOT=${BENCH_ROOT:-/tmp/arslan-kernel-bench}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 mkdir -p "$ROOT"
 if [ "${1:-deepseek}" = "anthropic" ]; then
-  KEYVAR=ARSLAN_SPIKE_ANTHROPIC_KEY PORT=8901 UPSTREAM=https://api.anthropic.com CAP=${BENCH_CAP_USD:-10} RUN_CAP=${BENCH_RUN_CAP_USD:-1}
+  KEYVAR=ARSLAN_SPIKE_ANTHROPIC_KEY PORT=${BENCH_PORT:-8901} UPSTREAM=https://api.anthropic.com CAP=${BENCH_CAP_USD:-10} RUN_CAP=${BENCH_RUN_CAP_USD:-1}
 else
-  KEYVAR=ARSLAN_SPIKE_DEEPSEEK_KEY PORT=8900 UPSTREAM=https://api.deepseek.com CAP=${BENCH_CAP_USD:-5} RUN_CAP=${BENCH_RUN_CAP_USD:-0.45}
+  KEYVAR=ARSLAN_SPIKE_DEEPSEEK_KEY PORT=${BENCH_PORT:-8900} UPSTREAM=https://api.deepseek.com CAP=${BENCH_CAP_USD:-5} RUN_CAP=${BENCH_RUN_CAP_USD:-0.45}
 fi
 # An interactive zsh may print things first (Terminal's "Restored session: …" line, a profile's own
 # echo); 2026-10-11 that line became part of the key and every request failed with an illegal header.

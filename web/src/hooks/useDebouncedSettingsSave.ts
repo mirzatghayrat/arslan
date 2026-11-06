@@ -152,8 +152,8 @@ export function useDebouncedSettingsSave({
     // live settings merged with the patch, and blanking the key fields kept the
     // secrets out — but every OTHER field still rode along, carrying a client-side
     // value that could disagree with what the server holds. Three bugs came out of
-    // that shape (a masked key written back as real; llm_strategy clobbered by an
-    // unhydrated default; search_provider="tavily" on a fresh install, which broke
+    // that shape (a masked key written back as real; a routing strategy, removed in v0.1.64,
+    // clobbered by an unhydrated default; search_provider="tavily" on a fresh install, which broke
     // keyless search as soon as the user changed anything). Each was fixed per
     // field, which kills the instance and leaves the shape. Sending the patch
     // removes the shape: the backend does model_dump(exclude_none=True), so a

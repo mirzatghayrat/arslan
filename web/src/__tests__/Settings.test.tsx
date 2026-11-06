@@ -39,8 +39,6 @@ vi.mock("../api/client", () => ({
   API_BASE: "",
   // The abilities section's other blocks load their lists through `request` (L11-0's switch test opens it).
   request: vi.fn().mockResolvedValue([]),
-  suggestPrimary: vi.fn().mockResolvedValue(null),
-  getCatalog: vi.fn().mockResolvedValue([]),
   addProviderConfig: vi.fn().mockResolvedValue({}),
   updateProviderConfig: vi.fn().mockResolvedValue({}),
   setPrimaryProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
@@ -71,7 +69,6 @@ const defaultSettings: AppSettings = {
   language: "en",
   theme: "dark",
   telemetry: false,
-  llmStrategy: "single",
   orchestratorShellEnabled: false,
   shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
   mcpServerEnabled: false,
