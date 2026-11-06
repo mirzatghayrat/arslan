@@ -175,7 +175,7 @@ def propose_capability(call_id: str, card: dict) -> dict[str, Any]:
 
 
 def capability_result(call_id: str, source_id: str | None, state: str, **detail: Any) -> dict[str, Any]:
-    """How the install the user approved ended: on (tested), failed (where), blocked (scan)."""
+    """How the install the user approved ended: on (tested), needs_sign_in (off until then), failed (where), blocked (scan)."""
     return {"type": "capability_result", "call_id": call_id, "source_id": source_id, "state": state, **detail}
 
 
