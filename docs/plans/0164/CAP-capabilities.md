@@ -311,6 +311,8 @@
 
 From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes the memory export from ChatGPT or Claude into a conversation. Arslan splits it into candidate entries, drops one-off task state and anything that guesses the user's gender (MEM1 rules), merges by meaning against what is already stored (MEM1), and shows the list. Nothing is stored until the user confirms; the user can untick lines. Pasted text is treated as the user's own words only for this confirm step: it is shown, not executed, and it never switches on lessons or notes by itself. Merged with CAP8 in the cut order (CAP10 → CAP8 and CAP8b → CAP7).
 
+**Changed on 2026-11-07 (⓪Plan's OK):** a kept line is the user's own words, and MEM1 never folds those away (`MemoryRepository.merge_into` refuses that write). So a line that says the same as a stored entry starts unticked and names that entry, and ticking it stores it as its own entry. The text is this turn's own message, never the model's words, and it's split by lines with no model call. The tool is registered with the web half, so the app never gets a card it can't draw.
+
 ### CAP9 OSV.dev 检查
 
 - 新建 `server/services/osv_check.py`，向 OSV.dev 的批量查询接口发包名、生态和版本，不发任何用户数据。

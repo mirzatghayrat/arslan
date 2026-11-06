@@ -491,13 +491,15 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
 
     async def confirm_capability(card: dict) -> dict:
         """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key);
-        v0.1.64 CAP2a: also the save-a-skill card (`kind: "authored"`, no keys or folders).
-        Returns {"approved", "keys", "folders"}; the tool loop installs or saves on approval."""
+        v0.1.64 CAP2a: also the save-a-skill card (`kind: "authored"`, no keys or folders); CAP8b: the memory import
+        card (`kind: "memory_import"`, `kept`: the lines the user kept).
+        Returns {"approved", "keys", "folders", "kept"}; the tool loop installs or saves on approval."""
         call_id = uuid.uuid4().hex
         decision = await _ask_everywhere(protocol.propose_capability(call_id, card), broadcast=False)
         extras = decision.get("extras") or {}
         return {"approved": decision["approved"], "call_id": call_id,
-                "keys": extras.get("keys") or {}, "folders": extras.get("folders") or []}
+                "keys": extras.get("keys") or {}, "folders": extras.get("folders") or [],
+                "kept": extras.get("kept") or []}
 
     # Reaches the tool loop on the callback every turn already carries (as the session
     # grants do), instead of a new parameter through four layers.

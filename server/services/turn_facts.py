@@ -86,6 +86,14 @@ async def _get_adapter():
     return slotted if slotted is not None else await build_adapter(role="router")
 
 
+def why_not_kept(text: str) -> str | None:
+    """MEM1: why this line isn't a memory ("gender", "one_off"), or None. Its own function for CAP8b, whose card says
+    why a pasted line was left out."""
+    if _GENDERED.search(text) and not _SOMEONE_ELSE.search(text):
+        return "gender"
+    return "one_off" if _TASK_STATE.search(text) else None
+
+
 def parse(content: str | None) -> list[dict[str, Any]]:
     """The facts in a model reply; anything malformed is simply no facts."""
     parsed = parse_json_object(content or "") or {}
@@ -94,8 +102,7 @@ def parse(content: str | None) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         text = " ".join(str(item.get("content") or "").split())[:MAX_FACT_CHARS]
-        guessed = _GENDERED.search(text) and not _SOMEONE_ELSE.search(text)
-        if text and not guessed and not _TASK_STATE.search(text):
+        if text and not why_not_kept(text):
             out.append({"content": text, "sensitive": bool(item.get("sensitive"))})
     return out[:MAX_FACTS]
 

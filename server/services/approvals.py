@@ -227,7 +227,8 @@ def answer(data: dict) -> bool:
 
 def _extras(frame: dict, data: dict) -> dict:
     """What an approval may carry (0.1.57): values for the keys THIS card asked for, and the
-    folders it offered — a subset the user kept, never one it added. Anything else is dropped."""
+    folders it offered — a subset the user kept, never one it added. Anything else is dropped.
+    CAP8b: the lines of a memory import the user kept, by the ids it showed. No list keeps none."""
     if frame.get("type") != "propose_capability":
         return {}
     asked = {k.get("name") for k in frame.get("keys") or [] if isinstance(k, dict)}
@@ -235,7 +236,9 @@ def _extras(frame: dict, data: dict) -> dict:
             if name in asked and isinstance(value, str) and value.strip()} if isinstance(data.get("keys"), dict) else {}
     offered = list(frame.get("folders") or [])
     kept = [f for f in data.get("folders") or [] if f in offered] if isinstance(data.get("folders"), list) else offered
-    return {"keys": keys, "folders": kept}
+    lines = {e.get("id") for e in frame.get("entries") or [] if isinstance(e, dict)}
+    answer = data.get("kept") if isinstance(data.get("kept"), list) else []
+    return {"keys": keys, "folders": kept, **({"kept": [i for i in answer if i in lines]} if lines else {})}
 
 
 def _same_kind(reply: str, card: str) -> bool:
