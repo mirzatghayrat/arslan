@@ -8,7 +8,7 @@
 | 版本 | v0.1.64 |
 | 分级 | 必须（⓪Plan 建议，用户定） |
 | 依赖 | **S64-0**（堵外部内容那道闸的漏洞，不归本卡，见下）先合。文案跟 ACM（卡片界面与文案大合并，领先路线里叫 D1）对齐，但不并进 ACM、不等 ACM 合并。SUB：子会话的父链接、子会话的验收单。Q1：iPhone 快问输入框，四行简报挂在它下面。Bridge 帧的一次性决定（v0.1.64 README §2 第 3 条） |
-| 合并位置 | S64-0 → INB1 → INB2（安全面，先合；INB2 是放宽，必须在 S64-0 和 INB1 之后）→ INB3 → INB4 → INB5 → INB6 → INB7 → INB8 → INB9。手机那半（INB4、INB7、INB8 里标了「手机」的部分）等 Bridge 帧点头，可以顺延，不挡 Mac 端 |
+| 合并位置 | S64-0 → INB1 → INB2（安全面，先合；INB2 是放宽，必须在 S64-0 和 INB1 之后）→ INB3 → INB4 → INB5 → INB6 → INB7 → INB8 → INB9。手机那半（INB4、INB7 里标了「手机」的部分）等 Bridge 帧点头，可以顺延，不挡 Mac 端；INB8 has no phone half (2026-11-07) |
 | 推动的门槛 | R64「用户验收：收件箱改完后用户一天的使用感受」；R64 安全（碰安全面的 PR 都有 effort=max 审查 + Codex 审查；Codex only where a Claude review is blocked, README §1.3）；§11「换掉就删掉」（收件箱的代码本版删完） |
 | 分支 | `claude/0164-inb1-lessons-direct`、`claude/0164-inb2-memory-direct`、`claude/0164-inb3-scheduled-entry`、`claude/0164-inb4-sidebar-dots`、`claude/0164-inb5-inbox-out`、`claude/0164-inb6-run-records`、`claude/0164-inb7-progress-brief`、`claude/0164-inb8-push`、`claude/0164-inb9-acceptance-sheet` |
 | 迁移号 | INB4 要一个（已读标记）；INB2 可能要一个（每次运行记「读过外部内容」，见 INB2）。开工时向 ②Main 申请，其余 PR 不要迁移 |
@@ -351,31 +351,31 @@ Added after the card was drafted; the full text is `docs/plans/0162/README.md` �
 
 ### INB8 推送只推「要你做」的（第 5 条）
 
-> **用户 10-28：** Bridge 帧照 ①iOS 的建议定了，但这一条会改变所有手机（含旧版）收到的推送，**单独问用户，还没定**。定之前 INB8 不开工；INB1–INB7、INB9 不等它。
+> **Decided (the user, 2026-11-07, relayed by ④参谋):** "done" still notifies on Mac and phone. Web and folder-change notifications go. During quiet hours approval cards don't pop; the badge and Progress keep them. So phones' `notify=1` doesn't change, and there is no Bridge frame change. INB8 is Mac only and no longer waits on a question to the user.
 
 - **主动提醒的通知事件带上种类：** `proactive_service.py:151` 推的事件加上提醒的 `kind`，`resident.rs:137` 按种类用不同的话。
 - **Mac**（`resident.rs:127-145`）：
   - **只弹：**
-    - 要批准；
+    - 要批准（not during quiet hours, below）；
+    - 做完：`notify_done`、`notify_scheduled_done`（stays, 2026-11-07）；
     - 需要你看：`turn_finished` 的 `error` / `needs_review`；
     - 定时任务失败 / 暂停；
     - 有 👀 项的验收单；
     - `job_followup`。这是**新加的通知**：今天它不弹（`proactive_policy.py:35`），而它的「接着做」要用户点。
   - **不再弹：**
-    - 做完：`notify_done`、`notify_scheduled_done`；
     - 网页、文件夹变化（今天会弹）；
     - 早报（INB7 删了）。
   - 点开到那个对话或进展页（INB5 已换掉 `@inbox`）。
 - **免打扰：** 今天只管主动提醒（`proactive_policy.py:157-161`）。改成管所有原生通知：服务端在状态里给一个「现在是不是免打扰时段」，`resident.rs` 照它办。
   - 免打扰不影响角标和进展页。
-  - 要批准的卡在免打扰时段弹不弹，要用户定（见最后一节）。
-- **手机：**
-  - `notify=1` 的范围要跟着改：协议 `:228-230`、`reference.py:196-205`，`make_vectors.py` 重新生成向量。今天最终回复和后台任务结束都会提醒。
-  - 这是协议改动。①iOS 要求**单独问用户一次**，不跟别的帧改动捆在一起。可以顺延。
+  - Decided (2026-11-07): during quiet hours approval cards don't pop; the badge and Progress keep them.
+- **手机：** nothing changes (2026-11-07). `notify=1` keeps its range, so the final reply and a finished background job still notify, and no frame, vector or protocol line changes.
 - **测试：**
   - 每种事件弹不弹的一张表；
   - `job_followup` 会弹，网页变化不弹；
+  - "done" still pops;
   - 免打扰时段不弹；
+  - in quiet hours an approval card doesn't pop, and the badge and Progress still count it;
   - 点开的目标对。
 
 ### INB9 验收单留在对话或项目里（第 8 条后半）
@@ -408,7 +408,7 @@ Added after the card was drafted; the full text is `docs/plans/0162/README.md` �
 - `decide_write` 里上面「原样保留」列的几条；#239 的回忆规则（读的一侧）。
 - 「总是允许」建规则的方式（`POST /permissions/rules {refused_id}`）和撤销：只搬位置、改取数的范围。
 - 确认卡本身、灵动岛怎么答卡（`server/services/approvals.py:276` 的 `island_may_answer`）。
-- Bridge 帧格式：没有用户点头，不改 `conversations.result` 的取值、`status.snapshot` 的字段、`notify` 的范围。这些在 INB4、INB7、INB8 里都是单独的一块，可以晚合。
+- Bridge 帧格式：没有用户点头，不改 `conversations.result` 的取值、`status.snapshot` 的字段、`notify` 的范围。这些在 INB4、INB7、INB8 里都是单独的一块，可以晚合。 INB8 changes no frame and leaves the range of `notify` alone (2026-11-07).
 - `/phone/inbox` 和 `Inbox/iPhone/` 文件夹。
 - 记忆提案和整理建议的数据：不改状态、不删、不批量处理。
 - 第 4 条的时间线和地图、第 3 条的外观：界面版的事。
@@ -449,7 +449,7 @@ Added after the card was drafted; the full text is `docs/plans/0162/README.md` �
 | INB5 | +300，删约 −504 | 删的是 `ProactiveInbox`、`InboxApprovals`、`InboxMemory`、`AskForFrame`、`useProactiveSummary`；`InboxRefused` 保留 |
 | INB6 | +150 | 先核，可能更少 |
 | INB7 | +350，删约 −70（早报） | 手机那半另算 |
-| INB8 | +150 | Mac，含事件带种类；手机那半是协议和向量 |
+| INB8 | +150 | Mac，含事件带种类；no phone half (2026-11-07) |
 | INB9 | +300 | 只做用户不在场的运行 |
 
 MEM1: about +200 (added 2026-10-28; see its section).
@@ -484,8 +484,8 @@ MEM1: about +200 (added 2026-10-28; see its section).
    - `conversations.result` 的 `state` 加 `done_unseen`，只发给 hello 里说支持的手机；
    - `status.snapshot` 加四行简报和「要你做」，在 iPhone 快问输入框下面显示。
    两样都可以顺延，不挡 Mac 端。
-2. **iPhone 提醒收窄（①iOS 要求单独问）：** `notify=1` 改成只提醒「要你做」的。今天最终回复和后台任务结束都会提醒；改了以后，手机上「做完了」不再响。
-3. **Mac 上「做完」的通知也不弹了，**网页、文件夹变化也不弹了，可以吗？（第 5 条照字面就是这样，但跟今天差别大。）免打扰时段里，要批准的卡弹不弹？
+2. iPhone notifications narrowed to what needs you: answered (the user, 2026-11-07, relayed by ④参谋). `notify=1` doesn't change, so the phone still rings for "done". No frame change; see INB8.
+3. Mac "done" notifications, web and folder changes, and approval cards in quiet hours: answered (the user, 2026-11-07, relayed by ④参谋). "done" still notifies; web and folder-change notifications go; approval cards don't pop in quiet hours (the badge and Progress keep them). See INB8.
 4. **敏感关键词补「家人」一类：** 词表由 ⓪Plan 在 PR 里列出、用户过目。还有别的类别要补吗？
 5. **验收单 v0.1.64 只给用户不在场的运行**（后台、定时、子会话）。用户在场的回合放到以后，带跑分数字再做（⓪Plan 的建议）。
 6. **定时任务的「做完的样子」：** 每次运行开头写（不要迁移），还是建任务时写好存下来（要加列）？⓪Plan 建议前者。

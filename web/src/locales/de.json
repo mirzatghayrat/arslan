@@ -691,7 +691,14 @@
     "openActivityBtn": "Fortschritt öffnen",
     "whatsNewEmpty": "Keine Notizen zu dieser Version.",
     "modelRolesResetNotice": "Modellrollen folgen jetzt dem Modell der jeweiligen Unterhaltung. Deine früheren Rollenwahlen wurden zurückgesetzt.",
-    "modelRolesResetOk": "OK"
+    "modelRolesResetOk": "OK",
+    "addModelKeyHint": "Wird nur verwendet, um {{provider}} nach den verfügbaren Modellen zu fragen. Gespeichert wird erst, wenn du auf Hinzufügen klickst.",
+    "addModelLive": "Live von {{provider}} · {{count}} Modelle",
+    "addModelLoading": "Frage {{provider}} nach den Modellen…",
+    "addModelBuiltIn": "Eingebaute Liste",
+    "addModelFallback": "{{provider}} ist nicht erreichbar; Arslans eingebaute Liste wird angezeigt.",
+    "addModelRetry": "Erneut versuchen",
+    "addModelChooseProvider": "Anbieter auswählen"
   },
   "errors": {
     "load_failed": "Daten konnten nicht geladen werden.",

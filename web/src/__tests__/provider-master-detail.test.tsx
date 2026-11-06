@@ -121,8 +121,8 @@ describe("provider card list", () => {
     // The blank draft form is its own card at the end of the list.
     expect(screen.getByTestId("provider-draft-model")).toBeInTheDocument();
     expect(screen.getByTestId("provider-draft-card")).toBeInTheDocument();
-    // The draft seeds from the first provider (deepseek)
-    expect((screen.getByTestId("provider-draft-model") as HTMLInputElement).value).toBe("deepseek-chat");
+    // MODEL1: no provider is preselected, so nothing is seeded until one is picked.
+    expect((screen.getByTestId("provider-draft-model") as HTMLInputElement).value).toBe("");
     // Cancel returns to the selected config's detail
     await user.click(screen.getByRole("button", { name: /common\.cancel/i }));
     expect(screen.queryByTestId("provider-draft-model")).toBeNull();

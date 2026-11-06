@@ -411,3 +411,14 @@ def test_the_version_is_found_however_it_is_written_but_only_whole(reply, found)
 def test_an_empty_reply_passes_neither_length_nor_no_offer():
     g = smart_bench.grade(item(13), "", [])
     assert g["words"] is False and g["no_offer"] is False and g["pass"] is False
+
+
+def test_a_call_made_through_dispatch_action_counts_as_its_own_call(tmp_path):
+    """OpenClaw records the tool dispatch_action ran as its own event; `meta.toolSummary.calls` counts both."""
+    nested = json.dumps({"type": "message", "message": {
+        "role": "custom", "customType": "openclaw.nested-tool.v1", "content": "", "details": {
+            "parentToolCallId": "c", "toolName": "web_fetch", "input": {"url": "https://example.test/a"},
+            "result": {"content": [{"type": "toolCall", "name": "not_a_call_of_this_turn", "arguments": {}}]}}}})
+    _openclaw_db(tmp_path, [(_call("dispatch_action", {"id": "web_fetch"}), None), (nested, None)])
+    assert smart_bench.openclaw_tool_calls(tmp_path, "") == [("dispatch_action", '{"id": "web_fetch"}'),
+                                                             ("web_fetch", '{"url": "https://example.test/a"}')]

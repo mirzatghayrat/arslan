@@ -35,6 +35,7 @@ vi.mock("../api/client", () => ({
     updateSettings: vi.fn().mockResolvedValue({}),
   },
   API_BASE: "",
+  previewProviderModels: vi.fn().mockResolvedValue({ models: [], fetched_at: null, stale: true, error: null, source: "static" }),
   addProviderConfig: (...args: unknown[]) => mockAddProviderConfig(...args),
   updateProviderConfig: (...args: unknown[]) => mockUpdateProviderConfig(...args),
   setPrimaryProviderConfig: (...args: unknown[]) => mockSetPrimaryProviderConfig(...args),
@@ -48,6 +49,12 @@ vi.mock("../api/client", () => ({
 
 import ProviderConfigList from "../components/ProviderConfigList";
 import type { ProviderOption, ProviderConfig } from "../api/client.types";
+
+/** MODEL1: Add model starts with no provider picked. */
+function pickFirstProvider() {
+  fireEvent.click(screen.getByLabelText("Provider"));
+  fireEvent.pointerDown(screen.getAllByRole("option")[0]);
+}
 
 const providers: ProviderOption[] = [
   {
@@ -256,8 +263,9 @@ describe("(E) Draft config: Add enabled when fields are filled", () => {
       />
     );
 
-    // Open draft form — provider + model are pre-filled from defaults
+    // Open draft form and pick a provider: its model is filled from the defaults
     fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
 
     // Confirm must NOT be gated on the (empty) api_key
     await waitFor(() => {
@@ -277,8 +285,9 @@ describe("(E) Draft config: Add enabled when fields are filled", () => {
 
     // Open draft form
     fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
 
-    // Type an api_key — provider+model are pre-filled from defaults
+    // Type an api_key — the picked provider's model is filled from the defaults
     const keyInput = await screen.findByPlaceholderText("settings.labelConfigApiKey");
     await user.type(keyInput, "sk-test-key");
 
@@ -298,6 +307,7 @@ describe("(E) Draft config: Add enabled when fields are filled", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
 
     await waitFor(() => {
       expect(screen.queryByTestId("provider-draft-test")).toBeNull();
