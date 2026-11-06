@@ -33,7 +33,11 @@
 - An unset `shell_confirm_policy` reads as `ask_risky`. Unknown spellings still read as `ask_all`: anything unreadable stays strict.
 - **A stored `ask_all` stays.** ⓪Plan's recommendation, for the user to confirm at the PR: the store can't tell a choice from 0070's move. 0070 moved toward strict when in doubt, and moving away from strict when in doubt is the opposite call. Existing installs with a stored `ask_all` get one note saying what changed and where to switch.
 - **Delete, with their `DELETE-BY` lines:** the known-issue sheet, `shell_policy_switch_notice` and its text. Old "pending" rows are cleared in the migration.
-- **Gate:** SBX-8's report is on main and doesn't argue against this, and S2a-3 is on main. If SBX-8 argues against it, stop and take it to the user.
+- **Keep the migration file `_0070`:** it stays in the chain. Only its notice block and its `DELETE-BY` line go.
+- **Gate:**
+  - SBX-8's report is on main and doesn't argue against this, and S2a-3 is on main. If SBX-8 argues against it, stop and take it to the user.
+  - **The known issue is closed, not just its sheet.** The sheet warns about a real gap: #406 closed unmerged on 2026-10-24, and it covered `cd` plus `rm` of a relative name running with no card. Before the sheet goes, the PR body names what closes that gap (S2a-3, or #686 for Trash and protected targets) with a test, or #406 is reopened.
+- **Markers this PR clears:** `_0070:21`, `settings_service.py:26`, `ShellPolicySwitchNotice.tsx:13`, `AdvancedSection.tsx:377`, and the locale strings they use. They name "S2a-3 and #406" today.
 
 ## ASK1-b: scheduled runs
 
@@ -45,7 +49,7 @@
 - **Why this needs HR's e rule first.** A run that can write can leave a file that runs later: a git hook, an editor task file, `.envrc`. An unattended write is exactly that case. Without HR's e rule on main, ASK1-b stops at read-only, as README's row says.
 - **The effort=max review decides this.** If it doesn't support going past read-only, ship read-only, and ⓪Plan takes it back to the user.
 - **A stored `ask_all` is honoured in a scheduled run too:** every command would ask, so every command is refused and listed. The refusal says where to switch. The user chose to see every command; a schedule doesn't override that.
-- **Delete** the `DELETE-BY` comment and `carried(True)`.
+- **Delete** `carried(True)` and every marker that says "scheduled runs get commands back with PR4", and the code each one holds up: `arslan.py:762,1568,1588`, `tool_loop.py:1271,1485`, `schedule_tools.py:12`, `heartbeat.py:7`, `scheduler.py:396,429`, `test_scheduled_run_no_command.py:7`, `locale-parity.test.ts:76`, `schedule-card-no-commands.test.ts:13`, `ScheduleGrantCard.tsx:78`, and the locale strings they use.
 
 ## References
 
