@@ -356,7 +356,63 @@ async def capabilities() -> list[dict]:
         else:
             row["last_used"] = _when(*(tools.get(key) for key in uses),
                                      *(when for key, when in tools.items() if family and key.startswith(family)))
-    return rows
+    return await _with_plugins(rows)
+
+
+async def _with_plugins(rows: list[dict]) -> list[dict]:
+    """CAP7b: a plugin is one row in its own section, holding its parts, which leave the skills and connections
+    sections: they switch and go as a group (the user's rule, 2026-10-28)."""
+    from server.db.models import CapabilitySource
+    from server.services import plugin_package
+    async with db_session.AsyncSessionLocal() as db:
+        plugins = (await db.execute(select(CapabilitySource).where(
+            CapabilitySource.kind == "plugin", CapabilitySource.state == "installed"))).scalars().all()
+        children = (await db.execute(select(CapabilitySource.id, CapabilitySource.candidate_id).where(
+            CapabilitySource.kind == "mcp", CapabilitySource.state != "removed",
+            CapabilitySource.candidate_id.like("plugin:%")))).all()
+    if not plugins:
+        return rows
+    parent = {source_id: plugin_package.parent_of(candidate_id) for source_id, candidate_id in children}
+    parent.update({plugin.id: plugin.id for plugin in plugins})
+    parts: dict[str, list[dict]] = {plugin.id: [] for plugin in plugins}
+    kept = []
+    for row in rows:
+        owner = parent.get(row.get("source_id"))
+        if owner in parts and row.get("section") in ("skills", "connections"):
+            parts[owner].append({"kind": "skill" if row["section"] == "skills" else "connection", "key": row["key"],
+                                 "name": row.get("name"), "state": row["state"], "reason": row.get("reason"),
+                                 "detail": row.get("detail"), "last_used": row.get("last_used"),
+                                 "source_id": row.get("source_id"), "fix": row.get("fix")})
+        else:
+            kept.append(row)
+    for plugin in plugins:
+        held = sorted(parts[plugin.id], key=lambda part: (part["kind"], part["name"] or ""))
+        stopped = (plugin.test or {}).get("stopped")
+        state = "setup" if stopped else "off" if held and all(p["state"] in ("off", "na") for p in held) else "on"
+        row = _row(f"plugin:{plugin.id}", state, switch="plugin", name=plugin.name, section="plugins",
+                   origin="installed", source_id=plugin.id, reason="plugin_stopped" if stopped else None,
+                   fix="open_tab:mcps" if stopped else None,
+                   detail=stopped["connection"] if stopped else (plugin.candidate or {}).get("summary") or None)
+        row["parts"] = held
+        row["last_used"] = max((p["last_used"] for p in held if p["last_used"]), default=None)
+        kept.append(row)
+    return kept
+
+
+async def _part_of_a_plugin(key: str) -> bool:
+    """A plugin's skill or connection, which only the group's switch and delete reach."""
+    from server.db.models import CapabilitySource, SkillPack
+    from server.services import plugin_package
+    async with db_session.AsyncSessionLocal() as db:
+        if key.startswith("skill:"):
+            pack = await db.get(SkillPack, key[6:])
+            source = await db.get(CapabilitySource, pack.source_id) if pack is not None and pack.source_id else None
+            return source is not None and source.kind == "plugin"
+        if (server := _server_id(key)) is None:
+            return False
+        sources = (await db.execute(select(CapabilitySource.candidate_id).where(
+            CapabilitySource.mcp_server_id == server, CapabilitySource.state != "removed"))).scalars().all()
+    return any(plugin_package.parent_of(candidate_id) for candidate_id in sources)
 
 
 def _server_id(key: str) -> int | None:
@@ -376,7 +432,13 @@ class NotSwitchable(Exception):
 
 async def switch(key: str, on: bool) -> None:
     """Turn one row on or off through the switch that already governs it."""
-    from server.services import hands_service, mcp_service, settings_service
+    from server.services import hands_service, mcp_service, plugin_package, settings_service
+    if key.startswith("plugin:"):
+        if not await plugin_package.switch(key[7:], on):
+            raise NotSwitchable(key)
+        return
+    if await _part_of_a_plugin(key):
+        raise NotSwitchable(key)
     if key in SETTING_SWITCHES:
         async with db_session.AsyncSessionLocal() as db:
             await settings_service.update_settings(db, {SETTING_SWITCHES[key]: "true" if on else "false"})
@@ -414,7 +476,15 @@ async def remove(key: str) -> None:
     server (the CAP card, security surface): a built-in tool or skill is only switched. A skill goes with its
     capability source marked removed, and its scripts and a copy of its text to the Trash. A connection
     installed from a card goes through capability_install.remove (its folder to the Trash); one added by hand
-    through delete_server. A skill key that is not a plain key is refused before anything is read."""
+    through delete_server. A skill key that is not a plain key is refused before anything is read. A plugin goes as
+    one, and no part of it goes alone (CAP7b)."""
+    if key.startswith("plugin:"):
+        from server.services import plugin_package
+        if not await plugin_package.remove(key[7:]):
+            raise NotFound(key)
+        return
+    if await _part_of_a_plugin(key):
+        raise NotRemovable(key)
     if key.startswith("skill:") and safe_skill_key(key[6:]):
         return await _remove_skill(key[6:])
     if (server := _server_id(key)) is not None:
@@ -481,7 +551,7 @@ async def _remove_skill(skill_key: str) -> None:
         source = await db.get(CapabilitySource, pack.source_id) if pack and pack.source_id else None
         if pack is not None:
             await db.delete(pack)
-        if source is not None:
+        if source is not None and source.kind != "plugin":      # a plugin's row goes when its last part has (CAP7b)
             source.state = "removed"
         await db.commit()
 

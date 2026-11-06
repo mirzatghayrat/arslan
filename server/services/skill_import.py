@@ -125,7 +125,7 @@ def detect_license(text: str) -> str | None:
 
 
 async def _skill_license(owner: str, repo: str, skill_path: str, paths: list[str],
-                         repo_spdx: str | None, sha: str | None = None) -> tuple[str | None, str]:
+                         repo_spdx: str | None, sha: str | None = None, fetch=None) -> tuple[str | None, str]:
     """(SPDX, where it came from) for ONE skill. The skill's own license file wins
     over the repo's (0.1.55): anthropics/skills has no repo license, but every skill
     folder has a LICENSE.txt — Apache-2.0 for most, Anthropic's own terms for the
@@ -134,7 +134,8 @@ async def _skill_license(owner: str, repo: str, skill_path: str, paths: list[str
     for name in _LICENSE_NAMES:
         candidate = f"{folder}/{name}" if folder else name
         if candidate in paths and folder:
-            return detect_license(await _fetch_raw(owner, repo, candidate, sha)), candidate
+            text = await fetch(candidate) if fetch else await _fetch_raw(owner, repo, candidate, sha)
+            return detect_license(text), candidate
     return repo_spdx, "repo"
 
 
@@ -325,7 +326,7 @@ def scan_prepared(prepared: dict) -> dict:
 
 
 async def _bundled(owner: str, repo: str, sha: str, found: list[str], cap: int, max_bytes: int, name_re: str,
-                   skipped: list, keep) -> dict[str, str]:
+                   skipped: list, keep, fetch=None) -> dict[str, str]:
     kept: dict[str, str] = {}
     taken: set[str] = set()                         # basenames ignoring case: APFS keeps one of two
     for n, file_path in enumerate(found):
@@ -339,7 +340,7 @@ async def _bundled(owner: str, repo: str, sha: str, found: list[str], cap: int, 
         if fname.lower() in taken:
             skipped.append({"path": file_path, "reason": "the same file name as another"})
             continue
-        content = await _fetch_raw(owner, repo, file_path, sha)
+        content = await fetch(file_path) if fetch else await _fetch_raw(owner, repo, file_path, sha)
         if len(content.encode("utf-8")) > max_bytes:
             skipped.append({"path": file_path, "reason": f"larger than {max_bytes} bytes"})
             continue
@@ -349,19 +350,20 @@ async def _bundled(owner: str, repo: str, sha: str, found: list[str], cap: int, 
 
 
 async def _bundles(owner: str, repo: str, sha: str, path: str, paths: list[str], skipped: list,
-                   keep=lambda file_path, content: content):
+                   keep=lambda file_path, content: content, fetch=None):
     """A skill's bundled scripts (flat names, .py only, capped) and references (flat basenames, .md/.txt only, the
     same per-file and per-skill caps; PC-3 mounts these read-only), as the import keeps them."""
     scripts = await _bundled(owner, repo, sha, _scripts_for(path, paths), _MAX_SCRIPTS, _MAX_SCRIPT_BYTES,
-                             r"[A-Za-z0-9._-]+\.py", skipped, keep)
+                             r"[A-Za-z0-9._-]+\.py", skipped, keep, fetch)
     references = await _bundled(owner, repo, sha, _references_for(path, paths), _MAX_REFERENCES,
-                                _MAX_REFERENCE_BYTES, r"[A-Za-z0-9._-]+\.(md|txt)", skipped, keep)
+                                _MAX_REFERENCE_BYTES, r"[A-Za-z0-9._-]+\.(md|txt)", skipped, keep, fetch)
     return scripts, references
 
 
-async def prepare_skill(ref: str, path: str) -> dict:
+async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str | None = None) -> dict:
     """Fetch ONE skill whole at one pinned commit, in memory: nothing is written (v0.1.64 CAP4a-1: the card is
-    built from this, scanned and hashed, and a yes installs exactly it).
+    built from this, scanned and hashed, and a yes installs exactly it). `snapshot` (CAP7b): a plugin's repository
+    already read at that commit, with `repo_license` read from it: no API call per file.
 
     0.1.57 §5.2: pinned. `ref` may name the commit (`owner/repo@<sha>`, what a dossier or the import panel's
     listing recorded); without one, the import pins to the commit the default branch points at now. Every file
@@ -373,10 +375,16 @@ async def prepare_skill(ref: str, path: str) -> dict:
     if sha and not _SHA_RE.fullmatch(sha.lower()):
         raise ValueError("not a commit id")
     owner, repo = parsed
-    meta = await github_eval.fetch_repo(owner, repo)
-    sha = await full_sha(owner, repo, sha) if sha else await head_sha(owner, repo)
-    paths = await _tree_paths(owner, repo, sha)
-    spdx, source = await _skill_license(owner, repo, path, paths, meta["license"], sha)
+    fetch = None
+    if snapshot is None:
+        meta = await github_eval.fetch_repo(owner, repo)
+        sha = await full_sha(owner, repo, sha) if sha else await head_sha(owner, repo)
+        paths = await _tree_paths(owner, repo, sha)
+    else:
+        async def fetch(file_path: str) -> str:
+            return snapshot.text(file_path)
+        meta, sha, paths = {"license": repo_license, "full_name": snapshot.repo}, snapshot.sha, list(snapshot.files)
+    spdx, source = await _skill_license(owner, repo, path, paths, meta["license"], sha, fetch)
     block = _skill_license_block(spdx, source)
     if block:
         raise ValueError(block)
@@ -391,7 +399,7 @@ async def prepare_skill(ref: str, path: str) -> dict:
 
     if path not in paths:                                     # a file of that commit's tree, nothing else
         raise ValueError("no such SKILL.md at that commit")
-    raw = _keep(path, await _fetch_raw(owner, repo, path, sha))
+    raw = _keep(path, await fetch(path) if fetch else await _fetch_raw(owner, repo, path, sha))
     info = parse_skill_md(raw, path)
     if info is None:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
@@ -401,7 +409,7 @@ async def prepare_skill(ref: str, path: str) -> dict:
         if await db.get(SkillPack, info["key"]) is not None:
             raise ValueError(f"skill '{info['key']}' already exists in the library")
 
-    scripts, references = await _bundles(owner, repo, sha, path, paths, skipped, _keep)
+    scripts, references = await _bundles(owner, repo, sha, path, paths, skipped, _keep, fetch)
     return {"key": info["key"], "info": info, "full_name": meta["full_name"], "commit": sha, "license": spdx,
             "license_source": source, "skill_md": raw, "scripts": scripts, "references": references,
             "files": files, "sizes": sizes, "skipped": skipped}

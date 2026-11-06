@@ -204,6 +204,20 @@ def verdict(c: dict, allow: dict) -> str | None:
     return None if who["value"].lower() in allow["accounts"] else PUBLISHER_NOT_LISTED
 
 
+def listed_remote(url: str, allow: dict) -> str | None:
+    """CAP7b: None when this address is on a listed vendor's own domain or hosts, else why it is added by hand. A
+    plugin's connection has no Registry publisher, so the address is all there is to check."""
+    try:
+        parts = urlsplit(str(url or ""))
+        host = (parts.hostname or "").lower().rstrip(".")
+    except ValueError:
+        return REMOTE_HOST_NOT_THE_PUBLISHERS
+    if parts.scheme.lower() != "https":
+        return REMOTE_NOT_HTTPS
+    listed = [*allow["domains"], *(h for hosts in allow["hosts"].values() for h in hosts)]
+    return None if host and any(_under(host, d) for d in listed) else PUBLISHER_NOT_LISTED
+
+
 _IDS: dict[str, tuple[float, int | None]] = {}
 
 

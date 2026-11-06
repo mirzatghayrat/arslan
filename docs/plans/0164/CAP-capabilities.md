@@ -298,6 +298,12 @@
 - 整组安装、整组开关、整组删除，不提供单独关掉插件里的某个技能（用户 10-28 定）。
 - 插件里的 MCP 照样进 `capability_sandbox`；插件里的技能脚本照样只走 CAP5 的专用路径。
 - **存法：** `CapabilitySource` 的 `kind="plugin"`（CAP7a 之后），各部分放进现有的 JSON 列。
+- **Changed on 2026-11-07 (⓪Plan's OK of the design note; these replace the folder in point 2 and the storage line above):**
+  - **No plugin folder.** Its skills land where any imported skill's do, and each MCP server gets its own folder under `capabilities/`, all inside Arslan's data folder. So a skill or connection that names `${CLAUDE_PLUGIN_ROOT}` is refused. A manifest's paths still can't leave the plugin. Each file's hash at the pinned commit is kept in the plugin row's `files`.
+  - **Storage.** One `kind="plugin"` row, and ordinary children rather than JSON parts: each skill has `SkillPack.source_id` set to that row, and each MCP server is its own `kind="mcp"` row with `candidate_id` `plugin:<parent id>:<name>`. That keeps the per-server lock, scan, test, tool pin and recheck. A part can't be switched or removed alone.
+  - **MCP shapes.** `npx` and `uvx` with one package (locked like a Registry package), and an https remote on the one-click list's domains. Everything else refuses the plugin, including whatever runs from the plugin's own source.
+  - **Source.** GitHub only, read from one archive at one commit. A marketplace is only a phonebook: an entry resolves to its own repository.
+  - **Merge timing.** Not before SBX-5a and SBX-4a (line 12 above), unless the user decides otherwise.
 
 ### CAP8 导入 Claude Code / Codex 的设置（import-agent）
 
