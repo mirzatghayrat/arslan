@@ -5,7 +5,7 @@ import { AskMark } from "./AskMark";
 import { Button } from "./Button";
 import { CARD_MS, Countdown } from "./Countdown";
 import { useAnswerGuard, useAnswerHeld } from "./guard";
-import { useAnswerKeys, useLayer } from "./layers";
+import { SURFACE, useAnswerKeys, useLayer } from "./layers";
 
 export interface AskQueuePosition { index: number; total: number; onPrev?: () => void; onNext?: () => void }
 
@@ -77,7 +77,9 @@ export function AskCard(p: AskCardProps) {
     if (!p.safeDefault) return;
     const active = document.activeElement;
     const typing = active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
-    if (!typing) root.current?.querySelector<HTMLButtonElement>(`[data-testid="${declineId}"]`)?.focus();
+    // #661 review: don't pull focus out of another surface — an open dialog or another card owns its own focus.
+    const onAnother = active instanceof Element && active.closest(SURFACE) !== null && active.closest(SURFACE) !== root.current;
+    if (!typing && !onAnother) root.current?.querySelector<HTMLButtonElement>(`[data-testid="${declineId}"]`)?.focus();
   }, [p.safeDefault, declineId]);
   return (
     <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}

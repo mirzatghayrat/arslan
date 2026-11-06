@@ -66,6 +66,21 @@ describe("AskCard", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onDecline).not.toHaveBeenCalled();
   });
+
+  it("safeDefault (CAP9) focuses No, so an Enter press lands on the safe answer", () => {
+    card({ safeDefault: true });
+    expect(screen.getByTestId("ask-decline")).toHaveFocus();
+  });
+
+  it("safeDefault does not pull focus out of an open dialog or another card (#661)", () => {
+    // A dialog open over a safeDefault card owns its own focus; the card coming up behind it must not grab it.
+    render(<Dialog open title="项目和记忆" onClose={() => {}}><p>body</p></Dialog>);
+    const inDialog = document.activeElement;
+    expect(inDialog?.closest('[role="dialog"]')).not.toBeNull();   // the dialog focused a control of its own
+    card({ safeDefault: true });
+    expect(document.activeElement).toBe(inDialog);                 // focus stayed in the dialog
+    expect(screen.getByTestId("ask-decline")).not.toHaveFocus();
+  });
 });
 
 describe("AskQueue", () => {
