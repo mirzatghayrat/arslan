@@ -41,6 +41,14 @@ async def test_a_command_the_sandbox_stopped_notes_its_code_off_the_result(tmp_p
     assert result["error"] == ("the sandbox stopped this command (exit code 1)" if code else "exit code 1")
 
 
+async def test_a_time_limit_keeps_its_exact_text_when_the_output_reads_like_a_stop(tmp_path, monkeypatch):
+    """M2 counts "stopped after N s": a command that printed the words and then ran out of time is still a time limit."""
+    monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **kw: ["/usr/bin/env"])     # runs it as "workspace"
+    result = await terminal_exec.run(f"printf '{DENIED}' >&2; sleep 30", cwd=tmp_path, sandbox=True, timeout_s=1)
+    assert result["sandbox_denied"] is True and result["code"] == "time_limit"
+    assert result["error"] == "stopped after 1 s"
+
+
 def test_the_code_reaches_the_run_step_of_its_own_tool_however_long_the_output():
     with run_trace.collecting():
         run_trace.note_denial("eperm")
