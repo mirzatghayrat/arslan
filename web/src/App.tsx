@@ -271,7 +271,7 @@ export default function App() {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveOrchestratorHistory, activeThreadId, threads]);
+  }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
   const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => {

@@ -376,7 +376,8 @@ export default function OrchestratorChat({
     } else if (stickToBottomRef.current) {
       scrollToBottom();
     }
-  }, [chatHistory]);
+    // llmError: its notice sits in this scroller and changes no message, and SMART-3's way out of a failed model is in it.
+  }, [chatHistory, llmError]);
 
 
   // 0.1.60: first things to try, from what the first run turned on — until the first message.

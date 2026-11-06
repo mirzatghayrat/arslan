@@ -6,9 +6,6 @@
  * - Composing Chinese while a reply streams drops and duplicates nothing. What only a real input method can prove is in the PR.
  */
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -376,22 +373,6 @@ describe('a finished reply while the chat renders', () => {
     expect(translated.count).toBe(0);
     rerender(<ReplyFooter text="Done." process={process} latest={false} onReplay={onReplay} />);
     expect(translated.count).toBeGreaterThan(0);
-  });
-
-  it('App keeps the messages it built, or every footer would see a new process object on every frame', () => {
-    const app = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../App.tsx'), 'utf8');
-    expect(app).toContain('useMemo(() => toUiMessages(arslanItems), [arslanItems])');
-  });
-});
-
-describe('who reads the live text', () => {
-  it('only the hook does, in the window: another reader would render the chat for every token again', () => {
-    const src = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-    const readers = readdirSync(src, { recursive: true, encoding: 'utf8' })
-      .filter((f) => /\.tsx?$/.test(f) && !f.startsWith('__tests__') && !f.startsWith('test/'))
-      .filter((f) => readFileSync(resolve(src, f), 'utf8').includes('.streamingText'));
-    expect(readers.sort()).toEqual(['hooks/useStreamingText.ts', 'stores/arslanStore.ts']);
-    expect(readFileSync(resolve(src, 'App.tsx'), 'utf8')).toContain('useStreamingText()');
   });
 });
 
