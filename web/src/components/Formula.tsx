@@ -5,12 +5,12 @@
  *
  * It shows its source as plain text until KaTeX is here, and when KaTeX can't typeset it: half-streamed TeX isn't an error
  * worth a flash of red. KaTeX runs on the main thread and can't be stopped, so a reply's text reaches it under three limits:
- * no macro definitions, a size cap for one formula (the worst that fits took about 0.4 s, measured in WKWebView), and a budget
+ * no macro definitions, a size cap for one formula (the worst that fits took about 0.5 s, measured in WKWebView), and a budget
  * for many of them (25 of those would freeze the window for 10 s). An ordinary formula takes 1 to 3 ms and never counts against
  * the budget.
  *
  * Definitions, because each call of a macro counts as one expansion however long its body, so maxExpand never trips: 1.8 kB took
- * 100 s, which no budget can stop, and a reload would do again from the stored reply. \\longrightarrow isn't one of them.
+ * 100 s, which no budget can stop, and a reload would do again from the stored reply. \longrightarrow isn't one of them.
  */
 import type Katex from 'katex';
 import React from 'react';

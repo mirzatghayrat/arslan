@@ -308,7 +308,7 @@ describe('texDelimiters', () => {
     ['**\\(x\\)** and [\\(y\\)](u)', '**$$x$$** and [$$y$$](u)'],
     ['\\(f[0,1](x)\\)', '$$f[0,1](x)$$'],                                                // TeX that looks like a link
     ['\\(a `b` c\\)', '$$a `b` c$$'],
-    ['mail@e.org \\(x\\)', 'mail@e.org $$x$$'],                                         // a link a transform made, with no position
+    ['[https://e.org \\(x\\)', '[https://e.org $$x$$'],                                 // a link a transform made, with no position
     [`\\(${'x'.repeat(4096)}\\)`, `$$${'x'.repeat(4096)}$$`],
     [`\\(${'x'.repeat(4097)}\\)`, `\\(${'x'.repeat(4097)}\\)`],
   ])('inline: %j', (from, to) => { expect(rewrite(from)).toBe(to); });
