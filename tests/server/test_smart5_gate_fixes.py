@@ -132,4 +132,5 @@ def test_answer_first_holds_after_looking_things_up():
 
 def test_a_correction_gets_the_admission_and_a_short_right_answer():
     rule = _report_rule()
-    assert "give the right answer in one or two sentences, not a new report or a list" in rule
+    assert ("give the right answer in one or two sentences, not a new report or a list, unless it's guidance for a "
+            "block or they asked for more") in rule
