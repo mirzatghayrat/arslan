@@ -114,16 +114,15 @@ _END = r"(?=$|[\s;&|)`'\"<>])"
 # item (`key=value`, `key:=json`, `field@file`), a form, or a body on stdin.
 _WRITE = r"(?:POST|PUT|PATCH|DELETE)"
 # One shell word: plain characters, a backslash escape, or a quoted part (`"Cache-Control:public, max-age=3600"`).
-# `;`, `&` and `|` end the command, so an option never takes the next command's words as its value.
-_WORD = r"""(?:\\.|[^\s"'\\;&|]|"[^"\n]*"|'[^'\n]*')"""
+_WORD = r"""(?:\\.|[^\s"'\\]|"[^"\n]*"|'[^'\n]*')"""
 
 
 def _opts(stop: str) -> str:
     """A cloud CLI's options before its next word (`-m`, `--profile "work account"`, `--region=eu-west-1`): each an
     option and at most one value that is neither an option nor the word `stop` names, then the blanks before it
     (#693 review). Linear: an option starts with `-` and a value can't, so each word is read one way only."""
-    return (r"(?:" + _H + r"+-" + _WORD + r"+(?:" + _H + r"+(?!-|(?:" + stop + r")" + _END + r")" + _WORD
-            + r"+)?)*" + _H + r"+")
+    word = _WORD + r"+(?<![;&|])"                           # `;`, `&` or `|` ending it ends the command
+    return r"(?:" + _H + r"+-" + word + r"(?:" + _H + r"+(?!-|(?:" + stop + r")" + _END + r")" + word + r")?)*" + _H + r"+"
 _HTTPIE = r"(?:https?|xhs?)"
 # Apps that run what they are given (`open -a`/`-b`): terminals, script and automation apps.
 _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty|script\s+editor|automator"
@@ -303,6 +302,8 @@ def _detection_texts(text: str) -> tuple[str, ...]:
     newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
     not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
     `ls && git push` ran with no card."""
+    if shell_text.too_complex(text):
+        return (text,)
     inner = tuple(t for arg in _launcher_args(text) for t in _detection_texts(arg))
     return (text, shell_text.normalize(text), *shell_text.variants(text), *inner)
 
@@ -450,7 +451,7 @@ def assess(command: str) -> Assessment:
         return Assessment("forbid", "empty", "no command")
     if len(text) > MAX_COMMAND_CHARS:
         return Assessment("forbid", "too-long", "command is too long to review")
-    texts = _detection_texts(text) if not shell_text.too_complex(text) else (text,)
+    texts = _detection_texts(text)
     forbidden = _forbid(text, texts)
     if forbidden is not None:
         return forbidden

