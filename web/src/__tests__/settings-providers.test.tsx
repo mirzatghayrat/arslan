@@ -430,7 +430,7 @@ describe("dynamic model list integration (Provider P2)", () => {
   it("custom draft save stays disabled until base_url is filled (P3)", async () => {
     const user = userEvent.setup();
     mockAddProviderConfig.mockClear();
-    // custom first → openDraft starts on the custom provider
+    // custom first, so pickFirstProvider picks it
     const customFirst: ProviderOption[] = [
       { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
       ...providers,

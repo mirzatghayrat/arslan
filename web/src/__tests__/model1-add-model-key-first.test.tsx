@@ -6,6 +6,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -128,6 +129,36 @@ describe("a base URL is used once it is finished (max review, finding 2)", () =>
     fireEvent.blur(url());
     await waitFor(() => expect(preview).toHaveBeenCalledTimes(1), { timeout: 2000 });
     expect(preview).toHaveBeenCalledWith({ provider: "custom", base_url: "http://192.168.1.20:1234/v1", api_key: KEY });
+  });
+
+  it("a chip does not commit what was typed: the key goes to the chip's address, once the field is left", async () => {
+    const user = userEvent.setup();
+    openDraft("OpenAI-compatible");
+    fireEvent.change(keyInput(), { target: { value: KEY } });
+    await user.click(url());
+    await user.keyboard("http://192.168");
+    await user.click(screen.getByRole("button", { name: "LM Studio" }));
+    expect(url().value).toBe("http://localhost:1234/v1");
+    expect(document.activeElement).toBe(url());              // to review it, or edit a placeholder
+    await new Promise((r) => setTimeout(r, 700));
+    expect(preview).not.toHaveBeenCalled();
+    fireEvent.blur(url());
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    expect(preview).toHaveBeenCalledWith({ provider: "custom", base_url: "http://localhost:1234/v1", api_key: KEY });
+  });
+
+  it("two chips in a row send nothing to the first", async () => {
+    const user = userEvent.setup();
+    openDraft("OpenAI-compatible");
+    fireEvent.change(keyInput(), { target: { value: KEY } });
+    await user.click(screen.getByRole("button", { name: "LM Studio" }));
+    await user.click(screen.getByRole("button", { name: "vLLM" }));
+    expect(document.activeElement).toBe(url());              // the chip puts focus there, from wherever it was
+    await new Promise((r) => setTimeout(r, 700));
+    expect(preview).not.toHaveBeenCalled();
+    fireEvent.blur(url());
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    expect(preview).toHaveBeenCalledWith({ provider: "custom", base_url: "http://localhost:8000/v1", api_key: KEY });
   });
 
   it("a preset's address counts as finished until it is edited", async () => {

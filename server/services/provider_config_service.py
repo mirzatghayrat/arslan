@@ -109,9 +109,10 @@ async def update_config(session: AsyncSession, config_id: int, *, label: str | N
         row.model = model
     if base_url is not None:
         row.base_url = base_url or None
-    key_changed = bool(api_key) and not _looks_masked(api_key)
+    key = (api_key or "").strip()
+    key_changed = bool(key) and not _looks_masked(key)
     if key_changed:
-        row.api_key = crypto.encrypt(api_key.strip())
+        row.api_key = crypto.encrypt(key)
     # A verdict is about the exact configuration that produced it. Change the
     # provider, the model, where it points, or the key, and the stored "ok" is
     # vouching for something nobody has tried — the same class of lie as a green

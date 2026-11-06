@@ -643,6 +643,8 @@ export default function ProviderConfigList({
             <button
               key={tpl.url}
               type="button"
+              // Keeps focus in the field: a blur would commit what was typed there, and the key would go to it.
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => opts.onChip(tpl.url)}
               className="px-2 py-0.5 text-[10px] font-mono text-muted-foreground hover:text-primary border border-border hover:border-primary/50 rounded-lg transition-colors"
             >

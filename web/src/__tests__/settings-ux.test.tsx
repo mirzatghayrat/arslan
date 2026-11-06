@@ -307,6 +307,7 @@ describe("(E) Draft config: Add enabled when fields are filled", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
 
     await waitFor(() => {
       expect(screen.queryByTestId("provider-draft-test")).toBeNull();
