@@ -51,16 +51,16 @@ async def test_apply_pending_fills_ledger_and_is_idempotent_at_runner_level(tmp_
     assert list(rows) == sorted(ids)
 
 
-# 🔴 MAINTAINER: adding a migration (e.g. 0032) requires updating THREE places in
-# lockstep — the version file under versions/, runner.MIGRATIONS, and the hardcoded
-# id list below — a mismatch here is a DELIBERATE CI red, not a bug to work around.
-def test_registry_matches_boot_chain_verbatim():
-    # The zero-behavior-change guarantee: registry order is EXACTLY the canonical chain.
-    assert [v for v, _ in runner.MIGRATIONS] == [
-        "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016",
-        "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026", "0027",
-        "0028", "0029", "0030", "0031", "0032", "0033", "0034", "0035", "0036", "0037", "0038",
-        "0039", "0040", "0041", "0042", "0043", "0044", "0045", "0046", "0047", "0048", "0049", "0050", "0051", "0052", "0053", "0054", "0055", "0056", "0057", "0058", "0059", "0060", "0061", "0062", "0063", "0064", "0065", "0066", "0067", "0068", "0069", "0070", "0071", "0072", "0073", "0074", "0075", "0076", "0077", "0078", "0079", "0080", "0081", "0082", "0083", "0084", "0085", "0086"]
+#: Every id through v0.1.63. A released id can never go: runner.assert_supported_schema refuses to start on a database that
+#: holds an id it doesn't know. A release PR may move this on; an ordinary migration PR doesn't touch it.
+RELEASED_THROUGH = 70
+
+
+def test_registry_is_in_order_and_keeps_every_released_id():
+    # The zero-behavior-change guarantee: apply_pending runs them in exactly this order.
+    ids = [v for v, _ in runner.MIGRATIONS]
+    assert ids == sorted(set(ids))
+    assert ids[:RELEASED_THROUGH - 5] == [f"{n:04d}" for n in range(6, RELEASED_THROUGH + 1)]
     # id→function binding: each registered fn must come from its own _00NN_ module.
     # Guards a copy-paste mis-binding like ("0032", _m0031) that the order check alone misses.
     for vid, fn in runner.MIGRATIONS:

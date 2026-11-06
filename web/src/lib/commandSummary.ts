@@ -228,7 +228,7 @@ const overNetwork = (program: string): Reading =>
 const NETWORK = new Set(["curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp",
   "tftp", "lftp", "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail",
   "msmtp", "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
-  "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"]);
+  "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine", "azcopy"]);
 /** Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7). */
 const INLINE_CODE: Record<string, RegExp> = { python: /^-[A-Za-z]*c/, python2: /^-[A-Za-z]*c/, python3: /^-[A-Za-z]*c/,
   node: /^(?:-[A-Za-z]*[ep]|--eval|--print)/, perl: /^-[A-Za-z]*[eE]/, ruby: /^-[A-Za-z]*e/, php: /^-[A-Za-z]*r/,
