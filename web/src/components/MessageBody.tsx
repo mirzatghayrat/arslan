@@ -122,7 +122,7 @@ export function buildStandaloneHtml(innerHtml: string, title: string): string {
     `--color-success:${v('--color-success', '#3fb950')}`,
   ].join(';');
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
-<style>:root{${vars}}html{color-scheme:dark}body{margin:0 auto;max-width:820px;padding:40px 28px;background:var(--color-background);color:var(--color-foreground);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65}a{color:var(--color-primary)}table{border-collapse:collapse;width:100%}pre{overflow:auto}img{max-width:100%}</style>
+<style>:root{${vars}}.katex-html{display:none}html{color-scheme:dark}body{margin:0 auto;max-width:820px;padding:40px 28px;background:var(--color-background);color:var(--color-foreground);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65}a{color:var(--color-primary)}table{border-collapse:collapse;width:100%}pre{overflow:auto}img{max-width:100%}</style>
 </head><body>${innerHtml}</body></html>`;
 }
 

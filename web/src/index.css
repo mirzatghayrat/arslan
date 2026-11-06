@@ -3057,3 +3057,55 @@ button:disabled {
 .md-code .token.operator,
 .md-code .token.punctuation,
 .md-code .token.parameter { color: var(--muted-foreground); }
+
+/* FMT1 PR 2: a reply's lists, task checkboxes and formulas (the iPhone mock). */
+.md-ul,
+.md-ol { margin: 0.6em 0; display: flex; flex-direction: column; gap: 0.3em; color: inherit; }
+.md-ul { padding-left: 0.25em; list-style: none; }
+.md-ol { padding-left: 1.6em; list-style-type: decimal; }
+.md-ul .md-ul,
+.md-ol .md-ul,
+.md-ul .md-ol,
+.md-ol .md-ol { margin: 0.3em 0 0; }
+.md-ol > li { line-height: 1.6; padding-left: 0.2em; }
+.md-ul > li { position: relative; padding-left: 1.1em; line-height: 1.6; }
+.md-ul > li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--color-muted-foreground);
+}
+.md-ul .md-ul > li::before { background: transparent; border: 1px solid var(--color-muted-foreground); }
+.md-ul > li.task-list-item { padding-left: 0; }
+.md-ul > li.task-list-item::before { content: none; }
+.md-check {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin: 0 8px 0 0;
+  box-sizing: border-box;
+  border: 1.5px solid var(--color-muted-foreground);
+  border-radius: 4px;
+  vertical-align: -3px;
+  cursor: default;
+}
+.md-check:checked { background: var(--color-foreground); border-color: var(--color-foreground); }
+.md-check:checked::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  color: var(--color-background);
+  font-size: 11px;
+  line-height: 13px;
+  text-align: center;
+}
+.task-list-item:has(> .md-check:checked) { color: var(--color-muted-foreground); text-decoration: line-through; }
+.md-math-display { display: block; margin: 0.85em 0; text-align: center; white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: auto; overflow-y: hidden; }
+.md-math-display .katex-display { margin: 0; }
