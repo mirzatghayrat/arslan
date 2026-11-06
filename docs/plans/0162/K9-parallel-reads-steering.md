@@ -87,5 +87,5 @@
 - **风险：** 插话和卡片备注抢同一条消息。规则：有卡片在等时，消息只当备注，不插入。
 - **回退：** 设置项「工具串行」；插话可以单独关掉，回到排队。
 - **留着的旧路径（§9），卡里和代码注释都写明：**
-  - 「工具串行」开关：**v0.1.64 删**。条件：v0.1.63 的 M1 连续两轮「并行」不差于「串行」，配对测试一直绿。
-  - 「关掉插话」开关：**v0.1.64 删**。条件：M3 第 10 条通过，v0.1.63 没有插话相关的问题单。
+  - 「工具串行」开关：**v0.1.64 删**。 **Changed (user, 2026-11-07):** delete it with no further M1 rounds; the M1 condition is dropped (v0.1.64 README §7). 配对测试一直绿。
+  - 「关掉插话」开关：**v0.1.64 删**。 **Changed (user, 2026-11-07):** delete it with no further bench rounds; the M3 and issue-list condition is dropped (v0.1.64 README §7).

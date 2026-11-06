@@ -99,6 +99,7 @@
     - **Stacked PRs:** enable auto-merge only once the PR's base is `main`. Auto-merge on a stacked PR merges it into its parent's branch, not main.
   - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
+  - **A merge of main carries the OK (user, 2026-11-07, relayed by ④参谋):** a merge of main with no conflict in the PR's own lines keeps the OK. The author notes the merge commit on the PR, CI goes green, and the PR is armed; no reviewer is woken. A conflict in the PR's own lines needs a delta OK on those hunks only. This is the exception to "a new OK at the new head" above.
   - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red only because two PRs combined on a macOS count pin, the second PR's author fixes it forward with a pin-only PR. If it goes red for anything else, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
   - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
   - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.
@@ -109,6 +110,10 @@
   - 破坏性的 git 操作单独执行，不放进 `&&` 链里。
 - **说 CI 绿时**，附上 run id 和结论。
 - **Reviewing (user, 2026-10-28):** every review also points out over-defence: unnecessary defensive code, the same validation repeated in several layers, and single-use helpers or abstractions (§12).
+- **Less rework (user, 2026-11-07, relayed by ④参谋):**
+  - **A real design choice:** for a card or PR with one, send ⓪Plan 10 lines before writing code: what you will do, how a mainstream agent does it, what you rejected.
+  - **A bench shows a gap:** remove or simplify a rule first. A new exception needs a stated reason.
+  - **Size and sessions:** new cards stay under about 60 lines; docs changes batch into the daily STATUS PR; each lane or card gets a fresh session, and a session past about 300k tokens writes a handoff and moves.
 
 ## 6. 文档卫生
 

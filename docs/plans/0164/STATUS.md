@@ -2,7 +2,73 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-03 (UTC), evening, by the new ⓪Plan session. The handoff section below is kept for its methods; this section supersedes its tables.
+**Updated:** 2026-11-07 (UTC), by ⓪Plan. The sections below are kept as they were; the 2026-11-07 section supersedes their tables.
+
+### 2026-11-07
+
+Heads and states are as read on 2026-11-07; main is `4592a1e7`. Each lane moved to a fresh session that day; lanes are named as in `docs/sessions.md` §1.
+
+**Decisions of 2026-11-07 now in the cards (the user, relayed by ④参谋):**
+- scope stays and everything planned ships in v0.1.64; the aim is less rework and less over-defence;
+- ASK1 (existing installs, old scheduled tasks, sandbox first), INB8 (what pushes), the K7/K8a/K9a/K9b switches (deleted), S2a-3's blocking bar, and `docs/sessions.md` §5;
+- LOOP1, the agent loop restructure, runs now (card in #717).
+
+**Merged since `be6d3114`:**
+- #706 (migrations 0087 and 0088 reserved for ASK1);
+- #705 (the ASK1 card; chain order corrected);
+- #707 (local paths and private excerpts removed from the public docs, step 1);
+- #712 (SBX: rclone's, s3cmd's and gsutil's credentials are protected paths);
+- #710 (SMART-8: azcopy reads as a network program in both card readers);
+- #711 (SMART-5 bench: counts the tools OpenClaw runs through `dispatch_action`);
+- #709 (SMART-5 round 2: finding a tool isn't work; answers stay answers after looking).
+
+**What's left (counts only):** about 65 PRs at `be6d3114` (about 25 in the chain, about 40 off it), plus about 25 for LOOP1, is about 90; 7 have merged since, so about 83 remain. The counts are rough and carry no dates.
+
+**Open PRs, and who has the next step:**
+
+| PR | State | Next |
+|---|---|---|
+| #693 cloud uploads ask | OK; armed, checks running | ③Hands; then a small follow-up PR (the "not covered" items on the PR, a `RecursionError` → `unreadable`, azcopy short subcommands) |
+| #686 delete to Trash | max delta review not started | ③Hands sends the head, ⓪Plan reviews; `cd` plus a relative `rm` stays for S2a-3 |
+| #668 SBX-6a | max review running | ⓪Plan posts it, then ③Hands |
+| #666 SBX-4a | draft; max review running | ⓪Plan posts it; the user clicks Ready and merges |
+| #538 SBX-7 | reviewed, 8 non-blocking findings; no CI checks at this head since the retarget | ③Hands pushes to start CI; ⓪Plan decides finding 1 (proxy refusals aren't counted and get no re-run card) before SBX-8 |
+| #531, #535 (SBX-4a part 1, SBX-5a) | drafts | ③Hands |
+| #715 HPW | max review running | ⓪Plan posts it, then ③Hands |
+| #375, #376, #378, #396 (S2a-3) | open since v0.1.63; #375 conflicts | ③Hands rebases after SBX-7; Codex writes the test content |
+| #704 MODEL1 | clean; max delta review running | ⓪Plan posts it, then ②Main arms |
+| #708 FMT1 PR 1 | first max review posted; the author pushed the fixes and a worker that stops highlighting past 2 s (`407477f8`); that delta is unreviewed | ⓪Plan reviews the delta, then ②Main arms |
+| #713 C7c-3a | clean; an independent review is OK; needs ④参谋's other-session OK | ②Main merges main, then arms |
+| #716 CI counts | clean; max review not started (⓪Plan's four conditions are in its body) | ⓪Plan reviews, then ②Main |
+| #661 CAP9 | clean; OK at `b6194a9a` | the user merges |
+| #714 CAP7a | OK; armed | ⑤CAP; CAP7b must handle `discovery.py:233` (`kind == "mcp"` only) |
+| #718 L11 (b) PR-B | memory and practice writes: security surface | ⓪Plan's max review, then ⑥Helper |
+| #717 LOOP1 card | docs; waits for ⓪Plan's OK on its design choices | ⓪Plan, then the LOOP1 session |
+| #719 foreign keys on in the shared test engines | tests only; armed; the 35 failures were all fixtures | ⓪Plan |
+| #298 SECURITY.md (only `run_python` fails closed) | green, docs | kept open: the audit sees the final wording once the SBX chain settles |
+
+**SMART-5:** ⑥Helper reruns it now that #709 and #711 are both on main. Last result (round 2, `5b8a0cdf`): fails on length only, pooled 15/33 vs 20/33; focus 42 vs 33, verify 9 vs 8, guide 6 vs 4, self-state 6 vs 0. STY2's 27-task gate must also rerun before the tag (the condition of #701's research cut).
+
+**Before the v0.1.64 tag, added:**
+- HPW's real-Mac check (a pasted WeChat message goes through; a real password field is still refused);
+- ROUTE1's model switch on a real Mac;
+- C7c-5 ships in the same release as C7c-3a (#713);
+- **SBX-6 isn't closed by #668 alone.** It also needs SBX-4a and the MCP proxy PR, because the capability sandbox still reaches the name-lookup socket until those land;
+- a real-Mac check of SBX-6a with a system proxy.
+
+**Waiting on the user:** the three open items from the 11-03 list are answered and dropped here. What's left:
+- merges: #661, #666, and Codex and Bridge-frame PRs;
+- Ready on #666;
+- S5a's clickable demo, and the other mocks waiting for a look.
+
+**Flakes to add to the list:**
+- `test_window_permissions` (`test_once_a_card…`);
+- `test_memory_deletion_ledger` (parallel writers);
+- `TaskPanel` under Strict Mode;
+- `test_mcp_exposure`;
+- `test_mcp_supervisor_real`;
+- `product-language-coverage`;
+- `test_uni1b_hidden_characters` (a wall-clock budget under load).
 
 ### Evening update (2026-11-03)
 

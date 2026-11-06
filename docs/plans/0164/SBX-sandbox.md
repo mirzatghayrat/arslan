@@ -400,6 +400,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 ### After measuring (SBX-8, measurement only)
 
 - On the merged SBX stack, run the bench twice on the same tasks, once with "ask for every command" and once with "ask only when risky" (a bench setting; no product change). Record the cards per task.
+- **The per-task row is SBX-8's to build** (found in #538's review). The bench report (`scripts/kernel_bench/report.py`) gives the re-run share per round and no per-task row, and `approvals` is not in the run record. So SBX-8 builds the ask-all vs ask-risky table per task from each task's `{run}.stdout` and puts it in its report. It stays docs only; no report or runner change.
 - **That card count is the classifier's baseline** (user, 2026-10-28): how many more cards CLS must save than "ask only when risky" alone (pass line "saves cards against 'ask only when risky' alone", `docs/plans/0164/README.md:80`). It is not a go/no-go for SBX or for CLS.
 - SBX-8 does not change Settings or the default. Re-offering "ask only when risky" without the known-issue sheet belongs to S2a-3's rebase (its `DELETE-BY` names S2a-3 and #406, `AdvancedSection.tsx:353-354`) and S5a, after B-1's measurement exists (Q5). **Changed 2026-11-07:** the sheet's removal and the default both belong to [ASK1](ASK1-default-ask-risky.md).
 
