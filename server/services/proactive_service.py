@@ -72,15 +72,15 @@ async def load_config() -> ProactiveConfig:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(Setting, CONFIG_KEY)
     try:
-        stored = {k: v for k, v in json.loads(row.value).items() if k not in RETIRED_CONFIG} if row and row.value else {}
-        return ProactiveConfig(**stored)
-    except (ValueError, TypeError):
+        stored = json.loads(row.value) if row and row.value else {}
+        return ProactiveConfig(**{k: v for k, v in stored.items() if k not in RETIRED_CONFIG})
+    except (ValueError, TypeError, AttributeError):
         logger.warning("stored proactive config is unreadable; using defaults")
-        return ProactiveConfig()          # defaults spend nothing, so this can only under-notify
+        return ProactiveConfig()          # defaults spend nothing
 
 
 async def in_quiet_hours_now() -> bool:
-    """INB8: the shell doesn't pop an approval card now. The badge and Progress keep it."""
+    """INB8: the shell doesn't pop an approval card now."""
     config = await load_config()
     return policy.in_quiet_hours(local_now(), config.quiet_start, config.quiet_end)
 

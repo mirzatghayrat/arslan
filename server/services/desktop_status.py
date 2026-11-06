@@ -7,7 +7,8 @@ authenticated loopback endpoint (`GET /api/v1/desktop/status`).
 
 In-process state only: counts of work in flight and of confirmation cards that
 are waiting, plus a short ring of notification events. Nothing here is
-persisted; after a restart there is nothing to notify about. Events carry IDs
+persisted; after a restart the only thing to notify about is a job the restart
+cut short (`background_jobs.report_interrupted`). Events carry IDs
 and an outcome, never message text, file content or source quotes — a
 notification can be read on a locked screen.
 """

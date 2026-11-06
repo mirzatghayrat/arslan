@@ -53,7 +53,7 @@ export default function ProactiveSection({ only, bare = false }: { only?: Proact
   </div>;
 
   const sources: [keyof ProactiveConfig, string][] = [['job_followups', 'jobFollowups'], ['scheduled_problems', 'scheduledProblems'], ['watches', 'watches']];
-  // 0.1.55 §11: notify + quiet hours live in General › Notifications; looking out in Background; watches and mutes are managed
+  // 0.1.55 §11: quiet hours live in General › Notifications; looking out in Background; watches and mutes are managed
   // on the Scheduled page (INB3; the Inbox is gone, INB5). Without `only`, all.
   const show = (k: ProactiveBlock) => !only || only.includes(k);
   const content = <div className="space-y-5">

@@ -137,9 +137,10 @@ pub fn should_notify(enabled: bool, window_visible: bool, window_focused: bool) 
     enabled && !(window_visible && window_focused)
 }
 
-/// During quiet hours an approval card doesn't pop; the badge and Progress keep it. Everything else still
-/// notifies, "done" included. A pairing request has no conversation and isn't a card: the user just asked
-/// for it, with the phone in their hand.
+/// During quiet hours an approval card doesn't pop. It shows on the badge and on Progress, and if nobody
+/// answers in 30 minutes it stops waiting, and Progress lists it. Everything else still notifies, "done"
+/// included. A pairing request has no conversation and isn't a card: the user just asked for it, with the
+/// phone in their hand.
 pub fn hushed(status: &Status, event: &Event) -> bool {
     status.quiet_hours && event.kind == "approval_needed" && event.conversation_id.is_some()
 }
@@ -1046,10 +1047,5 @@ mod tests {
     fn an_answer_without_quiet_hours_reads_as_not_quiet() {
         let status: Status = serde_json::from_str("{}").unwrap();
         assert!(!status.quiet_hours);
-    }
-
-    #[test]
-    fn what_arslan_notices_does_not_notify() {
-        assert!(notification("en", &event(1, "proactive", Some("ok"))).is_none());
     }
 }

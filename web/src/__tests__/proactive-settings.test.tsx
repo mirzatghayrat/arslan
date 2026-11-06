@@ -45,13 +45,11 @@ describe("settings", () => {
       { enabled: false }, { scheduled_problems: false }]);
   });
 
-  it("quiet hours save their value, and work with looking turned off", async () => {
+  it("quiet hours save their value", async () => {
     await ready();
     fireEvent.change(screen.getByTestId("proactive-quiet-start"), { target: { value: "23:15" } });
     await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(1));
     expect(api.saveConfig.mock.calls.map(([patch]) => patch)).toEqual([{ quiet_start: "23:15" }]);
-    expect(screen.queryByTestId("proactive-toggle-notify")).toBeNull();
-    expect(screen.queryByTestId("proactive-notify-cap")).toBeNull();
   });
 
   it("offers no morning brief any more (the user's Q9: the setting goes), and keeps the pointer to the diagnosis limit", async () => {

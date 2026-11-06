@@ -87,7 +87,6 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'memory.embedding_model': 'models',
   'proactive.enabled': 'background',
   'proactive.sources': 'background',
-  'proactive.notify': 'general',
   'proactive.quiet_hours': 'general',
   'proactive.brief': 'background',
   'proactive.watches': 'background',

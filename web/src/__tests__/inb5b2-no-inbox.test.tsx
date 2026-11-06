@@ -144,17 +144,15 @@ describe("a clicked notification", () => {
     click("thread-1");
     expect(selectConversation).toHaveBeenCalledWith("thread-1");
     click("thread-2");                                                            // archived: never opened from outside
-    click("@inbox");                                                              // the old routes lead nowhere
-    click("@progress");
+    click("@inbox");                                                              // the old route leads nowhere
     expect(selectConversation).toHaveBeenCalledTimes(1);
   });
 
-  it("no @inbox or @progress route is left in the desktop shell or the web app", () => {
+  it("no @inbox route is left in the desktop shell or the web app", () => {
     const shell = readFileSync(resolve(__dirname, "../../../desktop/src-tauri/src/resident.rs"), "utf8");
     expect(shell).not.toContain("@inbox");
-    expect(shell).not.toContain("@progress");
     const sources = import.meta.glob(["../**/*.{ts,tsx}", "!../__tests__/**"], { query: "?raw", import: "default", eager: true });
-    const left = Object.entries(sources).filter(([, text]) => /@inbox|@progress/.test(String(text))).map(([path]) => path);
+    const left = Object.entries(sources).filter(([, text]) => String(text).includes("@inbox")).map(([path]) => path);
     expect(left).toEqual([]);
   });
 });

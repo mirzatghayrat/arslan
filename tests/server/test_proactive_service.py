@@ -144,6 +144,15 @@ async def test_a_config_saved_before_inb8_keeps_the_users_other_choices(executio
     assert (saved.quiet_start, saved.quiet_end) == ("23:15", "07:00")
 
 
+@pytest.mark.parametrize("stored", ["[]", "null", "1", '"x"', "{not json"])
+async def test_a_config_that_isnt_an_object_reads_as_the_defaults(execution_db, stored):
+    """The desktop status poll reads this: raising here would stop notifications, the tray and the Bridge's tick."""
+    async with execution_db() as db:
+        db.add(Setting(key=svc.CONFIG_KEY, value=stored))
+        await db.commit()
+    assert await svc.load_config() == ProactiveConfig()
+
+
 @pytest.mark.parametrize("hour,quiet", [(23, True), (12, False)])
 async def test_quiet_hours_follow_the_config_and_the_local_clock(execution_db, monkeypatch, hour, quiet):
     monkeypatch.setattr(svc, "local_now", lambda: datetime(2026, 9, 30, hour, 0))
