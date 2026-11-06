@@ -56,9 +56,10 @@ NOT_IN_EFFECT = "not_in_effect"
 # its reason says: it waits for the user to choose, and the user's own correction is that choice.
 CONFLICTS_WITH = "conflicts_with"
 # L11 (b) (the user, 2026-11-02): where the user's corrections of a practice happened. CORRECTED_IN is the chosen
-# folder of every correction so far ("" once they came from more than one place, or from no chosen folder);
-# FOLDER_SCOPE is set when that folder saw the correction again, and then the practice applies only there (recall).
-# A practice with no CORRECTED_IN (from before v0.1.64, or born from a detour) is never narrowed.
+# folder of every correction so far ("" once they came from more than one place, or from no chosen folder, or when
+# the practice replaced one for everywhere); FOLDER_SCOPE is set when that folder saw the correction again, and then
+# the practice applies only there (recall). A practice with no CORRECTED_IN (from before v0.1.64, or born from a
+# detour) is never narrowed.
 CORRECTED_IN = "corrected_in"
 FOLDER_SCOPE = "folder_scope"
 # INB1: failed turns in a row that followed a practice (memory.applied said it was followed);
@@ -105,11 +106,10 @@ class Candidate:
 
 
 async def _corrected_in(db, conversation_id: str | None) -> str:
-    """L11 (b): the folder the user chose for this conversation, where this correction happened; "" when there is
-    none (Arslan's default ~/Arslan in a plain chat, or home itself, never scope a practice)."""
+    """L11 (b): the folder the user chose for this conversation, where this correction happened; "" when there's none."""
     from server.services import folder_rules
-    folder = await folder_rules.chosen_folder(db, conversation_id) if conversation_id else None
-    return str(folder) if folder is not None and folder != folder_rules._home() else ""
+    folder = await folder_rules.chosen_folder(db, conversation_id)
+    return str(folder) if folder is not None else ""
 
 
 def render(lesson) -> str:
@@ -335,6 +335,7 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
     from server.services import settings_service
     async with db_session.AsyncSessionLocal() as db:
         take_effect = await settings_service.learned_practices_take_effect(db)
+        here = await _corrected_in(db, conversation_id)
     learned = []
     for cand in candidates:
         if contains_credential(f"{cand.situation} {cand.advice}"):
@@ -366,6 +367,10 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
             if await _yes("memory.merge", pair, conversation_id, ref=f"lesson:{row.id}"):
                 merged = row
                 break
+            # L11 (b): the user's correction doesn't rival a practice that applies only in another folder. A detour
+            # still does: it never narrows, so it would stand in that folder for good, against what the user said there.
+            if cand.source == "user_correction" and _scope(row) not in ("", here):
+                continue
             if row.status != "stale" and await _yes("memory.conflict", pair, conversation_id, ref=f"lesson:{row.id}"):
                 conflicting = row
                 break
@@ -401,31 +406,34 @@ async def _capture(candidates, *, conversation_id, external_seen, emit) -> list[
                     if takes_effect and row.status == "proposed":
                         row.status = "active"
                     row.updated_at = now
-                    if cand.source == "user_correction":
+                    if cand.source == "user_correction" and immediate:
                         # L11 (b): scoped only while every correction came from this one chosen folder; one from
-                        # anywhere else makes it a practice for everywhere again, for good (never narrowed silently).
-                        where = await _corrected_in(db, conversation_id)
-                        same = bool(where) and evidence.get(CORRECTED_IN) == where
-                        evidence[CORRECTED_IN] = where if same else ""
-                        if same:
-                            evidence[FOLDER_SCOPE] = where
-                        else:
+                        # anywhere else makes it a practice for everywhere again, for good. A pinned one doesn't
+                        # narrow: the user pinned it where it stands.
+                        same = bool(here) and evidence.get(CORRECTED_IN) == here
+                        evidence[CORRECTED_IN] = here if same else ""
+                        if not same:
                             evidence.pop(FOLDER_SCOPE, None)
+                        elif not row.pinned:
+                            evidence[FOLDER_SCOPE] = here
                     row.evidence = evidence
                     await db.commit()
                     continue
             status, rival_id = ("active" if immediate else "proposed"), None
+            corrected_in = here if cand.source == "user_correction" and immediate else ""
             if conflicting is not None:
                 old = await db.get(Lesson, conflicting.id)
                 if cand.source == "user_correction" and immediate and not old.pinned:
                     old.status, old.updated_at = "archived", now     # the user's newer words win
+                    if not _scope(old):
+                        corrected_in = ""       # it replaces a practice for everywhere, so it stays for everywhere
                 else:
                     status, why = "proposed", why or "conflicts"     # the user decides between the two
                     rival_id = old.id if old.status == "active" else None
             evidence = dict(cand.evidence) | ({NOT_IN_EFFECT: why} if status == "proposed" else {}) \
                 | ({CONFLICTS_WITH: rival_id} if rival_id is not None else {})
             if cand.source == "user_correction":
-                evidence[CORRECTED_IN] = await _corrected_in(db, conversation_id)
+                evidence[CORRECTED_IN] = corrected_in
             row = Lesson(situation=cand.situation, advice=cand.advice, polarity=cand.polarity, source=cand.source,
                          evidence=evidence, status=status, created_at=now, updated_at=now)
             db.add(row)
@@ -484,9 +492,7 @@ async def recall(query: str) -> list[dict]:
 
 
 def _scope(row) -> str:
-    evidence = row.evidence if isinstance(row.evidence, dict) else {}
-    scope = evidence.get(FOLDER_SCOPE)
-    return scope if isinstance(scope, str) else ""
+    return (row.evidence or {}).get(FOLDER_SCOPE) or ""
 
 
 async def _in_scope(db, rows: list) -> list:
@@ -497,7 +503,7 @@ async def _in_scope(db, rows: list) -> list:
     from server.services import folder_rules, personal_context
     ctx = personal_context.current()
     try:
-        folder = await folder_rules.conversation_folder(db, ctx.conversation_id) if ctx and ctx.conversation_id else None
+        folder = await folder_rules.conversation_folder(db, ctx.conversation_id) if ctx.conversation_id else None
     except Exception:  # noqa: BLE001 — a scoped practice is left out rather than applied in the wrong folder
         logger.warning("conversation folder not found for scoped practices", exc_info=True)
         folder = None
