@@ -1,0 +1,499 @@
+"""L11 (b) PR-B (v0.1.64; the user's decision, 2026-11-02): when the same correction
+recurs in a folder, Arslan keeps the practice in its own memory, scoped to that folder, and applies it only there.
+
+⓪Plan's rule (Q2): a practice is scoped only when every one of its corrections came from that one chosen folder. A
+correction with no chosen folder, or in another folder, keeps it (or makes it again) a practice for everywhere:
+narrowing never happens silently to one that already works everywhere. Lessons from before this keep no record of
+where they were corrected, so they stay global (no backfill). Detours never scope. Fixture text is synthetic.
+
+Project rows and both folder lookups are real here, and the judge reports conflicts: #718's review found three bugs
+that a mocked lookup and a judge that never conflicts had hidden."""
+import pytest
+from sqlalchemy import select
+
+from server.db.companion_models import ConversationContext, Project
+from server.db.models import Lesson
+from server.services import folder_rules, judgment, lessons, settings_service
+from server.services import personal_context as pc
+
+CA, CB, CN = "c-photo", "c-site", "c-plain"
+QUERY = "write the weekly reports"
+ADVICE = "use 24-hour times, like 14:30"
+OPPOSITE = "use 12-hour times, like 2:30 pm"
+
+
+@pytest.fixture
+def judge(monkeypatch):
+    """Two lessons are the same practice only when their words are; only 24-hour and 12-hour times conflict."""
+    async def fake(point, state, *, ref=None, conversation_id=None):
+        if point == "memory.merge":
+            return judgment.Verdict(state["candidate"] == state["existing"], 0.99, 1)
+        if point == "memory.conflict":
+            texts = state["candidate"] + state["existing"]
+            return judgment.Verdict("24-hour" in texts and "12-hour" in texts, 0.99, 1)
+        return judgment.Verdict(True, 0.99, 1)
+    monkeypatch.setattr(judgment, "judge", fake)
+
+
+async def project(db, cid: str, ref: str | None):
+    async with db() as s:
+        s.add(Project(id=f"p-{cid}", name=cid, workspace_ref=ref))
+        await s.flush()
+        s.add(ConversationContext(id=cid, project_id=f"p-{cid}"))
+        await s.commit()
+
+
+@pytest.fixture
+async def folders(execution_db, tmp_path, monkeypatch):
+    home = (tmp_path / "home").resolve()
+    chosen = {CA: home / "Projects" / "photo", CB: home / "Projects" / "site"}
+    for f in chosen.values():
+        f.mkdir(parents=True)
+    default = home / "Arslan"
+    default.mkdir()
+    monkeypatch.setattr(folder_rules, "_home", lambda: home)
+    monkeypatch.setenv("ARSLAN_DEFAULT_WORKSPACE", str(default))
+    for cid, folder in chosen.items():
+        await project(execution_db, cid, str(folder))
+    return {"home": home, "default": default, **chosen}
+
+
+async def correct(cid: str, advice: str = ADVICE, source: str = "user_correction", answers: bool = True):
+    cand = lessons.candidate("writing reports", advice, source=source, evidence={"answers_earlier_reply": answers})
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id=cid, model_is_local=True)):
+        await lessons.capture([cand], conversation_id=cid, external_seen=False)
+
+
+async def recalled_in(cid: str) -> list[int]:
+    with pc.bind(pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id=cid, model_is_local=True, query=QUERY)):
+        return [item["id"] for item in await lessons.recall(QUERY)]
+
+
+async def only(db) -> Lesson:
+    async with db() as s:
+        return (await s.scalars(select(Lesson))).one()
+
+
+async def by_advice(db) -> dict[str, Lesson]:
+    async with db() as s:
+        return {row.advice: row for row in (await s.scalars(select(Lesson))).all()}
+
+
+async def pin_only(db):
+    async with db() as s:
+        (await s.scalars(select(Lesson))).one().pinned = True
+        await s.commit()
+
+
+async def test_twice_in_one_folder_scopes_it_there_and_applies_only_there(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    row = await only(execution_db)
+    assert row.evidence.get(lessons.FOLDER_SCOPE) == str(folders[CA])
+    assert await recalled_in(CA) == [row.id]
+    assert await recalled_in(CB) == [] and await recalled_in(CN) == []
+
+
+async def test_a_single_correction_is_a_practice_for_everywhere(execution_db, judge, folders):
+    await correct(CA)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CB) == [row.id]
+
+
+async def test_corrections_in_two_folders_stay_global(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CB)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CA) == [row.id] and await recalled_in(CB) == [row.id]
+
+
+@pytest.mark.parametrize("order", [(CN, CA), (CA, CN)])
+async def test_a_correction_without_a_chosen_folder_keeps_it_global(execution_db, judge, folders, order):
+    for cid in order:
+        await correct(cid)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CB) == [row.id]
+
+
+async def test_a_later_correction_elsewhere_widens_a_scoped_practice_and_it_stays_wide(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    await correct(CA)                                           # back in A, twice: its corrections aren't all from A
+    await correct(CA)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CB) == [row.id]
+
+
+async def test_a_lesson_from_before_stays_global(execution_db, judge, folders):
+    """No record of where its earlier corrections happened: it isn't narrowed."""
+    await correct(CA)
+    async with execution_db() as s:
+        row = (await s.scalars(select(Lesson))).one()
+        row.evidence = {k: v for k, v in row.evidence.items() if k != lessons.CORRECTED_IN}
+        await s.commit()
+    await correct(CA)
+    row = await only(execution_db)
+    assert row.evidence.get("seen") == 2 and lessons.FOLDER_SCOPE not in row.evidence
+
+
+async def test_home_is_never_a_scope(execution_db, judge, folders):
+    await project(execution_db, "c-home", str(folders["home"]))
+    await correct("c-home")
+    await correct("c-home")
+    assert lessons.FOLDER_SCOPE not in (await only(execution_db)).evidence
+
+
+# -- #718's review, finding 1: only a folder the user chose counts ---------------------------------------------------
+
+@pytest.mark.parametrize("ref", [None, "/no/such/folder"], ids=["no-folder", "folder-gone"])
+async def test_a_project_with_no_usable_folder_doesnt_scope_to_the_default(execution_db, judge, folders, ref):
+    await project(execution_db, "c-a", ref)
+    await project(execution_db, "c-b", ref)
+    await correct("c-a")
+    await correct("c-b")
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CA) == [row.id] and await recalled_in(CN) == [row.id]
+
+
+async def test_the_default_workspace_never_scopes_in_a_plain_chat(execution_db, judge, folders):
+    await correct(CN)
+    await correct(CN)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CA) == [row.id]
+
+
+@pytest.mark.parametrize("key", ["other", "default"])
+async def test_a_workspace_the_user_set_is_chosen_even_if_it_is_the_default(execution_db, judge, folders, key):
+    folder = folders[CA] if key == "other" else folders["default"]
+    async with execution_db() as s:
+        await settings_service._set_raw(s, "workspace_dir", str(folder))
+        await s.commit()
+    await correct(CN)
+    await correct(CN)
+    assert (await only(execution_db)).evidence.get(lessons.FOLDER_SCOPE) == str(folder)
+
+
+async def test_a_project_folder_that_cant_be_expanded_doesnt_lose_the_correction(execution_db, judge, folders):
+    await project(execution_db, "c-tilde", "~no_such_user_for_this_test/photo")
+    await correct("c-tilde")
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in("c-tilde") == [row.id]
+
+
+@pytest.fixture
+def behind_a_locked_folder(tmp_path):
+    locked = tmp_path / "locked"
+    (locked / "inside").mkdir(parents=True)
+    locked.chmod(0)
+    yield locked / "inside"
+    locked.chmod(0o700)
+
+
+async def test_a_project_folder_that_cant_be_checked_doesnt_lose_the_correction(execution_db, judge, folders,
+                                                                                behind_a_locked_folder):
+    await project(execution_db, "c-locked", str(behind_a_locked_folder))
+    await correct("c-locked")
+    assert lessons.FOLDER_SCOPE not in (await only(execution_db)).evidence
+
+
+async def test_a_workspace_that_cant_be_checked_doesnt_lose_a_detour(execution_db, judge, folders,
+                                                                     behind_a_locked_folder):
+    async with execution_db() as s:
+        await settings_service._set_raw(s, "workspace_dir", str(behind_a_locked_folder))
+        await s.commit()
+    await correct(CN, source="detour")
+    assert (await only(execution_db)).source == "detour"
+
+
+# -- #718's review, finding 2: a practice scoped elsewhere isn't a rival here ------------------------------------------
+
+async def test_folders_with_opposite_practices_each_keep_their_own(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)                          # one correction is for everywhere, so A briefly sees both
+    rows = await by_advice(execution_db)
+    a, b = rows[ADVICE].id, rows[OPPOSITE].id
+    assert rows[ADVICE].status == "active" and rows[OPPOSITE].status == "active"
+    assert sorted(await recalled_in(CA)) == [a, b] and await recalled_in(CB) == [b]
+    await correct(CB, advice=OPPOSITE)
+    assert await recalled_in(CA) == [a] and await recalled_in(CB) == [b] and await recalled_in(CN) == []
+
+
+async def test_the_same_opposites_back_and_forth_settle_in_their_folders(execution_db, judge, folders):
+    for cid, advice in ((CA, ADVICE), (CA, ADVICE), (CB, OPPOSITE), (CB, OPPOSITE), (CA, ADVICE), (CA, ADVICE)):
+        await correct(cid, advice=advice)
+    rows = await by_advice(execution_db)
+    assert {r.status for r in rows.values()} == {"active"}
+    assert await recalled_in(CA) == [rows[ADVICE].id] and await recalled_in(CB) == [rows[OPPOSITE].id]
+
+
+async def test_a_pinned_practice_scoped_elsewhere_doesnt_hold_a_correction_back(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await pin_only(execution_db)
+    await correct(CB, advice=OPPOSITE)
+    rows = await by_advice(execution_db)
+    assert rows[OPPOSITE].status == "active" and await recalled_in(CB) == [rows[OPPOSITE].id]
+
+
+async def test_a_detour_still_waits_on_a_practice_scoped_elsewhere(execution_db, judge, folders):
+    """A detour never narrows, so it would apply in A for good, against what the user said there."""
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE, source="detour")
+    rows = await by_advice(execution_db)
+    assert rows[ADVICE].status == "active" and rows[OPPOSITE].status == "proposed"
+    assert rows[OPPOSITE].evidence[lessons.CONFLICTS_WITH] == rows[ADVICE].id
+
+
+async def all_rows(db) -> list[Lesson]:
+    async with db() as s:
+        return list((await s.scalars(select(Lesson).order_by(Lesson.id))).all())
+
+
+async def test_a_restatement_finds_its_own_row_before_a_rival_in_another_folder(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)
+    await correct(CA)                                           # newest first, B's row comes up before A's own
+    rows = await by_advice(execution_db)
+    assert rows[OPPOSITE].status == "active" and rows[ADVICE].evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+    assert await recalled_in(CB) == [rows[OPPOSITE].id]
+
+
+async def test_restating_in_each_folder_settles_each_there(execution_db, judge, folders):
+    for cid, advice in ((CA, ADVICE), (CA, ADVICE), (CB, OPPOSITE), (CA, ADVICE), (CB, OPPOSITE), (CB, OPPOSITE)):
+        await correct(cid, advice=advice)
+    rows = await by_advice(execution_db)
+    assert await recalled_in(CA) == [rows[ADVICE].id] and await recalled_in(CB) == [rows[OPPOSITE].id]
+    assert await recalled_in(CN) == []
+
+
+@pytest.mark.parametrize("pinned", [False, True], ids=["plain", "pinned"])
+async def test_a_correction_on_a_waiting_detour_leaves_a_practice_scoped_elsewhere(execution_db, judge, folders, pinned):
+    await correct(CA)
+    await correct(CA)
+    if pinned:
+        await pin_only(execution_db)
+    await correct(CB, advice=OPPOSITE, source="detour")
+    await correct(CB, advice=OPPOSITE)
+    scoped, detour, correction = await all_rows(execution_db)
+    assert scoped.status == "active" and scoped.evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+    assert detour.status == "proposed" and detour.source == "detour"
+    assert correction.status == "active" and correction.source == "user_correction"
+    assert await recalled_in(CB) == [correction.id]
+
+
+async def test_replacing_a_practice_for_everywhere_through_a_waiting_row_stays_for_everywhere(execution_db, judge, folders):
+    await correct(CN)
+    await pin_only(execution_db)
+    await correct(CA, advice=OPPOSITE)                          # waits on the pinned one
+    async with execution_db() as s:
+        (await s.scalars(select(Lesson).where(Lesson.advice == ADVICE))).one().pinned = False
+        await s.commit()
+    await correct(CA, advice=OPPOSITE)
+    rows = await by_advice(execution_db)
+    assert rows[ADVICE].status == "archived" and rows[OPPOSITE].status == "active"
+    assert lessons.FOLDER_SCOPE not in rows[OPPOSITE].evidence and await recalled_in(CB) == [rows[OPPOSITE].id]
+
+
+async def test_replacing_a_practice_scoped_here_through_a_waiting_row_can_scope_here(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await pin_only(execution_db)
+    await correct(CA, advice=OPPOSITE)                          # waits on the pinned one
+    async with execution_db() as s:
+        (await s.scalars(select(Lesson).where(Lesson.advice == ADVICE))).one().pinned = False
+        await s.commit()
+    await correct(CA, advice=OPPOSITE)
+    rows = await by_advice(execution_db)
+    assert rows[ADVICE].status == "archived" and rows[OPPOSITE].evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+
+
+async def test_a_correction_that_merges_asks_no_conflict_question(execution_db, judge, folders, monkeypatch):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)                          # the nearer row, newest first, is the other folder's
+    asked, fake = [], judgment.judge
+
+    async def counting(point, state, **kwargs):
+        asked.append(point)
+        return await fake(point, state, **kwargs)
+    monkeypatch.setattr(judgment, "judge", counting)
+    await correct(CA)
+    assert "memory.merge" in asked and "memory.conflict" not in asked
+
+
+async def settled_in_both():
+    for cid, advice in ((CA, ADVICE), (CA, ADVICE), (CB, OPPOSITE), (CB, OPPOSITE)):
+        await correct(cid, advice=advice)
+
+
+async def test_a_folder_retires_its_own_practice_when_another_row_has_the_new_words(execution_db, judge, folders,
+                                                                                    monkeypatch):
+    await settled_in_both()
+    asked, fake = [], judgment.judge
+
+    async def recording(point, state, **kwargs):
+        asked.append((point, state))
+        return await fake(point, state, **kwargs)
+    monkeypatch.setattr(judgment, "judge", recording)
+    await correct(CB, advice=ADVICE)
+    rows = await by_advice(execution_db)
+    assert rows[OPPOSITE].status == "archived" and rows[ADVICE].status == "active"
+    assert await recalled_in(CB) == [rows[ADVICE].id]
+    assert not [s for point, s in asked if point == "memory.conflict" and s["candidate"] == s["existing"]]
+
+
+async def test_a_folder_retires_a_practice_it_has_corrected_only_once_too(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice=OPPOSITE)
+    await correct(CB)
+    rows = await by_advice(execution_db)
+    assert rows[OPPOSITE].status == "archived" and await recalled_in(CB) == [rows[ADVICE].id]
+
+
+async def test_a_pinned_practice_of_this_folder_isnt_retired_after_a_merge(execution_db, judge, folders):
+    await settled_in_both()
+    async with execution_db() as s:
+        (await s.scalars(select(Lesson).where(Lesson.advice == OPPOSITE))).one().pinned = True
+        await s.commit()
+    await correct(CB, advice=ADVICE)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
+async def test_a_merge_doesnt_retire_a_practice_scoped_to_a_third_folder(execution_db, judge, folders):
+    await settled_in_both()
+    await project(execution_db, "c-third", str(folders[CA].parent))
+    await correct("c-third", advice=ADVICE)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
+async def test_a_merge_in_a_plain_chat_doesnt_retire_a_practice_for_everywhere(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CN, advice=OPPOSITE)                          # skips A's, and stays for everywhere
+    await correct(CN)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
+@pytest.mark.parametrize("kwargs", [{"answers": False}, {"source": "detour"}], ids=["not-a-correction", "detour"])
+async def test_only_a_correction_retires_a_folders_practice_after_a_merge(execution_db, judge, folders, kwargs):
+    await settled_in_both()
+    await correct(CB, advice=ADVICE, **kwargs)
+    assert (await by_advice(execution_db))[OPPOSITE].status == "active"
+
+
+async def test_what_replaces_a_practice_for_everywhere_stays_for_everywhere(execution_db, judge, folders):
+    await correct(CN)
+    await correct(CA, advice=OPPOSITE)
+    await correct(CA, advice=OPPOSITE)
+    rows = await by_advice(execution_db)
+    assert rows[ADVICE].status == "archived" and lessons.FOLDER_SCOPE not in rows[OPPOSITE].evidence
+    assert await recalled_in(CB) == [rows[OPPOSITE].id] and await recalled_in(CN) == [rows[OPPOSITE].id]
+
+
+async def test_what_replaces_a_practice_scoped_here_can_scope_here(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CA, advice=OPPOSITE)
+    await correct(CA, advice=OPPOSITE)
+    rows = await by_advice(execution_db)
+    assert rows[ADVICE].status == "archived" and rows[OPPOSITE].evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+
+
+# -- #718's review, finding 3: what the module says isn't a correction doesn't count ------------------------------------
+
+async def test_a_first_message_after_a_correction_doesnt_scope_it(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA, answers=False)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CB) == [row.id]
+
+
+async def test_a_first_message_then_one_correction_doesnt_scope_it(execution_db, judge, folders):
+    await correct(CA, answers=False)
+    await correct(CA)
+    row = await only(execution_db)
+    assert row.status == "active" and lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CB) == [row.id]
+
+
+async def test_with_learned_practices_off_a_correction_doesnt_scope_it(execution_db, judge, folders):
+    await correct(CA)
+    async with execution_db() as s:
+        await settings_service._set_raw(s, "learned_practices_take_effect", "false")
+        await s.commit()
+    await correct(CA)
+    assert lessons.FOLDER_SCOPE not in (await only(execution_db)).evidence
+
+
+# -- A pinned practice doesn't narrow (⓪Plan, #718's review) -------------------------------------------------------
+
+async def test_a_pinned_practice_doesnt_narrow(execution_db, judge, folders):
+    await correct(CA)
+    await pin_only(execution_db)
+    await correct(CA)
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence
+    assert await recalled_in(CB) == [row.id]
+
+
+async def test_pinning_a_scoped_practice_keeps_its_scope(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await pin_only(execution_db)
+    await correct(CA)
+    assert (await only(execution_db)).evidence[lessons.FOLDER_SCOPE] == str(folders[CA])
+
+
+async def test_a_detour_never_scopes(execution_db, judge, folders):
+    await correct(CA, source="detour")
+    await correct(CA, source="detour")
+    row = await only(execution_db)
+    assert lessons.FOLDER_SCOPE not in row.evidence and lessons.CORRECTED_IN not in row.evidence
+
+
+async def test_a_scoped_practice_is_skipped_where_the_folder_cant_be_told(execution_db, judge, folders, monkeypatch):
+    await correct(CA)
+    await correct(CA)
+
+    async def unknown(_db, _cid):
+        return None
+    monkeypatch.setattr(folder_rules, "conversation_folder", unknown)
+    assert await recalled_in(CA) == []
+
+
+async def test_a_scoped_practice_is_skipped_when_the_lookup_fails(execution_db, judge, folders, monkeypatch):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice="put the newest entries first")
+    rows = await by_advice(execution_db)
+
+    async def broken(_db, _cid):
+        raise OSError("no folder")
+    monkeypatch.setattr(folder_rules, "conversation_folder", broken)
+    assert await recalled_in(CA) == [rows["put the newest entries first"].id]
+
+
+async def test_a_global_practice_still_applies_everywhere_next_to_a_scoped_one(execution_db, judge, folders):
+    await correct(CA)
+    await correct(CA)
+    await correct(CB, advice="put the newest entries first")
+    async with execution_db() as s:
+        rows = {r.advice: r.id for r in (await s.scalars(select(Lesson))).all()}
+    assert len(rows) == 2
+    assert sorted(await recalled_in(CA)) == sorted(rows.values())
+    assert await recalled_in(CN) == [rows["put the newest entries first"]]
