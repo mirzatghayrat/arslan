@@ -158,6 +158,10 @@ def test_running_out_of_stack_is_not_understood():
     assert not reading.understood and reading.capped
 
 
-@pytest.mark.parametrize("command", ["echo a )", "echo a ) ; ls", "echo a }", "echo a ; fi", "echo a ; done"])
+@pytest.mark.parametrize("command", ["echo a )", "echo a ) ; ls", "echo a ; fi", "echo a ; done"])
 def test_text_left_over_after_the_commands_is_not_understood(command):
     assert not shell_grammar.read(command).understood
+
+
+def test_a_closing_brace_as_an_argument_is_only_a_word():
+    assert shell_grammar.read("echo a }").commands == (("echo", "a", "}"),)
