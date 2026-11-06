@@ -843,10 +843,10 @@ def test_an_ab_cell_sets_extra_settings_but_never_the_workspace(monkeypatch):
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
     monkeypatch.delenv("BENCH_SHELL_POLICY", raising=False)
     assert settings_body("/run") == {"shell_confirm_policy": "ask_risky", "workspace_dir": "/run"}
-    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": "true", "workspace_dir": "/elsewhere"}')
-    assert settings_body("/run") == {"tools_all_resident": "true", "shell_confirm_policy": "ask_risky",
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"folder_rules_enabled": "false", "workspace_dir": "/elsewhere"}')
+    assert settings_body("/run") == {"folder_rules_enabled": "false", "shell_confirm_policy": "ask_risky",
                                      "workspace_dir": "/run"}
-    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": true}')
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"folder_rules_enabled": false}')
     with pytest.raises(ValueError):
         settings_body("/run")
 

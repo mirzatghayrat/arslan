@@ -1053,7 +1053,7 @@ _FETCH_TOOLS = frozenset({"web_search", "web_extract"})
 #: So the allowance spans the whole attempt, and it is smaller than the live one
 #: because an evaluation is not supposed to be doing research — a candidate that
 #: needs fifty pages is a candidate worth refusing.
-HERMETIC_FETCH_BUDGET = 50
+HERMETIC_FETCH_BUDGET = 50      # DELETE-BY: v0.1.64, with C7c-3b.
 
 #: Spent-so-far per hermetic sentinel. Module state rather than a threaded
 #: parameter because every dispatch in an attempt already shares one sentinel
@@ -2921,19 +2921,13 @@ def _progress_updates(a, resp) -> list[str]:
     return [text for text in texts if text and text != _UPDATE_CUT]
 
 
-async def _streams_answer(a, acceptance_runtime) -> bool:
+def _streams_answer(a, acceptance_runtime) -> bool:
     """K8a: whether this turn's answer is shown as it is written. Not for work with explicit acceptance
     criteria (background jobs and the like: a failed check rewrites what was written; ⓪Plan Q1), not for
-    a model in BUFFERED_MODELS, not when the user chose to see answers only when complete."""
-    from server.db import session as db_session
-    from server.services import settings_service, task_service
-    if (acceptance_runtime is not None and not task_service.answer_only()) or _model_key(a)[1] in BUFFERED_MODELS:
-        return False
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            return not await settings_service.answer_when_complete(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default: stream
-        return True
+    a model in BUFFERED_MODELS."""
+    from server.services import task_service
+    return not ((acceptance_runtime is not None and not task_service.answer_only())
+                or _model_key(a)[1] in BUFFERED_MODELS)
 
 
 # Tools a job may still use while wrapping up: saving the deliverable.
@@ -3193,7 +3187,7 @@ async def _run_native(
     ws_root, own_folder = await _status_workspace(wired_keys)
     # K8a: what this turn shows as it is written (None: every answer shown whole, as before).
     turn_text = (_TurnText(on_chunk, lambda label, keep: emit({"type": "stream_restart", "label": label, "keep": keep}))
-                 if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None)
+                 if on_chunk is not None and _streams_answer(a, acceptance_runtime) else None)
     if _facts is not None:
         _facts.update(ws_root=ws_root, started=turn_started, turn_text=turn_text)
     unseen_start = len(convo)

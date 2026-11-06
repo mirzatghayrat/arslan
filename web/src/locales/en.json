@@ -813,8 +813,6 @@
     "collapse_results": "Collapse",
     "stdout_label": "Stdout returns:",
     "exec_validated": "Instruction execution validated. Sandbox socket gracefully returned 0.",
-    "equipped_capabilities": "Equipped Capabilities:",
-    "capabilities_matrix": "Capabilities Matrix:",
     "hide_rail": "Hide Rail",
     "show_rail": "Show Rail",
     "confirm_direction": "Confirm direction · Go",

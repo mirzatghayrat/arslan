@@ -813,8 +813,6 @@
     "collapse_results": "折りたたむ",
     "stdout_label": "標準出力：",
     "exec_validated": "実行が確認され、サンドボックス接続がコード 0 で終了しました。",
-    "equipped_capabilities": "利用可能な機能：",
-    "capabilities_matrix": "機能一覧：",
     "hide_rail": "サイドパネルを非表示",
     "show_rail": "サイドパネルを表示",
     "confirm_direction": "方向を確認 · 実行",
