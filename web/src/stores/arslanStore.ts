@@ -691,7 +691,10 @@ function makeActions(set: SetState, get: GetState) {
                 role: "arslan",
                 content: state.streamingText,
                 ...(state.streamingDrafts.length > 0 ? { drafts: state.streamingDrafts } : {}),
-                toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
+                // A step still open when the run stopped never finishes: it must not spin on the reply for ever.
+                toolSteps: state.activitySteps.length > 0
+                  ? state.activitySteps.map((step) => (step.status === "running" ? { ...step, status: "error" as const } : step))
+                  : undefined,
                 cancelled: true,
               }
             : null;
