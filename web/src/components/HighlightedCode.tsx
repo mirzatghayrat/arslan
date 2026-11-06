@@ -22,14 +22,10 @@ export default React.memo(function HighlightedCode({ code, lang, className }: { 
   const [last, setLast] = React.useState<{ code: string; tokens: Prism.TokenStream } | null>(null);
   React.useEffect(() => {
     if (answerFor(code, name) !== undefined) return undefined;
-    return ask(code, name, () => {
-      const tokens = answerFor(code, name);
-      setLast(tokens ? { code, tokens } : null);
-    });
+    return ask(code, name, (tokens) => { if (tokens) setLast({ code, tokens }); });
   }, [code, name]);
-  if (answer) return <code className={className}>{pieces(answer)}</code>;
-  if (last && code.startsWith(last.code)) {
-    return <code className={className}>{pieces(last.tokens)}{code.slice(last.code.length)}</code>;
-  }
-  return <code className={className}>{code}</code>;
+  const known = answer ? { code, tokens: answer } : last && code.startsWith(last.code) ? last : null;
+  if (!known) return <code className={className}>{code}</code>;
+  // The same two children every time: with a different shape, React would rebuild every span on every answer of a stream.
+  return <code className={className}>{pieces(known.tokens)}{code.slice(known.code.length)}</code>;
 });

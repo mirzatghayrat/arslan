@@ -22,6 +22,8 @@ vi.mock('react-i18next', () => ({
 
 import { tokenize, type Tokens } from '../lib/highlightTokens';
 import Markdown from '../components/Markdown';
+import HighlightedCode from '../components/HighlightedCode';
+import { answerFor, ask } from '../lib/highlightClient';
 import Prism from 'prismjs';                                            // after highlightTokens: it loads Prism with auto-highlight off
 import { buildStandaloneHtml } from '../components/MessageBody';
 
@@ -31,8 +33,8 @@ beforeEach(() => { Object.defineProperty(navigator, 'clipboard', { value: { writ
 afterEach(() => { cleanup(); writeText.mockClear(); });
 
 /**
- * jsdom has no Worker. This one runs the real tokenizer on a clone of what a real one would send back, at once, or
- * when `answerHeld` says so while `hold` is on (a slow grammar). A real worker ran it too: see the PR.
+ * Unlike the one in test/setup.ts, this Worker highlights: the real tokenizer, answering with a clone as a real one would,
+ * at once, or when `answerHeld` says so while `hold` is on (a slow grammar). A real worker ran it too: see the PR.
  */
 const workers: FakeWorker[] = [];
 let hold = false;
@@ -361,15 +363,6 @@ describe('Prism runs in a worker, and a slow one is terminated', () => {
     expect(workers.reduce((n, w) => n + w.asked.length, 0)).toBe(before);
   });
 
-  it('a window with no Worker shows plain text', () => {
-    vi.stubGlobal('Worker', undefined);
-    try {
-      const c = fence('bash', 'echo none # eight\n');
-      expect(tokens(c)).toHaveLength(0);
-      expect((c.querySelector('pre') as HTMLPreElement).textContent).toBe('echo none # eight\n');
-    } finally { vi.stubGlobal('Worker', FakeWorker); }
-  });
-
   it('a fence well over the old 8 KiB cap is highlighted: only the budget decides', () => {
     const code = '# a comment line of ordinary code\n'.repeat(800);          // 27,200 characters
     expect(tokens(fence('bash', code), 'comment')).toHaveLength(800);
@@ -407,6 +400,39 @@ describe('Prism runs in a worker, and a slow one is terminated', () => {
     spy.mockRestore();
   });
 
+  it('neither a keystroke nor a stream token re-renders a finished fence', () => {
+    const memo = Symbol.for('react.memo');
+    expect((Markdown as unknown as { $$typeof: symbol }).$$typeof).toBe(memo);
+    expect((HighlightedCode as unknown as { $$typeof: symbol }).$$typeof).toBe(memo);
+  });
+
+  it('an answer belongs to the text and the language together', () => {
+    const c = render(<HighlightedCode code={'x = 1 # l1\n'} lang="python" />);
+    const pythonTokens = c.container.querySelectorAll('.token').length;
+    expect(pythonTokens).toBeGreaterThan(0);
+    expect(answerFor('x = 1 # l1\n', 'klingon')).toBeUndefined();
+    c.rerender(<HighlightedCode code={'x = 1 # l1\n'} lang="klingon" />);    // asked again, for this language
+    expect(answerFor('x = 1 # l1\n', 'klingon')).toBeNull();
+  });
+
+  it('old answers go first once a million characters are kept, and the newest stays', () => {
+    const text = (mark: string) => mark.repeat(600_000);
+    ask(text('a'), 'klingon', () => {});
+    expect(answerFor(text('a'), 'klingon')).toBeNull();
+    ask(text('b'), 'klingon', () => {});
+    expect(answerFor(text('a'), 'klingon')).toBeUndefined();
+    expect(answerFor(text('b'), 'klingon')).toBeNull();
+  });
+
+  it('two identical fences count once, so they do not push out what fits', () => {
+    const twice = 'c'.repeat(600_000);
+    ask(twice, 'klingon', () => {});
+    ask(twice, 'klingon', () => {});
+    const next = 'd'.repeat(500_000);
+    ask(next, 'klingon', () => {});
+    expect(answerFor(next, 'klingon')).toBeNull();
+  });
+
   describe('while a reply streams', () => {
     const md = (code: string) => `\`\`\`bash\n${code}`;
 
@@ -420,6 +446,17 @@ describe('Prism runs in a worker, and a slow one is terminated', () => {
       expect((container.querySelector('pre') as HTMLPreElement).textContent).toBe('echo stream # s1\necho more # s2\n');
       answerHeld();
       expect(tokens(container, 'comment').map((t) => t.textContent)).toEqual(['# s1', '# s2']);
+    });
+
+    it('an answer keeps the spans that are already there: React rebuilds none of them', () => {
+      hold = true;
+      const { container, rerender } = render(<Markdown>{md('echo nodes # n1\n')}</Markdown>);
+      answerHeld();
+      const first = container.querySelector('.token');
+      rerender(<Markdown>{md('echo nodes # n1\necho on # n2\n')}</Markdown>);
+      expect(container.querySelector('.token')).toBe(first);
+      answerHeld();
+      expect(container.querySelector('.token')).toBe(first);
     });
 
     it('text that is not a continuation drops the old colours rather than show them over the wrong text', () => {

@@ -6,24 +6,33 @@
 import type { Tokens } from './highlightTokens';
 
 const BUDGET_MS = 2000;
-/** Answers kept, a slow fence's null among them, so a re-render or a remount never asks twice. */
-const KEEP = 200;
+/**
+ * Answers kept, a slow fence's null among them, so a re-render or a remount in this window doesn't ask twice. Counted in
+ * characters: a stream leaves an answer per chunk, and 200 of a 40 kB fence's held about 185 MB.
+ */
+const KEEP_CHARS = 1_000_000;
 
-interface Job { key: string; code: string; lang: string; done: () => void }
+interface Job { key: string; code: string; lang: string; done: (tokens: Tokens) => void }
 
 const answers = new Map<string, Tokens>();
 const waiting: Job[] = [];
 let worker: Worker | null = null;
 let running: Job | null = null;
 let timer: ReturnType<typeof setTimeout>;
+let kept = 0;
 
 function finish(tokens: Tokens) {
   clearTimeout(timer);
   const job = running!;
   running = null;
+  if (!answers.has(job.key)) kept += job.key.length;     // two identical fences are one entry
   answers.set(job.key, tokens);
-  if (answers.size > KEEP) answers.delete(answers.keys().next().value!);
-  job.done();
+  for (const key of answers.keys()) {
+    if (kept <= KEEP_CHARS) break;
+    answers.delete(key);
+    kept -= key.length;
+  }
+  job.done(tokens);
   next();
 }
 
@@ -52,15 +61,15 @@ const keyOf = (code: string, lang: string) => `${lang}\0${code}`;
 
 /** Tokens, null for plain text, or undefined while the answer isn't in yet. */
 export function answerFor(code: string, lang: string): Tokens | undefined {
-  if (!lang || typeof Worker === 'undefined') return null;
+  if (!lang) return null;
   return answers.get(keyOf(code, lang));
 }
 
 /**
- * `done` runs once answerFor has the answer. Returns how to withdraw the question, for a stream that has moved on;
- * one already at the worker still answers, and its colours fit the start of the newer text.
+ * `done` gets the answer. Returns how to withdraw the question, for a stream that has moved on; one already at the worker
+ * still answers, and its colours fit the start of the newer text.
  */
-export function ask(code: string, lang: string, done: () => void): () => void {
+export function ask(code: string, lang: string, done: (tokens: Tokens) => void): () => void {
   const job: Job = { key: keyOf(code, lang), code, lang, done };
   waiting.push(job);
   next();

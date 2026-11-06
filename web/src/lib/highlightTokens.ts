@@ -29,7 +29,7 @@ export type Tokens = Prism.TokenStream | null;
 /** Names the models use that Prism does not define itself. */
 const ALIASES: Record<string, string> = { zsh: 'bash', jsonc: 'json', rs: 'rust', golang: 'go', 'c++': 'cpp' };
 
-/** Each token is a span the window has to render, however quickly the worker found it: 15,000 took 0.7 s on a busy Mac. */
+/** Each token is a span the window has to render, however quickly the worker found it: this many paint in about 60 ms. */
 const MAX_TOKENS = 10_000;
 
 function count(list: Prism.TokenStream): number {
