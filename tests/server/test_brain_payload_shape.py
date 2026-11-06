@@ -60,6 +60,9 @@ async def seeded(client, monkeypatch):
     monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
     async with client.db_maker() as s:
         s.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp"))
+        # The spawn row goes in first: the message and the chunk below point at it, and foreign
+        # keys are enforced, so a flush that wrote them first would be refused.
+        await s.flush()
         # category NON-BLANK: this is what makes brain_graph enter its fact tag loop
         # F1: valid_from is set EXPLICITLY here. Production always sets it (memory.py:245,
         # :359, learning_service.py:76 are the only three construction sites), but these

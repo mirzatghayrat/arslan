@@ -24,7 +24,9 @@
    "deleteSome": "Delete files or folders",
    "overNetwork": "Uses the network ({{program}}): may send or receive data",
    "more": " (and {{count}} more steps)",
-   "more_one": " (and 1 more step)"
+   "more_one": " (and 1 more step)",
+   "toTrash": "Move {{count}} files or folders to the Trash",
+   "toTrash_one": "Move 1 file or folder to the Trash"
   },
   "fact": {
    "outside": "Outside the sandbox",
@@ -33,7 +35,10 @@
    "network": "Uses the network",
    "shortcutAsYou": "Runs as you, outside the sandbox; Arslan can't see what the Shortcut does",
    "unsure": "May send local data",
-   "join": " · "
+   "join": " · ",
+   "ownFilesStay": "Arslan's own files stay",
+   "permanent": "Deletes permanently",
+   "permanentSandbox": "Deletes permanently where the sandbox allows"
   }
  },
  "zh": {
@@ -60,7 +65,9 @@
    "deleteSome": "删除文件或文件夹",
    "overNetwork": "用到网络（{{program}}）：可能发出或收到数据",
    "more": "（还有 {{count}} 步）",
-   "more_one": "（还有 {{count}} 步）"
+   "more_one": "（还有 {{count}} 步）",
+   "toTrash": "把 {{count}} 个文件或文件夹移到废纸篓",
+   "toTrash_one": "把 {{count}} 个文件或文件夹移到废纸篓"
   },
   "fact": {
    "outside": "沙盒外运行",
@@ -69,7 +76,10 @@
    "network": "会联网",
    "shortcutAsYou": "以你的身份在沙盒外运行；Arslan 看不到这个快捷指令做什么",
    "unsure": "可能发出本机数据",
-   "join": " · "
+   "join": " · ",
+   "ownFilesStay": "Arslan 自己的文件不动",
+   "permanent": "彻底删除",
+   "permanentSandbox": "在沙箱允许的范围内彻底删除"
   }
  },
  "ja": {
@@ -96,7 +106,9 @@
    "deleteSome": "ファイルまたはフォルダを削除",
    "overNetwork": "ネットワークを使用（{{program}}）：データを送受信する可能性",
    "more": "（ほか {{count}} ステップ）",
-   "more_one": "（ほか {{count}} ステップ）"
+   "more_one": "（ほか {{count}} ステップ）",
+   "toTrash": "{{count}} 件のファイルまたはフォルダをゴミ箱に移動",
+   "toTrash_one": "{{count}} 件のファイルまたはフォルダをゴミ箱に移動"
   },
   "fact": {
    "outside": "サンドボックス外で実行",
@@ -105,7 +117,10 @@
    "network": "ネットワークを使用",
    "shortcutAsYou": "あなたとしてサンドボックスの外で実行。Arslan にはショートカットの中身が見えません",
    "unsure": "ローカルのデータを送る可能性",
-   "join": " · "
+   "join": " · ",
+   "ownFilesStay": "Arslan 自身のファイルはそのまま",
+   "permanent": "完全に削除",
+   "permanentSandbox": "サンドボックスで許可された範囲を完全に削除"
   }
  },
  "es": {
@@ -132,7 +147,9 @@
    "deleteSome": "Borrar archivos o carpetas",
    "overNetwork": "Usa la red ({{program}}): puede enviar o recibir datos",
    "more": " (y {{count}} pasos más)",
-   "more_one": " (y 1 paso más)"
+   "more_one": " (y 1 paso más)",
+   "toTrash": "Mover {{count}} archivos o carpetas a la Papelera",
+   "toTrash_one": "Mover 1 archivo o carpeta a la Papelera"
   },
   "fact": {
    "outside": "Fuera del entorno aislado",
@@ -141,7 +158,10 @@
    "network": "Usa la red",
    "shortcutAsYou": "Se ejecuta como tú, fuera del entorno aislado; Arslan no ve lo que hace el atajo",
    "unsure": "Puede enviar datos locales",
-   "join": " · "
+   "join": " · ",
+   "ownFilesStay": "Los archivos de Arslan se quedan",
+   "permanent": "Borra de forma permanente",
+   "permanentSandbox": "Borra de forma permanente donde el sandbox lo permite"
   }
  },
  "de": {
@@ -168,7 +188,9 @@
    "deleteSome": "Dateien oder Ordner löschen",
    "overNetwork": "Nutzt das Netzwerk ({{program}}): kann Daten senden oder empfangen",
    "more": " (und {{count}} weitere Schritte)",
-   "more_one": " (und 1 weiterer Schritt)"
+   "more_one": " (und 1 weiterer Schritt)",
+   "toTrash": "{{count}} Dateien oder Ordner in den Papierkorb legen",
+   "toTrash_one": "1 Datei oder Ordner in den Papierkorb legen"
   },
   "fact": {
    "outside": "Außerhalb der Sandbox",
@@ -177,7 +199,10 @@
    "network": "Nutzt das Netzwerk",
    "shortcutAsYou": "Läuft als du, außerhalb der Sandbox; Arslan sieht nicht, was der Kurzbefehl tut",
    "unsure": "Kann lokale Daten senden",
-   "join": " · "
+   "join": " · ",
+   "ownFilesStay": "Arslans eigene Dateien bleiben",
+   "permanent": "Löscht endgültig",
+   "permanentSandbox": "Löscht endgültig, wo die Sandbox es erlaubt"
   }
  },
  "fr": {
@@ -204,7 +229,9 @@
    "deleteSome": "Supprimer des fichiers ou dossiers",
    "overNetwork": "Utilise le réseau ({{program}}) : peut envoyer ou recevoir des données",
    "more": " (et {{count}} étapes de plus)",
-   "more_one": " (et 1 étape de plus)"
+   "more_one": " (et 1 étape de plus)",
+   "toTrash": "Placer {{count}} fichiers ou dossiers dans la corbeille",
+   "toTrash_one": "Placer 1 fichier ou dossier dans la corbeille"
   },
   "fact": {
    "outside": "Hors du bac à sable",
@@ -213,7 +240,10 @@
    "network": "Utilise le réseau",
    "shortcutAsYou": "S’exécute en votre nom, hors du bac à sable ; Arslan ne voit pas ce que fait le raccourci",
    "unsure": "Peut envoyer des données locales",
-   "join": " · "
+   "join": " · ",
+   "ownFilesStay": "Les fichiers d'Arslan restent",
+   "permanent": "Supprime définitivement",
+   "permanentSandbox": "Supprime définitivement là où le bac à sable l'autorise"
   }
  }
 }

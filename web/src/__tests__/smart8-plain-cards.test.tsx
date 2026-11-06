@@ -174,7 +174,6 @@ describe("#688 review: the server's rules on every card", () => {
 
   it.each([
     ["outside", { sandbox: "outside" }, "Runs outside the sandbox, this time"],
-    ["retry", { sandbox: "retry" }, "The sandbox stopped it; running it again starts over"],
     ["remote", { remote_host: "me@box", fingerprints: ["SHA256:x"] }, "Runs on me@box, not on this Mac"],
   ])("the %s card keeps the red delete line (1)", (_name, extra, own) => {
     useArslanStore.setState(initialArslanState(), true);

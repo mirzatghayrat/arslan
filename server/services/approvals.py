@@ -299,7 +299,7 @@ def island_may_answer(frame: dict) -> bool:
         perm_kind = frame.get("perm_kind")
         return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
     if kind == "propose_run_command":
-        if (frame.get("remote_host") or frame.get("sandbox") in ("outside", "retry") or frame.get("unsandboxed")
+        if (frame.get("remote_host") or frame.get("sandbox") == "outside" or frame.get("unsandboxed")
                 or frame.get("network")):
             return False                   # another machine, outside the sandbox, or the network too (S2a-2)
         from server.services import terminal_policy
@@ -434,7 +434,7 @@ async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
 
 
 def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_all: bool = False,
-                     network: bool = False, unsandboxed: bool = False, lang: str | None = None, why: str = ""):
+                     network: bool = False, unsandboxed: bool = False, lang: str | None = None, why: str = "", delete_mode: str = ""):
     """A command card as a permission request, by the command's layer (S2a-2):
 
     - layer ② or `unreadable` (it matched rules): this time only; nothing is remembered and no stored
@@ -461,7 +461,8 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
 
     def plain(old: str, **where) -> str:
         # #689 review 2: a card that also asks for the network says so in its title.
-        return card_purpose.phrase(shell, why, rules, lang=lang, network=network, **where) if lang else old
+        return card_purpose.phrase(shell, why, rules, lang=lang, network=network, delete_mode=delete_mode,
+                                   **where) if lang else old
     if rules:
         # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
         # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.

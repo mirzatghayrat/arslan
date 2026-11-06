@@ -484,10 +484,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                               remote_host: str | None = None,
                               fingerprints: list | None = None,
                               sandbox: str | None = None, why: str = "", network: bool = False,
-                              host: str | None = None) -> bool:
+                              host: str | None = None, delete: str = "") -> bool:
         """See `command_confirm.Confirmations.command`."""
         return await ladder.command(command, argv, remote_host=remote_host, fingerprints=fingerprints,
-                                    sandbox=sandbox, why=why, network=network, host=host)
+                                    sandbox=sandbox, why=why, network=network, host=host, delete=delete)
 
     async def confirm_capability(card: dict) -> dict:
         """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key);

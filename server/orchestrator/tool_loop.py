@@ -1310,7 +1310,7 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
     runs offline under the kernel's rule — in the sandbox, and outside it under the minimal profile,
     which carries the same rule (card, piece 4; the internal review's case: a script refused inside for
-    reading a secret, let out by the retry card, must not get the network with it). One that reaches the
+    reading a secret, let out by its outside card, must not get the network with it). One that reaches the
     network (by its text, or the model's `network: true`) asks first: this time or this conversation
     inside the sandbox, this time only outside it, where the user's secrets are readable (a stored grant
     does not count there). The island never answers it. With nobody to ask: offline. An approved plain
@@ -1442,7 +1442,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     run_command is special: it requires per-command user confirmation via the injected
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default).
     Since 0.1.51 it also runs inside the workspace sandbox; leaving it is a click
-    (confirm_command(..., sandbox="outside"|"retry")), never the model's say-so."""
+    (confirm_command(..., sandbox="outside")), never the model's say-so."""
     from arslan.execution_budget import BudgetExceeded, current
     budget = current()
     if budget is not None:
@@ -1584,6 +1584,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     sandbox_on = False
     unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
+    deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
+
+    def delete_kw(outside: bool) -> dict:
+        """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
+        from server.services import delete_to_trash
+        return {"delete": delete_to_trash.card_mode(command, outside=outside or not confined)} if deletes_outside else {}
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
@@ -1594,6 +1600,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         if verdict.level == "forbid":
             result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
                       "note": "Tell the user what you wanted to do and let them run it themselves."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        if terminal_policy.heredoc_in_substitution(command):
+            # No card either: it would show text that reads as data, and some of that text would run.
+            result = {"ok": False, "error": "A here-document inside $( ) can't run here: in bash 3.2 its text can end the "
+                      "substitution early, and the rest of the text runs as commands. Nothing ran.",
+                      "note": "Write the text to a file with write_file, then use the file: for a commit message, "
+                              "git commit -F <file>; for a variable, NOTE=$(cat <file>)."}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -1609,6 +1624,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
         sandbox_on = await _sandbox_enabled()
+        deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
+        confined = sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
         from server.services import task_service as _task_service
         # S2a-2: a plain osascript that U11 runs bare takes its own card, the one way it works; asking to run it
         # outside the sandbox would show a card that cannot help (its Apple Events stay blocked there).
@@ -1640,11 +1657,22 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
-            why = str(args.get("why") or "").strip()[:300]
+            # The reason as the card will show it (protocol.propose_run_command): one of invisible characters is none.
+            from server.orchestrator import untrusted as _untrusted
+            why = _untrusted.clean_name(args.get("why"), 300)
+            if not why:
+                # Leaving the sandbox is a deliberate request (the calibration of 2026-11-07), and the card leads with why.
+                # Arslan's own words, and nothing ran: not outside content, whatever the command looks like.
+                result = {"ok": False, "external": False, "executed": False,
+                          "error": "outside_sandbox needs a why: one short sentence on why this has to run "
+                                   "outside the sandbox. The user reads it on the card."}
+                return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                            assistant_content, convo,
+                                            mcp_fail_counts=mcp_fail_counts)
             from server.services import approvals as _approvals
             _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
             _approvals.LAST_ANSWERED_BY.set(None)
-            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw):
+            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw, **delete_kw(True)):
                 result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
@@ -1690,7 +1718,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
             # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
             said = str(args.get("why") or "").strip()[:300]
-            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw)
+            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw,
+                                             **delete_kw(run_outside))
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -1882,8 +1911,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
             async def run_once(outside: bool) -> dict:
                 from server.services import terminal_exec
+                from server.services import delete_to_trash
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
                 bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
+                # SMART-8: allowed, outside the sandbox and read with certainty: its targets go to the Trash.
+                trash = delete_to_trash.TRASH.set(tool_key == "run_command" and deletes_outside
+                                                  and (outside or not confined)
+                                                  and delete_to_trash.plan(command) is not None)
                 # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
                 cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
                 try:
@@ -1891,6 +1925,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 finally:
                     if cut is not None:
                         terminal_exec.OFFLINE.reset(cut)
+                    delete_to_trash.TRASH.reset(trash)
                     terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             if result is None:
@@ -1909,22 +1944,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 if by_grant and not ran_outside and isinstance(result, dict):
                     result["grant_note"] = ("this conversation's permission to run commands outside the sandbox was "
                                             "taken back; it ran in the sandbox")
-            if (tool_key == "run_command" and sandbox_on and not ran_outside and confirm_command is not None
-                    and isinstance(result, dict) and result.get("sandbox_denied")):
-                # Stopped by the sandbox: offer ONE re-run outside it, from the start.
-                if await confirm_command(command, argv, sandbox="retry"):
-                    # S2a-1: outside, the network rule is decided again as for an outside run (this time
-                    # only, a stored grant does not count): the retry card is about files.
-                    network = await _network_after_outside_content(
-                        command, args, sandbox_on=sandbox_on, run_outside=True, unwrapped=False,
-                        conversation_id=conversation_id)
-                    if network.get("refused"):
-                        result = {"ok": False, "error": network["refused"]}
-                    else:
-                        result = await run_once(True)
-                    if isinstance(result, dict) and not network.get("refused"):
-                        result["ran_outside_sandbox"] = True
-            elif tool_key == "run_command" and ran_outside and isinstance(result, dict):
+            # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
+            if tool_key == "run_command" and ran_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True
             if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
                 result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
@@ -2169,15 +2190,16 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                                 f"{terminal_exec.DEFAULT_TIMEOUT_S})."},
                                    "outside_sandbox": {"type": "boolean",
                                                        "description": "Only when the command must write outside "
-                                                                      "the working folder (moving the user's files, "
-                                                                      "installing software). The user is asked."},
+                                                                      "the working folder (moving files, installing "
+                                                                      "software). The user is asked."},
                                    "network": {"type": "boolean",
                                                "description": "The command needs the network (a download, an "
                                                               "API). After you read outside content in this turn, "
                                                               "commands run offline unless the user allows it."},
                                    "why": {"type": "string", "maxLength": 300,
-                                           "description": "What this step does, in one short sentence: "
-                                                          "every command card shows it first."}},
+                                           "description": "What this step does, in a sentence. With "
+                                                          "outside_sandbox, why it must run outside. "
+                                                          "Cards show it first."}},
                     "required": ["command"]},
     "conversation_search": {"type": "object",
                             "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,

@@ -25,9 +25,8 @@ holds; the closed folder stays closed through /System/Volumes/Data/… and throu
 its parent still shows its name. Before, the toggle closed only the file tools — a question from
 the iPhone made Arslan scan the real ~/Downloads with ls/find/python while it was off.
 
-Leaving the sandbox is always a click (see tool_loop): the model asks up front,
-or a stopped command is offered a re-run, or the user answered such a card "in this
-conversation" — that last one is a stored grant (`outside` / `*`, S4a: `permissions`), not held here.
+Leaving the sandbox is always a click (see tool_loop): the model asks, or the user answered such a card
+"in this conversation", which is a stored grant (`outside` / `*`, S4a: `permissions`), not held here.
 """
 from __future__ import annotations
 
@@ -82,7 +81,7 @@ _DEVICES = (Root("/dev/null", DEVICE, "literal"), Root("/dev/zero", DEVICE, "lit
 def writable_roots(workspace: Path, temp: Path | None = None) -> list[Root]:
     """Where a command in `workspace` may write, tagged (§1b). Temp is the run's own folder (`run_temp`, §1a),
     in scope like the work folder; no longer the shared per-user /var/folders/… parent (with the cache C),
-    /private/tmp or /private/var/tmp. A tool that needs one of those gets a re-run card. SBX-M (#592) names none
+    /private/tmp or /private/var/tmp. A tool that needs one of those is stopped, and the model decides. SBX-M (#592) names none
     to reopen: a hardcoded /tmp is a cost that stands (§1a), and the Darwin temp and cache rows fail on every
     base, so they wait for a probe fix (Codex). A tool named later gets only its sub-folder reopened, as a shared
     cache. The caches stay writable until SBX-5 (§1c)."""
@@ -331,7 +330,7 @@ def available() -> bool:
 
 def stopped_by_sandbox(result: dict) -> bool:
     """A sandboxed run that failed with EPERM. Heuristic on purpose (Codex does the
-    same): a false positive only offers a re-run card the user can decline."""
+    same): a false positive only adds a note the model can ignore."""
     if result.get("sandbox") != "workspace" or result.get("ok") or result.get("exit_code") in (0, None):
         return False
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
@@ -350,8 +349,9 @@ def note(workspace: Path, closed: list[Path] = ()) -> str:
                 "cannot open them either.")
     return ("The sandbox stopped this command: commands may write only inside the working folder "
             f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data."
-            + shut + " If it really needs to work elsewhere, run it again with outside_sandbox: true and a short "
-            "why — the user decides with a click. Otherwise tell the user what you needed.")
+            + shut + " Find a way that works inside it if there is one. If it really has to run outside, run it "
+            "again with outside_sandbox: true and a short why, which the user reads before deciding. That starts it "
+            "over from the beginning, and whatever it already did stays. Otherwise tell the user what you needed.")
 
 
 # ── "for the rest of this conversation" (memory only) ─────────────────────────

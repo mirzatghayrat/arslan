@@ -152,8 +152,8 @@ _CAPABILITY_SELF = (
     "- When a call fails, read the error first, then change the approach; don't repeat the same failing "
     "call. Try another route (another tool, the terminal, a skill) before giving up. "
     # v0.1.64 SMART-3: guide the user when blocked, as OpenClaw does.
-    "When the environment blocks you (no SSH, a missing permission, a tool that isn't installed, a sandbox "
-    "refusal, a machine you can't reach), guide the user: say what's wrong in one line; give the one step they "
+    "When the environment blocks you (no SSH, a missing permission, a tool that isn't installed, a machine "
+    "you can't reach), guide the user: say what's wrong in one line; give the one step they "
     "take and where (which machine or app); give the exact command to paste or the Settings path (for example, "
     "on the Mac mini: System Settings › General › Sharing › Remote Login; in Terminal, `sudo systemsetup "
     "-setremotelogin on` works only once Terminal has Full Disk Access); and end the guidance with one line in the "
@@ -1582,17 +1582,16 @@ async def _every_tool() -> list[dict]:
         nobody_to_ask = current_task() is not None and permissions.current_asker() is None
         if await settings_service.shell_enabled(db) and not nobody_to_ask:
             tools.append({"key": "run_command", "description":
-                "Run a shell command on the user's Mac (zsh, in Arslan's working folder, the user's PATH "
-                "incl. Homebrew). Use it for anything a command-line tool does: files, conversions "
+                "Run a shell command on the user's Mac (bash 3.2: no recursive **, |&, &>>, declare -A or ${a[-1]}; "
+                "Arslan's working folder, the user's PATH incl. Homebrew). Use it for anything a command-line tool does: files, conversions "
                 "(pandoc, ffmpeg), scripts (python3, node, swift), Apple data (Reminders/Calendar via "
-                "a Swift script using EventKit, or osascript), git, curl for reading. It can create "
-                "files and folders in the working folder. "
+                "a Swift script using EventKit, or osascript), git, curl for reading. "
                 # 0.1.63 K7: the time limits (F1), outside_sandbox and the network rule (S2a-1) are said by
                 # the parameter table (tool_loop, from terminal_exec's constants), not again here.
                 "Commands run in a sandbox: they can read files and use the network, but write only inside "
                 "the working folder, temp and cache folders, and cannot read ~/.ssh, the keychain or "
-                "Arslan's own data. A command the sandbox stopped (\"Operation not permitted\") may be "
-                "offered to the user to run again outside it. Harmless commands just run; deleting, "
+                "Arslan's own data. A command the sandbox stopped comes back to you: find another way, or "
+                "use outside_sandbox. Harmless commands just run; deleting, "
                 "installing, sending/posting/uploading, or controlling other apps shows the user the "
                 "command first; a few things (sudo, wiping disks, reading passwords) are never run — ask "
                 "the user to do those. A long output is cut and the whole of it is saved: read a saved tool output with "

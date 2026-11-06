@@ -17,7 +17,7 @@ _HINTS: tuple[tuple[re.Pattern, str], ...] = (
      "EventKit for Reminders or Calendar (write it to a .swift file and run `swift file.swift`; it uses a "
      "different permission), a Shortcut (mac_list_shortcuts / mac_run_shortcut), or ask the user to allow "
      "Automation for Arslan in System Settings. Do not retry the same AppleScript."),
-    (re.compile(r"command not found|no such file or directory: ?[\w./-]+$", re.I | re.M),
+    (re.compile(r"command not found|/bin/bash: [\w./-]+: no such file or directory", re.I),
      "That command is not installed. Use an installed alternative, or a short python3 or swift script; "
      "installing software shows the user the command first."),
     (re.compile(r"permission denied|operation not permitted|read-only file system", re.I),
