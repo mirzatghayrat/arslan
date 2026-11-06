@@ -134,8 +134,9 @@ _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty
 # this time only. Reads are not here: ssh, git push and gh read them outside the sandbox (S2a-1).
 _PROTECTED_NAME = (r"(?:\.ssh(?=/|\b)|\.(?:zshrc|zshenv|zprofile|zlogin|zlogout|bashrc|bash_profile|bash_login"
                    r"|bash_logout|profile|inputrc|cshrc|tcshrc|kshrc)(?![\w.-])|\.config/(?:fish|gh|gcloud)(?=/|\b)"
-                   r"|\.(?:aws|gnupg|kube|azure)(?=/|\b)|\.docker/config\.json|\.(?:netrc|npmrc|pypirc|git-credentials"
-                   r"|gitconfig)(?![\w.-])|Library/(?:LaunchAgents|LaunchDaemons|StartupItems|Keychains)(?=/|\b)"
+                   r"|\.(?:aws|gnupg|kube|azure|gsutil)(?=/|\b)|\.config/rclone(?=/|\b)"
+                   r"|\.docker/config\.json|\.(?:netrc|npmrc|pypirc|git-credentials|gitconfig|rclone\.conf|s3cfg|boto)"
+                   r"(?![\w.-])|Library/(?:LaunchAgents|LaunchDaemons|StartupItems|Keychains)(?=/|\b)"
                    # other agents' settings start programs (hooks, MCP servers) the next time they run
                    r"|\.(?:cursor|codex|claude|gemini|hermes|continue)/|\.claude\.json\b"
                    r"|Library/Application Support/Claude/)")

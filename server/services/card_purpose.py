@@ -316,7 +316,7 @@ def _over_network(program: str) -> dict:
 _NETWORK = {"curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp", "tftp", "lftp",
             "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail", "msmtp",
             "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
-            "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"}
+            "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine", "azcopy"}
 #: Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7).
 _INLINE_CODE = {"python": r"^-[A-Za-z]*c", "python2": r"^-[A-Za-z]*c", "python3": r"^-[A-Za-z]*c",
                 "node": r"^(?:-[A-Za-z]*[ep]|--eval|--print)", "perl": r"^-[A-Za-z]*[eE]", "ruby": r"^-[A-Za-z]*e",
