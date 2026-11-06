@@ -1193,93 +1193,10 @@ async def _callable_tools() -> list[dict]:
 async def _every_tool() -> list[dict]:
     """Arslan's host-level safe toolset: web + chart + second-brain recall/remember
     (no spawn wiring)."""
-    from server.registry.executors import EXECUTORS
-
-    desc = {
-        # 0.1.63 K5: the research rules live with the web tools (they were appended to every system text),
-        # and web_search says what a blocked search means (D5).
-        "web_search": ("Search the web for fresh/factual info; returns titles, urls and short snippets, not "
-                       "full data: use it to locate the best source, not to collect facts one query at a time. "
-                       "Do at most 1–2 broad searches, then web_extract the most authoritative page; don't run "
-                       "several similar searches or chase each data point with its own search, and answer as "
-                       "soon as you can. If it returns code search_blocked, nothing was searched: tell the user "
-                       "the search was blocked (not that the web has nothing) and that a fallback search "
-                       "service can be set in Settings, and never answer from memory as if you had searched."),
-        "web_extract": ("Fetch a URL and return its main text (SSRF-guarded). Extracting the most authoritative "
-                        "page beats many snippet searches. If what you gathered is incomplete, answer only the "
-                        "supported part and name the specific unknowns; never invent missing detail or keep "
-                        "searching in circles."),
-        "render_chart": "Render a line/bar/pie chart from structured data; the user sees the chart.",
-        "recall": "Search the user's second brain (facts, learnings, notes) for relevant "
-                  "context before answering.",
-        "remember": "Write to the user's second brain: a fact/learning/note worth remembering.",
-        "conversation_search": "Find what was said in earlier conversations with the user — their own "
-                               "words and your replies — as original snippets with date and a link. "
-                               "args: {query, since?, until? (YYYY-MM-DD), limit?}. Use it when the user "
-                               "refers to something from before (\"what did I say about…\", \"last week we…\").",
-        "memory_note": "Edit the two memory sets that are always in view, by entry id. set \"about_you\": "
-                       "lasting facts and preferences about the user; set \"notes\": what you learned about this "
-                       "Mac and setup (paths, tools, quirks). args: {action: add|replace|remove, set, id?, text?, "
-                       "sensitive?}. Keep entries short. Add sensitive: true for anything private (health, beliefs, "
-                       "relationships, money); the user is asked first. Changes apply from the next turn; a full set "
-                       "returns its entries so you can replace or remove one.",
-    }
-    tools = [{"key": k, "description": desc[k]}
-             for k in ("web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search",
-                       "memory_note")]
+    from server.registry import tool, tool_defs
+    from server.services import background_jobs, permissions
     from server.services.task_service import current as current_task
-    if current_task() is not None:
-        tools.append({"key": "task_progress", "description":
-                      "Read THIS turn's own saved progress and owned prior outputs after interruption or context "
-                      "compaction. Optional run_id selects one prior execution. This never authorizes repeating a "
-                      "write. Not for background work: for that, use background_status."})
-    if current_task() is not None:
-        tools.append({"key": "delegate_work", "description":
-            "Use only for independent subtasks or isolated review that materially helps the current request. "
-            "Assign up to four small jobs using research, apple-growth or product-design methods; at most two run together. "
-            "Provide minimal context and an explicit read-only tool subset. Workers cannot delegate, change memory or write files. "
-            "Results remain unverified; synthesize and validate them in the host. Do not use for simple questions."})
-    # 0.1.50 S2: the run's checklist — host bookkeeping (turn_plan), no executor.
-    tools.append({"key": "update_plan",
-                  "description": "Keep a short checklist for a task with several parts or a target "
-                                 "count (\"find 10 …\", \"compare 3 …\"). Send the WHOLE list each time and keep "
-                                 "counts in the text (\"collect jobs 6/10\"). Update it as parts finish; "
-                                 "the current plan is shown back to you at the end of every step. "
-                                 "Skip it for one-step requests."})
-    # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends
-    # the turn and _handle_answer emits the clarify_options card). Registered here so
-    # Arslan's answer path can offer real choice buttons instead of a text counter-question.
-    tools.append({"key": "ask_user_choice",
-                  "description": "Ask the user to pick ONE of 2-4 concrete directions when you "
-                                 "genuinely cannot proceed without their choice. The user answers with "
-                                 "one click — NEVER ask a multiple-choice question in plain text."})
-    # 0.1.42 background work: offered to a host TURN only. Inside a job these are
-    # absent, so a job can never start (or stop) another job.
-    from server.services import background_jobs
-    # S1 (R7): only where someone can be asked. A scheduled run binds no card surface; through a job it could
-    # put a card on the window, and it cannot act on this Mac itself (decide refuses unattended, U14 a).
-    from server.services import permissions
-    if (current_task() is not None and not background_jobs.inside_job() and "start_background_work" in EXECUTORS
-            and permissions.current_asker() is not None):
-        tools.append({"key": "start_background_work", "description":
-            # 0.1.63 K4b (D4): one set of rules. A job is the same work in another place, chosen by the
-            # user or the model; the old "do NOT do such work inline" and the one-sentence reply are gone.
-            "Continue a piece of work in the background: the same work, run as a job, so the conversation "
-            "stays free. Use it when the user asks for it, or when the work will run long (many steps, or "
-            "more than about ten minutes) and doesn't need the user meanwhile; otherwise do the work in this "
-            "turn. In the goal, include what is already done in this turn (files saved, findings) and what "
-            "remains: the job sees the saved conversation but not this turn's tool results. Add 2-5 "
-            "completion criteria in the same language; prefer checkable kinds (file_saved, sources_read, "
-            "mentions). The result is posted to this conversation when the job ends. Acting in the browser "
-            "(clicking, typing, submitting) or on the Mac (Shortcuts, AppleScript) happens in background "
-            "work, where the user is asked before the first action."})
-        tools.append({"key": "background_status", "description":
-            "Read the real state of this conversation's background jobs (running, step, outcome, which "
-            "budget limit ended it). Call it FIRST whenever the user asks about work you started — "
-            "\"how is it going\", \"is it done\", \"why did it stop\" — and answer from it; "
-            "never guess progress, and never use task_progress for this."})
-        tools.append({"key": "stop_background_work", "description":
-            "Stop one running background job of this conversation by job_id when the user asks to stop it."})
+    tools = tool.listed(tool_defs.TOOLS, tool.read_offer())
     # 0.1.45 hands. Looking is offered everywhere; acting only inside a
     # background job (where its confirmation cards can wait without holding the
     # conversation), so never in a scheduled run, which has none (S1, R7).

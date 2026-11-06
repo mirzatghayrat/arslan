@@ -22,6 +22,7 @@ from server.orchestrator.json_protocol import first_json_object, parse_json_obje
 from server.orchestrator import on_demand, parallel_reads, turn_context
 from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
+from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services import replay_safety, steering
 from server.services.llm_factory import build_adapter
@@ -2011,10 +2012,7 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
-from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
-
-# INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
-_SENSITIVE_FLAG = {"type": "boolean", "description": "true if private"}
+# The tools still to move into server/registry/tool_defs (LOOP1 a3–a5) are listed here; DELETE-BY: v0.1.64, with a5.
 
 # Hands v2 §6.3: the one way the model asks for the front. FRONT1 (the user, 2026-10-30): an action the app
 # ignored in the background reads as `sent_unconfirmed` (a click or a press never says `no_effect`: Hands'
@@ -2025,6 +2023,7 @@ _FRONT = ("only if this action, done in the background, came back sent_unconfirm
           "second, waiting for the user to pause typing")
 
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
+    **tool_defs.SCHEMAS,
     "read_file": {"type": "object", "properties": {
         "path": {"type": "string", "minLength": 1,
                  "description": "File path within the approved readable roots or workspace."},
@@ -2136,50 +2135,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                  "items": {"type": "string", "minLength": 1, "maxLength": 120},
                  "description": "the menu's titles as the app shows them, top level first: [\"Format\", \"Font\", \"Bold\"]"}},
         "required": ["app", "path"], "additionalProperties": False},
-    "start_background_work": {"type": "object", "properties": {
-        "goal": {"type": "string", "minLength": 1, "maxLength": 4000,
-                 "description": "The work to do, in the user's own words and language."},
-        "criteria": {"type": "array", "minItems": 1, "maxItems": 5, "items": {
-            "type": "object", "properties": {
-                "description": {"type": "string", "minLength": 1, "maxLength": 300,
-                                "description": "One check, in the user's language."},
-                "kind": {"type": "string", "enum": ["file_saved", "sources_read", "mentions", "judgement"]},
-                "target": {"type": "string", "maxLength": 240,
-                           "description": "file_saved: the file or folder's full path (~/… or /…); "
-                                          "sources_read: optional, a file name or site the sources must include; "
-                                          "mentions: the phrase"},
-                "minimum": {"type": "integer", "minimum": 1, "maximum": 20}},
-            "required": ["description"], "additionalProperties": False}}},
-        "required": ["goal", "criteria"], "additionalProperties": False},
-    "background_status": {"type": "object", "properties": {}, "additionalProperties": False},
-    "stop_background_work": {"type": "object", "properties": {"job_id": {"type": "string", "minLength": 1}},
-                             "required": ["job_id"], "additionalProperties": False},
-    "delegate_work": {"type": "object", "properties": {"jobs": {
-        "type": "array", "minItems": 1, "maxItems": 4, "items": {
-            "type": "object", "properties": {
-                "method": {"type": "string", "enum": ["research", "apple-growth", "product-design"]},
-                "objective": {"type": "string", "maxLength": 4000},
-                "context": {"type": "string", "maxLength": 8000},
-                "tools": {"type": "array", "maxItems": 2, "items": {
-                    "type": "string", "enum": ["web_search", "web_extract"]}}},
-            "required": ["method", "objective"], "additionalProperties": False}}},
-        "required": ["jobs"], "additionalProperties": False},
-    "task_progress": {"type": "object", "properties": {"run_id": {"type": "integer", "minimum": 1}},
-                      "additionalProperties": False},
-    "web_search": {"type": "object",
-                   "properties": {"query": {"type": "string"}},
-                   "required": ["query"]},
-    "web_extract": {"type": "object",
-                    "properties": {"url": {"type": "string"},
-                                   "max_chars": {"type": "integer", "minimum": 1, "maximum": 40_000,
-                                                 "default": 12_000,
-                                                 "description": "Maximum extracted characters. Request a larger bounded read only when needed; check source.truncated."}},
-                    "required": ["url"]},
-    "render_chart": {"type": "object",
-                     "properties": {"type": {"type": "string"},
-                                    "x": {"type": "array"},
-                                    "series": {"type": "array"},
-                                    "title": {"type": "string"}}},
     "run_command": {"type": "object",
                     "properties": {"command": {"type": "string",
                                                "description": "The full shell command line, e.g. "
@@ -2201,21 +2156,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                           "outside_sandbox, why it must run outside. "
                                                           "Cards show it first."}},
                     "required": ["command"]},
-    "conversation_search": {"type": "object",
-                            "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,
-                                                     "description": "Words to find, e.g. \"weekly report\" or \"landlord\"."},
-                                           "since": {"type": "string", "description": "YYYY-MM-DD, optional."},
-                                           "until": {"type": "string", "description": "YYYY-MM-DD, optional."},
-                                           "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
-                            "required": ["query"], "additionalProperties": False},
-    "memory_note": {"type": "object",
-                    "properties": {"action": {"type": "string", "enum": ["add", "replace", "remove"]},
-                                   "set": {"type": "string", "enum": ["about_you", "notes"]},
-                                   "id": {"type": "string", "description": "Entry id, for replace or remove."},
-                                   "text": {"type": "string", "maxLength": 600,
-                                            "description": "The entry, for add or replace. One short line."},
-                                   "sensitive": _SENSITIVE_FLAG},
-                    "required": ["action", "set"], "additionalProperties": False},
     # v0.1.64 CAP2a: the user sees the whole SKILL.md on a card and decides (skill_forge.propose).
     "create_skill": {"type": "object",
                      "properties": {"key": {"type": "string", "maxLength": 60,
@@ -2231,23 +2171,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                      "required": ["key", "name", "description", "body"], "additionalProperties": False},
     "run_python": {"type": "object",
                    "properties": {"code": {"type": "string"}}},
-    "recall": {"type": "object",
-               "properties": {"query": {"type": "string"},
-                              "kind": {"type": "string",
-                                       "enum": ["fact", "material", "learning", "note"]}},
-               "required": ["query"]},
-    "remember": {"type": "object",
-                 "properties": {
-                     "kind": {"type": "string",
-                              "enum": ["fact", "learning", "note", "preference"]},
-                     "action": {"type": "string",
-                                "enum": ["append", "supersede", "mark_stale", "delete"]},
-                     "content": {"type": "string"},
-                     "target_id": {"type": "integer"},
-                     "sensitive": _SENSITIVE_FLAG,
-                 },
-                 "required": ["kind", "action", "content"]},
-    "update_plan": _PLAN_PARAMS,
     # 0.1.63 K7: the two tools that reach everything a request is not shown (on_demand.py).
     "find_tools": {"type": "object",
                    "properties": {"query": {"type": "string", "maxLength": 200,
@@ -2294,18 +2217,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                      "required": ["text"]}}},
                                  "required": ["name", "band"]}}},
         "required": ["levels", "reason"]},
-    "ask_user_choice": {
-        "type": "object",
-        "properties": {
-            "question": {"type": "string"},
-            "options": {"type": "array", "minItems": 2, "maxItems": 4,
-                        "items": {"type": "object",
-                                  "properties": {"label": {"type": "string"},
-                                                 "hint": {"type": "string"}},
-                                  "required": ["label"]}},
-        },
-        "required": ["question", "options"],
-    },
     # 0.1.63 D1: hand an existing file to the user (window card + paired iPhone).
     "attach_file": {"type": "object", "properties": {
         "path": {"type": "string", "minLength": 1,
