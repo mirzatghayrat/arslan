@@ -1,5 +1,5 @@
 /**
- * The run drawer is gone (the user, 2026-11-02: 「去掉」): its fleet radar and history sparkline went with it, and everything
+ * The run drawer is gone (the user, 2026-11-02: remove it): its fleet radar and history sparkline went with it, and everything
  * else it offered is in the inspector's 「诊断」 (#631). A scheduled run, which opened the drawer, now opens on Progress, picked.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
