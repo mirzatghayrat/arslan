@@ -23,9 +23,17 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "island",
   "step",
   "web_extract"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -34,13 +42,25 @@
    "url": "https://example.test/a"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
  ],
  [
   "island",
   "step",
   "web_extract"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -49,13 +69,25 @@
    "url": "https://example.test/b"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
  ],
  [
   "island",
   "step",
   "web_extract"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -64,7 +96,11 @@
    "url": "https://example.test/c"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [

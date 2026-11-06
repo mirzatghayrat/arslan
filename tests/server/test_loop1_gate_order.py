@@ -2,16 +2,18 @@
 
 For each tool, in today's order: a call that trips two gates is answered by the earlier one, the later one never runs
 (no card, no executor), and the `tool_call` frame goes out only past the gates that come before it. Each gate alone is
-checked too, so a pair can't pass because a trip did nothing. It tests the order, not what each gate decides: that is
-what the gates' own tests are for, so a trip uses the simplest input that reaches its gate.
+checked too, so a pair can't pass because a trip did nothing. It tests the order and what each gate says, not what each
+gate decides: that is what the gates' own tests are for, so a trip uses the simplest input that reaches its gate.
 
 Temporary: DELETE-BY: v0.1.64, with LOOP1's slice z (docs/plans/0164/LOOP1-agent-loop.md). A PR that adds, removes or
 moves a gate on purpose changes the lists below.
 """
 import itertools
 import json
+import os
 import types
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 import pytest
@@ -24,6 +26,8 @@ from tests.server.test_loop1_pinned_turns import _booted, _database  # noqa: F40
 
 HERMETIC = "evolution-replay"
 SECRET = {"password": "not-a-real-one"}
+ANSWERS = Path(__file__).parent / "golden" / "loop1_gate_answers.json"
+REGENERATE = "ARSLAN_UPDATE_GOLDEN=1 pytest tests/server/test_loop1_gate_order.py"
 
 
 class _Env:
@@ -37,6 +41,7 @@ class _Env:
         self.confirm_workspace_write = self._card("write", True)
         self.confirm_schedule = self._card("schedule", True)
         self.mcp_fail_counts = {}
+        self.fails = None
 
     def _card(self, name, answer):
         async def card(*_args, **_own):
@@ -50,6 +55,8 @@ class _Env:
 
         async def execute(_args):
             self.ran.append(self.tool)
+            if self.fails is not None:
+                raise self.fails
             return {"ok": True, "summary": "the executor ran"}
         self.monkeypatch.setitem(executors.EXECUTORS, self.tool, types.SimpleNamespace(key=self.tool, execute=execute))
         with scope(self.budget or Budget()):
@@ -214,6 +221,11 @@ HERMETIC_GATE = Gate("hermetic", _hermetic, "evaluation context")
 COMMON = [BUDGET, CREDENTIALS, WORKER, UNAVAILABLE]
 
 
+AFTER_THE_GATES = {"read_file: the executor raises": RuntimeError("it broke"),
+                   "read_file: the executor times out": TimeoutError(),
+                   "run_command: the executor times out": TimeoutError()}
+
+
 def _hermetic_after(card):
     """The eval backstop comes after the tool's own card: an approved card is shown, then the call is refused."""
     return Gate("hermetic", _hermetic, "evaluation context", card=card)
@@ -366,3 +378,24 @@ async def test_what_a_refusal_records(gate, recorded_args, counted, monkeypatch)
     assert env.trace[-1]["args"] == recorded_args
     assert env.convo[-1]["_legacy_call"] == ("{}" if recorded_args else json.dumps({"tool": env.tool, "args": {}}))
     assert env.mcp_fail_counts.get("mcp_1__lookup", 0) == counted
+
+
+async def test_what_each_gate_answers_word_for_word(monkeypatch):
+    """The model reads these words. A gate that moves says the same thing from its new place."""
+    answers = {}
+    for chain, (_args, gates) in CHAINS.items():
+        for gate in gates:
+            with monkeypatch.context() as patch:
+                env = _env(chain, patch)
+                gate.trip(env)
+                answers[f"{chain}: {gate.name}"] = str(await _outcome(env))
+            tool_loop.reset_hermetic_fetch_budget()
+    for name, failure in AFTER_THE_GATES.items():
+        env = _env(name.split(":")[0], monkeypatch)
+        env.fails = failure
+        answers[name] = str(await _outcome(env))
+    text = json.dumps(answers, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+    if os.environ.get("ARSLAN_UPDATE_GOLDEN") == "1":
+        ANSWERS.write_text(text, encoding="utf-8")
+    assert text == ANSWERS.read_text(encoding="utf-8"), (
+        f"what a gate says changed. If you meant it, commit the new JSON, so the diff shows the change: {REGENERATE}")

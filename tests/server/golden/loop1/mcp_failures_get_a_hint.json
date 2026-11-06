@@ -18,6 +18,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"id\": 1}",
@@ -32,13 +36,21 @@
   "mcp_1__lookup"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "mcp_1__lookup",
   {
    "id": 1
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -94,6 +106,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"id\": 2}",
@@ -108,13 +124,21 @@
   "mcp_1__lookup"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "mcp_1__lookup",
   {
    "id": 2
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -127,6 +151,15 @@
    "summary": "server said no",
    "tool": "mcp_1__lookup",
    "type": "tool_result"
+  }
+ ],
+ [
+  "event",
+  "c1",
+  "mcp_degrade_hint",
+  {
+   "count": 2,
+   "tool_key": "mcp_1__lookup"
   }
  ],
  [
