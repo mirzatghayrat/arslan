@@ -3,12 +3,13 @@ Arslan lists what it would keep and why it left the rest out; nothing is stored 
 the lines they kept, in those words."""
 import asyncio
 import json
+import logging
 
 import pytest
 from sqlalchemy import select
 
 from server.db.companion_models import ConversationContext, MemoryEntry, MemoryRevision
-from server.db.models import ArslanMessage, Lesson
+from server.db.models import ArslanMessage, Lesson, Run
 from server.orchestrator import arslan, tool_loop
 from server.orchestrator import memory as turn_memory
 from server.services import approvals, judgment, lessons, memory_import, memory_merge, task_context, turn_facts
@@ -46,10 +47,11 @@ async def memory(execution_db):
     return execution_db
 
 
-async def _said(db, text, cid=CID, role="user"):
-    """The row a turn stores; its id is what the turn's context names (`task_context.source_message`)."""
+async def _said(db, text, cid=CID, role="user", run_id=None):
+    """The row a turn stores; its id is what the turn's context names (`task_context.source_message`). A steer is a
+    user's row with its run's id."""
     async with db() as session:
-        row = ArslanMessage(conversation_id=cid, role=role, content=text)
+        row = ArslanMessage(conversation_id=cid, role=role, content=text, run_id=run_id)
         session.add(row)
         await session.commit()
         return row.id
@@ -122,13 +124,27 @@ async def test_a_message_with_no_list_in_it_is_not_a_paste(memory, message):
     assert out["ok"] is False and out["nothing_to_import"] is True and seen == []
 
 
-async def test_a_plain_line_beside_a_list_is_left_out_and_shown(memory):
+async def test_a_plain_line_beside_a_list_starts_unticked(memory):
+    """It may be the asking, so a plain yes doesn't store it."""
     await _said(memory, "Here is my export, import it\n- Likes tea\n-\n1.\nAnd do it quickly")
     seen = []
-    await _import(_ask(seen=seen))
-    assert [e["text"] for e in seen[0]["entries"]] == ["Likes tea"]
-    assert seen[0]["left_out"] == [{"text": "Here is my export, import it", "reason": "beside_the_list"},
-                                   {"text": "And do it quickly", "reason": "beside_the_list"}]
+    out = await _import(_ask(seen=seen))
+    assert [(e["text"], e["ticked"]) for e in seen[0]["entries"]] == [
+        ("Here is my export, import it", False), ("Likes tea", True), ("And do it quickly", False)]
+    assert seen[0]["left_out"] == [] and out["saved"] == 1 and set(await _stored(memory)) == {"Likes tea"}
+
+
+@pytest.mark.parametrize("paste", [
+    "Is a software engineer\nPrefers short answers\nHas a cat called Miso\n- Works in Python",
+    "Is a software engineer\nPrefers short answers\nHas a cat called Miso\n2024-05-01: started at Acme",
+], ids=["one bullet", "one date"])
+async def test_a_stray_marker_costs_no_line(memory, paste):
+    """One marker turns a plain paste into a list: the plain lines start unticked, and each can still be kept."""
+    await _said(memory, paste)
+    seen = []
+    await _import(_ask(seen=seen, kept=["e0", "e2"]))
+    assert len(seen[0]["entries"]) == 4 and seen[0]["left_out"] == []
+    assert set(await _stored(memory)) == {"Is a software engineer", "Has a cat called Miso"}
 
 
 async def test_a_key_beside_a_list_is_not_shown_again(memory):
@@ -435,18 +451,20 @@ async def test_an_id_it_didnt_show_stores_nothing_of_it(memory):
     assert out["saved"] == 1 and set(await _stored(memory)) == {"One line"}
 
 
-async def test_a_line_that_cant_be_stored_is_counted_and_the_others_go_on(memory, monkeypatch):
+async def test_a_line_that_cant_be_stored_is_counted_and_the_others_go_on(memory, monkeypatch, caplog):
     real = MemoryRepository.create
 
     async def create(self, write, actor):
         if write.content == "Line two":
-            raise RuntimeError("disk full")
+            raise RuntimeError(f"INSERT INTO memory_revisions VALUES ({write.content})")   # as the engine's error reads
         return await real(self, write, actor)
     monkeypatch.setattr(MemoryRepository, "create", create)
     await _said(memory, "- Line one\n- Line two\n- Line three")
-    out = await _import(_ask())
+    with caplog.at_level(logging.INFO, logger="server.services.memory_import"):
+        out = await _import(_ask())
     assert (out["ok"], out["saved"], out["not_saved"]) == (True, 2, 1)
     assert set(await _stored(memory)) == {"Line one", "Line three"}
+    assert "RuntimeError" in caplog.text and "Line two" not in caplog.text    # the log names the failure, not the words
 
 
 async def test_the_model_is_told_counts_not_the_lines(memory):
@@ -605,12 +623,17 @@ def post_turn(monkeypatch):
     return model
 
 
-async def _turn(monkeypatch, text, ask=None):
+async def _settled():
+    await settle_after_turn()
+    await asyncio.gather(*list(lessons._background))
+
+
+async def _turn(monkeypatch, text, ask=None, settle=True):
     model = _TurnModel(ask)
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
     await arslan.handle_user_message(CID, text, lambda event: None)
-    await settle_after_turn()
-    await asyncio.gather(*list(lessons._background))
+    if settle:
+        await _settled()
     return model.out
 
 
@@ -675,6 +698,96 @@ async def test_a_stop_while_the_judges_run_keeps_the_paste_out_too(memory, post_
     await asyncio.gather(turn, return_exceptions=True)
     await _turn(monkeypatch, "what time is it")
     assert "what time is it" in post_turn.prompts[-1] and "Miso" not in post_turn.prompts[-1]
+
+
+class _BackedUp(_PostTurnModel):
+    """A fast model with a backlog. As a real one can, it names a line only from a prompt that holds it."""
+
+    def __init__(self):
+        super().__init__()
+        self.free, self.asked = asyncio.Event(), asyncio.Event()
+
+    async def chat(self, *, system, user):
+        self.facts, self.practices = (NAMED[1:], [PRACTICE]) if "Miso" in user else ([], [])
+        self.asked.set()
+        await self.free.wait()
+        return await super().chat(system=system, user=user)
+
+
+async def test_a_job_behind_a_backlog_cant_read_a_paste_on_its_way_to_the_card(memory, post_turn, monkeypatch):
+    """An earlier turn's job can start after the paste's row is in and before the paste's model reaches the tool."""
+    backed_up = _BackedUp()
+
+    async def extractor():
+        return backed_up
+    monkeypatch.setattr(turn_facts, "_get_adapter", extractor)
+    await _turn(monkeypatch, "first", settle=False)
+    await asyncio.wait_for(backed_up.asked.wait(), 5)        # its job holds the fast model
+    await _turn(monkeypatch, "second", settle=False)         # its job waits behind that one
+    replying, reply = asyncio.Event(), asyncio.Event()
+
+    class _Slow(_TurnModel):
+        async def chat(self, *args, **kwargs):
+            replying.set()
+            await reply.wait()
+            return await super().chat(*args, **kwargs)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _Slow(_ask(approved=False)))
+    paste = asyncio.create_task(arslan.handle_user_message(CID, PASTE, lambda event: None))
+    await asyncio.wait_for(replying.wait(), 5)               # the paste's row is in; no card yet
+    backed_up.free.set()
+
+    async def both_jobs_asked():
+        while len(backed_up.prompts) < 2:
+            await asyncio.sleep(0.01)
+    await asyncio.wait_for(both_jobs_asked(), 10)
+    reply.set()
+    await paste
+    await _settled()
+    assert "second" in backed_up.prompts[1] and not any("Miso" in prompt for prompt in backed_up.prompts)
+    assert await _stored(memory) == {} and await _lessons(memory) == []
+
+
+@pytest.mark.parametrize("turned", [False, True], ids=["ordinary", "learning from a later message"])
+async def test_a_job_keeps_its_turns_steer_and_stops_at_the_next_turn(memory, post_turn, turned):
+    """Each message is read by its own job: the row that starts the next turn has no run yet, and a steer has one."""
+    older = await _said(memory, "An older message of mine")
+    await _said(memory, "A message after the older one")
+    mine = await _said(memory, "My own message")
+    await _said(memory, "A reply", role="arslan")
+    await _said(memory, "A message in another conversation", cid="c-other")
+    async with memory() as session:
+        run = Run(conversation_id=CID, user_message="My own message", status="done", system_prompt="p")
+        session.add(run)
+        await session.commit()
+        run_id = run.id
+    await _said(memory, "A steer in my turn", run_id=run_id)
+    await _said(memory, "The next turn's message")
+    await _said(memory, "A steer in the next turn", run_id=run_id)
+    if turned:
+        async with memory() as session:
+            session.add(ConversationContext(id=CID, learns_after_message_id=older))
+            await session.commit()
+    with pc.bind(_ctx(source_message_id=mine)):
+        await turn_facts.extract(CID, "My own message")
+    prompt = post_turn.prompts[0]
+    assert ("An older message of mine" in prompt) is not turned
+    for line in ("A message after the older one", "My own message", "A steer in my turn"):
+        assert line in prompt
+    for line in ("next turn", "another conversation", "A reply"):
+        assert line not in prompt
+
+
+async def test_a_job_with_no_later_turn_reads_the_history_as_before(memory, post_turn, monkeypatch):
+    """The ordinary path: what `assemble_working_context` holds, so a summarized message isn't read again."""
+    await _said(memory, "A message summarized away")
+    mine = await _said(memory, "My own message")
+
+    async def after_a_summary(conversation_id, **kwargs):
+        return {"summary": "", "history": [{"role": "user", "content": "My own message"}]}
+    monkeypatch.setattr(turn_memory, "assemble_working_context", after_a_summary)
+    with pc.bind(_ctx(source_message_id=mine)):
+        await turn_facts.extract(CID, "My own message")
+    assert "summarized away" not in post_turn.prompts[0]
 
 
 async def test_a_message_that_had_nothing_to_list_still_teaches(memory, post_turn, monkeypatch):

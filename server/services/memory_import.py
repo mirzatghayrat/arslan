@@ -48,10 +48,11 @@ _NOT_A_LINE = re.compile(r"^(?:```|#{1,6}\s)")
 
 
 def split(text: str | None) -> list[tuple[str, bool]]:
-    """One (line, offered) per candidate, without its bullet or date. Fences, headings, a line introducing a list
-    ("Here is what I know:") and a line with no letter or number aren't candidates. Beside a list, a plain line is the
-    asking and not a memory, and so is a plain line alone, so a follow-up ("yes, import those") offers nothing. With no
-    list and several lines, each is offered, the asking too if it's there: the card shows it, to untick."""
+    """One (line, ticked) per candidate, without its bullet or date. Fences, headings, a line introducing a list
+    ("Here is what I know:") and a line with no letter or number aren't candidates. Beside a list, a plain line may be
+    the asking, so it starts unticked, and nothing is lost. A plain line alone isn't a paste, so a follow-up ("yes,
+    import those") offers nothing. With no list and several lines, each starts ticked, the asking too if it's there:
+    the card shows it, to untick."""
     lines = []
     for raw in (text or "").splitlines():
         raw = raw.strip()
@@ -60,7 +61,7 @@ def split(text: str | None) -> list[tuple[str, bool]]:
             lines.append((line, line != raw))
     if any(listed for _, listed in lines):
         return lines
-    return [(line, len(lines) > 1) for line, _ in lines]
+    return [(line, True) for line, _ in lines] if len(lines) > 1 else []
 
 
 async def _this_turns_message(conversation_id: str | None, message_id: int | None) -> str:
@@ -88,7 +89,7 @@ async def _sort(text: str, actor) -> tuple[list[dict], list[dict], int]:
     seen: set[str] = set()
     scope = MemoryScope(kind="global")
     lines = split(text)
-    for index, (raw, offered) in enumerate(lines):
+    for index, (raw, ticked) in enumerate(lines):
         if len(entries) >= MAX_ENTRIES or index >= MAX_LINES_READ:
             return entries, left_out, len(lines) - index
         line = untrusted.clean_body(raw).strip()
@@ -102,9 +103,6 @@ async def _sort(text: str, actor) -> tuple[list[dict], list[dict], int]:
         if len(line) > turn_facts.MAX_FACT_CHARS:
             left_out.append({"text": f"{line[:120]}…", "reason": "too_long"})
             continue
-        if not offered:
-            left_out.append({"text": line, "reason": "beside_the_list"})
-            continue
         why = turn_facts.why_not_kept(line)
         if why:
             left_out.append({"text": line, "reason": why})
@@ -114,7 +112,7 @@ async def _sort(text: str, actor) -> tuple[list[dict], list[dict], int]:
         if known:
             left_out.append({"text": line, "reason": known})
         else:
-            entries.append({"id": f"e{len(entries)}", "text": line, "ticked": True, "same_as": None})
+            entries.append({"id": f"e{len(entries)}", "text": line, "ticked": ticked, "same_as": None})
     return entries, left_out, 0
 
 
@@ -198,8 +196,8 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
             async with repository() as repo:
                 await repo.create(write, actor)
             saved += 1
-        except Exception:  # noqa: BLE001 — the lines before it are in: the counts stay true, and the rest go on
-            logger.warning("memory import: a kept line wasn't stored", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 — the lines before it are in: the counts stay true, and the rest go on
+            logger.warning("memory import: a kept line wasn't stored: %s", type(exc).__name__)   # an error can hold the line
             not_saved += 1
     return {"ok": True, "saved": saved, "not_saved": not_saved, "left_out": len(left_out) + too_many,
             "note": "Tell the user how many were saved (`saved`). They can edit or delete any of them in Memory."}
