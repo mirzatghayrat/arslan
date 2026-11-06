@@ -46,6 +46,7 @@ vi.mock("../api/client", () => ({
   updateProviderConfig: (...args: unknown[]) => mockUpdateProviderConfig(...args),
   setPrimaryProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
   deleteProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
+  previewProviderModels: vi.fn().mockResolvedValue({ models: [], fetched_at: null, stale: true, error: null, source: "static" }),
   fetchProviderModels: (...args: unknown[]) => mockFetchProviderModels(...args),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
   testProviderConfig: vi.fn().mockResolvedValue({ ok: true }),
@@ -62,6 +63,12 @@ vi.mock("../stores/authStore", () => ({
 
 import ProviderConfigList from "../components/ProviderConfigList";
 import type { ProviderOption, ProviderConfig } from "../api/client.types";
+
+/** MODEL1: Add model starts with no provider picked. */
+function pickFirstProvider() {
+  fireEvent.click(screen.getByLabelText("Provider"));
+  fireEvent.pointerDown(screen.getAllByRole("option")[0]);
+}
 
 const providers: ProviderOption[] = [
   { key: "deepseek", label: "DeepSeek", base_url: "", default_model: "deepseek-chat", native: false, models: ["deepseek-chat", "deepseek-reasoner"] },
@@ -191,6 +198,7 @@ describe("add-draft error surfacing", () => {
       <ProviderConfigList llmProviders={providers} providerConfigs={[]} onConfigsChange={vi.fn()} />,
     );
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
     expect(screen.getByTestId("provider-draft-model")).toBeInTheDocument();
     await user.click(screen.getByTestId("provider-draft-confirm"));
     // Error is visible and carries the backend message; draft is NOT dismissed.
@@ -212,6 +220,7 @@ describe("add-draft error surfacing", () => {
     }
     render(<Harness />);
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
     await user.click(screen.getByTestId("provider-draft-confirm"));
     await waitFor(() => expect(mockAddProviderConfig).toHaveBeenCalled());
     // Draft closed, no error line, the new config's master row landed.

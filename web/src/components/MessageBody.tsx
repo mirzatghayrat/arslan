@@ -117,6 +117,7 @@ export function buildStandaloneHtml(innerHtml: string, title: string): string {
     `--color-border-strong:${v('--color-border-strong', '#3a3a40')}`,
     `--color-background:${v('--color-background', '#0e0e10')}`,
     `--color-surface-raised:${v('--color-surface-raised', '#1a1a1d')}`,
+    `--color-fill:${v('--color-fill', 'rgba(118,118,128,0.24)')}`,
     `--color-subtle-foreground:${v('--color-subtle-foreground', '#8a8a92')}`,
     `--color-success:${v('--color-success', '#3fb950')}`,
   ].join(';');

@@ -5,12 +5,12 @@ import asyncio
 import json
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm.exc import StaleDataError
 
 from server import crypto
 from server.db import session as db_session
-from server.db.models import MCPServer, Tool, Toolset
+from server.db.models import MCPServer, Setting, Tool, Toolset
 from server.mcp import discovery
 from server.orchestrator import untrusted
 from server.services import mcp_pin
@@ -342,8 +342,11 @@ async def delete_server(server_id: int) -> None:
     """The row first, then `forget` — which cancels an in-flight start (no orphan process), closes
     the session and moves the server's folder aside. In the other order a supervisor tick between
     the two found the row and started the deleted server again (forget's guard covers only its
-    own inside)."""
+    own inside). Its stored sign-in goes with the row: a later server can get this number."""
+    from server.mcp import oauth_flow
+
     async with db_session.AsyncSessionLocal() as db:
+        await db.execute(delete(Setting).where(Setting.key.in_(oauth_flow.stored_keys(server_id))))
         for t in (await db.execute(select(Tool).where(Tool.toolset_key == f"mcp_{server_id}"))).scalars().all():
             await db.delete(t)
         ts = await db.get(Toolset, f"mcp_{server_id}")

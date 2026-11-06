@@ -4,15 +4,6 @@ import { api } from "../api/client";
 afterEach(() => vi.restoreAllMocks());
 
 describe("knowledge client", () => {
-  it("getKnowledge GETs the spawn knowledge list", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify([{ source: "doc", chunks: 3 }]), { status: 200 }),
-    );
-    const out = await api.getKnowledge(7);
-    expect(out).toEqual([{ source: "doc", chunks: 3 }]);
-    expect(fetchMock.mock.calls[0][0]).toContain("/spawns/7/knowledge");
-  });
-
   it("ingestKnowledgeFile posts FormData without a JSON content-type", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ source: "f.txt", chunks_added: 1 }), { status: 200 }),

@@ -326,7 +326,7 @@ jobs:
         # tests still carries its own skip, which is why they stay green on Linux.
         # -o xfail_strict=true: SBX's p tests for a surface not built yet are strict
         # xfails, and JUnit doesn't record strictness, so every xfail is made strict here.
-        # -rfEsx: the x lists each xfail in the log, so the pinned count below can be read.
+        # -rfEsx: the x lists each xfail in the log, so the pinned counts can be read against it.
         run: .venv/bin/pytest tests/ -m macos -q -rfEsx -o xfail_strict=true --junitxml=macos-results.xml
 
       - name: Assert they RAN, and did not skip
@@ -335,99 +335,12 @@ jobs:
         # Vision or refuses seatbelt — reproducing, on the new platform, the
         # exact "a skip reads as a pass" failure that motivated the whole job.
         #
-        # The expected count is established by measurement rather than preference
-        # (see tests/server/test_macos_marker_covers_the_platform_set.py).
-        # If it legitimately changes, re-run the two-platform comparison and move
-        # this number with the evidence — do not tune it to whatever CI reports.
-        #
-        # 🔴 THE NUMBER LIVES IN TWO PLACES: here, and EXPECTED_TOTAL in that test
-        # file. Updating only the test makes the suite green locally and fails
-        # here; updating only this one hides drift from the guard that exists to
-        # catch it. Change both, in the same commit, or neither.
-        #    25 → 28 (2026-08-21, P3b): three seatbelt facts for the ssh
-        #    transport — the shipped profile is accepted, a per-host profile is
-        #    rejected, and the port confinement actually enforces.
-        run: |
-          .venv/bin/python - <<'PY'
-          import sys, xml.etree.ElementTree as ET
-          # 48 real macOS cases (0.1.51: +6 run_command workspace sandbox; 0.1.50: +2 run_command offline mode; 0.1.48: −4 with the unused command sandbox):
-          # includes restricted recovery trial, file-denial attacks, durable export, and the fixed isolated
-          # artifact parser (2026-09-15). MIRRORS EXPECTED_TOTAL in
-          # tests/server/test_macos_marker_covers_the_platform_set.py — a test there now fails if they differ.
-          # 0.1.63 D4 follow-up: +1, osacompile confirms an AppleScript syntax error without running it.
-          # 0.1.64 SBX-1b: +9, non-ASCII and control-character paths under real seatbelt.
-          # 0.1.64 SBX-2 (#507): +293, the default-deny base, its macOS corpus and three localhost measurements.
-          # 0.1.64 SBX-2 follow-up (#574): +2, compile checks that the TCP port denies on a fixed port list survive in the proxy and port-22 modes.
-          # 0.1.64 SBX-3p (#619): +56, the commands base's denial cases, strict xfails until SBX-3a's product adapter exists.
-          # 0.1.64 L11-3a/3d (#621): +1, a rules file's path through macOS's /var link refused, its real path written.
-          # 0.1.64 SBX-3a gates (#645, Codex): +13, the measured service allowlist (+12) and the multiprocessing diagnosis (+1).
-          # 0.1.64 SBX-3a gates (#645, Codex): +16, any-declared mode added to #619's two commands tests, strict xfails.
-          # 0.1.64 SBX-3a gates review round (#645, Codex): −17. The keychain gate's list drops four services that don't exist on macOS and swaps securityd for the live SecurityServer and securityd.xpc (−3 per mode: −12 in the SBX-2 kernel tests, −9 strict xfails in the commands tests); complete-list pins and the raw-UDP gate add +4.
-          # 0.1.64 SBX-3a: +1, the work folder, the narrowed devices and a pty still work.
-          # 0.1.64 SBX-3a §1a: +1, a sandboxed command writes its own run's TMPDIR.
-          # 0.1.64 SBX-3a flip: +1, a work folder inside a closed folder and a saved copy still work on the default-deny base.
-          # 0.1.64 SBX-6p (#669) (Codex): recounted after the merge of main, by collection.
-          # 0.1.64 SBX-4p (#670) (Codex): recounted after the merge of main, by collection.
-          # 0.1.64 SBX-6p (#669) after the trust and LAN settings and the merge of SBX-4p (#670): both p sets, by collection.
-          # 0.1.64 SBX-5p (#671) (Codex): recounted after the merge of main, by collection.
-          # 0.1.64 SBX-5p follow-ups (#671) (Codex): recounted after the merge of main, by collection.
-          # 0.1.64 SBX-5p (#671) after the merge of SBX-4p (#670): both p sets, by collection.
-          # 0.1.64 SBX-5p (#671) after the merge of SBX-6p (#669): SBX-4p, SBX-5p and SBX-6p, by collection.
-          # 0.1.64 L11 (b) (#681): −1, the rules writer went, and with it L11-3d's /var-link write test.
-          # 0.1.64 SBX-3a gates notes (#654, Codex), after the flip: +28 against 433 (five live services, less notificationcenterui.main, which the CI runner lacks): the kernel gates over 4 modes, and the commands cases over 3 modes now run for real.
-          # 0.1.64 SBX gates notes (#654) after the merge of SBX-4p (#670): 552 by collection, 508 + 28 + 16 SBX-4p cases from #654's wider service list.
-          # 0.1.64 SBX gates notes (#654) after the merge of SBX-6p (#669): by collection, with SBX-6's two commands modes over #654's wider service list.
-          # 0.1.64 SBX gates notes (#654) after the merge of SBX-5p (#671): 723 by collection, 645 + SBX-5p's 78.
-          # 0.1.64 SBX gates notes (#654) after the merge of L11 (b) (#681): 722 by collection, 723 − 1.
-          # 0.1.64 IPB-1b (#650): +2, a home through the Data firmlink or in another Unicode form is ~.
-          # 0.1.64 IPB-1b (#650) after the merge of main (SBX-4p/5p/6p, L11 (b)): 666 + 2 = 668, by collection.
-          # 0.1.64 IPB-1b (#650) after the merge of the SBX gates notes (#654): 722 + 2 = 724, by collection.
-          # 0.1.64 SMART-1: +10, run_command sees what ~/.zshrc adds to PATH; rc output, prompts, hangs, a `.` on PATH,
-          # a child that leaves the group, and the server's secrets can't break it or leak into it.
-          EXPECTED = 734
-          # The strict xfails (SBX's p tests for a surface not built yet) are pinned too. Counting them as
-          # ran is not enough: an adapter registered under the wrong key keeps every one xfailing and the
-          # job green (#620 review). The PR that builds the surface moves this down with its evidence;
-          # a new p PR moves it up.
-          # 0.1.64 SBX-3p (#619): 56, all in tests/server/sbx/test_sbx3_commands.py; SBX-3a takes it to 0.
-          # 0.1.64 SBX-3a gates (#645, Codex): 72, the 56 plus 16 any-declared cases in the commands tests.
-          # 0.1.64 SBX-3a gates review round (#645): 63, after the keychain gate's list shrank by 3 services in each of the 3 commands modes.
-          # 0.1.64 SBX-3a flip: 0. The commands adapter is registered, and all 63 pass on the product preset.
-          # 0.1.64 SBX-6p (#669) (Codex): 77 strict xfails for surfaces not built yet.
-          # 0.1.64 SBX-4p (#670) (Codex): 72 strict xfails for surfaces not built yet.
-          # 0.1.64 SBX-6p (#669) after the trust and LAN settings and the merge of SBX-4p (#670): 165, SBX-4p's 72 plus SBX-6p's 93.
-          # 0.1.64 SBX-5p (#671) (Codex): 59 strict xfails for surfaces not built yet.
-          # 0.1.64 SBX-5p follow-ups (#671) (Codex): 64 strict xfails for surfaces not built yet.
-          # 0.1.64 SBX-5p (#671) after the merge of SBX-4p (#670): 136, SBX-4p's 72 plus SBX-5p's 64.
-          # 0.1.64 SBX-5p (#671) after the merge of SBX-6p (#669): 229, SBX-4p's 72, SBX-5p's 64 and SBX-6p's 93.
-          # 0.1.64 SBX-3a gates notes (#654): still 0. Its added commands cases pass on the flipped base.
-          # 0.1.64 SBX gates notes (#654) after the merge of SBX-4p (#670): 88, SBX-4p's 72 plus 16 more SBX-4p cases over #654's wider service list.
-          # 0.1.64 SBX gates notes (#654) after the merge of SBX-6p (#669): 197 by collection, 165 + 16 SBX-4p + 16 SBX-6p cases over #654's wider service list.
-          # 0.1.64 SBX gates notes (#654) after the merge of SBX-5p (#671): 261 by collection, 197 + SBX-5p's 64.
-          EXPECTED_XFAIL = 261
-          suite = ET.parse("macos-results.xml").getroot().find("testsuite")
-          total = int(suite.get("tests", 0))
-          # A strict xfail that failed as expected (SBX's p tests before Na lands) is
-          # <skipped type="pytest.xfail">: it ran, so it counts as ran, not as a skip.
-          # A strict xfail that passed is a <failure>. How many there are is pinned (EXPECTED_XFAIL).
-          xfailed = sum(1 for s in suite.iter("skipped") if s.get("type") == "pytest.xfail")
-          skipped = int(suite.get("skipped", 0)) - xfailed
-          failures = int(suite.get("failures", 0)) + int(suite.get("errors", 0))
-          print(f"collected={total} skipped={skipped} xfailed={xfailed} failed={failures}")
-          problems = []
-          if skipped:
-              problems.append(f"{skipped} of {total} SKIPPED — a skip here is a silent pass")
-          if total - skipped != EXPECTED:
-              problems.append(f"{total - skipped} tests actually ran, expected {EXPECTED}")
-          if xfailed != EXPECTED_XFAIL:
-              problems.append(f"{xfailed} strict xfails, expected {EXPECTED_XFAIL}: a surface was built, or a "
-                              "gate's failure was absorbed, without moving the number")
-          if failures:
-              problems.append(f"{failures} failed/errored")
-          if problems:
-              sys.exit("::error::" + "; ".join(problems))
-          print(f"all {EXPECTED} macOS-only tests executed on the shipping platform")
-          PY
+        # What must run is pinned per file in tests/macos_expected.toml: cases and
+        # strict xfails. On a difference this prints what it saw; take those numbers
+        # with the tests that move them, not to whatever makes it green. See the
+        # script for what fails. The checks that the marked set is right are in
+        # tests/server/test_macos_marker_covers_the_platform_set.py.
+        run: .venv/bin/python scripts/check_macos_counts.py macos-results.xml tests/macos_expected.toml
 
   secrets:
     # FULL-HISTORY secret scan, not a diff scan.

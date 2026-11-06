@@ -98,7 +98,7 @@ def test_hands_folder_comes_from_the_account_not_from_home(monkeypatch, tmp_path
 
 
 @pytest.mark.parametrize("result,stopped", [
-    ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stderr": "zsh:1: operation not permitted: /x"}, True),
+    ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stderr": "/bin/bash: /x: Operation not permitted"}, True),
     ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stdout": "PermissionError: [Errno 1] Operation not permitted"}, True),
     ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stderr": "No such file or directory"}, False),
     ({"sandbox": "workspace", "ok": True, "exit_code": 0, "stderr": "operation not permitted"}, False),

@@ -4,6 +4,7 @@ An expert was a system prompt plus a domain. Its prompt becomes the skill's
 method; nothing is deleted. The user's click is the human gate: the skill is
 written at once (v0.1.64 CAP2a: no candidate any more), marked as the user's
 (`skill_forge.AUTHORED`), so a seed retirement never deletes it (D7).
+DELETE-BY: v0.1.64, with C7c-5 (its migration converts every leftover expert, using what this does).
 """
 from __future__ import annotations
 

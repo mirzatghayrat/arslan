@@ -1053,7 +1053,7 @@ _FETCH_TOOLS = frozenset({"web_search", "web_extract"})
 #: So the allowance spans the whole attempt, and it is smaller than the live one
 #: because an evaluation is not supposed to be doing research — a candidate that
 #: needs fifty pages is a candidate worth refusing.
-HERMETIC_FETCH_BUDGET = 50
+HERMETIC_FETCH_BUDGET = 50      # DELETE-BY: v0.1.64, with C7c-3b.
 
 #: Spent-so-far per hermetic sentinel. Module state rather than a threaded
 #: parameter because every dispatch in an attempt already shares one sentinel
@@ -1584,6 +1584,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     sandbox_on = False
     unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
+    deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
+
+    def delete_kw(outside: bool) -> dict:
+        """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
+        from server.services import delete_to_trash
+        return {"delete": delete_to_trash.card_mode(command, outside=outside or not confined)} if deletes_outside else {}
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
@@ -1594,6 +1600,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         if verdict.level == "forbid":
             result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
                       "note": "Tell the user what you wanted to do and let them run it themselves."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        if terminal_policy.heredoc_in_substitution(command):
+            # No card either: it would show text that reads as data, and some of that text would run.
+            result = {"ok": False, "error": "A here-document inside $( ) can't run here: in bash 3.2 its text can end the "
+                      "substitution early, and the rest of the text runs as commands. Nothing ran.",
+                      "note": "Write the text to a file with write_file, then use the file: for a commit message, "
+                              "git commit -F <file>; for a variable, NOTE=$(cat <file>)."}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -1609,6 +1624,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
         sandbox_on = await _sandbox_enabled()
+        deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
+        confined = sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
         from server.services import task_service as _task_service
         # S2a-2: a plain osascript that U11 runs bare takes its own card, the one way it works; asking to run it
         # outside the sandbox would show a card that cannot help (its Apple Events stay blocked there).
@@ -1644,7 +1661,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             from server.services import approvals as _approvals
             _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
             _approvals.LAST_ANSWERED_BY.set(None)
-            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw):
+            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw, **delete_kw(True)):
                 result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
@@ -1690,7 +1707,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
             # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
             said = str(args.get("why") or "").strip()[:300]
-            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw)
+            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw,
+                                             **delete_kw(run_outside))
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -1882,8 +1900,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
             async def run_once(outside: bool) -> dict:
                 from server.services import terminal_exec
+                from server.services import delete_to_trash
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
                 bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
+                # SMART-8: allowed, outside the sandbox and read with certainty: its targets go to the Trash.
+                trash = delete_to_trash.TRASH.set(tool_key == "run_command" and deletes_outside
+                                                  and (outside or not confined)
+                                                  and delete_to_trash.plan(command) is not None)
                 # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
                 cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
                 try:
@@ -1891,6 +1914,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 finally:
                     if cut is not None:
                         terminal_exec.OFFLINE.reset(cut)
+                    delete_to_trash.TRASH.reset(trash)
                     terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             if result is None:
@@ -1912,7 +1936,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             if (tool_key == "run_command" and sandbox_on and not ran_outside and confirm_command is not None
                     and isinstance(result, dict) and result.get("sandbox_denied")):
                 # Stopped by the sandbox: offer ONE re-run outside it, from the start.
-                if await confirm_command(command, argv, sandbox="retry"):
+                if await confirm_command(command, argv, sandbox="retry", **delete_kw(True)):
                     # S2a-1: outside, the network rule is decided again as for an outside run (this time
                     # only, a stored grant does not count): the retry card is about files.
                     network = await _network_after_outside_content(
@@ -2921,19 +2945,13 @@ def _progress_updates(a, resp) -> list[str]:
     return [text for text in texts if text and text != _UPDATE_CUT]
 
 
-async def _streams_answer(a, acceptance_runtime) -> bool:
+def _streams_answer(a, acceptance_runtime) -> bool:
     """K8a: whether this turn's answer is shown as it is written. Not for work with explicit acceptance
     criteria (background jobs and the like: a failed check rewrites what was written; ⓪Plan Q1), not for
-    a model in BUFFERED_MODELS, not when the user chose to see answers only when complete."""
-    from server.db import session as db_session
-    from server.services import settings_service, task_service
-    if (acceptance_runtime is not None and not task_service.answer_only()) or _model_key(a)[1] in BUFFERED_MODELS:
-        return False
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            return not await settings_service.answer_when_complete(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default: stream
-        return True
+    a model in BUFFERED_MODELS."""
+    from server.services import task_service
+    return not ((acceptance_runtime is not None and not task_service.answer_only())
+                or _model_key(a)[1] in BUFFERED_MODELS)
 
 
 # Tools a job may still use while wrapping up: saving the deliverable.
@@ -3193,7 +3211,7 @@ async def _run_native(
     ws_root, own_folder = await _status_workspace(wired_keys)
     # K8a: what this turn shows as it is written (None: every answer shown whole, as before).
     turn_text = (_TurnText(on_chunk, lambda label, keep: emit({"type": "stream_restart", "label": label, "keep": keep}))
-                 if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None)
+                 if on_chunk is not None and _streams_answer(a, acceptance_runtime) else None)
     if _facts is not None:
         _facts.update(ws_root=ws_root, started=turn_started, turn_text=turn_text)
     unseen_start = len(convo)
@@ -3385,17 +3403,17 @@ async def _run_native(
             # provider checks as it sends; a stop here hands them back).
             budget.check_request()
             await _commit_steers(_facts["steers"], conversation_id)
-        step = _StepStream(turn_text) if turn_text is not None else None
+        stream = _StepStream(turn_text) if turn_text is not None else None
         try:
             resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                      schemas=schemas, forced=forced, state=turn_state, status=status,
-                                     drops=drops, conversation_id=conversation_id, step=step)
+                                     drops=drops, conversation_id=conversation_id, step=stream)
         except TextShown:
             # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
             # what was shown and says so, and the run records a failure (no `error` frame: the window
             # would drop the text the phone kept).
             from server.services import host_run, runtime_messages
-            step.finish()
+            stream.finish()
             turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
                              answer=False)
             host_run.note_failure("model_error_after_text")
@@ -3403,8 +3421,8 @@ async def _run_native(
                 acceptance_runtime.pause_reason = "model_error_after_text"
             return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
                     "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
-        if step is not None:
-            step.finish()
+        if stream is not None:
+            stream.finish()
         if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
             drops.changed = False
             wired = drops.keep(wired)
@@ -3665,7 +3683,7 @@ async def _run_native(
             # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
             # passed the window and went out as the answer, where it stays (and in the stored answer).
             narration = agent_status.strip_echo((resp.content or "").strip())
-            if narration and not (step is not None and step.released):
+            if narration and not (stream is not None and stream.released):
                 emit({"type": "note", "text": narration[:400]})
             pending_feedback = len(convo) - history_start
             continue
@@ -3681,10 +3699,10 @@ async def _run_native(
         # The reply's continuation replays its own text verbatim (Claude: byte for byte); once the host
         # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
         own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
-        streamed = step is not None and step.released          # K8a: this step's text already went out
+        streamed = stream is not None and stream.released          # K8a: this step's text already went out
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
-        protocol_text = _embeds_protocol(final_text) or (step is not None and step.stopped)
+        protocol_text = _embeds_protocol(final_text) or (stream is not None and stream.stopped)
         # 0.1.50: an answer that denies a capability this turn had (bench: "no file
         # write ability" with write_file offered) gets one correction.
         from server.orchestrator import capability_truth

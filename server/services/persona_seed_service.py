@@ -1,8 +1,8 @@
 """Persona seeds: resolve a spawn's composed seed slugs for its detail view.
 
 The browse/search API (GET /seeds, list_seeds, count, search) went in C7 (v0.1.63): no
-component called it. get_by_slugs stays for spawn detail (GET /spawns/{id} and the equipment
-reply), which C7 step 3 keeps until v0.1.64.
+component called it. get_by_slugs stays for spawn detail (the equipment reply).
+DELETE-BY: v0.1.64, with C7c-4.
 """
 from __future__ import annotations
 

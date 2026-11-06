@@ -691,7 +691,14 @@
     "openActivityBtn": "Ouvrir Avancement",
     "whatsNewEmpty": "Pas de notes pour cette version.",
     "modelRolesResetNotice": "Les rôles des modèles suivent désormais le modèle de chaque conversation. Vos anciens choix de rôles ont été effacés.",
-    "modelRolesResetOk": "OK"
+    "modelRolesResetOk": "OK",
+    "addModelKeyHint": "Sert uniquement à demander à {{provider}} quels modèles sont disponibles. Rien n'est enregistré avant que vous cliquiez sur Ajouter.",
+    "addModelLive": "En direct de {{provider}} · {{count}} modèles",
+    "addModelLoading": "Demande des modèles à {{provider}}…",
+    "addModelBuiltIn": "Liste intégrée",
+    "addModelFallback": "Impossible de joindre {{provider}} ; affichage de la liste intégrée d'Arslan.",
+    "addModelRetry": "Réessayer",
+    "addModelChooseProvider": "Choisir un fournisseur"
   },
   "errors": {
     "load_failed": "Échec du chargement des données.",
@@ -806,8 +813,6 @@
     "collapse_results": "Réduire",
     "stdout_label": "Sortie standard :",
     "exec_validated": "Exécution vérifiée ; la connexion isolée s’est terminée avec le code 0.",
-    "equipped_capabilities": "Capacités disponibles :",
-    "capabilities_matrix": "Matrice des capacités :",
     "hide_rail": "Masquer le panneau latéral",
     "show_rail": "Afficher le panneau latéral",
     "confirm_direction": "Confirmer la direction · Allons-y",
@@ -1034,7 +1039,9 @@
       "deleteSome": "Supprimer des fichiers ou dossiers",
       "overNetwork": "Utilise le réseau ({{program}}) : peut envoyer ou recevoir des données",
       "more": " (et {{count}} étapes de plus)",
-      "more_one": " (et 1 étape de plus)"
+      "more_one": " (et 1 étape de plus)",
+      "toTrash": "Placer {{count}} fichiers ou dossiers dans la corbeille",
+      "toTrash_one": "Placer 1 fichier ou dossier dans la corbeille"
     },
     "risk": {
       "sandboxed": "S’exécute dans le bac à sable : ne peut modifier que les fichiers du dossier de travail",
@@ -1066,7 +1073,10 @@
         "unreadable-script-reach": "Son script se connecte, lance des programmes ou pilote des apps",
         "unreadable-quoting": "Ses guillemets ne se ferment pas : on ne peut pas lire ce qui s’exécute",
         "unreadable-complex": "Trop complexe pour être lue avant de s’exécuter",
-        "unreadable-send": "Arslan ne peut pas lire entièrement ce que cela envoie ; cela peut envoyer des données locales"
+        "unreadable-send": "Arslan ne peut pas lire entièrement ce que cela envoie ; cela peut envoyer des données locales",
+        "delete-outside-trash": "Les place dans la corbeille ; vous pouvez les y récupérer",
+        "delete-outside-protected": "Les données et clés d'Arslan restent en place ; le reste va dans la corbeille",
+        "delete-outside-sandboxed": "S'exécute dans le bac à sable ; ce qu'il y supprime est supprimé définitivement"
       }
     }
   },
