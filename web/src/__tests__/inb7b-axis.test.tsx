@@ -1,8 +1,8 @@
 /**
- * INB7-b (v0.1.64): Progress's one time axis, as board F draws it (the user's pick, 「2B」, relayed 2026-11-01). Over the last 24
+ * INB7-b (v0.1.64): Progress's one time axis, as board F draws it (the user's pick, option 2B, relayed 2026-11-01). Over the last 24
  * hours the token row has a runs lane under it: each bar is one run, its length the time it took and its colour how it ended, amber
  * while it waits for your answer. Picking a bar puts that run's steps on a lane of their own, at the time each one started, and the
- * replay walks through them. Over 7 and 30 days the duration heatmap stays (the user: 「热力图只在 7 天和 30 天显示」), since a
+ * replay walks through them. Over 7 and 30 days the duration heatmap stays (the user: the heatmap shows only for 7 and 30 days), since a
  * week of bars would be too thin to read.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";

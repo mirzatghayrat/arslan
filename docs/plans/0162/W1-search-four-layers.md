@@ -8,9 +8,9 @@
 | 依赖 | D5（v0.1.63，第①层的 Anthropic 部分和第③层的 only / backup 都在 D5 里） |
 | 合并位置 | v0.1.64 开工后。第②层先做第 0 步的测量，再决定要不要做完整的一层 |
 | 推动的门槛 | §5.1 T2、T3；用户自己碰到人机验证的场景 |
-| 来源 | 用户 2026-10-20：「T2、T3 的 DuckDuckGo 人机验证不能只算环境问题，用户也会碰到」；随后定了四层的方向 |
+| 来源 | 用户 2026-10-20: the DuckDuckGo human-verification failures in T2 and T3 cannot be written off as an environment problem, because users will hit them too；随后定了四层的方向 |
 
-## 用户定的方向（2026-10-20，原话整理）
+## 用户定的方向（2026-10-20, summarized）
 
 1. **这一轮所用模型自带的搜索：** D5，再加 OpenAI、Gemini。
 2. **Arslan 自己的浏览器搜索：** 复用 agent_browser 的托管 Chromium，参考 GitHub 上 kuraneko1/chrome-web-mcp 的做法。
@@ -33,7 +33,7 @@
 | 选了服务，「只用它」 | ③ |
 
 - **②不放在③前面，选了服务就不走②和④。** 这是 D5 里 ③Hands 提的规矩：用户选了一家搜索服务，查询就不该再发给用户没选的地方。第②层会把查询发给公开搜索引擎，第④层发给 Parallel、Firecrawl，都算「没选的地方」。
-- 用户的原话是 ①②③④ 的顺序。我的读法是：四层是「没选服务」时的自动顺序，③的两种用法照 D5。**你要是想让「作备选」也走②，告诉我，改这一行就行。**
+- The user gave the order ①②③④. 我的读法是：四层是「没选服务」时的自动顺序，③的两种用法照 D5。**你要是想让「作备选」也走②，告诉我，改这一行就行。**
 - 本地模型的对话：①不用（D5 的规矩），④不走（用户定的），②照用。②就是本机浏览器去公开搜索引擎，和今天抓 DuckDuckGo 是同一类去处。
   - **本地模型的对话 DuckDuckGo 打头**（用户 2026-10-20 定，③Hands 审卡时提出）：今天本地对话的搜索只去 DuckDuckGo，以后也先去它；被拦就自动换下一家。不加搜索引擎的设置项。
 - 临时对话（`task_context.is_temporary`）不走④。

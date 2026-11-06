@@ -15,7 +15,7 @@
 
 ## 目标
 
-- **用户的原话：** 「看 Inbox 70 多条就头疼，agent 反而给我加了这么多活」。用户 10-28 逐条同意了八条（`docs/plans/0162/README.md` §8「收件箱怎么改，加『进展』页」）。本卡做 v0.1.64 那部分：第 1、2、5、6、7、8 条，第 3 条的基本入口，第 4 条的四行简报，加上先核每次运行记了什么。第 4 条的时间线和地图、第 3 条的外观，是界面版的事，不在本卡。
+- **User's concern (in summary):** with 70-odd items in the Inbox, the agent adds work instead of removing it. 用户 10-28 逐条同意了八条（`docs/plans/0162/README.md` §8「收件箱怎么改，加『进展』页」）。本卡做 v0.1.64 那部分：第 1、2、5、6、7、8 条，第 3 条的基本入口，第 4 条的四行简报，加上先核每次运行记了什么。第 4 条的时间线和地图、第 3 条的外观，是界面版的事，不在本卡。
 - **角标为什么满：** 角标是 `summary()` 的三项相加（`server/services/proactive_service.py:294-307` → `web/src/App.tsx:80`、`:633-634`）：没看过的主动提醒、等批的卡、记忆等你确认。最后一项 `_memory_waiting`（`proactive_service.py:310-321`）数的是 `memory_proposals` 里所有 pending 的行，加上 `lessons` 里 `status="proposed"` 的行。所以先做第 6、7 条（INB1、INB2），角标就降下来了；其余按「东西挪到哪」拆。
 - **收件箱今天有五块**（`web/src/components/proactive/ProactiveInbox.tsx`），每块都要有去处，不能丢：
 
@@ -194,7 +194,7 @@
   - 角标不再数记忆；
   - 旧提案一条不少、状态不变。
 
-- **User decisions, 2026-10-29 (relayed by ④参谋; the user: 「都按你的建议，转给 ⓪Plan」), from ⓪Plan's review of #475:**
+- **User decisions, 2026-10-29 (relayed by ④参谋; the user: all as recommended, pass to ⓪Plan), from ⓪Plan's review of #475:**
   - **F2, which conversations are clean: an allowlist.** A conversation counts as clean only when all three hold: no attachments, no auto-injected project material, and only tools known to be local-only were used. Anything else counts as having touched outside content, `run_command` reading a file included. "About you" memories from such a conversation go to 「待整理」.
   - **`sent_at`:** the Bridge passes the envelope's `ts` as `sent_at`.
   - **F4, sensitivity beyond keywords:** an optional `sensitive: true` on the write. It can only make the decision stricter, never looser. Judging sensitivity by category is later.

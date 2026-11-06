@@ -4,7 +4,7 @@ and final-answer slots are gone (they follow the conversation's model); the rout
 slots stay. Migration 0086 clears the stored strategy, the removed slots and every old pin, and asks Settings to say
 so once.
 
-User, 2026-11-03: 「我同意你的方案要删就直接删 别留遗留/垃圾代码」."""
+User, 2026-11-03: agreed with the proposal; if it is to be removed, remove it outright and leave no legacy or junk code."""
 import importlib.util
 
 import pytest

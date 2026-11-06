@@ -1,6 +1,6 @@
 # SB1: sidebar order, sections, pin and collapse
 
-⓪Plan, 2026-10-29. The user approved this via ④参谋 on 2026-10-29 (「合理 按你的建议，转给 ⓪Plan」). It is in v0.1.64. Interface work, so **a clickable mock goes to the user before any UI code** (user, 2026-10-28). It does not touch the security surface. **Merging:** the user's approval relayed by ④参谋 says 「不碰安全面，另一个会话 OK 后由作者会话开自动合并」 (not the security surface; after another session's OK the author session turns on auto-merge). That is the user's word for this card, so SB1-0, SB1-1 and SB1-2 auto-merge after another session's OK on the current head and green checks, as an exception to `docs/sessions.md` §5's "the user merges ordinary product code". SB1-2's migration is add-only.
+⓪Plan, 2026-10-29. The user approved this via ④参谋 on 2026-10-29 (reasonable, as recommended, pass to ⓪Plan). It is in v0.1.64. Interface work, so **a clickable mock goes to the user before any UI code** (user, 2026-10-28). It does not touch the security surface. **Merging:** the user's approval relayed by ④参谋 says: not the security surface, and after another session's OK the author session turns on auto-merge. That is the user's decision for this card, so SB1-0, SB1-1 and SB1-2 auto-merge after another session's OK on the current head and green checks, as an exception to `docs/sessions.md` §5's "the user merges ordinary product code". SB1-2's migration is add-only.
 
 | | |
 |---|---|

@@ -306,7 +306,7 @@ def _run(program: str) -> dict:
 
 
 def _over_network(program: str) -> dict:
-    """SMART-8 (#688/#689 reviews, Astra's two rounds; the user: 「简化吧」): a step that reaches another machine is
+    """SMART-8 (#688/#689 reviews, Astra's two rounds; the user asked for the simpler version): a step that reaches another machine is
     read only as a fixed line — no host, no file — because what it sends cannot be told from the command. `unsure` is
     set, so the risk row and the card say so, and the Mac card shows the whole command."""
     return _reading("overNetwork", {"program": program}, unsure=True)
@@ -316,7 +316,7 @@ def _over_network(program: str) -> dict:
 _NETWORK = {"curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp", "tftp", "lftp",
             "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail", "msmtp",
             "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
-            "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"}
+            "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine", "azcopy"}
 #: Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7).
 _INLINE_CODE = {"python": r"^-[A-Za-z]*c", "python2": r"^-[A-Za-z]*c", "python3": r"^-[A-Za-z]*c",
                 "node": r"^(?:-[A-Za-z]*[ep]|--eval|--print)", "perl": r"^-[A-Za-z]*[eE]", "ruby": r"^-[A-Za-z]*e",

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Grade | **Must** for v0.1.64 (user, 2026-11-03, relayed by ④参谋): 「我同意你的方案要删就直接删 别留遗留/垃圾代码」. |
+| Grade | **Must** for v0.1.64 (user, 2026-11-03, relayed by ④参谋): the user agrees with the proposal: if it is to be removed, remove it outright and leave no legacy or junk code. |
 | Lane | ②Main, after #691 and the model-switch PR B, which both touch the same decision. One cleanup PR. |
 | Review | Product code, so a high review from another session, then a self-merge under #644. |
 | Mock | Mostly removal, so the user's mock rule is met by a before/after screenshot of Settings in the PR. No new UI. |
