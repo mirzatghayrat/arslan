@@ -1003,8 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "¿Ejecutar esto fuera del entorno aislado?",
-    "sandboxOutsideNote": "Los comandos normalmente solo escriben dentro de la carpeta de trabajo de Arslan. Este necesita cambiar archivos en otro lugar de tu Mac.",
-    "sandboxRetryLabel": "El entorno aislado detuvo este comando",
+    "sandboxOutsideNote": "Los comandos normalmente solo escriben dentro de la carpeta de trabajo de Arslan y no pueden leer archivos protegidos. Este pide ejecutarse sin esos límites. Si ya lo intentó en el entorno aislado, empieza de nuevo desde el principio, y lo que ya hizo se queda como está.",
     "sandboxConversation": "los comandos, incluidos los de tareas en segundo plano, pueden ejecutarse fuera del entorno aislado",
     "runOutside": "Ejecutar fuera del entorno aislado",
     "label": "¿Ejecutar este comando?",

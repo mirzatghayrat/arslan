@@ -236,18 +236,18 @@ async def test_with_no_sandbox_an_allowed_delete_goes_to_the_trash(monkeypatch):
 
 
 async def test_the_outside_card_moves_it_to_the_trash_too(monkeypatch):
-    ex, asked = await _run(monkeypatch, {"command": "rm -r /tmp/smart8-old", "outside_sandbox": True},
+    ex, asked = await _run(monkeypatch, {"command": "rm -r /tmp/smart8-old", "outside_sandbox": True, "why": "w"},
                            sandbox_on=True)
-    assert asked == [{"sandbox": "outside", "why": "", "delete": "trash"}] and ex.ran == [True]
+    assert asked == [{"sandbox": "outside", "why": "w", "delete": "trash"}] and ex.ran == [True]
 
 
 async def test_in_the_sandbox_it_keeps_the_sandboxs_limits(monkeypatch):
     """The server never moves for a sandboxed command what the sandbox would refuse; the card says it's permanent
-    there. When the sandbox stops it, the retry card runs it outside, and then it goes to the Trash."""
+    there. When the sandbox stops it, it goes back to the model with no second card; if the model then asks to run it
+    outside, it goes to the Trash (the test above)."""
     ex, asked = await _run(monkeypatch, {"command": "rm -r /tmp/smart8-old"}, sandbox_on=True,
                            exec_=_Exec(denied_first=True))
-    assert asked == [{"delete": "sandboxed"}, {"sandbox": "retry", "delete": "trash"}]
-    assert ex.ran == [False, True]
+    assert asked == [{"delete": "sandboxed"}] and ex.ran == [False]
 
 
 @pytest.mark.parametrize("command", ["rm -rf ~/smart8/*", "ls | xargs rm", "find ~/smart8 -delete", 'rm -rf "$D"'])
@@ -307,7 +307,7 @@ async def test_the_card_says_how_allow_deletes(tmp_path, monkeypatch, mode, word
     assert seen[0].frame["delete_mode"] == mode and seen[0].frame["delete_targets"] == ["~/smart8/old"]
 
 
-@pytest.mark.parametrize("sandbox", [None, "outside", "retry"])
+@pytest.mark.parametrize("sandbox", [None, "outside"])
 async def test_the_mac_frame_carries_the_mode_and_targets_on_every_delete_card(tmp_path, monkeypatch, sandbox):
     from server.services import command_confirm, permissions
     from tests.server.test_workspace_tool_gate import _wire

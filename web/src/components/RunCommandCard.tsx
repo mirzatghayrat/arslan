@@ -27,7 +27,7 @@ interface Props {
   /** The terminal rule the server matched (`rule`), whether the card also asks for the network (`network`), and
    *  whether it would run with no sandbox around it (`unsandboxed`): the 「风险」 row, never the model's words. */
   rule?: string;
-  /** Every terminal rule the server matched (#688 review 1, 3): on every command card, the outside, retry and remote
+  /** Every terminal rule the server matched (#688 review 1, 3): on every command card, the outside and remote
    *  ones too. An older frame has only `rule`. */
   rules?: string[];
   /** Why the server could not read it (fetched-code, script-reach, quoting, complex), when one of its rules is

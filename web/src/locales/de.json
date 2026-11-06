@@ -1003,8 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "Diesen Befehl außerhalb der Sandbox ausführen?",
-    "sandboxOutsideNote": "Befehle schreiben normalerweise nur in Arslans Arbeitsordner. Dieser muss Dateien an anderer Stelle auf deinem Mac ändern.",
-    "sandboxRetryLabel": "Die Sandbox hat diesen Befehl gestoppt",
+    "sandboxOutsideNote": "Befehle schreiben normalerweise nur in Arslans Arbeitsordner und können geschützte Dateien nicht lesen. Dieser möchte ohne diese Grenzen laufen. Hat er es schon in der Sandbox versucht, beginnt er wieder von vorn, und was er bereits getan hat, bleibt bestehen.",
     "sandboxConversation": "Befehle, auch die von Hintergrundaufgaben, dürfen außerhalb der Sandbox laufen",
     "runOutside": "Außerhalb der Sandbox ausführen",
     "label": "Diesen Befehl ausführen?",

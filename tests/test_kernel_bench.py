@@ -281,7 +281,7 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
         return t.on_frame({"type": "propose_run_command", "call_id": "c", **frame}, 1.0)["type"]
     assert ans({"rule": "delete"}) == "confirm_run_command"
     assert ans({}) == "confirm_run_command"
-    assert ans({"rule": "delete", "sandbox": "retry"}) == "cancel_run_command"
+    assert ans({"rule": "delete", "sandbox": "outside"}) == "cancel_run_command"
     assert ans({"sandbox": "outside"}) == "cancel_run_command"
     assert ans({"rule": "send-mail"}) == "cancel_run_command"
     assert ans({"rule": "apple-events"}) == "cancel_run_command"
@@ -322,7 +322,7 @@ def test_without_the_outer_sandbox_no_card_may_let_a_command_out(monkeypatch, tm
             driver = importlib.reload(arslan_driver)
             assert driver.CARDS == "sandboxed"
             t = driver.TurnTracker("/b/runs/arslan-T2-r1-base")
-            for frame in ({"sandbox": "outside"}, {"sandbox": "retry"}, {"rule": "delete", "sandbox": "retry"}):
+            for frame in ({"sandbox": "outside"}, {"rule": "delete", "sandbox": "outside"}):
                 answer = t.on_frame({"type": "propose_run_command", "call_id": "c", **frame}, 1.0)["type"]
                 assert answer == "cancel_run_command", frame
             t1 = driver.TurnTracker("/b/runs/arslan-T1-r2-base")

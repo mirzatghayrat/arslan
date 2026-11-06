@@ -377,4 +377,5 @@ def test_a_stopped_command_is_told_which_folders_the_user_keeps_closed():
     assert "~/Downloads, ~/Documents" in note and "outside_sandbox" in note
     # A stop goes back to the model: another way first, then leaving is its own request, with a reason.
     assert note.index("Find a way") < note.index("outside_sandbox") < note.index("why")
+    assert "starts it over from the beginning" in note     # a second run on top of what the first one did
     assert "closed" not in command_sandbox.note(home / "Arslan")

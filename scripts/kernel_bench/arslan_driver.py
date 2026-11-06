@@ -44,7 +44,7 @@ DECLINE_CARDS = os.environ.get("BENCH_DECLINE_CARDS") == "1"
 CARDS = os.environ.get("BENCH_CARDS", "")
 # Without the bench's outer sandbox (BENCH_SANDBOX=none, U10 choice A), Arslan's own sandbox is the only
 # thing between a command and the user's real disk: a card that would let a command out of it (run outside
-# the sandbox, or re-run after a stop) must be declined, whatever BENCH_CARDS says (③Hands' review of #234:
+# the sandbox) must be declined, whatever BENCH_CARDS says (③Hands' review of #234:
 # 8 such cards were approved in the first option-A rounds and ran as the user on the real disk).
 if os.environ.get("BENCH_SANDBOX") == "none":
     CARDS = "sandboxed"

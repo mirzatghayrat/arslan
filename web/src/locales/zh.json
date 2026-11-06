@@ -1003,8 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "在沙盒外运行这条命令？",
-    "sandboxOutsideNote": "命令平时只能写 Arslan 的工作文件夹。这条需要改动 Mac 上别处的文件。",
-    "sandboxRetryLabel": "沙盒拦下了这条命令",
+    "sandboxOutsideNote": "命令平时只能写 Arslan 的工作文件夹，也读不了受保护的文件。这条请求不受这些限制地运行。如果它已经在沙盒里试过，这次会从头再跑一遍，之前已经做的不会撤销。",
     "sandboxConversation": "命令（包括后台任务）都可以在沙盒外运行",
     "runOutside": "在沙盒外运行",
     "label": "运行这条命令?",

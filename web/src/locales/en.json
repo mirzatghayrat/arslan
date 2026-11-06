@@ -1003,8 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "Run this outside the sandbox?",
-    "sandboxOutsideNote": "Commands normally write only inside Arslan's working folder. This one needs to change files elsewhere on your Mac.",
-    "sandboxRetryLabel": "The sandbox stopped this command",
+    "sandboxOutsideNote": "Commands normally write only inside Arslan's working folder and can't read protected files. This one asks to run without those limits. If it already tried in the sandbox, it starts again from the beginning, and whatever it already did stays.",
     "sandboxConversation": "commands, background tasks included, may run outside the sandbox",
     "runOutside": "Run outside the sandbox",
     "label": "Run this command?",

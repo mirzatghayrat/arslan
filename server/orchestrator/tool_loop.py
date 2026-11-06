@@ -1310,7 +1310,7 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
     runs offline under the kernel's rule — in the sandbox, and outside it under the minimal profile,
     which carries the same rule (card, piece 4; the internal review's case: a script refused inside for
-    reading a secret, let out by the retry card, must not get the network with it). One that reaches the
+    reading a secret, let out by its outside card, must not get the network with it). One that reaches the
     network (by its text, or the model's `network: true`) asks first: this time or this conversation
     inside the sandbox, this time only outside it, where the user's secrets are readable (a stored grant
     does not count there). The island never answers it. With nobody to ask: offline. An approved plain
@@ -1648,11 +1648,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
-            why = str(args.get("why") or "").strip()[:300]
+            # The reason as the card will show it (protocol.propose_run_command): one of invisible characters is none.
+            from server.orchestrator import untrusted as _untrusted
+            why = _untrusted.clean_name(args.get("why"), 300)
             if not why:
                 # Leaving the sandbox is a deliberate request (the calibration of 2026-11-07), and the card leads with why.
-                result = {"ok": False, "error": "outside_sandbox needs a why: one short sentence on why this has to run "
-                                                "outside the sandbox. The user reads it on the card."}
+                # Arslan's own words, and nothing ran: not outside content, whatever the command looks like.
+                result = {"ok": False, "external": False, "executed": False,
+                          "error": "outside_sandbox needs a why: one short sentence on why this has to run "
+                                   "outside the sandbox. The user reads it on the card."}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
@@ -2177,16 +2181,16 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                                 f"{terminal_exec.DEFAULT_TIMEOUT_S})."},
                                    "outside_sandbox": {"type": "boolean",
                                                        "description": "Only when the command must write outside "
-                                                                      "the working folder (moving the user's files, "
-                                                                      "installing software). Needs why; the user is "
-                                                                      "asked."},
+                                                                      "the working folder (moving files, installing "
+                                                                      "software). The user is asked."},
                                    "network": {"type": "boolean",
                                                "description": "The command needs the network (a download, an "
                                                               "API). After you read outside content in this turn, "
                                                               "commands run offline unless the user allows it."},
                                    "why": {"type": "string", "maxLength": 300,
-                                           "description": "What this step does, in one short sentence: "
-                                                          "every command card shows it first."}},
+                                           "description": "What this step does, in a sentence. With "
+                                                          "outside_sandbox, why it must run outside. "
+                                                          "Cards show it first."}},
                     "required": ["command"]},
     "conversation_search": {"type": "object",
                             "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,

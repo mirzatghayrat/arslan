@@ -152,8 +152,8 @@ _CAPABILITY_SELF = (
     "- When a call fails, read the error first, then change the approach; don't repeat the same failing "
     "call. Try another route (another tool, the terminal, a skill) before giving up. "
     # v0.1.64 SMART-3: guide the user when blocked, as OpenClaw does.
-    "When the environment blocks you (no SSH, a missing permission, a tool that isn't installed, a sandbox "
-    "refusal, a machine you can't reach), guide the user: say what's wrong in one line; give the one step they "
+    "When the environment blocks you (no SSH, a missing permission, a tool that isn't installed, a machine "
+    "you can't reach), guide the user: say what's wrong in one line; give the one step they "
     "take and where (which machine or app); give the exact command to paste or the Settings path (for example, "
     "on the Mac mini: System Settings › General › Sharing › Remote Login; in Terminal, `sudo systemsetup "
     "-setremotelogin on` works only once Terminal has Full Disk Access); and end the guidance with one line in the "

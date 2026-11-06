@@ -350,8 +350,8 @@ def note(workspace: Path, closed: list[Path] = ()) -> str:
     return ("The sandbox stopped this command: commands may write only inside the working folder "
             f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data."
             + shut + " Find a way that works inside it if there is one. If it really has to run outside, run it "
-            "again with outside_sandbox: true and a short why, which the user reads before deciding. Otherwise "
-            "tell the user what you needed.")
+            "again with outside_sandbox: true and a short why, which the user reads before deciding. That starts it "
+            "over from the beginning, and whatever it already did stays. Otherwise tell the user what you needed.")
 
 
 # ── "for the rest of this conversation" (memory only) ─────────────────────────

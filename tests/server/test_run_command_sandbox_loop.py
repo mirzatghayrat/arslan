@@ -1,6 +1,6 @@
-"""Leaving the sandbox is a click (0.1.51 P3): the tool loop's three ways out —
-asked up front, offered after a stop, or granted for the rest of a conversation (a stored
-grant since S4a: tests/server/test_s4a_outside_remote.py) — and the cards that carry them."""
+"""Leaving the sandbox is a click (0.1.51 P3): the tool loop's two ways out, the model asks with a reason, or a
+stored grant for the rest of a conversation (S4a: tests/server/test_s4a_outside_remote.py), and the cards that carry
+them. A stop itself shows no card: it goes back to the model."""
 import pytest
 
 from server.orchestrator import tool_loop
@@ -81,13 +81,57 @@ async def test_after_a_stop_leaving_is_the_models_own_request_with_its_reason(mo
     assert ex.outside == [False, True] and r["ran_outside_sandbox"] is True
 
 
-@pytest.mark.parametrize("why", [None, "", "   "], ids=["missing", "empty", "blank"])
+@pytest.mark.parametrize("why", [None, "", "   ", "\u00a0", "\u200b", "\u202e", "\u2800", "\ufeff", "\U000e0041",
+                                 "\u3164", " \u200b\u202e "],
+                         ids=["missing", "empty", "blank", "nbsp", "zero-width", "bidi", "braille-blank", "bom", "tag",
+                              "hangul-filler", "mixed"])
 async def test_asking_to_leave_needs_a_reason_the_user_can_read(monkeypatch, why):
+    """What the card would show decides: a reason of invisible characters only is no reason."""
     ex, cards = _Exec(stop=False), _Cards(True)
     args = {"command": "ls", "outside_sandbox": True, **({} if why is None else {"why": why})}
     r = await _dispatch(monkeypatch, args, executor=ex, cards=cards)
     assert cards.calls == [] and ex.outside == []
     assert r["ok"] is False and "why" in r["error"]
+
+
+async def test_the_card_gets_the_reason_as_the_user_will_read_it(monkeypatch):
+    ex, cards = _Exec(stop=False), _Cards(True)
+    await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True, "why": "\u202e it \u200bwrites to ~/Library "},
+                    executor=ex, cards=cards)
+    assert cards.calls[0]["why"] == "it writes to ~/Library" and ex.outside == [True]
+
+
+async def _turn_of(monkeypatch, *steps, cards):
+    """Steps of one turn, with its outside-content mark: what `_network_card_due` reads for the next card."""
+    from server.orchestrator import untrusted
+    monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", _Exec(stop=False))
+    token = untrusted.track_turn()
+    convo: list = []
+    try:
+        results = [await tool_loop._dispatch_tool(
+            "run_command", args, "{}", resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+            tool_trace=[], convo=convo, confirm_command=cards, conversation_id="c1") for args in steps]
+        return results, convo, untrusted.external_seen()
+    finally:
+        untrusted.end_turn(token)
+
+
+NETWORK_LOOKING = "curl -s http://127.0.0.1:9/"
+
+
+async def test_a_request_with_no_reason_is_the_hosts_own_words_and_reads_nothing_from_outside(monkeypatch):
+    """Nothing ran, so the turn hasn't read outside content, and the next command isn't asked about the network
+    because of it. The error is Arslan's own, so it isn't framed as data, as the schema refusal's isn't."""
+    from server.orchestrator import untrusted
+    cards = _Cards(True)
+    args = {"command": NETWORK_LOOKING, "outside_sandbox": True}
+    results, convo, seen = await _turn_of(monkeypatch, args, cards=cards)
+    assert seen is False and "why" in results[0]["error"]
+    assert untrusted.TOOL_OPEN not in str(convo[-1]) and untrusted.DELIM_OPEN not in str(convo[-1])
+    assert "outside_sandbox needs a why" in str(convo[-1])
+    _, _, seen = await _turn_of(monkeypatch, args, {**args, "why": "it has to reach the service"}, cards=cards)
+    assert cards.calls[-1]["why"] == "it has to reach the service" and "network" not in cards.calls[-1]
+    assert seen is True                                 # the control: the command that did run counts as before
 
 
 async def test_without_a_window_a_stop_is_final(execution_db, monkeypatch):
