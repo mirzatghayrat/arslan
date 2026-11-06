@@ -165,3 +165,21 @@ def test_text_left_over_after_the_commands_is_not_understood(command):
 
 def test_a_closing_brace_as_an_argument_is_only_a_word():
     assert shell_grammar.read("echo a }").commands == (("echo", "a", "}"),)
+
+
+@pytest.mark.parametrize("command", [
+    "NOTE=$(cat <<'EOF'\nSteps\n1) rm -rf build\nEOF\n)\necho \"$NOTE\" > n.txt",
+    "git commit -m \"$(cat <<'EOF'\nFix:\n1) foo\n2) bar\nEOF\n)\"",
+    "x=$(cat <<-EOF\n\tx\n\tEOF\n)",
+    "x=$(echo \")\"; cat <<E\ny\nE\n)",
+    "x=$( (cat <<E\ny\nE\n) )",
+])
+def test_a_here_document_inside_a_substitution_is_not_understood(command):
+    """bash 3.2's scan of a substitution doesn't know here-documents, so text in one can end it early and the rest runs
+    (#723 review). What the reader understands has to be what bash does."""
+    reading = shell_grammar.read(command)
+    assert not reading.understood and "here-document" in reading.why
+
+
+def test_a_substitution_inside_a_here_document_still_is():
+    assert shell_grammar.read("cat <<EOF\nhello $(hostname)\nEOF").commands == (("hostname",), ("cat",))

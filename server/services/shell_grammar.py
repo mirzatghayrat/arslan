@@ -597,6 +597,8 @@ class _Reader:
     def _redirect_target(self, token, into: list[_Redirect]) -> None:
         op = token[1]
         if op in ("<<", "<<-"):
+            if self.in_substitution:
+                raise _NotUnderstood("it puts a here-document inside $( … ), which bash 3.2 misreads")
             target = self.take()
             if target[0] != "word":
                 raise _NotUnderstood("its here-document has no delimiter")
