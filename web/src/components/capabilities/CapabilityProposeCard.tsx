@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Escaped, isolate } from "../../lib/outsideText";
 import type { CapabilityCard } from "../../api/client.types";
 import { AskCard, type AskQueuePosition } from "../kit";
+import { SecurityRow, ownVulnerable } from "./SecurityRow";
 
 const host = (url: string | null) => {
   try { return url ? new URL(url).host : ""; } catch { return url ?? ""; }
@@ -33,6 +34,9 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [folders, setFolders] = useState<string[]>(card.folders);
   const missing = card.keys.filter(k => k.required && !(keys[k.name] ?? "").trim());
+  // CAP9, the user's question 5 as the board draws it: a known vulnerability in the package itself makes "Don't
+  // install" the safe answer; installing stays possible, as a red, deliberate click (no ⌘⏎ for it on this card).
+  const risky = ownVulnerable(card);
   const run = card.kind === "skill" ? t("discover.card_runSkill")
     : card.runtime === "remote" ? t("discover.card_runRemote", { host: host(card.remote_host) })
     : t(card.network ? "discover.card_runSandboxNet" : "discover.card_runSandbox");
@@ -49,6 +53,8 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
         <span className="rounded-full bg-success/10 px-[7px] py-0.5 text-[11px] text-success">{card.license.spdx}</span>
         {card.license.read_from && <span className="text-muted-foreground"> {t("discover.lic_readFrom")}</span>}
       </Row>
+      {/* CAP9: what OSV.dev knows of the locked packages, the package itself first. */}
+      <SecurityRow card={card} />
       <Row label={t("discover.card_runs")} testId="capability-card-runs">
         {run}
         {card.runtime_download && <span className="block text-muted-foreground">
@@ -88,7 +94,9 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
       context={card.retry ? [{ text: t("discover.card_retry", { step: card.retry }) }] : undefined}
       extra={<span className="text-[11px] text-subtle-foreground">{t("discover.card_footer")}</span>}
       expiresAt={expiresAt} queue={queue} allowDisabled={missing.length > 0}
-      allowLabel={t("discover.card_allow")} declineLabel={t("discover.card_decline")}
+      allowLabel={t(risky ? "discover.card_installAnyway" : "discover.card_allow")}
+      declineLabel={t(risky ? "discover.card_dontInstall" : "discover.card_decline")}
+      destructive={risky} allowKey={!risky} safeDefault={risky}
       allowTestId="capability-card-allow" declineTestId="capability-card-decline"
       onAllow={() => { if (!missing.length) onConfirm(callId, keys, folders); }}
       onDecline={() => onCancel(callId)} />
