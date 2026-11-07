@@ -769,7 +769,8 @@ const FORWARD_POLL: std::time::Duration = std::time::Duration::from_millis(20);
 
 /// Why these keys don't go to app `pid`, told to come forward: telling it returns before it's in front,
 /// so the question is only worth asking once it is. A window that hasn't become key yet can't answer,
-/// so unknown focus is asked until FOCUS_SETTLE has passed.
+/// so unknown focus is asked until FOCUS_SETTLE has passed. Each pass reads the focused element once:
+/// what decides the refusal is what ends the wait.
 fn press_refused_once_forward(keys: &str, pid: i64) -> Option<policy::Refusal> {
     let deadline = std::time::Instant::now() + FORWARD_WAIT;
     while !in_front(pid) && std::time::Instant::now() < deadline {
@@ -777,10 +778,13 @@ fn press_refused_once_forward(keys: &str, pid: i64) -> Option<policy::Refusal> {
     }
     let settled = std::time::Instant::now() + FOCUS_SETTLE;
     loop {
-        if let Some(refused) = press_refused(keys, pid, false) {
+        let focused = focused_password_field(pid);
+        if let Some(refused) =
+            policy::press_refusal(keys, focused, secure_input_on(), in_front(pid))
+        {
             return Some(refused);
         }
-        if focused_password_field(pid).is_some() || std::time::Instant::now() >= settled {
+        if focused.is_some() || std::time::Instant::now() >= settled {
             return None;
         }
         std::thread::sleep(FORWARD_POLL);
@@ -1138,20 +1142,35 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
     } else {
         run_envelope(ctx, &argv, deadline(op, args))
     };
+    // The key went nowhere; the menu item with that shortcut does the same thing without focus
+    // (A9's keys_after_restore). Only one enabled item, never a guess. It runs before a borrow is
+    // given back, so the app is in front for it, and is asked again: agent-desktop has waited for
+    // focus since the last check, and the field or the front may have changed.
+    let by_menu = if op == "press" && matches!(&ran, Ok((_, sent)) if keys_had_no_focus(sent)) {
+        let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
+        crate::menus::read(app.pid)
+            .and_then(|items| crate::menus::by_shortcut(&items, keys).map(|i| i.path.clone()))
+            .map(|item| match press_refused(keys, app.pid, false) {
+                Some((code, why)) => Err(refuse(code, why)),
+                None => press_item(&app, tier, &item, Some(keys)),
+            })
+    } else {
+        None
+    };
     let gave = borrowed.map(crate::borrow::end);
+    if let Some(answer) = by_menu {
+        let mut reply = answer?;
+        if let Some(gave) = gave {
+            reply["mode_used"] = json!("borrow");
+            reply["focus_restored"] = json!(gave.front_restored);
+            reply["borrow"] = borrow_json(&gave);
+            reply["front"]["after"] = json!(frontmost_pid());
+        }
+        return Ok(reply);
+    }
     let (exit, mut envelope) = ran?;
     if shared && op == "list_windows" {
         keep_windows_of(&mut envelope, app.pid);
-    }
-    if op == "press" && keys_had_no_focus(&envelope) {
-        // The key went nowhere; the menu item with that shortcut does the same thing without
-        // focus (A9's keys_after_restore). Only one enabled item, never a guess.
-        let keys = args.get("keys").and_then(Value::as_str).unwrap_or("");
-        if let Some(item) = crate::menus::read(app.pid)
-            .and_then(|items| crate::menus::by_shortcut(&items, keys).map(|i| i.path.clone()))
-        {
-            return press_item(&app, tier, &item, Some(keys));
-        }
     }
     // A borrow gives the front back itself; inside a takeover the app may stay in front; a visit
     // comes back when its work ends.
@@ -1185,13 +1204,7 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         } else {
             "background"
         }),
-        "borrow": gave.map(|g| json!({
-            "front_restored": g.front_restored,
-            "keys_replayed": g.keys_replayed,
-            "yielded_to_user": g.yielded_to_user,
-            "waited_ms": g.waited_ms,
-            "borrowed_ms": g.borrowed_ms,
-        })),
+        "borrow": gave.as_ref().map(borrow_json),
         // What was in front just before and just after this action (pids), so a
         // check can tell an app Hands acted on taking the focus from the user
         // switching apps between actions.
@@ -1200,6 +1213,16 @@ fn guarded(ctx: &Ctx, req: &Request) -> Result<Value, Refusal> {
         "visit_started": went,
         "visit": crate::visit::status(),
     }))
+}
+
+fn borrow_json(gave: &crate::borrow::GaveBack) -> Value {
+    json!({
+        "front_restored": gave.front_restored,
+        "keys_replayed": gave.keys_replayed,
+        "yielded_to_user": gave.yielded_to_user,
+        "waited_ms": gave.waited_ms,
+        "borrowed_ms": gave.borrowed_ms,
+    })
 }
 
 /// Operations that need one of the app's windows to be seen (§15 A18: such an app on another
