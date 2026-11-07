@@ -161,7 +161,7 @@ def clean_body(text, shown_only: bool = False) -> str:
     becomes one new line.
 
     `shown_only`, for text with no card to show those characters (a memory save): every other character that shows
-    nothing goes too. What stays is what UNI1b leaves unmarked for joiners and presentation selectors (`hidden_runs`):
+    nothing goes too, and one that draws a gap becomes a space (`visible_only`). What stays is what UNI1b leaves unmarked for joiners and presentation selectors (`hidden_runs`):
     a ZWNJ or ZWJ alone after a letter of a script that uses joiners, a ZWJ in an emoji sequence, VS15 or VS16 after
     an emoji or keycap base, and an RGI flag's tags. Until nothing more goes: a removal can leave a joiner after
     what no longer counts it (U+FE0F that goes, then a ZWJ)."""
@@ -177,8 +177,8 @@ def clean_body(text, shown_only: bool = False) -> str:
         cps = [ord(ch) for ch in text]
         counted = {start + k for start, run in hidden_runs(text) for k in range(len(run))}
         flags = _flag_tags(cps)
-        shown = "".join(ch for i, ch in enumerate(text) if visible_only(ch) or i in flags or (
-            i not in counted and cps[i] in (*_JOINERS, *_PRESENTATION_SELECTORS)))
+        shown = "".join(ch if i in flags or (i not in counted and cps[i] in (*_JOINERS, *_PRESENTATION_SELECTORS))
+                        else visible_only(ch) for i, ch in enumerate(text))
         if shown == text:
             break
         text = shown

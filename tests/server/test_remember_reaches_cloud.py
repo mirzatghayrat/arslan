@@ -321,10 +321,12 @@ async def test_persian_and_emoji_are_stored_as_written_and_still_match(memory, m
 
 
 #: One of each kind of character that shows nothing and that a save kept before: zero-width space, soft hyphen, word
-#: joiner, BOM, a variation selector from the supplement and U+FE0F, ZWNJ, RLO, LRM, blank braille, the Hangul filler.
+#: joiner, BOM, a variation selector from the supplement and U+FE0F, ZWNJ, RLO, LRM.
 INVISIBLE = {"zero-width-space": 0x200B, "soft-hyphen": 0xAD, "word-joiner": 0x2060, "bom": 0xFEFF,
-             "selector-supplement": 0xE0100, "vs16": 0xFE0F, "zwnj": 0x200C, "rlo": 0x202E, "lrm": 0x200E,
-             "blank-braille": 0x2800, "hangul-filler": 0x3164}
+             "selector-supplement": 0xE0100, "vs16": 0xFE0F, "zwnj": 0x200C, "rlo": 0x202E, "lrm": 0x200E}
+#: These draw a gap: the blank braille pattern and the Hangul fillers.
+GAPS = {"blank-braille": 0x2800, "choseong-filler": 0x115F, "jungseong-filler": 0x1160, "hangul-filler": 0x3164,
+        "halfwidth-filler": 0xFFA0}
 
 
 def _inside(chars):
@@ -354,6 +356,16 @@ async def test_what_shows_nothing_cant_split_a_keyword(memory, monkeypatch, cp):
 def test_the_keywords_read_the_text_without_what_shows_nothing(cp):
     """For a writer whose text keeps those characters (the Memory form, an imported line)."""
     assert sensitive_words(f"My sa{chr(cp)}lary is paid monthly")
+
+
+@pytest.mark.parametrize("cp", GAPS.values(), ids=list(GAPS))
+async def test_a_character_that_draws_a_gap_reads_as_a_space(memory, monkeypatch, cp):
+    """In place of a space it still shows two words, so the keyword is still there."""
+    said = f"My bank{chr(cp)}account is at the credit union"
+    await _turn(monkeypatch, f"Remember that {said}", *_remember(said))
+    entry = (await _stored(memory))["My bank account is at the credit union"]
+    assert (entry.status, entry.sensitivity, entry.use_policy) == ("proposed", "sensitive", "local_only")
+    assert "credit union" not in await _next_prompt(monkeypatch, "Do you know my bank account?")
 
 
 EVERY_KIND = _inside("".join(map(chr, INVISIBLE.values())))
@@ -420,6 +432,11 @@ def test_the_keywords_still_catch_what_folding_would_lose(text):
     """Folding, or removing what shows nothing, can join a keyword to the next letter, so the raw text is read as
     well: only ever stricter."""
     assert sensitive_words(text)
+
+
+def test_a_keyword_in_another_form_split_by_what_shows_nothing_is_caught():
+    """Only the folded read of the text without what shows nothing sees this (a writer that keeps them: the form)."""
+    assert sensitive_words(f"My {_full_width('sa')}{chr(0x200B)}{_full_width('lary')} is paid monthly")
 
 
 # -- the post-turn job on the same turn -----------------------------------------------------------------------------
