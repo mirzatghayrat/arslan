@@ -899,15 +899,14 @@ def _command_detection_variants(command: str):
         pending = carry
 
 
-@functools.lru_cache(maxsize=32)        # terminal_policy reads both halves of a command's variants
-def _split_detection_variants(command: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """The variants, and apart from them the payloads read only from the text with its quoted newlines kept: a
-    newline in a `-c` argument is a newline in what it runs. Masked, `sh -c 'ls<newline>x'` read as one command, `ls x`.
-    Apart, so the forms terminal_policy splits an inline script's line in are chosen as before (`_split_forms`)."""
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
+def _all_detection_variants(command: str) -> tuple[str, ...]:
+    """The variants, and the payloads read from the text with its quoted newlines kept: a newline in a `-c` argument
+    is a newline in what it runs. Masked, `sh -c 'ls<newline>x'` read as one command, `ls x`."""
     found = tuple(_command_detection_variants(command))
     normalized = _normalize_command_for_detection(_mask_quoted_newlines(command))
     if "\n" not in command or (kept := _normalize_command_for_detection(command)) == normalized:
-        return found, ()
+        return found
     seen = set(found)
 
     def fresh(variant: str) -> bool:
@@ -915,12 +914,7 @@ def _split_detection_variants(command: str) -> tuple[tuple[str, ...], tuple[str,
             return False
         seen.add(variant)
         return True
-    return found, tuple(_payload_variants(kept, fresh))
-
-
-def _all_detection_variants(command: str) -> tuple[str, ...]:
-    found, added = _split_detection_variants(command)
-    return found + added
+    return found + tuple(_payload_variants(kept, fresh))
 
 
 # ── what terminal_policy reads ────────────────────────────────────────────────
@@ -928,12 +922,12 @@ def _all_detection_variants(command: str) -> tuple[str, ...]:
 CMDPOS = _CMDPOS                                    # where a command starts, for the anchored rules
 normalize = _normalize_command_for_detection        # ANSI, NUL, fullwidth, continuations, home, escapes, $IFS
 variants = _all_detection_variants                  # the forms rules are matched against besides the text
-split_variants = _split_detection_variants          # those, and apart the ones read with quoted newlines kept
 has_shell_carrier = _contains_shell_carrier         # a command word runs a quoted argument (sh -c, eval …)
 mask_quoted_prose = _mask_quoted_prose
 mask_quoted_newlines = _mask_quoted_newlines
 too_complex = _command_parser_limit_exceeded         # past what is read at all
 over_limit_forms = _over_limit_forms                 # what the forbid rules read past it
+blank_run_over_limit = _blank_run_over_limit         # a blank run no regex reads in linear time
 
 
 def grep_unreadable(command: str) -> bool:

@@ -319,52 +319,37 @@ def _launcher_args(text: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+@functools.lru_cache(maxsize=64)        # assess, the limit check and ask_rules all ask
 def _forms(text: str) -> tuple[str, ...]:
     """The forms the rules are matched against: as written, normalized, and the variants with a
     newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
     not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
-    `ls && git push` ran with no card."""
-    first, added = _form_parts(text)
-    return first + added
-
-
-@functools.lru_cache(maxsize=64)        # assess, the limit check and the inline-script reading all ask
-def _form_parts(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """`_forms` in two parts: what was read before #766's follow-up, and what it added: the `-c` payloads read with
-    their quoted newlines kept, and the arguments of a launcher that spans lines or sits in a form other than the text
-    (a `-c` payload: `sh -c 'watch "…"'`). Kept apart so `_split_forms` still finds the line-split form it found."""
+    `ls && git push` ran with no card. Also the arguments of every launcher in any of them (one in a `-c` payload:
+    `sh -c 'watch "…"'`), read the same way. Every form is read by every rule, and none is chosen over another: the
+    verdict is the most cautious one any form gives, so a form added here can only add caution."""
     if shell_text.too_complex(text):
-        return (text,), ()
-    found, added = shell_text.split_variants(text)
-    normalized = shell_text.normalize(text)
-    first, later = [text, normalized, *found], list(added)
-    in_text = set(_launcher_args(text))
-    for arg in dict.fromkeys(arg for form in (text, normalized, *found, *added) for arg in _launcher_args(form)):
+        return (text,)
+    found = (text, shell_text.normalize(text), *shell_text.variants(text))
+    forms = list(found)
+    for arg in dict.fromkeys(arg for form in found for arg in _launcher_args(form)):
         # Shorter each time, so the reading ends: a marked form can be longer than the text, and so its argument.
-        arg_first, arg_added = _form_parts(arg) if len(arg) < len(text) else ((arg,), ())
-        if arg in in_text and "\n" not in arg:
-            first += arg_first
-            later += arg_added
-        else:
-            later += arg_first + arg_added
-    return tuple(first), tuple(later)
-
-
-def _split_forms(text: str) -> tuple[str, ...]:
-    """Where an inline script's line is read: the form with a newline at every command start (the most lines), so a
-    script's "line" stops where its command does. Chosen among the forms read before #766's follow-up, as then, and
-    among all of them, so what the added forms split is read too."""
-    first, added = _form_parts(text)
-    lines = lambda form: form.count("\n")          # noqa: E731
-    return tuple(dict.fromkeys((max(first, key=lines), max(first + added, key=lines))))
+        forms += _forms(arg) if len(arg) < len(text) else (arg,)
+    return tuple(dict.fromkeys(forms))
 
 
 def _detection_texts(text: str) -> tuple[str, ...]:
-    """`_forms`, or when a form of it (the `-c` argument it hides, say) is past the parser limit, what the forbid rules
-    read of it in linear passes (`shell_text.over_limit_forms`): no regex reads a form the parser would have to scan,
-    and `_unparseable` says the command can't be read. A forbid holds past the limit, so asking can't let one run."""
+    """`_forms`, or when a form of it (the `-c` argument it hides, say) is past the parser limit, the forms still read
+    cheaply: every one of them under the limits, the text as written (the form main reads), and what the forbid rules
+    read of the text in linear passes (`shell_text.over_limit_forms`). `_unparseable` then says the command can't be
+    read, and a forbid holds past the limit, so asking can't let one run. A form past a limit adds the linear passes and
+    takes no other form out. The one form left out is the text as written with a blank run past its limit: every rule's
+    command position reads such a run in time far beyond its length, so the linear passes read it squeezed instead."""
     forms = _forms(text)
-    return shell_text.over_limit_forms(text) if _over_limit(forms) else forms
+    if not _over_limit(forms):
+        return forms
+    readable = [form for form in forms if not shell_text.too_complex(form)]
+    as_written = [] if shell_text.blank_run_over_limit(text) else [text]
+    return tuple(dict.fromkeys((*as_written, *readable, *shell_text.over_limit_forms(text))))
 
 
 def _over_limit(forms: tuple[str, ...]) -> bool:
@@ -418,11 +403,19 @@ def _inline_scripts(text: str):
         yield line + ("\n" + body.group(0) if body else "")
 
 
-def _hidden_code(text: str, texts: tuple[str, ...]) -> str:
+def _scripts(texts: tuple[str, ...]):
+    """Every inline script in every form. A form with a newline at each command start ends a script's line where its
+    command does; a form with fewer lines reads more of it; a `-c` payload read with its own newlines can have more
+    lines than the whole command but holds only part of it. Any of them can be the one that shows what the script
+    reaches, so none is chosen over the others: the most cautious reading of them all is the verdict."""
+    return (script for form in texts for script in _inline_scripts(form))
+
+
+def _hidden_code(texts: tuple[str, ...]) -> str:
     """Why what this command runs cannot be read from its text, or "" (layer ②'s `unreadable`)."""
     if _matches(_FETCHED_CODE, texts):
         return "it runs code it downloads, decodes or builds"
-    if any(_SCRIPT_REACH.search(script) for split in _split_forms(text) for script in _inline_scripts(split)):
+    if any(_SCRIPT_REACH.search(script) for script in _scripts(texts)):
         return "its script reaches out, starts programs or drives apps"
     return ""
 
@@ -489,15 +482,15 @@ def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
 _PROTECTED_NAME_C = re.compile(_PROTECTED_NAME + r"|/(?:private/)?etc/")
 
 
-def _script_names_protected(text: str) -> bool:
+def _script_names_protected(texts: tuple[str, ...]) -> bool:
     """An inline script whose code names a protected file: a script reaches ~/.zshrc through
     expanduser or Path.home(), which no path pattern sees."""
-    return any(_PROTECTED_NAME_C.search(script) for split in _split_forms(text) for script in _inline_scripts(split))
+    return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
-def _layer_two(text: str, texts: tuple[str, ...]) -> list[tuple[str, str]]:
+def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
     found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
-    if _script_names_protected(text) and not any(k == "protected-write" for k, _ in found):
+    if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
     if _deletes_outside(texts):
         found.insert(0, _DELETE_OUTSIDE)
@@ -519,10 +512,10 @@ def assess(command: str) -> Assessment:
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(text, texts)
+    found = _layer_two(texts)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
-    hidden = _hidden_code(text, texts)
+    hidden = _hidden_code(texts)
     if hidden:
         return Assessment("ask", UNREADABLE, hidden)
     return Assessment("run")
@@ -538,7 +531,7 @@ def ask_rules(command: str) -> set[str]:
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(text, texts)} | ({UNREADABLE} if _hidden_code(text, texts) else set())
+    return {key for key, _why in _layer_two(texts)} | ({UNREADABLE} if _hidden_code(texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to
