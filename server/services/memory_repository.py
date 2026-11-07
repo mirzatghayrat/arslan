@@ -190,6 +190,19 @@ class MemoryRepository:
                 raise MemoryError("memory_source_deleted")
         return digest
 
+    async def already(self, write: MemoryWrite, actor: MemoryActor) -> str | None:
+        """CAP8b: "deleted" when the user deleted these words before, "stored" when an entry says them, else None.
+        What `create` would find, for a card to say before anything is written."""
+        try:
+            digest = await self._not_suppressed(write, actor)
+        except MemoryError:
+            return "deleted"
+        same = await self.db.scalar(select(MemoryEntry.id).where(
+            MemoryEntry.owner_id == actor.owner_id, MemoryEntry.kind == write.kind,
+            MemoryEntry.scope_kind == write.scope.kind, MemoryEntry.scope_id == write.scope.id,
+            MemoryEntry.normalized_hash == digest, MemoryEntry.status != "deleted").limit(1))
+        return "stored" if same else None
+
     @staticmethod
     def _dedup_key(write: MemoryWrite, owner_id: str, digest: str) -> str:
         return hashlib.sha256(json.dumps([owner_id, write.kind, write.scope.kind,
