@@ -107,6 +107,13 @@ markers = 1
 cases = 1
 xfail = 0
 
+# 0.1.64 SBX-6a, the #668 ruling: curl in the sandbox, through the proxy to a loopback destination, over https and
+# plain http, gets the proxy's named refusal, the note and the `proxy` denial code.
+["server/sbx/test_sbx6a_proxy_refusal.py"]
+markers = 1
+cases = 2
+xfail = 0
+
 # Stock Pool semaphore refusal and a same-policy run-prefixed control.
 ["server/sbx/test_sbx_multiprocessing.py"]
 markers = 1

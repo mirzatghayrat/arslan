@@ -56,7 +56,7 @@ def record(*, tool: str, args, result, ok: bool, error: str | None, ms: int | No
 def note_denial(code: str) -> None:
     """SBX-7: the sandbox stopped the command being run. The code goes on that call's entry, and from there on
     the run step's `ref`. It never goes on the result, which the model and every other payload read (card
-    §"The two numbers"). EPERM is what SBX-3 detects so far."""
+    §"The two numbers"). The codes: `eperm` (SBX-3) and `proxy`, the local proxy's refusal (#668 ruling)."""
     held = _denial.get()
     if held is not None:
         held["code"] = code

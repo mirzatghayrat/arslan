@@ -362,12 +362,28 @@ def available() -> bool:
 
 
 def stopped_by_sandbox(result: dict) -> bool:
-    """A sandboxed run that failed with EPERM, or with a certificate check the closed trust service failed
-    (`trust_check_failed`). Heuristic on purpose (Codex does the same): a false positive only adds a note the model
-    can ignore."""
+    """A sandboxed run that failed with EPERM, with a certificate check the closed trust service failed
+    (`trust_check_failed`), or on the local proxy's refusal (`proxy_refused`). Heuristic on purpose (Codex does the
+    same): a false positive only adds a note the model can ignore."""
     if result.get("sandbox") != "workspace" or result.get("ok") or result.get("exit_code") in (0, None):
         return False
-    return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}")) or trust_check_failed(result)
+    return (bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
+            or trust_check_failed(result) or proxy_refused(result))
+
+
+#: SBX-6a (#668 ruling): the local proxy's refusal of a destination the sandbox keeps closed (`sandbox_proxy.DENIED`).
+#: Python prints its reason, and curl without -f its body; curl and git print a refused CONNECT by its code only, which
+#: is enough because only that refusal is a 403 from the proxy. A plain-http refusal under curl -f reads like any
+#: server's 403 and is not counted.
+_PROXY_REFUSED = re.compile(r"Forbidden by Arslan's sandbox: local or non-public destination|"
+                            r"CONNECT tunnel failed, response 403\b|Received HTTP code 403 from proxy after CONNECT")
+
+
+def proxy_refused(result: dict) -> bool:
+    """A sandboxed online run whose output carries the local proxy's refusal, whatever the exit code."""
+    if result.get("sandbox") != "workspace" or result.get("offline"):
+        return False
+    return bool(_PROXY_REFUSED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
 #: SBX-6a: the certificate errors a tool prints when Security.framework can't reach the trust service (URLSession
@@ -389,15 +405,20 @@ def refused_outside(result: dict) -> bool:
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False) -> str:
+def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False) -> str:
     shut = ""
     if closed:
         names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
         shut = (f" The user keeps {names} closed (Settings: Desktop, Documents, Downloads is off), so commands "
                 "cannot open them either.")
-    return ("The sandbox stopped this command: commands may write only inside the working folder "
-            f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data."
-            + shut + (" This looks like a certificate check through macOS's trust service, which the sandbox "
+    if proxy:
+        head = ("The sandbox stopped this command: its network goes through Arslan's proxy, which refused a local or "
+                "non-public destination (this Mac, the local network or a link-local address). If it is a device on "
+                "the user's own network, name it, so the user can decide whether to trust that device.")
+    else:
+        head = ("The sandbox stopped this command: commands may write only inside the working folder "
+                f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data." + shut)
+    return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")
             + " Find a way that works inside it if there is one. If it really has to run outside, run it "

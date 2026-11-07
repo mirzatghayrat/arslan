@@ -8,7 +8,8 @@ Arslan's log.
 
 It speaks CONNECT, to any port, and plain-http forwarding (absolute-form requests). Every destination is
 resolved once and every answer must be public (`net_pin`, as the browser's tunnel does), so a command can't
-reach Arslan's own ports, a LAN host or a link-local service through it; a LAN host needs the re-run card.
+reach Arslan's own ports, a LAN host or a link-local service through it; a LAN host needs a trusted device or a
+run outside the sandbox. A refusal names itself (`DENIED`), so the command's output tells the model why.
 With a system HTTP proxy set it chains through it. A tunnel to :443 goes by name, as `browser_proxy` does:
 Arslan's check still runs first, but the system proxy then resolves the name and picks the real destination,
 so the public-address check is delegated to it there. Everything else, plain http included, goes to the one
@@ -37,7 +38,7 @@ import subprocess
 from urllib.parse import urlsplit
 
 from arslan.aio import close_connection, within
-from server.registry.net_pin import _BlockedHost, _resolve_pinned
+from server.registry.net_pin import _BlockedHost, _InvalidHost, _resolve_pinned, _Unresolvable
 from server.services import browser_proxy
 
 logger = logging.getLogger(__name__)
@@ -242,8 +243,39 @@ async def _trusted() -> list[dict]:
 
 # ── the proxy ────────────────────────────────────────────────────────────────
 
+# What the proxy answers when it won't carry a request: a fixed status and reason, sent again as a short text body
+# for a client that shows the body (curl without -f). Never a host, an address, a URL or a setting's value.
+# Only a destination the sandbox keeps closed is a 403, so a 403 from this proxy is always the sandbox's: curl and git
+# print only the code (#668 ruling). `command_sandbox._PROXY_REFUSED` reads DENIED's reason.
+DENIED = (403, "Forbidden by Arslan's sandbox: local or non-public destination")
+BAD_REQUEST = (400, "Bad Request: Arslan's sandbox proxy takes CONNECT and absolute plain-http requests")
+UNREACHABLE = (502, "Bad Gateway: Arslan's sandbox proxy could not resolve or reach the destination")
+BUSY = (503, "Service Unavailable: Arslan's sandbox proxy has too many open connections")
+
+
 class _Refused(Exception):
-    pass
+    def __init__(self, why: str, answer: tuple[int, str] = BAD_REQUEST):
+        super().__init__(why)
+        self.answer = answer
+
+
+def _answer(exc: Exception) -> tuple[int, str]:
+    if isinstance(exc, _Refused):
+        return exc.answer
+    if isinstance(exc, (_Unresolvable, OSError)):           # TimeoutError is an OSError
+        return UNREACHABLE
+    if isinstance(exc, _InvalidHost):
+        return BAD_REQUEST
+    if isinstance(exc, _BlockedHost):                       # a local name, a non-public answer, fake-IP off :443
+        return DENIED
+    return BAD_REQUEST                                      # an unreadable request: a bad value, a short or long head
+
+
+def _refusal(answer: tuple[int, str]) -> bytes:
+    status, reason = answer
+    body = f"{reason}\n".encode("ascii")
+    return (f"HTTP/1.1 {status} {reason}\r\nContent-Type: text/plain\r\nContent-Length: {len(body)}\r\n"
+            "Connection: close\r\n\r\n").encode("ascii") + body
 
 
 def _authority(text: str, default: int | None) -> tuple[str, int]:
@@ -285,7 +317,10 @@ class LocalProxy:
         url = f"{'http' if first else 'https'}://{host}:{port}/"
         device = None if _is_public_literal(name) else await within(
             asyncio.to_thread(trusted_address, name, await _trusted()), 5)    # DNS off the loop
-        chain = None if device is not None else browser_proxy._upstream_proxy(name)   # ValueError: refused
+        try:
+            chain = None if device is not None else browser_proxy._upstream_proxy(name)
+        except ValueError:                                   # a system proxy setting it can't use: nothing goes
+            raise _Refused("the system proxy setting is unusable", UNREACHABLE) from None
         if device is not None:
             # A device the user trusts, at its pinned address, directly (a system proxy can't reach the LAN).
             remote, upstream = await within(_dial(device, port), 8, dispose=close_connection)
@@ -307,10 +342,13 @@ class LocalProxy:
                 lines.append(f"Proxy-Authorization: {chain.auth}")
             upstream.write(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))
             await upstream.drain()
-            head = await within(remote.readuntil(b"\r\n\r\n"), 8)
+            try:
+                head = await within(remote.readuntil(b"\r\n\r\n"), 8)
+            except (asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+                head = b""                                   # it closed, or sent no HTTP head
             if not re.match(rb"HTTP/1\.[01] 200\b", head):
                 upstream.close()
-                raise _Refused("the upstream proxy refused")
+                raise _Refused("the upstream proxy refused", UNREACHABLE)
         else:
             ip, _, pinned = await within(asyncio.to_thread(_resolve_pinned, url), 5)
             remote, upstream = await within(asyncio.open_connection(ip, pinned), 8, dispose=close_connection)
@@ -350,7 +388,7 @@ class LocalProxy:
         established = False
         try:
             if len(self.tasks) > _CONNECTIONS:
-                raise _Refused("too many connections")
+                raise _Refused("too many connections", BUSY)
             async with asyncio.timeout(30):
                 raw = await reader.readuntil(b"\r\n\r\n")
                 line, _, headers = raw.decode("latin-1").partition("\r\n")
@@ -385,10 +423,10 @@ class LocalProxy:
             for finished in done:
                 finished.result()
         except (_Refused, _BlockedHost, ValueError, UnicodeError, OSError, TimeoutError,
-                asyncio.IncompleteReadError, asyncio.LimitOverrunError):
+                asyncio.IncompleteReadError, asyncio.LimitOverrunError) as exc:
             if not established:
                 with suppress(OSError):
-                    writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    writer.write(_refusal(_answer(exc)))
                     await writer.drain()
         finally:
             for relay in relays:
