@@ -607,14 +607,15 @@ def summarize(text: str, rules: str | list[str] | None = None) -> dict:
     tests/fixtures/card_purpose_vectors.json). `unsure`: a transfer in it was not fully read, so it may send local
     data. `rules`: the server's terminal rules for the line (one, or several). A line it cannot read (a quote never
     closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says Arslan could not read all of
-    it, still with its first word (`notAllRead`, #770 review)."""
+    it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part not read may send local
+    data, so its card keeps that warning."""
     listed = [rules] if isinstance(rules, str) else list(rules or [])
     program = _base((text.strip().split() or [""])[0])
     try:
         r = _read(text, listed)
     except _TooDeep:
         return {"purpose": {"key": "notAllRead", "params": {"program": program}}, "touches": [], "more": 0,
-                "unsure": False}
+                "unsure": True}
     if r is None:
         return {"purpose": {"key": "run", "params": {"program": program}}, "touches": [], "more": 0, "unsure": False}
     outside = [p for p in r["local"] if re.match(r"^(?:/|~|\$|\.\.(?:/|$))", p) or _REMOTE_PATH.match(p)]

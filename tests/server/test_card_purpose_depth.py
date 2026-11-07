@@ -1,7 +1,7 @@
 """A card's plain purpose reads a line inside another (a `$(…)`, a shell's `-c`, `eval`, `watch`, find's `-exec`) only
 so deep (`card_purpose.READ_DEPTH`) and only so much (`READ_WORK` times the line's length). Past either the card says
-Arslan could not read the whole command, still with the line's program, in each language (#770 review), and every card
-path still gets its title. Up to them, the reading is the one it always was. A quote never closed still reads as
+Arslan could not read the whole command, still with the line's program, in each language (#770 review), led by "May
+send local data" (the part not read may), and every card path still gets its title. Up to them, the reading is the one it always was. A quote never closed still reads as
 "Run <program>". These lines are only read here, never run."""
 import time
 from types import SimpleNamespace
@@ -35,12 +35,18 @@ NOT_ALL_READ = {
     "de": "{} ausführen: Arslan konnte nicht den ganzen Befehl lesen",
     "fr": "Exécuter {} : Arslan n’a pas pu lire toute la commande",
 }
+#: The part not read may send local data, so the card keeps that warning first, in each language.
+MAY_SEND = {"en": "May send local data · ", "zh": "可能发出本机数据 · ", "ja": "ローカルのデータを送る可能性 · ",
+            "es": "Puede enviar datos locales · ", "de": "Kann lokale Daten senden · ",
+            "fr": "Peut envoyer des données locales · "}
+#: The whole heading of a line read past a bound, with nothing else to say.
+PAST = {lang: MAY_SEND[lang] + NOT_ALL_READ[lang] for lang in NOT_ALL_READ}
 
 
 def _not_all_read(program: str) -> dict:
     """The reading of a line read past a bound."""
     return {"purpose": {"key": "notAllRead", "params": {"program": program}}, "touches": [], "more": 0,
-            "unsure": False}
+            "unsure": True}
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -55,7 +61,7 @@ def test_a_line_read_as_deep_as_the_bound_keeps_its_reading(shape):
 def test_a_line_read_past_the_bound_says_arslan_could_not_read_all_of_it(shape, depth, lang):
     line, _, program = SHAPES[shape]
     assert card_purpose.summarize(line(depth)) == _not_all_read(program)
-    assert card_purpose.phrase(line(depth), lang=lang) == NOT_ALL_READ[lang].format(program)
+    assert card_purpose.phrase(line(depth), lang=lang) == PAST[lang].format(program)
 
 
 @pytest.mark.parametrize("lang", NOT_ALL_READ)
@@ -104,7 +110,7 @@ def test_a_line_whose_readings_take_exactly_the_budget_keeps_its_reading():
 @pytest.mark.parametrize("over", [1, READ_WORK])
 def test_a_line_whose_readings_take_more_than_the_budget_says_arslan_could_not_read_all_of_it(over, lang):
     assert card_purpose.summarize(_over_the_budget(over)) == _not_all_read("find")
-    assert card_purpose.phrase(_over_the_budget(over), lang=lang) == NOT_ALL_READ[lang].format("find")
+    assert card_purpose.phrase(_over_the_budget(over), lang=lang) == PAST[lang].format("find")
 
 
 @pytest.mark.timeout(60)
@@ -120,7 +126,7 @@ def test_finds_inside_finds_are_read_in_bounded_time(depth):
 # ── Every card path gets its title ──
 
 DEEP = {"eval": "eval " * FAR + "rm x", "find -exec": "find . -exec " * (FAR // 2) + "rm x"}
-TITLE = {"eval": NOT_ALL_READ["en"].format("eval"), "find -exec": NOT_ALL_READ["en"].format("find")}
+TITLE = {"eval": PAST["en"].format("eval"), "find -exec": PAST["en"].format("find")}
 
 
 class _Asker:
