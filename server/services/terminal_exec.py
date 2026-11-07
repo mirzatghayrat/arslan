@@ -166,8 +166,9 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
                           readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key)
 
 
-async def _trust_service_allowed() -> bool:
-    """SBX-6a: the user's "Allow system certificate checks in the sandbox" (default off). Off when unreadable."""
+async def trust_service_allowed() -> bool:
+    """SBX-6a: the user's "Allow system certificate checks in the sandbox" (default off), for commands and
+    installed MCP servers online. Off when unreadable."""
     try:
         from server.db import session as db_session
         from server.services import settings_service
@@ -192,7 +193,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         # SBX-6: online, the sandbox lets TCP out only to Arslan's local proxy, and the child is told to use
         # it; dev servers on loopback are reached directly. No proxy means the profile is offline.
         proxy_port = None if offline else await sandbox_proxy.port()
-        trust = proxy_port is not None and await _trust_service_allowed()
+        trust = proxy_port is not None and await trust_service_allowed()
         if proxy_port is not None:
             via = f"http://127.0.0.1:{proxy_port}"
             env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",

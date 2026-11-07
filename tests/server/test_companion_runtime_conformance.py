@@ -13,6 +13,7 @@ from server.db.models import Run, RunStep
 from server.orchestrator import arslan, memory, tool_loop
 from server.orchestrator.tool_caller import current_caller
 from server.services import knowledge, run_registry
+from server.orchestrator import tool_gates
 
 
 @pytest.fixture
@@ -137,7 +138,7 @@ async def test_native_loop_passes_explicit_confirmation_callbacks(tool_name, cal
         return False
     # 0.1.48: writing in Arslan's own folder asks nothing; pin "a folder the user
     # chose" so this test's precondition does not depend on an earlier test's DB.
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", _no)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", _no)
     await tool_loop.run_native(system="Fixture", user_content="Fixture", history=[],
                                emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=resolve,
                                **{callback_name: approve})

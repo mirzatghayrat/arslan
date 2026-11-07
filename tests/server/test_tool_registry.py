@@ -49,3 +49,36 @@ def test_a_job_can_start_only_from_a_turn_where_someone_can_be_asked(in_task, in
     keys = {entry["key"] for entry in tool.listed(tool_defs.TOOLS, offer)}
     jobs = {"start_background_work", "background_status", "stop_background_work"}
     assert (jobs <= keys if offered else not jobs & keys)
+
+
+def _gates():
+    return {t.name: t.gate for t in tool_defs.TOOLS if t.gate is not None}
+
+
+def test_each_gate_is_its_modules_function_of_that_name():
+    """LOOP1 c2: `Tool.gate` holds the function itself, taken from `tool_gates` or `command_gate` when the table is
+    built. A gate that names no module function could only be reached through the tool."""
+    import sys
+    assert _gates(), "no tool has a gate"
+    for name, gate in _gates().items():
+        module = sys.modules[gate.__module__]
+        assert module.__name__ in ("server.orchestrator.tool_gates", "server.orchestrator.command_gate"), name
+        assert getattr(module, gate.__name__) is gate, name
+
+
+def test_no_test_patches_a_gate_function():
+    """Because the tool holds the function, patching `tool_gates.schedule` (say) would reach nothing: the call would
+    still run the real gate, and the test would pass for the wrong reason. Patch what the gate reads instead
+    (`_writing_in_own_folder`, `_unattended`, `command_gate._sandbox_enabled`, ...), which it reads by name."""
+    import ast
+    from pathlib import Path
+    names = {gate.__name__ for gate in _gates().values()}
+    found = []
+    for path in sorted(Path(__file__).parent.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "setattr"
+                    and len(node.args) >= 2 and isinstance(node.args[0], ast.Name)
+                    and node.args[0].id in ("tool_gates", "command_gate")
+                    and isinstance(node.args[1], ast.Constant) and node.args[1].value in names):
+                found.append(f"{path.name}:{node.lineno} {node.args[0].id}.{node.args[1].value}")
+    assert not found, f"a patch of a gate function never reaches the tool, which holds the function: {found}"

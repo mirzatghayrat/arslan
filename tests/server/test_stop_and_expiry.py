@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from server.orchestrator import tool_loop
+from server.orchestrator import tool_gates
 from server.services import approvals, run_registry, terminal_exec
 
 
@@ -43,7 +43,7 @@ async def test_a_card_nobody_answered_is_not_reported_as_a_refusal(execution_db,
                                                                 title="Use Notes?"),
                                             permissions.Context(conversation_id="c"))
     assert not decision.allowed and approvals.LAST_OUTCOME.get() == "expired"
-    text = tool_loop._declined("user declined this command", "this command")
+    text = tool_gates._declined("user declined this command", "this command")
     assert text.startswith("Nobody answered the card for Use Notes?") and "NOT a refusal" in text
     # Told it may ask again, the model asked again within two seconds (device, 2026-10-05).
     assert "Don't retry it in this turn" in text and "can be asked again" not in text
@@ -56,7 +56,7 @@ async def test_a_jobs_outside_card_nobody_answered_is_not_reported_as_a_refusal(
     job = approvals.JobConfirmations("c10", job_id="job-c10")
     assert await job.command("touch ~/Downloads/a", [], sandbox="outside") is False
     assert approvals.LAST_OUTCOME.get() == "expired"
-    text = tool_loop._declined("user declined this command", "this command")
+    text = tool_gates._declined("user declined this command", "this command")
     assert text.startswith("Nobody answered the card for Run `touch ~/Downloads/a` outside the sandbox?")
     assert "NOT a refusal" in text
     assert "Don't retry it in this turn" in text and "can be asked again" not in text
@@ -69,10 +69,10 @@ async def test_a_decision_tells_the_model_in_its_own_words():
     permissions.LAST_DECISION.set(permissions.Decision(
         False, "user", note="use dist", model_text="The user said no to: Run `rm`?. They said: use dist"))
     approvals.LAST_OUTCOME.set("declined")
-    assert tool_loop._declined("user declined this command", "this command") == \
+    assert tool_gates._declined("user declined this command", "this command") == \
         "The user said no to: Run `rm`?. They said: use dist"
     permissions.LAST_DECISION.set(None)                 # a plain card: no decision of its own
-    assert tool_loop._declined("user declined this command", "this command") == "user declined this command"
+    assert tool_gates._declined("user declined this command", "this command") == "user declined this command"
 
 
 async def test_after_one_unanswered_card_a_job_opens_no_more(execution_db, monkeypatch):
@@ -117,13 +117,13 @@ async def test_a_jobs_card_is_told_its_own_answer_not_an_earlier_one(execution_d
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
     job = approvals.JobConfirmations("c9", job_id="job-c9")
     assert await job.schedule("daily", "08:00") is False
-    assert tool_loop._declined("user declined to schedule this task", "scheduling this task").endswith("not daily")
+    assert tool_gates._declined("user declined to schedule this task", "scheduling this task").endswith("not daily")
     assert await job.command("touch ~/Downloads/a", [], sandbox="outside") is False      # S4a: a decide card too
-    told = tool_loop._declined("user declined this command", "this command")
+    told = tool_gates._declined("user declined this command", "this command")
     assert told.startswith("The user said no to: Run `touch ~/Downloads/a` outside the sandbox?")
     assert "not daily" not in told
     assert await job.schedule("weekly", "Mon") is False
     monkeypatch.setattr(settings_service, "workspace_dir", AsyncMock(return_value=None))
     assert await job.workspace_write("write_file", "a.txt") is False                    # no card at all
-    assert tool_loop._declined("user declined workspace write access", "writing") == \
+    assert tool_gates._declined("user declined workspace write access", "writing") == \
         "user declined workspace write access"

@@ -13,6 +13,7 @@ from server.db.models import Setting
 from server.orchestrator import tool_loop, untrusted
 from server.services import approvals, card_purpose, command_confirm, command_sandbox, permissions
 from server.orchestrator import command_gate
+from server.orchestrator import tool_gates
 
 ROOT = Path(__file__).resolve().parents[2]
 VECTORS = json.loads((ROOT / "tests/fixtures/card_purpose_vectors.json").read_text(encoding="utf-8"))["vectors"]
@@ -251,7 +252,7 @@ async def test_nobody_to_ask_lists_the_card_by_its_purpose(execution_db, monkeyp
     async def unattended(message, request, conversation_id):
         listed.append(request.title)
         return message
-    monkeypatch.setattr(tool_loop, "_unattended", unattended)
+    monkeypatch.setattr(tool_gates, "_unattended", unattended)
 
     async def _resolve():
         return [{"key": "ssh_run", "description": "run"}]
