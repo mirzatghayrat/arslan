@@ -9,7 +9,7 @@ import pytest
 
 from arslan.llm import trajectory as tj
 from arslan.runtime_policy import bounded_history
-from server.orchestrator import tool_loop
+from server.orchestrator import model_step, tool_loop
 from tests.server import test_trajectory_golden as golden
 
 
@@ -24,7 +24,7 @@ async def test_trajectory_is_valid_at_every_model_request(monkeypatch, name):
         tj.validate(snapshot)
         seen.append(snapshot)
         return real(convo, current_request, status)
-    monkeypatch.setattr(tool_loop, "_render_request", spy)
+    monkeypatch.setattr(model_step, "_render_request", spy)
     await golden._run(name, monkeypatch)
     assert seen
     ids = [c["id"] for m in seen[-1] if m.get("role") == "assistant" for c in m.get("tool_calls") or []]
@@ -44,7 +44,7 @@ async def test_presearch_stays_host_run_and_model_calls_are_bound(monkeypatch):
     def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
         return real(convo, current_request, status)
-    monkeypatch.setattr(tool_loop, "_render_request", spy)
+    monkeypatch.setattr(model_step, "_render_request", spy)
     await golden._presearch(monkeypatch)
     first, second = seen
     assert [m.get("_synthetic") for m in first if m["role"] == "tool"] == [True]
@@ -61,7 +61,7 @@ async def test_continuation_and_finish_are_kept_on_the_assistant_message(monkeyp
     def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
         return real(convo, current_request, status)
-    monkeypatch.setattr(tool_loop, "_render_request", spy)
+    monkeypatch.setattr(model_step, "_render_request", spy)
     cont = {"protocol": "openai", "endpoint": "fp", "fields": {"reasoning_content": "  why\n"}}
     reply = golden._Resp(None, [golden._tc("web_search", {"query": "q"}, ""), golden._tc("web_search", {"query": "r"}, "")])
     reply.continuation, reply.finish_reason = cont, "tool_calls"
@@ -134,7 +134,7 @@ async def _repair_assistant(monkeypatch, replies):
     def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
         return real(convo, current_request, status)
-    monkeypatch.setattr(tool_loop, "_render_request", spy)
+    monkeypatch.setattr(model_step, "_render_request", spy)
 
     class Adapter:
         async def chat(self, *args, **kwargs):
