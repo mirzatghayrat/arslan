@@ -9,9 +9,10 @@ Arslan's log.
 It speaks CONNECT, to any port, and plain-http forwarding (absolute-form requests). Every destination is
 resolved once and every answer must be public (`net_pin`, as the browser's tunnel does), so a command can't
 reach Arslan's own ports, a LAN host or a link-local service through it; a LAN host needs the re-run card.
-With a system HTTP proxy set it chains through it by name, with a CONNECT for plain http too, as
-`browser_proxy` does: Arslan's check still runs first, but the system proxy then resolves the name and
-picks the real destination, so the public-address check is delegated to it.
+With a system HTTP proxy set it chains through it. A tunnel to :443 goes by name, as `browser_proxy` does:
+Arslan's check still runs first, but the system proxy then resolves the name and picks the real destination,
+so the public-address check is delegated to it there. Everything else, plain http included, goes to the one
+address Arslan checked, so a second lookup upstream can't turn it into a LAN host or one of this Mac's ports.
 
 Known limits (SBX-6a review):
 - The denied loopback ports are a snapshot when a command starts. A listener Arslan opens later (a browser
@@ -276,7 +277,8 @@ class LocalProxy:
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
     async def _open(self, host: str, port: int, first: bytes | None):
-        """A stream to host:port, direct to its one checked public address, or through the system proxy.
+        """A stream to host:port, direct to its one checked public address, or through the system proxy, by name
+        only for a tunnel to :443 and at the checked address otherwise.
         `first` is sent before the relay starts: a forwarded request's head, which also marks it plain http.
         A tunnel is checked as https (net_pin lets a fake-IP name through only for https on port 443)."""
         name = host.strip("[]").lower()
@@ -288,10 +290,19 @@ class LocalProxy:
             # A device the user trusts, at its pinned address, directly (a system proxy can't reach the LAN).
             remote, upstream = await within(_dial(device, port), 8, dispose=close_connection)
         elif chain is not None:
-            await within(asyncio.to_thread(_resolve_pinned, url, via_proxy=True), 5)
+            if first is None and port == 443:
+                await within(asyncio.to_thread(_resolve_pinned, url, via_proxy=True), 5)
+                target = f"{host}:{port}"
+                browser_proxy._warn_once(("sandbox delegated", chain.host, chain.port),
+                                         "sandbox proxy: tunnels to port 443 go through the system proxy %s:%s by "
+                                         "name; it resolves each name, so the address check is delegated there",
+                                         chain.host, chain.port)
+            else:
+                ip, _, pinned = await within(asyncio.to_thread(_resolve_pinned, url), 5)
+                target = f"[{ip}]:{pinned}" if ":" in ip else f"{ip}:{pinned}"
             remote, upstream = await within(asyncio.open_connection(chain.host, chain.port), 8,
                                             dispose=close_connection)
-            lines = [f"CONNECT {host}:{port} HTTP/1.1", f"Host: {host}:{port}"]
+            lines = [f"CONNECT {target} HTTP/1.1", f"Host: {target}"]
             if chain.auth:
                 lines.append(f"Proxy-Authorization: {chain.auth}")
             upstream.write(("\r\n".join(lines) + "\r\n\r\n").encode("ascii"))

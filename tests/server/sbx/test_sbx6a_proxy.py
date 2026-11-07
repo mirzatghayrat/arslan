@@ -375,6 +375,46 @@ async def test_it_chains_through_a_system_http_proxy_by_name(monkeypatch, origin
     assert got[0].startswith(b"CONNECT example.com:443 HTTP/1.1\r\n")
 
 
+@pytest.mark.parametrize(("address", "target"), [("93.184.216.34", b"93.184.216.34:8443"),
+                                                 ("2606:2800:220:1::1", b"[2606:2800:220:1::1]:8443")])
+async def test_a_tunnel_to_another_port_goes_upstream_at_the_checked_address(monkeypatch, origin, address, target):
+    """By name, the system proxy would resolve it again and could reach the LAN or one of this Mac's ports."""
+    port, got = origin
+    seen = []
+    monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {"https": f"http://127.0.0.1:{port}"})
+    monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr(sandbox_proxy, "_resolve_pinned",
+                        lambda url, **kw: seen.append((url, kw)) or (address, "example.com", 8443))
+    p = sandbox_proxy.LocalProxy()
+    await p.start()
+    try:
+        await _ask(p.port, b"CONNECT example.com:8443 HTTP/1.1\r\nHost: example.com:8443\r\n\r\n")
+    finally:
+        await p.close()
+    assert seen == [("https://example.com:8443/", {})]
+    assert got[0].startswith(b"CONNECT " + target + b" HTTP/1.1\r\nHost: " + target + b"\r\n")
+    assert b"example.com" not in got[0]
+
+
+@pytest.mark.parametrize("port_text", ["", ":443"])
+async def test_plain_http_goes_upstream_at_the_checked_address_on_any_port(monkeypatch, origin, port_text):
+    """Port 443 is by name only for a tunnel: forwarded plain http keeps the checked address there too."""
+    port, got = origin
+    seen = []
+    monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {"https": f"http://127.0.0.1:{port}"})
+    monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "proxy_bypass", lambda host: False)
+    monkeypatch.setattr(sandbox_proxy, "_resolve_pinned",
+                        lambda url, **kw: seen.append(kw) or ("93.184.216.34", "example.com", int(port_text[1:] or 80)))
+    p = sandbox_proxy.LocalProxy()
+    await p.start()
+    try:
+        await _ask(p.port, f"GET http://example.com{port_text}/ HTTP/1.1\r\nHost: example.com\r\n\r\n".encode())
+    finally:
+        await p.close()
+    assert seen == [{}]
+    assert got[0].startswith(b"CONNECT 93.184.216.34:" + (port_text[1:] or "80").encode() + b" HTTP/1.1\r\n")
+
+
 async def test_port_starts_one_proxy_and_reuses_it():
     sandbox_proxy._reset_for_tests()
     try:
