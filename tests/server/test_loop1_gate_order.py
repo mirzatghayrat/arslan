@@ -145,6 +145,10 @@ def _forbidden(env):
     _words(env, "rm -rf /")
 
 
+def _heredoc(env):
+    _words(env, "X=$(cat <<EOF\nhi\nEOF\n)")
+
+
 def _jxa(env):
     _words(env, "osascript -l JavaScript -e x")
 
@@ -250,13 +254,17 @@ CHAINS = {
         _hermetic_after("schedule")]),
     "run_command": ({"command": "ls"}, [
         BUDGET, CREDENTIALS, WORKER, Gate("nobody to ask", _nobody, "Scheduled runs don't run commands"), UNAVAILABLE,
-        Gate("forbidden", _forbidden, "Arslan never runs this"), Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
+        Gate("forbidden", _forbidden, "Arslan never runs this"),
+        Gate("here-document", _heredoc, "A here-document inside $( ) can't run here"),
+        Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
         Gate("outside, no click", _outside_no_callback, "needs the user's click"),
         Gate("outside, no why", _outside_no_why, "outside_sandbox needs a why"),
         Gate("outside declined", _outside_declined, "user declined running this command outside", card="command"),
         Gate("network refused", _network_refused, "the network was refused"), HERMETIC_GATE]),
     "run_command#ask": ({"command": "ls"}, [
-        Gate("forbidden", _forbidden, "Arslan never runs this"), Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
+        Gate("forbidden", _forbidden, "Arslan never runs this"),
+        Gate("here-document", _heredoc, "A here-document inside $( ) can't run here"),
+        Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
         Gate("ask, no click", _ask_no_callback, "requires user confirmation"),
         Gate("command declined", _command_declined, "user declined this command", card="command"),
         Gate("network refused", _network_refused, "the network was refused"), HERMETIC_GATE]),

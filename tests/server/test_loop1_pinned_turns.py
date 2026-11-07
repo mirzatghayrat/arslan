@@ -47,6 +47,7 @@ from server.services import (
     background_jobs,
     capability_flow,
     command_sandbox,
+    delete_to_trash,
     desktop_status,
     lessons,
     ocr_fallback,
@@ -137,14 +138,17 @@ def _around_the_call():
     caller = tool_caller.current_caller()
     return {"offline": terminal_exec.OFFLINE.get(), "outside": terminal_exec.OUTSIDE_SANDBOX.get(),
             "unwrapped": terminal_exec.UNWRAPPED.get(), "caller": caller.actor if caller else None,
-            "model": type(turn_model.current()).__name__}
+            "model": type(turn_model.current()).__name__,
+            **({"trash": True} if delete_to_trash.TRASH.get() else {})}     # only when set: other pins stay as they are
 
 
 class _Ran:
     """An executor that records its call and answers from the scenario."""
 
-    def __init__(self, log, key, answer):
+    def __init__(self, log, key, answer, timeout_s=None):
         self.log, self.key, self.answer = log, key, answer
+        if timeout_s is not None:       # the executor declares its own limit, as a slow tool does
+            self.timeout_s = timeout_s
 
     async def execute(self, args):
         self.log.append(["ran", self.key, copy.deepcopy(args), _around_the_call()])
@@ -536,6 +540,23 @@ SCENARIOS: dict[str, dict] = {
         _call("web_extract", {"url": "https://example.test/a"}, "c1"),
         _call("run_command", {"command": "curl https://example.test/b"}, "c2"), Reply("Done.")],
         tools=_table("web_extract", "run_command"), setup="command_card", expect='"network": true'),
+    "delete_outside_goes_to_the_trash": dict(replies=[
+        _call("run_command", {"command": "rm -r /tmp/loop1-old", "outside_sandbox": True, "why": "it is outside"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", expect='"trash": true'),
+    "delete_in_the_sandbox_stays_a_delete": dict(replies=[
+        _call("run_command", {"command": "rm -r /tmp/loop1-old"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", expect='"delete": "sandboxed"'),
+    # ── a tool's own limit, on a clock that doesn't move: 100 seconds of the turn are left ──
+    "command_limit_leaves_its_reserve": dict(replies=[_call("run_command", {"command": "ls"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", own_limit={"run_command": 600}, expect='["limit", 90.0]'),
+    "command_own_limit_under_the_default": dict(replies=[_call("run_command", {"command": "ls"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", own_limit={"run_command": 15}, expect='["limit", 15.0]'),
+    "tool_own_limit_over_and_under_the_default": dict(replies=[
+        _call("web_search", {"query": "a"}, "c1"), _call("read_file", {"path": "a.md"}, "c2"), Reply("Done.")],
+        tools=_table("web_search", "read_file"), own_limit={"web_search": 300, "read_file": 5}, expect='["limit", 300.0]'),
+    "delegating_gets_what_is_left": dict(replies=[_call("delegate_work", {"jobs": [{"method": "research", "objective": "o"}]}), Reply("Done.")],
+        tools=_table("delegate_work"), answers={"delegate_work": {"ok": True}}, own_limit={"delegate_work": 300},
+        expect='["limit", 100.0]'),
     # ── a job with checks ──
     "checks_ask_for_a_repair": dict(replies=[Reply("First try."), Reply("Second try.")], job=[["missing part"], []],
                                     expect="Deterministic validation failed"),
@@ -651,8 +672,12 @@ async def _run(name, monkeypatch, database):
     monkeypatch.setattr(desktop_status, "note_plan", lambda items: log.append(["island", "plan", copy.deepcopy(items)]))
     monkeypatch.setattr(agent_status, "recent_files", lambda *_args, **_own: [])  # the real ~/Arslan is not this pin's
     _watch(log, monkeypatch)
+    own_limit = spec.get("own_limit", {})
+    if own_limit:
+        monkeypatch.setattr(eb, "time", types.SimpleNamespace(monotonic=lambda: 1000.0))
+        spec = {**spec, "budget": dict(limits=Limits(wall_seconds=100))}
     for key, answer in {**ANSWERS, **spec.get("answers", {})}.items():
-        monkeypatch.setitem(executors.EXECUTORS, key, _Ran(log, key, answer))
+        monkeypatch.setitem(executors.EXECUTORS, key, _Ran(log, key, answer, timeout_s=own_limit.get(key)))
     async with database() as db:
         db.add(Setting(key="shell_confirm_policy", value="ask_all"))      # a card for every command, whatever the default
         if spec.get("streams") is False:
