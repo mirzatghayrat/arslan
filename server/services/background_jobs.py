@@ -53,6 +53,8 @@ class Job:
     # S64-0: whether the goal may carry outside content. A fixed answer (True: nobody knows), or the
     # starting turn's mark, asked again when the job gets its slot (start).
     outside_seen: bool | Callable[[], bool] = field(default=True, repr=False)
+    # SUB3: a sub-session's job: the conversation that started it, where its cards are asked.
+    parent_id: str | None = None
     results: dict = field(default_factory=dict)   # check_id -> status
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -154,18 +156,19 @@ def active() -> list[Job]:
 
 
 async def start(conversation_id: str, goal: str, criteria: list[dict], *,
-                outside_seen: bool | Callable[[], bool], origin: str = "mac") -> Job:
+                outside_seen: bool | Callable[[], bool], origin: str = "mac", parent_id: str | None = None) -> Job:
     """S64-0: the job runs in a clean context, but its goal is someone's words, and every caller
     says whether they may carry outside content. A turn passes `untrusted.turn_so_far()`, asked
     when the job gets its slot: a queued job reads the history after that turn may have read more.
     The phone passes False (the user's own words), an accepted Inbox proposal True (text Arslan
-    put together)."""
+    put together). SUB3: `parent_id` makes it a sub-session's job (`sub_sessions.start`)."""
     goal = " ".join(goal.split())[:4000]
     if not goal:
         raise ValueError("background_goal_required")
     job = Job(job_id=f"job-{uuid.uuid4()}", conversation_id=conversation_id, goal=goal,
               acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac",
-              outside_seen=True if outside_seen is None else outside_seen)   # None: nobody knows
+              outside_seen=True if outside_seen is None else outside_seen,   # None: nobody knows
+              parent_id=parent_id)
     _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,
@@ -317,11 +320,11 @@ def goal_missed(answer: bool | None, probability: float | None) -> bool:
 
 
 async def _execute(job: Job) -> tuple[str, str, str | None]:
-    from server.orchestrator import arslan
+    from server.orchestrator import arslan, untrusted
     from arslan.execution_budget import run_budget
     from server.db import session as db_session
     from server.services import (approvals, host_run, permissions, personal_context, settings_service,
-                                 task_context, task_service)
+                                 sub_sessions, task_context, task_service)
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
         tier = await settings_service.background_job_budget(db)
@@ -329,12 +332,20 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     ctx = await task_context.load(job.conversation_id, user_message=job.goal)
     ctx = replace(ctx, task_id=job.job_id, run_id=f"job-{job.job_id}", explicit_save_digest=None,
                   explicit_save_ref=None, allow_global_save=False)
-    confirmations = approvals.JobConfirmations(job.conversation_id, job_id=job.job_id)
+    # SUB3: a sub-session's cards are asked in its parent's conversation, and answered for the sub-session.
+    confirmations = approvals.JobConfirmations(job.conversation_id, job_id=job.job_id,
+                                               **({"ask_in": job.parent_id} if job.parent_id else {}))
     downstream = run_registry.make_emit(job.conversation_id)
+    tree_stop = None
 
     async def function(conversation_id, instruction, emit):
         async def body(sink):
-            return await arslan.background_body(conversation_id, instruction, _job_sink(job, sink), confirmations)
+            if not job.parent_id:
+                return await arslan.background_body(conversation_id, instruction, _job_sink(job, sink), confirmations)
+            # SUB3: a brief that may carry outside content reaches the model framed as such.
+            goal = untrusted.wrap_external(instruction) if job.outside_seen is not False else instruction
+            return await arslan.background_body(conversation_id, goal, _job_sink(job, sink), confirmations,
+                                                sub_session=True)
         return await host_run.execute(conversation_id, instruction, emit, body, announce=False)
 
     # 0.1.61: everything the job asks (permissions.decide, Hands too) asks on its own card surface.
@@ -351,11 +362,14 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             logger.exception("background job %s execution raised %s %s", job.job_id, type(exc).__name__,
                              getattr(exc, "code", ""))
             output = None
+            if isinstance(exc, sub_sessions.TreeLimitReached):
+                tree_stop = {**exc.stop, "tier": tier}
     async with repository() as repo:
         row = await repo.get(job.job_id)
         for result in row.results or ():
             job.results[result.get("check_id")] = result.get("status")
-        job.budget_stop = budget_stop_of(row.budget or {}, pause_reason=row.pause_reason, tier=tier) or job.budget_stop
+        job.budget_stop = tree_stop or budget_stop_of(row.budget or {}, pause_reason=row.pause_reason,
+                                                      tier=tier) or job.budget_stop
         text = output if isinstance(output, str) else (output or {}).get("final") if isinstance(output, dict) else ""
         return text or "", row.phase, row.pause_reason
 
@@ -415,6 +429,10 @@ async def _budget_note(job: Job) -> str:
     from server.services import runtime_messages
     locale = await runtime_messages.selected_locale()
     stop = job.budget_stop or {}
+    if stop.get("scope") == "tree":           # SUB3: the sub-sessions' shared limit, not this job's own
+        return runtime_messages.render("job_out_of_budget_tree", locale, goal=job.goal[:200],
+                                       used=stop.get("used", "?"), limit=stop.get("limit", "?"),
+                                       steps=job.tool_calls_seen)
     if stop.get("reason") == "usd":           # K4a: the dollar cap, set in Settings → Advanced
         return runtime_messages.render("job_out_of_budget_usd", locale, goal=job.goal[:200],
                                        used=stop.get("used", "?"), limit=stop.get("limit", "?"),

@@ -149,6 +149,8 @@ async def phone_new_quick(conversation_id: str, db: AsyncSession = Depends(get_s
     if await db.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1)):
         raise HTTPException(409, "conversation_exists")
     row = await db.get(ConversationContext, conversation_id) or ConversationContext(id=conversation_id)
+    if row.kind not in (None, "chat", "quick"):      # SUB3: a sub-session (or a side chat) stays what it is
+        raise HTTPException(409, "conversation_exists")
     row.kind, row.no_learning = "quick", True
     db.add(row)
     await db.commit()
@@ -234,7 +236,10 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
                         db: AsyncSession = Depends(get_session)):
     """`chat.history.result`: the latest `limit` messages, oldest first. Ids are the message ids
     the Mac's final `chat.event` uses too, so the phone can merge the two. Arslan's replies carry
-    the files their run made."""
+    the files their run made. A sub-session is `not_found` (`_off_the_phone`); the Bridge links a conversation
+    only after this read answers, so the refusal keeps it unlinked too."""
+    if await _off_the_phone(db, conversation_id):
+        raise HTTPException(404, "not_found")
     rows = (await db.execute(
         select(ArslanMessage).where(ArslanMessage.conversation_id == conversation_id)
         .order_by(ArslanMessage.id.desc()).limit(limit))).scalars().all()
@@ -255,11 +260,18 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
 @router.get("/phone/runs/{run_id}/files")
 async def phone_run_files(run_id: int, db: AsyncSession = Depends(get_session)):
     """The files one turn made, offered to the phone when the turn ends (its stream_end names the run). A run in the
-    retired pocket is not there for a phone (Q1 #4)."""
+    retired pocket is not there for a phone (Q1 #4), nor one in a sub-session (SUB3)."""
     run = await db.get(Run, run_id)
-    if run is None or run.conversation_id == phone_ids.POCKET:
+    if run is None or run.conversation_id == phone_ids.POCKET or await _off_the_phone(db, run.conversation_id):
         raise HTTPException(404, "run_not_found")
     return {"files": run_files(run_id)}
+
+
+async def _off_the_phone(db: AsyncSession, conversation_id: str | None) -> bool:
+    """SUB3 (⓪Plan's review of #750): a sub-session is reached through the conversation that started it, never by a
+    phone holding its id. Its history, its runs and their files answer as for something that isn't there, as the
+    retired pocket's runs do; no frame changes."""
+    return bool(conversation_id) and bool(await sub_sessions.sub_ids(db, [conversation_id]))
 
 
 @router.get("/phone/files/{file_id}")
@@ -270,7 +282,7 @@ async def phone_file(file_id: str, db: AsyncSession = Depends(get_session)):
     phones still have these ids cached (#525 review)."""
     match = re.fullmatch(r"run_(\d+)_.+", file_id)
     run = await db.get(Run, int(match.group(1))) if match is not None else None
-    if run is None or run.conversation_id == phone_ids.POCKET:
+    if run is None or run.conversation_id == phone_ids.POCKET or await _off_the_phone(db, run.conversation_id):
         raise HTTPException(404, "file_unavailable")
     try:
         metadata, data = artifact_store.read_owned(int(match.group(1)), file_id)
@@ -333,9 +345,10 @@ async def kept_awake(db: AsyncSession) -> bool:
 @router.get("/phone/runs/{run_id}")
 async def phone_run(run_id: int, db: AsyncSession = Depends(get_session)):
     """`run.result`: one turn or task, for quick review — its steps (a command's exit code and
-    last lines, an edit's line diff, a new file's first lines), and the files it made."""
+    last lines, an edit's line diff, a new file's first lines), and the files it made. A run in a sub-session is
+    one that isn't there (SUB3): its answer would name the sub-session."""
     detail = await phone_reads.run_detail(db, run_id)
-    if detail is None:
+    if detail is None or await _off_the_phone(db, detail["conversation_id"]):
         raise HTTPException(404, "run_not_found")
     return detail
 

@@ -410,15 +410,34 @@ class BroadcastAsker:
         return {**decision, "call_id": pending.call_id}
 
 
+class SubSessionAsker(BroadcastAsker):
+    """SUB3: a sub-session's card surface is its parent's conversation (every window there, the Inbox, the island and
+    the phone), marked as the sub-session's (`sub_session`: the window says "In this sub-session"). What it grants is
+    decided on the sub-session's own context (its JobConfirmations), so it lands on the sub-session, and the
+    parent's grants never answer for it. Its asks never join a card of the parent's own or another sub-session's: one
+    answer must not decide for two conversations."""
+
+    def __init__(self, conversation_id: str, sub_session_id: str):
+        super().__init__(conversation_id)
+        self.sub_session_id = sub_session_id
+
+    async def __call__(self, frame: dict) -> dict:
+        key = frame.get("dedupe")
+        return await super().__call__(frame | {"sub_session": True,
+                                               "dedupe": f"sub:{self.sub_session_id}:{key}" if key else key})
+
+
 class JobConfirmations(Confirmations):
     """The three confirmation callbacks the tool loop expects, for one job: the one ladder
     (`command_confirm.Confirmations`) on its `BroadcastAsker`, its ledger rows carrying the job id (§A8).
     Rule cards, the workspace write and the schedule are decided by `permissions.decide` (0.1.61): the
     window's choices, and the grants and rules of the job's conversation — a job's grants are its
-    conversation's, leaving the sandbox among them (S4a)."""
+    conversation's, leaving the sandbox among them (S4a). SUB3: `ask_in`, a sub-session's parent, where its cards
+    are shown (`SubSessionAsker`)."""
 
-    def __init__(self, conversation_id: str, job_id: str | None = None):
-        super().__init__(conversation_id, job_id=job_id, surface="job", asker=BroadcastAsker(conversation_id))
+    def __init__(self, conversation_id: str, job_id: str | None = None, ask_in: str | None = None):
+        asker = SubSessionAsker(ask_in, conversation_id) if ask_in else BroadcastAsker(conversation_id)
+        super().__init__(conversation_id, job_id=job_id, surface="job", asker=asker)
 
 
 async def runs_unsandboxed(conversation_id: str | None = None) -> bool:

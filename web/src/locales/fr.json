@@ -1402,6 +1402,8 @@
       "task": "Pour cette tâche",
       "conversation": "Dans cette conversation",
       "conversationFor": "Dans cette conversation : {{label}}",
+      "subSession": "Dans cette sous-session",
+      "subSessionFor": "Dans cette sous-session : {{label}}",
       "anyToolUse": "toute utilisation de cet outil, avec n’importe quels arguments",
       "always": "Toujours : {{label}}"
     },

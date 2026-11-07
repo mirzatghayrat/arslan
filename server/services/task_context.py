@@ -85,6 +85,7 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
         allow_sensitive=settings.allow_sensitive if settings else False,
         explicit_save_digest=digest, explicit_save_ref=f"turn:{identity}" if digest else None,
         allow_global_save=bool(digest) and not (settings and settings.project_id),
+        sub_session=bool(row and row.kind == sub_sessions.SUB),
     )
 
 
