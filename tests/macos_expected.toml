@@ -190,6 +190,12 @@ markers = 1
 cases = 1
 xfail = 0
 
+# S2a-3 d: local measurement; CI prints the runner counts. Sixteen corpus families and one containment gate.
+["server/test_shell_grammar_differential.py"]
+markers = 2
+cases = 17
+xfail = 0
+
 ["server/test_skill_import.py"]
 markers = 1
 cases = 1
