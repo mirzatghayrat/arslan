@@ -736,9 +736,21 @@ def _iter_shell_command_starts(command: str) -> tuple[int, ...]:
 
 def _mark_command_starts(command: str, marker: str = "\n") -> str:
     """Insert *marker* before each real (quote-aware) command start, so subshell and brace-group openers
-    reach the anchored rules without quoted prose (``--title "block (reboot)"``) doing so."""
+    reach the anchored rules without quoted prose (``--title "block (reboot)"``) doing so. A marked form never has a
+    blank run the text doesn't, so the limits read the same below them (#766): a start the blanks before it already put
+    on a line of its own gets no marker, and blanks long enough to reach the blank limit with it give it their place."""
     offsets = sorted(o for o in _iter_shell_command_starts(command) if o > 0)
-    return _splice(command, [(o, o, marker) for o in offsets]) if offsets else command
+    edits, floor = [], 0
+    for offset in offsets:
+        start = offset
+        while start > floor and command[start - 1].isspace():
+            start -= 1
+        joined = start > 0 and command[start - 1] == "\\"      # normalizing would join a `\` and a newline
+        if "\n" not in command[start:offset] or joined:
+            edits.append((start if offset - start + len(marker) >= _MAX_BLANK_RUN and not joined else offset,
+                          offset, marker))
+        floor = offset
+    return _splice(command, edits) if edits else command
 
 
 def _mask_quoted_newlines(command: str) -> str:

@@ -196,9 +196,21 @@ def test_a_command_after_a_newline_in_an_argument_that_runs_is_read(stand_in, ru
     quote never closed, so not at all. Either way the command after the newline read as no rule: `run`."""
     stand_in(ENDED)
     command = wrap.format(r=run, w=CALL)
-    if run in (NEWLINE_RUNS["one"], NEWLINE_RUNS["half"]):
-        assert not tp._over_limit(tp._forms(command))   # just under, a start marked in the payload reaches the limit
+    assert tp._over_limit(tp._forms(command)) == (run == NEWLINE_RUNS["at-the-limit"])
     assert _verdict(command) == ("forbid", STAND_IN), command
+
+
+@pytest.mark.parametrize("blanks", ["\n" * (NEWLINES - 1), "\n " * (NEWLINES - 1), " " * (BLANKS - 1),
+                                    "\t" * (BLANKS - 1)], ids=["newlines", "spaced-newlines", "spaces", "tabs"])
+@pytest.mark.parametrize("shape", ["ls;{b}ls; echo 'a; b'", "ls &&{b}echo 'a; b'", "({b}echo 'a; b')",
+                                   "if true; then{b}echo 'a; b'; fi", "sh -c \"ls;{b}echo 'a; b'\""],
+                         ids=["semicolon", "and", "subshell", "then", "payload"])
+def test_marking_a_command_start_never_takes_a_blank_run_to_a_limit(blanks, shape):
+    """Just under a blank limit, a marked start used to add one more and put the command past it: then a quoted
+    separator further on read as a separator. A start the blanks already put on a line of its own needs no mark."""
+    command = shape.format(b=blanks)
+    assert not shell_text.too_complex(command)
+    assert not tp._over_limit(tp._forms(command)), command
 
 
 @pytest.mark.parametrize("wrap", [
