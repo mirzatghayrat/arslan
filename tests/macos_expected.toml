@@ -64,9 +64,10 @@ markers = 7
 cases = 23
 xfail = 0
 
+# +1 marker, +2 cases (#666): compute's workspace map-exec closure, run-python and artifact.
 ["server/sbx/test_sbx4_kernel_boundaries.py"]
-markers = 4
-cases = 16
+markers = 5
+cases = 18
 xfail = 0
 
 # SBX-4p: 88 Python/artifact/MCP gates (72, then +16 over #654's wider service list), pending product adapters.

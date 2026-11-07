@@ -1,7 +1,8 @@
 """Receiver/file-backed SBX-4 gates; only registered adapters satisfy them.
 
 Must go red: K1 remove compute exec denial; K2 grant runtime writes;
-K3 grant foreign POSIX shared memory; K4 grant the interpreter's bin directory.
+K3 grant foreign POSIX shared memory; K4 grant the interpreter's bin directory;
+K5 remove compute's workspace map-exec denial.
 """
 import ctypes
 import os
@@ -81,6 +82,30 @@ except OSError as exc:
 else:
     assert sys.argv[2] == 'control', 'interpreter sibling executed'
 """, sibling, profile=profile, python=str(interpreter))
+
+
+@pytest.mark.macos
+@pytest.mark.sbx_mac
+@macos
+@compute
+def test_compute_cannot_load_code_from_its_workspace(sbx):
+    # A disposable copy of one of the interpreter's own extension modules, never a write to the runtime.
+    library = min((Path(os.__file__).parent / "lib-dynload").glob("*.so"))
+    copy = sbx.work / ("copied-" + library.name)
+    shutil.copy(library, copy)
+    checked_refusal(sbx, """
+import ctypes, pathlib, sys
+library, copy, expect = sys.argv[1:]
+# Readable and identical: a refusal below is the code mapping, not the read.
+assert pathlib.Path(copy).read_bytes() == pathlib.Path(library).read_bytes()
+try:
+    ctypes.CDLL(copy)
+except OSError as exc:
+    assert expect == 'deny' and 'sandbox blocked mmap()' in str(exc), exc
+    ctypes.CDLL(library)  # The same bytes still load from the runtime: only the workspace is refused.
+else:
+    assert expect == 'control', 'workspace library loaded as code'
+""", library, copy)
 
 
 @pytest.mark.macos
