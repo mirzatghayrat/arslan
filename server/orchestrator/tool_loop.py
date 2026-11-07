@@ -1433,8 +1433,8 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     return schemas
 
 
-# Tools a job may still use while wrapping up: saving the deliverable.
-WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
+# Tools a job may still use while wrapping up: saving the deliverable. LOOP1 a6: each tool's `saves` trait.
+WRAP_UP_TOOLS = tool_defs.named(lambda traits: traits.saves)
 
 
 def _stop_for_limit(runtime, reason: str, trace: list[dict], *, finishing: bool = False) -> None:

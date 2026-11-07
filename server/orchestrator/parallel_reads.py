@@ -23,12 +23,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from server.orchestrator import run_trace
+from server.registry import tool_defs
 
 #: Reads that never show a card and share no state with each other (⓪Plan's Q2). Not render_chart,
-#: delegate_work, update_plan, browser_* or desktop_* (one browser, one desktop).
-READS = frozenset({"web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir", "search_files",
-                   "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "my_status", "task_progress",
-                   "background_status", "mac_list_shortcuts"})
+#: delegate_work, update_plan, browser_* or desktop_* (one browser, one desktop). LOOP1 a6: each tool's
+#: `parallel` trait (server/registry/tool_defs).
+READS = tool_defs.named(lambda traits: traits.parallel)
 CONCURRENCY = 4
 
 _SLOT: contextvars.ContextVar[_Slot | None] = contextvars.ContextVar("parallel_read_slot", default=None)

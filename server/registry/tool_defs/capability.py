@@ -1,5 +1,5 @@
 """The user's saved methods, a project's changed plan, finding and adding a capability, and Arslan's own state."""
-from server.registry.tool import Tool
+from server.registry.tool import Tool, Traits
 
 CAPABILITY = (
     # 0.1.44 one Arslan: skills are methods Arslan applies itself (experts are
@@ -19,7 +19,9 @@ CAPABILITY = (
              "required": ["key"],
              "additionalProperties": False,
          },
-         offered=lambda offer: bool(offer.skills)),
+         offered=lambda offer: bool(offer.skills),
+         # Outside content per result (`external` on the result: tool_loop._record_tool_result), not by name.
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=True, saves=False)),
     # 0.1.56 §7: a project's conversation may propose a changed plan (a card; the user decides).
     Tool("propose_plan_change",
          "This conversation belongs to a project with levels (see the project card). When the user "
@@ -43,7 +45,8 @@ CAPABILITY = (
                                       "required": ["name", "band"]}}},
              "required": ["levels", "reason"]},
          offered=lambda offer: offer.in_project,
-         host=True),
+         host=True,
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     # 0.1.57 §2: only after a wall, never as a first move; the result is outside content.
     Tool("find_capability",
          "When a step failed because none of your tools can do it (e.g. you can read an .xlsx's values "
@@ -58,7 +61,8 @@ CAPABILITY = (
                  "keywords": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "string"},
                               "description": "1-4 short English search words, e.g. [\"excel\", \"xlsx\"]."},
                  "kinds": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skill", "project"]}}},
-             "required": ["need", "keywords"]}),
+             "required": ["need", "keywords"]},
+         traits=Traits(effect="external_write", parallel=False, outside=True, replay_safe=False, saves=False)),
     # 0.1.57 §3: propose one candidate find_capability returned (the card is the server's).
     Tool("propose_capability",
          "After find_capability, ask the user to add ONE candidate (not_here null; for a skill, license_verdict "
@@ -77,7 +81,8 @@ CAPABILITY = (
                  "folders": {"type": "array", "maxItems": 3, "items": {"type": "string"},
                              "description": "Folders it needs (e.g. the folder of the file you work on)."}},
              "required": ["candidate_id", "why"]},
-         host=True),
+         host=True,
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     # v0.1.64 CAP2a: found on demand (K7), never resident; the user sees the whole SKILL.md on a card and decides
     # (skill_forge.propose).
     Tool("create_skill",
@@ -98,7 +103,8 @@ CAPABILITY = (
                          "why": {"type": "string", "maxLength": 300,
                                  "description": "What the user asked for, in a few words."}},
           "required": ["key", "name", "description", "body"], "additionalProperties": False},
-         host=True),
+         host=True,
+         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     # v0.1.64 CAP8b: found on demand (K7), never resident. It takes no text: memory_import reads the message that started
     # this turn, and the user's ticks on the card decide what is stored.
     Tool("import_memories",
@@ -110,7 +116,8 @@ CAPABILITY = (
           "properties": {"why": {"type": "string", "maxLength": 300,
                                  "description": "What the user asked for, in a few words."}},
           "additionalProperties": False},
-         host=True),
+         host=True,
+         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("whats_new",
          "Your own version and the release notes of the latest versions "
          "(newest first). Call it when the user asks which version you are, "
@@ -121,7 +128,8 @@ CAPABILITY = (
              "properties": {"count": {"type": "integer", "minimum": 1, "maximum": 6,
                                       "description": "How many recent versions' notes (default 3)."}},
              "additionalProperties": False,
-         }),
+         },
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
     # v0.1.64 SMART-2: found on demand (K7), never resident.
     Tool("my_status",
          "Your own live state: version and what is new, the chat model (and this "
@@ -129,11 +137,13 @@ CAPABILITY = (
          "local network scan, paired phones, SSH hosts, the last few failures with "
          "times, and where your own code and plans are (GitHub main). Call it when the "
          "user asks about you or your setup; answer from it, never from memory. args: {}.",
-         {"type": "object", "properties": {}, "additionalProperties": False}),
+         {"type": "object", "properties": {}, "additionalProperties": False},
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
     Tool("list_my_capabilities",
          "List your OWN usable capabilities (built-in tools + installed "
          "MCP servers). Call this ONCE when the user asks what you can do / "
          "what tools or MCPs you have, then answer from its result in a "
          "short friendly summary — never paste the raw JSON back.",
-         {"type": "object", "properties": {}, "additionalProperties": False}),
+         {"type": "object", "properties": {}, "additionalProperties": False},
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
 )

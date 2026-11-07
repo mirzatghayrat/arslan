@@ -5,9 +5,11 @@ import pytest
 
 from server.registry import tool, tool_defs
 from server.registry.executors import EXECUTORS
-from server.registry.tool import Offer, Tool
+from server.registry.tool import Offer, Tool, Traits
 
 OBJECT = {"type": "object", "properties": {}}
+# LOOP1 a6: every Tool states its traits (no defaults); these tests are about the other fields.
+_TRAITS = Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)
 
 
 def _offer(**values) -> Offer:
@@ -20,10 +22,11 @@ def test_todays_table_passes_its_own_check():
 
 
 @pytest.mark.parametrize("tools,why", [
-    ([Tool("a", "d", OBJECT, host=True), Tool("a", "d", OBJECT, host=True)], "defined twice"),
-    ([Tool("a", "d", {"type": "string"}, host=True)], "JSON object schema"),
-    ([Tool("nobody_answers_this", "d", OBJECT)], "not both or neither"),
-    ([Tool("web_search", "d", OBJECT, host=True)], "not both or neither"),
+    ([Tool("a", "d", OBJECT, host=True, traits=_TRAITS), Tool("a", "d", OBJECT, host=True, traits=_TRAITS)],
+     "defined twice"),
+    ([Tool("a", "d", {"type": "string"}, host=True, traits=_TRAITS)], "JSON object schema"),
+    ([Tool("nobody_answers_this", "d", OBJECT, traits=_TRAITS)], "not both or neither"),
+    ([Tool("web_search", "d", OBJECT, host=True, traits=_TRAITS)], "not both or neither"),
 ])
 def test_a_table_that_cant_work_is_refused(tools, why):
     with pytest.raises(ValueError, match=why):
@@ -31,9 +34,9 @@ def test_a_table_that_cant_work_is_refused(tools, why):
 
 
 def test_a_turn_is_offered_what_its_predicates_say_in_table_order():
-    tools = [Tool("always", "first", OBJECT, host=True),
-             Tool("in_a_job", "second", OBJECT, host=True, offered=lambda offer: offer.in_job),
-             Tool("in_a_task", "third", OBJECT, host=True, offered=lambda offer: offer.in_task)]
+    tools = [Tool("always", "first", OBJECT, host=True, traits=_TRAITS),
+             Tool("in_a_job", "second", OBJECT, host=True, offered=lambda offer: offer.in_job, traits=_TRAITS),
+             Tool("in_a_task", "third", OBJECT, host=True, offered=lambda offer: offer.in_task, traits=_TRAITS)]
     offer = _offer(in_task=True, in_job=False, can_ask=False)
     assert tool.listed(tools, offer) == [{"key": "always", "description": "first"},
                                          {"key": "in_a_task", "description": "third"}]

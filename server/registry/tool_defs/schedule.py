@@ -1,5 +1,5 @@
 """Tasks Arslan runs later, on a schedule."""
-from server.registry.tool import Tool
+from server.registry.tool import Tool, Traits
 
 # Self-scheduling (P2). Independent of the workspace — a recurring task
 # needs no directory. Creating one is gated by a session grant in the tool
@@ -27,10 +27,12 @@ SCHEDULE = (
              },
              "required": ["name", "prompt", "when"],
              "additionalProperties": False,
-         }),
+         },
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("list_my_tasks",
          "List the recurring tasks that exist, with their ids and schedules.",
-         {"type": "object", "properties": {}, "additionalProperties": False}),
+         {"type": "object", "properties": {}, "additionalProperties": False},
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
     Tool("cancel_task",
          "Delete a recurring task. args: {task_id}.",
          {
@@ -39,5 +41,6 @@ SCHEDULE = (
              "properties": {"task_id": {"description": "The task id from list_my_tasks (a number, e.g. 3)."}},
              "required": ["task_id"],
              "additionalProperties": False,
-         }),
+         },
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
 )
