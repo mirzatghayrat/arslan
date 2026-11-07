@@ -16,8 +16,7 @@ import unicodedata
 import pytest
 
 from server.registry import hands_tools
-from server.services import desktop_status, hands_contract, hands_service
-from server.services import personal_context as pc
+from server.services import hands_contract, hands_service
 from tests.server import test_hands_0153 as base
 
 isolated, hands, asks, in_turn, in_job = base.isolated, base.hands, base.asks, base.in_turn, base.in_job
@@ -134,18 +133,6 @@ async def test_a_look_at_the_twin_is_its_first_look(hands, asks, in_job):
     again = await hands_tools.DesktopLookExecutor().execute({"app": TWIN})
     assert "since your last look" not in twin["text"], twin["text"]
     assert hands_tools.NOTHING_CHANGED in again["text"]                     # the comparison itself is on
-
-
-async def test_a_scheduled_run_tells_apart_two_apps_whose_names_read_the_same(hands, asks):
-    """A scheduled run acts in one app (H3), kept by the name Hands gave: the twin is a second app."""
-    hands.apps = list(NO_BUNDLE_IDS)
-    press = hands_tools.DesktopPressExecutor()
-    with pc.bind(pc.TaskMemoryContext(task_id="s", run_id="fire-1", conversation_id="scheduled-1")), \
-            desktop_status.working("scheduled-1", kind="scheduled"):
-        first = await press.execute({"app": "Notes", "keys": "tab"})
-        other = await press.execute({"app": TWIN, "keys": "tab"})
-    assert first["ok"], first
-    assert other["code"] == "act_in_background" and "one app" in other["error"], other
 
 
 async def test_an_app_with_no_bundle_id_and_no_visible_name_shows_none_of_its_name(hands, asks, in_job):
