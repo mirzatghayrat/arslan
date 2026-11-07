@@ -189,6 +189,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     prefix: list[str] = []
     mode = "off"
     if sandbox:
+        env.update(command_sandbox.cache_environment(run_temp.cache("commands")))   # SBX-5 §1c: its own cache
         # SBX-6: online, the sandbox lets TCP out only to Arslan's local proxy, and the child is told to use
         # it; dev servers on loopback are reached directly. No proxy means the profile is offline.
         proxy_port = None if offline else await sandbox_proxy.port()

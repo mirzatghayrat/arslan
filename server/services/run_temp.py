@@ -42,6 +42,17 @@ def root() -> Path:
     return real(tempfile.gettempdir()) / f"arslan-runs-{tag}"
 
 
+def cache(preset: str) -> Path:
+    """SBX-5 §1c: the Arslan-owned cache folder sandboxed commands write instead of the user's ~/.npm, ~/.cache
+    and ~/Library/Caches. Next to the runs' root, outside every protected root; named, not made (the caller makes
+    it, `command_sandbox.cache_environment`). There is only "commands": an MCP server's cache is its own, under its
+    folder, so no two servers share one (SBX-5a review)."""
+    if preset != "commands":
+        raise ValueError(f"no shared cache for {preset!r}")
+    base = root()
+    return base.parent / base.name.replace("arslan-runs-", "arslan-cache-") / preset
+
+
 def folder(key: int) -> Path:
     """The folder of run `key` (a run id), made on first use: 0700, resolved."""
     path = _folders.get(key)

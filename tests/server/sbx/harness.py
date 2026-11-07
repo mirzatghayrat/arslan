@@ -56,7 +56,9 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base in {"commands", "commands-proxy", "outside-floor"}:
+        # The product presets read HOME (the CAP6b folders, the user's caches) and the temp root (Arslan's commands
+        # cache): a scratch one each (SBX-5a).
+        if self.base in {"commands", "commands-proxy", "outside-floor", "mcp", "run-python", "artifact"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -85,7 +87,8 @@ class Harness:
                     [*command_sandbox.default_protected(), self.protected],
                     offline=self.network == NetworkMode.NONE)
         if self.base == "outside-floor":
-            return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE)
+            return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE,
+                                                   plugin_folder=getattr(self, "plugin_root", None))
         raise NotImplementedError(f"no profile adapter for {self.base}")
 
     def run(self, argv, *, probe: str, profile=None, timeout=30, discard=False, pass_fds=()):
@@ -147,6 +150,9 @@ def _commands_profile(self, **parameters) -> str:
     options = dict(network=self.network, ipc_prefix=self.ipc_prefix, bound_ports=[], system_proxies=[])
     if self.network == NetworkMode.PROXY:
         options["proxy_port"] = getattr(self, "proxy_port", None) or 49151  # 49151: no listener
+    # SBX-5a: a test's own cache roots and plugin folder, when it sets them (SBX-5p), else the product's.
+    options.update(cache=getattr(self, "cache_root", None), peer_cache=getattr(self, "peer_cache", None),
+                   plugin_folder=getattr(self, "plugin_root", None))
     options.update(parameters)
     return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
 
@@ -198,11 +204,16 @@ def _mcp_profile(self, **parameters) -> str:
     with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
         return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
                                           network=self.network != NetworkMode.NONE,
-                                          read=[sys.prefix, sys.base_prefix, *read])
+                                          read=[sys.prefix, sys.base_prefix, *read],
+                                          cache=getattr(self, "cache_root", None),
+                                          peer_cache=getattr(self, "peer_cache", None),
+                                          plugin_folder=getattr(self, "plugin_root", None))
 
 
 BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
 
 # Feature keys are declared only when their protections land: SBX-6a's settings bring "trustd-toggle" and
-# "trusted-lan"; SBX-5a adds "cap6b" and "shared-cache-exclusions".
-BUILT_FEATURES = frozenset({"trustd-toggle", "trusted-lan"})
+# "trusted-lan"; SBX-5a brings "cap6b" (`command_sandbox.cap6b_folders` in the commands, outside, MCP and
+# computation presets) and "shared-cache-exclusions" (the user's caches read-only, a cache per preset, each
+# closed to the other).
+BUILT_FEATURES = frozenset({"trustd-toggle", "trusted-lan", "cap6b", "shared-cache-exclusions"})
