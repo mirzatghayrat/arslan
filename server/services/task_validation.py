@@ -312,7 +312,7 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                 artifact.update(status="not_applicable", code="artifact_superseded", superseded_by=replacement["id"])
     checks = [evaluate(check, text, artifacts, trace, context) for check in spec.acceptance]
     if model_adapter is not None and not any(item["status"] == "failed" for item in [*checks, *artifacts]):
-        from server.orchestrator.tool_loop import _chat_retry
+        from server.orchestrator.answer_salvage import _chat_retry
         from server.orchestrator.untrusted import wrap_external
         for index, check in enumerate(spec.acceptance):
             if check.evaluator != "model":
