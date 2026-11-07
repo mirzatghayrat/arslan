@@ -86,6 +86,14 @@ async def _get_adapter():
     return slotted if slotted is not None else await build_adapter(role="router")
 
 
+def why_not_kept(text: str) -> str | None:
+    """MEM1: why this line isn't a memory ("gender", "one_off"), or None. Its own function for CAP8b, whose card says
+    why a pasted line was left out."""
+    if _GENDERED.search(text) and not _SOMEONE_ELSE.search(text):
+        return "gender"
+    return "one_off" if _TASK_STATE.search(text) else None
+
+
 def parse(content: str | None) -> list[dict[str, Any]]:
     """The facts in a model reply; anything malformed is simply no facts."""
     parsed = parse_json_object(content or "") or {}
@@ -94,8 +102,7 @@ def parse(content: str | None) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         text = " ".join(str(item.get("content") or "").split())[:MAX_FACT_CHARS]
-        guessed = _GENDERED.search(text) and not _SOMEONE_ELSE.search(text)
-        if text and not guessed and not _TASK_STATE.search(text):
+        if text and not why_not_kept(text):
             out.append({"content": text, "sensitive": bool(item.get("sensitive"))})
     return out[:MAX_FACTS]
 
@@ -110,25 +117,45 @@ def parse_practices(content: str | None) -> list[dict[str, Any]]:
     return out[:MAX_PRACTICES]
 
 
-async def _own_words(conversation_id: str, history: list[dict]) -> list[str]:
-    """The user's recent messages. Q1 #3 (the user, 2026-10-29): a quick question turned into a chat learns
-    from then on, so for one, only the user's messages after the turn (`learns_after_message_id`, migration
-    0078), read as memory allows (memory_history.eligible_messages: a deleted entry's source never seeds memory
-    again). Every conversation is looked up, whatever its id looks like. What remains of "its quick turns never
-    teach" is in server/api/phone.py (phone_update_conversation)."""
+async def _learns_after(conversation_id: str) -> int | None:
     from sqlalchemy import select
 
     from server.db import session as db_session
     from server.db.companion_models import ConversationContext
-    from server.db.models import ArslanMessage
-    from server.services.memory_history import eligible_messages
     async with db_session.AsyncSessionLocal() as db:
-        after = await db.scalar(select(ConversationContext.learns_after_message_id).where(
+        return await db.scalar(select(ConversationContext.learns_after_message_id).where(
             ConversationContext.id == conversation_id))
-        if after is None:
+
+
+async def _own_words(conversation_id: str, history: list[dict]) -> list[str]:
+    """The user's recent messages. Q1 #3 (the user, 2026-10-29): a quick question turned into a chat learns
+    from then on, so for one, only the user's messages after the turn (`learns_after_message_id`, migration
+    0078), read as memory allows (memory_history.eligible_messages: a deleted entry's source never seeds memory
+    again). CAP8b: the same after a message that went to the memory import card. And a job's words end where the next
+    turn's begin (no `run_id` yet; a steer has its run and stays with its turn): a job can start behind a backlog, and
+    the next message may be on its way to that card. Each is read by its own job. Every conversation is looked up,
+    whatever its id looks like. What remains of "its quick turns never teach" is in server/api/phone.py
+    (phone_update_conversation)."""
+    from sqlalchemy import func, select
+
+    from server.db import session as db_session
+    from server.db.models import ArslanMessage
+    from server.services import personal_context
+    from server.services.memory_history import eligible_messages
+    turn = personal_context.current()
+    mine = turn.source_message_id if turn is not None else None
+    after = await _learns_after(conversation_id)
+    async with db_session.AsyncSessionLocal() as db:
+        next_turn = None if mine is None else await db.scalar(select(func.min(ArslanMessage.id)).where(
+            ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "user", ArslanMessage.id > mine,
+            ArslanMessage.run_id.is_(None)))
+        if after is None and next_turn is None:
             return [m["content"] for m in history if m.get("role") == "user"]
-        rows = (await db.scalars(eligible_messages(conversation_id).with_only_columns(ArslanMessage.content).where(
-            ArslanMessage.role == "user", ArslanMessage.id > after).order_by(ArslanMessage.id.desc()).limit(8))).all()
+        words = eligible_messages(conversation_id).with_only_columns(ArslanMessage.content).where(
+            ArslanMessage.role == "user", ArslanMessage.id > (after or 0))
+        if next_turn is not None:
+            words = words.where(ArslanMessage.id < next_turn)
+        rows = (await db.scalars(words.order_by(ArslanMessage.id.desc()).limit(8))).all()
     return list(reversed(rows))
 
 
@@ -167,6 +194,15 @@ async def extract(conversation_id: str, user_message: str) -> list[dict[str, Any
     return parse(response.content)
 
 
+async def _went_to_a_card(conversation_id: str) -> bool:
+    """CAP8b: this turn's message went to the memory import card, which is the only way in for its lines."""
+    from server.services import personal_context
+    turn = personal_context.current()
+    source = turn.source_message_id if turn is not None else None
+    after = await _learns_after(conversation_id) if source is not None else None
+    return after is not None and source <= after
+
+
 async def capture(conversation_id: str, user_message: str, emit, *, recheck=None) -> int:
     """Extract and save; announce what was saved. Never raises. Returns how many.
 
@@ -176,6 +212,8 @@ async def capture(conversation_id: str, user_message: str, emit, *, recheck=None
     _practices.set([])
     _after_reply.set(False)
     try:
+        if await _went_to_a_card(conversation_id):
+            return 0
         facts = await extract(conversation_id, user_message)
         context = None
         if recheck is not None:

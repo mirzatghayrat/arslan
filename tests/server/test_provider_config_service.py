@@ -72,6 +72,23 @@ async def test_update_skips_masked_key_echo(db):
     assert await svc.get_decrypted_key(db, a["id"]) == "sk-aaaa1111bbbb"
 
 
+@pytest.mark.parametrize("sent", [" {masked}", "{masked} ", "   ", "\t\n"])
+async def test_update_strips_before_it_decides_the_key_changed(db, sent):
+    """A masked value with stray space must not store the mask, and a blank one must not wipe the key."""
+    a = await svc.add_config(db, label="A", provider="deepseek", model="deepseek-chat",
+                             base_url="", api_key="sk-aaaa1111bbbb")
+    masked = (await svc.list_configs(db))[0]["api_key"]
+    await svc.update_config(db, a["id"], api_key=sent.format(masked=masked))
+    assert await svc.get_decrypted_key(db, a["id"]) == "sk-aaaa1111bbbb"
+
+
+async def test_update_stores_a_new_key_without_its_stray_space(db):
+    a = await svc.add_config(db, label="A", provider="deepseek", model="deepseek-chat",
+                             base_url="", api_key="sk-aaaa1111bbbb")
+    await svc.update_config(db, a["id"], api_key="  sk-new-key-22223333\n")
+    assert await svc.get_decrypted_key(db, a["id"]) == "sk-new-key-22223333"
+
+
 async def test_delete_primary_promotes_survivor(db):
     a = await svc.add_config(db, label="A", provider="deepseek", model="deepseek-chat",
                              base_url="", api_key="sk-aaaa1111bbbb")

@@ -141,6 +141,14 @@ The user's request, in summary: the allow button should not delete for good but 
   - When the delete parses with certainty (`rm` with `-r`/`-f` and literal paths, no glob it can't expand safely, no command substitution, no `xargs`, the same parse `_deletes_outside` already does), allow moves each target to the Trash instead of running the command.
   - It reuses `capability_install.to_trash`, which moves a link itself and never follows it.
   - `to_trash` moves into `~/.Trash`, which copies when the target is on another volume. The builder may use that volume's own `.Trashes/<uid>` instead; otherwise the card says it will copy.
+  - **As built (#686):**
+    - Each target is renamed with `os.rename` into the Trash on its own volume: `~/.Trash`, or that disk's `.Trashes/<uid>`. Nothing is ever copied, and a disk with no Trash is refused, so nothing is deleted.
+    - The targets are checked as the command would check them first ("is a directory", "Directory not empty", `rm -f` on nothing), and the command itself never runs.
+  - **Only outside the sandbox (③Hands; ⓪Plan agreed, 2026-11-02):**
+    - Allow moves to the Trash only when the command would run outside the sandbox: the outside card, the retry card, a conversation grant, or the sandbox off or unable to start.
+    - A command the sandbox holds keeps the sandbox's limits, including the folders the user closed. A move made by the server would bypass those limits.
+    - Its card says that what it deletes there is deleted permanently. If the sandbox stops it, the retry card runs it outside, and then it goes to the Trash.
+  - **Wording:** the Mac's frame carries `delete_mode` (trash | protected | permanent | sandboxed, and later permanent_requested) and `delete_targets`. The Mac card's reader and the phone's heading (`card_purpose.phrase`) both word every mode; FrameMapper reads neither key.
 - **An explicit permanent delete.**
   - When the user's own chat message in this conversation explicitly asks to delete specific paths permanently (for example 「把 ~/Downloads/旧安装包 彻底删掉」), 「允许」 really deletes those paths.
   - The card says so: 「你说要彻底删除，这次不进废纸篓」.
@@ -149,6 +157,11 @@ The user's request, in summary: the allow button should not delete for good but 
   - The card is still shown for deletes outside the working folder, as one click. Mainstream agents re-confirm irreversible deletes outside the workspace too, and the click catches a misread path.
 - **A delete that can't be parsed** (inside a script, a pipeline or a program): the card says plainly that the command deletes permanently and can't go to the Trash, and allow keeps today's meaning. It never implies a safety net that isn't there.
 - **Arslan never empties the Trash.** A permanent delete from the Trash is the user's own act.
+  - **As built (#686):**
+    - `terminal_policy` has a forbid rule, `trash`, covering a delete into a Trash and Finder's `empty trash` through osascript, a heredoc included.
+    - `mac_applescript` refuses an AppleScript that empties the Trash before any card. A card the user could approve would still break the rule (⓪Plan).
+    - The move refuses a target inside a Trash, and a source pin guards the rest.
+  - **Not covered yet:** emptying the Trash through Hands' clicks (Finder's menu item, ⌘⇧⌫, the Trash window's Empty button).
 - **Tests (red first):**
   - allow on `rm -r <outside dir>` puts it in the Trash, and the original path is gone;
   - an explicit permanent-delete request from the user, naming the path, really deletes it;

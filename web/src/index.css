@@ -3025,3 +3025,91 @@ button:disabled {
   backdrop-filter: blur(10px); box-shadow: var(--kit-shadow);
 }
 .brain-nav--floating .brain-nav__search { padding: 10px 10px 6px; }
+
+/* ── Highlighted code (FMT1) ──────────────────────────────────────────────────
+   HighlightedCode renders Prism's tokens as <span class="token TYPE ALIAS">; the colours are tokens in theme/tokens.css. */
+/* A token's type is also its class, and Tailwind has utilities of the same names: a TOML [section] is `table`
+   (display: table, so it broke onto three lines). Every token is inline text. */
+.md-code .token { display: inline; }
+.md-code .token.comment,
+.md-code .token.prolog,
+.md-code .token.doctype,
+.md-code .token.cdata { color: var(--code-comment); }
+.md-code .token.keyword,
+.md-code .token.builtin,
+.md-code .token.function,
+.md-code .token.class-name,
+.md-code .token.tag,
+.md-code .token.selector,
+.md-code .token.atrule { color: var(--code-keyword); }
+.md-code .token.number,
+.md-code .token.boolean,
+.md-code .token.constant,
+.md-code .token.symbol,
+.md-code .token.attr-name,
+.md-code .token.property { color: var(--code-number); }
+.md-code .token.string,
+.md-code .token.char,
+.md-code .token.attr-value,
+.md-code .token.regex { color: var(--code-string); }
+.md-code .token.inserted { color: var(--code-inserted); }
+.md-code .token.deleted { color: var(--code-deleted); }
+.md-code .token.operator,
+.md-code .token.punctuation,
+.md-code .token.parameter { color: var(--muted-foreground); }
+
+/* FMT1 PR 2: a reply's lists, task checkboxes and formulas (the iPhone mock). */
+/* A formula's boxes and kerns can move anything anywhere, over the chat around the reply and under its clicks, so a reply stops
+   at its own box. clip isn't a scroll container and keeps margins collapsing; WebKit before 16 keeps hidden. A long word or URL
+   used to reach the chat's scroller, and would be lost here, so it wraps. break-word, not anywhere: a table keeps its width and scrolls. */
+.md-root { overflow: hidden; overflow: clip; overflow-wrap: break-word; }
+.md-ul,
+.md-ol { margin: 0.6em 0; display: flex; flex-direction: column; gap: 0.3em; color: inherit; }
+.md-ul { padding-left: 0.25em; list-style: none; }
+.md-ol { padding-left: 1.6em; list-style-type: decimal; }
+.md-ul .md-ul,
+.md-ol .md-ul,
+.md-ul .md-ol,
+.md-ol .md-ol { margin: 0.3em 0 0; }
+.md-ol > li { line-height: 1.6; padding-left: 0.2em; }
+.md-ul > li { position: relative; padding-left: 1.1em; line-height: 1.6; }
+.md-ul > li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--color-muted-foreground);
+}
+.md-ul .md-ul > li::before { background: transparent; border: 1px solid var(--color-muted-foreground); }
+.md-ul > li.task-list-item { padding-left: 0; }
+.md-ul > li.task-list-item::before { content: none; }
+.md-check {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin: 0 8px 0 0;
+  box-sizing: border-box;
+  border: 1.5px solid var(--color-muted-foreground);
+  border-radius: 4px;
+  vertical-align: -3px;
+  cursor: default;
+}
+.md-check:checked { background: var(--color-foreground); border-color: var(--color-foreground); }
+.md-check:checked::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  color: var(--color-background);
+  font-size: 11px;
+  line-height: 13px;
+  text-align: center;
+}
+.task-list-item:has(> .md-check:checked) { color: var(--color-muted-foreground); text-decoration: line-through; }
+.md-math-display { display: block; margin: 0.85em 0; text-align: center; white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: auto; overflow-y: hidden; }
+.md-math-display .katex-display { margin: 0; }

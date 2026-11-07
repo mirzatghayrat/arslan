@@ -1,14 +1,14 @@
-"""Spawn CRUD REST endpoints."""
+"""What is left of the spawn REST endpoints. DELETE-BY: v0.1.64, with C7c-4 (the equip popover, the release check's
+login probe) and C7c-3b (the preferences routes, which are on the security surface: memory writes)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.models import Spawn
 from server.db.session import get_session
 from server.schemas import (
-    ConfigUpdateIn,
     EquipmentOut,
     EquipmentUpdateIn,
     PreferenceDeleteIn,
@@ -43,34 +43,6 @@ async def list_spawns(session: AsyncSession = Depends(get_session)) -> list[Spaw
     for out in rows:
         await _attach_equipment(out, out.id, session)
     return rows
-
-
-@router.get("/spawns/{spawn_id}", response_model=SpawnDetailOut)
-async def get_spawn(
-    spawn_id: int, session: AsyncSession = Depends(get_session)
-) -> SpawnDetailOut:
-    detail = await spawn_service.get_detail(session, spawn_id)
-    if detail is None:
-        raise HTTPException(status_code=404, detail="Spawn not found")
-    await _attach_equipment(detail, spawn_id, session)
-    return detail
-
-
-@router.put("/spawns/{spawn_id}/config", response_model=SpawnDetailOut)
-async def update_config(
-    spawn_id: int,
-    body: ConfigUpdateIn,
-    session: AsyncSession = Depends(get_session),
-) -> SpawnDetailOut:
-    spawn = await spawn_service.update_config(
-        session, spawn_id, **body.model_dump(exclude_none=True)
-    )
-    if spawn is None:
-        raise HTTPException(status_code=404, detail="Spawn not found")
-    detail = await spawn_service.get_detail(session, spawn_id)
-    assert detail is not None
-    await _attach_equipment(detail, spawn_id, session)
-    return detail
 
 
 @router.put("/spawns/{spawn_id}/equipment", response_model=SpawnDetailOut)
@@ -131,16 +103,3 @@ async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
         await session.rollback()
         raise HTTPException(409 if exc.code == "memory_version_conflict" else 404, detail=exc.code) from exc
     return await get_preferences(spawn_id, session)
-
-
-@router.delete("/spawns/{spawn_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_spawn(
-    spawn_id: int, session: AsyncSession = Depends(get_session)
-) -> Response:
-    try:
-        ok = await spawn_service.delete_spawn(session, spawn_id)
-    except spawn_service.BuiltInSpawnError:
-        raise HTTPException(status_code=403, detail="Built-in agents cannot be deleted")
-    if not ok:
-        raise HTTPException(status_code=404, detail="Spawn not found")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

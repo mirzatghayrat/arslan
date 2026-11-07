@@ -32,7 +32,7 @@
   - STY：必须。SUB：必须（用户 10-27 本来就放进了 v0.1.64；它只等 SBX，SBX 本来就是必须）。
   - L6 后台进程、L7 目标模式：留在 v0.1.64，标「应该」。L6 排在 SBX 之后；L7 跑分不退步才合。
   - 其余「执行领先」行照 ⓪Plan 的建议（L11 + K10「应该」，其余顺延 v0.1.65）。
-- **Bridge 帧：** 照 ①iOS 的建议。翻页这一版做；改名先不做；「做完未看」按手机能做到的程度降级；四行简报和子会话上手机顺延 v0.1.65。**「推送只推要你做的」（INB 第 5 条）单独问用户，还没定。**
+- **Bridge 帧：** 照 ①iOS 的建议。翻页这一版做；改名先不做；「做完未看」按手机能做到的程度降级；四行简报和子会话上手机顺延 v0.1.65。**Decided 2026-11-07 (the user): "push only what needs you" (INB item 5): "done" still notifies on Mac and phone, web and folder-change pushes go, and there is no Bridge frame change; see INB8.**
 - **#432：** 用户把复核结果发给了云端审计（在 5.5 上，问题 A–F），等它回来再正式定。用户倾向推翻 D8，条件是两处更正都做到（守护进程那一类靠 SBX 的 profile 加系统服务允许清单挡；分类器说「行」记成 `by="reviewer"`、只管这一次、不存规则和授权、永远不批沙箱外的动作）。
 - **①iOS 的审阅不贴到 PR 上**，只记在 Q1 卡末尾。
 - **开工顺序：** 用户点合并本 PR 后，能同时开的一起开：先合 C7c、C5b、F5b-2，再开 CAP1–CAP3、Q1、STY、INB1 起。M64 和 S64-0 现在就能开。SBX 卡等 #432 定了再写。
@@ -58,7 +58,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 
 1. ~~Pass lines for the classifier~~: the user chose option 2 on 2026-10-28 (see the CLS row in §3.2).
 2. ~~S64-0 and the extra mark leaks~~: decided 2026-10-28 (§1.2): #438 merges as planned, two leaks go to S64-0b, `run_command` reading files is a known limit.
-3. **推送只推「要你做」的**（INB 第 5 条）：会影响所有手机，单独问。
+3. ~~推送只推「要你做」的~~ (INB item 5): decided 2026-11-07 (the user); see INB8. Phones' `notify=1` doesn't change.
 4. **#375 约 1,060 行要不要拆**（超过 §5 的约 800 行）。按云端审计的意见 S2a-3 的解析器要留，这一问照样要答。
 5. **R63 判定里没有记录的两半**（M3 第 7 条 Mac 那半、第 12 条截屏那半）：v0.1.64 冒烟时补测，还是放下。
 6. **K8c 的 Gemini M1：** 要 Gemini 代理和额度（只有用户能放 key）。
@@ -94,7 +94,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | **S5a** | Modes: plan / ask every step / auto-edit / full access; current mode next to the input box, one click, per conversation; Settings keeps only the default for new conversations; plan's "start" returns to the previous mode; sub-sessions inherit only | must | After SBX, HR's e rule and S3 undo. Clickable demo to the user before UI code. Lane ②Main. |
 | **S5b** | The "auto" mode on top of S5a, **and the only PR that wires CLS into `permissions.py` `_ask`** (one writer in the hot file) | must | After CLS. **Gates built and tested in S5b:** b ("yes" recorded `by="reviewer"`, this time only, no rules or grants, never satisfies the network / unsandboxed checks), d (modes widen in order; only runs that finish inside SBX; never anything full access would still ask; no sandbox, no approvals), h (denials counted: 3 in a row within a turn, 20 per conversation and per job, then back to cards), the ledger the user can read, the one-click off, and D7's constraints that live in the wiring (an exception or timeout counts as "ask"; it only answers cards that would be asked anyway; off by default, on only after the user agrees). **"Any one unmet → the classifier does not ship" binds S5b's merge as well as CLS's:** "auto" is not offered until every gate in both cards holds. Lane ②Main; reviewed by ③Hands plus an effort=max reviewer plus Codex. **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |
 | **S64-0b** | Two more mark leaks from the audit's E: attachment and OCR text inlined without the mark; background job results posted as Arslan's own words (framed and marked when the job read outside content) | must (user, 2026-10-28) | After #438. The attachment / OCR inline code is in `arslan.py` (a hot file; goes after any open K-line PR touching it). About 20 product lines each; tests check outcomes (network command gets a card, `memory_note` does not take effect at once). `run_command` reading files stays a known limit. Lane ③Hands; effort=max plus Codex. **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |
-| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406；PR4 is now ASK1-b） | must (user, 2026-10-28: keep the parser, drop "complete the list") | **Split (user, 2026-10-29, the cloud audit's split, as for SBX):** Claude (③Hands) writes the structural part: `bash -p`, the cleaned child-process environment, "can't read it, so ask", the parser moved off the event loop with a time limit, and the rule itself that a uniquely named program anywhere in the command asks. Codex writes the test content: differential tests, the real-shell comparison, automatic variants, #406, and the test parts of the four PRs that were stopped before. Claude does not rewrite those. Reviews as SBX's "Who writes what". **After SBX-7** (#432: once the sandbox is in, the parser is no longer the main line and S2a-3 shrinks). Codex 审 rebase 之后的头 (now: another session's max review first, Codex only for what it cannot cover, §1.3)（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 |
+| **S2a-3** | #375、#376、#378、#396（和可能重开的 #406；PR4 is now ASK1-b） | must (user, 2026-10-28: keep the parser, drop "complete the list") | **Split (user, 2026-10-29, the cloud audit's split, as for SBX):** Claude (③Hands) writes the structural part: `bash -p`, the cleaned child-process environment, "can't read it, so ask", the parser moved off the event loop with a time limit, and the rule itself that a uniquely named program anywhere in the command asks. Codex writes the test content: differential tests, the real-shell comparison, automatic variants, #406, and the test parts of the four PRs that were stopped before. Claude does not rewrite those. Reviews as SBX's "Who writes what". **After SBX-7** (#432: once the sandbox is in, the parser is no longer the main line and S2a-3 shrinks). Codex 审 rebase 之后的头 (now: another session's max review first, Codex only for what it cannot cover, §1.3)（§8 安全审查路径的顺序）。**PR4（定时任务恢复只读命令）要加的（用户 10-28）：** 定时任务存一个 `outside_seen` 列（写提示的那一轮读过外部内容就是 True），到点时从它起步；换掉 S64-0 里包住 `_fire` 的临时 `carried(True)`。 **Blocking bar (the user, 2026-11-07):** a way round a command-text rule doesn't block a PR if the sandbox on main holds that case; put it on the list. It still blocks where the sandbox doesn't hold yet, for example network before SBX-6a and `run_python` before SBX-4a. |
 | **ACM** | 卡片界面与文案大合并（领先路线 D 行「审批策略与作用域」；§8 和别处叫它 D1，和 v0.1.63 的 D1 卡不是一回事） | 必须 | INB、STY、S4a 跟进、S6 都挂在它上面。等 #432（权限模式会改卡片）。 |
 | **NET** | 本机代理加网站名单（§0.6 第 3 条） | 顺延候选 | 原定「产能允许时」。 |
 | 其余「执行领先」行 | L1 薄循环 + ACP、L2 内置工具按需 + 参数修复、L3 边流式边执行、L4 进度流到灵动岛和 iPhone、L6 后台进程与进程工具、L7 目标模式、L8 存记忆 + 服务端压缩、L11 文件夹规矩、L12 评审选项 + iPhone 批准、L14 公开 Terminal-Bench + Mac 题库 | 用户 10-28 已定 | L11 + K10「应该」（都小）。**L6 后台进程、L7 目标模式留在 v0.1.64，标「应该」**：L6 是新的安全面，排在 SBX 之后；L7 改主循环，跑分（M64 那套）不退步才合。其余顺延 v0.1.65。L6、L7 的卡开工时由 ②Main 写。 |
@@ -214,6 +214,7 @@ Small cards, each its own PR. Tests come first, and none is a new subsystem.
 | **ROUTE1** | Remove task routing and the provider capability table, with no leftover code (user, 2026-11-03): `routing.select` scores providers from a hard-coded table and can override Settings' main model. Every role follows the conversation's choice, else the primary; the compaction and final-answer slots go; the image slot applies only when the chat's model can't read images; the old pins are cleared by migration. Card: [ROUTE1-remove-routing.md](ROUTE1-remove-routing.md) | ②Main | must (user, 2026-11-03) | One cleanup PR, after #691 and PR B |
 | **MODEL1** | Add model asks for the API key first, then offers the provider's live model list (fetched with the entered key, nothing stored before Add), with a marked fallback to the built-in list (user, 2026-11-03). Card: [MODEL1-add-model-key-first.md](MODEL1-add-model-key-first.md) | ②Main | must (user, 2026-11-03) | After ROUTE1; mock first; effort=max review |
 | **FMT1** | The Mac's reply formatting catches up with the iPhone mock the user confirmed, staying web (React and react-markdown): code-block header with copy and highlighting, inline-code background; formulas, lists, task checkboxes, tables; a per-reply copy and share row, plus measured streaming speed and an IME check (user, 2026-11-03). Card: [FMT1-mac-reply-formatting.md](FMT1-mac-reply-formatting.md) | ②Main | should (in if done before the tag) | After PR B, ROUTE1, MODEL1; three PRs |
+| **LOOP1** | The agent loop is restructured with the same features (the user, 2026-11-07, relayed by ④参谋): one tool object, dispatch by lookup, `_run_native` as phases, the prompt in named pieces. No behaviour change, no new feature or setting, assertions unchanged. Overrides the 11-04 decision to split `tool_loop.py` after the tag. About 25 PRs, each from main. Card: [LOOP1-agent-loop.md](LOOP1-agent-loop.md) | LOOP1's own session (⓪Plan coordinates; ③Hands agrees slice d) | must (user, 2026-11-07) | Runs now. SUB, S5a and SIDE start after its slices `b` and `a1` (§4). |
 
 ### 3.12 Capability follow-ups (user, 2026-10-30: the long-term approach; relayed by ④参谋)
 
@@ -282,6 +283,12 @@ HR's e rule + S3 ──→ S5a ──→ ACM
 CLS + S5a ──→ S5b
 ```
 
+HR also needs SBX-4a, 5a and 6a on main: "After SBX" means SBX-1 to SBX-7, and the first line above draws only 3a and SBX-7.
+
+SBX-8 runs after S2a-3's wire step as well as 6a, 4a, 5a and SBX-7, because that step changes the card numbers it measures, and one bench sitting on the user's Mac is enough (⓪Plan, 2026-11-07). ASK1-a still follows SBX-8, so the default doesn't change until it's measured.
+
+SUB, S5a and SIDE start once LOOP1's slices `b` and `a1`, and any tool family they extend, are on main ([LOOP1](LOOP1-agent-loop.md)). Nothing else waits for LOOP1.
+
 The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until SBX-2 lands, and STATUS says where the chain is stuck. Cards that don't depend on SBX go ahead as before.
 
 ## 5. 分道
@@ -338,15 +345,17 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0086 | ROUTE1 | Data only: clears `llm_strategy`, the removed compaction and final-answer slots, and the old router/vision pins from `settings`; sets `model_roles_reset_notice` to "pending" when it cleared anything, so Settings says so once | ②Main |
 | 0087 | ASK1 | Reserved for ASK1; the card fills in what it does | ②Main, for ASK1 |
 | 0088 | ASK1 | Reserved for ASK1; the card fills in what it does | ②Main, for ASK1 |
+| 0089 | CAP7a | Rebuilds `capability_sources` so the `kind` CHECK also allows `plugin` (CAP7b stores a plugin as one source); copy-rename like 0069, schema otherwise unchanged, rows preserved, no-op downgrade | ⑤CAP |
+| 0090 | ⑤CAP | Data only: removes stored MCP sign-ins from `settings` whose server no longer exists | ⑤CAP |
 
-The next free number is 0089. Ask ②Main before taking it.
+The next free number is 0091. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 
 - 跑分：按 M64 卡，DeepSeek 上不退步（通过、答对不降，「等你」不增，没有新的报错类型）；对 Hermes 同题三次全过不少于它；代码审查题和拆分派汇总题出数。
 - 安全：每个碰安全面的 PR 都有 effort=max 的审查 + Codex 的审查（结论写明模型），安全相关的结论给云端审计看过。 **Changed (user, 2026-10-28 evening):** every PR on the security surface has an OK from an independent Claude review at effort=max by another session; Codex Astra only for parts that review could not cover (§1.3).
 - 用户验收：回复风格要用户读一批真实回复（中英文）；收件箱改完后用户一天的使用感受。
-- 删除期限：`DELETE-BY: v0.1.64` 的都删掉了，或者用户逐条同意顺延。
+- 删除期限：`DELETE-BY: v0.1.64` 的都删掉了，或者用户逐条同意顺延。**K7, K8a, K9a and K9b switches (the user, 2026-11-07):** delete them (`tools_all_resident`, `answer_when_complete`, `tools_serial`, `steering_off`), with no further M1 A/B rounds. It is one PR, before ASK1 (same files); Q1's parametrized test and the bench's sample setting change with it. The `DELETE-BY` comments in the code carry the old "after M1 rounds" conditions; the PR removes them with the keys.
 - **SBX-6 (user, 2026-11-01: take the recommendation on #645, merge it first and make SBX-6 a hard release condition; pick option a on #650):** SBX-6's proxy is on main, so any-declared mode no longer holds the mDNSResponder socket. That socket can ask the router to forward a port to this Mac (#645). If SBX-6 isn't on main, the release ships with no name lookup in any-declared mode instead, via a one-line Codex change before the tag. Either way, no v0.1.64 build ships with the socket in any-declared mode.
 
 具体数字和清单在 R64 卡里定，用户批准本计划后 ⓪Plan 再写。

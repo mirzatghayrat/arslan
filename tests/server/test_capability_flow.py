@@ -177,6 +177,17 @@ def _installer(result):
     return install
 
 
+async def test_a_connection_waiting_for_sign_in_is_not_reported_as_working(monkeypatch):
+    shown("c-sign-in", CAND)
+    monkeypatch.setattr(capability_flow, "install_mcp", _installer({"state": "needs_sign_in", "source_id": "s1"}))
+    frames = []
+    out = await capability_flow.propose({"candidate_id": CAND["id"], "why": "x"}, conversation_id="c-sign-in",
+                                        ask=_ask(keys={"EXCEL_TOKEN": "t"}), emit=frames.append)
+    assert out["ok"] is False and out["needs_sign_in"] is True and "refresh" not in out   # no tools to retry with
+    assert "signs in" in out["note"] and out["added"] == CAND["name"]
+    assert frames[-1]["state"] == "needs_sign_in" and frames[-1]["source_id"] == "s1"
+
+
 async def _prepared(c):
     """CAP4a-1: what prepare_skill hands the card before it shows: one pinned commit, scanned clean."""
     return ({"commit": "0" * 40, "files": {"skills/csv/SKILL.md": "f" * 64}, "sizes": {"skills/csv/SKILL.md": 1},

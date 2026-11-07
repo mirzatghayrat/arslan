@@ -1,5 +1,8 @@
-"""Spawn CRUD REST tests."""
+"""What is left of the spawn REST endpoints."""
 import pytest
+
+from server.db.models import Spawn
+from server.services import spawn_service
 
 
 async def _create_spawn(client, name="beauty-guru"):
@@ -15,7 +18,7 @@ async def test_list_spawns_empty(client):
 
 
 @pytest.mark.asyncio
-async def test_list_and_get_spawn(client):
+async def test_list_spawn(client):
     await _create_spawn(client)
     listed = await client.get("/api/v1/spawns")
     assert listed.status_code == 200
@@ -24,40 +27,8 @@ async def test_list_and_get_spawn(client):
     assert rows[0]["name"] == "beauty-guru"
     assert rows[0]["domain"] == "content-creator.xiaohongshu"
 
-    spawn_id = rows[0]["id"]
-    detail = await client.get(f"/api/v1/spawns/{spawn_id}")
-    assert detail.status_code == 200
-    body = detail.json()
-    assert body["system_prompt"]
-    assert body["messages"] == []
 
-
-@pytest.mark.asyncio
-async def test_get_missing_spawn_404(client):
-    resp = await client.get("/api/v1/spawns/999")
-    assert resp.status_code == 404
-    assert resp.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_update_config(client):
-    await _create_spawn(client)
-    spawn_id = (await client.get("/api/v1/spawns")).json()[0]["id"]
-    resp = await client.put(
-        f"/api/v1/spawns/{spawn_id}/config",
-        json={"persona_tone": "playful", "system_prompt": "Be playful."},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["persona_tone"] == "playful"
-
-    detail = await client.get(f"/api/v1/spawns/{spawn_id}")
-    assert detail.json()["system_prompt"] == "Be playful."
-
-
-@pytest.mark.asyncio
-async def test_delete_spawn(client):
-    await _create_spawn(client)
-    spawn_id = (await client.get("/api/v1/spawns")).json()[0]["id"]
-    resp = await client.delete(f"/api/v1/spawns/{spawn_id}")
-    assert resp.status_code == 204
-    assert (await client.get("/api/v1/spawns")).json() == []
+# Moved from test_spawn_delete.py when C7c-3a removed DELETE /spawns/{id} and spawn_service.delete_spawn.
+def test_to_summary_carries_is_default():
+    sp = Spawn(id=1, name="B", domain_category="x", capabilities=[], system_prompt="x", is_default=True)
+    assert spawn_service.to_summary(sp).is_default is True

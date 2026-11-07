@@ -19,6 +19,7 @@ import Markdown from './Markdown';
 import { useDismissable } from "../hooks/useDismissable";
 import { Dialog } from './kit';
 import { withFrameCsp } from '../lib/frameCsp';
+import { splitBlocks } from '../lib/markdownBlocks';
 
 const LONG_CHARS = 1800;      // prose longer than this collapses in-bubble AND gets .md/.html downloads
 const COPY_MIN_CHARS = 240;   // shorter messages don't get a standalone copy row (keeps chat clean)
@@ -117,11 +118,12 @@ export function buildStandaloneHtml(innerHtml: string, title: string): string {
     `--color-border-strong:${v('--color-border-strong', '#3a3a40')}`,
     `--color-background:${v('--color-background', '#0e0e10')}`,
     `--color-surface-raised:${v('--color-surface-raised', '#1a1a1d')}`,
+    `--color-fill:${v('--color-fill', 'rgba(118,118,128,0.24)')}`,
     `--color-subtle-foreground:${v('--color-subtle-foreground', '#8a8a92')}`,
     `--color-success:${v('--color-success', '#3fb950')}`,
   ].join(';');
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
-<style>:root{${vars}}html{color-scheme:dark}body{margin:0 auto;max-width:820px;padding:40px 28px;background:var(--color-background);color:var(--color-foreground);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65}a{color:var(--color-primary)}table{border-collapse:collapse;width:100%}pre{overflow:auto}img{max-width:100%}</style>
+<style>:root{${vars}}.katex-html{display:none}html{color-scheme:dark}body{margin:0 auto;max-width:820px;padding:40px 28px;background:var(--color-background);color:var(--color-foreground);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.65}a{color:var(--color-primary)}table{border-collapse:collapse;width:100%}pre{overflow:auto}img{max-width:100%}</style>
 </head><body>${innerHtml}</body></html>`;
 }
 
@@ -293,8 +295,11 @@ function ProseBody({ text, className, indent, streaming, hasMessageActions, foot
         ref={ref}
         style={collapsed ? { position: 'relative', maxHeight: CLAMP_PX, overflow: 'hidden' } : { position: 'relative' }}
       >
-        <div data-md-root>
-          <Markdown className={className}>{text}</Markdown>
+        <div data-md-root className="md-root">
+          {streaming
+            // Only the block still growing is parsed again. `contents`: the blocks lay out as one, like the finished reply.
+            ? <div className={className}>{splitBlocks(text).map((block, i) => <Markdown key={i} className="contents">{block}</Markdown>)}</div>
+            : <Markdown className={className}>{text}</Markdown>}
         </div>
         {collapsed && (
           <div
@@ -361,7 +366,7 @@ interface Props {
   footerActions?: boolean;
 }
 
-export default function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false, footerActions = false }: Props) {
+export default React.memo(function MessageBody({ text, className, indent = false, streaming = false, hasMessageActions = false, footerActions = false }: Props) {
   if (!streaming && isFullHtmlDoc(text)) {
     // A bare doc that starts with the doctype but lost its </html> to max-tokens is
     // still shown as a card — honestly labeled truncated.
@@ -388,4 +393,4 @@ export default function MessageBody({ text, className, indent = false, streaming
   }
   return <ProseBody text={text} className={className} indent={indent} streaming={streaming} hasMessageActions={hasMessageActions}
     footerActions={footerActions} />;
-}
+});

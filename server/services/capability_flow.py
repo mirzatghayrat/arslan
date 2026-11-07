@@ -27,12 +27,13 @@ from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
 from server.services import (capability_allowlist, capability_install, capability_runtime, capability_scan,
-                             capability_search, osv_check)
+                             capability_search, osv_check, plugin_package)
 from arslan.aio import within
 
 logger = logging.getLogger(__name__)
 
 TEST_TIMEOUT_S = 90
+SIGN_IN_CHECK_S = 20         # the whole check: `oauth_flow`'s own timeout is per read, and a chat turn waits on this
 
 
 def installable(c: dict) -> str | None:
@@ -40,6 +41,8 @@ def installable(c: dict) -> str | None:
     the version being installed (`capability_install.prepare`, before the card; #569 review F1, ⓪Plan's call under
     the user's no-over-defence rule): the search's verdict is GitHub's detection at the repository's HEAD, so for
     MCP it is a hint, never a refusal. A skill keeps it, and its own license is read at the pinned commit too."""
+    if c.get("kind") == "plugin":       # CAP7b: read at the pinned commit (plugin_package.prepare), not the search
+        return c.get("not_here") or (None if c.get("repo") else "not_a_capability")
     if c.get("kind") != "mcp" and c.get("license", {}).get("verdict") != "usable":
         return "license_not_usable"
     if c.get("not_here"):
@@ -92,20 +95,42 @@ async def _update(source_id: str, **fields) -> None:
         await db.commit()
 
 
+async def _waits_for_sign_in(server_id: int, line: str) -> bool:
+    """A start that needs the user's browser, not a key. Stored tokens that need it again say so themselves. A fresh
+    install has none, so no OAuth provider, and its 401 reads as "no credentials": there the server has to say it takes
+    OAuth. A key it rejects and a 403 aren't this: a browser can't fix them."""
+    from server.mcp import discovery, oauth_flow
+    from server.mcp.supervisor import SIGN_IN_PREFIX
+    if line.startswith(SIGN_IN_PREFIX):
+        return True
+    if not line.startswith(discovery.NO_CREDENTIALS_401):
+        return False
+    async with db_session.AsyncSessionLocal() as db:
+        server = await db.get(MCPServer, server_id)
+    return server is not None and await oauth_flow.offers_sign_in(server.url)
+
+
 async def test_mcp(source_id: str) -> dict:
     """Start it in its sandbox and list its tools; on success switch it on (0.1.61: through the
     supervisor, so the row is `ready` and its tools are offered in the same reply, spec §B3). A
-    start that does not pass leaves it `off`, its process stopped."""
-    from server.mcp.supervisor import supervisor
+    start that does not pass leaves it `off`, its process stopped. One that asks the user to sign in
+    is off too, but it hasn't failed: `discovery._check_pin` switches it on and pins its tools at the
+    first listing after the sign-in."""
+    from server.mcp.supervisor import SIGN_IN_LINE, supervisor
     from server.services import mcp_service
     row = await _source(source_id)
     at = datetime.utcnow().isoformat() + "Z"
     try:
         result = await within(mcp_service.start_now(row.mcp_server_id), TEST_TIMEOUT_S)
+        waiting = result.state == "needs_auth" and await within(
+            _waits_for_sign_in(row.mcp_server_id, result.last_error or ""), SIGN_IN_CHECK_S)
     except Exception as exc:  # noqa: BLE001 — a failed start is the test's answer
         await supervisor.set_enabled(row.mcp_server_id, False)
         detail = getattr(exc, "detail", None) or str(exc)
         return {"ok": False, "stage": "start", "detail": detail[-400:] or type(exc).__name__, "at": at}
+    if waiting:
+        await supervisor.set_enabled(row.mcp_server_id, False)
+        return {"ok": False, "needs_sign_in": True, "stage": "sign_in", "detail": SIGN_IN_LINE, "at": at}
     if result.state != "ready":
         await supervisor.set_enabled(row.mcp_server_id, False)
         return {"ok": False, "stage": "start", "detail": (result.last_error or result.state)[-400:],
@@ -141,6 +166,9 @@ async def install_mcp(c: dict, *, folders: list[str], keys: dict, prepared: dict
     test = await test_mcp(row.id)
     # CAP5a: the test's listing pinned the tools (discovery._check_pin, in `test`); the result is added to it.
     test = {**((await _source(row.id)).test or {}), **test}
+    if test.get("needs_sign_in"):
+        await _update(row.id, test=test)
+        return {"state": "needs_sign_in", "source_id": row.id, "scan": scan}
     await _update(row.id, test=test, **({} if test["ok"] else {"state": "failed", "error": f"test: {test['stage']}"}))
     if not test["ok"]:
         return {"state": "failed", "stage": "test", "source_id": row.id, "detail": test["detail"]}
@@ -275,8 +303,28 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was added. Say in "
                         "your answer that the capability you proposed (`missing`) is not there and that the user "
                         "can add it by asking for it in a conversation."}
-    prepared = scan = locked = None
-    if cand["kind"] == "mcp":
+    prepared = scan = locked = plugin = None
+    if cand["kind"] == "plugin":
+        # CAP7b: read and prepared whole before the card; a part it can't take refuses it, with nothing kept. After the
+        # "nobody to ask" answer above: a run that cannot install fetches nothing.
+        try:
+            plugin = await plugin_package.prepare(cand)
+        except plugin_package.Refused as exc:
+            _outside_text()
+            emit({"type": "capability_result", "call_id": None, "source_id": None, "state": "refused",
+                  "name": cand["name"], "tools": 0, "code": exc.code, "detail": untrusted.clean_name(exc.part, 200)})
+            refused = {"ok": False, "error": f"cannot be added: {exc.code}", "code": exc.code,
+                       "part": outside_label(exc.part, 200),
+                       "note": "This plugin can't be added (`code`, in `part`), and nothing was installed. Say which "
+                               "part and why; do not propose it again."}
+            if exc.code == "add_by_hand":
+                refused.update(by_hand=exc.by_hand,
+                               note="The user's one-click list does not cover this part of the plugin (`part`), so "
+                                    "nothing was installed and only the user can add it: by hand, in Capabilities "
+                                    "(Connections, add by hand). Say so; do not propose it again.")
+            return refused
+        card.update(plugin_package.card_fields(plugin))
+    elif cand["kind"] == "mcp":
         # CAP4a-3c: the user's one-click list as it is now (it may have changed since the search), and a listed GitHub
         # organization still the one the list names. Off the list, only the user adds it, by hand.
         allow = await capability_allowlist.current()
@@ -330,16 +378,20 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         decision = await ask(card)
     except BaseException:
         capability_install.discard(locked)
+        plugin_package.discard(plugin)
         raise
     # S7: the card's answer in the ledger (§5.4) — never the key or the folders it carried back.
     await permissions.record_card_outcome(request, context, approved=bool(decision.get("approved")),
                                           expired=approvals.LAST_OUTCOME.get() == "expired")
     if not decision.get("approved"):
         capability_install.discard(locked)
+        plugin_package.discard(plugin)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
                                                         "way or say what is missing; do not propose it again now."}
-    if cand["kind"] == "mcp":
+    if cand["kind"] == "plugin":
+        result = await plugin_package.install(cand, plugin, decision.get("keys") or {})
+    elif cand["kind"] == "mcp":
         result = await install_mcp(cand, folders=decision.get("folders") or [], keys=decision.get("keys") or {},
                                    prepared=locked)
     else:
@@ -351,7 +403,15 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
     if result["state"] == "on":
         # ③Hands' review of #449: the names are the server's and the source's own text, so they go in their own
         # fields, and the sentence Arslan tells the model stays Arslan's.
-        if cand["kind"] == "mcp":
+        if cand["kind"] == "plugin":
+            found = {"tools": [outside_label(t, 80) for t in (result.get("tools") or [])[:20]],
+                     "skills": [outside_label(s, 80) for s in result.get("skills") or []]}
+            what = "its tools (`tools`) and skills (`skills`; read them with read_skill)"
+            if result.get("needs_sign_in"):
+                found["needs_sign_in"] = [outside_label(n, 80) for n in result["needs_sign_in"]]
+                what += (". `needs_sign_in` stays off until the user signs in to it: in Capabilities, open it and "
+                         "choose Authorize; its tools aren't available yet, so say so")
+        elif cand["kind"] == "mcp":
             found = {"tools": [outside_label(t, 80) for t in (result.get("tools") or [])[:20]]}
             what = "its tools (`tools`)"
         else:
@@ -360,6 +420,12 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         _outside_text()
         return {"ok": True, "installed": outside_label(cand.get("name")), **found, "refresh": True,
                 "note": f"Installed, tested and switched on: {what}. Retry the step that failed now."}
+    if result["state"] == "needs_sign_in":
+        _outside_text()
+        return {"ok": False, "needs_sign_in": True, "added": outside_label(cand.get("name")),
+                "note": "Added (`added`), but it stays off until the user signs in to it: in Capabilities, open it and "
+                        "choose Authorize. Its tools aren't available yet, so don't retry the step. Say this in your "
+                        "answer."}
     if result["state"] == "blocked":
         rules = ", ".join(f["rule"] for f in result["scan"]["findings"] if f["level"] == "high")
         return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); it was removed again"}

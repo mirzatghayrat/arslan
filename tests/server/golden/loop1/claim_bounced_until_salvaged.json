@@ -1,0 +1,129 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "I searched and found it.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "The proposed answer lacks a successful web_search receipt. Use an available native tool if needed, or give an honest answer stating the limitation. Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "I searched and found it.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "The proposed answer lacks a successful web_search receipt. Use an available native tool if needed, or give an honest answer stating the limitation. Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text.",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "I searched again.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "The proposed answer lacks a successful web_search receipt. Use an available native tool if needed, or give an honest answer stating the limitation. Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "legacy request",
+  {
+   "history": [],
+   "max_tokens": null,
+   "system": "SYS\n\n<GUARD_NOTE>\n\nAnswer the user's message directly, in plain text, right NOW. Do NOT call a tool, output JSON, or say you will search / look into it / get back to them later — just give your actual answer using what you already know.",
+   "tools": null,
+   "user": "the request"
+  }
+ ],
+ [
+  "chunk",
+  "An honest answer from what I know."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "An honest answer from what I know.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ]
+]

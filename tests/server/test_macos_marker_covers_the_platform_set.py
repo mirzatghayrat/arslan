@@ -8,9 +8,9 @@ therefore never executed anywhere, including three that prove the seatbelt
 sandbox denies a chmod-then-write/unlink escape.
 
 Those 25 were given `@pytest.mark.macos` so a macOS job can select them. The
-set has grown since as new macOS-only ground was covered — EXPECTED_FILES below
-is the current population and its per-file comments carry the reasons. The 25 is
-the founding measurement, not a ceiling.
+set has grown since as new macOS-only ground was covered — tests/macos_expected.toml
+is the current population and its comments carry the reasons. The 25 is the founding
+measurement, not a ceiling.
 
 WHAT THIS FILE CAN AND CANNOT DO. It cannot prove the marker set is COMPLETE —
 completeness was established by running the suite on both platforms and
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+import tomllib
 
 # The WHOLE test tree, not this one directory. `parent` was tests/server/ and the
 # glob was non-recursive, so the drift check silently ignored the other seven test
@@ -32,111 +33,12 @@ import re
 # would have reported no offenders while looking at almost nothing.
 TESTS = pathlib.Path(__file__).parents[1]
 
-#: The measured set, 2026-08-06. Files, not test names: names churn, the
-#: platform boundary does not.
-EXPECTED_FILES: dict[str, int] = {
-    # SBX-5p: 73 CAP6b/cache cases, including the built outside floor.
-    "server/sbx/test_sbx5_paths.py": 10,
-    # SBX-6p: four default trust checks, four toggle checks, eight LAN cases.
-    "server/sbx/test_sbx6_settings.py": 3,
-    # SBX-6p: 94 network cases (78, then +16 over #654's wider service list), pending except one real SSH control.
-    "server/sbx/test_sbx6_network.py": 8,
-    # SBX-4p: 88 Python/artifact/MCP gates (72, then +16 over #654's wider service list), pending product adapters.
-    "server/sbx/test_sbx4_presets.py": 7,
-    # Stock Pool semaphore refusal and a same-policy run-prefixed control.
-    "server/sbx/test_sbx_multiprocessing.py": 1,
-    # Measured DNS, FSEvents and trust service grants, each in all four modes.
-    "server/sbx/test_sbx_service_allowlist.py": 4,
-    # SBX-3p: 58 commands denial cases (63; +12 in #654; then SBX-6 retired the any-declared mode), real since SBX-3a.
-    "server/sbx/test_sbx3_commands.py": 14,
-    # SBX-2 port follow-ups: one compile check for each of proxy and port-22.
-    "server/sbx/test_sbx2_tcp_ports.py": 1,
-    # SBX-2: 75 kernel assertions and 222 measurement rows (297 collected).
-    "server/sbx/test_sbx2_kernel.py": 10,
-    "server/sbx/corpus/test_sbx2_corpus.py": 5,
-    # 2026-10-03 (0.1.51 P3): run_command's workspace sandbox — what the kernel
-    # refuses (writes outside, a protected folder inside a writable one, the
-    # keychain folder and ~/.ssh), what it keeps (temp, offline writes), and a
-    # nested sandbox-exec seen as a stop. Seatbelt is macOS-only. Appended
-    # boundary case. +1 0.1.53: a socket in a protected folder (Arslan Hands)
-    # cannot be connected from the sandbox.
-    # +2 0.1.59: with "Desktop, Documents, Downloads" off those folders are closed to commands
-    # (also via /System/Volumes/Data and a symlink), the working folder and projects inside stay open.
-    "server/test_command_sandbox.py": 9,
-    # 2026-10-20 (0.1.63 S2a-1): real sandbox-exec runs — an Apple Event from the sandbox reaches no app
-    # (-600), a command reads its own conversation's saved output and nothing else in that folder, and
-    # outside the sandbox the minimal profile keeps Arslan's data closed and the user's secrets open.
-    "server/test_s2a1_sandbox.py": 3,
-    # 2026-10-02 (0.1.50): run_command's offline mode is /usr/bin/sandbox-exec
-    # with deny network*; the two kernel facts (blocked connect, file write still
-    # works) exist only on macOS. Appended boundary case.
-    "server/test_terminal_offline.py": 2,
-    # 2026-09-19: actual loopback restricted trial at the macOS packaged path.
-    "server/test_profile_activation.py": 1,
-    # 2026-09-25: native manual-backup maintenance subprocess at the macOS
-    # profile path (0.1.40). It already skipped off darwin; CI run 35973558629
-    # showed test_every_darwin_only_file_is_marked flagging it unmarked, so
-    # the macos job never selected it. Appended boundary case, not a new
-    # full Linux measurement.
-    "server/test_manual_backup_control.py": 1,
-    "server/test_code_sandbox.py": 14,
-    "server/test_artifact_store.py": 1,
-    # 2026-09-15: fixed artifact parser actually runs inside Seatbelt. The new
-    # case passed on macOS and explicitly skips when sys.platform != darwin.
-    # This is an appended boundary case, not a new full Linux measurement.
-    "server/test_task_validation.py": 1,
-    "server/test_ocr_vision.py": 5,
-    "server/test_skill_script_failclosed.py": 3,
-    "server/test_ocr_fallback.py": 3,
-    "server/test_skill_import.py": 1,
-    "server/test_chat_image_fallback.py": 1,
-    "server/test_extract_api.py": 1,
-    # 2026-08-21, P3b: the ssh transport's two kernel facts. Same platform
-    # boundary as the (0.1.48-deleted) command sandbox tests — they drive /usr/bin/sandbox-exec
-    # directly, which exists on macOS and nowhere else. One asserts the profile
-    # we ship is accepted, one asserts a per-host profile is REJECTED (the
-    # measurement the design rests on), one asserts the port confinement
-    # actually enforces.
-    "server/test_ssh_exec.py": 3,
-    # 2026-10-09 (0.1.57 P2): an installed capability's MCP server profile (deny by default):
-    # only its folder and the granted one, a protected folder stays closed inside a grant,
-    # the network only when declared. Seatbelt is macOS-only. Appended boundary case.
-    "server/test_capability_sandbox.py": 3,
-    # 0.1.62 F4b (R1): a parent folder swapped for a link at the open is refused by the kernel
-    # (O_NOFOLLOW_ANY exists on macOS 11+ only; elsewhere the second resolve is the guard).
-    "server/test_write_no_links.py": 1,
-    # 0.1.63 D4 follow-up: osacompile (macOS-only) tells a real AppleScript syntax error from a
-    # script that only prints one, without running it. Appended boundary case.
-    "server/test_d4_osascript_not_authorized.py": 1,
-    # 0.1.63 S3a: a checkpoint is a real clonefile(2) copy on APFS, and its folder carries the
-    # Time Machine exclusion xattr. Linux takes the plain-copy path, which every other S3a test covers.
-    "server/test_s3a_checkpoint_save.py": 1,
-    # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
-    # protected folder named in ASCII, CJK, accents, emoji or with a control character is closed; a
-    # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
-    # readable. Seatbelt is macOS-only.
-    "server/sbx/test_sbx1b_sbpl_strings.py": 4,
-    # 0.1.64 SBX-3a: what should run still runs under the commands profile with /dev narrowed: the
-    # work folder, /dev/null and /dev/zero, and a pty. Seatbelt is macOS-only.
-    # 0.1.64 SBX-3a flip: a work folder inside a closed folder and a saved copy still work on the base.
-    "server/sbx/test_sbx3a_commands_profile.py": 2,
-    # 0.1.64 SBX-3a §1a: a sandboxed command writes its own run's TMPDIR. Seatbelt is macOS-only.
-    "server/sbx/test_sbx3_run_temp.py": 1,
-    # 0.1.64 SMART-1: the PATH an interactive zsh gives, read with real rc files (zsh is the Mac's shell).
-    "server/test_smart1_interactive_path.py": 9,
-    # 0.1.64 IPB-1b: the phone's folder shows a home reached through APFS's /System/Volumes/Data firmlink,
-    # or written in another Unicode form, as ~. Both need APFS, so macOS only.
-    "server/test_phone_history_details.py": 2,
-}
-#: 🔴 MIRRORED in .github/workflows/ci.yml ("Assert they RAN, and did not skip").
-#: That step re-derives this number from the junit XML, so changing one without
-#: the other turns a green local run into a red CI run, or worse, hides drift
-#: from the guard meant to catch it. Both, same commit, or neither.
-EXPECTED_TOTAL = 734  # +10 0.1.64 SMART-1: the interactive PATH with real zsh rc files; +2 0.1.64 IPB-1b: a home through the Data firmlink or in another Unicode form is ~; +56 0.1.64 SBX gates notes (#654) after SBX-6p: +16 kernel gates, +8 commands cases (four more services in two modes), +16 SBX-4p and +16 SBX-6p network cases over its wider service list; -1 0.1.64 L11 (b) (#681): the rules writer went, with L11-3d's /var-link write test; +72 SBX-4p; +78 SBX-5p (includes one pre-existing-link measurement); +16 SBX-6p settings; +1 0.1.64 SBX-3a flip: a reopened work folder and a saved copy; +1 0.1.64 SBX-3a §1a: a command uses its own TMPDIR; +1 0.1.64 SBX-3a: the work folder, the devices and a pty still work; -13 SBX-6 commands transition; +78 SBX-6p; -12 stale service cases; +4 raw UDP denials; +1 multiprocessing diagnosis; +12 measured service allowlist cases; +1 0.1.64 L11-3a/3d: a rules file's path through /var refused, its real path written; +63 SBX-3p commands denial cases; +2 SBX-2 TCP compile checks; +3 SBX-2 localhost measurements; +290 SBX-2; +9 0.1.64 SBX-1b: non-ASCII and control-character paths under real seatbelt; +1 0.1.63 S3a: clonefile and the Time Machine xattr; +3 0.1.63 S2a-1: Apple Events, saved copies, minimal outside profile; +1 0.1.63 D4 follow-up: osacompile confirms a syntax error; +1 0.1.62 F4b: write_file refused by O_NOFOLLOW_ANY; +2 0.1.59: closed Desktop/Documents/Downloads; +3 0.1.57: installed capability sandbox; +1 0.1.53 Hands: protected socket; +6 0.1.51 P3: run_command workspace sandbox; +2 0.1.50: run_command offline mode (seatbelt deny network*);
-#                     −4 0.1.48: the unused command sandbox and its tests were deleted
-# The external-file test has six attack cases under one marked function; SBX-1b's protected-folder test has
-# six names under one (+5).
-PARAMETERIZED_EXTRA_CASES = 598  # SMART-1: +1 (10 cases over 9 functions); SBX-4p: +81 (88 over 7, after #654); SBX-5p: +68 (78 over 10); SBX-6p settings: +13 (16 over 3); SBX-6p: +86 (94 over 8, after #654); Allowlist: +12 (16 cases over 4 functions); SBX-3p after SBX-6 and #654: +44 (58 cases over 14 functions); SBX-2: 299 over 16 (after #654).
+#: What the macOS job must run, per file: the one list. `markers` is checked here, on every platform; `cases` and
+#: `xfail` by the macOS job itself (scripts/check_macos_counts.py). Files, not test names: names churn, the platform
+#: boundary does not.
+MANIFEST_PATH = TESTS / "macos_expected.toml"
+MANIFEST: dict[str, dict[str, int]] = tomllib.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+EXPECTED_FILES: dict[str, int] = {path: pins["markers"] for path, pins in MANIFEST.items()}
 
 #: Text that means "this test only means something on macOS". Kept broad on
 #: purpose — a new gating phrase should trip the drift check and be added here
@@ -265,14 +167,21 @@ def test_the_marked_population_matches_the_measurement():
         f"the macos-marked population changed.\n  expected: {EXPECTED_FILES}\n"
         f"  actual:   {actual}"
     )
-    assert sum(actual.values()) + PARAMETERIZED_EXTRA_CASES == EXPECTED_TOTAL
 
 
-def test_the_ci_workflow_expects_the_same_count():
-    """The mirror was a comment, and comments do not fail: 0.1.50 raised
-    EXPECTED_TOTAL to 42 here while ci.yml still asserted 40, and the macOS job
-    went red on a correct test run. Now the two numbers are checked together."""
+def test_the_manifest_stays_in_sorted_path_order():
+    """Two PRs that both append at the end of the file would conflict, which is what one table per file exists to end."""
+    assert list(MANIFEST) == sorted(MANIFEST)
+
+
+def test_every_table_has_its_three_pins():
+    for path, pins in MANIFEST.items():
+        assert set(pins) == {"markers", "cases", "xfail"}, path
+
+
+def test_the_ci_workflow_reads_the_manifest_and_keeps_no_number_of_its_own():
+    """Two numbers in two places went out of step once (0.1.50) and conflicted on every PR after that."""
     workflow = (TESTS.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    found = re.findall(r"^\s*EXPECTED = (\d+)\s*$", workflow, re.M)
-    assert found == [str(EXPECTED_TOTAL)], (
-        f"ci.yml asserts {found} macOS cases, this file expects {EXPECTED_TOTAL}: change both together")
+    assert re.search(r"^\s+run: \.venv/bin/python scripts/check_macos_counts\.py macos-results\.xml tests/macos_expected\.toml$",
+                     workflow, re.M), "the step runs the check, with nothing after it (`|| true`) and not commented out"
+

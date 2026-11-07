@@ -98,7 +98,7 @@ def test_hands_folder_comes_from_the_account_not_from_home(monkeypatch, tmp_path
 
 
 @pytest.mark.parametrize("result,stopped", [
-    ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stderr": "zsh:1: operation not permitted: /x"}, True),
+    ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stderr": "/bin/bash: /x: Operation not permitted"}, True),
     ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stdout": "PermissionError: [Errno 1] Operation not permitted"}, True),
     ({"sandbox": "workspace", "ok": False, "exit_code": 1, "stderr": "No such file or directory"}, False),
     ({"sandbox": "workspace", "ok": True, "exit_code": 0, "stderr": "operation not permitted"}, False),
@@ -375,4 +375,7 @@ def test_a_stopped_command_is_told_which_folders_the_user_keeps_closed():
     home = Path.home()
     note = command_sandbox.note(home / "Arslan", [home / "Downloads", home / "Documents"])
     assert "~/Downloads, ~/Documents" in note and "outside_sandbox" in note
+    # A stop goes back to the model: another way first, then leaving is its own request, with a reason.
+    assert note.index("Find a way") < note.index("outside_sandbox") < note.index("why")
+    assert "starts it over from the beginning" in note     # a second run on top of what the first one did
     assert "closed" not in command_sandbox.note(home / "Arslan")

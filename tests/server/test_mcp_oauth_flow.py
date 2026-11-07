@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Setting
+from server.db.models import Base, MCPServer, Setting
 from server.mcp.oauth_flow import EncryptedTokenStorage, has_tokens
 
 
@@ -38,6 +38,10 @@ async def maker(tmp_path, monkeypatch):
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # A sign-in is only stored for a server that exists.
+        await conn.execute(MCPServer.__table__.insert(), [
+            {"id": server_id, "label": f"server {server_id}", "transport": "http", "command": "", "args": [],
+             "status": "registered"} for server_id in (1, 2, 5, 7)])
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
 

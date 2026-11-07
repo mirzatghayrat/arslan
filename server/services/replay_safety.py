@@ -1,4 +1,4 @@
-"""Replay-safe tool whitelist (S2 E3 — hermetic replay).
+"""Replay-safe tool whitelist (S2 E3 — hermetic replay). DELETE-BY: v0.1.64, with C7c-3b.
 
 An evolution replay must run a spawn on a task WITHOUT touching real state, so the
 model may only see tools that are read-only or fully sandboxed and produce nothing
@@ -88,3 +88,126 @@ def is_hermetic_context(conversation_id: str | None) -> bool:
     its only caller, distill_service, in C8-4, v0.1.63.)
     """
     return conversation_id in _HERMETIC_CONVERSATION_IDS
+
+
+#: 0.1.63 K4b: a live run has no allowance of its own any more (it was 25); a web read is one tool
+#: call under the run's limits (K4a), and K4a's tool-call limit and dollar cap bound a web-heavy turn.
+#: What stays is the eval/replay allowance below. The tools it covers: capping web_extract alone
+#: would be bypassed by alternating with web_search, so they share ONE allowance.
+_FETCH_TOOLS = frozenset({"web_search", "web_extract"})
+
+
+#: FU-2b. The eval/replay allowance, and it is deliberately NOT per dispatch.
+#:
+#: The gate dispatches roughly `pairs x 2 arms x (epochs*lr_budget + 1)` times —
+#: a few hundred for one candidate. Giving each of those its own 25 would be a
+#: cap in name only: 25 x 224 is not a bound, it is a multiplier with a label.
+#: So the allowance spans the whole attempt, and it is smaller than the live one
+#: because an evaluation is not supposed to be doing research — a candidate that
+#: needs fifty pages is a candidate worth refusing.
+HERMETIC_FETCH_BUDGET = 50      # DELETE-BY: v0.1.64, with C7c-3b.
+
+#: Spent-so-far per hermetic sentinel. Module state rather than a threaded
+#: parameter because every dispatch in an attempt already shares one sentinel
+#: conversation id, and threading a budget object through the evaluator would
+#: mean changing every layer between here and the watcher for a counter.
+#:
+#: If two spawns are evaluated at once they SHARE this allowance. That is the
+#: conservative direction for a spend gate and is left deliberately: a shared
+#: budget can only refuse earlier than a per-attempt one, never later.
+#:
+#: 🔴 That last sentence was FALSE, and the sharing was never why. The RESET
+#: was: the watcher cleared the counter at the top of EVERY attempt, and
+#: `_running_spawns` allows one attempt per SPAWN, not one overall. Attempt B
+#: starting refunded attempt A mid-flight — 90 spent against a cap of 50 from a
+#: single overlap, N x 50 for N overlaps, i.e. the gate loosened exactly when
+#: evolution activity and therefore spend was highest.
+#:
+#: Passing the sentinel to the reset does NOT fix it, which is worth writing
+#: down because it is the obvious fix and it is empty: every hermetic dispatch
+#: shares the one id, so popping that key and clearing the dict are the same
+#: operation. What restores the promise is refcounting the attempts in flight —
+#: a fresh allowance when the first one starts, and nothing but sharing after.
+#: Covered by tests/server/test_hermetic_budget_refund.py.
+_hermetic_fetches: dict[str, int] = {}
+
+
+#: How many hermetic attempts are in flight. The allowance is refreshed when
+#: this goes 0 -> 1 and never while it is above zero, so concurrent attempts
+#: SHARE one allowance (conservative, and what the comment above has always
+#: claimed) instead of refunding each other (what actually happened).
+_hermetic_attempts_inflight = 0
+
+
+def begin_hermetic_attempt() -> None:
+    """Claim the allowance for an attempt that is starting.
+
+    Production callers use this instead of `reset_hermetic_fetch_budget`, which
+    is unconditional and therefore unsafe while anything else is running.
+    """
+    global _hermetic_attempts_inflight
+    if _hermetic_attempts_inflight == 0:
+        _hermetic_fetches.clear()
+    _hermetic_attempts_inflight += 1
+
+
+def end_hermetic_attempt() -> None:
+    """Release one in-flight claim. Must run even when the attempt raised."""
+    global _hermetic_attempts_inflight
+    _hermetic_attempts_inflight = max(0, _hermetic_attempts_inflight - 1)
+
+
+def hermetic_attempts_inflight() -> int:
+    """For tests and diagnostics; never a control-flow input."""
+    return _hermetic_attempts_inflight
+
+
+def reset_hermetic_fetch_budget(conversation_id: str | None = None) -> None:
+    """Start a fresh allowance. Called by the watcher at the top of an attempt.
+
+    Without this the counter would be process-lifetime and the first attempt
+    after a restart would get the budget while every later one got nothing —
+    a gate that tightens silently over uptime, which is worse than no gate
+    because it looks like a broken feature rather than a limit."""
+    if conversation_id is None:
+        _hermetic_fetches.clear()
+    else:
+        _hermetic_fetches.pop(conversation_id, None)
+
+
+def hermetic_fetches_used(conversation_id: str) -> int:
+    """For tests and diagnostics; never a control-flow input."""
+    return _hermetic_fetches.get(conversation_id, 0)
+
+
+def _check_hermetic_fetch_budget(conversation_id: str | None) -> dict | None:
+    key = conversation_id or "evolution"
+    used = _hermetic_fetches.get(key, 0)
+    if used >= HERMETIC_FETCH_BUDGET:
+        return {"ok": False,
+                "error": f"evaluation fetch budget reached ({HERMETIC_FETCH_BUDGET} "
+                         "web_search/web_extract calls for this attempt) — judge the "
+                         "candidate on what has already been gathered"}
+    _hermetic_fetches[key] = used + 1
+    return None
+
+
+async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None) -> dict | None:
+    """None to proceed, or an explicit refusal dict once an eval/replay attempt has spent its allowance.
+
+    🔴 SCOPE. A live run has no fetch allowance since 0.1.63 K4b: its reads count as tool calls.
+    A hermetic eval/replay gets HERMETIC_FETCH_BUDGET for the WHOLE ATTEMPT, which is the only shape that
+    bounds anything there: `web_search` and `web_extract` are both in
+    REPLAY_SAFE_BUILTINS (sealing keeps read-only web and drops WRITE tools plus
+    anything non-allowlisted), and the gate dispatches roughly
+    `pairs x 2 arms x (epochs*lr_budget + 1)` times — so a per-dispatch cap would
+    multiply rather than limit. This was registered as FU-2b and is now in.
+
+    The refusal is EXPLICIT rather than a silent drop: a swallowed fetch looks to the
+    model like a page with no content, and it will simply try the next URL.
+    """
+    if tool_key not in _FETCH_TOOLS:
+        return None
+    if is_hermetic_context(conversation_id):
+        return _check_hermetic_fetch_budget(conversation_id)
+    return None

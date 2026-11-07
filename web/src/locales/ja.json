@@ -691,7 +691,14 @@
     "openActivityBtn": "進捗を開く",
     "whatsNewEmpty": "このバージョンの説明はありません。",
     "modelRolesResetNotice": "モデルの役割は各会話のモデルに従うようになりました。以前の役割の設定はクリアされました。",
-    "modelRolesResetOk": "OK"
+    "modelRolesResetOk": "OK",
+    "addModelKeyHint": "{{provider}} に利用できるモデルを問い合わせるためだけに使います。「追加」を押すまで何も保存されません。",
+    "addModelLive": "{{provider}} の最新リスト · {{count}} モデル",
+    "addModelLoading": "{{provider}} にモデルを問い合わせ中…",
+    "addModelBuiltIn": "内蔵リスト",
+    "addModelFallback": "{{provider}} に接続できません。Arslan の内蔵リストを表示しています。",
+    "addModelRetry": "再試行",
+    "addModelChooseProvider": "プロバイダを選択"
   },
   "errors": {
     "load_failed": "データの読み込みに失敗しました。",
@@ -806,8 +813,6 @@
     "collapse_results": "折りたたむ",
     "stdout_label": "標準出力：",
     "exec_validated": "実行が確認され、サンドボックス接続がコード 0 で終了しました。",
-    "equipped_capabilities": "利用可能な機能：",
-    "capabilities_matrix": "機能一覧：",
     "hide_rail": "サイドパネルを非表示",
     "show_rail": "サイドパネルを表示",
     "confirm_direction": "方向を確認 · 実行",
@@ -998,9 +1003,7 @@
   },
   "runcmd": {
     "sandboxOutsideLabel": "このコマンドをサンドボックスの外で実行しますか？",
-    "sandboxOutsideNote": "コマンドは通常 Arslan の作業フォルダにしか書き込めません。このコマンドは Mac の別の場所のファイルを変更する必要があります。",
-    "sandboxRetryLabel": "サンドボックスがこのコマンドを止めました",
-    "sandboxRetryNote": "作業フォルダの外に書き込むか、保護されたファイルを読もうとしました。サンドボックスの外で実行すると最初からやり直します。",
+    "sandboxOutsideNote": "コマンドは通常 Arslan の作業フォルダにしか書き込めず、保護されたファイルも読めません。このコマンドはその制限なしでの実行を求めています。サンドボックスで一度試している場合は最初からやり直しになり、すでに行われたことはそのまま残ります。",
     "sandboxConversation": "コマンド（バックグラウンドのタスクも含む）をサンドボックスの外で実行できます",
     "runOutside": "サンドボックスの外で実行",
     "label": "このコマンドを実行しますか？",
@@ -1034,13 +1037,14 @@
       "deleteSome": "ファイルまたはフォルダを削除",
       "overNetwork": "ネットワークを使用（{{program}}）：データを送受信する可能性",
       "more": "（ほか {{count}} ステップ）",
-      "more_one": "（ほか {{count}} ステップ）"
+      "more_one": "（ほか {{count}} ステップ）",
+      "toTrash": "{{count}} 件のファイルまたはフォルダをゴミ箱に移動",
+      "toTrash_one": "{{count}} 件のファイルまたはフォルダをゴミ箱に移動"
     },
     "risk": {
       "sandboxed": "サンドボックス内で実行：作業フォルダ内のファイルしか変更できません",
       "remote": "この Mac ではなく {{host}} で実行",
       "outside": "今回はサンドボックスの外で実行",
-      "retry": "サンドボックスが止めました。再実行すると最初からやり直します",
       "unsandboxed": "サンドボックスなしで実行",
       "network": "今回はネットワークを使います",
       "rule": {
@@ -1066,7 +1070,10 @@
         "unreadable-script-reach": "スクリプトが外部に接続したり、プログラムを起動したり、アプリを操作したりします",
         "unreadable-quoting": "引用符が閉じていないため、何が実行されるか読めません",
         "unreadable-complex": "複雑すぎて実行前に読み切れません",
-        "unreadable-send": "Arslan にはこのコマンドが何を送るか読み切れません。ローカルのデータを送る可能性があります"
+        "unreadable-send": "Arslan にはこのコマンドが何を送るか読み切れません。ローカルのデータを送る可能性があります",
+        "delete-outside-trash": "ゴミ箱に移動します。そこから元に戻せます",
+        "delete-outside-protected": "Arslan 自身のデータとキーはそのままで、残りはゴミ箱に移動します",
+        "delete-outside-sandboxed": "サンドボックス内で実行します。そこで削除したものは完全に削除されます"
       }
     }
   },

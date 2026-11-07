@@ -33,12 +33,14 @@
 | 文件 | 规矩 |
 |---|---|
 | `server/orchestrator/arslan.py`、`server/orchestrator/tool_loop.py`、`server/orchestrator/memory.py` | 当轮 K 线主改。其他 PR 只做小改动，合并时排在当前打开的 K 线 PR 之后；rebase 时两边都保留 |
-| `web/src/locales/*.json`（6 种语言） | 新加的 key，6 种语言同一个 PR 一起加；不改别人的 key；冲突在文件末尾，rebase 时两边都留；`web/src/__tests__/locale-parity.test.ts` 通过才算完 |
+| `web/src/locales/*.json`（6 种语言） | 新加的 key，6 种语言同一个 PR 一起加；不改别人的 key；`web/src/__tests__/locale-parity.test.ts` 通过才算完。Merged key by key by `scripts/dev/merge_json_keys.py`, so the place a key is added no longer matters. Set it up once per clone: `git config merge.json-keys.driver "python3 scripts/dev/merge_json_keys.py %O %A %B"`. A clone without it merges as text. A page on GitHub still shows a conflict until someone merges main locally |
 | `docs/CAPABILITY_INVENTORY.md` | 生成物，不手改、不手工解冲突。rebase 后重新生成：`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`（在仓库根目录、用项目的虚拟环境运行）。C5b 合并后，只在发版 PR 里生成 |
-| `server/db/migrations/**`、`tests/server/test_migration_runner.py`、`server/db/models.py` | 迁移号按 §4 处理 |
+| `server/db/migrations/**`、`server/db/models.py` | 迁移号按 §4 处理 |
 | `server/main.py`、`web/src/App.tsx` | 只做小改动。路由和启动步骤加在末尾，不重排；rebase 时两边都留 |
 | `docs/releases/*.md` | 只有发版 PR 写。每一句对用户的承诺旁边，写出对应的测试名 |
 | `docs/plans/**`、`docs/specs/**` | 计划只由 ⓪Plan 改；任务卡的状态由 ②Main 更新；spec 只在决定变化时改，并注明日期 |
+
+- **macOS test counts (2026-11-07):** what the macOS job must run is pinned per test file in `tests/macos_expected.toml` (`markers`, `cases`, `xfail`; tables in sorted path order). A PR changes only the tables of the files it touches, so it doesn't recount for other PRs. Two new tables landing in the same gap can still conflict: keep both, in order, with no recount. Take the numbers from the macOS job on the PR, which prints what it saw; `pytest tests/ -m macos --collect-only -q` gives `cases` in about a minute, and a Mac can differ, because some system services exist on only one of the two. The job is red on any skip or failure, on a file whose numbers differ from its pins, on a manifest file with no results, and on results from a file with no table. A pin that differs right after a merge means two PRs combined: §5 says who fixes it, and how.
 
 ## 4. 迁移号
 
@@ -46,7 +48,6 @@
 - **同步改的地方：** 加一个迁移要同时改这几处，缺一处 CI 就红：
   - 版本文件 `server/db/migrations/versions/_00NN_*.py`；
   - `server/db/migrations/runner.py` 里的导入和 `MIGRATIONS`；
-  - `tests/server/test_migration_runner.py` 里的 id 列表；
   - `server/db/models.py`。
 - **顺序：** `MIGRATIONS` 按数字升序排列。合并前，如果别的迁移已经先合了，该 PR 先把自己的号改成下一个空号，再合。
 - **冻结：** 一个号只要进过正式版本，就永远不能改。`runner.assert_supported_schema` 会拒绝启动带未知 id 的数据库。
@@ -77,7 +78,7 @@
     - capability and MCP install checks;
     - memory and learned-practice writes;
     - Hands' policy;
-    - CI and repository settings (`.github/workflows/`, branch protection, required checks);
+    - CI and repository settings (`.github/workflows/`, branch protection, required checks), including `scripts/check_macos_counts.py` and, in `tests/macos_expected.toml`, any lowered `cases`, raised `xfail` or removed table. Adding a table, or raising `cases` with the tests that do it, isn't security surface by itself;
     - dependency and lock changes (`pyproject.toml`, `uv.lock`, `package.json` and lockfiles);
     - migrations that drop data.
 
@@ -97,7 +98,8 @@
     - **Stacked PRs:** enable auto-merge only once the PR's base is `main`. Auto-merge on a stacked PR merges it into its parent's branch, not main.
   - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
   - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
-  - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
+  - **A merge of main carries the OK (user, 2026-11-07, relayed by ④参谋):** a merge of main with no conflict in the PR's own lines keeps the OK. The author notes the merge commit on the PR, CI goes green, and the PR is armed; no reviewer is woken. A conflict in the PR's own lines needs a delta OK on those hunks only. This is the exception to "a new OK at the new head" above.
+  - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red only because two PRs combined on a macOS count pin, the second PR's author fixes it forward with a pin-only PR. If it goes red for anything else, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
   - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
   - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.
 - **rebase 纪律：**
@@ -107,6 +109,10 @@
   - 破坏性的 git 操作单独执行，不放进 `&&` 链里。
 - **说 CI 绿时**，附上 run id 和结论。
 - **Reviewing (user, 2026-10-28):** every review also points out over-defence: unnecessary defensive code, the same validation repeated in several layers, and single-use helpers or abstractions (§12).
+- **Less rework (user, 2026-11-07, relayed by ④参谋):**
+  - **A real design choice:** for a card or PR with one, send ⓪Plan 10 lines before writing code: what you will do, how a mainstream agent does it, what you rejected.
+  - **A bench shows a gap:** remove or simplify a rule first. A new exception needs a stated reason.
+  - **Size and sessions:** new cards stay under about 60 lines; docs changes batch into the daily STATUS PR; each lane or card gets a fresh session, and a session past about 300k tokens writes a handoff and moves.
 
 ## 6. 文档卫生
 

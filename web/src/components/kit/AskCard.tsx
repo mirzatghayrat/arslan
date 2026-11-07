@@ -12,7 +12,7 @@ export interface AskQueuePosition { index: number; total: number; onPrev?: () =>
 export type AskRiskLevel = "info" | "warn" | "irreversible";
 
 /** SMART-8: a choice besides the two answers, drawn as a secondary button after the primary one. */
-/** Another approval beside Allow (③Hands' re-run cards): off while Allow is (`allowDisabled`), red when `destructive`
+/** Another approval beside Allow: off while Allow is (`allowDisabled`), red when `destructive`
  *  (PR 688's review, item 8). */
 export interface AskAction { label: string; onClick: () => void; testId?: string; destructive?: boolean }
 
@@ -31,7 +31,7 @@ export interface AskCardProps {
   riskRow?: { level: AskRiskLevel; text: ReactNode };
   /** SMART-8: the raw command (or the text to be sent), folded under "Show command" and shown whole when opened. */
   folded?: { body: ReactNode; showLabel?: string; hideLabel?: string; testId?: string };
-  /** SMART-8: more choices, as secondary buttons after the primary one (③Hands' re-run cards). */
+  /** SMART-8: more choices, as secondary buttons after the primary one. */
   actions?: AskAction[];
   /** The MODEL's own description, never trusted for safety: shown as "Arslan 说：…". */
   said?: string | null;
@@ -58,7 +58,7 @@ export interface AskCardProps {
   allowDisabled?: boolean;
   /** "See the whole context" (island, inbox → the conversation). */
   onOpenContext?: () => void;
-  /** Extra actions beside the two answers (e.g. "run again outside the sandbox"). */
+  /** Extra actions beside the two answers. */
   extra?: ReactNode;
   /** Answers to ⌘⏎ / esc while it is the top surface. Off when shown as a preview. */
   keys?: boolean;

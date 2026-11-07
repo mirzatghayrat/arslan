@@ -1,0 +1,33 @@
+[
+ [
+  "stream request",
+  {
+   "history": [],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "user": "the request"
+  }
+ ],
+ [
+  "chunk",
+  "plain "
+ ],
+ [
+  "chunk",
+  "streamed "
+ ],
+ [
+  "chunk",
+  "answer"
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "plain streamed answer",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ]
+]

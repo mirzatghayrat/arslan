@@ -11,12 +11,13 @@ import re
 from pathlib import Path
 
 from server.registry.executors import EXECUTORS
+from server.registry.tool_defs import TOOLS
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def _offered() -> set[str]:
-    keys = set(EXECUTORS)
+    keys = set(EXECUTORS) | {tool.name for tool in TOOLS}     # LOOP1 a1: a tool the host answers has no executor
     for rel in ("server/orchestrator/arslan.py", "server/orchestrator/tool_loop.py",
                 "server/orchestrator/on_demand.py"):     # K7: find_tools, use_tool
         keys |= set(re.findall(r'"key": "([a-z_]+)"', (ROOT / rel).read_text()))
