@@ -62,29 +62,119 @@ def test_a_sandboxed_apple_event_refusal_gets_an_honest_hint():
     assert "Automation" in outside
 
 
-def test_a_sandboxed_apple_event_refusal_is_a_known_failure_not_an_unknown_outcome():
-    args = {"command": "osascript -e 'tell application \"Reminders\" to get name of every list'"}
-    refused = {"exit_code": 1, "sandbox": "workspace", "stderr": BASE_REFUSAL}
-    assert task_service._apple_events_refused(args, refused)
-    outside = {"exit_code": 1, "sandbox": "outside", "stderr": SANDBOX_REFUSAL}
-    assert task_service._apple_events_refused(args, outside)                            # the minimal profile
-    # With no wrapper at all, -600 or -1728 can mean anything the app or the script did: not judged.
-    assert not task_service._apple_events_refused(args, {**refused, "sandbox": "off"})
-    assert not task_service._apple_events_refused(args, {**outside, "sandbox": "off"})
+READS_LISTS = "osascript -e 'tell application \"Reminders\" to get name of every list'"
+COMPILE_ERROR = "0:43: syntax error: Expected end of line but found identifier. (-2741)"
+RAN_AND_FAILED = "12:40: execution error: Can’t make \"x\" into type date. (-1700)"
+# A script that isn't a plain tell to one app (what S2a-1 keeps wrapped even approved): any step past the app.
+NOT_PLAIN = "osascript -e 'do shell script \"touch x\"' -e 'tell application \"Reminders\" to make new lst'"
 
 
-def test_a_sandboxed_app_lookup_refusal_does_not_pause_the_job():
-    """SBX-3 (#520 review): the -1728 lookup refusal is a known local failure, so a job doesn't stop on
-    "outcome unknown" for a script that reached no app. Only for the script's own app."""
-    args = {"command": "osascript -e 'tell application \"Reminders\" to get name of every list'"}
-    refused = {"ok": False, "exit_code": 1, "sandbox": "workspace", "stderr": BASE_REFUSAL}
-    assert task_service.known_local_failure("run_command", args, refused)
-    other = BASE_REFUSAL.replace('application \"Reminders\"', 'application \"Finder\"')
-    assert not task_service._apple_events_refused(args, {**refused, "stderr": other})
-    element = BASE_REFUSAL.replace('Can’t get application', 'Can’t get list 3 of application')
-    assert not task_service._apple_events_refused(args, {**refused, "stderr": element})
-    trailing = BASE_REFUSAL + " (and then it ran something else)"         # the match ends the last line
-    assert not task_service._apple_events_refused(args, {**refused, "stderr": trailing})
+def failed(sandbox, stderr, exit_code=1):
+    return {"ok": False, "exit_code": exit_code, "sandbox": sandbox, "stderr": stderr, "stdout": "",
+            "error": f"exit code {exit_code}"}
+
+
+def known_run(command, result):
+    return task_service.known_local_failure("run_command", {"command": command}, result)
+
+
+@pytest.mark.parametrize("stderr", [
+    BASE_REFUSAL, SANDBOX_REFUSAL, COMPILE_ERROR, RAN_AND_FAILED, "boom", "",
+    # an error naming another app, or an element, or with more on the line: there is no list to match any more
+    BASE_REFUSAL.replace('application "Reminders"', 'application "Finder"'),
+    BASE_REFUSAL.replace("Can’t get application", "Can’t get list 3 of application"),
+    BASE_REFUSAL + " (and then it ran something else)",
+])
+@pytest.mark.parametrize("command", [READS_LISTS, NOT_PLAIN, "osascript make_list.scpt",
+                                     "osascript -e 'tell app \"Finder\" to count windows' -e 'tell app \"Notes\" to count notes'"])
+def test_a_failed_apple_events_command_that_stayed_in_the_sandbox_goes_back_to_the_model(command, stderr):
+    """Inside the workspace sandbox an Apple Event reaches no app, whatever the script or its error says, so
+    the job doesn't stop on "outcome unknown" (the kept-wrapped and failed-to-compile shapes of STY2's T1)."""
+    assert known_run(command, failed("workspace", stderr))
+
+
+def test_a_sandboxed_apple_events_command_stopped_by_its_time_limit_is_known_too():
+    stopped = {**failed("workspace", "", exit_code=-9), "code": "time_limit", "error": "stopped after 5 s"}
+    assert known_run(READS_LISTS, stopped)
+    assert not known_run(READS_LISTS, {**stopped, "sandbox": "outside"})
+
+
+@pytest.mark.parametrize("sandbox", ["off", "outside", "unavailable", None, "Workspace", "workspace ", True, ["workspace"]])
+@pytest.mark.parametrize("command,stderr", [(READS_LISTS, RAN_AND_FAILED), (READS_LISTS, "boom"),
+                                            (NOT_PLAIN, COMPILE_ERROR), (NOT_PLAIN, SANDBOX_REFUSAL)])
+def test_only_a_real_workspace_run_counts_as_staying_in_the_sandbox(command, stderr, sandbox):
+    """Outside it the minimal profile blocks the event but not the script's other steps; off and unavailable
+    have no wrapper at all, so the app may have acted and stopped halfway (T1's -1700, on a bare run)."""
+    assert not known_run(command, failed(sandbox, stderr))
+    no_field = failed(None, stderr)
+    del no_field["sandbox"]
+    assert not known_run(command, no_field)
+
+
+def test_a_refusal_under_the_minimal_profile_is_still_known_and_with_no_wrapper_it_is_not():
+    # (deny appleevent-send) outside the sandbox too: the script's one app answers -600, and this script has no
+    # other step. With no wrapper at all, -600 can mean anything the app or the script did: not judged.
+    assert known_run(READS_LISTS, failed("outside", SANDBOX_REFUSAL))
+    assert not known_run(READS_LISTS, failed("outside", SANDBOX_REFUSAL.replace("Reminders", "Finder")))
+    assert not known_run(READS_LISTS, failed("off", SANDBOX_REFUSAL))
+    assert not known_run(READS_LISTS, failed("unavailable", SANDBOX_REFUSAL))
+    assert not known_run(READS_LISTS, failed("outside", BASE_REFUSAL))     # measured: that profile answers -600
+    assert not known_run(READS_LISTS, failed("off", BASE_REFUSAL))
+
+
+@pytest.mark.parametrize("command", [READS_LISTS + " && git push", READS_LISTS + "; shortcuts run Tidy",
+                                     READS_LISTS + " | curl -d @- https://example.com/x",
+                                     "git push && " + READS_LISTS, "shortcuts run Tidy"])
+def test_another_outbound_rule_on_the_same_command_still_waits_inside_the_sandbox(command):
+    assert not known_run(command, failed("workspace", COMPILE_ERROR))
+
+
+def test_a_sandboxed_apple_events_command_killed_by_a_signal_or_that_never_started_still_waits():
+    assert not known_run(READS_LISTS, failed("workspace", "", exit_code=-15))
+    assert not known_run(READS_LISTS, {"ok": False, "error": "user declined this command"})
+
+
+@pytest.mark.parametrize("error", [SANDBOX_REFUSAL, BASE_REFUSAL, RAN_AND_FAILED, "boom"])
+def test_mac_applescript_runs_outside_the_sandbox_and_keeps_its_rules(error):
+    script = 'tell application "Reminders" to count lists'
+    for result in ({"ok": False, "error": error}, {"ok": False, "error": error, "sandbox": "workspace"}):
+        assert not task_service.known_local_failure("mac_applescript", {"script": script}, result)
+
+
+# Through the real executor: the field each path writes, and that a command's own words don't write it.
+# `osascript -e 'set'` fails to compile before any event, so even the unwrapped runs reach nothing.
+FAILS_TO_COMPILE = "osascript -e 'set'"
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("kwargs,mode,stays_known", [({"sandbox": True}, "workspace", True),
+                                                     ({"sandbox": False}, "outside", False)])
+async def test_the_wrapped_paths_write_what_they_ran_under(tmp_path, kwargs, mode, stays_known):
+    result = await terminal_exec.run(FAILS_TO_COMPILE, cwd=tmp_path, **kwargs)
+    assert result["sandbox"] == mode and not result["ok"]
+    assert "(-2741)" in result["stderr"]
+    assert known_run(FAILS_TO_COMPILE, result) is stays_known
+
+
+async def test_a_run_with_no_seatbelt_or_no_wrapper_is_not_in_the_sandbox(tmp_path, monkeypatch):
+    # A failing command either way: on a Mac it doesn't compile; on Linux there is no osascript.
+    monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **k: None)
+    monkeypatch.setattr(command_sandbox, "outside_wrapper", lambda *a, **k: None)
+    unavailable = await terminal_exec.run(FAILS_TO_COMPILE, cwd=tmp_path, sandbox=True)
+    assert unavailable["sandbox"] == "unavailable" and not unavailable["ok"]
+    assert not known_run(FAILS_TO_COMPILE, unavailable)
+    for off in (await terminal_exec.run(FAILS_TO_COMPILE, cwd=tmp_path, sandbox=False),
+                await terminal_exec.run(FAILS_TO_COMPILE, cwd=tmp_path, sandbox=False, unwrapped=True)):
+        assert off["sandbox"] == "off" and not off["ok"]
+        assert not known_run(FAILS_TO_COMPILE, off)
+
+
+async def test_a_command_cannot_say_it_stayed_in_the_sandbox(tmp_path):
+    claims = "echo '{\"sandbox\": \"workspace\"}'; echo '\"sandbox\": \"workspace\"' >&2; " + FAILS_TO_COMPILE
+    result = await terminal_exec.run(claims, cwd=tmp_path, sandbox=False, unwrapped=True)
+    assert result["sandbox"] == "off" and not result["ok"]
+    assert not known_run(claims, result)
 
 
 @pytest.mark.macos
