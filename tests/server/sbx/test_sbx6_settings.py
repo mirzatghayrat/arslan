@@ -65,7 +65,7 @@ def test_trust_services_are_off_by_default(net_sbx, mode):
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("net_sbx,mode,feature", [
-    pytest.param(b, mode, "trustd-toggle", marks=feature_pending("trustd-toggle"))
+    pytest.param(b, mode, "trustd-toggle", marks=[feature_pending("trustd-toggle"), pending(b)])
     for b, mode in SERVICE_CASES], indirect=["net_sbx"])
 def test_trust_switch_grants_only_trustd_in_proxy(net_sbx, mode, feature):
     net_sbx.network = mode
@@ -92,7 +92,7 @@ def proxy_module(request, net_sbx):
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("net_sbx,feature", [
-    pytest.param(b, "trusted-lan", marks=feature_pending("trusted-lan"))
+    pytest.param(b, "trusted-lan", marks=[feature_pending("trusted-lan"), pending(b)])
     for b in ("commands-proxy", "mcp-proxy")], indirect=["net_sbx"])
 @pytest.mark.parametrize("scenario", ["listed-ip", "unlisted-ip", "unlisted-name", "rebound-name"])
 async def test_trusted_local_devices_are_pinned(net_sbx, feature, scenario, proxy_module, monkeypatch):

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FileText, Globe, KeyRound, Laptop, PinOff, Search, Sparkles } from "lucide-react";
+import { FileText, Folder, Globe, KeyRound, Laptop, PinOff, Search, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../../api/client";
 import { companionApi, type MemoryEntry, type MemoryProposal, type MemoryRevision, type MemoryStats, type MemoryWrite, type Project } from "../../api/companion";
@@ -177,6 +177,8 @@ function LearnedPractices({ lessons, busy, change }: {
         <dd className="text-[14px] text-foreground">{lesson.situation}</dd>
         <dt className="mt-1 text-[11px] text-subtle-foreground">{t(lesson.polarity === "avoid" ? "companion.practiceAvoid" : "companion.practiceDo")}</dt>
         <dd className="text-[14px] text-foreground">{lesson.advice}</dd>
+        {lesson.scope && <dt className="mt-1 text-[11px] text-subtle-foreground">{t("companion.practiceWhere")}</dt>}
+        {lesson.scope && <dd className="font-mono text-[12.5px] text-foreground [overflow-wrap:anywhere]">{lesson.scope.folder}</dd>}
         <dd className="mt-1 text-[11px] text-subtle-foreground">{t("companion.practiceFrom", { source: t(source[lesson.source]) })}</dd>
       </dl>
       <p className="font-semibold text-ask">{t("companion.practiceWhyNot", { reason: t(`companion.why_${reason}`) })}</p>
@@ -187,6 +189,15 @@ function LearnedPractices({ lessons, busy, change }: {
       cancel: t("companion.practiceNotNow"), destructive: false }))
       await change(() => lessonsApi.setStatus(lesson.id, "active", lesson.updated_at));
   };
+  // L11 (b): where a practice narrowed to one folder applies. Not a Tag, which never wraps: a long path has to. The
+  // newline only marks where each language puts the folder, so the path can sit in its own element.
+  const scopeTag = (folder: string) => {
+    const [before, after] = t("companion.practiceOnlyIn", { folder: "\n" }).split("\n");
+    return <span data-testid="practice-scope" className="inline-flex min-w-0 items-center gap-1 rounded-lg bg-fill px-[7px] py-0.5 text-[11px] text-foreground">
+      <Folder size={11} className="shrink-0" aria-hidden="true" />
+      <span className="min-w-0 [overflow-wrap:anywhere]">{before}<code className="font-mono text-[10.5px]">{folder}</code>{after}</span>
+    </span>;
+  };
   const row = (lesson: Lesson) => {
     const switchedOn = lesson.status === "active";
     const reasonTag = !switchedOn && reasonOf(lesson) !== "retired";
@@ -194,6 +205,7 @@ function LearnedPractices({ lessons, busy, change }: {
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="break-words text-[14px] leading-snug">{lesson.text}</span>
         <span className="flex flex-wrap items-center gap-1.5 text-[11px] text-subtle-foreground">
+          {lesson.scope && scopeTag(lesson.scope.folder)}
           {reasonTag && <Tag tone={lesson.status === "stale" ? "danger" : "ask"}>{t(`companion.whyShort_${reasonOf(lesson)}`)}</Tag>}
           <Tag>{t(source[lesson.source])}</Tag>{lesson.pinned ? <Tag>{t("companion.practiceUnpin")}</Tag> : null}
           <span>{t("companion.practiceCounts", { recalled: lesson.recalled, followed: lesson.followed, succeeded: lesson.succeeded, failed: lesson.failed })}</span>
@@ -217,6 +229,7 @@ function LearnedPractices({ lessons, busy, change }: {
       {current.map(row)}
       {!current.length && <p className="px-4 py-3 text-[13px] text-subtle-foreground">{t("companion.practicesHint")}</p>}
     </Block>
+    {current.some(lesson => lesson.scope) && <p className="max-w-[65ch] px-1 text-[11.5px] text-muted-foreground">{t("companion.practiceScopeHint")}</p>}
     {section("practices-not-in-effect", t("companion.practicesNotInEffect"), waiting)}
     {section("practices-stopped", t("companion.practicesStopped"), stopped)}
     {retired.length > 0 && <button className="self-start px-1 text-[12px] text-muted-foreground hover:text-foreground" aria-expanded={showRetired}

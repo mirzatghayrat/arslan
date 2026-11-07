@@ -21,6 +21,8 @@ class Offer:
     lan: bool = False
     ssh: bool = False
     enrolled: bool = False      # SSH is on and a machine is enrolled
+    shell: bool = False
+    nobody_to_ask: bool = False  # a task's turn with no card surface (a scheduled run)
 
 
 def read_offer() -> Offer:
