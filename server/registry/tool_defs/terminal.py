@@ -1,5 +1,6 @@
 """Commands on the user's Mac. The command gate, the policy and the sandbox are elsewhere: this says only what the model
 reads and when the tool is offered."""
+from server.orchestrator import command_gate
 from server.registry.tool import Tool
 from server.services import terminal_exec
 
@@ -46,5 +47,5 @@ TERMINAL = (
                                                 "outside_sandbox, why it must run outside. "
                                                 "Cards show it first."}},
           "required": ["command"]},
-         offered=lambda offer: offer.shell and not offer.nobody_to_ask),
+         offered=lambda offer: offer.shell and not offer.nobody_to_ask, gate=command_gate.check),
 )

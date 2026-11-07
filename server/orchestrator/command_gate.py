@@ -174,7 +174,7 @@ class CommandPlan:
 NOT_A_COMMAND = CommandPlan()
 
 
-async def check(args: dict, turn: ToolTurn) -> dict | CommandPlan:
+async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     """The refusal to record, or the plan to run with.
 
     A command requires per-command user confirmation via the injected
