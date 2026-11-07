@@ -617,6 +617,19 @@ export interface AuthoredSkillCard {
    *  card is the check. */
   outside: boolean;
 }
+/** The memory-import card (v0.1.64 CAP8b, server/services/memory_import.propose): the lines of what the user pasted. Same
+ *  frame and answers as the install card, told apart by `kind`; a yes names the ids it keeps (`kept`). `same_as`: what a
+ *  stored memory says, when this line says the same. `too_many`: lines past one card's limit, counted and not read. */
+export interface MemoryImportLeftOut {
+  /** null: the line held a key, so it isn't shown again. */
+  text: string | null;
+  reason: "gender" | "one_off" | "credential" | "too_long" | "stored" | "deleted";
+}
+export interface MemoryImportCard {
+  kind: "memory_import"; name: string; why: string; lines: number; too_many: number;
+  entries: { id: string; text: string; ticked: boolean; same_as: string | null }[];
+  left_out: MemoryImportLeftOut[];
+}
 export interface CapabilityResult { state: "on" | "failed" | "blocked" | "needs_sign_in"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
@@ -749,7 +762,7 @@ export type ArslanServerMessage =
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
-  | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard))
+  | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard | MemoryImportCard))
   | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked" | "needs_sign_in";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;

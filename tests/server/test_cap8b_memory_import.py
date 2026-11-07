@@ -578,8 +578,8 @@ async def test_with_remember_me_off_a_kept_line_stays_on_this_mac(memory):
 # ── the real turn and its post-turn job ───────────────────────────────────────
 
 class _TurnModel:
-    """The turn's model, on the real tool loop. With `ask` it makes the tool's call, where a registered tool's branch
-    would: the tool is registered with the web half."""
+    """The turn's model, on the real tool loop. With `ask` it makes the tool's call, where the registered tool's branch
+    does; test_cap8b_registered_tool.py goes through that branch."""
 
     def __init__(self, ask=None):
         self.ask, self.out = ask, None

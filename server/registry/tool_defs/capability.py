@@ -101,6 +101,18 @@ CAPABILITY = (
                                  "description": "What the user asked for, in a few words."}},
           "required": ["key", "name", "description", "body"], "additionalProperties": False},
          host=True),
+    # v0.1.64 CAP8b: found on demand (K7), never resident. It takes no text: memory_import reads the message that started
+    # this turn, and the user's ticks on the card decide what is stored.
+    Tool("import_memories",
+         "Import memories the user pasted from ChatGPT, Claude or another assistant, when they paste a list and ask to "
+         "keep it (\"import these memories\"). You pass no text: it reads the message that started this turn, so the "
+         "list must be in that message. The user sees each line on a card, unticks what they don't want and decides; "
+         "only what they keep is stored, as their own words. args: {why?}.",
+         {"type": "object",
+          "properties": {"why": {"type": "string", "maxLength": 300,
+                                 "description": "What the user asked for, in a few words."}},
+          "additionalProperties": False},
+         host=True),
     Tool("whats_new",
          "Your own version and the release notes of the latest versions "
          "(newest first). Call it when the user asks which version you are, "

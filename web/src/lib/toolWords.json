@@ -30,6 +30,7 @@
   "enroll_node": { "family": "command" },
   "find_capability": { "family": "capability", "arg": "need" },
   "find_tools": { "family": "capability", "arg": "query" },
+  "import_memories": { "family": "write" },
   "list_dir": { "family": "read", "arg": "path" },
   "list_my_capabilities": { "family": "read" },
   "list_my_tasks": { "family": "read" },

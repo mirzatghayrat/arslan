@@ -2799,17 +2799,20 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     outcome = await _propose_plan_change(args, emit)
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     continue
-                if name in ("propose_capability", "create_skill") and (name in wired_keys or on_demand_call):
+                if name in ("propose_capability", "create_skill", "import_memories") and (name in wired_keys or on_demand_call):
                     # 0.1.57 §3: the install-and-retry card; v0.1.64 CAP2a: the save-a-skill card, on the
-                    # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill). A blocking ask in THIS window (confirm_command carries it); a job or a
+                    # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill); CAP8b: the
+                    # memory import card. A blocking ask in THIS window (confirm_command carries it); a job or a
                     # turn nobody watches adds nothing. On success the tools are read again, so the new
                     # capability (or read_skill's list) is there for the rest of this turn.
                     emit({"type": "tool_call", "tool": name,
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    from server.services import background_jobs, capability_flow, skill_forge
+                    from server.services import background_jobs, capability_flow, memory_import, skill_forge
                     ask = None if background_jobs.inside_job() else getattr(confirm_command, "ask_capability", None)
                     if name == "create_skill":
                         outcome = await skill_forge.propose(args, conversation_id=conversation_id, ask=ask)
+                    elif name == "import_memories":
+                        outcome = await memory_import.propose(args, conversation_id=conversation_id, ask=ask)
                     else:
                         outcome = await capability_flow.propose(args, conversation_id=conversation_id, ask=ask,
                                                                 emit=emit)

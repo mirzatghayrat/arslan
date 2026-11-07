@@ -14,7 +14,8 @@ MEMORY = (
                                   "enum": ["fact", "material", "learning", "note"]}},
           "required": ["query"]}),
     Tool("remember",
-         "Write to the user's second brain: a fact/learning/note worth remembering.",
+         "Write to the user's second brain: a fact/learning/note worth remembering. A list the user pasted from "
+         "another assistant to import goes through import_memories (find_tools), never here.",
          {"type": "object",
           "properties": {
               "kind": {"type": "string",

@@ -10,7 +10,8 @@ followed.
 A message going to the card leaves post-turn learning first (`learns_after_message_id`; turn_facts), so the card is the
 only way in for its lines, and a no or an unticked line holds.
 
-The card is the install card's channel, answered only in the Arslan window, so the phone never gets it.
+The card is the install card's channel, answered only in the Arslan window, so the phone never gets it: a turn the
+iPhone started has no window to answer, so it opens none and says where to paste instead.
 """
 from __future__ import annotations
 
@@ -64,12 +65,14 @@ def split(text: str | None) -> list[tuple[str, bool]]:
     return [(line, True) for line, _ in lines] if len(lines) > 1 else []
 
 
-async def _this_turns_message(conversation_id: str | None, message_id: int | None) -> str:
-    """By the id the turn stored it under: a steer is a newer row, and a resumed task has no message of its own."""
+async def _this_turns_message(conversation_id: str | None, message_id: int | None) -> tuple[str, str | None]:
+    """(its text, where it was typed), by the id the turn stored it under: a steer is a newer row, and a resumed task has
+    no message of its own."""
     async with db_session.AsyncSessionLocal() as db:
-        return await db.scalar(select(ArslanMessage.content).where(
+        row = (await db.execute(select(ArslanMessage.content, ArslanMessage.source).where(
             ArslanMessage.id == message_id, ArslanMessage.conversation_id == conversation_id,
-            ArslanMessage.role == "user")) or ""
+            ArslanMessage.role == "user"))).first()
+    return (row.content, row.source) if row else ("", None)
 
 
 async def _out_of_learning(conversation_id: str, message_id: int) -> None:
@@ -164,13 +167,17 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was read or stored. "
                         "Offer to import them when the user is in the conversation."}
     actor = ctx.actor("user")
-    text = await _this_turns_message(conversation_id, ctx.source_message_id)
+    text, typed_on = await _this_turns_message(conversation_id, ctx.source_message_id)
     entries, left_out, too_many = await _sort(text, actor)
     if not entries:
         return {"ok": False, "nothing_to_import": True, "left_out": len(left_out) + too_many,
                 "note": "This message holds no lines to import. They have to be pasted in the same message that asks; "
                         "say so, or say why they were left out."}
     await _out_of_learning(conversation_id, ctx.source_message_id)     # before the judges: a Stop there ends the turn
+    if typed_on == "phone":     # no window to answer: the turn would wait 30 minutes on a card nobody can see
+        return {"ok": False, "not_saved": True, "on_the_mac": True,
+                "note": "This card is only answered in the Arslan window on the Mac, and this message came from the "
+                        "iPhone, so nothing was stored. Ask them to paste the list in Arslan on the Mac."}
     await _mark_the_same(entries, ctx)
     card = {"kind": KIND, "name": "memories", "why": why, "entries": entries, "left_out": left_out,
             "too_many": too_many, "lines": len(text.splitlines()), "keys": [], "folders": []}

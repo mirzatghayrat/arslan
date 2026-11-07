@@ -20,7 +20,8 @@ export type PendingEnrollNode = { callId: string; name: string; host: string; us
 export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
 export type PendingSchedule = { callId: string; name: string; when: string; prompt?: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
 export type PendingCapability = { callId: string; receivedAt?: number; seq?: number }
-  & (import("../api/client.types").CapabilityCard | import("../api/client.types").AuthoredSkillCard);
+  & (import("../api/client.types").CapabilityCard | import("../api/client.types").AuthoredSkillCard
+     | import("../api/client.types").MemoryImportCard);
 export type PendingAction = { callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean;
   receivedAt?: number; seq?: number } & CardV2;
 /** How a card's own apply stands in this window (0.1.61 §A4, fix round 3): an enrolment calls the REST API from the card and
