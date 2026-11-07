@@ -7,6 +7,7 @@ DELETE-BY: v0.1.64 after SBX-4a registers and validates all product adapters.
 import sys
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 from server.services import capability_sandbox, code_sandbox
 from server.services.sandbox_profile import NetworkMode, default_deny_profile, literal, subpath
@@ -32,6 +33,18 @@ def reference(harness, **parameters):
             text += f'(allow process-exec {literal(path)})\n'
         return text
     reads = parameters.pop("read", [])
+    if harness.base == "mcp-proxy":
+        # Match SBX-6p and capability_sandbox.profile's public argument names.
+        proxy_port = parameters.pop("proxy_port", getattr(harness, "proxy_port", None))
+        ports = list(parameters.pop("bound_ports", []))
+        for setting in parameters.pop("system_proxies", []):
+            proxy = urlsplit(setting)
+            if proxy.port == proxy_port:
+                raise ValueError("proxy port collides with a configured system proxy")
+            if proxy.hostname in {"localhost", "127.0.0.1", "::1"}:
+                ports.append(proxy.port)
+        parameters.update(proxy_port=proxy_port, denied_ports=ports)
+
     return default_deny_profile([harness.work, *grants], protected,
                                 readable=[*capability_sandbox.SYSTEM_READ, Path(sys.prefix),
                                           Path(sys.base_prefix), harness.work, *grants, *map(Path, reads)],
@@ -60,5 +73,5 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     adapter = {"reference": reference, "legacy": legacy, "permissive": permissive}[config.getoption("--sbx4-control")]
-    for base in ("run-python", "artifact", "mcp"):
+    for base in ("run-python", "artifact", "mcp", "mcp-proxy"):
         BUILT_BASES[base] = adapter
