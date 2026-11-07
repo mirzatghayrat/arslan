@@ -14,7 +14,7 @@ const _arrived = () => ({ receivedAt: Date.now(), seq: ++_cardSeq });
 /** A card waiting on the user in this window, by kind (0.1.61 §A4). Each kind is a list, oldest first, keyed by `callId`: a
  *  second card of a kind (a window's own run-command card and a job's) waits behind the first and never replaces it. */
 export type PendingCommand = { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean;
-  sandbox?: "outside" | "retry"; why?: string; rule?: string; rules?: string[]; unreadable?: string; network?: boolean; unsandboxed?: boolean; receivedAt?: number;
+  sandbox?: "outside"; why?: string; rule?: string; rules?: string[]; unreadable?: string; deleteMode?: string; deleteTargets?: string[]; network?: boolean; unsandboxed?: boolean; receivedAt?: number;
   seq?: number } & CardV2;
 export type PendingEnrollNode = { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number; seq?: number };
 export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
@@ -691,7 +691,10 @@ function makeActions(set: SetState, get: GetState) {
                 role: "arslan",
                 content: state.streamingText,
                 ...(state.streamingDrafts.length > 0 ? { drafts: state.streamingDrafts } : {}),
-                toolSteps: state.activitySteps.length > 0 ? state.activitySteps : undefined,
+                // A step still open when the run stopped never finishes: it must not spin on the reply for ever.
+                toolSteps: state.activitySteps.length > 0
+                  ? state.activitySteps.map((step) => (step.status === "running" ? { ...step, status: "error" as const } : step))
+                  : undefined,
                 cancelled: true,
               }
             : null;
@@ -840,12 +843,15 @@ function makeActions(set: SetState, get: GetState) {
                                   fingerprints: frame.fingerprints || [],
                                   background: frame.background === true,
                                   // 0.1.51 P3: the card is about leaving the sandbox.
-                                  ...(frame.sandbox === "outside" || frame.sandbox === "retry" ? { sandbox: frame.sandbox } : {}),
+                                  ...(frame.sandbox === "outside" ? { sandbox: frame.sandbox } : {}),
                                   // SMART-8: Arslan's reason for any command (its purpose line), and what the server decided
                                   // about it (the 「风险」 row): the rule it matched, the network, no sandbox around it.
                                   why: frame.why || "", rule: frame.rule || undefined,
                                   rules: Array.isArray(frame.rules) ? frame.rules.filter((r): r is string => typeof r === "string") : undefined,
                                   unreadable: typeof frame.unreadable === "string" ? frame.unreadable : undefined,
+                                  deleteMode: typeof frame.delete_mode === "string" ? frame.delete_mode : undefined,
+                                  deleteTargets: Array.isArray(frame.delete_targets)
+                                    ? frame.delete_targets.filter((x: unknown): x is string => typeof x === "string") : undefined,
                                   network: frame.network === true,
                                   unsandboxed: frame.unsandboxed === true,
                                   ..._cardV2(frame),

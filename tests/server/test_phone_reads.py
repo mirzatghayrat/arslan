@@ -21,6 +21,7 @@ async def _seed(client, rows):
     async with client.db_maker() as db:
         db.add(Run(id=7, conversation_id="trip", user_message="plan"))
         db.add(Run(id=8, conversation_id="trip", user_message="big"))
+        await db.flush()      # the runs first: messages.run_id is a foreign key, and it is enforced
         for row in rows:
             db.add(row)
         await db.commit()

@@ -1,7 +1,7 @@
 """Recovery for run_native's main model call (0.1.49 P1, design sections 5.2 and 6).
 
 Scope: ONLY the one model call each run_native step makes. Auxiliary calls
-(synthesis, salvage, review) keep tool_loop._chat_retry's single fast retry:
+(synthesis, salvage, review) keep answer_salvage._chat_retry's single fast retry:
 they must give up rather than crowd the main path.
 
 Only provider/transport failures are classified and wrapped in ModelCallError.

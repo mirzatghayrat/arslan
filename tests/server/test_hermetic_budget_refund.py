@@ -30,6 +30,7 @@ from __future__ import annotations
 import pytest
 
 from server.orchestrator import tool_loop
+from server.services import replay_safety
 
 # The replay sentinel replay_safety still seals (replay_run, which defined it, went in C7b-2).
 REPLAY_CONVERSATION_ID = "evolution-replay"
@@ -53,10 +54,10 @@ async def _spend(n: int) -> int:
 @pytest.fixture(autouse=True)
 def _clean_counter():
     tool_loop.reset_hermetic_fetch_budget()
-    tool_loop._hermetic_attempts_inflight = 0
+    replay_safety._hermetic_attempts_inflight = 0
     yield
     tool_loop.reset_hermetic_fetch_budget()
-    tool_loop._hermetic_attempts_inflight = 0
+    replay_safety._hermetic_attempts_inflight = 0
 
 
 async def test_the_probe_can_see_spend_at_all():

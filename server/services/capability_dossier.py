@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer
-from server.services import capability_flow, capability_install, capability_search
+from server.services import capability_flow, capability_install, capability_search, plugin_package
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +137,11 @@ async def accept_source(source_id: str, seen: str) -> dict:
 
 async def remove(source_id: str) -> None:
     row = await source(source_id)
+    if row.kind == "plugin":                # CAP7b: the group goes as one, and no part of it goes alone
+        await plugin_package.remove(source_id)
+        return
+    if plugin_package.parent_of(row.candidate_id):
+        raise DossierError("part_of_a_plugin")
     if row.kind == "skill":
         from server.db.models import SkillPack
         from server.services import capability_list
@@ -226,6 +231,10 @@ async def update(source_id: str) -> dict:
     result = await capability_flow.install_mcp(cand, folders=(row.grants or {}).get("folders") or [], keys=keys)
     if result["state"] == "on":
         await capability_install.remove(source_id)
+    elif result["state"] == "needs_sign_in":
+        # Sign-ins are kept per server, so the new row always asks; beside the old one, it would never replace it.
+        await capability_install.remove(result["source_id"])
+        return {"state": "failed", "stage": "sign_in"}
     return result
 
 

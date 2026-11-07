@@ -8,10 +8,13 @@ import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { defaultUrlTransform, type UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import MarkdownLink from './MarkdownLink';
 import { openExternal, shellAvailable } from '../lib/shell';
 import PathChip, { isLocalPath } from './PathChip';
+import Formula from './Formula';
 import HighlightedCode from './HighlightedCode';
+import { remarkTexDelimiters } from '../lib/texDelimiters';
 import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame, Image as ImageIcon } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
@@ -255,7 +258,8 @@ const components: import('react-markdown').Components = {
 
   // Inline code
   // (Block code never reaches this override: `pre` below renders it through HighlightedCode.)
-  code: ({ children }) => {
+  code: ({ children, className }) => {
+    if (className?.includes('math-inline')) return <Formula tex={extractText(children)} />;
     // 0.1.58 §2: a local path in backticks opens in the reader (or reveals in Finder).
     const plain = (
       <code style={{
@@ -285,6 +289,7 @@ const components: import('react-markdown').Components = {
       if (match) lang = match[1];
       rawCode = extractText(codeEl.props?.children);
     }
+    if (codeClass?.split(' ').includes('math-display')) return <Formula tex={rawCode} display />;
 
     return (
       <div style={{
@@ -344,85 +349,23 @@ const components: import('react-markdown').Components = {
     : <MarkdownLink href={href}>{children}</MarkdownLink>,
 
   // Unordered lists
-  ul: ({ children }) => (
-    <ul style={{
-      margin: '0.6em 0',
-      paddingLeft: '1.35em',
-      listStyle: 'none',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '0.3em',
-    }}>
-      {children}
-    </ul>
-  ),
+  ul: ({ children, className }) => <ul className={`md-ul ${className ?? ''}`.trim()}>{children}</ul>,
 
   // Ordered lists
-  ol: ({ children }) => (
-    <ol style={{
-      margin: '0.6em 0',
-      paddingLeft: '1.6em',
-      listStyleType: 'decimal',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '0.3em',
-      color: 'inherit',
-    }}>
-      {children}
-    </ol>
+  ol: ({ children, start }) => <ol className="md-ol" start={start}>{children}</ol>,
+
+  // List items: the stylesheet draws the markers. In a task item, GFM puts a lone space after the checkbox, and a done item's
+  // strike-through would cross it. The checkbox has its own margin.
+  li: ({ children, className }) => (
+    <li className={className}>
+      {className === 'task-list-item' ? React.Children.toArray(children).filter((child) => child !== ' ') : children}
+    </li>
   ),
 
-  // List items — handles task list checkboxes
-  li: ({ children, className }) => {
-    const isTask = className === 'task-list-item';
-    // For task lists, react-markdown injects an <input type="checkbox"> as first child
-    return (
-      <li style={{
-        position: 'relative',
-        paddingLeft: isTask ? '0' : '1.1em',
-        color: 'inherit',
-        lineHeight: 1.6,
-        listStyle: isTask ? 'none' : 'inherit',
-      }}>
-        {!isTask && (
-          <span style={{
-            position: 'absolute',
-            left: 0,
-            top: '0.55em',
-            width: '5px',
-            height: '5px',
-            borderRadius: '50%',
-            background: 'color-mix(in srgb, var(--color-primary) 70%, transparent)',
-            flexShrink: 0,
-          }} />
-        )}
-        {children}
-      </li>
-    );
-  },
-
   // Task-list checkboxes
-  input: ({ type, checked }) => {
-    if (type === 'checkbox') {
-      return (
-        <input
-          type="checkbox"
-          checked={checked}
-          readOnly
-          style={{
-            accentColor: 'var(--color-primary)',
-            marginRight: '6px',
-            verticalAlign: 'middle',
-            cursor: 'default',
-            width: '12px',
-            height: '12px',
-            borderRadius: '3px',
-          }}
-        />
-      );
-    }
-    return <input type={type} />;
-  },
+  input: ({ type, checked }) => (type === 'checkbox'
+    ? <input type="checkbox" className="md-check" checked={checked} disabled />
+    : <input type={type} />),
 
   // Blockquotes — detect GFM alerts, else premium callout
   blockquote: ({ children }) => {
@@ -474,54 +417,24 @@ const components: import('react-markdown').Components = {
 
   // Tables with horizontal scroll
   table: ({ children }) => (
-    <div style={{ overflowX: 'auto', margin: '1em 0', borderRadius: '8px', border: '1px solid color-mix(in srgb, var(--color-border-strong) 90%, transparent)' }}>
-      <table style={{
-        width: '100%',
-        borderCollapse: 'collapse',
-        fontSize: '0.9em',
-        fontFamily: 'inherit',
-        minWidth: '400px',
-      }}>
+    <div style={{ overflowX: 'auto', margin: '1em 0', borderRadius: '12px', border: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9em', fontFamily: 'inherit' }}>
         {children}
       </table>
     </div>
   ),
-  thead: ({ children }) => (
-    <thead style={{ background: 'color-mix(in srgb, var(--color-primary) 7%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--color-border-strong) 95%, transparent)' }}>
-      {children}
-    </thead>
-  ),
-  tbody: ({ children }) => (
-    <tbody>{children}</tbody>
-  ),
+  thead: ({ children }) => <thead style={{ background: 'var(--color-fill)' }}>{children}</thead>,
+  tbody: ({ children }) => <tbody>{children}</tbody>,
   tr: ({ children }) => (
-    <tr style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
+    <tr style={{ borderTop: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
       {children}
     </tr>
   ),
-  th: ({ children }) => (
-    <th style={{
-      padding: '8px 14px',
-      textAlign: 'left',
-      color: 'var(--color-primary)',
-      fontWeight: 600,
-      fontSize: '0.85em',
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      whiteSpace: 'nowrap',
-    }}>
-      {children}
-    </th>
+  th: ({ children, style }) => (
+    <th style={{ padding: '8px 12px', textAlign: style?.textAlign ?? 'left', fontWeight: 600 }}>{children}</th>
   ),
-  td: ({ children }) => (
-    <td style={{
-      padding: '8px 14px',
-      color: 'var(--color-muted-foreground)',
-      verticalAlign: 'top',
-      lineHeight: 1.5,
-    }}>
-      {children}
-    </td>
+  td: ({ children, style }) => (
+    <td style={{ padding: '8px 12px', textAlign: style?.textAlign, verticalAlign: 'top', lineHeight: 1.5 }}>{children}</td>
   ),
 
   // Horizontal rule
@@ -594,6 +507,10 @@ interface MarkdownProps {
 
 // Memoized: the chat re-renders its whole history on every keystroke and stream token, and a finished reply must not
 // be tokenized again each time.
+// A single $ is never math (Streamdown's default too): "it costs $5 and $10" would come out garbled, and a formula left in
+// single dollars shows its source, which is ugly but true.
+const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'] = [remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkTexDelimiters];
+
 export default React.memo(function Markdown({ children, className = '' }: MarkdownProps) {
   return (
     <div
@@ -606,7 +523,7 @@ export default React.memo(function Markdown({ children, className = '' }: Markdo
       } as React.CSSProperties}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={REMARK_PLUGINS}
         components={components}
         urlTransform={urlTransform}
       >
