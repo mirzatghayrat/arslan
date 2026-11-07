@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { isolate } from "../lib/outsideText";
-import { ChevronRight, KeyRound, MessageSquare, Sparkles, Trash2 } from "lucide-react";
+import { ChevronRight, Download, KeyRound, MessageSquare, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { capabilitiesApi, type CapabilityRow } from "../api/capabilities";
 import { ApiError } from "../api/client";
@@ -9,13 +9,14 @@ import { formatUiDate } from "../lib/localeFormatting";
 import { openSection } from "../lib/sections";
 import CapabilityFilter from "./CapabilityFilter";
 import CapabilitySheet from "./CapabilitySheet";
+import ImportConnections from "./capabilities/ImportConnections";
 import McpServers from "./McpServers";
 import SkillImportPanel from "./SkillImportPanel";
 import { Button, Dialog, Notice, confirmSheet, toast } from "./kit";
 
 const SECTIONS = ["builtin", "skills", "connections"] as const;
 type Filter = "all" | "on" | "canTurnOn";
-type Sheet = { kind: "row"; key: string } | { kind: "link" } | { kind: "manual" } | null;
+type Sheet = { kind: "row"; key: string } | { kind: "link" } | { kind: "manual" } | { kind: "import" } | null;
 /** Built-in details that are a note to show (others, like a runtime name, feed the reason). */
 const NOTES = new Set(["own_folder_only", "first_use_setup"]);
 const FOLD_AFTER = 6;
@@ -206,6 +207,13 @@ export default function CapabilitySwitches() {
             <span className="text-[12px] text-subtle-foreground">{t("capabilityList.addLinkWhat")}</span></span>
           <ChevronRight size={14} className="text-subtle-foreground" />
         </button>
+        <button type="button" data-testid="cap-add-import" onClick={() => open({ kind: "import" })}
+          className="flex w-full items-center gap-2.5 border-t border-border px-3.5 py-2.5 text-left hover:bg-fill">
+          <Download size={14} className="shrink-0 text-subtle-foreground" />
+          <span className="flex min-w-0 flex-1 flex-col"><span className="text-[13px]">{t("capabilityList.import_open")}</span>
+            <span className="text-[12px] text-subtle-foreground">{t("capabilityList.import_openWhat")}</span></span>
+          <ChevronRight size={14} className="text-subtle-foreground" />
+        </button>
         <div data-testid="cap-add-method" className="flex w-full items-center gap-2.5 border-t border-border px-3.5 py-2.5">
           <Sparkles size={14} className="shrink-0 text-subtle-foreground" />
           <span className="flex min-w-0 flex-1 flex-col"><span className="text-[13px]">{t("capabilityList.addMethod")}</span>
@@ -218,6 +226,7 @@ export default function CapabilitySwitches() {
       onClose={() => setSheet(null)} onDelete={row => void remove(row)} onChanged={() => void load()} />}
     {sheet?.kind === "link" && <Dialog open onClose={() => setSheet(null)} width={640} testId="cap-link-sheet" padded title={t("capabilityList.addLink")}>
       <SkillImportPanel onImported={() => void load()} /></Dialog>}
+    {sheet?.kind === "import" && <ImportConnections onClose={() => setSheet(null)} onChanged={() => void load()} />}
     {sheet?.kind === "manual" && <Dialog open onClose={() => setSheet(null)} width={640} testId="cap-manual-sheet" padded title={t("capabilityList.addByHand")}>
       <div className="flex flex-col gap-3"><p className="text-[12px] text-subtle-foreground">{t("capabilityList.addByHandHint")}</p>
         <McpServers form onChanged={() => { void load(); setSheet(null); }} /></div></Dialog>}
