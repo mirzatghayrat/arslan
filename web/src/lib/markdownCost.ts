@@ -49,9 +49,12 @@ function fenceAt(line: string, at: number): string {
 }
 
 function closesFence(line: string, fence: string): boolean {
-  const text = line.replace(/^ {0,3}/, '').trimEnd();
-  if (text.length < fence.length) return false;
-  for (let i = 0; i < text.length; i++) if (text[i] !== fence[0]) return false;
+  let start = 0;
+  while (start < 3 && line.charCodeAt(start) === SPACE) start++;
+  let end = line.length;   // only a space or a tab may follow: to the parser, any other white space is text
+  while (end > start && (line.charCodeAt(end - 1) === SPACE || line.charCodeAt(end - 1) === TAB)) end--;
+  if (end - start < fence.length) return false;
+  for (let i = start; i < end; i++) if (line[i] !== fence[0]) return false;
   return true;
 }
 
@@ -87,7 +90,7 @@ export function markdownCost(text: string): number {
       if (++depth > MAX_NESTING) return Infinity;
       at = after - 1;
     }
-    if (at >= line.length) {   // blank, or only container marks: either way it ends a run
+    if (at >= line.length && depth === 0) {   // blank. A line of only container marks may not end a run, so it isn't counted as ending one
       cost += run * run;
       run = 0;
       continue;

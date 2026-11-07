@@ -138,6 +138,27 @@ describe('a code fence only counts when the parser would agree', () => {
     ['in a TeX block, which the pre-pass makes math', `\\[\n\`\`\`\n\\]\n\n${PAYLOAD}\n`],
   ])('not a fence, or not one to believe: %s', (_name, doc) => expect(skipped(doc)).toBe(false));
 
+  it.each([0xA0, 0x0B, 0x0C, 0x2028, 0x3000, 0xFEFF])('white space with character code %i after a fence does not close it, for the parser or the scan', (code) => {
+    const other = String.fromCharCode(code);
+    expect(skipped(`\`\`\`\n\`\`\`${other}\n\`\`\`\n${PAYLOAD}\n`)).toBe(false);
+    expect(skipped(`~~~\n~~~${other}\n~~~\n${PAYLOAD}\n`)).toBe(false);
+  });
+
+  it('a space or a tab after a fence still closes it', () => {
+    expect(skipped(`\`\`\`\n\`\`\` \t\n${PAYLOAD}\n`)).toBe(false);
+    expect(skipped(`\`\`\`\n${PAYLOAD}\n\`\`\` \t\n`)).toBe(true);
+  });
+
+  it.each(['+ ', '* ', '- ', '1. ', '2) ', '   + ', '+\t', '> ', '>'])('a line of only %j does not end a run', (marker) => {
+    let doc = '';
+    while (doc.length < 64 * KB) doc += `${'*a'.repeat(100)}\n${marker}\n`;
+    expect(tooCostlyToParse(doc)).toBe(true);
+  });
+
+  it('a list marker made of a delimiter still counts', () => {
+    expect(markdownCost('*a\n* \n*a')).toBe(9);
+  });
+
   it('a lone carriage return ends a line, as it does for the parser', () => {
     expect(skipped(`\`\`\`\rx\r\`\`\`\r${PAYLOAD}`)).toBe(false);
     expect(markdownCost(`${'*'.repeat(10)}a\r\r${'*'.repeat(10)}a`)).toBe(200);
@@ -150,6 +171,8 @@ describe('a code fence only counts when the parser would agree', () => {
     const LINES = [
       // A hole needs what hides a fence, a fence, and then something to read inline, so those come up often.
       '```', '```', '```', '```', '', '', '', '', '*a*a', '*a*a', '*a*a', '*a*a', '*a*a', '[[', '[[', `${BOM}\`\`\``,
+      ...[0xA0, 0x0B, 0x0C, 0x2028, 0x3000, 0xFEFF].flatMap((code) => [`\`\`\`${String.fromCharCode(code)}`, `~~~${String.fromCharCode(code)}`]),
+      '+ ', '* ', '- ', '1. ', '1) ', '   + ', '+\t', '-\t', '> ',
       '```', '````', '~~~', '``` py', '```a`b', '  ```', '    ```', '   ```', '> ```', '- ```', '-   ```', '1. ```', '`', '``',
       '<div>', '</div>', '<!--', '-->', '<script>', '</script>', '<?', '?>', '<a>', '<![CDATA[', ']]>', '<!X', '$$', '$$ x', '  $$', '> $$',
       '[a]: b', '[a]: b "', '[a]:', '"', "'", '(', ')', '[^a]: b', '    x', '  - a', '- a', '> a', '>', '1. a', '---', '===', '# h',
