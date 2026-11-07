@@ -88,11 +88,11 @@ class Harness:
             return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE)
         raise NotImplementedError(f"no profile adapter for {self.base}")
 
-    def run(self, argv, *, probe: str, profile=None, timeout=30, discard=False):
+    def run(self, argv, *, probe: str, profile=None, timeout=30, discard=False, pass_fds=()):
         """Bound a process group, including grandchildren; never retain service output."""
         text = self.profile() if profile is None else profile
         with subprocess.Popen(
-            ["/usr/bin/sandbox-exec", "-p", text, *map(str, argv)], cwd=self.work, env=self.env,
+            ["/usr/bin/sandbox-exec", "-p", text, *map(str, argv)], cwd=self.work, env=self.env, pass_fds=pass_fds,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL if discard else subprocess.PIPE,
             stderr=subprocess.DEVNULL if discard else subprocess.PIPE, text=True,
             start_new_session=True,
