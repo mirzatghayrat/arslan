@@ -73,6 +73,7 @@ class TaskMemoryContext:
             explicit_save_digest=self.explicit_save_digest if origin == "host" else None,
             allow_global_save=self.allow_global_save if origin == "host" else False,
             cloud_memory_allowed=self.cloud_memory_effective,
+            saves_reach_cloud=self.cloud_memory_effective and not self.model_is_local,
             auto_activate_noticed=self.auto_activate_noticed if origin == "extractor" else False,
             no_learning=self.no_learning, temporary=self.temporary,
             source_message_id=self.source_message_id,

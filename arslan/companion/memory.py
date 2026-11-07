@@ -72,6 +72,9 @@ class MemoryActor:
     explicit_save_digest: str | None = None
     allow_global_save: bool = False
     cloud_memory_allowed: bool = False
+    # What the user asks to remember in their own words is for the cloud model they're using, when the setting allows.
+    # Saved on a setup with only local models, it stays on this Mac even if they switch to a cloud one later (M07-07).
+    saves_reach_cloud: bool = False
     # 0.1.52 (D1): a normal fact noticed after a turn takes effect at once,
     # visible and undoable. Set only by the trusted task context, for origin
     # "extractor"; the extractor reads only the user's own messages.
@@ -160,9 +163,11 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
     about_you = (not user_confirmation and not auto_noticed and not own_note and actor.origin == "host"
                  and actor.user_present and actor.conversation_clean and write.kind == "preference"
                  and sensitive == "normal" and not write.style_reference)
-    if user_confirmation:
-        use_policy = write.use_policy if (actor.origin == "user" or actor.cloud_memory_allowed) else "local_only"
-        kind = "user_form" if actor.origin == "user" else "explicit_user_request"
+    if actor.origin == "user" and user_confirmation:
+        use_policy, kind = write.use_policy, "user_form"
+    elif user_confirmation:
+        # The user's own words, always normal here (a sensitive save waits, on this Mac, for the user's answer).
+        use_policy, kind = "cloud_allowed" if actor.saves_reach_cloud else "local_only", "explicit_user_request"
     elif auto_noticed or own_note or about_you:
         use_policy = "cloud_allowed" if actor.cloud_memory_allowed else "local_only"
         kind = "auto_noticed" if auto_noticed else "arslan_note" if own_note else "arslan_about_you"
