@@ -84,10 +84,19 @@ cases = 1
 xfail = 0
 
 # Kernel carry: eight MCP CAP6b/cache cases now wait for their feature (local measurement).
+# 0.1.64 SBX-5a: both features built, so all 43 strict xfails run as real gates.
 ["server/sbx/test_sbx5_paths.py"]
 markers = 10
 cases = 78
-xfail = 43
+xfail = 0
+
+# 0.1.64 SBX-5a: the product paths under real seatbelt. Commands, the outside floor, an MCP server granted HOME
+# and run_python keep off the skill and plugin folders and the user's caches and write their own caches; an MCP
+# server whose folder holds an outside hard link does not start, and starts once it is gone.
+["server/sbx/test_sbx5a_cap6b.py"]
+markers = 5
+cases = 5
+xfail = 0
 
 # SBX-6p: 94 network cases (78, then +16 over #654's wider service list), pending except one real SSH control.
 ["server/sbx/test_sbx6_network.py"]

@@ -17,6 +17,7 @@ protected paths from command_sandbox close last, even inside a granted folder.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
@@ -29,9 +30,14 @@ SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/pri
                "/private/var/db/timezone", "/private/var/db/dyld")
 
 
-def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -> str:
+def profile(*, root: Path, folders: list[str], network: bool, read: list[str], cache: Path | None = None,
+            peer_cache: Path | None = None, plugin_folder: Path | None = None) -> str:
     """The SBPL text. `root` = the server's own folder (read/write); `folders` = granted by
     the user (read/write); `read` = extra read-only paths (Arslan's runtimes).
+
+    SBX-5: its tools write this server's own cache (`cache`, `root/cache` by default: never shared with another
+    server), never the commands' one (`peer_cache`, `run_temp.cache("commands")` by default: closed after the
+    grants) nor the user's shared caches; and the CAP6b folders are never written, even inside a granted parent.
 
     SBX-4: SBX-2's shared base (`default_deny_profile`): only the listed system services (no wholesale
     `mach-lookup`), no POSIX IPC, the network only when declared (any-declared: TCP to any host and DNS).
@@ -39,10 +45,12 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -
     `sandbox_proxy`; SBX-6 is a release condition for MCP as for commands. The base closes the user's protected paths last, over
     the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
     (read) and its own folder (read and write) open again: both live inside Arslan's data folder."""
-    from server.services import command_sandbox
+    from server.services import command_sandbox, run_temp
     granted = [real(Path(p)) for p in folders]
-    text = default_deny_profile([*granted], command_sandbox.default_protected(),
-                                readable=[*map(real, SYSTEM_READ), *granted],
+    own = real(root) / "cache" if cache is None else real(cache)
+    peer = real(run_temp.cache("commands") if peer_cache is None else peer_cache)
+    text = default_deny_profile([*granted, own], command_sandbox.default_protected(),
+                                readable=[*map(real, SYSTEM_READ), *granted, own], closed=[peer],
                                 network=NetworkMode.ANY_DECLARED if network else NetworkMode.NONE)
     rules = Profile("deny")
     # #666 review: an MCP server talks over stdio and never had a terminal: the base's tty devices, their
@@ -59,16 +67,57 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -
     rules.allow("file-read-data", literal("/"))
     rules.allow_paths("file-read* file-map-executable", map(real, read))
     rules.allow("file-read* file-write* file-map-executable", subpath(real(root)))
+    # SBX-5: after every grant, including its own folder (the last rule wins).
+    rules.deny("file-write*", *(subpath(p) for p in command_sandbox.cap6b_folders(plugin_folder)))
+    rules.deny("file-write*", *(subpath(p) for p in command_sandbox.shared_caches()))
     return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
+
+
+class OutsideLink(RuntimeError):
+    """A file in a server's own folder is a hard link whose other name is outside it (SBX-5p, #666 review P2)."""
+
+
+def outside_links(root: Path) -> list[Path]:
+    """Regular files under `root` with more names than `root` holds: a hard link from outside. The profile lets a
+    server write its own folder, and a write through such a link changes the outside file. Creating a new link is
+    refused by the kernel already; this finds one made before launch. Links between two names inside the folder
+    (a tool hard-linking from its own cache there) are fine. Symlinks are not followed. About 240 ms for a
+    13,000-file node_modules (measured 2026-11-02)."""
+    seen: dict[tuple[int, int], list] = {}
+    stack = [root]
+    while stack:
+        folder = stack.pop()
+        try:
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        st = entry.stat(follow_symlinks=False)
+                        if st.st_nlink > 1:
+                            names = seen.setdefault((st.st_dev, st.st_ino), [st.st_nlink, []])
+                            names[1].append(Path(entry.path))
+        except OSError:
+            continue
+    return sorted(p for nlink, paths in seen.values() if nlink > len(paths) for p in paths)
 
 
 def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, list[str], dict, str]:
     """(command, args, env, cwd) to start `command args` inside the profile, in its own home
-    (a cwd outside the profile makes the shell complain it cannot read where it starts)."""
+    (a cwd outside the profile makes the shell complain it cannot read where it starts).
+    Raises OutsideLink (SBX-5) when its folder holds a hard link to a file outside it; the caller doesn't start it."""
     root = Path(sandbox["root"])
     for sub in ("home", "tmp"):
         (root / sub).mkdir(parents=True, exist_ok=True)
+    # SBX-5 (#666 review P2; option a): Arslan made this folder, so a file linked from outside it is anomalous.
+    # Refuse to start rather than let the server write through it.
+    linked = outside_links(root)
+    if linked:
+        raise OutsideLink(f"refusing to start: {linked[0].relative_to(root)} in this capability's folder is a hard "
+                          "link to a file outside it; reinstall the capability")
     text = profile(root=root, folders=list(sandbox.get("folders") or []), network=bool(sandbox.get("network")),
                    read=list(sandbox.get("read") or []))
-    env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp")}
+    from server.services import command_sandbox
+    env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp"),
+           **command_sandbox.cache_environment(root / "cache")}     # SBX-5 §1c: this server's own cache
     return SANDBOX_EXEC, ["-p", text, command, *args], env, str(root / "home")

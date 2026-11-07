@@ -28,7 +28,7 @@ def test_the_profile_starts_from_deny_and_orders_its_rules(tmp_path, monkeypatch
     # SBX-4: the shared base closes the protected paths to files and to sockets in two rules, after the grants.
     protected = next(i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write* file-map-executable")
                      and str(os.path.realpath(secret)) in line)
-    own = next(i for i, line in enumerate(lines) if str(os.path.realpath(tmp_path / "root")) in line)
+    own = lines.index(f'(allow file-read* file-write* file-map-executable (subpath "{os.path.realpath(tmp_path / "root")}"))')
     runtime = next(i for i, line in enumerate(lines) if str(os.path.realpath(tmp_path / "runtimes")) in line)
     # Last match wins: grants, then the protected paths close, then the server's own folder and
     # the runtimes (which live inside Arslan's protected data folder) open again — only those.
