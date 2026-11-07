@@ -41,6 +41,10 @@ def _cand(name, runtime="uv", url=None, source="registry", kind="mcp"):
     (_cand("com.stripe/mcp", "remote", "https://stripe.com/mcp"), None),
     (_cand("com.microsoft.azure/x", "remote", "https://mcp.azure.microsoft.com/"), None),   # a vendor's subdomain
     (_cand("com.microsoft/agent", "remote", "https://agent365.svc.cloud.microsoft/x"), None),  # a listed extra host
+    (_cand("com.github/mcp", "remote", "https://api.githubcopilot.com/mcp/"), None),         # GitHub's own remote
+    (_cand("com.stripe/mcp", "remote", "https://api.githubcopilot.com/mcp/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.github/mcp", "remote", "https://api.githubcopilot.com.evil.example/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
+    (_cand("com.github/mcp", "remote", "https://evilgithubcopilot.com/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
     (_cand("com.stripe/mcp", "remote", "https://stripe.com.evil.example/mcp"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
     (_cand("com.stripe/mcp", "remote", "https://evilstripe.com/mcp"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
     (_cand("com.stripe/mcp", "remote", "https://mcp.cloudflare.com/"), al.REMOTE_HOST_NOT_THE_PUBLISHERS),
@@ -75,7 +79,7 @@ def test_with_packages_from_any_domain_off_only_vendors_are_one_click():
 def test_the_default_list_is_valid_and_names_organizations_by_id():
     assert ALLOW["packages_from_any_domain"] is True
     assert ALLOW["accounts"]["github"] == 9919 and all(type(i) is int and i > 0 for i in ALLOW["accounts"].values())
-    assert "stripe.com" in ALLOW["domains"] and ALLOW["hosts"] == {"microsoft.com": ["cloud.microsoft"]}
+    assert "stripe.com" in ALLOW["domains"] and ALLOW["hosts"] == {"github.com": ["githubcopilot.com"], "microsoft.com": ["cloud.microsoft"]}
 
 
 @pytest.mark.parametrize("bad, code", [
