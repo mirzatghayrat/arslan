@@ -307,35 +307,30 @@ async def test_a_chat_turn_runs_past_the_old_cap_to_k4s_wrap_up(hands, asks, in_
     assert json.dumps(systems[-1][1] or []).count("desktop_press") == 0
 
 
-async def test_a_scheduled_run_keeps_five_actions_in_one_app(hands, asks, monkeypatch):
+async def test_a_scheduled_run_never_acts_however_often_and_in_whatever_app_it_tries(hands, monkeypatch):
+    """A real scheduled run has nobody to ask (no asker bound): permissions.decide refuses every action by policy,
+    so nothing reaches an app, in one app or several, a batch or not, the first time or the tenth. This is what
+    Hands' old five-actions-in-one-app cap for scheduled runs stood behind; the cap is gone (v0.1.64)."""
     async def exec_(*argv, **kw):
-        raise AssertionError("a second app was opened in a scheduled run")
+        raise AssertionError("an app was opened in a scheduled run")
     monkeypatch.setattr(asyncio, "create_subprocess_exec", exec_)
+    assert permissions.current_asker() is None
     press = hands_tools.DesktopPressExecutor()
     with pc.bind(pc.TaskMemoryContext(task_id="s", run_id="fire-1", conversation_id="scheduled-1")), \
             desktop_status.working("scheduled-1", kind="scheduled"):
-        codes = [(await press.execute({"app": "Notes", "keys": "tab"})).get("code") for _ in range(6)]
-        assert codes == [None] * 5 + ["act_in_background"]
-    with pc.bind(pc.TaskMemoryContext(task_id="s", run_id="fire-2", conversation_id="scheduled-1")), \
-            desktop_status.working("scheduled-1", kind="scheduled"):
-        assert (await press.execute({"app": "Notes", "keys": "tab"}))["ok"]          # the next fire starts at 0
-        other = await press.execute({"app": "Messages", "keys": "tab"})
-        opened = await hands_tools.DesktopOpenExecutor().execute({"app": "TextEdit"})   # not running: would open
-    assert other["code"] == "act_in_background" and "one app" in other["error"]
-    assert opened["code"] == "act_in_background"
-    assert hands.ops("press") == ["press"] * 6
+        results = [await press.execute({"app": "Notes", "keys": "tab"}) for _ in range(7)]
+        results.append(await press.execute({"app": "Messages", "keys": "tab"}))
+        results.append(await hands_tools.DesktopOpenExecutor().execute({"app": "TextEdit"}))   # not running
+        batch = await hands_tools.DesktopBatchExecutor().execute(
+            {"app": "Notes", "steps": [{"action": "press", "keys": "tab"}] * 7})
+    for result in results:
+        assert result["code"] == "no_one_to_ask" and result["executed"] is False, result
+        assert "Tell the user" in result["error"] and "start_background_work" not in result["error"], result
+    assert batch["ok"] is False and "(no_one_to_ask)" in batch["text"], batch
+    assert hands.ops("press") == []
 
 
-async def test_a_batch_in_a_scheduled_run_counts_each_step(hands, asks):
-    steps = [{"action": "press", "keys": "tab"}] * 7
-    with pc.bind(pc.TaskMemoryContext(task_id="s", run_id="fire-1", conversation_id="scheduled-1")), \
-            desktop_status.working("scheduled-1", kind="scheduled"):
-        result = await hands_tools.DesktopBatchExecutor().execute({"app": "Notes", "steps": steps})
-    assert hands.ops("press") == ["press"] * hands_tools.SCHEDULED_ACTIONS
-    assert f"stopped at step {hands_tools.SCHEDULED_ACTIONS + 1} (act_in_background)" in result["text"]
-
-
-async def test_only_a_scheduled_run_is_told_of_the_cap(execution_db, hands, monkeypatch):
+async def test_only_a_scheduled_run_is_told_it_cannot_act(execution_db, hands, monkeypatch):
     import sys
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(task_service, "current", lambda: object())
@@ -345,7 +340,7 @@ async def test_only_a_scheduled_run_is_told_of_the_cap(execution_db, hands, monk
     with desktop_status.working("c1"):
         assert "five" not in await described()
     with desktop_status.working("scheduled-1", kind="scheduled"):
-        # S1 (R7, U14 a): a scheduled run cannot act at all; the five-action cap stays behind it (⓪Plan, Q3)
+        # S1 (R7, U14 a): a scheduled run cannot act at all
         assert "A scheduled run cannot act on this Mac" in await described()
 
 
@@ -379,12 +374,3 @@ async def test_a_chat_turns_refusals_still_name_background_work(hands, asks):
     with desktop_status.working("c1"):
         results = await _refusals()
     assert all("start_background_work" in r["error"] for r in results.values()), results
-
-
-async def test_the_scheduled_cap_says_tell_the_user(hands, asks):
-    press = hands_tools.DesktopPressExecutor()
-    with pc.bind(pc.TaskMemoryContext(task_id="s", run_id="fire-9", conversation_id="scheduled-1")), _scheduled():
-        results = [await press.execute({"app": "Notes", "keys": "tab"}) for _ in range(hands_tools.SCHEDULED_ACTIONS + 1)]
-    last = results[-1]
-    assert last["code"] == "act_in_background" and "Tell the user" in last["error"]
-    assert "start_background_work" not in last["error"]

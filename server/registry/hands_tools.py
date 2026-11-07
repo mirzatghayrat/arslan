@@ -1057,51 +1057,11 @@ class DesktopTakeoverExecutor:
                 "summary": f"takeover · {minutes} min"}
 
 
-# Hands v2 §5.7, kept for scheduled runs only (⓪Plan on #290, 2026-10-21): U8 lifts the cap for chat
-# replies; a scheduled run acts with nobody at the Mac, and what scheduled runs may do is with the
-# audit. At most this many actions, all in one app, per run (a batch counts its steps).
-# Defence in depth since S1a (U14 a, #317): permissions.decide refuses every action when no asker is bound, as
-# in a scheduled run, so this cap cannot be reached while that holds. DELETE-BY: v0.1.64 if M2 shows the policy
-# refusal holding (no scheduled run acted on the Mac).
-SCHEDULED_ACTIONS = 5
-_scheduled: dict[int, tuple[int, str]] = {}      # desktop_status work id → (actions, app)
-
-
 def _scheduled_run() -> int | None:
     """The desktop_status work id of the scheduled run this call is in, or None."""
     from server.services import desktop_status
     activity = desktop_status._current.get()
     return activity["id"] if activity is not None and activity.get("kind") == "scheduled" else None
-
-
-def _scheduled_refusal(why: str) -> dict:
-    return _not_run({"ok": False, "external": False, "code": "act_in_background",
-                     "error": f"{why} {_SCHEDULED_INSTEAD}"})
-
-
-def _scheduled_full(run: int | None) -> dict | None:
-    if run is None:
-        return None
-    from server.services import desktop_status
-    with desktop_status._lock:
-        live = set(desktop_status._working)
-    for gone in [r for r in _scheduled if r not in live]:
-        del _scheduled[gone]
-    if _scheduled.get(run, (0, ""))[0] >= SCHEDULED_ACTIONS:
-        return _scheduled_refusal(f"This scheduled run has already acted {SCHEDULED_ACTIONS} times, the most a "
-                                  "scheduled run may.")
-    return None
-
-
-def _scheduled_count(run: int | None, bundle: str) -> dict | None:
-    """Count one action of a scheduled run in `bundle`; a refusal when it would be a second app."""
-    if run is None:
-        return None
-    count, first = _scheduled.get(run, (0, bundle))
-    if first != bundle:
-        return _scheduled_refusal("This scheduled run already acted in another app; a scheduled run acts in one app.")
-    _scheduled[run] = (count + 1, first)
-    return None
 
 
 def _in_a_conversation() -> bool:
@@ -1157,9 +1117,6 @@ class _DesktopAct:
         stop = _stopped(job_id)                     # before any request
         if stop is not None:
             return stop
-        run = _scheduled_run() if job_id is None else None
-        if (full := _scheduled_full(run)) is not None:
-            return full
         started = time.monotonic()
         target: dict = {}
         if self.op in ("press", "menu"):
@@ -1181,12 +1138,10 @@ class _DesktopAct:
                 return _failed(hands_contract.Result(ok=False, code=f"app_{tier}", refused=True))
             if target.get("password") and self.op in ("type", "set_value"):
                 return _failed(hands_contract.Result(ok=False, code="password_field", refused=True))
-        bundle = _target(app)               # a scheduled run's one app, and the risky card's target
+        bundle = _target(app)               # the risky card's target
         label = hands_contract.shown_name(target.get("name") or args.get("element") or "", 120)
         if self.op == "menu":
             label = " › ".join(_menu_path(args))
-        if (other := _scheduled_count(run, bundle)) is not None:
-            return other
         verb = _VERBS.get(self.op, self.op)
         first = f"{verb} “{label or args.get('keys', '')}”"
         decision = await _decide_app(
@@ -1490,9 +1445,6 @@ class DesktopOpenExecutor:
         stop = _stopped(job_id)
         if stop is not None:
             return stop
-        run = _scheduled_run() if job_id is None else None
-        if (full := _scheduled_full(run)) is not None:
-            return full
         if hands_service.never_touched(name):
             return _failed(hands_contract.Result(ok=False, code="app_denied", refused=True), app=name)
         running, _ = await _resolve_app(name, job_id)
@@ -1523,8 +1475,6 @@ class DesktopOpenExecutor:
             return _no(decision, f"opening {name}")
         if (stop := _stopped(job_id)) is not None:   # Stop while the card waited
             return stop
-        if (other := _scheduled_count(run, str(identity.get("bundle_id") or name))) is not None:
-            return other
         argv = ["/usr/bin/open", "-g", "-a", name] + ([str(path)] if path is not None else [])
         process = await asyncio.create_subprocess_exec(
             *argv, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)

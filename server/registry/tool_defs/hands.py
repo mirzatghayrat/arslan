@@ -7,7 +7,7 @@ from server.registry.tool import Offer, Tool, Traits
 # (0.1.61); looking and acting: any turn (H3). A scheduled run cannot act (S1: decide has nobody to ask).
 # Hands v2 §5.7, as changed by H3 (U8): acting is offered in chat replies under the run's own
 # limits (K4), the same as in background work. A scheduled run cannot act: decide refuses with nobody
-# to ask (S1, U14 a), and it is told so below; Hands' five-action cap stays behind that (⓪Plan, Q3).
+# to ask (S1, U14 a), and it is told so below.
 
 
 def _available(offer: Offer) -> bool:
@@ -32,7 +32,7 @@ def _press_words(offer: Offer) -> str:
              "cmd+s. Delete/send shortcuts ask every time. Not available in terminals, editors or browsers.")
     if not offer.in_job and offer.scheduled:
         # S1 (U14 a, R7): with nobody to approve, decide refuses every action here, and there is no background
-        # work to hand it to. Hands' five-action cap stays behind it (⓪Plan, Q3).
+        # work to hand it to.
         return words + (" A scheduled run cannot act on this Mac: nobody is there to approve it. "
                         "Tell the user what you would have done.")
     return words
