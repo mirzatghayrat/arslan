@@ -594,8 +594,10 @@ def _replace_simple_shell_expansions(word: str) -> str:
 
 
 def _strip_shell_word_syntax(word: str) -> str:
+    # `\` + newline is a line continuation: the shell removes both (`pyth\<newline>on3` is `python3`), so a word read on
+    # raw text never comes out with a newline in it (one would cut an interpreter's name in two).
     return "".join(
-        word[i + 1] if kind == "esc" else word[i]
+        ("" if word[i + 1] == "\n" else word[i + 1]) if kind == "esc" else word[i]
         for kind, i, _, _ in _scan_shell(word) if kind != "quote"
     )
 

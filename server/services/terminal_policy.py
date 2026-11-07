@@ -382,9 +382,11 @@ def _hidden_code(texts: tuple[str, ...]) -> str:
 
 def _one_command_a_line(texts: tuple[str, ...]) -> list[str]:
     """The variants with a newline at every command start (the most lines), so a script's "line" stops where its
-    command does: each of them, since one spells the command words as the shell runs them (a quoted interpreter)."""
-    most = max(t.count("\n") for t in texts)
-    return [t for t in texts if t.count("\n") == most]
+    command does: each of them, since one spells the command words as the shell runs them (a quoted interpreter).
+    A `\\` line continuation is a newline that starts no line, so the variants with the most lines once those are
+    joined are read too: as written, `pyth\\<newline>on3 -c …` has one line more than the forms that read `python3`."""
+    lines, joined = [t.count("\n") for t in texts], [t.count("\n") - t.count("\\\n") for t in texts]
+    return [t for t, n, j in zip(texts, lines, joined) if n == max(lines) or j == max(joined)]
 
 
 # rm and its kin at a command start, and their operands; a target outside the working folder (the
