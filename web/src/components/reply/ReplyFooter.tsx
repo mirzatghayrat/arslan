@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, MoreHorizontal } from "lucide-react";
 import { api } from "../../api/client";
@@ -74,7 +74,7 @@ function ModelUsage({ summary }: { summary: ProcessSummary }) {
  * opening the steps below), which model, copy, and ⋯ — in the place the "…" was, nothing
  * above the answer. The latest reply shows it all; earlier ones show copy and ⋯ on hover.
  */
-export default function ReplyFooter({ text, process, latest, onReplay }: {
+export default memo(function ReplyFooter({ text, process, latest, onReplay }: {
   text: string; process: ReplyProcess; latest: boolean; onReplay?: (runId: number) => void;
 }) {
   const { t } = useTranslation();
@@ -144,4 +144,4 @@ export default function ReplyFooter({ text, process, latest, onReplay }: {
       {undo && runId && <UndoTurnSheet runId={runId} info={undo} onClose={() => setUndo(null)} />}
     </div>
   );
-}
+});

@@ -1,0 +1,82 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "ask_user_choice"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "This is a long answer that goes out while it is written. This is a long answer that goes out whi"
+ ],
+ [
+  "chunk",
+  "le it is written. This is a long answer "
+ ],
+ [
+  "chunk",
+  "that goes out while it is written. This "
+ ],
+ [
+  "chunk",
+  "is a long answer that goes out while it "
+ ],
+ [
+  "chunk",
+  "is written. This is a long answer that g"
+ ],
+ [
+  "chunk",
+  "oes out while it is written. This is a l"
+ ],
+ [
+  "chunk",
+  "ong answer that goes out while it is wri"
+ ],
+ [
+  "chunk",
+  "tten. This is a long answer that goes ou"
+ ],
+ [
+  "chunk",
+  "t while it is wr"
+ ],
+ [
+  "chunk",
+  "itten. This is a long answer that goes out while it is written. "
+ ],
+ [
+  "returned",
+  {
+   "clarify": {
+    "options": [
+     {
+      "hint": "",
+      "label": "A"
+     },
+     {
+      "hint": "",
+      "label": "B"
+     }
+    ],
+    "question": "Which?"
+   },
+   "escalation": null,
+   "external_seen": false,
+   "final": "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. ",
+   "tool_trace": []
+  }
+ ]
+]

@@ -1,0 +1,39 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file",
+    "escalate"
+   ]
+  }
+ ],
+ [
+  "returned",
+  {
+   "escalation": {
+    "context": "PDF",
+    "kind": "capability",
+    "need": "a scanner"
+   },
+   "external_seen": false,
+   "final": null,
+   "tool_trace": []
+  }
+ ]
+]

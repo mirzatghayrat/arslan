@@ -18,7 +18,7 @@ import LearnedLine from "./LearnedLine";
 import { formatUiTime } from '../lib/localeFormatting';
 import { getIcon } from './iconMap';
 import { Message, MessageAttachment, Spawn } from '../types';
-import type { ProviderConfig, ProviderOption } from '../api/client.types';
+import type { ProviderConfig, ProviderOption, ToolStep } from '../api/client.types';
 import ConversationModelChip from './models/ConversationModelChip';
 import { MODEL_CHANGED_EVENT, beginModelSave, isModelSaving, useModelSaving } from './models/useConversationModel';
 import { conversationModelApi } from '../api/conversationModel';
@@ -78,6 +78,12 @@ function EarlierDrafts({ drafts }: { drafts?: Message['drafts'] }) {
       ))}
     </div>
   );
+}
+
+/** FMT1 (0.1.64): every frame moves lastStepAt. Read in the chat, that rendered the whole history once per token. */
+function TurnActivity({ steps, startedAt }: { steps: ToolStep[]; startedAt: number | null }) {
+  const quietSince = useArslanStore((s) => s.lastStepAt);
+  return <LiveActivity steps={steps} startedAt={startedAt} quietSince={quietSince} />;
 }
 
 // Composer drafts by conversation — module scope so they outlive the component.
@@ -212,12 +218,11 @@ export default function OrchestratorChat({
   // Client-side user display name for the greeting + own-message sender label.
   const displayName = useProfileStore((s) => s.displayName);
   const thinking = useArslanStore((s) => (s as any).thinking as boolean);
-  const liveSteps = useArslanStore((s) => (s as any).activitySteps as import('../api/client.types').ToolStep[]);
+  const liveSteps = useArslanStore((s) => (s as any).activitySteps as ToolStep[]);
   // 0.1.58 §1: the latest finished Arslan reply keeps its footer row visible; older ones on hover.
   const lastReplyId = [...chatHistory].reverse().find((m) => m.sender === 'arslan' && m.id !== '__streaming__')?.id;
   const liveStreaming = useArslanStore((s) => (s as any).streaming as boolean);
   const workStartedAt = useArslanStore((s) => (s as any).workStartedAt as number | null);
-  const lastStepAt = useArslanStore((s) => s.lastStepAt);
   const queued = useArslanStore((s) => s.queued);
   const inserted = useArslanStore((s) => s.inserted);
   // HX-4/A1: stall watchdog — while a turn is active (runtime-frame flags only,
@@ -371,7 +376,8 @@ export default function OrchestratorChat({
     } else if (stickToBottomRef.current) {
       scrollToBottom();
     }
-  }, [chatHistory]);
+    // llmError: its notice sits in this scroller and changes no message, and SMART-3's way out of a failed model is in it.
+  }, [chatHistory, llmError]);
 
 
   // 0.1.60: first things to try, from what the first run turned on — until the first message.
@@ -948,7 +954,7 @@ export default function OrchestratorChat({
                   ⏸ {t('working.stalled')}
                 </span>
               ) : (
-                <LiveActivity steps={liveSteps} startedAt={workStartedAt} quietSince={lastStepAt} />
+                <TurnActivity steps={liveSteps} startedAt={workStartedAt} />
               )}
             </div>
           </div>

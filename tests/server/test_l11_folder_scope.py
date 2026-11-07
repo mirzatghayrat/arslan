@@ -2,9 +2,10 @@
 recurs in a folder, Arslan keeps the practice in its own memory, scoped to that folder, and applies it only there.
 
 ⓪Plan's rule (Q2): a practice is scoped only when every one of its corrections came from that one chosen folder. A
-correction with no chosen folder, or in another folder, keeps it (or makes it again) a practice for everywhere:
-narrowing never happens silently to one that already works everywhere. Lessons from before this keep no record of
-where they were corrected, so they stay global (no backfill). Detours never scope. Fixture text is synthetic.
+correction with no chosen folder, or in another folder, keeps it (or makes it again) a practice for everywhere.
+The correction that narrows one says nothing when it happens (it merges: no frame, no line); `present()` gives the web
+the scope (test_l11_scope_in_memory.py), and Memory's row that shows it is L11-3b. Lessons from before this keep no
+record of where they were corrected, so they stay global (no backfill). Detours never scope. Fixture text is synthetic.
 
 Project rows and both folder lookups are real here, and the judge reports conflicts: #718's review found three bugs
 that a mocked lookup and a judge that never conflicts had hidden."""

@@ -1,0 +1,147 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "validated",
+  "First."
+ ],
+ [
+  "checkpoint",
+  "validation_repair"
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "First.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "Deterministic validation failed: bad one. Repair only within the existing task scope, permissions and remaining budget. Do not repeat successful or uncertain external writes. If repair is unavailable, state the failed checks and remaining work; do not claim acceptance.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "validated",
+  "Second."
+ ],
+ [
+  "checkpoint",
+  "validation_repair"
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "First.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "Deterministic validation failed: bad one. Repair only within the existing task scope, permissions and remaining budget. Do not repeat successful or uncertain external writes. If repair is unavailable, state the failed checks and remaining work; do not claim acceptance.",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "Second.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "Deterministic validation failed: bad two. Repair only within the existing task scope, permissions and remaining budget. Do not repeat successful or uncertain external writes. If repair is unavailable, state the failed checks and remaining work; do not claim acceptance.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "validated",
+  "Third."
+ ],
+ [
+  "chunk",
+  "Third.\n[checks failed: ['bad three']]"
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Third.\n[checks failed: ['bad three']]",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ],
+ [
+  "job",
+  {
+   "limit_reason": null,
+   "pause_reason": "task_validation_failed",
+   "repairs": 2
+  }
+ ]
+]
