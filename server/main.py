@@ -129,6 +129,10 @@ def _install_redacting_record_factory() -> None:
 
 _install_redacting_record_factory()
 
+# A connection's address can hold a key (SEC1, CAP8-1), in words the redaction above doesn't know (`api_key=`, a path).
+# httpx writes each request's whole URL at INFO, and the MCP SDK writes it at DEBUG on each connect.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("mcp.client.streamable_http").setLevel(logging.INFO)
 
 
 # Undecryptable-key canary message (module-level so tests can pin the guidance).

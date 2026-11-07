@@ -74,6 +74,32 @@ async def capability_allowlist_reset() -> dict:
     return {"list": await capability_allowlist.reset()}
 
 
+# ── CAP8-1: bringing in what the user configured in Claude Code and Codex (their click; the model has no way to it) ──
+
+@router.get("/capability-import")
+async def capability_import_scan() -> dict:
+    """The sheet: each server in those two files, with its kind and host and how many keys, never a key."""
+    from server.services import connection_import
+    return await connection_import.scan()
+
+
+class ImportTick(BaseModel):
+    id: str
+    digest: str
+    keys: dict[str, str] = {}
+
+
+class ImportIn(BaseModel):
+    servers: list[ImportTick]
+
+
+@router.post("/capability-import")
+async def capability_import_add(body: ImportIn) -> dict:
+    """Add the ticked ones, each with its own result: one that fails doesn't stop the others."""
+    from server.services import connection_import
+    return {"results": await connection_import.add([tick.model_dump() for tick in body.servers])}
+
+
 @router.get("/capability-sources")
 async def capability_sources() -> list[dict]:
     from server.services import capability_dossier

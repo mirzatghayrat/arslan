@@ -313,6 +313,15 @@
 - **MCP 配置**每个服务器一张卡，卡面同 CAP4。本地的进 `capability_sandbox`，没钉版本的钉上或拒。
 - **钥匙：** 配置里的环境变量可能是真钥匙。由服务端直接读、加密存（同 `capability_install.py:304-305`），不进模型上下文、不进账本、不显示在卡上（卡上只写「带了 N 个钥匙」）。
 - 这一切只在用户点「导入」时做。模型不能触发，也不能读这些文件。
+- **Changed on 2026-11-07 (⓪Plan; these replace the lines above where they differ):**
+  - **Split.** CAP8-1 is MCP config only. CAP8-2 (skills and plugins from other tools) waits for CAP6a.
+  - **One sheet with ticks,** not one card per server: a scan to list and an add for the ticked ones (`server/services/connection_import.py`, behind the routes in `server/api/capabilities.py`). The server half has no web code, so nothing in the app calls it and no user reaches it yet; the sheet follows its mock.
+  - **What's read.** Only the top-level `mcpServers` of `~/.claude.json` (user scope) and `[mcp_servers.*]` of `~/.codex/config.toml`. A project's `.mcp.json` and Claude Code's local scope are on the list. Formats checked at the source on 2026-11-07: https://code.claude.com/docs/en/mcp and https://learn.chatgpt.com/docs/extend/mcp?surface=cli
+  - **What can come in.** `npx` and `uvx` go the CAP4 way through `plugin_package`'s reading of the line: locked, scanned, tested, tool-pinned, sandboxed. A remote is added as written, its host on the sheet. Neither is held to the one-click list, since the click is the deliberate one, and neither passes the license gate, as a server added by hand doesn't.
+  - **Custom programs: the user's decision, still open.** The scan lists them with their command, and add refuses them (`custom_program`).
+  - **Keys.** Read on the server and stored encrypted; the sheet says how many. One in an address or an argument moves to the server's encrypted `secrets` (SEC1). Names with no value (`env_vars`, `${VAR}`, `bearer_token_env_var`, `env_http_headers`) are keys add must be given.
+  - **Delete.** What's imported is Arslan's own copy, so it can be removed like anything Arslan installed: nothing touches the other tool's file. The switch-only rule still applies to what CAP6a reads in place.
+  - **Skipped or unticked.** One already here is skipped. One `enabled = false` in Codex, one whose `enabled_tools` or `disabled_tools` wouldn't come along, and the second tool's copy of a server are listed and start unticked; a tick takes the first two.
 
 ### CAP8b Import memories from ChatGPT / Claude (user, 2026-10-28)
 
