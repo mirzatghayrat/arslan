@@ -311,6 +311,7 @@ describe('texDelimiters', () => {
     ['**\\(x\\)** and [\\(y\\)](u)', '**$$x$$** and [$$y$$](u)'],
     ['\\(f[0,1](x)\\)', '$$f[0,1](x)$$'],                                                // TeX that looks like a link
     ['\\(a `b` c\\)', '$$a `b` c$$'],
+    ['a $$x > 0$$ and \\(y\\)', 'a $$x > 0$$ and $$y$$'],
     ['[https://e.org \\(x\\)', '[https://e.org $$x$$'],                                 // a link a transform made, with no position
     [`\\(${'x'.repeat(4096)}\\)`, `$$${'x'.repeat(4096)}$$`],
     [`\\(${'x'.repeat(4097)}\\)`, `\\(${'x'.repeat(4097)}\\)`],
@@ -411,6 +412,10 @@ describe('texDelimiters', () => {
     ['- $$x$$', '- $$\n  x\n  $$'],
     ['$$\\href{https://e.org}{x}$$', '$$\n\\href{https://e.org}{x}\n$$'],                  // a URL doesn't take the closing $$
     ['$$a + b\n+ c$$', '$$\na + b\n+ c\n$$'],
+    ['$$x > 0$$', '$$\nx > 0\n$$'],                                                    // not read as a tag <x >
+    ['$$p > 0.05$$', '$$\np > 0.05\n$$'],
+    ['$$k>=1$$', '$$\nk>=1\n$$'],
+    ['$$x->y$$', '$$\nx->y\n$$'],
     [`$$${'x'.repeat(4096)}$$`, `$$\n${'x'.repeat(4096)}\n$$`],
     ['$$ a\nb $$', '$$\na\nb\n$$'],
     ['$$ a\nb\n$$', '$$\na\nb\n$$'],
@@ -484,7 +489,7 @@ describe('texDelimiters', () => {
   it('reads a line that starts with $$ as a block of its own, as the fence it would be, so it builds no long paragraph', () => {
     const spy = vi.fn(parse);
     texDelimiters('$$ a\n$$b\n$$\nc\n$$ d $ e\n$$f$$', spy);
-    expect(spy.mock.calls[0][0]).toBe('#  a\n# b\n# \nc\n<< d $ e\n<<f<<');
+    expect(spy.mock.calls[0][0]).toBe('#  a\n# b\n# \nc\n<  d $ e\n< f< ');
   });
 
   it('stays quick through the whole pipeline on 256 kB of $$ lines, where the first fence takes the rest', () => {
@@ -540,7 +545,7 @@ describe('texDelimiters', () => {
     const read = (doc: string) => {
       const out = { literal: [] as string[], math: [] as string[], metas: 0 };
       const walk = (node: Node) => {
-        if (['code', 'inlineCode', 'html'].includes(node.type)) out.literal.push(node.value!.replace(/##|<</g, '$$$$'));
+        if (['code', 'inlineCode', 'html'].includes(node.type)) out.literal.push(node.value!.replace(/##|< /g, '$$$$'));
         if (['link', 'image', 'definition'].includes(node.type)) out.literal.push(node.url!);
         if (node.type === 'math' || node.type === 'inlineMath') out.math.push(node.value!.replaceAll('\\', ''));
         if (node.type === 'math' && node.meta) out.metas += 1;
@@ -556,7 +561,7 @@ describe('texDelimiters', () => {
       if (out === doc) continue;
       changed += 1;
       // The reading to keep is Markdown's own, with no formulas: a fence that ran on after a $$ line hid what it swallowed.
-      const before = read(doc.replace(/(^|\n)((?:[ >]|\d\. |- )*)\$\$(?= *(?:\n|$))/g, '$1$2##').replaceAll('$$', '<<')).literal;
+      const before = read(doc.replace(/(^|\n)((?:[ >]|\d\. |- )*)\$\$(?= *(?:\n|$))/g, '$1$2##').replaceAll('$$', '< ')).literal;
       const after = read(out);
       expect(after.metas, JSON.stringify(doc)).toBe(0);
       expect(after.literal.filter((value) => !before.includes(value)), JSON.stringify(doc)).toEqual([]);
@@ -632,6 +637,27 @@ describe('what the rewrite does to a reply', () => {
     const c = show('$$ \\frac{1}{2} +');
     expect(c.textContent).toBe('$$ \\frac{1}{2} +');
   });
+
+  it.each([false, true])('a formula with a > in it is typeset, not shown as source (streaming: %s)', async (streaming) => {
+    await katexLoaded();
+    const c = render(<MessageBody text={'$$x > 0$$\n\nand $$p > 0.05$$ here\n'} streaming={streaming} />).container;
+    expect(c.querySelectorAll('.katex-display')).toHaveLength(1);
+    expect(Array.from(c.querySelectorAll('annotation')).map((a) => a.textContent)).toEqual(['x > 0', 'p > 0.05']);
+  });
+
+  it('a code fence keeps its own meta to itself', () => {
+    const c = show('```js title="a"\nx\n```\n');
+    expect(c.querySelector('pre')!.textContent).toBe('x\n');
+  });
+
+  it('past the bound, a $$ line left as a fence still shows its text, at the top of the formula', async () => {
+    await katexLoaded();
+    const c = show(`$$ first words\nb\n$$\n\n${'c\n'.repeat(40_000)}`);
+    expect(c.querySelector('annotation')!.textContent).toBe('first words\nb');
+    cleanup();
+    const unclosed = show(`$$ first words\n${'c\n'.repeat(40_000)}`);
+    expect(unclosed.textContent).toContain('first words');
+  }, 60_000);
 
   it('$$x$$ alone on a line is display, as \\[x\\] is, and in a sentence it stays inline', async () => {
     await katexLoaded();

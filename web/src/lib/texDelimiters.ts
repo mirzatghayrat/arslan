@@ -21,6 +21,8 @@ import type { Processor } from 'unified';
 type Node = {
   type: string;
   referenceType?: string;
+  meta?: string | null;
+  data?: unknown;
   children?: Node[];
   position?: { start: { offset?: number }; end: { offset?: number } };
 };
@@ -126,8 +128,8 @@ export function texDelimiters(text: string, parse: (doc: string) => Node): strin
     }
   };
   // A line remark-math would read as a fence reads here as a block of one line, a heading, so it builds no long paragraph. Any other
-  // $$ is <, which ends a bare URL, so that a URL doesn't take a closing $$.
-  walk(parse(text.replace(FENCE_LINE, '$1# ').replaceAll('$$', '<<')));
+  // $$ is `< `: it ends a bare URL, so that a URL doesn't take a closing $$, and it can't open a tag, as <x > would in $$x > 0$$.
+  walk(parse(text.replace(FENCE_LINE, '$1# ').replaceAll('$$', '< ')));
   mask += text.slice(mask.length);
   return rewrite(text, mask, (offset) => blockStarts.has(offset), '\\$\\$');
 }
@@ -136,4 +138,14 @@ export function texDelimiters(text: string, parse: (doc: string) => Node): strin
 export function remarkTexDelimiters(this: Processor) {
   const parse = this.parser!;
   this.parser = (doc, file) => parse(texDelimiters(doc, (d) => parse(d, file)), file);
+  // Past the bound a reply is left as written, so a $$ line with text is still a fence, and nothing shows a fence's meta. It goes back at
+  // the top of the formula. What reaches the page is in hChildren, not node.value.
+  const restoreMeta = (node: Node) => {
+    if (node.type === 'math' && node.meta) {
+      const shown = (node.data as { hChildren: { children: { value: string }[] }[] }).hChildren[0].children[0];
+      shown.value = `${node.meta}\n${shown.value}`;
+    }
+    node.children?.forEach(restoreMeta);
+  };
+  return restoreMeta;
 }
