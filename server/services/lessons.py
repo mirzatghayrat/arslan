@@ -82,7 +82,7 @@ _NOT_A_TRY = {"invalid_arguments", "declined", "user_declined", "denied", "not_e
 # proposed — the opposite of what hands_contract tells the model.
 _USER_MUST_ALLOW = {"PERM_DENIED"}
 # Work tools only; bookkeeping and memory tools are never a "route".
-_NOT_A_ROUTE = {"update_plan", "memory_note", "remember", "recall", "conversation_search", "task_progress",
+_NOT_A_ROUTE = {"update_plan", "memory_note", "remember", "import_memories", "recall", "conversation_search", "task_progress",
                 "render_chart", "clarify", "escalate", "read_skill"}
 _QUIRK = re.compile(
     r"operation not permitted|not permitted|not authori[sz]ed|permission denied|command not found|"

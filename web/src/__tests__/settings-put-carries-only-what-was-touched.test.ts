@@ -110,6 +110,7 @@ describe("every settings field the UI can edit is mappable", () => {
       shell_confirm_policy: { shellConfirmPolicy: "ask_all" },
       background_job_budget: { backgroundJobBudget: "lean" },
       task_usd_cap: { taskUsdCap: 5 },
+      task_usd_cap_enabled: { taskUsdCapEnabled: false },
       embedding_config_id: { embeddingConfigId: "1" },
       router_config_id: { routerConfigId: "1" },
       vision_config_id: { visionConfigId: "1" },

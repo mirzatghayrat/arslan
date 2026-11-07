@@ -903,8 +903,8 @@ async def test_a_card_that_never_opened_because_the_person_is_away_is_an_expiry_
     """F3 (final review I3, §A4): once a card of a job or a turn went unanswered, its later cards do
     not open. The model is told each one expired ("NOT a refusal"), and the ledger records it as
     one: an expiry decided by the person being away, with what "Always" would have stored, so the
-    Inbox lists it as it lists what a scheduled run could not ask. It is never a denial, and a
-    card that was shown and ran out is not listed."""
+    Inbox lists it as it lists what a scheduled run could not ask. It is never a denial. A card that was
+    shown and ran out is listed too (INB8), with no "Always"."""
     with permissions.asking_with(Asker(AWAY, EXPIRED)):
         away = await permissions.decide(_git_push(), CTX)
         assert (approvals.LAST_OUTCOME.get(), permissions.LAST_DECISION.get()) == ("expired", away)
@@ -920,7 +920,7 @@ async def test_a_card_that_never_opened_because_the_person_is_away_is_an_expiry_
                                                            "publishes to a remote")]
     assert (shown.decided_by, shown.decision) == ("expired", "expired")
     assert permissions.always_from(shown.extra) == []
-    assert [row.id for row, _, _ in listed] == [never_shown.id]
+    assert [row.id for row, _, _ in listed] == [shown.id, never_shown.id]
 
 
 async def test_an_answer_someone_gave_is_theirs_even_with_a_stray_away_marker():

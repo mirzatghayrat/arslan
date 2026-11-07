@@ -118,6 +118,9 @@ pub struct Status {
     pub keep_awake: bool,
     #[serde(default)]
     pub notifications: bool,
+    /// Inside the user's quiet hours. Missing means not quiet.
+    #[serde(default)]
+    pub quiet_hours: bool,
     /// Settings › iPhone switch: run the Arslan Bridge. Missing means OFF.
     #[serde(default)]
     pub phone_bridge: bool,
@@ -134,6 +137,14 @@ pub fn should_notify(enabled: bool, window_visible: bool, window_focused: bool) 
     enabled && !(window_visible && window_focused)
 }
 
+/// During quiet hours an approval card doesn't pop. It shows on the badge and on Progress, and if nobody
+/// answers in 30 minutes it stops waiting, and Progress lists it. Everything else still notifies, "done"
+/// included. A pairing request has no conversation and isn't a card: the user just asked for it, with the
+/// phone in their hand.
+pub fn hushed(status: &Status, event: &Event) -> bool {
+    status.quiet_hours && event.kind == "approval_needed" && event.conversation_id.is_some()
+}
+
 /// The events not seen yet. The first poll adopts the backend's history
 /// without notifying. A backend whose cursor went BACKWARDS was restarted:
 /// its ids start over, so everything it holds happened after the restart and
@@ -144,6 +155,14 @@ pub fn fresh_events(previous: Option<u64>, status: &Status) -> Vec<&Event> {
         Some(seen) if status.cursor < seen => status.events.iter().collect(),
         Some(seen) => status.events.iter().filter(|e| e.id > seen).collect(),
     }
+}
+
+/// What the shell may post from this poll.
+pub fn events_to_post(previous: Option<u64>, status: &Status) -> Vec<&Event> {
+    fresh_events(previous, status)
+        .into_iter()
+        .filter(|event| !hushed(status, event))
+        .collect()
 }
 
 pub fn status_line(locale: &str, status: &Status, holding_sleep: bool) -> String {
@@ -172,9 +191,6 @@ pub fn notification(locale: &str, event: &Event) -> Option<(String, String)> {
         ("scheduled_finished", Some("ok")) => "notify_scheduled_done",
         ("scheduled_finished", Some("error")) => "notify_scheduled_failed",
         ("scheduled_paused", _) => "notify_scheduled_paused",
-        // 0.1.47: Arslan noticed something. Fixed words only, even on the lock screen:
-        // what it noticed is in Arslan (on Progress and in its conversation), never in the banner.
-        ("proactive", _) => "notify_proactive",
         _ => return None,
     };
     let name = event.task_name.as_deref().unwrap_or("");
@@ -195,15 +211,11 @@ pub fn parse_response(raw: &str) -> Option<Status> {
 
 /// A notification's identifier carries the conversation to open on click.
 pub fn notification_id(event: &Event) -> String {
-    // A proactive notice has no conversation; clicking it sends "@progress", which the window routes to the Scheduled page
-    // (web useNotificationRoutes.PROGRESS_NOTICE_SECTION: a watch's change is listed there), not to Progress (#605 re-check, N1).
-    // "@progress" cannot collide with a real conversation id (those are `thread-<uuid>`).
-    let target = if event.kind == "proactive" {
-        "@progress"
-    } else {
+    format!(
+        "arslan|{}|{}",
+        event.id,
         event.conversation_id.as_deref().unwrap_or("")
-    };
-    format!("arslan|{}|{}", event.id, target)
+    )
 }
 
 pub fn conversation_from_id(identifier: &str) -> Option<String> {
@@ -471,7 +483,7 @@ pub fn start(app: tauri::AppHandle, port: u16) {
                             .and_then(|w| w.is_focused().ok())
                             .unwrap_or(false);
                         if should_notify(true, visible, focused) {
-                            for event in fresh_events(cursor, &status) {
+                            for event in events_to_post(cursor, &status) {
                                 if let Some((title, body)) = notification(locale, event) {
                                     notify::post(&notification_id(event), &title, &body);
                                 }
@@ -921,8 +933,6 @@ mod tests {
             "notify_scheduled_failed_body",
             "notify_scheduled_paused_title",
             "notify_scheduled_paused_body",
-            "notify_proactive_title",
-            "notify_proactive_body",
         ];
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
             for key in keys {
@@ -987,29 +997,55 @@ mod tests {
     }
 
     #[test]
-    fn a_proactive_notice_says_only_fixed_words_and_opens_progress() {
-        // Even if an event ever carried a name or a conversation, none of it shows.
-        let noticed = Event {
-            task_name: Some("Quarterly taxes".into()),
-            ..event(9, "proactive", Some("ok"))
+    fn quiet_hours_hush_approval_cards_and_nothing_else() {
+        let quiet = Status {
+            quiet_hours: true,
+            ..Status::default()
         };
-        for locale in ["en", "zh", "ja", "es", "de", "fr"] {
-            let (title, body) = notification(locale, &noticed).unwrap();
-            assert!(!title.is_empty() && !body.is_empty());
-            assert!(!title.contains("Quarterly") && !body.contains("Quarterly"));
-            assert!(!body.contains("{name}"));
+        assert!(hushed(&quiet, &event(1, "approval_needed", None)));
+        assert!(!hushed(
+            &Status::default(),
+            &event(1, "approval_needed", None)
+        ));
+        for (kind, outcome) in [
+            ("turn_finished", Some("ok")),
+            ("turn_finished", Some("needs_review")),
+            ("turn_finished", Some("error")),
+            ("scheduled_finished", Some("ok")),
+            ("scheduled_finished", Some("error")),
+            ("scheduled_paused", None),
+        ] {
+            assert!(!hushed(&quiet, &event(1, kind, outcome)), "{kind}");
         }
-        assert_eq!(
-            conversation_from_id(&notification_id(&noticed)).as_deref(),
-            Some("@progress")
-        );
-        let with_conversation = Event {
-            conversation_id: Some("thread-secret".into()),
-            ..noticed
+        let pairing = Event {
+            conversation_id: None,
+            ..event(1, "approval_needed", None)
         };
-        assert_eq!(
-            conversation_from_id(&notification_id(&with_conversation)).as_deref(),
-            Some("@progress")
-        );
+        assert!(!hushed(&quiet, &pairing));
+    }
+
+    #[test]
+    fn a_poll_in_quiet_hours_posts_everything_but_the_approval_card() {
+        let status = Status {
+            cursor: 3,
+            quiet_hours: true,
+            events: vec![
+                event(1, "approval_needed", None),
+                event(2, "turn_finished", Some("ok")),
+                event(3, "scheduled_finished", Some("error")),
+            ],
+            ..Status::default()
+        };
+        let posted: Vec<u64> = events_to_post(Some(0), &status)
+            .iter()
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(posted, [2, 3]);
+    }
+
+    #[test]
+    fn an_answer_without_quiet_hours_reads_as_not_quiet() {
+        let status: Status = serde_json::from_str("{}").unwrap();
+        assert!(!status.quiet_hours);
     }
 }

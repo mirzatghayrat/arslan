@@ -23,6 +23,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"q\"}",
@@ -37,13 +41,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "q"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -105,6 +117,10 @@
     "write_file"
    ]
   }
+ ],
+ [
+  "limit",
+  75.0
  ],
  [
   "legacy request",

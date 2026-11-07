@@ -167,7 +167,7 @@ async def test_a_real_change_is_reported_with_quotes_and_the_baseline_moves_only
         await db.commit()
     [found] = await det.web_changes(ctx(fetch=fetcher([CHANGED])))
     c = found.candidate
-    assert c.kind == "web_change" and c.source_key == f"watch:{watch_id}" and c.notify is True
+    assert c.kind == "web_change" and c.source_key == f"watch:{watch_id}"
     quotes = {(e.key, e.quote) for e in c.evidence if e.quote}
     assert ("web.added", "Pro plan: $12 per month") in quotes and ("web.removed", "Pro plan: $10 per month") in quotes
     assert c.evidence[0].params["added"] == 1 and "example.com/pricing" in c.goal

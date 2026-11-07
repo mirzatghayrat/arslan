@@ -67,7 +67,7 @@ class _NativeAdapter:
 def test_filter_replay_tools_unit():
     wired = [
         {"key": "web_search"}, {"key": "render_chart"},
-        {"key": "mcp_9__do"}, {"key": "create_skill"}, {"key": "ask_user_choice"},
+        {"key": "mcp_9__do"}, {"key": "create_skill"}, {"key": "import_memories"}, {"key": "ask_user_choice"},
     ]
     kept = {t["key"] for t in filter_replay_tools(wired)}
     assert kept == {"web_search", "render_chart"}

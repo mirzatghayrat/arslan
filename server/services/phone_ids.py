@@ -22,3 +22,10 @@ def made_on_the_phone(conversation_id: str | None) -> bool:
 def kind_of(conversation_id: str, stored: str | None) -> str | None:
     """What a conversation is: its stored kind (migration 0071), or `quick` for one the phone made with none."""
     return "quick" if stored is None and made_on_the_phone(conversation_id) else stored
+
+
+def in_list(conversation_id: str, stored: str | None, *, quick: bool = False) -> bool:
+    """Whether a conversation belongs in a list of conversations: the ordinary ones, or with `quick` the quick
+    questions. A sub-session (SUB2) is in neither; it is reached through the conversation that started it."""
+    kind = kind_of(conversation_id, stored)
+    return kind != "sub" and (kind == "quick") is quick

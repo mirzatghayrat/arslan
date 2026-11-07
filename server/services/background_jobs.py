@@ -453,6 +453,8 @@ async def report_interrupted() -> int:
         note = runtime_messages.render("job_interrupted", locale, goal=goal)
         await memory.add_message(conversation_id, "arslan", untrusted.job_result(note), display_content=note,
                                  job_outcome="interrupted")
+        desktop_status.push("turn_finished", conversation_id=conversation_id, outcome="needs_review", title=goal,
+                            summary=note, work="job")
     return len(targets)
 
 

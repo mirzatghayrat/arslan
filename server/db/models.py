@@ -1074,7 +1074,7 @@ class ProactiveItem(Base):
     seen_at = Column(DateTime, nullable=True)
     acted_at = Column(DateTime, nullable=True)
     snooze_until = Column(DateTime, nullable=True)
-    notified_at = Column(DateTime, nullable=True)
+    notified_at = Column(DateTime, nullable=True)  # Unused since INB8. DELETE-BY: the next migration that touches this table.
 
 
 class ProactiveWatch(Base):
@@ -1089,7 +1089,7 @@ class ProactiveWatch(Base):
     label = Column(String(120), nullable=False)
     enabled = Column(Boolean, nullable=False, default=True)
     interval_s = Column(Integer, nullable=False, default=21600)
-    notify = Column(Boolean, nullable=False, default=True)
+    notify = Column(Boolean, nullable=False, default=True)  # Unused since INB8. DELETE-BY: the next migration that touches this table.
     last_checked_at = Column(DateTime, nullable=True)
     last_changed_at = Column(DateTime, nullable=True)
     last_item_at = Column(DateTime, nullable=True)                   # cooldown: one item per day per watch

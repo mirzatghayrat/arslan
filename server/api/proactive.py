@@ -48,13 +48,11 @@ class WatchIn(Strict):
     target: str = Field(max_length=4000)
     label: str | None = Field(default=None, max_length=120)
     interval_s: int = 21600
-    notify: bool = True
 
 
 class WatchPatch(Strict):
     interval_s: int | None = None
     enabled: bool | None = None
-    notify: bool | None = None
     label: str | None = Field(default=None, max_length=120)
 
 
@@ -123,8 +121,7 @@ async def list_watches():
 @router.post("/proactive/watches", status_code=201)
 async def add_watch(body: WatchIn):
     try:
-        return await service.add_watch(body.kind, body.target, label=body.label, interval_s=body.interval_s,
-                                       notify=body.notify)
+        return await service.add_watch(body.kind, body.target, label=body.label, interval_s=body.interval_s)
     except ProactiveError as error:
         raise fail(error) from error
 

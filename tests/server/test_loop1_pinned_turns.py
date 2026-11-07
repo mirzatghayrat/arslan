@@ -27,18 +27,31 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from arslan import execution_budget as eb
+from arslan import execution_checkpoint
 from arslan.execution_budget import Budget, Limits
 from server.db import session as db_session
 from server.db.models import Setting
-from server.orchestrator import memory, on_demand, tool_loop
+from server.orchestrator import (
+    agent_status,
+    answer_salvage,
+    memory,
+    model_call,
+    on_demand,
+    tool_caller,
+    tool_loop,
+    turn_model,
+)
 from server.orchestrator.untrusted import GUARD_NOTE
 from server.registry import executors
 from server.services import (
+    background_jobs,
     capability_flow,
     command_sandbox,
     desktop_status,
     lessons,
     ocr_fallback,
+    permissions,
+    recap_service,
     runtime_messages,
     skill_forge,
     steering,
@@ -74,8 +87,8 @@ def _refusal(status, text):
 class _Model:
     """The model of one scenario. The loop reads `_provider` for what it may do, so each scenario says."""
 
-    def __init__(self, log, replies, provider=None):
-        self.log, self.replies, self._provider = log, list(replies), provider
+    def __init__(self, log, replies, provider, expected):
+        self.log, self.replies, self._provider, self.expected = log, list(replies), provider, expected
 
     def native_trajectory(self):
         return True
@@ -90,19 +103,25 @@ class _Model:
         return types.SimpleNamespace(content=reply.content, tool_calls=reply.calls, finish_reason=reply.finish,
                                      continuation=reply.continuation, provider_content=reply.provider_content)
 
-    @staticmethod
-    def _names(tools):
-        return None if tools is None else [t["function"]["name"] for t in tools]
+    async def _names(self, tools):
+        """The names are pinned. The schemas are compared with what the table gives now, in order, so another lane's
+        edit to a description or a parameter changes no pin, and a request that sends anything else fails."""
+        if tools is None:
+            return None
+        names = [t["function"]["name"] for t in tools]
+        assert tools == [s for s in await self.expected() if s["function"]["name"] in names], (
+            f"a request sent schemas its table doesn't give: {names}")
+        return names
 
     async def chat_trajectory(self, system, messages, tools=None, tool_choice=None, **kwargs):
         self.log.append(["request", {"system": system.replace(GUARD_NOTE, "<GUARD_NOTE>"),
                                      "messages": copy.deepcopy(messages), "tool_choice": tool_choice,
-                                     "tools": self._names(tools), "max_tokens": kwargs.get("max_tokens")}])
+                                     "tools": await self._names(tools), "max_tokens": kwargs.get("max_tokens")}])
         return await self._next(kwargs.get("on_text"))
 
     async def chat(self, system, user, history=None, tools=None, **kwargs):
         self.log.append(["legacy request", {"system": system.replace(GUARD_NOTE, "<GUARD_NOTE>"), "user": user,
-                                            "history": copy.deepcopy(history), "tools": self._names(tools),
+                                            "history": copy.deepcopy(history), "tools": await self._names(tools),
                                             "max_tokens": kwargs.get("max_tokens")}])
         return await self._next()
 
@@ -113,6 +132,14 @@ class _Model:
             yield piece
 
 
+def _around_the_call():
+    """What the loop set around the executor: what the call may reach, who is calling, on which model."""
+    caller = tool_caller.current_caller()
+    return {"offline": terminal_exec.OFFLINE.get(), "outside": terminal_exec.OUTSIDE_SANDBOX.get(),
+            "unwrapped": terminal_exec.UNWRAPPED.get(), "caller": caller.actor if caller else None,
+            "model": type(turn_model.current()).__name__}
+
+
 class _Ran:
     """An executor that records its call and answers from the scenario."""
 
@@ -120,7 +147,7 @@ class _Ran:
         self.log, self.key, self.answer = log, key, answer
 
     async def execute(self, args):
-        self.log.append(["ran", self.key, copy.deepcopy(args), {"offline": terminal_exec.OFFLINE.get()}])
+        self.log.append(["ran", self.key, copy.deepcopy(args), _around_the_call()])
         return self.answer(args) if callable(self.answer) else copy.deepcopy(self.answer)
 
 
@@ -161,6 +188,7 @@ ANSWERS = {"web_search": _searched, "web_extract": _extract, "write_file": _wrot
            "read_file": {"ok": True, "path": "notes.md", "text": "a local note"},
            "list_dir": {"ok": True, "entries": ["a.md"]},
            "run_command": {"ok": True, "exit_code": 0, "stdout": "done"},
+           "schedule_task": {"ok": True},
            "attach_file": {"ok": True, "path": "a.md"},
            "read_skill": {"ok": True, "text": "the method"},
            "start_background_work": {"ok": True},
@@ -176,6 +204,12 @@ THOUGHT = {"protocol": "openai", "reasoning": "thinking it over"}
 UPDATE = {"protocol": "anthropic", "updates": True, "content": [{"type": "thinking", "thinking": "Checking the file."}]}
 
 
+def _stopped_by_the_sandbox(_args):
+    if terminal_exec.OUTSIDE_SANDBOX.get():
+        return {"ok": True, "exit_code": 0, "stdout": "done"}
+    return {"ok": False, "sandbox_denied": True, "error": "the sandbox stopped it"}
+
+
 def _call(name, args, cid="c1"):
     return Reply(None, [golden._tc(name, args, cid)])
 
@@ -186,6 +220,20 @@ def _batch(*calls):
 
 def _searches(count):
     return [_call("web_search", {"query": f"q{index}"}, f"s{index}") for index in range(count)]
+
+
+def _looks(count):
+    return [_call("desktop_look", {"app": f"app {index}"}, f"l{index}") for index in range(count)]
+
+
+def _repeated(name, args):
+    """A model that keeps sending one refused call, far past where the no-progress stop should end it."""
+    return [*[_call(name, args, f"c{index}") for index in range(8)], Reply("Stopped asking.")]
+
+
+def _repeated_bad_json():
+    return [*[Reply(None, [{"id": f"c{index}", "function": {"name": "web_search", "arguments": '{"query": '},
+                            "arguments_raw": '{"query": '}]) for index in range(8)], Reply("Stopped asking.")]
 
 
 # Each scenario: `replies`, `expect`, then what run_native gets (`tools`, `history`, its keywords), `answers`, `budget`,
@@ -410,6 +458,84 @@ SCENARIOS: dict[str, dict] = {
         expect="also this"),
     "turn_notes_and_status": dict(replies=[Reply("Hello.")], turn_notes=["This turn came from the iPhone."],
                                   expect="This turn came from the iPhone."),
+    # ── the batch's own gates ──
+    "budget_spent_then_choice_card": dict(replies=[
+        _batch(("web_search", {"query": "a"}, "c1"), ("ask_user_choice", {"question": "Which?", "options": ["A", "B"]}, "c2"))],
+        tools=_table("web_search", "ask_user_choice"), budget=dict(limits=Limits(tool_calls=1)), expect='"clarify"'),
+    "reads_while_wrapping_up": dict(replies=[
+        _call("list_dir", {"path": "~/a"}, "c1"),
+        _batch(("read_file", {"path": "b.md"}, "c2"), ("list_dir", {"path": "~/c"}, "c3"),
+               ("write_file", {"path": "d.md", "content": "x"}, "c4")), Reply("Wrapped up.")],
+        budget=dict(limits=Limits(tool_calls=40), soft=Limits(tool_calls=1)), expect="Wrapping up: no more research"),
+    "escalate_with_bad_arguments": dict(replies=[_call("escalate", {"kind": "capability"}), Reply("Asking another way.")],
+                                        tools=[{"key": "escalate", "description": "d", "input_schema": {
+                                            "type": "object", "required": ["need"], "properties": {"need": {"type": "string"}}}}],
+                                        allow_escalation=True, expect="missing required 'need'"),
+    "presearch_counts_toward_no_progress": dict(replies=[*_searches(4), Reply("Blocked.")], tools=_table("web_search"),
+                                                answers=NOTHING_FOUND, force_tools=True, setup="presearch",
+                                                expect="Repeated actions made no progress"),
+    "older_screenshots_trimmed": dict(replies=[*_looks(3), Reply("Seen them.")], tools=_table("desktop_look"),
+                                      expect="no longer shown"),
+    "screenshots_kept_when_the_provider_clears": dict(replies=[*_looks(3), Reply("Seen them.")], tools=_table("desktop_look"),
+                                                      provider=dict(trims_context_server_side=lambda: True), expect="Seen them."),
+    "screenshots_trimmed_once_the_provider_stops_clearing": dict(replies=[
+        *_looks(3), Reply(raises=_refusal(400, "messages: invalid role tool, tool_call_id is not supported")),
+        _call("list_dir", {"path": "~/a"}, "c9"), Reply("Seen them.")], tools=_table("desktop_look", "list_dir"),
+        provider=dict(trims_context_server_side=lambda: True), expect="no longer shown"),
+    "bad_json_repeated": dict(replies=_repeated_bad_json(), expect="task_no_progress"),
+    "schema_refused_repeated": dict(replies=_repeated("write_file", {"path": "a.md"}), expect="task_no_progress"),
+    "find_tools_repeated": dict(replies=_repeated("find_tools", {"query": "attach"}), tools=FINDERS, callable=REACHABLE,
+                                expect="task_no_progress"),
+    "use_tool_refused_repeated": dict(replies=_repeated("use_tool", {"name": "nothing"}), tools=FINDERS, callable=REACHABLE,
+                                      expect="task_no_progress"),
+    "bad_choice_repeated": dict(replies=_repeated("ask_user_choice", {"question": "Which?", "options": ["only"]}),
+                                tools=_table("ask_user_choice"), expect="task_no_progress"),
+    "message_waiting_before_the_first_call": dict(replies=[
+        _batch(("write_file", {"path": "a.md", "content": "x"}, "c1"), ("write_file", {"path": "b.md", "content": "y"}, "c2")),
+        Reply("Read your message.")], steerable=True, conversation_id="steered", setup="message_before_the_calls",
+        expect="skipped_for_message"),
+    # ── the hard stop ──
+    "streamed_text_then_hard_stop": dict(replies=[Reply(LONG, [golden._tc("web_search", {"query": "a"}, "c1")]),
+                                                  _call("web_search", {"query": "b"}, "c2")],
+                                         budget=dict(limits=Limits(model_requests=2)), expect='"task_budget_exhausted"'),
+    "job_at_the_hard_stop": dict(replies=[_call("web_search", {"query": "a"}, "c1"), _call("web_search", {"query": "b"}, "c2")],
+                                 budget=dict(limits=Limits(model_requests=2)), job=[], expect='"pause_reason": "task_budget_exhausted"'),
+    "job_saved_at_the_hard_stop": dict(replies=[_call("write_file", {"path": "a.md", "content": "x"}, "c1"),
+                                                _call("web_search", {"query": "b"}, "c2")],
+                                       budget=dict(limits=Limits(model_requests=2)), job=[],
+                                       expect='"limit_reason": "task_budget_exhausted"'),
+    "background_job_at_the_hard_stop": dict(replies=[_call("web_search", {"query": "a"}, "c1"), _call("web_search", {"query": "b"}, "c2")],
+                                            budget=dict(limits=Limits(model_requests=2)), setup="inside_a_job", expect='"raised"'),
+    "worker_at_the_hard_stop": dict(replies=[_call("web_search", {"query": "a"}, "c1"), _call("web_search", {"query": "b"}, "c2")],
+                                    budget=dict(limits=Limits(model_requests=2)),
+                                    caller=tool_caller.ToolCaller("spawn", 3, "c1"), expect='"raised"'),
+    "lane_at_the_hard_stop": dict(replies=[_call("web_search", {"query": "a"}, "c1"), _call("web_search", {"query": "b"}, "c2")],
+                                  budget=dict(limits=Limits(model_requests=2)), setup="lane", expect='"raised"'),
+    # ── what reaches the executor and the cards ──
+    "everything_passed_through": dict(replies=[
+        _batch(("write_file", {"path": "a.md", "content": "x"}, "c1"),
+               ("schedule_task", {"name": "n", "when": "every: 3600", "prompt": "p"}, "c2"),
+               ("run_command", {"command": "git push origin main", "why": "to publish it"}, "c3")), Reply("Done.")],
+        tools=_table("write_file", "schedule_task", "run_command"), setup="every_card", tool_timeout_s=7.5,
+        caller=tool_caller.ToolCaller("host", None, "c1"), conversation_id="c1", expect='"caller": "host"'),
+    "command_outside_the_sandbox": dict(replies=[
+        _call("run_command", {"command": "ls", "outside_sandbox": True, "why": "it needs the keychain"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", expect='"outside": true'),
+    "command_stopped_by_the_sandbox": dict(replies=[
+        _call("run_command", {"command": "ls"}, "c1"),
+        _call("run_command", {"command": "ls", "outside_sandbox": True, "why": "the sandbox stopped it"}, "c2"), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", answers={"run_command": _stopped_by_the_sandbox},
+        expect="the sandbox stopped it"),
+    "plain_script_runs_with_no_wrapper": dict(replies=[
+        _call("run_command", {"command": "osascript -e 'tell application \"Notes\" to count notes'"}), Reply("Done.")],
+        tools=_table("run_command"), setup="clicked_card", expect='"unwrapped": true'),
+    "command_after_outside_content": dict(replies=[
+        _call("web_extract", {"url": "https://example.test/a"}, "c1"), _call("run_command", {"command": "ls"}, "c2"), Reply("Done.")],
+        tools=_table("web_extract", "run_command"), setup="command_card", expect='"offline": true'),
+    "network_card_after_outside_content": dict(replies=[
+        _call("web_extract", {"url": "https://example.test/a"}, "c1"),
+        _call("run_command", {"command": "curl https://example.test/b"}, "c2"), Reply("Done.")],
+        tools=_table("web_extract", "run_command"), setup="command_card", expect='"network": true'),
     # ── a job with checks ──
     "checks_ask_for_a_repair": dict(replies=[Reply("First try."), Reply("Second try.")], job=[["missing part"], []],
                                     expect="Deterministic validation failed"),
@@ -434,6 +560,12 @@ SCENARIOS: dict[str, dict] = {
                                         provider=dict(trims_context_server_side=lambda: True),
                                         history=[{"role": "user", "content": "old " * 30000},
                                                  {"role": "assistant", "content": "ok"}], expect='"ran"'),
+    "rate_limited_then_answered": dict(replies=[Reply(raises=_refusal(429, "rate limited")), Reply("Answered after the wait.")],
+                                       expect='"waited"'),
+    "server_error_then_answered": dict(replies=[Reply(raises=_refusal(503, "overloaded")), Reply(raises=_refusal(500, "broke")),
+                                                Reply("Answered after two waits.")], expect='"waited"'),
+    "rate_limited_after_text": dict(replies=[Reply(LONG, raises=_refusal(429, "rate limited"))],
+                                    expect="model_error_after_text"),
     "endpoint_refuses_the_protocol": dict(replies=[
         Reply(raises=_refusal(400, "messages: invalid role tool, tool_call_id is not supported")),
         Reply("Answered on the legacy rendering.")], expect="legacy request"),
@@ -460,7 +592,11 @@ SCENARIOS: dict[str, dict] = {
     "mcp_failures_get_a_hint": dict(replies=[
         _call("mcp_1__lookup", {"id": 1}, "c1"), _call("mcp_1__lookup", {"id": 2}, "c2"), Reply("Used the built-in.")],
         tools=_mcp("mcp_1__lookup"), answers={"mcp_1__lookup": {"ok": False, "error": "server said no"}},
-        expect="has failed 2 times in a row"),
+        conversation_id="c1", expect="has failed 2 times in a row"),
+    "mcp_failures_not_logged": dict(replies=[
+        _call("mcp_1__lookup", {"id": 1}, "c1"), _call("mcp_1__lookup", {"id": 2}, "c2"), Reply("Used the built-in.")],
+        tools=_mcp("mcp_1__lookup"), answers={"mcp_1__lookup": {"ok": False, "error": "server said no"}},
+        conversation_id="c1", log_events=False, expect="has failed 2 times in a row"),
     "output_limit_raised_then_continued": dict(replies=[
         Reply("The start", finish="length"), Reply("The start again", finish="length"), Reply(" and the end.")],
         provider=dict(output_ceiling=8000, max_tokens=4000), expect="and the end."),
@@ -513,6 +649,8 @@ async def _run(name, monkeypatch, database):
     monkeypatch.setattr(command_sandbox, "available", lambda: True)              # the same on Linux and macOS
     monkeypatch.setattr(desktop_status, "note_step", lambda tool, _args: log.append(["island", "step", tool]))
     monkeypatch.setattr(desktop_status, "note_plan", lambda items: log.append(["island", "plan", copy.deepcopy(items)]))
+    monkeypatch.setattr(agent_status, "recent_files", lambda *_args, **_own: [])  # the real ~/Arslan is not this pin's
+    _watch(log, monkeypatch)
     for key, answer in {**ANSWERS, **spec.get("answers", {})}.items():
         monkeypatch.setitem(executors.EXECUTORS, key, _Ran(log, key, answer))
     async with database() as db:
@@ -521,17 +659,21 @@ async def _run(name, monkeypatch, database):
             db.add(Setting(key="answer_when_complete", value="true"))
         await db.commit()
     provider = types.SimpleNamespace(**spec["provider"]) if spec.get("provider") else None
-    model = _Model(log, spec["replies"], provider)
     tools, later, saved = spec.get("tools", RESEARCH), spec.get("later_tools"), {"done": False}
 
     async def resolve():
         return copy.deepcopy(later if later and saved["done"] else tools)
 
+    async def expected():
+        return tool_loop._native_tool_schemas(await resolve(), allow_escalation=spec.get("allow_escalation", False))
+    model = _Model(log, spec["replies"], provider, expected)
+
     kwargs = dict(system="SYS", user_content="the request", history=spec.get("history", []),
                   emit=lambda frame: log.append(["frame", copy.deepcopy(frame)]),
                   on_chunk=lambda chunk: log.append(["chunk", chunk]), resolve_tools=resolve, adapter_override=model,
                   allow_escalation=spec.get("allow_escalation", False))
-    for key in ("max_tool_calls", "force_tools", "stream_without_tools", "turn_notes", "steerable", "conversation_id"):
+    for key in ("max_tool_calls", "force_tools", "stream_without_tools", "turn_notes", "steerable", "conversation_id",
+                "caller", "log_events", "tool_timeout_s"):
         if key in spec:
             kwargs[key] = spec[key]
     if "callable" in spec:
@@ -539,17 +681,52 @@ async def _run(name, monkeypatch, database):
             return copy.deepcopy(spec["callable"])
         kwargs["resolve_callable"] = reachable
     _setup(spec, log, monkeypatch, saved, kwargs)
-    runtime = _job(log, monkeypatch, spec) if "job" in spec else None
+    runtime = _job(log, monkeypatch, spec) if "job" in spec else kwargs.get("progress_lane")
     budget = Budget(spec["budget"]["limits"], soft=spec["budget"].get("soft")) if spec.get("budget") else Budget()
     with eb.scope(budget):
         try:
             log.append(["returned", await tool_loop.run_native(**kwargs)])
+        except AssertionError:
+            raise
         except Exception as exc:  # noqa: BLE001 — what it raises is part of what is pinned
             log.append(["raised", type(exc).__name__, str(exc)])
     if runtime is not None:
         log.append(["job", {"pause_reason": runtime.pause_reason, "limit_reason": runtime.limit_reason,
                             "repairs": len(runtime.progress.validation_repairs)}])
     return log
+
+
+def _watch(log, monkeypatch):
+    """What a turn does that no frame shows: its limit on each call, its waits, its checkpoints and its events."""
+    within = tool_loop.within
+
+    async def limited(awaitable, timeout, **own):
+        log.append(["limit", timeout])
+        return await within(awaitable, timeout, **own)
+    monkeypatch.setattr(tool_loop, "within", limited)
+    monkeypatch.setattr(answer_salvage, "within", limited)
+
+    async def waited(seconds):
+        log.append(["waited", seconds])
+    monkeypatch.setattr(model_call, "sleep", waited)
+    monkeypatch.setattr(model_call, "jitter", lambda: 0.0)
+
+    async def saved(reason):
+        log.append(["execution checkpoint", reason])
+    monkeypatch.setattr(execution_checkpoint, "save", saved)
+
+    async def event(conversation_id, kind, payload, _text):
+        log.append(["event", conversation_id, kind, payload])
+    monkeypatch.setattr(recap_service, "log_event", event)
+
+
+def _card(log, name, clicked=False):
+    async def confirm(*shown, **own):
+        if clicked:
+            permissions.LAST_DECISION.set(types.SimpleNamespace(by="user"))
+        log.append(["card", name, list(shown), own])
+        return True
+    return confirm
 
 
 def _setup(spec, log, monkeypatch, saved, kwargs):
@@ -564,10 +741,19 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
             return {"ok": False, "error": "the user declined"}
         monkeypatch.setattr(capability_flow, "propose", declined)
     elif setup == "command_card":
-        async def confirm(command, _argv, **own):
-            log.append(["card", command, sorted(own)])
-            return True
-        kwargs["confirm_command"] = confirm
+        kwargs["confirm_command"] = _card(log, "command")
+    elif setup == "clicked_card":
+        kwargs["confirm_command"] = _card(log, "command", clicked=True)
+    elif setup == "every_card":
+        async def not_own():
+            return False
+        monkeypatch.setattr(tool_loop, "_writing_in_own_folder", not_own)
+        kwargs.update(confirm_command=_card(log, "command"), confirm_workspace_write=_card(log, "write"),
+                      confirm_schedule=_card(log, "schedule"))
+    elif setup == "inside_a_job":
+        monkeypatch.setattr(background_jobs, "inside_job", lambda: True)
+    elif setup == "lane":
+        kwargs["progress_lane"] = _runtime(log, {})
     elif setup == "presearch":
         async def classify(*_args, **_own):
             return types.SimpleNamespace(needs=True, tool="web_search", query="the pre-search")
@@ -585,7 +771,7 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
                 return await super().execute(args)
         key = spec.get("slow", "web_search")
         monkeypatch.setitem(executors.EXECUTORS, key, _Slow(log, key, ANSWERS[key]))
-    elif setup == "message_meanwhile":
+    elif setup in ("message_meanwhile", "message_before_the_calls"):
         async def stored(_conversation, _role, content, **_own):
             log.append(["stored", content])
             return 7
@@ -595,21 +781,33 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
         async def tell(frame):
             log.append(["told", frame])
 
+        def message():
+            steering.put("steered", steering.Steer("also this", None, {"type": "user_message"}, tell, asyncio.Queue()))
+
+        if setup == "message_before_the_calls":
+            # It arrives while the model writes its reply, so the first call of the batch is already past the check.
+            answer_next = _Model._next
+
+            async def with_a_message(self, on_text=None):
+                monkeypatch.setattr(_Model, "_next", answer_next)
+                message()
+                return await answer_next(self, on_text)
+            monkeypatch.setattr(_Model, "_next", with_a_message)
+            return
+
         class _First(_Ran):
             told = False
 
             async def execute(self, args):
                 if not _First.told:
                     _First.told = True
-                    steering.put("steered", steering.Steer("also this", None, {"type": "user_message"}, tell,
-                                                           asyncio.Queue()))
+                    message()
                 return await super().execute(args)
         key = spec["steer_on"]
         monkeypatch.setitem(executors.EXECUTORS, key, _First(log, key, spec.get("answers", {}).get(key, ANSWERS[key])))
 
 
-def _job(log, monkeypatch, spec):
-    reports = list(spec["job"])
+def _runtime(log, spec):
     check = types.SimpleNamespace(evaluator="auto", model_dump=lambda **_own: {"kind": "mentions", "target": "x"})
 
     async def checkpoint(reason):
@@ -617,9 +815,14 @@ def _job(log, monkeypatch, spec):
 
     async def execute_tool(_key, args, execute):
         return await execute(args)
-    runtime = types.SimpleNamespace(
-        spec=types.SimpleNamespace(acceptance=[check], locale="en"), progress=_Progress(), checkpoint=checkpoint,
-        execute_tool=execute_tool, pause_reason=None, limit_reason=None, closed=False, task_id="t1")
+    return types.SimpleNamespace(
+        spec=types.SimpleNamespace(acceptance=[check] if "job" in spec else [], locale="en"), progress=_Progress(),
+        checkpoint=checkpoint, execute_tool=execute_tool, pause_reason=None, limit_reason=None, closed=False, task_id="t1")
+
+
+def _job(log, monkeypatch, spec):
+    reports = list(spec["job"])
+    runtime = _runtime(log, spec)
     monkeypatch.setattr(task_service, "current", lambda: runtime)
     monkeypatch.setattr(task_service, "answer_only", lambda: spec.get("answer_only", False))
 
@@ -652,13 +855,15 @@ def _text(log) -> str:
 @pytest.mark.parametrize("name", list(SCENARIOS))
 async def test_a_turn_does_what_it_did(name, monkeypatch, _database):
     log = await _run(name, monkeypatch, _database)
-    assert SCENARIOS[name]["expect"] in json.dumps(log, ensure_ascii=False, default=str), (
-        f"{name} no longer reaches what it is for")
     text = _text(log)
     path = GOLDEN / f"{name}.json"
     if os.environ.get("ARSLAN_UPDATE_GOLDEN") == "1":
         GOLDEN.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+    assert SCENARIOS[name]["expect"] in json.dumps(log, ensure_ascii=False, default=str), (
+        f"{name} no longer reaches {SCENARIOS[name]['expect']!r}. If you meant it, change `expect` in SCENARIOS and "
+        f"commit the new JSON: {REGENERATE}")
+    assert path.exists(), f"{name} has no pin yet: {REGENERATE}"
     assert text == path.read_text(encoding="utf-8"), (
         f"what the turn did changed: {name}. If you meant it, commit the new JSON, so the diff shows the change: "
         f"{REGENERATE}")

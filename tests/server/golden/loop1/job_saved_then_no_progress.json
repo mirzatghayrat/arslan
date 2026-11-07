@@ -19,6 +19,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"path\": \"a.md\", \"content\": \"x\"}",
@@ -33,6 +37,10 @@
   "write_file"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "write_file",
   {
@@ -40,7 +48,11 @@
    "path": "a.md"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -109,6 +121,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"q0\"}",
@@ -123,13 +139,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "q0"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -216,6 +240,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"q1\"}",
@@ -230,13 +258,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "q1"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -345,6 +381,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"q2\"}",
@@ -359,13 +399,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "q2"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -496,6 +544,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"q3\"}",
@@ -510,13 +562,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "q3"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -669,6 +729,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"q4\"}",
@@ -683,13 +747,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "q4"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [

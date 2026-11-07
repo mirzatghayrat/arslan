@@ -23,9 +23,17 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "island",
   "step",
   "web_extract"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -34,13 +42,25 @@
    "url": "https://example.test/a"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
  ],
  [
   "island",
   "step",
   "web_extract"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -49,7 +69,11 @@
    "url": "https://example.test/b"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -160,6 +184,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"path\": \"report.md\", \"content\": \"| a | https://example.test/a |\\n| b | https://example.test/b |\\n| c | https://not-read.test/z |\"}",
@@ -174,6 +202,10 @@
   "write_file"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "write_file",
   {
@@ -181,7 +213,11 @@
    "path": "report.md"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [

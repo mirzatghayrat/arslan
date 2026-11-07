@@ -465,6 +465,18 @@ async def test_a_line_that_cant_be_stored_is_counted_and_the_others_go_on(memory
     assert (out["ok"], out["saved"], out["not_saved"]) == (True, 2, 1)
     assert set(await _stored(memory)) == {"Line one", "Line three"}
     assert "RuntimeError" in caplog.text and "Line two" not in caplog.text    # the log names the failure, not the words
+    assert "`not_saved`" in out["note"]
+
+
+async def test_an_import_that_stored_nothing_is_not_reported_as_done(memory, monkeypatch):
+    """Every kept line fails at the store: the model must not be able to tell the user they were imported."""
+    async def create(self, write, actor):
+        raise RuntimeError("the store is down")
+    monkeypatch.setattr(MemoryRepository, "create", create)
+    await _said(memory, "- Line one\n- Line two")
+    out = await _import(_ask())
+    assert (out["ok"], out["saved"], out["not_saved"]) == (False, 0, 2)
+    assert "`not_saved`" in out["note"] and await _stored(memory) == {}
 
 
 async def test_the_model_is_told_counts_not_the_lines(memory):
@@ -578,8 +590,8 @@ async def test_with_remember_me_off_a_kept_line_stays_on_this_mac(memory):
 # ── the real turn and its post-turn job ───────────────────────────────────────
 
 class _TurnModel:
-    """The turn's model, on the real tool loop. With `ask` it makes the tool's call, where a registered tool's branch
-    would: the tool is registered with the web half."""
+    """The turn's model, on the real tool loop. With `ask` it makes the tool's call, where the registered tool's branch
+    does; test_cap8b_registered_tool.py goes through that branch."""
 
     def __init__(self, ask=None):
         self.ask, self.out = ask, None

@@ -18,10 +18,10 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("../api/proactive", async (original) => ({ ...(await original<typeof import("../api/proactive")>()), proactiveApi: api }));
 
-const CONFIG: ProactiveConfig = { enabled: true, notify: true, notify_daily_cap: 5, quiet_start: "22:00", quiet_end: "08:00",
+const CONFIG: ProactiveConfig = { enabled: true, quiet_start: "22:00", quiet_end: "08:00",
   job_followups: true, scheduled_problems: true, watches: true, brief_enabled: false, brief_time: "08:30", diagnosis_daily_usd: 0 };
 const WATCH: ProactiveWatch = { id: 4, kind: "web", target: "https://example.com/pricing", label: "Pricing", enabled: true,
-  interval_s: 21600, notify: true, last_error: null, last_checked_at: null, last_changed_at: null };
+  interval_s: 21600, last_error: null, last_checked_at: null, last_changed_at: null };
 
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset());
@@ -39,19 +39,17 @@ describe("settings", () => {
   it("each switch saves exactly its own field", async () => {
     await ready();
     fireEvent.click(screen.getByTestId("proactive-toggle-enabled"));
-    fireEvent.click(screen.getByTestId("proactive-toggle-notify"));
     fireEvent.click(screen.getByTestId("proactive-source-scheduled_problems"));
-    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(2));
     expect(api.saveConfig.mock.calls.map(([patch]) => patch)).toEqual([
-      { enabled: false }, { notify: false }, { scheduled_problems: false }]);
+      { enabled: false }, { scheduled_problems: false }]);
   });
 
-  it("quiet hours and the cap save their values", async () => {
+  it("quiet hours save their value", async () => {
     await ready();
     fireEvent.change(screen.getByTestId("proactive-quiet-start"), { target: { value: "23:15" } });
-    fireEvent.change(screen.getByTestId("proactive-notify-cap"), { target: { value: "2" } });
-    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(2));
-    expect(api.saveConfig.mock.calls.map(([patch]) => patch)).toEqual([{ quiet_start: "23:15" }, { notify_daily_cap: 2 }]);
+    await waitFor(() => expect(api.saveConfig).toHaveBeenCalledTimes(1));
+    expect(api.saveConfig.mock.calls.map(([patch]) => patch)).toEqual([{ quiet_start: "23:15" }]);
   });
 
   it("offers no morning brief any more (the user's Q9: the setting goes), and keeps the pointer to the diagnosis limit", async () => {
@@ -94,7 +92,7 @@ describe("watches", () => {
     fireEvent.change(within(form).getByRole("textbox", { name: "Address or folder" }), { target: { value: "  https://example.org/news  " } });
     fireEvent.change(within(form).getByRole("combobox", { name: "Check every" }), { target: { value: "3600" } });
     fireEvent.click(within(form).getByRole("button", { name: "Add watch" }));
-    await waitFor(() => expect(api.addWatch).toHaveBeenCalledWith({ kind: "web", target: "https://example.org/news", interval_s: 3600, notify: true }));
+    await waitFor(() => expect(api.addWatch).toHaveBeenCalledWith({ kind: "web", target: "https://example.org/news", interval_s: 3600 }));
     await waitFor(() => expect((within(form).getByRole("textbox", { name: "Address or folder" }) as HTMLInputElement).value).toBe(""));
   });
 
@@ -109,13 +107,12 @@ describe("watches", () => {
     expect(api.addWatch.mock.calls[0][0].kind).toBe("folder");
   });
 
-  it("pause, notify, interval and remove each call the API once", async () => {
+  it("pause, interval and remove each call the API once", async () => {
     api.updateWatch.mockResolvedValue(WATCH);
     api.deleteWatch.mockResolvedValue({ ok: true });
     await ready();
     const row = screen.getByTestId("proactive-watch-4");
     fireEvent.click(within(row).getByRole("button", { name: "Pause" }));
-    fireEvent.click(within(row).getByRole("checkbox", { name: "Notify me" }));
     fireEvent.change(within(row).getByRole("combobox", { name: "Check every" }), { target: { value: "86400" } });
     // 0.1.55: removing asks first (its history goes too); nothing is deleted until confirmed.
     render(<ConfirmHost />);
@@ -125,7 +122,7 @@ describe("watches", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Remove" }));
     fireEvent.click(await screen.findByTestId("confirm-action"));
     await waitFor(() => expect(api.deleteWatch).toHaveBeenCalledWith(4));
-    expect(api.updateWatch.mock.calls).toEqual([[4, { enabled: false }], [4, { notify: false }], [4, { interval_s: 86400 }]]);
+    expect(api.updateWatch.mock.calls).toEqual([[4, { enabled: false }], [4, { interval_s: 86400 }]]);
   });
 
   it("warns when watches exist but checking them is switched off", async () => {

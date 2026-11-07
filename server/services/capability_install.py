@@ -230,7 +230,10 @@ async def lock_npm(root: Path, identifier: str, version: str) -> dict:
     packages = json.loads((root / "package-lock.json").read_text()).get("packages") or {}
     _registry_only(packages)
     return {"file": "package-lock.json", "sha256": _sha256(root / "package-lock.json"),
-            "packages": [{"name": path.rsplit("node_modules/", 1)[-1], "version": str(meta.get("version") or "")}
+            # CAP9 (#661 review F1): an alias's folder is not its name; npm writes the real one in the entry.
+            "packages": [{"name": path.rsplit("node_modules/", 1)[-1], "version": str(meta.get("version") or ""),
+                          "registry_name": str(meta.get("name") or path.rsplit("node_modules/", 1)[-1]),
+                          "path": path}                    # CAP9 (#661 max review): the top-level entry is the package
                          for path, meta in sorted(packages.items()) if path and isinstance(meta, dict)]}
 
 
@@ -383,7 +386,9 @@ async def prepare(candidate: dict) -> dict:
     runtime = candidate["runtime"]
     spdx, license_path = await source_license(candidate.get("repo"), (candidate.get("package") or {}).get("version"))
     from server.services.skill_import import _license_gate
-    if runtime != "remote" and _license_gate(spdx):
+    # CAP8-1: a line imported from the user's other tool has no repository to read, and is the user's own click, as a
+    # server added by hand is: neither passes this gate.
+    if runtime != "remote" and candidate.get("source") != "import" and _license_gate(spdx):
         raise InstallFailure("license", _license_gate(spdx) or "")
     prepared = {"runtime": runtime, "license": (spdx, license_path), "lock": None, "staging": None}
     pkg = candidate.get("package") or {}
@@ -521,6 +526,8 @@ async def install(candidate: dict, *, folders: list[str], keys: dict[str, str] |
                                host_allowed=False, state="off", sandbox=sandbox)
             from server import crypto
             server.env = crypto.encrypt(json.dumps(keys or {}))
+            if prepared.get("secrets"):         # CAP8-1: what SEC1's `move` took out of the address or arguments
+                server.secrets = crypto.encrypt(json.dumps(prepared["secrets"]))
             db.add(server)
             await db.flush()
             row.mcp_server_id, row.state, row.installed_at = server.id, "installed", datetime.utcnow()

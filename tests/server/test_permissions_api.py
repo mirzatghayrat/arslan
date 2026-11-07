@@ -378,9 +378,9 @@ def test_policy_refusals_are_listed_for_the_inbox(client):
 
 
 def test_only_what_could_not_be_asked_is_listed(client):
-    """A card the user declined, or one shown that nobody answered, is not "not done while you were
-    away". A policy refusal is, and so is a card that never opened because an earlier one of its
-    job or turn went unanswered (F3)."""
+    """A card the user declined is not "not done while you were away". A policy refusal is, and so is a
+    card that never opened because an earlier one of its job or turn went unanswered (F3), and one shown
+    that nobody answered (INB8: it would otherwise just vanish)."""
     async def nobody(frame):
         return {"approved": False, "scope": None, "note": "", "by": None}
 
@@ -394,7 +394,7 @@ def test_only_what_could_not_be_asked_is_listed(client):
     _decide(client, permissions.Request(kind="app", target="c", title="C?"), asker=allows)
     _decide(client, permissions.Request(kind="app", target="d", title="D?"))
     _decide(client, permissions.Request(kind="app", target="e", title="E?"), asker=away)
-    assert [r["target"] for r in _refused(client)] == ["e", "d"]
+    assert [r["target"] for r in _refused(client)] == ["e", "d", "b"]
 
 
 def test_the_refused_list_looks_back_between_one_hour_and_a_week(client):
@@ -487,10 +487,12 @@ def test_a_jobs_card_after_one_went_unanswered_is_listed_and_offers_no_always(cl
     assert client.portal.call(job.command, "rm -rf build", []) is False          # shown; nobody answers
     assert client.portal.call(job.command, "git push origin main", []) is False  # the person is away
     assert len(opened) == 1, "the job's later card never opened"
-    [row] = _refused(client)                         # the card that was shown and ran out is not listed
-    assert (row["kind"], row["target"], row["conversation_id"]) == ("command", "rules:git-push", "c")
-    assert (row["always_ok"], row["always"]) == (False, [])
-    assert _allow(client, row["id"]).status_code == 409
+    never_opened, ran_out = _refused(client)         # INB8: the card that was shown and ran out is listed too
+    assert (never_opened["kind"], never_opened["target"], never_opened["conversation_id"]) == ("command", "rules:git-push", "c")
+    assert (ran_out["kind"], ran_out["conversation_id"]) == ("command", "c")
+    for row in (never_opened, ran_out):
+        assert (row["always_ok"], row["always"]) == (False, [])
+        assert _allow(client, row["id"]).status_code == 409
     assert _rules(client) == set()
 
     async def ledger():

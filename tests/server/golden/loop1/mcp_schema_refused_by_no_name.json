@@ -19,6 +19,15 @@
   }
  ],
  [
+  "event",
+  null,
+  "mcp_schema_relaxed",
+  {
+   "provider": "SimpleNamespace",
+   "tool_key": "all"
+  }
+ ],
+ [
   "request",
   {
    "max_tokens": null,

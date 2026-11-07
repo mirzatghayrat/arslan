@@ -14,7 +14,7 @@ import server.db.session as db_session
 from server.api import proactive as proactive_api
 from server.db.models import Base
 from server.services import background_jobs, proactive_detectors as det, proactive_service as svc
-from arslan.proactive_policy import Candidate, Evidence, ProactiveConfig
+from arslan.proactive_policy import Candidate, Evidence
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 AUTH = {"Authorization": "Bearer test-token"}
@@ -44,7 +44,7 @@ async def make_item(n=1, **over):
     base = dict(kind="web_change", fingerprint=f"fp:{n}", source_key=f"watch:{n}", title_key="title.web_change",
                 evidence=(Evidence("web.changed", {"n": 2}, quote="Price: 9"),), goal="Look at it")
     base.update(over)
-    await svc.ingest([det.Found(Candidate(**base))], now_utc=NOW, now_local=NOW, config=ProactiveConfig(notify=False))
+    await svc.ingest([det.Found(Candidate(**base))], now_utc=NOW)
 
 
 async def first_id(client, scope="open"):
@@ -192,8 +192,8 @@ async def test_watch_lifecycle(client):
     assert r.status_code == 201
     watch = r.json()
     assert watch["label"] == "example.com" and watch["enabled"] is True
-    r = await client.patch(f"/api/v1/proactive/watches/{watch['id']}", json={"interval_s": 7200, "notify": False})
-    assert r.json()["interval_s"] == 7200 and r.json()["notify"] is False
+    r = await client.patch(f"/api/v1/proactive/watches/{watch['id']}", json={"interval_s": 7200})
+    assert r.json()["interval_s"] == 7200
     assert (await client.patch(f"/api/v1/proactive/watches/{watch['id']}", json={"target": "https://evil.example/"})).status_code == 422
     assert (await client.patch(f"/api/v1/proactive/watches/{watch['id']}", json={"interval_s": 5})).status_code == 422
     assert (await client.patch("/api/v1/proactive/watches/999", json={})).status_code == 404

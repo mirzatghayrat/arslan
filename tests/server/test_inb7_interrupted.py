@@ -29,7 +29,12 @@ async def test_a_job_a_restart_cut_short_is_recorded_as_interrupted_and_your_own
         await repo.cancel("job-mine")                          # the user stops this one before the restart
     async with repository() as repo:
         await repo.recover_interrupted()                       # what a restart finds
+    pushed = []
+    monkeypatch.setattr(background_jobs.desktop_status, "push", lambda kind, **kw: pushed.append((kind, kw)))
     assert await background_jobs.report_interrupted() == 1
+    # INB8: the one way a job ends that didn't tell the shell. The window may be up already, with a backend that restarted.
+    assert [(kind, kw["conversation_id"], kw["outcome"]) for kind, kw in pushed] == [
+        ("turn_finished", "conv-job-cut", "needs_review")]
     async with execution_db() as db:
         cut = await db.get(CompanionTask, "job-cut")
         mine = await db.get(CompanionTask, "job-mine")

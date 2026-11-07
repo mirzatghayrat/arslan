@@ -47,7 +47,7 @@ def _chat(cid):
 def _refused(conversation_id, decided_by="away", hours_ago=1.0):
     return ApprovalEvent(created_at=datetime.utcnow() - timedelta(hours=hours_ago), conversation_id=conversation_id,
                          kind="send", target="mail:team", detail="send mail", mode="ask", decided_by=decided_by,
-                         decision="expired" if decided_by == "away" else "deny")
+                         decision="deny" if decided_by == "policy" else "expired")
 
 
 def _item(n, kind, source_key, conversation_id=None, status="new"):

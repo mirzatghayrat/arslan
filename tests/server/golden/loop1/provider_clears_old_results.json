@@ -31,6 +31,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"a\"}",
@@ -45,13 +49,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "a"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [

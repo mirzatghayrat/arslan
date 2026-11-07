@@ -53,11 +53,12 @@ class Waiting:
 
 
 async def _latest_not_asked(db: AsyncSession, decided_by: str, hours: int) -> dict[str, datetime]:
-    """Per conversation, the newest entry of one kind of "could not ask": `away` (a card that never opened) or `policy` (a
-    scheduled run). Kept apart: a scheduled run's entry belongs to its task, not to the conversation it writes into."""
-    decision = {"away": "expired", "policy": "deny"}[decided_by]
+    """Per conversation, the newest entry of one kind of "could not ask": `away` (a card that never opened, or one nobody
+    answered in time) or `policy` (a scheduled run). Kept apart: a scheduled run's entry belongs to its task, not to the
+    conversation it writes into."""
+    who, decision = {"away": (("away", "expired"), "expired"), "policy": (("policy",), "deny")}[decided_by]
     rows = await db.execute(select(ApprovalEvent.conversation_id, func.max(ApprovalEvent.created_at))
-                            .where(ApprovalEvent.decided_by == decided_by, ApprovalEvent.decision == decision,
+                            .where(ApprovalEvent.decided_by.in_(who), ApprovalEvent.decision == decision,
                                    ApprovalEvent.conversation_id.is_not(None),
                                    ApprovalEvent.created_at >= datetime.utcnow() - timedelta(hours=hours))
                             .group_by(ApprovalEvent.conversation_id))

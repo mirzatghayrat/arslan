@@ -361,8 +361,8 @@ Added after the card was drafted; the full text is `docs/plans/0162/README.md` �
     - 需要你看：`turn_finished` 的 `error` / `needs_review`；
     - 定时任务失败 / 暂停；
     - 有 👀 项的验收单；
-    - `job_followup`。这是**新加的通知**：今天它不弹（`proactive_policy.py:35`），而它的「接着做」要用户点。
   - **不再弹：**
+    - **`job_followup` does not pop (changed 2026-11-07, #730).** The card added it as a new notification, but a stopped job already pops when it ends, and `job_followup` waits out `SETTLE` (10 minutes) and would pop a second time for the same job. `scheduled_problem` doesn't pop either; with web and folder changes gone, nothing proactive pops;
     - 网页、文件夹变化（今天会弹）；
     - 早报（INB7 删了）。
   - 点开到那个对话或进展页（INB5 已换掉 `@inbox`）。
@@ -372,7 +372,7 @@ Added after the card was drafted; the full text is `docs/plans/0162/README.md` �
 - **手机：** nothing changes (2026-11-07). `notify=1` keeps its range, so the final reply and a finished background job still notify, and no frame, vector or protocol line changes.
 - **测试：**
   - 每种事件弹不弹的一张表；
-  - `job_followup` 会弹，网页变化不弹；
+  - no proactive item pops (`job_followup`, `scheduled_problem`, web and folder changes), as built in #730;
   - "done" still pops;
   - 免打扰时段不弹；
   - in quiet hours an approval card doesn't pop, and the badge and Progress still count it;

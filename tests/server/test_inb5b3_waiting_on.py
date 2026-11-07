@@ -35,6 +35,19 @@ async def test_a_waiting_row_says_whether_it_waits_on_a_card_an_away_entry_or_a_
         "chat-g": ("waiting", "card")}                                              # d: not waiting (a reply not seen yet)
 
 
+async def test_a_card_nobody_answered_in_time_waits_on_progress_and_offers_no_always(client):
+    """INB8: during quiet hours an approval card doesn't pop, so without this it would just vanish after 30 minutes: it ran
+    out, the job went on, and nothing said so. It's listed like an away entry, and nothing more: "Always allow" stays for what
+    could not be asked at all."""
+    await _add(client, *_chat("chat-x"), _refused("chat-x", decided_by="expired"))
+    row = (await _window_rows(client))["chat-x"]
+    assert (row["state"], row["waiting_on"]) == ("waiting", "away")
+    [listed] = [e for e in (await client.get("/api/v1/approvals/refused")).json() if e["conversation_id"] == "chat-x"]
+    assert listed["always_ok"] is False and listed["always"] == []
+    refused = await client.post("/api/v1/permissions/rules", json={"refused_id": listed["id"]})
+    assert refused.status_code == 409 and "not_a_refusal" in refused.text
+
+
 async def test_phones_get_no_new_field(client):
     await _add(client, *_chat("chat-c"), _item(2, "job_followup", "job:2", conversation_id="chat-c"))
     body = (await client.get("/api/v1/phone/conversations?limit=50")).json()

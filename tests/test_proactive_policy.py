@@ -75,28 +75,6 @@ def test_quiet_hours_same_day_and_disabled():
 NOON = datetime(2026, 9, 30, 12, 0)
 
 
-def may(c=None, *, now=NOON, notified_today=0, **config):
-    return policy.may_notify(c or candidate(), now=now, config=ProactiveConfig(**config), notified_today=notified_today)
-
-
-def test_a_notification_needs_every_condition():
-    assert may()
-    assert not may(notify=False)                                             # the user said no
-    assert not may(candidate(notify=False))                                  # this watch is silent
-    assert not may(now=datetime(2026, 9, 30, 23, 30))                        # quiet hours
-    assert not may(notified_today=5)                                         # cap spent
-    assert may(notified_today=4)
-    assert not may(notify_daily_cap=0)
-
-
-def test_job_and_schedule_problems_never_notify_twice():
-    # the job and the scheduler already notified when they ended
-    for kind in ("job_followup", "scheduled_problem"):
-        assert not may(candidate(kind=kind))
-    for kind in ("web_change", "folder_change", "brief"):
-        assert may(candidate(kind=kind))
-
-
 def test_a_watch_raises_once_a_day():
     assert policy.cooldown_over(None, NOON)
     assert not policy.cooldown_over(NOON - timedelta(hours=23), NOON)
@@ -137,7 +115,7 @@ def test_config_defaults_spend_nothing_and_reject_bad_input():
     assert config.enabled and config.diagnosis_daily_usd == 0 and not config.brief_enabled
     assert ProactiveConfig(quiet_start="6:5").quiet_start == "06:05"
     for bad in ({"quiet_start": "25:00"}, {"brief_time": "noon"}, {"diagnosis_daily_usd": 9},
-                {"notify_daily_cap": -1}, {"surprise": 1}):
+                {"surprise": 1}):
         with pytest.raises(ValueError):
             ProactiveConfig(**bad)
 

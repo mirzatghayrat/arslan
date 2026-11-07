@@ -1,10 +1,10 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight, Lock } from "lucide-react";
 import { Button } from "./Button";
 import { CARD_MS, Countdown } from "./Countdown";
 import { useAnswerGuard, useAnswerHeld } from "./guard";
-import { useAnswerKeys, useLayer } from "./layers";
+import { SURFACE, useAnswerKeys, useLayer } from "./layers";
 
 export interface AskQueuePosition { index: number; total: number; onPrev?: () => void; onNext?: () => void }
 
@@ -68,6 +68,12 @@ export interface AskCardProps {
   allowTestId?: string;
   saidTestId?: string;
   declineTestId?: string;
+  /** CAP9: No is the safe answer, so it leads as the primary wide button and is focused on mount — unless the user is
+   *  typing, another surface owns focus, or a modal is open. */
+  safeDefault?: boolean;
+  /** ⌘⏎ allows only when true (the default). A risky install (CAP9) sets it false, so only a deliberate Tab then Enter
+   *  or a click confirms the install (Esc still declines). */
+  allowKey?: boolean;
   className?: string;
 }
 
@@ -81,13 +87,27 @@ export function AskCard(p: AskCardProps) {
   const [open, setOpen] = useState(false);
   const top = useLayer(p.keys !== false);
   const root = useRef<HTMLElement>(null);
+  const saidId = useId();
   // Within ANSWER_GUARD_MS of this card coming up in a queue, no answer is for it (see guard.ts).
   const guarded = useAnswerGuard();
   const held = useAnswerHeld();                                     // the same hold, to be seen: Allow and No look disabled while it lasts
-  useAnswerKeys(top && !p.busy, { onAllow: () => { if (!p.allowDisabled && !guarded()) p.onAllow(); },
+  const allowKey = p.allowKey !== false;
+  useAnswerKeys(top && !p.busy, { onAllow: allowKey ? () => { if (!p.allowDisabled && !guarded()) p.onAllow(); } : undefined,
                                   onDecline: () => { if (!guarded()) p.onDecline(); } }, root);
+  useEffect(() => {
+    if (!p.safeDefault) return;
+    const active = document.activeElement;
+    const typing = active instanceof HTMLElement && (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
+    // CAP9 review: don't pull focus out of another surface — an open dialog or another card owns its own focus, and a
+    // modal owns it even when nothing in it is focused yet, so skip if focus is on another surface or any modal is open
+    // outside this card.
+    const onAnother = active instanceof Element && active.closest(SURFACE) !== null && active.closest(SURFACE) !== root.current;
+    const modalOutside = Array.from(document.querySelectorAll('[aria-modal="true"]')).some((m) => !root.current?.contains(m));
+    if (!typing && !onAnother && !modalOutside) root.current?.querySelector<HTMLButtonElement>(`[data-testid="${p.declineTestId ?? "ask-decline"}"]`)?.focus();
+  }, [p.safeDefault, p.declineTestId]);
   return (
-    <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
+    <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who}
+      aria-describedby={p.said ? saidId : undefined} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
       {/* The default asker ("Arslan is asking") is no longer printed (the user: drop the small heading); another one (a background
           job) still is, as it is the only place some cards say who is asking. */}
@@ -114,7 +134,7 @@ export function AskCard(p: AskCardProps) {
           {t(p.purposeFrom === "arslan" ? "kit.purposeFromArslan" : "kit.purposeFromCommand")}</span> : null}
       </div>
       {p.said ? (
-        <p data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
+        <p id={saidId} data-testid={p.saidTestId ?? "ask-said"} className="-mt-1.5 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">
           <span className="text-subtle-foreground">{t("kit.arslanSays")}</span>{p.said}
         </p>
       ) : null}
@@ -154,9 +174,17 @@ export function AskCard(p: AskCardProps) {
         </ul>
       )}
       {p.options}
-      {/* SMART-8 (the mock the user OK'd): the action first, named for what it does; then any other choice; No last. */}
+      {/* SMART-8 (the mock the user OK'd): the action first, named for what it does; then any other choice; No last.
+          CAP9 (safeDefault): No is the safe answer, so it leads as the primary wide button and the action is de-emphasised. */}
       <div className="flex flex-wrap gap-2.5">
-        <Button tone={p.destructive ? "destructive" : "primary"} grow={1.4} kbd="⌘⏎" disabled={p.busy || p.allowDisabled} aria-disabled={held || undefined}
+        {p.safeDefault && (
+          <Button tone="primary" grow={1.4} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
+            onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
+            {p.declineLabel ?? t("kit.decline")}
+          </Button>
+        )}
+        <Button tone={p.destructive ? "destructive" : p.safeDefault ? "secondary" : "primary"} grow={p.safeDefault ? 1 : 1.4}
+          kbd={allowKey ? "⌘⏎" : undefined} disabled={p.busy || p.allowDisabled} aria-disabled={held || undefined}
           onClick={() => { if (!guarded()) p.onAllow(); }} data-testid={p.allowTestId ?? "ask-allow"}>
           {p.allowLabel ?? t("kit.allow")}
         </Button>
@@ -165,10 +193,12 @@ export function AskCard(p: AskCardProps) {
             aria-disabled={held || undefined}
             onClick={() => { if (!guarded()) a.onClick(); }} data-testid={a.testId}>{a.label}</Button>
         ))}
-        <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
-          onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
-          {p.declineLabel ?? t("kit.decline")}
-        </Button>
+        {!p.safeDefault && (
+          <Button tone="secondary" grow={1} kbd="esc" disabled={p.busy} aria-disabled={held || undefined}
+            onClick={() => { if (!guarded()) p.onDecline(); }} data-testid={p.declineTestId ?? "ask-decline"}>
+            {p.declineLabel ?? t("kit.decline")}
+          </Button>
+        )}
       </div>
       {p.extra}
       {p.onOpenContext && (

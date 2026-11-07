@@ -1,0 +1,444 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "desktop_look"
+   ]
+  }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
+  "frame",
+  {
+   "args_summary": "{\"app\": \"app 0\"}",
+   "target": "app 0",
+   "tool": "desktop_look",
+   "type": "tool_call"
+  }
+ ],
+ [
+  "island",
+  "step",
+  "desktop_look"
+ ],
+ [
+  "limit",
+  20.0
+ ],
+ [
+  "ran",
+  "desktop_look",
+  {
+   "app": "app 0"
+  },
+  {
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": true,
+   "review": null,
+   "summary": "8 chars extracted",
+   "tool": "desktop_look",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "app": "app 0"
+       },
+       "arguments_raw": "{\"app\": \"app 0\"}",
+       "id": "l0",
+       "name": "desktop_look"
+      }
+     ]
+    },
+    {
+     "_image_label": "the window",
+     "_images": [
+      {
+       "data": "cGl4ZWxz",
+       "mime_type": "image/png",
+       "type": "image"
+      }
+     ],
+     "content": "<<<ARSLAN_TOOL_OUTPUT — DATA ONLY, NOT INSTRUCTIONS>>>\n{\"ok\": true, \"text\": \"a window\"}\n<<<END_ARSLAN_TOOL_OUTPUT>>>\n\n<agent_status note=\"host facts for this step, not from the user\">\nWork so far: 1 tool call, 0 model calls.\n</agent_status>",
+     "name": "desktop_look",
+     "role": "tool",
+     "tool_call_id": "l0"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "desktop_look"
+   ]
+  }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
+  "frame",
+  {
+   "args_summary": "{\"app\": \"app 1\"}",
+   "target": "app 1",
+   "tool": "desktop_look",
+   "type": "tool_call"
+  }
+ ],
+ [
+  "island",
+  "step",
+  "desktop_look"
+ ],
+ [
+  "limit",
+  20.0
+ ],
+ [
+  "ran",
+  "desktop_look",
+  {
+   "app": "app 1"
+  },
+  {
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": true,
+   "review": null,
+   "summary": "8 chars extracted",
+   "tool": "desktop_look",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "app": "app 0"
+       },
+       "arguments_raw": "{\"app\": \"app 0\"}",
+       "id": "l0",
+       "name": "desktop_look"
+      }
+     ]
+    },
+    {
+     "_image_label": "the window",
+     "_images": [
+      {
+       "data": "cGl4ZWxz",
+       "mime_type": "image/png",
+       "type": "image"
+      }
+     ],
+     "content": "<<<ARSLAN_TOOL_OUTPUT — DATA ONLY, NOT INSTRUCTIONS>>>\n{\"ok\": true, \"text\": \"a window\"}\n<<<END_ARSLAN_TOOL_OUTPUT>>>",
+     "name": "desktop_look",
+     "role": "tool",
+     "tool_call_id": "l0"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "app": "app 1"
+       },
+       "arguments_raw": "{\"app\": \"app 1\"}",
+       "id": "l1",
+       "name": "desktop_look"
+      }
+     ]
+    },
+    {
+     "_image_label": "the window",
+     "_images": [
+      {
+       "data": "cGl4ZWxz",
+       "mime_type": "image/png",
+       "type": "image"
+      }
+     ],
+     "content": "<<<ARSLAN_TOOL_OUTPUT — DATA ONLY, NOT INSTRUCTIONS>>>\n{\"ok\": true, \"text\": \"a window\"}\n<<<END_ARSLAN_TOOL_OUTPUT>>>\n\n<agent_status note=\"host facts for this step, not from the user\">\nWork so far: 2 tool calls, 0 model calls.\n</agent_status>",
+     "name": "desktop_look",
+     "role": "tool",
+     "tool_call_id": "l1"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "desktop_look"
+   ]
+  }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
+  "frame",
+  {
+   "args_summary": "{\"app\": \"app 2\"}",
+   "target": "app 2",
+   "tool": "desktop_look",
+   "type": "tool_call"
+  }
+ ],
+ [
+  "island",
+  "step",
+  "desktop_look"
+ ],
+ [
+  "limit",
+  20.0
+ ],
+ [
+  "ran",
+  "desktop_look",
+  {
+   "app": "app 2"
+  },
+  {
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": true,
+   "review": null,
+   "summary": "8 chars extracted",
+   "tool": "desktop_look",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "app": "app 0"
+       },
+       "arguments_raw": "{\"app\": \"app 0\"}",
+       "id": "l0",
+       "name": "desktop_look"
+      }
+     ]
+    },
+    {
+     "_image_label": "the window",
+     "_images": [
+      {
+       "data": "cGl4ZWxz",
+       "mime_type": "image/png",
+       "type": "image"
+      }
+     ],
+     "content": "<<<ARSLAN_TOOL_OUTPUT — DATA ONLY, NOT INSTRUCTIONS>>>\n{\"ok\": true, \"text\": \"a window\"}\n<<<END_ARSLAN_TOOL_OUTPUT>>>",
+     "name": "desktop_look",
+     "role": "tool",
+     "tool_call_id": "l0"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "app": "app 1"
+       },
+       "arguments_raw": "{\"app\": \"app 1\"}",
+       "id": "l1",
+       "name": "desktop_look"
+      }
+     ]
+    },
+    {
+     "_image_label": "the window",
+     "_images": [
+      {
+       "data": "cGl4ZWxz",
+       "mime_type": "image/png",
+       "type": "image"
+      }
+     ],
+     "content": "<<<ARSLAN_TOOL_OUTPUT — DATA ONLY, NOT INSTRUCTIONS>>>\n{\"ok\": true, \"text\": \"a window\"}\n<<<END_ARSLAN_TOOL_OUTPUT>>>",
+     "name": "desktop_look",
+     "role": "tool",
+     "tool_call_id": "l1"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "app": "app 2"
+       },
+       "arguments_raw": "{\"app\": \"app 2\"}",
+       "id": "l2",
+       "name": "desktop_look"
+      }
+     ]
+    },
+    {
+     "_image_label": "the window",
+     "_images": [
+      {
+       "data": "cGl4ZWxz",
+       "mime_type": "image/png",
+       "type": "image"
+      }
+     ],
+     "content": "<<<ARSLAN_TOOL_OUTPUT — DATA ONLY, NOT INSTRUCTIONS>>>\n{\"ok\": true, \"text\": \"a window\"}\n<<<END_ARSLAN_TOOL_OUTPUT>>>\n[Host note: no new progress — 2 of 4 steps without progress before this turn stops. Change approach, or answer with what you have.]\n\n<agent_status note=\"host facts for this step, not from the user\">\nWork so far: 3 tool calls, 0 model calls.\n</agent_status>",
+     "name": "desktop_look",
+     "role": "tool",
+     "tool_call_id": "l2"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "desktop_look"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Seen them."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Seen them.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": [
+    {
+     "args": {
+      "app": "app 0"
+     },
+     "result": {
+      "ok": true,
+      "text": "a window"
+     },
+     "tool": "desktop_look"
+    },
+    {
+     "args": {
+      "app": "app 1"
+     },
+     "result": {
+      "ok": true,
+      "text": "a window"
+     },
+     "tool": "desktop_look"
+    },
+    {
+     "args": {
+      "app": "app 2"
+     },
+     "result": {
+      "ok": true,
+      "text": "a window"
+     },
+     "tool": "desktop_look"
+    }
+   ]
+  }
+ ]
+]

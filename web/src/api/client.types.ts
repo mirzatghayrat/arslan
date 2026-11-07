@@ -389,6 +389,7 @@ export interface AppSettings {
   model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
+  task_usd_cap_enabled?: boolean; // K4a: false = no dollar cap (step and token limits still hold); default true
   workspace_dir?: string;   // "" = unset = file tools not offered
   workspace_other_volume?: boolean; // S3b: on another volume than Arslan's data: its changes can't be undone
   heartbeat_enabled?: string;     // "true" | "false"
@@ -607,7 +608,22 @@ export interface CapabilityCard {
   why: string; retry: string;
   /** UNI1b (#586 review F2): a skill's characters that show nothing, in its text and references. */
   hidden?: { count: number; runs: string[]; more: number };
+  /** CAP9: what OSV.dev knows of every locked package (server/services/osv_check.py). Absent on a skill's card. */
+  vulns?: Vulns;
 }
+export type Severity = "CRITICAL" | "HIGH" | "MODERATE" | "LOW" | "UNKNOWN";
+/** `loaded` false: no record of it answered, so its severity, summary and fixes are unknown, not none. `fixed` lists
+ *  only versions above the installed one. */
+export interface Advisory { id: string; ids: string[]; severity: Severity; summary: string | null; loaded: boolean; fixed: string[] }
+/** `packages` counts the lock's distinct packages, `asked` those sent (the package itself first); `own_more` and
+ *  `deps_more` what the lists leave out; `own_highest` and `deps_highest` are told apart (#661 max review). */
+export type Vulns =
+  | { state: "checked"; source: string; packages: number; asked: number; complete: boolean; count: number;
+      highest: Severity | null; own_highest: Severity | null; deps_highest: Severity | null;
+      own: Advisory[]; own_more: number; deps_more: number;
+      deps: { name: string; alias: string | null; version: string; more: number; advisories: Advisory[] }[] }
+  | { state: "not_checked"; why: string }
+  | { state: "skipped"; why: string };
 /** The save-a-skill card (v0.1.64 CAP2a, server/services/skill_forge.propose): the SKILL.md the model wrote, shown
  *  whole before anything is saved. Same frame and answers as the install card; told apart by `kind`. */
 export interface AuthoredSkillCard {
@@ -616,6 +632,19 @@ export interface AuthoredSkillCard {
    *  saved skill is marked so (#472 F1, F2); since the user's D2 it is read unframed like every skill, so the
    *  card is the check. */
   outside: boolean;
+}
+/** The memory-import card (v0.1.64 CAP8b, server/services/memory_import.propose): the lines of what the user pasted. Same
+ *  frame and answers as the install card, told apart by `kind`; a yes names the ids it keeps (`kept`). `same_as`: what a
+ *  stored memory says, when this line says the same. `too_many`: lines past one card's limit, counted and not read. */
+export interface MemoryImportLeftOut {
+  /** null: the line held a key, so it isn't shown again. */
+  text: string | null;
+  reason: "gender" | "one_off" | "credential" | "too_long" | "stored" | "deleted";
+}
+export interface MemoryImportCard {
+  kind: "memory_import"; name: string; why: string; lines: number; too_many: number;
+  entries: { id: string; text: string; ticked: boolean; same_as: string | null }[];
+  left_out: MemoryImportLeftOut[];
 }
 export interface CapabilityResult { state: "on" | "failed" | "blocked" | "needs_sign_in"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
@@ -749,7 +778,7 @@ export type ArslanServerMessage =
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
-  | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard))
+  | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard | MemoryImportCard))
   | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked" | "needs_sign_in";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;

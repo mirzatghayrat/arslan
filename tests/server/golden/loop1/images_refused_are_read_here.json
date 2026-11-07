@@ -18,6 +18,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"app\": \"Notes\"}",
@@ -32,13 +36,21 @@
   "desktop_look"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "desktop_look",
   {
    "app": "Notes"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [

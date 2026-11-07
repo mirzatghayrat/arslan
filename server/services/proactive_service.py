@@ -26,7 +26,7 @@ from server.db import session as db_session
 from server.db.models import (ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, ProviderConfig, ScheduledTask,
                               Setting)
 from arslan.aio import within
-from server.services import desktop_status, proactive_detectors as detectors, runtime_messages, settings_service
+from server.services import proactive_detectors as detectors, runtime_messages, settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -60,21 +60,29 @@ def local_now() -> datetime:
     return datetime.now()
 
 
-def start_of_local_day_utc(now_utc: datetime, now_local: datetime) -> datetime:
-    """Midnight of the user's local day, expressed as naive UTC (how rows are stored)."""
-    return now_utc - (now_local - now_local.replace(hour=0, minute=0, second=0, microsecond=0))
-
-
 # ── config ──────────────────────────────────────────────────────────────────
+
+#: INB8: a config saved before these went still holds them, and ProactiveConfig refuses a key it doesn't know: that would
+#: reset the user's other choices. A stored config loses them when it is next saved. DELETE-BY: the next migration that
+#: rewrites this setting.
+RETIRED_CONFIG = ("notify", "notify_daily_cap")
+
 
 async def load_config() -> ProactiveConfig:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(Setting, CONFIG_KEY)
     try:
-        return ProactiveConfig(**json.loads(row.value)) if row and row.value else ProactiveConfig()
-    except (ValueError, TypeError):
+        stored = json.loads(row.value) if row and row.value else {}
+        return ProactiveConfig(**{k: v for k, v in stored.items() if k not in RETIRED_CONFIG})
+    except (ValueError, TypeError, AttributeError):
         logger.warning("stored proactive config is unreadable; using defaults")
-        return ProactiveConfig()          # defaults spend nothing, so this can only under-notify
+        return ProactiveConfig()          # defaults spend nothing
+
+
+async def in_quiet_hours_now() -> bool:
+    """INB8: the shell doesn't pop an approval card now."""
+    config = await load_config()
+    return policy.in_quiet_hours(local_now(), config.quiet_start, config.quiet_end)
 
 
 async def save_config(patch: dict) -> ProactiveConfig:
@@ -110,18 +118,10 @@ def _evidence_json(candidate: Candidate) -> list[dict]:
 
 # ── ingest ──────────────────────────────────────────────────────────────────
 
-async def _notified_today(db, since_utc: datetime) -> int:
-    return int(await db.scalar(select(func.count()).select_from(ProactiveItem)
-                               .where(ProactiveItem.notified_at >= since_utc)) or 0)
-
-
-async def ingest(found: list[detectors.Found], *, now_utc: datetime, now_local: datetime,
-                 config: ProactiveConfig) -> dict:
+async def ingest(found: list[detectors.Found], *, now_utc: datetime) -> dict:
     """Gate every finding; store the ones that pass. Returns what happened, by reason."""
     created: list[int] = []
     rejected: dict[str, int] = {}
-    notified = 0
-    since = start_of_local_day_utc(now_utc, now_local)
     for item in found:
         candidate = item.candidate
         async with db_session.AsyncSessionLocal() as db:
@@ -142,19 +142,13 @@ async def ingest(found: list[detectors.Found], *, now_utc: datetime, now_local: 
                     await db.rollback()
                     verdict = policy.Verdict(False, "duplicate")
                 else:
-                    if policy.may_notify(candidate, now=now_local, config=config,
-                                         notified_today=await _notified_today(db, since)):
-                        row.notified_at = now_utc
-                        notified += 1
                     await db.commit()
                     created.append(row.id)
         if not verdict.ok:
             rejected[verdict.reason] = rejected.get(verdict.reason, 0) + 1
         if item.ack is not None:               # only now may a watch's baseline move
             await item.ack()
-    for _ in range(notified):
-        desktop_status.push("proactive", outcome="ok")
-    return {"created": created, "rejected": rejected, "notified": notified}
+    return {"created": created, "rejected": rejected}
 
 
 # ── the morning brief ───────────────────────────────────────────────────────
@@ -225,7 +219,7 @@ async def scan_once(*, now_utc: datetime | None = None, now_local: datetime | No
             found.extend(await detectors.DETECTORS[name](ctx))
         except Exception as exc:  # noqa: BLE001 — isolated on purpose
             logger.warning("proactive detector %s failed: %s %s", name, type(exc).__name__, exc)
-    result = await ingest(found, now_utc=now_utc, now_local=now_local, config=config)
+    result = await ingest(found, now_utc=now_utc)
     # The morning brief is retired (the user's Q9, #605 review F2): since the Inbox went (INB5) nothing shows a brief, so the scan
     # makes none, and no notice leads nowhere, whatever brief_enabled says. DELETE-BY: INB7-e (v0.1.64), which removes build_brief,
     # policy.brief_due, the brief kind and the config's brief fields.
@@ -425,7 +419,7 @@ async def list_mutes() -> list[str]:
 
 def present_watch(w: ProactiveWatch) -> dict:
     return {"id": w.id, "kind": w.kind, "target": w.target, "label": w.label, "enabled": bool(w.enabled),
-            "interval_s": w.interval_s, "notify": bool(w.notify), "last_error": w.last_error,
+            "interval_s": w.interval_s, "last_error": w.last_error,
             "last_checked_at": w.last_checked_at.isoformat() + "Z" if w.last_checked_at else None,
             "last_changed_at": w.last_changed_at.isoformat() + "Z" if w.last_changed_at else None}
 
@@ -443,8 +437,7 @@ def _interval(value) -> int:
     return value
 
 
-async def add_watch(kind: str, target: str, *, label: str | None = None, interval_s: int = 21600,
-                    notify: bool = True) -> dict:
+async def add_watch(kind: str, target: str, *, label: str | None = None, interval_s: int = 21600) -> dict:
     target = (target or "").strip()
     if kind == "web":
         from urllib.parse import urlsplit
@@ -472,7 +465,7 @@ async def add_watch(kind: str, target: str, *, label: str | None = None, interva
         if int(await db.scalar(select(func.count()).select_from(ProactiveWatch)) or 0) >= MAX_WATCHES:
             raise ProactiveError("too_many_watches")
         watch = ProactiveWatch(kind=kind, target=target, label=label, interval_s=interval,
-                               notify=bool(notify), enabled=True, created_at=utc_now())
+                               enabled=True, created_at=utc_now())
         db.add(watch)
         await db.commit()
         await db.refresh(watch)
@@ -490,8 +483,6 @@ async def update_watch(watch_id: int, patch: dict) -> dict:
             watch.enabled = bool(patch["enabled"])
             if watch.enabled:          # turning it back on lifts the mute that turned it off
                 await db.execute(delete(ProactiveMute).where(ProactiveMute.key == f"watch:{watch.id}"))
-        if "notify" in patch:
-            watch.notify = bool(patch["notify"])
         if "label" in patch:
             watch.label = " ".join(str(patch["label"]).split())[:120] or watch.label
         await db.commit()

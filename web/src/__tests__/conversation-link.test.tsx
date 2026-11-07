@@ -5,7 +5,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
 import MarkdownLink from "../components/MarkdownLink";
-import { conversationFromLink, notificationTarget, OPEN_CONVERSATION_EVENT } from "../lib/openConversation";
+import { conversationFromLink, conversationToOpen, OPEN_CONVERSATION_EVENT } from "../lib/openConversation";
 
 afterEach(() => cleanup());
 
@@ -31,8 +31,8 @@ describe("conversation links", () => {
 
   it("the app opens only a conversation the user has", () => {
     const threads = [{ id: "thread-1" }, { id: "old", archived: true }];
-    expect(notificationTarget("thread-1", threads)).toEqual({ kind: "conversation", id: "thread-1" });
-    expect(notificationTarget("old", threads)).toBeNull();
-    expect(notificationTarget("someone-elses", threads)).toBeNull();
+    expect(conversationToOpen("thread-1", threads)).toBe("thread-1");
+    expect(conversationToOpen("old", threads)).toBeNull();
+    expect(conversationToOpen("someone-elses", threads)).toBeNull();
   });
 });

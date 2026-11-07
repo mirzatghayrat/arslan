@@ -181,10 +181,10 @@ async def test_only_policy_refusals_inside_the_window_are_listed_as_refused():
 
 
 async def test_a_card_that_never_opened_while_the_person_was_away_is_listed_as_refused_too():
-    """F3: what the Inbox lists is what could not be asked: a policy refusal (a scheduled run) and
-    a card the away latch never opened (decided_by "away", an expiry, never a denial). A card that
-    was shown and ran out (decided_by "expired") is not one, nor an "away" row that is not an
-    expiry."""
+    """F3: what could not be asked is a policy refusal (a scheduled run) and a card the away latch never
+    opened (decided_by "away", an expiry, never a denial). A card that was shown and ran out (decided_by
+    "expired") is not one, nor an "away" row that is not an expiry. INB8: that shown card is listed too, or a
+    hushed one would just vanish, but it stays out of `could_not_ask`, so "Always allow" can't be given for it."""
     async with db_session.AsyncSessionLocal() as db:
         for decided_by, decision, target in (("policy", "deny", "scheduled"), ("away", "expired", "away"),
                                              ("expired", "expired", "shown"), ("user", "deny", "no"),
@@ -194,7 +194,7 @@ async def test_a_card_that_never_opened_while_the_person_was_away_is_listed_as_r
         await db.commit()
         since = datetime.utcnow() - timedelta(hours=1)
         assert [row.target for row, _, _ in await permission_store.refused_groups(db, since)] \
-            == ["away", "scheduled"]
+            == ["shown", "away", "scheduled"]
         for row in await permission_store.recent(db):
             assert permission_store.could_not_ask(row) is (row.target in ("away", "scheduled"))
 

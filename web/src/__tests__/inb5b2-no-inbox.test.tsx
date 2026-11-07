@@ -1,6 +1,6 @@
 /** INB5b-2 (v0.1.64): the Inbox is gone (the INB5 board, approved 2026-10-31). What is waiting on you is one number on Progress in the
  *  sidebar, counted by the server (progress.waiting_on_user: conversations, projects and scheduled tasks, never rows); a clicked
- *  notice goes where its section says (the Scheduled page, useNotificationRoutes); and no "@inbox" route is left anywhere. */
+ *  notification opens a conversation the user has; and no "@inbox" route is left anywhere. */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
@@ -15,7 +15,7 @@ import { proactiveApi } from "../api/proactive";
 import Sidebar from "../components/Sidebar";
 import { useNotificationRoutes } from "../hooks/useNotificationRoutes";
 import { useWaiting } from "../hooks/useWaiting";
-import { notificationTarget, OPEN_CONVERSATION_EVENT, PROGRESS_TARGET } from "../lib/openConversation";
+import { OPEN_CONVERSATION_EVENT } from "../lib/openConversation";
 import { SECTIONS } from "../lib/sections";
 import de from "../locales/de.json";
 import en from "../locales/en.json";
@@ -136,31 +136,20 @@ describe("Settings", () => {
   });
 });
 
-describe("a clicked notice", () => {
-  it("opens Progress, and the old Inbox route leads nowhere", () => {
-    expect(PROGRESS_TARGET).toBe("@progress");
-    expect(notificationTarget("@progress", [])).toEqual({ kind: "progress" });
-    expect(notificationTarget("@inbox", [])).toBeNull();
-  });
-
-  it("opens the Scheduled page for now, where what was noticed is listed, and a conversation by its id (#605 review F1)", () => {
-    const openSection = vi.fn();
+describe("a clicked notification", () => {
+  it("opens a conversation by its id, and nothing else", () => {
     const selectConversation = vi.fn();
-    renderHook(() => useNotificationRoutes({ threads: [{ id: "thread-1" }, { id: "thread-2", archived: true }], selectConversation, openSection }));
+    renderHook(() => useNotificationRoutes({ threads: [{ id: "thread-1" }, { id: "thread-2", archived: true }], selectConversation }));
     const click = (id: string) => act(() => { window.dispatchEvent(new CustomEvent(OPEN_CONVERSATION_EVENT, { detail: id })); });
-    click(PROGRESS_TARGET);
-    expect(openSection).toHaveBeenCalledWith("scheduled");
     click("thread-1");
     expect(selectConversation).toHaveBeenCalledWith("thread-1");
     click("thread-2");                                                            // archived: never opened from outside
     click("@inbox");                                                              // the old route leads nowhere
     expect(selectConversation).toHaveBeenCalledTimes(1);
-    expect(openSection).toHaveBeenCalledTimes(1);
   });
 
-  it("is sent as @progress by the desktop shell, and no @inbox is left there or in the web app", () => {
+  it("no @inbox route is left in the desktop shell or the web app", () => {
     const shell = readFileSync(resolve(__dirname, "../../../desktop/src-tauri/src/resident.rs"), "utf8");
-    expect(shell).toContain('"@progress"');
     expect(shell).not.toContain("@inbox");
     const sources = import.meta.glob(["../**/*.{ts,tsx}", "!../__tests__/**"], { query: "?raw", import: "default", eager: true });
     const left = Object.entries(sources).filter(([, text]) => String(text).includes("@inbox")).map(([path]) => path);

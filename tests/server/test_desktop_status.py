@@ -45,6 +45,17 @@ def test_cursor_returns_only_newer_events_and_events_carry_no_text():
         desktop_status.push("turn_finished", outcome="done: here is your secret")
 
 
+async def test_status_says_when_it_is_quiet_hours(client, monkeypatch):
+    """INB8: the shell hushes approval cards by this. The default hours, on the machine's clock."""
+    from datetime import datetime
+
+    from server.services import proactive_service
+    monkeypatch.setattr(proactive_service, "local_now", lambda: datetime(2026, 9, 30, 23, 30))
+    assert (await client.get("/api/v1/desktop/status")).json()["quiet_hours"] is True
+    monkeypatch.setattr(proactive_service, "local_now", lambda: datetime(2026, 9, 30, 12, 0))
+    assert (await client.get("/api/v1/desktop/status")).json()["quiet_hours"] is False
+
+
 async def test_status_endpoint_defaults_on_and_names_only_scheduled_tasks(client):
     desktop_status.push("turn_finished", conversation_id="c1", outcome="ok")
     body = (await client.get("/api/v1/desktop/status")).json()

@@ -138,7 +138,7 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 | `server/services/code_sandbox.py`, `server/services/artifact_validation.py` | SBX-4 | `computation_profile` becomes the strictest preset on the same base (no network, no services beyond the base); delete `_SEATBELT_PROFILE` (§11: replaced, so removed) |
 | `server/services/capability_sandbox.py` | SBX-4, SBX-5 | Drop `(allow mach-lookup)` (`:49`) for the shared allowlist; network = proxy port (or as today, per Q1); exclude the CAP6b folders even inside granted folders |
 | `server/services/ssh_exec.py` | SBX-1 only | The same text produced by the builder, byte for byte (no behaviour change; Q7, decided yes) |
-| `server/services/terminal_exec.py` | SBX-3, SBX-7 | `TMPDIR` = the run's private folder instead of the process temp (`:165-168`); denial code on the result; "unavailable" handling unchanged |
+| `server/services/terminal_exec.py` | SBX-3, SBX-7 | `TMPDIR` = the run's private folder instead of the process temp (`:165-168`); the denial's code is noted on the call's trace entry (`run_trace.note_denial`), never on the tool result (#538); "unavailable" handling unchanged |
 | `server/services/execution_context.py` (or wherever a Run's lifetime ends) | SBX-3 | Create and remove the run's private TMPDIR |
 | `server/services/command_confirm.py` | SBX-7 | `Request.extra = {"sandbox": "retry" | "outside"}` so the ledger row says which card it was. `permissions.py` does not change: `_record_in` already writes `req.extra` into the row (`server/services/permissions.py:609-620`; ②Main) |
 | `server/services/sandbox_proxy.py` (new) | SBX-6 (Q1 decided N-a) | A minimal local forward / CONNECT proxy on a loopback port, no site list (NET adds the list), chaining through the system proxy as `browser_proxy` does |
@@ -388,12 +388,14 @@ The three S2a-3 branches on origin (`claude/0163-s2a3-understood`, `-runs-from-o
 
 1. **Local count of sandbox denials, never uploaded.**
    - Detection: EPERM text as today, plus (to be measured in SBX-M) tagged deny rules that report through the unified log, scoped to the command's process group. If tagged reporting is not usable without extra rights, fall back to EPERM plus known service-failure texts, and the report says it undercounts.
-   - Storage: a fixed code on the tool result that `run_recorder` keeps in `ref` (not inside the 2,000-character `result_raw`).
+   - Storage (as built in #538): a fixed code noted on the call's trace entry, which `run_recorder` puts on the step's `ref` (out of reach of the 2,000-character `result_raw`). It is never on the tool result, because the model and every other payload read the result.
+   - Detection is EPERM only: the SBX-M run (#592) did not measure tagged deny reports, so there is no second source. The count is an estimate, not a floor: a command that prints the words is counted, and one that hides them, or a refusal by the proxy, is not.
    - Counts: per turn, per job, per conversation.
    - Shown only by `scripts/usage_report.py` and in the local run detail. Never in telemetry, the Bridge, or any upload. A test asserts it is absent from every outgoing payload builder that exists today.
 2. **Bench share of "re-run outside the sandbox" cards.**
-   - Definition: re-run cards ÷ `run_command` calls that ran in the sandbox, per round and per task, with ask-up-front cards reported separately.
-   - Source: the ledger's new `extra.sandbox` and the driver's split counters.
+   - Definition (changed 2026-11-07, #538): cards to leave the sandbox ÷ `run_command` calls, per entrant, model and task. A sandbox denial now goes back to the model, so the automatic re-run card is going away and the question is how often a card to leave the sandbox is needed. Every card is still reported, so ask-all against ask-risky can be read side by side.
+   - Source: the ledger's `kind = 'outside'` (it needs no new field; the first version's `extra.sandbox` is gone) and the driver's counters. A run under the bench's own sandbox has no row: Arslan's sandbox wasn't on, so it reads as no share, not 0%.
+   - Until the sandbox-first PR removes the re-run card, a re-run card counts as a card to leave. No bench runs in between.
    - Rounds run with `BENCH_SANDBOX=none` (Arslan's own sandbox active); the stand-in declines every such card, as today (`arslan_driver.py:45-48`).
    - Baseline: one round on today's profile before SBX-3 merges, one after.
 

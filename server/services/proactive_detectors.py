@@ -213,8 +213,7 @@ async def web_changes(ctx: Context) -> list[Found]:
             evidence=(Evidence("web.changed", {"label": watch.label, "url": watch.target,
                                                "added": len(added), "removed": len(removed)}), *quotes),
             goal=_say(ctx, "proactive_goal_web", url=watch.target),
-            criteria=({"description": _say(ctx, "proactive_crit_report"), "kind": "judgement"},),
-            notify=bool(watch.notify)), ack))
+            criteria=({"description": _say(ctx, "proactive_crit_report"), "kind": "judgement"},)), ack))
     return found
 
 
@@ -279,8 +278,7 @@ async def folder_changes(ctx: Context) -> list[Found]:
             evidence=(Evidence("folder.new", {"label": watch.label, "count": len(new)}),
                       *(Evidence("folder.file", quote=name[:MAX_QUOTE_CHARS]) for name in new[:8])),
             goal=_say(ctx, "proactive_goal_folder", path=str(path), count=len(new)),
-            criteria=({"description": _say(ctx, "proactive_crit_report"), "kind": "judgement"},),
-            notify=bool(watch.notify)), ack))
+            criteria=({"description": _say(ctx, "proactive_crit_report"), "kind": "judgement"},)), ack))
     return found
 
 

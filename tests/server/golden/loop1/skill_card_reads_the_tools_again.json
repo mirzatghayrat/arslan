@@ -82,6 +82,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"key\": \"weekly\"}",
@@ -96,13 +100,21 @@
   "read_skill"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "read_skill",
   {
    "key": "weekly"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
