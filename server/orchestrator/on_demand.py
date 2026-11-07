@@ -31,6 +31,19 @@ USE_TOOL = {"key": "use_tool", "description":
     "Call a tool find_tools returned, with the same approvals as a direct call. From the next turn it is "
     "in your list."}
 OWN = frozenset({"find_tools", "use_tool"})
+# Not in the registry: `_every_tool` doesn't list them, `arslan._arslan_tools` adds them to what a request is shown.
+SCHEMAS = {
+    "find_tools": {"type": "object",
+                   "properties": {"query": {"type": "string", "maxLength": 200,
+                                            "description": "English keywords, e.g. \"send file\"."}},
+                   "required": ["query"], "additionalProperties": False},
+    "use_tool": {"type": "object",
+                 "properties": {"name": {"type": "string", "maxLength": 120,
+                                         "description": "As find_tools returned it."},
+                                "arguments": {"type": "object",
+                                              "description": "Its arguments, as its parameters say."}},
+                 "required": ["name"], "additionalProperties": False},
+}
 
 _WORD = re.compile(r"[a-z0-9]+")
 _CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]+")

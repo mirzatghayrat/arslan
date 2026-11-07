@@ -95,7 +95,6 @@ FILES = (
 
 # 0.1.63 D1: a file the user asked for reaches them, not just its Mac path. Offered with the read
 # tools, appended after every other built-in so no existing tool moves (the K3 / K7 rule).
-# 0.1.63 D1: hand an existing file to the user (window card + paired iPhone).
 ATTACH_FILE = Tool("attach_file",
                    "Attach an existing file to your answer so the user gets the file itself: a file card in the "
                    "Mac window and the file on their iPhone. args: {path, title?} — absolute, ~/ or "

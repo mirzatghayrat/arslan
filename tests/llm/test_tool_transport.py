@@ -276,7 +276,7 @@ def test_the_mcp_tool_query_is_ordered():
 
     from server.orchestrator import arslan as arslan_mod
 
-    src = inspect.getsource(arslan_mod._every_tool)   # C3b: _arslan_tools filters it
+    src = inspect.getsource(arslan_mod._host_mcp_tools)   # LOOP1 a5: out of _every_tool, which still calls it
     # Retargeted 2026-08-18: the host gate went server-level (host_allowed),
     # the query keys on the allowed servers' toolset keys now.
     assert "Tool.toolset_key.in_(keys)" in src, "the MCP query moved — retarget this test"

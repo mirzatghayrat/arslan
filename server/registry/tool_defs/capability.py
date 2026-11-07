@@ -21,7 +21,6 @@ CAPABILITY = (
          },
          offered=lambda offer: bool(offer.skills)),
     # 0.1.56 §7: a project's conversation may propose a changed plan (a card; the user decides).
-    # 0.1.56 §7: a changed plan for the project, proposed — the user decides on the card.
     Tool("propose_plan_change",
          "This conversation belongs to a project with levels (see the project card). When the user "
          "changes direction (drops a feature, adds a goal, changes the order), propose the new plan: "
@@ -46,7 +45,6 @@ CAPABILITY = (
          offered=lambda offer: offer.in_project,
          host=True),
     # 0.1.57 §2: only after a wall, never as a first move; the result is outside content.
-    # 0.1.57 §2: find a capability for what the turn could not do.
     Tool("find_capability",
          "When a step failed because none of your tools can do it (e.g. you can read an .xlsx's values "
          "but not its formulas), search the official MCP Registry, GitHub and skill libraries for a "
@@ -80,8 +78,8 @@ CAPABILITY = (
                              "description": "Folders it needs (e.g. the folder of the file you work on)."}},
              "required": ["candidate_id", "why"]},
          host=True),
-    # v0.1.64 CAP2a: found on demand (K7), never resident; the card is the user's yes.
-    # v0.1.64 CAP2a: the user sees the whole SKILL.md on a card and decides (skill_forge.propose).
+    # v0.1.64 CAP2a: found on demand (K7), never resident; the user sees the whole SKILL.md on a card and decides
+    # (skill_forge.propose).
     Tool("create_skill",
          "Save a way of working as one of the user's skills, when the user asks (\"save what we just did as a "
          "skill\", \"remember how to do this\"). Write the SKILL.md yourself: a '## Trigger' section (when to "
