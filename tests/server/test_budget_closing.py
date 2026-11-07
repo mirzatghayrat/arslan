@@ -6,6 +6,7 @@ from arslan.execution_budget import Budget, BudgetExceeded, Limits, current, sco
 from arslan.models import LLMResponse
 from server.orchestrator import tool_loop
 from tests.server import test_trajectory_golden as golden
+from server.orchestrator import tool_gates
 
 
 class _Counting:
@@ -32,7 +33,7 @@ async def _run(monkeypatch, replies, **kwargs):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
     from server.registry import executors
     monkeypatch.setitem(executors.EXECUTORS, "write_file", golden._Write())
     monkeypatch.setitem(executors.EXECUTORS, "web_search", golden._Search())

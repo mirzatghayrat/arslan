@@ -1,5 +1,6 @@
 """Commands on the user's Mac. The command gate, the policy and the sandbox are elsewhere: this says only what the model
 reads and when the tool is offered."""
+from server.orchestrator import command_gate
 from server.registry.tool import Tool, Traits
 from server.services import terminal_exec
 
@@ -46,7 +47,7 @@ TERMINAL = (
                                                 "outside_sandbox, why it must run outside. "
                                                 "Cards show it first."}},
           "required": ["command"]},
-         offered=lambda offer: offer.shell and not offer.nobody_to_ask,
+         offered=lambda offer: offer.shell and not offer.nobody_to_ask, gate=command_gate.check,
          # effect_of grades a command a read when the command policy grades it LOW, and an external write otherwise;
          # counts_as_external reads the command for the network. Both read the command itself, not these.
          traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),

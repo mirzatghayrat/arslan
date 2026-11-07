@@ -564,6 +564,7 @@ def _write():
 
 async def _native_in_task(monkeypatch, disk, replies, checks):
     from server.orchestrator import tool_loop
+    from server.orchestrator import tool_gates
     from server.registry import executors
     from tests.server import test_trajectory_golden as golden
     adapter = golden._Recorder(replies)
@@ -572,7 +573,7 @@ async def _native_in_task(monkeypatch, disk, replies, checks):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
 
     class DiskWrite:
         async def execute(self, args):

@@ -114,6 +114,9 @@ class Tool:
     schema: dict
     offered: Callable[[Offer], bool] = always
     host: bool = False          # the tool loop answers it: there is no executor
+    # Its own gate, after the common ones (LOOP1 c2): `gate(tool_key, args, turn)` answers with a refusal to record,
+    # run_command's plan, or None to go on. In `server/orchestrator/tool_gates.py` and `command_gate.py`.
+    gate: Callable[..., Awaitable[object]] | None = None
     traits: Traits = field(kw_only=True)
 
 

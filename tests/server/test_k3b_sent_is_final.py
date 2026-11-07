@@ -13,6 +13,7 @@ import pytest
 from server.orchestrator import tool_loop
 from tests.server import test_agent_status_requests as status_requests
 from tests.server import test_trajectory_golden as golden
+from server.orchestrator import tool_gates
 
 RECEIPT = "PREVIOUS WEB READ RECEIPT"
 BODY = "Body of https://example.test/a"
@@ -38,7 +39,7 @@ async def _run(monkeypatch, *, trims):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
     from server.registry import executors
     for key, executor in {"web_extract": golden._Extract, "write_file": golden._Write}.items():
         monkeypatch.setitem(executors.EXECUTORS, key, executor())

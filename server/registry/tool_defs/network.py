@@ -1,4 +1,5 @@
 """Looking at the user's own local network, and reaching machines on it."""
+from server.orchestrator import tool_gates
 from server.registry.tool import Tool, Traits
 
 NETWORK = (
@@ -48,7 +49,7 @@ NETWORK = (
              "required": ["host", "user", "name"],
              "additionalProperties": False,
          },
-         offered=lambda offer: offer.ssh,
+         offered=lambda offer: offer.ssh, gate=tool_gates.enrol,
          traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     # C3b (⓪Plan's call A on the user's card U3): running needs an enrolled machine, so a first
     # command goes probe → enrol (its host key pinned) → run. With one enrolled, ssh_run still
@@ -70,7 +71,7 @@ NETWORK = (
              "required": ["host", "user", "command"],
              "additionalProperties": False,
          },
-         offered=lambda offer: offer.enrolled,
+         offered=lambda offer: offer.enrolled, gate=tool_gates.remote_command,
          traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("list_nodes",
          "List the machines the user has enrolled (name, address, "

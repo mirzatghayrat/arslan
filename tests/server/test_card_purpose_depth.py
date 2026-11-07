@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from server.orchestrator import command_gate, tool_loop, untrusted
+from server.orchestrator import tool_gates
 from server.services import approvals, card_purpose, command_confirm, command_sandbox, permissions
 
 READ_DEPTH = card_purpose.READ_DEPTH
@@ -180,7 +181,7 @@ async def test_a_remote_command_with_nobody_to_ask_is_refused_with_its_card_list
     async def unattended(message, request, conversation_id):
         listed.append(request.title)
         return message
-    monkeypatch.setattr(tool_loop, "_unattended", unattended)
+    monkeypatch.setattr(tool_gates, "_unattended", unattended)
 
     async def _resolve():
         return [{"key": "ssh_run", "description": "run"}]
