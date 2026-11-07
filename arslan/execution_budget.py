@@ -273,9 +273,10 @@ class Budget:
                 "stop_reason": self.stop_reason,
                 "token_limit_mode": "post_response_admission", "monetary_limit": self.usd_cap is not None,
                 **({"soft_limits": asdict(self.soft)} if self.soft is not None else {}),
-                **({"spend": {"usd": round(self.usd, 6), "usd_cap": self.usd_cap,
-                              "unpriced_requests": self.unpriced_requests}}
-                   if self.usd_cap is not None or self.usd or self.unpriced_requests else {}),
+                # K4a off switch (v0.1.64): always recorded, so a run with no dollar cap (usd_cap None) is
+                # restored with none; a snapshot without "spend" is from before K4a and gets the default.
+                "spend": {"usd": round(self.usd, 6), "usd_cap": self.usd_cap,
+                          "unpriced_requests": self.unpriced_requests},
                 **({"context_events": list(self.context_events)} if self.context_events else {}),
                 **({"history": dict(self.history)} if self.history else {})}
 

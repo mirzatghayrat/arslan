@@ -134,6 +134,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onBackgroundJobBudgetChange={(v) => saveField({ backgroundJobBudget: v })}
         taskUsdCap={localSettings.taskUsdCap ?? 2}
         onTaskUsdCapChange={(v) => saveField({ taskUsdCap: v })}
+        taskUsdCapEnabled={localSettings.taskUsdCapEnabled ?? true}
+        onTaskUsdCapEnabledChange={(v) => saveField({ taskUsdCapEnabled: v })}
         workspaceDir={localSettings.workspaceDir ?? ''}
         workspaceOtherVolume={localSettings.workspaceOtherVolume}
         onWorkspaceDirChange={(v) => saveField({ workspaceDir: v })}

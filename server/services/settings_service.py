@@ -22,6 +22,8 @@ _PLAIN_KEYS = (
                "search_provider_role",
                "orchestrator_shell_enabled",
                "shell_confirm_policy", "background_job_budget", "task_usd_cap",
+               # K4a (v0.1.64): the dollar cap's off switch ("true" | "false"; default on).
+               "task_usd_cap_enabled",
                # v0.1.63 (R63): "pending" when migration 0070 switched this user from ask_risky; the window shows a
                # one-time notice and writes "seen". DELETE-BY: v0.1.64, with the notice.
                "shell_policy_switch_notice",
@@ -414,12 +416,22 @@ async def background_job_budget(session: AsyncSession) -> str:
     return raw if raw in TIERS else DEFAULT_TIER
 
 
-async def task_usd_cap(session: AsyncSession) -> float:
+async def task_usd_cap_enabled(session: AsyncSession) -> bool:
+    """Whether the per-task dollar cap applies (K4a off switch, v0.1.64). Default ON; only an explicit
+    'false' turns it off. Off removes the dollar cap only: the tier's step and token limits still hold."""
+    raw = await _get_raw(session, "task_usd_cap_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def task_usd_cap(session: AsyncSession) -> float | None:
     """The per-task dollar cap (K4a): $2 by default; anything unreadable or not above zero is the default,
-    and at most MAX_USD_CAP."""
+    and at most MAX_USD_CAP. None when the user turned the cap off (no dollar limit; the amount stays
+    stored for when it is turned back on)."""
     import math
 
     from arslan.execution_budget import DEFAULT_USD_CAP, MAX_USD_CAP
+    if not await task_usd_cap_enabled(session):
+        return None
     try:
         value = float(str(await _get_raw(session, "task_usd_cap") or "").strip())
     except ValueError:
@@ -521,6 +533,7 @@ _BOOL_ACCESSORS = {
     "learned_practices_take_effect": learned_practices_take_effect,
     "phone_bridge_enabled": phone_bridge_enabled,
     "mcp_server_enabled": mcp_server_enabled,
+    "task_usd_cap_enabled": task_usd_cap_enabled,
 }
 
 #: The bool keys this registry is responsible for.
