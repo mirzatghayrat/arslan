@@ -207,6 +207,8 @@ NOTHING_FOUND = {"web_search": {"ok": True, "results": []}}
 LINKS = "| a | https://example.test/a |\n| b | https://example.test/b |\n| c | https://not-read.test/z |"
 THOUGHT = {"protocol": "openai", "reasoning": "thinking it over"}
 UPDATE = {"protocol": "anthropic", "updates": True, "content": [{"type": "thinking", "thinking": "Checking the file."}]}
+NEEDS_X = {"key": "needs_x", "description": "The needs_x tool.",
+           "input_schema": {"type": "object", "required": ["x"], "properties": {"x": {"type": "string"}}}}
 
 
 def _stopped_by_the_sandbox(_args):
@@ -335,6 +337,25 @@ SCENARIOS: dict[str, dict] = {
     "capability_card_stays_the_same_table": dict(replies=[
         _call("propose_capability", {"candidate_id": "c9", "why": "an xlsx reader"}), Reply("Asked.")],
         tools=_table("propose_capability"), setup="capability_declined", expect="declined"),
+    # LOOP1 c3a: a table read again mid-batch is what the rest of that batch checks against, while what the turn worked
+    # out from the table it opened with stays as it was: the offline note (it needs run_command), and whether it can save
+    # (a save tool added mid-turn doesn't start the finish steps at a no-progress stop).
+    "a_refresh_mid_batch_reads_the_new_table": dict(replies=[
+        _batch(("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c1"),
+               ("needs_x", {}, "c2"), ("update_plan", {"items": [{"text": "after", "status": "in_progress"}]}, "c3")),
+        Reply("Done.")], tools=_table("create_skill"), later_tools=[*_table("create_skill", "update_plan"), NEEDS_X],
+        setup="skill_saved", expect="missing required 'x'"),
+    "values_stored_at_open_stay_after_a_refresh": dict(replies=[
+        _batch(("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c1"),
+               ("list_dir", {"path": "~/a"}, "c2")), _call("web_search", {"query": "b"}, "c3"), Reply("Wrapped up.")],
+        tools=_table("create_skill", "list_dir", "web_search"),
+        later_tools=_table("create_skill", "list_dir", "web_search", "run_command"), setup="skill_saved",
+        budget=dict(limits=Limits(tool_calls=40), soft=Limits(tool_calls=1)), expect="Tools that still run: run_command"),
+    "no_save_tool_at_open_stays_after_a_refresh": dict(replies=[
+        _call("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c0"),
+        *_searches(5), Reply("Blocked; here is what is verified.")], tools=_table("create_skill", "web_search"),
+        later_tools=_table("create_skill", "web_search", "write_file"), setup="skill_saved", answers=NOTHING_FOUND,
+        expect="Repeated actions made no progress. Explain what was verified"),
     "choice_card": dict(replies=[
         Reply("Which one?", [golden._tc("ask_user_choice", {"question": "Which?", "options": [
             {"label": "A"}, {"label": "B"}]}, "c1"), golden._tc("web_search", {"query": "never run"}, "c2")])],
