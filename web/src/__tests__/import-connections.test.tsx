@@ -229,6 +229,25 @@ describe("a custom program", () => {
     expect(addSpy.mock.calls[0][0].map(s => s.digest)).toEqual([PROGRAM.digest, PACKAGE.digest]);
   });
 
+  it("never opens ticked when a ticked row shares its id; each tick is its own row's and sends its own digest", async () => {
+    // Two server names can give one id, so a tick follows the row's digest, which differs per entry.
+    const shared = "claude_code:twin";
+    const pkg = row({ id: shared, name: "twin-pkg", digest: "digest-of-the-package" });
+    const program = { ...PROGRAM, id: shared, tool: "claude_code" as const, name: "twin", digest: "digest-of-the-program", tick: true };
+    await openSheet([pkg, program]);
+    expect(tick("twin-pkg").checked).toBe(true);
+    expect(tick("twin").checked).toBe(false);
+    expect(addButton()).toHaveTextContent("Add 1 connection");
+    fireEvent.click(tick("twin"));
+    expect(tick("twin").checked).toBe(true);
+    expect(addButton()).toHaveTextContent("Add 2 connections");
+    fireEvent.click(tick("twin"));
+    expect(tick("twin").checked).toBe(false);
+    expect(tick("twin-pkg").checked).toBe(true);
+    await addAndGetResults([{ id: shared, state: "on", tools: 1 }]);
+    expect(addSpy.mock.calls[0][0]).toEqual([{ id: shared, digest: pkg.digest, keys: {} }]);
+  });
+
   it("its result says it isn't tested and where a failed start shows", async () => {
     await openSheet([{ ...PROGRAM, tick: true }]);
     fireEvent.click(tick("my-server"));
@@ -487,6 +506,21 @@ describe("the footer", () => {
     expect(foot()).toContain("A custom program isn't tested: it starts when it is added.");
     fireEvent.click(tick("my-server"));
     expect(foot()).toContain("Each one is tested once before it is switched on.");
+  });
+
+  it("right after the key sentence, says a value shown in full isn't a key, with or without a program ticked", async () => {
+    const both = "Keys are kept encrypted on this Mac, and the model never sees them. A value a row shows in full isn't treated as a key.";
+    expect(capabilityListMessages.en.import_shownFoot).toBe("A value a row shows in full isn't treated as a key.");
+    await openSheet([PACKAGE, PROGRAM]);
+    expect(foot()).toContain(both);
+    fireEvent.click(tick("my-server"));
+    expect(foot()).toContain(both);
+  });
+
+  it("says it in the sheet's own language", async () => {
+    await i18n.changeLanguage("ja");
+    await openSheet([PACKAGE]);
+    expect(foot()).toContain(`${capabilityListMessages.ja.import_keysFoot} ${capabilityListMessages.ja.import_shownFoot}`);
   });
 });
 

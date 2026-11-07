@@ -29,6 +29,7 @@ export default function ImportConnections({ onClose, onChanged }: { onClose: () 
   const { t } = useTranslation();
   const [scan, setScan] = useState<ImportScan | null>(null);
   const [scanFailed, setScanFailed] = useState(false);
+  // Ticks are held by `digest`, not `id`: two server names in one file can give one id, and a tick must stay its own row's.
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [keys, setKeys] = useState<Map<string, string>>(new Map());
   const [busy, setBusy] = useState(false);
@@ -42,7 +43,7 @@ export default function ImportConnections({ onClose, onChanged }: { onClose: () 
       if (!live) return;
       setScan(next);
       // The server decides, except that a refused row has nothing to tick and a program is only ever ticked by hand.
-      setTicked(new Set(next.servers.filter(r => r.tick && !r.refused && r.kind !== "program").map(r => r.id)));
+      setTicked(new Set(next.servers.filter(r => r.tick && !r.refused && r.kind !== "program").map(r => r.digest)));
     }).catch(() => { if (live) setScanFailed(true); });
     return () => { live = false; };
   }, [scanNumber]);
@@ -55,7 +56,7 @@ export default function ImportConnections({ onClose, onChanged }: { onClose: () 
   const rows = scan?.servers ?? [];
   const listed = rows.filter(r => !r.here);
   const here = rows.filter(r => r.here);
-  const chosen = listed.filter(r => ticked.has(r.id));
+  const chosen = listed.filter(r => ticked.has(r.digest));
   const programTicked = chosen.some(r => r.kind === "program");
 
   async function add() {
@@ -95,10 +96,10 @@ export default function ImportConnections({ onClose, onChanged }: { onClose: () 
 
   const row = (r: ImportRow) => {
     const first = r.same_as ? rows.find(other => other.id === r.same_as) : undefined;
-    return <div key={r.id} data-testid="import-row" data-name={r.name} className="flex flex-col gap-1.5 border-t border-border py-2.5 text-[13px] leading-snug">
+    return <div key={r.digest} data-testid="import-row" data-name={r.name} className="flex flex-col gap-1.5 border-t border-border py-2.5 text-[13px] leading-snug">
       <label className="grid cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-start gap-2.5 has-[:disabled]:cursor-default">
-        <input type="checkbox" checked={ticked.has(r.id)} disabled={!!r.refused} className="mt-0.5 h-[15px] w-[15px] accent-foreground"
-          onChange={() => { if (!r.refused) setTicked(old => { const next = new Set(old); if (next.has(r.id)) next.delete(r.id); else next.add(r.id); return next; }); }} />
+        <input type="checkbox" checked={ticked.has(r.digest)} disabled={!!r.refused} className="mt-0.5 h-[15px] w-[15px] accent-foreground"
+          onChange={() => { if (!r.refused) setTicked(old => { const next = new Set(old); if (next.has(r.digest)) next.delete(r.digest); else next.add(r.digest); return next; }); }} />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="flex flex-wrap items-center gap-2"><bdi className="font-semibold [overflow-wrap:anywhere]">{r.name}</bdi><Tag>{TOOL[r.tool]}</Tag></span>
           {runs(r)}
@@ -112,7 +113,7 @@ export default function ImportConnections({ onClose, onChanged }: { onClose: () 
       </label>
       {!r.refused && r.asks.map(name => <label key={name} className="ml-[28px] flex flex-col gap-0.5">
         <span className="font-mono text-[11.5px] break-all">{name}</span>
-        <input type="password" autoComplete="off" disabled={!ticked.has(r.id)} value={keys.get(keySlot(r, name)) ?? ""}
+        <input type="password" autoComplete="off" disabled={!ticked.has(r.digest)} value={keys.get(keySlot(r, name)) ?? ""}
           onChange={event => { const { value } = event.target; setKeys(old => new Map(old).set(keySlot(r, name), value)); }}
           className="rounded-lg border border-border bg-background px-2 py-1 text-[12.5px] disabled:opacity-50" />
       </label>)}
@@ -149,6 +150,7 @@ export default function ImportConnections({ onClose, onChanged }: { onClose: () 
     </div>
     {/* A custom program isn't tested (`added`), so "each one" is said only while none is ticked. */}
     <span data-testid="import-foot" className="text-[11px] text-subtle-foreground">{t("capabilityList.import_keysFoot")}{" "}
+      {t("capabilityList.import_shownFoot")}{" "}
       {t(programTicked ? "capabilityList.import_programFoot" : "capabilityList.import_testedFoot")}</span>
   </div> : null;
 
