@@ -283,7 +283,8 @@ def render(weeks: list[date], data: dict) -> str:
            "SBX-7; counts only, and never sent anywhere. Commands it stopped: run_command steps whose "
            "run noted a sandbox denial (EPERM, or the local proxy's refusal of a local address). An estimate, not "
            "a floor: it reads the command's own output, so a command that prints the words counts and one that "
-           "hides them does not (a plain-http refusal under curl -f among them). Cards to leave it: outside cards that "
+           "hides them does not (a plain-http refusal by a client that prints only the code among them). Cards to "
+           "leave it: outside cards that "
            "opened. Their share of commands is a bench number (scripts/kernel_bench/report.py).")
     weekly("## Post-turn model calls", ["memory_facts rows", "memory rows"],
            lambda w: [w["memory_facts"], w["memory"]],
