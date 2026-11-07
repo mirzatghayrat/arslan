@@ -22,7 +22,7 @@ import httpx
 import pytest
 
 from arslan.llm.adapter import LLMAdapter
-from server.orchestrator import tool_loop
+from server.orchestrator import tool_loop, turn_stream
 from sqlalchemy import select
 
 from server.db.models import CompanionTask, Run
@@ -315,7 +315,7 @@ async def test_whether_a_turn_streams(execution_db, monkeypatch):
         assert tool_loop._streams_answer(a, object()) is True       # only "an answer was delivered"
     finally:
         task_service._answer_only.reset(token)
-    monkeypatch.setattr(tool_loop, "BUFFERED_MODELS", frozenset({"deepseek-v4-flash"}))
+    monkeypatch.setattr(turn_stream, "BUFFERED_MODELS", frozenset({"deepseek-v4-flash"}))
     assert tool_loop._streams_answer(a, None) is False
 
 
