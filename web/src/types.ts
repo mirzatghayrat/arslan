@@ -202,6 +202,8 @@ export interface AppSettings {
   backgroundJobBudget: 'lean' | 'standard' | 'ample';
   /** K4a: the per-task dollar cap, US$ (default 2, at most 100). */
   taskUsdCap: number;
+  /** K4a: the dollar cap's switch (default on); off = no dollar cap, the step and token limits still hold. */
+  taskUsdCapEnabled?: boolean;
   /** Directory Arslan's file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   /** S3b: the workspace is on another volume than Arslan's data, so its changes can't be undone (read only). */

@@ -389,6 +389,7 @@ export interface AppSettings {
   model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
+  task_usd_cap_enabled?: boolean; // K4a: false = no dollar cap (step and token limits still hold); default true
   workspace_dir?: string;   // "" = unset = file tools not offered
   workspace_other_volume?: boolean; // S3b: on another volume than Arslan's data: its changes can't be undone
   heartbeat_enabled?: string;     // "true" | "false"
