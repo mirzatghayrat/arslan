@@ -987,6 +987,11 @@ EXECUTORS = {e.key: e for e in (
     ListNodesExecutor(), EnrollNodeExecutor(),
 )}
 
+# LOOP1 a1: refuse a table that can't work when it is built (a name twice, parameters that aren't an object, a tool
+# nothing answers). Here since a6, so the tool table itself imports no executor.
+from server.registry import tool as _tool, tool_defs as _tool_defs  # noqa: E402 — registry assembly
+_tool.check(_tool_defs.TOOLS, EXECUTORS)
+
 
 async def resolve_executor(tool_key: str):
     """Route a tool key to its executor: built-in (static EXECUTORS), MCP proxy, or None.

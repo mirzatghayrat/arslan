@@ -13,6 +13,7 @@ import pytest
 from arslan.llm import trajectory as tj
 from server.orchestrator import agent_status, tool_loop
 from tests.server import test_trajectory_golden as golden
+from server.orchestrator import tool_gates
 
 PLAN = {"items": [{"text": "find sources", "status": "done"},
                   {"text": "save report", "status": "in_progress"}]}
@@ -50,7 +51,7 @@ async def _run(monkeypatch, replies, **kwargs):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
     from server.registry import executors
     for key, executor in {"web_search": golden._Search, "web_extract": golden._Extract,
                           "write_file": golden._Write}.items():

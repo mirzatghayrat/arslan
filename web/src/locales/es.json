@@ -1016,6 +1016,7 @@
     "runRemote": "Ejecutar allí",
     "purpose": {
       "run": "Ejecutar {{program}}",
+      "notAllRead": "Ejecutar {{program}}: Arslan no pudo leer el comando completo",
       "copyLocal": "Copiar {{count}} elementos",
       "copyLocal_one": "Copiar 1 elemento",
       "delete": "Borrar {{count}} archivos o carpetas",
