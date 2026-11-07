@@ -25,6 +25,9 @@ LEDGER_DAYS = 90
 #:   count of the user's "no" (decided_by "user", decision "deny") never includes it, and a card
 #:   that was shown and ran out ("expired", "expired") is not one of these.
 NOT_ASKED = (("policy", "deny"), ("away", "expired"))
+#: What Progress lists: those, and (INB8) a card nobody answered in time, or a hushed card would just vanish. It's listed and
+#: nothing more: it records no "Always" set, and `could_not_ask` keeps "Always allow" to NOT_ASKED.
+LISTED = (*NOT_ASKED, ("expired", "expired"))
 #: A task grant's turn or job never comes back; its row is pruned after this.
 TASK_GRANT_HOURS = 24
 #: Pruning runs at most once an hour, on a write.
@@ -157,9 +160,9 @@ def could_not_ask(row: ApprovalEvent) -> bool:
     return (row.decided_by, row.decision) in NOT_ASKED
 
 
-def _not_asked():
+def _listed():
     return or_(*(and_(ApprovalEvent.decided_by == decided_by, ApprovalEvent.decision == decision)
-                 for decided_by, decision in NOT_ASKED))
+                 for decided_by, decision in LISTED))
 
 
 async def refused_groups(db, since: datetime, *, limit: int = 500, conversation_id: str | None = None
@@ -173,7 +176,7 @@ async def refused_groups(db, since: datetime, *, limit: int = 500, conversation_
 
     `conversation_id` (INB3): only that conversation's rows, picked before grouping. Grouped first, two
     conversations that refused the same thing would make one group whose latest row names one of them."""
-    where = [_not_asked(), ApprovalEvent.created_at >= since]
+    where = [_listed(), ApprovalEvent.created_at >= since]
     if conversation_id is not None:
         where.append(ApprovalEvent.conversation_id == conversation_id)
     groups = (await db.execute(
