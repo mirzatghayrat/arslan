@@ -23,6 +23,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"x\": 1}",
