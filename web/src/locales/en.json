@@ -1402,6 +1402,8 @@
       "task": "For this task",
       "conversation": "In this conversation",
       "conversationFor": "In this conversation: {{label}}",
+      "subSession": "In this sub-session",
+      "subSessionFor": "In this sub-session: {{label}}",
       "anyToolUse": "any use of this tool, with any arguments",
       "always": "Always: {{label}}"
     },

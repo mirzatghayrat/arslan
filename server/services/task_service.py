@@ -41,7 +41,7 @@ _READ_TOOLS = frozenset({
     "web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
     "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "my_status", "render_chart", "task_progress", "delegate_work",
 })
-_LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "remember", "create_skill",
+_LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "remember", "create_skill", "import_memories",
                                 "start_background_work", "stop_background_work",
                                 "attach_file"})   # 0.1.63 D1: to this Mac's window and the user's own iPhone
 _READ_TOOLS = _READ_TOOLS | {"background_status", "browser_open", "browser_look", "browser_back",
@@ -49,13 +49,15 @@ _READ_TOOLS = _READ_TOOLS | {"background_status", "browser_open", "browser_look"
 _READ_TOOLS = _READ_TOOLS | {"desktop_apps", "desktop_look"}       # 0.1.53: Hands reads; desktop_* acts
 
 
-def _outbound(command: str) -> bool:
+def _outbound(command: str, *, in_sandbox: bool = False) -> bool:
     """0.1.59: a command whose failure may still have left something behind elsewhere (an upload that
     broke after the server took it), so it stays a reason to ask the user to check. The rules are
     terminal_policy's "sends something out" group and the two that drive other apps (S2a-2: F2's extra
-    spellings now live in that group)."""
+    spellings now live in that group). Inside the workspace sandbox an Apple Event reaches no app, so
+    `apple-events` is not a reason there; any other rule on the same command still is."""
     from server.services import terminal_policy
-    return bool(terminal_policy.ask_rules(command) & terminal_policy.OUTBOUND_RULES)
+    rules = terminal_policy.OUTBOUND_RULES - {"apple-events"} if in_sandbox else terminal_policy.OUTBOUND_RULES
+    return bool(terminal_policy.ask_rules(command) & rules)
 
 
 def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
@@ -68,11 +70,20 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     Also known: an MCP call to a server that was not ready (it never left Arslan; 0.1.61 §B1).
     Also known (0.1.62 F2): a result that says it never ran (`executed: False`), and a command stopped
     by its own time limit inside the workspace sandbox.
+    Also known (0.1.64): a failed `apple-events` command that stayed in the workspace sandbox, whatever
+    its script or its error says: no event left it. `sandbox` is what terminal_exec ran it under, written
+    after the command ended; only "workspace" is that. "outside" is the minimal profile, which blocks the
+    event but not the script's other steps (a shell, a file anywhere); "off" and "unavailable" have no
+    wrapper, so the app may have acted and then failed.
     Still unknown, and still asking: exceptions, cancellations, a command killed by a signal or by a
     time limit outside the sandbox, any command matching an outbound rule, and every other tool.
     Not covered (said here and in docs/specs/2026-10-10-0159-job-checks.md): a local script that sends
     something over the network itself and then fails is treated as local — the terminal policy cannot
-    see inside the script.
+    see inside the script. A sandboxed osascript's `do shell script` is such a script once the user turns
+    on "Allow system certificate checks in the sandbox" (`sandbox_system_certificates`, off by default):
+    then it runs and reaches the network, a rule like `upload` doesn't read inside its quotes, and a
+    failed send counted as known can be repeated after a card click. With that setting off it doesn't
+    start (measured with SBX-6a's profile).
     """
     if not isinstance(result, dict) or result.get("ok"):
         return False
@@ -89,18 +100,19 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
         return _osascript_refused(str((arguments or {}).get("script") or ""), str(result.get("error") or ""))
     if tool_key != "run_command":
         return False
-    if _apple_events_refused(arguments, result):
+    in_sandbox = result.get("sandbox") == "workspace"
+    if not in_sandbox and _apple_events_refused(arguments, result):
         return True       # 0.1.63 D4: before the outbound rule (apple-events) below: nothing reached the app
     from server.services import terminal_policy
     command = terminal_policy.as_shell(arguments.get("command"), arguments.get("argv"))
-    if result.get("code") == "time_limit" and result.get("sandbox") == "workspace":
+    if result.get("code") == "time_limit" and in_sandbox:
         # 0.1.62 F2 ②: stopped by its own time limit inside the workspace sandbox. Before the signal
         # check below: the stop is a SIGKILL too. Outside the sandbox it stays unknown.
-        return not _outbound(command)
+        return not _outbound(command, in_sandbox=True)
     code = result.get("exit_code")
     if str(result.get("error") or "").startswith("stopped") or (code is not None and (type(code) is not int or code < 0)):
         return False
-    return not _outbound(command)
+    return not _outbound(command, in_sandbox=in_sandbox)
 
 
 # 0.1.63 D4: one osascript, its script in the command (-e or a here-doc), talking to ONE app that refused
@@ -127,12 +139,10 @@ _PRIVILEGE_ALL_OR_NOTHING = {"reminders"}
 _OSA_HEREDOC = re.compile(r"\A\s*(?:/usr/bin/)?osascript\s*<<-?\s*(['\"]?)(\w+)\1[ \t]*\n(.*)\n\2\s*\Z", re.S)
 _OSA_NOT_ALLOWED = re.compile(r"execution error: Not authorized to send Apple events to (.+)\. \(-1743\)\Z")
 _OSA_PRIVILEGE = re.compile(r"execution error: (.+) got an error: A privilege violation occurred\. \(-10004\)\Z")
-# S2a-1: under `(deny appleevent-send)` (the workspace sandbox, and the minimal profile outside it) no
-# event leaves the process, so the script's one app answers "isn't running" (-600): nothing happened there.
-_OSA_SANDBOX_DENIED = re.compile(r"execution error: (.+) got an error: Application isn[’']t running\. \(-600\)\Z")
-# SBX-3: the workspace sandbox is the default-deny base, which refuses the app's lookup before any event, so
-# osascript reports the app itself as not found (-1728, measured 2026-11-02). Only for the app, not an element.
-_OSA_SANDBOX_LOOKUP = re.compile(r"execution error: Can[’']t get application \"([^\"]+)\"\. \(-1728\)\Z")
+# S2a-1: under `(deny appleevent-send)` in the minimal profile no event leaves the process, so the script's
+# one app answers "isn't running" (-600): nothing happened there. Inside the workspace sandbox no error is
+# read at all (known_local_failure).
+_OSA_MINIMAL_PROFILE_DENIED = re.compile(r"execution error: (.+) got an error: Application isn[’']t running\. \(-600\)\Z")
 _OSA_ELSEWHERE = re.compile(r"[«»]|\(\*|\b(?:do\s+shell\s+script|run\s+script|load\s+script|store\s+script|"
                             r"application\s+id|app\s*\"|current\s+application|use\s|open\s+for\s+access|"
                             r"write\s|set\s+eof)", re.I)
@@ -416,10 +426,10 @@ def _apple_events_refused(arguments: dict, result: dict) -> bool:
         return False
     script = _inline_osascript(terminal_policy.as_shell(arguments.get("command"), arguments.get("argv")))
     return script is not None and _osascript_refused(script, str(result.get("stderr") or ""),
-                                                     sandboxed=result.get("sandbox") in ("workspace", "outside"))
+                                                     minimal_profile=result.get("sandbox") == "outside")
 
 
-def _osascript_refused(script: str, stderr: str, *, sandboxed: bool = False) -> bool:
+def _osascript_refused(script: str, stderr: str, *, minimal_profile: bool = False) -> bool:
     """An AppleScript that failed without acting: it never compiled, or its one app refused it."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not script.strip() or not lines:
@@ -434,7 +444,7 @@ def _osascript_refused(script: str, stderr: str, *, sandboxed: bool = False) -> 
         return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
-    if sandboxed and (match := _OSA_SANDBOX_DENIED.search(lines[-1]) or _OSA_SANDBOX_LOOKUP.search(lines[-1])):
+    if minimal_profile and (match := _OSA_MINIMAL_PROFILE_DENIED.search(lines[-1])):
         return match.group(1).lower() in apps
     match = _OSA_PRIVILEGE.search(lines[-1])
     return match is not None and match.group(1).lower() in apps & _PRIVILEGE_ALL_OR_NOTHING
@@ -669,6 +679,11 @@ class TaskRuntime:
                 value = await repo.checkpoint(self.task_id, self.attempt_id, budget.snapshot(),
                                               self.progress, reason=reason, retain_stopped=retain_stopped)
             self.emit(_state_frame(value))
+        context = personal_context.current()
+        if reason == "before_model" and context is not None and context.sub_session:
+            # SUB3: and its tree's shared limit, with this request's own spend saved just above.
+            from server.services import sub_sessions
+            await sub_sessions.check_tree_spend(context.conversation_id)
 
     def capture(self, event: dict):
         if event.get("type") == "run_cancelled":

@@ -1402,6 +1402,8 @@
       "task": "本次任务内",
       "conversation": "本对话内",
       "conversationFor": "本对话内：{{label}}",
+      "subSession": "这个子会话内",
+      "subSessionFor": "这个子会话内：{{label}}",
       "anyToolUse": "这个工具的任何调用，参数不限",
       "always": "始终允许：{{label}}"
     },

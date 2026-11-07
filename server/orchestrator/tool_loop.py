@@ -26,7 +26,6 @@ from server.orchestrator.turn_stream import (
     _UNVERIFIED_BOUNCES, TextShown, _StepStream, _TurnText, _correct, _kept_note, _not_verified, _progress_updates, _shown,
     _streams_answer)
 from server.orchestrator.turn_state import TOOL_TIMEOUT_S, ResolveTools, ToolTurn, TurnRequest, TurnState  # noqa: F401
-from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
@@ -865,150 +864,10 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
-# The tools still to move into server/registry/tool_defs (LOOP1 a4 and a5) are listed here; DELETE-BY: v0.1.64, with a5.
-
-# Hands v2 §6.3: the one way the model asks for the front. FRONT1 (the user, 2026-10-30): an action the app
-# ignored in the background reads as `sent_unconfirmed` (a click or a press never says `no_effect`: Hands'
-# outcome.rs), then as a look with no change (hands_tools.NOTHING_CHANGED). A POLICY_DENIED refusal is no
-# reason: a borrow never lets agent-desktop take focus (hands_contract's `needs_focus`, `keys_refused`).
-_FRONT = ("only if this action, done in the background, came back sent_unconfirmed and your next desktop_look "
-          "said “Nothing changed since your last look.”: Arslan borrows the app's front for about a "
-          "second, waiting for the user to pause typing")
-
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     **tool_defs.SCHEMAS,
-    # 0.1.45 hands
-    "browser_open": {"type": "object", "properties": {"url": {"type": "string", "maxLength": 4000}},
-                     "required": ["url"], "additionalProperties": False},
-    "browser_look": {"type": "object", "properties": {}, "additionalProperties": False},
-    "browser_back": {"type": "object", "properties": {}, "additionalProperties": False},
-    "browser_click": {"type": "object", "properties": {"element": {"type": "string", "maxLength": 300, "description": "what the element is, in words"}, "ref": {"type": "string", "maxLength": 200, "description": "the element ref from the latest page snapshot"}},
-                      "required": ["element", "ref"], "additionalProperties": False},
-    "browser_type": {"type": "object", "properties": {"element": {"type": "string", "maxLength": 300, "description": "what the element is, in words"}, "ref": {"type": "string", "maxLength": 200, "description": "the element ref from the latest page snapshot"},
-                     "text": {"type": "string", "maxLength": 4000}, "submit": {"type": "boolean"}},
-                     "required": ["element", "ref", "text"], "additionalProperties": False},
-    "browser_select": {"type": "object", "properties": {"element": {"type": "string", "maxLength": 300, "description": "what the element is, in words"}, "ref": {"type": "string", "maxLength": 200, "description": "the element ref from the latest page snapshot"},
-                       "values": {"type": "array", "items": {"type": "string"}, "maxItems": 20}},
-                       "required": ["element", "ref", "values"], "additionalProperties": False},
-    "browser_press": {"type": "object", "properties": {"key": {"type": "string", "maxLength": 40}},
-                      "required": ["key"], "additionalProperties": False},
-    "mac_list_shortcuts": {"type": "object", "properties": {}, "additionalProperties": False},
-    "mac_run_shortcut": {"type": "object", "properties": {"name": {"type": "string", "maxLength": 200},
-                         "input": {"type": "string", "maxLength": 20000}}, "required": ["name"],
-                         "additionalProperties": False},
-    "mac_applescript": {"type": "object", "properties": {"script": {"type": "string", "maxLength": 4000}},
-                        "required": ["script"], "additionalProperties": False},
-    # 0.1.53 Mac apps through Arslan Hands
-    "desktop_apps": {"type": "object", "properties": {}, "additionalProperties": False},
-    "desktop_look": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120, "description": "app name or bundle id"},
-        "ref": {"type": "string", "maxLength": 200, "description": "open this part of the last outline"},
-        "text": {"type": "string", "maxLength": 200, "description": "find elements containing this text"},
-        "role": {"type": "string", "maxLength": 40, "description": "find elements of this role (button, textfield…)"},
-        "wait_for_text": {"type": "string", "maxLength": 200, "description": "wait up to 10 s for this text first"},
-        "window": {"type": "string", "maxLength": 200, "description": "look at the window whose title contains this"}},
-        "required": ["app"], "additionalProperties": False},
-    "desktop_click": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "element": {"type": "string", "maxLength": 300, "description": "what the element is, in words"},
-        "ref": {"type": "string", "maxLength": 200, "description": "the ref from your latest desktop_look"},
-        "front": {"type": "boolean", "description": _FRONT}},
-        "required": ["app", "element", "ref"], "additionalProperties": False},
-    "desktop_type": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "element": {"type": "string", "maxLength": 300, "description": "what the field is, in words"},
-        "ref": {"type": "string", "maxLength": 200},
-        "text": {"type": "string", "maxLength": 20000},
-        "mode": {"type": "string", "enum": ["replace", "append"]},
-        "submit": {"type": "boolean"}},
-        "required": ["app", "element", "ref", "text"], "additionalProperties": False},
-    "desktop_select": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "element": {"type": "string", "maxLength": 300},
-        "ref": {"type": "string", "maxLength": 200},
-        "value": {"type": "string", "minLength": 1, "maxLength": 200}},
-        "required": ["app", "element", "ref", "value"], "additionalProperties": False},
-    "desktop_scroll": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "element": {"type": "string", "maxLength": 300},
-        "ref": {"type": "string", "maxLength": 200},
-        "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
-        "amount": {"type": "integer", "minimum": 1, "maximum": 20}},
-        "required": ["app", "element", "ref"], "additionalProperties": False},
-    "desktop_press": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "keys": {"type": "string", "minLength": 1, "maxLength": 40, "description": "return, escape, tab, cmd+n…"},
-        "front": {"type": "boolean", "description": _FRONT}},
-        "required": ["app", "keys"], "additionalProperties": False},
-    "desktop_access": {"type": "object", "properties": {
-        "apps": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "string", "maxLength": 120},
-                 "description": "the apps this task needs, by name"},
-        "why": {"type": "string", "minLength": 1, "maxLength": 300, "description": "what you will do, in words"}},
-        "required": ["apps", "why"], "additionalProperties": False},
-    "desktop_takeover": {"type": "object", "properties": {
-        "why": {"type": "string", "minLength": 1, "maxLength": 300,
-                "description": "what you will do with the screen, in the user's words"},
-        "minutes": {"type": "integer", "minimum": 1, "maximum": 30}},
-        "required": ["why", "minutes"], "additionalProperties": False},
-    "desktop_open": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120, "description": "the app's name, e.g. TextEdit"},
-        "path": {"type": "string", "minLength": 1, "maxLength": 1000,
-                 "description": "a file or folder to open in that app (optional)"}},
-        "required": ["app"], "additionalProperties": False},
-    "desktop_batch": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "steps": {"type": "array", "minItems": 1, "maxItems": 8, "items": {
-            "type": "object", "properties": {
-                "action": {"type": "string", "enum": ["click", "type", "select", "scroll", "press", "menu"]},
-                "element": {"type": "string", "maxLength": 300}, "ref": {"type": "string", "maxLength": 200},
-                "text": {"type": "string", "maxLength": 20000}, "mode": {"type": "string", "enum": ["replace", "append"]},
-                "submit": {"type": "boolean"}, "value": {"type": "string", "maxLength": 200},
-                "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
-                "amount": {"type": "integer", "minimum": 1, "maximum": 20},
-                "keys": {"type": "string", "maxLength": 40},
-                "path": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": "string", "maxLength": 120}}},
-            "required": ["action"], "additionalProperties": False}}},
-        "required": ["app", "steps"], "additionalProperties": False},
-    "desktop_menu": {"type": "object", "properties": {
-        "app": {"type": "string", "minLength": 1, "maxLength": 120},
-        "path": {"type": "array", "minItems": 2, "maxItems": 4,
-                 "items": {"type": "string", "minLength": 1, "maxLength": 120},
-                 "description": "the menu's titles as the app shows them, top level first: [\"Format\", \"Font\", \"Bold\"]"}},
-        "required": ["app", "path"], "additionalProperties": False},
-    "run_command": {"type": "object",
-                    "properties": {"command": {"type": "string",
-                                               "description": "The full shell command line, e.g. "
-                                                              "\"ls -la ~/Downloads | head -20\"."},
-                                   "timeout_s": {"type": "integer", "minimum": terminal_exec.MIN_TIMEOUT_S,
-                                                 "maximum": terminal_exec.MAX_TIMEOUT_S,
-                                                 "description": "Stop after this many seconds (default "
-                                                                f"{terminal_exec.DEFAULT_TIMEOUT_S})."},
-                                   "outside_sandbox": {"type": "boolean",
-                                                       "description": "Only when the command must write outside "
-                                                                      "the working folder (moving files, installing "
-                                                                      "software). The user is asked."},
-                                   "network": {"type": "boolean",
-                                               "description": "The command needs the network (a download, an "
-                                                              "API). After you read outside content in this turn, "
-                                                              "commands run offline unless the user allows it."},
-                                   "why": {"type": "string", "maxLength": 300,
-                                           "description": "What this step does, in a sentence. With "
-                                                          "outside_sandbox, why it must run outside. "
-                                                          "Cards show it first."}},
-                    "required": ["command"]},
-    "run_python": {"type": "object",
-                   "properties": {"code": {"type": "string"}}},
     # 0.1.63 K7: the two tools that reach everything a request is not shown (on_demand.py).
-    "find_tools": {"type": "object",
-                   "properties": {"query": {"type": "string", "maxLength": 200,
-                                            "description": "English keywords, e.g. \"send file\"."}},
-                   "required": ["query"], "additionalProperties": False},
-    "use_tool": {"type": "object",
-                 "properties": {"name": {"type": "string", "maxLength": 120,
-                                         "description": "As find_tools returned it."},
-                                "arguments": {"type": "object",
-                                              "description": "Its arguments, as its parameters say."}},
-                 "required": ["name"], "additionalProperties": False},
+    **on_demand.SCHEMAS,
 }
 
 # PA-3: ask_user_choice is a TERMINAL tool (same pattern as `escalate`): a VALID call
@@ -1702,17 +1561,20 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     outcome = await _propose_plan_change(args, emit)
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     continue
-                if name in ("propose_capability", "create_skill") and (name in wired_keys or on_demand_call):
+                if name in ("propose_capability", "create_skill", "import_memories") and (name in wired_keys or on_demand_call):
                     # 0.1.57 §3: the install-and-retry card; v0.1.64 CAP2a: the save-a-skill card, on the
-                    # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill). A blocking ask in THIS window (confirm_command carries it); a job or a
+                    # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill); CAP8b: the
+                    # memory import card. A blocking ask in THIS window (confirm_command carries it); a job or a
                     # turn nobody watches adds nothing. On success the tools are read again, so the new
                     # capability (or read_skill's list) is there for the rest of this turn.
                     emit({"type": "tool_call", "tool": name,
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    from server.services import background_jobs, capability_flow, skill_forge
+                    from server.services import background_jobs, capability_flow, memory_import, skill_forge
                     ask = None if background_jobs.inside_job() else getattr(confirm_command, "ask_capability", None)
                     if name == "create_skill":
                         outcome = await skill_forge.propose(args, conversation_id=conversation_id, ask=ask)
+                    elif name == "import_memories":
+                        outcome = await memory_import.propose(args, conversation_id=conversation_id, ask=ask)
                     else:
                         outcome = await capability_flow.propose(args, conversation_id=conversation_id, ask=ask,
                                                                 emit=emit)

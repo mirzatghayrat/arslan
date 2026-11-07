@@ -8,7 +8,7 @@
 | 版本 | v0.1.64 |
 | 分级 | 必须（用户 10-27 放进 v0.1.64，10-28 确认；只等 SBX） |
 | 依赖 | S64-0（补洞的安全 PR，在 SUB 之外：`delegate_work` 的标记、`track_turn` 的起始值等）；SBX（沙箱默认拒绝，用户定的顺序：本卡排在它后面）；M64 的「拆开、分给子会话、汇总」题和反面题；Q1 的迁移（`kind` 列 + 父对话 id，两张卡共用，Q1 先申请）；手机上显示子会话要改 Bridge 帧，要用户点头 |
-| 合并位置 | SUB2 在 Q1 的迁移合了以后。SUB3–SUB5 叠着做，M64 的题在叠起来的最上面跑过了才一起合，而且要在 S64-0 之后。SUB6 删代码，SUB7 删表，最后。改到 `tool_loop.py`、`arslan.py` 的，排在当时打开的 K 线 PR 后面 |
+| 合并位置 | SUB2 after Q1's migration. Changed (⓪Plan, 2026-11-07): SUB3 and SUB4 are not stacked and carry no flag; each lands from main with `start_sub_session` in no tool table, so no model can reach it. SUB5 adds the tool to the tables last, once the M64 bench passes on its branch. All after S64-0. SUB6 deletes the code and SUB7 the table, last. A PR touching `tool_loop.py` or `arslan.py` goes after the K-line PRs open at the time |
 | 推动的门槛 | 领先路线 C 行「子 agent」落后 → 追平（`docs/plans/2026-10-17-0162-lead-roadmap.md:243`）；R64 的跑分（拆分派汇总题出数） |
 | 分支 | `claude/0164-sub2-sub-data`、`claude/0164-sub3-runner`、`claude/0164-sub4-report`、`claude/0164-sub5-lifecycle`、`claude/0164-sub6-delete-delegate`、`claude/0164-sub7-drop-task-workers` |
 | 迁移号 | SUB2 不另要（用 Q1 那一次）。SUB7 删 `task_workers` 表要一个迁移：⓪Plan 建议并进 C7c 那一次迁移，C7c 已经合了就向 ②Main 申请下一个空号 |
@@ -207,7 +207,7 @@ Added after this card was drafted. The sub-session base in this card (v0.1.64) i
 
 1. **S64-0 先合**（#438，不在本卡）。SUB3 要用它加的起始值 `untrusted.carried(seen)`。
 2. **SUB2** 等 Q1 的迁移合了再开。只加数据、继承和过滤，用户看不到变化。
-3. **SUB3、SUB4、SUB5 叠在一起做，先不合。** 最上面那个 PR 的头上跑 M64 的拆分派汇总题和反面题（DeepSeek 当总指挥），加上全套旧题。过了，三个 PR 按顺序合，每个都要 CI 绿。没过，三个都不合，结论写进早报，回来改。理由：先合进 main 而工具没开放，就是一堆没人调的代码；跑分不过要么返工，要么撤。
+3. **Changed (⓪Plan, 2026-11-07): SUB3 and SUB4 land from main, not stacked and with no flag; SUB5 opens the tool.** SUB3 and SUB4 each merge on their own once reviewed and CI is green, with `start_sub_session` in no tool table: the executor and the runner are tested directly, and no model can reach them. SUB5 adds the tool to the tables last. The M64 split-dispatch-summarise task and the counter task (DeepSeek as the commander), plus the full set of older tasks, run on SUB5's branch; SUB5 merges only if they pass. If they don't, SUB5 doesn't merge, the result goes in the morning report, and the work goes back.
 4. **跑分过的标准（⓪Plan 建议，用户定）：**
    - 拆分派汇总题三次里至少两次过：开了 2–4 个子会话，每块都有产物，汇总覆盖了每一块，两个子会话没写同一个文件；
    - 反面题三次都不开子会话；

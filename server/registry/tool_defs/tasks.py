@@ -106,3 +106,16 @@ TASKS = (
           "required": ["job_id"], "additionalProperties": False},
          offered=_can_start_a_job),
 )
+
+#: SUB3: defined, and answered by task_tools.StartSubSessionExecutor, but in no table yet: SUB5 adds it to TASKS (and
+#: the executor to EXECUTORS) once the M64 bench passes with it, so no model can call it before then.
+START_SUB_SESSION = Tool(
+    "start_sub_session",
+    "Hand one independent part of a larger piece of work to a sub-session: a conversation of its own that works in "
+    "the background with files, commands and the web, and reports back here. Use it only when the work splits into "
+    "parts that can be done apart; anything one turn can do, do here. Write the brief so it stands alone: the "
+    "sub-session sees nothing of this conversation but the brief.",
+    {"type": "object", "properties": {
+        "brief": {"type": "string", "minLength": 1, "maxLength": 4000,
+                  "description": "What the sub-session should do and what done looks like, in the user's language."}},
+     "required": ["brief"], "additionalProperties": False})

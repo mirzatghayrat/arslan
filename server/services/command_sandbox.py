@@ -42,6 +42,7 @@ from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_
                                              real as _real, regex, subpath)
 
 _SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+_TRUST_SERVICE = '(global-name "com.apple.trustd.agent")'   # SBX-6a, the user's setting
 _available: bool | None = None
 
 # strerror(EPERM): what seatbelt returns for a denied file operation, and what
@@ -160,12 +161,19 @@ _SECRETS = (".ssh", "Library/Keychains", ".aws", ".config/gcloud", ".kube", ".do
             ".config/rclone", ".rclone.conf", ".s3cfg", ".boto", ".gsutil",
             "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
             "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
-            "Library/Application Support/Arc", "Library/Safari", "Library/Cookies")
+            "Library/Application Support/Arc", "Library/Safari", "Library/Cookies",
+            # Other agents' config, which can hold API keys in MCP entries, its backups and their sign-ins. `codex mcp
+            # list` now stops with EPERM here; `codex exec` already did under this profile. A run outside can still read them.
+            ".claude.json", ".claude/backups", ".claude/.credentials.json", ".codex/config.toml", ".codex/auth.json")
 
 
 def user_secrets() -> list[Path]:
     ours = arslan_protected()
-    return [p for p in _resolved(Path.home() / name for name in _SECRETS) if p not in ours]
+    # Backups beside Claude Code's config carry a timestamp in their names, so they're listed for each run: one written
+    # while a command runs is closed from the next command on. A regex would reach only the commands' profile, and the
+    # file tools, checkpoints and capability sandbox read this list too.
+    home = Path.home()
+    return [p for p in _resolved([*(home / name for name in _SECRETS), *home.glob(".claude.json.backup*")]) if p not in ours]
 
 
 def default_protected() -> list[Path]:
@@ -238,15 +246,22 @@ def profile(writable: list[Path], protected: list[Path], *, offline: bool = Fals
 def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
                      readable: list[Path] = (), copies: list[Path] = (), network: NetworkMode | None = None,
                      proxy_port: int | None = None, denied_ports: tuple[int, ...] = (),
-                     ipc_prefix: str | None = None) -> str:
+                     ipc_prefix: str | None = None, bound_ports: list[int] | None = None,
+                     system_proxies: list[str] | None = None, trust_service: bool = False) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
 
-    Network (the user's D2, 2026-11-01): offline is NONE; online is ANY_DECLARED, outbound TCP to any host plus
-    DNS, with no `denied_ports` (that mode can't hold them), so loopback to Arslan's own ports stays open as on
-    v0.1.63. DELETE-BY: v0.1.64, when SBX-6's proxy lands: online is then PROXY with Arslan's ports denied.
-    `network`, `proxy_port` and `denied_ports` go to the base as given (SBX-3p's harness passes them).
+    Network (SBX-6, the user's N-a): offline is NONE; online is PROXY, TCP only to `proxy_port` (the running
+    `sandbox_proxy`) and to loopback for dev servers, with no DNS inside. Loopback excludes every port Arslan
+    listens on (`bound_ports`, read now when not given) and the system proxies' loopback ports
+    (`system_proxies`, likewise), so neither is a way out round the proxy. Online with no proxy port, or with
+    Arslan's own ports unknown, is offline: closed, not open. Any-declared is retired for commands (D2's
+    interim until SBX-6). `network` and `proxy_port` go to the base as given, and `denied_ports` adds to the
+    excluded ports (SBX-3p's and SBX-6p's harness pass them). `trust_service` (the user's setting
+    `sandbox_system_certificates`, default off) grants macOS's certificate trust service in proxy mode only, the
+    one thing it adds, as sandbox-runtime's `enableWeakerNetworkIsolation` does: Swift, Xcode's and Go's tools
+    check certificates through it, and it fetches certificate data itself, round the proxy.
     `ipc_prefix` is None for product runs, which permits no POSIX IPC (gate 4, option b: a stock
     multiprocessing Pool is refused, SBX-measurement.md); the harness passes a per-run one to test the rule."""
     roots = writable_roots(workspace, temp)
@@ -254,7 +269,21 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     protected = default_protected()
     shut = _resolved([*closed, *app_data()])
     if network is None:
-        network = NetworkMode.NONE if offline else NetworkMode.ANY_DECLARED
+        network = NetworkMode.NONE if offline or proxy_port is None else NetworkMode.PROXY
+    network = NetworkMode(network)
+    if network == NetworkMode.ANY_DECLARED:
+        raise ValueError("commands no longer accept any-declared: online is the proxy (SBX-6)")
+    if network in (NetworkMode.PROXY, NetworkMode.PORT_22):
+        from server.services import sandbox_proxy
+        bound = sandbox_proxy.listening_ports() if bound_ports is None else list(bound_ports)
+        if bound is None:
+            network, proxy_port, denied_ports = NetworkMode.NONE, None, ()
+        else:
+            system = sandbox_proxy.system_proxies() if system_proxies is None else list(system_proxies)
+            denied_ports = tuple(sorted({*sandbox_proxy.excluded_ports(bound, system, proxy_port=proxy_port or 0),
+                                         *denied_ports}))
+    if network != NetworkMode.PROXY:
+        proxy_port = None
     text = default_deny_profile(writable, protected, closed=shut, network=network, proxy_port=proxy_port,
                                 denied_ports=denied_ports, ipc_prefix=ipc_prefix)
     # The base closes `closed` and then `protected` last, over every grant. Reopen what lives inside a closed
@@ -268,18 +297,22 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     after.allow_paths("file-read* file-map-executable", open_r, file_or_folder)
     if open_rw or open_r:
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
+    if trust_service and network == NetworkMode.PROXY:
+        after.allow("mach-lookup", _TRUST_SERVICE)
     after.allow_paths("file-read*", map(_real, copies), literal)
     return text + "".join(after.text().splitlines(True)[2:])        # its rules, without a second header
 
 
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
-            readable: list[Path] = (), copies: list[Path] = ()) -> list[str] | None:
+            readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
+            trust_service: bool = False) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so)."""
     if not available():
         return None
     return [_SANDBOX_EXEC, "-p", commands_profile(workspace, temp=temp, offline=offline, closed=closed,
-                                                  readable=readable, copies=copies)]
+                                                  readable=readable, copies=copies, proxy_port=proxy_port,
+                                                  trust_service=trust_service)]
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = ()) -> str:
@@ -329,11 +362,26 @@ def available() -> bool:
 
 
 def stopped_by_sandbox(result: dict) -> bool:
-    """A sandboxed run that failed with EPERM. Heuristic on purpose (Codex does the
-    same): a false positive only adds a note the model can ignore."""
+    """A sandboxed run that failed with EPERM, or with a certificate check the closed trust service failed
+    (`trust_check_failed`). Heuristic on purpose (Codex does the same): a false positive only adds a note the model
+    can ignore."""
     if result.get("sandbox") != "workspace" or result.get("ok") or result.get("exit_code") in (0, None):
         return False
-    return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
+    return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}")) or trust_check_failed(result)
+
+
+#: SBX-6a: the certificate errors a tool prints when Security.framework can't reach the trust service (URLSession
+#: and Swift, Xcode's tools, Go on macOS). Their own CA bundles keep curl, Python and git working without it.
+_TRUST_FAILED = re.compile(r"NSURLErrorDomain[^\n]*-120[0-6]|NSURLErrorServerCertificate|kCFStreamErrorDomainSSL|"
+                           r"errSSL[A-Za-z]+|SecTrust[A-Za-z]*(?:Evaluate|failed)|x509: OSStatus -?\d+|"
+                           r"The certificate for this server is invalid", re.I)
+
+
+def trust_check_failed(result: dict) -> bool:
+    """A sandboxed online run whose certificate check failed the way a closed trust service makes it fail."""
+    if result.get("sandbox") != "workspace" or result.get("ok") or result.get("offline"):
+        return False
+    return bool(_TRUST_FAILED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
 def refused_outside(result: dict) -> bool:
@@ -341,7 +389,7 @@ def refused_outside(result: dict) -> bool:
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path, closed: list[Path] = ()) -> str:
+def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False) -> str:
     shut = ""
     if closed:
         names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
@@ -349,7 +397,10 @@ def note(workspace: Path, closed: list[Path] = ()) -> str:
                 "cannot open them either.")
     return ("The sandbox stopped this command: commands may write only inside the working folder "
             f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data."
-            + shut + " Find a way that works inside it if there is one. If it really has to run outside, run it "
+            + shut + (" This looks like a certificate check through macOS's trust service, which the sandbox "
+                      "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
+                      "sandbox\")." if trust else "")
+            + " Find a way that works inside it if there is one. If it really has to run outside, run it "
             "again with outside_sandbox: true and a short why, which the user reads before deciding. That starts it "
             "over from the beginning, and whatever it already did stays. Otherwise tell the user what you needed.")
 

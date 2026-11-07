@@ -56,7 +56,7 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base in {"commands", "outside-floor"}:
+        if self.base in {"commands", "commands-proxy", "outside-floor"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -88,11 +88,11 @@ class Harness:
             return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE)
         raise NotImplementedError(f"no profile adapter for {self.base}")
 
-    def run(self, argv, *, probe: str, profile=None, timeout=30, discard=False):
+    def run(self, argv, *, probe: str, profile=None, timeout=30, discard=False, pass_fds=()):
         """Bound a process group, including grandchildren; never retain service output."""
         text = self.profile() if profile is None else profile
         with subprocess.Popen(
-            ["/usr/bin/sandbox-exec", "-p", text, *map(str, argv)], cwd=self.work, env=self.env,
+            ["/usr/bin/sandbox-exec", "-p", text, *map(str, argv)], cwd=self.work, env=self.env, pass_fds=pass_fds,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL if discard else subprocess.PIPE,
             stderr=subprocess.DEVNULL if discard else subprocess.PIPE, text=True,
             start_new_session=True,
@@ -115,8 +115,8 @@ class Harness:
             finally:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass  # The entire group has already exited.
+                except (ProcessLookupError, PermissionError):
+                    pass  # The entire group has already exited (EPERM: only zombies left, on macOS).
                 process.wait()
                 execution["returncode"] = process.returncode
         return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
@@ -142,17 +142,67 @@ class Harness:
 # HOME/TMPDIR, with this harness's work/temp, IPC prefix, mode and denied_ports.
 # It must not delegate commands to the candidate.
 def _commands_profile(self, **parameters) -> str:
-    options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
+    # The test process's own listeners are not Arslan's: bound ports and system proxies come only from the
+    # test (SBX-6p passes stand-ins), never from this process or this Mac.
+    options = dict(network=self.network, ipc_prefix=self.ipc_prefix, bound_ports=[], system_proxies=[])
     if self.network == NetworkMode.PROXY:
-        options["proxy_port"] = 49151  # no listener; actual proxy is SBX-6
+        options["proxy_port"] = getattr(self, "proxy_port", None) or 49151  # 49151: no listener
     options.update(parameters)
     return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
 
 
+# SBX-6a: the base with SBX-6's loopback exclusions, as the product computes them (`sandbox_proxy`).
+def _sbx6_base_profile(self, **parameters) -> str:
+    from server.services import sandbox_proxy
+    proxy_port = parameters.pop("proxy_port", getattr(self, "proxy_port", None))
+    parameters.pop("trust_service", None)       # the base has no such setting: only online commands can grant it
+    denied = sandbox_proxy.excluded_ports(parameters.pop("bound_ports", []), parameters.pop("system_proxies", []),
+                                          proxy_port=proxy_port or 0)
+    return default_deny_profile([self.work, self.temp], [self.protected], network=self.network,
+                                proxy_port=proxy_port if self.network == NetworkMode.PROXY else None,
+                                denied_ports=denied, ipc_prefix=self.ipc_prefix, **parameters)
+
+
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
 BUILT_BASES["commands"] = _commands_profile
+BUILT_BASES["commands-proxy"] = _commands_profile
+BUILT_BASES["network-sbx6"] = _sbx6_base_profile
 
-# Feature keys are declared only when their protections land: SBX-6a adds "trustd-toggle" and
-# "trusted-lan" with the settings; SBX-5a adds "cap6b" and "shared-cache-exclusions". The existing
-# commands/outside-floor adapters alone do not claim any of them.
-BUILT_FEATURES = frozenset()
+
+# SBX-4a's entries call the real product presets: `code_sandbox.computation_profile` for run_python (with its
+# read-only references) and the artifact checks (without), and `capability_sandbox.profile` for an installed
+# MCP server, whose own folder is this harness's work folder and whose protected paths are the test's.
+def _computation_profile(self, **parameters) -> str:
+    from server.services import code_sandbox
+    python = parameters.pop("python", sys.executable)
+    references = parameters.pop("references", None)
+    parameters.pop("granted_folders", None)          # computation has no granted folders
+    parameters.pop("protected", None)                # nor protected paths: its reads are the runtime's only
+    if parameters:
+        raise ValueError(f"computation takes no {sorted(parameters)}")
+    return code_sandbox.computation_profile(python, self.work,
+                                            references if self.base == "run-python" else None)
+
+
+def _mcp_profile(self, **parameters) -> str:
+    from unittest.mock import patch
+    from server.services import capability_sandbox
+    read = parameters.pop("read", [])
+    grants = parameters.pop("granted_folders", getattr(self, "granted_folders", []))
+    protected = parameters.pop("protected", [self.protected])
+    parameters.pop("references", None)
+    if parameters:
+        raise ValueError(f"MCP takes no {sorted(parameters)}")
+    if self.network not in (NetworkMode.NONE, NetworkMode.ANY_DECLARED):
+        raise ValueError(f"MCP has no {self.network.value} mode yet (SBX-6 MCP proxy)")
+    with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
+        return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
+                                          network=self.network != NetworkMode.NONE,
+                                          read=[sys.prefix, sys.base_prefix, *read])
+
+
+BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
+
+# Feature keys are declared only when their protections land: SBX-6a's settings bring "trustd-toggle" and
+# "trusted-lan"; SBX-5a adds "cap6b" and "shared-cache-exclusions".
+BUILT_FEATURES = frozenset({"trustd-toggle", "trusted-lan"})

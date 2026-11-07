@@ -50,3 +50,22 @@ def contains_credential_data(value: object) -> bool:
 
 def normalized_memory(content: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", content).casefold().split())
+
+
+#: What shows nothing, or only blank space: white space, Unicode's default-ignorable code points
+#: (DerivedCoreProperties.txt) and the blank braille pattern. A line of only these is blank, and a long run of
+#: them is padding (#472 review F5, #526 review 1). UNI1's table, moved here from `server.orchestrator.untrusted`
+#: (which imports it) so memory's keyword hold can read past them.
+BLANK = (r"[\s\U000000ad\U0000034f\U0000061c\U0000115f\U00001160\U000017b4\U000017b5\U0000180b-\U0000180f"
+         r"\U0000200b-\U0000200f\U0000202a-\U0000202e\U00002060-\U0000206f\U00002800\U00003164\U0000fe00-\U0000fe0f"
+         r"\U0000feff\U0000ffa0\U0000fff0-\U0000fff8\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0000-\U000e0fff]")
+_INVISIBLE = re.compile(r"(?!\s)" + BLANK)
+#: Of those, the ones that draw a gap: the blank braille pattern and the Hangul fillers. One in place of a space
+#: still shows two words (#749 review).
+_GAP = re.compile(r"[\U0000115f\U00001160\U00002800\U00003164\U0000ffa0]")
+
+
+def visible_only(text: str) -> str:
+    """`text` without any character that shows nothing (`BLANK` but white space), and a space for one that draws a
+    gap."""
+    return _INVISIBLE.sub("", _GAP.sub(" ", text))

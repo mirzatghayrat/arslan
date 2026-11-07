@@ -269,6 +269,30 @@ def test_a_compile_time_syntax_error_confirmed_by_osacompile_is_known(command, s
     assert compiles["checked"]
 
 
+def test_a_failure_inside_the_sandbox_needs_no_compile_check(compiles):
+    # Nothing to confirm there: no event reaches an app, and osacompile may load the app it names.
+    assert known(T1_R3_FIRST, {**refused(T1_R3_SYNTAX), "sandbox": "workspace"})
+    assert compiles["checked"] == []
+
+
+async def test_a_failed_script_that_stayed_in_the_sandbox_does_not_ask_for_review(execution_db, disk):  # noqa: F811
+    # STY2's T1, as it ran (no text kept): an approved script kept wrapped that failed to compile, and one that
+    # failed with an error outside every list. The job goes on; the model has the error.
+    task, _ = await outcome(("run_command", {"command": T1_R3_FIRST}, {**refused(T1_R3_SYNTAX), "sandbox": "workspace"}),
+                            ("run_command", {"command": T1_COMMAND}, {**refused("0:1: execution error: nope (-2753)"),
+                                                                      "sandbox": "workspace"}))
+    assert task.pause_reason != "task_reconciliation_required"
+
+
+@pytest.mark.parametrize("sandbox", ["off", "outside", "unavailable"])
+async def test_the_same_failure_outside_the_sandbox_still_asks_for_review(execution_db, disk, sandbox):  # noqa: F811
+    # T1-r2's two: a bare run that reached the app and failed partway (-1700). It may have acted first.
+    task, _ = await outcome(("run_command", {"command": T1_COMMAND},
+                             {**refused("12:40: execution error: Can’t make \"x\" into type date. (-1700)"),
+                              "sandbox": sandbox}))
+    assert (task.phase, task.pause_reason) == ("waiting_user", "task_reconciliation_required")
+
+
 def test_a_forged_syntax_error_from_a_script_that_compiles_stays_unknown(compiles):
     # ③Hands' review: the script controls its stderr. Inside the tell it can act, then raise an error
     # whose last line reads like a syntax error; osacompile shows it compiled, so it ran.

@@ -18,6 +18,8 @@ interface Props {
   /** 0.1.61 §A4: Once / In this conversation (a card from the permission layer); absent on an old frame. */
   options?: string[];
   alwaysLabel?: string;
+  /** SUB3: a sub-session asks (the frame's `sub_session`). */
+  subSession?: boolean;
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
   busy?: boolean;
   queue?: AskQueuePosition;
@@ -60,7 +62,7 @@ export function humanCadence(when: string, t?: TFunction): string {
  * long the yes lasts (the frame's options, 0.1.61: permissions.decide sends every schedule card),
  * and a No takes a note.
  */
-export default function ScheduleGrantCard({ callId, name, when, prompt, background, expiresAt, options, alwaysLabel, busy, queue,
+export default function ScheduleGrantCard({ callId, name, when, prompt, background, expiresAt, options, alwaysLabel, subSession, busy, queue,
                                             onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
@@ -79,7 +81,7 @@ export default function ScheduleGrantCard({ callId, name, when, prompt, backgrou
                 { icon: lineIcon(Eye), text: <span data-testid="schedule-unattended">{t("schedgrant.unattended")}</span> }]}
       // "In this conversation" lets it create ANY scheduled task here without asking (the grant's target is every schedule).
       options={<ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
-        conversationLabel={t("schedgrant.anyTask")} testId="schedule-choice" />}
+        conversationLabel={t("schedgrant.anyTask")} subSession={subSession} testId="schedule-choice" />}
       extra={<DeclineNote testId="schedule-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} />}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}

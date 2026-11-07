@@ -198,6 +198,29 @@ describe("AdvancedSection · per-task dollar cap (K4a)", () => {
     expect(onTaskUsdCapChange).toHaveBeenCalledWith(5);
   });
 
+  it("has an off switch, on by default, that saves and disables the amount", () => {
+    const onTaskUsdCapEnabledChange = vi.fn();
+    const base = { backgroundJobBudget: "standard" as const, onBackgroundJobBudgetChange: vi.fn(), taskUsdCap: 2,
+      onTaskUsdCapChange: vi.fn(), onTaskUsdCapEnabledChange };
+    setup(base);
+    const toggle = screen.getByTestId("settings-task-usd-cap-enabled") as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    expect((screen.getByTestId("settings-task-usd-cap") as HTMLSelectElement).disabled).toBe(false);
+    expect(screen.queryByTestId("task-usd-cap-off-note")).toBeNull();
+    fireEvent.click(toggle);
+    expect(onTaskUsdCapEnabledChange).toHaveBeenCalledWith(false);
+  });
+
+  it("when off, the amount is disabled but kept, and a line says the other limits still apply", () => {
+    setup({ backgroundJobBudget: "standard", onBackgroundJobBudgetChange: vi.fn(), taskUsdCap: 5,
+      onTaskUsdCapChange: vi.fn(), taskUsdCapEnabled: false, onTaskUsdCapEnabledChange: vi.fn() });
+    expect((screen.getByTestId("settings-task-usd-cap-enabled") as HTMLInputElement).checked).toBe(false);
+    const select = screen.getByTestId("settings-task-usd-cap") as HTMLSelectElement;
+    expect(select.disabled).toBe(true);
+    expect(select.value).toBe("5");
+    expect(screen.getByTestId("task-usd-cap-off-note")).toHaveTextContent("jobs.usdCapOffNote");
+  });
+
   it("shows a stored cap outside the list as itself", () => {
     setup({ backgroundJobBudget: "standard", onBackgroundJobBudgetChange: vi.fn(), taskUsdCap: 7.5, onTaskUsdCapChange: vi.fn() });
     const select = screen.getByTestId("settings-task-usd-cap") as HTMLSelectElement;

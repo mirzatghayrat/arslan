@@ -86,11 +86,13 @@ export function offeredScopes(options: string[] | undefined, permKind?: string):
  *  yes will send (`scopeToSend`), so a value the card does not show ticks its default. One choice
  *  (or none) needs no picker, so nothing is drawn — except Always, which is drawn even alone: it
  *  is only ever sent by being picked where the person can see it. */
-export function ScopeChoice({ options, value, onChange, alwaysLabel, conversationLabel, testId = "ask-scope" }: {
+export function ScopeChoice({ options, value, onChange, alwaysLabel, conversationLabel, subSession, testId = "ask-scope" }: {
   options: string[] | undefined; value: string; onChange: (v: string) => void; alwaysLabel?: string;
   /** What "In this conversation" covers when that is more than the request on the card (every command of its kind, any
    *  scheduled task, any file in the folder): said on the choice, as "Always" says its literal scope. */
-  conversationLabel?: string; testId?: string;
+  conversationLabel?: string;
+  /** SUB3: a sub-session's card, shown in the conversation that started it: the grant is the sub-session's, not this one's. */
+  subSession?: boolean; testId?: string;
 }) {
   const { t } = useTranslation();
   const name = useId();
@@ -105,7 +107,9 @@ export function ScopeChoice({ options, value, onChange, alwaysLabel, conversatio
           <input type="radio" name={name} value={o} checked={ticked === o} onChange={() => { if (!guarded()) onChange(o); }}
             data-testid={`${testId}-${o}`} className="mt-[3px] accent-foreground" />
           <span>{o === "always" ? t("kit.scope.always", { label: alwaysLabel?.trim() ?? "" })
-            : o === "conversation" && conversationLabel?.trim() ? t("kit.scope.conversationFor", { label: conversationLabel.trim() })
+            : o === "conversation" && conversationLabel?.trim()
+              ? t(subSession ? "kit.scope.subSessionFor" : "kit.scope.conversationFor", { label: conversationLabel.trim() })
+            : o === "conversation" && subSession ? t("kit.scope.subSession")
             : t(`kit.scope.${o}`)}</span>
         </label>
       ))}

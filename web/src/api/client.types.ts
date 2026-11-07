@@ -389,6 +389,7 @@ export interface AppSettings {
   model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
+  task_usd_cap_enabled?: boolean; // K4a: false = no dollar cap (step and token limits still hold); default true
   workspace_dir?: string;   // "" = unset = file tools not offered
   workspace_other_volume?: boolean; // S3b: on another volume than Arslan's data: its changes can't be undone
   heartbeat_enabled?: string;     // "true" | "false"
@@ -632,8 +633,48 @@ export interface AuthoredSkillCard {
    *  card is the check. */
   outside: boolean;
 }
+/** The memory-import card (v0.1.64 CAP8b, server/services/memory_import.propose): the lines of what the user pasted. Same
+ *  frame and answers as the install card, told apart by `kind`; a yes names the ids it keeps (`kept`). `same_as`: what a
+ *  stored memory says, when this line says the same. `too_many`: lines past one card's limit, counted and not read. */
+export interface MemoryImportLeftOut {
+  /** null: the line held a key, so it isn't shown again. */
+  text: string | null;
+  reason: "gender" | "one_off" | "credential" | "too_long" | "stored" | "deleted";
+}
+export interface MemoryImportCard {
+  kind: "memory_import"; name: string; why: string; lines: number; too_many: number;
+  entries: { id: string; text: string; ticked: boolean; same_as: string | null }[];
+  left_out: MemoryImportLeftOut[];
+}
 export interface CapabilityResult { state: "on" | "failed" | "blocked" | "needs_sign_in"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
+
+/** CAP8-1: one server on the import sheet (server/services/connection_import.py, `Found.view`). Never holds a key.
+ *  `id` and `same_as` aren't cleaned by the server: they are opaque, sent back or compared, and never shown. */
+export interface ImportRow {
+  id: string; tool: "claude_code" | "codex"; name: string; digest: string;
+  kind: "package" | "remote" | "program" | "unreadable";
+  /** What it runs, keys masked, or the host it opens. */
+  command: string | null; arguments: string[]; address: string | null;
+  /** What the sandbox will give it; a program runs outside it. */
+  network: boolean;
+  /** Setting names it starts with (a remote's are headers); `asks` are the variables `add` must be given. */
+  env: string[]; keys: number; asks: string[];
+  on_there: boolean; tool_limits: boolean; here: boolean; same_as: string | null;
+  refused: string | null; refused_part: string | null;
+  /** Whether it starts ticked. */
+  tick: boolean;
+}
+export interface ImportScan {
+  tools: { tool: ImportRow["tool"]; state: "read" | "missing" | "malformed"; count: number }[];
+  servers: ImportRow[];
+}
+export interface ImportTick { id: string; digest: string; keys: Record<string, string> }
+export interface ImportResult {
+  id: string;
+  state: "on" | "added" | "needs_sign_in" | "failed" | "blocked" | "refused" | "here" | "needs_keys" | "gone" | "changed";
+  code?: string; stage?: string; detail?: string; keys?: string[]; tools?: number; source_id?: string; server_id?: number;
+}
 
 /** K8a: text a reply showed and then replaced, with the server's label for it. */
 export interface EarlierDraft {
@@ -764,7 +805,7 @@ export type ArslanServerMessage =
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
-  | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard))
+  | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard | MemoryImportCard))
   | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked" | "needs_sign_in";
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;

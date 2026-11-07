@@ -1402,6 +1402,8 @@
       "task": "Für diese Aufgabe",
       "conversation": "In diesem Gespräch",
       "conversationFor": "In diesem Gespräch: {{label}}",
+      "subSession": "In diesem Teilgespräch",
+      "subSessionFor": "In diesem Teilgespräch: {{label}}",
       "anyToolUse": "jede Nutzung dieses Werkzeugs, mit beliebigen Argumenten",
       "always": "Immer: {{label}}"
     },

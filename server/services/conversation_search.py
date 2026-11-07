@@ -2,8 +2,8 @@
 
 Returns the ORIGINAL words — a snippet around the match — with when it was said, which
 conversation, and an in-app link (`#conversation=<id>`), never a summary (summaries lose
-the detail people search for). Temporary and "don't use memory" conversations are never
-searched. Uses the trigram FTS index (migration 0059); queries shorter than three
+the detail people search for). Temporary and "don't use memory" conversations and
+sub-sessions are never searched. Uses the trigram FTS index (migration 0059); queries shorter than three
 characters, or a database without the index, fall back to LIKE.
 """
 from __future__ import annotations
@@ -42,7 +42,8 @@ async def search(query: str, *, since: datetime | None = None, until: datetime |
                     "exclude": exclude_conversation or ""}
     where = ("m.role IN ('user', 'arslan') "
              "AND NOT EXISTS (SELECT 1 FROM conversation_contexts c WHERE c.id = m.conversation_id "
-             "AND (c.temporary = 1 OR c.no_memory = 1)) "
+             # SUB2: a sub-session's settings live along its chain, not on this row, and no list shows one.
+             "AND (c.temporary = 1 OR c.no_memory = 1 OR c.kind = 'sub')) "
              "AND (:since IS NULL OR m.timestamp >= :since) AND (:until IS NULL OR m.timestamp <= :until) "
              "AND m.conversation_id != :exclude")
     async with db_session.AsyncSessionLocal() as db:

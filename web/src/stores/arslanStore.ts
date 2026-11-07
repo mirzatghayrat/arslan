@@ -20,7 +20,8 @@ export type PendingEnrollNode = { callId: string; name: string; host: string; us
 export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
 export type PendingSchedule = { callId: string; name: string; when: string; prompt?: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
 export type PendingCapability = { callId: string; receivedAt?: number; seq?: number }
-  & (import("../api/client.types").CapabilityCard | import("../api/client.types").AuthoredSkillCard);
+  & (import("../api/client.types").CapabilityCard | import("../api/client.types").AuthoredSkillCard
+     | import("../api/client.types").MemoryImportCard);
 export type PendingAction = { callId: string; kind: ActionKind | (string & {}); target: string; detail: string; background?: boolean;
   receivedAt?: number; seq?: number } & CardV2;
 /** How a card's own apply stands in this window (0.1.61 §A4, fix round 3): an enrolment calls the REST API from the card and
@@ -181,13 +182,15 @@ function _voiceStop() { _speaker?.cancel(); _speaker = null; }
 
 
 /** 0.1.61 §A4: what a card from the permission layer adds to a pending card. */
-type CardV2 = { options?: string[]; alwaysLabel?: string; title?: string; permKind?: string; why?: string; expiresAt?: number };
+type CardV2 = { options?: string[]; alwaysLabel?: string; title?: string; permKind?: string; why?: string; expiresAt?: number;
+                subSession?: boolean };
 
 /** The v2 fields of a card frame (permissions._ask): its choices, its literal "Always" scope, its
  *  question (the server's English title, and the model's own why when it gave one: that is the question,
  *  §A4), its permission kind and the server's own expiry (Unix s → ms). An old frame has none and is
  *  shown and answered exactly as before. */
-function _cardV2(frame: { options?: unknown; always_label?: unknown; title?: unknown; perm_kind?: unknown; why?: unknown; expires_at?: unknown }): CardV2 {
+function _cardV2(frame: { options?: unknown; always_label?: unknown; title?: unknown; perm_kind?: unknown; why?: unknown; expires_at?: unknown;
+                          sub_session?: unknown }): CardV2 {
   const options = Array.isArray(frame.options) ? frame.options.filter((o): o is string => typeof o === "string") : [];
   return {
     ...(options.length ? { options } : {}),
@@ -197,6 +200,7 @@ function _cardV2(frame: { options?: unknown; always_label?: unknown; title?: unk
     ...(typeof frame.why === "string" && frame.why.trim() ? { why: frame.why.trim() } : {}),
     ...(typeof frame.expires_at === "number" && Number.isFinite(frame.expires_at)
       ? { expiresAt: Math.round(frame.expires_at * 1000) } : {}),
+    ...(frame.sub_session === true ? { subSession: true } : {}),     // SUB3: a sub-session's card, asked here
   };
 }
 

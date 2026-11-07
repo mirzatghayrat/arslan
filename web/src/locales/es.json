@@ -1402,6 +1402,8 @@
       "task": "Durante esta tarea",
       "conversation": "En esta conversación",
       "conversationFor": "En esta conversación: {{label}}",
+      "subSession": "En esta subsesión",
+      "subSessionFor": "En esta subsesión: {{label}}",
       "anyToolUse": "cualquier uso de esta herramienta, con cualquier argumento",
       "always": "Siempre: {{label}}"
     },

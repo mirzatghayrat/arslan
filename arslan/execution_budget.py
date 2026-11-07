@@ -111,6 +111,10 @@ class Budget:
         self.soft = soft
         self.usd_cap = usd_cap
         self.usd = 0.0
+        # SUB3: a dollar limit this run shares with others (a sub-session's tree): (what the others spent, the
+        # limit). Its owner refreshes it before each model request and stops the run at the limit
+        # (`sub_sessions.check_tree_spend`); here it wraps up at limit / HARD_OVER_SOFT, as the run's own cap does.
+        self.shared_usd: tuple[float, float] | None = None
         self.unpriced_requests = 0
         self.id = uuid.uuid4().hex
         self.started = time.monotonic()
@@ -197,7 +201,8 @@ class Budget:
         return (soft is not None and (
             self.model_requests >= soft.model_requests or self.tool_calls >= soft.tool_calls
             or self.tokens >= soft.tokens or time.monotonic() - self.started >= soft.wall_seconds)
-        ) or (self.usd_cap is not None and self.usd >= self.usd_cap / HARD_OVER_SOFT)
+        ) or (self.usd_cap is not None and self.usd >= self.usd_cap / HARD_OVER_SOFT) or (
+            self.shared_usd is not None and self.usd + self.shared_usd[0] >= self.shared_usd[1] / HARD_OVER_SOFT)
 
     def remaining_seconds(self) -> float:
         return max(0.0, self.limits.wall_seconds - self.elapsed())
@@ -273,9 +278,10 @@ class Budget:
                 "stop_reason": self.stop_reason,
                 "token_limit_mode": "post_response_admission", "monetary_limit": self.usd_cap is not None,
                 **({"soft_limits": asdict(self.soft)} if self.soft is not None else {}),
-                **({"spend": {"usd": round(self.usd, 6), "usd_cap": self.usd_cap,
-                              "unpriced_requests": self.unpriced_requests}}
-                   if self.usd_cap is not None or self.usd or self.unpriced_requests else {}),
+                # K4a off switch (v0.1.64): always recorded, so a run with no dollar cap (usd_cap None) is
+                # restored with none; a snapshot without "spend" is from before K4a and gets the default.
+                "spend": {"usd": round(self.usd, 6), "usd_cap": self.usd_cap,
+                          "unpriced_requests": self.unpriced_requests},
                 **({"context_events": list(self.context_events)} if self.context_events else {}),
                 **({"history": dict(self.history)} if self.history else {})}
 
