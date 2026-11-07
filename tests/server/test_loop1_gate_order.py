@@ -382,7 +382,7 @@ async def test_what_a_refusal_records(gate, recorded_args, counted, monkeypatch)
 
 async def test_what_each_gate_answers_word_for_word(monkeypatch):
     """The model reads these words. A gate that moves says the same thing from its new place."""
-    answers = {}
+    answers = {"_": "DELETE-BY: v0.1.64, with LOOP1's slice z (docs/plans/0164/LOOP1-agent-loop.md)"}
     for chain, (_args, gates) in CHAINS.items():
         for gate in gates:
             with monkeypatch.context() as patch:

@@ -1,4 +1,5 @@
 {
+ "_": "DELETE-BY: v0.1.64, with LOOP1's slice z (docs/plans/0164/LOOP1-agent-loop.md)",
  "edit_file: budget": "<class 'arslan.execution_budget.BudgetExceeded'>",
  "edit_file: credentials": "{'ok': False, 'external': False, 'code': 'credentials_not_tool_data', 'error': 'Credentials cannot be passed as ordinary tool arguments. Use an approved connection.'}",
  "edit_file: hermetic": "{'ok': False, 'external': False, 'error': \"evaluation context: 'edit_file' is unavailable here. This run is a hermetic evaluation replay that exposes read-only tools only (no side-effecting or external tools). Do not retry this tool — answer with the read-only tools you have.\"}",
