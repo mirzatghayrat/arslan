@@ -364,7 +364,8 @@ def _unparseable(text: str) -> str:
 def _inline_scripts(text: str):
     """Each inline script's own code: the rest of its line (`python3 -c "…"`) and, for a heredoc, its body."""
     for match in _INLINE_SCRIPT.finditer(text):
-        end = text.find("\n", match.start() + 1)
+        # its line starts at the program, past the blank lines `_POS` reads through (a start marked after a newline)
+        end = text.find("\n", match.start() + len(match.group()) - len(match.group().lstrip()))
         line = text[match.start():] if end == -1 else text[match.start():end]
         body = _HEREDOC.match(text, text.find("<<", match.start())) if "<<" in line else None
         yield line + ("\n" + body.group(0) if body else "")
@@ -374,12 +375,16 @@ def _hidden_code(texts: tuple[str, ...]) -> str:
     """Why what this command runs cannot be read from its text, or "" (layer ②'s `unreadable`)."""
     if _matches(_FETCHED_CODE, texts):
         return "it runs code it downloads, decodes or builds"
-    # Each command on its own line: the variant with a newline at every command start (the most lines), so a
-    # script's "line" stops where its command does.
-    split = max(texts, key=lambda t: t.count("\n"))
-    if any(_SCRIPT_REACH.search(script) for script in _inline_scripts(split)):
+    if any(_SCRIPT_REACH.search(script) for split in _one_command_a_line(texts) for script in _inline_scripts(split)):
         return "its script reaches out, starts programs or drives apps"
     return ""
+
+
+def _one_command_a_line(texts: tuple[str, ...]) -> list[str]:
+    """The variants with a newline at every command start (the most lines), so a script's "line" stops where its
+    command does: each of them, since one spells the command words as the shell runs them (a quoted interpreter)."""
+    most = max(t.count("\n") for t in texts)
+    return [t for t in texts if t.count("\n") == most]
 
 
 # rm and its kin at a command start, and their operands; a target outside the working folder (the
@@ -447,8 +452,7 @@ _PROTECTED_NAME_C = re.compile(_PROTECTED_NAME + r"|/(?:private/)?etc/")
 def _script_names_protected(texts: tuple[str, ...]) -> bool:
     """An inline script whose code names a protected file: a script reaches ~/.zshrc through
     expanduser or Path.home(), which no path pattern sees."""
-    split = max(texts, key=lambda t: t.count("\n"))
-    return any(_PROTECTED_NAME_C.search(script) for script in _inline_scripts(split))
+    return any(_PROTECTED_NAME_C.search(script) for split in _one_command_a_line(texts) for script in _inline_scripts(split))
 
 
 def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
