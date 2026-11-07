@@ -40,7 +40,7 @@ SHOWN = "('user', 'expired')"                 # approval_events.decided_by: the 
 # bookkeeping tools (server/orchestrator/arslan.py). `tools` adds the seeded catalog and MCP.
 BUILT_IN_TOOLS = frozenset("""
     attach_file background_status browser_back browser_click browser_look browser_open browser_press
-    browser_select browser_type cancel_task conversation_search create_skill delegate_work
+    browser_select browser_type cancel_task conversation_search create_skill delegate_work import_memories
     desktop_access desktop_apps desktop_batch desktop_click desktop_look desktop_menu
     desktop_open desktop_press desktop_scroll desktop_select desktop_takeover desktop_type
     edit_file enroll_node find_capability list_dir list_my_capabilities list_my_tasks list_nodes

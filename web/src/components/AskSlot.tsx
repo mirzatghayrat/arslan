@@ -1,10 +1,11 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { announceProactiveChange } from "../api/proactive";
 import { useTranslation } from "react-i18next";
 import { useArslanStore } from "../stores/arslanStore";
 import ActionApprovalCard from "./ActionApprovalCard";
 import CapabilityProposeCard from "./capabilities/CapabilityProposeCard";
 import EnrollNodeCard from "./EnrollNodeCard";
+import MemoryImportCard from "./capabilities/MemoryImportCard";
 import RunCommandCard from "./RunCommandCard";
 import ScheduleGrantCard from "./ScheduleGrantCard";
 import SkillSaveCard from "./capabilities/SkillSaveCard";
@@ -77,6 +78,8 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
   const cardExpiredKind = useArslanStore((s) => s.cardExpiredKind);
   const expireCard = useArslanStore((s) => s.expireCard);
   const dismissCardExpired = useArslanStore((s) => s.dismissCardExpired);
+  // CAP8b: what each import card has ticked, by call id. Paging re-mounts a card, and a line unticked must stay unticked.
+  const importTicks = useRef(new Map<string, string[]>());
 
   // 0.1.61 §A4: the countdown is the server's own expiry (the frame's expires_at, so a reload
   // shows the time really left). A frame without one waits approvals.TIMEOUT_S like every card
@@ -149,7 +152,14 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
         expiresAt={expires(s)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_schedule', callId, s, scope); clearPendingSchedule(s.callId); }}
         onCancel={(callId, note) => { no('cancel_schedule', callId, note); clearPendingSchedule(s.callId); }} />) })),
-    ...pendingCapabilities.map((k) => ({ seq: k.seq ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => k.kind === "authored" ? (
+    ...pendingCapabilities.map((k) => ({ seq: k.seq ?? 0, key: `cap:${k.callId}`, render: (queue: AskQueuePosition) => k.kind === "memory_import" ? (
+      // v0.1.64 CAP8b: what the user pasted; the yes names the lines it keeps.
+      <MemoryImportCard card={k} callId={k.callId} ticks={importTicks.current.get(k.callId)}
+        onTicks={(kept) => importTicks.current.set(k.callId, kept)}
+        expiresAt={expires(k)} queue={queue}
+        onConfirm={(callId, kept) => { send({ type: 'confirm_capability', call_id: callId, kept }); clearPendingCapability(k.callId); }}
+        onCancel={(callId) => { send({ type: 'cancel_capability', call_id: callId }); clearPendingCapability(k.callId); }} />
+    ) : k.kind === "authored" ? (
       // v0.1.64 CAP2a: a skill Arslan wrote, to save; the same frame and answers, with nothing to carry.
       <SkillSaveCard card={k} callId={k.callId}
         expiresAt={expires(k)} queue={queue}
