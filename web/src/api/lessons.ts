@@ -19,6 +19,9 @@ export interface Lesson {
   /** INB1: why it is not in effect (outside_content, setting_off, no_judgement, not_a_correction,
    *  conflicts, failed_repeatedly; a retired one keeps its reason, or says "retired"); null while active. */
   not_in_effect?: string | null;
+  /** L11 (b): where it applies: the folder (named as Overview names it) for a practice learned from corrections made
+   *  only there; null for one that applies everywhere. */
+  scope?: { folder: string } | null;
   last_used_at: string | null;
   created_at: string;
   updated_at: string;

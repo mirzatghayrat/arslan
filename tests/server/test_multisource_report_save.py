@@ -33,7 +33,7 @@ async def test_a_multisource_report_saves_without_an_extra_model_call(monkeypatc
     async def resolve():
         return [{"key": k, "description": k} for k in ("web_extract", "write_file", "read_file")]
 
-    async def dispatch(name, args, assistant_content, **kwargs):
+    async def dispatch(name, args, assistant_content, turn):
         if name == "web_extract":
             result = next(e["result"] for e in evidence if e["args"] == args)
         elif name == "write_file":
@@ -41,10 +41,10 @@ async def test_a_multisource_report_saves_without_an_extra_model_call(monkeypatc
             result = {"ok": True, "external": False}
         else:
             result = {"ok": True, "text": (tmp_path / "report.md").read_text()}
-        return tool_loop._record_tool_result(name, args, result, kwargs["emit"],
-            kwargs["tool_trace"], assistant_content, kwargs["convo"])
+        return tool_loop._record_tool_result(name, args, result, turn.emit,
+            turn.tool_trace, assistant_content, turn.convo)
 
-    monkeypatch.setattr(tool_loop, "_dispatch_tool", dispatch)
+    monkeypatch.setattr(tool_loop, "_run_tool", dispatch)
     result = await tool_loop.run_native(system="s", user_content="Compare and save.", history=[],
         emit=lambda _: None, on_chunk=lambda _: None, resolve_tools=resolve, adapter_override=adapter)
     assert (tmp_path / "report.md").read_text() == content

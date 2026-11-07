@@ -1,0 +1,116 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": {
+    "bytes": 0,
+    "file_id": null,
+    "head": "",
+    "kind": "write",
+    "lines": 0,
+    "path": ""
+   },
+   "summary": "The output limit was reached while writing this call's arguments; nothing was executed. Split the work: write the first part with write_file, then append each further part with edit_file (replace the file's current last line with that line plus the next part), or shorten the payload.",
+   "tool": "write_file",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "length",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "content": "par",
+        "path": "a.md"
+       },
+       "arguments_raw": "{\"path\": \"a.md\", \"content\": \"par\"}",
+       "id": "c1",
+       "name": "write_file"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"output_truncated\", \"error\": \"The output limit was reached while writing this call's arguments; nothing was executed. Split the work: write the first part with write_file, then append each further part with edit_file (replace the file's current last line with that line plus the next part), or shorten the payload.\"}\n\n<agent_status note=\"host facts for this step, not from the user\">\nWorkspace: ~/Arslan — your own folder: create and edit files here without asking (write_file, edit_file).\n</agent_status>",
+     "name": "write_file",
+     "role": "tool",
+     "tool_call_id": "c1"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Answered instead."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Answered instead.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": [
+    {
+     "args": {},
+     "result": {
+      "code": "output_truncated",
+      "error": "The output limit was reached while writing this call's arguments; nothing was executed. Split the work: write the first part with write_file, then append each further part with edit_file (replace the file's current last line with that line plus the next part), or shorten the payload.",
+      "external": false,
+      "ok": false
+     },
+     "tool": "write_file"
+    }
+   ]
+  }
+ ]
+]

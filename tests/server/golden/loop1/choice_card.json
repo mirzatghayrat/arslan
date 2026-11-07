@@ -1,0 +1,43 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "ask_user_choice",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "returned",
+  {
+   "clarify": {
+    "options": [
+     {
+      "hint": "",
+      "label": "A"
+     },
+     {
+      "hint": "",
+      "label": "B"
+     }
+    ],
+    "question": "Which?"
+   },
+   "escalation": null,
+   "external_seen": false,
+   "final": null,
+   "tool_trace": []
+  }
+ ]
+]

@@ -1,0 +1,317 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "find_tools",
+    "use_tool",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": null,
+   "summary": "web_search is already in your tool list: call it directly.",
+   "tool": "use_tool",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "arguments": {
+         "query": "x"
+        },
+        "name": "web_search"
+       },
+       "arguments_raw": "{\"name\": \"web_search\", \"arguments\": {\"query\": \"x\"}}",
+       "id": "c1",
+       "name": "use_tool"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"tool_unavailable\", \"error\": \"web_search is already in your tool list: call it directly.\"}",
+     "name": "use_tool",
+     "role": "tool",
+     "tool_call_id": "c1"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "find_tools",
+    "use_tool",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": null,
+   "summary": "Invalid arguments for attach_file: missing required 'path' (string). Nothing was executed; send use_tool again with corrected arguments.",
+   "tool": "use_tool",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "arguments": {
+         "query": "x"
+        },
+        "name": "web_search"
+       },
+       "arguments_raw": "{\"name\": \"web_search\", \"arguments\": {\"query\": \"x\"}}",
+       "id": "c1",
+       "name": "use_tool"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"tool_unavailable\", \"error\": \"web_search is already in your tool list: call it directly.\"}",
+     "name": "use_tool",
+     "role": "tool",
+     "tool_call_id": "c1"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "arguments": {},
+        "name": "attach_file"
+       },
+       "arguments_raw": "{\"name\": \"attach_file\", \"arguments\": {}}",
+       "id": "call_1_0",
+       "name": "use_tool"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"invalid_arguments\", \"error\": \"Invalid arguments for attach_file: missing required 'path' (string). Nothing was executed; send use_tool again with corrected arguments.\"}",
+     "name": "use_tool",
+     "role": "tool",
+     "tool_call_id": "call_1_0"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "find_tools",
+    "use_tool",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": null,
+   "summary": "There is no tool named 'nothing' that you can use here. Use find_tools to look one up.",
+   "tool": "use_tool",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "arguments": {
+         "query": "x"
+        },
+        "name": "web_search"
+       },
+       "arguments_raw": "{\"name\": \"web_search\", \"arguments\": {\"query\": \"x\"}}",
+       "id": "c1",
+       "name": "use_tool"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"tool_unavailable\", \"error\": \"web_search is already in your tool list: call it directly.\"}",
+     "name": "use_tool",
+     "role": "tool",
+     "tool_call_id": "c1"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "arguments": {},
+        "name": "attach_file"
+       },
+       "arguments_raw": "{\"name\": \"attach_file\", \"arguments\": {}}",
+       "id": "call_1_0",
+       "name": "use_tool"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"invalid_arguments\", \"error\": \"Invalid arguments for attach_file: missing required 'path' (string). Nothing was executed; send use_tool again with corrected arguments.\"}",
+     "name": "use_tool",
+     "role": "tool",
+     "tool_call_id": "call_1_0"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "name": "nothing"
+       },
+       "arguments_raw": "{\"name\": \"nothing\"}",
+       "id": "call_2_0",
+       "name": "use_tool"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"tool_unavailable\", \"error\": \"There is no tool named 'nothing' that you can use here. Use find_tools to look one up.\"}",
+     "name": "use_tool",
+     "role": "tool",
+     "tool_call_id": "call_2_0"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "find_tools",
+    "use_tool",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Done."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Done.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": [
+    {
+     "args": {
+      "arguments": {
+       "query": "x"
+      },
+      "name": "web_search"
+     },
+     "result": {
+      "code": "tool_unavailable",
+      "error": "web_search is already in your tool list: call it directly.",
+      "external": false,
+      "ok": false
+     },
+     "tool": "use_tool"
+    },
+    {
+     "args": {
+      "arguments": {},
+      "name": "attach_file"
+     },
+     "result": {
+      "code": "invalid_arguments",
+      "error": "Invalid arguments for attach_file: missing required 'path' (string). Nothing was executed; send use_tool again with corrected arguments.",
+      "external": false,
+      "ok": false
+     },
+     "tool": "use_tool"
+    },
+    {
+     "args": {
+      "name": "nothing"
+     },
+     "result": {
+      "code": "tool_unavailable",
+      "error": "There is no tool named 'nothing' that you can use here. Use find_tools to look one up.",
+      "external": false,
+      "ok": false
+     },
+     "tool": "use_tool"
+    }
+   ]
+  }
+ ]
+]

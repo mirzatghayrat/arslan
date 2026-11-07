@@ -1,0 +1,109 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": {
+    "kind": "search",
+    "query": ""
+   },
+   "summary": "The arguments for web_search were not valid JSON (Expecting value at character 9); nothing was executed. Send the call again with a JSON object.",
+   "tool": "web_search",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": null,
+       "arguments_raw": "{\"query\": ",
+       "id": "c1",
+       "name": "web_search"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"invalid_arguments_json\", \"error\": \"The arguments for web_search were not valid JSON (Expecting value at character 9); nothing was executed. Send the call again with a JSON object.\"}\n\n<agent_status note=\"host facts for this step, not from the user\">\nWorkspace: ~/Arslan — your own folder: create and edit files here without asking (write_file, edit_file).\n</agent_status>",
+     "name": "web_search",
+     "role": "tool",
+     "tool_call_id": "c1"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Done."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": true,
+   "final": "Done.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": [
+    {
+     "args": {},
+     "result": {
+      "code": "invalid_arguments_json",
+      "error": "The arguments for web_search were not valid JSON (Expecting value at character 9); nothing was executed. Send the call again with a JSON object.",
+      "external": false,
+      "ok": false
+     },
+     "tool": "web_search"
+    }
+   ]
+  }
+ ]
+]
