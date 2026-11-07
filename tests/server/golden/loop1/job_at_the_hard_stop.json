@@ -10,7 +10,7 @@
      "role": "user"
     }
    ],
-   "system": "SYS\n\n<GUARD_NOTE>",
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
    "tool_choice": null,
    "tools": [
     "edit_file",
@@ -110,7 +110,7 @@
      "tool_call_id": "c1"
     }
    ],
-   "system": "SYS\n\n<GUARD_NOTE>",
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
    "tool_choice": null,
    "tools": [
     "edit_file",

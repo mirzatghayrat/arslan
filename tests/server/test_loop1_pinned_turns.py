@@ -31,7 +31,16 @@ from arslan import execution_checkpoint
 from arslan.execution_budget import Budget, Limits
 from server.db import session as db_session
 from server.db.models import Setting
-from server.orchestrator import agent_status, memory, model_call, on_demand, tool_caller, tool_loop, turn_model
+from server.orchestrator import (
+    agent_status,
+    answer_salvage,
+    memory,
+    model_call,
+    on_demand,
+    tool_caller,
+    tool_loop,
+    turn_model,
+)
 from server.orchestrator.untrusted import GUARD_NOTE
 from server.registry import executors
 from server.services import (
@@ -215,6 +224,16 @@ def _searches(count):
 
 def _looks(count):
     return [_call("desktop_look", {"app": f"app {index}"}, f"l{index}") for index in range(count)]
+
+
+def _repeated(name, args):
+    """A model that keeps sending one refused call, far past where the no-progress stop should end it."""
+    return [*[_call(name, args, f"c{index}") for index in range(8)], Reply("Stopped asking.")]
+
+
+def _repeated_bad_json():
+    return [*[Reply(None, [{"id": f"c{index}", "function": {"name": "web_search", "arguments": '{"query": '},
+                            "arguments_raw": '{"query": '}]) for index in range(8)], Reply("Stopped asking.")]
 
 
 # Each scenario: `replies`, `expect`, then what run_native gets (`tools`, `history`, its keywords), `answers`, `budget`,
@@ -463,6 +482,18 @@ SCENARIOS: dict[str, dict] = {
         *_looks(3), Reply(raises=_refusal(400, "messages: invalid role tool, tool_call_id is not supported")),
         _call("list_dir", {"path": "~/a"}, "c9"), Reply("Seen them.")], tools=_table("desktop_look", "list_dir"),
         provider=dict(trims_context_server_side=lambda: True), expect="no longer shown"),
+    "bad_json_repeated": dict(replies=_repeated_bad_json(), expect="task_no_progress"),
+    "schema_refused_repeated": dict(replies=_repeated("write_file", {"path": "a.md"}), expect="task_no_progress"),
+    "find_tools_repeated": dict(replies=_repeated("find_tools", {"query": "attach"}), tools=FINDERS, callable=REACHABLE,
+                                expect="task_no_progress"),
+    "use_tool_refused_repeated": dict(replies=_repeated("use_tool", {"name": "nothing"}), tools=FINDERS, callable=REACHABLE,
+                                      expect="task_no_progress"),
+    "bad_choice_repeated": dict(replies=_repeated("ask_user_choice", {"question": "Which?", "options": ["only"]}),
+                                tools=_table("ask_user_choice"), expect="task_no_progress"),
+    "message_waiting_before_the_first_call": dict(replies=[
+        _batch(("write_file", {"path": "a.md", "content": "x"}, "c1"), ("write_file", {"path": "b.md", "content": "y"}, "c2")),
+        Reply("Read your message.")], steerable=True, conversation_id="steered", setup="message_before_the_calls",
+        expect="skipped_for_message"),
     # ── the hard stop ──
     "streamed_text_then_hard_stop": dict(replies=[Reply(LONG, [golden._tc("web_search", {"query": "a"}, "c1")]),
                                                   _call("web_search", {"query": "b"}, "c2")],
@@ -561,7 +592,7 @@ SCENARIOS: dict[str, dict] = {
     "mcp_failures_get_a_hint": dict(replies=[
         _call("mcp_1__lookup", {"id": 1}, "c1"), _call("mcp_1__lookup", {"id": 2}, "c2"), Reply("Used the built-in.")],
         tools=_mcp("mcp_1__lookup"), answers={"mcp_1__lookup": {"ok": False, "error": "server said no"}},
-        conversation_id="c1", expect="mcp_degrade_hint"),
+        conversation_id="c1", expect="has failed 2 times in a row"),
     "mcp_failures_not_logged": dict(replies=[
         _call("mcp_1__lookup", {"id": 1}, "c1"), _call("mcp_1__lookup", {"id": 2}, "c2"), Reply("Used the built-in.")],
         tools=_mcp("mcp_1__lookup"), answers={"mcp_1__lookup": {"ok": False, "error": "server said no"}},
@@ -673,6 +704,7 @@ def _watch(log, monkeypatch):
         log.append(["limit", timeout])
         return await within(awaitable, timeout, **own)
     monkeypatch.setattr(tool_loop, "within", limited)
+    monkeypatch.setattr(answer_salvage, "within", limited)
 
     async def waited(seconds):
         log.append(["waited", seconds])
@@ -739,7 +771,7 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
                 return await super().execute(args)
         key = spec.get("slow", "web_search")
         monkeypatch.setitem(executors.EXECUTORS, key, _Slow(log, key, ANSWERS[key]))
-    elif setup == "message_meanwhile":
+    elif setup in ("message_meanwhile", "message_before_the_calls"):
         async def stored(_conversation, _role, content, **_own):
             log.append(["stored", content])
             return 7
@@ -749,14 +781,27 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
         async def tell(frame):
             log.append(["told", frame])
 
+        def message():
+            steering.put("steered", steering.Steer("also this", None, {"type": "user_message"}, tell, asyncio.Queue()))
+
+        if setup == "message_before_the_calls":
+            # It arrives while the model writes its reply, so the first call of the batch is already past the check.
+            answer_next = _Model._next
+
+            async def with_a_message(self, on_text=None):
+                monkeypatch.setattr(_Model, "_next", answer_next)
+                message()
+                return await answer_next(self, on_text)
+            monkeypatch.setattr(_Model, "_next", with_a_message)
+            return
+
         class _First(_Ran):
             told = False
 
             async def execute(self, args):
                 if not _First.told:
                     _First.told = True
-                    steering.put("steered", steering.Steer("also this", None, {"type": "user_message"}, tell,
-                                                           asyncio.Queue()))
+                    message()
                 return await super().execute(args)
         key = spec["steer_on"]
         monkeypatch.setitem(executors.EXECUTORS, key, _First(log, key, spec.get("answers", {}).get(key, ANSWERS[key])))
@@ -771,7 +816,7 @@ def _runtime(log, spec):
     async def execute_tool(_key, args, execute):
         return await execute(args)
     return types.SimpleNamespace(
-        spec=types.SimpleNamespace(acceptance=[check] if spec.get("job") else [], locale="en"), progress=_Progress(),
+        spec=types.SimpleNamespace(acceptance=[check] if "job" in spec else [], locale="en"), progress=_Progress(),
         checkpoint=checkpoint, execute_tool=execute_tool, pause_reason=None, limit_reason=None, closed=False, task_id="t1")
 
 
