@@ -23,7 +23,8 @@ from server.orchestrator.model_step import (
 from server.orchestrator.turn_stream import (
     _UNVERIFIED_BOUNCES, TextShown, _StepStream, _TurnText, _correct, _kept_note, _not_verified, _progress_updates, _shown,
     _streams_answer)
-from server.orchestrator.turn_state import TOOL_TIMEOUT_S, ResolveTools, ToolTurn, TurnRequest, TurnState  # noqa: F401
+from server.orchestrator.turn_state import (  # noqa: F401
+    TOOL_TIMEOUT_S, ResolveTools, StepMode, StepReply, ToolTurn, TurnRequest, TurnState)
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
@@ -946,32 +947,16 @@ async def _budget_closing(trace: list, ws_root, started: float) -> str:
                                    files=", ".join(saved) + where)
 
 
-async def _run_native(request: TurnRequest, state: TurnState) -> dict:
-    """Canonical native tool loop. Its core return shape
-    ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
-
-    Each step calls adapter.chat(..., tools=schemas) → LLMResponse{content, tool_calls}:
-      - tool_calls non-empty → dispatch each through the shared gate; content is narration
-        ONLY, never surfaced as the answer; continue.
-      - escalate tool call → return {"escalation": {...}} (when allow_escalation).
-      - no tool_calls → content IS the final answer; stream it and return.
-      - no progress or no remaining tools → one text-only synthesis if request budget permits.
-
-    Production calls use the shared task budget, with no fixed eight-round cap.
-    max_tool_calls is an optional explicit compatibility ceiling, never a default.
-    """
-    # The request's fields by name, until the phases read them (LOOP1 c3).
+async def _open_turn(request: TurnRequest, state: TurnState) -> dict | None:
+    """LOOP1 c3, the first phase: the turn's model, budget and task, the acceptance checks in the system text, the
+    tool table, the trajectory, the lessons in view and what the turn shows as it is written. A turn that streams
+    without tools ends here, with its answer. Otherwise it returns None, with all of that recorded on `state`."""
     system, user_content, history, emit, on_chunk = (
         request.system, request.user_content, request.history, request.emit, request.on_chunk)
-    resolve_tools, resolve_callable, tool_timeout_s = (
-        request.resolve_tools, request.resolve_callable, request.tool_timeout_s)
-    allow_escalation, max_tool_calls, force_tools, stream_without_tools = (
-        request.allow_escalation, request.max_tool_calls, request.force_tools, request.stream_without_tools)
-    confirm_command, confirm_workspace_write, confirm_schedule = (
-        request.confirm_command, request.confirm_workspace_write, request.confirm_schedule)
-    conversation_id, log_events, caller, progress_lane, turn_notes, steerable = (
-        request.conversation_id, request.log_events, request.caller, request.progress_lane, request.turn_notes,
-        request.steerable)
+    resolve_tools, resolve_callable = request.resolve_tools, request.resolve_callable
+    allow_escalation, max_tool_calls, stream_without_tools = (
+        request.allow_escalation, request.max_tool_calls, request.stream_without_tools)
+    conversation_id, caller, progress_lane = request.conversation_id, request.caller, request.progress_lane
     has_images, adapter_override = request.has_images, request.adapter_override
     # The vision slot needs to know whether this turn carries an image, and the
     # request is the only place that fact is available — hence an input rather
@@ -991,8 +976,6 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                        json.dumps(checks, ensure_ascii=False)[:12_000])
     policy = ProgressPolicy(seen=set(runtime.progress.loop_fingerprints) if runtime else set())
     request_ceiling = max(0, budget.limits.model_requests - budget.model_requests)
-    stop_reason = None
-    history_compacted = False
     if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 0):
         raise ValueError("max_tool_calls must be a non-negative explicit ceiling")
 
@@ -1037,7 +1020,6 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     # evicts whole call groups.
     current_request = trajectory.request(user_content)
     convo: list[dict] = list(history) + [current_request]
-    tool_trace = state.tool_trace
     # 0.1.52 S5: practices learned before that match this request ride in the status
     # block (never the system prompt). Host turns only; recall applies memory's permissions.
     lesson_notes: list[str] = []
@@ -1069,15 +1051,35 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     turn_text = (_TurnText(on_chunk, lambda label, keep: emit({"type": "stream_restart", "label": label, "keep": keep}))
                  if on_chunk is not None and _streams_answer(a, acceptance_runtime) else None)
     state.ws_root, state.started, state.turn_text = ws_root, turn_started, turn_text
+    state.adapter, state.budget, state.runtime, state.acceptance_runtime, state.policy = (
+        a, budget, runtime, acceptance_runtime, policy)
+    state.request_ceiling, state.system, state.drops = request_ceiling, system, drops
+    state.resolve_tools, state.resolve_callable = resolve_tools, resolve_callable
+    state.wired, state.wired_keys, state.schemas, state.params_by_key = wired, wired_keys, schemas, params_by_key
+    state.current_request, state.convo, state.lesson_notes = current_request, convo, lesson_notes
+    state.research_source_feedback, state.mcp_fail_counts, state.mcp_hint_logged, state.call_ids = (
+        research_source_feedback, mcp_fail_counts, mcp_hint_logged, call_ids)
+    state.recovery, state.plan, state.own_folder = turn_state, plan, own_folder
+    return None
+
+
+def _tool_turn(request: TurnRequest, state: TurnState) -> ToolTurn:
+    """What a call of this turn goes through its gates with, built for each call from the turn as it stands then:
+    the trajectory is rebound when the history is fitted."""
+    return ToolTurn(resolve_tools=state.resolve_tools, emit=request.emit, tool_timeout_s=request.tool_timeout_s,
+                    tool_trace=state.tool_trace, convo=state.convo, confirm_command=request.confirm_command,
+                    confirm_workspace_write=request.confirm_workspace_write, confirm_schedule=request.confirm_schedule,
+                    mcp_fail_counts=state.mcp_fail_counts, mcp_hint_logged=state.mcp_hint_logged,
+                    conversation_id=request.conversation_id, log_events=request.log_events, caller=request.caller,
+                    turn_adapter=state.adapter, resolve_callable=state.resolve_callable)
+
+
+async def _presearch(request: TurnRequest, state: TurnState) -> None:
+    """A turn with `force_tools` may search first, through `_run_tool` as any call does. What it records is the
+    first request's newest feedback (`state.pending_feedback`)."""
+    user_content, force_tools, conversation_id = request.user_content, request.force_tools, request.conversation_id
+    wired_keys, policy, convo = state.wired_keys, state.policy, state.convo
     unseen_start = len(convo)
-
-    def tool_turn() -> ToolTurn:
-        return ToolTurn(resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s, tool_trace=tool_trace,
-                        convo=convo, confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                        confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
-                        mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id, log_events=log_events,
-                        caller=caller, turn_adapter=a, resolve_callable=resolve_callable)
-
     # Deterministic pre-search uses the same admission and progress boundaries.
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
         from server.services import tool_intent
@@ -1089,204 +1091,284 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             q = (intent.query or user_content)[:400]
             result = await _run_tool("web_search", {"query": q},
                                      json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
-                                     tool_turn())
+                                     _tool_turn(request, state))
             policy.observe("web_search", {"query": q}, result)
+    state.pending_feedback = len(convo) - unseen_start
 
-    pending_feedback = len(convo) - unseen_start
-    # 0.1.50 completion first after a stop (S6 bench, T2): repeated failure ends RESEARCH, not the
-    # deliverable. The run enters finish mode once (sticky): up to two steps where only the save tools
-    # run (K3: the table stays, other calls are refused), then text only. Without save tools a
-    # no-progress stop forces an answer at once, as before. (0.1.63 K4b: a spent web-read allowance
-    # no longer starts it; live reads have none.)
-    finish_reason: str | None = None
-    finish_from = 0
-    finish_steps = 0
-    # Wrap-up keeps the FULL tool list (an unchanged list keeps the provider's prompt
-    # cache: a narrowed one re-sent ~28k tokens uncached in the S6 bench). K3: it no
-    # longer narrows after a refused research call either; refusals say why, and after
-    # the second refused call the next step is text only (the same table, tool_choice
-    # none), so a model that keeps reaching for research still delivers.
-    wrap_refused = 0
-    long_turn_told = False
-    tool_steps = 0              # K5: steps whose calls are not only update_plan
-    work = {"done": False, "seen": 0}   # SMART-5: whether a call so far changed something, and how far that was checked
-    link_hints: dict[str, int] = {}
-    offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
-    can_save = bool(WRAP_UP_TOOLS & wired_keys)
-    for step in range(request_ceiling):
-        budget.check()
-        if budget.model_requests >= budget.limits.model_requests:
-            if runtime:
-                runtime.pause_reason = "task_budget_exhausted"
-            budget.stop("model_requests")
-        # Three batches of tool calls cut off by the output limit (none of which
-        # ran): stop asking for tools and get an answer (0.1.49 S6 breaker).
-        truncation_stop = turn_state.truncated_calls >= 3
-        if finish_reason is None and not truncation_stop:
-            if policy.stopped:
-                finish_reason, finish_from = "no_progress", len(tool_trace)
-        saved = any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
-                    for item in tool_trace[finish_from:]) if finish_reason else False
-        finishing = finish_reason is not None and can_save and finish_steps < 3 and not saved
-        finish_done = finish_reason is not None and not finishing
-        forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
-                  or budget.tool_calls >= budget.limits.tool_calls
-                  or (max_tool_calls is not None and step >= max_tool_calls)
-                  or wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT)
-        no_progress = policy.stopped or finish_reason == "no_progress"
-        if forced or (finishing and no_progress):
-            stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
-            if runtime:
-                _stop_for_limit(runtime, stop_reason, tool_trace, finishing=finishing and no_progress and not forced)
-        # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
-        # (prefix cache); this step's notes go to the <agent_status> block.
-        notes: list[str] = []
-        if forced:
-            notes.append("The deliverable is saved. Give the final answer now: where it is, what is verified and "
-                         "what is missing. Text only." if saved else
-                         "Repeated actions made no progress. Explain what was verified and what is blocked. Text only."
-                         if no_progress else
-                         "Your tool calls kept exceeding the output limit and none of them ran. Report briefly what "
-                         "was verified and what remains. Text only." if truncation_stop else
-                         "Research is over and the calls outside wrapping up were refused: give the final answer "
-                         "now from what you have, marking what is unverified. Text only."
-                         if wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT else
-                         "Tool budget exhausted: report the verified results and remaining work. Text only.")
-        # 0.1.43 completion first: past the soft limit (or, 0.1.50, in finish mode),
-        # stop gathering and FINISH. Research tools are withdrawn; saving the
-        # deliverable stays possible. Not a failure: the completion checks decide
-        # the outcome as usual.
-        wrap_up = not forced and (finishing or budget.soft_reached())
-        # K3: the tool table stays as it is (narrowing it would rewrite Claude's cache from the tools
-        # on); the status says what still runs, and dispatch refuses the rest with its reason.
-        still_run = sorted(FINISH_TOOLS & wired_keys)
-        allowed_note = (f" Tools that still run: {', '.join(still_run)}; any other call is refused."
-                        if still_run else " No tool runs any more: answer in text.") if wrap_up else ""
-        if finishing:
-            finish_steps += 1
-            notes.append("Repeated actions made no progress, so research has stopped."
-                         " Using only what you already have, save the deliverable now if one was asked for "
-                           "(write_file), marking anything missing or unverified; then give the final answer: "
-                           "what was done, what is blocked." + allowed_note + offline_note)
-        elif wrap_up:
-            notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
-                         "produce the complete deliverable the user asked for (save it if a file was asked for), "
-                         "clearly marking anything you could not verify. Then give the final answer."
-                         + allowed_note + offline_note)
-        # K4b: once a turn, only where start_background_work is offered (never inside a job), and only in
-        # the status block, so the system text and the tools (K3's cached prefix) stay as they are.
-        if (not long_turn_told and not forced and not wrap_up and "start_background_work" in wired_keys
-                and budget.elapsed() >= LONG_TURN_S):
-            long_turn_told = True
-            notes.append(_LONG_TURN_NOTE)
-            from server.services import runtime_messages
-            emit({"type": "note", "text": runtime_messages.render(
-                "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
-        if tool_steps >= 2 and _host_turn(caller, progress_lane) and await _did_work(tool_trace, work):
-            notes.append(_CLOSING_NOTE)
-        # Deliver one new tool batch atomically before normal old-history
-        # eviction. Keep a bounded 96k research window so a <=96k source batch
-        # can survive the following save/readback steps, not just one request.
-        # Other turns retain the 64k target. Apply extra protection only
-        # to batches <=96k, never permanently pin sources or widen task budgets.
-        # Existing opaque-provider pair retention is otherwise unchanged.
-        # 0.1.63 K1b: Claude's native path never edits what it sent; the API clears old tool results
-        # (context editing). After a refusal of that, local trimming resumes (screenshots too).
-        server_trims = _server_trims(a, turn_state)
-        _SENT_IS_FINAL.set(server_trims)
-        if not server_trims:
-            trajectory.keep_latest_images(convo)
-        oversized_feedback = (not server_trims and pending_feedback
-                              and _rendered_size(convo[-pending_feedback:]) > 96_000)
-        has_web_evidence = any(item.get("tool") == "web_extract" and
-                               (item.get("result") or {}).get("ok") for item in tool_trace)
-        if has_web_evidence:
-            notes.append(
-                "Research scope: deliver the smallest useful report answering the requested dimensions. "
-                "For a question about one capability, do not expand into an inventory of unrelated README "
-                "differences. Unless comprehensive coverage is requested, use at most six relevant comparison "
-                "rows and short source quotations, with a concise conclusion and explicit unknowns. "
-                "Do not add an exhaustive 'not mentioned' list that the user did not ask for. "
-                "Omission from one quoted sentence is not absence from a document. Each shared claim must "
-                "be supported by BOTH sources; otherwise attribute it only to the source that says it. "
-                "A shared commit URL does not date a translation's baseline or prove why texts differ. "
-                "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
-        in_turn = _IN_TURN_CHARS_RESEARCH if has_web_evidence else _IN_TURN_CHARS
-        convo, compacted = (convo, False) if server_trims else bounded_history(
-            convo, max_chars=in_turn, trim_to=in_turn // 2,
-            preserve_tail=0 if oversized_feedback else pending_feedback, size_of=_rendered_size)
-        pending_feedback = 0
-        if oversized_feedback:
-            notes.append("The newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
-                         "content may have been omitted before you saw it. Do not claim to have inspected omitted "
-                         "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
-        history_compacted = history_compacted or compacted
-        if history_compacted:
-            notes.append("Earlier conversation turns were compacted. Do not repeat completed effects." + (
-                " Saved task progress and owned outputs remain available through task_progress."
-                if "task_progress" in wired_keys else
-                " task_progress is not available in this turn; do not invent a call to it."))
-        # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
-        # prose from the accumulated TOOL RESULTs — never an empty turn.
-        # Rolling evidence eviction must not erase this turn's task or its
-        # restrictions. Restore the exact request at user priority, not as a
-        # system instruction or an invented summary, only in this payload.
-        # K3: the same tool table on every step of the turn, wrapping up included (a narrowed table was a
-        # cache miss from the tools on, K1b). Exceptions, one miss each: a capability added mid-turn, an
-        # MCP schema the provider refused, relax() on a retry.
-        step_tools = None if forced else schemas
-        offered = {t["function"]["name"] for t in step_tools or []}
-        # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
-        # block — the request goes out as the user wrote it. Step 0's write
-        # facts live in the tool descriptions (S5); the block starts with work.
-        # 0.1.63 D1: turn_notes are host facts about this whole turn (a turn from the iPhone).
-        turn_lines = list(turn_notes or ())
-        status = "" if not (tool_trace or notes or plan.items or lesson_notes or turn_lines) else agent_status.render(
-            workspace=agent_status.home_relative(ws_root) if ws_root is not None else None,
-            writers=[k for k in ("write_file", "edit_file", "run_command") if k in offered],
-            own_folder=own_folder, saved=agent_status.owned_outputs(tool_trace, ws_root, turn_started),
-            plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
-            wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
-            notes=lesson_notes + turn_lines + notes)
-        try:
-            usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
-        except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
-            logger.warning("context parts not measured", exc_info=True)
-            usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
-        if state.steers:
-            # K9b: this request carries them, once it is sure to go (its tokens and dollars too, which the
-            # provider checks as it sends; a stop here hands them back).
-            budget.check_request()
-            await _commit_steers(state.steers, conversation_id)
-        stream = _StepStream(turn_text) if turn_text is not None else None
-        try:
-            resp = await _model_call(a, system, convo, current_request, tools=step_tools,
-                                     schemas=schemas, forced=forced, state=turn_state, status=status,
-                                     drops=drops, conversation_id=conversation_id, step=stream)
-        except TextShown:
-            # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
-            # what was shown and says so, and the run records a failure (no `error` frame: the window
-            # would drop the text the phone kept).
-            from server.services import host_run, runtime_messages
-            stream.finish()
-            turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
-                             answer=False)
-            host_run.note_failure("model_error_after_text")
-            if acceptance_runtime is not None:
-                acceptance_runtime.pause_reason = "model_error_after_text"
-            return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
-                    "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
-        if stream is not None:
-            stream.finish()
-        if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
-            drops.changed = False
-            wired = drops.keep(wired)
-            wired_keys = {t["key"] for t in wired}
-            schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
-            params_by_key = {t["key"]: _tool_params(t) for t in wired}
-        # A context-overflow recovery compacted convo in place (S6).
-        history_compacted = history_compacted or turn_state.context_retry_used
-        tool_calls = list(getattr(resp, "tool_calls", None) or [])
+
+def _step_mode(request: TurnRequest, state: TurnState, step: int) -> StepMode:
+    """LOOP1 c3: what this step may do. The budget's checks come first, then finish mode (sticky once entered), then
+    whether the step is forced to text. A step that stops records its reason, and the turn keeps it."""
+    max_tool_calls = request.max_tool_calls
+    budget, runtime, policy, turn_state, tool_trace = (
+        state.budget, state.runtime, state.policy, state.recovery, state.tool_trace)
+    finish_reason, finish_from, finish_steps, wrap_refused, can_save, stop_reason = (
+        state.finish_reason, state.finish_from, state.finish_steps, state.wrap_refused, state.can_save,
+        state.stop_reason)
+    budget.check()
+    if budget.model_requests >= budget.limits.model_requests:
+        if runtime:
+            runtime.pause_reason = "task_budget_exhausted"
+        budget.stop("model_requests")
+    # Three batches of tool calls cut off by the output limit (none of which
+    # ran): stop asking for tools and get an answer (0.1.49 S6 breaker).
+    truncation_stop = turn_state.truncated_calls >= 3
+    if finish_reason is None and not truncation_stop:
+        if policy.stopped:
+            finish_reason, finish_from = "no_progress", len(tool_trace)
+    saved = any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
+                for item in tool_trace[finish_from:]) if finish_reason else False
+    finishing = finish_reason is not None and can_save and finish_steps < 3 and not saved
+    finish_done = finish_reason is not None and not finishing
+    forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
+              or budget.tool_calls >= budget.limits.tool_calls
+              or (max_tool_calls is not None and step >= max_tool_calls)
+              or wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT)
+    no_progress = policy.stopped or finish_reason == "no_progress"
+    if forced or (finishing and no_progress):
+        stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
+        if runtime:
+            _stop_for_limit(runtime, stop_reason, tool_trace, finishing=finishing and no_progress and not forced)
+    state.finish_reason, state.finish_from, state.stop_reason = finish_reason, finish_from, stop_reason
+    return StepMode(forced=forced, finishing=finishing, saved=saved, no_progress=no_progress,
+                    truncation_stop=truncation_stop)
+
+
+async def _step_notes(request: TurnRequest, state: TurnState, mode: StepMode) -> tuple[list[str], bool]:
+    """LOOP1 c3: this step's notes for the status block, and whether it wraps up."""
+    emit, caller, progress_lane = request.emit, request.caller, request.progress_lane
+    budget, tool_trace, wired_keys, work, offline_note = (
+        state.budget, state.tool_trace, state.wired_keys, state.work, state.offline_note)
+    finish_steps, long_turn_told, tool_steps, wrap_refused = (
+        state.finish_steps, state.long_turn_told, state.tool_steps, state.wrap_refused)
+    forced, finishing, saved, no_progress, truncation_stop = (
+        mode.forced, mode.finishing, mode.saved, mode.no_progress, mode.truncation_stop)
+    # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
+    # (prefix cache); this step's notes go to the <agent_status> block.
+    notes: list[str] = []
+    if forced:
+        notes.append("The deliverable is saved. Give the final answer now: where it is, what is verified and "
+                     "what is missing. Text only." if saved else
+                     "Repeated actions made no progress. Explain what was verified and what is blocked. Text only."
+                     if no_progress else
+                     "Your tool calls kept exceeding the output limit and none of them ran. Report briefly what "
+                     "was verified and what remains. Text only." if truncation_stop else
+                     "Research is over and the calls outside wrapping up were refused: give the final answer "
+                     "now from what you have, marking what is unverified. Text only."
+                     if wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT else
+                     "Tool budget exhausted: report the verified results and remaining work. Text only.")
+    # 0.1.43 completion first: past the soft limit (or, 0.1.50, in finish mode),
+    # stop gathering and FINISH. Research tools are withdrawn; saving the
+    # deliverable stays possible. Not a failure: the completion checks decide
+    # the outcome as usual.
+    wrap_up = not forced and (finishing or budget.soft_reached())
+    # K3: the tool table stays as it is (narrowing it would rewrite Claude's cache from the tools
+    # on); the status says what still runs, and dispatch refuses the rest with its reason.
+    still_run = sorted(FINISH_TOOLS & wired_keys)
+    allowed_note = (f" Tools that still run: {', '.join(still_run)}; any other call is refused."
+                    if still_run else " No tool runs any more: answer in text.") if wrap_up else ""
+    if finishing:
+        finish_steps += 1
+        notes.append("Repeated actions made no progress, so research has stopped."
+                     " Using only what you already have, save the deliverable now if one was asked for "
+                       "(write_file), marking anything missing or unverified; then give the final answer: "
+                       "what was done, what is blocked." + allowed_note + offline_note)
+    elif wrap_up:
+        notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
+                     "produce the complete deliverable the user asked for (save it if a file was asked for), "
+                     "clearly marking anything you could not verify. Then give the final answer."
+                     + allowed_note + offline_note)
+    # K4b: once a turn, only where start_background_work is offered (never inside a job), and only in
+    # the status block, so the system text and the tools (K3's cached prefix) stay as they are.
+    if (not long_turn_told and not forced and not wrap_up and "start_background_work" in wired_keys
+            and budget.elapsed() >= LONG_TURN_S):
+        long_turn_told = True
+        notes.append(_LONG_TURN_NOTE)
+        from server.services import runtime_messages
+        emit({"type": "note", "text": runtime_messages.render(
+            "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
+    if tool_steps >= 2 and _host_turn(caller, progress_lane) and await _did_work(tool_trace, work):
+        notes.append(_CLOSING_NOTE)
+    state.finish_steps, state.long_turn_told = finish_steps, long_turn_told
+    return notes, wrap_up
+
+
+def _fit_history(state: TurnState, notes: list[str]) -> None:
+    """LOOP1 c3: the in-turn history fitted to its bound before the request, and the notes that go with it. The
+    trajectory may come back as a new list, so `state.convo` is rebound here and read again after."""
+    a, turn_state, convo, tool_trace, wired_keys = (
+        state.adapter, state.recovery, state.convo, state.tool_trace, state.wired_keys)
+    pending_feedback, history_compacted = state.pending_feedback, state.history_compacted
+    # Deliver one new tool batch atomically before normal old-history
+    # eviction. Keep a bounded 96k research window so a <=96k source batch
+    # can survive the following save/readback steps, not just one request.
+    # Other turns retain the 64k target. Apply extra protection only
+    # to batches <=96k, never permanently pin sources or widen task budgets.
+    # Existing opaque-provider pair retention is otherwise unchanged.
+    # 0.1.63 K1b: Claude's native path never edits what it sent; the API clears old tool results
+    # (context editing). After a refusal of that, local trimming resumes (screenshots too).
+    server_trims = _server_trims(a, turn_state)
+    _SENT_IS_FINAL.set(server_trims)
+    if not server_trims:
+        trajectory.keep_latest_images(convo)
+    oversized_feedback = (not server_trims and pending_feedback
+                          and _rendered_size(convo[-pending_feedback:]) > 96_000)
+    has_web_evidence = any(item.get("tool") == "web_extract" and
+                           (item.get("result") or {}).get("ok") for item in tool_trace)
+    if has_web_evidence:
+        notes.append(
+            "Research scope: deliver the smallest useful report answering the requested dimensions. "
+            "For a question about one capability, do not expand into an inventory of unrelated README "
+            "differences. Unless comprehensive coverage is requested, use at most six relevant comparison "
+            "rows and short source quotations, with a concise conclusion and explicit unknowns. "
+            "Do not add an exhaustive 'not mentioned' list that the user did not ask for. "
+            "Omission from one quoted sentence is not absence from a document. Each shared claim must "
+            "be supported by BOTH sources; otherwise attribute it only to the source that says it. "
+            "A shared commit URL does not date a translation's baseline or prove why texts differ. "
+            "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
+    in_turn = _IN_TURN_CHARS_RESEARCH if has_web_evidence else _IN_TURN_CHARS
+    convo, compacted = (convo, False) if server_trims else bounded_history(
+        convo, max_chars=in_turn, trim_to=in_turn // 2,
+        preserve_tail=0 if oversized_feedback else pending_feedback, size_of=_rendered_size)
+    pending_feedback = 0
+    if oversized_feedback:
+        notes.append("The newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
+                     "content may have been omitted before you saw it. Do not claim to have inspected omitted "
+                     "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
+    history_compacted = history_compacted or compacted
+    if history_compacted:
+        notes.append("Earlier conversation turns were compacted. Do not repeat completed effects." + (
+            " Saved task progress and owned outputs remain available through task_progress."
+            if "task_progress" in wired_keys else
+            " task_progress is not available in this turn; do not invent a call to it."))
+    state.convo, state.pending_feedback, state.history_compacted = convo, pending_feedback, history_compacted
+
+
+async def _request(request: TurnRequest, state: TurnState, mode: StepMode, notes: list[str]) -> StepReply | dict:
+    """LOOP1 c3: this step's request, with its status block and the messages sent meanwhile that it carries. If the
+    reply fails after part of the answer went out, the turn ends here (the dict). A schema the provider refused
+    reads the table again."""
+    from server.orchestrator import agent_status
+    conversation_id, allow_escalation, turn_notes = request.conversation_id, request.allow_escalation, request.turn_notes
+    a, system, convo, current_request, tool_trace, plan = (
+        state.adapter, state.system, state.convo, state.current_request, state.tool_trace, state.plan)
+    budget, turn_state, drops, turn_text, acceptance_runtime = (
+        state.budget, state.recovery, state.drops, state.turn_text, state.acceptance_runtime)
+    lesson_notes, ws_root, own_folder, turn_started = state.lesson_notes, state.ws_root, state.own_folder, state.started
+    wired, wired_keys, schemas, params_by_key = state.wired, state.wired_keys, state.schemas, state.params_by_key
+    history_compacted, forced = state.history_compacted, mode.forced
+    # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
+    # prose from the accumulated TOOL RESULTs — never an empty turn.
+    # Rolling evidence eviction must not erase this turn's task or its
+    # restrictions. Restore the exact request at user priority, not as a
+    # system instruction or an invented summary, only in this payload.
+    # K3: the same tool table on every step of the turn, wrapping up included (a narrowed table was a
+    # cache miss from the tools on, K1b). Exceptions, one miss each: a capability added mid-turn, an
+    # MCP schema the provider refused, relax() on a retry.
+    step_tools = None if forced else schemas
+    offered = {t["function"]["name"] for t in step_tools or []}
+    # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
+    # block — the request goes out as the user wrote it. Step 0's write
+    # facts live in the tool descriptions (S5); the block starts with work.
+    # 0.1.63 D1: turn_notes are host facts about this whole turn (a turn from the iPhone).
+    turn_lines = list(turn_notes or ())
+    status = "" if not (tool_trace or notes or plan.items or lesson_notes or turn_lines) else agent_status.render(
+        workspace=agent_status.home_relative(ws_root) if ws_root is not None else None,
+        writers=[k for k in ("write_file", "edit_file", "run_command") if k in offered],
+        own_folder=own_folder, saved=agent_status.owned_outputs(tool_trace, ws_root, turn_started),
+        plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
+        wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
+        notes=lesson_notes + turn_lines + notes)
+    try:
+        usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
+    except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
+        logger.warning("context parts not measured", exc_info=True)
+        usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
+    if state.steers:
+        # K9b: this request carries them, once it is sure to go (its tokens and dollars too, which the
+        # provider checks as it sends; a stop here hands them back).
+        budget.check_request()
+        await _commit_steers(state.steers, conversation_id)
+    stream = _StepStream(turn_text) if turn_text is not None else None
+    try:
+        resp = await _model_call(a, system, convo, current_request, tools=step_tools,
+                                 schemas=schemas, forced=forced, state=turn_state, status=status,
+                                 drops=drops, conversation_id=conversation_id, step=stream)
+    except TextShown:
+        # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
+        # what was shown and says so, and the run records a failure (no `error` frame: the window
+        # would drop the text the phone kept).
+        from server.services import host_run, runtime_messages
+        stream.finish()
+        turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
+                         answer=False)
+        host_run.note_failure("model_error_after_text")
+        if acceptance_runtime is not None:
+            acceptance_runtime.pause_reason = "model_error_after_text"
+        return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
+                "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
+    if stream is not None:
+        stream.finish()
+    if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
+        drops.changed = False
+        wired = drops.keep(wired)
+        wired_keys = {t["key"] for t in wired}
+        schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
+        params_by_key = {t["key"]: _tool_params(t) for t in wired}
+    # A context-overflow recovery compacted convo in place (S6).
+    history_compacted = history_compacted or turn_state.context_retry_used
+    tool_calls = list(getattr(resp, "tool_calls", None) or [])
+    state.wired, state.wired_keys, state.schemas, state.params_by_key = wired, wired_keys, schemas, params_by_key
+    state.history_compacted = history_compacted
+    return StepReply(resp=resp, stream=stream, tool_calls=tool_calls)
+
+
+async def _run_native(request: TurnRequest, state: TurnState) -> dict:
+    """Canonical native tool loop. Its core return shape
+    ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
+
+    Each step calls adapter.chat(..., tools=schemas) → LLMResponse{content, tool_calls}:
+      - tool_calls non-empty → dispatch each through the shared gate; content is narration
+        ONLY, never surfaced as the answer; continue.
+      - escalate tool call → return {"escalation": {...}} (when allow_escalation).
+      - no tool_calls → content IS the final answer; stream it and return.
+      - no progress or no remaining tools → one text-only synthesis if request budget permits.
+
+    Production calls use the shared task budget, with no fixed eight-round cap.
+    max_tool_calls is an optional explicit compatibility ceiling, never a default.
+
+    LOOP1 c3: the turn opens (`_open_turn`, `_presearch`), then each step runs its phases (`_step_mode`,
+    `_step_notes`, `_fit_history`, `_request`) and either its tool batch or its answer, below.
+    """
+    # The request's fields by name, for the batch and the answer below (LOOP1 c3b and c3c take those to phases).
+    user_content, emit, on_chunk = request.user_content, request.emit, request.on_chunk
+    allow_escalation, confirm_command, conversation_id, steerable = (
+        request.allow_escalation, request.confirm_command, request.conversation_id, request.steerable)
+    opened = await _open_turn(request, state)
+    if opened is not None:
+        return opened
+    await _presearch(request, state)
+    from server.orchestrator import agent_status
+    state.offline_note = _OFFLINE_NOTE if "run_command" in state.wired_keys else ""
+    state.can_save = bool(WRAP_UP_TOOLS & state.wired_keys)
+    # Set once when the turn opened and never rebound, so the batch and the answer below read them by name, as before.
+    a, budget, runtime, acceptance_runtime, policy = (
+        state.adapter, state.budget, state.runtime, state.acceptance_runtime, state.policy)
+    system, resolve_tools, resolve_callable, turn_state, plan = (
+        state.system, state.resolve_tools, state.resolve_callable, state.recovery, state.plan)
+    call_ids, tool_trace, turn_text, research_source_feedback, link_hints, offline_note = (
+        state.call_ids, state.tool_trace, state.turn_text, state.research_source_feedback, state.link_hints,
+        state.offline_note)
+    for step in range(state.request_ceiling):
+        mode = _step_mode(request, state, step)
+        notes, wrap_up = await _step_notes(request, state, mode)
+        _fit_history(state, notes)
+        reply = await _request(request, state, mode, notes)
+        if isinstance(reply, dict):
+            return reply
+        forced, finishing = mode.forced, mode.finishing
+        resp, stream, tool_calls = reply.resp, reply.stream, reply.tool_calls
+        convo = state.convo                 # rebound only when the history is fitted, above
 
         if not forced and tool_calls:
             provider_content = getattr(resp, "provider_content", None)
@@ -1310,11 +1392,11 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             if cut_off:
                 turn_state.truncated_calls += 1
             elif any((call.get("function") or {}).get("name") != "update_plan" for call in tool_calls):
-                tool_steps += 1
+                state.tool_steps += 1
             # K9a: consecutive reads of this reply run together (parallel_reads); never in a reply cut off
             # or while wrapping up.
             reads = None if cut_off or wrap_up else await parallel_reads.plan(
-                [_planned_read(call, neutral_call, wired_keys, params_by_key)
+                [_planned_read(call, neutral_call, state.wired_keys, state.params_by_key)
                  for call, neutral_call in zip(tool_calls, calls)])
             steered = False                     # K9b: a message sent meanwhile waits: the rest is not started
             for index, (call, neutral_call) in enumerate(zip(tool_calls, calls)):
@@ -1353,7 +1435,8 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     policy.observe(name, {}, result)
                     continue
-                schema_problem = _schema_problem(args, params_by_key.get(name)) if name in params_by_key else None
+                schema_problem = (_schema_problem(args, state.params_by_key.get(name)) if name in state.params_by_key
+                                  else None)
                 if schema_problem:
                     result = _record_tool_result(name, args, {"ok": False, "external": False,
                         "code": "invalid_arguments",
@@ -1371,9 +1454,9 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 # of such a tool, goes on under the tool's real name once its arguments check out against
                 # its own table, so the approval, the trace and the receipts are a direct call's.
                 on_demand_call = False
-                if name == "find_tools" and "find_tools" in wired_keys:
+                if name == "find_tools" and "find_tools" in state.wired_keys:
                     emit({"type": "tool_call", "tool": name, "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    unseen = [t for t in await resolve_callable() if t["key"] not in wired_keys]
+                    unseen = [t for t in await resolve_callable() if t["key"] not in state.wired_keys]
                     result = _record_tool_result(name, args, on_demand.find(str(args.get("query") or ""), unseen, _tool_params),
                                                  emit, tool_trace, json.dumps({"tool": name, "args": args}, ensure_ascii=False),
                                                  convo)
@@ -1384,11 +1467,11 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     # v0.1.63: refused (and listed) as a direct call is, not "no tool named run_command".
                     inner = args.get("arguments")
                     name, args = "run_command", inner if isinstance(inner, dict) else {}
-                elif "use_tool" in wired_keys and (name == "use_tool" or name not in wired_keys):
+                elif "use_tool" in state.wired_keys and (name == "use_tool" or name not in state.wired_keys):
                     reachable = {t["key"]: t for t in await resolve_callable()}
                     if name == "use_tool" or name in reachable:
                         wanted = args if name == "use_tool" else {"name": name, "arguments": args}
-                        real, inner, refusal = on_demand.unwrap(wanted, reachable, wired_keys, _tool_params,
+                        real, inner, refusal = on_demand.unwrap(wanted, reachable, state.wired_keys, _tool_params,
                                                                 _schema_problem)
                         if refusal is not None:
                             result = _record_tool_result(name, args, refusal, emit, tool_trace,
@@ -1401,7 +1484,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
                 # 0.1.50 S2: the plan is host bookkeeping — no executor, no tool
                 # budget, no progress signal; allowed during wrap-up too.
-                if name == "propose_plan_change" and (name in wired_keys or on_demand_call):
+                if name == "propose_plan_change" and (name in state.wired_keys or on_demand_call):
                     # 0.1.56 §7: bookkeeping like update_plan — the proposal waits for the
                     # user on a card; nothing in the plan changes here.
                     emit({"type": "tool_call", "tool": name,
@@ -1409,7 +1492,8 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     outcome = await _propose_plan_change(args, emit)
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     continue
-                if name in ("propose_capability", "create_skill", "import_memories") and (name in wired_keys or on_demand_call):
+                if name in ("propose_capability", "create_skill", "import_memories") and (name in state.wired_keys
+                                                                                           or on_demand_call):
                     # 0.1.57 §3: the install-and-retry card; v0.1.64 CAP2a: the save-a-skill card, on the
                     # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill); CAP8b: the
                     # memory import card. A blocking ask in THIS window (confirm_command carries it); a job or a
@@ -1429,12 +1513,12 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     refresh = bool(outcome.pop("refresh", False))
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     if refresh:
-                        wired = await resolve_tools()
-                        wired_keys = {t["key"] for t in wired}
-                        schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
-                        params_by_key = {t["key"]: _tool_params(t) for t in wired}
+                        state.wired = await resolve_tools()
+                        state.wired_keys = {t["key"] for t in state.wired}
+                        state.schemas = _native_tool_schemas(state.wired, allow_escalation=allow_escalation)
+                        state.params_by_key = {t["key"]: _tool_params(t) for t in state.wired}
                     continue
-                if name == "update_plan" and "update_plan" in wired_keys:
+                if name == "update_plan" and "update_plan" in state.wired_keys:
                     emit({"type": "tool_call", "tool": name,
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
                     outcome = plan.update(args)
@@ -1445,13 +1529,13 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     continue
                 ran = reads is not None and reads.has(index)    # K9a: it already ran with the reads next to it
                 if policy.stopped and not (finishing and name in FINISH_TOOLS) and not ran:
-                    wrap_refused += bool(wrap_up)
+                    state.wrap_refused += bool(wrap_up)
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
                 if wrap_up and name not in FINISH_TOOLS:
-                    wrap_refused += 1
+                    state.wrap_refused += 1
                     _record_tool_result(name, {}, {"ok": False, "external": False, "code": "wrap_up",
                         "error": "Wrapping up: no more research. Write the deliverable from what you have."
                                  + offline_note},
@@ -1461,7 +1545,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 # caller emits the clarify_options card and waits for the user's click.
                 # Gated on the RESOLVED toolset so loops that don't wire it (spawns)
                 # fall through to the normal "tool not available" dispatch error.
-                if name == "ask_user_choice" and "ask_user_choice" in wired_keys:
+                if name == "ask_user_choice" and "ask_user_choice" in state.wired_keys:
                     clarify, err = _parse_clarify_args(args)
                     if err is not None:
                         result = _record_tool_result(
@@ -1486,7 +1570,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 from server.services import terminal_exec
                 offline = terminal_exec.OFFLINE.set(True) if wrap_up and name == "run_command" else None
                 try:
-                    turn = tool_turn()
+                    turn = _tool_turn(request, state)
                     if reads is not None and reads.launchable(index):
                         await reads.run(index, lambda key, arguments, **own: _run_tool(
                             key, arguments, json.dumps({"tool": key, "args": arguments}, ensure_ascii=False),
@@ -1518,8 +1602,8 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                         # editing what was sent sends the prompt cache back to the system prompt, and the
                         # request rewrites the whole history (45k tokens in K3's Claude run, T2 r1).
                         from server.orchestrator import saved_context
-                        history_compacted = saved_context.compact_saved_context(
-                            convo, research_source_feedback, args.get("content")) or history_compacted
+                        state.history_compacted = saved_context.compact_saved_context(
+                            convo, research_source_feedback, args.get("content")) or state.history_compacted
                 if runtime:
                     runtime.progress = runtime.progress.model_copy(update={
                         "loop_fingerprints": tuple(sorted(policy.seen))[-256:]})
@@ -1536,7 +1620,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             narration = agent_status.strip_echo((resp.content or "").strip())
             if narration and not (stream is not None and stream.released):
                 emit({"type": "note", "text": narration[:400]})
-            pending_feedback = len(convo) - history_start
+            state.pending_feedback = len(convo) - history_start
             continue
 
         # No tool calls (or forced) → resp.content should be the FINAL answer. GUARD: the model
@@ -1551,21 +1635,21 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
         # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
         own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
         streamed = stream is not None and stream.released          # K8a: this step's text already went out
-        claimed = _unverified_claim(final_text, tool_trace, wired_keys)
+        claimed = _unverified_claim(final_text, tool_trace, state.wired_keys)
         deferred = _is_deferral_stub(final_text)
         protocol_text = _embeds_protocol(final_text) or (stream is not None and stream.stopped)
         # 0.1.50: an answer that denies a capability this turn had (bench: "no file
         # write ability" with write_file offered) gets one correction.
         from server.orchestrator import capability_truth
         denied = (None if forced or turn_state.capability_bounced or claimed or deferred or protocol_text
-                  else capability_truth.denied_capability(final_text, wired_keys, tool_trace))
+                  else capability_truth.denied_capability(final_text, state.wired_keys, tool_trace))
         if denied:
             turn_state.capability_bounced = True
             await _correct(turn_text, streamed)
             convo.extend([trajectory.assistant(final_text, continuation=own_continuation),
-                          {"role": "user", "content": capability_truth.correction(denied, wired_keys)}])
+                          {"role": "user", "content": capability_truth.correction(denied, state.wired_keys)}])
             continue
-        if not forced and (claimed or ((deferred or protocol_text) and wired_keys)) \
+        if not forced and (claimed or ((deferred or protocol_text) and state.wired_keys)) \
                 and turn_state.unverified_bounces < _UNVERIFIED_BOUNCES:
             turn_state.unverified_bounces += 1
             await _correct(turn_text, streamed)
@@ -1599,7 +1683,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             await _correct(turn_text, streamed)
             replacement = (await _synthesize_from_findings(a, system, user_content, tool_trace, or_none=True)
                            if tool_trace else await _salvage_plain(a, system, user_content))
-            if replacement and _unverified_claim(replacement, tool_trace, wired_keys):
+            if replacement and _unverified_claim(replacement, tool_trace, state.wired_keys):
                 replacement = None
             if replacement:
                 final_text = replacement
@@ -1649,11 +1733,11 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
         if turn_text is not None and (streamed or turn_text.parts):
             turn_text.append(to_show)
             return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
-                    "stop_reason": stop_reason, "history_compacted": history_compacted}
+                    "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
         if final_text:
             on_chunk(final_text)
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace,
-                "stop_reason": stop_reason, "history_compacted": history_compacted}
+                "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
 
     if runtime:
         runtime.pause_reason = "task_budget_exhausted"
