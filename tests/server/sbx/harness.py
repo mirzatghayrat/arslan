@@ -56,7 +56,8 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base in {"commands", "commands-proxy", "outside-floor"}:
+        # SBX-6 MCP proxy: mcp-proxy builds under the scratch HOME too (SBX-5a, #772, adds mcp; keep both).
+        if self.base in {"commands", "commands-proxy", "outside-floor", "mcp-proxy"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])

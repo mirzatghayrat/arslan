@@ -97,9 +97,24 @@ def test_a_declared_server_is_told_only_arslans_proxy(tmp_path, ports):
     assert '(allow network-outbound (remote tcp "localhost:41000"))' in args[1]
 
 
-@pytest.mark.parametrize("sandbox", [{"network": False, "proxy_port": 41000}, {"network": True}],
-                         ids=["undeclared", "no-proxy"])
-def test_a_server_with_no_way_out_is_told_no_proxy(tmp_path, ports, sandbox):
+def test_wrap_closes_arslans_ports_and_this_macs_proxies_itself(tmp_path, ports):
+    """#771 review: started the product's way, a server's profile denies the ports Arslan listens on and every
+    announced system proxy's loopback port, read by `wrap` (no caller passes them), so neither is a way round
+    Arslan's proxy."""
+    ports["system"] = ["http://127.0.0.1:7891", "socks5://someone:pw-for-this-test@[::1]:7892"]
+    _, args, env, _ = _wrap(tmp_path, {"PATH": "/usr/bin"}, network=True, proxy_port=41000)
+    for port in (8741, 7891, 7892):
+        assert f'(deny network-outbound (remote tcp "localhost:{port}"))' in args[1], port
+    assert '(allow network-outbound (remote tcp "localhost:41000"))' in args[1]
+    assert "pw-for-this-test" not in json.dumps(env) + "".join(args)
+
+
+@pytest.mark.parametrize("sandbox,known", [({"network": False, "proxy_port": 41000}, True), ({"network": True}, True),
+                                           ({"network": True, "proxy_port": 41000}, False)],
+                         ids=["undeclared", "no-proxy", "ports-unknown"])
+def test_a_server_with_no_way_out_is_told_no_proxy(tmp_path, ports, sandbox, known):
+    if not known:
+        ports["bound"] = None              # #771 review: an unreadable port list is offline, never an empty one
     _, args, env, _ = _wrap(tmp_path, {"PATH": "/usr/bin"}, **sandbox)
     assert not {*_PROXY_NAMES, "NO_PROXY", "no_proxy", "NODE_USE_ENV_PROXY"} & set(env)
     assert "(deny network*)" in args[1]
@@ -113,7 +128,7 @@ async def test_the_session_passes_the_proxy_and_the_setting_to_a_declared_server
     class Stop(Exception):
         pass
 
-    seen, started = [], []
+    seen, started, setting = [], [], {"on": True}
 
     def wrap(command, args, env, sandbox):
         seen.append(dict(sandbox))
@@ -124,21 +139,24 @@ async def test_the_session_passes_the_proxy_and_the_setting_to_a_declared_server
         return 41000
 
     async def allowed():
-        return True
+        return setting["on"]
     monkeypatch.setattr(capability_sandbox, "wrap", wrap)
     monkeypatch.setattr(sandbox_proxy, "port", port)
     monkeypatch.setattr(terminal_exec, "trust_service_allowed", allowed)
     monkeypatch.setattr(proxy_resolve, "_scutil_proxy", dict)
     manager = session.MCPSessionManager()
     stored = []
-    for network in (True, False):
+    # Declared with the setting on, declared with it off (#771 review: the setting decides), undeclared.
+    for network, on in ((True, True), (True, False), (False, True)):
+        setting["on"] = on
         stored.append({"root": str(tmp_path / "srv"), "folders": [], "network": network})
         with pytest.raises(Stop):
             await manager._open_session({"id": 7, "command": "/bin/echo", "args": [], "env": {"PATH": "/usr/bin"},
                                          "sandbox": stored[-1]})
     assert seen[0]["proxy_port"] == 41000 and seen[0]["trust_service"] is True
-    assert seen[1].get("proxy_port") is None and not seen[1].get("trust_service")
-    assert started == [True]                                         # no proxy is started for an undeclared one
+    assert seen[1]["proxy_port"] == 41000 and seen[1]["trust_service"] is False
+    assert seen[2].get("proxy_port") is None and not seen[2].get("trust_service")
+    assert started == [True, True]                                   # no proxy is started for an undeclared one
     assert all("proxy_port" not in s and "trust_service" not in s for s in stored)   # the stored grant is unchanged
 
 
