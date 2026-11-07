@@ -140,9 +140,8 @@ def test_the_product_reads_arslans_ports_and_the_system_proxies_itself(home, mon
 
 def test_the_sbx_harness_registers_the_proxy_bases():
     from tests.server.sbx.harness import BUILT_BASES
-    assert {"commands-proxy", "network-sbx6"} <= set(BUILT_BASES)
-    assert "run-python" in BUILT_BASES                                  # SBX-4a's computation preset has landed
-    assert "mcp-proxy" not in BUILT_BASES                               # the MCP proxy base, still pending
+    # SBX-6 MCP proxy, on SBX-4a: all four of SBX-6p's bases are built.
+    assert {"commands-proxy", "network-sbx6", "mcp-proxy", "run-python"} <= set(BUILT_BASES)
 
 
 # ── the run: its environment points at the proxy ─────────────────────────────
@@ -519,7 +518,7 @@ async def test_the_setting_is_read_and_passed_on(monkeypatch, tmp_path):
     async def allowed():
         return True
     monkeypatch.setattr(sandbox_proxy, "port", port)
-    monkeypatch.setattr(terminal_exec, "_trust_service_allowed", allowed)
+    monkeypatch.setattr(terminal_exec, "trust_service_allowed", allowed)
     monkeypatch.setattr(command_sandbox, "wrapper", lambda cwd, **kw: seen.update(kw) or ["/usr/bin/true"])
     await terminal_exec.run("true", cwd=tmp_path, sandbox=True)
     assert seen["trust_service"] is True
@@ -639,4 +638,4 @@ async def test_an_unreadable_certificates_setting_is_off(monkeypatch):
     def broken():
         raise RuntimeError("no database")
     monkeypatch.setattr(db_session, "AsyncSessionLocal", broken)
-    assert await terminal_exec._trust_service_allowed() is False
+    assert await terminal_exec.trust_service_allowed() is False

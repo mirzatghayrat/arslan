@@ -89,17 +89,24 @@ markers = 10
 cases = 78
 xfail = 43
 
-# SBX-6p: 94 network cases (78, then +16 over #654's wider service list), pending except one real SSH control.
+# 0.1.64 SBX-6 MCP proxy: a declared MCP server started the product's way reaches the real proxy and nothing
+# local round it; an undeclared one reaches nothing. Seatbelt is macOS-only.
+["server/sbx/test_sbx6_mcp_proxy.py"]
+markers = 2
+cases = 2
+xfail = 0
+
+# SBX-6p: 94 network cases (78, then +16 over #654's wider service list), real since SBX-6a and the MCP proxy.
 ["server/sbx/test_sbx6_network.py"]
 markers = 8
 cases = 94
-xfail = 8
+xfail = 0
 
-# SBX-6p: four default trust checks, four toggle checks, eight LAN cases.
+# SBX-6p: four default trust checks, four toggle checks, eight LAN cases, real since SBX-6a and the MCP proxy.
 ["server/sbx/test_sbx6_settings.py"]
 markers = 3
 cases = 16
-xfail = 6
+xfail = 0
 
 # 0.1.64 SBX-6a: a sandboxed command reaches the local proxy, which refuses a loopback destination.
 ["server/sbx/test_sbx6a_proxy.py"]

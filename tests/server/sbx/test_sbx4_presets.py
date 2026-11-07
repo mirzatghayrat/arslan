@@ -14,7 +14,7 @@ from tests.server.sbx.harness import BUILT_BASES, Harness
 
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
 SURFACES = (("run-python", NetworkMode.NONE), ("artifact", NetworkMode.NONE),
-            ("mcp", NetworkMode.NONE), ("mcp", NetworkMode.ANY_DECLARED))
+            ("mcp", NetworkMode.NONE), ("mcp-proxy", NetworkMode.PROXY))   # SBX-6 MCP proxy: online is the proxy
 
 
 def pending(base):

@@ -21,7 +21,7 @@ compute = pytest.mark.parametrize("sbx", [pytest.param(b, marks=pending(b))
                                          for b in ("run-python", "artifact")], indirect=True)
 mcp = pytest.mark.parametrize("sbx,mode", [
     pytest.param(base, mode, marks=pending(base), id=base + "-" + mode.value)
-    for base, mode in (("mcp", NetworkMode.NONE), ("mcp", NetworkMode.ANY_DECLARED))], indirect=["sbx"])
+    for base, mode in (("mcp", NetworkMode.NONE), ("mcp-proxy", NetworkMode.PROXY))], indirect=["sbx"])
 
 
 def checked_refusal(sbx, source, *args, profile=None, python=sys.executable):
