@@ -635,6 +635,33 @@ export interface AuthoredSkillCard {
 export interface CapabilityResult { state: "on" | "failed" | "blocked" | "needs_sign_in"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
+/** CAP8-1: one server on the import sheet (server/services/connection_import.py, `Found.view`). Never holds a key.
+ *  `id` and `same_as` aren't cleaned by the server: they are opaque, sent back or compared, and never shown. */
+export interface ImportRow {
+  id: string; tool: "claude_code" | "codex"; name: string; digest: string;
+  kind: "package" | "remote" | "program" | "unreadable";
+  /** What it runs, keys masked, or the host it opens. */
+  command: string | null; arguments: string[]; address: string | null;
+  /** What the sandbox will give it; a program runs outside it. */
+  network: boolean;
+  /** Setting names it starts with (a remote's are headers); `asks` are the variables `add` must be given. */
+  env: string[]; keys: number; asks: string[];
+  on_there: boolean; tool_limits: boolean; here: boolean; same_as: string | null;
+  refused: string | null; refused_part: string | null;
+  /** Whether it starts ticked. */
+  tick: boolean;
+}
+export interface ImportScan {
+  tools: { tool: ImportRow["tool"]; state: "read" | "missing" | "malformed"; count: number }[];
+  servers: ImportRow[];
+}
+export interface ImportTick { id: string; digest: string; keys: Record<string, string> }
+export interface ImportResult {
+  id: string;
+  state: "on" | "added" | "needs_sign_in" | "failed" | "blocked" | "refused" | "here" | "needs_keys" | "gone" | "changed";
+  code?: string; stage?: string; detail?: string; keys?: string[]; tools?: number; source_id?: string; server_id?: number;
+}
+
 /** K8a: text a reply showed and then replaced, with the server's label for it. */
 export interface EarlierDraft {
   label: string;

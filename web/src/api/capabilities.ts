@@ -1,4 +1,5 @@
 import { request } from "./client";
+import type { ImportResult, ImportScan, ImportTick } from "./client.types";
 
 /** One row of GET /capabilities (0.1.55 §14, server/services/capability_list.py). */
 export interface CapabilityRow {
@@ -104,6 +105,9 @@ export const capabilitiesApi = {
   }),
   /** v0.1.64 CAP3a: delete one row (only a `deletable` one; the server refuses the rest). */
   deleteRow: (key: string) => request<{ ok: boolean }>(`/capabilities/${rowPath(key)}`, { method: "DELETE" }),
+  /** CAP8-1: read what Claude Code and Codex have configured, on the user's click. */
+  importScan: () => request<ImportScan>("/capability-import"),
+  importAdd: (servers: ImportTick[]) => request<{ results: ImportResult[] }>("/capability-import", json("POST", { servers })),
 };
 
 function rowPath(key: string): string {
