@@ -71,8 +71,8 @@ export interface AskCardProps {
   /** CAP9: No is the safe answer, so it leads as the primary wide button and is focused on mount — unless the user is
    *  typing, another surface owns focus, or a modal is open. */
   safeDefault?: boolean;
-  /** ⌘⏎ allows only when true (the default). A risky install (CAP9) sets it false, so no key can confirm the install
-   *  (Esc still declines). */
+  /** ⌘⏎ allows only when true (the default). A risky install (CAP9) sets it false, so only a deliberate Tab then Enter
+   *  or a click confirms the install (Esc still declines). */
   allowKey?: boolean;
   className?: string;
 }
