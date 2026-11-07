@@ -294,18 +294,22 @@ _LAUNCHER = re.compile(
     r"(?:watch|script|concurrently|parallel|tmux\s+(?:new(?:-session|-window)?|split-window|send-keys|respawn-pane)"
     r"|screen)(?=\s)")
 _ARG_END = frozenset({";", "&&", "||", "|", "&", "|&", ";;"})
+# shlex's own punctuation, and a newline: outside quotes it ends the launcher's command, inside them it is part of
+# the argument, and so a line of the command it runs.
+_LAUNCHER_PUNCTUATION = "();<>|&\n"
 
 
 def _launcher_args(text: str) -> tuple[str, ...]:
-    """Every quoted argument of a launcher, up to the end of its command (`concurrently 'a' 'b'` runs both)."""
+    """Every quoted argument of a launcher, up to the end of its command (`concurrently 'a' 'b'` runs both). An
+    argument may span lines (`watch 'ls<newline>x'`): read only to the first line, it had no closing quote and
+    wasn't read at all."""
     out: list[str] = []
     for match in _LAUNCHER.finditer(text):
-        rest = text[match.end():].split("\n", 1)[0]
-        lexer = shlex.shlex(rest, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
+        lexer = shlex.shlex(text[match.end():], posix=True, punctuation_chars=_LAUNCHER_PUNCTUATION)
+        lexer.whitespace, lexer.whitespace_split = " \t\r", True
         try:
             for token in lexer:
-                if token in _ARG_END:
+                if token in _ARG_END or ("\n" in token and not token.strip(_LAUNCHER_PUNCTUATION)):
                     break
                 if any(ch.isspace() for ch in token):
                     out.append(token)          # it was quoted: a command line, not one word
@@ -321,8 +325,11 @@ def _forms(text: str) -> tuple[str, ...]:
     `ls && git push` ran with no card."""
     if shell_text.too_complex(text):
         return (text,)
-    inner = tuple(t for arg in _launcher_args(text) for t in _forms(arg))
-    return (text, shell_text.normalize(text), *shell_text.variants(text), *inner)
+    variants = (shell_text.normalize(text), *shell_text.variants(text))
+    # A launcher's argument in any of them: a `-c` payload is one, and a launcher in it (`sh -c 'watch "…"'`) runs too.
+    args = dict.fromkeys(arg for form in (text, *variants) for arg in _launcher_args(form))
+    inner = tuple(t for arg in args for t in _forms(arg))
+    return (text, *variants, *inner)
 
 
 def _detection_texts(text: str) -> tuple[str, ...]:

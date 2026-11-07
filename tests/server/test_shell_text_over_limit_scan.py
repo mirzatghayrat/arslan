@@ -175,6 +175,56 @@ def test_quoted_prose_is_data_under_the_limits_and_a_command_past_them(stand_in,
     assert _verdict(f"{OVER['nested']}; {prose}") == ("forbid", STAND_IN)
 
 
+# ── under the limits too: a newline inside an argument that runs ──────────────
+# The real rules want a word end after their operand, never a quote: read as part of the quoted text, the command after
+# the newline ends in `'` and matches none of them. So this stand-in wants one too.
+ENDED = tp._POS + re.escape(WORD) + r"\s+x(?:\s|$|[)`;|&])"
+RUNS_ITS_ARGUMENT = {
+    "watch": "watch 'ls{r}{w}'", "watch-double": 'watch "ls{r}{w}"', "tmux": "tmux new 'ls{r}{w}'",
+    "script": "script -q /dev/null -c 'ls{r}{w}'", "concurrently": "concurrently 'ls' 'ls{r}{w}'",
+    "sh-c": "sh -c 'ls{r}{w}'", "bash-c-double": 'bash -c "ls{r}{w}"', "zsh-c-after": "ls; zsh -c 'ls{r}{w}'",
+    "launcher-in-c": "sh -c 'watch \"ls{r}{w}\"'",
+}
+NEWLINE_RUNS = {"one": "\n", "half": "\n" * (NEWLINES // 2), "just-under": "\n" * (NEWLINES - 1),
+                "spaced-just-under": "\n " * (NEWLINES - 1), "at-the-limit": "\n" * NEWLINES}
+
+
+@pytest.mark.parametrize("run", NEWLINE_RUNS.values(), ids=NEWLINE_RUNS.keys())
+@pytest.mark.parametrize("wrap", RUNS_ITS_ARGUMENT.values(), ids=RUNS_ITS_ARGUMENT.keys())
+def test_a_command_after_a_newline_in_an_argument_that_runs_is_read(stand_in, run, wrap):
+    """Masked, the payload read `ls x` on one line; a launcher's argument was read to the first line only, where its
+    quote never closed, so not at all. Either way the command after the newline read as no rule: `run`."""
+    stand_in(ENDED)
+    command = wrap.format(r=run, w=CALL)
+    if run in (NEWLINE_RUNS["one"], NEWLINE_RUNS["half"]):
+        assert not tp._over_limit(tp._forms(command))   # just under, a start marked in the payload reaches the limit
+    assert _verdict(command) == ("forbid", STAND_IN), command
+
+
+@pytest.mark.parametrize("wrap", [
+    "sh -c 'watch \"{w}\"'", "sh -c 'ls; watch \"{w}\"'", "bash -c \"watch '{w}'\"", "sh -c 'tmux new \"ls; {w}\"'",
+    "sh -c 'watch \"ls\n{w}\"'",
+], ids=["watch", "after-separator", "double", "tmux", "newline"])
+def test_a_launcher_inside_a_shell_argument_is_read(stand_in, wrap):
+    """Launchers were read in the command as written only, so one in a `-c` payload ran its argument unread."""
+    stand_in(ENDED)
+    command = wrap.format(w=CALL)
+    assert not tp._over_limit(tp._forms(command))
+    assert _verdict(command) == ("forbid", STAND_IN), command
+
+
+def test_a_command_after_a_newline_in_a_shell_argument_asks_by_its_own_rule():
+    assert _verdict('bash -c "ls\ngit push"') == ("ask", "git-push")
+    assert _verdict("watch 'ls\ngit push'") == ("ask", "git-push")
+
+
+def test_a_launcher_argument_spans_lines_but_its_command_ends_at_a_bare_newline():
+    assert tp._launcher_args("watch 'ls\nx y'") == ("ls\nx y",)
+    assert tp._launcher_args("watch 'ls x'\necho 'a b'") == ("ls x",)
+    assert tp._launcher_args("watch 'ls x';\necho 'a b'") == ("ls x",)
+    assert tp._launcher_args("watch 'a b' 'c d' && echo 'e f'") == ("a b", "c d")
+
+
 def test_every_forbid_rule_reads_the_separator_scan(monkeypatch):
     """By name: each real rule, the positionless ones in their masked reading, is matched against the scan."""
     command = f"{OVER['nested']}; ls"

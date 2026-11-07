@@ -839,8 +839,12 @@ def _command_detection_variants(command: str):
         if fresh(win_variant):
             yield win_variant
     # Program-bearing options are parsed in their owning command's context; surfacing only the payload lets the
-    # hardline floor inspect what will actually run without promoting similar flags or quoted prose.
+    # hardline floor inspect what will actually run without promoting similar flags or quoted prose. A newline in a
+    # `-c` argument is a newline in what it runs, so the payloads are read from the text with its quoted newlines kept
+    # too: masked, `sh -c 'ls<newline>x'` read as one command, `ls x`.
     pending = [normalized]
+    if "\n" in command and (kept := _normalize_command_for_detection(command)) != normalized:
+        pending.append(kept)
     while pending:
         for payload in _execution_flag_findings(pending.pop()):
             if fresh(payload):
