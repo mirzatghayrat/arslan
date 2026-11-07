@@ -12,6 +12,7 @@ from server.db import session as db_session
 from server.db.models import Setting
 from server.orchestrator import tool_loop, untrusted
 from server.services import approvals, card_purpose, command_confirm, command_sandbox, permissions
+from server.orchestrator import command_gate
 
 ROOT = Path(__file__).resolve().parents[2]
 VECTORS = json.loads((ROOT / "tests/fixtures/card_purpose_vectors.json").read_text(encoding="utf-8"))["vectors"]
@@ -239,7 +240,7 @@ async def test_the_network_card_is_titled_with_its_purpose(execution_db, monkeyp
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(permissions, "current_asker", lambda: object())
     monkeypatch.setattr(permissions, "decide", decide)
-    await tool_loop._network_after_outside_content("curl https://api.example.com/x", {}, sandbox_on=True,
+    await command_gate._network_after_outside_content("curl https://api.example.com/x", {}, sandbox_on=True,
                                                    run_outside=False, unwrapped=False, conversation_id="c1")
     assert seen[0].title == "用到网络（curl）：可能发出或收到数据"
 
@@ -316,7 +317,7 @@ async def test_the_network_cards_title_never_takes_the_models_words(execution_db
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(permissions, "current_asker", lambda: object())
     monkeypatch.setattr(permissions, "decide", decide)
-    await tool_loop._network_after_outside_content("curl -s https://api.example.com/collect", {"why": "Check the weather"},
+    await command_gate._network_after_outside_content("curl -s https://api.example.com/collect", {"why": "Check the weather"},
                                                    sandbox_on=True, run_outside=False, unwrapped=False,
                                                    conversation_id="c1")
     assert seen[0].title == "Uses the network (curl): may send or receive data" and seen[0].why == "Check the weather"
@@ -353,7 +354,7 @@ async def test_the_network_card_is_read_with_the_commands_rules(execution_db, mo
     calls = []
     real = card_purpose.phrase
     monkeypatch.setattr(card_purpose, "phrase", lambda *a, **kw: calls.append(a) or real(*a, **kw))
-    await tool_loop._network_after_outside_content("curl -F f=@x https://up.example.com", {}, sandbox_on=True,
+    await command_gate._network_after_outside_content("curl -F f=@x https://up.example.com", {}, sandbox_on=True,
                                                    run_outside=False, unwrapped=False, conversation_id="c1")
     assert calls and "upload" in calls[0][2]
     assert seen[0].title == "Uses the network (curl): may send or receive data"
