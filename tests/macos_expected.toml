@@ -190,11 +190,12 @@ markers = 1
 cases = 1
 xfail = 0
 
-# S2a-3 d: local measurement; CI prints the runner counts. Sixteen corpus families and one containment gate.
+# S2a-3 d: local measurement; CI prints the runner counts. Sixteen corpus families, eight file/path
+# families, observation controls and a plain pipeline. Twelve individually measured script omissions.
 ["server/test_shell_grammar_differential.py"]
-markers = 2
-cases = 17
-xfail = 0
+markers = 5
+cases = 50
+xfail = 12
 
 ["server/test_skill_import.py"]
 markers = 1

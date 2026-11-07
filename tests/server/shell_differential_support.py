@@ -1,7 +1,7 @@
 """Repository-only corpus and bounded bash observations for S2a-3 d.
 
-No reader output decides which stub exists. Absolute/path-bearing texts are
-withheld: approved real wrappers could otherwise bypass the invocation log.
+No reader output decides which stub exists. Paths to approved real wrappers
+are withheld when they could bypass the invocation log; fixture paths reach stubs.
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ FAMILIES = ("original", "single-quote", "double-quote", "split-quote", "backslas
             "pipe", "here-string", "sequence", "comment")
 WRAPPERS = {name: "/usr/bin/" + name for name in
             ("env", "nice", "nohup", "time", "xargs", "find", "caffeinate")}
-WRAPPERS.update(bash="/bin/bash", sh="/bin/sh")
+WRAPPERS.update(bash="/bin/bash", sh="/bin/sh", cat="/bin/cat", grep="/usr/bin/grep")
 # A missing real timeout is reported as withheld, never replaced by a no-op.
 for _name in ("timeout", "gtimeout"):
     WRAPPERS[_name] = shutil.which(_name, path="/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
@@ -134,9 +134,11 @@ STUB_NAMES = sorted(({word.lower() for text in TEXTS for spelling in
 def withheld(text):
     if LOGIN.search(text):
         return "login"
-    path_text = re.sub(r"https?://[A-Za-z0-9._/-]+", "URL", text)
-    if "/" in path_text or "~" in path_text:
-        return "path"
+    # Conservative lexical check, independent of the reader. Ordinary path
+    # arguments and refused/missing executables are no longer blanket-withheld.
+    spelling = text.translate(str.maketrans("", "", "'\"\\")).lower()
+    if re.search(r"/(?:[a-z0-9_.~-]*/)*(?:" + "|".join(WRAPPERS) + r")(?=$|[^a-z0-9_.+-])", spelling):
+        return "unlogged-wrapper-path"
     if any(real is None and re.search(r"\b" + name + r"\b", text, re.I)
            for name, real in WRAPPERS.items()):
         return "missing-wrapper"
@@ -210,3 +212,42 @@ class ShellRun:
                 process.wait()
         names = {name.lower() for name in self.log.read_text().splitlines()} if self.log.exists() else set()
         return names, expired, process.returncode
+
+
+# Bounded, corpus-derived file contents: the ordinary simple commands, without
+# shell syntax or wrappers. This selects git, make and grep from the same corpus.
+FILE_SEEDS = tuple(seed for seed in SEEDS if seed.text in ORDINARY
+                   and re.fullmatch(r"[a-z]+(?: [A-Za-z0-9_.-]+)+", seed.text))
+FILE_FAMILIES = ("path-relative", "path-home", "path-absolute", "path-link",
+                 "file-script", "cwd-script", "written-script", "link-script")
+
+
+def file_variant(family, seed, run):
+    """Vary only how a corpus command/file is reached, inside a fresh work tree."""
+    name, _, tail = seed.text.partition(" ")
+    # Each fixture path resolves to the immutable stub directory, not a new
+    # arbitrary-executable grant. A symlink keeps the actual basename unchanged.
+    (run.root / "tools").symlink_to(run.bin, target_is_directory=True)
+    (run.root / "links").mkdir()
+    (run.root / "links" / name).symlink_to(run.bin / name)
+    (run.root / "notes.txt").write_text("needle\n")
+    if family.startswith("path-"):
+        word = {"path-relative": "./tools/" + name,
+                "path-home": "~/tools/" + name,
+                "path-absolute": str(run.root / "tools" / name),
+                "path-link": "./links/" + name}[family]
+        return word + " " + tail
+    if family == "cwd-script":
+        (run.root / "child").mkdir()
+        (run.root / "child" / "notes.txt").write_text("needle\n")
+        (run.root / "child" / "case.sh").write_text(seed.text + "\n")
+        return "cd child; bash case.sh"
+    if family == "written-script":
+        return "printf '%s\n' " + shlex.quote(seed.text) + " > case.sh; bash case.sh"
+    (run.root / "case.sh").write_text(seed.text + "\n")
+    if family == "file-script":
+        return "bash ./case.sh"
+    if family == "link-script":
+        (run.root / "linked.sh").symlink_to("case.sh")
+        return "bash ./linked.sh"
+    raise ValueError(family)
