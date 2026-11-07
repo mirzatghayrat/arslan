@@ -829,6 +829,21 @@ def _iter_shell_command_word_spans(command: str) -> tuple[tuple[int, int, str], 
     return tuple(spans)
 
 
+def _payload_variants(root: str, fresh):
+    """The payloads program-bearing options in *root* carry, and theirs in turn, each with its starts marked too."""
+    pending = [root]
+    while pending:
+        for payload in _execution_flag_findings(pending.pop()):
+            if fresh(payload):
+                yield payload
+                # A payload may start with an option-looking program and then invoke a hardline command
+                # after a separator; mark its starts.
+                marked_payload = _mark_command_starts(payload)
+                if marked_payload != payload and fresh(marked_payload):
+                    yield marked_payload
+                pending.append(payload)
+
+
 def _command_detection_variants(command: str):
     # Mask quoted newlines BEFORE normalizing: normalizing turns \" into " and would corrupt quote tracking.
     normalized = _normalize_command_for_detection(_mask_quoted_newlines(command))
@@ -851,22 +866,8 @@ def _command_detection_variants(command: str):
         if fresh(win_variant):
             yield win_variant
     # Program-bearing options are parsed in their owning command's context; surfacing only the payload lets the
-    # hardline floor inspect what will actually run without promoting similar flags or quoted prose. A newline in a
-    # `-c` argument is a newline in what it runs, so the payloads are read from the text with its quoted newlines kept
-    # too: masked, `sh -c 'ls<newline>x'` read as one command, `ls x`.
-    pending = [normalized]
-    if "\n" in command and (kept := _normalize_command_for_detection(command)) != normalized:
-        pending.append(kept)
-    while pending:
-        for payload in _execution_flag_findings(pending.pop()):
-            if fresh(payload):
-                yield payload
-                # A payload may start with an option-looking program and then invoke a hardline command
-                # after a separator; mark its starts.
-                marked_payload = _mark_command_starts(payload)
-                if marked_payload != payload and fresh(marked_payload):
-                    yield marked_payload
-                pending.append(payload)
+    # hardline floor inspect what will actually run without promoting similar flags or quoted prose.
+    yield from _payload_variants(normalized, fresh)
     # `(cmd)` and `{ cmd; }` put cmd at a command position the flat patterns cannot see: mark the starts the
     # quote-aware scan found instead (adding `(` to _CMDPOS would match quoted prose).
     marked = _mark_command_starts(grep_safe)
@@ -898,11 +899,36 @@ def _command_detection_variants(command: str):
         pending = carry
 
 
+@functools.lru_cache(maxsize=32)        # terminal_policy reads both halves of a command's variants
+def _split_detection_variants(command: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The variants, and apart from them the payloads read only from the text with its quoted newlines kept: a
+    newline in a `-c` argument is a newline in what it runs. Masked, `sh -c 'ls<newline>x'` read as one command, `ls x`.
+    Apart, so the forms terminal_policy splits an inline script's line in are chosen as before (`_split_forms`)."""
+    found = tuple(_command_detection_variants(command))
+    normalized = _normalize_command_for_detection(_mask_quoted_newlines(command))
+    if "\n" not in command or (kept := _normalize_command_for_detection(command)) == normalized:
+        return found, ()
+    seen = set(found)
+
+    def fresh(variant: str) -> bool:
+        if not variant or variant in seen:
+            return False
+        seen.add(variant)
+        return True
+    return found, tuple(_payload_variants(kept, fresh))
+
+
+def _all_detection_variants(command: str) -> tuple[str, ...]:
+    found, added = _split_detection_variants(command)
+    return found + added
+
+
 # ── what terminal_policy reads ────────────────────────────────────────────────
 
 CMDPOS = _CMDPOS                                    # where a command starts, for the anchored rules
 normalize = _normalize_command_for_detection        # ANSI, NUL, fullwidth, continuations, home, escapes, $IFS
-variants = _command_detection_variants              # the forms rules are matched against besides the text
+variants = _all_detection_variants                  # the forms rules are matched against besides the text
+split_variants = _split_detection_variants          # those, and apart the ones read with quoted newlines kept
 has_shell_carrier = _contains_shell_carrier         # a command word runs a quoted argument (sh -c, eval …)
 mask_quoted_prose = _mask_quoted_prose
 mask_quoted_newlines = _mask_quoted_newlines

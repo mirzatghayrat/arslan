@@ -30,6 +30,7 @@ holds a layer ③ command, and a command outside it runs with the user's own per
 """
 from __future__ import annotations
 
+import functools
 import re
 import shlex
 from dataclasses import dataclass
@@ -323,13 +324,39 @@ def _forms(text: str) -> tuple[str, ...]:
     newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
     not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
     `ls && git push` ran with no card."""
+    first, added = _form_parts(text)
+    return first + added
+
+
+@functools.lru_cache(maxsize=64)        # assess, the limit check and the inline-script reading all ask
+def _form_parts(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """`_forms` in two parts: what was read before #766's follow-up, and what it added: the `-c` payloads read with
+    their quoted newlines kept, and the arguments of a launcher that spans lines or sits in a form other than the text
+    (a `-c` payload: `sh -c 'watch "…"'`). Kept apart so `_split_forms` still finds the line-split form it found."""
     if shell_text.too_complex(text):
-        return (text,)
-    variants = (shell_text.normalize(text), *shell_text.variants(text))
-    # A launcher's argument in any of them: a `-c` payload is one, and a launcher in it (`sh -c 'watch "…"'`) runs too.
-    args = dict.fromkeys(arg for form in (text, *variants) for arg in _launcher_args(form))
-    inner = tuple(t for arg in args for t in _forms(arg))
-    return (text, *variants, *inner)
+        return (text,), ()
+    found, added = shell_text.split_variants(text)
+    normalized = shell_text.normalize(text)
+    first, later = [text, normalized, *found], list(added)
+    in_text = set(_launcher_args(text))
+    for arg in dict.fromkeys(arg for form in (text, normalized, *found, *added) for arg in _launcher_args(form)):
+        # Shorter each time, so the reading ends: a marked form can be longer than the text, and so its argument.
+        arg_first, arg_added = _form_parts(arg) if len(arg) < len(text) else ((arg,), ())
+        if arg in in_text and "\n" not in arg:
+            first += arg_first
+            later += arg_added
+        else:
+            later += arg_first + arg_added
+    return tuple(first), tuple(later)
+
+
+def _split_forms(text: str) -> tuple[str, ...]:
+    """Where an inline script's line is read: the form with a newline at every command start (the most lines), so a
+    script's "line" stops where its command does. Chosen among the forms read before #766's follow-up, as then, and
+    among all of them, so what the added forms split is read too."""
+    first, added = _form_parts(text)
+    lines = lambda form: form.count("\n")          # noqa: E731
+    return tuple(dict.fromkeys((max(first, key=lines), max(first + added, key=lines))))
 
 
 def _detection_texts(text: str) -> tuple[str, ...]:
@@ -391,14 +418,11 @@ def _inline_scripts(text: str):
         yield line + ("\n" + body.group(0) if body else "")
 
 
-def _hidden_code(texts: tuple[str, ...]) -> str:
+def _hidden_code(text: str, texts: tuple[str, ...]) -> str:
     """Why what this command runs cannot be read from its text, or "" (layer ②'s `unreadable`)."""
     if _matches(_FETCHED_CODE, texts):
         return "it runs code it downloads, decodes or builds"
-    # Each command on its own line: the variant with a newline at every command start (the most lines), so a
-    # script's "line" stops where its command does.
-    split = max(texts, key=lambda t: t.count("\n"))
-    if any(_SCRIPT_REACH.search(script) for script in _inline_scripts(split)):
+    if any(_SCRIPT_REACH.search(script) for split in _split_forms(text) for script in _inline_scripts(split)):
         return "its script reaches out, starts programs or drives apps"
     return ""
 
@@ -465,16 +489,15 @@ def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
 _PROTECTED_NAME_C = re.compile(_PROTECTED_NAME + r"|/(?:private/)?etc/")
 
 
-def _script_names_protected(texts: tuple[str, ...]) -> bool:
+def _script_names_protected(text: str) -> bool:
     """An inline script whose code names a protected file: a script reaches ~/.zshrc through
     expanduser or Path.home(), which no path pattern sees."""
-    split = max(texts, key=lambda t: t.count("\n"))
-    return any(_PROTECTED_NAME_C.search(script) for script in _inline_scripts(split))
+    return any(_PROTECTED_NAME_C.search(script) for split in _split_forms(text) for script in _inline_scripts(split))
 
 
-def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
+def _layer_two(text: str, texts: tuple[str, ...]) -> list[tuple[str, str]]:
     found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
-    if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
+    if _script_names_protected(text) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
     if _deletes_outside(texts):
         found.insert(0, _DELETE_OUTSIDE)
@@ -496,10 +519,10 @@ def assess(command: str) -> Assessment:
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(texts)
+    found = _layer_two(text, texts)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
-    hidden = _hidden_code(texts)
+    hidden = _hidden_code(text, texts)
     if hidden:
         return Assessment("ask", UNREADABLE, hidden)
     return Assessment("run")
@@ -515,7 +538,7 @@ def ask_rules(command: str) -> set[str]:
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(texts)} | ({UNREADABLE} if _hidden_code(texts) else set())
+    return {key for key, _why in _layer_two(text, texts)} | ({UNREADABLE} if _hidden_code(text, texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to

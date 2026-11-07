@@ -230,6 +230,16 @@ def test_a_command_after_a_newline_in_a_shell_argument_asks_by_its_own_rule():
     assert _verdict("watch 'ls\ngit push'") == ("ask", "git-push")
 
 
+@pytest.mark.parametrize("command", [
+    'python3 -c "import subprocess"; bash -c "ls; ls\nls\nls"',
+    "python3 -c 'import subprocess'; watch 'ls; ls\nls\nls'",
+], ids=["shell", "launcher"])
+def test_an_inline_script_is_still_found_when_an_argument_read_on_its_own_has_more_lines(command):
+    """The script's line is read in the form with the most lines. An argument read with its newlines, which has more
+    lines than the whole command, doesn't take that place: the script is outside it."""
+    assert _verdict(command) == ("ask", tp.UNREADABLE)
+
+
 def test_a_launcher_argument_spans_lines_but_its_command_ends_at_a_bare_newline():
     assert tp._launcher_args("watch 'ls\nx y'") == ("ls\nx y",)
     assert tp._launcher_args("watch 'ls x'\necho 'a b'") == ("ls x",)
