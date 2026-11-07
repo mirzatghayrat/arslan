@@ -2,7 +2,67 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-07 (UTC), by ⓪Plan. The sections below are kept as they were; the 2026-11-07 section supersedes their tables.
+**Updated:** 2026-11-07 (UTC, morning), by ⓪Plan. The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+
+### 2026-11-07, morning
+
+Heads and states are as read on 2026-11-07 at 02:48 UTC; main is `ac34420f`. The sections below this one are history. Lanes are named as in `docs/sessions.md` §1.
+
+**Merged since the night's list: 14** (counted with a `merged:>=` search for 2026-11-06 23:20 UTC; 47 since 16:00 UTC that day):
+- **CAP:** #733 (CAP7b server), #735 (CAP8b server), #661 (CAP9 server half), #751 (GitHub's remote MCP host joins the one-click list);
+- **LOOP1:** #740 (b), #742 (a1: the registry, web, memory, tasks and jobs), #743 (L0: the tool table dump), #745 (c1a), #746 (a3), #741 (L0b);
+- **S2a-3:** #729 (c: `shell_grammar`, not wired);
+- **FMT1:** #736 (PR 2), #747 (the whole code block is tinted);
+- **INB8:** #730.
+
+**What's left (counts only):** the night's list counted about 65 at 23:20 UTC (about 44 of the original 65 and about 18 of LOOP1's 21, plus the new items); 14 merged since, so about 51 remain. The counts are rough. **LOOP1 is 21 PRs**; the "about 25" in the section below is wrong.
+
+**Open PRs, and who has the next step** (replaces the open-PR tables below; every armed PR merges when its required checks are green, `review-ok` included):
+
+| PR | State | Next |
+|---|---|---|
+| #748 LOOP1 c1b | armed; `review-ok` is posted at this head; checks green | merges on its own |
+| #750 SUB2 | armed; checks green; no `review-ok` yet | ⓪Plan's review at the card's effort, then `review-ok` |
+| #749 `remember` | armed; checks green; no `review-ok` yet | ⓪Plan's review, then `review-ok` |
+| #744 CAP8-1 (server) | armed; the max review's three blockers are fixed at this head; `macos` is red here | ⑤CAP looks at `macos`, then ⓪Plan's delta review |
+| #715 HPW | armed; checks green; the max review at the earlier head was not OK; no delta review yet | ⓪Plan's max delta review (option (b) is decided, below) |
+| #668 SBX-6a | OK at this head (delta check); conflicts with main; not armed | ③Hands makes by-name CONNECT `:443` only and merges main; ⓪Plan reads the new hunks |
+| #666 SBX-4a | draft; CI running; OK on the count hunks | Codex's 4p gates, then the user clicks Ready and merges |
+| #531, #535 (SBX-4a part 1, SBX-5a) | drafts, clean, no checks | ③Hands; close #531 when #666 merges |
+| #375, #376, #378, #396 (S2a-3) | #375 conflicts; #376 has a new head | ③Hands, one step at a time; #396 can't stand in for the real-shell differential, since it tests Linux's bash |
+| #298 SECURITY.md | conflicts | kept open: the audit sees the final wording once the SBX chain settles |
+
+**The gate for SUB, S5a and SIDE is met for web, memory, jobs and tasks:** LOOP1 `b` (#740) and `a1` (#742) are on main. Any other tool family they extend must be on main before their slice.
+
+**Decisions in force (the user, 2026-11-07):**
+- **`review-ok`** is a required status on `protect-main`, and the author arms a PR when it opens. The rules are in `docs/sessions.md` §5, "The merge flow".
+- **L11-3b is option A:** the Memory tag on the practice's row, a hint under the list and the scope in the turn-on sheet; nothing in chat, web only. It ships in the same release as #718 and #738. The card is corrected below and in [L11-3](L11-3-rule-followups.md).
+- **CAP8, importing MCP config:** custom programs are offered on the import sheet, unticked, with a plain line saying the program runs with no sandbox. This loosens the card's rule by the user's decision.
+- **Plugins** are a group of their own, shown once one is installed, not inside Connections.
+- **One-click host list:** `githubcopilot.com` under GitHub (#751, merged).
+- **`remember`:** an explicit save must reach a cloud model (#749).
+- **Agent config files** (`~/.claude.json`, `~/.codex/config.toml`) are protected in the sandbox's secrets list; ③Hands also checks what that does to the `claude` and `codex` CLIs under the sandbox.
+- **FMT1:** the whole code block is tinted (#747, merged).
+- **#668:** CONNECT by name only on `:443`; any other port uses the pinned address.
+- **#715 HPW:** option (b). Unknown focus is allowed only when the target app is in front, and Hands brings it forward with `front: true` before it pastes.
+- **#730 INB8:** as built (merged). Web and folder changes and "noticed something" no longer pop; approval cards don't pop in quiet hours; a card still waits 30 minutes; `job_followup` no longer pops either. The INB card is corrected to match.
+- **`docs/sessions.md` §5** stays as narrowed in #716.
+
+**A correction to the older text:** the 2026-11-02 line "Mocks: … L11-3b … are OK'd" (under "Decided today (2026-11-02…)") predates the scope row. The user redid the mock and chose option A above. The card [L11-3](L11-3-rule-followups.md) is corrected, and the "Merged for v0.1.64" table below stops at 2026-11-02: the dated sections are the record after it.
+
+**Gates, as read now:** SMART-5 passes (3 repeats, a rule fixed in advance). STY2 doesn't hold yet (16 of 27 passed against the baseline's 20 of 27; waiting 3 against 0). The fix, `known_local_failure`, goes to ③Hands at effort=max, and the re-run waits for it. This replaces "SMART-5 … reruns it now" in the 11-07 section below.
+
+**Before the v0.1.64 tag, added:**
+- **L11 PR-C is on main (#738), so L11-3b must ship with it:** without the Memory tag, a practice can stop applying outside one folder with no notice. The release needs the web part, not only the server part.
+- **C7c-5 ships in the same release as C7c-3a** (#713).
+- **HPW's real-Mac check gets one more case:** a target app opened in the background, pasted into with `front: true`. The 500 ms and 100 ms waits were never measured on a real Mac.
+- **SBX-6a with a system proxy** on a real Mac (an upstream proxy resolves a name again, so the LAN decision must hold at the first lookup).
+- **The Reminders cleanup after the STY2 bench stays the user's** (`cleanup_t1`, with `--delete --yes`).
+
+**Flakes to add to the list** (`test_uni1b_hidden_characters` and `test_mcp_exposure` are already on it in the section below):
+- `test_cloud_upload_rule::test_balanced_nesting_reaches_a_card_too` (a 5 s wall-clock budget under load);
+- `test_k9b_steering::test_the_iphone_a_message_from_another_socket_reaches_the_turn_running_on_the_window` (unproven);
+- `web/src/__tests__/inb7c1-pick.test.tsx`.
 
 ### 2026-11-07
 
@@ -211,7 +271,7 @@ SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun
 - **Afterwards:** each round leaves Reminders lists for the user to clean with `cleanup_t1 --delete --yes`.
 
 **Ways of working that held up:**
-- **Recount a Codex or count-touching PR after main moves:** merge main, then count by collection with a small pytest plugin that calls `_pytest.skipping.evaluate_xfail_marks`, and set ci.yml EXPECTED/EXPECTED_XFAIL and the mirror's EXPECTED_TOTAL/PARAMETERIZED_EXTRA_CASES from it.
+- **Recounting a Codex or count-touching PR after main moves is gone since #716.** The macOS job's counts are pinned per file in `tests/macos_expected.toml` (`markers`, `cases`, `xfail`), so a PR changes only the tables of the files it touches; see `docs/sessions.md` §3. Take the numbers from the macOS job on the PR, which prints what it saw. The ci.yml `EXPECTED` / `EXPECTED_XFAIL` and the mirror's `EXPECTED_TOTAL` / `PARAMETERIZED_EXTRA_CASES` no longer exist.
 - **Re-OK after a merge of main:** compare the PR's own +/- lines against its base before and after, excluding only the resolved files.
 - **Reviewer subagents:** Opus, at effort=max on the security surface and high otherwise. Resume the same reviewer for deltas.
 - **When a Claude safety check stops adversarial probing:** don't route around it. The user decides; Codex Astra covers it via ⑦Codex.

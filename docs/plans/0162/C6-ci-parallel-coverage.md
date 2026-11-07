@@ -11,6 +11,8 @@
 | 分支 | `claude/0162-c6-ci-parallel-coverage` |
 | 迁移号 | 无 |
 
+> **Stale since #716 (2026-11-07), for the macOS count only.** What the macOS job must run is no longer one total in two places. `ci.yml` has no `EXPECTED`, and the marker test has no `EXPECTED_TOTAL`, `test_the_marked_population_matches_the_measurement` or `test_the_ci_workflow_expects_the_same_count`. Counts are pinned per test file in `tests/macos_expected.toml` and checked by `scripts/check_macos_counts.py` (`docs/sessions.md` §3). The line numbers and the macOS steps in the goal 3 and in the file list below no longer point at anything. The pytest-xdist and coverage parts are unaffected.
+
 ## 目标
 
 1. **pytest 并行**：用 `pytest-xdist`，每个 worker 用自己的数据目录。
