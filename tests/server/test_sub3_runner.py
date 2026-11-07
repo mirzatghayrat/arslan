@@ -322,6 +322,22 @@ async def test_a_child_asks_in_its_parents_window_and_the_grant_is_the_childs_al
     assert grants == {(ROOT, "network"), (child, "network")}
 
 
+async def test_a_card_its_job_asks_itself_grants_the_child_too(memory):  # noqa: F811
+    """The command, write and schedule cards are asked on the job's own ladder (JobConfirmations), not the tool loop's."""
+    async with memory() as db:
+        await permission_store.add_grant(db, ROOT, "", "schedule", "*")
+        await db.commit()
+    shown = _answering(ROOT, scope="conversation")
+    confirmations = approvals.JobConfirmations("c-kid", job_id="job-kid", ask_in=ROOT)
+    with permissions.asking_with(confirmations.asker):
+        assert await confirmations.schedule("tidy", "every: 3600") is True
+        assert await confirmations.schedule("tidy", "every: 3600") is True       # its grant answers the second
+    assert [(c["type"], c["sub_session"]) for c in _cards(shown)] == [("propose_schedule", True)]
+    async with memory() as db:
+        grants = {(g.conversation_id, g.kind) for g in (await db.scalars(select(PermissionGrant))).all()}
+    assert grants == {(ROOT, "schedule"), ("c-kid", "schedule")}
+
+
 async def test_a_childs_card_is_never_shown_in_the_child_and_never_joins_the_parents(memory):  # noqa: F811
     """The parent's own job asks the identical question while the child's card is open: two cards."""
     frame = {"type": "propose_action", "call_id": "c1", "dedupe": "same", "title": "t"}
