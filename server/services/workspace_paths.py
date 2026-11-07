@@ -25,6 +25,8 @@ Rules, each one load-bearing:
 from __future__ import annotations
 
 import fnmatch
+import os
+import unicodedata
 from pathlib import Path
 
 
@@ -109,15 +111,54 @@ def _refuse_cap6b(path: Path, root: Path, user_path) -> None:
     """SBX-5 CAP6b: write_file and edit_file never write the skill or plugin folders, nor Arslan's data folder
     (it holds the MCP config, runtimes, capabilities' code), even when the working folder contains them or is
     inside them. One folder is exempt: `<data>/workspace`, where an eval puts its profile's working folder
-    (evals/companion/stable_recovery.py); Arslan keeps nothing of its own there."""
+    (evals/companion/stable_recovery.py); Arslan keeps nothing of its own there.
+
+    SBX-5a (#772 review): judged by what is on disk (`_within`), not by spelling, since APFS folds case and
+    Unicode normalization: `~/.agents/SKILLS` is the skills folder. The exemption goes by the same identity."""
     from server import config
     from server.services import command_sandbox
     data = Path(config.data_dir()).resolve()
-    marked = data / "workspace"
-    folders = [*command_sandbox.cap6b_folders(), *([] if root == marked or marked in root.parents else [data])]
-    for folder in folders:
-        if path == folder or folder in path.parents:
+    marked = _identity(data / "workspace")
+    exempt = marked is not None and any(_identity(a) == marked for a in (root, *root.parents))
+    for folder in [*command_sandbox.cap6b_folders(), *([] if exempt else [data])]:
+        if _within(path, folder):
             raise PathEscape(f"refusing to write Arslan's skills, plugins or data: {user_path}")
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return st.st_dev, st.st_ino
+
+
+def _folded(parts) -> tuple[str, ...]:
+    return tuple(unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold()) for part in parts)
+
+
+def _within(path: Path, folder: Path) -> bool:
+    """Whether `path` is `folder` or inside it. Its existing part by identity: some existing ancestor (or itself)
+    has the folder's `(st_dev, st_ino)`, whatever the spelling, a case or NFD one, or /System/Volumes/Data's. Its
+    missing part (folders `make_parents` would make) by name: folded (casefold, NFC) and compared with the
+    folder's names below the same existing ancestor, since a folder made by that name would be the protected one.
+    On a case-sensitive volume the fold can refuse a different folder: closed, not open."""
+    existing, missing = path, []
+    while _identity(existing) is None and existing != existing.parent:
+        missing.append(existing.name)
+        existing = existing.parent
+    missing.reverse()
+    target, here = _identity(folder), _identity(existing)
+    ancestors = [existing, *existing.parents]
+    if target is not None and any(_identity(a) == target for a in ancestors):
+        return True
+    if not missing or here is None:
+        return False
+    for above in folder.parents:                       # the folder's part below `existing`, by name
+        if _identity(above) == here:
+            rest = folder.parts[len(above.parts):]
+            return len(missing) >= len(rest) and _folded(missing[:len(rest)]) == _folded(rest)
+    return False
 
 
 def _contained(path: Path, root: Path) -> bool:

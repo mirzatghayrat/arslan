@@ -138,8 +138,41 @@ def cap6b_folders(plugin_folder: Path | None = None) -> list[Path]:
     floor never read: `SKILL.md` goes through `read_skill`, scripts through `run_python`). Resolved, so a
     `~/.agents` that links into a writable folder is closed by its real path. Arslan's data folder, which holds
     the MCP config, is protected already."""
+    return _resolved(cap6b_spellings(plugin_folder))
+
+
+def cap6b_spellings(plugin_folder: Path | None = None) -> list[Path]:
+    """The CAP6b folders as Arslan looks them up, not resolved: a link on the way is held too (`held_ancestors`)."""
     plugin = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
-    return _resolved([Path.home() / ".agents" / "skills", *([plugin] if plugin is not None else [])])
+    return [Path.home() / ".agents" / "skills", *([plugin] if plugin is not None else [])]
+
+
+def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
+    """SBX-5a (#772 review): the folders between a writable root and a protected path, root included, which the
+    profiles deny `file-write*` as literals. A rule on a folder holds its contents but not its parents: a process
+    that may write ~ could rename ~/.agents away, skills inside, and use them there. A literal is that one folder
+    (rename, removal, mode, making it again, a link put there); creating, writing and removing things inside it
+    still work (measured under seatbelt, test_sbx5a_aliases.py).
+
+    `protected` paths count when they exist (nothing to move otherwise, and a missing ~/.config stays makeable).
+    `planted` ones (CAP6b) count even when missing, since a folder made or linked where Arslan looks would be read
+    as skills, and by their spelling as well as their real path, so a link on the way can't be retargeted."""
+    roots = _resolved(writable)
+    out: list[Path] = []
+
+    def hold(folder: Path) -> None:
+        if folder not in out and any(folder == r or r in folder.parents for r in roots):
+            out.append(folder)
+
+    for path in [*(_real(p) for p in protected if _real(p).exists()), *(_real(p) for p in planted)]:
+        for folder in reversed(path.parents):
+            hold(folder)
+    for path in planted:
+        lexical = Path(os.path.abspath(os.path.expanduser(str(path))))
+        for folder in reversed(lexical.parents):
+            if folder != folder.parent:
+                hold(_real(folder.parent) / folder.name)         # the name itself: a link there, not its target
+    return out
 
 
 # Kept for SBX-2's harness only: its `legacy-commands` base rebuilds main's commands profile from these as the
@@ -356,6 +389,10 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
     # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
     after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
+    # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
+    held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder))
+    if held:
+        after.deny("file-write*", *map(literal, held))
     if trust_service and network == NetworkMode.PROXY:
         after.allow("mach-lookup", _TRUST_SERVICE)
     after.allow_paths("file-read*", map(_real, copies), literal)
@@ -390,6 +427,10 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
     rules.deny("network-outbound", *ours)
     # SBX-5 CAP6b: the skill and plugin folders are closed outside too (CAP6a); the user's secrets stay open.
     rules.deny("file-read* file-write*", *(file_or_folder(p) for p in cap6b_folders(plugin_folder)))
+    # SBX-5a (#772 review): everything is writable out here, so every folder above those is held.
+    held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder))
+    if held:
+        rules.deny("file-write*", *map(literal, held))
     rules.allow_paths("file-read*", map(_real, copies), literal)
     return rules.text()
 

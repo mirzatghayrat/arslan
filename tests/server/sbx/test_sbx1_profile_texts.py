@@ -120,7 +120,9 @@ def test_outside_floor(T, A, monkeypatch):
     # arslan_protected() returns resolved paths; the floor writes them as given.
     ours = [Path(os.path.realpath(T / "data")), Path(os.path.realpath(T / "updater.key"))]
     monkeypatch.setattr(command_sandbox, "arslan_protected", lambda: ours)
-    assert _shown(command_sandbox.minimal_profile(offline=True, copies=[A / "copy.txt"]), T) == """\
+    # SBX-5a: every folder above them is held (`held_ancestors`, from / down: everything is writable out here).
+    held = _shown(_held(T, "home", "home/.agents"), T)
+    assert _shown(command_sandbox.minimal_profile(offline=True, copies=[A / "copy.txt"]), T) == f"""\
 (version 1)
 (allow default)
 (deny appleevent-send)
@@ -128,19 +130,28 @@ def test_outside_floor(T, A, monkeypatch):
 (deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key"))
 (deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key"))
 (deny file-read* file-write* (subpath "<T>/home/.agents/skills"))
+{held}
 (allow file-read* (literal "<T>/copy.txt"))
 """
-    assert _shown(command_sandbox.minimal_profile(), T) == """\
+    assert _shown(command_sandbox.minimal_profile(), T) == f"""\
 (version 1)
 (allow default)
 (deny appleevent-send)
 (deny file-read* file-write* (subpath "<T>/data") (literal "<T>/updater.key"))
 (deny network-outbound (subpath "<T>/data") (literal "<T>/updater.key"))
 (deny file-read* file-write* (subpath "<T>/home/.agents/skills"))
+{held}
 """
     # SBX-5 CAP6b: the plugin folder, once CAP7 names it, closes with the skills.
-    assert _shown(command_sandbox.minimal_profile(plugin_folder=A / "plugins"), T).endswith(
-        '(deny file-read* file-write* (subpath "<T>/home/.agents/skills") (subpath "<T>/plugins"))\n')
+    assert ('(deny file-read* file-write* (subpath "<T>/home/.agents/skills") (subpath "<T>/plugins"))\n'
+            in _shown(command_sandbox.minimal_profile(plugin_folder=A / "plugins"), T))
+
+
+def _held(T: Path, *below: str) -> str:
+    """The held-ancestors rule over / down to <T>, then `below` under <T>."""
+    real = Path(os.path.realpath(T))
+    chain = [*reversed(real.parents), real, *(real / name for name in below)]
+    return "(deny file-write* " + " ".join(f'(literal "{p}")' for p in chain) + ")"
 
 
 def _between_system_and_usr(T: Path) -> None:

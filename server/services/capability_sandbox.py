@@ -70,6 +70,12 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], c
     # SBX-5: after every grant, including its own folder (the last rule wins).
     rules.deny("file-write*", *(subpath(p) for p in command_sandbox.cap6b_folders(plugin_folder)))
     rules.deny("file-write*", *(subpath(p) for p in command_sandbox.shared_caches()))
+    # SBX-5a (#772 review): nor are the folders above the protected ones moved or replaced through a grant.
+    held = command_sandbox.held_ancestors(
+        [*granted, own, real(root)], [*command_sandbox.default_protected(), *command_sandbox.shared_caches(), peer],
+        planted=command_sandbox.cap6b_spellings(plugin_folder))
+    if held:
+        rules.deny("file-write*", *map(literal, held))
     return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
@@ -82,7 +88,12 @@ def outside_links(root: Path) -> list[Path]:
     server write its own folder, and a write through such a link changes the outside file. Creating a new link is
     refused by the kernel already; this finds one made before launch. Links between two names inside the folder
     (a tool hard-linking from its own cache there) are fine. Symlinks are not followed. About 240 ms for a
-    13,000-file node_modules (measured 2026-11-02)."""
+    13,000-file node_modules (measured 2026-11-02).
+
+    SBX-5a (#772 review): a folder or file it can't read raises OutsideLink, so the server doesn't start: a link
+    behind a folder the scan can't list would be missed, and the folder made readable afterwards. What it can't
+    close is the time between the scan and the server's use: another process running as the user can add a link
+    after it (SECURITY.md); the server itself can't."""
     seen: dict[tuple[int, int], list] = {}
     stack = [root]
     while stack:
@@ -97,15 +108,18 @@ def outside_links(root: Path) -> list[Path]:
                         if st.st_nlink > 1:
                             names = seen.setdefault((st.st_dev, st.st_ino), [st.st_nlink, []])
                             names[1].append(Path(entry.path))
-        except OSError:
-            continue
+        except OSError as exc:
+            raise OutsideLink(f"refusing to start: {Path(folder).relative_to(root)} in this capability's folder "
+                              f"can't be checked for links from outside ({exc.strerror or exc}); reinstall the "
+                              "capability") from None
     return sorted(p for nlink, paths in seen.values() if nlink > len(paths) for p in paths)
 
 
 def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, list[str], dict, str]:
     """(command, args, env, cwd) to start `command args` inside the profile, in its own home
     (a cwd outside the profile makes the shell complain it cannot read where it starts).
-    Raises OutsideLink (SBX-5) when its folder holds a hard link to a file outside it; the caller doesn't start it."""
+    Raises OutsideLink (SBX-5) when its folder holds a hard link to a file outside it, or can't be scanned all
+    through (SBX-5a); the caller doesn't start it."""
     root = Path(sandbox["root"])
     for sub in ("home", "tmp"):
         (root / sub).mkdir(parents=True, exist_ok=True)
