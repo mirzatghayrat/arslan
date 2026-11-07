@@ -95,7 +95,7 @@ async def _sort(text: str, actor) -> tuple[list[dict], list[dict], int]:
     for index, (raw, ticked) in enumerate(lines):
         if len(entries) >= MAX_ENTRIES or index >= MAX_LINES_READ:
             return entries, left_out, len(lines) - index
-        line = untrusted.clean_body(raw).strip()
+        line = untrusted.clean_body(raw, shown_only=True).strip()
         same = normalized_memory(line)
         if same in seen:
             continue
