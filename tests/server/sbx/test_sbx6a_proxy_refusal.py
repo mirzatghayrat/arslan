@@ -130,6 +130,17 @@ async def test_a_system_proxy_that_refuses_is_a_502(monkeypatch, answer):
     _names_nothing(reply, "example.com", str(port))
 
 
+async def test_a_system_proxy_setting_it_cant_use_is_a_502_not_the_sandboxs_403(proxy, monkeypatch):
+    """`_upstream_proxy` refuses a malformed setting with ValueError; nothing goes, but the destination wasn't judged."""
+    def unusable(name):
+        raise ValueError
+    monkeypatch.setattr(sandbox_proxy.browser_proxy, "_upstream_proxy", unusable)
+    reply = await _ask(proxy.port, b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+    status, body = _status_and_body(reply)
+    assert status.startswith("502 Bad Gateway") and body == status.split(" ", 1)[1] + "\n"
+    _names_nothing(reply, "example.com")
+
+
 async def test_a_full_proxy_is_a_503(proxy, monkeypatch):
     monkeypatch.setattr(sandbox_proxy, "_CONNECTIONS", 0)
     reply = await _ask(proxy.port, b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
@@ -169,8 +180,9 @@ async def _run(tmp_path, monkeypatch, command: str, **kw) -> tuple[dict, list[di
 def _shows_the_proxy_note(result: dict) -> None:
     note = result["note"]
     assert "Arslan's proxy" in note and "local or non-public destination" in note
-    assert "outside_sandbox: true" in note and "trust" in note
+    assert "outside_sandbox: true" in note
     assert "may write only inside the working folder" not in note       # a network stop, not the file rules
+    assert "device" not in note           # trusting a device has no Settings control, card or tool yet (#774 review)
 
 
 @pytest.mark.parametrize("printed", [_PYTHON, _URLLIB, _CURL, _OLD_CURL, _GIT])
@@ -204,6 +216,15 @@ async def test_an_eperm_beside_a_proxy_refusal_keeps_its_eperm_code(tmp_path, mo
     result, trace = await _run(tmp_path, monkeypatch,
                                f"printf '%s\\n' 'x: Operation not permitted' \"{_CURL}\" >&2; exit 1")
     assert result["sandbox_denied"] is True and trace[0].get("denial") == "eperm"
+
+
+async def test_a_proxy_refusal_beside_a_failed_certificate_check_still_records_proxy(tmp_path, monkeypatch):
+    """A certificate failure alone records no code; next to the proxy's refusal the refusal is still counted."""
+    result, trace = await _run(tmp_path, monkeypatch,
+                               f"printf '%s\\n' 'x509: OSStatus -26276' \"{_CURL}\" >&2; exit 1")
+    assert result["sandbox_denied"] is True and trace[0].get("denial") == "proxy"
+    _shows_the_proxy_note(result)
+    assert "certificate check" in result["note"]
 
 
 async def test_outside_the_sandbox_the_text_means_nothing(tmp_path, monkeypatch):

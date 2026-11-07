@@ -413,8 +413,7 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 "cannot open them either.")
     if proxy:
         head = ("The sandbox stopped this command: its network goes through Arslan's proxy, which refused a local or "
-                "non-public destination (this Mac, the local network or a link-local address). If it is a device on "
-                "the user's own network, name it, so the user can decide whether to trust that device.")
+                "non-public destination (this Mac, the local network or a link-local address).")
     else:
         head = ("The sandbox stopped this command: commands may write only inside the working folder "
                 f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data." + shut)
