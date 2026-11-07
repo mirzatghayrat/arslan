@@ -3,8 +3,8 @@
 Unlike `command_sandbox` (writes confined, reading and the network open), this one starts
 from DENY: the server may read the system, Arslan's pinned runtimes and its own folder;
 read and write its own folder, its temp and ONLY the folders the user granted it; and reach
-the network only when it declared it needs to (then any host — seatbelt cannot hold a
-connection to one host, and the card says so).
+the network only when it declared it needs to, and then only through Arslan's local proxy
+(SBX-6), under the same rules as a sandboxed command online.
 
 Measured on this Mac (2026-10-09, macOS 26, a uv-managed CPython 3.11 under this profile):
 reading and writing the granted folder worked; listing ~/Documents, ~/.ssh and ~ was
@@ -19,7 +19,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from server.services.sandbox_profile import Profile, literal, real, subpath
+from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
+                                             subpath)
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
@@ -28,31 +29,50 @@ SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/pri
                "/private/var/db/timezone", "/private/var/db/dyld")
 
 
-def profile(*, root: Path, folders: list[str], network: bool, read: list[str]) -> str:
+def profile(*, root: Path, folders: list[str], network: bool, read: list[str], proxy_port: int | None = None,
+            bound_ports: list[int] | None = None, system_proxies: list[str] | None = None,
+            trust_service: bool = False) -> str:
     """The SBPL text. `root` = the server's own folder (read/write); `folders` = granted by
-    the user (read/write); `read` = extra read-only paths (Arslan's runtimes)."""
-    from server.services import command_sandbox
+    the user (read/write); `read` = extra read-only paths (Arslan's runtimes).
+
+    SBX-4: SBX-2's shared base (`default_deny_profile`): only the listed system services (no wholesale
+    `mach-lookup`), no POSIX IPC, the network only when declared. SBX-6 MCP proxy: declared network is the
+    commands' proxy mode, TCP only to `sandbox_proxy`'s port (`proxy_port`) and to loopback, minus every port
+    Arslan listens on (`bound_ports`, read now when not given) and the system proxies' loopback ports
+    (`system_proxies`, likewise), with no DNS and no UDP inside. Declared with no proxy port, or with Arslan's own
+    ports unknown, is offline. `trust_service` (the user's `sandbox_system_certificates`) grants the certificate
+    trust service in proxy mode only, as for commands. The base closes the user's protected paths last, over
+    the grants, so a granted ~ never opens ~/.ssh or Arslan's data. Then, after them, the server's runtimes
+    (read) and its own folder (read and write) open again: both live inside Arslan's data folder."""
+    from server.services import command_sandbox, sandbox_proxy
+    granted = [real(Path(p)) for p in folders]
+    mode, denied = NetworkMode.NONE, ()
+    if network and proxy_port is not None:
+        bound = sandbox_proxy.listening_ports() if bound_ports is None else list(bound_ports)
+        if bound is not None:
+            system = sandbox_proxy.system_proxies() if system_proxies is None else list(system_proxies)
+            mode, denied = NetworkMode.PROXY, sandbox_proxy.excluded_ports(bound, system, proxy_port=proxy_port)
+    text = default_deny_profile([*granted], command_sandbox.default_protected(),
+                                readable=[*map(real, SYSTEM_READ), *granted], network=mode,
+                                proxy_port=proxy_port if mode == NetworkMode.PROXY else None, denied_ports=denied)
     rules = Profile("deny")
-    rules.allow("process-exec process-fork")
-    rules.allow("signal", "(target same-sandbox)")
-    rules.allow("sysctl-read")
-    rules.allow("mach-lookup")
-    rules.allow("ipc-posix-shm-read* ipc-posix-shm-write-data")
-    rules.allow("file-read-metadata")
-    rules.allow("file-read*", literal("/"))
-    rules.allow_paths("file-read*", map(real, SYSTEM_READ))
-    rules.allow("file-write*", literal("/dev/null"))
-    if network:
-        rules.allow("network* system-socket")
-    rules.allow_paths("file-read* file-write*", map(real, folders))
-    # Order matters (last match wins): the protected paths close AFTER the user's grants, so a
-    # granted ~ never opens ~/.ssh or Arslan's data; the server's own folder and Arslan's
-    # runtimes (which live inside Arslan's data folder) open AFTER that, and only those.
-    rules.deny("file-read* file-write* network-outbound",
-               *(subpath(real(p)) for p in command_sandbox.default_protected()))
-    rules.allow_paths("file-read*", map(real, read))
-    rules.allow("file-read* file-write*", subpath(real(root)))
-    return rules.text()
+    # #666 review: an MCP server talks over stdio and never had a terminal: the base's tty devices, their
+    # ioctls and pseudo-ttys close again here, after the base, which stays identical across presets.
+    rules.deny("file-read* file-write*", *TTY_DEVICES)
+    # Astra (#666, P1): the exact operations too (the base's explicit grant survives a wildcard deny), and reads,
+    # since SYSTEM_READ opens /dev: an MCP server neither writes to nor reads another terminal.
+    rules.deny("file-read-data file-write-data", *TTY_DEVICES)
+    rules.deny("file-ioctl", *TTY_DEVICES)
+    rules.deny("pseudo-tty")
+    # Astra (#666, P2): file events would show the names, flags and ids of files outside its folders (contents
+    # stay closed). No one-click server watches files; computation closes them too.
+    rules.deny("mach-lookup", '(global-name "com.apple.FSEvents")')
+    if trust_service and mode == NetworkMode.PROXY:
+        rules.allow("mach-lookup", '(global-name "com.apple.trustd.agent")')
+    rules.allow("file-read-data", literal("/"))
+    rules.allow_paths("file-read* file-map-executable", map(real, read))
+    rules.allow("file-read* file-write* file-map-executable", subpath(real(root)))
+    return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
 def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, list[str], dict, str]:
@@ -61,7 +81,25 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     root = Path(sandbox["root"])
     for sub in ("home", "tmp"):
         (root / sub).mkdir(parents=True, exist_ok=True)
-    text = profile(root=root, folders=list(sandbox.get("folders") or []), network=bool(sandbox.get("network")),
-                   read=list(sandbox.get("read") or []))
+    # SBX-6 MCP proxy: the session adds the running proxy's port and the user's certificate setting for a
+    # declared server.
+    from server.services import sandbox_proxy
+    network, proxy_port = bool(sandbox.get("network")), sandbox.get("proxy_port")
+    bound = sandbox_proxy.listening_ports() if network and proxy_port is not None else None
+    if bound is None:
+        proxy_port = None                                        # no proxy, or Arslan's ports unknown: offline
+    text = profile(root=root, folders=list(sandbox.get("folders") or []), network=network,
+                   read=list(sandbox.get("read") or []), proxy_port=proxy_port, bound_ports=bound,
+                   system_proxies=None if bound is None else sandbox_proxy.system_proxies(),
+                   trust_service=bool(sandbox.get("trust_service")))
     env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp")}
+    if proxy_port is not None:
+        # Told only Arslan's proxy: a proxy the server's config or this Mac set (a sign-in in its address
+        # included) is replaced, since the kernel refuses it and Arslan's proxy goes upstream itself.
+        # Node's fetch reads these only with NODE_USE_ENV_PROXY (Node 24, Arslan's pinned runtime).
+        via = f"http://127.0.0.1:{proxy_port}"
+        env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                                           "http_proxy", "https_proxy", "all_proxy")})
+        env.update({"NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
+                    "NODE_USE_ENV_PROXY": "1"})
     return SANDBOX_EXEC, ["-p", text, command, *args], env, str(root / "home")

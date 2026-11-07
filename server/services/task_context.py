@@ -8,6 +8,7 @@ from uuid import uuid4
 from arslan.companion.content_policy import normalized_memory
 from server.db import session as db_session
 from server.db.models import ConversationContext
+from server.orchestrator import untrusted
 from server.services import personal_context as pc
 from server.services import phone_ids, sub_sessions
 
@@ -17,13 +18,14 @@ def explicit_save_digest(user_message: str) -> str | None:
 
     Only an exact content match receives direct-save authority; paraphrases still
     produce proposals. Unrecognized phrasing is safe to confirm through the UI.
+    The match is on the message without what clean_body removes for a save, as the save is.
     """
     match = re.fullmatch(
         r"(?:please\s+)?remember(?:\s+that)?[\s:：,，]+(.+)"
         r"|(?:请)?(?:记住|记下)[\s:：,，]*(.+)"
         r"|(?:覚えて|記憶して)[\s:：,，]*(.+)"
         r"|(?:recuerda|souviens-toi|merke dir)[\s:：,，]+(.+)",
-        user_message.strip(), re.IGNORECASE | re.DOTALL,
+        untrusted.clean_body(user_message, shown_only=True).strip(), re.IGNORECASE | re.DOTALL,
     )
     if not match:
         return None
@@ -83,6 +85,7 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
         allow_sensitive=settings.allow_sensitive if settings else False,
         explicit_save_digest=digest, explicit_save_ref=f"turn:{identity}" if digest else None,
         allow_global_save=bool(digest) and not (settings and settings.project_id),
+        sub_session=bool(row and row.kind == sub_sessions.SUB),
     )
 
 

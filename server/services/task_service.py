@@ -26,6 +26,7 @@ from arslan.execution_budget import Budget, BudgetExceeded, current as current_b
 from arslan.execution_budget import paused as paused_budgets, running_clock
 from server.db import session as db_session
 from server.db.models import ArslanMessage, Run, Setting, TaskAttempt
+from server.registry import tool_defs
 from server.services import personal_context
 from server.services.task_repository import Progress, TaskError, encoded_action, repository
 
@@ -37,16 +38,9 @@ _run_owners: dict[int, str] = {}
 
 # Unknown tools, including all MCP tools, are conservatively external writes.
 # This is an effect classification, NOT a permission grant.
-_READ_TOOLS = frozenset({
-    "web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
-    "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "my_status", "render_chart", "task_progress", "delegate_work",
-})
-_LOCAL_WRITE_TOOLS = frozenset({"write_file", "edit_file", "run_python", "remember", "create_skill", "import_memories",
-                                "start_background_work", "stop_background_work",
-                                "attach_file"})   # 0.1.63 D1: to this Mac's window and the user's own iPhone
-_READ_TOOLS = _READ_TOOLS | {"background_status", "browser_open", "browser_look", "browser_back",
-                             "mac_list_shortcuts", "update_plan"}   # 0.1.45: looking never changes anything
-_READ_TOOLS = _READ_TOOLS | {"desktop_apps", "desktop_look"}       # 0.1.53: Hands reads; desktop_* acts
+# LOOP1 a6: each tool's `effect` trait (server/registry/tool_defs); run_python's is in tool_defs.UNLISTED.
+_READ_TOOLS = tool_defs.named(lambda traits: traits.effect == "read")
+_LOCAL_WRITE_TOOLS = tool_defs.named(lambda traits: traits.effect == "local_write")
 
 
 def _outbound(command: str, *, in_sandbox: bool = False) -> bool:
@@ -679,6 +673,11 @@ class TaskRuntime:
                 value = await repo.checkpoint(self.task_id, self.attempt_id, budget.snapshot(),
                                               self.progress, reason=reason, retain_stopped=retain_stopped)
             self.emit(_state_frame(value))
+        context = personal_context.current()
+        if reason == "before_model" and context is not None and context.sub_session:
+            # SUB3: and its tree's shared limit, with this request's own spend saved just above.
+            from server.services import sub_sessions
+            await sub_sessions.check_tree_spend(context.conversation_id)
 
     def capture(self, event: dict):
         if event.get("type") == "run_cancelled":

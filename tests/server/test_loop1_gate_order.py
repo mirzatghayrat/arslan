@@ -21,8 +21,11 @@ import pytest
 from arslan.execution_budget import Budget, BudgetExceeded, Limits, scope
 from server.orchestrator import tool_loop
 from server.registry import executors, ssh_tools
-from server.services import command_sandbox, permissions, task_service, task_workers
+from server.db import session as db_session
+from server.services import approvals, command_sandbox, permission_store, permissions, task_service, task_workers
 from tests.server.test_loop1_pinned_turns import _booted, _database  # noqa: F401 — the fixtures
+from server.orchestrator import command_gate
+from server.orchestrator import tool_gates
 
 HERMETIC = "evolution-replay"
 SECRET = {"password": "not-a-real-one"}
@@ -145,6 +148,10 @@ def _forbidden(env):
     _words(env, "rm -rf /")
 
 
+def _heredoc(env):
+    _words(env, "X=$(cat <<EOF\nhi\nEOF\n)")
+
+
 def _jxa(env):
     _words(env, "osascript -l JavaScript -e x")
 
@@ -179,7 +186,7 @@ def _command_declined(env):
 def _network_refused(env):
     async def refused(*_args, **_own):
         return {"refused": "the network was refused"}
-    env.monkeypatch.setattr(tool_loop, "_network_after_outside_content", refused)
+    env.monkeypatch.setattr(command_gate, "_network_after_outside_content", refused)
 
 
 def _hermetic(env):
@@ -250,13 +257,17 @@ CHAINS = {
         _hermetic_after("schedule")]),
     "run_command": ({"command": "ls"}, [
         BUDGET, CREDENTIALS, WORKER, Gate("nobody to ask", _nobody, "Scheduled runs don't run commands"), UNAVAILABLE,
-        Gate("forbidden", _forbidden, "Arslan never runs this"), Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
+        Gate("forbidden", _forbidden, "Arslan never runs this"),
+        Gate("here-document", _heredoc, "A here-document inside $( ) can't run here"),
+        Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
         Gate("outside, no click", _outside_no_callback, "needs the user's click"),
         Gate("outside, no why", _outside_no_why, "outside_sandbox needs a why"),
         Gate("outside declined", _outside_declined, "user declined running this command outside", card="command"),
         Gate("network refused", _network_refused, "the network was refused"), HERMETIC_GATE]),
     "run_command#ask": ({"command": "ls"}, [
-        Gate("forbidden", _forbidden, "Arslan never runs this"), Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
+        Gate("forbidden", _forbidden, "Arslan never runs this"),
+        Gate("here-document", _heredoc, "A here-document inside $( ) can't run here"),
+        Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
         Gate("ask, no click", _ask_no_callback, "requires user confirmation"),
         Gate("command declined", _command_declined, "user declined this command", card="command"),
         Gate("network refused", _network_refused, "the network was refused"), HERMETIC_GATE]),
@@ -294,11 +305,11 @@ def _a_mac_with_a_sandbox(monkeypatch, _database):  # noqa: F811
 
     async def no_grant(*_args, **_own):
         return None
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", no)
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content", nothing)
-    monkeypatch.setattr(tool_loop, "_outside_grant", no_grant)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", no)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", nothing)
+    monkeypatch.setattr(command_gate, "_outside_grant", no_grant)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(ssh_tools, "prepare_confirmation", _prepared)
     monkeypatch.setattr(ssh_tools, "prepare_enrollment", _prepared)
@@ -399,3 +410,121 @@ async def test_what_each_gate_answers_word_for_word(monkeypatch):
         ANSWERS.write_text(text, encoding="utf-8")
     assert text == ANSWERS.read_text(encoding="utf-8"), (
         f"what a gate says changed. If you meant it, commit the new JSON, so the diff shows the change: {REGENERATE}")
+
+
+# ── #761's review: the words of a card that says no, the stored grant and the sandbox setting, read for real ──────────
+# The fixture above stubs `_outside_grant` and `_sandbox_enabled`, and its cards leave no decision behind, so these were
+# held only by other tests. Here a card says no the way a real one does, and the grant and the setting are read.
+
+REAL_OUTSIDE_GRANT = command_gate._outside_grant
+REAL_SANDBOX_ENABLED = command_gate._sandbox_enabled
+NOTE = "Not in this folder, please."
+# The tool, its arguments, the card's callback, the card, and what `_declined` names
+DECLINING = {
+    "write_file": ({"path": "a.md", "content": "x"}, "confirm_workspace_write", "write", "writing to the workspace"),
+    "edit_file": ({"path": "a.md"}, "confirm_workspace_write", "write", "writing to the workspace"),
+    "schedule_task": ({"name": "n", "when": "every: 3600", "prompt": "p"}, "confirm_schedule", "schedule",
+                      "scheduling this task"),
+    "run_command#outside": ({"command": "ls", "outside_sandbox": True, "why": "it needs the keychain"},
+                            "confirm_command", "command", "running this command outside the sandbox"),
+    "run_command#ask": ({"command": "git push origin main"}, "confirm_command", "command", "this command"),
+    "ssh_run": ({"host": "10.0.0.2", "user": "me", "command": "uptime"}, "confirm_command", "command",
+                "this remote command"),
+}
+
+
+def _declining(env, card, *, expired):
+    """A card that says no as a real one does: with the user's note, or with nobody answering it."""
+    async def no(*_args, **_own):
+        env.cards.append(card)
+        if expired:
+            approvals.LAST_OUTCOME.set("expired")
+        else:
+            permissions.LAST_DECISION.set(permissions.Decision(False, "user", note=NOTE, model_text=NOTE))
+        return False
+    return no
+
+
+@pytest.mark.parametrize("expired", [False, True], ids=["with the user's note", "nobody answered"])
+@pytest.mark.parametrize("chain", list(DECLINING))
+async def test_a_card_that_says_no_tells_the_model_what_it_said(chain, expired, monkeypatch):
+    args, callback, card, subject = DECLINING[chain]
+    env = _Env(chain.split("#")[0], args, monkeypatch)
+    setattr(env, callback, _declining(env, card, expired=expired))
+    result = await env.run()
+    assert result["error"] == (f"Nobody answered the card for {subject} in 30 minutes. This is NOT a refusal. "
+                               "Don't retry it in this turn. Finish what you can and tell the user what is waiting."
+                               if expired else NOTE)
+    assert env.cards == [card] and env.ran == []
+
+
+async def _stored_grant():
+    """The outside card's "In this conversation", as it is stored."""
+    async with db_session.AsyncSessionLocal() as db:
+        grant = await permission_store.add_grant(db, "c1", "", "outside", "*", call_id="card-1")
+        await db.commit()
+        return grant.id
+
+
+async def _ledger():
+    async with db_session.AsyncSessionLocal() as db:
+        return [(row.kind, row.decided_by, row.decision, row.detail)
+                for row in reversed(await permission_store.recent(db))]
+
+
+async def _no_card_surface_is_used(frame):
+    raise AssertionError(f"a card was shown: {frame}")
+
+
+async def test_a_stored_grant_lets_a_command_out_with_no_card_and_writes_its_row(monkeypatch):
+    monkeypatch.setattr(command_gate, "_outside_grant", REAL_OUTSIDE_GRANT)
+    await _stored_grant()
+    env = _Env("run_command", {"command": "ls"}, monkeypatch)
+    with permissions.asking_with(_no_card_surface_is_used):
+        result = await env.run()
+    assert result.get("ran_outside_sandbox") is True and "grant_note" not in result, result
+    assert env.cards == [] and env.ran == ["run_command"]
+    assert await _ledger() == [("outside", "grant", "allow", "ls")]
+
+
+@pytest.mark.parametrize("sandbox", [True, False], ids=["it runs in the sandbox", "with no sandbox it doesn't run"])
+async def test_a_grant_taken_back_while_its_card_waits_is_read_again(sandbox, monkeypatch):
+    """The grant is read before any card and again after the last one: taken back in between, the command doesn't
+    leave the sandbox, and where no sandbox can start it doesn't run. No grant row either way."""
+    monkeypatch.setattr(command_gate, "_outside_grant", REAL_OUTSIDE_GRANT)
+    monkeypatch.setattr(command_sandbox, "available", lambda: sandbox)
+    grant = await _stored_grant()
+    env = _Env("run_command", {"command": "git push origin main"}, monkeypatch)     # its own card, grant or not
+
+    async def take_it_back(*_args, **_own):
+        env.cards.append("command")
+        async with db_session.AsyncSessionLocal() as db:
+            await permission_store.delete_conversation_grant(db, grant)
+            await db.commit()
+        return True
+    env.confirm_command = take_it_back
+    with permissions.asking_with(_no_card_surface_is_used):
+        result = await env.run()
+    assert env.cards == ["command"] and "ran_outside_sandbox" not in result, result
+    if sandbox:
+        assert env.ran == ["run_command"] and result["grant_note"].endswith("it ran in the sandbox")
+    else:
+        assert env.ran == [] and result["error"].endswith("taken back while this one waited; it did not run")
+    assert await _ledger() == []
+
+
+@pytest.mark.parametrize("reads,answer", [("unreadable", "outside_sandbox needs a why"), ("off", "the executor ran")])
+async def test_an_unreadable_sandbox_setting_means_the_sandbox_is_on(reads, answer, monkeypatch):
+    """Asked to leave the sandbox with no why: refused while the sandbox is on, which it is when the setting can't be
+    read; with the sandbox off there is nothing to leave, and the command takes its own card."""
+    from server.services import settings_service
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", REAL_SANDBOX_ENABLED)
+
+    async def setting(_db):
+        if reads == "unreadable":
+            raise RuntimeError("the settings can't be read")
+        return False
+    monkeypatch.setattr(settings_service, "terminal_sandbox_enabled", setting)
+    env = _Env("run_command", {"command": "ls", "outside_sandbox": True}, monkeypatch)
+    assert answer in await _outcome(env)
+    assert env.cards == ([] if reads == "unreadable" else ["command"])

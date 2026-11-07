@@ -1016,6 +1016,7 @@
     "runRemote": "在那台机器上执行",
     "purpose": {
       "run": "运行 {{program}}",
+      "notAllRead": "运行 {{program}}：Arslan 没能读完整条命令",
       "copyLocal": "复制 {{count}} 项",
       "delete": "删除 {{count}} 个文件或文件夹",
       "move": "移动 {{count}} 项",
@@ -1402,6 +1403,8 @@
       "task": "本次任务内",
       "conversation": "本对话内",
       "conversationFor": "本对话内：{{label}}",
+      "subSession": "这个子会话内",
+      "subSessionFor": "这个子会话内：{{label}}",
       "anyToolUse": "这个工具的任何调用，参数不限",
       "always": "始终允许：{{label}}"
     },

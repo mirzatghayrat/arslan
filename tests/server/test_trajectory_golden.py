@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator import tool_gates
 
 GOLDEN = Path(__file__).parent / "golden" / "legacy_payloads.json"
 
@@ -137,7 +138,7 @@ async def _run(name, monkeypatch):
     if spec.get("own_folder"):
         async def own():
             return True
-        monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+        monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
     result = await tool_loop.run_native(
         system="SYS", user_content=f"task for {name}", history=spec.get("history", []),
         emit=lambda e: None, on_chunk=lambda c: None, resolve_tools=_resolve,

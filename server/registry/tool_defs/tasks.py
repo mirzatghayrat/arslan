@@ -1,6 +1,6 @@
 """A task's own tools, the plan, the choice card and background work."""
 from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS
-from server.registry.tool import Offer, Tool
+from server.registry.tool import Offer, Tool, Traits
 
 
 def _in_task(offer: Offer) -> bool:
@@ -22,7 +22,8 @@ TASKS = (
          "write. Not for background work: for that, use background_status.",
          {"type": "object", "properties": {"run_id": {"type": "integer", "minimum": 1}},
           "additionalProperties": False},
-         offered=_in_task),
+         offered=_in_task,
+         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
     Tool("delegate_work",
          "Use only for independent subtasks or isolated review that materially helps the current request. "
          "Assign up to four small jobs using research, apple-growth or product-design methods; at most two run together. "
@@ -38,7 +39,8 @@ TASKS = (
                          "type": "string", "enum": ["web_search", "web_extract"]}}},
                  "required": ["method", "objective"], "additionalProperties": False}}},
           "required": ["jobs"], "additionalProperties": False},
-         offered=_in_task),
+         offered=_in_task,
+         traits=Traits(effect="read", parallel=False, outside=True, replay_safe=False, saves=False)),
     # 0.1.50 S2: the run's checklist — host bookkeeping (turn_plan), no executor.
     Tool("update_plan",
          "Keep a short checklist for a task with several parts or a target "
@@ -46,7 +48,8 @@ TASKS = (
          "counts in the text (\"collect jobs 6/10\"). Update it as parts finish; "
          "the current plan is shown back to you at the end of every step. "
          "Skip it for one-step requests.",
-         _PLAN_PARAMS, host=True),
+         _PLAN_PARAMS, host=True,
+         traits=Traits(effect="read", parallel=False, outside=False, replay_safe=False, saves=False)),
     # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends the turn and _handle_answer
     # emits the clarify_options card), so Arslan's answer path can offer real choice buttons instead of a text
     # counter-question.
@@ -64,7 +67,8 @@ TASKS = (
                                     "required": ["label"]}},
           },
           "required": ["question", "options"]},
-         host=True),
+         host=True,
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("start_background_work",
          # 0.1.63 K4b (D4): one set of rules. A job is the same work in another place, chosen by the
          # user or the model; the old "do NOT do such work inline" and the one-sentence reply are gone.
@@ -92,17 +96,37 @@ TASKS = (
                      "minimum": {"type": "integer", "minimum": 1, "maximum": 20}},
                  "required": ["description"], "additionalProperties": False}}},
           "required": ["goal", "criteria"], "additionalProperties": False},
-         offered=_can_start_a_job),
+         offered=_can_start_a_job,
+         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("background_status",
          "Read the real state of this conversation's background jobs (running, step, outcome, which "
          "budget limit ended it). Call it FIRST whenever the user asks about work you started — "
          "\"how is it going\", \"is it done\", \"why did it stop\" — and answer from it; "
          "never guess progress, and never use task_progress for this.",
          {"type": "object", "properties": {}, "additionalProperties": False},
-         offered=_can_start_a_job),
+         offered=_can_start_a_job,
+         # Outside content per result (`external` on the result: tool_loop._record_tool_result), not by name.
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
     Tool("stop_background_work",
          "Stop one running background job of this conversation by job_id when the user asks to stop it.",
          {"type": "object", "properties": {"job_id": {"type": "string", "minLength": 1}},
           "required": ["job_id"], "additionalProperties": False},
-         offered=_can_start_a_job),
+         offered=_can_start_a_job,
+         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
 )
+
+#: SUB3: defined, and answered by task_tools.StartSubSessionExecutor, but in no table yet: SUB5 adds it to TASKS (and
+#: the executor to EXECUTORS) once the M64 bench passes with it, so no model can call it before then.
+START_SUB_SESSION = Tool(
+    "start_sub_session",
+    "Hand one independent part of a larger piece of work to a sub-session: a conversation of its own that works in "
+    "the background with files, commands and the web, and reports back here. Use it only when the work splits into "
+    "parts that can be done apart; anything one turn can do, do here. Write the brief so it stands alone: the "
+    "sub-session sees nothing of this conversation but the brief.",
+    {"type": "object", "properties": {
+        "brief": {"type": "string", "minLength": 1, "maxLength": 4000,
+                  "description": "What the sub-session should do and what done looks like, in the user's language."}},
+     "required": ["brief"], "additionalProperties": False},
+    # LOOP1 a6: in no table, so in no name set, as before: these are what today's sets say of it. SUB5 decides them
+    # when it joins TASKS (its report carries what the sub-session read, as delegate_work's does).
+    traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False))

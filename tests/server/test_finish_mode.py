@@ -9,6 +9,7 @@ import pytest
 
 from server.orchestrator import tool_loop
 from tests.server import test_trajectory_golden as golden
+from server.orchestrator import tool_gates
 
 
 class _Blocked:
@@ -45,7 +46,7 @@ async def _run(monkeypatch, replies, *, search, writers=True):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
     from server.registry import executors
     monkeypatch.setitem(executors.EXECUTORS, "web_search", search)
     monkeypatch.setitem(executors.EXECUTORS, "write_file", golden._Write())
@@ -126,7 +127,7 @@ async def test_wrapping_up_may_process_files_but_only_offline(monkeypatch):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
 
     async def allow(*_a, **_k):
         return True

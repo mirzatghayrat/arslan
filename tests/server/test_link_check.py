@@ -3,6 +3,7 @@ import pytest
 
 from server.orchestrator import link_check, tool_loop
 from tests.server import test_trajectory_golden as golden
+from server.orchestrator import tool_gates
 
 SEARCH = {"tool": "web_search", "args": {"query": "jobs"}, "result": {"ok": True, "results": [
     {"title": "A", "url": "https://m.jobs.example/a"}, {"title": "B", "url": "https://jobs.example/b/"}]}}
@@ -68,7 +69,7 @@ async def _run(monkeypatch, replies, *, research=True):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
     from server.registry import executors
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Search())
     monkeypatch.setitem(executors.EXECUTORS, "write_file", golden._Write())

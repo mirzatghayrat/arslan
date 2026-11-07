@@ -15,6 +15,7 @@ from server.services import settings_service
 from tests.server import test_agent_status_requests as status_requests
 from tests.server import test_k3b_sent_is_final as k3b
 from tests.server import test_trajectory_golden as golden
+from server.orchestrator import tool_gates
 
 
 def test_the_module_and_its_setting_are_gone():
@@ -46,7 +47,7 @@ async def test_a_saved_report_turn_never_imports_research_review(monkeypatch):
 
     async def own():
         return True
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", own)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
     from server.registry import executors
     monkeypatch.setitem(executors.EXECUTORS, "web_extract", golden._Extract())
     monkeypatch.setitem(executors.EXECUTORS, "write_file", _WriteWithArtifact())

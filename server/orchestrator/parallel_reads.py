@@ -4,7 +4,7 @@ A run is two or more calls in a row, each one of READS or an MCP tool whose serv
 (and on a server not already in the run), called by its own name (not through use_tool) with arguments
 that parse and fit its table. Any other call ends the run and goes alone, in its place, as before.
 
-Each call of a run still goes through `_dispatch_tool` with every gate, one after another in the reply's
+Each call of a run still goes through `_run_tool` with every gate, one after another in the reply's
 order: a refused fetch budget or the turn's tool limit lands on the same call as before. Only the executors
 overlap, at most CONCURRENCY at once. A call's record (its `tool_call` and `tool_result` frames, its history
 record, its trace entries) is held and handed over in the reply's order, the two frames together: every
@@ -23,12 +23,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from server.orchestrator import run_trace
+from server.registry import tool_defs
 
 #: Reads that never show a card and share no state with each other (⓪Plan's Q2). Not render_chart,
-#: delegate_work, update_plan, browser_* or desktop_* (one browser, one desktop).
-READS = frozenset({"web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir", "search_files",
-                   "list_my_tasks", "list_nodes", "list_my_capabilities", "whats_new", "my_status", "task_progress",
-                   "background_status", "mac_list_shortcuts"})
+#: delegate_work, update_plan, browser_* or desktop_* (one browser, one desktop). LOOP1 a6: each tool's
+#: `parallel` trait (server/registry/tool_defs).
+READS = tool_defs.named(lambda traits: traits.parallel)
 CONCURRENCY = 4
 
 _SLOT: contextvars.ContextVar[_Slot | None] = contextvars.ContextVar("parallel_read_slot", default=None)
@@ -53,7 +53,7 @@ class _Slot:
 
 @asynccontextmanager
 async def executing():
-    """Around the executor in `_dispatch_tool`: the call passed every gate. In a run, the next call's
+    """Around the executor in `tool_execute.run_executor`: the call passed every gate. In a run, the next call's
     gates may start now, and this one waits for a place. Outside a run, nothing."""
     slot = _SLOT.get()
     if slot is None:

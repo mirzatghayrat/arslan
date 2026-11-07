@@ -14,8 +14,9 @@ macos = pytest.mark.skipif(sys.platform != "darwin", reason="seatbelt is macOS-o
 
 
 def _profile(tmp_path, *, folders=(), network=False, read=()):
+    # SBX-6 MCP proxy: a declared server's network is proxy mode, with a stand-in proxy port and no Arslan ports.
     return capability_sandbox.profile(root=tmp_path / "root", folders=[str(f) for f in folders], network=network,
-                                      read=[str(r) for r in read])
+                                      read=[str(r) for r in read], proxy_port=41000, bound_ports=[], system_proxies=[])
 
 
 def test_the_profile_starts_from_deny_and_orders_its_rules(tmp_path, monkeypatch):
@@ -25,14 +26,16 @@ def test_the_profile_starts_from_deny_and_orders_its_rules(tmp_path, monkeypatch
     lines = text.splitlines()
     assert lines[1] == "(deny default)"
     grant = next(i for i, line in enumerate(lines) if str(os.path.realpath(tmp_path / "grant")) in line)
-    protected = next(i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write* network-outbound"))
+    # SBX-4: the shared base closes the protected paths to files and to sockets in two rules, after the grants.
+    protected = next(i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write* file-map-executable")
+                     and str(os.path.realpath(secret)) in line)
     own = next(i for i, line in enumerate(lines) if str(os.path.realpath(tmp_path / "root")) in line)
     runtime = next(i for i, line in enumerate(lines) if str(os.path.realpath(tmp_path / "runtimes")) in line)
     # Last match wins: grants, then the protected paths close, then the server's own folder and
     # the runtimes (which live inside Arslan's protected data folder) open again — only those.
     assert grant < protected < runtime < own
     assert "network" not in "".join(line for line in lines if line.startswith("(allow"))
-    assert "(allow network* system-socket)" in _profile(tmp_path, network=True)
+    assert '(allow network-outbound (remote tcp "localhost:41000"))' in _profile(tmp_path, network=True)   # SBX-6
 
 
 def test_a_folder_name_cannot_inject_rules(tmp_path):
@@ -84,6 +87,10 @@ def _run_probe(tmp_path, monkeypatch, *, network=False):
     (secret / "key").write_text("hush")
     (root / "probe.py").write_text(PROBE)
     monkeypatch.setattr(command_sandbox, "default_protected", lambda: [secret])
+    # SBX-6 MCP proxy: the listener stands for a local dev server, not one of Arslan's ports.
+    from server.services import sandbox_proxy
+    monkeypatch.setattr(sandbox_proxy, "listening_ports", lambda: [])
+    monkeypatch.setattr(sandbox_proxy, "system_proxies", lambda: [])
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen(1)
@@ -91,7 +98,8 @@ def _run_probe(tmp_path, monkeypatch, *, network=False):
     runtime = os.path.realpath(sys.base_prefix)
     command, args, env, cwd = capability_sandbox.wrap(
         python, [str(root / "probe.py"), str(grant), str(outside), str(secret), str(listener.getsockname()[1])],
-        {"PATH": "/usr/bin:/bin"}, {"root": str(root), "folders": [str(grant)], "network": network, "read": [runtime]})
+        {"PATH": "/usr/bin:/bin"},
+        {"root": str(root), "folders": [str(grant)], "network": network, "read": [runtime], "proxy_port": 41000})
     try:
         out = subprocess.run([command, *args], env=env, cwd=cwd, capture_output=True, text=True, timeout=60)
     finally:

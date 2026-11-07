@@ -147,6 +147,30 @@ def test_a_line_continuation_in_a_command_word_is_joined_not_kept():
     assert shell_text._deobfuscate_shell_word_for_detection('"pyth\\\non3"') == "python3"   # in double quotes too
 
 
+# A blank line before the interpreter (`true<newline><newline>python3 -c …`): the command position reads through it, and
+# a script's line was cut at the first newline after the match start, so the script read as an empty line and ran,
+# bare or spelled. The line starts at the program.
+BLANK_BEFORE = {"blank-line": "true\n\n{}", "blank-with-space": "true\n \n{}", "and-then-blank": "true &&\n\n{}",
+                "pipe-then-blank": "true |\n\n{}", "then-blank": "if true; then\n\n{}\nfi"}
+BLANK_CASES = [
+    pytest.param(wrap.format(spelled + body), rule, id=f"{name}-{where}-{how}")
+    for rule, name, body in SCRIPTS
+    for where, wrap in BLANK_BEFORE.items()
+    for how, spelled in spellings("python3").items() if how in ("bare", "single", "backslash")
+]
+
+
+@pytest.mark.parametrize("command,rule", BLANK_CASES)
+def test_an_inline_script_after_a_blank_line_is_read(command, rule):
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == (ASK, rule)
+
+
+@pytest.mark.parametrize("where", BLANK_BEFORE)
+def test_a_plain_script_after_a_blank_line_still_runs(where):
+    assert tp.assess(BLANK_BEFORE[where].format('python3 -c "print(1)"')).level == "run"
+
+
 @pytest.mark.parametrize("command", [
     "echo 'rm -rf ~'",
     'git commit -m "x; rm -rf ~"',

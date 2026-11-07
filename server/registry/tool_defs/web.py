@@ -1,6 +1,6 @@
 """Reading the web and drawing what was found. 0.1.63 K5: the research rules live with the web tools (they were appended
 to every system text), and web_search says what a blocked search means (D5)."""
-from server.registry.tool import Tool
+from server.registry.tool import Tool, Traits
 
 WEB = (
     Tool("web_search",
@@ -13,7 +13,8 @@ WEB = (
          "service can be set in Settings, and never answer from memory as if you had searched.",
          {"type": "object",
           "properties": {"query": {"type": "string"}},
-          "required": ["query"]}),
+          "required": ["query"]},
+         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=True, saves=False)),
     Tool("web_extract",
          "Fetch a URL and return its main text (SSRF-guarded). Extracting the most authoritative "
          "page beats many snippet searches. If what you gathered is incomplete, answer only the "
@@ -24,12 +25,14 @@ WEB = (
                          "max_chars": {"type": "integer", "minimum": 1, "maximum": 40_000,
                                        "default": 12_000,
                                        "description": "Maximum extracted characters. Request a larger bounded read only when needed; check source.truncated."}},
-          "required": ["url"]}),
+          "required": ["url"]},
+         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=True, saves=False)),
     Tool("render_chart",
          "Render a line/bar/pie chart from structured data; the user sees the chart.",
          {"type": "object",
           "properties": {"type": {"type": "string"},
                          "x": {"type": "array"},
                          "series": {"type": "array"},
-                         "title": {"type": "string"}}}),
+                         "title": {"type": "string"}}},
+         traits=Traits(effect="read", parallel=False, outside=False, replay_safe=True, saves=False)),
 )

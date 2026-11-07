@@ -1016,6 +1016,7 @@
     "runRemote": "Dort ausführen",
     "purpose": {
       "run": "{{program}} ausführen",
+      "notAllRead": "{{program}} ausführen: Arslan konnte nicht den ganzen Befehl lesen",
       "copyLocal": "{{count}} Einträge kopieren",
       "copyLocal_one": "1 Eintrag kopieren",
       "delete": "{{count}} Dateien oder Ordner löschen",
@@ -1402,6 +1403,8 @@
       "task": "Für diese Aufgabe",
       "conversation": "In diesem Gespräch",
       "conversationFor": "In diesem Gespräch: {{label}}",
+      "subSession": "In diesem Teilgespräch",
+      "subSessionFor": "In diesem Teilgespräch: {{label}}",
       "anyToolUse": "jede Nutzung dieses Werkzeugs, mit beliebigen Argumenten",
       "always": "Immer: {{label}}"
     },

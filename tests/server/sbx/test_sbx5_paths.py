@@ -1,7 +1,8 @@
 """CAP6b/cache gates distinguish built adapters from built protections.
 
 Must go red: M3 CAP6b moved from protected to closed; M7 commands peer-cache
-closure removed; M7-REVERSE MCP peer-cache closure removed. H1 corrupts the
+closure removed; M7-REVERSE MCP peer-cache closure removed. MCP-WIDE-GRANT
+without exclusions fails two direct writes and six link cases. H1 corrupts the
 pre-existing-link measurement's result and must fail its parent-side check.
 """
 import sys
@@ -91,7 +92,8 @@ print('checked')
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("name,cap_sbx", [
-    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"}).marks)
+    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"},
+                 feature="cap6b" if base == "mcp" and name in {"skills", "plugin"} else None).marks)
     for base in BASES for name in ("skills", "plugin", "data")], indirect=["cap_sbx"])
 def test_cap6b_write_denied(cap_sbx, name):
     folder = target_folder(cap_sbx, name)
@@ -129,7 +131,7 @@ def test_cap6b_read_denied(cap_sbx, name):
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("cap_sbx", [
-    pending(b, cap6b=True, feature="cap6b" if b == "commands" else None) for b in BASES], indirect=True)
+    pending(b, feature="cap6b") for b in BASES], indirect=True)
 @pytest.mark.parametrize("through_alias", [False, True], ids=["real-name", "home-link"])
 def test_cap6b_symlink_root(cap_sbx, through_alias):
     real = cap_sbx.work / "agent-source"
@@ -145,7 +147,7 @@ def test_cap6b_symlink_root(cap_sbx, through_alias):
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("cap_sbx", [
-    pending(b, feature="shared-cache-exclusions" if b == "commands" else None)
+    pending(b, feature="shared-cache-exclusions" if b in ("commands", "mcp") else None)
     for b in ("commands", "mcp", "run-python")], indirect=True)
 @pytest.mark.parametrize("name", ["npm", "cache", "Library-Caches"])
 def test_shared_cache_is_not_writable(cap_sbx, name):
@@ -183,7 +185,7 @@ def test_commands_exclusions_override_a_writable_ancestor(cap_sbx, name):
 @pytest.mark.macos
 @pytest.mark.sbx_mac
 @macos
-@pytest.mark.parametrize("cap_sbx", [pending("mcp")], indirect=True)
+@pytest.mark.parametrize("cap_sbx", [pending("mcp", feature="shared-cache-exclusions")], indirect=True)
 def test_commands_cache_is_not_visible_to_mcp(cap_sbx):
     assert cap_sbx.peer_cache.resolve() != cap_sbx.cache_root.resolve()
     target = cap_sbx.peer_cache / "package"
@@ -199,7 +201,8 @@ def test_commands_cache_is_not_visible_to_mcp(cap_sbx):
 @macos
 @pytest.mark.parametrize("cap_sbx,name", [
     pytest.param(base, name, marks=pending(base, cap6b=name in {"skills", "plugin"},
-                 feature="shared-cache-exclusions" if base == "commands" and name == "npm" else None).marks)
+                 feature="shared-cache-exclusions" if base in {"commands", "mcp"} and name == "npm"
+                 else "cap6b" if base == "mcp" and name in {"skills", "plugin"} else None).marks)
     for base in BASES for name in ("skills", "plugin", "data", "npm")
     if not (base == "outside-floor" and name == "npm")], indirect=["cap_sbx"])
 @pytest.mark.parametrize("kind", ["symlink", "hardlink"])
@@ -269,7 +272,7 @@ print('checked')
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("cap_sbx", [
-    pending("commands", feature="shared-cache-exclusions"), pending("mcp")], indirect=True)
+    pending("commands", feature="shared-cache-exclusions"), pending("mcp", feature="shared-cache-exclusions")], indirect=True)
 def test_peer_cache_inside_a_grant_stays_closed(cap_sbx):
     # MCP's supplied grant is independent of its own server root. Reopening a
     # server root is a different lifecycle decision, not this nested-grant case.

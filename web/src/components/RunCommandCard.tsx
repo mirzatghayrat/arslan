@@ -48,6 +48,8 @@ interface Props {
   /** The frame's permission kind (`perm_kind`). A red kind (money, app_risky, destructive) draws Run red,
    *  as the action card does; a once-only kind offers only the frame's first choice. Absent on an old frame. */
   permKind?: string;
+  /** SUB3: a sub-session asks (the frame's `sub_session`). */
+  subSession?: boolean;
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
   busy?: boolean;
   queue?: import("./kit").AskQueuePosition;
@@ -69,7 +71,7 @@ interface Props {
  */
 export default function RunCommandCard({ callId, pretty, remoteHost, fingerprints, background,
                                          sandbox, why, rule, rules, unreadable, deleteMode, deleteTargets, network, unsandboxed, expiresAt, options, alwaysLabel,
-                                         permKind, busy, queue, onOpenContext, onConfirm, onCancel }: Props) {
+                                         permKind, subSession, busy, queue, onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
   const offered = offeredScopes(options, permKind);
@@ -123,7 +125,7 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
       // S4a: on the card to leave the sandbox it lets every command of this conversation out, a background task's too.
       options={v2 ? <ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
         conversationLabel={permKind === "command" ? alwaysLabel
-          : permKind === "outside" ? t("runcmd.sandboxConversation") : undefined} testId="runcmd-scope" />
+          : permKind === "outside" ? t("runcmd.sandboxConversation") : undefined} subSession={subSession} testId="runcmd-scope" />
         : null}
       extra={v2 ? <DeclineNote testId="runcmd-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} /> : undefined}

@@ -39,9 +39,12 @@ def _strip_ansi(text: str) -> str:
 # ── adapted from Hermes ───────────────────────────────────────────────────────
 
 _MAX_DETECTION_COMMAND_CHARS, _MAX_SEPARATOR_FREE_COMMAND_CHARS, _MAX_DETECTION_SEGMENTS = 128_000, 4_096, 25_000
-# Each nested `$(` is one Python frame deeper in the scan: well under the recursion limit, with room for the stack a turn
-# has already used.
+# All the `$(` in a command, nested or not.
 _MAX_DETECTION_SUBSTITUTIONS = 256
+# What can't be read cheaply can't be read: the work grows far faster than the text past these, so `too_complex` says it
+# isn't read at all and the command asks (`unreadable`). Well above what recorded commands use.
+_MAX_NESTED_SUBSTITUTIONS, _MAX_BACKTICKS = 6, 32
+_MAX_BLANK_RUN, _MAX_NEWLINES_IN_BLANK_RUN = 64, 16
 
 # Start of a command: start of text, a newline, `$(` or a backtick, past sudo/env/exec/nohup/setsid/time.
 # ; & | are made newlines by the quote-aware _mark_command_starts pass, so quoted data never counts.
@@ -217,11 +220,85 @@ _BASH_OPTIONS_WITH_ARG = {"-O", "+O", "-o", "+o", "--init-file", "--rcfile"}
 _BASH_SHORT_OPTION_LETTERS = frozenset("ilrsDcabefhkmnptuvxBCEHPTOo")
 
 
+_NESTING_TOKEN = re.compile(r"""\$\(|[)'"\\`]""")
+
+
+def _substitutions_over_limit(command: str) -> bool:
+    """Too many substitutions, or too many that may be open at once. A `)` closes one only with no quote, backslash or
+    backtick since its `$(`: those can make the `)` data here, or in a later reading of a quoted argument, so a `$(` that
+    met one stays counted however it reads. Over-counts, which fails closed."""
+    if command.count("$(") >= _MAX_DETECTION_SUBSTITUTIONS or command.count("`") >= _MAX_BACKTICKS:
+        return True
+    closable = unclosable = 0
+    for token in _NESTING_TOKEN.findall(command):
+        if token == "$(":
+            closable += 1
+            if closable + unclosable >= _MAX_NESTED_SUBSTITUTIONS:
+                return True
+        elif token == ")":
+            closable = max(closable - 1, 0)
+        else:
+            closable, unclosable = 0, unclosable + closable
+    return False
+
+
+_BLANK_RUN = re.compile(r"\s+")
+
+
+def _blank_run_over_limit(command: str) -> bool:
+    """A blank run the rules' command position would spend too long on."""
+    return any(len(run) >= _MAX_BLANK_RUN or run.count("\n") >= _MAX_NEWLINES_IN_BLANK_RUN
+               for run in _BLANK_RUN.findall(command))
+
+
+def _squeeze_blank_runs(command: str) -> str:
+    """Each blank run as one blank, a newline if it held one, so no form read past the limit has a long run."""
+    return _BLANK_RUN.sub(lambda run: "\n" if "\n" in run.group() else " ", command)
+
+
+_BACKTICK_RUN = re.compile(r"``+")
+# Past a limit, what could start a command is taken to start one: every quote, bracket and shell metacharacter but
+# `<` and `>` (a disk rule reads the redirect), and the `{` of `${`, which opens a parameter (`${HOME}`), not a group.
+_SEPARATOR = re.compile(r"""['"`()\[\]};&|]|(?<!\$)\{""")
+# The keywords after which a command starts (`then x`, `do x`, `! x`), as words of their own.
+_COMMAND_KEYWORD = re.compile(
+    r"(?<!\S)(?:" + "|".join(map(re.escape, sorted(_SHELL_COMMAND_TRANSITIONS))) + r")(?!\S)")
+
+
+def _separated(normalized: str) -> str:
+    """Each separator and command keyword a newline, so every place a command could start is a line start, with the
+    words after it on that line: a `-c` or launcher's quoted argument, a `( )` or `{ }` group, after `then` or `do`,
+    a separator inside a double-quoted substitution. Quoted prose reads as commands too, which only forbids more."""
+    return _COMMAND_KEYWORD.sub("\n", _SEPARATOR.sub("\n", normalized))
+
+
+def _over_limit_forms(command: str) -> tuple[str, ...]:
+    """What the forbid rules read of a command past the limit, each with its blank runs squeezed. Linear passes only,
+    with no scan of what its substitutions hold:
+      - the text as written, for a rule that reads the metacharacters themselves (the fork-bomb rule);
+      - its top-level commands each on a line of its own (`_iter_top_level_shell_segments`), normalized (`l''s`),
+        after a blank so a `\\` ending a command doesn't join the lines, and with its quotes taken out: a command word
+        spelled with quotes inside it (`'l's`) reads as the word, and a rule that reads one command's options to the
+        end of its line reads them across a quoted argument. A run of backticks is one here: a rule can match at a
+        backtick in a run only by reading past the ones after it, so the last one finds it too;
+      - the separator scan (`_separated`) of the normalized text, where each structural command start is a line start.
+    Reading too much here only forbids more, which fails closed. None has a quote to mask, but the text as written."""
+    normalized = _normalize_command_for_detection(command)
+    lines = _normalize_command_for_detection(" \n".join(_iter_top_level_shell_segments(command)))
+    unquoted = _BACKTICK_RUN.sub("`", lines.replace("'", "").replace('"', ""))
+    return tuple(dict.fromkeys(_squeeze_blank_runs(form) for form in (command, unquoted, _separated(normalized))))
+
+
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
 def _command_parser_limit_exceeded(command: str) -> bool:
     """Bound all parser work: too long, long with no separator, too many separators, or too many
-    substitutions to scan (quoted ones over-count, which fails closed)."""
-    if len(command) > _MAX_DETECTION_COMMAND_CHARS or max(
-            command.count("$("), _normalize_command_for_detection(command).count("$(")) >= _MAX_DETECTION_SUBSTITUTIONS:
+    substitutions to scan. The text as written and normalized are both read, so both count."""
+    if len(command) > _MAX_DETECTION_COMMAND_CHARS:
+        return True
+    if _substitutions_over_limit(command) or _blank_run_over_limit(command):
+        return True                     # before normalizing, which is the slow part on some texts
+    normalized = _normalize_command_for_detection(command)
+    if _substitutions_over_limit(normalized) or _blank_run_over_limit(normalized):
         return True
     # Long separator-free input has no compound-command utility and makes every regex inspect one giant token.
     if len(command) > _MAX_SEPARATOR_FREE_COMMAND_CHARS and not any(char in command for char in ";&|\n"):
@@ -554,6 +631,8 @@ def _read_shell_word(command: str, pos: int) -> tuple[int, int, str]:
 
 def _literal_command_substitution_output(script: str) -> str | None:
     """Resolve tiny literal command substitutions without executing a shell."""
+    if "$" in script or "`" in script:      # never literal, and shlex is the slow part of a nested read
+        return None
     try:
         tokens = shlex.split(script, posix=True)
     except ValueError:
@@ -602,6 +681,7 @@ def _strip_shell_word_syntax(word: str) -> str:
     )
 
 
+@functools.lru_cache(maxsize=256)       # every form of a command reads the same words again
 def _deobfuscate_shell_word_for_detection(word: str) -> str:
     """Approximate how shell syntax can spell a command word: collapses quoting/escaping plus
     simple literal command substitutions in the word itself. Intentionally narrow and non-executing."""
@@ -618,7 +698,10 @@ def _is_shell_comment_start(command: str, index: int) -> bool:
                                       or command[index - 1] in ";&|()<>")
 
 
-def _iter_shell_command_starts(command: str):
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
+def _iter_shell_command_starts(command: str) -> tuple[int, ...]:
+    if _substitutions_over_limit(command):      # past it `too_complex` says it isn't read at all
+        return ()
     starts = [0]
 
     def scan(start: int, end: int) -> None:
@@ -640,25 +723,36 @@ def _iter_shell_command_starts(command: str):
                     skip = i + 1 if repeated else skip
                     starts.append(i + 1 + repeated)
 
-    if command.count("$(") < _MAX_DETECTION_SUBSTITUTIONS:      # past it `too_complex` says it isn't read at all
-        scan(0, len(command))
-    seen = set()
+    scan(0, len(command))
+    seen = {}
     for start in starts:
         start = _skip_shell_whitespace(command, start)
         if start >= len(command) or start in seen or _is_shell_comment_start(command, start):
             continue
-        seen.add(start)
-        yield start
+        seen[start] = None
         _, end, word = _read_shell_word(command, start)
         if word in _SHELL_COMMAND_TRANSITIONS:
             starts.append(end)
+    return tuple(seen)
 
 
 def _mark_command_starts(command: str, marker: str = "\n") -> str:
     """Insert *marker* before each real (quote-aware) command start, so subshell and brace-group openers
-    reach the anchored rules without quoted prose (``--title "block (reboot)"``) doing so."""
+    reach the anchored rules without quoted prose (``--title "block (reboot)"``) doing so. A marked form never has a
+    blank run the text doesn't, so the limits read the same below them (#766): a start the blanks before it already put
+    on a line of its own gets no marker, and blanks long enough to reach the blank limit with it give it their place."""
     offsets = sorted(o for o in _iter_shell_command_starts(command) if o > 0)
-    return _splice(command, [(o, o, marker) for o in offsets]) if offsets else command
+    edits, floor = [], 0
+    for offset in offsets:
+        start = offset
+        while start > floor and command[start - 1].isspace():
+            start -= 1
+        joined = start > 0 and command[start - 1] == "\\"      # normalizing would join a `\` and a newline
+        if "\n" not in command[start:offset] or joined:
+            edits.append((start if offset - start + len(marker) >= _MAX_BLANK_RUN and not joined else offset,
+                          offset, marker))
+        floor = offset
+    return _splice(command, edits) if edits else command
 
 
 def _mask_quoted_newlines(command: str) -> str:
@@ -688,8 +782,10 @@ def _mask_quoted_newlines_span(command: str, start: int, end: int) -> str:
     return "".join(out)
 
 
-def _iter_shell_command_word_spans(command: str):
-    """Yield command-position words that may be executable names."""
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
+def _iter_shell_command_word_spans(command: str) -> tuple[tuple[int, int, str], ...]:
+    """The command-position words that may be executable names."""
+    spans = []
     for pos in _iter_shell_command_starts(command):
         wrapper, positionals = None, 0
         options, skip_arg = True, False
@@ -727,11 +823,31 @@ def _iter_shell_command_word_spans(command: str):
                 continue
             if _ENV_ASSIGNMENT_RE.fullmatch(word):
                 continue
-            yield (word_start, word_end, word)
+            spans.append((word_start, word_end, word))
             if name not in _COMMAND_WRAPPER_WORDS:
                 break
             wrapper, options = name, True
             positionals = _COMMAND_WRAPPER_POSITIONAL_ARGS.get(name, 0)
+    return tuple(spans)
+
+
+def _payload_variants(root: str, fresh):
+    """The payloads program-bearing options in *root* carry, and theirs in turn, each with its starts marked too, and
+    with its command words spelled as the shell runs them."""
+    pending = [root]
+    while pending:
+        for payload in _execution_flag_findings(pending.pop()):
+            if fresh(payload):
+                yield payload
+                # A payload may start with an option-looking program and then invoke a hardline command
+                # after a separator; mark its starts.
+                marked_payload = _mark_command_starts(payload)
+                if marked_payload != payload and fresh(marked_payload):
+                    yield marked_payload
+                for spelled in _spelled_out(marked_payload):        # a quoted command word, read as the shell runs it
+                    if fresh(spelled):
+                        yield spelled
+                pending.append(payload)
 
 
 def _command_detection_variants(command: str):
@@ -757,20 +873,7 @@ def _command_detection_variants(command: str):
             yield win_variant
     # Program-bearing options are parsed in their owning command's context; surfacing only the payload lets the
     # hardline floor inspect what will actually run without promoting similar flags or quoted prose.
-    pending = [normalized]
-    while pending:
-        for payload in _execution_flag_findings(pending.pop()):
-            if fresh(payload):
-                yield payload
-                # A payload may start with an option-looking program and then invoke a hardline command
-                # after a separator; mark its starts.
-                marked_payload = _mark_command_starts(payload)
-                if marked_payload != payload and fresh(marked_payload):
-                    yield marked_payload
-                for spelled in _spelled_out(marked_payload):        # its command words spelled out, as below
-                    if fresh(spelled):
-                        yield spelled
-                pending.append(payload)
+    yield from _payload_variants(normalized, fresh)
     # `(cmd)` and `{ cmd; }` put cmd at a command position the flat patterns cannot see: mark the starts the
     # quote-aware scan found instead (adding `(` to _CMDPOS would match quoted prose).
     marked = _mark_command_starts(grep_safe)
@@ -814,15 +917,35 @@ def _spelled_out(command: str):
         pending = carry
 
 
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
+def _all_detection_variants(command: str) -> tuple[str, ...]:
+    """The variants, and the payloads read from the text with its quoted newlines kept: a newline in a `-c` argument
+    is a newline in what it runs. Masked, `sh -c 'ls<newline>x'` read as one command, `ls x`."""
+    found = tuple(_command_detection_variants(command))
+    normalized = _normalize_command_for_detection(_mask_quoted_newlines(command))
+    if "\n" not in command or (kept := _normalize_command_for_detection(command)) == normalized:
+        return found
+    seen = set(found)
+
+    def fresh(variant: str) -> bool:
+        if not variant or variant in seen:
+            return False
+        seen.add(variant)
+        return True
+    return found + tuple(_payload_variants(kept, fresh))
+
+
 # ── what terminal_policy reads ────────────────────────────────────────────────
 
 CMDPOS = _CMDPOS                                    # where a command starts, for the anchored rules
 normalize = _normalize_command_for_detection        # ANSI, NUL, fullwidth, continuations, home, escapes, $IFS
-variants = _command_detection_variants              # the forms rules are matched against besides the text
+variants = _all_detection_variants                  # the forms rules are matched against besides the text
 has_shell_carrier = _contains_shell_carrier         # a command word runs a quoted argument (sh -c, eval …)
 mask_quoted_prose = _mask_quoted_prose
 mask_quoted_newlines = _mask_quoted_newlines
 too_complex = _command_parser_limit_exceeded         # past what is read at all
+over_limit_forms = _over_limit_forms                 # what the forbid rules read past it
+blank_run_over_limit = _blank_run_over_limit         # a blank run no regex reads in linear time
 
 
 def grep_unreadable(command: str) -> bool:

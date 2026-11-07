@@ -1016,6 +1016,7 @@
     "runRemote": "Run there",
     "purpose": {
       "run": "Run {{program}}",
+      "notAllRead": "Run {{program}}: Arslan couldn't read the whole command",
       "copyLocal": "Copy {{count}} items",
       "copyLocal_one": "Copy 1 item",
       "delete": "Delete {{count}} files or folders",
@@ -1402,6 +1403,8 @@
       "task": "For this task",
       "conversation": "In this conversation",
       "conversationFor": "In this conversation: {{label}}",
+      "subSession": "In this sub-session",
+      "subSessionFor": "In this sub-session: {{label}}",
       "anyToolUse": "any use of this tool, with any arguments",
       "always": "Always: {{label}}"
     },

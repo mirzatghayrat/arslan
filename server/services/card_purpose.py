@@ -36,6 +36,26 @@ PHONE_MAX = 200
 #: The facts' separator and the marks that look like it (U+00B7, U+2022, U+2027, U+2219, U+22C5, U+30FB, U+FF65),
 #: which the model's words may not use.
 _SEPARATORS = re.compile("[" + "".join(map(chr, (0xB7, 0x2022, 0x2027, 0x2219, 0x22C5, 0x30FB, 0xFF65))) + "]")
+#: How deep a line is read inside another: a `$(…)`, a shell's `-c`, `eval`, `watch`, `trap`, `env -S` or find's
+#: `-exec`, each one level, all counted together. Each level is Python frames, so past it the card says Arslan could
+#: not read the whole line ("Run <program>: Arslan couldn't read the whole command").
+READ_DEPTH = 64
+#: How much reading a line may read again, as a multiple of its length, so its cost stays linear in it. A line inside
+#: another is shorter than it, so lines read inside one another READ_DEPTH deep stay under this; find's `-exec` reads
+#: the rest of its line, so some parts of a line can be read more than once.
+READ_WORK = READ_DEPTH
+
+
+class _TooDeep(Exception):
+    """A line read past READ_DEPTH or READ_WORK: `summarize` says Arslan could not read all of it."""
+
+
+def _deeper(work: dict, line: str, depth: int) -> None:
+    """Before `line` is read `depth` lines deep: its length is taken from what is left of the reading's READ_WORK.
+    Raises _TooDeep past READ_DEPTH, or once nothing is left."""
+    work["left"] -= len(line)
+    if depth > READ_DEPTH or work["left"] < 0:
+        raise _TooDeep
 
 QUIET = {"echo", "printf", "true", "false", ":", "cd", "pushd", "popd", "sleep", "set", "export", "unset", "test", "[",
          "read", "wait", "clear"}
@@ -93,7 +113,8 @@ def _closing(text: str, open_at: int) -> int:
 
 def _parse(text: str, depth: int = 0) -> list[dict] | None:
     """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
-    is never closed (as commandSummary's `parse`)."""
+    is never closed (as commandSummary's `parse`). Raises _TooDeep at a `$(…)` nested past READ_DEPTH, where it reads
+    no further."""
     steps: list[dict] = []
     step = {"tokens": [], "piped": False, "subs": []}
     token, in_token, quote, i = "", False, None, 0
@@ -121,7 +142,9 @@ def _parse(text: str, depth: int = 0) -> list[dict] | None:
                 end = text.find("`", i + 1) if ch == "`" else _closing(text, i + 1)
                 if end < 0:
                     return None
-                inner = _parse(text[i + 1 if ch == "`" else i + 2:end], depth + 1) if depth < 64 else None
+                if depth >= READ_DEPTH:
+                    raise _TooDeep
+                inner = _parse(text[i + 1 if ch == "`" else i + 2:end], depth + 1)
                 if inner is None:
                     return None
                 step["subs"].extend(inner)
@@ -162,8 +185,12 @@ def _parse(text: str, depth: int = 0) -> list[dict] | None:
 
 
 def split_shell(text: str) -> list[list[str]] | None:
-    """The line's steps as words, the steps run inside a step before it; None when a quote is never closed."""
-    steps = _parse(text)
+    """The line's steps as words, the steps run inside a step before it; None when a quote is never closed or a
+    `$(…)` is nested past READ_DEPTH."""
+    try:
+        steps = _parse(text)
+    except _TooDeep:
+        return None
     if steps is None:
         return None
     out: list[list[str]] = []
@@ -371,8 +398,9 @@ def _buried_network(w: dict) -> str | None:
     return None
 
 
-def _step(w: dict) -> dict:
-    """One step's purpose and what it touches. A step that reaches another machine is read only as overNetwork."""
+def _step(w: dict, depth: int, work: dict) -> dict:
+    """One step's purpose and what it touches. A step that reaches another machine is read only as overNetwork.
+    `depth`, `work`: as `_flatten`'s."""
     program = w["program"].lower()                                         # the binary a case-insensitive volume runs
     args = w["args"]
     plain = _plain(args)
@@ -404,7 +432,9 @@ def _step(w: dict) -> dict:
                 j += 1
             if not slice_:
                 continue
-            r = _read(" ".join(_requote(t) for t in slice_), [])
+            line = " ".join(_requote(t) for t in slice_)
+            _deeper(work, line, depth + 1)
+            r = _read(line, [], depth + 1, work)
             if r and r["unsure"]:
                 return _over_network(str(r["purpose"]["params"].get("program") or program))
             if r and r["purpose"]["key"] in ("delete", "deleteSome", "findDelete"):
@@ -481,30 +511,38 @@ def _rebase(folder: str | None, path: str) -> str:
     return "/".join(out) or "/"
 
 
-def _flatten(steps: list[dict], container: dict | None, out: list[dict], ctx: dict) -> None:
-    """`ctx`: the shell a step runs in; a `$(…)` or `sh -c '…'` starts its own, so a `cd` inside it stays there."""
+def _flatten(steps: list[dict], container: dict | None, out: list[dict], ctx: dict, depth: int, work: dict) -> None:
+    """`ctx`: the shell a step runs in; a `$(…)` or `sh -c '…'` starts its own, so a `cd` inside it stays there.
+    `depth`: how many lines these steps are read inside; `work`: what is left of the reading's READ_WORK."""
     prev = None
     for step in steps:
         node = {"w": _words(step["tokens"]), "from": prev if step["piped"] else None, "container": container,
                 "merged": False, "run": False, "ctx": ctx}
         line = _inline_line(node["w"])
+        if line is not None:
+            _deeper(work, line, depth + 1)
         inner = None if line is None else _parse(line)
         if inner:
-            _flatten(inner, container, out, {"parent": ctx})              # `sh -c '…'`: its line, read once
+            _flatten(inner, container, out, {"parent": ctx}, depth + 1, work)   # `sh -c '…'`: its line, read once
         else:
-            _flatten(step["subs"], node, out, {"parent": ctx})            # what runs inside it runs first
+            if step["subs"]:
+                _deeper(work, "", depth + 1)                              # parsed with this line: nothing read again
+                _flatten(step["subs"], node, out, {"parent": ctx}, depth + 1, work)   # what runs inside it runs first
             out.append(node)
         prev = node
 
 
-def _read(text: str, rules: list[str]) -> dict | None:
+def _read(text: str, rules: list[str], depth: int = 0, work: dict | None = None) -> dict | None:
     """The line read: its purpose, what it touches, how many real steps it has, and whether a transfer in it was not
-    fully read (`unsure`)."""
+    fully read (`unsure`). `depth`, `work`: as `_flatten`'s; a line read on its own may read READ_WORK times its
+    length again. Raises _TooDeep past READ_DEPTH or READ_WORK."""
     steps = _parse(text)
     if steps is None:
         return None
+    if work is None:
+        work = {"left": READ_WORK * len(text)}
     nodes: list[dict] = []
-    _flatten(steps, None, nodes, {"parent": None})
+    _flatten(steps, None, nodes, {"parent": None}, depth, work)
     # #688 review 6e: a download whose output a program runs as code is one step.
     for node in nodes:
         if node["w"]["program"] not in _FETCHERS:
@@ -544,7 +582,7 @@ def _read(text: str, rules: list[str]) -> dict | None:
         quiet = program in QUIET or (not program and not wrapped)
         if node["merged"] or (quiet and not writes):
             continue
-        r = _reading("write", {"target": writes[0]}) if quiet else _step(w)
+        r = _reading("write", {"target": writes[0]}) if quiet else _step(w, depth, work)
         local = _unique([_rebase(folder, p) for p in [*r["local"], *writes]])
         if r["purpose"]["key"] == "write":
             r["purpose"] = {"key": "write", "params": {"target": _rebase(folder, str(r["purpose"]["params"]["target"]))}}
@@ -567,12 +605,19 @@ def summarize(text: str, rules: str | list[str] | None = None) -> dict:
     """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...], "more": n,
     "unsure": bool}`, as web/src/lib/commandSummary.ts reads it (both are held to
     tests/fixtures/card_purpose_vectors.json). `unsure`: a transfer in it was not fully read, so it may send local
-    data. `rules`: the server's terminal rules for the line (one, or several)."""
+    data. `rules`: the server's terminal rules for the line (one, or several). A line it cannot read (a quote never
+    closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says Arslan could not read all of
+    it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part not read may send local
+    data, so its card keeps that warning."""
     listed = [rules] if isinstance(rules, str) else list(rules or [])
-    r = _read(text, listed)
+    program = _base((text.strip().split() or [""])[0])
+    try:
+        r = _read(text, listed)
+    except _TooDeep:
+        return {"purpose": {"key": "notAllRead", "params": {"program": program}}, "touches": [], "more": 0,
+                "unsure": True}
     if r is None:
-        return {"purpose": {"key": "run", "params": {"program": _base((text.strip().split() or [""])[0])}},
-                "touches": [], "more": 0, "unsure": False}
+        return {"purpose": {"key": "run", "params": {"program": program}}, "touches": [], "more": 0, "unsure": False}
     outside = [p for p in r["local"] if re.match(r"^(?:/|~|\$|\.\.(?:/|$))", p) or _REMOTE_PATH.match(p)]
     return {"purpose": r["purpose"], "touches": _unique([*r["hosts"], *outside, *r["local"]]),
             "more": max(r["real"] - 1, 0), "unsure": r["unsure"]}

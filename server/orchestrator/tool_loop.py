@@ -6,7 +6,6 @@ import hashlib
 import json
 import logging
 import os
-import uuid
 from dataclasses import replace
 
 from arslan.execution_budget import BudgetExceeded, governed
@@ -17,20 +16,21 @@ from server.orchestrator import run_trace
 from server.orchestrator.answer_guards import _embeds_protocol, _is_deferral_stub, _unverified_claim
 from server.orchestrator.answer_salvage import (
     _CHAT_TIMEOUT_S, _chat_miss_message, _fallback_with_digest, _salvage_plain, _synthesize_from_findings)
-from server.orchestrator import on_demand, parallel_reads, turn_context
+from server.orchestrator import command_gate, on_demand, parallel_reads, tool_execute, tool_gates, turn_context
+from server.orchestrator.command_gate import _nobody_to_ask, _scheduled_command_refused
 from server.orchestrator.model_step import (
     _SENT_IS_FINAL, _SchemaDrops, _context_parts, _hiding, _model_call, _rendered_size, _server_trims)
 from server.orchestrator.turn_stream import (
     _UNVERIFIED_BOUNCES, TextShown, _StepStream, _TurnText, _correct, _kept_note, _not_verified, _progress_updates, _shown,
     _streams_answer)
-from server.orchestrator.turn_state import TOOL_TIMEOUT_S, ResolveTools, ToolTurn, TurnRequest, TurnState  # noqa: F401
+from server.orchestrator.turn_state import (  # noqa: F401
+    TOOL_TIMEOUT_S, ResolveTools, StepMode, StepReply, ToolTurn, TurnRequest, TurnState)
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services import steering
 from server.services.llm_factory import build_adapter
 from server.services.replay_safety import _check_fetch_budget
-from arslan.aio import within
 # Tests read these here. DELETE-BY: v0.1.64, with LOOP1's slice z.
 from server.orchestrator.answer_guards import (  # noqa: F401
     _CLAIMS_SEARCH_RE, _DEFERRAL_MAX, _PROMISES_ACTION_RE, _claims_search, _draws_chart_fence, _promises_action)
@@ -44,9 +44,6 @@ from server.services.replay_safety import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-# 0.1.62 F1: run_command's backstop stops this much before the turn's own timeout, so the order
-# is fixed: the command's limit first (with its output), this backstop next, the turn last.
-_RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
 # The in-turn history's bound on a provider that doesn't clear old results itself (rendered characters).
 # K4a gate (⓪Plan's DeepSeek run, T2): over the bound, the history is trimmed to half of it in one go.
 # Trimmed back under the bound one message at a time, the start of the history changed on every step,
@@ -54,23 +51,13 @@ _RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
 # step); now the cache breaks once per chunk and the steps in between only append (the K3b family).
 _IN_TURN_CHARS = 64_000
 _IN_TURN_CHARS_RESEARCH = 96_000
-# Task-record refusals that end one call, never the turn or the job (_dispatch_tool): what the model is told.
-_REFUSED_STEP = {
-    "task_reconciliation_required": "This exact action already ran and its outcome is unknown. Do not repeat it; "
-                                    "tell the user to check whether it happened.",
-    "task_action_already_completed": "This exact action already succeeded in this task. Do not repeat it.",
-    # D6 (K3's Claude run, T2 r2): it used to stop the whole background job.
-    "task_action_arguments_not_journalable": (
-        "This step did not run: its arguments can't go into the task record. They are over 256 KB, or contain "
-        "something that looks like a secret (a password, key, token or cookie value). Don't put secrets in files "
-        "or commands: read them from an environment variable or a file the user names. Split a very long write "
-        "into several smaller ones."),
-}
-
-# The T1 write tools, gated as a category (P1b). Kept as a set here — the tool
-# list in _arslan_tools decides what is OFFERED, this decides what is GATED, and
-# a tool that slips out of this set would be a silently ungated writer.
-_WORKSPACE_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
+# Each built-in tool by name: `_run_tool` looks its gate up here (`Tool.gate`, LOOP1 c2).
+_BUILT_IN = {tool.name: tool for tool in tool_defs.TOOLS}
+# The T1 write tools, gated as a category (P1b): the tools whose gate is the write card. The tool
+# list in _arslan_tools decides what is OFFERED, `Tool.gate` decides what is GATED, and a writer
+# without the write card's gate would be a silently ungated writer (test_workspace_tool_gate).
+_WORKSPACE_WRITE_TOOLS = frozenset(name for name, tool in _BUILT_IN.items()
+                                   if tool.gate in (tool_gates.workspace_write, tool_gates.file_arguments_then_write))
 
 
 
@@ -466,17 +453,6 @@ async def _did_work(tool_trace: list, work: dict) -> bool:
     return work["done"]
 
 
-async def _asks_for_everything() -> bool:
-    """The user chose 'ask for every command'. Unknown counts as yes (then nothing runs unasked)."""
-    from server.db import session as db_session
-    from server.services import settings_service
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.shell_confirm_policy(db) == "ask_all"
-    except Exception:  # noqa: BLE001 — fails closed: unreadable means ask for every command
-        return True
-
-
 async def _status_workspace(wired_keys) -> tuple:
     """(workspace root, is Arslan's own folder) for the status block; (None,
     False) when no writer is wired or the setting cannot be read."""
@@ -524,188 +500,6 @@ async def _read_saved(rel: str) -> str | None:
         return None
 
 
-def _declined(refused: str, subject: str) -> str:
-    """What a "no" from a card tells the model (0.1.61): the decision's own text when there is
-    one (the user's note, or "nobody answered — NOT a refusal"), never "declined" for a card
-    that simply ran out (seen 2026-10-04 on a phone task)."""
-    from server.services import approvals, permissions
-    decision = permissions.LAST_DECISION.get()
-    if decision is not None and not decision.allowed and decision.model_text:
-        return decision.model_text
-    if approvals.LAST_OUTCOME.get() == "expired":
-        return (f"Nobody answered the card for {subject} in 30 minutes. This is NOT a refusal. "
-                "Don't retry it in this turn. Finish what you can and tell the user what is waiting.")
-    return refused
-
-
-async def _writing_in_own_folder() -> bool:
-    """Unknown means ask: if the setting cannot be read, treat the folder as the user's."""
-    from server.db import session as db_session
-    from server.services import settings_service
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.workspace_is_default(db)
-    except Exception:  # noqa: BLE001 — fails closed: unknown means the folder is the user's, so writing asks
-        return False
-
-
-async def _workspace_root_or_none():
-    """The workspace folder for a refusal's ledger row; unreadable means unnamed ("*")."""
-    from server.registry import file_tools
-    try:
-        return await file_tools._workspace_root()
-    except Exception:  # noqa: BLE001 — the row names the folder when it can; the refusal stands either way
-        return None
-
-
-async def _unattended(error: str, req, conversation_id: str | None) -> str:
-    """S1 (U14 c): a step refused for want of a card callback. With nobody to ask (a scheduled run) the
-    refusal is listed in the Inbox and the model is told what decide() tells it; a turn with someone to
-    ask (none today lacks the callback) keeps `error` and writes no row."""
-    from server.services import background_jobs, permissions
-    if permissions.current_asker() is not None:
-        return error
-    return await permissions.refuse_unattended(
-        req, permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
-
-
-def _nobody_to_ask(confirm_command) -> bool:
-    """A run with no card callback and no card surface: a scheduled run (the heartbeat is one)."""
-    from server.services import permissions
-    return confirm_command is None and permissions.current_asker() is None
-
-
-#: What the model is told when a run with nobody to ask names run_command (v0.1.63; DELETE-BY: v0.1.64, with
-#: S2a-3 and PR4).
-SCHEDULED_COMMAND_NOTE = ("Scheduled runs don't run commands. Save what you found with write_file (it writes in "
-                          "Arslan's own folder), or tell the user what to run themselves.")
-
-
-async def _scheduled_command_refused(args: dict, conversation_id: str | None) -> dict:
-    """The refusal of a command in a run with nobody to ask, listed in the Inbox as the card would have read under
-    "ask for every command" (U14 c): policy, deny, no "Always"."""
-    from server.services import approvals, terminal_policy
-    command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
-    return {"ok": False, "error": await _unattended("a scheduled run runs no commands",
-                                                    approvals._command_request(command, [], None, ask_all=True),
-                                                    conversation_id),
-            "note": SCHEDULED_COMMAND_NOTE}
-
-
-def _outside_request(command: str, title: str = ""):
-    """S4a: what running `command` outside the sandbox asks: every command of the conversation may (`outside`
-    / `*`), the card's "In this conversation" (command_confirm). `title`, where it is shown (SMART-8): its plain
-    purpose; a standing-grant lookup reads only the target."""
-    from server.services import permissions
-    old = f"Run `{command[:80]}` outside the sandbox?"
-    return permissions.Request(kind="outside", target="*", detail=command, title=title or old,
-                               model_title=old if title else "")
-
-
-async def _outside_grant(conversation_id: str | None, command: str):
-    """S4a: this conversation's stored grant to run its commands outside the sandbox (`permissions.standing`,
-    which finds nothing where nobody can be asked), or None. No ledger row yet: `note_standing` writes it."""
-    from server.services import background_jobs, permissions
-    return await permissions.standing(_outside_request(command), permissions.Context(
-        conversation_id, job_id=background_jobs._inside_job.get()))
-
-
-async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
-                                         unwrapped: bool, conversation_id: str | None) -> dict:
-    """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
-    runs offline under the kernel's rule — in the sandbox, and outside it under the minimal profile,
-    which carries the same rule (card, piece 4; the internal review's case: a script refused inside for
-    reading a secret, let out by its outside card, must not get the network with it). One that reaches the
-    network (by its text, or the model's `network: true`) asks first: this time or this conversation
-    inside the sandbox, this time only outside it, where the user's secrets are readable (a stored grant
-    does not count there). The island never answers it. With nobody to ask: offline. An approved plain
-    osascript (U11) runs with no wrapper and is not a network command; an approved bare Shortcut asks for
-    the network, this time only, and does not run without it. Where seatbelt cannot start nothing is
-    wrapped, so only the card holds.
-
-    Returns {"offline": bool, "note": str} or {"refused": model text}."""
-    from server.orchestrator import untrusted as _untrusted
-    from server.services import background_jobs, command_sandbox, permissions, task_service, terminal_policy
-    if not _untrusted.external_seen():
-        return {}
-    if unwrapped:
-        # ⓪Plan's S-gate review: a bare osascript (one of four apps, no URL) is not a network command,
-        # but a Shortcut can do anything, the network included, and a bare run has no offline rule. It
-        # asks first, this time only; with nobody to ask, or on a no, it does not run.
-        if not task_service.bare_shortcut(command):
-            return {}
-        from server.services import card_purpose
-        why = str(args.get("why") or "").strip()[:300]
-        # SMART-8: the title is the command's plain purpose (the iPhone's heading). Never the model's `why` (#689
-        # review 3): the Mac's action card shows the title as the server's own words under it.
-        request = permissions.Request(
-            kind="network", target="network:*", title=card_purpose.phrase(
-                command, "", sorted(terminal_policy.ask_rules(command)), lang=await card_purpose.language(),
-                network=True),
-            model_title=f"Let the Shortcut `{command[:80]}` use the network?",
-            detail=command, why=why, conversation_ok=False, once_only=True)
-        if permissions.current_asker() is None:
-            return {"refused": await _unattended("", request, conversation_id)}
-        decision = await permissions.decide(request, permissions.Context(
-            conversation_id, job_id=background_jobs._inside_job.get()))
-        return {} if decision.allowed else {
-            "refused": decision.model_text or "the user did not allow this Shortcut to use the network"}
-    wrapped = command_sandbox.available()
-    inside = sandbox_on and not run_outside and wrapped
-    if not (args.get("network") is True or _untrusted.reaches_network(command)):
-        return {"offline": True} if wrapped else {}
-    if wrapped and permissions.current_asker() is None:
-        return {"offline": True, "note": "ran without network: this turn read outside content, and there was "
-                                         "nobody to allow the network for it"}
-    from server.services import card_purpose
-    why = str(args.get("why") or "").strip()[:300]
-    decision = await permissions.decide(permissions.Request(   # SMART-8: the plain purpose, never `why` (as above)
-        kind="network", target="network:*", title=card_purpose.phrase(   # read with its rules (Astra 5)
-            command, "", sorted(terminal_policy.ask_rules(command)), lang=await card_purpose.language(),
-            network=True), detail=command,
-        model_title=f"Let `{command[:80]}` use the network?", why=why, conversation_ok=inside, once_only=not inside),
-        permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
-    if decision.allowed:
-        return {}
-    return {"refused": decision.model_text or "the user did not allow this command to use the network"}
-
-
-def _network_card_due(command: str, args: dict) -> bool:
-    """S2a-2: whether `_network_after_outside_content` would ask for the network, known before the
-    command's own card, so that card asks for both (one card, not two). A click on it stands for the
-    network this time; a grant or rule that answers it does not, and the network card still comes."""
-    from server.orchestrator import untrusted as _untrusted
-    from server.services import task_service
-    if not _untrusted.external_seen():
-        return False
-    if task_service.unwrapped_once(command):
-        return task_service.bare_shortcut(command)       # a bare osascript is not a network command
-    return args.get("network") is True or _untrusted.reaches_network(command)
-
-
-def _bare_once(command: str, *, by_user: bool) -> tuple[bool, bool]:
-    """S2a-1 piece 4, decision U11: (run with no wrapper, kept wrapped) for an approved command. Only
-    a command with an Apple Events or Shortcuts rule, approved by the user's click on its card (a
-    once-only card: no grant or rule ever answers it), and one plain call runs bare, this once.
-    Approved but not plain (a script that acts beyond its app): kept under the sandbox's profiles."""
-    from server.services import task_service, terminal_policy
-    if not (by_user and terminal_policy.ask_rules(command) & terminal_policy.BARE_RULES):
-        return False, False
-    bare = task_service.unwrapped_once(command)
-    return bare, not bare
-
-
-async def _sandbox_enabled() -> bool:
-    """Settings → Advanced → "Run commands in a sandbox" (0.1.51 P3), default on."""
-    from server.db import session as db_session
-    from server.services import settings_service
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.terminal_sandbox_enabled(db)
-    except Exception:  # noqa: BLE001 — unreadable means the default: sandboxed
-        return True
-
-
 async def _unavailable(tool_key: str, live: set[str]) -> dict:
     """The answer to a call this turn cannot run."""
     if tool_key.startswith("mcp_"):
@@ -735,23 +529,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, **turn) -> dict:
     return await _run_tool(tool_key, args, assistant_content, ToolTurn(**turn))
 
 
-async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
-    """Execute one tool (gated), emit its frames, record the trace, and append one
-    framed tool-result record into convo. Returns the raw result dict.
-
-    run_command is special: it requires per-command user confirmation via the injected
-    confirm_command(command, argv) -> bool callback. No callback → refuse (safety default).
-    Since 0.1.51 it also runs inside the workspace sandbox; leaving it is a click
-    (confirm_command(..., sandbox="outside")), never the model's say-so."""
-    resolve_tools, resolve_callable, tool_timeout_s = turn.resolve_tools, turn.resolve_callable, turn.tool_timeout_s
+async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> dict | set[str]:
+    """The first stage: the call spends one from the budget, what no gate may see is refused before its frame
+    goes out, and a call this turn can't run is refused after. The refusal, recorded, or the keys this turn can run."""
+    resolve_tools, resolve_callable = turn.resolve_tools, turn.resolve_callable
     emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
-    confirm_command, confirm_workspace_write, confirm_schedule = (
-        turn.confirm_command, turn.confirm_workspace_write, turn.confirm_schedule)
-    mcp_fail_counts, mcp_hint_logged = turn.mcp_fail_counts, turn.mcp_hint_logged
-    conversation_id, log_events, caller, turn_adapter = (
-        turn.conversation_id, turn.log_events, turn.caller, turn.turn_adapter)
-    from arslan.execution_budget import BudgetExceeded, current
-    budget = current()
+    confirm_command, mcp_fail_counts, conversation_id = turn.confirm_command, turn.mcp_fail_counts, turn.conversation_id
     if budget is not None:
         try:
             budget.tool()
@@ -803,6 +586,22 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     if tool_key not in live:
         return _record_tool_result(tool_key, args, await _unavailable(tool_key, live), emit, tool_trace,
                                    assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
+    return live
+
+
+async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
+    """Execute one tool (gated), emit its frames, record the trace, and append one
+    framed tool-result record into convo. Returns the raw result dict.
+
+    The stages, in today's order (LOOP1 c2): admit, the eval allowance, the tool's own gate (`Tool.gate`), the eval
+    backstop, execute, after."""
+    emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
+    mcp_fail_counts, conversation_id = turn.mcp_fail_counts, turn.conversation_id
+    from arslan.execution_budget import current
+    budget = current()
+    live = await _admit(tool_key, args, assistant_content, budget, turn)
+    if isinstance(live, dict):
+        return live
 
     # FU-2b: the eval/replay allowance (live reads have none since 0.1.63 K4b).
     refusal = await _check_fetch_budget(tool_key, conversation_id=conversation_id)
@@ -811,333 +610,34 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
                                    assistant_content, convo,
                                    mcp_fail_counts=mcp_fail_counts)
 
-    # Missing model arguments are not a user's refusal. Validate their shape
-    # before requesting permission or performing any file I/O; path scope and
-    # symlinks remain the executor's independently enforced responsibility.
-    if tool_key in {"read_file", "write_file"} and (
-        not isinstance(args.get("path"), str) or not args["path"].strip()
-        or (tool_key == "write_file" and not isinstance(args.get("content"), str))
-    ):
-        result = {"ok": False, "code": "invalid_file_arguments",
-                  "error": "A non-empty string path is required; write_file also requires string content. "
-                           "No permission decision was requested and no file was accessed."}
-        return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                   assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
+    # The tool's own gate (LOOP1 c2): the refusal to record (enrolling's card is its answer), the command gate's
+    # plan, or None. One per tool, so these gates have no order among themselves.
+    plan = command_gate.NOT_A_COMMAND
+    gate = getattr(_BUILT_IN.get(tool_key), "gate", None)
+    if gate is not None:
+        gated = await gate(tool_key, args, turn)
+        if isinstance(gated, dict):
+            return _record_tool_result(tool_key, args, gated, emit, tool_trace, assistant_content, convo,
+                                       mcp_fail_counts=mcp_fail_counts)
+        if gated is not None:
+            plan = gated
 
-    # T1 workspace writes (P1b): ONE grant per session, not per file. The unit
-    # differs from run_command deliberately — a user approving "Arslan may write
-    # in my workspace" is answering a question about a capability, not about a
-    # filename, and asking again per file would train them to click through.
-    # The remembering lives on the WS connection; here we only ask.
-    # 0.1.48: Arslan's own folder (~/Arslan, the default) is its desk: writing there
-    # does not ask. A folder the user chose still asks once per session, because that
-    # folder holds the user's own files.
-    if tool_key in _WORKSPACE_WRITE_TOOLS and not await _writing_in_own_folder():
-        if confirm_workspace_write is None:
-            from server.services import permissions
-            error = "writing to the workspace needs your permission, which is not available on this channel"
-            if permissions.current_asker() is None:
-                root = await _workspace_root_or_none()
-                error = await _unattended(error, permissions.Request(
-                    kind="workspace_write", target=str(root) if root else "*", detail=str(args.get("path") or ""),
-                    title=f"Let Arslan write in {root.name if root else 'the workspace'}?"), conversation_id)
-            result = {"ok": False, "error": error}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        granted = await confirm_workspace_write(tool_key, str(args.get("path") or ""))
-        if not granted:
-            result = {"ok": False, "error": _declined("user declined workspace write access", "writing to the workspace")}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
+    refusal = _eval_backstop(tool_key, conversation_id)
+    if refusal is not None:
+        return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
+                                   assistant_content, convo,
+                                   mcp_fail_counts=mcp_fail_counts)
 
-    # Creating a scheduled task spends future money on the user's key, so it
-    # asks once per session — same shape as a workspace write (裁决① 2026-08-20).
-    # Listing and cancelling are deliberately NOT gated: refusing to let someone
-    # see or undo what was created is the worse failure.
-    if tool_key == "schedule_task":
-        if confirm_schedule is None:
-            from server.services import permissions
-            name = str(args.get("name") or "")
-            result = {"ok": False, "error": await _unattended(
-                "scheduling needs your permission, which is not available on this channel",
-                permissions.Request(kind="schedule", target="*", title=f"Schedule “{name}”?",
-                                    detail=str(args.get("when") or "")), conversation_id)}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        from server.ws import protocol as _protocol
-        prompt = str(args.get("prompt") or "").strip()
-        if len(prompt) > _protocol.DETAIL_MAX:
-            # S1 (U14 d): the card shows the task's text in full or not at all (as an MCP call's arguments).
-            result = {"ok": False, "code": "too_long_to_show",
-                      "error": f"Not scheduled: the task's text is {len(prompt)} characters, more than a card "
-                               f"can show the user ({_protocol.DETAIL_MAX}). Shorten it."}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        granted = await confirm_schedule(str(args.get("name") or ""),
-                                         str(args.get("when") or ""), prompt=prompt)
-        if not granted:
-            result = {"ok": False, "error": _declined("user declined to schedule this task", "scheduling this task")}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
+    executor = await resolve_executor(tool_key)
+    if executor is None:
+        result = await _unavailable(tool_key, live)
+    else:
+        result = await tool_execute.run_executor(tool_key, args, executor, plan, budget, turn)
+    return await _after(tool_key, args, result, assistant_content, turn)
 
-    run_outside = False          # 0.1.51 P3: this command leaves the sandbox (a click said so)
-    outside_grant = None         # S4a: this conversation's stored grant to leave the sandbox, as first read
-    by_grant = False             # S4a: that grant is what lets this command run outside (read again at execute)
-    sandbox_on = False
-    unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
-    network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
-    deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
 
-    def delete_kw(outside: bool) -> dict:
-        """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
-        from server.services import delete_to_trash
-        return {"delete": delete_to_trash.card_mode(command, outside=outside or not confined)} if deletes_outside else {}
-    if tool_key == "run_command":
-        # 0.1.48: one shell string; a forbidden command is refused here, before any
-        # card, so nobody is ever asked to approve wiping the disk.
-        from server.services import command_sandbox, terminal_policy
-        command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
-        argv = []
-        verdict = terminal_policy.assess(command)
-        if verdict.level == "forbid":
-            result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
-                      "note": "Tell the user what you wanted to do and let them run it themselves."}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        if terminal_policy.heredoc_in_substitution(command):
-            # No card either: it would show text that reads as data, and some of that text would run.
-            result = {"ok": False, "error": "A here-document inside $( ) can't run here: in bash 3.2 its text can end the "
-                      "substitution early, and the rest of the text runs as commands. Nothing ran.",
-                      "note": "Write the text to a file with write_file, then use the file: for a commit message, "
-                              "git commit -F <file>; for a variable, NOTE=$(cat <file>)."}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        if terminal_policy.other_osa_language(command):
-            # S2a-2 (K5's gate, T1): a JXA script cannot reach an app from here, inside the sandbox or out (its
-            # Apple Events are blocked; only plain AppleScript runs bare, U11), so no card is shown for it.
-            result = {"ok": False, "error": "JXA (osascript -l JavaScript) cannot control apps from run_command: "
-                      "Apple Events are blocked in the sandbox and outside it, and only plain AppleScript runs "
-                      "outside the sandbox.",
-                      "note": "Write it as plain AppleScript (osascript -e or a heredoc) for Reminders, Calendar, "
-                              "Notes or Contacts, without outside_sandbox; or use mac_applescript."}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        sandbox_on = await _sandbox_enabled()
-        deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
-        confined = sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
-        from server.services import task_service as _task_service
-        # S2a-2: a plain osascript that U11 runs bare takes its own card, the one way it works; asking to run it
-        # outside the sandbox would show a card that cannot help (its Apple Events stay blocked there).
-        wants_out = (sandbox_on and args.get("outside_sandbox") is True
-                     and not _task_service.unwrapped_once(command))
-        # S4a: this conversation's stored grant to run its commands outside the sandbox (the outside card
-        # answered "In this conversation"), found as decide finds one: in a chat turn and a background job
-        # alike. With nobody to ask (a scheduled run) nothing stands, and the command starts inside the
-        # sandbox. Its ledger row is written below, once the command is cleared to run.
-        outside_grant = await _outside_grant(conversation_id, command)
-        run_outside = sandbox_on and outside_grant is not None
-        by_grant = run_outside            # the grant is what lets this command run outside the sandbox
-        net_due = _network_card_due(command, args)
-        net_kw = {"network": True} if net_due else {}
-        net_clicked = False                # the command's own card, clicked, asked for the network too
-        if wants_out and not run_outside:
-            # Asked up front: always a card, even for a command that would just run,
-            # and one card covers the command's own reason too.
-            if confirm_command is None:
-                from server.services import card_purpose, permissions
-                result = {"ok": False, "error": await _unattended(
-                              "running a command outside the sandbox needs the user's click, which is not "
-                              "available here",
-                              _outside_request(command, card_purpose.phrase(
-                                  command, str(args.get("why") or "").strip()[:300],
-                                  lang=await card_purpose.language(), outside=True)),
-                              conversation_id),
-                          "note": "Run it without outside_sandbox, or tell the user what you needed."}
-                return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                            assistant_content, convo,
-                                            mcp_fail_counts=mcp_fail_counts)
-            # The reason as the card will show it (protocol.propose_run_command): one of invisible characters is none.
-            from server.orchestrator import untrusted as _untrusted
-            why = _untrusted.clean_name(args.get("why"), 300)
-            if not why:
-                # Leaving the sandbox is a deliberate request (the calibration of 2026-11-07), and the card leads with why.
-                # Arslan's own words, and nothing ran: not outside content, whatever the command looks like.
-                result = {"ok": False, "external": False, "executed": False,
-                          "error": "outside_sandbox needs a why: one short sentence on why this has to run "
-                                   "outside the sandbox. The user reads it on the card."}
-                return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                            assistant_content, convo,
-                                            mcp_fail_counts=mcp_fail_counts)
-            from server.services import approvals as _approvals
-            _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
-            _approvals.LAST_ANSWERED_BY.set(None)
-            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw, **delete_kw(True)):
-                result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
-                return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                            assistant_content, convo,
-                                            mcp_fail_counts=mcp_fail_counts)
-            run_outside = True
-            # ⓪Plan review, fix 2: the network is answered only by the user's own click on this card (as below for
-            # the command's card), never by whatever else let the command out.
-            from server.services import permissions
-            decided = permissions.LAST_DECISION.get()
-            net_clicked = net_due and decided is not None and decided.by == "user"
-            # S2a-1: the plain outside card records whose click approved it (approvals.LAST_ANSWERED_BY);
-            # only the asking window's own ("mac") unlocks a bare run. A conversation grant shows no card.
-            unwrapped, kept_wrapped = _bare_once(
-                command, by_user=_approvals.LAST_OUTCOME.get() == "approved"
-                and _approvals.LAST_ANSWERED_BY.get() == "mac")
-        elif (verdict.level == "run" and not await _asks_for_everything()
-              and (outside_grant is not None or (sandbox_on and command_sandbox.available()))):
-            # S2a-2 layer ③: no card, and decided here only. In the sandbox only when it can start (R4: with
-            # seatbelt unavailable the command would run unwrapped). Outside it under this conversation's
-            # stored grant to leave the sandbox, which is the user's yes (S4a) — with the sandbox switched
-            # off or unable to start too: that card asks the same thing (⓪Plan, S4a Q3). A layer ② card and
-            # "ask for every command" still ask, whatever the grant.
-            by_grant = outside_grant is not None
-        else:
-            if confirm_command is None:
-                # Layer ②, `unreadable`, "ask for every command", or layer ③ with no sandbox to run it in.
-                # Listed as the card would have read (approvals._command_request), U14 c.
-                from server.services import approvals as _approvals, card_purpose
-                ask_all = await _asks_for_everything()
-                result = {"ok": False, "error": await _unattended(
-                    "run_command requires user confirmation, which is not available in this context"
-                    if verdict.level == "ask" or ask_all else
-                    "this command would run outside the sandbox here (it is switched off or cannot start), "
-                    "which needs the user's OK, and nobody can be asked here",
-                    _approvals._command_request(command, sorted(terminal_policy.ask_rules(command)), None,
-                                                ask_all=ask_all, lang=await card_purpose.language(),
-                                                why=str(args.get("why") or "").strip()[:300]),
-                    conversation_id)}
-                return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                            assistant_content, convo,
-                                            mcp_fail_counts=mcp_fail_counts)
-            from server.services import permissions
-            permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
-            # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
-            said = str(args.get("why") or "").strip()[:300]
-            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw,
-                                             **delete_kw(run_outside))
-            if not approved:
-                result = {"ok": False, "error": _declined("user declined this command", "this command")}
-                return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                            assistant_content, convo,
-                                            mcp_fail_counts=mcp_fail_counts)
-            # S2a-1 (the user, via ⓪Plan): only an explicitly recorded click unlocks the bare run — decide's
-            # record of this card, answered by the user. Nothing recorded (a yes from any other path) keeps
-            # the command wrapped.
-            decided = permissions.LAST_DECISION.get()
-            unwrapped, kept_wrapped = _bare_once(
-                command, by_user=confirm_command is not None and decided is not None and decided.by == "user")
-            run_outside = run_outside or unwrapped
-            by_grant = by_grant and not unwrapped     # a bare run is the user's click on its card, not the grant
-            net_clicked = net_due and decided is not None and decided.by == "user"
-        network = {} if net_clicked else await _network_after_outside_content(
-            command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
-            conversation_id=conversation_id)
-        if network.get("refused"):
-            result = {"ok": False, "error": network["refused"]}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-    # Reaching another machine (P3b). Every call asks, with no session memory and
-    # no ask_risky exemption — see ssh_tools for why remote is graded HIGH even
-    # when the same command is LOW locally.
-    #
-    # The no-callback refusal comes FIRST, deliberately: an unattended turn has no
-    # socket and therefore no confirm callback, so it must not so much as probe the
-    # network before being told no. That ordering is what makes "a scheduled task
-    # cannot SSH" structural rather than a rule someone has to remember.
-    if tool_key == "ssh_run":
-        if confirm_command is None:
-            from server.services import card_purpose, command_confirm, permissions
-            host, remote = str(args.get("host") or "*")[:200], str(args.get("command") or "")
-            result = {"ok": False, "error": await _unattended(
-                "running a command on another machine requires your confirmation, which is not available "
-                "in this context",
-                permissions.Request(kind="remote", target=command_confirm.remote_target(host),
-                                    title=card_purpose.phrase(remote, lang=await card_purpose.language(), host=host),
-                                    model_title=f"Run `{remote[:80]}` on {host}?", detail=remote), conversation_id)}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        from server.registry.ssh_tools import prepare_confirmation
-        from server.services import ssh_exec
-        prep = await prepare_confirmation(args)
-        if not prep.get("ok"):
-            result = {"ok": False, "error": prep.get("error") or "cannot reach that machine"}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        # An enrolled machine is named on the card. "studio" is what the user
-        # calls it; the address alone makes them re-derive which machine that is
-        # every single time, and a decision people have to re-derive is one they
-        # start making by reflex.
-        label = (f"{prep['user']}@{prep['host']}" if not prep.get("node_name")
-                 else f"{prep['node_name']} ({prep['user']}@{prep['host']})")
-        approved = await confirm_command(
-            prep["command"], prep["argv"],
-            remote_host=label,
-            fingerprints=prep["fingerprints"], host=prep["host"])
-        if not approved:
-            # Un-stage: a declined command must not leave an approved host key
-            # sitting where the next call would silently consume it.
-            ssh_exec.take(prep["host"])
-            result = {"ok": False, "error": _declined("user declined this remote command", "this remote command")}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-
-    # Enrolling a machine (P3c). This tool never writes: it reaches the machine,
-    # reads its host key, and paints a card whose button does the enrolment over
-    # REST. So the safety here is not a callback but the absence of any write on
-    # this path at all.
-    #
-    # It is still refused with no confirm callback, which is a proxy for "no
-    # socket". An unattended turn painting a proposal card nobody asked for is
-    # not dangerous, but this is the highest-consequence surface in the feature
-    # and a card that appears while the user is asleep is a card they meet out of
-    # context.
-    if tool_key == "enroll_node":
-        if confirm_command is None:
-            from server.services import command_confirm, permissions
-            host = str(args.get("host") or "*")[:200]
-            result = {"ok": False, "error": await _unattended(
-                "enrolling a machine has to be proposed to you directly, and there is nobody on this "
-                "channel to propose it to",
-                permissions.Request(kind="remote", target=command_confirm.remote_target(host), title=f"Enrol {host}?"),
-                conversation_id)}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        from server.registry.ssh_tools import prepare_enrollment
-        from server.ws import protocol as _protocol
-        prep = await prepare_enrollment(args)
-        if not prep.get("ok"):
-            result = {"ok": False, "error": prep.get("error") or "cannot enrol that machine"}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
-        emit(_protocol.propose_enroll_node(
-            call_id=uuid.uuid4().hex, name=prep["name"], host=prep["host"],
-            user=prep["user"], fingerprints=prep["fingerprints"]))
-        result = {"ok": True, "proposed": True,
-                  "summary": f"asked the user to enrol {prep['host']} as '{prep['name']}'",
-                  "note": "Nothing is enrolled yet. The user has to confirm it on the "
-                          "card, after checking the fingerprint against the machine."}
-        return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                    assistant_content, convo,
-                                    mcp_fail_counts=mcp_fail_counts)
-
+def _eval_backstop(tool_key, conversation_id) -> dict | None:
+    """The last common gate, after the tool's own: in an eval or replay, only what is safe to replay runs."""
     # Fail-closed hermetic backstop (eval sealing): in an evolution eval/replay context,
     # refuse ANY tool that isn't read-only-safe, independent of resolve_tools() and the
     # replay flag. This is the throat every tool call passes through (model-driven AND the
@@ -1156,126 +656,21 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
                                "run is a hermetic evaluation replay that exposes read-only "
                                "tools only (no side-effecting or external tools). Do not retry "
                                "this tool — answer with the read-only tools you have."}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
+            return result
         if tool_key == "run_python" and os.environ.get("ARSLAN_ALLOW_UNSANDBOXED_PY"):
             result = {"ok": False, "external": False,
                       "error": "evaluation context: run_python is unavailable because the "
                                "unsandboxed escape valve (ARSLAN_ALLOW_UNSANDBOXED_PY) is set; "
                                "a networked run_python is not hermetic. Answer without it."}
-            return _record_tool_result(tool_key, args, result, emit, tool_trace,
-                                        assistant_content, convo,
-                                        mcp_fail_counts=mcp_fail_counts)
+            return result
+    return None
 
-    executor = await resolve_executor(tool_key)
-    if executor is None:
-        result = await _unavailable(tool_key, live)
-    else:
-        # Caller identity (brain-P2 Task 1): set ONLY around the executor call so a
-        # memory-write executor can read who is calling (host vs. spawn) and fail-closed
-        # (refuse) when no caller was threaded through. Reset in finally — zero residual
-        # pollution across dispatches/turns, including on the exception paths below.
-        from server.orchestrator import tool_caller, turn_model
-        _ct = tool_caller.set_caller(caller) if caller is not None else None
-        # 0.1.63 D5: the model THIS turn runs on, for web_search's choice of the provider's own search. Always set
-        # (None included) so a value from an outer context can't stand in for this turn's.
-        _mt = turn_model.set_model(turn_adapter)
-        try:
-            from server.services.task_service import current as current_task
-            from server.services.task_repository import TaskError
-            # S4a (⓪Plan review, fixes 2 and 3, follow-up B): the grant was read before any card and may have been taken
-            # back since. Read it again now — after every card, and before the task runtime's admission fence, inside
-            # which nothing is awaited (task_service.execute_tool). Gone: the command runs in the sandbox, or, where none
-            # can start (switched off, seatbelt unavailable), not at all. Its ledger row is written only once the
-            # executor was invoked: never for a command that did not run.
-            grant_use = {"found": None, "invoked": False}
-            ran_outside, result = run_outside, None
-            if by_grant:
-                grant_use["found"] = await _outside_grant(conversation_id, command)
-                if grant_use["found"] is None:
-                    ran_outside = False
-                    if not (sandbox_on and command_sandbox.available()):
-                        result = {"ok": False, "executed": False,
-                                  "error": "this conversation's permission to run commands outside the sandbox was "
-                                           "taken back while this one waited; it did not run",
-                                  "note": "Ask the user again if it is still needed."}
 
-            async def execute(admitted_args):
-                grant_use["invoked"] = True            # the executor is invoked now (no await before this line)
-                # A tool that waits for the user's card or a slow app declares its own limit
-                # (`timeout_s`): the default cut a Notes look mid-card on a real Mac (0.1.53).
-                own = getattr(executor, "timeout_s", None)
-                if tool_key == "run_command" and isinstance(own, (int, float)):
-                    # 0.1.62 F1: the command's own limit decides, not the loop's 20 s default.
-                    timeout = (max(0.0, min(float(own), budget.remaining_seconds() - _RUN_COMMAND_BACKSTOP_RESERVE_S))
-                               if budget else float(own))
-                else:
-                    timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
-                               else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
-                return await within(executor.execute(admitted_args), timeout=timeout)
-            runtime = current_task()
-
-            async def run_once(outside: bool) -> dict:
-                from server.services import terminal_exec
-                from server.services import delete_to_trash
-                token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
-                bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
-                # SMART-8: allowed, outside the sandbox and read with certainty: its targets go to the Trash.
-                trash = delete_to_trash.TRASH.set(tool_key == "run_command" and deletes_outside
-                                                  and (outside or not confined)
-                                                  and delete_to_trash.plan(command) is not None)
-                # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
-                cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
-                try:
-                    return await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
-                finally:
-                    if cut is not None:
-                        terminal_exec.OFFLINE.reset(cut)
-                    delete_to_trash.TRASH.reset(trash)
-                    terminal_exec.UNWRAPPED.reset(bare)
-                    terminal_exec.OUTSIDE_SANDBOX.reset(token)
-            if result is None:
-                try:
-                    async with parallel_reads.executing():      # K9a: the next read's gates may start now
-                        result = await run_once(ran_outside)
-                except asyncio.CancelledError:
-                    grant_use["found"] = None          # a stop: no row written while the task is being cancelled
-                    raise
-                finally:
-                    found, grant_use["found"] = grant_use["found"], None
-                    if found is not None and grant_use["invoked"]:
-                        from server.services import background_jobs, permissions
-                        await permissions.note_standing(_outside_request(command), permissions.Context(
-                            conversation_id, job_id=background_jobs._inside_job.get()), found)
-                if by_grant and not ran_outside and isinstance(result, dict):
-                    result["grant_note"] = ("this conversation's permission to run commands outside the sandbox was "
-                                            "taken back; it ran in the sandbox")
-            # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
-            if tool_key == "run_command" and ran_outside and isinstance(result, dict):
-                result["ran_outside_sandbox"] = True
-            if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
-                result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
-            if tool_key == "run_command" and network.get("note") and isinstance(result, dict):
-                result["network_note"] = network["note"]
-        except TaskError as exc:
-            if exc.code not in _REFUSED_STEP:
-                raise
-            # 0.1.44: refuse the repeat, never the turn. The model is told why. D6: a step whose
-            # arguments can't go into the task record is refused alone, before it runs; the task goes on.
-            result = {"ok": False, "external": False, "code": exc.code, "error": _REFUSED_STEP[exc.code]}
-        except BudgetExceeded:
-            raise
-        except TimeoutError:
-            # M2 counts the run_command wording (0.1.62 F1): keep it as it is.
-            result = ({"ok": False, "code": "time_limit", "error": "stopped by the time limit; no output was captured"}
-                      if tool_key == "run_command" else {"ok": False, "error": f"tool '{tool_key}' timed out"})
-        except Exception as exc:  # noqa: BLE001
-            result = {"ok": False, "error": f"tool '{tool_key}' failed: {exc}"}
-        finally:
-            turn_model.reset_model(_mt)
-            if _ct is not None:
-                tool_caller.reset_caller(_ct)
+async def _after(tool_key, args, result, assistant_content, turn: ToolTurn) -> dict:
+    """The last stage: the call's one record, and the degrade hint the first time an MCP tool fails often enough."""
+    emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
+    mcp_fail_counts, mcp_hint_logged = turn.mcp_fail_counts, turn.mcp_hint_logged
+    conversation_id, log_events = turn.conversation_id, turn.log_events
     out = _record_tool_result(tool_key, args, result, emit, tool_trace,
                               assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
     if (log_events and mcp_fail_counts is not None and mcp_hint_logged is not None
@@ -1433,8 +828,8 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     return schemas
 
 
-# Tools a job may still use while wrapping up: saving the deliverable.
-WRAP_UP_TOOLS = frozenset({"write_file", "edit_file"})
+# Tools a job may still use while wrapping up: saving the deliverable. LOOP1 a6: each tool's `saves` trait.
+WRAP_UP_TOOLS = tool_defs.named(lambda traits: traits.saves)
 
 
 def _stop_for_limit(runtime, reason: str, trace: list[dict], *, finishing: bool = False) -> None:
@@ -1552,35 +947,19 @@ async def _budget_closing(trace: list, ws_root, started: float) -> str:
                                    files=", ".join(saved) + where)
 
 
-async def _run_native(request: TurnRequest, state: TurnState) -> dict:
-    """Canonical native tool loop. Same signature and core return shape
-    ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
-
-    Each step calls adapter.chat(..., tools=schemas) → LLMResponse{content, tool_calls}:
-      - tool_calls non-empty → dispatch each through the shared gate; content is narration
-        ONLY, never surfaced as the answer; continue.
-      - escalate tool call → return {"escalation": {...}} (when allow_escalation).
-      - no tool_calls → content IS the final answer; stream it and return.
-      - no progress or no remaining tools → one text-only synthesis if request budget permits.
-
-    Production calls use the shared task budget, with no fixed eight-round cap.
-    max_tool_calls is an optional explicit compatibility ceiling, never a default.
-    """
-    # The request's fields by name, until the phases read them (LOOP1 c3).
+async def _open_turn(request: TurnRequest, state: TurnState) -> dict | None:
+    """LOOP1 c3, the first phase: the turn's model, budget and task, the acceptance checks in the system text, the
+    tool table, the trajectory, the lessons in view and what the turn shows as it is written. A turn that streams
+    without tools ends here, with its answer. Otherwise it returns None, with all of that recorded on `state`."""
     system, user_content, history, emit, on_chunk = (
         request.system, request.user_content, request.history, request.emit, request.on_chunk)
-    resolve_tools, resolve_callable, tool_timeout_s = (
-        request.resolve_tools, request.resolve_callable, request.tool_timeout_s)
-    allow_escalation, max_tool_calls, force_tools, stream_without_tools = (
-        request.allow_escalation, request.max_tool_calls, request.force_tools, request.stream_without_tools)
-    confirm_command, confirm_workspace_write, confirm_schedule = (
-        request.confirm_command, request.confirm_workspace_write, request.confirm_schedule)
-    conversation_id, log_events, caller, progress_lane, turn_notes, steerable = (
-        request.conversation_id, request.log_events, request.caller, request.progress_lane, request.turn_notes,
-        request.steerable)
+    resolve_tools, resolve_callable = request.resolve_tools, request.resolve_callable
+    allow_escalation, max_tool_calls, stream_without_tools = (
+        request.allow_escalation, request.max_tool_calls, request.stream_without_tools)
+    conversation_id, caller, progress_lane = request.conversation_id, request.caller, request.progress_lane
     has_images, adapter_override = request.has_images, request.adapter_override
-    # The vision slot needs to know whether this turn carries an image, and this
-    # signature is the only place that fact is available — hence a parameter rather
+    # The vision slot needs to know whether this turn carries an image, and the
+    # request is the only place that fact is available — hence an input rather
     # than something guessed further down.
     a = adapter_override if adapter_override is not None else await _adapter_for_turn(
         has_images=has_images, conversation_id=conversation_id)
@@ -1597,8 +976,6 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                        json.dumps(checks, ensure_ascii=False)[:12_000])
     policy = ProgressPolicy(seen=set(runtime.progress.loop_fingerprints) if runtime else set())
     request_ceiling = max(0, budget.limits.model_requests - budget.model_requests)
-    stop_reason = None
-    history_compacted = False
     if max_tool_calls is not None and (type(max_tool_calls) is not int or max_tool_calls < 0):
         raise ValueError("max_tool_calls must be a non-negative explicit ceiling")
 
@@ -1643,7 +1020,6 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     # evicts whole call groups.
     current_request = trajectory.request(user_content)
     convo: list[dict] = list(history) + [current_request]
-    tool_trace = state.tool_trace
     # 0.1.52 S5: practices learned before that match this request ride in the status
     # block (never the system prompt). Host turns only; recall applies memory's permissions.
     lesson_notes: list[str] = []
@@ -1675,15 +1051,35 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     turn_text = (_TurnText(on_chunk, lambda label, keep: emit({"type": "stream_restart", "label": label, "keep": keep}))
                  if on_chunk is not None and _streams_answer(a, acceptance_runtime) else None)
     state.ws_root, state.started, state.turn_text = ws_root, turn_started, turn_text
+    state.adapter, state.budget, state.runtime, state.acceptance_runtime, state.policy = (
+        a, budget, runtime, acceptance_runtime, policy)
+    state.request_ceiling, state.system, state.drops = request_ceiling, system, drops
+    state.resolve_tools, state.resolve_callable = resolve_tools, resolve_callable
+    state.wired, state.wired_keys, state.schemas, state.params_by_key = wired, wired_keys, schemas, params_by_key
+    state.current_request, state.convo, state.lesson_notes = current_request, convo, lesson_notes
+    state.research_source_feedback, state.mcp_fail_counts, state.mcp_hint_logged, state.call_ids = (
+        research_source_feedback, mcp_fail_counts, mcp_hint_logged, call_ids)
+    state.recovery, state.plan, state.own_folder = turn_state, plan, own_folder
+    return None
+
+
+def _tool_turn(request: TurnRequest, state: TurnState) -> ToolTurn:
+    """What a call of this turn goes through its gates with, built for each call from the turn as it stands then:
+    the trajectory is rebound when the history is fitted."""
+    return ToolTurn(resolve_tools=state.resolve_tools, emit=request.emit, tool_timeout_s=request.tool_timeout_s,
+                    tool_trace=state.tool_trace, convo=state.convo, confirm_command=request.confirm_command,
+                    confirm_workspace_write=request.confirm_workspace_write, confirm_schedule=request.confirm_schedule,
+                    mcp_fail_counts=state.mcp_fail_counts, mcp_hint_logged=state.mcp_hint_logged,
+                    conversation_id=request.conversation_id, log_events=request.log_events, caller=request.caller,
+                    turn_adapter=state.adapter, resolve_callable=state.resolve_callable)
+
+
+async def _presearch(request: TurnRequest, state: TurnState) -> None:
+    """A turn with `force_tools` may search first, through `_run_tool` as any call does. What it records is the
+    first request's newest feedback (`state.pending_feedback`)."""
+    user_content, force_tools, conversation_id = request.user_content, request.force_tools, request.conversation_id
+    wired_keys, policy, convo = state.wired_keys, state.policy, state.convo
     unseen_start = len(convo)
-
-    def tool_turn() -> ToolTurn:
-        return ToolTurn(resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s, tool_trace=tool_trace,
-                        convo=convo, confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
-                        confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
-                        mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id, log_events=log_events,
-                        caller=caller, turn_adapter=a, resolve_callable=resolve_callable)
-
     # Deterministic pre-search uses the same admission and progress boundaries.
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
         from server.services import tool_intent
@@ -1695,204 +1091,284 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             q = (intent.query or user_content)[:400]
             result = await _run_tool("web_search", {"query": q},
                                      json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
-                                     tool_turn())
+                                     _tool_turn(request, state))
             policy.observe("web_search", {"query": q}, result)
+    state.pending_feedback = len(convo) - unseen_start
 
-    pending_feedback = len(convo) - unseen_start
-    # 0.1.50 completion first after a stop (S6 bench, T2): repeated failure ends RESEARCH, not the
-    # deliverable. The run enters finish mode once (sticky): up to two steps where only the save tools
-    # run (K3: the table stays, other calls are refused), then text only. Without save tools a
-    # no-progress stop forces an answer at once, as before. (0.1.63 K4b: a spent web-read allowance
-    # no longer starts it; live reads have none.)
-    finish_reason: str | None = None
-    finish_from = 0
-    finish_steps = 0
-    # Wrap-up keeps the FULL tool list (an unchanged list keeps the provider's prompt
-    # cache: a narrowed one re-sent ~28k tokens uncached in the S6 bench). K3: it no
-    # longer narrows after a refused research call either; refusals say why, and after
-    # the second refused call the next step is text only (the same table, tool_choice
-    # none), so a model that keeps reaching for research still delivers.
-    wrap_refused = 0
-    long_turn_told = False
-    tool_steps = 0              # K5: steps whose calls are not only update_plan
-    work = {"done": False, "seen": 0}   # SMART-5: whether a call so far changed something, and how far that was checked
-    link_hints: dict[str, int] = {}
-    offline_note = _OFFLINE_NOTE if "run_command" in wired_keys else ""
-    can_save = bool(WRAP_UP_TOOLS & wired_keys)
-    for step in range(request_ceiling):
-        budget.check()
-        if budget.model_requests >= budget.limits.model_requests:
-            if runtime:
-                runtime.pause_reason = "task_budget_exhausted"
-            budget.stop("model_requests")
-        # Three batches of tool calls cut off by the output limit (none of which
-        # ran): stop asking for tools and get an answer (0.1.49 S6 breaker).
-        truncation_stop = turn_state.truncated_calls >= 3
-        if finish_reason is None and not truncation_stop:
-            if policy.stopped:
-                finish_reason, finish_from = "no_progress", len(tool_trace)
-        saved = any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
-                    for item in tool_trace[finish_from:]) if finish_reason else False
-        finishing = finish_reason is not None and can_save and finish_steps < 3 and not saved
-        finish_done = finish_reason is not None and not finishing
-        forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
-                  or budget.tool_calls >= budget.limits.tool_calls
-                  or (max_tool_calls is not None and step >= max_tool_calls)
-                  or wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT)
-        no_progress = policy.stopped or finish_reason == "no_progress"
-        if forced or (finishing and no_progress):
-            stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
-            if runtime:
-                _stop_for_limit(runtime, stop_reason, tool_trace, finishing=finishing and no_progress and not forced)
-        # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
-        # (prefix cache); this step's notes go to the <agent_status> block.
-        notes: list[str] = []
-        if forced:
-            notes.append("The deliverable is saved. Give the final answer now: where it is, what is verified and "
-                         "what is missing. Text only." if saved else
-                         "Repeated actions made no progress. Explain what was verified and what is blocked. Text only."
-                         if no_progress else
-                         "Your tool calls kept exceeding the output limit and none of them ran. Report briefly what "
-                         "was verified and what remains. Text only." if truncation_stop else
-                         "Research is over and the calls outside wrapping up were refused: give the final answer "
-                         "now from what you have, marking what is unverified. Text only."
-                         if wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT else
-                         "Tool budget exhausted: report the verified results and remaining work. Text only.")
-        # 0.1.43 completion first: past the soft limit (or, 0.1.50, in finish mode),
-        # stop gathering and FINISH. Research tools are withdrawn; saving the
-        # deliverable stays possible. Not a failure: the completion checks decide
-        # the outcome as usual.
-        wrap_up = not forced and (finishing or budget.soft_reached())
-        # K3: the tool table stays as it is (narrowing it would rewrite Claude's cache from the tools
-        # on); the status says what still runs, and dispatch refuses the rest with its reason.
-        still_run = sorted(FINISH_TOOLS & wired_keys)
-        allowed_note = (f" Tools that still run: {', '.join(still_run)}; any other call is refused."
-                        if still_run else " No tool runs any more: answer in text.") if wrap_up else ""
-        if finishing:
-            finish_steps += 1
-            notes.append("Repeated actions made no progress, so research has stopped."
-                         " Using only what you already have, save the deliverable now if one was asked for "
-                           "(write_file), marking anything missing or unverified; then give the final answer: "
-                           "what was done, what is blocked." + allowed_note + offline_note)
-        elif wrap_up:
-            notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
-                         "produce the complete deliverable the user asked for (save it if a file was asked for), "
-                         "clearly marking anything you could not verify. Then give the final answer."
-                         + allowed_note + offline_note)
-        # K4b: once a turn, only where start_background_work is offered (never inside a job), and only in
-        # the status block, so the system text and the tools (K3's cached prefix) stay as they are.
-        if (not long_turn_told and not forced and not wrap_up and "start_background_work" in wired_keys
-                and budget.elapsed() >= LONG_TURN_S):
-            long_turn_told = True
-            notes.append(_LONG_TURN_NOTE)
-            from server.services import runtime_messages
-            emit({"type": "note", "text": runtime_messages.render(
-                "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
-        if tool_steps >= 2 and _host_turn(caller, progress_lane) and await _did_work(tool_trace, work):
-            notes.append(_CLOSING_NOTE)
-        # Deliver one new tool batch atomically before normal old-history
-        # eviction. Keep a bounded 96k research window so a <=96k source batch
-        # can survive the following save/readback steps, not just one request.
-        # Other turns retain the 64k target. Apply extra protection only
-        # to batches <=96k, never permanently pin sources or widen task budgets.
-        # Existing opaque-provider pair retention is otherwise unchanged.
-        # 0.1.63 K1b: Claude's native path never edits what it sent; the API clears old tool results
-        # (context editing). After a refusal of that, local trimming resumes (screenshots too).
-        server_trims = _server_trims(a, turn_state)
-        _SENT_IS_FINAL.set(server_trims)
-        if not server_trims:
-            trajectory.keep_latest_images(convo)
-        oversized_feedback = (not server_trims and pending_feedback
-                              and _rendered_size(convo[-pending_feedback:]) > 96_000)
-        has_web_evidence = any(item.get("tool") == "web_extract" and
-                               (item.get("result") or {}).get("ok") for item in tool_trace)
-        if has_web_evidence:
-            notes.append(
-                "Research scope: deliver the smallest useful report answering the requested dimensions. "
-                "For a question about one capability, do not expand into an inventory of unrelated README "
-                "differences. Unless comprehensive coverage is requested, use at most six relevant comparison "
-                "rows and short source quotations, with a concise conclusion and explicit unknowns. "
-                "Do not add an exhaustive 'not mentioned' list that the user did not ask for. "
-                "Omission from one quoted sentence is not absence from a document. Each shared claim must "
-                "be supported by BOTH sources; otherwise attribute it only to the source that says it. "
-                "A shared commit URL does not date a translation's baseline or prove why texts differ. "
-                "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
-        in_turn = _IN_TURN_CHARS_RESEARCH if has_web_evidence else _IN_TURN_CHARS
-        convo, compacted = (convo, False) if server_trims else bounded_history(
-            convo, max_chars=in_turn, trim_to=in_turn // 2,
-            preserve_tail=0 if oversized_feedback else pending_feedback, size_of=_rendered_size)
-        pending_feedback = 0
-        if oversized_feedback:
-            notes.append("The newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
-                         "content may have been omitted before you saw it. Do not claim to have inspected omitted "
-                         "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
-        history_compacted = history_compacted or compacted
-        if history_compacted:
-            notes.append("Earlier conversation turns were compacted. Do not repeat completed effects." + (
-                " Saved task progress and owned outputs remain available through task_progress."
-                if "task_progress" in wired_keys else
-                " task_progress is not available in this turn; do not invent a call to it."))
-        # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
-        # prose from the accumulated TOOL RESULTs — never an empty turn.
-        # Rolling evidence eviction must not erase this turn's task or its
-        # restrictions. Restore the exact request at user priority, not as a
-        # system instruction or an invented summary, only in this payload.
-        # K3: the same tool table on every step of the turn, wrapping up included (a narrowed table was a
-        # cache miss from the tools on, K1b). Exceptions, one miss each: a capability added mid-turn, an
-        # MCP schema the provider refused, relax() on a retry.
-        step_tools = None if forced else schemas
-        offered = {t["function"]["name"] for t in step_tools or []}
-        # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
-        # block — the request goes out as the user wrote it. Step 0's write
-        # facts live in the tool descriptions (S5); the block starts with work.
-        # 0.1.63 D1: turn_notes are host facts about this whole turn (a turn from the iPhone).
-        turn_lines = list(turn_notes or ())
-        status = "" if not (tool_trace or notes or plan.items or lesson_notes or turn_lines) else agent_status.render(
-            workspace=agent_status.home_relative(ws_root) if ws_root is not None else None,
-            writers=[k for k in ("write_file", "edit_file", "run_command") if k in offered],
-            own_folder=own_folder, saved=agent_status.owned_outputs(tool_trace, ws_root, turn_started),
-            plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
-            wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
-            notes=lesson_notes + turn_lines + notes)
-        try:
-            usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
-        except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
-            logger.warning("context parts not measured", exc_info=True)
-            usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
-        if state.steers:
-            # K9b: this request carries them, once it is sure to go (its tokens and dollars too, which the
-            # provider checks as it sends; a stop here hands them back).
-            budget.check_request()
-            await _commit_steers(state.steers, conversation_id)
-        stream = _StepStream(turn_text) if turn_text is not None else None
-        try:
-            resp = await _model_call(a, system, convo, current_request, tools=step_tools,
-                                     schemas=schemas, forced=forced, state=turn_state, status=status,
-                                     drops=drops, conversation_id=conversation_id, step=stream)
-        except TextShown:
-            # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
-            # what was shown and says so, and the run records a failure (no `error` frame: the window
-            # would drop the text the phone kept).
-            from server.services import host_run, runtime_messages
-            stream.finish()
-            turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
-                             answer=False)
-            host_run.note_failure("model_error_after_text")
-            if acceptance_runtime is not None:
-                acceptance_runtime.pause_reason = "model_error_after_text"
-            return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
-                    "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
-        if stream is not None:
-            stream.finish()
-        if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
-            drops.changed = False
-            wired = drops.keep(wired)
-            wired_keys = {t["key"] for t in wired}
-            schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
-            params_by_key = {t["key"]: _tool_params(t) for t in wired}
-        # A context-overflow recovery compacted convo in place (S6).
-        history_compacted = history_compacted or turn_state.context_retry_used
-        tool_calls = list(getattr(resp, "tool_calls", None) or [])
+
+def _step_mode(request: TurnRequest, state: TurnState, step: int) -> StepMode:
+    """LOOP1 c3: what this step may do. The budget's checks come first, then finish mode (sticky once entered), then
+    whether the step is forced to text. A step that stops records its reason, and the turn keeps it."""
+    max_tool_calls = request.max_tool_calls
+    budget, runtime, policy, turn_state, tool_trace = (
+        state.budget, state.runtime, state.policy, state.recovery, state.tool_trace)
+    finish_reason, finish_from, finish_steps, wrap_refused, can_save, stop_reason = (
+        state.finish_reason, state.finish_from, state.finish_steps, state.wrap_refused, state.can_save,
+        state.stop_reason)
+    budget.check()
+    if budget.model_requests >= budget.limits.model_requests:
+        if runtime:
+            runtime.pause_reason = "task_budget_exhausted"
+        budget.stop("model_requests")
+    # Three batches of tool calls cut off by the output limit (none of which
+    # ran): stop asking for tools and get an answer (0.1.49 S6 breaker).
+    truncation_stop = turn_state.truncated_calls >= 3
+    if finish_reason is None and not truncation_stop:
+        if policy.stopped:
+            finish_reason, finish_from = "no_progress", len(tool_trace)
+    saved = any(item.get("tool") in WRAP_UP_TOOLS and (item.get("result") or {}).get("ok") is True
+                for item in tool_trace[finish_from:]) if finish_reason else False
+    finishing = finish_reason is not None and can_save and finish_steps < 3 and not saved
+    finish_done = finish_reason is not None and not finishing
+    forced = (finish_done or (policy.stopped and not finishing) or truncation_stop
+              or budget.tool_calls >= budget.limits.tool_calls
+              or (max_tool_calls is not None and step >= max_tool_calls)
+              or wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT)
+    no_progress = policy.stopped or finish_reason == "no_progress"
+    if forced or (finishing and no_progress):
+        stop_reason = "task_no_progress" if no_progress or truncation_stop else "task_budget_exhausted"
+        if runtime:
+            _stop_for_limit(runtime, stop_reason, tool_trace, finishing=finishing and no_progress and not forced)
+    state.finish_reason, state.finish_from, state.stop_reason = finish_reason, finish_from, stop_reason
+    return StepMode(forced=forced, finishing=finishing, saved=saved, no_progress=no_progress,
+                    truncation_stop=truncation_stop)
+
+
+async def _step_notes(request: TurnRequest, state: TurnState, mode: StepMode) -> tuple[list[str], bool]:
+    """LOOP1 c3: this step's notes for the status block, and whether it wraps up."""
+    emit, caller, progress_lane = request.emit, request.caller, request.progress_lane
+    budget, tool_trace, wired_keys, work, offline_note = (
+        state.budget, state.tool_trace, state.wired_keys, state.work, state.offline_note)
+    finish_steps, long_turn_told, tool_steps, wrap_refused = (
+        state.finish_steps, state.long_turn_told, state.tool_steps, state.wrap_refused)
+    forced, finishing, saved, no_progress, truncation_stop = (
+        mode.forced, mode.finishing, mode.saved, mode.no_progress, mode.truncation_stop)
+    # 0.1.50 S1: the system prompt stays byte-identical for the whole turn
+    # (prefix cache); this step's notes go to the <agent_status> block.
+    notes: list[str] = []
+    if forced:
+        notes.append("The deliverable is saved. Give the final answer now: where it is, what is verified and "
+                     "what is missing. Text only." if saved else
+                     "Repeated actions made no progress. Explain what was verified and what is blocked. Text only."
+                     if no_progress else
+                     "Your tool calls kept exceeding the output limit and none of them ran. Report briefly what "
+                     "was verified and what remains. Text only." if truncation_stop else
+                     "Research is over and the calls outside wrapping up were refused: give the final answer "
+                     "now from what you have, marking what is unverified. Text only."
+                     if wrap_refused >= WRAP_REFUSALS_BEFORE_TEXT else
+                     "Tool budget exhausted: report the verified results and remaining work. Text only.")
+    # 0.1.43 completion first: past the soft limit (or, 0.1.50, in finish mode),
+    # stop gathering and FINISH. Research tools are withdrawn; saving the
+    # deliverable stays possible. Not a failure: the completion checks decide
+    # the outcome as usual.
+    wrap_up = not forced and (finishing or budget.soft_reached())
+    # K3: the tool table stays as it is (narrowing it would rewrite Claude's cache from the tools
+    # on); the status says what still runs, and dispatch refuses the rest with its reason.
+    still_run = sorted(FINISH_TOOLS & wired_keys)
+    allowed_note = (f" Tools that still run: {', '.join(still_run)}; any other call is refused."
+                    if still_run else " No tool runs any more: answer in text.") if wrap_up else ""
+    if finishing:
+        finish_steps += 1
+        notes.append("Repeated actions made no progress, so research has stopped."
+                     " Using only what you already have, save the deliverable now if one was asked for "
+                       "(write_file), marking anything missing or unverified; then give the final answer: "
+                       "what was done, what is blocked." + allowed_note + offline_note)
+    elif wrap_up:
+        notes.append("Work budget nearly used: stop researching now. Using only what you already have, "
+                     "produce the complete deliverable the user asked for (save it if a file was asked for), "
+                     "clearly marking anything you could not verify. Then give the final answer."
+                     + allowed_note + offline_note)
+    # K4b: once a turn, only where start_background_work is offered (never inside a job), and only in
+    # the status block, so the system text and the tools (K3's cached prefix) stay as they are.
+    if (not long_turn_told and not forced and not wrap_up and "start_background_work" in wired_keys
+            and budget.elapsed() >= LONG_TURN_S):
+        long_turn_told = True
+        notes.append(_LONG_TURN_NOTE)
+        from server.services import runtime_messages
+        emit({"type": "note", "text": runtime_messages.render(
+            "turn_long", await runtime_messages.selected_locale(), minutes=LONG_TURN_S // 60)})
+    if tool_steps >= 2 and _host_turn(caller, progress_lane) and await _did_work(tool_trace, work):
+        notes.append(_CLOSING_NOTE)
+    state.finish_steps, state.long_turn_told = finish_steps, long_turn_told
+    return notes, wrap_up
+
+
+def _fit_history(state: TurnState, notes: list[str]) -> None:
+    """LOOP1 c3: the in-turn history fitted to its bound before the request, and the notes that go with it. The
+    trajectory may come back as a new list, so `state.convo` is rebound here and read again after."""
+    a, turn_state, convo, tool_trace, wired_keys = (
+        state.adapter, state.recovery, state.convo, state.tool_trace, state.wired_keys)
+    pending_feedback, history_compacted = state.pending_feedback, state.history_compacted
+    # Deliver one new tool batch atomically before normal old-history
+    # eviction. Keep a bounded 96k research window so a <=96k source batch
+    # can survive the following save/readback steps, not just one request.
+    # Other turns retain the 64k target. Apply extra protection only
+    # to batches <=96k, never permanently pin sources or widen task budgets.
+    # Existing opaque-provider pair retention is otherwise unchanged.
+    # 0.1.63 K1b: Claude's native path never edits what it sent; the API clears old tool results
+    # (context editing). After a refusal of that, local trimming resumes (screenshots too).
+    server_trims = _server_trims(a, turn_state)
+    _SENT_IS_FINAL.set(server_trims)
+    if not server_trims:
+        trajectory.keep_latest_images(convo)
+    oversized_feedback = (not server_trims and pending_feedback
+                          and _rendered_size(convo[-pending_feedback:]) > 96_000)
+    has_web_evidence = any(item.get("tool") == "web_extract" and
+                           (item.get("result") or {}).get("ok") for item in tool_trace)
+    if has_web_evidence:
+        notes.append(
+            "Research scope: deliver the smallest useful report answering the requested dimensions. "
+            "For a question about one capability, do not expand into an inventory of unrelated README "
+            "differences. Unless comprehensive coverage is requested, use at most six relevant comparison "
+            "rows and short source quotations, with a concise conclusion and explicit unknowns. "
+            "Do not add an exhaustive 'not mentioned' list that the user did not ask for. "
+            "Omission from one quoted sentence is not absence from a document. Each shared claim must "
+            "be supported by BOTH sources; otherwise attribute it only to the source that says it. "
+            "A shared commit URL does not date a translation's baseline or prove why texts differ. "
+            "Stay within the existing budget; extra detail is not a substitute for an accurate deliverable.")
+    in_turn = _IN_TURN_CHARS_RESEARCH if has_web_evidence else _IN_TURN_CHARS
+    convo, compacted = (convo, False) if server_trims else bounded_history(
+        convo, max_chars=in_turn, trim_to=in_turn // 2,
+        preserve_tail=0 if oversized_feedback else pending_feedback, size_of=_rendered_size)
+    pending_feedback = 0
+    if oversized_feedback:
+        notes.append("The newest tool-result batch exceeded the bounded delivery window. Some newly fetched "
+                     "content may have been omitted before you saw it. Do not claim to have inspected omitted "
+                     "content; request smaller sequential reads or disclose the limitation within remaining budgets.")
+    history_compacted = history_compacted or compacted
+    if history_compacted:
+        notes.append("Earlier conversation turns were compacted. Do not repeat completed effects." + (
+            " Saved task progress and owned outputs remain available through task_progress."
+            if "task_progress" in wired_keys else
+            " task_progress is not available in this turn; do not invent a call to it."))
+    state.convo, state.pending_feedback, state.history_compacted = convo, pending_feedback, history_compacted
+
+
+async def _request(request: TurnRequest, state: TurnState, mode: StepMode, notes: list[str]) -> StepReply | dict:
+    """LOOP1 c3: this step's request, with its status block and the messages sent meanwhile that it carries. If the
+    reply fails after part of the answer went out, the turn ends here (the dict). A schema the provider refused
+    reads the table again."""
+    from server.orchestrator import agent_status
+    conversation_id, allow_escalation, turn_notes = request.conversation_id, request.allow_escalation, request.turn_notes
+    a, system, convo, current_request, tool_trace, plan = (
+        state.adapter, state.system, state.convo, state.current_request, state.tool_trace, state.plan)
+    budget, turn_state, drops, turn_text, acceptance_runtime = (
+        state.budget, state.recovery, state.drops, state.turn_text, state.acceptance_runtime)
+    lesson_notes, ws_root, own_folder, turn_started = state.lesson_notes, state.ws_root, state.own_folder, state.started
+    wired, wired_keys, schemas, params_by_key = state.wired, state.wired_keys, state.schemas, state.params_by_key
+    history_compacted, forced = state.history_compacted, mode.forced
+    # On the forced step pass tools=None so the model CANNOT call a tool and MUST produce
+    # prose from the accumulated TOOL RESULTs — never an empty turn.
+    # Rolling evidence eviction must not erase this turn's task or its
+    # restrictions. Restore the exact request at user priority, not as a
+    # system instruction or an invented summary, only in this payload.
+    # K3: the same tool table on every step of the turn, wrapping up included (a narrowed table was a
+    # cache miss from the tools on, K1b). Exceptions, one miss each: a capability added mid-turn, an
+    # MCP schema the provider refused, relax() on a retry.
+    step_tools = None if forced else schemas
+    offered = {t["function"]["name"] for t in step_tools or []}
+    # Nothing done, planned or noted yet (a plain chat turn, or step 0): no
+    # block — the request goes out as the user wrote it. Step 0's write
+    # facts live in the tool descriptions (S5); the block starts with work.
+    # 0.1.63 D1: turn_notes are host facts about this whole turn (a turn from the iPhone).
+    turn_lines = list(turn_notes or ())
+    status = "" if not (tool_trace or notes or plan.items or lesson_notes or turn_lines) else agent_status.render(
+        workspace=agent_status.home_relative(ws_root) if ws_root is not None else None,
+        writers=[k for k in ("write_file", "edit_file", "run_command") if k in offered],
+        own_folder=own_folder, saved=agent_status.owned_outputs(tool_trace, ws_root, turn_started),
+        plan=plan.render(), tool_calls=budget.tool_calls, model_calls=budget.model_requests,
+        wrap_up_at=budget.soft.tool_calls if budget.soft is not None else None,
+        notes=lesson_notes + turn_lines + notes)
+    try:
+        usage_sink.note_context_parts(_context_parts(system, schemas, convo, current_request, status))
+    except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
+        logger.warning("context parts not measured", exc_info=True)
+        usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
+    if state.steers:
+        # K9b: this request carries them, once it is sure to go (its tokens and dollars too, which the
+        # provider checks as it sends; a stop here hands them back).
+        budget.check_request()
+        await _commit_steers(state.steers, conversation_id)
+    stream = _StepStream(turn_text) if turn_text is not None else None
+    try:
+        resp = await _model_call(a, system, convo, current_request, tools=step_tools,
+                                 schemas=schemas, forced=forced, state=turn_state, status=status,
+                                 drops=drops, conversation_id=conversation_id, step=stream)
+    except TextShown:
+        # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
+        # what was shown and says so, and the run records a failure (no `error` frame: the window
+        # would drop the text the phone kept).
+        from server.services import host_run, runtime_messages
+        stream.finish()
+        turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
+                         answer=False)
+        host_run.note_failure("model_error_after_text")
+        if acceptance_runtime is not None:
+            acceptance_runtime.pause_reason = "model_error_after_text"
+        return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
+                "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
+    if stream is not None:
+        stream.finish()
+    if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
+        drops.changed = False
+        wired = drops.keep(wired)
+        wired_keys = {t["key"] for t in wired}
+        schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
+        params_by_key = {t["key"]: _tool_params(t) for t in wired}
+    # A context-overflow recovery compacted convo in place (S6).
+    history_compacted = history_compacted or turn_state.context_retry_used
+    tool_calls = list(getattr(resp, "tool_calls", None) or [])
+    state.wired, state.wired_keys, state.schemas, state.params_by_key = wired, wired_keys, schemas, params_by_key
+    state.history_compacted = history_compacted
+    return StepReply(resp=resp, stream=stream, tool_calls=tool_calls)
+
+
+async def _run_native(request: TurnRequest, state: TurnState) -> dict:
+    """Canonical native tool loop. Its core return shape
+    ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
+
+    Each step calls adapter.chat(..., tools=schemas) → LLMResponse{content, tool_calls}:
+      - tool_calls non-empty → dispatch each through the shared gate; content is narration
+        ONLY, never surfaced as the answer; continue.
+      - escalate tool call → return {"escalation": {...}} (when allow_escalation).
+      - no tool_calls → content IS the final answer; stream it and return.
+      - no progress or no remaining tools → one text-only synthesis if request budget permits.
+
+    Production calls use the shared task budget, with no fixed eight-round cap.
+    max_tool_calls is an optional explicit compatibility ceiling, never a default.
+
+    LOOP1 c3: the turn opens (`_open_turn`, `_presearch`), then each step runs its phases (`_step_mode`,
+    `_step_notes`, `_fit_history`, `_request`) and either its tool batch or its answer, below.
+    """
+    # The request's fields by name, for the batch and the answer below (LOOP1 c3b and c3c take those to phases).
+    user_content, emit, on_chunk = request.user_content, request.emit, request.on_chunk
+    allow_escalation, confirm_command, conversation_id, steerable = (
+        request.allow_escalation, request.confirm_command, request.conversation_id, request.steerable)
+    opened = await _open_turn(request, state)
+    if opened is not None:
+        return opened
+    await _presearch(request, state)
+    from server.orchestrator import agent_status
+    state.offline_note = _OFFLINE_NOTE if "run_command" in state.wired_keys else ""
+    state.can_save = bool(WRAP_UP_TOOLS & state.wired_keys)
+    # Set once when the turn opened and never rebound, so the batch and the answer below read them by name, as before.
+    a, budget, runtime, acceptance_runtime, policy = (
+        state.adapter, state.budget, state.runtime, state.acceptance_runtime, state.policy)
+    system, resolve_tools, resolve_callable, turn_state, plan = (
+        state.system, state.resolve_tools, state.resolve_callable, state.recovery, state.plan)
+    call_ids, tool_trace, turn_text, research_source_feedback, link_hints, offline_note = (
+        state.call_ids, state.tool_trace, state.turn_text, state.research_source_feedback, state.link_hints,
+        state.offline_note)
+    for step in range(state.request_ceiling):
+        mode = _step_mode(request, state, step)
+        notes, wrap_up = await _step_notes(request, state, mode)
+        _fit_history(state, notes)
+        reply = await _request(request, state, mode, notes)
+        if isinstance(reply, dict):
+            return reply
+        forced, finishing = mode.forced, mode.finishing
+        resp, stream, tool_calls = reply.resp, reply.stream, reply.tool_calls
+        convo = state.convo                 # rebound only when the history is fitted, above
 
         if not forced and tool_calls:
             provider_content = getattr(resp, "provider_content", None)
@@ -1916,11 +1392,11 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             if cut_off:
                 turn_state.truncated_calls += 1
             elif any((call.get("function") or {}).get("name") != "update_plan" for call in tool_calls):
-                tool_steps += 1
+                state.tool_steps += 1
             # K9a: consecutive reads of this reply run together (parallel_reads); never in a reply cut off
             # or while wrapping up.
             reads = None if cut_off or wrap_up else await parallel_reads.plan(
-                [_planned_read(call, neutral_call, wired_keys, params_by_key)
+                [_planned_read(call, neutral_call, state.wired_keys, state.params_by_key)
                  for call, neutral_call in zip(tool_calls, calls)])
             steered = False                     # K9b: a message sent meanwhile waits: the rest is not started
             for index, (call, neutral_call) in enumerate(zip(tool_calls, calls)):
@@ -1959,7 +1435,8 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     policy.observe(name, {}, result)
                     continue
-                schema_problem = _schema_problem(args, params_by_key.get(name)) if name in params_by_key else None
+                schema_problem = (_schema_problem(args, state.params_by_key.get(name)) if name in state.params_by_key
+                                  else None)
                 if schema_problem:
                     result = _record_tool_result(name, args, {"ok": False, "external": False,
                         "code": "invalid_arguments",
@@ -1977,9 +1454,9 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 # of such a tool, goes on under the tool's real name once its arguments check out against
                 # its own table, so the approval, the trace and the receipts are a direct call's.
                 on_demand_call = False
-                if name == "find_tools" and "find_tools" in wired_keys:
+                if name == "find_tools" and "find_tools" in state.wired_keys:
                     emit({"type": "tool_call", "tool": name, "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    unseen = [t for t in await resolve_callable() if t["key"] not in wired_keys]
+                    unseen = [t for t in await resolve_callable() if t["key"] not in state.wired_keys]
                     result = _record_tool_result(name, args, on_demand.find(str(args.get("query") or ""), unseen, _tool_params),
                                                  emit, tool_trace, json.dumps({"tool": name, "args": args}, ensure_ascii=False),
                                                  convo)
@@ -1990,11 +1467,11 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     # v0.1.63: refused (and listed) as a direct call is, not "no tool named run_command".
                     inner = args.get("arguments")
                     name, args = "run_command", inner if isinstance(inner, dict) else {}
-                elif "use_tool" in wired_keys and (name == "use_tool" or name not in wired_keys):
+                elif "use_tool" in state.wired_keys and (name == "use_tool" or name not in state.wired_keys):
                     reachable = {t["key"]: t for t in await resolve_callable()}
                     if name == "use_tool" or name in reachable:
                         wanted = args if name == "use_tool" else {"name": name, "arguments": args}
-                        real, inner, refusal = on_demand.unwrap(wanted, reachable, wired_keys, _tool_params,
+                        real, inner, refusal = on_demand.unwrap(wanted, reachable, state.wired_keys, _tool_params,
                                                                 _schema_problem)
                         if refusal is not None:
                             result = _record_tool_result(name, args, refusal, emit, tool_trace,
@@ -2007,7 +1484,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
                 # 0.1.50 S2: the plan is host bookkeeping — no executor, no tool
                 # budget, no progress signal; allowed during wrap-up too.
-                if name == "propose_plan_change" and (name in wired_keys or on_demand_call):
+                if name == "propose_plan_change" and (name in state.wired_keys or on_demand_call):
                     # 0.1.56 §7: bookkeeping like update_plan — the proposal waits for the
                     # user on a card; nothing in the plan changes here.
                     emit({"type": "tool_call", "tool": name,
@@ -2015,7 +1492,8 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     outcome = await _propose_plan_change(args, emit)
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     continue
-                if name in ("propose_capability", "create_skill", "import_memories") and (name in wired_keys or on_demand_call):
+                if name in ("propose_capability", "create_skill", "import_memories") and (name in state.wired_keys
+                                                                                           or on_demand_call):
                     # 0.1.57 §3: the install-and-retry card; v0.1.64 CAP2a: the save-a-skill card, on the
                     # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill); CAP8b: the
                     # memory import card. A blocking ask in THIS window (confirm_command carries it); a job or a
@@ -2035,12 +1513,12 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     refresh = bool(outcome.pop("refresh", False))
                     _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
                     if refresh:
-                        wired = await resolve_tools()
-                        wired_keys = {t["key"] for t in wired}
-                        schemas = _native_tool_schemas(wired, allow_escalation=allow_escalation)
-                        params_by_key = {t["key"]: _tool_params(t) for t in wired}
+                        state.wired = await resolve_tools()
+                        state.wired_keys = {t["key"] for t in state.wired}
+                        state.schemas = _native_tool_schemas(state.wired, allow_escalation=allow_escalation)
+                        state.params_by_key = {t["key"]: _tool_params(t) for t in state.wired}
                     continue
-                if name == "update_plan" and "update_plan" in wired_keys:
+                if name == "update_plan" and "update_plan" in state.wired_keys:
                     emit({"type": "tool_call", "tool": name,
                           "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
                     outcome = plan.update(args)
@@ -2051,13 +1529,13 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                     continue
                 ran = reads is not None and reads.has(index)    # K9a: it already ran with the reads next to it
                 if policy.stopped and not (finishing and name in FINISH_TOOLS) and not ran:
-                    wrap_refused += bool(wrap_up)
+                    state.wrap_refused += bool(wrap_up)
                     _record_tool_result(name, {}, {"ok": False, "external": False,
                         "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
                         emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
                     continue
                 if wrap_up and name not in FINISH_TOOLS:
-                    wrap_refused += 1
+                    state.wrap_refused += 1
                     _record_tool_result(name, {}, {"ok": False, "external": False, "code": "wrap_up",
                         "error": "Wrapping up: no more research. Write the deliverable from what you have."
                                  + offline_note},
@@ -2067,7 +1545,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 # caller emits the clarify_options card and waits for the user's click.
                 # Gated on the RESOLVED toolset so loops that don't wire it (spawns)
                 # fall through to the normal "tool not available" dispatch error.
-                if name == "ask_user_choice" and "ask_user_choice" in wired_keys:
+                if name == "ask_user_choice" and "ask_user_choice" in state.wired_keys:
                     clarify, err = _parse_clarify_args(args)
                     if err is not None:
                         result = _record_tool_result(
@@ -2092,7 +1570,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                 from server.services import terminal_exec
                 offline = terminal_exec.OFFLINE.set(True) if wrap_up and name == "run_command" else None
                 try:
-                    turn = tool_turn()
+                    turn = _tool_turn(request, state)
                     if reads is not None and reads.launchable(index):
                         await reads.run(index, lambda key, arguments, **own: _run_tool(
                             key, arguments, json.dumps({"tool": key, "args": arguments}, ensure_ascii=False),
@@ -2124,8 +1602,8 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
                         # editing what was sent sends the prompt cache back to the system prompt, and the
                         # request rewrites the whole history (45k tokens in K3's Claude run, T2 r1).
                         from server.orchestrator import saved_context
-                        history_compacted = saved_context.compact_saved_context(
-                            convo, research_source_feedback, args.get("content")) or history_compacted
+                        state.history_compacted = saved_context.compact_saved_context(
+                            convo, research_source_feedback, args.get("content")) or state.history_compacted
                 if runtime:
                     runtime.progress = runtime.progress.model_copy(update={
                         "loop_fingerprints": tuple(sorted(policy.seen))[-256:]})
@@ -2142,7 +1620,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             narration = agent_status.strip_echo((resp.content or "").strip())
             if narration and not (stream is not None and stream.released):
                 emit({"type": "note", "text": narration[:400]})
-            pending_feedback = len(convo) - history_start
+            state.pending_feedback = len(convo) - history_start
             continue
 
         # No tool calls (or forced) → resp.content should be the FINAL answer. GUARD: the model
@@ -2157,21 +1635,21 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
         # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
         own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
         streamed = stream is not None and stream.released          # K8a: this step's text already went out
-        claimed = _unverified_claim(final_text, tool_trace, wired_keys)
+        claimed = _unverified_claim(final_text, tool_trace, state.wired_keys)
         deferred = _is_deferral_stub(final_text)
         protocol_text = _embeds_protocol(final_text) or (stream is not None and stream.stopped)
         # 0.1.50: an answer that denies a capability this turn had (bench: "no file
         # write ability" with write_file offered) gets one correction.
         from server.orchestrator import capability_truth
         denied = (None if forced or turn_state.capability_bounced or claimed or deferred or protocol_text
-                  else capability_truth.denied_capability(final_text, wired_keys, tool_trace))
+                  else capability_truth.denied_capability(final_text, state.wired_keys, tool_trace))
         if denied:
             turn_state.capability_bounced = True
             await _correct(turn_text, streamed)
             convo.extend([trajectory.assistant(final_text, continuation=own_continuation),
-                          {"role": "user", "content": capability_truth.correction(denied, wired_keys)}])
+                          {"role": "user", "content": capability_truth.correction(denied, state.wired_keys)}])
             continue
-        if not forced and (claimed or ((deferred or protocol_text) and wired_keys)) \
+        if not forced and (claimed or ((deferred or protocol_text) and state.wired_keys)) \
                 and turn_state.unverified_bounces < _UNVERIFIED_BOUNCES:
             turn_state.unverified_bounces += 1
             await _correct(turn_text, streamed)
@@ -2205,7 +1683,7 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
             await _correct(turn_text, streamed)
             replacement = (await _synthesize_from_findings(a, system, user_content, tool_trace, or_none=True)
                            if tool_trace else await _salvage_plain(a, system, user_content))
-            if replacement and _unverified_claim(replacement, tool_trace, wired_keys):
+            if replacement and _unverified_claim(replacement, tool_trace, state.wired_keys):
                 replacement = None
             if replacement:
                 final_text = replacement
@@ -2255,11 +1733,11 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
         if turn_text is not None and (streamed or turn_text.parts):
             turn_text.append(to_show)
             return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
-                    "stop_reason": stop_reason, "history_compacted": history_compacted}
+                    "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
         if final_text:
             on_chunk(final_text)
         return {"final": final_text, "escalation": None, "tool_trace": tool_trace,
-                "stop_reason": stop_reason, "history_compacted": history_compacted}
+                "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
 
     if runtime:
         runtime.pause_reason = "task_budget_exhausted"

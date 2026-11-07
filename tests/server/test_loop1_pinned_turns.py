@@ -47,6 +47,7 @@ from server.services import (
     background_jobs,
     capability_flow,
     command_sandbox,
+    delete_to_trash,
     desktop_status,
     lessons,
     ocr_fallback,
@@ -62,6 +63,8 @@ from server.services import (
 )
 from tests.server import test_trajectory_golden as golden
 from tests.server.conftest import boot_schema
+from server.orchestrator import tool_execute
+from server.orchestrator import tool_gates
 
 GOLDEN = Path(__file__).parent / "golden" / "loop1"
 REGENERATE = "ARSLAN_UPDATE_GOLDEN=1 pytest tests/server/test_loop1_pinned_turns.py"
@@ -137,14 +140,17 @@ def _around_the_call():
     caller = tool_caller.current_caller()
     return {"offline": terminal_exec.OFFLINE.get(), "outside": terminal_exec.OUTSIDE_SANDBOX.get(),
             "unwrapped": terminal_exec.UNWRAPPED.get(), "caller": caller.actor if caller else None,
-            "model": type(turn_model.current()).__name__}
+            "model": type(turn_model.current()).__name__,
+            **({"trash": True} if delete_to_trash.TRASH.get() else {})}     # only when set: other pins stay as they are
 
 
 class _Ran:
     """An executor that records its call and answers from the scenario."""
 
-    def __init__(self, log, key, answer):
+    def __init__(self, log, key, answer, timeout_s=None):
         self.log, self.key, self.answer = log, key, answer
+        if timeout_s is not None:       # the executor declares its own limit, as a slow tool does
+            self.timeout_s = timeout_s
 
     async def execute(self, args):
         self.log.append(["ran", self.key, copy.deepcopy(args), _around_the_call()])
@@ -202,6 +208,8 @@ NOTHING_FOUND = {"web_search": {"ok": True, "results": []}}
 LINKS = "| a | https://example.test/a |\n| b | https://example.test/b |\n| c | https://not-read.test/z |"
 THOUGHT = {"protocol": "openai", "reasoning": "thinking it over"}
 UPDATE = {"protocol": "anthropic", "updates": True, "content": [{"type": "thinking", "thinking": "Checking the file."}]}
+NEEDS_X = {"key": "needs_x", "description": "The needs_x tool.",
+           "input_schema": {"type": "object", "required": ["x"], "properties": {"x": {"type": "string"}}}}
 
 
 def _stopped_by_the_sandbox(_args):
@@ -330,6 +338,25 @@ SCENARIOS: dict[str, dict] = {
     "capability_card_stays_the_same_table": dict(replies=[
         _call("propose_capability", {"candidate_id": "c9", "why": "an xlsx reader"}), Reply("Asked.")],
         tools=_table("propose_capability"), setup="capability_declined", expect="declined"),
+    # LOOP1 c3a: a table read again mid-batch is what the rest of that batch checks against, while what the turn worked
+    # out from the table it opened with stays as it was: the offline note (it needs run_command), and whether it can save
+    # (a save tool added mid-turn doesn't start the finish steps at a no-progress stop).
+    "a_refresh_mid_batch_reads_the_new_table": dict(replies=[
+        _batch(("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c1"),
+               ("needs_x", {}, "c2"), ("update_plan", {"items": [{"text": "after", "status": "in_progress"}]}, "c3")),
+        Reply("Done.")], tools=_table("create_skill"), later_tools=[*_table("create_skill", "update_plan"), NEEDS_X],
+        setup="skill_saved", expect="missing required 'x'"),
+    "values_stored_at_open_stay_after_a_refresh": dict(replies=[
+        _batch(("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c1"),
+               ("list_dir", {"path": "~/a"}, "c2")), _call("web_search", {"query": "b"}, "c3"), Reply("Wrapped up.")],
+        tools=_table("create_skill", "list_dir", "web_search"),
+        later_tools=_table("create_skill", "list_dir", "web_search", "run_command"), setup="skill_saved",
+        budget=dict(limits=Limits(tool_calls=40), soft=Limits(tool_calls=1)), expect="Tools that still run: run_command"),
+    "no_save_tool_at_open_stays_after_a_refresh": dict(replies=[
+        _call("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c0"),
+        *_searches(5), Reply("Blocked; here is what is verified.")], tools=_table("create_skill", "web_search"),
+        later_tools=_table("create_skill", "web_search", "write_file"), setup="skill_saved", answers=NOTHING_FOUND,
+        expect="Repeated actions made no progress. Explain what was verified"),
     "choice_card": dict(replies=[
         Reply("Which one?", [golden._tc("ask_user_choice", {"question": "Which?", "options": [
             {"label": "A"}, {"label": "B"}]}, "c1"), golden._tc("web_search", {"query": "never run"}, "c2")])],
@@ -536,6 +563,23 @@ SCENARIOS: dict[str, dict] = {
         _call("web_extract", {"url": "https://example.test/a"}, "c1"),
         _call("run_command", {"command": "curl https://example.test/b"}, "c2"), Reply("Done.")],
         tools=_table("web_extract", "run_command"), setup="command_card", expect='"network": true'),
+    "delete_outside_goes_to_the_trash": dict(replies=[
+        _call("run_command", {"command": "rm -r /tmp/loop1-old", "outside_sandbox": True, "why": "it is outside"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", expect='"trash": true'),
+    "delete_in_the_sandbox_stays_a_delete": dict(replies=[
+        _call("run_command", {"command": "rm -r /tmp/loop1-old"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", expect='"delete": "sandboxed"'),
+    # ── a tool's own limit, on a clock that doesn't move: 100 seconds of the turn are left ──
+    "command_limit_leaves_its_reserve": dict(replies=[_call("run_command", {"command": "ls"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", own_limit={"run_command": 600}, expect='["limit", 90.0]'),
+    "command_own_limit_under_the_default": dict(replies=[_call("run_command", {"command": "ls"}), Reply("Done.")],
+        tools=_table("run_command"), setup="command_card", own_limit={"run_command": 15}, expect='["limit", 15.0]'),
+    "tool_own_limit_over_and_under_the_default": dict(replies=[
+        _call("web_search", {"query": "a"}, "c1"), _call("read_file", {"path": "a.md"}, "c2"), Reply("Done.")],
+        tools=_table("web_search", "read_file"), own_limit={"web_search": 300, "read_file": 5}, expect='["limit", 300.0]'),
+    "delegating_gets_what_is_left": dict(replies=[_call("delegate_work", {"jobs": [{"method": "research", "objective": "o"}]}), Reply("Done.")],
+        tools=_table("delegate_work"), answers={"delegate_work": {"ok": True}}, own_limit={"delegate_work": 300},
+        expect='["limit", 100.0]'),
     # ── a job with checks ──
     "checks_ask_for_a_repair": dict(replies=[Reply("First try."), Reply("Second try.")], job=[["missing part"], []],
                                     expect="Deterministic validation failed"),
@@ -651,8 +695,12 @@ async def _run(name, monkeypatch, database):
     monkeypatch.setattr(desktop_status, "note_plan", lambda items: log.append(["island", "plan", copy.deepcopy(items)]))
     monkeypatch.setattr(agent_status, "recent_files", lambda *_args, **_own: [])  # the real ~/Arslan is not this pin's
     _watch(log, monkeypatch)
+    own_limit = spec.get("own_limit", {})
+    if own_limit:
+        monkeypatch.setattr(eb, "time", types.SimpleNamespace(monotonic=lambda: 1000.0))
+        spec = {**spec, "budget": dict(limits=Limits(wall_seconds=100))}
     for key, answer in {**ANSWERS, **spec.get("answers", {})}.items():
-        monkeypatch.setitem(executors.EXECUTORS, key, _Ran(log, key, answer))
+        monkeypatch.setitem(executors.EXECUTORS, key, _Ran(log, key, answer, timeout_s=own_limit.get(key)))
     async with database() as db:
         db.add(Setting(key="shell_confirm_policy", value="ask_all"))      # a card for every command, whatever the default
         if spec.get("streams") is False:
@@ -698,12 +746,12 @@ async def _run(name, monkeypatch, database):
 
 def _watch(log, monkeypatch):
     """What a turn does that no frame shows: its limit on each call, its waits, its checkpoints and its events."""
-    within = tool_loop.within
+    within = tool_execute.within
 
     async def limited(awaitable, timeout, **own):
         log.append(["limit", timeout])
         return await within(awaitable, timeout, **own)
-    monkeypatch.setattr(tool_loop, "within", limited)
+    monkeypatch.setattr(tool_execute, "within", limited)
     monkeypatch.setattr(answer_salvage, "within", limited)
 
     async def waited(seconds):
@@ -747,7 +795,7 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
     elif setup == "every_card":
         async def not_own():
             return False
-        monkeypatch.setattr(tool_loop, "_writing_in_own_folder", not_own)
+        monkeypatch.setattr(tool_gates, "_writing_in_own_folder", not_own)
         kwargs.update(confirm_command=_card(log, "command"), confirm_workspace_write=_card(log, "write"),
                       confirm_schedule=_card(log, "schedule"))
     elif setup == "inside_a_job":

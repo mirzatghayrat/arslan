@@ -17,6 +17,8 @@ interface Props {
   /** 0.1.61 §A4: Once / In this conversation (a card from the permission layer); absent on an old frame. */
   options?: string[];
   alwaysLabel?: string;
+  /** SUB3: a sub-session asks (the frame's `sub_session`). */
+  subSession?: boolean;
   /** An answer is on its way: the card is inert (its buttons, its keys and its note). */
   busy?: boolean;
   queue?: AskQueuePosition;
@@ -33,7 +35,7 @@ interface Props {
  * context; no "remember". The person chooses how long the yes lasts (the frame's options, 0.1.61:
  * permissions.decide sends every write card), and a No takes a note.
  */
-export default function WorkspaceWriteCard({ callId, workspace, action, path, background, expiresAt, options, alwaysLabel,
+export default function WorkspaceWriteCard({ callId, workspace, action, path, background, expiresAt, options, alwaysLabel, subSession,
                                              busy, queue, onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   const verb = action === "edit_file" ? t("wswrite.action.edit") : t("wswrite.action.write");
@@ -46,7 +48,7 @@ export default function WorkspaceWriteCard({ callId, workspace, action, path, ba
       context={[{ icon: lineIcon(FileText), text: `${verb} · ${path}` }]}
       // "In this conversation" covers any file in the folder, not the one shown (the grant's target is the folder).
       options={<ScopeChoice options={options} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
-        conversationLabel={t("wswrite.anyFile")} testId="wswrite-scope" />}
+        conversationLabel={t("wswrite.anyFile")} subSession={subSession} testId="wswrite-scope" />}
       extra={<DeclineNote testId="wswrite-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(callId, note) : onCancel(callId))} />}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}

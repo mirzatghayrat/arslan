@@ -240,6 +240,7 @@ def _read_line(found: Found, name: str, spec: dict) -> None:
 
 def _found(tool: str, name: str, raw) -> Found:
     # A file's name can hold a lone surrogate, which a response can't encode: the id is opaque, and only has to match.
+    # Written out, it can read as another name in the same file: `_unique_ids` then tells the two apart.
     found = Found(id=f"{tool}:{name}".encode("utf-8", "backslashreplace").decode(), tool=tool,
                   name=untrusted.clean_name(name, 120), digest="")
     try:
@@ -277,7 +278,21 @@ def _read_all() -> tuple[list[dict], list[Found]]:
         state, servers = _servers_in(path, parse, key)
         tools.append({"tool": tool, "state": state, "count": len(servers)})
         found += [_found(tool, name, raw) for name, raw in servers.items()]
+    _unique_ids(found)
     return tools, found
+
+
+def _unique_ids(found: list[Found]) -> None:
+    """One id per row, so a tick, a typed key and a result each stay their own row's. An id seen before takes the first
+    free `~n` in the files' order: the scan and the `add` that reads the same files again give each entry the same id,
+    and a name seen once keeps the id it always had."""
+    taken: set[str] = set()
+    for server in found:
+        base, n = server.id, 1
+        while server.id in taken:
+            n += 1
+            server.id = f"{base}~{n}"
+        taken.add(server.id)
 
 
 async def _here() -> set[str]:

@@ -3,6 +3,7 @@
  "en": {
   "purpose": {
    "run": "Run {{program}}",
+   "notAllRead": "Run {{program}}: Arslan couldn't read the whole command",
    "copyLocal": "Copy {{count}} items",
    "copyLocal_one": "Copy 1 item",
    "delete": "Delete {{count}} files or folders",
@@ -44,6 +45,7 @@
  "zh": {
   "purpose": {
    "run": "运行 {{program}}",
+   "notAllRead": "运行 {{program}}：Arslan 没能读完整条命令",
    "copyLocal": "复制 {{count}} 项",
    "delete": "删除 {{count}} 个文件或文件夹",
    "move": "移动 {{count}} 项",
@@ -85,6 +87,7 @@
  "ja": {
   "purpose": {
    "run": "{{program}} を実行",
+   "notAllRead": "{{program}} を実行：Arslan はコマンド全体を読み取れませんでした",
    "copyLocal": "{{count}} 件をコピー",
    "delete": "{{count}} 件のファイルまたはフォルダを削除",
    "move": "{{count}} 件を移動",
@@ -126,6 +129,7 @@
  "es": {
   "purpose": {
    "run": "Ejecutar {{program}}",
+   "notAllRead": "Ejecutar {{program}}: Arslan no pudo leer el comando completo",
    "copyLocal": "Copiar {{count}} elementos",
    "copyLocal_one": "Copiar 1 elemento",
    "delete": "Borrar {{count}} archivos o carpetas",
@@ -167,6 +171,7 @@
  "de": {
   "purpose": {
    "run": "{{program}} ausführen",
+   "notAllRead": "{{program}} ausführen: Arslan konnte nicht den ganzen Befehl lesen",
    "copyLocal": "{{count}} Einträge kopieren",
    "copyLocal_one": "1 Eintrag kopieren",
    "delete": "{{count}} Dateien oder Ordner löschen",
@@ -208,6 +213,7 @@
  "fr": {
   "purpose": {
    "run": "Exécuter {{program}}",
+   "notAllRead": "Exécuter {{program}} : Arslan n’a pas pu lire toute la commande",
    "copyLocal": "Copier {{count}} éléments",
    "copyLocal_one": "Copier 1 élément",
    "delete": "Supprimer {{count}} fichiers ou dossiers",

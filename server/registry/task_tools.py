@@ -67,6 +67,29 @@ class StartBackgroundWorkExecutor:
                         "and what done will look like. Don't also do the same work in this turn."}
 
 
+class StartSubSessionExecutor:
+    """SUB3: start a sub-session of this conversation and return at once; it works in the background. Not in
+    EXECUTORS until SUB5 (tool_defs.tasks.START_SUB_SESSION)."""
+    key = "start_sub_session"
+
+    async def execute(self, args: dict) -> dict:
+        from server.orchestrator import untrusted
+        from server.services import permissions, sub_sessions
+        conversation_id = _conversation_id()
+        # Never where nobody can be asked (a scheduled run): its cards would have no one to answer them.
+        if conversation_id is None or permissions.current_asker() is None:
+            return {"ok": False, "external": False, "error_code": "sub_session_unavailable"}
+        brief = args.get("brief") if isinstance(args, dict) else None
+        if set(args or {}) - {"brief"} or not isinstance(brief, str) or not brief.strip() or len(brief) > 4000:
+            return {"ok": False, "external": False, "error_code": "invalid_sub_session_arguments"}
+        try:
+            # What this turn read so far: a brief written after reading a page may carry what it said.
+            child = await sub_sessions.start(conversation_id, brief, outside_seen=untrusted.external_seen())
+        except sub_sessions.SubSessionError as exc:
+            return {"ok": False, "external": False, "error_code": exc.code}
+        return {"ok": True, "external": False, "sub_session_id": child, "status": "queued"}
+
+
 class BackgroundStatusExecutor:
     key = "background_status"
 

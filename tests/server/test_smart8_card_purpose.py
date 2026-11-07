@@ -18,8 +18,8 @@ def setup(monkeypatch):
 
     async def yes():
         return True
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     yield
     command_sandbox._reset_for_tests()
@@ -115,6 +115,7 @@ import re  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from server.services import terminal_policy  # noqa: E402
+from server.orchestrator import command_gate  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 LANGS = ("en", "zh", "ja", "es", "de", "fr")
