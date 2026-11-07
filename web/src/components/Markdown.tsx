@@ -15,6 +15,7 @@ import PathChip, { isLocalPath } from './PathChip';
 import Formula from './Formula';
 import HighlightedCode from './HighlightedCode';
 import { remarkTexDelimiters } from '../lib/texDelimiters';
+import { tooCostlyToParse } from '../lib/markdownCost';
 import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame, Image as ImageIcon } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
@@ -513,6 +514,7 @@ interface MarkdownProps {
 const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'] = [remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkTexDelimiters];
 
 export default React.memo(function Markdown({ children, className = '' }: MarkdownProps) {
+  if (tooCostlyToParse(children)) return <div className={className} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{children}</div>;
   return (
     <div
       className={className}
