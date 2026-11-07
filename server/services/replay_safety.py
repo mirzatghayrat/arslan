@@ -34,14 +34,11 @@ set regardless.
 """
 from __future__ import annotations
 
-# Builtin tools safe to expose to the model inside a hermetic replay.
-REPLAY_SAFE_BUILTINS: frozenset[str] = frozenset({
-    "web_search",
-    "web_extract",
-    "render_chart",
-    "run_python",
-    "read_skill",
-})
+from server.registry import tool_defs
+
+# Builtin tools safe to expose to the model inside a hermetic replay. LOOP1 a6: each tool's `replay_safe`
+# trait (server/registry/tool_defs); run_python's is in tool_defs.UNLISTED.
+REPLAY_SAFE_BUILTINS: frozenset[str] = tool_defs.named(lambda traits: traits.replay_safe)
 
 
 def is_replay_safe(key: str | None) -> bool:

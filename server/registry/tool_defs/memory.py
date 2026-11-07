@@ -1,5 +1,5 @@
 """The user's second brain and earlier conversations."""
-from server.registry.tool import Tool
+from server.registry.tool import Tool, Traits
 
 # INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
 _SENSITIVE_FLAG = {"type": "boolean", "description": "true if private"}
@@ -12,7 +12,9 @@ MEMORY = (
           "properties": {"query": {"type": "string"},
                          "kind": {"type": "string",
                                   "enum": ["fact", "material", "learning", "note"]}},
-          "required": ["query"]}),
+          "required": ["query"]},
+         # Not replay-safe although it reads: replay_safety's docstring says what must be proved first.
+         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
     Tool("remember",
          "Second brain: a fact/learning/note worth remembering. Pasted list: import_memories.",
          {"type": "object",
@@ -25,7 +27,8 @@ MEMORY = (
               "target_id": {"type": "integer"},
               "sensitive": _SENSITIVE_FLAG,
           },
-          "required": ["kind", "action", "content"]}),
+          "required": ["kind", "action", "content"]},
+         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("conversation_search",
          "Find what was said in earlier conversations with the user — their own "
          "words and your replies — as original snippets with date and a link. "
@@ -37,7 +40,8 @@ MEMORY = (
                          "since": {"type": "string", "description": "YYYY-MM-DD, optional."},
                          "until": {"type": "string", "description": "YYYY-MM-DD, optional."},
                          "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
-          "required": ["query"], "additionalProperties": False}),
+          "required": ["query"], "additionalProperties": False},
+         traits=Traits(effect="external_write", parallel=False, outside=True, replay_safe=False, saves=False)),
     Tool("memory_note",
          "Edit the two memory sets that are always in view, by entry id. set \"about_you\": "
          "lasting facts and preferences about the user; set \"notes\": what you learned about this "
@@ -52,5 +56,6 @@ MEMORY = (
                          "text": {"type": "string", "maxLength": 600,
                                   "description": "The entry, for add or replace. One short line."},
                          "sensitive": _SENSITIVE_FLAG},
-          "required": ["action", "set"], "additionalProperties": False}),
+          "required": ["action", "set"], "additionalProperties": False},
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
 )

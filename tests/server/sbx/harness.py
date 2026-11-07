@@ -56,7 +56,8 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base in {"commands", "commands-proxy", "outside-floor"}:
+        # SBX-6 MCP proxy: mcp-proxy builds under the scratch HOME too (SBX-5a, #772, adds mcp; keep both).
+        if self.base in {"commands", "commands-proxy", "outside-floor", "mcp-proxy"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -191,17 +192,23 @@ def _mcp_profile(self, **parameters) -> str:
     grants = parameters.pop("granted_folders", getattr(self, "granted_folders", []))
     protected = parameters.pop("protected", [self.protected])
     parameters.pop("references", None)
+    # SBX-6 MCP proxy: SBX-6p passes the proxy's port, stand-ins for Arslan's bound ports and the system proxies,
+    # and the certificate setting. The test process's own listeners and this Mac's proxies are never read.
+    online = {"proxy_port": getattr(self, "proxy_port", None) or 49151, "bound_ports": [], "system_proxies": [],
+              "trust_service": False}
+    online.update({k: parameters.pop(k) for k in tuple(online) if k in parameters})
     if parameters:
         raise ValueError(f"MCP takes no {sorted(parameters)}")
-    if self.network not in (NetworkMode.NONE, NetworkMode.ANY_DECLARED):
-        raise ValueError(f"MCP has no {self.network.value} mode yet (SBX-6 MCP proxy)")
+    if self.network not in (NetworkMode.NONE, NetworkMode.PROXY):
+        raise ValueError(f"MCP has no {self.network.value} mode (SBX-6 MCP proxy: none or proxy)")
     with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
         return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
                                           network=self.network != NetworkMode.NONE,
-                                          read=[sys.prefix, sys.base_prefix, *read])
+                                          read=[sys.prefix, sys.base_prefix, *read], **online)
 
 
-BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
+BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile,
+                    "mcp-proxy": _mcp_profile})   # SBX-6 MCP proxy: the same preset, in proxy mode
 
 # Feature keys are declared only when their protections land: SBX-6a's settings bring "trustd-toggle" and
 # "trusted-lan"; SBX-5a adds "cap6b" and "shared-cache-exclusions".

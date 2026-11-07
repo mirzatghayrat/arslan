@@ -1016,6 +1016,7 @@
     "runRemote": "向こうで実行",
     "purpose": {
       "run": "{{program}} を実行",
+      "notAllRead": "{{program}} を実行：Arslan はコマンド全体を読み取れませんでした",
       "copyLocal": "{{count}} 件をコピー",
       "delete": "{{count}} 件のファイルまたはフォルダを削除",
       "move": "{{count}} 件を移動",
