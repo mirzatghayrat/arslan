@@ -6,6 +6,7 @@ import pytest
 
 from server.orchestrator import tool_loop
 from server.services import command_sandbox, terminal_exec, terminal_policy
+from server.orchestrator import command_gate
 
 T2_SCRIPT = '''python3 - <<'PY'
 import csv, os
@@ -52,8 +53,8 @@ def setup(monkeypatch):
 
     async def yes():
         return True
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
     yield
     command_sandbox._reset_for_tests()
 
@@ -104,13 +105,13 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(executio
 
     async def off():
         return False
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", off)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", off)
     await _dispatch(monkeypatch, T2_SCRIPT, cards)
     assert len(asked) == 1                                   # sandbox off: asks as in 0.1.51
 
     async def on():
         return True
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", on)
     # Seatbelt starts here, as on a Mac: outside it the command is wrapped in the minimal profile.
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     from server.services import permission_store, permissions
@@ -126,7 +127,7 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(executio
 
     async def ask_all():
         return True
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", ask_all)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", ask_all)
     await _dispatch(monkeypatch, T2_SCRIPT, cards)
     assert len(asked) == 2                                   # the user chose to be asked for everything
 

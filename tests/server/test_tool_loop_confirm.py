@@ -1,5 +1,6 @@
 import pytest
 from server.orchestrator import tool_loop
+from server.orchestrator import command_gate
 
 
 async def _resolve():
@@ -21,7 +22,7 @@ async def test_run_command_refused_without_confirm_cb(monkeypatch):
         return True
     # 0.1.48: under the default policy a harmless command runs without a card, so
     # pin "ask for every command" — this test is about the missing callback.
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", _yes)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", _yes)
     trace, convo = [], []
     r = await tool_loop._dispatch_tool(
         "run_command", {"command": "git", "argv": ["status"]}, "{}",
