@@ -89,6 +89,10 @@ def _world(execution_db, tmp_path, monkeypatch):
     async def tested(source_id):
         return {"ok": True, "tools": ["read_note"], "at": "now"}
     monkeypatch.setattr(capability_flow, "test_mcp", tested)
+
+    async def not_checked(cand, prepared):                                  # CAP9: OSV, tested on its own
+        return {"state": "not_checked", "why": "osv_did_not_answer"}
+    monkeypatch.setattr(capability_flow.osv_check, "check", not_checked)
     scanned: list[bool] = []
 
     def scan(root):

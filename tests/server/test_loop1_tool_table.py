@@ -138,3 +138,18 @@ async def test_the_table_for_every_condition(monkeypatch, _database):  # noqa: F
 async def test_the_dump_sees_real_tools(key, monkeypatch, _database):  # noqa: F811
     _mac(monkeypatch, CHAT)
     assert key in (await _table())["listed"]
+
+
+@pytest.mark.parametrize("first, second", [(True, False), (False, True)])
+async def test_the_folder_setting_is_read_twice_and_each_read_keeps_its_readers(first, second, monkeypatch, _database):  # noqa: F811
+    """The dump answers both reads alike, so it can't tell them apart: file tools follow the first, the command's words
+    the second, as `_every_tool` has always read them."""
+    _mac(monkeypatch, {**CHAT, "workspace": False})
+    answers = iter((first, second))
+
+    async def read(_db):
+        return next(answers)
+    monkeypatch.setattr(settings_service, "default_read_enabled", read)
+    tools = {tool["key"]: tool["description"] for tool in await arslan._every_tool()}
+    assert ("read_file" in tools, "attach_file" in tools) == (first, first)
+    assert ("keeps Desktop, Documents and Downloads closed" in tools["run_command"]) is (not second)

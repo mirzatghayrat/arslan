@@ -47,7 +47,7 @@ function typingField(target: EventTarget | null): boolean {
 }
 
 /** Another card or dialog (the native <dialog> too): a surface with keys of its own. */
-const SURFACE = '[role="alertdialog"], [role="dialog"], dialog';
+export const SURFACE = '[role="alertdialog"], [role="dialog"], dialog';
 
 /**
  * ⌘⏎ (Ctrl+⏎ elsewhere) allows, Esc declines — user decision 2, 2026-10-05.
