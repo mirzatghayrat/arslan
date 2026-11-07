@@ -23,6 +23,7 @@
     "echarts": "^6.1.0",
     "i18next": "^26.3.1",
     "i18next-browser-languagedetector": "^8.2.1",
+    "katex": "^0.19.1",
     "lucide-react": "^0.546.0",
     "prismjs": "^1.30.0",
     "react": "^19.0.1",
@@ -30,6 +31,7 @@
     "react-i18next": "^17.0.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
@@ -50,5 +52,10 @@
     "typescript": "~5.8.2",
     "vite": "^6.4.5",
     "vitest": "^4.1.11"
+  },
+  "overrides": {
+    "micromark-extension-math": {
+      "katex": "$katex"
+    }
   }
 }
