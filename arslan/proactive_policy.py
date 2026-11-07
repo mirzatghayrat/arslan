@@ -9,11 +9,9 @@ The rules, in one place:
   whether something is worth raising.
 - NO EVIDENCE, NO PROPOSAL. A candidate without evidence (or with an evidence
   line that says nothing) is refused here, not trusted to the detector.
-- QUIET BY DEFAULT. Duplicates are dropped, muted sources stay muted, and an
-  interruption (a system notification) needs: the user wants them, it is not
-  quiet hours, today's cap is not spent, and the kind is one the user asked to
-  hear about. Job and schedule problems are NOT in that list: the job and the
-  scheduler already notify when they end, a second ping would just be noise.
+- QUIET BY DEFAULT. Duplicates are dropped, muted sources stay muted, and nothing
+  here raises a system notification (INB8): the job and the scheduler already
+  notify when they end, and a second ping would just be noise.
 - NEVER CARRY SECRETS. A credential-shaped string in a goal or a quoted page /
   file name is refused, so a watched page cannot smuggle one into the inbox.
 - SPENDING IS OPT-IN AND BOUNDED. A zero budget is off; a call is allowed only
@@ -30,9 +28,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from arslan.companion.content_policy import contains_credential
 
 KINDS = ("job_followup", "scheduled_problem", "web_change", "folder_change", "brief")
-#: Kinds that may interrupt with a system notification. Job / schedule problems
-#: already notified when the job or the run ended.
-NOTIFYING_KINDS = frozenset({"web_change", "folder_change", "brief"})
 PRIORITIES = ("high", "normal", "low")
 #: Why a background job stopped short, as detectors name it ("other" = none of these).
 JOB_REASONS = ("task_budget_exhausted", "task_validation_failed", "task_checks_not_run",
@@ -67,8 +62,6 @@ class ProactiveConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
-    notify: bool = True
-    notify_daily_cap: int = Field(default=5, ge=0, le=20)
     quiet_start: str = "22:00"
     quiet_end: str = "08:00"
     job_followups: bool = True
@@ -103,7 +96,6 @@ class Candidate:
     criteria: tuple[dict, ...] = ()
     priority: Literal["high", "normal", "low"] = "normal"
     conversation_id: str | None = None
-    notify: bool = True          # a per-source preference (a watch's own switch)
 
 
 @dataclass(frozen=True)
@@ -152,13 +144,6 @@ def in_quiet_hours(now: datetime, start: str, end: str) -> bool:
     if a == b:
         return False
     return a <= t < b if a < b else (t >= a or t < b)
-
-
-def may_notify(candidate: Candidate, *, now: datetime, config: ProactiveConfig, notified_today: int) -> bool:
-    """May this item interrupt the user? Every condition must hold."""
-    return (config.notify and candidate.notify and candidate.kind in NOTIFYING_KINDS
-            and notified_today < config.notify_daily_cap
-            and not in_quiet_hours(now, config.quiet_start, config.quiet_end))
 
 
 def cooldown_over(last_item_at: datetime | None, now: datetime) -> bool:
