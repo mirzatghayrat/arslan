@@ -108,7 +108,7 @@ def _to_dict(srv: MCPServer, *, mask: bool = True, stored_status: bool = False) 
 
 
 async def add_server(label: str, command: str, args: list[str], env: dict,
-                     transport: str = "stdio", url: str | None = None) -> dict:
+                     transport: str = "stdio", url: str | None = None, secrets: dict | None = None) -> dict:
     if transport not in ("stdio", "http"):
         raise AddRefused("transport must be stdio|http")
     if transport == "http" and not (url or "").strip():
@@ -140,7 +140,8 @@ async def add_server(label: str, command: str, args: list[str], env: dict,
         if existing is not None:
             return _to_dict(existing)
         srv = MCPServer(label=label, command=command or "", args=args or [], transport=transport, url=url,
-                        env=crypto.encrypt(json.dumps(env or {})), status="registered")
+                        env=crypto.encrypt(json.dumps(env or {})), status="registered",
+                        secrets=crypto.encrypt(json.dumps(secrets)) if secrets else None)   # SEC1: `args` hold their `${NAME}`
         db.add(srv)
         await db.commit()
         await db.refresh(srv)

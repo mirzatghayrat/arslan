@@ -268,19 +268,26 @@ def _whole(name: str, value) -> str:
     return value
 
 
-def _settings(name: str, settings, valid: re.Pattern, unsafe: re.Pattern) -> dict[str, str]:
-    """A connection's `env` or `headers`, read: its shape, and no name `unsafe` holds. Absent is none."""
+def setting_names(name: str, settings, valid: re.Pattern, unsafe: re.Pattern | None) -> dict:
+    """A connection's `env` or `headers`: its shape, and no name `unsafe` holds. Absent is none. CAP8-1 shares this: it
+    never shows a value, so the values aren't read here."""
     if settings is None:
         return {}
     if not isinstance(settings, dict):
         raise Refused("unreadable", name)
-    for key, value in settings.items():
+    for key in settings:
         if not valid.fullmatch(key):
             raise Refused("unreadable", name)
-        if unsafe.fullmatch(key):
+        if unsafe is not None and unsafe.fullmatch(key):
             raise Refused("unsafe_setting", f"{name}: {key}")
-        _whole(name, value)
     return settings
+
+
+def _settings(name: str, settings, valid: re.Pattern, unsafe: re.Pattern) -> dict[str, str]:
+    """A plugin's `env` or `headers`, which its card shows, so each value has to show whole."""
+    for value in setting_names(name, settings, valid, unsafe).values():
+        _whole(name, value)
+    return settings or {}
 
 
 def _env_keys(name: str, env) -> tuple[list[dict], dict]:
@@ -297,11 +304,16 @@ def _env_keys(name: str, env) -> tuple[list[dict], dict]:
     return keys, fixed
 
 
-def _remote(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
+def remote_url(name: str, spec: dict) -> str:
+    """A remote's address, as written: one that names a variable can't be pinned to the card or the sheet."""
     url = spec.get("url")
     if spec.get("type") not in _REMOTE_TYPES or not isinstance(url, str) or _ANY_VAR.search(url):
         raise Refused("cannot_pin", name)
-    _whole(name, url)
+    return _whole(name, url)
+
+
+def _remote(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
+    url = remote_url(name, spec)
     why = capability_allowlist.listed_remote(url, allow)
     if why:
         raise Refused("add_by_hand", name, by_hand=why)
@@ -315,10 +327,10 @@ def _remote(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
                                          remote={"url": url}, needs={"keys": keys, "network": True}), "env": fixed}
 
 
-async def _package(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
-    """`npx` or `uvx`, by those bare names, and one package, locked as a Registry package is. Only the plain form is
-    read: its options decide which argument is the package, and a variable in an argument can't be locked or asked
-    for. A package has no Registry publisher here, so the plugin's own repository answers to the list."""
+def package_line(name: str, spec: dict) -> tuple[str, list[str]]:
+    """`npx` or `uvx`, by those bare names, and one package: the command, and its package then the package's arguments.
+    Only the plain form is read: its options decide which argument is the package, and a variable in an argument can't
+    be locked or asked for."""
     command = spec.get("command")
     if not isinstance(command, str) and command is not None:
         raise Refused("unreadable", name)
@@ -334,10 +346,11 @@ async def _package(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
         args.pop(0)
     if not args or args[0].startswith("-"):
         raise Refused("cannot_pin", name)
-    keys, fixed = _env_keys(name, spec.get("env"))
-    why = await capability_allowlist.confirm_repository(plugin, allow)
-    if why:
-        raise Refused("add_by_hand", name, by_hand=why)
+    return command, args
+
+
+async def pinned_package(parent: dict, name: str, command: str, args: list[str], keys: list[dict], fixed: dict) -> dict:
+    """That line, locked as a Registry package is: its candidate, and the `env` it starts with."""
     try:
         pinned = (await mcp_pin.pin(command, [args[0]], fixed))[0]
     except mcp_pin.PinRefused as exc:
@@ -348,8 +361,18 @@ async def _package(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
     runtime, registry = _RUNTIMES[command]
     package = {"registry_type": registry, "identifier": match.group(1), "version": match.group(2),
                "arguments": [{"type": "positional", "value": a} for a in args[1:]]}
-    return {"candidate": _part_candidate(plugin, name, runtime=runtime, version=match.group(2), package=package,
+    return {"candidate": _part_candidate(parent, name, runtime=runtime, version=match.group(2), package=package,
                                          remote=None, needs={"keys": keys, "network": None}), "env": fixed}
+
+
+async def _package(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
+    """A package has no Registry publisher here, so the plugin's own repository answers to the list."""
+    command, args = package_line(name, spec)
+    keys, fixed = _env_keys(name, spec.get("env"))
+    why = await capability_allowlist.confirm_repository(plugin, allow)
+    if why:
+        raise Refused("add_by_hand", name, by_hand=why)
+    return await pinned_package(plugin, name, command, args, keys, fixed)
 
 
 async def _skills(snap: Snapshot, paths: list[str], spdx_and_path: tuple) -> list[dict]:
