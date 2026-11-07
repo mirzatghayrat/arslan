@@ -1,4 +1,4 @@
-"""0.1.44: list former experts and turn one into a skill (Capabilities page)."""
+"""0.1.44: list former experts and turn one into a skill (Capabilities page). DELETE-BY: v0.1.64, with C7c-4."""
 from fastapi import APIRouter, Depends, HTTPException
 
 from server.auth import require_auth

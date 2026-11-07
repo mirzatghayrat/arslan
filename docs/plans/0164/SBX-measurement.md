@@ -429,7 +429,7 @@ one-line change before the tag: remove the ANY_DECLARED mDNSResponder socket
 grant, leaving **no name lookup in any-declared mode**. Do not release the
 transitional daemon interface as an implicit extension of this acceptance.
 
-Measured on 2026-11-01 after the user replied "run the dns_sd probe" in the
+Measured on 2026-11-01 after the user told the session to run the dns_sd probe in the
 authoring thread, on macOS 26.6.2 (25G83), arm64. The opt-in pytest used scratch
 HOME/TMPDIR and `ARSLAN_SECRET_KEY_FILE=` empty in both children. It ran the
 same sequence first under the ANY_DECLARED candidate and then unsandboxed:

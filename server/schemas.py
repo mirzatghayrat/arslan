@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -72,10 +72,6 @@ class SettingsIn(BaseModel):
     workspace_dir: str | None = None
     heartbeat_enabled: str | None = None
     show_technical_details: str | None = None
-    tools_all_resident: str | None = None   # K7, no UI; DELETE-BY: v0.1.64
-    answer_when_complete: str | None = None   # K8a, no UI; DELETE-BY: v0.1.64
-    tools_serial: str | None = None   # K9a, no UI; DELETE-BY: v0.1.64
-    steering_off: str | None = None   # K9b, no UI; DELETE-BY: v0.1.64
     heartbeat_checklist: str | None = None
     heartbeat_interval_s: str | None = None
     lan_discovery_enabled: str | None = None
@@ -144,10 +140,6 @@ class SettingsOut(BaseModel):
     workspace_dir: str = ""
     heartbeat_enabled: str = ""
     show_technical_details: str = ""
-    tools_all_resident: str = ""   # K7, no UI; DELETE-BY: v0.1.64
-    answer_when_complete: str = ""   # K8a, no UI; DELETE-BY: v0.1.64
-    tools_serial: str = ""   # K9a, no UI; DELETE-BY: v0.1.64
-    steering_off: str = ""   # K9b, no UI; DELETE-BY: v0.1.64
     heartbeat_checklist: str = ""
     heartbeat_interval_s: str = ""
     lan_discovery_enabled: str = ""
@@ -300,13 +292,6 @@ class EquipmentUpdateIn(BaseModel):
     skills: list[str] = []
 
 
-class ConfigUpdateIn(BaseModel):
-    system_prompt: str | None = None
-    persona_tone: str | None = None
-    persona_role: str | None = None
-    config: dict[str, Any] | None = None
-
-
 class FactIn(BaseModel):
     content: str
     sensitive: bool = False
@@ -390,6 +375,15 @@ class TestLLMIn(BaseModel):
 
     provider: str
     model: str = ""
+    base_url: str = ""
+    api_key: str = ""
+
+
+class ModelPreviewIn(BaseModel):
+    """Body for POST /settings/provider-models/preview (MODEL1): the Add model form's fields before Add.
+    The key travels in this body only, never in a URL, and is not stored."""
+
+    provider: str
     base_url: str = ""
     api_key: str = ""
 

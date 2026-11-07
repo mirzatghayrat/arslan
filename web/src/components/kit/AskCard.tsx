@@ -12,12 +12,12 @@ export interface AskQueuePosition { index: number; total: number; onPrev?: () =>
 export type AskRiskLevel = "info" | "warn" | "irreversible";
 
 /** SMART-8: a choice besides the two answers, drawn as a secondary button after the primary one. */
-/** Another approval beside Allow (③Hands' re-run cards): off while Allow is (`allowDisabled`), red when `destructive`
+/** Another approval beside Allow: off while Allow is (`allowDisabled`), red when `destructive`
  *  (PR 688's review, item 8). */
 export interface AskAction { label: string; onClick: () => void; testId?: string; destructive?: boolean }
 
 export interface AskCardProps {
-  /** Who is asking: "Arslan 在问你" / "后台作业在问你". The card's accessible name; SMART-8 (the user: 「去掉小标题」)
+  /** Who is asking: "Arslan 在问你" / "后台作业在问你". The card's accessible name; SMART-8 (the user: drop the small heading)
    *  no longer prints it as a heading. */
   who: string;
   /** One plain sentence: what Arslan wants to do. */
@@ -31,7 +31,7 @@ export interface AskCardProps {
   riskRow?: { level: AskRiskLevel; text: ReactNode };
   /** SMART-8: the raw command (or the text to be sent), folded under "Show command" and shown whole when opened. */
   folded?: { body: ReactNode; showLabel?: string; hideLabel?: string; testId?: string };
-  /** SMART-8: more choices, as secondary buttons after the primary one (③Hands' re-run cards). */
+  /** SMART-8: more choices, as secondary buttons after the primary one. */
   actions?: AskAction[];
   /** The MODEL's own description, never trusted for safety: shown as "Arslan 说：…". */
   said?: string | null;
@@ -58,7 +58,7 @@ export interface AskCardProps {
   allowDisabled?: boolean;
   /** "See the whole context" (island, inbox → the conversation). */
   onOpenContext?: () => void;
-  /** Extra actions beside the two answers (e.g. "run again outside the sandbox"). */
+  /** Extra actions beside the two answers. */
   extra?: ReactNode;
   /** Answers to ⌘⏎ / esc while it is the top surface. Off when shown as a preview. */
   keys?: boolean;
@@ -89,7 +89,7 @@ export function AskCard(p: AskCardProps) {
   return (
     <section ref={root} data-testid={p.testId ?? "ask-card"} role="alertdialog" aria-label={p.who} {...p.attrs}
       className={`flex w-full max-w-[460px] flex-col gap-3.5 rounded-2xl border border-border bg-surface px-5 pb-4 pt-[18px] text-foreground shadow-kit ${p.className ?? ""}`}>
-      {/* The default asker ("Arslan is asking") is no longer printed (the user: 「去掉小标题」); another one (a background
+      {/* The default asker ("Arslan is asking") is no longer printed (the user: drop the small heading); another one (a background
           job) still is, as it is the only place some cards say who is asking. */}
       {(p.queue && p.queue.total > 1) || p.expiresAt || p.who !== t("kit.whoArslan") ? <header
         className="flex items-center justify-between gap-3">

@@ -1,0 +1,50 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "ask_user_choice"
+   ]
+  }
+ ],
+ [
+  "returned",
+  {
+   "clarify": {
+    "options": [
+     {
+      "hint": "",
+      "label": "A"
+     },
+     {
+      "hint": "",
+      "label": "B"
+     }
+    ],
+    "question": "Which?"
+   },
+   "escalation": null,
+   "external_seen": false,
+   "final": null,
+   "tool_trace": []
+  }
+ ],
+ [
+  "job",
+  {
+   "limit_reason": null,
+   "pause_reason": "task_input_required",
+   "repairs": 0
+  }
+ ]
+]

@@ -107,12 +107,37 @@ _LAUNCHED = (r"(?:command" + _H + r"+(?:-p" + _H + r"+)?"
              r"|xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+)*"
              r"(?:[^\s=]*/)?")         # a path, never a VAR=value assignment
 _CMD = _ONCE_POS + _LAUNCHED
+# SMART-8: a delete reaching into a Trash. Finder emptying it needs Apple Events, which both profiles deny, and
+# mac_applescript refuses it itself (`hands_service`). A permanent delete from the Trash is the user's own act;
+# allowed deletes go to the Trash (`delete_to_trash`), so Arslan never takes them out of it. It reads commands: a
+# launcher (`/bin/rm`, `command rm`, `FOO=1 rm`, `timeout 5 rm`) is read through, and prose or a read-only `find` that
+# only names the Trash is not refused. Forms this can't prove (a glob or variable naming the folder) stay on the
+# delete card, which no grant answers (#686 review).
+_DELETER = r"(?:rm|rmdir|unlink|srm)\b"
+_FORBID.append(
+    ("trash", r"(?:" + _CMD + _DELETER + r"[^\n;&|]*\.Trash(?:es)?(?:[/\"'\s)`*]|$)"
+              r"|" + _CMD + r"find\b[^\n;&|]*\.Trash(?:es)?\b[^\n;&|]*\s(?:-delete\b|-exec(?:dir)?\s+(?:[^\s]*/)?"
+              + _DELETER + r")"
+              # a delete after changing into a Trash (`cd ~/.Trash && rm -rf *`)
+              + r"|" + _CMD + r"(?:builtin" + _H + r"+)?(?:cd|chdir|pushd)\b[^\n;&|]*\.Trash(?:es)?\b.*?(?:\b"
+              + _DELETER + r"|\s-delete\b))",
+     "deletes from or empties the Trash; that's yours to do", False))
 # The program itself, not a longer name that starts with it (osascript.sh, osascriptx); a
 # redirection may follow it directly (osascript<<EOF, osascript>/dev/null).
 _END = r"(?=$|[\s;&|)`'\"<>])"
 # HTTP methods that change something, and HTTPie / xh sending data: a method word, or a request
 # item (`key=value`, `key:=json`, `field@file`), a form, or a body on stdin.
 _WRITE = r"(?:POST|PUT|PATCH|DELETE)"
+# One shell word: plain characters, a backslash escape, or a quoted part (`"Cache-Control:public, max-age=3600"`).
+_WORD = r"""(?:\\.|[^\s"'\\]|"[^"\n]*"|'[^'\n]*')"""
+
+
+def _opts(stop: str) -> str:
+    """A cloud CLI's options before its next word (`-m`, `--profile "work account"`, `--region=eu-west-1`): each an
+    option and at most one value that is neither an option nor the word `stop` names, then the blanks before it
+    (#693 review). Linear: an option starts with `-` and a value can't, so each word is read one way only."""
+    word = _WORD + r"+(?<![;&|])"                           # `;`, `&` or `|` ending it ends the command
+    return r"(?:" + _H + r"+-" + word + r"(?:" + _H + r"+(?!-|(?:" + stop + r")" + _END + r")" + word + r")?)*" + _H + r"+"
 _HTTPIE = r"(?:https?|xhs?)"
 # Apps that run what they are given (`open -a`/`-b`): terminals, script and automation apps.
 _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty|script\s+editor|automator"
@@ -124,8 +149,9 @@ _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty
 # this time only. Reads are not here: ssh, git push and gh read them outside the sandbox (S2a-1).
 _PROTECTED_NAME = (r"(?:\.ssh(?=/|\b)|\.(?:zshrc|zshenv|zprofile|zlogin|zlogout|bashrc|bash_profile|bash_login"
                    r"|bash_logout|profile|inputrc|cshrc|tcshrc|kshrc)(?![\w.-])|\.config/(?:fish|gh|gcloud)(?=/|\b)"
-                   r"|\.(?:aws|gnupg|kube|azure)(?=/|\b)|\.docker/config\.json|\.(?:netrc|npmrc|pypirc|git-credentials"
-                   r"|gitconfig)(?![\w.-])|Library/(?:LaunchAgents|LaunchDaemons|StartupItems|Keychains)(?=/|\b)"
+                   r"|\.(?:aws|gnupg|kube|azure|gsutil)(?=/|\b)|\.config/rclone(?=/|\b)"
+                   r"|\.docker/config\.json|\.(?:netrc|npmrc|pypirc|git-credentials|gitconfig|rclone\.conf|s3cfg|boto)"
+                   r"(?![\w.-])|Library/(?:LaunchAgents|LaunchDaemons|StartupItems|Keychains)(?=/|\b)"
                    # other agents' settings start programs (hooks, MCP servers) the next time they run
                    r"|\.(?:cursor|codex|claude|gemini|hermes|continue)/|\.claude\.json\b"
                    r"|Library/Application Support/Claude/)")
@@ -144,7 +170,22 @@ _ASK = [
                       r"|wget\b[^\n]*--(?:post[a-z-]*|method(?:=|\s+)[\"']?(?:" + _WRITE + r"))"
                       r"|" + _HTTPIE + r"(?:\s+-\S+)*\s+[\"']?" + _WRITE + r"\b"
                       r"|" + _HTTPIE + r"\b[^\n]*(?:\s--(?:form|multipart|raw)\b|\s-f\b|\s[A-Za-z_][\w.\-\[\]]*(?::=|=|@)(?!=))"
-                      r"|aws" + _H + r"+s3" + _H + r"+(?:cp|mv|sync|rm)\b)", "sends data to a website or a cloud"),
+                      r")", "sends data to a website or a cloud"),
+    # Cloud storage uploads (Astra on #688/#689, via ⓪Plan, 2026-11-03), `aws s3` among them: the verb, not the
+    # direction (a download asks too). Options may come before each word (`aws --profile p s3 --region r cp`).
+    ("upload", _CMD + r"(?:gcloud" + _opts(r"alpha|beta|storage") + r"(?:(?:alpha|beta)" + _opts(r"storage") + r")?"
+                      r"storage" + _opts(r"cp|mv|rsync") + r"(?:cp|mv|rsync)"
+                      r"|gsutil" + _opts(r"cp|copy|mv|move|ren|rename|rsync") + r"(?:cp|copy|mv|move|ren|rename|rsync)"
+                      r"|aws" + _opts(r"s3|s3api") + r"(?:s3" + _opts(r"cp|mv|sync|rm") + r"(?:cp|mv|sync|rm)"
+                      r"|s3api" + _opts(r"put-object|upload-part") + r"(?:put-object|upload-part))"
+                      r"|gh" + _opts(r"release") + r"release" + _opts(r"upload") + r"upload"
+                      r"|azcopy" + _opts(r"copy|cp|c|sync|sc|s") + r"(?:copy|cp|c|sync|sc|s)"
+                      r"|az" + _opts(r"storage") + r"storage" + _opts(r"blob|file|fs") + r"(?:blob|file|fs" + _opts(r"file")
+                      + r"file)" + _opts(r"upload|upload-batch|sync") + r"(?:upload(?:-batch)?|sync)"
+                      r"|rclone" + _opts(r"copy|copyto|move|moveto|sync|bisync|rcat|copyurl")
+                      + r"(?:copy|copyto|move|moveto|sync|bisync|rcat|copyurl)"
+                      r"|s3cmd" + _opts(r"put|sync|cp|mv") + r"(?:put|sync|cp|mv))(?:" + _END + r"|(?=\$))",
+     "sends data to a website or a cloud"),
     # a body piped in or redirected in: `cat d.json | http url`, `http url < d.json`
     ("upload", r"\|\s*(?:[^\s=|]*/)?" + _HTTPIE + _END, "sends data to a website or a cloud"),
     ("upload", _CMD + _HTTPIE + r"\b[^\n|;&]*\s<\s*[^\s<]", "sends data to a website or a cloud"),
@@ -155,6 +196,8 @@ _ASK = [
      + _END
      + r"|" + _CMD
      + r"rsync\b[^\n]*\S:", "connects to another machine"),
+    # bash opens the connection itself, with no program named (zsh has no such path).
+    ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
     ("publish", _CMD + r"(?:npm\s+publish|pnpm\s+publish|yarn\s+publish|twine\s+upload|cargo\s+publish"
                        r"|gh\s+(?:pr|issue|release|repo|gist)\s+(?:create|delete|merge|close|edit|comment)"
@@ -276,6 +319,8 @@ def _detection_texts(text: str) -> tuple[str, ...]:
     newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
     not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
     `ls && git push` ran with no card."""
+    if shell_text.too_complex(text):
+        return (text,)
     inner = tuple(t for arg in _launcher_args(text) for t in _detection_texts(arg))
     return (text, shell_text.normalize(text), *shell_text.variants(text), *inner)
 
@@ -423,7 +468,7 @@ def assess(command: str) -> Assessment:
         return Assessment("forbid", "empty", "no command")
     if len(text) > MAX_COMMAND_CHARS:
         return Assessment("forbid", "too-long", "command is too long to review")
-    texts = _detection_texts(text) if not shell_text.too_complex(text) else (text,)
+    texts = _detection_texts(text)
     forbidden = _forbid(text, texts)
     if forbidden is not None:
         return forbidden
@@ -455,6 +500,17 @@ def ask_rules(command: str) -> set[str]:
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to
 # Objective-C, so U11's bare run is plain AppleScript only: wrapped, its Apple Events are blocked.
 _OTHER_OSA_LANGUAGE = re.compile(_CMD + r"osascript\b[^\n;&|]*\s-l\s*[\"']?(?!applescript\b)\w", re.I)
+
+
+# bash 3.2 scans a substitution without knowing here-documents, so text in one can end it early and the rest runs: a
+# numbered list in a commit message can delete a folder (#723 review). `$((` is arithmetic and `<<<` a here-string.
+_HEREDOC_IN_SUBSTITUTION = re.compile(r"""(?:\$\((?!\()|[<>]\()[^)]*(?<!<)<<-?\s*[\\'"]?\w""")
+
+
+def heredoc_in_substitution(command: str) -> bool:
+    """A here-document inside `$( )`, `<( )` or `>( )`. Misses one after a `)` in the same substitution, which text
+    inside the body can't write."""
+    return bool(_HEREDOC_IN_SUBSTITUTION.search(str(command or "")))
 
 
 def other_osa_language(command: str) -> bool:

@@ -1,0 +1,247 @@
+# What the macOS job must run, per test file (read by scripts/check_macos_counts.py and by
+# tests/server/test_macos_marker_covers_the_platform_set.py). One table per file, in sorted path order, so PRs that
+# touch different files rarely touch the same lines. Two new tables in the same gap can conflict: keep both, in order,
+# with no recount.
+#
+#   markers  how many tests the file marks for the macOS job
+#   cases    how many cases must RUN on the macOS runner (a parametrized test counts once per case; xfails count)
+#   xfail    how many of those are strict xfails: a p PR's cases for a surface not built yet
+#
+# Take `cases` and `xfail` from the macOS job on your PR: it prints the numbers it saw for every file that differs.
+# A number from your own Mac can differ, because some system services exist on only one of the two. Change a number
+# only with the tests that move it. A pin that differs right after a merge means two PRs combined: the second PR's
+# author recounts that file in a pin-only PR (docs/sessions.md §5).
+
+["server/sbx/corpus/test_sbx2_corpus.py"]
+markers = 5
+cases = 222
+xfail = 0
+
+# 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
+# protected folder named in ASCII, CJK, accents, emoji or with a control character is closed; a
+# rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
+# readable. Seatbelt is macOS-only.
+["server/sbx/test_sbx1b_sbpl_strings.py"]
+markers = 4
+cases = 9
+xfail = 0
+
+# SBX-2: 75 kernel assertions and 222 measurement rows (297 collected).
+["server/sbx/test_sbx2_kernel.py"]
+markers = 10
+cases = 75
+xfail = 0
+
+# SBX-2 port follow-ups: one compile check for each of proxy and port-22.
+["server/sbx/test_sbx2_tcp_ports.py"]
+markers = 1
+cases = 2
+xfail = 0
+
+# SBX-3p: 58 commands denial cases (63; +12 in #654; then SBX-6 retired the any-declared mode), real since SBX-3a.
+["server/sbx/test_sbx3_commands.py"]
+markers = 14
+cases = 58
+xfail = 0
+
+# 0.1.64 SBX-3a §1a: a sandboxed command writes its own run's TMPDIR. Seatbelt is macOS-only.
+["server/sbx/test_sbx3_run_temp.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# 0.1.64 SBX-3a: what should run still runs under the commands profile with /dev narrowed: the
+# work folder, /dev/null and /dev/zero, and a pty. Seatbelt is macOS-only.
+# 0.1.64 SBX-3a flip: a work folder inside a closed folder and a saved copy still work on the base.
+["server/sbx/test_sbx3a_commands_profile.py"]
+markers = 2
+cases = 2
+xfail = 0
+
+# SBX-4p: 88 Python/artifact/MCP gates (72, then +16 over #654's wider service list), pending product adapters.
+["server/sbx/test_sbx4_presets.py"]
+markers = 7
+cases = 88
+xfail = 88
+
+# SBX-5p: CAP6b/cache cases, including the built outside floor.
+["server/sbx/test_sbx5_paths.py"]
+markers = 10
+cases = 78
+xfail = 64
+
+# SBX-6p: 94 network cases (78, then +16 over #654's wider service list), pending except one real SSH control.
+["server/sbx/test_sbx6_network.py"]
+markers = 8
+cases = 94
+xfail = 10
+
+# SBX-6p: four default trust checks, four toggle checks, eight LAN cases.
+["server/sbx/test_sbx6_settings.py"]
+markers = 3
+cases = 16
+xfail = 6
+
+# 0.1.64 SBX-6a: a sandboxed command reaches the local proxy, which refuses a loopback destination.
+["server/sbx/test_sbx6a_proxy.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# Stock Pool semaphore refusal and a same-policy run-prefixed control.
+["server/sbx/test_sbx_multiprocessing.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# Measured DNS, FSEvents and trust service grants, each in all four modes.
+["server/sbx/test_sbx_service_allowlist.py"]
+markers = 4
+cases = 16
+xfail = 0
+
+["server/test_artifact_store.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# 2026-10-09 (0.1.57 P2): an installed capability's MCP server profile (deny by default):
+# only its folder and the granted one, a protected folder stays closed inside a grant,
+# the network only when declared. Seatbelt is macOS-only. Appended boundary case.
+["server/test_capability_sandbox.py"]
+markers = 3
+cases = 3
+xfail = 0
+
+["server/test_chat_image_fallback.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+["server/test_code_sandbox.py"]
+markers = 14
+cases = 19
+xfail = 0
+
+# 2026-10-03 (0.1.51 P3): run_command's workspace sandbox — what the kernel
+# refuses (writes outside, a protected folder inside a writable one, the
+# keychain folder and ~/.ssh), what it keeps (temp, offline writes), and a
+# nested sandbox-exec seen as a stop. Seatbelt is macOS-only. Appended
+# boundary case. +1 0.1.53: a socket in a protected folder (Arslan Hands)
+# cannot be connected from the sandbox.
+# +2 0.1.59: with "Desktop, Documents, Downloads" off those folders are closed to commands
+# (also via /System/Volumes/Data and a symlink), the working folder and projects inside stay open.
+["server/test_command_sandbox.py"]
+markers = 9
+cases = 9
+xfail = 0
+
+# 0.1.63 D4 follow-up: osacompile (macOS-only) tells a real AppleScript syntax error from a
+# script that only prints one, without running it. Appended boundary case.
+["server/test_d4_osascript_not_authorized.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+["server/test_extract_api.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# 2026-09-25: native manual-backup maintenance subprocess at the macOS
+# profile path (0.1.40). It already skipped off darwin; CI run 35973558629
+# showed test_every_darwin_only_file_is_marked flagging it unmarked, so
+# the macos job never selected it. Appended boundary case, not a new
+# full Linux measurement.
+["server/test_manual_backup_control.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+["server/test_ocr_fallback.py"]
+markers = 3
+cases = 3
+xfail = 0
+
+["server/test_ocr_vision.py"]
+markers = 5
+cases = 5
+xfail = 0
+
+# 0.1.64 IPB-1b: the phone's folder shows a home reached through APFS's /System/Volumes/Data firmlink,
+# or written in another Unicode form, as ~. Both need APFS, so macOS only.
+["server/test_phone_history_details.py"]
+markers = 2
+cases = 2
+xfail = 0
+
+# 2026-09-19: actual loopback restricted trial at the macOS packaged path.
+["server/test_profile_activation.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# 2026-10-20 (0.1.63 S2a-1): real sandbox-exec runs — an Apple Event from the sandbox reaches no app
+# (-600), a command reads its own conversation's saved output and nothing else in that folder, and
+# outside the sandbox the minimal profile keeps Arslan's data closed and the user's secrets open.
+["server/test_s2a1_sandbox.py"]
+markers = 3
+cases = 3
+xfail = 0
+
+# 0.1.63 S3a: a checkpoint is a real clonefile(2) copy on APFS, and its folder carries the
+# Time Machine exclusion xattr. Linux takes the plain-copy path, which every other S3a test covers.
+["server/test_s3a_checkpoint_save.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+["server/test_skill_import.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+["server/test_skill_script_failclosed.py"]
+markers = 3
+cases = 3
+xfail = 0
+
+# 0.1.64 SMART-1: the PATH an interactive zsh gives, read with real rc files (zsh is the Mac's shell).
+["server/test_smart1_interactive_path.py"]
+markers = 9
+cases = 10
+xfail = 0
+
+# 2026-08-21, P3b: the ssh transport's two kernel facts. Same platform
+# boundary as the (0.1.48-deleted) command sandbox tests — they drive /usr/bin/sandbox-exec
+# directly, which exists on macOS and nowhere else. One asserts the profile
+# we ship is accepted, one asserts a per-host profile is REJECTED (the
+# measurement the design rests on), one asserts the port confinement
+# actually enforces.
+["server/test_ssh_exec.py"]
+markers = 3
+cases = 3
+xfail = 0
+
+# 2026-09-15: fixed artifact parser actually runs inside Seatbelt. The new
+# case passed on macOS and explicitly skips when sys.platform != darwin.
+# This is an appended boundary case, not a new full Linux measurement.
+["server/test_task_validation.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# 2026-10-02 (0.1.50): run_command's offline mode is /usr/bin/sandbox-exec
+# with deny network*; the two kernel facts (blocked connect, file write still
+# works) exist only on macOS. Appended boundary case.
+["server/test_terminal_offline.py"]
+markers = 2
+cases = 2
+xfail = 0
+
+# 0.1.62 F4b (R1): a parent folder swapped for a link at the open is refused by the kernel
+# (O_NOFOLLOW_ANY exists on macOS 11+ only; elsewhere the second resolve is the guard).
+["server/test_write_no_links.py"]
+markers = 1
+cases = 1
+xfail = 0

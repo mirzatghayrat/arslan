@@ -17,13 +17,13 @@ import AdvancedSection from "../components/settings/AdvancedSection";
 afterEach(() => cleanup());
 
 describe("RunCommandCard sandbox questions", () => {
-  it("a stopped command says so, offers a re-run outside, and its \"In this conversation\" is for this conversation", () => {
+  it("asking to leave says so, and its \"In this conversation\" is for this conversation", () => {
     const onConfirm = vi.fn();
-    render(<RunCommandCard callId="c1" pretty="mv ~/Downloads/a.png ~/Pictures/" sandbox="retry" permKind="outside"
+    render(<RunCommandCard callId="c1" pretty="mv ~/Downloads/a.png ~/Pictures/" sandbox="outside" permKind="outside"
                            options={["once", "conversation"]} onConfirm={onConfirm} onCancel={vi.fn()} />);
     expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent("runcmd.purpose.move");
-    expect(screen.getByTestId("ask-risk-row").textContent).toMatch(/^runcmd\.risk\.retry/);
-    expect(screen.getByTestId("runcmd-sandbox-note")).toHaveTextContent("runcmd.sandboxRetryNote");
+    expect(screen.getByTestId("ask-risk-row").textContent).toMatch(/^runcmd\.risk\.outside/);
+    expect(screen.getByTestId("runcmd-sandbox-note")).toHaveTextContent("runcmd.sandboxOutsideNote");
     fireEvent.click(screen.getByTestId("runcmd-scope-conversation"));
     fireEvent.click(screen.getByTestId("runcmd-run"));
     expect(screen.getByTestId("runcmd-run")).toHaveTextContent("runcmd.runOutside");
@@ -41,7 +41,7 @@ describe("RunCommandCard sandbox questions", () => {
   });
 
   it("a background job's card offers this conversation too (S4a), and an ordinary card is unchanged", () => {
-    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="retry" background permKind="outside"
+    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="outside" background permKind="outside"
                            options={["once", "conversation"]} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("runcmd-scope-conversation")).toBeInTheDocument();
     cleanup();

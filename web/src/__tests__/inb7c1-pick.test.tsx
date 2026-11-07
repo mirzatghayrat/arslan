@@ -248,7 +248,7 @@ describe("the inspector keeps up (⓪Plan's review of PR 624)", () => {
   });
 });
 
-describe("the old drawer is gone (the user, 2026-11-02: 「去掉」)", () => {
+describe("the old drawer is gone", () => {
   it("a link from a reply or a scheduled run picks the run for the inspector", () => {
     act(() => { useActivityStore.getState().showRun(12); });
     expect(useActivityStore.getState().pickedRunId).toBe(12);

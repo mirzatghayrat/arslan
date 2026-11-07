@@ -58,7 +58,7 @@ def test_a_command_card_in_the_window_is_answered_and_not_judged(app_client, mon
     assert len(fake.calls) == (1 if decision == "allow" else 0)
 
 
-@pytest.mark.parametrize("sandbox", [None, "retry"])
+@pytest.mark.parametrize("sandbox", [None, "outside"])
 async def test_a_jobs_command_card_is_answered_and_not_judged(execution_db, monkeypatch, answering_judge, sandbox):
     """A rule card and a sandbox card (S4a: kind `outside`), each decided by permissions.decide with its
     ledger row and answered by a window on the conversation."""

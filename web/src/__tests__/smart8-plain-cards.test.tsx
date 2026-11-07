@@ -1,7 +1,7 @@
-// SMART-8 (the card mock the user OK'd, 2026-11-02, with 「去掉小标题」): a confirm card leads with what the step is
+// SMART-8 (the card mock the user OK'd, 2026-11-02, with the small heading dropped): a confirm card leads with what the step is
 // for, in the user's language; then what it touches and the risk, read by code; the action named first, then other
 // choices, then No. A step that uses the network is read only as a fixed line and the command is shown unfolded
-// (Astra's rounds, simplified; the user: 「简化吧」). Real strings (en, zh), not keys.
+// (Astra's rounds, simplified; the user asked for the simpler version). Real strings (en, zh), not keys.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import i18n from "../i18n";
@@ -174,7 +174,6 @@ describe("#688 review: the server's rules on every card", () => {
 
   it.each([
     ["outside", { sandbox: "outside" }, "Runs outside the sandbox, this time"],
-    ["retry", { sandbox: "retry" }, "The sandbox stopped it; running it again starts over"],
     ["remote", { remote_host: "me@box", fingerprints: ["SHA256:x"] }, "Runs on me@box, not on this Mac"],
   ])("the %s card keeps the red delete line (1)", (_name, extra, own) => {
     useArslanStore.setState(initialArslanState(), true);

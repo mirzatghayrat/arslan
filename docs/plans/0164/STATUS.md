@@ -2,7 +2,73 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-03 (UTC), evening, by the new ⓪Plan session. The handoff section below is kept for its methods; this section supersedes its tables.
+**Updated:** 2026-11-07 (UTC), by ⓪Plan. The sections below are kept as they were; the 2026-11-07 section supersedes their tables.
+
+### 2026-11-07
+
+Heads and states are as read on 2026-11-07; main is `4592a1e7`. Each lane moved to a fresh session that day; lanes are named as in `docs/sessions.md` §1.
+
+**Decisions of 2026-11-07 now in the cards (the user, relayed by ④参谋):**
+- scope stays and everything planned ships in v0.1.64; the aim is less rework and less over-defence;
+- ASK1 (existing installs, old scheduled tasks, sandbox first), INB8 (what pushes), the K7/K8a/K9a/K9b switches (deleted), S2a-3's blocking bar, and `docs/sessions.md` §5;
+- LOOP1, the agent loop restructure, runs now (card in #717).
+
+**Merged since `be6d3114`:**
+- #706 (migrations 0087 and 0088 reserved for ASK1);
+- #705 (the ASK1 card; chain order corrected);
+- #707 (local paths and private excerpts removed from the public docs, step 1);
+- #712 (SBX: rclone's, s3cmd's and gsutil's credentials are protected paths);
+- #710 (SMART-8: azcopy reads as a network program in both card readers);
+- #711 (SMART-5 bench: counts the tools OpenClaw runs through `dispatch_action`);
+- #709 (SMART-5 round 2: finding a tool isn't work; answers stay answers after looking).
+
+**What's left (counts only):** about 65 PRs at `be6d3114` (about 25 in the chain, about 40 off it), plus about 25 for LOOP1, is about 90; 7 have merged since, so about 83 remain. The counts are rough and carry no dates.
+
+**Open PRs, and who has the next step:**
+
+| PR | State | Next |
+|---|---|---|
+| #693 cloud uploads ask | OK; armed, checks running | ③Hands; then a small follow-up PR (the "not covered" items on the PR, a `RecursionError` → `unreadable`, azcopy short subcommands) |
+| #686 delete to Trash | max delta review not started | ③Hands sends the head, ⓪Plan reviews; `cd` plus a relative `rm` stays for S2a-3 |
+| #668 SBX-6a | max review running | ⓪Plan posts it, then ③Hands |
+| #666 SBX-4a | draft; max review running | ⓪Plan posts it; the user clicks Ready and merges |
+| #538 SBX-7 | reviewed, 8 non-blocking findings; no CI checks at this head since the retarget | ③Hands pushes to start CI; ⓪Plan decides finding 1 (proxy refusals aren't counted and get no re-run card) before SBX-8 |
+| #531, #535 (SBX-4a part 1, SBX-5a) | drafts | ③Hands |
+| #715 HPW | max review running | ⓪Plan posts it, then ③Hands |
+| #375, #376, #378, #396 (S2a-3) | open since v0.1.63; #375 conflicts | ③Hands rebases after SBX-7; Codex writes the test content |
+| #704 MODEL1 | clean; max delta review running | ⓪Plan posts it, then ②Main arms |
+| #708 FMT1 PR 1 | first max review posted; the author pushed the fixes and a worker that stops highlighting past 2 s (`407477f8`); that delta is unreviewed | ⓪Plan reviews the delta, then ②Main arms |
+| #713 C7c-3a | clean; an independent review is OK; needs ④参谋's other-session OK | ②Main merges main, then arms |
+| #716 CI counts | clean; max review not started (⓪Plan's four conditions are in its body) | ⓪Plan reviews, then ②Main |
+| #661 CAP9 | clean; OK at `b6194a9a` | the user merges |
+| #714 CAP7a | OK; armed | ⑤CAP; CAP7b must handle `discovery.py:233` (`kind == "mcp"` only) |
+| #718 L11 (b) PR-B | memory and practice writes: security surface | ⓪Plan's max review, then ⑥Helper |
+| #717 LOOP1 card | docs; waits for ⓪Plan's OK on its design choices | ⓪Plan, then the LOOP1 session |
+| #719 foreign keys on in the shared test engines | tests only; armed; the 35 failures were all fixtures | ⓪Plan |
+| #298 SECURITY.md (only `run_python` fails closed) | green, docs | kept open: the audit sees the final wording once the SBX chain settles |
+
+**SMART-5:** ⑥Helper reruns it now that #709 and #711 are both on main. Last result (round 2, `5b8a0cdf`): fails on length only, pooled 15/33 vs 20/33; focus 42 vs 33, verify 9 vs 8, guide 6 vs 4, self-state 6 vs 0. STY2's 27-task gate must also rerun before the tag (the condition of #701's research cut).
+
+**Before the v0.1.64 tag, added:**
+- HPW's real-Mac check (a pasted WeChat message goes through; a real password field is still refused);
+- ROUTE1's model switch on a real Mac;
+- C7c-5 ships in the same release as C7c-3a (#713);
+- **SBX-6 isn't closed by #668 alone.** It also needs SBX-4a and the MCP proxy PR, because the capability sandbox still reaches the name-lookup socket until those land;
+- a real-Mac check of SBX-6a with a system proxy.
+
+**Waiting on the user:** the three open items from the 11-03 list are answered and dropped here. What's left:
+- merges: #661, #666, and Codex and Bridge-frame PRs;
+- Ready on #666;
+- S5a's clickable demo, and the other mocks waiting for a look.
+
+**Flakes to add to the list:**
+- `test_window_permissions` (`test_once_a_card…`);
+- `test_memory_deletion_ledger` (parallel writers);
+- `TaskPanel` under Strict Mode;
+- `test_mcp_exposure`;
+- `test_mcp_supervisor_real`;
+- `product-language-coverage`;
+- `test_uni1b_hidden_characters` (a wall-clock budget under load).
 
 ### Evening update (2026-11-03)
 
@@ -108,7 +174,7 @@ SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun
 - **The model-by-job trial:** Opus for every code review, security, SBX and critical-path code; Sonnet for docs, relays and ⑦Codex, plus FMT1 PR 1 as the trial; Haiku for read-only search only.
 - ⑤CAP is paused after #688.
 
-**Handoff note (2026-11-03, morning):** ⓪Plan moved to a fresh session today (the user: "Yes, hand it over"; part of the model-by-job pacing trial). It starts from this page, the cards and the memory index; nothing in a scratchpad counts as handoff.
+**Handoff note (2026-11-03, morning):** ⓪Plan moved to a fresh session today (the user agreed to the handover; part of the model-by-job pacing trial). It starts from this page, the cards and the memory index; nothing in a scratchpad counts as handoff.
 
 ### ⓪Plan handoff (2026-11-03, morning; its tables are superseded by the evening update above)
 
@@ -157,7 +223,7 @@ SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun
 - Q1c end to end with build 31;
 - the IPB privacy line is live (#667, merged).
 
-**Previous update:** 2026-11-02 (UTC), late evening. **Since the evening update: 12 more merged**, among them all three Codex SBX p-parts (#669, #671, #654), SMART-2 (#677), L11 (b) (#681), CAP4a-3d (#604), DEP1 (#683, #684, #687) and the privacy page (#667). Main is green at 8c3a899d (run 41421660022). Open Dependabot alerts went from 116 to 8 (0 critical, 0 high, 7 medium, 1 low). **Pacing (user, via ④参谋):** until the 11-07 quota reset, only the critical path runs (SBX 6a/4a/5a/7, SMART-1..4, DEP1, IPB and iOS 1.0), with 2–3 sessions and effort=max only for security reviews. CAP9 (#661) waits for the reset. **iOS completeness is a v0.1.64 must** (the user: 「我期待 0.1.64 发布跟 iOS 对应功能是完整的，因为我想把 iOS 尽快可以提审上架」); ①iOS's list is below.
+**Previous update:** 2026-11-02 (UTC), late evening. **Since the evening update: 12 more merged**, among them all three Codex SBX p-parts (#669, #671, #654), SMART-2 (#677), L11 (b) (#681), CAP4a-3d (#604), DEP1 (#683, #684, #687) and the privacy page (#667). Main is green at 8c3a899d (run 41421660022). Open Dependabot alerts went from 116 to 8 (0 critical, 0 high, 7 medium, 1 low). **Pacing (user, via ④参谋):** until the 11-07 quota reset, only the critical path runs (SBX 6a/4a/5a/7, SMART-1..4, DEP1, IPB and iOS 1.0), with 2–3 sessions and effort=max only for security reviews. CAP9 (#661) waits for the reset. **iOS completeness is a v0.1.64 must** (the user expects Mac v0.1.64 to ship with the matching iOS features complete, so that the iOS app can go to App Store review as soon as possible); ①iOS's list is below.
 
 ## Merged for v0.1.64 (newest first)
 
@@ -395,7 +461,7 @@ SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun
 **Your list (late evening):**
 1. **#650 (IPB-1b), you merge:** on the iOS critical path. Main is merged in at b8af9a45 (724 / 261), and ①iOS's OK carries over by identity. Merge once CI is green.
 2. **Build 31:** ①iOS waits for your 「传」 to upload it to TestFlight; it can go before 0.1.64.
-3. **#525 (retire the pocket): in 0.1.64** (the user, 2026-11-02, "Yes, in 0.1.64"). ②Main merges main into it, takes it out of draft and gets a review; ①iOS re-checks the vectors. It's a Bridge PR, so you merge it.
+3. **#525 (retire the pocket): in 0.1.64** (the user agreed on 2026-11-02 to do it in 0.1.64). ②Main merges main into it, takes it out of draft and gets a review; ①iOS re-checks the vectors. It's a Bridge PR, so you merge it.
 4. **#666 (SBX-4a), you merge,** after Codex's 4p device gates land and CI is green.
 5. **Before the tag (you present):** the real-Mac signed-feed update test from #684's body (a throwaway key, a separately named test app); the OCR / PDF / attachment smoke for DEP1; Q1c end to end with build 31.
 
@@ -526,23 +592,23 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - Codex works under plan A.
 
 **Decided overnight (2026-11-01/02):**
-- **The loopback proxy (relayed, 「代理端口选 a」):** loopback stays open for dev servers; the profile denies the system proxy's own loopback port(s), read via proxy_resolve. Built in 6a; any-declared is retired for commands.
+- **The loopback proxy (relayed: option a for the proxy port):** loopback stays open for dev servers; the profile denies the system proxy's own loopback port(s), read via proxy_resolve. Built in 6a; any-declared is retired for commands.
 - **SBX-6's release gate covers MCP too** (⓪Plan with ③Hands, from #666's review): MCP with network moves to proxy mode in the "SBX-6 MCP proxy" PR. Node: the pinned runtime is 24.21.0, and `NODE_USE_ENV_PROXY` covers fetch and https in the sandbox, so no Node change is needed.
 
 **Decided on 2026-11-01, evening:**
-- **#645 and #650** (relayed by ④参谋, about 15:35 UTC), verbatim: 「#645 按推荐：先合，SBX-6 定为发版硬条件；#650 文件夹选 a」.
+- **#645 and #650** (relayed by ④参谋, about 15:35 UTC): take the recommendation on #645, merge it first and make SBX-6 a hard release condition; option a for #650's folder.
   - **#645:** merge as is. The any-declared socket, including the router port-mapping exposure, is accepted only for the development window on main.
     - **SBX-6 is a hard release condition** (README §7, SBX card).
     - The fallback, if SBX-6 isn't on main at release: no name lookup in any-declared mode.
   - **#650:** a folder outside home is shown by its last name only, e.g. `proj`. No volume and no full path leave the Mac.
-- **#645's two questions** (relayed by ④参谋, about 14:50 UTC), verbatim: 「A 放行，B 测」.
+- **#645's two questions** (relayed by ④参谋, about 14:50 UTC): A allowed, B measured.
   - **A:** any-declared mode keeps the mDNSResponder socket until SBX-6's proxy. The trade-off is recorded with `DELETE-BY: SBX-6`: the socket is the daemon's whole client interface (service registration, NAT port mapping, browse). Port-22 mode drops the socket.
   - **B:** the three daemon calls are measured once on this Mac, with you present.
-- **IMG1** (relayed, verbatim): 「直接按 A + C 做 确实听着靠谱些」. A + C now, B later, no extras (#646).
+- **IMG1** (relayed): go straight with A + C. A + C now, B later, no extras (#646).
 - **Self-merge after review** (in ⓪Plan's chat): it covers the security surface and then ordinary product code. Codex PRs and Bridge-frame PRs stay yours (#644).
-- **Process** (relayed, 「都同意」): no stacked PRs, STATUS twice a day, and ④参谋 pushes each ready merge to your phone as it comes.
+- **Process** (relayed: the user agreed with all of it): no stacked PRs, STATUS twice a day, and ④参谋 pushes each ready merge to your phone as it comes.
 
-**Decided on 2026-11-01, about 13:45 UTC (user, relayed by ④参谋): IPB's frames are OK**, 「帧 OK，1/2/4 按推荐，3 选 b」.
+**Decided on 2026-11-01, about 13:45 UTC (user, relayed by ④参谋): IPB's frames are OK**: items 1, 2 and 4 as recommended, option b for item 3.
 - The frames are as listed in [IPB-frame-list](IPB-frame-list.md) (#640): `status.snapshot` gains the optional `mac`, `week` and `outcomes`, and `chat.history.result` gains `details`. No new frame types and no `hello` flag.
 - The privacy rules stand: no Wi-Fi name, BSSID or IP; the folder starts with `~`; connector names carry no URL or arguments; the aralem.dev privacy line goes live with or before the Mac version that sends them.
 - Decide 1: network is link state only (connected, limited, none). Decide 2: at most 50 tasks per set in `outcomes`. Decide 4: changed lines are the sum of the recorded edit and write steps, and the spec says shell changes and very large edits are undercounted.
@@ -556,7 +622,7 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - A release build with no `ArslanComingSoon`, checked against a Mac without IPB; the screenshots retaken; the review notes say Quick Chat.
 - The privacy line on aralem.dev, live with or before the Mac version that sends state.
 
-**Decided on 2026-11-01 (user, relayed by ④参谋).** The user's words: 「D1、D2 按推荐」. Both are the recommended options in [#520's "Decisions for the user, before the flip"](https://github.com/mirzatghayrat/arslan/pull/520#decisions-for-the-user-before-the-flip), recorded in [SBX-sandbox.md](SBX-sandbox.md), §3:
+**Decided on 2026-11-01 (user, relayed by ④参谋).** D1 and D2 as recommended. Both are the recommended options in [#520's "Decisions for the user, before the flip"](https://github.com/mirzatghayrat/arslan/pull/520#decisions-for-the-user-before-the-flip), recorded in [SBX-sandbox.md](SBX-sandbox.md), §3:
 - **D1, listening:** SBX-3a flips with listening still denied. This keeps the 10-30 decision and adds no code. How listening comes back is decided in NET, either a per-run listen card or a Network Extension filter.
 - **D2, online-mode commands until SBX-6:** offline until Codex's DNS entry (gate 2) exists, then any-declared. Outbound TCP behaves as in v0.1.63, and UDP is denied. The gap it keeps, Arslan's ports over loopback, is v0.1.63's, and SBX-6 closes it. #619's commands mode list also needs any-declared.
 
@@ -565,16 +631,16 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - **The long-term approach over minimal patches:** cards SKF1, UNI1 and SEC1 (README §3.12).
 - **FRONT1:** options A and B, in one PR (user, 2026-10-30, in ③Hands' chat). It is #512: OK from the security side at `7dd5eade`, with a small window-title fix to land before the user merges.
 
-**Decided on 2026-10-30, night (user, relayed by ④参谋).** The user's words: 「1. 接受建议改成 a；2.（1）现在就跟你说 直接按主流做法： Claude Code 和 Codex 对装过的技能一律信任，读的时候不加框。（2）也按主流做法；3.也按主流做法」 and 「SB1 侧栏、STY 盲读 都可以 刚看了demo」. Recorded in full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-30", and [CAPX-followups.md](CAPX-followups.md).
+**Decided on 2026-10-30, night (user, relayed by ④参谋).** In summary: accept the suggestion and switch item 1 to option (a); for skills, follow mainstream practice (Claude Code and Codex trust every installed skill and read it unframed); follow mainstream practice for item 2(2) and item 3 as well. The user also approved the SB1 sidebar and the STY blind read after seeing the demo. Recorded in full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-30", and [CAPX-followups.md](CAPX-followups.md).
 - **D1, CAP4a-2: option (a).** Arslan's own pinned, checksummed uv and Node runtime makes the lock before the card; one card shows the locked versions.
 - **D2, skills follow mainstream practice:** every skill the user has is trusted and read unframed, as in Claude Code and Codex. Origin marks stay as data for deletion and display. Skills of unknown origin are deletable. #519 is reworked to match; 0077's `authored` skip is moot. Stated limit: the same trust model as MCP descriptions from approved servers; the guard is at install time.
 - **D3:** UNI1b is a notice only, never blocking. SEC1's move is an optional offer that never blocks a connection; #536's storage (`${NAME}` plus the encrypted column) stays.
 - **SB1-0:** the user is fine with either option on all three toggles, so ⑥Helper chose: the iPhone's sections (Today / Yesterday / Previous 7 days / Older, with Older folded by month and a count per month, by the iPhone's own `ConversationGroups.make` rules), time in the headings only, and Pinned above Projects. Recorded in #543.
 - **STY:** the user has no preference between the two sides of the read, so the read no longer blocks #452. The card's bench gate is unchanged.
 
-**Not adopted (user, 2026-10-30):** the v0.1.64 cut (#515). The user's words: 「现在没有按"截断方案"吧，我不太想一直有任务推到后面只为了快上线新版本 我只是想要合理推进 不要老是原地踏步」. The scope stays as planned. What the user wants is steady, visible progress: every lane busy on its next card, reviews in parallel, no PR left idle on a sync or a review, and Codex's next SBX block queued as soon as the previous one lands. Progress is reported as PRs merged per round and what moved on the critical path.
+**Not adopted (user, 2026-10-30):** the v0.1.64 cut (#515). In summary: the user does not want tasks pushed back again and again just to ship the new version sooner; the aim is reasonable progress, not standing still. The scope stays as planned. What the user wants is steady, visible progress: every lane busy on its next card, reviews in parallel, no PR left idle on a sync or a review, and Codex's next SBX block queued as soon as the previous one lands. Progress is reported as PRs merged per round and what moved on the critical path.
 
-**Decided on 2026-10-31, about 12:40 UTC (user, relayed by ④参谋).** The user's words: 「全按推荐，DIFF1 用左右对照，白名单选 D，UNI1b 草图推荐选 B（我还是那个要求 借鉴主流agent产品做法，不要过度防御）」. In full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-31".
+**Decided on 2026-10-31, about 12:40 UTC (user, relayed by ④参谋).** In summary: all recommendations taken; DIFF1 uses a side-by-side view; the allowlist is option D; UNI1b is option B of the sketch; and the standing request stands to follow mainstream agent products and not over-defend. In full in [CAP-capabilities.md](CAP-capabilities.md), "Decided on 2026-10-31".
 - **DIFF1-0:** a side-by-side diff; created and deleted files open, as the mock recommended. The web half goes ahead (⑥Helper).
 - **DIFF2-0:** the diff covers everything since the branch left main, as Claude's does; a PR opens in the workbench's Browser tab; the PR row shows its checks (⑥Helper).
 - **CAP4a-3:** allowlist D. Packages from any verified domain are one-click (the lock, the scan and the sandbox still apply); remote servers only from B's vendor list. A remote whose publisher has no verified domain is manual-only. The Registry re-check runs once a day per server and on the first start after an update.
@@ -584,7 +650,7 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - **UNI1b:** option B of ⑤CAP's mock.
 - **The standing rule, repeated:** follow mainstream agent products, and don't over-defend (`docs/sessions.md` §12).
 
-**Decided on 2026-10-31, about 14:45 UTC (user, relayed by ④参谋).** The user's words: 「都按推荐」, after the four items that were "to confirm".
+**Decided on 2026-10-31, about 14:45 UTC (user, relayed by ④参谋).** All as recommended, after the four items that were "to confirm".
 - **The INB card's questions 1–11:** as the card recommends. For the two that had no card recommendation:
   - Q3: during Do Not Disturb or Focus, approval cards don't pop. They wait in the conversation and the badge still shows, as Claude's and Codex's desktop notifications follow Focus.
   - Q4: only a "family" category is added for now.
@@ -603,12 +669,12 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
 - The report is `SBX-measurement.md` (#592, `71f79c3d`).
 - The two boundary-open rows (the hard-link measurement on today's shipped bases) are a probe artifact, not a shipped gap; no point release (the effort=max assessment, #592 comment 6545067946). The probe fix is in Codex's SBX-3p paste.
 
-**Decided on 2026-10-31, about 17:45 UTC (user, relayed by ④参谋).** The user's words: 「1 允许，2B，3A，4 都按推荐，5 允许」.
+**Decided on 2026-10-31, about 17:45 UTC (user, relayed by ④参谋).** In summary: items 1 and 5 allowed, option B for item 2, option A for item 3, item 4 as recommended.
 1. **The #584 and #563 pushes:** allowed. ⑤CAP pushes them in its own session; no other session pushes for it.
 2. **INB7:** **B**: all of it goes into v0.1.64, the map and the timeline replay included (②Main). The plan is the newest board, F ("fused", version 11 of ②Main's canvas). That board came after C+, when the user asked to fuse it with today's Activity.
    - Usage's tiles are on top, with 「要你做」 as the first tile. One time axis carries a runs lane and replay. 「最近的工作」 is the only list. The map follows. An inspector holds 「要你做」, 「回放」, 「改动」 and 「诊断」.
    - PRs: a, the rename, the tiles and the per-model cost; b, the axis; c, the list and the inspector; d, the map; e, removing the morning brief; f, the read-only progress tool.
-   - **Decided after (user, relayed by ④参谋: 「并进去」):** the Hands, judgment, scheduled-task and per-model cards fold into the page. The duration heatmap shows only for 7 and 30 days.
+   - **Decided after (user, relayed by ④参谋: fold them in):** the Hands, judgment, scheduled-task and per-model cards fold into the page. The duration heatmap shows only for 7 and 30 days.
 3. **The import scan:** **A**. The rule that blocks an import blocks only Tag characters and bidi overrides. Every other hidden character is counted and marked, not blocked, as GitHub's warning does. This is a new small PR on the security surface (⑤CAP).
 4. **L11-0:** both picks as recommended. The rules show as an Overview row, and the card has two buttons, Add and Not now. L11-2 can be built now (⑥Helper).
 5. **The SB1 count:** allowed. The classifier still stopped the relayed OK, so the user allowed it in ⑥Helper's session directly, and it ran read-only, counts only.
@@ -616,7 +682,7 @@ More decided on 2026-10-29 and 2026-10-30, all by the user:
    - By section: Today 0, Yesterday 2, Previous 7 days 20, Older 28 (one month group).
    - So Older needs no "show more" today. Pinned can't be read yet, since the installed database predates 0079.
 
-**Decided on 2026-11-01, morning (user, relayed by ④参谋).** The user's words: 「1A，2 已知限制，3 去掉，额度按你的建议」.
+**Decided on 2026-11-01, morning (user, relayed by ④参谋).** In summary: option A for item 1, item 2 a known limit, item 3 dropped, and the quota as recommended.
 1. **#563:** accept the gap. The 40-character window and the interpreter pattern weren't reviewed (classifier blocks). The scan is a heuristic, so this is a known limit, with no Astra paste. #563 goes to Ready and merge.
 2. **#604 F3, cross-host redirects for remote MCP:** a stated limit, as mainstream clients have it. #604's body and #584's text are aligned, so neither says the other handles it. Recorded in [CAP-capabilities.md](CAP-capabilities.md), "Stated limits recorded on 2026-11-01".
 3. **#604 KEEP_FOR:** removed. A keep holds until the entry changes again, with no 30-day expiry. ⑤CAP drops it and its card line; ⓪Plan re-checks.

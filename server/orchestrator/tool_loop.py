@@ -8,31 +8,39 @@ import logging
 import os
 import re
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from contextvars import ContextVar
-from typing import TYPE_CHECKING
+from dataclasses import replace
 
 from arslan.execution_budget import BudgetExceeded, governed
 from arslan.llm import tool_names, trajectory, usage_sink
-from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind
+from arslan.runtime_policy import ProgressPolicy, bounded_history
 
 from server.orchestrator import run_trace
-from server.orchestrator.answer_contract import GROUNDED_ANSWER_RULES
-from server.orchestrator.json_protocol import first_json_object, parse_json_object
+from server.orchestrator.answer_guards import (
+    _DEFERRAL_MAX, _PROTOCOL_PATTERNS, _embeds_protocol, _is_deferral_stub, _unverified_claim)
+from server.orchestrator.answer_salvage import (
+    _CHAT_TIMEOUT_S, _chat_miss_message, _fallback_with_digest, _salvage_plain, _synthesize_from_findings)
 from server.orchestrator import on_demand, parallel_reads, turn_context
+from server.orchestrator.turn_state import TOOL_TIMEOUT_S, ResolveTools, ToolTurn, TurnRequest, TurnState  # noqa: F401
 from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
+from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
-from server.services import replay_safety, steering
+from server.services import steering
 from server.services.llm_factory import build_adapter
+from server.services.replay_safety import _check_fetch_budget
 from arslan.aio import within
+# Tests read these here. DELETE-BY: v0.1.64, with LOOP1's slice z.
+from server.orchestrator.answer_guards import (  # noqa: F401
+    _CLAIMS_SEARCH_RE, _PROMISES_ACTION_RE, _claims_search, _draws_chart_fence, _promises_action)
+from server.orchestrator.answer_salvage import _chat_retry, _clean_findings  # noqa: F401
+from server.services.replay_safety import (  # noqa: F401
+    HERMETIC_FETCH_BUDGET, _hermetic_fetches, begin_hermetic_attempt, end_hermetic_attempt, hermetic_fetches_used,
+    reset_hermetic_fetch_budget)
 
 logger = logging.getLogger(__name__)
 
-if TYPE_CHECKING:
-    from server.orchestrator.tool_caller import ToolCaller
-
-TOOL_TIMEOUT_S = 20.0
 # 0.1.62 F1: run_command's backstop stops this much before the turn's own timeout, so the order
 # is fixed: the command's limit first (with its output), this backstop next, the turn last.
 _RUN_COMMAND_BACKSTOP_RESERVE_S = 10.0
@@ -61,11 +69,6 @@ _REFUSED_STEP = {
 # a tool that slips out of this set would be a silently ungated writer.
 _WORKSPACE_WRITE_TOOLS = frozenset({"write_file", "edit_file"})
 
-
-
-ResolveTools = Callable[[], Awaitable[list[dict]]]
-# (command, argv, *, remote_host=, fingerprints=, sandbox=, why=) -> approved
-ConfirmCommand = Callable[..., Awaitable[bool]]
 
 
 def _get_adapter():
@@ -125,178 +128,6 @@ def _summarize_result(result: dict) -> str:
     if "text" in result:
         return f"{len(result['text'])} chars extracted"
     return "ok"
-
-
-_CLAIMS_CHART_RE = re.compile(
-    r"上图|已生成图|已为您生成|已绘制|图表已|chart (is )?(generated|ready|done)|here('s| is) (the|your) chart",
-    re.IGNORECASE)
-#: "No search was needed" (「不需要搜索了」, 「无需再搜索了」, 「不用去搜索了」) is no claim: each negation, bare or with
-#: 「再」 / 「去」 before the verb, as its own fixed-width lookbehind.
-_NOT_SEARCHED = "".join(f"(?<!{no}{adverb})" for no in ("没", "未", "不", "不用", "无需", "不必", "需要", "没有")  # lang-check: allow
-                        for adverb in ("", "再", "去"))
-_CLAIMS_SEARCH_RE = re.compile(
-    r"我搜索|" + _NOT_SEARCHED + r"搜索了|获取到(了|的)?数据|我已搜|i (just )?searched|let me search"  # lang-check: allow
-    r"|i looked it up",
-    re.IGNORECASE)
-#: K8a: 「查到」 alone claims no web search (memory, a command or a file finds things too; "say how it was found",
-#: 「说明是怎么查到的」, sent run 492 back three times). It does after a web word in the same clause (「我在网上查到了」),
-#: unless the clause is advice or how-to (「你可以在网上查到」, 「怎么在网上查到」, 「建议上网查到…」) or says nothing was
-#: found (「网上没有查到」). #694 review.
-#: 「网络上」 only, never bare 「网络」 or 「网络中」: 「网络设置里查到…」 and 「本地网络中查到…」 are local (#698 review).
-_WEB_FOUND_RE = re.compile(r"(网上|在线|上网|联网|网页|网络上|搜索引擎)[^。！？，、；\n]{0,6}查到")  # lang-check: allow
-_ADVICE_WORDS = ("可以", "怎么", "如何", "建议")  # lang-check: allow
-#: 「可」 / 「能」 / 「去」 are advice only right before the web word (「可在网上」, 「去网上」) or right before 「查到」
-#: (「都能查到」), and not as the end of 「可能」, 「功能」 or 「过去」 (#694 follow-up).
-_ADVICE_BEFORE_WEB = re.compile(r"(?:(?<![可功])能|可|(?<!过)去)[在到]?$")  # lang-check: allow
-_ADVICE_BEFORE_FOUND = re.compile(r"(?:(?<![可功])能|可)$")  # lang-check: allow
-_NOT_FOUND = ("没", "未", "没有", "未能")  # lang-check: allow
-
-
-def _claims_web_found(text: str) -> bool:
-    for match in _WEB_FOUND_RE.finditer(text):
-        clause_start = max(text.rfind(mark, 0, match.start()) for mark in "。！？，、；\n") + 1
-        clause = text[clause_start:match.end()]
-        before = text[:match.end() - 2]
-        # The single-character checks look only at the few characters before (lookbehind still sees past `pos`).
-        advice = (any(word in clause for word in _ADVICE_WORDS)
-                  or _ADVICE_BEFORE_WEB.search(text, max(clause_start, match.start() - 3), match.start())
-                  or _ADVICE_BEFORE_FOUND.search(text, max(match.start(), len(before) - 2), len(before)))
-        if not advice and not before.endswith(_NOT_FOUND):
-            return True
-    return False
-
-
-def _claims_chart(text: str) -> bool:
-    return bool(_CLAIMS_CHART_RE.search(text or ""))
-
-
-def _claims_search(text: str) -> bool:
-    return bool(_CLAIMS_SEARCH_RE.search(text or "")) or _claims_web_found(text or "")
-
-
-# Chart-as-code-fence: instead of calling render_chart, the model draws a DATA chart by writing a
-# Markdown code block (```mermaid xychart-beta / ```mermaid pie / ```chart / bare ```xychart-beta).
-# The UI shows a raw code block with a "Copy" button, not a real ECharts chart. Distinct from
-# _claims_chart (which catches "上图已生成" claims): here the model neither claims nor promises — it
-# literally hands over chart source. Matches ONLY data charts render_chart can produce; a mermaid
-# flowchart / sequenceDiagram is a legit diagram render_chart CANNOT draw, so it must not trip this.
-_DRAWS_CHART_FENCE_RE = re.compile(
-    r"```\s*chart\b"                                       # ```chart generic fence
-    r"|```\s*(?:mermaid\s+)?xychart[\w-]*"                 # ```xychart-beta or ```mermaid xychart...
-    r"|```\s*mermaid\b[\s\S]{0,80}?"                       # ```mermaid then, in the block head,
-    r"(?:xychart-beta|\bpie\s+(?:title|showData))",        #   an xychart/pie declaration
-    re.IGNORECASE)
-
-
-def _draws_chart_fence(text: str) -> bool:
-    return bool(_DRAWS_CHART_FENCE_RE.search(text or ""))
-
-
-# Forward-promise patterns: the model ends its turn PROMISING a future tool action instead of
-# emitting the tool JSON ("数据正在路上", "马上为您绘制…", "我这就去搜索", "STEP 2: 调用 web_extract",
-# "let me search"). Distinct from the _CLAIMS_* regexes above, which catch the inverse — claiming
-# a result already produced. Tight on purpose (anchored on first-person / imperative + a tool-action
-# verb) so a complete answer that merely mentions next steps doesn't trip it.
-_PROMISES_ACTION_RE = re.compile(
-    r"正在(为您|帮您|努力)?\s*(路上|搜索|查询|抓取|获取|拉取|加载|生成|绘制|出图|制作)"
-    r"|数据\s*(正在|马上|即将|这就)\s*(路上|赶来|送达|生成|呈现)"
-    r"|(马上|这就|现在就|立刻|立即|即将)\s*(去|来)?\s*(为您|帮您|给您)?\s*(搜索|查询|查一下|抓取|获取|拉取|生成|绘制|出图|画|制作|呈现|调用)"
-    # first-person promise: 我来/让我/现在让我(继续) + a tool-action verb. Anchored on 我/让我 so a
-    # completed answer that says "接下来你可以自行搜索" (second-person) never trips it.
-    r"|(现在)?\s*(我|让我)\s*(来|去|先|这就|马上|现在就|继续)?\s*(为您|帮您)?\s*"
-    r"(搜索|查|查询|抓取|获取|拉取|绘制|生成|画|制作|调用)"
-    # promising a chart/figure: 生成/绘制/画/制作 … a NAMED chart type. Must be a specific chart noun
-    # (图表/趋势图/柱状图/…), NOT the bare "图" — bare "画图" is the render_chart CAPABILITY's common
-    # name and legitimately appears in capability answers (e.g. "我有内置的…画图"); matching it there
-    # falsely rejects a good answer into the digest/继续 floor.
-    r"|(以便|接着|然后)?\s*(生成|绘制|画|制作|输出)\s*[^。\n]{0,8}(图表|趋势图|全景图|示意图|柱状图|折线图|饼图|散点图)"
-    # STEP narration: 'STEP <anything-short> 调取/搜索/获取/生成…' — the icon/number between STEP and
-    # the verb is arbitrary (we saw 'STEP <icon> 调取各项目详情'), so match loosely.
-    r"|STEP\s*\S{0,4}\s*(调用|调取|搜索|抓取|获取|查询|绘制|生成|call|search|fetch|generate)"
-    r"|第\s*[一二三四五六七八九十\d]+\s*步\s*[:：]?\s*(调用|调取|搜索|抓取|获取)"
-    r"|(下一步|接下来)\s*[，,：:]?\s*(我|让我)\s*(会|要|将|就|继续)?\s*(搜索|查询|抓取|获取|绘制|生成|调用)"
-    r"|调用\s*(web_search|web_extract|render_chart)"
-    r"|(生成|制作|输出|导出)\s*[^。\n]{0,6}(deck|pptx|\.pptx|幻灯|演示|ppt)"
-    r"|let me (search|look this up|fetch|pull|grab|draw|generate|chart|get the data)"
-    r"|i(?:'ll| will| am going to|'m going to)\s+(?:now\s+|quickly\s+|go\s+)?"
-    r"(search|fetch|pull|retrieve|draw|generate|chart|look up|gather)",
-    re.IGNORECASE)
-
-
-def _promises_action(text: str) -> bool:
-    return bool(_PROMISES_ACTION_RE.search(text or ""))
-
-
-# A genuine deferral ("让我继续查各项目的 star 数" with no tool call and no real content) is SHORT.
-# A substantive answer that merely MENTIONS action verbs — a capability rundown ("我能搜索、抓取网页、
-# 画图表"), a plan, a summary that describes what tools do — is long and IS the answer. Rejecting the
-# latter as "still promising action" was the bug behind: capability answers → digest/继续 floor, and
-# good synthesized answers bounced. So only treat a promise as a deferral to reject when it's ALSO
-# short/stub-like; keep any substantive answer regardless of the action words in it.
-_DEFERRAL_MAX = 160
-
-
-def _is_deferral_stub(text: str) -> bool:
-    t = (text or "").strip()
-    return len(t) < _DEFERRAL_MAX and _promises_action(t)
-
-
-
-def _fallback_message(user_content: str, *, locale=None) -> str:
-    """Honest last-resort answer when even the salvage attempt won't produce prose. Language
-    inferred from the request so a Chinese user doesn't get an English apology (or vice-versa).
-    Wording is deliberately PER-TURN ("这一轮") — a live incident showed 'session exhausted'
-    phrasing poisons later turns: the model reads it in history and role-plays permanent
-    exhaustion even though every dispatch starts with a fresh budget."""
-    from server.services import runtime_messages
-    if locale is not None:
-        return runtime_messages.render("round_incomplete", locale)
-    cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
-    if cjk:
-        # User-facing copy: NO internal mechanics. "工具调用次数用完" confused a live tester
-        # ("什么意思?误导性很强") and reads like a permanent outage. Just: unfinished + how
-        # to continue.
-        return "这个任务这一轮还没做完。回复“继续”我就接着做;也可以把范围缩小一点,会更快。"
-    return ("I didn't finish this one in a single round. Reply \"continue\" and I'll keep "
-            "going — or narrow the scope a little for a faster answer.")
-
-
-def _evidence_digest(tool_trace: list, *, max_items: int = 8, snippet: int = 240,
-                     total: int = 2600) -> str:
-    """Deterministic (no-LLM) salvage of a spent round: compress the OK tool results
-    into a findings block. Without this, a continuation restarts research from ZERO —
-    live incident: 3 rounds × 8 searches on the same task, nothing ever accumulated,
-    the user kept being asked to press 继续. The digest rides inside the round's final
-    message, so the next round sees the evidence in chat history."""
-    lines: list[str] = []
-    for step in tool_trace[-max_items:]:
-        res = step.get("result") or {}
-        if not res.get("ok"):
-            continue
-        args = step.get("args") or {}
-        head = str(args.get("query") or args.get("url") or "")[:60]
-        payload = {k: v for k, v in res.items() if k not in ("ok", "artifact", "external")}
-        body = json.dumps(payload, ensure_ascii=False)[:snippet]
-        lines.append(f"- {step.get('tool')}({head}): {body}")
-    return "\n".join(lines)[:total]
-
-
-def _fallback_with_digest(user_content: str, tool_trace: list, *, locale=None) -> str:
-    """Fallback message + whatever evidence this round actually gathered. The 【阶段性发现】
-    marker matters: arslan._looks_like_refusal treats a marked message as substantive
-    (carried forward), not as a refusal to be dropped."""
-    base = _fallback_message(user_content, locale=locale)
-    digest = _evidence_digest(tool_trace)
-    if not digest:
-        return base
-    if locale is not None:
-        from server.services import runtime_messages
-        header = runtime_messages.render("findings_header", locale)
-    else:
-        cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
-        header = ("【阶段性发现】(本轮已查到的资料,尚未成稿)" if cjk
-                  else "[Findings so far] (gathered this round, not yet written up)")
-    return f"{header}\n{digest}\n\n{base}"
 
 
 # PB-3: turn-scoped MCP degradation. When an `mcp_*` tool fails this many times
@@ -1013,12 +844,14 @@ _LONG_TURN_NOTE = (f"This turn has been working for {LONG_TURN_S // 60} minutes.
 #: for reports, not for chatting".
 _CLOSING_NOTE = ("This turn used tools in several steps. End your final reply with four short lines, in the "
                  "reply's language: what you did; how you checked it; what you did not check (call it "
-                 "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch.")
+                 "unverified, in the reply's language, e.g. 未核对 in Chinese); what the user should watch. Skip them "
+                 "if the user asked a question and you only looked things up to answer it.")
 
 
 #: Looking, not working, though task_service.effect_of (which also decides retries) calls them external writes: they
-#: search, find or probe and change nothing. For the closing lines only (#701 review).
-_LOOKS_ONLY = frozenset({"conversation_search", "find_capability", "scan_local_network", "ssh_probe"})
+#: search, find or probe and change nothing. For the closing lines only (#701 review). find_tools is how a turn reaches
+#: my_status (itself a read), so a version question is two steps of looking (SMART-5 round 2).
+_LOOKS_ONLY = frozenset({"conversation_search", "find_capability", "find_tools", "scan_local_network", "ssh_probe"})
 
 
 async def _did_work(tool_trace: list, work: dict) -> bool:
@@ -1034,129 +867,6 @@ async def _did_work(tool_trace: list, work: dict) -> bool:
             work["done"] = effect != "read"
     work["seen"] = len(tool_trace)
     return work["done"]
-
-
-#: 0.1.63 K4b: a live run has no allowance of its own any more (it was 25); a web read is one tool
-#: call under the run's limits (K4a), and K4a's tool-call limit and dollar cap bound a web-heavy turn.
-#: What stays is the eval/replay allowance below. The tools it covers: capping web_extract alone
-#: would be bypassed by alternating with web_search, so they share ONE allowance.
-_FETCH_TOOLS = frozenset({"web_search", "web_extract"})
-
-
-#: FU-2b. The eval/replay allowance, and it is deliberately NOT per dispatch.
-#:
-#: The gate dispatches roughly `pairs x 2 arms x (epochs*lr_budget + 1)` times —
-#: a few hundred for one candidate. Giving each of those its own 25 would be a
-#: cap in name only: 25 x 224 is not a bound, it is a multiplier with a label.
-#: So the allowance spans the whole attempt, and it is smaller than the live one
-#: because an evaluation is not supposed to be doing research — a candidate that
-#: needs fifty pages is a candidate worth refusing.
-HERMETIC_FETCH_BUDGET = 50
-
-#: Spent-so-far per hermetic sentinel. Module state rather than a threaded
-#: parameter because every dispatch in an attempt already shares one sentinel
-#: conversation id, and threading a budget object through the evaluator would
-#: mean changing every layer between here and the watcher for a counter.
-#:
-#: If two spawns are evaluated at once they SHARE this allowance. That is the
-#: conservative direction for a spend gate and is left deliberately: a shared
-#: budget can only refuse earlier than a per-attempt one, never later.
-#:
-#: 🔴 That last sentence was FALSE, and the sharing was never why. The RESET
-#: was: the watcher cleared the counter at the top of EVERY attempt, and
-#: `_running_spawns` allows one attempt per SPAWN, not one overall. Attempt B
-#: starting refunded attempt A mid-flight — 90 spent against a cap of 50 from a
-#: single overlap, N x 50 for N overlaps, i.e. the gate loosened exactly when
-#: evolution activity and therefore spend was highest.
-#:
-#: Passing the sentinel to the reset does NOT fix it, which is worth writing
-#: down because it is the obvious fix and it is empty: every hermetic dispatch
-#: shares the one id, so popping that key and clearing the dict are the same
-#: operation. What restores the promise is refcounting the attempts in flight —
-#: a fresh allowance when the first one starts, and nothing but sharing after.
-#: Covered by tests/server/test_hermetic_budget_refund.py.
-_hermetic_fetches: dict[str, int] = {}
-
-
-#: How many hermetic attempts are in flight. The allowance is refreshed when
-#: this goes 0 -> 1 and never while it is above zero, so concurrent attempts
-#: SHARE one allowance (conservative, and what the comment above has always
-#: claimed) instead of refunding each other (what actually happened).
-_hermetic_attempts_inflight = 0
-
-
-def begin_hermetic_attempt() -> None:
-    """Claim the allowance for an attempt that is starting.
-
-    Production callers use this instead of `reset_hermetic_fetch_budget`, which
-    is unconditional and therefore unsafe while anything else is running.
-    """
-    global _hermetic_attempts_inflight
-    if _hermetic_attempts_inflight == 0:
-        _hermetic_fetches.clear()
-    _hermetic_attempts_inflight += 1
-
-
-def end_hermetic_attempt() -> None:
-    """Release one in-flight claim. Must run even when the attempt raised."""
-    global _hermetic_attempts_inflight
-    _hermetic_attempts_inflight = max(0, _hermetic_attempts_inflight - 1)
-
-
-def hermetic_attempts_inflight() -> int:
-    """For tests and diagnostics; never a control-flow input."""
-    return _hermetic_attempts_inflight
-
-
-def reset_hermetic_fetch_budget(conversation_id: str | None = None) -> None:
-    """Start a fresh allowance. Called by the watcher at the top of an attempt.
-
-    Without this the counter would be process-lifetime and the first attempt
-    after a restart would get the budget while every later one got nothing —
-    a gate that tightens silently over uptime, which is worse than no gate
-    because it looks like a broken feature rather than a limit."""
-    if conversation_id is None:
-        _hermetic_fetches.clear()
-    else:
-        _hermetic_fetches.pop(conversation_id, None)
-
-
-def hermetic_fetches_used(conversation_id: str) -> int:
-    """For tests and diagnostics; never a control-flow input."""
-    return _hermetic_fetches.get(conversation_id, 0)
-
-
-def _check_hermetic_fetch_budget(conversation_id: str | None) -> dict | None:
-    key = conversation_id or "evolution"
-    used = _hermetic_fetches.get(key, 0)
-    if used >= HERMETIC_FETCH_BUDGET:
-        return {"ok": False,
-                "error": f"evaluation fetch budget reached ({HERMETIC_FETCH_BUDGET} "
-                         "web_search/web_extract calls for this attempt) — judge the "
-                         "candidate on what has already been gathered"}
-    _hermetic_fetches[key] = used + 1
-    return None
-
-
-async def _check_fetch_budget(tool_key: str, *, conversation_id: str | None) -> dict | None:
-    """None to proceed, or an explicit refusal dict once an eval/replay attempt has spent its allowance.
-
-    🔴 SCOPE. A live run has no fetch allowance since 0.1.63 K4b: its reads count as tool calls.
-    A hermetic eval/replay gets HERMETIC_FETCH_BUDGET for the WHOLE ATTEMPT, which is the only shape that
-    bounds anything there: `web_search` and `web_extract` are both in
-    REPLAY_SAFE_BUILTINS (sealing keeps read-only web and drops WRITE tools plus
-    anything non-allowlisted), and the gate dispatches roughly
-    `pairs x 2 arms x (epochs*lr_budget + 1)` times — so a per-dispatch cap would
-    multiply rather than limit. This was registered as FU-2b and is now in.
-
-    The refusal is EXPLICIT rather than a silent drop: a swallowed fetch looks to the
-    model like a page with no content, and it will simply try the next URL.
-    """
-    if tool_key not in _FETCH_TOOLS:
-        return None
-    if replay_safety.is_hermetic_context(conversation_id):
-        return _check_hermetic_fetch_budget(conversation_id)
-    return None
 
 
 async def _asks_for_everything() -> bool:
@@ -1308,7 +1018,7 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
     runs offline under the kernel's rule — in the sandbox, and outside it under the minimal profile,
     which carries the same rule (card, piece 4; the internal review's case: a script refused inside for
-    reading a secret, let out by the retry card, must not get the network with it). One that reaches the
+    reading a secret, let out by its outside card, must not get the network with it). One that reaches the
     network (by its text, or the model's `network: true`) asks first: this time or this conversation
     inside the sandbox, this time only outside it, where the user's secrets are readable (a stored grant
     does not count there). The island never answers it. With nobody to ask: offline. An approved plain
@@ -1423,24 +1133,26 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
     return result
 
 
-async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, emit,
-                         tool_timeout_s, tool_trace, convo, confirm_command=None,
-                        confirm_workspace_write=None,
-                        confirm_schedule=None,
-                         mcp_fail_counts: dict | None = None,
-                         mcp_hint_logged: set | None = None,
-                         conversation_id: str | None = None,
-                         log_events: bool = True,
-                         caller: ToolCaller | None = None,
-                         turn_adapter=None,
-                         resolve_callable=None) -> dict:
+async def _dispatch_tool(tool_key, args, assistant_content, **turn) -> dict:
+    """`_run_tool` by keyword, the way tests call it. DELETE-BY: v0.1.64, with LOOP1's slice z."""
+    return await _run_tool(tool_key, args, assistant_content, ToolTurn(**turn))
+
+
+async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append one
     framed tool-result record into convo. Returns the raw result dict.
 
     run_command is special: it requires per-command user confirmation via the injected
     confirm_command(command, argv) -> bool callback. No callback → refuse (safety default).
     Since 0.1.51 it also runs inside the workspace sandbox; leaving it is a click
-    (confirm_command(..., sandbox="outside"|"retry")), never the model's say-so."""
+    (confirm_command(..., sandbox="outside")), never the model's say-so."""
+    resolve_tools, resolve_callable, tool_timeout_s = turn.resolve_tools, turn.resolve_callable, turn.tool_timeout_s
+    emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
+    confirm_command, confirm_workspace_write, confirm_schedule = (
+        turn.confirm_command, turn.confirm_workspace_write, turn.confirm_schedule)
+    mcp_fail_counts, mcp_hint_logged = turn.mcp_fail_counts, turn.mcp_hint_logged
+    conversation_id, log_events, caller, turn_adapter = (
+        turn.conversation_id, turn.log_events, turn.caller, turn.turn_adapter)
     from arslan.execution_budget import BudgetExceeded, current
     budget = current()
     if budget is not None:
@@ -1582,6 +1294,12 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
     sandbox_on = False
     unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
+    deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
+
+    def delete_kw(outside: bool) -> dict:
+        """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
+        from server.services import delete_to_trash
+        return {"delete": delete_to_trash.card_mode(command, outside=outside or not confined)} if deletes_outside else {}
     if tool_key == "run_command":
         # 0.1.48: one shell string; a forbidden command is refused here, before any
         # card, so nobody is ever asked to approve wiping the disk.
@@ -1592,6 +1310,15 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
         if verdict.level == "forbid":
             result = {"ok": False, "error": f"Arslan never runs this: {verdict.reason}",
                       "note": "Tell the user what you wanted to do and let them run it themselves."}
+            return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                        assistant_content, convo,
+                                        mcp_fail_counts=mcp_fail_counts)
+        if terminal_policy.heredoc_in_substitution(command):
+            # No card either: it would show text that reads as data, and some of that text would run.
+            result = {"ok": False, "error": "A here-document inside $( ) can't run here: in bash 3.2 its text can end the "
+                      "substitution early, and the rest of the text runs as commands. Nothing ran.",
+                      "note": "Write the text to a file with write_file, then use the file: for a commit message, "
+                              "git commit -F <file>; for a variable, NOTE=$(cat <file>)."}
             return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
@@ -1607,6 +1334,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                                         assistant_content, convo,
                                         mcp_fail_counts=mcp_fail_counts)
         sandbox_on = await _sandbox_enabled()
+        deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
+        confined = sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
         from server.services import task_service as _task_service
         # S2a-2: a plain osascript that U11 runs bare takes its own card, the one way it works; asking to run it
         # outside the sandbox would show a card that cannot help (its Apple Events stay blocked there).
@@ -1638,11 +1367,22 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
                                             mcp_fail_counts=mcp_fail_counts)
-            why = str(args.get("why") or "").strip()[:300]
+            # The reason as the card will show it (protocol.propose_run_command): one of invisible characters is none.
+            from server.orchestrator import untrusted as _untrusted
+            why = _untrusted.clean_name(args.get("why"), 300)
+            if not why:
+                # Leaving the sandbox is a deliberate request (the calibration of 2026-11-07), and the card leads with why.
+                # Arslan's own words, and nothing ran: not outside content, whatever the command looks like.
+                result = {"ok": False, "external": False, "executed": False,
+                          "error": "outside_sandbox needs a why: one short sentence on why this has to run "
+                                   "outside the sandbox. The user reads it on the card."}
+                return _record_tool_result(tool_key, args, result, emit, tool_trace,
+                                            assistant_content, convo,
+                                            mcp_fail_counts=mcp_fail_counts)
             from server.services import approvals as _approvals
             _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
             _approvals.LAST_ANSWERED_BY.set(None)
-            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw):
+            if not await confirm_command(command, argv, sandbox="outside", why=why, **net_kw, **delete_kw(True)):
                 result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
                                             assistant_content, convo,
@@ -1688,7 +1428,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
             permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
             # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
             said = str(args.get("why") or "").strip()[:300]
-            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw)
+            approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw,
+                                             **delete_kw(run_outside))
             if not approved:
                 result = {"ok": False, "error": _declined("user declined this command", "this command")}
                 return _record_tool_result(tool_key, args, result, emit, tool_trace,
@@ -1880,8 +1621,13 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
 
             async def run_once(outside: bool) -> dict:
                 from server.services import terminal_exec
+                from server.services import delete_to_trash
                 token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
                 bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
+                # SMART-8: allowed, outside the sandbox and read with certainty: its targets go to the Trash.
+                trash = delete_to_trash.TRASH.set(tool_key == "run_command" and deletes_outside
+                                                  and (outside or not confined)
+                                                  and delete_to_trash.plan(command) is not None)
                 # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
                 cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
                 try:
@@ -1889,6 +1635,7 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 finally:
                     if cut is not None:
                         terminal_exec.OFFLINE.reset(cut)
+                    delete_to_trash.TRASH.reset(trash)
                     terminal_exec.UNWRAPPED.reset(bare)
                     terminal_exec.OUTSIDE_SANDBOX.reset(token)
             if result is None:
@@ -1907,22 +1654,8 @@ async def _dispatch_tool(tool_key, args, assistant_content, *, resolve_tools, em
                 if by_grant and not ran_outside and isinstance(result, dict):
                     result["grant_note"] = ("this conversation's permission to run commands outside the sandbox was "
                                             "taken back; it ran in the sandbox")
-            if (tool_key == "run_command" and sandbox_on and not ran_outside and confirm_command is not None
-                    and isinstance(result, dict) and result.get("sandbox_denied")):
-                # Stopped by the sandbox: offer ONE re-run outside it, from the start.
-                if await confirm_command(command, argv, sandbox="retry"):
-                    # S2a-1: outside, the network rule is decided again as for an outside run (this time
-                    # only, a stored grant does not count): the retry card is about files.
-                    network = await _network_after_outside_content(
-                        command, args, sandbox_on=sandbox_on, run_outside=True, unwrapped=False,
-                        conversation_id=conversation_id)
-                    if network.get("refused"):
-                        result = {"ok": False, "error": network["refused"]}
-                    else:
-                        result = await run_once(True)
-                    if isinstance(result, dict) and not network.get("refused"):
-                        result["ran_outside_sandbox"] = True
-            elif tool_key == "run_command" and ran_outside and isinstance(result, dict):
+            # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
+            if tool_key == "run_command" and ran_outside and isinstance(result, dict):
                 result["ran_outside_sandbox"] = True
             if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
                 result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
@@ -1988,10 +1721,7 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
-from server.orchestrator.turn_plan import PARAMS as _PLAN_PARAMS  # noqa: E402
-
-# INB2 (#475 F4): Arslan's own mark on a memory write; it only ever makes the write stricter.
-_SENSITIVE_FLAG = {"type": "boolean", "description": "true if private"}
+# The tools still to move into server/registry/tool_defs (LOOP1 a4 and a5) are listed here; DELETE-BY: v0.1.64, with a5.
 
 # Hands v2 §6.3: the one way the model asks for the front. FRONT1 (the user, 2026-10-30): an action the app
 # ignored in the background reads as `sent_unconfirmed` (a click or a press never says `no_effect`: Hands'
@@ -2002,19 +1732,7 @@ _FRONT = ("only if this action, done in the background, came back sent_unconfirm
           "second, waiting for the user to pause typing")
 
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
-    "read_file": {"type": "object", "properties": {
-        "path": {"type": "string", "minLength": 1,
-                 "description": "File path within the approved readable roots or workspace."},
-        "offset": {"type": "integer", "minimum": 0,
-                   "description": "Lines to skip from the start (for paging a long file)."},
-        "limit": {"type": "integer", "minimum": 1, "description": "Maximum lines to return."}},
-        "required": ["path"], "additionalProperties": False},
-    "write_file": {"type": "object", "properties": {
-        "path": {"type": "string", "minLength": 1,
-                 "description": "Destination file path within the configured workspace; "
-                                "missing folders are created."},
-        "content": {"type": "string", "description": "Complete UTF-8 text to write."}},
-        "required": ["path", "content"], "additionalProperties": False},
+    **tool_defs.SCHEMAS,
     # 0.1.45 hands
     "browser_open": {"type": "object", "properties": {"url": {"type": "string", "maxLength": 4000}},
                      "required": ["url"], "additionalProperties": False},
@@ -2113,50 +1831,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                  "items": {"type": "string", "minLength": 1, "maxLength": 120},
                  "description": "the menu's titles as the app shows them, top level first: [\"Format\", \"Font\", \"Bold\"]"}},
         "required": ["app", "path"], "additionalProperties": False},
-    "start_background_work": {"type": "object", "properties": {
-        "goal": {"type": "string", "minLength": 1, "maxLength": 4000,
-                 "description": "The work to do, in the user's own words and language."},
-        "criteria": {"type": "array", "minItems": 1, "maxItems": 5, "items": {
-            "type": "object", "properties": {
-                "description": {"type": "string", "minLength": 1, "maxLength": 300,
-                                "description": "One check, in the user's language."},
-                "kind": {"type": "string", "enum": ["file_saved", "sources_read", "mentions", "judgement"]},
-                "target": {"type": "string", "maxLength": 240,
-                           "description": "file_saved: the file or folder's full path (~/… or /…); "
-                                          "sources_read: optional, a file name or site the sources must include; "
-                                          "mentions: the phrase"},
-                "minimum": {"type": "integer", "minimum": 1, "maximum": 20}},
-            "required": ["description"], "additionalProperties": False}}},
-        "required": ["goal", "criteria"], "additionalProperties": False},
-    "background_status": {"type": "object", "properties": {}, "additionalProperties": False},
-    "stop_background_work": {"type": "object", "properties": {"job_id": {"type": "string", "minLength": 1}},
-                             "required": ["job_id"], "additionalProperties": False},
-    "delegate_work": {"type": "object", "properties": {"jobs": {
-        "type": "array", "minItems": 1, "maxItems": 4, "items": {
-            "type": "object", "properties": {
-                "method": {"type": "string", "enum": ["research", "apple-growth", "product-design"]},
-                "objective": {"type": "string", "maxLength": 4000},
-                "context": {"type": "string", "maxLength": 8000},
-                "tools": {"type": "array", "maxItems": 2, "items": {
-                    "type": "string", "enum": ["web_search", "web_extract"]}}},
-            "required": ["method", "objective"], "additionalProperties": False}}},
-        "required": ["jobs"], "additionalProperties": False},
-    "task_progress": {"type": "object", "properties": {"run_id": {"type": "integer", "minimum": 1}},
-                      "additionalProperties": False},
-    "web_search": {"type": "object",
-                   "properties": {"query": {"type": "string"}},
-                   "required": ["query"]},
-    "web_extract": {"type": "object",
-                    "properties": {"url": {"type": "string"},
-                                   "max_chars": {"type": "integer", "minimum": 1, "maximum": 40_000,
-                                                 "default": 12_000,
-                                                 "description": "Maximum extracted characters. Request a larger bounded read only when needed; check source.truncated."}},
-                    "required": ["url"]},
-    "render_chart": {"type": "object",
-                     "properties": {"type": {"type": "string"},
-                                    "x": {"type": "array"},
-                                    "series": {"type": "array"},
-                                    "title": {"type": "string"}}},
     "run_command": {"type": "object",
                     "properties": {"command": {"type": "string",
                                                "description": "The full shell command line, e.g. "
@@ -2167,63 +1841,19 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                                 f"{terminal_exec.DEFAULT_TIMEOUT_S})."},
                                    "outside_sandbox": {"type": "boolean",
                                                        "description": "Only when the command must write outside "
-                                                                      "the working folder (moving the user's files, "
-                                                                      "installing software). The user is asked."},
+                                                                      "the working folder (moving files, installing "
+                                                                      "software). The user is asked."},
                                    "network": {"type": "boolean",
                                                "description": "The command needs the network (a download, an "
                                                               "API). After you read outside content in this turn, "
                                                               "commands run offline unless the user allows it."},
                                    "why": {"type": "string", "maxLength": 300,
-                                           "description": "What this step does, in one short sentence: "
-                                                          "every command card shows it first."}},
+                                           "description": "What this step does, in a sentence. With "
+                                                          "outside_sandbox, why it must run outside. "
+                                                          "Cards show it first."}},
                     "required": ["command"]},
-    "conversation_search": {"type": "object",
-                            "properties": {"query": {"type": "string", "minLength": 1, "maxLength": 200,
-                                                     "description": "Words to find, e.g. \"weekly report\" or \"landlord\"."},
-                                           "since": {"type": "string", "description": "YYYY-MM-DD, optional."},
-                                           "until": {"type": "string", "description": "YYYY-MM-DD, optional."},
-                                           "limit": {"type": "integer", "minimum": 1, "maximum": 20}},
-                            "required": ["query"], "additionalProperties": False},
-    "memory_note": {"type": "object",
-                    "properties": {"action": {"type": "string", "enum": ["add", "replace", "remove"]},
-                                   "set": {"type": "string", "enum": ["about_you", "notes"]},
-                                   "id": {"type": "string", "description": "Entry id, for replace or remove."},
-                                   "text": {"type": "string", "maxLength": 600,
-                                            "description": "The entry, for add or replace. One short line."},
-                                   "sensitive": _SENSITIVE_FLAG},
-                    "required": ["action", "set"], "additionalProperties": False},
-    # v0.1.64 CAP2a: the user sees the whole SKILL.md on a card and decides (skill_forge.propose).
-    "create_skill": {"type": "object",
-                     "properties": {"key": {"type": "string", "maxLength": 60,
-                                            "description": "Lowercase letters, digits and hyphens, e.g. weekly-report."},
-                                    "name": {"type": "string", "maxLength": 100},
-                                    "description": {"type": "string", "maxLength": 300,
-                                                    "description": "One line: what the skill is for."},
-                                    "body": {"type": "string",
-                                             "description": "The SKILL.md body: a '## Trigger' section (when to "
-                                                            "use it), then the method. Text only, at most 15 KB."},
-                                    "why": {"type": "string", "maxLength": 300,
-                                            "description": "What the user asked for, in a few words."}},
-                     "required": ["key", "name", "description", "body"], "additionalProperties": False},
     "run_python": {"type": "object",
                    "properties": {"code": {"type": "string"}}},
-    "recall": {"type": "object",
-               "properties": {"query": {"type": "string"},
-                              "kind": {"type": "string",
-                                       "enum": ["fact", "material", "learning", "note"]}},
-               "required": ["query"]},
-    "remember": {"type": "object",
-                 "properties": {
-                     "kind": {"type": "string",
-                              "enum": ["fact", "learning", "note", "preference"]},
-                     "action": {"type": "string",
-                                "enum": ["append", "supersede", "mark_stale", "delete"]},
-                     "content": {"type": "string"},
-                     "target_id": {"type": "integer"},
-                     "sensitive": _SENSITIVE_FLAG,
-                 },
-                 "required": ["kind", "action", "content"]},
-    "update_plan": _PLAN_PARAMS,
     # 0.1.63 K7: the two tools that reach everything a request is not shown (on_demand.py).
     "find_tools": {"type": "object",
                    "properties": {"query": {"type": "string", "maxLength": 200,
@@ -2235,156 +1865,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                 "arguments": {"type": "object",
                                               "description": "Its arguments, as its parameters say."}},
                  "required": ["name"], "additionalProperties": False},
-    # 0.1.57 §3: propose one candidate find_capability returned (the card is the server's).
-    "propose_capability": {
-        "type": "object",
-        "properties": {
-            "candidate_id": {"type": "string", "description": "An id from find_capability's candidates."},
-            "why": {"type": "string", "description": "What failed and why this helps, in one sentence."},
-            "retry": {"type": "string", "description": "The step you will retry with it."},
-            "folders": {"type": "array", "maxItems": 3, "items": {"type": "string"},
-                        "description": "Folders it needs (e.g. the folder of the file you work on)."}},
-        "required": ["candidate_id", "why"]},
-    # 0.1.57 §2: find a capability for what the turn could not do.
-    "find_capability": {
-        "type": "object",
-        "properties": {
-            "need": {"type": "string", "description": "What could not be done, in one sentence."},
-            "keywords": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "string"},
-                         "description": "1-4 short English search words, e.g. [\"excel\", \"xlsx\"]."},
-            "kinds": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skill", "project"]}}},
-        "required": ["need", "keywords"]},
-    # 0.1.56 §7: a changed plan for the project, proposed — the user decides on the card.
-    "propose_plan_change": {
-        "type": "object",
-        "properties": {
-            "reason": {"type": "string", "description": "What changed, in the user's words."},
-            "levels": {"type": "array", "minItems": 1, "maxItems": 15, "description":
-                       "Every level NOT cleared yet, as it should be after the change, in order.",
-                       "items": {"type": "object", "properties": {
-                           "name": {"type": "string"},
-                           "band": {"type": "string", "enum": ["shaping", "doing", "done"]},
-                           "clear_condition": {"type": "string"},
-                           "checkpoints": {"type": "array", "maxItems": 12,
-                                           "items": {"type": "object", "properties": {"text": {"type": "string"}},
-                                                     "required": ["text"]}}},
-                                 "required": ["name", "band"]}}},
-        "required": ["levels", "reason"]},
-    "ask_user_choice": {
-        "type": "object",
-        "properties": {
-            "question": {"type": "string"},
-            "options": {"type": "array", "minItems": 2, "maxItems": 4,
-                        "items": {"type": "object",
-                                  "properties": {"label": {"type": "string"},
-                                                 "hint": {"type": "string"}},
-                                  "required": ["label"]}},
-        },
-        "required": ["question", "options"],
-    },
-    # 0.1.63 D1: hand an existing file to the user (window card + paired iPhone).
-    "attach_file": {"type": "object", "properties": {
-        "path": {"type": "string", "minLength": 1,
-                 "description": "The file: absolute, ~/ or relative to the workspace, in a readable folder."},
-        "title": {"type": "string", "maxLength": 200,
-                  "description": "Optional name the user sees; the file's extension is kept."}},
-        "required": ["path"], "additionalProperties": False},
-    # 0.1.63 K5: the 14 offered tools that had no schema (and fell back to _PERMISSIVE_PARAMS), matching
-    # each executor's real arguments. Built-in schemas go to every provider verbatim (F3's normaliser is for
-    # MCP tools only): no `pattern`, no top-level `anyOf`, no type arrays (tests/server/test_k5_tool_schemas.py).
-    "edit_file": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "minLength": 1, "description": "File path within the configured workspace."},
-            "old_string": {"type": "string", "minLength": 1,
-                           "description": "The exact text to replace; it must appear exactly once in the file."},
-            "new_string": {"type": "string", "description": "The text to put in its place."},
-        },
-        "required": ["path", "old_string", "new_string"],
-        "additionalProperties": False,
-    },
-    "list_dir": {
-        "type": "object",
-        "properties": {"path": {"type": "string", "description": (
-            "Absolute or ~/ folder path in Desktop, Documents, Downloads or the workspace; leave it out to list "
-            "the folders you can see.")}},
-        "additionalProperties": False,
-    },
-    "search_files": {
-        "type": "object",
-        "properties": {"query": {"type": "string", "minLength": 1,
-                                 "description": "Literal text to find in the readable folders' text files."}},
-        "required": ["query"],
-        "additionalProperties": False,
-    },
-    "whats_new": {
-        "type": "object",
-        "properties": {"count": {"type": "integer", "minimum": 1, "maximum": 6,
-                                 "description": "How many recent versions' notes (default 3)."}},
-        "additionalProperties": False,
-    },
-    "list_my_capabilities": {"type": "object", "properties": {}, "additionalProperties": False},
-    "my_status": {"type": "object", "properties": {}, "additionalProperties": False},
-    "schedule_task": {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string", "minLength": 1, "maxLength": 80, "description": "A short name for the task."},
-            "prompt": {"type": "string", "minLength": 1, "description": "What to do each time it runs."},
-            "when": {"type": "string", "minLength": 1, "description": (
-                "'every: <seconds>' (at least 900) or 'cron: <expression>', e.g. 'every: 3600' or 'cron: 0 9 * * *'.")},
-        },
-        "required": ["name", "prompt", "when"],
-        "additionalProperties": False,
-    },
-    "list_my_tasks": {"type": "object", "properties": {}, "additionalProperties": False},
-    "cancel_task": {
-        "type": "object",
-        # No "type": a number and the string "3" are both accepted (⓪Plan's Q9: no type arrays).
-        "properties": {"task_id": {"description": "The task id from list_my_tasks (a number, e.g. 3)."}},
-        "required": ["task_id"],
-        "additionalProperties": False,
-    },
-    "read_skill": {
-        "type": "object",
-        "properties": {
-            "key": {"type": "string", "minLength": 1,
-                    "description": "The skill's key from the list in this tool's description."},
-            "section": {"type": "string", "description": (
-                "Optional: one part only, a '## Heading' of the skill or 'references/<file>.md' (or .txt).")},
-        },
-        "required": ["key"],
-        "additionalProperties": False,
-    },
-    "scan_local_network": {"type": "object", "properties": {}, "additionalProperties": False},
-    "ssh_probe": {
-        "type": "object",
-        "properties": {"host": {"type": "string", "minLength": 1,
-                                "description": "An IPv4 address on the local network, e.g. 192.168.1.8."}},
-        "required": ["host"],
-        "additionalProperties": False,
-    },
-    "ssh_run": {
-        "type": "object",
-        "properties": {
-            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
-            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
-            "command": {"type": "string", "minLength": 1, "description": "One whitelisted program name, e.g. 'uptime'."},
-            "argv": {"type": "array", "items": {"type": "string"}, "description": "Its arguments, one per item."},
-        },
-        "required": ["host", "user", "command"],
-        "additionalProperties": False,
-    },
-    "list_nodes": {"type": "object", "properties": {}, "additionalProperties": False},
-    "enroll_node": {
-        "type": "object",
-        "properties": {
-            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
-            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
-            "name": {"type": "string", "minLength": 1, "maxLength": 60, "description": "A name for the machine."},
-        },
-        "required": ["host", "user", "name"],
-        "additionalProperties": False,
-    },
 }
 
 # PA-3: ask_user_choice is a TERMINAL tool (same pattern as `escalate`): a VALID call
@@ -2494,197 +1974,6 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     if allow_escalation:
         schemas.append(_ESCALATE_SCHEMA)
     return schemas
-
-
-# What a tool call written as text looks like, in every provider's shape. One list: _embeds_protocol
-# judges a whole answer with it, and K8a's streaming holds back the tail of a reply against it.
-_PROTOCOL_PATTERNS = (
-    # Some providers render a proposed call as XML instead of native tool_calls, including an unfinished
-    # opening tag.
-    re.compile(r'<\s*/?\s*(?:tool_call|tool_calls|function_call)(?=[\s>/]|$)', re.I),
-    # DeepSeek's own chat-template tokens leaking into content instead of native tool_calls (seen in the
-    # 0.1.49 bench: "<｜｜DSML｜｜tool_calls>", and V3's "<｜tool▁calls▁begin｜>").
-    re.compile(r'[｜|]\s*DSML\s*[｜|]|<\s*[｜|]+\s*(?:DSML\s*[｜|]+\s*)?/?\s*(?:tool[▁_ ]?calls?|invoke)', re.I),
-    re.compile(r'\{\s*"(?:tool|tool_calls|function_call|functionCall|escalate)"\s*:'),
-)
-
-
-def _embeds_protocol(text: str) -> bool:
-    """True if `text` is / EMBEDS a tool-call or escalate JSON in ANY provider's shape (even behind
-    a prose prefix like 'Let me search…{…}'). Covers OpenAI/DeepSeek ({"tool"} / {"tool_calls"} /
-    {"function_call"}), Gemini ({"functionCall"}), and our escalate object. A finished answer is
-    prose — it never surfaces one of these as the reply."""
-    # Detection is deliberately stricter than parsing for dispatch: malformed
-    # quotes or an interrupted object must not turn a proposed action into an
-    # answer. This only rejects text; it never repairs JSON or executes a call,
-    # nor grants the proposed action permission.
-    if any(pattern.search(text or "") for pattern in _PROTOCOL_PATTERNS):
-        return True
-    obj = first_json_object(text or "") or parse_json_object(text or "")
-    if not isinstance(obj, dict):
-        return False
-    return bool(obj.get("tool") or obj.get("tool_calls") or obj.get("function_call")
-                or obj.get("functionCall") or isinstance(obj.get("escalate"), dict))
-
-
-def _clean_findings(tool_trace: list, *, limit: int = 8000) -> str:
-    """Human-readable findings for the synthesis step — plain facts, NOT tool-call logs. Feeding
-    the model 'web_search(q): {json}' makes it imitate and emit more tool-calls; clean prose gives
-    it nothing to imitate, so it just writes the answer.
-
-    Links stay with their facts (0.1.50 S6): a bench answer built from these notes listed ten
-    jobs with "link: not provided" because the URLs were dropped here — and the link was the
-    field the user asked for."""
-    lines: list[str] = []
-    for step in tool_trace:
-        res = step.get("result") or {}
-        if not res.get("ok"):
-            continue
-        if isinstance(res.get("results"), list):          # web_search
-            for r in res["results"][:5]:
-                if not isinstance(r, dict):
-                    continue
-                title = str(r.get("title") or "").strip()
-                snip = str(r.get("snippet") or r.get("content") or r.get("text") or "").strip()
-                url = str(r.get("url") or r.get("link") or "").strip()
-                if title or snip:
-                    head = f"{title} <{url}>" if url else title
-                    lines.append(f"- {head}: {snip}".strip(" -:"))
-        elif res.get("text"):                              # web_extract
-            url = str(res.get("url") or (step.get("args") or {}).get("url") or "").strip()
-            body = str(res["text"])[:700].strip()
-            lines.append(f"[{url}] {body}" if url else body)
-        elif res.get("summary"):
-            lines.append(str(res["summary"]).strip())
-        else:
-            # Any OTHER tool (e.g. list_my_capabilities returns {builtin, mcp}) — its result is
-            # itself the answer material, not web findings. Render the meaningful payload as data
-            # so synthesis can write a real answer from it, instead of falling through to the
-            # raw-dump digest floor + a bogus 继续 nudge (which reads as "still working" when the
-            # tool already returned everything needed).
-            payload = {k: v for k, v in res.items()
-                       if k not in ("ok", "artifact", "external", "error")}
-            if payload:
-                lines.append(f"{step.get('tool')} returned: {json.dumps(payload, ensure_ascii=False)[:900]}")
-    return "\n".join(lines)[:limit]
-
-
-def _unverified_claim(text: str, tool_trace: list, wired_keys: set[str]) -> str | None:
-    """Claims are not receipts. Check this before displaying a proposed answer."""
-    if "<!doctype html" in text.lower() and "</html>" in text.lower():
-        return None
-    succeeded = {step.get("tool") for step in tool_trace if (step.get("result") or {}).get("ok")}
-    if (_claims_chart(text) or (_draws_chart_fence(text) and "render_chart" in wired_keys)) and "render_chart" not in succeeded:
-        return "render_chart"
-    if _claims_search(text) and "web_search" not in succeeded:
-        return "web_search"
-    return None
-
-
-async def _synthesize_from_findings(a, system: str, user_content: str, tool_trace: list, *,
-                                    or_none: bool = False) -> str | None:
-    """Forced-step / salvage synthesis. Instead of asking the model to answer from the messy
-    tool-loop convo (which DeepSeek resists — it keeps wanting to search), hand it its OWN gathered
-    findings in a CLEAN, isolated prompt and demand the finished answer. Falls back to an honest
-    findings digest only if even this refuses (or_none: None instead, for a caller with a better fallback)."""
-    digest = _clean_findings(tool_trace)
-    if not digest.strip():
-        if or_none:
-            return None
-        from server.services import runtime_messages
-        return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
-    # ROUTE1 (v0.1.64): synthesis runs on the tool loop's own adapter `a`, the conversation's model; there is no
-    # final-answer slot.
-    synth_system = (
-        "You are writing the FINAL answer for the user. You have no tools and cannot search — that "
-        "phase is over. Reference notes gathered by a researcher are given below. Write the complete, "
-        "well-structured answer to the user's question NOW, using ONLY those notes. If they asked for "
-        "a ranking/top-N, include only entries supported by those notes and disclose any shortfall. "
-        "Keep each item's link from the notes next to it (the <…> or […] address); never invent one. "
-        "Output ONLY the prose answer — never JSON, never a tool call, never 'let me…' or 'I'll search'."
-        + GROUNDED_ANSWER_RULES + "\n\n" + GUARD_NOTE)
-    synth_user = (f"The user asked:\n{user_content}\n\nReference notes:\n{wrap_external(digest)}"
-                  "\n\nNow write the final answer.")
-    try:
-        resp = await _chat_retry(a, synth_system, synth_user, history=[], tools=None)
-        s = (resp.content or "").strip()
-        if s and not _embeds_protocol(s) and not _is_deferral_stub(s):
-            return s
-    except BudgetExceeded:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        from server.services.task_repository import TaskError
-        if isinstance(exc, TaskError):
-            raise
-        pass
-    if or_none:
-        return None
-    from server.services import runtime_messages
-    return _fallback_with_digest(user_content, tool_trace, locale=await runtime_messages.selected_locale())
-
-
-_CHAT_TIMEOUT_S = 75.0  # per model call — DeepSeek's API can be slow and occasionally stalls.
-
-
-async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
-    """One bounded retry for known transient transport failures, never for denial."""
-    return await _with_retry(lambda: a.chat(system, user, history=history, tools=tools))
-
-
-async def _with_retry(request):
-    last: Exception | None = None
-    from arslan.execution_budget import BudgetExceeded
-    for attempt in range(2):
-        try:
-            return await within(request(), timeout=_CHAT_TIMEOUT_S)
-        except BudgetExceeded:
-            from server.services.task_service import current as current_task
-            if current_task():
-                current_task().pause_reason = "task_budget_exhausted"
-            raise
-        except Exception as exc:  # noqa: BLE001
-            last = exc
-            if exception_kind(exc) != FailureKind.RETRYABLE or attempt:
-                raise
-            await asyncio.sleep(0.2)
-    raise last if last else RuntimeError("chat failed")
-
-
-_PLAIN_ANSWER_SYS = (
-    "\n\nAnswer the user's message directly, in plain text, right NOW. Do NOT call a tool, output "
-    "JSON, or say you will search / look into it / get back to them later — just give your actual "
-    "answer using what you already know.")
-
-
-async def _salvage_plain(a, system: str, user_content: str) -> str | None:
-    """Direct-answer salvage for a turn where NO tool ran but the model's content was empty, a raw
-    tool-call, or tripped the promises-action guard. With no findings there is nothing to synthesize
-    and nothing 'unfinished', so we must NOT show the research 继续 nudge — re-ask for a plain,
-    tool-free answer instead. Returns clean prose, or None if even this won't produce usable text."""
-    try:
-        resp = await _chat_retry(a, system + _PLAIN_ANSWER_SYS, user_content, history=[], tools=None)
-        s = (resp.content or "").strip()
-        if s and not _embeds_protocol(s) and not _is_deferral_stub(s) and not getattr(resp, "tool_calls", None):
-            return s
-    except BudgetExceeded:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        from server.services.task_repository import TaskError
-        if isinstance(exc, TaskError):
-            raise
-        pass
-    return None
-
-
-def _chat_miss_message(user_content: str, *, locale=None) -> str:
-    """Gentle honest miss for a chat turn that produced nothing usable — distinct from the research
-    'reply 继续' nudge (there is no work in progress to continue here)."""
-    if locale is not None:
-        from server.services import runtime_messages
-        return runtime_messages.render("chat_miss", locale)
-    cjk = any("一" <= ch <= "鿿" for ch in (user_content or ""))
-    return ("抱歉,我刚没接住你的意思——能再说一次或换个说法吗?" if cjk
-            else "Sorry, I didn't quite catch that — could you say it another way?")
 
 
 # 0.1.63 K8a–K8c: the answer goes out while it is written (OpenAI-compatible endpoints that stream, Claude
@@ -2919,19 +2208,13 @@ def _progress_updates(a, resp) -> list[str]:
     return [text for text in texts if text and text != _UPDATE_CUT]
 
 
-async def _streams_answer(a, acceptance_runtime) -> bool:
+def _streams_answer(a, acceptance_runtime) -> bool:
     """K8a: whether this turn's answer is shown as it is written. Not for work with explicit acceptance
     criteria (background jobs and the like: a failed check rewrites what was written; ⓪Plan Q1), not for
-    a model in BUFFERED_MODELS, not when the user chose to see answers only when complete."""
-    from server.db import session as db_session
-    from server.services import settings_service, task_service
-    if (acceptance_runtime is not None and not task_service.answer_only()) or _model_key(a)[1] in BUFFERED_MODELS:
-        return False
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            return not await settings_service.answer_when_complete(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default: stream
-        return True
+    a model in BUFFERED_MODELS."""
+    from server.services import task_service
+    return not ((acceptance_runtime is not None and not task_service.answer_only())
+                or _model_key(a)[1] in BUFFERED_MODELS)
 
 
 # Tools a job may still use while wrapping up: saving the deliverable.
@@ -2971,48 +2254,47 @@ async def run_native(**kwargs) -> dict:
     hides a deliverable already on disk. No model call: the limit is reached.
     Background jobs and delegated workers still raise; their machinery records
     the stop itself."""
-    facts: dict = {}
+    request, state = TurnRequest(**kwargs), TurnState()
     from server.orchestrator import untrusted as _untrusted
     from server.services import tool_outputs
     seen = _untrusted.track_turn()
-    if _untrusted.history_from_outside(kwargs.get("history")) or _untrusted.context_from_outside(
-            kwargs.get("user_content")):
+    if _untrusted.history_from_outside(request.history) or _untrusted.context_from_outside(request.user_content):
         _untrusted.mark_external()       # S64-0b: a job's result framed as outside content, or a summary of one
     sent_is_final = _SENT_IS_FINAL.set(False)
     # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).
-    copies_of = tool_outputs.conversation.set(kwargs.get("conversation_id"))
+    copies_of = tool_outputs.conversation.set(request.conversation_id)
     try:
-        result = await _run_native(**kwargs, _facts=facts)
+        result = await _run_native(request, state)
         if isinstance(result, dict):
             result["external_seen"] = _untrusted.external_seen()
-            _learn_after(kwargs, facts, result)
+            _learn_after(request, state, result)
         return result
     except BudgetExceeded:
         from server.services import background_jobs
-        trace = facts.get("tool_trace") or []
+        trace = state.tool_trace
         # 0.1.52: the chat path passes ToolCaller(actor="host"); checking for no caller
         # at all left this closing message unreachable from a real chat turn.
-        host_turn = _host_turn(kwargs.get("caller"), kwargs.get("progress_lane"))
+        host_turn = _host_turn(request.caller, request.progress_lane)
         if not host_turn or background_jobs.inside_job() \
                 or not any((t.get("result") or {}).get("ok") for t in trace):
             raise                       # workers and jobs record the stop themselves
-        text = await _budget_closing(trace, facts.get("ws_root"), facts.get("started", 0.0))
+        text = await _budget_closing(trace, state.ws_root, state.started)
         from server.services.task_service import current as current_task
         task = current_task()
         if task is not None:
             _stop_for_limit(task, "task_budget_exhausted", trace)
-        if (turn_text := facts.get("turn_text")) is not None and turn_text.parts:
+        if (turn_text := state.turn_text) is not None and turn_text.parts:
             turn_text.append(text, answer=False)    # K8a: after what this turn already showed
             text = turn_text.text
         elif text:
-            kwargs["on_chunk"](text)
+            request.on_chunk(text)
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
                 "external_seen": _untrusted.external_seen()}
     finally:
         # K9b: a message read after the last batch that no request carried (the turn stopped, hit its limit
         # or failed first) goes back to its sender, to run once as a turn of its own.
-        for steer in facts.pop("steers", None) or []:
+        for steer in state.steers:
             steer.hand_back()
         known_local = _untrusted.known_local()      # read before end_turn drops the holder
         _untrusted.end_turn(seen)
@@ -3021,19 +2303,19 @@ async def run_native(**kwargs) -> dict:
         tool_outputs.conversation.reset(copies_of)
 
 
-def _learn_after(kwargs: dict, facts: dict, result: dict) -> None:
+def _learn_after(request: TurnRequest, state: TurnState, result: dict) -> None:
     """0.1.52 S5: after a host turn, off the reply path — counters for the lessons this
     turn recalled, then any detour worth keeping (lessons.after_turn)."""
-    if not _host_turn(kwargs.get("caller"), kwargs.get("progress_lane")):
+    if not _host_turn(request.caller, request.progress_lane):
         return
     from server.services import lessons, personal_context
     ctx = personal_context.current()
-    lessons.note_turn(kwargs.get("conversation_id"), list(facts.get("tool_trace") or []))
+    lessons.note_turn(request.conversation_id, list(state.tool_trace))
     lessons.later(lessons.after_turn(
-        conversation_id=kwargs.get("conversation_id"), user_request=(ctx.query if ctx else "") or "",
-        trace=list(facts.get("tool_trace") or []), external_seen=bool(result.get("external_seen")),
-        recalled=list(facts.get("recalled_lessons") or []),
-        ok=bool(result.get("final")) and not result.get("stop_reason"), emit=kwargs.get("emit")))
+        conversation_id=request.conversation_id, user_request=(ctx.query if ctx else "") or "",
+        trace=list(state.tool_trace), external_seen=bool(result.get("external_seen")),
+        recalled=list(state.recalled_lessons),
+        ok=bool(result.get("final")) and not result.get("stop_reason"), emit=request.emit))
 
 
 async def _budget_closing(trace: list, ws_root, started: float) -> str:
@@ -3054,33 +2336,7 @@ async def _budget_closing(trace: list, ws_root, started: float) -> str:
                                    files=", ".join(saved) + where)
 
 
-async def _run_native(
-    *,
-    _facts: dict | None = None,
-    system: str,
-    user_content: str,
-    history: list[dict],
-    emit: Callable[[dict], None],
-    on_chunk: Callable[[str], None],
-    resolve_tools: ResolveTools,
-    resolve_callable: ResolveTools | None = None,
-    allow_escalation: bool = True,
-    max_tool_calls: int | None = None,
-    tool_timeout_s: float = TOOL_TIMEOUT_S,
-    force_tools: bool = False,
-    confirm_command: ConfirmCommand | None = None,
-    confirm_workspace_write=None,
-    confirm_schedule=None,
-    conversation_id: str | None = None,
-    log_events: bool = True,
-    caller: ToolCaller | None = None,
-    has_images: bool = False,
-    adapter_override=None,
-    stream_without_tools: bool = False,
-    progress_lane=None,
-    turn_notes: list[str] | None = None,
-    steerable: bool = False,
-) -> dict:
+async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     """Canonical native tool loop. Same signature and core return shape
     ({"final": str|None, "escalation": dict|None, "tool_trace": list}).
 
@@ -3094,6 +2350,19 @@ async def _run_native(
     Production calls use the shared task budget, with no fixed eight-round cap.
     max_tool_calls is an optional explicit compatibility ceiling, never a default.
     """
+    # The request's fields by name, until the phases read them (LOOP1 c3).
+    system, user_content, history, emit, on_chunk = (
+        request.system, request.user_content, request.history, request.emit, request.on_chunk)
+    resolve_tools, resolve_callable, tool_timeout_s = (
+        request.resolve_tools, request.resolve_callable, request.tool_timeout_s)
+    allow_escalation, max_tool_calls, force_tools, stream_without_tools = (
+        request.allow_escalation, request.max_tool_calls, request.force_tools, request.stream_without_tools)
+    confirm_command, confirm_workspace_write, confirm_schedule = (
+        request.confirm_command, request.confirm_workspace_write, request.confirm_schedule)
+    conversation_id, log_events, caller, progress_lane, turn_notes, steerable = (
+        request.conversation_id, request.log_events, request.caller, request.progress_lane, request.turn_notes,
+        request.steerable)
+    has_images, adapter_override = request.has_images, request.adapter_override
     # The vision slot needs to know whether this turn carries an image, and this
     # signature is the only place that fact is available — hence a parameter rather
     # than something guessed further down.
@@ -3158,9 +2427,7 @@ async def _run_native(
     # evicts whole call groups.
     current_request = trajectory.request(user_content)
     convo: list[dict] = list(history) + [current_request]
-    tool_trace: list[dict] = []
-    if _facts is not None:
-        _facts["tool_trace"] = tool_trace
+    tool_trace = state.tool_trace
     # 0.1.52 S5: practices learned before that match this request ride in the status
     # block (never the system prompt). Host turns only; recall applies memory's permissions.
     lesson_notes: list[str] = []
@@ -3172,8 +2439,7 @@ async def _run_native(
         if not all(item["users"] for item in recalled):
             from server.orchestrator import untrusted as _untrusted
             _untrusted.mark_off_the_list()   # #475 H1: a practice in view that came from a run off the list
-        if _facts is not None:
-            _facts["recalled_lessons"] = recalled
+        state.recalled_lessons = recalled
     research_source_feedback: list = []
     # PB-3 (条件2): consecutive-failure counts per mcp_* tool key. These are LOCALS of this
     # run_native invocation — one invocation = one turn — so a new turn starts at zero by
@@ -3191,10 +2457,16 @@ async def _run_native(
     ws_root, own_folder = await _status_workspace(wired_keys)
     # K8a: what this turn shows as it is written (None: every answer shown whole, as before).
     turn_text = (_TurnText(on_chunk, lambda label, keep: emit({"type": "stream_restart", "label": label, "keep": keep}))
-                 if on_chunk is not None and await _streams_answer(a, acceptance_runtime) else None)
-    if _facts is not None:
-        _facts.update(ws_root=ws_root, started=turn_started, turn_text=turn_text)
+                 if on_chunk is not None and _streams_answer(a, acceptance_runtime) else None)
+    state.ws_root, state.started, state.turn_text = ws_root, turn_started, turn_text
     unseen_start = len(convo)
+
+    def tool_turn() -> ToolTurn:
+        return ToolTurn(resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s, tool_trace=tool_trace,
+                        convo=convo, confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
+                        confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
+                        mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id, log_events=log_events,
+                        caller=caller, turn_adapter=a, resolve_callable=resolve_callable)
 
     # Deterministic pre-search uses the same admission and progress boundaries.
     if force_tools and "web_search" in wired_keys and "web_search" in EXECUTORS:
@@ -3205,16 +2477,9 @@ async def _run_native(
             intent = None
         if intent is not None and intent.needs and intent.tool == "web_search":
             q = (intent.query or user_content)[:400]
-            result = await _dispatch_tool(
-                "web_search", {"query": q},
-                json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
-                resolve_tools=resolve_tools, emit=emit, tool_timeout_s=tool_timeout_s,
-                tool_trace=tool_trace, convo=convo, confirm_command=confirm_command,
-                confirm_workspace_write=confirm_workspace_write,
-                confirm_schedule=confirm_schedule,
-                mcp_fail_counts=mcp_fail_counts, mcp_hint_logged=mcp_hint_logged,
-                conversation_id=conversation_id, log_events=log_events, caller=caller, turn_adapter=a,
-                resolve_callable=resolve_callable)
+            result = await _run_tool("web_search", {"query": q},
+                                     json.dumps({"tool": "web_search", "args": {"query": q}}, ensure_ascii=False),
+                                     tool_turn())
             policy.observe("web_search", {"query": q}, result)
 
     pending_feedback = len(convo) - unseen_start
@@ -3378,22 +2643,22 @@ async def _run_native(
         except Exception:  # noqa: BLE001 — the ring's breakdown is telemetry: it never fails a turn
             logger.warning("context parts not measured", exc_info=True)
             usage_sink.note_context_parts(None)      # say nothing rather than show an older request's
-        if _facts is not None and _facts.get("steers"):
+        if state.steers:
             # K9b: this request carries them, once it is sure to go (its tokens and dollars too, which the
             # provider checks as it sends; a stop here hands them back).
             budget.check_request()
-            await _commit_steers(_facts["steers"], conversation_id)
-        step = _StepStream(turn_text) if turn_text is not None else None
+            await _commit_steers(state.steers, conversation_id)
+        stream = _StepStream(turn_text) if turn_text is not None else None
         try:
             resp = await _model_call(a, system, convo, current_request, tools=step_tools,
                                      schemas=schemas, forced=forced, state=turn_state, status=status,
-                                     drops=drops, conversation_id=conversation_id, step=step)
+                                     drops=drops, conversation_id=conversation_id, step=stream)
         except TextShown:
             # K8a (⓪Plan Q2): part of the answer is out; resending would show it twice. The turn ends with
             # what was shown and says so, and the run records a failure (no `error` frame: the window
             # would drop the text the phone kept).
             from server.services import host_run, runtime_messages
-            step.finish()
+            stream.finish()
             turn_text.append(runtime_messages.render("stream_interrupted", await runtime_messages.selected_locale()),
                              answer=False)
             host_run.note_failure("model_error_after_text")
@@ -3401,8 +2666,8 @@ async def _run_native(
                 acceptance_runtime.pause_reason = "model_error_after_text"
             return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
                     "stop_reason": "model_error_after_text", "history_compacted": history_compacted}
-        if step is not None:
-            step.finish()
+        if stream is not None:
+            stream.finish()
         if drops.changed:              # a refused MCP schema was left out: the rest of the turn too
             drops.changed = False
             wired = drops.keep(wired)
@@ -3608,23 +2873,16 @@ async def _run_native(
                 from server.services import terminal_exec
                 offline = terminal_exec.OFFLINE.set(True) if wrap_up and name == "run_command" else None
                 try:
-                    gated = dict(resolve_tools=resolve_tools, tool_timeout_s=tool_timeout_s,
-                                 confirm_command=confirm_command,
-                                 confirm_workspace_write=confirm_workspace_write,
-                                 confirm_schedule=confirm_schedule, mcp_fail_counts=mcp_fail_counts,
-                                 mcp_hint_logged=mcp_hint_logged, conversation_id=conversation_id,
-                                 log_events=log_events, caller=caller, turn_adapter=a,
-                                 resolve_callable=resolve_callable)
+                    turn = tool_turn()
                     if reads is not None and reads.launchable(index):
-                        await reads.run(index, lambda key, arguments, **own: _dispatch_tool(
+                        await reads.run(index, lambda key, arguments, **own: _run_tool(
                             key, arguments, json.dumps({"tool": key, "args": arguments}, ensure_ascii=False),
-                            **gated, **own),
+                            replace(turn, **own)),
                             exhausted=lambda: budget.tool_calls >= budget.limits.tool_calls)
                     if reads is not None and reads.has(index):
                         result = reads.take(index, emit=emit, tool_trace=tool_trace, convo=convo)
                     else:
-                        result = await _dispatch_tool(name, args, assistant_content, emit=emit,
-                                                      tool_trace=tool_trace, convo=convo, **gated)
+                        result = await _run_tool(name, args, assistant_content, turn)
                 finally:
                     if offline is not None:
                         terminal_exec.OFFLINE.reset(offline)
@@ -3657,13 +2915,13 @@ async def _run_native(
             # Gemini provider pair and the old "invocation completed" text are now
             # renderings of this trajectory (trajectory.to_legacy), not rewrites.
             _claim_results(convo, marks)
-            if steerable and conversation_id and not cut_off and _facts is not None:
+            if steerable and conversation_id and not cut_off:
                 # The boundary after the batch: what waits joins the turn (no await between take and read).
-                _read_steers(steering.take(conversation_id), convo, _facts.setdefault("steers", []))
+                _read_steers(steering.take(conversation_id), convo, state.steers)
             # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
             # passed the window and went out as the answer, where it stays (and in the stored answer).
             narration = agent_status.strip_echo((resp.content or "").strip())
-            if narration and not (step is not None and step.released):
+            if narration and not (stream is not None and stream.released):
                 emit({"type": "note", "text": narration[:400]})
             pending_feedback = len(convo) - history_start
             continue
@@ -3679,10 +2937,10 @@ async def _run_native(
         # The reply's continuation replays its own text verbatim (Claude: byte for byte); once the host
         # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
         own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
-        streamed = step is not None and step.released          # K8a: this step's text already went out
+        streamed = stream is not None and stream.released          # K8a: this step's text already went out
         claimed = _unverified_claim(final_text, tool_trace, wired_keys)
         deferred = _is_deferral_stub(final_text)
-        protocol_text = _embeds_protocol(final_text) or (step is not None and step.stopped)
+        protocol_text = _embeds_protocol(final_text) or (stream is not None and stream.stopped)
         # 0.1.50: an answer that denies a capability this turn had (bench: "no file
         # write ability" with write_file offered) gets one correction.
         from server.orchestrator import capability_truth

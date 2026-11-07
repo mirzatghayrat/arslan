@@ -1,4 +1,4 @@
-"""The shared test engines run SQLite as the app does (WAL, busy_timeout), and why that matters.
+"""The shared test engines run SQLite as the app does (WAL, busy_timeout, foreign keys), and why that matters.
 
 They used to be bare create_async_engine calls: SQLite's rollback journal with the driver's 5 s
 busy timeout. A socket test's teardown cancels its turn; when that cancel lands between a
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from server.db import session as db_session
 from tests.server.conftest import build_ws_client
 
-PRODUCTION = {"journal_mode": "wal", "busy_timeout": 5000}
+PRODUCTION = {"journal_mode": "wal", "busy_timeout": 5000, "foreign_keys": 1}
 
 
 async def _pragmas(session) -> dict:
@@ -27,19 +27,14 @@ async def _pragmas(session) -> dict:
     return values
 
 
-def _expected() -> dict:
-    # foreign_keys stays off in the shared engines for now (build_engine's DELETE-BY).
-    return {**PRODUCTION, "foreign_keys": 0}
-
-
 async def test_the_app_client_engine_runs_as_production(client):
     async with db_session.AsyncSessionLocal() as session:
-        assert await _pragmas(session) == _expected()
+        assert await _pragmas(session) == PRODUCTION
 
 
 async def test_the_wdb_engine_runs_as_production(wdb):
     async with wdb() as session:
-        assert await _pragmas(session) == _expected()
+        assert await _pragmas(session) == PRODUCTION
 
 
 def test_the_socket_test_engine_runs_as_production(portal, tmp_path, monkeypatch):
@@ -49,7 +44,7 @@ def test_the_socket_test_engine_runs_as_production(portal, tmp_path, monkeypatch
     async def read():
         async with async_sessionmaker(engine, class_=AsyncSession)() as session:
             return await _pragmas(session)
-    assert portal.call(read) == _expected()
+    assert portal.call(read) == PRODUCTION
 
 
 async def test_a_select_cancelled_before_its_fetch_does_not_hold_up_the_next_commit(tmp_path, monkeypatch):
@@ -57,7 +52,7 @@ async def test_a_select_cancelled_before_its_fetch_does_not_hold_up_the_next_com
     # (With NullPool, build_engine's busy_timeout pragma alone was enough in measurement, so a
     # NullPool engine here would not notice WAL going missing; the socket engine's WAL is pinned
     # by test_the_socket_test_engine_runs_as_production instead.)
-    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path / 'held.db'}", foreign_keys=False)
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path / 'held.db'}")
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as session:
         await session.execute(text("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)"))

@@ -273,9 +273,8 @@ async def client(tmp_path, monkeypatch, request):
 
     from server.main import create_app
 
-    # Built as production builds it (WAL, busy_timeout, the cancel rollback), only without
-    # foreign_keys yet: see build_engine.
-    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}", foreign_keys=False)
+    # Built as production builds it (WAL, busy_timeout, foreign keys, the cancel rollback).
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path/'app.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(_schema_for(request))
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -435,7 +434,7 @@ def build_ws_client(
     # rollback journal that cursor's read lock made the cancel record's COMMIT wait out the 5 s
     # busy_timeout, past the portal's 3 s grace ("task(s) still alive 3.0s after cancel").
     engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path/db_name}",
-                                     poolclass=NullPool, foreign_keys=False)
+                                     poolclass=NullPool)
     portal._test_engines.append(engine)  # disposed at portal-fixture teardown
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -489,7 +488,7 @@ _assert_testclient_portal_seam()
 @pytest.fixture
 async def wdb(tmp_path, monkeypatch):
     """A file-backed SQLite DB wired into db_session.AsyncSessionLocal."""
-    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path / 'w.db'}", foreign_keys=False)
+    engine = db_session.build_engine(f"sqlite+aiosqlite:///{tmp_path / 'w.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(boot_schema)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

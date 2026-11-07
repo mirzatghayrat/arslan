@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { OPEN_SECTION_EVENT, readOpenSection, type Section } from "./lib/sections";
 import { ConfirmHost, ToastHost, toast as showToast } from "./components/kit";
 import ShellPolicySwitchNotice from "./components/ShellPolicySwitchNotice";
@@ -18,6 +18,7 @@ import { normalizeLanguage } from './lib/languages';
 import { toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
 import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, deleteConversation } from './api/client';
+import { useStreamingText } from './hooks/useStreamingText';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
 import Sidebar from './components/Sidebar';
@@ -202,7 +203,7 @@ export default function App() {
   const dockTaskFrame = useArslanStore((s) => s.taskState);
   const arslanStreaming = useArslanStore((s) => s.streaming);
   const arslanRunning = useArslanStore((s) => s.thinking || s.streaming || s.pending || s.activeRunId != null);
-  const arslanStreamingText = useArslanStore((s) => s.streamingText);
+  const arslanStreamingText = useStreamingText();
   const arslanStreamingDrafts = useArslanStore((s) => s.streamingDrafts);
 
   // Handler for incoming WS frames — routes to the proven store logic
@@ -218,8 +219,8 @@ export default function App() {
   // changes (path is in its effect dep array), so switching threads reconnects.
   const { send: wsSend } = useWebSocket(`/ws/arslan/${activeThreadId}`, handleArslanFrame);
 
-  // Derived UI messages from the live store
-  const liveOrchestratorHistory: Message[] = toUiMessages(arslanItems);
+  // Derived UI messages from the live store. The same objects until the items change, so a finished reply's footer can sit out a frame.
+  const liveOrchestratorHistory: Message[] = useMemo(() => toUiMessages(arslanItems), [arslanItems]);
 
   // Append an optimistic streaming bubble while a reply is streaming
   // K8a: a reply whose earlier text was replaced keeps its bubble (the drafts) until the new text arrives.
@@ -715,7 +716,7 @@ export default function App() {
                   <PanelRight className="w-3.5 h-3.5" />
                 </button>
               )}
-              {/* WB1 (user, 2026-10-30: 「标题栏只留一个按钮」): the globe button is gone; Browser is a fixed tab in the workbench. */}
+              {/* WB1 (user, 2026-10-30: leave only one button in the title bar): the globe button is gone; Browser is a fixed tab in the workbench. */}
             </div>
           </div>
 

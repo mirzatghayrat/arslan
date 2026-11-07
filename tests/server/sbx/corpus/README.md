@@ -45,6 +45,8 @@ mandatory for every retained service. Claude updates EXPECTED and
 EXPECTED_XFAIL in a commit on this same branch after the user pushes; there is
 no companion PR. The remaining 17 any-declared transitional cases are removed
 when SBX-6's proxy mode lands.
+(The EXPECTED and EXPECTED_XFAIL numbers above are history: since 2026-11-07 the pins are per file, in
+`tests/macos_expected.toml`.)
 Once SBX-3a registers its real commands adapter, these cases must run with zero
 skips and zero xfails.
 
