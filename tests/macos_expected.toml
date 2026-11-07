@@ -58,6 +58,17 @@ markers = 2
 cases = 2
 xfail = 0
 
+# SBX-4p kernel carry: local measurements; the macOS CI job prints its own counts.
+["server/sbx/test_sbx4_devices.py"]
+markers = 7
+cases = 23
+xfail = 0
+
+["server/sbx/test_sbx4_kernel_boundaries.py"]
+markers = 4
+cases = 16
+xfail = 0
+
 # SBX-4p: 88 Python/artifact/MCP gates (72, then +16 over #654's wider service list), pending product adapters.
 ["server/sbx/test_sbx4_presets.py"]
 markers = 7
@@ -71,10 +82,11 @@ markers = 1
 cases = 1
 xfail = 0
 
+# Kernel carry: eight MCP CAP6b/cache cases now wait for their feature (local measurement).
 ["server/sbx/test_sbx5_paths.py"]
 markers = 10
 cases = 78
-xfail = 35
+xfail = 43
 
 # SBX-6p: 94 network cases (78, then +16 over #654's wider service list), pending except one real SSH control.
 ["server/sbx/test_sbx6_network.py"]

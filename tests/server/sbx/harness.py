@@ -172,7 +172,7 @@ def _mcp_profile(self, **parameters) -> str:
     from unittest.mock import patch
     from server.services import capability_sandbox
     read = parameters.pop("read", [])
-    grants = parameters.pop("granted_folders", [])
+    grants = parameters.pop("granted_folders", getattr(self, "granted_folders", []))
     protected = parameters.pop("protected", [self.protected])
     parameters.pop("references", None)
     if parameters:

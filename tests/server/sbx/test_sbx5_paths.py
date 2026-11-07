@@ -1,7 +1,8 @@
 """CAP6b/cache gates distinguish built adapters from built protections.
 
 Must go red: M3 CAP6b moved from protected to closed; M7 commands peer-cache
-closure removed; M7-REVERSE MCP peer-cache closure removed. H1 corrupts the
+closure removed; M7-REVERSE MCP peer-cache closure removed. MCP-WIDE-GRANT
+without exclusions fails two direct writes and six link cases. H1 corrupts the
 pre-existing-link measurement's result and must fail its parent-side check.
 """
 import sys
@@ -91,7 +92,8 @@ print('checked')
 @pytest.mark.sbx_mac
 @macos
 @pytest.mark.parametrize("name,cap_sbx", [
-    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"}).marks)
+    pytest.param(name, base, marks=pending(base, cap6b=name in {"skills", "plugin"},
+                 feature="cap6b" if base == "mcp" and name in {"skills", "plugin"} else None).marks)
     for base in BASES for name in ("skills", "plugin", "data")], indirect=["cap_sbx"])
 def test_cap6b_write_denied(cap_sbx, name):
     folder = target_folder(cap_sbx, name)
@@ -199,7 +201,8 @@ def test_commands_cache_is_not_visible_to_mcp(cap_sbx):
 @macos
 @pytest.mark.parametrize("cap_sbx,name", [
     pytest.param(base, name, marks=pending(base, cap6b=name in {"skills", "plugin"},
-                 feature="shared-cache-exclusions" if base == "commands" and name == "npm" else None).marks)
+                 feature="shared-cache-exclusions" if base in {"commands", "mcp"} and name == "npm"
+                 else "cap6b" if base == "mcp" and name in {"skills", "plugin"} else None).marks)
     for base in BASES for name in ("skills", "plugin", "data", "npm")
     if not (base == "outside-floor" and name == "npm")], indirect=["cap_sbx"])
 @pytest.mark.parametrize("kind", ["symlink", "hardlink"])
