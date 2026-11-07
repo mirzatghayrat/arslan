@@ -1,4 +1,5 @@
 """Tasks Arslan runs later, on a schedule."""
+from server.orchestrator import tool_gates
 from server.registry.tool import Tool, Traits
 
 # Self-scheduling (P2). Independent of the workspace — a recurring task
@@ -28,6 +29,7 @@ SCHEDULE = (
              "required": ["name", "prompt", "when"],
              "additionalProperties": False,
          },
+         gate=tool_gates.schedule,
          traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("list_my_tasks",
          "List the recurring tasks that exist, with their ids and schedules.",

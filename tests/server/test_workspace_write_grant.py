@@ -10,6 +10,7 @@ the loop asks, refuses safely without a callback, and never gates T0.
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator import tool_gates
 
 
 @pytest.fixture(autouse=True)
@@ -18,7 +19,7 @@ def _a_folder_the_user_chose(monkeypatch):
     folder does not ask; see the tests at the end)."""
     async def _no():
         return False
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", _no)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", _no)
 
 
 async def _resolve():
@@ -134,7 +135,7 @@ async def test_in_its_own_folder_arslan_writes_without_asking(monkeypatch, key, 
         asked.append(path)
         return False
 
-    monkeypatch.setattr(tool_loop, "_writing_in_own_folder", _yes)
+    monkeypatch.setattr(tool_gates, "_writing_in_own_folder", _yes)
     r = await _dispatch(key, args, grant=_ask)
     assert r["ok"] is True and log and asked == []
     r = await _dispatch(key, args, grant=None)        # even on a channel with nobody to ask
@@ -147,4 +148,4 @@ async def test_unknown_folder_state_is_treated_as_the_users_folder(monkeypatch):
 
     monkeypatch.undo()
     monkeypatch.setattr(db_session, "AsyncSessionLocal", lambda: (_ for _ in ()).throw(RuntimeError("no db")))
-    assert await tool_loop._writing_in_own_folder() is False
+    assert await tool_gates._writing_in_own_folder() is False

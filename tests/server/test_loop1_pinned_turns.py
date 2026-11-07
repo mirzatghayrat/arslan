@@ -64,6 +64,7 @@ from server.services import (
 from tests.server import test_trajectory_golden as golden
 from tests.server.conftest import boot_schema
 from server.orchestrator import tool_execute
+from server.orchestrator import tool_gates
 
 GOLDEN = Path(__file__).parent / "golden" / "loop1"
 REGENERATE = "ARSLAN_UPDATE_GOLDEN=1 pytest tests/server/test_loop1_pinned_turns.py"
@@ -773,7 +774,7 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
     elif setup == "every_card":
         async def not_own():
             return False
-        monkeypatch.setattr(tool_loop, "_writing_in_own_folder", not_own)
+        monkeypatch.setattr(tool_gates, "_writing_in_own_folder", not_own)
         kwargs.update(confirm_command=_card(log, "command"), confirm_workspace_write=_card(log, "write"),
                       confirm_schedule=_card(log, "schedule"))
     elif setup == "inside_a_job":

@@ -1,4 +1,5 @@
 """Reading, writing and handing over files."""
+from server.orchestrator import tool_gates
 from server.registry.tool import Offer, Tool, Traits
 
 # File tools. READS and WRITES now have different gates (spec 2026-08-24):
@@ -30,7 +31,7 @@ FILES = (
                         "description": "Lines to skip from the start (for paging a long file)."},
              "limit": {"type": "integer", "minimum": 1, "description": "Maximum lines to return."}},
              "required": ["path"], "additionalProperties": False},
-         offered=_readable,
+         offered=_readable, gate=tool_gates.file_arguments,
          traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
     Tool("list_dir",
          "List one level of a folder; with no path, the folders you can "
@@ -76,7 +77,7 @@ FILES = (
                                      "missing folders are created."},
              "content": {"type": "string", "description": "Complete UTF-8 text to write."}},
              "required": ["path", "content"], "additionalProperties": False},
-         offered=lambda offer: offer.workspace,
+         offered=lambda offer: offer.workspace, gate=tool_gates.file_arguments_then_write,
          traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=True)),
     Tool("edit_file",
          "Replace a UNIQUE occurrence of `old_string` with `new_string` in a "
@@ -94,7 +95,7 @@ FILES = (
              "required": ["path", "old_string", "new_string"],
              "additionalProperties": False,
          },
-         offered=lambda offer: offer.workspace,
+         offered=lambda offer: offer.workspace, gate=tool_gates.workspace_write,
          traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=True)),
 )
 
