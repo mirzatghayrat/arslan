@@ -29,7 +29,8 @@ export default function ImportConnections({ onClose, onChanged }: { onClose: () 
   const { t } = useTranslation();
   const [scan, setScan] = useState<ImportScan | null>(null);
   const [scanFailed, setScanFailed] = useState(false);
-  // Ticks are held by `digest`, not `id`: two server names in one file can give one id, and a tick must stay its own row's.
+  // Ticks are held by `digest`, which differs per entry. A scan's ids are unique too (`_unique_ids` in the server), so a
+  // key slot and a result line go by `id`, which is what the POST and its results carry.
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [keys, setKeys] = useState<Map<string, string>>(new Map());
   const [busy, setBusy] = useState(false);

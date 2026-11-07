@@ -236,6 +236,25 @@ async def test_a_name_that_cannot_be_written_as_text_does_not_stop_the_sheet(api
     assert response.json()["results"][0]["state"] == "refused"
 
 
+#: Two names one file can hold that write out alike: a lone surrogate, and the backslash text its escape reads as.
+TWINS = ("cal\\udfff", "cal\udfff")
+
+
+async def test_two_names_that_write_out_alike_are_two_rows_and_each_tick_finds_its_own(api, home):
+    _claude(home, {TWINS[0]: {"command": "npx", "args": ["first-server"], "env": {"FIRST_TOKEN": "${FIRST_KEY}"}},
+                   TWINS[1]: {"command": "npx", "args": ["second-server"], "env": {"SECOND_TOKEN": "${SECOND_KEY}"}},
+                   f"{TWINS[0]}~2": {"command": "npx", "args": ["third-server"]}})     # the name a repeat's id could take
+    scan = await _scan(api)
+    first, second, third = scan["servers"]
+    assert first["id"] == f"claude_code:{TWINS[0]}"              # a name seen once keeps the id it had
+    assert len({first["id"], second["id"], third["id"]}) == 3
+    assert (first["asks"], second["asks"]) == (["FIRST_KEY"], ["SECOND_KEY"])
+    assert [row["id"] for row in (await _scan(api))["servers"]] == [first["id"], second["id"], third["id"]]
+    results = await _add(api, scan, first["id"], second["id"])     # `add` reads the file again: each id finds its own entry
+    assert results == {first["id"]: {"id": first["id"], "state": "needs_keys", "keys": ["FIRST_KEY"]},
+                       second["id"]: {"id": second["id"], "state": "needs_keys", "keys": ["SECOND_KEY"]}}
+
+
 async def test_an_entry_nested_past_what_can_be_hashed_is_unreadable_and_the_sheet_stays(api, home, monkeypatch):
     """Right at the edge the parser takes it and the digest doesn't: the depth moves with the stack, so the digest is told."""
     real = json.dumps
@@ -915,6 +934,22 @@ async def test_only_what_is_ticked_is_added(api, home, execution_db, world):
     results = await _add(api, await _scan(api), "claude_code:ticked")
     assert list(results) == ["claude_code:ticked"]
     assert [server.url for server in await _rows(execution_db, MCPServer)] == [REMOTE]
+
+
+@pytest.mark.real_mcp
+async def test_a_key_typed_for_one_of_two_names_that_write_out_alike_reaches_only_that_server(api, home, execution_db, world):
+    _claude(home, {TWINS[0]: {"command": "npx", "args": ["first-server"], "env": {"FIRST_TOKEN": "${MY_TOKEN}"}},
+                   TWINS[1]: {"command": "npx", "args": ["second-server"], "env": {"SECOND_TOKEN": "${MY_TOKEN}"}}})
+    scan = await _scan(api)
+    first, second = scan["servers"]
+    typed = "typed-value-for-this-test"
+    results = await _add(api, scan, first["id"], second["id"], keys={second["id"]: {"MY_TOKEN": typed}})
+    assert results[first["id"]]["state"] == "needs_keys"
+    assert results[second["id"]]["state"] == "on", results
+    source, server = await _server_of(execution_db, results[second["id"]])
+    assert [row.id for row in await _rows(execution_db, MCPServer)] == [server.id]
+    assert json.loads(crypto.decrypt(server.env)) == {"SECOND_TOKEN": typed}
+    assert world.package_started_with(source.id, "second-server")["env"]["SECOND_TOKEN"] == typed
 
 
 @pytest.mark.real_mcp
