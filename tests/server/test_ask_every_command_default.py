@@ -16,6 +16,7 @@ from server.db.migrations import runner
 from server.db.migrations.versions import _0070_ask_every_command as m0070
 from server.db.models import Base
 from server.services import settings_service, storage_boot
+from server.orchestrator import command_gate
 
 #: Spellings the old, forgiving reader took as ask_risky. The reader and 0070 now share one rule, the exact
 #: value Settings writes, so each of these reads ask_all before 0070 and after it (#398 review, F1).
@@ -170,7 +171,7 @@ async def test_an_unreadable_setting_means_a_card_even_for_a_harmless_command(ex
         raise OSError("database is locked")
     monkeypatch.setattr(settings_service, "shell_confirm_policy", unreadable)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    assert await tool_loop._asks_for_everything() is True
+    assert await command_gate._asks_for_everything() is True
     asked, ran = [], []
 
     async def card(command, argv, **kw):

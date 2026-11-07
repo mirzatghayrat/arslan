@@ -11,6 +11,7 @@ import pytest
 from server.orchestrator import tool_loop, untrusted
 from server.services import approvals, command_sandbox, permissions, terminal_exec, terminal_policy as tp
 from server.ws import protocol
+from server.orchestrator import command_gate
 
 
 # ── ① forbid ─────────────────────────────────────────────────────────────────
@@ -169,8 +170,8 @@ async def _run(monkeypatch, args, cards, *, available=True):
 
     async def no():
         return False
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", on)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
     monkeypatch.setattr(command_sandbox, "available", lambda: available)
 
     async def resolve():
@@ -234,14 +235,14 @@ async def test_a_clicked_card_after_outside_content_asks_for_the_network_too(mon
     the network; the click stands for it, so no second (network) card comes."""
     asked = []
     gate = AsyncMock(side_effect=AssertionError("a second card for the network"))
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content", gate)
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", gate)
     ex, _ = await _run(monkeypatch, {"command": "curl https://example.com"}, _clicked(asked), available=False)
     assert asked == [{"network": True}] and len(ex.ran) == 1
 
 
 async def test_the_outside_card_carries_the_network_too(monkeypatch):
     asked = []
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content",
+    monkeypatch.setattr(command_gate, "_network_after_outside_content",
                         AsyncMock(side_effect=AssertionError("a second card for the network")))
     ex, _ = await _run(monkeypatch, {"command": "curl https://example.com", "outside_sandbox": True,
                                      "why": "w"}, _clicked(asked))
@@ -257,7 +258,7 @@ async def test_a_card_a_grant_answered_leaves_the_network_card_to_come(monkeypat
         asked.append(kw)
         return True                                       # nothing recorded: no click
     gate = AsyncMock(return_value={})
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content", gate)
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", gate)
     await _run(monkeypatch, {"command": "curl https://example.com"}, granted, available=False)
     assert asked == [{"network": True}] and gate.await_count == 1
 
@@ -351,7 +352,7 @@ async def test_a_careful_mode_card_with_no_sandbox_is_marked_and_the_island_leav
     """🟡 D: under "ask for every command" a text card for a command that would run unsandboxed is marked."""
     async def off():
         return False
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", off)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", off)
     assert await approvals.runs_unsandboxed() is True
     frame = protocol.propose_run_command("c", "rm notes.txt", [])
     card = approvals._command_request("rm notes.txt", [], frame, ask_all=True, unsandboxed=True).frame
@@ -364,7 +365,7 @@ async def test_runs_unsandboxed_reads_the_setting_seatbelt_and_the_conversations
     from server.services import permission_store
     async def on():
         return True
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", on)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", on)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     assert await approvals.runs_unsandboxed("c9") is False
     async with execution_db() as db:

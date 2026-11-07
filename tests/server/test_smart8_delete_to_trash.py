@@ -13,6 +13,7 @@ import pytest
 
 from server.orchestrator import tool_loop
 from server.services import command_sandbox, delete_to_trash as dt, task_service, terminal_exec, terminal_policy as tp
+from server.orchestrator import command_gate
 
 
 @pytest.fixture
@@ -212,9 +213,9 @@ async def _run(monkeypatch, args, *, sandbox_on, available=True, exec_=None):
 
     async def no_network(*a, **k):
         return {}
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", sandbox)
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content", no_network)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", sandbox)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", no_network)
     monkeypatch.setattr(command_sandbox, "available", lambda: available)
     asked: list[dict] = []
 

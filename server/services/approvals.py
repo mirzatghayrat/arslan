@@ -426,7 +426,7 @@ async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
     start (R4), or `conversation_id` has a stored grant to run its commands outside it (S4a). Only marks a
     card for the island, so it reads the grant without a ledger row (`permissions.standing` writes one)."""
     from server.db import session as db_session
-    from server.orchestrator.tool_loop import _sandbox_enabled
+    from server.orchestrator.command_gate import _sandbox_enabled
     from server.services import command_sandbox, permission_store
     if not (await _sandbox_enabled() and command_sandbox.available()):
         return True
@@ -501,7 +501,7 @@ def _paused_clock():
 
 
 def _forget_decision() -> None:
-    """A card starts: an earlier decision is not its answer (`tool_loop._declined` reads
+    """A card starts: an earlier decision is not its answer (`tool_gates._declined` reads
     `permissions.LAST_DECISION` first); a decide card sets its own after."""
     from server.services import permissions
     permissions.LAST_DECISION.set(None)

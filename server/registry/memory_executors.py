@@ -7,7 +7,7 @@ lives in server.registry.seeder.RETIRED_TOOLSET_KEYS and is deleted on every boo
 
 🔴 Both executors read WHO is calling via
 server.orchestrator.tool_caller.current_caller() (threaded by
-tool_loop._dispatch_tool, brain-P2 Task 1) — that contextvar is set ONLY by
+tool_execute.run_executor, brain-P2 Task 1) — that contextvar is set ONLY by
 run_native's dispatch path. A Claude session talking to this backend directly
 (no native tool-calling round trip through run_native) never populates it, so
 current_caller() reads None and every write here refuses (fail-closed nail,

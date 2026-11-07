@@ -23,6 +23,7 @@ from server.orchestrator import tool_loop
 from server.registry import executors, ssh_tools
 from server.services import command_sandbox, permissions, task_service, task_workers
 from tests.server.test_loop1_pinned_turns import _booted, _database  # noqa: F401 — the fixtures
+from server.orchestrator import command_gate
 
 HERMETIC = "evolution-replay"
 SECRET = {"password": "not-a-real-one"}
@@ -183,7 +184,7 @@ def _command_declined(env):
 def _network_refused(env):
     async def refused(*_args, **_own):
         return {"refused": "the network was refused"}
-    env.monkeypatch.setattr(tool_loop, "_network_after_outside_content", refused)
+    env.monkeypatch.setattr(command_gate, "_network_after_outside_content", refused)
 
 
 def _hermetic(env):
@@ -303,10 +304,10 @@ def _a_mac_with_a_sandbox(monkeypatch, _database):  # noqa: F811
     async def no_grant(*_args, **_own):
         return None
     monkeypatch.setattr(tool_loop, "_writing_in_own_folder", no)
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content", nothing)
-    monkeypatch.setattr(tool_loop, "_outside_grant", no_grant)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", nothing)
+    monkeypatch.setattr(command_gate, "_outside_grant", no_grant)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(ssh_tools, "prepare_confirmation", _prepared)
     monkeypatch.setattr(ssh_tools, "prepare_enrollment", _prepared)

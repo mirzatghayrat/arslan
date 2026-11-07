@@ -63,6 +63,7 @@ from server.services import (
 )
 from tests.server import test_trajectory_golden as golden
 from tests.server.conftest import boot_schema
+from server.orchestrator import tool_execute
 
 GOLDEN = Path(__file__).parent / "golden" / "loop1"
 REGENERATE = "ARSLAN_UPDATE_GOLDEN=1 pytest tests/server/test_loop1_pinned_turns.py"
@@ -723,12 +724,12 @@ async def _run(name, monkeypatch, database):
 
 def _watch(log, monkeypatch):
     """What a turn does that no frame shows: its limit on each call, its waits, its checkpoints and its events."""
-    within = tool_loop.within
+    within = tool_execute.within
 
     async def limited(awaitable, timeout, **own):
         log.append(["limit", timeout])
         return await within(awaitable, timeout, **own)
-    monkeypatch.setattr(tool_loop, "within", limited)
+    monkeypatch.setattr(tool_execute, "within", limited)
     monkeypatch.setattr(answer_salvage, "within", limited)
 
     async def waited(seconds):

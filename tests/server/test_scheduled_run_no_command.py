@@ -18,6 +18,7 @@ from server.db.models import Setting
 from server.orchestrator import arslan as arslan_mod
 from server.orchestrator import tool_loop
 from server.services import permission_store, permissions, terminal_exec
+from server.orchestrator import command_gate
 
 CID = "sched-no-command"
 
@@ -102,7 +103,7 @@ async def test_the_refusal_comes_before_every_other_check(ran, monkeypatch, comm
     run with nobody to ask, no other answer about a command is ever reached."""
     async def grant_read(*_a, **_k):
         raise AssertionError("the outside grant is never read in a scheduled run")
-    monkeypatch.setattr(tool_loop, "_outside_grant", grant_read)
+    monkeypatch.setattr(command_gate, "_outside_grant", grant_read)
     out = await _dispatch(command)
     [row] = await _rows()
     assert ran == [] and out["ok"] is False and "nobody to ask" in out["error"]

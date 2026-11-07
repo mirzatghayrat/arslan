@@ -55,7 +55,7 @@ def filter_replay_tools(wired: list[dict]) -> list[dict]:
 
 
 # Synthetic conversation ids used ONLY by evolution eval/replay dispatch. A dispatch
-# under one of these must be hermetic. The throat backstop (tool_loop._dispatch_tool)
+# under one of these must be hermetic. The throat backstop (tool_loop._run_tool)
 # reads this set; so did the expert dispatcher's structural rule until C7b-4 deleted it.
 #   "evolution-replay"  — was replay_run.REPLAY_CONVERSATION_ID, the sentinel every
 #                         eval/replay path used. Those paths went in C7b-1/C7b-2
@@ -81,7 +81,7 @@ def is_hermetic_context(conversation_id: str | None) -> bool:
     user conversation). Both the structural hermetic rule and the fail-closed throat
     assertion derive hermeticity from THIS predicate.
 
-    🔴 Besides meaning "synthetic traffic", a True here makes `tool_loop._dispatch_tool`
+    🔴 Besides meaning "synthetic traffic", a True here makes `tool_loop._run_tool`
     refuse every non-REPLAY_SAFE_BUILTINS tool. Never add a real or background
     conversation id to `_HERMETIC_CONVERSATION_IDS`: it would seal that work's own
     writes. (The separate "never learn from it" predicate, should_not_curate, went with

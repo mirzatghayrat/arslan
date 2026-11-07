@@ -13,6 +13,7 @@ import pytest
 
 from server.services import command_sandbox, task_service, terminal_exec
 from server.orchestrator.recovery_hints import SANDBOX_APPLE_EVENTS_HINT, hint_for
+from server.orchestrator import command_gate
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt (sandbox-exec) is macOS-only")
@@ -308,8 +309,8 @@ async def _dispatch(monkeypatch, command, executor, cards, **args):
 
     async def no():
         return False
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", executor)
     return await tool_loop._dispatch_tool(
         "run_command", {"command": command, **args}, "{}", resolve_tools=resolve, emit=lambda e: None,

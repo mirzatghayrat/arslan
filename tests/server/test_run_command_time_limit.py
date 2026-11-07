@@ -12,6 +12,7 @@ from arslan.execution_budget import Budget, Limits
 from server.orchestrator import tool_loop
 from server.registry.executors import EXECUTORS
 from server.services import terminal_exec
+from server.orchestrator import command_gate
 
 run = EXECUTORS["run_command"].execute
 
@@ -27,8 +28,8 @@ def own_folder(execution_db):
 def no_cards(monkeypatch):
     async def no():
         return False
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", no)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", no)
 
 
 async def _yes(command, argv, **kw):
