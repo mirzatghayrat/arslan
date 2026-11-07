@@ -1,5 +1,5 @@
 """Looking at the user's own local network, and reaching machines on it."""
-from server.registry.tool import Tool
+from server.registry.tool import Tool, Traits
 
 NETWORK = (
     # LAN discovery (P3a): offered only when the user turned it on. Read-only —
@@ -10,7 +10,8 @@ NETWORK = (
          "not connect to, log into, or run anything on them. "
          "args: {} — the network is derived from this machine.",
          {"type": "object", "properties": {}, "additionalProperties": False},
-         offered=lambda offer: offer.lan),
+         offered=lambda offer: offer.lan,
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     # SSH reach (P3b): offered only when the user turned it on. ssh_probe looks;
     # ssh_run asks every time — the description says so, because a model that
     # believes a tool is silent will plan around a dialog that is going to appear.
@@ -26,7 +27,8 @@ NETWORK = (
              "required": ["host"],
              "additionalProperties": False,
          },
-         offered=lambda offer: offer.ssh),
+         offered=lambda offer: offer.ssh,
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("enroll_node",
          "ASK the user to enrol a machine so its host key is "
          "remembered. args: {host, user, name}. This enrols "
@@ -46,7 +48,8 @@ NETWORK = (
              "required": ["host", "user", "name"],
              "additionalProperties": False,
          },
-         offered=lambda offer: offer.ssh),
+         offered=lambda offer: offer.ssh,
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     # C3b (⓪Plan's call A on the user's card U3): running needs an enrolled machine, so a first
     # command goes probe → enrol (its host key pinned) → run. With one enrolled, ssh_run still
     # reaches an unenrolled host through its fingerprint card; C3b does not change that.
@@ -67,10 +70,12 @@ NETWORK = (
              "required": ["host", "user", "command"],
              "additionalProperties": False,
          },
-         offered=lambda offer: offer.enrolled),
+         offered=lambda offer: offer.enrolled,
+         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
     Tool("list_nodes",
          "List the machines the user has enrolled (name, address, "
          "username). READ-ONLY. args: {}.",
          {"type": "object", "properties": {}, "additionalProperties": False},
-         offered=lambda offer: offer.enrolled),
+         offered=lambda offer: offer.enrolled,
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
 )

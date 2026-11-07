@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import dataclass, field
+from typing import Literal, get_args
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,31 @@ def always(_offer: Offer) -> bool:
     return True
 
 
+Effect = Literal["read", "local_write", "external_write"]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Traits:
+    """What the code that treats tools differently needs to know about one (LOOP1 a6). Every tool states every trait:
+    there are no defaults, so a tool that leaves one out fails when its family is imported. The name sets those modules
+    read are derived from these (`tool_defs.named`); a key that isn't a registry tool states its traits in
+    `tool_defs.UNLISTED`. MCP tools have none here: each module judges them per call, by name or by their server."""
+    effect: Effect      # how task_service.effect_of grades a call by name, which also decides retries. external_write is
+    #                     the safe grade for anything not known to be a read or a local write, so a tool may be graded
+    #                     more strictly than it acts; run_command's grade comes from its command first.
+    parallel: bool      # parallel_reads: runs alongside the reads next to it (no card, no shared state)
+    outside: bool       # untrusted.counts_as_external: what it returns is outside content
+    replay_safe: bool   # replay_safety: offered in a hermetic replay
+    saves: bool         # tool_loop.WRAP_UP_TOOLS: saves a job's deliverable, so it may run while the job wraps up
+
+    def __post_init__(self) -> None:
+        if self.effect not in get_args(Effect):
+            raise ValueError(f"effect {self.effect!r} is not one of {get_args(Effect)}")
+        for name in ("parallel", "outside", "replay_safe", "saves"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"trait {name} must be True or False, not {getattr(self, name)!r}")
+
+
 @dataclass(frozen=True, slots=True)
 class Tool:
     name: str
@@ -88,6 +114,7 @@ class Tool:
     schema: dict
     offered: Callable[[Offer], bool] = always
     host: bool = False          # the tool loop answers it: there is no executor
+    traits: Traits = field(kw_only=True)
 
 
 def listed(tools: Iterable[Tool], offer: Offer) -> list[dict]:
@@ -110,3 +137,18 @@ def check(tools: Iterable[Tool], executors: dict) -> None:
             raise ValueError(f"tool {tool.name!r}: its parameters must be a JSON object schema")
         if tool.host == (tool.name in executors):
             raise ValueError(f"tool {tool.name!r}: it must have an executor or be answered by the loop, not both or neither")
+
+
+def check_traits(tools: Iterable[Tool], unlisted: Mapping[str, Traits]) -> None:
+    """Refuse traits that aren't stated, when the table is built: every tool's, and every key outside the registry
+    whose traits are listed once, under a name no tool has."""
+    names = set()
+    for tool in tools:
+        if not isinstance(tool.traits, Traits):
+            raise ValueError(f"tool {tool.name!r}: its traits must be a Traits")
+        names.add(tool.name)
+    for key, traits in unlisted.items():
+        if key in names:
+            raise ValueError(f"{key!r} is a registry tool: its traits are on its Tool")
+        if not isinstance(traits, Traits):
+            raise ValueError(f"{key!r}: its traits must be a Traits")
