@@ -232,18 +232,20 @@ def test_no_regex_reads_a_form_past_a_limit():
         assert len(tp._detection_texts(command)) <= 3
 
 
-def test_past_a_limit_each_top_level_command_is_read_on_a_line_of_its_own_normalized_and_unquoted():
-    """A quoted `;` is never split, and a blank before each new line keeps an escaped `\\` from joining it to the next."""
+def test_past_a_limit_the_forms_are_as_written_each_top_level_command_unquoted_and_separated():
+    """In the unquoted form a quoted `;` is not split, and a blank before each new line keeps an escaped `\\` from
+    joining it to the next. In the separated one every quote and separator is a line start."""
     assert shell_text.over_limit_forms("ls; r''m x && 'rm' y 'a; b' \\\\| z") == (
-        "ls; r''m x && 'rm' y 'a; b' \\\\| z", "ls\nrm x\n'rm' y 'a; b' \\\nz", "ls\nrm x\nrm y a; b \\\nz")
+        "ls; r''m x && 'rm' y 'a; b' \\\\| z", "ls\nrm x\nrm y a; b \\\nz", "ls\nrm x\nrm\ny\na\nb\n\\\nz")
 
 
 def test_past_a_limit_a_run_of_backticks_is_read_as_one_in_the_new_forms():
     """Every start in a run would read the rest of it; the last one reads all a rule could match at any of them."""
-    command = "`" * BACKTICKS + "x; `'`" + "`" * BACKTICKS + "rm -rf ~"
-    written, lines, unquoted = shell_text.over_limit_forms(command)
+    command = "`" * BACKTICKS + "x; `'`" + "`" * BACKTICKS + "ls -l"
+    written, unquoted, separated = shell_text.over_limit_forms(command)
     assert written == command
-    assert lines == "`x\n`'`rm -rf ~" and unquoted == "`x\n`rm -rf ~"     # joined again once the quote is out
+    assert unquoted == "`x\n`ls -l"         # joined again once the quote is out
+    assert separated == "\nx\nls -l"
 
 
 # Past each limit, as a piece of its own the command chains to.
@@ -291,14 +293,14 @@ def test_past_every_limit_a_forbidden_command_is_still_forbidden_however_it_is_r
 
 
 @pytest.mark.parametrize("over", OVER_LIMIT.values(), ids=OVER_LIMIT.keys())
-@pytest.mark.parametrize("rule,command", [(k, v) for k, v in FORBIDDEN.items() if k != "sudo"],
-                         ids=[k for k in FORBIDDEN if k != "sudo"])
+@pytest.mark.parametrize("rule,command", FORBIDDEN.items(), ids=FORBIDDEN.keys())
 @pytest.mark.parametrize("quote", ["'", '"'], ids=["single", "double"])
-def test_past_a_limit_a_separator_in_quotes_is_still_data(over, rule, command, quote):
-    """Only a top-level separator starts a command. (`sudo` is the floor after any `;` in any reading.)"""
+def test_past_a_limit_a_separator_in_quotes_is_a_separator(over, rule, command, quote):
+    """Past a limit what a quote holds may be a `-c` argument read later, so a separator there starts a command too.
+    Prose is forbidden with it, which fails closed."""
     command = f"{over}; echo {quote}ls; {command}{quote}"
     assert tp._over_limit(tp._forms(command))
-    assert (tp.assess(command).level, tp.assess(command).rule) == ("ask", tp.UNREADABLE), command
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("forbid", rule), command
 
 
 @pytest.mark.parametrize("blanks", ["\n" * NEWLINES, " " * BLANKS, "\n \t" * NEWLINES], ids=["newlines", "spaces", "mixed"])

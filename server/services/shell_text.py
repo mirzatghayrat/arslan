@@ -257,23 +257,36 @@ def _squeeze_blank_runs(command: str) -> str:
 
 
 _BACKTICK_RUN = re.compile(r"``+")
+# Past a limit, what could start a command is taken to start one: every quote, bracket and shell metacharacter but
+# `<` and `>` (a disk rule reads the redirect), and the `{` of `${`, which opens a parameter (`${HOME}`), not a group.
+_SEPARATOR = re.compile(r"""['"`()\[\]};&|]|(?<!\$)\{""")
+# The keywords after which a command starts (`then x`, `do x`, `! x`), as words of their own.
+_COMMAND_KEYWORD = re.compile(
+    r"(?<!\S)(?:" + "|".join(map(re.escape, sorted(_SHELL_COMMAND_TRANSITIONS))) + r")(?!\S)")
+
+
+def _separated(normalized: str) -> str:
+    """Each separator and command keyword a newline, so every place a command could start is a line start, with the
+    words after it on that line: a `-c` or launcher's quoted argument, a `( )` or `{ }` group, after `then` or `do`,
+    a separator inside a double-quoted substitution. Quoted prose reads as commands too, which only forbids more."""
+    return _COMMAND_KEYWORD.sub("\n", _SEPARATOR.sub("\n", normalized))
 
 
 def _over_limit_forms(command: str) -> tuple[str, ...]:
     """What the forbid rules read of a command past the limit, each with its blank runs squeezed. Linear passes only,
-    with no scan of what its substitutions hold: the text as written; its top-level commands each on a line of its own
-    (`_iter_top_level_shell_segments`), since the rules anchor at a newline and not at `;` `&&` `||` `|`, then
-    normalized (`ls; r''m -rf ~`), after a blank so a `\\` ending a command doesn't join the lines; and that with its
-    quotes taken out, which reads a command word spelled with quotes (`'rm' -rf ~`, `"$("rm -rf ~`) as the word reading
-    under the limit does. A quoted `;` is never split, so for the rules that need a command start, quoted prose stays
-    data unless they already read a start in it (a newline, `$(` or a backtick). The unquoted form has nothing to
-    mask, so a rule with no start to need (a redirect onto a disk) reads quoted prose there. Reading too much here only
-    forbids more, which fails closed. In these two a run of backticks is one: a rule can match at a backtick in a run
-    only by reading past the ones after it, so the last one finds it too, and each start in a run would read the rest."""
+    with no scan of what its substitutions hold:
+      - the text as written, for a rule that reads the metacharacters themselves (the fork-bomb rule);
+      - its top-level commands each on a line of its own (`_iter_top_level_shell_segments`), normalized (`l''s`),
+        after a blank so a `\\` ending a command doesn't join the lines, and with its quotes taken out: a command word
+        spelled with quotes inside it (`'l's`) reads as the word, and a rule that reads one command's options to the
+        end of its line reads them across a quoted argument. A run of backticks is one here: a rule can match at a
+        backtick in a run only by reading past the ones after it, so the last one finds it too;
+      - the separator scan (`_separated`) of the normalized text, where each structural command start is a line start.
+    Reading too much here only forbids more, which fails closed. None has a quote to mask, but the text as written."""
+    normalized = _normalize_command_for_detection(command)
     lines = _normalize_command_for_detection(" \n".join(_iter_top_level_shell_segments(command)))
-    lines = _BACKTICK_RUN.sub("`", lines)
     unquoted = _BACKTICK_RUN.sub("`", lines.replace("'", "").replace('"', ""))
-    return tuple(dict.fromkeys(_squeeze_blank_runs(form) for form in (command, lines, unquoted)))
+    return tuple(dict.fromkeys(_squeeze_blank_runs(form) for form in (command, unquoted, _separated(normalized))))
 
 
 @functools.lru_cache(maxsize=32)        # the forms of a command repeat
