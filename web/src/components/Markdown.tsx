@@ -327,6 +327,7 @@ const components: import('react-markdown').Components = {
         <pre className="md-code" style={{
           margin: 0,
           padding: '10px 12px',
+          background: 'var(--color-fill)',
           overflowX: 'auto',
           fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
           fontSize: '13px',

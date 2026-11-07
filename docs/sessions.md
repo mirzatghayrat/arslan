@@ -33,9 +33,10 @@
 | 文件 | 规矩 |
 |---|---|
 | `server/orchestrator/arslan.py`、`server/orchestrator/tool_loop.py`、`server/orchestrator/memory.py` | 当轮 K 线主改。其他 PR 只做小改动，合并时排在当前打开的 K 线 PR 之后；rebase 时两边都保留 |
-| `web/src/locales/*.json`（6 种语言） | 新加的 key，6 种语言同一个 PR 一起加；不改别人的 key；`web/src/__tests__/locale-parity.test.ts` 通过才算完。Merged key by key by `scripts/dev/merge_json_keys.py`, so the place a key is added no longer matters. Set it up once per clone: `git config merge.json-keys.driver "python3 scripts/dev/merge_json_keys.py %O %A %B"`. A clone without it merges as text. A page on GitHub still shows a conflict until someone merges main locally |
+| `web/src/locales/*.json`（6 种语言） | 新加的 key，6 种语言同一个 PR 一起加；不改别人的 key；`web/src/__tests__/locale-parity.test.ts` 通过才算完。Merged key by key by `scripts/dev/merge_json_keys.py`, so the place a key is added no longer matters. Set it up once per clone: `git config merge.json-keys.driver "python3 scripts/dev/merge_json_keys.py %O %A %B"`. A clone without it merges as text. A page on GitHub still shows a conflict until someone merges main locally. A branch from before the driver landed conflicts as text on its first merge of main: `git checkout -m -- web/src/locales/??.json`, then `git add`, resolves it by key. |
 | `docs/CAPABILITY_INVENTORY.md` | 生成物，不手改、不手工解冲突。rebase 后重新生成：`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`（在仓库根目录、用项目的虚拟环境运行）。C5b 合并后，只在发版 PR 里生成 |
-| `server/db/migrations/**`、`server/db/models.py` | 迁移号按 §4 处理 |
+| `server/db/migrations/**`、`server/db/models.py` | 迁移号按 §4 处理。Next free number: 0091 (main's highest is 0090; 0087 and 0088 are reserved for ASK1; the round's README has the table) |
+| `tests/server/golden/loop1_tool_names.json` | Generated: `ARSLAN_UPDATE_GOLDEN=1 pytest tests/server/test_loop1_tool_table.py`. One new tool touches up to about 100 lines, so two PRs that add tools can conflict there. The author takes either side, runs that command, commits the result and notes the merge on the PR. The OK carries, because the test proves the file. Put this in any brief that adds a tool |
 | `server/main.py`、`web/src/App.tsx` | 只做小改动。路由和启动步骤加在末尾，不重排；rebase 时两边都留 |
 | `docs/releases/*.md` | 只有发版 PR 写。每一句对用户的承诺旁边，写出对应的测试名 |
 | `docs/plans/**`、`docs/specs/**` | 计划只由 ⓪Plan 改；任务卡的状态由 ②Main 更新；spec 只在决定变化时改，并注明日期 |
@@ -64,7 +65,14 @@
   - K 线 PR 要贴跑分的前后对比，没有对比不合。
 - **合并顺序**由依赖图决定，不是先到先得。顺序表在当轮 README。
 - **Who merges (user, 2026-10-28; relayed by ④参谋 and confirmed by the user in ⓪Plan's chat; replaces U9 for merging):**
-  - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session's OK **at the current head**, and **every** check on that head green (not only the required ones; the `language` job, for example, is not required yet). The authoring session enables auto-merge with `ccd_pr` `set_auto_merge`; GitHub merges when the required checks pass. **Timing (found 2026-10-29):** GitHub refuses to enable auto-merge on a PR that is already mergeable ("clean status"), so enable it once the OK is in and every check that is *not* required has passed (today `language`; the ruleset requires `backend`, `frontend`, `macos`, `secrets`), while a required one is still running. If all checks are already green, a session cannot merge it (a plain `gh pr merge` is blocked); name it to the user, who merges.
+  - **The merge flow (user, 2026-11-07; where it differs, it replaces the arming times and re-arming rules below):**
+    - `review-ok` is a required status check on the `protect-main` ruleset, next to `backend`, `frontend`, `macos`, `secrets` and `language`. It is the user's repository setting.
+    - **The author arms auto-merge when the PR opens, whatever CI's state.** GitHub then merges as soon as every required check, `review-ok` included, is green. No empty commits to restart CI, and no merge of main just to get a push.
+    - **Only the coordinating session (⓪Plan) posts `review-ok`,** after a review has passed at that exact head. A push clears it.
+    - **A clean merge of main carries the OK.** If the merge has no conflict in the PR's own lines, the author notes the merge commit on the PR and asks ⓪Plan to post `review-ok` at the new head; no reviewer is woken. A conflict in the PR's own lines, or any other change, gets a delta review first.
+    - **Merge main only for a real reason:** a conflict, or a merged change to an interface the PR uses.
+    - **PRs the user merges** (Codex's, and those that change a Bridge frame) get the status too and stay unarmed.
+  - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session reviews it and ⓪Plan posts `review-ok` **at the current head**, and every other required check on that head is green. The authoring session arms auto-merge with `ccd_pr` `set_auto_merge` when the PR opens (the merge flow above).
   - **The user merges** everything else: anything on the security surface, and ordinary product code (for example BR2's file grouping), except where the 2026-11-01 rules below let the author auto-merge. The security surface here means:
     - the outside-content mark;
     - the sandbox;
@@ -83,22 +91,21 @@
     - migrations that drop data.
 
     Deleting a guard, a hard rule or a test of the security surface counts as security surface, not deletion-only.
-  - **Security-surface PRs the author may auto-merge (user, 2026-11-01, in ⓪Plan's chat; in summary: from now on, a PR that touches the security surface may be merged by its author through auto-merge once another session has reviewed it at effort=max, OK'd it at the current head, and all five checks are green; Codex's PRs and PRs that change a Bridge frame are still merged by the user):**
+  - **Security-surface PRs the author may auto-merge (user, 2026-11-01, in ⓪Plan's chat; in summary: from now on, a PR that touches the security surface may be merged by its author through auto-merge once another session has reviewed it at effort=max, OK'd it at the current head, and all five checks are green; since 2026-11-07 that OK is the `review-ok` status, the sixth required check, as in the merge flow above; Codex's PRs and PRs that change a Bridge frame are still merged by the user):**
     - Conditions, all three:
       - another session reviewed it at effort=max;
-      - that session posted its OK **at the current head**;
-      - all five checks are green on that head: `backend`, `frontend`, `macos`, `secrets` and `language`.
-    - Then the authoring session enables auto-merge with `ccd_pr` `set_auto_merge`, with the same timing and push rules as above.
+      - ⓪Plan posted `review-ok` **at the current head**, after that review;
+      - all six required checks are green on that head: `backend`, `frontend`, `macos`, `secrets`, `language` and `review-ok`.
+    - The authoring session has armed auto-merge with `ccd_pr` `set_auto_merge` since the PR opened, so it merges when those are green.
     - **Still the user's:**
       - Codex's PRs, including any Claude commit added on a Codex branch;
       - any PR that changes a Bridge frame, `hello`, the shared vectors or `docs/specs/mobile-bridge-protocol.md`.
     - **Ordinary product code too (user, 2026-11-01, in ⓪Plan's chat; in summary: the same applies to ordinary product code):**
-      the author may enable auto-merge once another session reviewed it (effort=high, unless it is on the security surface, where the effort=max rule above applies), that session OK'd it at the current head, and all five checks are green.
+      the author arms auto-merge when the PR opens, and it merges once another session reviewed it (effort=high, unless it is on the security surface, where the effort=max rule above applies), ⓪Plan posted `review-ok` at the current head, and the other five checks are green.
       The two exceptions above (Codex's PRs; Bridge frames) stay the user's.
     - **Stacked PRs:** enable auto-merge only once the PR's base is `main`. Auto-merge on a stacked PR merges it into its parent's branch, not main.
-  - **A push after auto-merge is on:** GitHub keeps auto-merge enabled across new commits. Disable it before pushing, and re-enable only after a new OK and green checks at the new head.
-  - **Old base:** if a PR's CI ran on an old base and main has since changed files it touches, or code its tests call, merge main in (or rebase) and re-run CI before enabling auto-merge.
-  - **A merge of main carries the OK (user, 2026-11-07, relayed by ④参谋):** a merge of main with no conflict in the PR's own lines keeps the OK. The author notes the merge commit on the PR, CI goes green, and the PR is armed; no reviewer is woken. A conflict in the PR's own lines needs a delta OK on those hunks only. This is the exception to "a new OK at the new head" above.
+  - **A push after arming:** GitHub keeps auto-merge enabled across new commits, and the push clears `review-ok`, so nothing merges until ⓪Plan posts it again at the new head. There is no need to disable and re-arm.
+  - **Old base:** if main has changed files the PR touches, or code its tests call, merge main in (or rebase); that is a real reason in the merge flow, and its OK carries or needs a delta review as described there.
   - **The authoring session watches main's CI** for that merge commit, whoever clicked merge. If it goes red only because two PRs combined on a macOS count pin, the second PR's author fixes it forward with a pin-only PR. If it goes red for anything else, open a pure `git revert` of that merge. The revert needs no new OK, only green checks; the author may enable auto-merge on it unless the reverted PR was user-merged, in which case the user merges the revert. Say so in STATUS and to the author.
   - **Blocked:** a plain `gh pr merge` is blocked by the auto-mode classifier. If the classifier also blocks binding the PR or enabling auto-merge (it did for ⓪Plan on 2026-10-28), stop, say so in STATUS, and leave the merge to the user. Don't work around it or ask another session to do it.
   - The merge order (§3 of the round's README) still applies. Tags and releases stay the user's.

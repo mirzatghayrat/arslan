@@ -68,6 +68,16 @@ REFUSALS = {
                    "ref from that result.",
     "bad_ref": "Refs look like @s1a2b3c4:e7 and come from desktop_look. Look first.",
     "password_field": "Arslan never types into password fields. Ask the user to fill it in themselves.",
+    # HPW: not "a password field": what has focus is unknown, and something holds secure input on.
+    "focus_unknown_secure_input": "This app doesn't say what has keyboard focus, and macOS secure input is on, so a "
+                                  "password field may be taking input. Nothing was typed. Usually another app holds "
+                                  "it on: ask the user to turn off Secure Keyboard Entry in Terminal's menu, or "
+                                  "close a password manager's prompt, then try again.",
+    # HPW: secure input says nothing about an app behind the front one.
+    "focus_unknown_background": "This app doesn't say what has keyboard focus and it isn't in front, so a password "
+                                "field may be taking input. Nothing was typed. Send the keys again with front: true, "
+                                "which brings the app forward for this one action; a menu item that pastes has no "
+                                "front: true, so use the keys instead.",
     # Hands v2 §6.3: borrowing the front.
     "borrow_off": "This needs the app in front for about a second, and the user turned off \u201cborrow the front "
                   "when needed\u201d. Nothing was done. Find a way that works in the background, or tell the user.",

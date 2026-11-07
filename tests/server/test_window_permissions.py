@@ -671,9 +671,12 @@ def test_a_turns_card_that_never_opened_while_the_person_was_away_is_listed_with
     assert len([f for f in frames if f.get("type") == "propose_run_command"]) == 1
     results = [f["summary"] for f in frames if f.get("type") == "tool_result"]
     assert len(results) == 2 and all("NOT a refusal" in r for r in results), results
-    [row] = app_client.get("/api/v1/approvals/refused").json()       # the shown card is not listed
+    row, shown = app_client.get("/api/v1/approvals/refused").json()  # INB8: the shown card that ran out is listed too
     assert (row["kind"], row["target"], row["conversation_id"]) == ("command", "rules:git-push",
                                                                      "conv-away")
+    assert (shown["always_ok"], shown["always"], shown["conversation_id"]) == (False, [], "conv-away")
+    refused = app_client.post("/api/v1/permissions/rules", json={"refused_id": shown["id"]})
+    assert refused.status_code == 409 and refused.json()["detail"] == {"code": "not_a_refusal"}
     assert (row["always_ok"], row["always"]) == (False, [])
     allowed = app_client.post("/api/v1/permissions/rules", json={"refused_id": row["id"]})
     assert allowed.status_code == 409 and allowed.json()["detail"] == {"code": "no_always"}

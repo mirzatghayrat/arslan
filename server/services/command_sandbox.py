@@ -161,12 +161,19 @@ _SECRETS = (".ssh", "Library/Keychains", ".aws", ".config/gcloud", ".kube", ".do
             ".config/rclone", ".rclone.conf", ".s3cfg", ".boto", ".gsutil",
             "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
             "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
-            "Library/Application Support/Arc", "Library/Safari", "Library/Cookies")
+            "Library/Application Support/Arc", "Library/Safari", "Library/Cookies",
+            # Other agents' config, which can hold API keys in MCP entries, its backups and their sign-ins. `codex mcp
+            # list` now stops with EPERM here; `codex exec` already did under this profile. A run outside can still read them.
+            ".claude.json", ".claude/backups", ".claude/.credentials.json", ".codex/config.toml", ".codex/auth.json")
 
 
 def user_secrets() -> list[Path]:
     ours = arslan_protected()
-    return [p for p in _resolved(Path.home() / name for name in _SECRETS) if p not in ours]
+    # Backups beside Claude Code's config carry a timestamp in their names, so they're listed for each run: one written
+    # while a command runs is closed from the next command on. A regex would reach only the commands' profile, and the
+    # file tools, checkpoints and capability sandbox read this list too.
+    home = Path.home()
+    return [p for p in _resolved([*(home / name for name in _SECRETS), *home.glob(".claude.json.backup*")]) if p not in ours]
 
 
 def default_protected() -> list[Path]:
