@@ -29,9 +29,10 @@ LIMITS = {"nested": 6, "backticks": 32, "blanks": 64,
 BOUNDARIES = ("below", "edge", "past")
 POSITIONS = ("top", "shell-argument", "launcher-argument", "subshell", "group",
              "then", "do", "quoted-substitution")
-XFAIL_REASON = "forbid lost past a reader limit; fixed by the reader-stall follow-up"
-# Only independently measured base failures belong here; no verdict is used to
-# choose a marker at collection time.
+# The cases measured failing at b3e718c6, independently of any verdict. They
+# were strict xfails until the reader-stall follow-up (#766) fixed them all;
+# now they are plain cases, and the set stays as the record (and for the
+# RESTORE-FORBID oracle in forbid_limit_mutations).
 _MEASURED_LIMITS = ("nested", "backticks", "blanks", "newlines", "all-substitutions", "ifs")
 _MEASURED_RULES = ("wipe-home", "wipe-root", "shutdown", "raw-disk")
 _ENCLOSED = ("shell-argument", "launcher-argument", "subshell", "group", "then", "do", "quoted-substitution")
@@ -99,10 +100,7 @@ def cases():
         for limit in LIMITS:
             for boundary in BOUNDARIES:
                 for position in POSITIONS:
-                    case_id = key(rule, limit, boundary, position)
-                    yield pytest.param(rule, limit, boundary, position, id=case_id,
-                        marks=pytest.mark.xfail(strict=True, raises=AssertionError, reason=XFAIL_REASON)
-                        if case_id in GAPS else ())
+                    yield pytest.param(rule, limit, boundary, position, id=key(rule, limit, boundary, position))
 
 
 @pytest.mark.parametrize("rule", COMMANDS)
@@ -151,4 +149,10 @@ def test_quoted_separator_remains_data(limit, boundary, quote):
     # matching is deliberately broader and is not the quoted-data control.
     data = "marker; " + COMMANDS["wipe-home"]
     text = padding(limit, amount(limit, boundary)) + "; echo " + quote + data + quote
-    assert tp.assess(text).level != "forbid"
+    verdict = tp.assess(text)
+    if boundary == "below":
+        assert verdict.level != "forbid"
+    else:
+        # ⓪Plan's ruling on #766: at a limit's edge and past it, the policy fails
+        # closed, and a quoted separator is read as a separator.
+        assert (verdict.level, verdict.rule) == ("forbid", "wipe-home")

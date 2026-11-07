@@ -3,7 +3,8 @@
 With HOME pinned, run python -m pytest tests/server/test_forbid_past_limits.py
 -p tests.server.forbid_limit_mutations --forbid-mutation MODE.
 DROP-FORBID selects plain_family or forbid_survives. RESTORE-FORBID selects
-forbid_survives (all measured pending cases must XPASS(strict)). FORBID-ALL
+forbid_survives (the cases measured failing at b3e718c6, all passing since
+#766's follow-up, must still pass). FORBID-ALL
 selects harmless_in_the_same_shape. SPLIT-QUOTED-DATA selects quoted_separator.
 RAISE-LIMIT/LOWER-LIMIT select limit_edge with --forbid-limit LIMIT.
 The restore is a synthetic verdict oracle, not a proposed product fix.
