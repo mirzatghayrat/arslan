@@ -161,7 +161,7 @@ async def remember(args, caller):
     kind = "experience" if args.get("kind") == "learning" else "preference"
     if action == "append" and caller.actor == "host" and kind == "preference":
         actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
-    content = untrusted.clean_body(args.get("content"))     # here, so it covers a click, a paste and any client
+    content = untrusted.clean_body(args.get("content"), shown_only=True)     # here: a click, a paste, any client
     match = await _same_meaning(content, kind, scope, None, args, ctx) if action == "append" else None
     try:
         async with repository() as repo:
@@ -239,7 +239,7 @@ async def note(args, caller):
     if action not in {"add", "replace", "remove"} or member not in NOTE_SETS:
         return {"ok": False, "code": "unsupported_memory_action"}
     kind, cap = NOTE_SETS[member]
-    text = " ".join(untrusted.clean_body(args.get("text")).split())
+    text = " ".join(untrusted.clean_body(args.get("text"), shown_only=True).split())
     if action != "remove" and not text:
         return {"ok": False, "code": "memory_text_required"}
     actor = ctx.actor("host")

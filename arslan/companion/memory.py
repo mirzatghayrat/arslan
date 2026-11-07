@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from arslan.companion.content_policy import contains_credential, contains_credential_data, normalized_memory
+from arslan.companion.content_policy import contains_credential, contains_credential_data, normalized_memory, visible_only
 from arslan.companion.contracts import Contract, Identifier
 from arslan.companion.design import StyleReference
 
@@ -117,7 +117,8 @@ _SENSITIVE = re.compile(r"\b(?:birthday|diagnosis|medical|passport|salary|bank a
 
 def sensitive_words(text: str) -> bool:
     # Folded as a save's match folds it, and raw too: folding can join a keyword to what follows ("salary" plus U+2122).
-    return bool(_SENSITIVE.search(text) or _SENSITIVE.search(normalized_memory(text)))
+    # Each also without what shows nothing, which can sit inside a keyword: only ever stricter.
+    return any(_SENSITIVE.search(form) for read in (text, visible_only(text)) for form in (read, normalized_memory(read)))
 
 
 def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:

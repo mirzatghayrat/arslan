@@ -101,7 +101,7 @@ def parse(content: str | None) -> list[dict[str, Any]]:
     for item in parsed.get("new_facts") or []:
         if not isinstance(item, dict):
             continue
-        text = " ".join(untrusted.clean_body(item.get("content")).split())[:MAX_FACT_CHARS]
+        text = " ".join(untrusted.clean_body(item.get("content"), shown_only=True).split())[:MAX_FACT_CHARS]
         if text and not why_not_kept(text):
             out.append({"content": text, "sensitive": bool(item.get("sensitive"))})
     return out[:MAX_FACTS]

@@ -273,10 +273,12 @@ async def test_a_clicked_choice_is_stored_without_what_the_button_couldnt_show(m
     assert WORDS in prompt and not _shows_nothing(prompt)
 
 
-async def test_the_job_noticing_those_words_stores_them_clean_too(memory, monkeypatch):
+@pytest.mark.parametrize("hidden", ["tags", "what-shows-nothing"])
+async def test_the_job_noticing_those_words_stores_them_clean_too(memory, monkeypatch, hidden):
     """The model made no save: the post-turn job reads the same message, and a noticed fact is for the cloud too."""
-    _extracts(monkeypatch, [WORDS + HIDDEN])
-    await _turn(monkeypatch, ASK + HIDDEN)
+    said = WORDS + HIDDEN if hidden == "tags" else EVERY_KIND
+    _extracts(monkeypatch, [said])
+    await _turn(monkeypatch, f"Remember that {said}")
     assert set(await _stored(memory)) == {WORDS}
     _extracts(monkeypatch, [])
     prompt = await _next_prompt(monkeypatch)
@@ -303,7 +305,9 @@ async def test_an_edit_proposal_is_cleaned_too(memory, monkeypatch):
     assert proposal.candidate["content"] == other
 
 
-PERSIAN_AND_EMOJI = f"می{chr(0x200C)}خواهم {chr(0x2764)}{chr(0xFE0F)} {chr(0x1F468)}{chr(0x200D)}{chr(0x1F4BB)} worked examples"
+SCOTLAND = chr(0x1F3F4) + "".join(chr(0xE0000 + ord(c)) for c in "gbsct") + chr(0xE007F)    # a flag's tags
+PERSIAN_AND_EMOJI = (f"می{chr(0x200C)}خواهم {chr(0x2764)}{chr(0xFE0F)} {chr(0x1F468)}{chr(0x200D)}{chr(0x1F4BB)} "
+                     f"{SCOTLAND} worked examples")
 
 
 @pytest.mark.parametrize("call", [
@@ -314,6 +318,77 @@ async def test_persian_and_emoji_are_stored_as_written_and_still_match(memory, m
     entry = (await _stored(memory))[PERSIAN_AND_EMOJI]
     assert (entry.status, entry.confirmation_kind, entry.use_policy) == ("active", "explicit_user_request", "cloud_allowed")
     assert PERSIAN_AND_EMOJI in await _next_prompt(monkeypatch)
+
+
+#: One of each kind of character that shows nothing and that a save kept before: zero-width space, soft hyphen, word
+#: joiner, BOM, a variation selector from the supplement and U+FE0F, ZWNJ, RLO, LRM, blank braille, the Hangul filler.
+INVISIBLE = {"zero-width-space": 0x200B, "soft-hyphen": 0xAD, "word-joiner": 0x2060, "bom": 0xFEFF,
+             "selector-supplement": 0xE0100, "vs16": 0xFE0F, "zwnj": 0x200C, "rlo": 0x202E, "lrm": 0x200E,
+             "blank-braille": 0x2800, "hangul-filler": 0x3164}
+
+
+def _inside(chars):
+    return WORDS.replace("worked", f"wor{chars}ked")
+
+
+@pytest.mark.parametrize("cp", INVISIBLE.values(), ids=list(INVISIBLE))
+async def test_what_shows_nothing_is_gone_from_a_save_and_the_later_prompt(memory, monkeypatch, cp):
+    await _turn(monkeypatch, f"Remember that {_inside(chr(cp))}", *_remember(_inside(chr(cp))))
+    stored = await _stored(memory)
+    assert set(stored) == {WORDS}
+    assert (stored[WORDS].confirmation_kind, stored[WORDS].use_policy) == ("explicit_user_request", "cloud_allowed")
+    prompt = await _next_prompt(monkeypatch)
+    assert WORDS in prompt and f"wor{chr(cp)}" not in prompt
+
+
+@pytest.mark.parametrize("cp", INVISIBLE.values(), ids=list(INVISIBLE))
+async def test_what_shows_nothing_cant_split_a_keyword(memory, monkeypatch, cp):
+    split = f"My sa{chr(cp)}lary is paid monthly"
+    await _turn(monkeypatch, f"Remember that {split}", *_remember(split))
+    entry = (await _stored(memory))["My salary is paid monthly"]
+    assert (entry.status, entry.sensitivity, entry.use_policy) == ("proposed", "sensitive", "local_only")
+    assert "lary is paid monthly" not in await _next_prompt(monkeypatch, "Do you know my salary?")
+
+
+@pytest.mark.parametrize("cp", INVISIBLE.values(), ids=list(INVISIBLE))
+def test_the_keywords_read_the_text_without_what_shows_nothing(cp):
+    """For a writer whose text keeps those characters (the Memory form, an imported line)."""
+    assert sensitive_words(f"My sa{chr(cp)}lary is paid monthly")
+
+
+EVERY_KIND = _inside("".join(map(chr, INVISIBLE.values())))
+
+
+@pytest.mark.parametrize("call", [
+    _remember(EVERY_KIND), _remember(), ("memory_note", {"action": "add", "set": "about_you", "text": EVERY_KIND}),
+], ids=["copied", "left-out", "memory-note"])
+@pytest.mark.parametrize("clicked", [False, True], ids=["typed", "clicked"])
+async def test_a_line_holding_them_still_counts_as_the_users_request(memory, monkeypatch, clicked, call):
+    """The request's match and the stored text lose the same characters, so they still agree."""
+    if clicked:
+        await _offered_after_a_page(memory, monkeypatch, f"Remember that {EVERY_KIND}")
+    await _turn(monkeypatch, f"Remember that {EVERY_KIND}", *call)
+    entry = (await _stored(memory))[WORDS]
+    assert (entry.status, entry.confirmation_kind, entry.use_policy) == ("active", "explicit_user_request", "cloud_allowed")
+
+
+ZWNJ, ZWJ, VS16, HEART = chr(0x200C), chr(0x200D), chr(0xFE0F), chr(0x2764)
+
+
+@pytest.mark.parametrize("written, kept", [
+    (_inside(ZWNJ), WORDS), (_inside(ZWJ), WORDS),
+    (f"می {ZWNJ}خواهم worked examples", "می خواهم worked examples"),
+    (f"می{ZWNJ * 2}خواهم worked examples", "میخواهم worked examples"),
+    (f"{HEART}{VS16 * 2} worked examples", f"{HEART} worked examples"),
+    (_inside(VS16 + ZWJ), WORDS),
+], ids=["zwnj-in-latin", "zwj-in-latin", "zwnj-after-a-space", "two-zwnj", "a-selector-twice",
+        "a-joiner-after-a-selector-that-goes"])
+async def test_a_joiner_or_selector_where_text_doesnt_use_one_is_dropped(memory, monkeypatch, written, kept):
+    await _turn(monkeypatch, f"Remember that {written}", *_remember(written))
+    stored = await _stored(memory)
+    assert set(stored) == {kept}
+    assert (stored[kept].confirmation_kind, stored[kept].use_policy) == ("explicit_user_request", "cloud_allowed")
+    assert kept in await _next_prompt(monkeypatch, "Do you know how I like worked examples?")
 
 
 # -- the keyword hold reads the text the way the save's match does ------------------------------------------------------
@@ -339,9 +414,11 @@ async def test_a_keyword_in_another_form_still_waits_on_this_mac(memory, monkeyp
         "proposed", "sensitive", "local_only", False)
 
 
-@pytest.mark.parametrize("text", [f"My salary{chr(0x2122)}", f"My salary{chr(0x301)}"], ids=["folds-into-letters", "composes"])
+@pytest.mark.parametrize("text", [f"My salary{chr(0x2122)}", f"My salary{chr(0x301)}", f"My salary{chr(0x200B)}s"],
+                         ids=["folds-into-letters", "composes", "ended-by-what-shows-nothing"])
 def test_the_keywords_still_catch_what_folding_would_lose(text):
-    """Folding can join a keyword to the next letter, so the raw text is read as well: only ever stricter."""
+    """Folding, or removing what shows nothing, can join a keyword to the next letter, so the raw text is read as
+    well: only ever stricter."""
     assert sensitive_words(text)
 
 
