@@ -24,7 +24,8 @@ Hands refuses ordinary typing in apps that don't report keyboard focus, such as 
 
 1. **Keep the hard refusal** when macOS says the focused element is a secure text field: role or subrole `AXSecureTextField`, or the `secure` state. Computer-use agents never type passwords for the user.
 2. **Replace "unknown → refuse".** When accessibility can't say, ask the system-wide secure-input state (`IsSecureEventInputEnabled()`, Carbon/HIToolbox):
-   - **off:** no secure field is taking input anywhere, so allow;
+   - **off, target in front:** nothing secure is taking input there, so allow;
+   - **off, target behind:** refuse with a next step of `front: true`. Secure input only speaks for the app in front (measured at review, and decided by the user on 2026-11-07), so "off" says nothing about a background target;
    - **on:** refuse, as today.
 3. **Honest refusal text, in two codes:**
    - `password_field` stays for (1): "this is a password field".
