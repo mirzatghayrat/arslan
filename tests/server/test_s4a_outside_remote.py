@@ -16,6 +16,7 @@ from server.db.models import PermissionGrant
 from server.orchestrator import tool_loop
 from server.services import (approvals, command_confirm, command_sandbox, permission_store, permissions,
                              terminal_exec)
+from server.orchestrator import command_gate
 
 
 @pytest.fixture(autouse=True)
@@ -29,8 +30,8 @@ def setup(monkeypatch):
 
     async def yes():
         return True
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     yield
     command_sandbox._reset_for_tests()
@@ -301,7 +302,7 @@ async def test_an_outside_rule_is_never_read(execution_db):
 async def _sandbox_off(monkeypatch):
     async def off():
         return False
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", off)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", off)
 
 
 async def test_with_the_sandbox_off_the_grant_answers_the_layer_three_card(execution_db, monkeypatch):
@@ -324,7 +325,7 @@ async def test_with_the_sandbox_off_ask_for_every_command_still_asks_under_the_g
 
     async def yes():
         return True
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", yes)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", yes)
     await _give_outside_grant("c1")
     cards, ex = _Cards(False), _Exec(stop=False)
     with permissions.asking_with(_Asker()):
@@ -493,7 +494,7 @@ async def test_review_2_after_falling_back_into_the_sandbox_a_stop_goes_back_to_
 async def test_review_2_with_no_sandbox_to_fall_back_to_a_taken_back_grant_runs_nothing(execution_db, monkeypatch):
     await _sandbox_off(monkeypatch)
     await _give_outside_grant("c1")
-    real = tool_loop._network_after_outside_content
+    real = command_gate._network_after_outside_content
 
     async def taken_back_meanwhile(*a, **kw):
         async with db_session.AsyncSessionLocal() as db:
@@ -501,7 +502,7 @@ async def test_review_2_with_no_sandbox_to_fall_back_to_a_taken_back_grant_runs_
             await permission_store.delete_conversation_grant(db, grant.id)
             await db.commit()
         return await real(*a, **kw)
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content", taken_back_meanwhile)
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", taken_back_meanwhile)
     ex = _Exec(stop=False)
     with permissions.asking_with(_Asker()):
         r = await _dispatch(monkeypatch, {"command": "ls"}, executor=ex, cards=_Cards(True), cid="c1")
@@ -562,7 +563,7 @@ async def test_review_4_with_the_sandbox_off_an_approved_card_writes_no_grant_ro
     if ask_all:
         async def yes():
             return True
-        monkeypatch.setattr(tool_loop, "_asks_for_everything", yes)
+        monkeypatch.setattr(command_gate, "_asks_for_everything", yes)
     await _give_outside_grant("c1")
     cards, ex = _Cards(True), _Exec(stop=False)
     with permissions.asking_with(_Asker()):
@@ -614,7 +615,7 @@ class _Runtime:
 async def _traced(monkeypatch, log, *, cancel_on_read=None):
     from server.services import task_service
     reads = {"n": 0}
-    real_read, real_note = tool_loop._outside_grant, permissions.note_standing
+    real_read, real_note = command_gate._outside_grant, permissions.note_standing
 
     async def read(*a, **kw):
         reads["n"] += 1
@@ -626,7 +627,7 @@ async def _traced(monkeypatch, log, *, cancel_on_read=None):
     async def note(*a, **kw):
         log.append("row")
         return await real_note(*a, **kw)
-    monkeypatch.setattr(tool_loop, "_outside_grant", read)
+    monkeypatch.setattr(command_gate, "_outside_grant", read)
     monkeypatch.setattr(permissions, "note_standing", note)
     monkeypatch.setattr(task_service, "current", lambda: _Runtime(log))
 

@@ -15,6 +15,7 @@ from server.db import session as db_session
 from server.db.models import Setting
 from server.orchestrator import tool_loop, untrusted
 from server.services import permission_store, permissions, task_service
+from server.orchestrator import command_gate
 
 
 @pytest.fixture(autouse=True)
@@ -81,7 +82,7 @@ async def test_a_schedule_and_another_machine_are_listed():
 async def test_the_network_after_outside_content_is_listed(monkeypatch):
     monkeypatch.setattr(untrusted, "external_seen", lambda: True)
     monkeypatch.setattr(task_service, "bare_shortcut", lambda command: True)
-    out = await tool_loop._network_after_outside_content(
+    out = await command_gate._network_after_outside_content(
         "shortcuts run Fetch", {}, sandbox_on=True, run_outside=False, unwrapped=True, conversation_id="conv-u")
     [row] = await _rows()
     assert "refused" in out and _policy(row, "network")

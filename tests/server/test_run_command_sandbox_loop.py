@@ -5,6 +5,7 @@ import pytest
 
 from server.orchestrator import tool_loop
 from server.services import command_sandbox, terminal_exec
+from server.orchestrator import command_gate
 
 
 @pytest.fixture(autouse=True)
@@ -16,8 +17,8 @@ def setup(monkeypatch):
 
     async def yes():
         return True
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
     # S2a-2 (R4): layer ③ runs with no card only where the sandbox can start; these tests are about
     # what happens after it starts, on every platform.
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
@@ -192,7 +193,7 @@ async def test_a_conversation_grant_runs_outside_from_the_start_there_only(execu
 async def test_with_the_sandbox_switched_off_nothing_about_it_asks(monkeypatch):
     async def off():
         return False
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", off)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", off)
     ex, cards = _Exec(), _Cards(True)
     r = await _dispatch(monkeypatch, {"command": "ls", "outside_sandbox": True}, executor=ex, cards=cards)
     assert all(c.get("sandbox") is None for c in cards.calls)

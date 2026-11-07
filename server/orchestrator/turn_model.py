@@ -1,6 +1,6 @@
 """The model this turn runs on, for tools that use the chat provider's own capabilities (0.1.63 D5).
 
-Set around each executor call by tool_loop._dispatch_tool, beside the caller identity (tool_caller.py), from the
+Set around each executor call by tool_execute.run_executor, beside the caller identity (tool_caller.py), from the
 adapter _run_native resolved for the turn: the conversation's chosen model, or the vision slot when the turn
 carries an image. web_search reads it to choose the model provider's own search, so a search goes to the party
 THIS turn already talks to, never to whatever the primary config happens to be (before D5 it read the primary

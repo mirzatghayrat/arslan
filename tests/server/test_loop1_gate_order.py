@@ -23,6 +23,7 @@ from server.orchestrator import tool_loop
 from server.registry import executors, ssh_tools
 from server.services import command_sandbox, permissions, task_service, task_workers
 from tests.server.test_loop1_pinned_turns import _booted, _database  # noqa: F401 — the fixtures
+from server.orchestrator import command_gate
 
 HERMETIC = "evolution-replay"
 SECRET = {"password": "not-a-real-one"}
@@ -145,6 +146,10 @@ def _forbidden(env):
     _words(env, "rm -rf /")
 
 
+def _heredoc(env):
+    _words(env, "X=$(cat <<EOF\nhi\nEOF\n)")
+
+
 def _jxa(env):
     _words(env, "osascript -l JavaScript -e x")
 
@@ -179,7 +184,7 @@ def _command_declined(env):
 def _network_refused(env):
     async def refused(*_args, **_own):
         return {"refused": "the network was refused"}
-    env.monkeypatch.setattr(tool_loop, "_network_after_outside_content", refused)
+    env.monkeypatch.setattr(command_gate, "_network_after_outside_content", refused)
 
 
 def _hermetic(env):
@@ -250,13 +255,17 @@ CHAINS = {
         _hermetic_after("schedule")]),
     "run_command": ({"command": "ls"}, [
         BUDGET, CREDENTIALS, WORKER, Gate("nobody to ask", _nobody, "Scheduled runs don't run commands"), UNAVAILABLE,
-        Gate("forbidden", _forbidden, "Arslan never runs this"), Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
+        Gate("forbidden", _forbidden, "Arslan never runs this"),
+        Gate("here-document", _heredoc, "A here-document inside $( ) can't run here"),
+        Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
         Gate("outside, no click", _outside_no_callback, "needs the user's click"),
         Gate("outside, no why", _outside_no_why, "outside_sandbox needs a why"),
         Gate("outside declined", _outside_declined, "user declined running this command outside", card="command"),
         Gate("network refused", _network_refused, "the network was refused"), HERMETIC_GATE]),
     "run_command#ask": ({"command": "ls"}, [
-        Gate("forbidden", _forbidden, "Arslan never runs this"), Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
+        Gate("forbidden", _forbidden, "Arslan never runs this"),
+        Gate("here-document", _heredoc, "A here-document inside $( ) can't run here"),
+        Gate("JXA", _jxa, "JXA (osascript -l JavaScript)"),
         Gate("ask, no click", _ask_no_callback, "requires user confirmation"),
         Gate("command declined", _command_declined, "user declined this command", card="command"),
         Gate("network refused", _network_refused, "the network was refused"), HERMETIC_GATE]),
@@ -295,10 +304,10 @@ def _a_mac_with_a_sandbox(monkeypatch, _database):  # noqa: F811
     async def no_grant(*_args, **_own):
         return None
     monkeypatch.setattr(tool_loop, "_writing_in_own_folder", no)
-    monkeypatch.setattr(tool_loop, "_asks_for_everything", no)
-    monkeypatch.setattr(tool_loop, "_sandbox_enabled", yes)
-    monkeypatch.setattr(tool_loop, "_network_after_outside_content", nothing)
-    monkeypatch.setattr(tool_loop, "_outside_grant", no_grant)
+    monkeypatch.setattr(command_gate, "_asks_for_everything", no)
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", nothing)
+    monkeypatch.setattr(command_gate, "_outside_grant", no_grant)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(ssh_tools, "prepare_confirmation", _prepared)
     monkeypatch.setattr(ssh_tools, "prepare_enrollment", _prepared)

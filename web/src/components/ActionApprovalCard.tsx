@@ -25,8 +25,10 @@ const GRANTS = new Set(["browser_site", "mac_script", "desktop_app", "desktop_ri
 const LOCALIZED_TITLES = new Set(["network"]);
 
 export default function ActionApprovalCard({ kind, target, detail, expiresAt, options, alwaysLabel, title, why, permKind,
-  background, busy, queue, onOpenContext, onConfirm, onCancel }: {
+  background, subSession, busy, queue, onOpenContext, onConfirm, onCancel }: {
   kind: string; target: string; detail: string;
+  /** SUB3: a sub-session asks (the frame's `sub_session`). */
+  subSession?: boolean;
   expiresAt?: number | null;
   /** 0.1.61 §A4: a card from the permission layer — its choices, its literal "Always" scope, its
    *  one-line question (the server's words, used only for a kind this card has no words for), the
@@ -96,7 +98,8 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
         : detailLine}
       context={grantLine ? [{ icon: lineIcon(LockKeyhole), text: grantLine }] : []}
       options={<ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
-        conversationLabel={permKind === "mcp_tool" ? t("kit.scope.anyToolUse") : undefined} testId="action-scope" />}
+        conversationLabel={permKind === "mcp_tool" ? t("kit.scope.anyToolUse") : undefined} subSession={subSession}
+        testId="action-scope" />}
       extra={<DeclineNote testId="action-note" disabled={busy}
         onDeclineWithNote={(note) => (note ? onCancel(note) : onCancel())} />}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
