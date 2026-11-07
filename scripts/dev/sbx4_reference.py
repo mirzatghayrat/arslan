@@ -7,9 +7,10 @@ DELETE-BY: v0.1.64 after SBX-4a registers and validates all product adapters.
 import sys
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 from server.services import capability_sandbox, code_sandbox
-from server.services.sandbox_profile import NetworkMode, default_deny_profile, subpath
+from server.services.sandbox_profile import NetworkMode, default_deny_profile, literal, subpath
 from tests.server.sbx.harness import BUILT_BASES
 
 
@@ -19,18 +20,44 @@ def reference(harness, **parameters):
     references = parameters.pop("references", None)
     if harness.base in {"run-python", "artifact"}:
         # Reuse today's exact runtime read rules; broad parent reads are not a reference.
-        legacy = code_sandbox.computation_profile(sys.executable, harness.work, references)
+        python = parameters.pop("python", sys.executable)
+        legacy = code_sandbox.computation_profile(python, harness.work, references)
         reads = [line for line in legacy.splitlines() if line.startswith("(allow file-read")]
         text = default_deny_profile([harness.work], readable=[harness.work],
                                     network=NetworkMode.NONE, ipc_prefix=harness.ipc_prefix)
         text += "\n" + "\n".join(reads) + "\n"
         if references is not None and harness.base == "run-python":
             text += f'(deny file-write* {subpath(references)})\n'
-        return text
+        text += '(deny process-exec)\n'
+        for path in sorted({Path(python).absolute(), Path(python).resolve()}):
+            text += f'(allow process-exec {literal(path)})\n'
+        return text + device_rules()
+    reads = parameters.pop("read", [])
+    if harness.base == "mcp-proxy":
+        # Match SBX-6p and capability_sandbox.profile's public argument names.
+        proxy_port = parameters.pop("proxy_port", getattr(harness, "proxy_port", None))
+        ports = list(parameters.pop("bound_ports", []))
+        for setting in parameters.pop("system_proxies", []):
+            proxy = urlsplit(setting)
+            if proxy.port == proxy_port:
+                raise ValueError("proxy port collides with a configured system proxy")
+            if proxy.hostname in {"localhost", "127.0.0.1", "::1"}:
+                ports.append(proxy.port)
+        parameters.update(proxy_port=proxy_port, denied_ports=ports)
+
     return default_deny_profile([harness.work, *grants], protected,
                                 readable=[*capability_sandbox.SYSTEM_READ, Path(sys.prefix),
-                                          Path(sys.base_prefix), harness.work, *grants],
-                                network=harness.network, ipc_prefix=harness.ipc_prefix, **parameters) + '(allow file-read-data (literal "/"))\n'
+                                          Path(sys.base_prefix), harness.work, *grants, *map(Path, reads)],
+                                network=harness.network, ipc_prefix=harness.ipc_prefix, **parameters) + '(allow file-read-data (literal "/"))\n' + device_rules()
+
+
+def device_rules():
+    devices = '(literal "/dev/tty") (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$")'
+    return (f'(deny file-read* file-write* {devices})\n'
+            f'(deny file-read-data file-write-data {devices})\n'
+            f'(deny file-ioctl {devices})\n'
+            '(deny pseudo-tty)\n'
+            '(deny mach-lookup (global-name "com.apple.FSEvents"))\n')
 
 
 def legacy(harness, **parameters):
@@ -55,5 +82,5 @@ def pytest_addoption(parser):
 
 def pytest_configure(config):
     adapter = {"reference": reference, "legacy": legacy, "permissive": permissive}[config.getoption("--sbx4-control")]
-    for base in ("run-python", "artifact", "mcp"):
+    for base in ("run-python", "artifact", "mcp", "mcp-proxy"):
         BUILT_BASES[base] = adapter
