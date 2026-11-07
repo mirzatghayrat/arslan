@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from server.services import capability_sandbox, code_sandbox
-from server.services.sandbox_profile import NetworkMode, default_deny_profile, subpath
+from server.services.sandbox_profile import NetworkMode, default_deny_profile, literal, subpath
 from tests.server.sbx.harness import BUILT_BASES
 
 
@@ -19,17 +19,22 @@ def reference(harness, **parameters):
     references = parameters.pop("references", None)
     if harness.base in {"run-python", "artifact"}:
         # Reuse today's exact runtime read rules; broad parent reads are not a reference.
-        legacy = code_sandbox.computation_profile(sys.executable, harness.work, references)
+        python = parameters.pop("python", sys.executable)
+        legacy = code_sandbox.computation_profile(python, harness.work, references)
         reads = [line for line in legacy.splitlines() if line.startswith("(allow file-read")]
         text = default_deny_profile([harness.work], readable=[harness.work],
                                     network=NetworkMode.NONE, ipc_prefix=harness.ipc_prefix)
         text += "\n" + "\n".join(reads) + "\n"
         if references is not None and harness.base == "run-python":
             text += f'(deny file-write* {subpath(references)})\n'
+        text += '(deny process-exec)\n'
+        for path in sorted({Path(python).absolute(), Path(python).resolve()}):
+            text += f'(allow process-exec {literal(path)})\n'
         return text
+    reads = parameters.pop("read", [])
     return default_deny_profile([harness.work, *grants], protected,
                                 readable=[*capability_sandbox.SYSTEM_READ, Path(sys.prefix),
-                                          Path(sys.base_prefix), harness.work, *grants],
+                                          Path(sys.base_prefix), harness.work, *grants, *map(Path, reads)],
                                 network=harness.network, ipc_prefix=harness.ipc_prefix, **parameters) + '(allow file-read-data (literal "/"))\n'
 
 

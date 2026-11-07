@@ -158,18 +158,20 @@ BUILT_BASES["commands"] = _commands_profile
 # MCP server, whose own folder is this harness's work folder and whose protected paths are the test's.
 def _computation_profile(self, **parameters) -> str:
     from server.services import code_sandbox
+    python = parameters.pop("python", sys.executable)
     references = parameters.pop("references", None)
     parameters.pop("granted_folders", None)          # computation has no granted folders
     parameters.pop("protected", None)                # nor protected paths: its reads are the runtime's only
     if parameters:
         raise ValueError(f"computation takes no {sorted(parameters)}")
-    return code_sandbox.computation_profile(sys.executable, self.work,
+    return code_sandbox.computation_profile(python, self.work,
                                             references if self.base == "run-python" else None)
 
 
 def _mcp_profile(self, **parameters) -> str:
     from unittest.mock import patch
     from server.services import capability_sandbox
+    read = parameters.pop("read", [])
     grants = parameters.pop("granted_folders", [])
     protected = parameters.pop("protected", [self.protected])
     parameters.pop("references", None)
@@ -180,7 +182,7 @@ def _mcp_profile(self, **parameters) -> str:
     with patch.object(command_sandbox, "default_protected", return_value=list(protected)):
         return capability_sandbox.profile(root=self.work, folders=list(map(str, grants)),
                                           network=self.network != NetworkMode.NONE,
-                                          read=[sys.prefix, sys.base_prefix])
+                                          read=[sys.prefix, sys.base_prefix, *read])
 
 
 BUILT_BASES.update({"run-python": _computation_profile, "artifact": _computation_profile, "mcp": _mcp_profile})
