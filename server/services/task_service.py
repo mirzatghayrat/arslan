@@ -80,7 +80,7 @@ def known_local_failure(tool_key: str, arguments: dict, result) -> bool:
     Not covered (said here and in docs/specs/2026-10-10-0159-job-checks.md): a local script that sends
     something over the network itself and then fails is treated as local — the terminal policy cannot
     see inside the script. A sandboxed osascript's `do shell script` is such a script once the user turns
-    on "Allow system certificate checks in the sandbox" (off by default): then it runs and reaches the
+    on "Allow system certificate checks in the sandbox" (`sandbox_system_certificates`, off by default): then it runs and reaches the
     network, a rule like `upload` doesn't read inside its quotes, and a failed send counted as known can
     be repeated after a card click. With that setting off it doesn't start (measured with SBX-6a's profile).
     """
