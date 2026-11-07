@@ -11,7 +11,7 @@ the permissions.
 SUB3: `start` opens one and runs it as a background job of its own conversation (`background_jobs.start` with a
 `parent_id`). Its cards are asked in the parent's conversation and answered for the sub-session
 (`approvals.SubSessionAsker`); it is offered `TOOLS` only (`arslan.background_body`); one tree shares a spending limit,
-read before each model request (`check_tree_spend`). No tool table offers `start` yet: SUB5 adds `start_sub_session`
+read before each model request, that wraps a run up before it stops it (`check_tree_spend`). No tool table offers `start` yet: SUB5 adds `start_sub_session`
 once the M64 bench passes on its branch.
 """
 from __future__ import annotations
@@ -245,15 +245,25 @@ async def check_tree_spend(conversation_id: str) -> None:
     TREE_CAP_MULTIPLIER times the per-run dollar cap as `settings_service.task_usd_cap` reads it (None: no cap, so no
     tree limit either). The tree is every sub-session under the same commander; the commander's own turns are not in
     it (they are the user's conversation, and a long one would stop every sub-session it starts). SUB4 adds the
-    commander's summary turn."""
+    commander's summary turn.
+
+    Completion first, as with the run's own cap: what the rest of the tree spent goes into the run's budget
+    (`Budget.shared_usd`), so the run wraps up at limit / HARD_OVER_SOFT through `soft_reached` (the tool loop's "Work
+    budget nearly used" step, the same as for its own cap) and is stopped here at the limit only if it doesn't."""
+    from arslan.execution_budget import current
     from server.db import session as db_session
     from server.services import settings_service
+    budget = current()
     async with db_session.AsyncSessionLocal() as db:
         usd_cap = await settings_service.task_usd_cap(db)
         if usd_cap is None:
+            if budget is not None:
+                budget.shared_usd = None
             return
         limit = TREE_CAP_MULTIPLIER * usd_cap
         spent = await tree_spend(db, (await tree(db, await root_of(db, conversation_id)))[1:])
+    if budget is not None:          # its own spend is in `spent` already: the snapshot was saved just before
+        budget.shared_usd = (max(0.0, spent - budget.usd), limit)
     if spent >= limit:
         raise TreeLimitReached(spent, limit)
 

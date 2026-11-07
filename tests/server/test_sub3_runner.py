@@ -355,6 +355,35 @@ async def test_a_childs_card_is_never_shown_in_the_child_and_never_joins_the_par
     assert [(await asking)["call_id"], (await own)["call_id"]] == ["c1", "c2"]
 
 
+async def test_two_children_asking_the_same_get_two_cards_each_granting_only_its_own_child(memory):  # noqa: F811
+    """A child's card never joins another child's: one answer must not decide for two conversations. Two children of
+    one parent ask the identical schedule at once; the parent shows two cards, and each answer grants its child only."""
+    in_root = []
+    run_registry.attach_sink(ROOT, in_root.append)
+    _SINKS.append((ROOT, in_root.append))
+    kids = ("c-kid", "c-kid2")
+
+    async def ask(cid):
+        confirmations = approvals.JobConfirmations(cid, job_id=f"job-{cid}", ask_in=ROOT)
+        with permissions.asking_with(confirmations.asker):
+            return await confirmations.schedule("tidy", "every: 3600")
+    asking = [asyncio.ensure_future(ask(cid)) for cid in kids]
+    await _wait(lambda: len(_cards(in_root)) == 2)
+
+    async def grants():
+        async with memory() as db:
+            return {(g.conversation_id, g.kind) for g in (await db.scalars(select(PermissionGrant))).all()}
+    first, second = _cards(in_root)
+    assert first["sub_session"] is second["sub_session"] is True
+    approvals.answer({"type": "confirm_schedule", "call_id": first["call_id"], "scope": "conversation"})
+    await _wait(lambda: any(a.done() for a in asking))
+    [answered] = [kid for kid, a in zip(kids, asking) if a.done()]
+    assert await grants() == {(answered, "schedule")}
+    approvals.answer({"type": "confirm_schedule", "call_id": second["call_id"], "scope": "conversation"})
+    assert await asyncio.gather(*asking) == [True, True]
+    assert await grants() == {(kid, "schedule") for kid in kids}
+
+
 # -- tools -------------------------------------------------------------------------------------------------------
 
 async def test_a_child_is_offered_files_commands_the_web_and_its_plan_only(jobs, monkeypatch):
@@ -465,13 +494,78 @@ async def test_a_sub_session_stops_at_its_trees_limit_before_its_own(jobs, monke
     plan = {"items": [{"text": "outline", "status": "in_progress"}]}
     model = _Model(child=_steps(("update_plan", plan), ("update_plan", plan), ("update_plan", plan)), price=0.3)
     job = await _commander_turn(monkeypatch, model)
-    assert len(model.requests["child"]) == 2
+    # Told to wrap up first (it plans on regardless here); stopped at the tree's limit only after that.
+    assert [_told(r) for r in model.requests["child"]] == [False, True]
     assert (job.outcome, job.budget_stop["scope"], job.budget_stop["limit"]) == ("out_of_budget", "tree",
                                                                                  f"${3 * cap:.2f}")
     async with jobs() as db:
         [note] = (await db.scalars(select(ArslanMessage).where(
             ArslanMessage.conversation_id == job.conversation_id, ArslanMessage.role == "arslan"))).all()
     assert f"${3 * cap:.2f}" in (note.display_content or note.content)
+
+
+WRAP_UP = "Work budget nearly used"
+
+
+def _told(request) -> bool:
+    return WRAP_UP in json.dumps([request["user"], request["history"]], ensure_ascii=False, default=str)
+
+
+class _Writes:
+    key = "write_file"
+
+    def __init__(self):
+        self.written = []
+
+    async def execute(self, args):
+        self.written.append(args.get("path"))
+        return {"ok": True, "path": args.get("path"), "bytes": len(args.get("content", ""))}
+
+
+class _UntilToldToWrapUp(_Model):
+    """A sub-session that keeps planning (a new item each time) until a request tells it to wrap up; told, it writes
+    the outline, then answers."""
+
+    def __init__(self, price):
+        super().__init__(price=price)
+        self.wrote = False
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+        if "BACKGROUND" in str(system):
+            told = _told({"user": user, "history": history})
+            if self.wrote:
+                reply = LLMResponse(usage={}, content="The outline is in outline.md.", tool_calls=[])
+            elif told:
+                self.wrote = True
+                reply = LLMResponse(usage={}, content=None, tool_calls=[_call(
+                    "write_file", {"path": "outline.md", "content": "# Outline\n- the hook\n- the demo\n"})])
+            else:
+                plan = {"items": [{"text": f"outline part {len(self.requests['child'])}", "status": "in_progress"}]}
+                reply = LLMResponse(usage={}, content=None, tool_calls=[_call("update_plan", plan)])
+            self.replies["child"] = [reply]
+        return await super().chat(system, user, history=history, tools=tools, temperature=temperature)
+
+
+async def test_near_its_trees_limit_a_sub_session_wraps_up_writes_up_and_only_then_stops(jobs, monkeypatch):
+    """Completion first, as with the per-run cap: a sibling spent $5.50 of the tree's $6, past where the tree wraps up
+    ($4, the limit / HARD_OVER_SOFT). This child pays $0.20 a request; it is told to wrap up from its second request
+    (the first one's check is where it learns the tree's spend), writes the outline, answers, and its job is done
+    before the tree's hard stop. Before the fix it planned on, was stopped at $6.10 and wrote nothing."""
+    writer = _Writes()
+    monkeypatch.setitem(executors.EXECUTORS, "write_file", writer)
+    _answering(ROOT)
+    async with jobs() as db:
+        await _sub(db, ROOT, "c-sibling")
+        await _spent_task(db, "c-sibling", 5.5)
+    model = _UntilToldToWrapUp(price=0.2)
+    job = await _commander_turn(monkeypatch, model)
+    assert [_told(r) for r in model.requests["child"]] == [False, True, True]
+    assert writer.written == ["outline.md"]
+    assert (job.outcome, job.budget_stop) == ("done", None)
+    async with jobs() as db:
+        [result] = (await db.scalars(select(ArslanMessage).where(
+            ArslanMessage.conversation_id == job.conversation_id, ArslanMessage.role == "arslan"))).all()
+    assert "outline.md" in (result.display_content or result.content)
 
 
 async def test_the_same_child_with_room_left_in_its_tree_finishes(jobs, monkeypatch):
