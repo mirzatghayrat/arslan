@@ -17,6 +17,7 @@ from pathlib import Path
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from server.db.companion_models import ConversationContext
 from server.db.models import ApprovalEvent, ArslanMessage, Judgment, Run
 from server.db.task_models import CompanionTask, TaskAttempt, TaskRevision
 from server.services import background_jobs, home_text, phone_ids, phone_reads
@@ -123,9 +124,11 @@ async def _build(db: AsyncSession, now: float) -> dict:
         # again, the conversation list's rule (#647 review F1). A task whose conversation never had a message
         # is not listed either: an Inbox "Do it" job that was stopped in a thread nothing was written to
         # (#651 review N2; the spec says so). Undo (turn_undo) follows. Nor is one in the retired pocket (Q1 #4):
-        # nothing about it reaches a phone.
+        # nothing about it reaches a phone. Nor is a sub-session's (SUB2): a phone sees what its parent reports.
         select(CompanionTask).where(background, CompanionTask.updated_at >= since, CompanionTask.phase.not_in(NOT_FINISHED),
                                     CompanionTask.conversation_id != phone_ids.POCKET,
+                                    CompanionTask.conversation_id.not_in(
+                                        select(ConversationContext.id).where(ConversationContext.kind == "sub")),
                                     exists().where(ArslanMessage.conversation_id == CompanionTask.conversation_id))
         .order_by(CompanionTask.updated_at.desc(), CompanionTask.id))).scalars() if row.id not in running][:TASK_CAP]
     tasks = await _tasks(db, rows)
