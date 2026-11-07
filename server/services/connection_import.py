@@ -15,13 +15,18 @@ never a key. `add` takes the ticked ones, reads the file again, and adds what th
   counts as one, since Arslan can't tell a key from a setting. One in an address or an argument moves into the server's
   encrypted `secrets`, leaving a `${NAME}` that `discovery.runtime_dict` fills at each start (SEC1). A name with no value
   (`${VAR}`, `Bearer ${VAR}`, `env_vars`, `bearer_token_env_var`, `env_http_headers`) is a key `add` must be given.
-- **A custom program** is listed with its command, and refused: see `_read_line`.
+- **A custom program** (anything but bare `npx` or `uvx`) is the user's decision of 2026-11-07, which loosens the card's
+  rule: offered and unticked, with its command and arguments shown, and added as the hand-add form adds one, so it runs as
+  the other tool runs it, with no sandbox. The sheet says so in words.
 - **A server `enabled = false` in Codex,** or one with `enabled_tools` or `disabled_tools` (which don't come along), is
   listed and starts unticked, and a tick still takes it. So does the second tool's copy of a server (`same_as`).
 
 **Stated limits:** a key that doesn't look like one to SEC1 (short, after an option with an ordinary name) shows as an
 argument and stays as written. A package with no key gets no network (CAP4's rule), and a folder in its arguments isn't
 granted (the dossier grants one). `cwd`, timeouts, approval modes and pre-registered OAuth clients don't come along.
+`PATH` in a package's `env` is dropped: programs there start by absolute path, and hand-written configs often set it.
+A program's relative path that reads like a key (24 or more characters with a digit) shows masked and is one server with
+another such: the file it comes from already runs it in the other tool.
 """
 from __future__ import annotations
 
@@ -43,7 +48,7 @@ from server.db.models import CapabilitySource, MCPServer
 from server.orchestrator import untrusted
 from server.services import capability_flow, capability_install, capability_runtime
 from server.services import connection_secrets as cs
-from server.services import plugin_package
+from server.services import mcp_pin, mcp_service, plugin_package
 from server.services.plugin_package import Refused
 
 logger = logging.getLogger(__name__)
@@ -126,7 +131,7 @@ class Found:
     def _shown(self) -> list[str]:
         """The command and its arguments, every key masked. A package's own name isn't one, and what comes before it is `-y`."""
         if not self.line:
-            return cs.shown(None, [self.command or "", *self.args])[1]
+            return [self.command or "", *cs.shown(None, self.args)[1]]
         before = self.args[:len(self.args) - len(self.line)]
         return [self.command or "", *before, _package_shown(self.line[0]), *cs.shown(None, self.line[1:])[1]]
 
@@ -134,11 +139,11 @@ class Found:
         shown = [untrusted.clean_name(part, 500) for part in self._shown()]
         return {"id": self.id, "tool": self.tool, "name": self.name, "digest": self.digest, "kind": self.kind,
                 "command": shown[0] or None, "arguments": shown[1:], "address": self.address,
-                # What the sandbox will give it (`capability_install.grants_for`). A program would run outside it.
-                "network": self.kind == "remote" or (self.kind == "package" and bool(self.keys() or self.asked)),
+                # What the sandbox will give it (`capability_install.grants_for`). A program runs outside it.
+                "network": self.kind in ("remote", "program") or (self.kind == "package" and bool(self.keys() or self.asked)),
                 "keys": self.keys(), "asks": self.asks(), "on_there": self.on_there, "tool_limits": self.tool_limits,
                 "here": here, "same_as": same_as, "refused": self.refused, "refused_part": self.refused_part,
-                "tick": not (self.refused or here or same_as or self.tool_limits or not self.on_there)}
+                "tick": not (self.refused or here or same_as or self.tool_limits or not self.on_there or self.kind == "program")}
 
 
 def _settings(name: str, settings, valid: re.Pattern, unsafe: re.Pattern | None) -> tuple[dict, dict]:
@@ -205,11 +210,15 @@ def _read_line(found: Found, name: str, spec: dict) -> None:
         if command not in plugin_package._RUNTIMES:
             found.kind = "program"
             found.fixed, found.asked = _settings(name, spec.get("env"), plugin_package._ENV_NAME, None)
-            # The user's decision, still open: whether a custom program can come in, which would run as the other tool
-            # runs it, with no sandbox (`mcp_service.add_server`). Refused until then; this line is what changes.
-            raise Refused("custom_program", name)
+            for part in [command, *args]:    # the sheet shows what runs, whole; a variable has no value to run with
+                if plugin_package._ANY_VAR.search(plugin_package._whole(name, part)):
+                    raise Refused("cannot_pin", name)
+            return
         found.kind = "package"
-        found.fixed, found.asked = _settings(name, spec.get("env"), plugin_package._ENV_NAME, plugin_package._UNSAFE_ENV)
+        env = spec.get("env")
+        if isinstance(env, dict):
+            env = {key: value for key, value in env.items() if key.upper() != "PATH"}
+        found.fixed, found.asked = _settings(name, env, plugin_package._ENV_NAME, plugin_package._UNSAFE_ENV)
         found.line = plugin_package.package_line(name, spec)[1]
         return
     found.kind = "remote"
@@ -339,10 +348,16 @@ async def _add_one(server: Found | None, tick: dict, here: set[str]) -> dict:
     env = {**server.fixed, **{setting: scheme + given[variable] for setting, (scheme, variable) in server.asked.items()}}
     locked = None
     try:
+        if server.kind == "program":        # no lock, no test, no sandbox: as the hand-add form adds one
+            _, args, moved = _moved(server.name, None, server.args)
+            added = await mcp_service.add_server(server.name, server.command, args, env, secrets=moved)
+            return {"state": "added", "server_id": added["id"]}
         candidate, locked = await _candidate(server, env)
         out = await capability_flow.install_mcp(candidate, folders=[], keys=env, prepared=locked)
     except Refused as exc:
         return {"state": "refused", "code": exc.code}
+    except (mcp_pin.PinRefused, mcp_service.AddRefused):
+        return {"state": "refused", "code": "cannot_pin"}
     except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
         return {"state": "failed", "stage": "install", "code": exc.code}
     except Exception as exc:  # noqa: BLE001 — one server's failure isn't the others'; its text could quote a key
@@ -358,8 +373,9 @@ async def _add_one(server: Found | None, tick: dict, here: set[str]) -> dict:
 
 async def add(ticked: list[dict]) -> list[dict]:
     """Each ticked server, from the file as it reads now, with its own result. The result's words: `on`,
-    `needs_sign_in`, `failed` and `blocked` as a card's install, or `refused`, `here`, `needs_keys`, or `gone` and
-    `changed` when the file no longer holds what the sheet showed. Scan again after those two."""
+    `needs_sign_in`, `failed` and `blocked` as a card's install, `added` for a custom program, whose start runs in the
+    background as a hand-added one's does, or `refused`, `here`, `needs_keys`, or `gone` and `changed` when the file no
+    longer holds what the sheet showed. Scan again after those two."""
     async with _ONE_AT_A_TIME:
         found = {server.id: server for server in (await asyncio.to_thread(_read_all))[1]}
         return [{"id": tick["id"], **await _add_one(found.get(tick["id"]), tick, await _here())} for tick in ticked]

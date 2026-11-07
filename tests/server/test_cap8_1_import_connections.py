@@ -28,7 +28,7 @@ from server.mcp import session
 from server.mcp import supervisor as supervisor_module
 from server.registry import executors
 from server.services import (capability_allowlist, capability_flow, capability_install, capability_list,
-                             capability_runtime, capability_sandbox, capability_scan, connection_import)
+                             capability_runtime, capability_sandbox, capability_scan, connection_import, mcp_service)
 from server.services import connection_secrets as cs
 
 RealClient = httpx.AsyncClient
@@ -154,7 +154,7 @@ async def test_the_sheet_lists_each_kind_from_both_tools_with_what_each_shows(ap
 
     mine = _row(scan, "claude_code:mine")
     assert (mine["kind"], mine["command"], mine["arguments"]) == ("program", "/opt/tools/mine", ["--serve"])
-    assert (mine["refused"], mine["tick"], mine["keys"]) == ("custom_program", False, 1)
+    assert (mine["refused"], mine["tick"], mine["keys"]) == (None, False, 1)
 
     assert _row(scan, "codex:docs")["asks"] == ["DOCS_OTHER", "DOCS_TOKEN"]
     assert _row(scan, "codex:docs")["keys"] == 0
@@ -218,7 +218,7 @@ async def test_one_bad_entry_is_listed_as_unreadable_and_the_others_stay(api, ho
 @pytest.mark.parametrize("entry", [
     {"type": "http", "url": "https://xn--a.example.test/"},             # reads as a URL; its host only fails when decoded
     {"type": "http", "url": "https://\udc80.example.test/"},             # a lone surrogate
-    {"command": "npx", "args": ["n", "\udc80"]}])
+    {"command": "npx", "args": ["n", "\udc80"]}, {"command": "\udc80"}])
 async def test_an_entry_no_parser_can_read_is_unreadable_and_the_sheet_stays(api, home, entry):
     _claude(home, {"bad": entry, "notes": {"command": "npx", "args": ["n"]}})
     scan = await _scan(api)
@@ -294,7 +294,7 @@ async def test_the_digest_cannot_be_tried_against_a_guess_at_the_key(api, home):
 @pytest.mark.parametrize("env, code", [
     ({"T": "${A:-default}"}, "cannot_pin"), ({"T": "before-${A}"}, "cannot_pin"), ({"T": "${A}${B}"}, "cannot_pin"),
     ({"NODE_OPTIONS": "--require /tmp/x.js"}, "unsafe_setting"), ({"DYLD_INSERT_LIBRARIES": "/tmp/x"}, "unsafe_setting"),
-    ({"PATH": "/tmp"}, "unsafe_setting"), ({"HTTPS_PROXY": "http://x.example.test"}, "unsafe_setting"),
+    ({"HTTPS_PROXY": "http://x.example.test"}, "unsafe_setting"),
     ({"npm_config_registry": "https://x.example.test"}, "unsafe_setting"), ({"BAD NAME": "x"}, "unreadable")])
 async def test_a_setting_it_cannot_take_refuses_that_package_and_nothing_is_installed(api, home, execution_db, env, code):
     _claude(home, {"notes": {"command": "npx", "args": ["n"], "env": env}})
@@ -343,17 +343,79 @@ async def test_the_address_shown_is_what_httpx_will_open(api, home, url, shown):
     assert httpx.URL(url).netloc.decode() == shown.split("://")[1]
 
 
-# ── custom programs: the user's decision, still open ─────────────────────────────────────────────────────────────
+# ── custom programs: offered, unticked, and they run with no sandbox (the user's decision, 2026-11-07) ──────────────
 
-@pytest.mark.parametrize("command", ["/opt/tools/mine", "python3", "node", "docker", "/usr/local/bin/npx", "NPX", "bunx"])
-async def test_a_custom_program_is_listed_with_its_command_and_add_refuses_it(api, home, execution_db, command):
-    _claude(home, {"mine": {"command": command, "args": ["--serve"], "env": {"T": FAKE}}})
+LONG_PATH = "/opt/tools/mine2025/bin/server0build1"
+
+
+@pytest.mark.parametrize("command", ["/opt/tools/mine", LONG_PATH, "mcp0server1for2notes3and4tasks5", "python3", "node", "docker", "/usr/local/bin/npx", "NPX", "bunx"])
+async def test_a_custom_program_is_offered_unticked_with_what_it_runs_shown(api, home, command):
+    _claude(home, {"mine": {"command": command, "args": [LONG_PATH, "--serve"], "env": {"T": FAKE}}})
+    row = _row(await _scan(api), "claude_code:mine")
+    assert (row["kind"], row["command"], row["arguments"]) == ("program", command, [LONG_PATH, "--serve"])
+    assert (row["refused"], row["tick"], row["keys"], row["network"]) == (None, False, 1, True)
+    assert FAKE not in json.dumps(row)
+
+
+@pytest.mark.parametrize("spec", [
+    {"command": "/opt/mine", "args": ["${TOKEN}"]}, {"command": "/opt/${WHO}/mine"},
+    {"command": "/opt/mine", "args": ["evil\u202eright-to-left"]}, {"command": "/opt/mine\u200b"},
+    {"command": "/opt/mine", "args": ["x" * 5000]}, {"command": "/opt/mine", "env": {"T": "before-${A}"}}])
+async def test_a_program_the_sheet_cannot_show_whole_is_refused(api, home, execution_db, spec):
+    _claude(home, {"mine": spec})
     scan = await _scan(api)
-    row = _row(scan, "claude_code:mine")
-    assert (row["kind"], row["command"], row["refused"], row["tick"]) == ("program", command, "custom_program", False)
+    assert _row(scan, "claude_code:mine")["refused"] in ("unreadable", "cannot_pin")
+    assert (await _add(api, scan, "claude_code:mine"))["claude_code:mine"]["state"] == "refused"
+    assert await _rows(execution_db, MCPServer) == []
+
+
+@pytest.mark.real_mcp
+async def test_a_ticked_program_runs_as_written_with_no_sandbox_and_its_keys_encrypted(api, home, execution_db, world, caplog):
+    caplog.set_level(logging.DEBUG)
+    program = home / "mine_server2025build1.py"
+    program.write_text(PROGRAM)
+    _claude(home, {"mine": {"command": sys.executable, "args": [str(program), "ok", "--token", FAKE], "env": {"T": FAKE + "2"}}})
+    scan = await _scan(api)
+    assert _row(scan, "claude_code:mine")["arguments"][:2] == [str(program), "ok"]
     result = (await _add(api, scan, "claude_code:mine"))["claude_code:mine"]
-    assert (result["state"], result["code"]) == ("refused", "custom_program")
-    assert await _rows(execution_db, MCPServer) == [] and await _rows(execution_db, CapabilitySource) == []
+    assert result["state"] == "added", result
+    started = await mcp_service.start_now(result["server_id"])
+    assert started.state == "ready", started
+    assert world.wrapped == [], "a custom program runs with no sandbox: the user's decision"
+    assert await _rows(execution_db, CapabilitySource) == []
+    written = json.loads((home / "started_with.json").read_text())
+    assert written["argv"] == ["ok", "--token", FAKE] and written["env"]["T"] == FAKE + "2"
+    await _nothing_stored_holds(execution_db, FAKE)
+    assert FAKE not in caplog.text
+    again = await _scan(api)
+    assert _row(again, "claude_code:mine")["here"] is True
+    assert (await _add(api, again, "claude_code:mine"))["claude_code:mine"]["state"] == "here"
+
+
+async def test_two_programs_with_long_paths_are_two_servers(api, home):
+    _claude(home, {"one": {"command": "python3", "args": [LONG_PATH + "a.py"]}, "two": {"command": "python3", "args": [LONG_PATH + "b.py"]}})
+    assert _row(await _scan(api), "claude_code:two")["same_as"] is None
+
+
+async def test_a_program_a_variable_asks_for_needs_its_key(api, home, execution_db):
+    _claude(home, {"mine": {"command": "/opt/mine", "env": {"T": "${MINE_TOKEN}"}}})
+    scan = await _scan(api)
+    assert _row(scan, "claude_code:mine")["asks"] == ["MINE_TOKEN"]
+    assert (await _add(api, scan, "claude_code:mine"))["claude_code:mine"] == {
+        "id": "claude_code:mine", "state": "needs_keys", "keys": ["MINE_TOKEN"]}
+    assert await _rows(execution_db, MCPServer) == []
+
+
+async def test_a_folder_given_to_a_package_is_no_key_and_opens_no_network(api, home):
+    _claude(home, {"files": {"command": "npx", "args": ["-y", "server-files", LONG_PATH]}})
+    row = _row(await _scan(api), "claude_code:files")
+    assert (row["arguments"], row["keys"], row["network"]) == (["-y", "server-files", LONG_PATH], 0, False)
+
+
+async def test_path_in_a_packages_env_is_dropped_not_refused(api, home):
+    _claude(home, {"notes": {"command": "npx", "args": ["n"], "env": {"PATH": "/opt/homebrew/bin", "path": "/x"}}})
+    row = _row(await _scan(api), "claude_code:notes")
+    assert (row["refused"], row["keys"], row["tick"]) == (None, 0, True)
 
 
 # ── a server the file has turned off, and tool limits ───────────────────────────────────────────────────────────
@@ -836,7 +898,7 @@ async def test_one_failure_does_not_stop_the_others_and_each_reports_its_own(api
                    "no-lock": {"command": "npx", "args": ["locks-badly"]},
                    "throws": {"command": "npx", "args": ["throws-server"]},
                    "explodes": {"command": "npx", "args": ["explodes-server"]},
-                   "program": {"command": "/opt/tools/mine"},
+                   "variable": {"command": "/opt/tools/${WHO}"},
                    "last": {"type": "http", "url": REMOTE}})
     real_prepare = capability_install.prepare
 
@@ -856,7 +918,7 @@ async def test_one_failure_does_not_stop_the_others_and_each_reports_its_own(api
     results = await _add(api, scan, *[row["id"] for row in scan["servers"]])
     states = {row_id.split(":")[1]: result["state"] for row_id, result in results.items()}
     assert states == {"first": "on", "crashes": "failed", "no-lock": "failed", "throws": "failed", "explodes": "failed",
-                      "program": "refused", "last": "on"}
+                      "variable": "refused", "last": "on"}
     assert results["claude_code:crashes"]["stage"] == "test"
     assert results["claude_code:no-lock"]["code"] == "step_failed"
     assert FAKE not in json.dumps(results) and FAKE not in caplog.text

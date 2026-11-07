@@ -47,8 +47,9 @@ class NothingToMove(ValueError):
 
 def _random_looking(value: str) -> bool:
     """A long value that reads like a key, not a word: 24 or more characters of a token alphabet, with letters
-    and digits both, and more than 3.5 bits of entropy per character."""
-    if len(value) < 24 or not re.fullmatch(r"[A-Za-z0-9_\-.~+/=]+", value):
+    and digits both, and more than 3.5 bits of entropy per character. One that starts like a path is a path: masking it
+    hides what a program runs or a folder it's given, and a key named as one (`--token /x`) is still found by its name."""
+    if len(value) < 24 or value.startswith(("/", "./", "../", "~/")) or not re.fullmatch(r"[A-Za-z0-9_\-.~+/=]+", value):
         return False
     if not (re.search(r"[A-Za-z]", value) and re.search(r"[0-9]", value)):
         return False

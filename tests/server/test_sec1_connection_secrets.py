@@ -299,3 +299,15 @@ def test_the_masking_fallback_keeps_the_moved_values():
     from server.mcp.supervisor import mask_for
     runtime = {"id": 1, "env": {}, "url": "http://[::1/mcp", "secrets": {"T": "tok_example_42"}}
     assert "tok_example_42" not in mask_for(runtime, "401: tok_example_42 was refused")
+
+
+@pytest.mark.parametrize("path", ["/Users/someone/projects2025/notes1", "./build2025/server0/index1.js",
+                                  "../build2025/server0/index1.js", "~/projects2025/notes1/more2"])
+def test_a_long_path_is_not_a_key_by_its_look(path):
+    assert cs._random_looking(path.lstrip("./~")), "without its start it reads as a key"
+    assert cs.find(None, [path]) == [] and cs.find(None, ["--root", path]) == []
+    assert cs.shown(None, [path])[1] == [path]
+
+
+def test_a_path_after_an_option_that_names_a_secret_is_still_found():
+    assert cs.find(None, ["--token", "/x"])
