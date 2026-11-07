@@ -269,14 +269,21 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         # A time limit keeps its own text (M2 counts it).
         if not timed_out:
             result["error"] = f"the sandbox stopped this command ({result.get('error')})"
-        # SBX-7: the denial's code (EPERM, the one SBX-3 detects so far) goes to the run step's `ref` through
-        # run_trace, never onto this result: the model and every other payload read the result. A failed certificate
-        # check isn't an EPERM, so it records no code.
+        # SBX-7: the denial's code (`eperm`, or `proxy` for the local proxy's refusal with no EPERM beside it) goes to
+        # the run step's `ref` through run_trace, never onto this result: the model and every other payload read the
+        # result. A failed certificate check is neither, so it alone records no code.
         trust = command_sandbox.trust_check_failed(result)
-        if not trust:
+        proxy = command_sandbox.proxy_refused(result) and not command_sandbox.refused_outside(result)   # EPERM text
+        if proxy or not trust:
             from server.orchestrator import run_trace
-            run_trace.note_denial("eperm")
-        result["note"] = command_sandbox.note(cwd, closed, trust=trust)
+            run_trace.note_denial("proxy" if proxy else "eperm")
+        result["note"] = command_sandbox.note(cwd, closed, trust=trust, proxy=proxy)
+    elif result["ok"] and command_sandbox.proxy_refused(result):
+        # A client that printed the proxy's refusal and exited 0 (curl without -f on plain http): still a denial,
+        # but not a failed step.
+        from server.orchestrator import run_trace
+        run_trace.note_denial("proxy")
+        result["note"] = command_sandbox.note(cwd, closed, proxy=True)
     elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
         result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "
                           "Arslan Hands' folder. Tell the user what you needed.")
