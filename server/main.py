@@ -355,6 +355,14 @@ async def lifespan(app: FastAPI):
 
     await seed_registry()
 
+    # CAP7b: a plugin install a plain Quit cut short goes, before the supervisor can start what it left on.
+    try:
+        from server.services import plugin_package
+
+        await plugin_package.finish_interrupted()
+    except Exception as exc:  # noqa: BLE001 — must never block boot
+        logger.warning("plugin installs cut short were not checked at boot (non-fatal): %s", exc)
+
     # 0.1.61 §B1: the MCP supervisor starts every enabled server in the background; the PB-4
     # opt-in health sweep runs only when the supervisor is off. Never blocks boot.
     await _boot_mcp()
