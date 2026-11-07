@@ -41,6 +41,16 @@ async def test_a_command_the_sandbox_stopped_notes_its_code_off_the_result(tmp_p
     assert result["error"] == ("the sandbox stopped this command (exit code 1)" if code else "exit code 1")
 
 
+async def test_a_failed_certificate_check_is_a_stop_with_no_eperm_code(tmp_path, monkeypatch):
+    """The closed trust service stops it, but SBX-7's number counts EPERM, and this isn't one."""
+    monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **kw: ["/usr/bin/env"])     # runs it as "workspace"
+    with run_trace.collecting() as trace:
+        result = await terminal_exec.run("printf 'x509: OSStatus -26276\\n' >&2; exit 1", cwd=tmp_path, sandbox=True)
+        run_trace.record(tool="run_command", args={}, result=result, ok=False, error="exit code 1", ms=5)
+    assert result["sandbox_denied"] is True and "certificate check" in result["note"]
+    assert trace[0].get("denial") is None
+
+
 async def test_a_time_limit_keeps_its_exact_text_when_the_output_reads_like_a_stop(tmp_path, monkeypatch):
     """M2 counts "stopped after N s": a command that printed the words and then ran out of time is still a time limit."""
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **kw: ["/usr/bin/env"])     # runs it as "workspace"

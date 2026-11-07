@@ -56,7 +56,7 @@ class Harness:
     def profile(self, **parameters) -> str:
         if self.base not in BUILT_BASES:
             raise NotImplementedError(f"no profile adapter for {self.base}")
-        if self.base in {"commands", "outside-floor"}:
+        if self.base in {"commands", "commands-proxy", "outside-floor"}:
             with pytest.MonkeyPatch.context() as environment:
                 for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
                     environment.setenv(name, self.env[name])
@@ -142,17 +142,32 @@ class Harness:
 # HOME/TMPDIR, with this harness's work/temp, IPC prefix, mode and denied_ports.
 # It must not delegate commands to the candidate.
 def _commands_profile(self, **parameters) -> str:
-    options = dict(network=self.network, ipc_prefix=self.ipc_prefix)
+    # The test process's own listeners are not Arslan's: bound ports and system proxies come only from the
+    # test (SBX-6p passes stand-ins), never from this process or this Mac.
+    options = dict(network=self.network, ipc_prefix=self.ipc_prefix, bound_ports=[], system_proxies=[])
     if self.network == NetworkMode.PROXY:
-        options["proxy_port"] = 49151  # no listener; actual proxy is SBX-6
+        options["proxy_port"] = getattr(self, "proxy_port", None) or 49151  # 49151: no listener
     options.update(parameters)
     return command_sandbox.commands_profile(self.work, temp=self.temp, **options)
 
 
+# SBX-6a: the base with SBX-6's loopback exclusions, as the product computes them (`sandbox_proxy`).
+def _sbx6_base_profile(self, **parameters) -> str:
+    from server.services import sandbox_proxy
+    proxy_port = parameters.pop("proxy_port", getattr(self, "proxy_port", None))
+    parameters.pop("trust_service", None)       # the base has no such setting: only online commands can grant it
+    denied = sandbox_proxy.excluded_ports(parameters.pop("bound_ports", []), parameters.pop("system_proxies", []),
+                                          proxy_port=proxy_port or 0)
+    return default_deny_profile([self.work, self.temp], [self.protected], network=self.network,
+                                proxy_port=proxy_port if self.network == NetworkMode.PROXY else None,
+                                denied_ports=denied, ipc_prefix=self.ipc_prefix, **parameters)
+
+
 BUILT_BASES = {base: Harness._measurement_profile for base in MEASUREMENT_BASES}
 BUILT_BASES["commands"] = _commands_profile
+BUILT_BASES["commands-proxy"] = _commands_profile
+BUILT_BASES["network-sbx6"] = _sbx6_base_profile
 
-# Feature keys are declared only when their protections land: SBX-6a adds "trustd-toggle" and
-# "trusted-lan" with the settings; SBX-5a adds "cap6b" and "shared-cache-exclusions". The existing
-# commands/outside-floor adapters alone do not claim any of them.
-BUILT_FEATURES = frozenset()
+# Feature keys are declared only when their protections land: SBX-6a's settings bring "trustd-toggle" and
+# "trusted-lan"; SBX-5a adds "cap6b" and "shared-cache-exclusions".
+BUILT_FEATURES = frozenset({"trustd-toggle", "trusted-lan"})
