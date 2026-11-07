@@ -1,13 +1,14 @@
 """A card's plain purpose reads a line inside another (a `$(…)`, a shell's `-c`, `eval`, `watch`, find's `-exec`) only
-so deep (`card_purpose.READ_DEPTH`) and only so much (`READ_WORK` times the line's length). Past either it reads the
-line as one it cannot read ("Run <program>"), and every card path still gets its title. Up to them, the reading is the
-one it always was. These lines are only read here, never run."""
+so deep (`card_purpose.READ_DEPTH`) and only so much (`READ_WORK` times the line's length). Past either the card says
+Arslan could not read the whole command, still with the line's program, in each language (#770 review), and every card
+path still gets its title. Up to them, the reading is the one it always was. A quote never closed still reads as
+"Run <program>". These lines are only read here, never run."""
 import time
 from types import SimpleNamespace
 
 import pytest
 
-from server.orchestrator import tool_loop, untrusted
+from server.orchestrator import command_gate, tool_loop, untrusted
 from server.services import approvals, card_purpose, command_confirm, command_sandbox, permissions
 
 READ_DEPTH = card_purpose.READ_DEPTH
@@ -25,9 +26,21 @@ SHAPES = {
 FAR = READ_DEPTH * 16
 
 
-def _unreadable(program: str) -> dict:
-    """The reading of a line that cannot be read (a quote never closed): "Run <program>"."""
-    return card_purpose.summarize(program + " '")
+#: Past a bound, in each language: Arslan could not read the whole command, with the line's program ({}).
+NOT_ALL_READ = {
+    "en": "Run {}: Arslan couldn't read the whole command",
+    "zh": "运行 {}：Arslan 没能读完整条命令",
+    "ja": "{} を実行：Arslan はコマンド全体を読み取れませんでした",
+    "es": "Ejecutar {}: Arslan no pudo leer el comando completo",
+    "de": "{} ausführen: Arslan konnte nicht den ganzen Befehl lesen",
+    "fr": "Exécuter {} : Arslan n’a pas pu lire toute la commande",
+}
+
+
+def _not_all_read(program: str) -> dict:
+    """The reading of a line read past a bound."""
+    return {"purpose": {"key": "notAllRead", "params": {"program": program}}, "touches": [], "more": 0,
+            "unsure": False}
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -36,12 +49,20 @@ def test_a_line_read_as_deep_as_the_bound_keeps_its_reading(shape):
     assert card_purpose.phrase(line(READ_DEPTH), lang="en") == reading
 
 
+@pytest.mark.parametrize("lang", NOT_ALL_READ)
 @pytest.mark.parametrize("depth", [READ_DEPTH + 1, READ_DEPTH * 2, FAR])
 @pytest.mark.parametrize("shape", SHAPES)
-def test_a_line_read_past_the_bound_reads_as_one_it_cannot_read(shape, depth):
+def test_a_line_read_past_the_bound_says_arslan_could_not_read_all_of_it(shape, depth, lang):
     line, _, program = SHAPES[shape]
-    assert card_purpose.summarize(line(depth)) == _unreadable(program)
-    assert card_purpose.phrase(line(depth), lang="en") == f"Run {program}"
+    assert card_purpose.summarize(line(depth)) == _not_all_read(program)
+    assert card_purpose.phrase(line(depth), lang=lang) == NOT_ALL_READ[lang].format(program)
+
+
+@pytest.mark.parametrize("lang", NOT_ALL_READ)
+def test_a_quote_never_closed_still_reads_as_run_its_program(lang):
+    """Only a bound says Arslan could not read the whole command; a line it cannot parse keeps "Run <program>"."""
+    assert card_purpose.phrase("eval 'rm x", lang=lang) == card_purpose.TEXT[lang]["purpose"]["run"].replace(
+        "{{program}}", "eval")
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -79,9 +100,11 @@ def test_a_line_whose_readings_take_exactly_the_budget_keeps_its_reading():
     assert card_purpose.phrase(_over_the_budget(0), lang="en") == "Delete what it finds in ."
 
 
+@pytest.mark.parametrize("lang", NOT_ALL_READ)
 @pytest.mark.parametrize("over", [1, READ_WORK])
-def test_a_line_whose_readings_take_more_than_the_budget_reads_as_one_it_cannot_read(over):
-    assert card_purpose.summarize(_over_the_budget(over)) == _unreadable("find")
+def test_a_line_whose_readings_take_more_than_the_budget_says_arslan_could_not_read_all_of_it(over, lang):
+    assert card_purpose.summarize(_over_the_budget(over)) == _not_all_read("find")
+    assert card_purpose.phrase(_over_the_budget(over), lang=lang) == NOT_ALL_READ[lang].format("find")
 
 
 @pytest.mark.timeout(60)
@@ -90,14 +113,14 @@ def test_finds_inside_finds_are_read_in_bounded_time(depth):
     """Each `-exec` reads the rest of its line, and each `-exec` in that reads it again; READ_WORK bounds it all."""
     line = "find . -exec " * depth + "rm x"
     start = time.process_time()
-    assert card_purpose.summarize(line) == _unreadable("find")
+    assert card_purpose.summarize(line) == _not_all_read("find")
     assert time.process_time() - start < 5
 
 
 # ── Every card path gets its title ──
 
 DEEP = {"eval": "eval " * FAR + "rm x", "find -exec": "find . -exec " * (FAR // 2) + "rm x"}
-TITLE = {"eval": "Run eval", "find -exec": "Run find"}
+TITLE = {"eval": NOT_ALL_READ["en"].format("eval"), "find -exec": NOT_ALL_READ["en"].format("find")}
 
 
 class _Asker:
@@ -138,8 +161,8 @@ async def test_the_network_card_after_outside_content_is_shown(execution_db, mon
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(permissions, "current_asker", lambda: object())
     monkeypatch.setattr(permissions, "decide", decide)
-    out = await tool_loop._network_after_outside_content(DEEP[shape], {"network": True}, sandbox_on=True,
-                                                         run_outside=False, unwrapped=False, conversation_id="c1")
+    out = await command_gate._network_after_outside_content(DEEP[shape], {"network": True}, sandbox_on=True,
+                                                            run_outside=False, unwrapped=False, conversation_id="c1")
     assert out == {"refused": "no"}
     assert seen[0].title == "Uses the network · " + TITLE[shape]
 

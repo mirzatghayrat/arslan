@@ -37,8 +37,8 @@ PHONE_MAX = 200
 #: which the model's words may not use.
 _SEPARATORS = re.compile("[" + "".join(map(chr, (0xB7, 0x2022, 0x2027, 0x2219, 0x22C5, 0x30FB, 0xFF65))) + "]")
 #: How deep a line is read inside another: a `$(…)`, a shell's `-c`, `eval`, `watch`, `trap`, `env -S` or find's
-#: `-exec`, each one level, all counted together. Each level is Python frames, so past it the line is read as one that
-#: cannot be read ("Run <program>").
+#: `-exec`, each one level, all counted together. Each level is Python frames, so past it the card says Arslan could
+#: not read the whole line ("Run <program>: Arslan couldn't read the whole command").
 READ_DEPTH = 64
 #: How much reading a line may read again, as a multiple of its length, so its cost stays linear in it. A line inside
 #: another is shorter than it, so lines read inside one another READ_DEPTH deep stay under this; find's `-exec` reads
@@ -47,7 +47,7 @@ READ_WORK = READ_DEPTH
 
 
 class _TooDeep(Exception):
-    """A line read past READ_DEPTH or READ_WORK: `summarize` reads it as a line it cannot read."""
+    """A line read past READ_DEPTH or READ_WORK: `summarize` says Arslan could not read all of it."""
 
 
 def _deeper(work: dict, line: str, depth: int) -> None:
@@ -113,7 +113,8 @@ def _closing(text: str, open_at: int) -> int:
 
 def _parse(text: str, depth: int = 0) -> list[dict] | None:
     """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
-    is never closed (as commandSummary's `parse`)."""
+    is never closed (as commandSummary's `parse`). Raises _TooDeep at a `$(…)` nested past READ_DEPTH, where it reads
+    no further."""
     steps: list[dict] = []
     step = {"tokens": [], "piped": False, "subs": []}
     token, in_token, quote, i = "", False, None, 0
@@ -141,7 +142,9 @@ def _parse(text: str, depth: int = 0) -> list[dict] | None:
                 end = text.find("`", i + 1) if ch == "`" else _closing(text, i + 1)
                 if end < 0:
                     return None
-                inner = _parse(text[i + 1 if ch == "`" else i + 2:end], depth + 1) if depth < READ_DEPTH else None
+                if depth >= READ_DEPTH:
+                    raise _TooDeep
+                inner = _parse(text[i + 1 if ch == "`" else i + 2:end], depth + 1)
                 if inner is None:
                     return None
                 step["subs"].extend(inner)
@@ -182,8 +185,12 @@ def _parse(text: str, depth: int = 0) -> list[dict] | None:
 
 
 def split_shell(text: str) -> list[list[str]] | None:
-    """The line's steps as words, the steps run inside a step before it; None when a quote is never closed."""
-    steps = _parse(text)
+    """The line's steps as words, the steps run inside a step before it; None when a quote is never closed or a
+    `$(…)` is nested past READ_DEPTH."""
+    try:
+        steps = _parse(text)
+    except _TooDeep:
+        return None
     if steps is None:
         return None
     out: list[list[str]] = []
@@ -599,15 +606,17 @@ def summarize(text: str, rules: str | list[str] | None = None) -> dict:
     "unsure": bool}`, as web/src/lib/commandSummary.ts reads it (both are held to
     tests/fixtures/card_purpose_vectors.json). `unsure`: a transfer in it was not fully read, so it may send local
     data. `rules`: the server's terminal rules for the line (one, or several). A line it cannot read (a quote never
-    closed, or read past READ_DEPTH or READ_WORK) reads as "Run <its first word>"."""
+    closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says Arslan could not read all of
+    it, still with its first word (`notAllRead`, #770 review)."""
     listed = [rules] if isinstance(rules, str) else list(rules or [])
+    program = _base((text.strip().split() or [""])[0])
     try:
         r = _read(text, listed)
     except _TooDeep:
-        r = None                                                           # read as a line it cannot read
+        return {"purpose": {"key": "notAllRead", "params": {"program": program}}, "touches": [], "more": 0,
+                "unsure": False}
     if r is None:
-        return {"purpose": {"key": "run", "params": {"program": _base((text.strip().split() or [""])[0])}},
-                "touches": [], "more": 0, "unsure": False}
+        return {"purpose": {"key": "run", "params": {"program": program}}, "touches": [], "more": 0, "unsure": False}
     outside = [p for p in r["local"] if re.match(r"^(?:/|~|\$|\.\.(?:/|$))", p) or _REMOTE_PATH.match(p)]
     return {"purpose": r["purpose"], "touches": _unique([*r["hosts"], *outside, *r["local"]]),
             "more": max(r["real"] - 1, 0), "unsure": r["unsure"]}
