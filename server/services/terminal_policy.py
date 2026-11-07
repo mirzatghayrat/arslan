@@ -326,10 +326,11 @@ def _forms(text: str) -> tuple[str, ...]:
 
 
 def _detection_texts(text: str) -> tuple[str, ...]:
-    """`_forms`, or only the text as written when a form of it (the `-c` argument it hides, say) is past the parser
-    limit: no regex reads such a form, and `_unparseable` says the command can't be read."""
+    """`_forms`, or when a form of it (the `-c` argument it hides, say) is past the parser limit, what the forbid rules
+    read of it in linear passes (`shell_text.over_limit_forms`): no regex reads a form the parser would have to scan,
+    and `_unparseable` says the command can't be read. A forbid holds past the limit, so asking can't let one run."""
     forms = _forms(text)
-    return (shell_text.squeeze_blank_runs(text),) if _over_limit(forms) else forms
+    return shell_text.over_limit_forms(text) if _over_limit(forms) else forms
 
 
 def _over_limit(forms: tuple[str, ...]) -> bool:
@@ -338,8 +339,10 @@ def _over_limit(forms: tuple[str, ...]) -> bool:
 
 def _masked_texts(texts: tuple[str, ...]) -> tuple[str, ...]:
     """Quoted prose masked out for the positionless forbid rules, except under a shell carrier
-    (sh -c, eval, source), whose quoted argument is code (Hermes' hardline matcher)."""
-    return tuple(t if shell_text.has_shell_carrier(t) else shell_text.mask_quoted_prose(t) for t in texts)
+    (sh -c, eval, source), whose quoted argument is code (Hermes' hardline matcher). A text with no quote has nothing
+    to mask."""
+    return tuple(t if not ("'" in t or '"' in t) or shell_text.has_shell_carrier(t) else shell_text.mask_quoted_prose(t)
+                 for t in texts)
 
 
 def _matches(pattern, texts) -> bool:

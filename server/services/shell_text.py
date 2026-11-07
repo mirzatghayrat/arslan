@@ -252,8 +252,28 @@ def _blank_run_over_limit(command: str) -> bool:
 
 
 def _squeeze_blank_runs(command: str) -> str:
-    """Each blank run as one blank, a newline if it held one: what the forbid rules read of a command past the limit."""
+    """Each blank run as one blank, a newline if it held one, so no form read past the limit has a long run."""
     return _BLANK_RUN.sub(lambda run: "\n" if "\n" in run.group() else " ", command)
+
+
+_BACKTICK_RUN = re.compile(r"``+")
+
+
+def _over_limit_forms(command: str) -> tuple[str, ...]:
+    """What the forbid rules read of a command past the limit, each with its blank runs squeezed. Linear passes only,
+    with no scan of what its substitutions hold: the text as written; its top-level commands each on a line of its own
+    (`_iter_top_level_shell_segments`), since the rules anchor at a newline and not at `;` `&&` `||` `|`, then
+    normalized (`ls; r''m -rf ~`), after a blank so a `\\` ending a command doesn't join the lines; and that with its
+    quotes taken out, which reads a command word spelled with quotes (`'rm' -rf ~`, `"$("rm -rf ~`) as the word reading
+    under the limit does. A quoted `;` is never split, so for the rules that need a command start, quoted prose stays
+    data unless they already read a start in it (a newline, `$(` or a backtick). The unquoted form has nothing to
+    mask, so a rule with no start to need (a redirect onto a disk) reads quoted prose there. Reading too much here only
+    forbids more, which fails closed. In these two a run of backticks is one: a rule can match at a backtick in a run
+    only by reading past the ones after it, so the last one finds it too, and each start in a run would read the rest."""
+    lines = _normalize_command_for_detection(" \n".join(_iter_top_level_shell_segments(command)))
+    lines = _BACKTICK_RUN.sub("`", lines)
+    unquoted = _BACKTICK_RUN.sub("`", lines.replace("'", "").replace('"', ""))
+    return tuple(dict.fromkeys(_squeeze_blank_runs(form) for form in (command, lines, unquoted)))
 
 
 @functools.lru_cache(maxsize=32)        # the forms of a command repeat
@@ -262,8 +282,10 @@ def _command_parser_limit_exceeded(command: str) -> bool:
     substitutions to scan. The text as written and normalized are both read, so both count."""
     if len(command) > _MAX_DETECTION_COMMAND_CHARS:
         return True
+    if _substitutions_over_limit(command) or _blank_run_over_limit(command):
+        return True                     # before normalizing, which is the slow part on some texts
     normalized = _normalize_command_for_detection(command)
-    if any(_substitutions_over_limit(text) or _blank_run_over_limit(text) for text in (command, normalized)):
+    if _substitutions_over_limit(normalized) or _blank_run_over_limit(normalized):
         return True
     # Long separator-free input has no compound-command utility and makes every regex inspect one giant token.
     if len(command) > _MAX_SEPARATOR_FREE_COMMAND_CHARS and not any(char in command for char in ";&|\n"):
@@ -856,7 +878,7 @@ has_shell_carrier = _contains_shell_carrier         # a command word runs a quot
 mask_quoted_prose = _mask_quoted_prose
 mask_quoted_newlines = _mask_quoted_newlines
 too_complex = _command_parser_limit_exceeded         # past what is read at all
-squeeze_blank_runs = _squeeze_blank_runs
+over_limit_forms = _over_limit_forms                 # what the forbid rules read past it
 
 
 def grep_unreadable(command: str) -> bool:
