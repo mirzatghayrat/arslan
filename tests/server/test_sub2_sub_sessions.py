@@ -65,7 +65,7 @@ async def test_a_child_starts_with_what_its_parent_allows(execution_db):
     assert (effective.cloud_memory_allowed, effective.allow_sensitive) == (True, False)
 
 
-async def test_a_parent_with_no_row_yet_gets_one_so_a_missing_parent_can_mean_deleted(execution_db):
+async def test_a_parent_with_no_row_yet_gets_one_so_a_missing_row_can_fail_closed(execution_db):
     """An ordinary conversation has no row until a setting is changed. Its default row changes nothing about it."""
     await _child(execution_db, parent="c-never-set")
     async with execution_db() as session:

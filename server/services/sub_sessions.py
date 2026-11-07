@@ -101,8 +101,9 @@ async def create_child(db, parent_id: str, child_id: str | None = None) -> Conve
     """A new sub-session of `parent_id`; the caller commits. It starts with what its parent allows right now, and its
     parent can take that back later. Its name comes from its first message, as every conversation's does.
 
-    A parent with no row yet gets one (an ordinary conversation has none until a setting changes), so that a missing
-    parent always means a deleted one."""
+    A parent with no row yet gets one (an ordinary conversation has none until a setting changes), so that a chain with
+    a row missing can fail closed. Deleting a conversation keeps its row today, so a deleted parent isn't a missing one:
+    removing the rows is SUB5's cascade."""
     parent = await db.get(ConversationContext, parent_id)
     if parent is None:
         parent = ConversationContext(id=parent_id)
