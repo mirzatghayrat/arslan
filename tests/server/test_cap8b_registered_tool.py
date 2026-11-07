@@ -92,7 +92,7 @@ def _turn_ends(window, portal, jobs, count=1):
     while len(jobs) < count:
         assert time.monotonic() < deadline, "the turn never started its post-turn job"
         time.sleep(0.02)
-    portal.call(settle_after_turn)
+    portal.call(base._settled)            # the turn's tasks and `lessons._background`, where a practice is written
     return frames
 
 

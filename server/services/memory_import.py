@@ -206,5 +206,11 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
         except Exception as exc:  # noqa: BLE001 — the lines before it are in: the counts stay true, and the rest go on
             logger.warning("memory import: a kept line wasn't stored: %s", type(exc).__name__)   # an error can hold the line
             not_saved += 1
-    return {"ok": True, "saved": saved, "not_saved": not_saved, "left_out": len(left_out) + too_many,
-            "note": "Tell the user how many were saved (`saved`). They can edit or delete any of them in Memory."}
+    counts = {"saved": saved, "not_saved": not_saved, "left_out": len(left_out) + too_many}
+    if not saved:     # nothing stored is not an import, whatever the card said: the model must not report it as done
+        return {"ok": False, **counts,
+                "note": "Nothing was stored: none of the kept lines were saved, and `not_saved` of them could not be "
+                        "stored. Say so, and do not say they were imported."}
+    return {"ok": True, **counts,
+            "note": "Tell the user how many were saved (`saved`), and how many could not be stored (`not_saved`) if "
+                    "any. They can edit or delete any of them in Memory."}
