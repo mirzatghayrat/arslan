@@ -101,7 +101,9 @@ assert pathlib.Path(copy).read_bytes() == pathlib.Path(library).read_bytes()
 try:
     ctypes.CDLL(copy)
 except OSError as exc:
-    assert expect == 'deny' and 'sandbox blocked mmap()' in str(exc), exc
+    # No match on dyld's wording, which can differ between macOS versions: if the mapping were allowed, the
+    # deny run would load the copy and fail below as "workspace library loaded as code".
+    assert expect == 'deny', exc
     ctypes.CDLL(library)  # The same bytes still load from the runtime: only the workspace is refused.
 else:
     assert expect == 'control', 'workspace library loaded as code'
