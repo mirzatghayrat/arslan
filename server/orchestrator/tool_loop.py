@@ -24,7 +24,6 @@ from server.orchestrator.turn_stream import (
     _UNVERIFIED_BOUNCES, TextShown, _StepStream, _TurnText, _correct, _kept_note, _not_verified, _progress_updates, _shown,
     _streams_answer)
 from server.orchestrator.turn_state import TOOL_TIMEOUT_S, ResolveTools, ToolTurn, TurnRequest, TurnState  # noqa: F401
-from server.services import terminal_exec
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
@@ -1319,7 +1318,7 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
-# The tools still to move into server/registry/tool_defs (LOOP1 a4 and a5) are listed here; DELETE-BY: v0.1.64, with a5.
+# The tools still to move into server/registry/tool_defs (LOOP1 a5) are listed here; DELETE-BY: v0.1.64, with a5.
 
 # Hands v2 §6.3: the one way the model asks for the front. FRONT1 (the user, 2026-10-30): an action the app
 # ignored in the background reads as `sent_unconfirmed` (a click or a press never says `no_effect`: Hands'
@@ -1429,27 +1428,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                  "items": {"type": "string", "minLength": 1, "maxLength": 120},
                  "description": "the menu's titles as the app shows them, top level first: [\"Format\", \"Font\", \"Bold\"]"}},
         "required": ["app", "path"], "additionalProperties": False},
-    "run_command": {"type": "object",
-                    "properties": {"command": {"type": "string",
-                                               "description": "The full shell command line, e.g. "
-                                                              "\"ls -la ~/Downloads | head -20\"."},
-                                   "timeout_s": {"type": "integer", "minimum": terminal_exec.MIN_TIMEOUT_S,
-                                                 "maximum": terminal_exec.MAX_TIMEOUT_S,
-                                                 "description": "Stop after this many seconds (default "
-                                                                f"{terminal_exec.DEFAULT_TIMEOUT_S})."},
-                                   "outside_sandbox": {"type": "boolean",
-                                                       "description": "Only when the command must write outside "
-                                                                      "the working folder (moving files, installing "
-                                                                      "software). The user is asked."},
-                                   "network": {"type": "boolean",
-                                               "description": "The command needs the network (a download, an "
-                                                              "API). After you read outside content in this turn, "
-                                                              "commands run offline unless the user allows it."},
-                                   "why": {"type": "string", "maxLength": 300,
-                                           "description": "What this step does, in a sentence. With "
-                                                          "outside_sandbox, why it must run outside. "
-                                                          "Cards show it first."}},
-                    "required": ["command"]},
     "run_python": {"type": "object",
                    "properties": {"code": {"type": "string"}}},
     # 0.1.63 K7: the two tools that reach everything a request is not shown (on_demand.py).
