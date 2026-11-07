@@ -314,15 +314,26 @@ def _launcher_args(text: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _detection_texts(text: str) -> tuple[str, ...]:
+def _forms(text: str) -> tuple[str, ...]:
     """The forms the rules are matched against: as written, normalized, and the variants with a
     newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
     not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
     `ls && git push` ran with no card."""
     if shell_text.too_complex(text):
         return (text,)
-    inner = tuple(t for arg in _launcher_args(text) for t in _detection_texts(arg))
+    inner = tuple(t for arg in _launcher_args(text) for t in _forms(arg))
     return (text, shell_text.normalize(text), *shell_text.variants(text), *inner)
+
+
+def _detection_texts(text: str) -> tuple[str, ...]:
+    """`_forms`, or only the text as written when a form of it (the `-c` argument it hides, say) is past the parser
+    limit: no regex reads such a form, and `_unparseable` says the command can't be read."""
+    forms = _forms(text)
+    return (shell_text.squeeze_blank_runs(text),) if _over_limit(forms) else forms
+
+
+def _over_limit(forms: tuple[str, ...]) -> bool:
+    return any(shell_text.too_complex(form) for form in forms)
 
 
 def _masked_texts(texts: tuple[str, ...]) -> tuple[str, ...]:
@@ -354,7 +365,7 @@ def _quotes_close(text: str) -> bool:
 
 def _unparseable(text: str) -> str:
     """Why the command's text cannot be read at all, or "": then no other rule can be trusted."""
-    if shell_text.too_complex(text):
+    if _over_limit(_forms(text)):
         return "too complex to read before running"
     if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"

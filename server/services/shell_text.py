@@ -39,9 +39,12 @@ def _strip_ansi(text: str) -> str:
 # ── adapted from Hermes ───────────────────────────────────────────────────────
 
 _MAX_DETECTION_COMMAND_CHARS, _MAX_SEPARATOR_FREE_COMMAND_CHARS, _MAX_DETECTION_SEGMENTS = 128_000, 4_096, 25_000
-# Each nested `$(` is one Python frame deeper in the scan: well under the recursion limit, with room for the stack a turn
-# has already used.
+# All the `$(` in a command, nested or not.
 _MAX_DETECTION_SUBSTITUTIONS = 256
+# What can't be read cheaply can't be read: the work grows far faster than the text past these, so `too_complex` says it
+# isn't read at all and the command asks (`unreadable`). Well above what recorded commands use.
+_MAX_NESTED_SUBSTITUTIONS, _MAX_BACKTICKS = 6, 32
+_MAX_BLANK_RUN, _MAX_NEWLINES_IN_BLANK_RUN = 64, 16
 
 # Start of a command: start of text, a newline, `$(` or a backtick, past sudo/env/exec/nohup/setsid/time.
 # ; & | are made newlines by the quote-aware _mark_command_starts pass, so quoted data never counts.
@@ -217,11 +220,50 @@ _BASH_OPTIONS_WITH_ARG = {"-O", "+O", "-o", "+o", "--init-file", "--rcfile"}
 _BASH_SHORT_OPTION_LETTERS = frozenset("ilrsDcabefhkmnptuvxBCEHPTOo")
 
 
+_NESTING_TOKEN = re.compile(r"""\$\(|[)'"\\`]""")
+
+
+def _substitutions_over_limit(command: str) -> bool:
+    """Too many substitutions, or too many that may be open at once. A `)` closes one only with no quote, backslash or
+    backtick since its `$(`: those can make the `)` data here, or in a later reading of a quoted argument, so a `$(` that
+    met one stays counted however it reads. Over-counts, which fails closed."""
+    if command.count("$(") >= _MAX_DETECTION_SUBSTITUTIONS or command.count("`") >= _MAX_BACKTICKS:
+        return True
+    closable = unclosable = 0
+    for token in _NESTING_TOKEN.findall(command):
+        if token == "$(":
+            closable += 1
+            if closable + unclosable >= _MAX_NESTED_SUBSTITUTIONS:
+                return True
+        elif token == ")":
+            closable = max(closable - 1, 0)
+        else:
+            closable, unclosable = 0, unclosable + closable
+    return False
+
+
+_BLANK_RUN = re.compile(r"\s+")
+
+
+def _blank_run_over_limit(command: str) -> bool:
+    """A blank run the rules' command position would spend too long on."""
+    return any(len(run) >= _MAX_BLANK_RUN or run.count("\n") >= _MAX_NEWLINES_IN_BLANK_RUN
+               for run in _BLANK_RUN.findall(command))
+
+
+def _squeeze_blank_runs(command: str) -> str:
+    """Each blank run as one blank, a newline if it held one: what the forbid rules read of a command past the limit."""
+    return _BLANK_RUN.sub(lambda run: "\n" if "\n" in run.group() else " ", command)
+
+
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
 def _command_parser_limit_exceeded(command: str) -> bool:
     """Bound all parser work: too long, long with no separator, too many separators, or too many
-    substitutions to scan (quoted ones over-count, which fails closed)."""
-    if len(command) > _MAX_DETECTION_COMMAND_CHARS or max(
-            command.count("$("), _normalize_command_for_detection(command).count("$(")) >= _MAX_DETECTION_SUBSTITUTIONS:
+    substitutions to scan. The text as written and normalized are both read, so both count."""
+    if len(command) > _MAX_DETECTION_COMMAND_CHARS:
+        return True
+    normalized = _normalize_command_for_detection(command)
+    if any(_substitutions_over_limit(text) or _blank_run_over_limit(text) for text in (command, normalized)):
         return True
     # Long separator-free input has no compound-command utility and makes every regex inspect one giant token.
     if len(command) > _MAX_SEPARATOR_FREE_COMMAND_CHARS and not any(char in command for char in ";&|\n"):
@@ -554,6 +596,8 @@ def _read_shell_word(command: str, pos: int) -> tuple[int, int, str]:
 
 def _literal_command_substitution_output(script: str) -> str | None:
     """Resolve tiny literal command substitutions without executing a shell."""
+    if "$" in script or "`" in script:      # never literal, and shlex is the slow part of a nested read
+        return None
     try:
         tokens = shlex.split(script, posix=True)
     except ValueError:
@@ -600,6 +644,7 @@ def _strip_shell_word_syntax(word: str) -> str:
     )
 
 
+@functools.lru_cache(maxsize=256)       # every form of a command reads the same words again
 def _deobfuscate_shell_word_for_detection(word: str) -> str:
     """Approximate how shell syntax can spell a command word: collapses quoting/escaping plus
     simple literal command substitutions in the word itself. Intentionally narrow and non-executing."""
@@ -616,7 +661,10 @@ def _is_shell_comment_start(command: str, index: int) -> bool:
                                       or command[index - 1] in ";&|()<>")
 
 
-def _iter_shell_command_starts(command: str):
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
+def _iter_shell_command_starts(command: str) -> tuple[int, ...]:
+    if _substitutions_over_limit(command):      # past it `too_complex` says it isn't read at all
+        return ()
     starts = [0]
 
     def scan(start: int, end: int) -> None:
@@ -638,18 +686,17 @@ def _iter_shell_command_starts(command: str):
                     skip = i + 1 if repeated else skip
                     starts.append(i + 1 + repeated)
 
-    if command.count("$(") < _MAX_DETECTION_SUBSTITUTIONS:      # past it `too_complex` says it isn't read at all
-        scan(0, len(command))
-    seen = set()
+    scan(0, len(command))
+    seen = {}
     for start in starts:
         start = _skip_shell_whitespace(command, start)
         if start >= len(command) or start in seen or _is_shell_comment_start(command, start):
             continue
-        seen.add(start)
-        yield start
+        seen[start] = None
         _, end, word = _read_shell_word(command, start)
         if word in _SHELL_COMMAND_TRANSITIONS:
             starts.append(end)
+    return tuple(seen)
 
 
 def _mark_command_starts(command: str, marker: str = "\n") -> str:
@@ -686,8 +733,10 @@ def _mask_quoted_newlines_span(command: str, start: int, end: int) -> str:
     return "".join(out)
 
 
-def _iter_shell_command_word_spans(command: str):
-    """Yield command-position words that may be executable names."""
+@functools.lru_cache(maxsize=32)        # the forms of a command repeat
+def _iter_shell_command_word_spans(command: str) -> tuple[tuple[int, int, str], ...]:
+    """The command-position words that may be executable names."""
+    spans = []
     for pos in _iter_shell_command_starts(command):
         wrapper, positionals = None, 0
         options, skip_arg = True, False
@@ -725,11 +774,12 @@ def _iter_shell_command_word_spans(command: str):
                 continue
             if _ENV_ASSIGNMENT_RE.fullmatch(word):
                 continue
-            yield (word_start, word_end, word)
+            spans.append((word_start, word_end, word))
             if name not in _COMMAND_WRAPPER_WORDS:
                 break
             wrapper, options = name, True
             positionals = _COMMAND_WRAPPER_POSITIONAL_ARGS.get(name, 0)
+    return tuple(spans)
 
 
 def _command_detection_variants(command: str):
@@ -806,6 +856,7 @@ has_shell_carrier = _contains_shell_carrier         # a command word runs a quot
 mask_quoted_prose = _mask_quoted_prose
 mask_quoted_newlines = _mask_quoted_newlines
 too_complex = _command_parser_limit_exceeded         # past what is read at all
+squeeze_blank_runs = _squeeze_blank_runs
 
 
 def grep_unreadable(command: str) -> bool:

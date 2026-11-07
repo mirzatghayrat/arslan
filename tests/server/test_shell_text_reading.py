@@ -133,3 +133,149 @@ def test_a_command_inside_a_substitution_starts_a_line_of_its_own():
     assert list(shell_text.variants("echo `git push`"))[1] == "echo `\ngit push`"
     assert list(shell_text.variants("x=$(ls; git push)"))[1] == "x=$(\nls; \ngit push)"
 
+
+# ── what can't be read cheaply can't be read ──────────────────────────────────
+
+NESTED = shell_text._MAX_NESTED_SUBSTITUTIONS
+BACKTICKS = shell_text._MAX_BACKTICKS
+BLANKS = shell_text._MAX_BLANK_RUN
+NEWLINES = shell_text._MAX_NEWLINES_IN_BLANK_RUN
+
+
+@pytest.mark.parametrize("build,limit", [
+    (lambda n: "$(" * n + ")" * n, NESTED),
+    (lambda n: "`" * n, BACKTICKS),
+    (lambda n: "a" + " " * n + "b", BLANKS),
+    (lambda n: "a" + "\n" * n + "b", NEWLINES),
+    (lambda n: "a" + "\n " * n + "b", NEWLINES),
+], ids=["nested", "backticks", "blanks", "newlines", "newlines-apart"])
+def test_too_complex_at_each_limit_and_not_just_under_it(build, limit):
+    assert shell_text.too_complex(build(limit))
+    assert not shell_text.too_complex(build(limit - 1))
+
+
+@pytest.mark.parametrize("opener", [
+    '$(")"', "$(')'", "$(\\)", "$(`)", '"$(")"', "'$(", "\\$(", '$(")" ', '$(";"', '"$(\'")\'',
+], ids=["double", "single", "backslash", "backtick", "inside-double", "single-quoted", "escaped", "spaced", "no-closer",
+        "both"])
+def test_a_closer_that_may_be_data_doesnt_lower_the_nesting(opener):
+    """Whether a `)` closes depends on a quote before it, here or in a later reading of a quoted argument, so a `$(` that
+    met a quote stays counted. Quoted and escaped openers count too: a `-c` argument reads them."""
+    assert shell_text.too_complex(opener * NESTED)
+    assert not shell_text.too_complex(opener * (NESTED - 1))
+
+
+@pytest.mark.parametrize("command", [
+    "$(a) " * 200, "$(a)" * 200, "echo $(a) $(b); " * 100, "x=$(a)\n" * 200, "$($(a)) " * 100,
+    '"$(a)" ' * 200,
+], ids=["apart", "together", "chained", "lines", "pairs", "quoted-around"])
+def test_substitutions_that_close_are_not_nesting(command):
+    assert not shell_text.too_complex(command)
+
+
+@pytest.mark.parametrize("build,limit", [
+    (lambda n: "\n''" * n, NEWLINES), (lambda n: '\n""' * n, NEWLINES), (lambda n: "\n$IFS" * n, NEWLINES),
+    (lambda n: "$''(" * n, NESTED), (lambda n: "\n\x00" * n, NEWLINES),
+], ids=["single", "double", "ifs", "opener", "nul"])
+def test_the_limits_count_the_normalized_text_too(build, limit):
+    """Normalizing is what the rules read, and it can make a run or an opener out of text that has neither."""
+    assert shell_text.too_complex(build(limit))
+    assert not shell_text.too_complex(build(limit - 1))
+
+
+def test_too_many_substitutions_in_all_is_still_past_the_limit():
+    assert shell_text.too_complex("$(a)" * shell_text._MAX_DETECTION_SUBSTITUTIONS)
+    assert not shell_text.too_complex("$(a)" * (shell_text._MAX_DETECTION_SUBSTITUTIONS - 1))
+
+
+@pytest.mark.parametrize("over", [
+    "$(" * NESTED + ")" * NESTED, '$(")"' * NESTED, "`" * BACKTICKS, "a" + "\n" * NEWLINES + "b",
+    "a" + " " * BLANKS + "b", "$(echo g)" * shell_text._MAX_DETECTION_SUBSTITUTIONS,
+], ids=["nested", "quoted-closer", "backticks", "newlines", "blanks", "many-in-one-word"])
+@pytest.mark.parametrize("wrap", [
+    "{}; git push", "git push; {}", "echo {}", "sh -c 'x; {}'", "bash -c \"{}\"", "watch '{} x'",
+], ids=["before", "after", "argument", "c-single", "c-double", "launcher"])
+def test_past_a_limit_a_command_asks_as_unreadable_however_it_hides_there(over, wrap):
+    """An argument that runs is read on its own, so being past a limit there is the command being past it."""
+    command = wrap.format(over)
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("ask", tp.UNREADABLE), command
+    assert tp.ask_rules(command) == {tp.UNREADABLE}
+
+
+@pytest.mark.parametrize("carrier", ["bash -c", "watch"])
+def test_a_substitution_only_a_later_reading_makes_counts_in_that_reading(carrier):
+    """Quotes can split an opener so the command as written has none; the `-c` argument, read on its own, has them all."""
+    command = f"{carrier} '" + "$'\"(\"'" * NESTED + " '"
+    assert not shell_text.too_complex(command)
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("ask", tp.UNREADABLE)
+    assert tp.ask_rules(command) == {tp.UNREADABLE}
+
+
+def test_a_later_reading_under_the_limits_is_read():
+    command = "bash -c '" + "$'\"(\"'" * (NESTED - 1) + " git push'"
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("ask", "git-push")
+
+
+def test_nothing_is_scanned_past_a_limit():
+    """A hidden argument gets as far as the reader before `too_complex` is asked about it."""
+    assert shell_text._iter_shell_command_starts("x; " + "$(" * NESTED) == ()
+    assert shell_text._iter_shell_command_word_spans("x; " + "`" * BACKTICKS) == ()
+    assert shell_text._iter_shell_command_starts("x; " + "$(" * (NESTED - 1)) != ()
+
+
+def test_no_regex_reads_a_form_past_a_limit():
+    """Only the command as written, with each blank run squeezed, and that form is back under the limit."""
+    for command in ("a" + "\n" * NEWLINES + "b", "bash -c 'a" + "\n" * NEWLINES + "b'", "$(" * NESTED + "\n" * NEWLINES):
+        assert not any(shell_text._blank_run_over_limit(text) for text in tp._detection_texts(command))
+        assert len(tp._detection_texts(command)) == 1
+
+
+@pytest.mark.parametrize("blanks", ["\n" * NEWLINES, " " * BLANKS, "\n \t" * NEWLINES], ids=["newlines", "spaces", "mixed"])
+@pytest.mark.parametrize("command,rule", [
+    ("{}rm -rf /", "wipe-root"), ("rm{}-rf /", "wipe-root"), ("rm -rf{}/", "wipe-root"), ("rm -rf /{}", "wipe-root"),
+    ("echo a\nrm -rf ~{}", "wipe-home"), ("{}shutdown", "shutdown"), ("cat ~/.arslan/secret_key{}", "arslan-keys"),
+], ids=["before", "after-word", "before-path", "after", "second-line", "shutdown", "keys"])
+def test_the_forbid_rules_still_read_a_command_with_too_long_a_blank_run(blanks, command, rule):
+    command = command.format(blanks)
+    assert shell_text.too_complex(command)
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("forbid", rule)
+
+
+@pytest.mark.parametrize("command,rule", [
+    ("$(echo g)$(echo i)$(echo t) push", "git-push"),
+    ("".join(f"$(echo {c})" for c in "/usr/bin/open") + " -a Terminal", "open-app"),
+    ("".join(f"$(echo {c})" for c in "/usr/bin/osascript") + " -e x", "apple-events"),
+    ("".join(f"`echo {c}`" for c in "/usr/bin/ssh") + " host", "remote-shell"),
+    ("".join(f"$(echo {c})" for c in "./././.") + "/rm -rf /tmp/x", "delete-outside"),
+    ("x=$(a); y=$(b); " * 10 + "git push", "git-push"),
+    ('echo "$(a "b")" "$(c)"; git push', "git-push"),
+    ("$(" * (NESTED - 1) + "git push", "git-push"),
+    ("echo a" + "\n" * (NEWLINES - 2) + "git push", "git-push"),      # marking a start adds a newline to the run
+    ("echo a" + " " * (BLANKS - 1) + "b; git push", "git-push"),
+], ids=["spelled", "spelled-open", "spelled-osascript", "spelled-backticks", "spelled-rm", "flat", "quoted", "nested",
+        "blank-lines", "spaces"])
+def test_under_the_limits_a_command_is_read_and_its_rule_names_it(command, rule):
+    """A word spelled with many substitutions is read, never handed back raw: raw, it'd match no rule at all."""
+    assert not shell_text.too_complex(command)
+    assert (tp.assess(command).level, tp.assess(command).rule) == ("ask", rule)
+
+
+def test_a_word_is_spelled_out_however_many_substitutions_it_takes():
+    word = "".join(f"$(echo {c})" for c in "/usr/bin/ssh" * 20)
+    assert shell_text._deobfuscate_shell_word_for_detection(word) == "/usr/bin/ssh" * 20
+
+
+@pytest.mark.parametrize("body", ["echo $x", "echo `a`", "printf %s $(a)", "echo $", 'echo "$"', "e$(a)cho x", "echo `"])
+def test_a_body_with_a_substitution_is_never_literal_and_isnt_tokenized(body, monkeypatch):
+    def tokenizing(*_args, **_kwargs):
+        raise AssertionError("tokenized")
+    monkeypatch.setattr(shell_text.shlex, "split", tokenizing)
+    assert shell_text._literal_command_substitution_output(body) is None
+
+
+def test_a_body_with_no_substitution_is_still_read_as_a_literal():
+    assert shell_text._literal_command_substitution_output("echo rm") == "rm"
+    assert shell_text._literal_command_substitution_output("printf %s rm") == "rm"
+    assert shell_text._literal_command_substitution_output("echo -n rm") == "rm"
+    assert shell_text._literal_command_substitution_output("echo rm x") is None
+
