@@ -309,5 +309,17 @@ def test_a_long_path_is_not_a_key_by_its_look(path):
     assert cs.shown(None, [path])[1] == [path]
 
 
+@pytest.mark.parametrize("key", ["/AbCdEf0123456789GhIjKlMnOp4567", "/AbCd/Ef0123456789+GhIjKlMnOp4567",
+                                 "/AbCd/Ef0123456789GhIjKlMnOp456="])
+def test_a_base64_key_that_starts_with_a_slash_is_still_a_key(key):
+    assert cs.find(None, [key]) and cs.shown(None, [key])[1] != [key]
+
+
+def test_the_stated_limit_a_key_that_reads_as_a_path_shows_as_one():
+    """The one case the path rule gives up: `_reads_as_a_path` states it. Named, it's still found."""
+    key = "/AbCd/Ef0123456789GhIjKlMnOp4567"
+    assert cs.find(None, [key]) == [] and cs.find(None, ["--token", key])
+
+
 def test_a_path_after_an_option_that_names_a_secret_is_still_found():
     assert cs.find(None, ["--token", "/x"])
