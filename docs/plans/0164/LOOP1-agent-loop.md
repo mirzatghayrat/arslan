@@ -6,7 +6,7 @@
 | Version | v0.1.64, must |
 | Lane | LOOP1's own session. ⓪Plan coordinates and reviews, with a fresh subagent per PR at the effort below. ③Hands reviews the Hands family and agrees slice d. |
 | Rule | No behaviour change, no new feature or setting, gate order unchanged, existing assertions unchanged. A move that would change behaviour stops and is reported. Two exceptions, each its own PR: the id fix (#722) and slice f. |
-| Size | 22 PRs, each from main, not stacked: the id fix, L0, b, a (6), c1 (2), c2 (2), c3 (3), e, f, d (2), z (2). Moved lines don't count toward the 400-line guide: `--color-moved` and the pins carry their proof, and new or changed lines stay small. Net product lines about flat until d1. |
+| Size | 22 PRs, each from main, not stacked: the id fix, L0 (2), b, a (5; a1 and a2 are one PR), c1 (2), c2 (2), c3 (3), e, f, d (2), z (2). Moved lines don't count toward the 400-line guide: `--color-moved` and the pins carry their proof, and new or changed lines stay small. Net product lines about flat until d1. |
 
 ## Reference
 - One tool object: [Codex `ToolExecutor`](https://github.com/openai/codex/blob/c1c07853fe6e8e712f264030a30758cfa80eedfe/codex-rs/tools/src/tool_executor.rs#L106), [OpenClaw `AgentTool`](https://github.com/openclaw/openclaw/blob/0e0bebb48c1cd87d24e59cc9d38ad2d0c6879581/packages/agent-core/src/types.ts#L505). Duplicate names refused at assembly: [Goose](https://github.com/block/goose/blob/4facf56cbab049142809d9afa4648ebe6823ba80/crates/goose-agent/src/machine.rs#L90).
@@ -26,7 +26,7 @@
 ## Method
 1. **Pin first, on today's main (`L0`, tests only).** Scripted turns through `run_native` with a fake adapter and a fake tool table: every frame in order, every request's messages and tools, and the return value, byte for byte, as per-scenario JSON. A pairwise gate-order matrix: a call that trips two gates is answered by the earlier one. Both exist only to carry LOOP1 (`DELETE-BY: v0.1.64`, with slice z). The traces hold no volatile value and don't make rework for other lanes: a failure names the one regenerate command, and a PR that changes behaviour on purpose commits the new JSON, so its diff shows the change.
 2. **Move, then prove.** Each PR passes the same pinned tests. Test files change only where a patch must follow a moved function. `run_native(**kwargs)` and `_dispatch_tool(...)` keep their keyword forms; each builds its typed object once.
-3. **Definitions move, they are not copied.** A family's description and schema leave the old place in the PR that adds its `Tool`, so nothing is defined twice and no other lane's edit has two homes. Traits move last, all together (a6). `tests/server/test_loop1_tool_table.py` dumps the offered table and schemas across 54 cases of the offer conditions (job, someone to ask, Hands, browser, workspace, read default, LAN, SSH, shell, project). The dump is identical on a PR's base and head, and the PR gives both hashes.
+3. **Definitions move, they are not copied.** A family's description and schema leave the old place in the PR that adds its `Tool`, so nothing is defined twice and no other lane's edit has two homes. Traits move last, all together (a6). `tests/server/test_loop1_tool_table.py` dumps the offered table and schemas across 51 cases of the offer conditions (job, someone to ask, Hands, browser, workspace, read default, LAN, SSH, shell, project). The dump is identical on a PR's base and head, and the PR gives both hashes.
 4. **Mutation on every gate move.** Swap two gates, drop a refusal, flip a default: the pinned tests go red, and the PR says which.
 
 ## External evidence
@@ -36,6 +36,7 @@ Each PR: the CI run id on all five checks, the `--color-moved` result (moved lin
 | | What | Review | Target |
 |---|---|---|---|
 | L0 | The pinned tests and the table dump | high | no product line |
+| L0b | The execute stage, the batch loop's gates and each gate's full answer, test-only: L0 proved turn flow and missed these | high | Before c2 and c3. a1–a6 and c1 don't wait for it. |
 | b | `TurnRequest` (the caller's inputs, frozen), `TurnState` (replaces `_facts`), `ToolTurn` (replaces the 12 gate keywords) | high | `_run_native` 2 parameters, `_dispatch_tool` a call and a turn. **Tell ⓪Plan.** |
 | a1 | `Tool`, `Offer`, the registry and its check at import (unique names, an object schema, the executor's key matches); web and memory family | high | **New tools register here. Tell ⓪Plan.** |
 | a2 | Jobs and tasks, next after a1 | high | **Tell ⓪Plan.** |

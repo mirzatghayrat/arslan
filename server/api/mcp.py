@@ -161,6 +161,9 @@ async def wire(tool_key: str, body: WireBody):
 
 @router.patch("/servers/{server_id}/host")
 async def set_host(server_id: int, body: ServerHostBody):
+    from server.services import capability_list
+    if await capability_list._part_of_a_plugin(f"mcp:{server_id}"):     # CAP7b: only the group's switch reaches it
+        raise HTTPException(status_code=409, detail="part_of_a_plugin")
     try:
         await mcp_service.set_host_allowed(server_id, body.allowed)
     except ValueError as exc:

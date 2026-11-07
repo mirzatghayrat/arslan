@@ -296,6 +296,8 @@ async def _check_pin(db, server_id: int, tools: list, rows_by_name: dict, *, com
               "at": datetime.utcnow().isoformat() + "Z"}
     source.test = {**(source.test or {}), "tools_changed": record}
     await db.commit()
+    from server.services import plugin_package              # CAP7b: a plugin's connection stops the whole plugin
+    await plugin_package.stop_for(source, server_id)
     raise ToolsChanged(server_id, record)
 
 

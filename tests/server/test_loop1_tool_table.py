@@ -1,13 +1,16 @@
 """LOOP1 L0: the tool table as a request and a run see it, for every condition that changes it.
 
 While the tools move into one object per tool, the table must stay byte-identical. Other lanes change descriptions
-during that time, so nothing here is pinned to a fixture: each slice's PR dumps the table on its base and on its head and
-gives both hashes.
+during that time, so the full dump isn't pinned: each slice's PR dumps the table on its base and on its head and gives
+both hashes. Which tools each case lists and shows, in order, is pinned in one JSON, so CI sees a tool lost, gained or
+reordered. A PR that adds a tool on purpose regenerates that file:
+ARSLAN_UPDATE_GOLDEN=1 pytest tests/server/test_loop1_tool_table.py
 
 LOOP1_TABLE_OUT=/some/file pytest tests/server/test_loop1_tool_table.py -s
 
 The dump holds, per case: the order `_every_tool` lists the tools in (find_tools' tie-break), the table a request is
-shown, and every schema it sends. It also holds the hash of the prompt's stable prefix, for slice e.
+shown, and every schema it sends, with its keys in the order they go to the model. It also holds the hash of the prompt's
+stable prefix, for slice e.
 
 Temporary: DELETE-BY: v0.1.64, with LOOP1's slice z (docs/plans/0164/LOOP1-agent-loop.md).
 """
@@ -27,6 +30,8 @@ from server.services import agent_browser, background_jobs, permissions, persona
 from server.mcp import supervisor
 from tests.server.test_loop1_pinned_turns import _booted, _database  # noqa: F401 — the fixtures
 
+NAMES = Path(__file__).parent / "golden" / "loop1_tool_names.json"
+REGENERATE = "ARSLAN_UPDATE_GOLDEN=1 pytest tests/server/test_loop1_tool_table.py"
 WORKSPACE = Path("/workspace-for-the-dump")
 TASK = types.SimpleNamespace(closed=False)
 # A chat turn on a Mac, with everything switched on that a default install has.
@@ -109,7 +114,7 @@ async def _dump(monkeypatch, database) -> dict:
 
 async def test_the_table_for_every_condition(monkeypatch, _database):  # noqa: F811
     dump = await _dump(monkeypatch, _database)
-    text = json.dumps(dump, ensure_ascii=False, indent=1, sort_keys=True)
+    text = json.dumps(dump, ensure_ascii=False, indent=1)
     out = os.environ.get("LOOP1_TABLE_OUT")
     if out:
         Path(out).write_text(text + "\n", encoding="utf-8")
@@ -121,6 +126,12 @@ async def test_the_table_for_every_condition(monkeypatch, _database):  # noqa: F
     flat = {name: json.dumps(table, sort_keys=True) for name, table in dump.items()}
     same = {key for key, value in FLIPS.items() if flat[f"chat, {key}={value}"] == flat["chat"]}
     assert same == set(), "a condition that changes nothing isn't exercising what it names"
+    names = json.dumps({name: {"listed": table["listed"], "shown": table["shown"]} for name, table in dump.items()
+                        if name != "answer prefix sha256"}, ensure_ascii=False, indent=1) + "\n"
+    if os.environ.get("ARSLAN_UPDATE_GOLDEN") == "1":
+        NAMES.write_text(names, encoding="utf-8")
+    assert names == NAMES.read_text(encoding="utf-8"), (
+        f"the tools a case lists or shows changed. If you meant it, commit the new JSON, so the diff shows it: {REGENERATE}")
 
 
 @pytest.mark.parametrize("key", ["web_search", "run_command", "write_file"])
