@@ -19,7 +19,7 @@ import re
 from typing import Any
 
 from arslan.llm.cached_system import build_cached_system
-from server.orchestrator import memory
+from server.orchestrator import memory, untrusted
 from server.orchestrator.json_protocol import parse_json_object
 from server.services import usage_ledger
 
@@ -101,7 +101,7 @@ def parse(content: str | None) -> list[dict[str, Any]]:
     for item in parsed.get("new_facts") or []:
         if not isinstance(item, dict):
             continue
-        text = " ".join(str(item.get("content") or "").split())[:MAX_FACT_CHARS]
+        text = " ".join(untrusted.clean_body(item.get("content")).split())[:MAX_FACT_CHARS]
         if text and not why_not_kept(text):
             out.append({"content": text, "sensitive": bool(item.get("sensitive"))})
     return out[:MAX_FACTS]

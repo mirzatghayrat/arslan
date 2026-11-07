@@ -8,6 +8,7 @@ from uuid import uuid4
 from arslan.companion.content_policy import normalized_memory
 from server.db import session as db_session
 from server.db.models import ConversationContext
+from server.orchestrator import untrusted
 from server.services import personal_context as pc
 from server.services import phone_ids
 
@@ -17,13 +18,14 @@ def explicit_save_digest(user_message: str) -> str | None:
 
     Only an exact content match receives direct-save authority; paraphrases still
     produce proposals. Unrecognized phrasing is safe to confirm through the UI.
+    The match is on the message without what clean_body removes, as the save is.
     """
     match = re.fullmatch(
         r"(?:please\s+)?remember(?:\s+that)?[\s:：,，]+(.+)"
         r"|(?:请)?(?:记住|记下)[\s:：,，]*(.+)"
         r"|(?:覚えて|記憶して)[\s:：,，]*(.+)"
         r"|(?:recuerda|souviens-toi|merke dir)[\s:：,，]+(.+)",
-        user_message.strip(), re.IGNORECASE | re.DOTALL,
+        untrusted.clean_body(user_message).strip(), re.IGNORECASE | re.DOTALL,
     )
     if not match:
         return None

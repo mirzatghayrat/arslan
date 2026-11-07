@@ -116,7 +116,8 @@ _SENSITIVE = re.compile(r"\b(?:birthday|diagnosis|medical|passport|salary|bank a
 
 
 def sensitive_words(text: str) -> bool:
-    return bool(_SENSITIVE.search(text))
+    # Folded as a save's match folds it, and raw too: folding can join a keyword to what follows ("salary" plus U+2122).
+    return bool(_SENSITIVE.search(text) or _SENSITIVE.search(normalized_memory(text)))
 
 
 def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:

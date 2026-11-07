@@ -143,6 +143,7 @@ async def recall(args, caller):
 
 
 async def remember(args, caller):
+    from server.orchestrator import untrusted
     ctx = _context(caller)
     if ctx is None:
         return {"ok": False, "code": "memory_context_unavailable"}
@@ -160,7 +161,7 @@ async def remember(args, caller):
     kind = "experience" if args.get("kind") == "learning" else "preference"
     if action == "append" and caller.actor == "host" and kind == "preference":
         actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only
-    content = str(args.get("content") or "")
+    content = untrusted.clean_body(args.get("content"))     # here, so it covers a click, a paste and any client
     match = await _same_meaning(content, kind, scope, None, args, ctx) if action == "append" else None
     try:
         async with repository() as repo:
@@ -184,7 +185,7 @@ async def remember(args, caller):
                 # explicit save request exists. Replacing confirmed text needs UI
                 # review of the exact old/new versions.
                 result = await repo.revise(entry.id, expected, MemoryWrite(
-                    content=str(args.get("content") or ""), kind=entry.kind, scope=scope,
+                    content=content, kind=entry.kind, scope=scope,
                     sensitivity=_flagged(args, entry.sensitivity), use_policy=entry.use_policy,
                     topic=(revision.structured_value or {}).get("topic"),
                     valid_from=entry.valid_from.replace(tzinfo=UTC) if entry.valid_from else None,
@@ -238,7 +239,7 @@ async def note(args, caller):
     if action not in {"add", "replace", "remove"} or member not in NOTE_SETS:
         return {"ok": False, "code": "unsupported_memory_action"}
     kind, cap = NOTE_SETS[member]
-    text = " ".join(str(args.get("text") or "").split())
+    text = " ".join(untrusted.clean_body(args.get("text")).split())
     if action != "remove" and not text:
         return {"ok": False, "code": "memory_text_required"}
     actor = ctx.actor("host")
