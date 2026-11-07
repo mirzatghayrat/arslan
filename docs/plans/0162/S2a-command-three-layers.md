@@ -169,6 +169,8 @@
 
 **验收（原为 R63 门槛；S2a-3 已顺延，现为 v0.1.64 的门槛）：** a + b（两档）+ c + d（含真 shell 对照和自动变形）+ 出卡率不退步（bench「等你」仍为 0）+ 外部安全审查：v0.1.64 起是 Codex，结论再给云端审计看（用户 10-27 定；10-22 晚定交给 Codex、10-24 改为云端 Claude Fable 5.1、原为 ②Main 的 effort=max 复审），审查结论写明模型和档位；变异；全量；CI。（⓪Plan 补充：PR 按 a+c → b → d → f 拆，每个不超过约 800 行。） **Changed (user, 2026-10-28 evening):** another session's effort=max Claude review comes first; Codex Astra only for the parts it cannot cover (v0.1.64 README §1.3). S2a-3 is where a Claude review was stopped by the safety classifier on 2026-10-22 (line 152 below), so parts may be stopped again; those parts go to Astra.
 
+**Blocking bar (the user, 2026-11-07, relayed by ④参谋):** a way round a command-text rule (found by the real-shell comparison, the automatic variants or a review) doesn't block a PR if the sandbox on main holds that case; put it on the list. It still blocks where the sandbox doesn't hold yet, for example network before SBX-6a and `run_python` before SBX-4a. The rest of S2a-3 stays as written.
+
 **合并位置：** S 线里排在 S4a、S7 前面，紧跟 S2b-1；原定 R63 之前（S2a-3 已顺延到 v0.1.64，排在默认拒绝沙箱之后）必须合。
 
 ## 开放问题（S2a 设计时定）

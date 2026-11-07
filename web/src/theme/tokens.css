@@ -150,3 +150,15 @@
    has a table with names and values. A fourth series and beyond fold into "Other" (--muted-foreground), never a new hue. */
 :root { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; }
 .dark { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; }
+
+/* FMT1 syntax colours for highlighted code: the iPhone mock's purple, orange and grey (green and red are ours: the mock
+   has no string or diff), so a code block reads the same on both. Light/dark only, not per palette (like the kit above).
+   The whole block is tinted with --fill, and each value holds 4.5:1 on that tint in every palette. */
+:root {
+  --code-comment: #69696E; --code-keyword: #823CEE; --code-number: #AB4F00;
+  --code-string: #197847; --code-inserted: #197847; --code-deleted: #C62828;
+}
+.dark {
+  --code-comment: #8E8E93; --code-keyword: #C49BFF; --code-number: #FFB15C;
+  --code-string: #7AD9A1; --code-inserted: #7AD9A1; --code-deleted: #FF8A80;
+}

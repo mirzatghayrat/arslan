@@ -73,7 +73,7 @@ export function heldNoteKey(card: PendingCard):
   if (!kind || kind === 'command') {
     if (!kind && f.kind === 'desktop_risky') return 'riskyNote';
     if (f.remote_host) return 'heldRemote';
-    if (f.sandbox === 'outside' || f.sandbox === 'retry') return 'heldOutside';
+    if (f.sandbox === 'outside') return 'heldOutside';
   }
   return 'heldGeneric';
 }

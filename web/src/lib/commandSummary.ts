@@ -13,7 +13,7 @@
  *
  * A step that reaches another machine (curl, ssh, scp, rsync, nc, the mail programs, a cloud CLI, an interpreter
  * running inline code) is read only as a fixed "uses the network" line, with no host and no file: what it sends
- * cannot be told from the command (#688/#689 reviews, Astra's two rounds; the user, 「简化吧」). `unsure` is set, so
+ * cannot be told from the command (#688/#689 reviews, Astra's two rounds; the user asked for the simpler version). `unsure` is set, so
  * the risk row says so and the Mac card shows the whole command. A line the reader cannot split (an open quote) gets
  * the plain "run <program>" purpose.
  */
@@ -218,7 +218,7 @@ function readsCode(w: Words): boolean {
  *  as "uses the network" (no host, no file). */
 interface Reading { purpose: Purpose; hosts: string[]; local: string[]; unsure?: boolean }
 const run = (program: string): Reading => ({ purpose: { key: "run", params: { program } }, hosts: [], local: [] });
-/** SMART-8 (#688/#689 reviews, Astra's two rounds; the user: 「简化吧」): a step that reaches another machine is read
+/** SMART-8 (#688/#689 reviews, Astra's two rounds; the user asked for the simpler version): a step that reaches another machine is read
  *  only as a fixed line — no host, no file — because what it sends cannot be told from the command. `unsure` is set,
  *  so the risk row and the card say so, and the Mac card shows the whole command. */
 const overNetwork = (program: string): Reading =>
@@ -228,7 +228,7 @@ const overNetwork = (program: string): Reading =>
 const NETWORK = new Set(["curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp",
   "tftp", "lftp", "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail",
   "msmtp", "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
-  "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"]);
+  "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine", "azcopy"]);
 /** Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7). */
 const INLINE_CODE: Record<string, RegExp> = { python: /^-[A-Za-z]*c/, python2: /^-[A-Za-z]*c/, python3: /^-[A-Za-z]*c/,
   node: /^(?:-[A-Za-z]*[ep]|--eval|--print)/, perl: /^-[A-Za-z]*[eE]/, ruby: /^-[A-Za-z]*e/, php: /^-[A-Za-z]*r/,
@@ -481,6 +481,8 @@ export const RULES = new Set(["delete-outside", "send-mail", "send-message", "up
   "open-app", "screen-clipboard", "protected-write", "unreadable"]);
 /** Why the server could not read a command (server/services/command_confirm.py `UNREADABLE`), each with its line. */
 export const UNREADABLE_KINDS = new Set(["fetched-code", "script-reach", "quoting", "complex"]);
+/** The delete modes with a line of their own; "permanent" is the rule's plain line. */
+const DELETE_MODE_LINES = new Set(["trash", "protected", "sandboxed"]);
 
 /**
  * The card's 「风险」 row, from what the server decided about the command (never the model's words): every terminal
@@ -489,19 +491,24 @@ export const UNREADABLE_KINDS = new Set(["fetched-code", "script-reach", "quotin
  * the card has no line for still asks, in amber, never as "sandboxed" (#688 review 3, 4).
  */
 export function commandRisk(f: { rule?: string; rules?: string[]; unreadable?: string; network?: boolean;
-                                 sandbox?: "outside" | "retry"; remoteHost?: string; unsandboxed?: boolean;
-                                 unsure?: boolean }): CommandRisk {
+                                 sandbox?: "outside"; remoteHost?: string; unsandboxed?: boolean;
+                                 unsure?: boolean; deleteMode?: string }): CommandRisk {
   const keys: CommandRisk["keys"] = [];
   let level: RiskLevel = "info";
   const raise = (to: RiskLevel) => { if (to === "irreversible" || (to === "warn" && level === "info")) level = to; };
   // Leaving the sandbox is said first on the card (S4a), so it leads the row.
   if (f.sandbox === "outside") { keys.push({ key: "outside" }); raise("warn"); }
-  else if (f.sandbox === "retry") { keys.push({ key: "retry" }); raise("warn"); }
   if (f.remoteHost) { keys.push({ key: "remote", params: { host: f.remoteHost } }); raise("warn"); }
   const rules = f.rules?.length ? f.rules : f.rule ? [f.rule] : [];
   const ordered = [...rules.filter(r => IRREVERSIBLE.has(r)), ...rules.filter(r => !IRREVERSIBLE.has(r))];
   let unknown = false;
   for (const rule of ordered) {
+    // SMART-8: how Allow deletes, from the server (`delete_to_trash.card_mode`). What goes to the Trash can come back.
+    if (rule === "delete-outside" && f.deleteMode && DELETE_MODE_LINES.has(f.deleteMode)) {
+      keys.push({ key: `rule.delete-outside-${f.deleteMode}` });
+      raise(f.deleteMode === "sandboxed" ? "irreversible" : "warn");
+      continue;
+    }
     if (rule === "unreadable" && f.unreadable && UNREADABLE_KINDS.has(f.unreadable)) keys.push({ key: `rule.unreadable-${f.unreadable}` });
     else if (RULES.has(rule)) keys.push({ key: `rule.${rule}` });
     else if (!unknown) { keys.push({ key: "rule.unknown" }); unknown = true; }
@@ -513,6 +520,11 @@ export function commandRisk(f: { rule?: string; rules?: string[]; unreadable?: s
   if (f.network) { keys.push({ key: "network" }); raise("warn"); }
   if (!keys.length) keys.push({ key: f.remoteHost ? "remote" : "sandboxed" });
   return { level, keys };
+}
+
+/** A delete that moves its targets to the Trash says so: word for word with server/services/card_purpose.py. */
+export function deletePurpose(p: Purpose, deleteMode?: string): Purpose {
+  return p.key === "delete" && (deleteMode === "trash" || deleteMode === "protected") ? { ...p, key: "toTrash" } : p;
 }
 
 /** A purpose in the user's words: a step run on another machine says that step inside its own sentence. */

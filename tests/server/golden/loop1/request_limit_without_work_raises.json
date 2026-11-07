@@ -1,0 +1,64 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "I searched for it.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "The proposed answer lacks a successful web_search receipt. Use an available native tool if needed, or give an honest answer stating the limitation. Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "raised",
+  "BudgetExceeded",
+  "Execution budget exhausted: model_requests. Saved results remain available; start a new task to continue."
+ ]
+]

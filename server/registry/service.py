@@ -457,16 +457,3 @@ async def replace_user_equipment(session: AsyncSession, spawn_id: int,
         session.add(SpawnCapability(spawn_id=spawn_id, kind="skill", ref_key=key,
                                     grant="permanent", granted_by="user"))
     await session.commit()
-
-
-def _active_toolset_keys(caps, current_turn: int) -> list[str]:
-    """The toolsets a spawn holds right now: permanent, or a temporary grant not yet expired.
-
-    DELETE-BY: v0.1.64 — no product caller since C7b-6 (its users, the spawn tool gate, went with the
-    dispatcher). Kept only because S3b's tests/server/test_turn_undo.py asserts the turn clock with it;
-    goes with the expert tables (C7 step 3), together with those two assertions."""
-    return [c.ref_key for c in caps
-            if c.grant == "permanent"
-            or (c.expires_turn is not None and c.expires_turn >= current_turn)]
-
-

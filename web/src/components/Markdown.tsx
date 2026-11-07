@@ -8,9 +8,13 @@ import React, { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { defaultUrlTransform, type UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import MarkdownLink from './MarkdownLink';
 import { openExternal, shellAvailable } from '../lib/shell';
 import PathChip, { isLocalPath } from './PathChip';
+import Formula from './Formula';
+import HighlightedCode from './HighlightedCode';
+import { remarkTexDelimiters } from '../lib/texDelimiters';
 import { Copy, Check, Info, Lightbulb, AlertTriangle, AlertCircle, Flame, Image as ImageIcon } from 'lucide-react';
 
 // ─── GFM Alert parsing ────────────────────────────────────────────────────────
@@ -120,25 +124,20 @@ function CopyButton({ code }: { code: string }) {
       onClick={handleCopy}
       title={t('ui.copyCode')}
       style={{
-        position: 'absolute',
-        top: '8px',
-        right: '8px',
         display: 'flex',
         alignItems: 'center',
         gap: '4px',
-        padding: '3px 8px',
-        borderRadius: '5px',
-        fontSize: '10px',
-        fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
-        background: copied ? 'color-mix(in srgb, var(--color-primary) 15%, transparent)' : 'rgba(255,255,255,0.05)',
-        border: `1px solid ${copied ? 'color-mix(in srgb, var(--color-primary) 50%, transparent)' : 'rgba(255,255,255,0.08)'}`,
+        flexShrink: 0,
+        padding: '4px',
+        fontSize: '12px',
+        background: 'none',
+        border: 0,
         color: copied ? 'var(--color-primary)' : 'var(--color-muted-foreground)',
         cursor: 'pointer',
-        transition: 'all 0.15s ease',
         lineHeight: 1,
       }}
     >
-      {copied ? <Check size={11} /> : <Copy size={11} />}
+      {copied ? <Check size={13} /> : <Copy size={13} />}
       {t(copied ? 'ui.copied' : 'ui.copy')}
     </button>
   );
@@ -258,23 +257,17 @@ const components: import('react-markdown').Components = {
   ),
 
   // Inline code
+  // (Block code never reaches this override: `pre` below renders it through HighlightedCode.)
   code: ({ children, className }) => {
-    // Block code is handled by `pre` below; inline code has no className
-    const isBlock = Boolean(className);
-    if (isBlock) {
-      return <code className={className}>{children}</code>;
-    }
+    if (className?.includes('math-inline')) return <Formula tex={extractText(children)} />;
     // 0.1.58 §2: a local path in backticks opens in the reader (or reveals in Finder).
     const plain = (
       <code style={{
         fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
-        fontSize: '0.84em',
-        background: 'color-mix(in srgb, var(--color-surface-raised) 90%, transparent)',
-        border: '1px solid color-mix(in srgb, var(--color-border-strong) 90%, transparent)',
-        borderRadius: '4px',
-        padding: '1.5px 5px',
-        color: 'var(--color-primary)',
-        letterSpacing: '-0.01em',
+        fontSize: '0.875em',
+        background: 'var(--color-fill)',
+        borderRadius: '5px',
+        padding: '1px 5px',
       }}>
         {children}
       </code>
@@ -285,67 +278,67 @@ const components: import('react-markdown').Components = {
 
   // Code blocks
   pre: ({ children }) => {
-    // Extract lang and raw code from children
+    // Extract lang, the code element's class and the raw code from children
     let lang = '';
+    let codeClass: string | undefined;
     let rawCode = '';
     if (React.isValidElement(children)) {
       const codeEl = children as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-      const cls = codeEl.props?.className || '';
-      const match = cls.match(/language-(\S+)/);
+      codeClass = codeEl.props?.className;
+      const match = (codeClass || '').match(/language-(\S+)/);
       if (match) lang = match[1];
       rawCode = extractText(codeEl.props?.children);
     }
+    if (codeClass?.split(' ').includes('math-display')) return <Formula tex={rawCode} display />;
 
     return (
       <div style={{
-        position: 'relative',
         margin: '1em 0',
-        borderRadius: '10px',
+        borderRadius: '12px',
         border: '1px solid color-mix(in srgb, var(--color-border-strong) 95%, transparent)',
         background: 'var(--color-background)',
         overflow: 'hidden',
       }}>
-        {/* Header bar */}
-        <div style={{
+        {/* Header bar: the language as written, then copy (FMT1; the iPhone mock) */}
+        <div data-testid="code-header" style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '6px 12px',
-          background: 'rgba(255,255,255,0.02)',
+          gap: '8px',
+          padding: '4px 10px 4px 12px',
+          background: 'var(--color-fill)',
           borderBottom: '1px solid color-mix(in srgb, var(--color-border-strong) 80%, transparent)',
-          minHeight: '30px',
+          minHeight: '32px',
         }}>
-          {lang ? (
-            <span style={{
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: '10px',
-              color: 'var(--color-primary)',
-              opacity: 0.85,
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-            }}>
-              {lang}
-            </span>
-          ) : (
-            <span style={{ fontSize: '10px', color: 'var(--color-subtle-foreground)' }}><UiText id="ui.code" /></span>
-          )}
+          <span data-testid="code-lang" title={lang || undefined} style={{
+            fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
+            fontSize: '12px',
+            color: 'var(--color-muted-foreground)',
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {lang || <UiText id="ui.code" />}
+          </span>
           <CopyButton code={rawCode} />
         </div>
         {/* Code body */}
-        <pre style={{
+        <pre className="md-code" style={{
           margin: 0,
-          padding: '14px 16px',
+          padding: '10px 12px',
+          background: 'var(--color-fill)',
           overflowX: 'auto',
           fontFamily: '"JetBrains Mono", "Fira Mono", monospace',
-          fontSize: '12px',
-          lineHeight: 1.6,
+          fontSize: '13px',
+          lineHeight: 1.55,
           color: 'var(--color-foreground)',
           ...(PROSE_FENCES.has(lang.toLowerCase())
             ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
             : { whiteSpace: 'pre' }),
           WebkitOverflowScrolling: 'touch',
         }}>
-          {children}
+          <HighlightedCode code={rawCode} lang={lang} className={codeClass} />
         </pre>
       </div>
     );
@@ -357,85 +350,23 @@ const components: import('react-markdown').Components = {
     : <MarkdownLink href={href}>{children}</MarkdownLink>,
 
   // Unordered lists
-  ul: ({ children }) => (
-    <ul style={{
-      margin: '0.6em 0',
-      paddingLeft: '1.35em',
-      listStyle: 'none',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '0.3em',
-    }}>
-      {children}
-    </ul>
-  ),
+  ul: ({ children, className }) => <ul className={`md-ul ${className ?? ''}`.trim()}>{children}</ul>,
 
   // Ordered lists
-  ol: ({ children }) => (
-    <ol style={{
-      margin: '0.6em 0',
-      paddingLeft: '1.6em',
-      listStyleType: 'decimal',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '0.3em',
-      color: 'inherit',
-    }}>
-      {children}
-    </ol>
+  ol: ({ children, start }) => <ol className="md-ol" start={start}>{children}</ol>,
+
+  // List items: the stylesheet draws the markers. In a task item, GFM puts a lone space after the checkbox, and a done item's
+  // strike-through would cross it. The checkbox has its own margin.
+  li: ({ children, className }) => (
+    <li className={className}>
+      {className === 'task-list-item' ? React.Children.toArray(children).filter((child) => child !== ' ') : children}
+    </li>
   ),
 
-  // List items — handles task list checkboxes
-  li: ({ children, className }) => {
-    const isTask = className === 'task-list-item';
-    // For task lists, react-markdown injects an <input type="checkbox"> as first child
-    return (
-      <li style={{
-        position: 'relative',
-        paddingLeft: isTask ? '0' : '1.1em',
-        color: 'inherit',
-        lineHeight: 1.6,
-        listStyle: isTask ? 'none' : 'inherit',
-      }}>
-        {!isTask && (
-          <span style={{
-            position: 'absolute',
-            left: 0,
-            top: '0.55em',
-            width: '5px',
-            height: '5px',
-            borderRadius: '50%',
-            background: 'color-mix(in srgb, var(--color-primary) 70%, transparent)',
-            flexShrink: 0,
-          }} />
-        )}
-        {children}
-      </li>
-    );
-  },
-
   // Task-list checkboxes
-  input: ({ type, checked }) => {
-    if (type === 'checkbox') {
-      return (
-        <input
-          type="checkbox"
-          checked={checked}
-          readOnly
-          style={{
-            accentColor: 'var(--color-primary)',
-            marginRight: '6px',
-            verticalAlign: 'middle',
-            cursor: 'default',
-            width: '12px',
-            height: '12px',
-            borderRadius: '3px',
-          }}
-        />
-      );
-    }
-    return <input type={type} />;
-  },
+  input: ({ type, checked }) => (type === 'checkbox'
+    ? <input type="checkbox" className="md-check" checked={checked} disabled />
+    : <input type={type} />),
 
   // Blockquotes — detect GFM alerts, else premium callout
   blockquote: ({ children }) => {
@@ -487,54 +418,24 @@ const components: import('react-markdown').Components = {
 
   // Tables with horizontal scroll
   table: ({ children }) => (
-    <div style={{ overflowX: 'auto', margin: '1em 0', borderRadius: '8px', border: '1px solid color-mix(in srgb, var(--color-border-strong) 90%, transparent)' }}>
-      <table style={{
-        width: '100%',
-        borderCollapse: 'collapse',
-        fontSize: '0.9em',
-        fontFamily: 'inherit',
-        minWidth: '400px',
-      }}>
+    <div style={{ overflowX: 'auto', margin: '1em 0', borderRadius: '12px', border: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9em', fontFamily: 'inherit' }}>
         {children}
       </table>
     </div>
   ),
-  thead: ({ children }) => (
-    <thead style={{ background: 'color-mix(in srgb, var(--color-primary) 7%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--color-border-strong) 95%, transparent)' }}>
-      {children}
-    </thead>
-  ),
-  tbody: ({ children }) => (
-    <tbody>{children}</tbody>
-  ),
+  thead: ({ children }) => <thead style={{ background: 'var(--color-fill)' }}>{children}</thead>,
+  tbody: ({ children }) => <tbody>{children}</tbody>,
   tr: ({ children }) => (
-    <tr style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
+    <tr style={{ borderTop: '1px solid color-mix(in srgb, var(--color-border) 70%, transparent)' }}>
       {children}
     </tr>
   ),
-  th: ({ children }) => (
-    <th style={{
-      padding: '8px 14px',
-      textAlign: 'left',
-      color: 'var(--color-primary)',
-      fontWeight: 600,
-      fontSize: '0.85em',
-      letterSpacing: '0.04em',
-      textTransform: 'uppercase',
-      whiteSpace: 'nowrap',
-    }}>
-      {children}
-    </th>
+  th: ({ children, style }) => (
+    <th style={{ padding: '8px 12px', textAlign: style?.textAlign ?? 'left', fontWeight: 600 }}>{children}</th>
   ),
-  td: ({ children }) => (
-    <td style={{
-      padding: '8px 14px',
-      color: 'var(--color-muted-foreground)',
-      verticalAlign: 'top',
-      lineHeight: 1.5,
-    }}>
-      {children}
-    </td>
+  td: ({ children, style }) => (
+    <td style={{ padding: '8px 12px', textAlign: style?.textAlign, verticalAlign: 'top', lineHeight: 1.5 }}>{children}</td>
   ),
 
   // Horizontal rule
@@ -605,7 +506,13 @@ interface MarkdownProps {
   className?: string;
 }
 
-export default function Markdown({ children, className = '' }: MarkdownProps) {
+// Memoized: the chat re-renders its whole history on every keystroke and stream token, and a finished reply must not
+// be tokenized again each time.
+// A single $ is never math (Streamdown's default too): "it costs $5 and $10" would come out garbled, and a formula left in
+// single dollars shows its source, which is ugly but true.
+const REMARK_PLUGINS: React.ComponentProps<typeof ReactMarkdown>['remarkPlugins'] = [remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkTexDelimiters];
+
+export default React.memo(function Markdown({ children, className = '' }: MarkdownProps) {
   return (
     <div
       className={className}
@@ -617,7 +524,7 @@ export default function Markdown({ children, className = '' }: MarkdownProps) {
       } as React.CSSProperties}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={REMARK_PLUGINS}
         components={components}
         urlTransform={urlTransform}
       >
@@ -625,4 +532,4 @@ export default function Markdown({ children, className = '' }: MarkdownProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});

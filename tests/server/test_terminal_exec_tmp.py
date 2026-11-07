@@ -1,7 +1,7 @@
-"""zsh here-documents use $TMPPREFIX (default /tmp/zsh), not TMPDIR. In the 0.1.49
-bench /tmp was not writable and every `python3 - <<'PY'` save failed with
-"can't create temp file for here document". Commands keep both in their own temp
-folder: since SBX-3 §1a that is the run's (`run_temp`), under the process temp dir."""
+"""A here-document's temp file goes where a command's other temp files go. In the 0.1.49 bench /tmp was not writable
+and every `python3 - <<'PY'` save failed with "can't create temp file for here document". bash honours TMPDIR; a nested
+zsh (`zsh -c`, a `#!/bin/zsh` script) uses $TMPPREFIX instead. Commands keep both in their own temp folder: since SBX-3
+§1a that is the run's (`run_temp`), under the process temp dir."""
 import tempfile
 from pathlib import Path
 

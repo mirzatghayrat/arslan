@@ -227,7 +227,8 @@ def answer(data: dict) -> bool:
 
 def _extras(frame: dict, data: dict) -> dict:
     """What an approval may carry (0.1.57): values for the keys THIS card asked for, and the
-    folders it offered — a subset the user kept, never one it added. Anything else is dropped."""
+    folders it offered — a subset the user kept, never one it added. Anything else is dropped.
+    CAP8b: the lines of a memory import the user kept, by the ids it showed. No list keeps none."""
     if frame.get("type") != "propose_capability":
         return {}
     asked = {k.get("name") for k in frame.get("keys") or [] if isinstance(k, dict)}
@@ -235,7 +236,9 @@ def _extras(frame: dict, data: dict) -> dict:
             if name in asked and isinstance(value, str) and value.strip()} if isinstance(data.get("keys"), dict) else {}
     offered = list(frame.get("folders") or [])
     kept = [f for f in data.get("folders") or [] if f in offered] if isinstance(data.get("folders"), list) else offered
-    return {"keys": keys, "folders": kept}
+    lines = {e.get("id") for e in frame.get("entries") or [] if isinstance(e, dict)}
+    answer = data.get("kept") if isinstance(data.get("kept"), list) else []
+    return {"keys": keys, "folders": kept, **({"kept": [i for i in answer if isinstance(i, str) and i in lines]} if lines else {})}
 
 
 def _same_kind(reply: str, card: str) -> bool:
@@ -299,7 +302,7 @@ def island_may_answer(frame: dict) -> bool:
         perm_kind = frame.get("perm_kind")
         return isinstance(perm_kind, str) and perm_kind in ISLAND_KINDS
     if kind == "propose_run_command":
-        if (frame.get("remote_host") or frame.get("sandbox") in ("outside", "retry") or frame.get("unsandboxed")
+        if (frame.get("remote_host") or frame.get("sandbox") == "outside" or frame.get("unsandboxed")
                 or frame.get("network")):
             return False                   # another machine, outside the sandbox, or the network too (S2a-2)
         from server.services import terminal_policy
@@ -434,7 +437,7 @@ async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
 
 
 def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_all: bool = False,
-                     network: bool = False, unsandboxed: bool = False, lang: str | None = None, why: str = ""):
+                     network: bool = False, unsandboxed: bool = False, lang: str | None = None, why: str = "", delete_mode: str = ""):
     """A command card as a permission request, by the command's layer (S2a-2):
 
     - layer ② or `unreadable` (it matched rules): this time only; nothing is remembered and no stored
@@ -461,7 +464,8 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
 
     def plain(old: str, **where) -> str:
         # #689 review 2: a card that also asks for the network says so in its title.
-        return card_purpose.phrase(shell, why, rules, lang=lang, network=network, **where) if lang else old
+        return card_purpose.phrase(shell, why, rules, lang=lang, network=network, delete_mode=delete_mode,
+                                   **where) if lang else old
     if rules:
         # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
         # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.

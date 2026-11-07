@@ -281,11 +281,14 @@ def test_sandboxed_rounds_answer_cards_like_a_user_and_never_let_commands_out(mo
         return t.on_frame({"type": "propose_run_command", "call_id": "c", **frame}, 1.0)["type"]
     assert ans({"rule": "delete"}) == "confirm_run_command"
     assert ans({}) == "confirm_run_command"
-    assert ans({"rule": "delete", "sandbox": "retry"}) == "cancel_run_command"
+    assert ans({"rule": "delete", "sandbox": "outside"}) == "cancel_run_command"
     assert ans({"sandbox": "outside"}) == "cancel_run_command"
     assert ans({"rule": "send-mail"}) == "cancel_run_command"
     assert ans({"rule": "apple-events"}) == "cancel_run_command"
-    assert (t.sandbox_cards, t.declined, t.approvals) == (2, 4, 6)
+    assert (t.leave_cards, t.declined, t.approvals) == (2, 4, 6)                         # SBX-7
+    for tool in ("run_command", "web_search", "run_command"):                          # the share's denominator
+        assert t.on_frame({"type": "tool_call", "tool": tool}, 1.0) is None
+    assert t.run_commands == 2
     # Every other kind inside the sandbox is approved, new ones included (K2a's T5 got a heredoc-script card);
     # every outward kind is declined.
     assert ans({"rule": "unreadable"}) == "confirm_run_command"          # S2a-2: inside the sandbox it holds them
@@ -319,7 +322,7 @@ def test_without_the_outer_sandbox_no_card_may_let_a_command_out(monkeypatch, tm
             driver = importlib.reload(arslan_driver)
             assert driver.CARDS == "sandboxed"
             t = driver.TurnTracker("/b/runs/arslan-T2-r1-base")
-            for frame in ({"sandbox": "outside"}, {"sandbox": "retry"}, {"rule": "delete", "sandbox": "retry"}):
+            for frame in ({"sandbox": "outside"}, {"rule": "delete", "sandbox": "outside"}):
                 answer = t.on_frame({"type": "propose_run_command", "call_id": "c", **frame}, 1.0)["type"]
                 assert answer == "cancel_run_command", frame
             t1 = driver.TurnTracker("/b/runs/arslan-T1-r2-base")
@@ -843,10 +846,10 @@ def test_an_ab_cell_sets_extra_settings_but_never_the_workspace(monkeypatch):
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
     monkeypatch.delenv("BENCH_SHELL_POLICY", raising=False)
     assert settings_body("/run") == {"shell_confirm_policy": "ask_risky", "workspace_dir": "/run"}
-    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": "true", "workspace_dir": "/elsewhere"}')
-    assert settings_body("/run") == {"tools_all_resident": "true", "shell_confirm_policy": "ask_risky",
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"folder_rules_enabled": "false", "workspace_dir": "/elsewhere"}')
+    assert settings_body("/run") == {"folder_rules_enabled": "false", "shell_confirm_policy": "ask_risky",
                                      "workspace_dir": "/run"}
-    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"tools_all_resident": true}')
+    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"folder_rules_enabled": false}')
     with pytest.raises(ValueError):
         settings_body("/run")
 
@@ -868,3 +871,23 @@ def test_the_bench_pins_its_command_policy(monkeypatch):
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"shell_confirm_policy": "ask_all"}')
     with pytest.raises(ValueError):
         settings_body("/run")
+
+
+def test_the_driver_counts_cards_to_leave_the_sandbox_and_hands_them_to_the_record(monkeypatch):
+    """SBX-7: whatever the stand-in person answers, and nothing when Arslan's own sandbox isn't on (the bench's is), so a
+    report shows no share rather than 0%."""
+    from scripts.kernel_bench import arslan_driver, runner
+    card = {"type": "propose_run_command", "call_id": "c", "sandbox": "outside"}
+    monkeypatch.setattr(arslan_driver, "CARDS", "sandboxed")
+    for decline in (False, True):
+        monkeypatch.setattr(arslan_driver, "DECLINE_CARDS", decline)
+        t = TurnTracker("/b/runs/arslan-T5-r1")
+        assert t.on_frame({"type": "tool_call", "tool": "run_command"}, 1.0) is None
+        assert t.on_frame(card, 1.0)["type"] == "cancel_run_command"
+        assert t.on_frame({"type": "propose_run_command", "call_id": "d", "rule": "delete"}, 1.0)
+        assert t.counts() == {"leave_cards": 1, "run_commands": 1, "approvals": 2}
+    monkeypatch.setattr(arslan_driver, "CARDS", "")
+    assert TurnTracker("/b/runs/arslan-T5-r1").counts()["leave_cards"] is None
+    summary = {"leave_cards": 1, "approvals": 2, "run_commands": 3}
+    assert runner.sandbox_cards(summary) == {"leave": 1, "asked": 2, "run_commands": 3}
+    assert runner.sandbox_cards({}) == {"leave": None, "asked": None, "run_commands": None}

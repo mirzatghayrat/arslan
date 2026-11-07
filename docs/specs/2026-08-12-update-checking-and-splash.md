@@ -25,7 +25,7 @@
 
 ## 1. 🔴 ②a 是一个 BUG,不是外观偏好
 
-用户报的是「开屏动画结束时出现 `Starting Arslan…`,我不想要」。亲核后这不是有人加的文案:
+The user reported that `Starting Arslan…` appears when the splash animation ends and does not want it. 亲核后这不是有人加的文案:
 
 - `#fallback`(那行字 + 脉冲点)**铺满整屏,压在 `<video id="clip">` 底下**(`splash/index.html:48-53`)
 - `__arslanFadeOut()` **只给 `#clip` 加 `.gone`**(`:155`),`#fallback` 原地不动

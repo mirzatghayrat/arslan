@@ -1,0 +1,118 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "find_tools",
+    "use_tool",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
+  "frame",
+  {
+   "args_summary": "{}",
+   "target": null,
+   "tool": "nothing_at_all",
+   "type": "tool_call"
+  }
+ ],
+ [
+  "island",
+  "step",
+  "nothing_at_all"
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": null,
+   "summary": "tool 'nothing_at_all' is not available to you; available tools include: find_tools, attach_file; you may escalate a need instead",
+   "tool": "nothing_at_all",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {},
+       "arguments_raw": "{}",
+       "id": "c1",
+       "name": "nothing_at_all"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"tool_unavailable\", \"error\": \"tool 'nothing_at_all' is not available to you; available tools include: find_tools, attach_file; you may escalate a need instead\"}\n\n<agent_status note=\"host facts for this step, not from the user\">\nWork so far: 1 tool call, 0 model calls.\n</agent_status>",
+     "name": "nothing_at_all",
+     "role": "tool",
+     "tool_call_id": "c1"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "find_tools",
+    "use_tool",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Done."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Done.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": [
+    {
+     "args": {},
+     "result": {
+      "code": "tool_unavailable",
+      "error": "tool 'nothing_at_all' is not available to you; available tools include: find_tools, attach_file; you may escalate a need instead",
+      "external": false,
+      "ok": false
+     },
+     "tool": "nothing_at_all"
+    }
+   ]
+  }
+ ]
+]

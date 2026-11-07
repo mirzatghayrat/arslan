@@ -46,6 +46,7 @@ vi.mock("../api/client", () => ({
   updateProviderConfig: (...args: unknown[]) => mockUpdateProviderConfig(...args),
   setPrimaryProviderConfig: (...args: unknown[]) => mockSetPrimaryProviderConfig(...args),
   deleteProviderConfig: (...args: unknown[]) => mockDeleteProviderConfig(...args),
+  previewProviderModels: vi.fn().mockResolvedValue({ models: [], fetched_at: null, stale: true, error: null, source: "static" }),
   fetchProviderModels: (...args: unknown[]) => mockFetchProviderModels(...args),
   testLlm: vi.fn().mockResolvedValue({ ok: true }),
   testProviderConfig: (...args: unknown[]) => mockTestProviderConfig(...args),
@@ -61,6 +62,12 @@ vi.mock("../stores/authStore", () => ({
 
 import ProviderConfigList from "../components/ProviderConfigList";
 import type { ProviderOption, ProviderConfig } from "../api/client.types";
+
+/** MODEL1: Add model starts with no provider picked. */
+function pickFirstProvider() {
+  fireEvent.click(screen.getByLabelText("Provider"));
+  fireEvent.pointerDown(screen.getAllByRole("option")[0]);
+}
 
 const providers: ProviderOption[] = [
   { key: "deepseek", label: "DeepSeek", base_url: "", default_model: "deepseek-chat", native: false, models: ["deepseek-chat", "deepseek-reasoner"] },
@@ -349,6 +356,7 @@ describe("dynamic model list integration (Provider P2)", () => {
       />
     );
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
     const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
     fireEvent.change(keyInput, { target: { value: "sk-test" } });
     await user.click(screen.getByTestId("provider-draft-confirm"));
@@ -422,7 +430,7 @@ describe("dynamic model list integration (Provider P2)", () => {
   it("custom draft save stays disabled until base_url is filled (P3)", async () => {
     const user = userEvent.setup();
     mockAddProviderConfig.mockClear();
-    // custom first → openDraft starts on the custom provider
+    // custom first, so pickFirstProvider picks it
     const customFirst: ProviderOption[] = [
       { key: "custom", label: "OpenAI-compatible(自定义)", base_url: "", default_model: "", native: false, models: [] },
       ...providers,
@@ -435,6 +443,7 @@ describe("dynamic model list integration (Provider P2)", () => {
       />
     );
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
 
     // Fill model (combobox commits on blur) and api_key — base_url still blank
     const modelInput = screen.getByTestId("provider-draft-model");
@@ -481,6 +490,7 @@ describe("dynamic model list integration (Provider P2)", () => {
       />
     );
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
 
     // Chips render for the custom draft; clicking LM Studio fills the input
     await user.click(screen.getByRole("button", { name: "LM Studio" }));
@@ -543,6 +553,7 @@ describe("dynamic model list integration (Provider P2)", () => {
       />
     );
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
     // Fill only the model — api_key stays empty (local daemon needs none)
     const modelInput = screen.getByTestId("provider-draft-model");
     fireEvent.change(modelInput, { target: { value: "llama3" } });
@@ -571,6 +582,7 @@ describe("dynamic model list integration (Provider P2)", () => {
       />
     );
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
     const modelInput = screen.getByTestId("provider-draft-model");
     fireEvent.change(modelInput, { target: { value: "my-model" } });
     fireEvent.blur(modelInput);
@@ -785,6 +797,7 @@ describe("dynamic model list integration (Provider P2)", () => {
       />
     );
     await user.click(screen.getByRole("button", { name: /btnAddModel/i }));
+    pickFirstProvider();
     const keyInput = screen.getByPlaceholderText("settings.labelConfigApiKey");
     fireEvent.change(keyInput, { target: { value: "sk-test" } });
     await user.click(screen.getByTestId("provider-draft-confirm"));

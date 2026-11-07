@@ -1,6 +1,8 @@
 """0.1.52 S5: learned practices — detours from the turn's own trace, the user's
 corrections, capture through the judgment layer (worth / merge / conflict), the D2
 effect rule, recall into the status block, and the counters."""
+from types import SimpleNamespace
+
 import pytest
 from sqlalchemy import select
 
@@ -517,7 +519,8 @@ def test_the_host_turn_records_what_worked_before_learning(monkeypatch, fresh_wo
     scheduled = []
     monkeypatch.setattr(tool_loop, "_host_turn", lambda *a: True)
     monkeypatch.setattr(lessons, "later", lambda coro: (coro.close(), scheduled.append(1)))
-    tool_loop._learn_after({"conversation_id": CID}, {"tool_trace": [call("run_command", True, command="mv a b")]},
+    tool_loop._learn_after(SimpleNamespace(conversation_id=CID, caller=None, progress_lane=None, emit=None),
+                           SimpleNamespace(tool_trace=[call("run_command", True, command="mv a b")], recalled_lessons=[]),
                            {"final": "ok"})
     assert lessons._WORKED[CID] == ["run_command: mv a b"] and scheduled == [1]
 

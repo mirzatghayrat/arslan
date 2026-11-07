@@ -1,0 +1,54 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "limit",
+  75.0
+ ],
+ [
+  "legacy request",
+  {
+   "history": [],
+   "max_tokens": null,
+   "system": "SYS\n\n<GUARD_NOTE>\n\nAnswer the user's message directly, in plain text, right NOW. Do NOT call a tool, output JSON, or say you will search / look into it / get back to them later — just give your actual answer using what you already know.",
+   "tools": null,
+   "user": "the request"
+  }
+ ],
+ [
+  "chunk",
+  "Sorry, I didn't quite catch that — could you say it another way?"
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Sorry, I didn't quite catch that — could you say it another way?",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ]
+]

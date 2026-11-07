@@ -1,0 +1,92 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "mcp_1__lookup",
+    "mcp_2__other",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "event",
+  null,
+  "mcp_schema_relaxed",
+  {
+   "provider": "NoneType",
+   "tool_key": "mcp_1__lookup"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request\n\nNote: the MCP tool mcp_1__lookup is not available in this turn: the model provider refused its parameter schema. Use the other tools, or tell the user that capability cannot be used right now.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "mcp_2__other",
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "event",
+  null,
+  "mcp_schema_relaxed",
+  {
+   "provider": "NoneType",
+   "tool_key": "all"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request\n\nNote: the MCP tool mcp_1__lookup is not available in this turn: the model provider refused its parameter schema. Use the other tools, or tell the user that capability cannot be used right now.\n\nNote: every MCP tool is not available in this turn: the model provider refused its parameter schema. Use the other tools, or tell the user that capability cannot be used right now.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "web_search"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Done without them."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Done without them.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ]
+]

@@ -66,6 +66,7 @@ NOT_EXECUTED = frozenset({
     "declined", "no_answer", "no_one_to_ask", "reviewer_denied", "not_allowed", "act_in_background",
     "bad_request", "no_such_file", "app_not_found", "no_apps", "hands_unavailable", "no_passwords", "no_page",
     "too_long", "append_unreadable", "window_not_found",
+    "empties_trash",                 # SMART-8: refused before any card
     # Hands' refusals before the action (server.rs, borrow.rs, visit.rs, takeover.rs, argv.rs)
     "app_denied", "app_look_only", "app_click_only", "ref_wrong_app", "ref_unknown", "bad_ref", "password_field",
     "borrow_off", "waiting_for_pause", "secure_input", "window_elsewhere", "window_unreachable", "borrow_declined",
@@ -423,6 +424,12 @@ class MacAppleScriptExecutor:
         script = str((args or {}).get("script") or "")
         if not script.strip() or len(script) > 4000:
             return _bad_request("script required (max 4000 characters)")
+        from server.services import hands_service as _hands
+        if _hands.empties_trash(script):
+            # SMART-8: refused before any card, in a job or not: Arslan never empties the Trash.
+            return {"ok": False, "refused": True, "code": "empties_trash",
+                    "error": "Arslan never runs this: it empties the Trash, which is the user's to do",
+                    "note": "Tell the user what is in the Trash and let them empty it themselves."}
         job_id = _conversation_and_job()[1]
         if job_id is None:
             return await _not_in_job("app_risky", "AppleScript", "Run this AppleScript?")

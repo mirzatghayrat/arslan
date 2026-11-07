@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from server.db.models import Run
+from server.db.models import Run, Spawn
+
+
+def _add_spawns(db, names_by_id: dict[int, str]) -> None:
+    # runs.spawn_id is a foreign key, and the tests' engines enforce it: the spawn comes first.
+    for sid, name in names_by_id.items():
+        db.add(Spawn(id=sid, name=name, domain_category="g", system_prompt="sp"))
 
 
 async def test_catalog_aggregates_red_health_and_sorts_worst_first(client):
     async with client.db_maker() as db:
+        _add_spawns(db, {1: "Bad", 2: "Good"})
+        await db.flush()
         # spawn "Bad": 3 runs, 1 errored, all scored low (<4).
         for i in range(3):
             db.add(Run(
@@ -47,6 +55,8 @@ async def test_catalog_aggregates_red_health_and_sorts_worst_first(client):
 
 async def test_catalog_range_window_filters(client):
     async with client.db_maker() as db:
+        _add_spawns(db, {1: "Old", 2: "Recent"})
+        await db.flush()
         old_run = Run(
             conversation_id="c", spawn_id=1, spawn_name="Old",
             user_message="old", status="scored", task_tokens=10,

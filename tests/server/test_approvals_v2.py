@@ -229,9 +229,9 @@ async def test_a_jobs_remote_and_sandbox_cards_are_decided_and_never_always(job_
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: windows)
     job = approvals.JobConfirmations("conv", job_id="job-1")
     assert await job.command("git", ["status"], remote_host="box") is True
-    assert await job.command("touch ~/Downloads/a", [], sandbox="retry") is True
+    assert await job.command("touch ~/Downloads/a", [], sandbox="outside") is True
     assert [c.get("remote_host") for c in windows.cards] == ["box", None]
-    assert windows.cards[1]["sandbox"] == "retry"
+    assert windows.cards[1]["sandbox"] == "outside"
     assert [(c["perm_kind"], c["options"]) for c in windows.cards] == [
         ("remote", ["once"]), ("outside", ["once", "conversation"])]
     assert [(r.kind, r.decided_by, r.scope, r.job_id) for r in await _ledger(job_db)] == [
@@ -538,7 +538,7 @@ async def test_a_declined_outside_job_card_reads_declined(job_db, monkeypatch):
         if f["type"].startswith("propose_"):
             approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
-    assert await approvals.JobConfirmations("c").command("touch ~/Downloads/a", [], sandbox="retry") is False
+    assert await approvals.JobConfirmations("c").command("touch ~/Downloads/a", [], sandbox="outside") is False
     assert approvals.LAST_OUTCOME.get() == "declined"                # expired is not declined, nor back
 
 

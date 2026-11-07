@@ -1,6 +1,6 @@
 # 0.1.59 — "Desktop, Documents, Downloads: Off" also closes them to commands
 
-Status: approved by the user 2026-10-10 ("真的挡住，放进 0.1.59"). Found while recording the promo on
+Status: approved by the user 2026-10-10 (really block it, and put it in 0.1.59). Found while recording the promo on
 v0.1.59-beta.3 (the recording session's report), checked in the code.
 
 ## 1. What went wrong

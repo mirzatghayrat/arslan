@@ -32,7 +32,7 @@ describe("a rule card (run a command)", () => {
 
   it("S4a: the card to leave the sandbox says what its \"In this conversation\" lets out, and answers with it", () => {
     const onConfirm = vi.fn();
-    render(<RunCommandCard callId="c5" pretty="mv a ~/b" sandbox="retry" permKind="outside"
+    render(<RunCommandCard callId="c5" pretty="mv a ~/b" sandbox="outside" permKind="outside"
       options={["once", "conversation"]} onConfirm={onConfirm} onCancel={vi.fn()} />);
     fireEvent.click(screen.getByLabelText('kit.scope.conversationFor:{"label":"runcmd.sandboxConversation"}'));
     fireEvent.click(screen.getByTestId("runcmd-run"));
@@ -60,7 +60,7 @@ describe("a rule card (run a command)", () => {
 
   it("S4a: a frame without choices shows no tick and answers with no scope (its first choice)", () => {
     const onConfirm = vi.fn();
-    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="retry" onConfirm={onConfirm} onCancel={vi.fn()} />);
+    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="outside" onConfirm={onConfirm} onCancel={vi.fn()} />);
     expect(screen.queryByRole("radiogroup")).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
     fireEvent.click(screen.getByTestId("runcmd-run"));

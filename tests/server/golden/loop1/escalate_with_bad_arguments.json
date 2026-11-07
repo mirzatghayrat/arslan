@@ -1,0 +1,102 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "escalate",
+    "escalate"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "artifact": null,
+   "artifacts": [],
+   "ok": false,
+   "review": null,
+   "summary": "Invalid arguments for escalate: missing required 'need' (string). Nothing was executed; send the call again with corrected arguments.",
+   "tool": "escalate",
+   "type": "tool_result"
+  }
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": "stop",
+     "content": null,
+     "role": "assistant",
+     "tool_calls": [
+      {
+       "arguments": {
+        "kind": "capability"
+       },
+       "arguments_raw": "{\"kind\": \"capability\"}",
+       "id": "c1",
+       "name": "escalate"
+      }
+     ]
+    },
+    {
+     "content": "{\"ok\": false, \"external\": false, \"code\": \"invalid_arguments\", \"error\": \"Invalid arguments for escalate: missing required 'need' (string). Nothing was executed; send the call again with corrected arguments.\"}",
+     "name": "escalate",
+     "role": "tool",
+     "tool_call_id": "c1"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "escalate",
+    "escalate"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "Asking another way."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "Asking another way.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": [
+    {
+     "args": {
+      "kind": "capability"
+     },
+     "result": {
+      "code": "invalid_arguments",
+      "error": "Invalid arguments for escalate: missing required 'need' (string). Nothing was executed; send the call again with corrected arguments.",
+      "external": false,
+      "ok": false
+     },
+     "tool": "escalate"
+    }
+   ]
+  }
+ ]
+]
