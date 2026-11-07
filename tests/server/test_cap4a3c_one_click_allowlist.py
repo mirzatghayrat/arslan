@@ -219,8 +219,9 @@ async def test_search_keeps_another_reason_it_cannot_run(execution_db):
 
 
 @pytest.fixture
-def card_world(execution_db, monkeypatch):
-    """propose up to the card: the candidate the model was shown, a prepare that records it was reached."""
+def card_world(execution_db, monkeypatch, fake_capability_prepare):
+    """propose up to the card: the candidate the model was shown, a prepare that records it was reached (and OSV,
+    CAP9, with nothing known)."""
     permission_store._reset_for_tests()
     reached = []
 

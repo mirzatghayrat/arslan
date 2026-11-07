@@ -607,7 +607,22 @@ export interface CapabilityCard {
   why: string; retry: string;
   /** UNI1b (#586 review F2): a skill's characters that show nothing, in its text and references. */
   hidden?: { count: number; runs: string[]; more: number };
+  /** CAP9: what OSV.dev knows of every locked package (server/services/osv_check.py). Absent on a skill's card. */
+  vulns?: Vulns;
 }
+export type Severity = "CRITICAL" | "HIGH" | "MODERATE" | "LOW" | "UNKNOWN";
+/** `loaded` false: no record of it answered, so its severity, summary and fixes are unknown, not none. `fixed` lists
+ *  only versions above the installed one. */
+export interface Advisory { id: string; ids: string[]; severity: Severity; summary: string | null; loaded: boolean; fixed: string[] }
+/** `packages` counts the lock's distinct packages, `asked` those sent (the package itself first); `own_more` and
+ *  `deps_more` what the lists leave out; `own_highest` and `deps_highest` are told apart (#661 max review). */
+export type Vulns =
+  | { state: "checked"; source: string; packages: number; asked: number; complete: boolean; count: number;
+      highest: Severity | null; own_highest: Severity | null; deps_highest: Severity | null;
+      own: Advisory[]; own_more: number; deps_more: number;
+      deps: { name: string; alias: string | null; version: string; more: number; advisories: Advisory[] }[] }
+  | { state: "not_checked"; why: string }
+  | { state: "skipped"; why: string };
 /** The save-a-skill card (v0.1.64 CAP2a, server/services/skill_forge.propose): the SKILL.md the model wrote, shown
  *  whole before anything is saved. Same frame and answers as the install card; told apart by `kind`. */
 export interface AuthoredSkillCard {
