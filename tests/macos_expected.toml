@@ -179,8 +179,8 @@ xfail = 0
 # (-600), a command reads its own conversation's saved output and nothing else in that folder, and
 # outside the sandbox the minimal profile keeps Arslan's data closed and the user's secrets open.
 ["server/test_s2a1_sandbox.py"]
-markers = 3
-cases = 3
+markers = 4
+cases = 4
 xfail = 0
 
 # 0.1.63 S3a: a checkpoint is a real clonefile(2) copy on APFS, and its folder carries the

@@ -15,7 +15,7 @@ from arslan.llm.adapter import LLMAdapter
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.openai_provider import OpenAIProvider
 from arslan.runtime_policy import bounded_history
-from server.orchestrator import tool_loop
+from server.orchestrator import model_step, tool_loop
 from server.registry import executors
 
 CONTEXT_BETA = "context-management-2025-06-27"
@@ -75,6 +75,7 @@ def tight_history(monkeypatch):
     def tight(messages, max_chars=0, **kwargs):
         return bounded_history(messages, max_chars=1_500, **kwargs)
     monkeypatch.setattr(tool_loop, "bounded_history", tight)
+    monkeypatch.setattr(model_step, "bounded_history", tight)
 
 
 async def claude_turn(monkeypatch, replies, *, model="claude-opus-5-5", search=None, base_url=""):

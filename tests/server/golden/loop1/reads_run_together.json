@@ -23,9 +23,17 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "island",
   "step",
   "web_search"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -34,13 +42,25 @@
    "query": "a"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
  ],
  [
   "island",
   "step",
   "read_file"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -49,13 +69,25 @@
    "path": "b.md"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
+ ],
+ [
+  "execution checkpoint",
+  "tool_admitted"
  ],
  [
   "island",
   "step",
   "list_dir"
+ ],
+ [
+  "limit",
+  20.0
  ],
  [
   "ran",
@@ -64,7 +96,11 @@
    "path": "~/c"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -140,6 +176,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"path\": \"d.md\", \"content\": \"x\"}",
@@ -154,6 +194,10 @@
   "write_file"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "write_file",
   {
@@ -161,7 +205,11 @@
    "path": "d.md"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -184,6 +232,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"e\"}",
@@ -198,13 +250,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "e"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
