@@ -78,12 +78,12 @@ async def test_each_answer_is_one_row_and_never_the_key(approved, outcome, expec
     assert (row.extra or {}).get("source_url") == CAND["source_url"]
 
 
-async def test_an_expired_card_is_not_a_refusal_in_the_inbox():
+async def test_an_expired_card_is_listed_but_is_not_what_could_not_be_asked():
     with permissions.asking_with(_window(False, "expired")):
         await _propose(_window(False, "expired"))
     async with db_session.AsyncSessionLocal() as db:
-        listed = await permission_store.refused_groups(db, datetime.utcnow() - timedelta(hours=1))
-    assert listed == []                       # an expiry the person saw is not "could not be asked"
+        [(row, _, _)] = await permission_store.refused_groups(db, datetime.utcnow() - timedelta(hours=1))
+    assert not permission_store.could_not_ask(row)        # INB8: listed, or a hushed card would just vanish; no "Always allow"
 
 
 async def test_every_answer_writes_exactly_one_row_and_a_job_that_skips_the_card_writes_none():

@@ -4,8 +4,6 @@ import pytest
 EXPECTED_PATHS = {
     "/api/v1/health",
     "/api/v1/spawns",
-    "/api/v1/spawns/{spawn_id}",
-    "/api/v1/spawns/{spawn_id}/config",
     "/api/v1/settings",
 }
 

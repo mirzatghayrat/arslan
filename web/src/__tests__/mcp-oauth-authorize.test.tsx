@@ -75,6 +75,17 @@ describe("Authorize", () => {
     await waitFor(() => expect(oauthStatus).toHaveBeenCalled());
   });
 
+  it("tells the page once the sign-in has connected, so its row stops saying it needs one", async () => {
+    servers.mockResolvedValue([httpServer]);
+    authorize.mockResolvedValue({ auth_url: "https://auth.example/a" });
+    oauthStatus.mockResolvedValue({ state: "done", error: "" });
+    const onChanged = vi.fn();
+    render(<McpServers only={3} onChanged={onChanged} />);
+    await waitFor(() => expect(screen.getByTestId("mcp-authorize-3")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("mcp-authorize-3"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
   it("surfaces a refused flow instead of spinning forever", async () => {
     servers.mockResolvedValue([httpServer]);
     authorize.mockResolvedValue({ auth_url: "https://auth.example/a" });

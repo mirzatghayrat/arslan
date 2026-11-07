@@ -35,7 +35,7 @@ export default function WatchesPanel({ watchesOn = true, quiet = false, marked, 
   const [mutes, setMutes] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ kind: 'web' as 'web' | 'folder', target: '', label: '', interval_s: 21600, notify: true });
+  const [draft, setDraft] = useState({ kind: 'web' as 'web' | 'folder', target: '', label: '', interval_s: 21600 });
   const fail = useCallback((cause: unknown) => setError(proactiveErrorText(t, 'settings', cause)), [t]);
   const reload = useCallback(async () => {
     try {
@@ -52,7 +52,7 @@ export default function WatchesPanel({ watchesOn = true, quiet = false, marked, 
     event.preventDefault();
     await run(async () => {
       await proactiveApi.addWatch({ kind: draft.kind, target: draft.target.trim(), ...(draft.label.trim() ? { label: draft.label.trim() } : {}),
-        interval_s: draft.interval_s, notify: draft.notify });
+        interval_s: draft.interval_s });
       setDraft((d) => ({ ...d, target: '', label: '' }));
       setAdding(false);
     });
@@ -82,7 +82,6 @@ export default function WatchesPanel({ watchesOn = true, quiet = false, marked, 
               <select aria-label={t('proactive.settings.every')} className={field} value={w.interval_s} onChange={(e) => void run(() => proactiveApi.updateWatch(w.id, { interval_s: Number(e.target.value) }))}>
                 {(WATCH_INTERVALS.includes(w.interval_s) ? WATCH_INTERVALS : [...WATCH_INTERVALS, w.interval_s].sort((a, b) => a - b)).map((s) =>
                   <option key={s} value={s}>{t(`proactive.settings.intervals.${s}`, { defaultValue: `${Math.round(s / 60)} min` })}</option>)}</select>
-              <label className="flex items-center gap-1"><input type="checkbox" checked={w.notify} onChange={(e) => void run(() => proactiveApi.updateWatch(w.id, { notify: e.target.checked }))} />{t('proactive.settings.notifyThis')}</label>
               <span className="flex-1" />
               <button type="button" className="rounded-lg bg-fill px-2 py-1 hover:bg-fill-strong" onClick={() => void run(() => proactiveApi.updateWatch(w.id, { enabled: !w.enabled }))}>
                 {t(w.enabled ? 'proactive.settings.pause' : 'proactive.settings.resume')}</button>
@@ -110,7 +109,6 @@ export default function WatchesPanel({ watchesOn = true, quiet = false, marked, 
             <label className="flex flex-col gap-1">{t('proactive.settings.every')}
               <select className={field} value={draft.interval_s} onChange={(e) => setDraft((d) => ({ ...d, interval_s: Number(e.target.value) }))}>
                 {WATCH_INTERVALS.map((s) => <option key={s} value={s}>{t(`proactive.settings.intervals.${s}`)}</option>)}</select></label>
-            <label className="flex items-center gap-1 pb-1"><input type="checkbox" checked={draft.notify} onChange={(e) => setDraft((d) => ({ ...d, notify: e.target.checked }))} />{t('proactive.settings.notifyThis')}</label>
             <button className="inline-flex items-center gap-1 rounded-lg bg-foreground px-3 py-1.5 font-semibold text-background disabled:opacity-50" disabled={!draft.target.trim()}><Plus size={13} />{t('proactive.settings.add')}</button>
           </form>
           )}

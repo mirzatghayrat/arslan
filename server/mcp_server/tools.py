@@ -41,7 +41,7 @@ def _run_status(r: Run) -> dict:
 
 
 async def list_spawns() -> dict:
-    """The user's agents (spawns) with equipment keys. Metadata only."""
+    """The user's agents (spawns) with equipment keys. Metadata only. DELETE-BY: v0.1.64, with C7c-4."""
     async with db_session.AsyncSessionLocal() as db:
         spawns = await spawn_service.list_spawns(db)
         out = []

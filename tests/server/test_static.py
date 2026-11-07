@@ -60,7 +60,7 @@ async def test_spa_fallback_for_client_route(client):
 
 @pytest.mark.asyncio
 async def test_api_404_still_json(client):
-    resp = await client.get("/api/v1/spawns/12345")
+    resp = await client.get("/api/v1/runs/12345")      # a route of ours that answers 404 itself
     assert resp.status_code == 404
     assert resp.headers["content-type"].startswith("application/json")
 

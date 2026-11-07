@@ -3,7 +3,7 @@
 GET /seeds and GET /templates had no component caller (the web's api.getSeeds and
 api.listTemplates were unused), and arslan/templates (library, matcher, official data) had no
 other user. persona_seed_service.get_by_slugs stays: spawn detail resolves a spawn's composed
-seeds with it (GET /spawns/{id} and the equipment reply), which C7 step 3 keeps until v0.1.64.
+seeds with it (the equipment reply), until C7c-4.
 """
 import importlib.util
 from pathlib import Path

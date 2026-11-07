@@ -7,7 +7,8 @@ authenticated loopback endpoint (`GET /api/v1/desktop/status`).
 
 In-process state only: counts of work in flight and of confirmation cards that
 are waiting, plus a short ring of notification events. Nothing here is
-persisted; after a restart there is nothing to notify about. Events carry IDs
+persisted; after a restart the only thing to notify about is a job the restart
+cut short (`background_jobs.report_interrupted`). Events carry IDs
 and an outcome, never message text, file content or source quotes — a
 notification can be read on a locked screen.
 """
@@ -26,7 +27,7 @@ from typing import Callable, Iterator
 from urllib.parse import urlsplit
 
 # lesson_learned (0.1.52 S5): quiet — the island counts it ("+1 practice"); no notification.
-KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused", "proactive",
+KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused",
                    "lesson_learned"})
 OUTCOMES = frozenset({"ok", "error", "needs_review", "cancelled"})
 MAX_EVENTS = 100

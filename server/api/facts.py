@@ -65,18 +65,3 @@ async def remove_fact(fact_id: int, expected_version: int | None = None) -> Resp
     if not removed:
         raise HTTPException(status_code=404, detail="Fact not found")
     return Response(status_code=204)
-
-
-@router.post("/facts/dedup")
-async def dedup() -> dict:
-    """Kept for the API's shape. Memory v2 never bulk-deletes history (it proposes conflicts), so nothing is
-    deleted. 0.1.63 C2a-2 removed the v1 backfill. DELETE-BY: v0.1.64, with the v1 tables (C7's third step)."""
-    return {"deleted": 0}
-
-
-@router.post("/facts/classify")
-async def classify() -> dict:
-    """Kept for the API's shape. Background classification was v1-only (it had no cloud-memory consent), so it
-    never starts. 0.1.63 C2a-2 removed the classifier. DELETE-BY: v0.1.64, with the v1 tables (C7's third step)."""
-    return {"started": False, "reason": "legacy_classification_disabled",
-            "status": {"running": False, "done": 0, "total": 0, "error": None}}

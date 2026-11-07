@@ -298,6 +298,13 @@
 - 整组安装、整组开关、整组删除，不提供单独关掉插件里的某个技能（用户 10-28 定）。
 - 插件里的 MCP 照样进 `capability_sandbox`；插件里的技能脚本照样只走 CAP5 的专用路径。
 - **存法：** `CapabilitySource` 的 `kind="plugin"`（CAP7a 之后），各部分放进现有的 JSON 列。
+- **Changed on 2026-11-07 (⓪Plan's OK of the design note; these replace the folder in point 2 and the storage line above):**
+  - **No plugin folder.** Its skills land where any imported skill's do, and each MCP server gets its own folder under `capabilities/`, all inside Arslan's data folder. So a skill or connection that names `${CLAUDE_PLUGIN_ROOT}` is refused. A manifest's paths still can't leave the plugin. Each file's hash at the pinned commit is kept in the plugin row's `files`.
+  - **Storage.** One `kind="plugin"` row, and ordinary children rather than JSON parts: each skill has `SkillPack.source_id` set to that row, and each MCP server is its own `kind="mcp"` row with `candidate_id` `plugin:<parent id>:<name>`. That keeps the per-server lock, scan, test, tool pin and recheck. A part can't be switched or removed alone.
+  - **MCP shapes.** `npx` and `uvx` by those bare names with one package (locked like a Registry package), and an https remote on the one-click list's domains. Everything else refuses the plugin, including whatever runs from the plugin's own source. A connection's fixed `env` and `headers` and its key names are on the card, per connection. Names that load code or redirect traffic refuse the plugin.
+  - **One-click list (⓪Plan's ruling on point 1).** A plugin isn't a way round the list. A package answers by the plugin's own repository (a listed GitHub organization, checked by its id), a remote by its address, and one part off the list makes the whole plugin "add by hand". Skills aren't held to the list, as a single skill isn't.
+  - **Source.** GitHub only, read from one archive at one commit. A marketplace is only a phonebook: an entry resolves to its own repository.
+  - **Merge timing (⓪Plan, 2026-11-07; replaces "not before SBX-5a and SBX-4a" for this half).** The server half can merge once OK'd: search doesn't offer plugins, so it reaches no user and adds no exposure. The web half is what waits for SBX-5a and SBX-4a (line 12 above), so no user reaches a plugin before then.
 
 ### CAP8 导入 Claude Code / Codex 的设置（import-agent）
 
@@ -310,6 +317,23 @@
 ### CAP8b Import memories from ChatGPT / Claude (user, 2026-10-28)
 
 From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes the memory export from ChatGPT or Claude into a conversation. Arslan splits it into candidate entries, drops one-off task state and anything that guesses the user's gender (MEM1 rules), merges by meaning against what is already stored (MEM1), and shows the list. Nothing is stored until the user confirms; the user can untick lines. Pasted text is treated as the user's own words only for this confirm step: it is shown, not executed, and it never switches on lessons or notes by itself. Merged with CAP8 in the cut order (CAP10 → CAP8 and CAP8b → CAP7).
+
+**Changed on 2026-11-07 (⓪Plan's OK):** a kept line is the user's own words, and MEM1 never folds those away (`MemoryRepository.merge_into` refuses that write). So a line that says the same as a stored entry starts unticked and names that entry, and ticking it stores it as its own entry. The text is this turn's own message, never the model's words, and it's split by lines with no model call. The tool is registered with the web half, so the app never gets a card it can't draw.
+
+**From the review of #735:** a message going to the card leaves post-turn learning (`learns_after_message_id`), and a job's words end where the next turn's begin, so the card is the only way in for its lines, and a no or an unticked line holds. A kept line is `cloud_allowed` when "Remember me" allows and it isn't sensitive.
+
+**Before registering the tool:** a phone-started turn has `broadcast=False`, so no Mac window sees the card and the turn waits up to 30 minutes unless someone says no (`create_skill` has this too). `clean_body` keeps format characters and some invisible text, so stored-equals-shown rests on the web card: it needs UNI1a's and UNI1b's markers. The card also says what `too_many` means, and a plain line beside a list starts unticked with no reason shown.
+
+**On the list:**
+- A clicked `ask_user_choice` label is a user row, so a multi-line label becomes entries; so does an image's placeholder in a message with no list. The card shows every line.
+- With a fast judge, one import can use the whole `memory.same` day (about 56.7k tokens against 50k, by arithmetic).
+- Deleting one imported line suppresses that conversation's source, so its history goes and later writes there get `memory_source_deleted`. Any turn-sourced entry does this, but the result's note invites deletes.
+- A job still waiting when a later paste reaches the card is skipped, so that earlier message teaches nothing. A per-message mark would keep it, and needs a column.
+- All-`[unknown]` lines are offered with the prefix stored, and `+` isn't a bullet. Widen `_DATE` to a short bracket plus a dash, and add `+` to `_BULLET`.
+- "Sensitive" means the word list: a health line or a street address is `normal`, `cloud_allowed` and shown to a cloud model. They were already in that turn's request.
+- With `clean_body`, a key with a zero-width character passes the credential screen.
+- `lessons.after_turn` gives a detour's writer the first 300 characters of the message, and `project_evidence.after_turn` can tick a checkpoint quoting it. Neither stores the line as a memory.
+- In the same turn the model can still call `remember` with a line it read, as with any words. INB2's rules apply.
 
 ### CAP9 OSV.dev 检查
 
