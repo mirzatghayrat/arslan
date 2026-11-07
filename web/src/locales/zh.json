@@ -1016,6 +1016,7 @@
     "runRemote": "在那台机器上执行",
     "purpose": {
       "run": "运行 {{program}}",
+      "notAllRead": "运行 {{program}}：Arslan 没能读完整条命令",
       "copyLocal": "复制 {{count}} 项",
       "delete": "删除 {{count}} 个文件或文件夹",
       "move": "移动 {{count}} 项",
