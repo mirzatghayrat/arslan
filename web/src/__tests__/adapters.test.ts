@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toUiSpawn, toUiSettings, toUiMessages, toBackendSettings } from "../api/adapters";
+import { toUiSpawn, toUiSettings, toUiMessages, toBackendSettings, toBackendSettingsPatch } from "../api/adapters";
 import type { ArslanThreadItem } from "../api/client.types";
 import type { AppSettings as BackendAppSettings } from "../api/client.types";
 
@@ -121,6 +121,14 @@ describe("toBackendSettings", () => {
 
   it("sends the dollar cap as text (K4a)", () => {
     expect(toBackendSettings({ ...baseUi, taskUsdCap: 5 }).task_usd_cap).toBe("5");
+  });
+
+  it("the dollar cap's switch is on unless the server says off, and goes out as a bool (K4a)", () => {
+    expect(toUiSettings({} as any).taskUsdCapEnabled).toBe(true);
+    expect(toUiSettings({ task_usd_cap_enabled: false } as any).taskUsdCapEnabled).toBe(false);
+    expect(toUiSettings({ task_usd_cap_enabled: true } as any).taskUsdCapEnabled).toBe(true);
+    expect(toBackendSettingsPatch({ taskUsdCapEnabled: false })).toEqual({ task_usd_cap_enabled: false });
+    expect(toBackendSettingsPatch({ taskUsdCapEnabled: true })).toEqual({ task_usd_cap_enabled: true });
   });
 
   it("omits search_api_key when empty", () => {

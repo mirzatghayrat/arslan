@@ -10,7 +10,8 @@ followed.
 A message going to the card leaves post-turn learning first (`learns_after_message_id`; turn_facts), so the card is the
 only way in for its lines, and a no or an unticked line holds.
 
-The card is the install card's channel, answered only in the Arslan window, so the phone never gets it.
+The card is the install card's channel, answered only in the Arslan window, so the phone never gets it: a turn the
+iPhone started has no window to answer, so it opens none and says where to paste instead.
 """
 from __future__ import annotations
 
@@ -64,12 +65,14 @@ def split(text: str | None) -> list[tuple[str, bool]]:
     return [(line, True) for line, _ in lines] if len(lines) > 1 else []
 
 
-async def _this_turns_message(conversation_id: str | None, message_id: int | None) -> str:
-    """By the id the turn stored it under: a steer is a newer row, and a resumed task has no message of its own."""
+async def _this_turns_message(conversation_id: str | None, message_id: int | None) -> tuple[str, str | None]:
+    """(its text, where it was typed), by the id the turn stored it under: a steer is a newer row, and a resumed task has
+    no message of its own."""
     async with db_session.AsyncSessionLocal() as db:
-        return await db.scalar(select(ArslanMessage.content).where(
+        row = (await db.execute(select(ArslanMessage.content, ArslanMessage.source).where(
             ArslanMessage.id == message_id, ArslanMessage.conversation_id == conversation_id,
-            ArslanMessage.role == "user")) or ""
+            ArslanMessage.role == "user"))).first()
+    return (row.content, row.source) if row else ("", None)
 
 
 async def _out_of_learning(conversation_id: str, message_id: int) -> None:
@@ -92,7 +95,7 @@ async def _sort(text: str, actor) -> tuple[list[dict], list[dict], int]:
     for index, (raw, ticked) in enumerate(lines):
         if len(entries) >= MAX_ENTRIES or index >= MAX_LINES_READ:
             return entries, left_out, len(lines) - index
-        line = untrusted.clean_body(raw).strip()
+        line = untrusted.clean_body(raw, shown_only=True).strip()
         same = normalized_memory(line)
         if same in seen:
             continue
@@ -164,13 +167,17 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
                 "note": "Nobody to ask here (a background job or a scheduled run), so nothing was read or stored. "
                         "Offer to import them when the user is in the conversation."}
     actor = ctx.actor("user")
-    text = await _this_turns_message(conversation_id, ctx.source_message_id)
+    text, typed_on = await _this_turns_message(conversation_id, ctx.source_message_id)
     entries, left_out, too_many = await _sort(text, actor)
     if not entries:
         return {"ok": False, "nothing_to_import": True, "left_out": len(left_out) + too_many,
                 "note": "This message holds no lines to import. They have to be pasted in the same message that asks; "
                         "say so, or say why they were left out."}
     await _out_of_learning(conversation_id, ctx.source_message_id)     # before the judges: a Stop there ends the turn
+    if typed_on == "phone":     # no window to answer: the turn would wait 30 minutes on a card nobody can see
+        return {"ok": False, "not_saved": True, "on_the_mac": True,
+                "note": "This card is only answered in the Arslan window on the Mac, and this message came from the "
+                        "iPhone, so nothing was stored. Ask them to paste the list in Arslan on the Mac."}
     await _mark_the_same(entries, ctx)
     card = {"kind": KIND, "name": "memories", "why": why, "entries": entries, "left_out": left_out,
             "too_many": too_many, "lines": len(text.splitlines()), "keys": [], "folders": []}
@@ -199,5 +206,11 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
         except Exception as exc:  # noqa: BLE001 — the lines before it are in: the counts stay true, and the rest go on
             logger.warning("memory import: a kept line wasn't stored: %s", type(exc).__name__)   # an error can hold the line
             not_saved += 1
-    return {"ok": True, "saved": saved, "not_saved": not_saved, "left_out": len(left_out) + too_many,
-            "note": "Tell the user how many were saved (`saved`). They can edit or delete any of them in Memory."}
+    counts = {"saved": saved, "not_saved": not_saved, "left_out": len(left_out) + too_many}
+    if not saved:     # nothing stored is not an import, whatever the card said: the model must not report it as done
+        return {"ok": False, **counts,
+                "note": "Nothing was stored: none of the kept lines were saved, and `not_saved` of them could not be "
+                        "stored. Say so, and do not say they were imported."}
+    return {"ok": True, **counts,
+            "note": "Tell the user how many were saved (`saved`), and how many could not be stored (`not_saved`) if "
+                    "any. They can edit or delete any of them in Memory."}

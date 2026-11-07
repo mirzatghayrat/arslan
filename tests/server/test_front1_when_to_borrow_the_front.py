@@ -25,6 +25,7 @@ import pytest
 
 from server.orchestrator import tool_loop
 from server.registry import hands_tools
+from server.registry.tool_defs.hands import _FRONT
 from server.services import hands_contract, look_diff
 from tests.server import test_hands_0153 as base
 
@@ -38,16 +39,16 @@ REFUSED = _case("err_type_refused_headless")["envelope"]
 # ── A: the words the model waits for ──────────────────────────────────────────
 
 def test_front_names_the_words_hands_and_the_look_really_say():
-    assert hands_tools.NOTHING_CHANGED in tool_loop._FRONT
-    assert "sent_unconfirmed" in hands_contract.OUTCOMES and "sent_unconfirmed" in tool_loop._FRONT
-    assert "no_effect" not in tool_loop._FRONT            # a click or a press never says it (Hands' outcome.rs)
-    assert "POLICY_DENIED" not in tool_loop._FRONT        # a refusal is no reason to borrow (B)
+    assert hands_tools.NOTHING_CHANGED in _FRONT
+    assert "sent_unconfirmed" in hands_contract.OUTCOMES and "sent_unconfirmed" in _FRONT
+    assert "no_effect" not in _FRONT            # a click or a press never says it (Hands' outcome.rs)
+    assert "POLICY_DENIED" not in _FRONT        # a refusal is no reason to borrow (B)
 
 
 def test_click_and_press_carry_it_and_typing_has_no_front():
     schemas = tool_loop._NATIVE_PARAM_SCHEMAS
     for key in ("desktop_click", "desktop_press"):
-        assert schemas[key]["properties"]["front"]["description"] == tool_loop._FRONT
+        assert schemas[key]["properties"]["front"]["description"] == _FRONT
     assert "front" not in schemas["desktop_type"]["properties"]
 
 

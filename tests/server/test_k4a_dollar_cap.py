@@ -102,6 +102,66 @@ async def test_the_work_budget_settings_carry_the_cap(execution_db):
         assert (await settings_service.run_budget_from_settings()).usd_cap == cap, stored
 
 
+async def test_the_off_switch_removes_the_dollar_cap_and_keeps_the_amount(execution_db):
+    """K4a off switch (default on): off reads as no dollar cap (None) for every run; the stored amount
+    stays, so turning it back on restores it. Nothing stored is on."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    async with db_session.AsyncSessionLocal() as db:
+        assert await settings_service.task_usd_cap_enabled(db) is True
+        await settings_service.update_settings(db, {"task_usd_cap": "5", "task_usd_cap_enabled": False})
+        assert await settings_service.task_usd_cap(db) is None
+    assert (await settings_service.run_budget_from_settings()).usd_cap is None
+    async with db_session.AsyncSessionLocal() as db:
+        await settings_service.update_settings(db, {"task_usd_cap_enabled": True})
+        assert await settings_service.task_usd_cap(db) == 5.0
+        assert (await settings_service.get_settings(db))["task_usd_cap_enabled"] is True
+
+
+def test_a_run_with_the_dollar_cap_off_still_stops_on_tokens_and_steps():
+    budget = eb.run_budget(usd_cap=None)
+    budget.charge_usd(1_000.0)                                          # far past any cap
+    assert not budget.soft_reached()
+    assert budget.model_request(10) == 10                               # no dollar stop
+    budget.tokens = budget.limits.tokens
+    with pytest.raises(eb.BudgetExceeded, match="tokens"):
+        budget.model_request(10)
+    assert budget.stop_reason == "tokens"
+    steps = eb.run_budget(usd_cap=None)
+    steps.charge_usd(1_000.0)
+    steps.model_requests = steps.limits.model_requests
+    with pytest.raises(eb.BudgetExceeded, match="model_requests"):
+        steps.model_request(10)
+
+
+async def test_the_off_state_survives_the_task_row_a_run_is_restored_from(execution_db):
+    """A turn's budget is snapshotted into its task row and the run uses the restored one
+    (task_service._run): off must not come back as the default $2."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    from server.services.task_repository import repository
+    from tests.server.test_task_repository import spec
+    async with db_session.AsyncSessionLocal() as db:
+        await settings_service.update_settings(db, {"task_usd_cap_enabled": False})
+    budget = await settings_service.run_budget_from_settings()
+    async with repository() as repo:
+        created = await repo.create(spec(), "conversation", budget_snapshot=budget.snapshot())
+        started = await repo.start("task-one", created["version"])
+    restored = eb.Budget.from_snapshot(started["budget"])
+    assert restored.usd_cap is None and restored.snapshot()["monetary_limit"] is False
+    restored.charge_usd(1_000.0)
+    restored.tokens = restored.limits.tokens
+    with pytest.raises(eb.BudgetExceeded, match="tokens"):
+        restored.model_request(10)
+
+
+async def test_the_off_switch_round_trips_through_the_api(client):
+    for value in (False, True):
+        r = await client.put("/api/v1/settings", json={"task_usd_cap_enabled": value})
+        assert r.status_code == 200, r.text
+        assert (await client.get("/api/v1/settings")).json()["task_usd_cap_enabled"] is value
+
+
 async def test_a_chat_turns_closing_names_the_dollar_limit(monkeypatch):
     from server.orchestrator import tool_loop
     from server.services import runtime_messages

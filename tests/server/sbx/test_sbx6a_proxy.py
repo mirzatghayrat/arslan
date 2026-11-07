@@ -141,7 +141,8 @@ def test_the_product_reads_arslans_ports_and_the_system_proxies_itself(home, mon
 def test_the_sbx_harness_registers_the_proxy_bases():
     from tests.server.sbx.harness import BUILT_BASES
     assert {"commands-proxy", "network-sbx6"} <= set(BUILT_BASES)
-    assert not {"mcp-proxy", "run-python"} & set(BUILT_BASES)          # SBX-4a's surfaces, still pending
+    assert "run-python" in BUILT_BASES                                  # SBX-4a's computation preset has landed
+    assert "mcp-proxy" not in BUILT_BASES                               # the MCP proxy base, still pending
 
 
 # ── the run: its environment points at the proxy ─────────────────────────────

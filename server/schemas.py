@@ -51,6 +51,7 @@ class SettingsIn(BaseModel):
     model_roles_reset_notice: str | None = None     # v0.1.64 ROUTE1: "pending" / "seen" (migration 0086's notice)
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
+    task_usd_cap_enabled: bool | None = None  # K4a: off = no dollar cap (step and token limits still hold)
     run_debug_retention_days: int | None = None
     # 🔴 The slot and embedding keys below were once in _PLAIN_KEYS (so update_settings would
     # store them) but on NEITHER schema, and the PUT route feeds update_settings `body.model_dump()` —
@@ -125,6 +126,7 @@ class SettingsOut(BaseModel):
     model_roles_reset_notice: str = ""              # v0.1.64 ROUTE1: "pending" after 0086 cleared the old roles, then "seen"
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
+    task_usd_cap_enabled: bool = True         # K4a: the dollar cap's switch, default on
     run_debug_retention_days: int = 30
     router_model: str = ""
     vision_model: str = ""

@@ -57,6 +57,9 @@ export interface AdvancedSectionProps {
   /** K4a: the per-task dollar cap (US$). Optional so older hosts still render. */
   taskUsdCap?: number;
   onTaskUsdCapChange?: (value: number) => void;
+  /** K4a: the dollar cap's off switch (default on). Off keeps the amount for when it is turned back on. */
+  taskUsdCapEnabled?: boolean;
+  onTaskUsdCapEnabledChange?: (value: boolean) => void;
   /** Directory the file tools may work in. Empty = unset = tools not offered. */
   workspaceDir: string;
   onWorkspaceDirChange: (value: string) => void;
@@ -105,6 +108,8 @@ export default function AdvancedSection({
   onBackgroundJobBudgetChange,
   taskUsdCap = 2,
   onTaskUsdCapChange,
+  taskUsdCapEnabled = true,
+  onTaskUsdCapEnabledChange,
   workspaceDir,
   onWorkspaceDirChange,
   workspaceOtherVolume = false,
@@ -440,13 +445,33 @@ export default function AdvancedSection({
             <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl" data-testid="task-usd-cap-desc">
               {t('jobs.usdCapDesc')}
             </p>
+            {!taskUsdCapEnabled && (
+              <p className="text-[12px] leading-snug text-muted-foreground mt-1 max-w-xl" data-testid="task-usd-cap-off-note">
+                {t('jobs.usdCapOffNote')}
+              </p>
+            )}
           </div>
-          <select data-testid="settings-task-usd-cap" aria-label={t('jobs.usdCapLabel')} value={taskUsdCap}
-            onChange={(e) => onTaskUsdCapChange(Number(e.target.value))}
-            className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground w-40">
-            {(USD_CAPS.includes(taskUsdCap) ? USD_CAPS : [...USD_CAPS, taskUsdCap].sort((a, b) => a - b))
-              .map((value) => <option key={value} value={value}>{`$${value.toFixed(2)}`}</option>)}
-          </select>
+          <div className="flex items-center gap-3 shrink-0">
+            {/* K4a (v0.1.64): off = no dollar cap; the amount stays stored, disabled, for when it is back on. */}
+            {onTaskUsdCapEnabledChange && (
+              <input
+                id="settings-task-usd-cap-enabled"
+                data-testid="settings-task-usd-cap-enabled"
+                type="checkbox"
+                aria-label={t('jobs.usdCapEnabledLabel')}
+                checked={taskUsdCapEnabled}
+                onChange={(e) => onTaskUsdCapEnabledChange(e.target.checked)}
+                className="kit-switch"
+              />
+            )}
+            <select data-testid="settings-task-usd-cap" aria-label={t('jobs.usdCapLabel')} value={taskUsdCap}
+              disabled={!taskUsdCapEnabled}
+              onChange={(e) => onTaskUsdCapChange(Number(e.target.value))}
+              className="rounded-lg border border-border bg-background px-2 py-1 text-xs text-foreground w-40 disabled:opacity-50 disabled:cursor-not-allowed">
+              {(USD_CAPS.includes(taskUsdCap) ? USD_CAPS : [...USD_CAPS, taskUsdCap].sort((a, b) => a - b))
+                .map((value) => <option key={value} value={value}>{`$${value.toFixed(2)}`}</option>)}
+            </select>
+          </div>
         </div>)}
     </>)],
     ['browser', (<>

@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 _PASSWORD = re.compile(r"pass(word|code|phrase)|密码|口令|パスワード|contraseña|mot de passe|passwort|\bpin\b", re.I)
 _OUTPUT_LIMIT = 8_000
-# A look that found no change since the last one. `_FRONT` (tool_loop.py) quotes it as the sign that a
+# A look that found no change since the last one. `_FRONT` (tool_defs/hands.py) quotes it as the sign that a
 # background action did nothing, and a test keeps the two the same (FRONT1).
 NOTHING_CHANGED = "Nothing changed since your last look."
 

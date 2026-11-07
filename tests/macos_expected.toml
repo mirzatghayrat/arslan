@@ -58,23 +58,42 @@ markers = 2
 cases = 2
 xfail = 0
 
+# SBX-4p kernel carry: local measurements; the macOS CI job prints its own counts.
+["server/sbx/test_sbx4_devices.py"]
+markers = 7
+cases = 23
+xfail = 0
+
+# +1 marker, +2 cases (#666): compute's workspace map-exec closure, run-python and artifact.
+["server/sbx/test_sbx4_kernel_boundaries.py"]
+markers = 5
+cases = 18
+xfail = 0
+
 # SBX-4p: 88 Python/artifact/MCP gates (72, then +16 over #654's wider service list), pending product adapters.
 ["server/sbx/test_sbx4_presets.py"]
 markers = 7
 cases = 88
-xfail = 88
+xfail = 0
 
 # SBX-5p: CAP6b/cache cases, including the built outside floor.
+# 0.1.64 SBX-4a: what should run does run, arithmetic under the computation preset and a Python MCP server.
+["server/sbx/test_sbx4a_presets.py"]
+markers = 1
+cases = 1
+xfail = 0
+
+# Kernel carry: eight MCP CAP6b/cache cases now wait for their feature (local measurement).
 ["server/sbx/test_sbx5_paths.py"]
 markers = 10
 cases = 78
-xfail = 64
+xfail = 43
 
 # SBX-6p: 94 network cases (78, then +16 over #654's wider service list), pending except one real SSH control.
 ["server/sbx/test_sbx6_network.py"]
 markers = 8
 cases = 94
-xfail = 10
+xfail = 8
 
 # SBX-6p: four default trust checks, four toggle checks, eight LAN cases.
 ["server/sbx/test_sbx6_settings.py"]
@@ -185,8 +204,8 @@ xfail = 0
 # (-600), a command reads its own conversation's saved output and nothing else in that folder, and
 # outside the sandbox the minimal profile keeps Arslan's data closed and the user's secrets open.
 ["server/test_s2a1_sandbox.py"]
-markers = 4
-cases = 4
+markers = 5
+cases = 6
 xfail = 0
 
 # 0.1.63 S3a: a checkpoint is a real clonefile(2) copy on APFS, and its folder carries the
