@@ -2006,7 +2006,7 @@ async def _propose_plan_change(args: dict, emit) -> dict:
 
 # Minimal OpenAI-format parameter schemas per known tool key. The executor re-validates args,
 # so these can be loose; they exist only to nudge the model toward the right shape.
-# The tools still to move into server/registry/tool_defs (LOOP1 a3–a5) are listed here; DELETE-BY: v0.1.64, with a5.
+# The tools still to move into server/registry/tool_defs (LOOP1 a4 and a5) are listed here; DELETE-BY: v0.1.64, with a5.
 
 # Hands v2 §6.3: the one way the model asks for the front. FRONT1 (the user, 2026-10-30): an action the app
 # ignored in the background reads as `sent_unconfirmed` (a click or a press never says `no_effect`: Hands'
@@ -2018,19 +2018,6 @@ _FRONT = ("only if this action, done in the background, came back sent_unconfirm
 
 _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
     **tool_defs.SCHEMAS,
-    "read_file": {"type": "object", "properties": {
-        "path": {"type": "string", "minLength": 1,
-                 "description": "File path within the approved readable roots or workspace."},
-        "offset": {"type": "integer", "minimum": 0,
-                   "description": "Lines to skip from the start (for paging a long file)."},
-        "limit": {"type": "integer", "minimum": 1, "description": "Maximum lines to return."}},
-        "required": ["path"], "additionalProperties": False},
-    "write_file": {"type": "object", "properties": {
-        "path": {"type": "string", "minLength": 1,
-                 "description": "Destination file path within the configured workspace; "
-                                "missing folders are created."},
-        "content": {"type": "string", "description": "Complete UTF-8 text to write."}},
-        "required": ["path", "content"], "additionalProperties": False},
     # 0.1.45 hands
     "browser_open": {"type": "object", "properties": {"url": {"type": "string", "maxLength": 4000}},
                      "required": ["url"], "additionalProperties": False},
@@ -2150,19 +2137,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                                           "outside_sandbox, why it must run outside. "
                                                           "Cards show it first."}},
                     "required": ["command"]},
-    # v0.1.64 CAP2a: the user sees the whole SKILL.md on a card and decides (skill_forge.propose).
-    "create_skill": {"type": "object",
-                     "properties": {"key": {"type": "string", "maxLength": 60,
-                                            "description": "Lowercase letters, digits and hyphens, e.g. weekly-report."},
-                                    "name": {"type": "string", "maxLength": 100},
-                                    "description": {"type": "string", "maxLength": 300,
-                                                    "description": "One line: what the skill is for."},
-                                    "body": {"type": "string",
-                                             "description": "The SKILL.md body: a '## Trigger' section (when to "
-                                                            "use it), then the method. Text only, at most 15 KB."},
-                                    "why": {"type": "string", "maxLength": 300,
-                                            "description": "What the user asked for, in a few words."}},
-                     "required": ["key", "name", "description", "body"], "additionalProperties": False},
     "run_python": {"type": "object",
                    "properties": {"code": {"type": "string"}}},
     # 0.1.63 K7: the two tools that reach everything a request is not shown (on_demand.py).
@@ -2176,144 +2150,6 @@ _NATIVE_PARAM_SCHEMAS: dict[str, dict] = {
                                 "arguments": {"type": "object",
                                               "description": "Its arguments, as its parameters say."}},
                  "required": ["name"], "additionalProperties": False},
-    # 0.1.57 §3: propose one candidate find_capability returned (the card is the server's).
-    "propose_capability": {
-        "type": "object",
-        "properties": {
-            "candidate_id": {"type": "string", "description": "An id from find_capability's candidates."},
-            "why": {"type": "string", "description": "What failed and why this helps, in one sentence."},
-            "retry": {"type": "string", "description": "The step you will retry with it."},
-            "folders": {"type": "array", "maxItems": 3, "items": {"type": "string"},
-                        "description": "Folders it needs (e.g. the folder of the file you work on)."}},
-        "required": ["candidate_id", "why"]},
-    # 0.1.57 §2: find a capability for what the turn could not do.
-    "find_capability": {
-        "type": "object",
-        "properties": {
-            "need": {"type": "string", "description": "What could not be done, in one sentence."},
-            "keywords": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "string"},
-                         "description": "1-4 short English search words, e.g. [\"excel\", \"xlsx\"]."},
-            "kinds": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skill", "project"]}}},
-        "required": ["need", "keywords"]},
-    # 0.1.56 §7: a changed plan for the project, proposed — the user decides on the card.
-    "propose_plan_change": {
-        "type": "object",
-        "properties": {
-            "reason": {"type": "string", "description": "What changed, in the user's words."},
-            "levels": {"type": "array", "minItems": 1, "maxItems": 15, "description":
-                       "Every level NOT cleared yet, as it should be after the change, in order.",
-                       "items": {"type": "object", "properties": {
-                           "name": {"type": "string"},
-                           "band": {"type": "string", "enum": ["shaping", "doing", "done"]},
-                           "clear_condition": {"type": "string"},
-                           "checkpoints": {"type": "array", "maxItems": 12,
-                                           "items": {"type": "object", "properties": {"text": {"type": "string"}},
-                                                     "required": ["text"]}}},
-                                 "required": ["name", "band"]}}},
-        "required": ["levels", "reason"]},
-    # 0.1.63 D1: hand an existing file to the user (window card + paired iPhone).
-    "attach_file": {"type": "object", "properties": {
-        "path": {"type": "string", "minLength": 1,
-                 "description": "The file: absolute, ~/ or relative to the workspace, in a readable folder."},
-        "title": {"type": "string", "maxLength": 200,
-                  "description": "Optional name the user sees; the file's extension is kept."}},
-        "required": ["path"], "additionalProperties": False},
-    # 0.1.63 K5: the 14 offered tools that had no schema (and fell back to _PERMISSIVE_PARAMS), matching
-    # each executor's real arguments. Built-in schemas go to every provider verbatim (F3's normaliser is for
-    # MCP tools only): no `pattern`, no top-level `anyOf`, no type arrays (tests/server/test_k5_tool_schemas.py).
-    "edit_file": {
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "minLength": 1, "description": "File path within the configured workspace."},
-            "old_string": {"type": "string", "minLength": 1,
-                           "description": "The exact text to replace; it must appear exactly once in the file."},
-            "new_string": {"type": "string", "description": "The text to put in its place."},
-        },
-        "required": ["path", "old_string", "new_string"],
-        "additionalProperties": False,
-    },
-    "list_dir": {
-        "type": "object",
-        "properties": {"path": {"type": "string", "description": (
-            "Absolute or ~/ folder path in Desktop, Documents, Downloads or the workspace; leave it out to list "
-            "the folders you can see.")}},
-        "additionalProperties": False,
-    },
-    "search_files": {
-        "type": "object",
-        "properties": {"query": {"type": "string", "minLength": 1,
-                                 "description": "Literal text to find in the readable folders' text files."}},
-        "required": ["query"],
-        "additionalProperties": False,
-    },
-    "whats_new": {
-        "type": "object",
-        "properties": {"count": {"type": "integer", "minimum": 1, "maximum": 6,
-                                 "description": "How many recent versions' notes (default 3)."}},
-        "additionalProperties": False,
-    },
-    "list_my_capabilities": {"type": "object", "properties": {}, "additionalProperties": False},
-    "my_status": {"type": "object", "properties": {}, "additionalProperties": False},
-    "schedule_task": {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string", "minLength": 1, "maxLength": 80, "description": "A short name for the task."},
-            "prompt": {"type": "string", "minLength": 1, "description": "What to do each time it runs."},
-            "when": {"type": "string", "minLength": 1, "description": (
-                "'every: <seconds>' (at least 900) or 'cron: <expression>', e.g. 'every: 3600' or 'cron: 0 9 * * *'.")},
-        },
-        "required": ["name", "prompt", "when"],
-        "additionalProperties": False,
-    },
-    "list_my_tasks": {"type": "object", "properties": {}, "additionalProperties": False},
-    "cancel_task": {
-        "type": "object",
-        # No "type": a number and the string "3" are both accepted (⓪Plan's Q9: no type arrays).
-        "properties": {"task_id": {"description": "The task id from list_my_tasks (a number, e.g. 3)."}},
-        "required": ["task_id"],
-        "additionalProperties": False,
-    },
-    "read_skill": {
-        "type": "object",
-        "properties": {
-            "key": {"type": "string", "minLength": 1,
-                    "description": "The skill's key from the list in this tool's description."},
-            "section": {"type": "string", "description": (
-                "Optional: one part only, a '## Heading' of the skill or 'references/<file>.md' (or .txt).")},
-        },
-        "required": ["key"],
-        "additionalProperties": False,
-    },
-    "scan_local_network": {"type": "object", "properties": {}, "additionalProperties": False},
-    "ssh_probe": {
-        "type": "object",
-        "properties": {"host": {"type": "string", "minLength": 1,
-                                "description": "An IPv4 address on the local network, e.g. 192.168.1.8."}},
-        "required": ["host"],
-        "additionalProperties": False,
-    },
-    "ssh_run": {
-        "type": "object",
-        "properties": {
-            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
-            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
-            "command": {"type": "string", "minLength": 1, "description": "One whitelisted program name, e.g. 'uptime'."},
-            "argv": {"type": "array", "items": {"type": "string"}, "description": "Its arguments, one per item."},
-        },
-        "required": ["host", "user", "command"],
-        "additionalProperties": False,
-    },
-    "list_nodes": {"type": "object", "properties": {}, "additionalProperties": False},
-    "enroll_node": {
-        "type": "object",
-        "properties": {
-            "host": {"type": "string", "minLength": 1, "description": "The machine's IPv4 address."},
-            "user": {"type": "string", "minLength": 1, "description": "The username to log in as."},
-            "name": {"type": "string", "minLength": 1, "maxLength": 60, "description": "A name for the machine."},
-        },
-        "required": ["host", "user", "name"],
-        "additionalProperties": False,
-    },
 }
 
 # PA-3: ask_user_choice is a TERMINAL tool (same pattern as `escalate`): a VALID call
