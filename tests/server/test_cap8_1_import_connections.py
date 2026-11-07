@@ -385,6 +385,7 @@ async def test_a_ticked_program_runs_as_written_with_no_sandbox_and_its_keys_enc
     assert await _rows(execution_db, CapabilitySource) == []
     written = json.loads((home / "started_with.json").read_text())
     assert written["argv"] == ["ok", "--token", FAKE] and written["env"]["T"] == FAKE + "2"
+    assert _row(scan, "claude_code:mine")["env"] == ["T"]      # the sheet named what reached the program
     await _nothing_stored_holds(execution_db, FAKE)
     assert FAKE not in caplog.text
     again = await _scan(api)
@@ -404,6 +405,33 @@ async def test_a_program_a_variable_asks_for_needs_its_key(api, home, execution_
     assert (await _add(api, scan, "claude_code:mine"))["claude_code:mine"] == {
         "id": "claude_code:mine", "state": "needs_keys", "keys": ["MINE_TOKEN"]}
     assert await _rows(execution_db, MCPServer) == []
+
+
+async def test_a_programs_env_names_are_on_the_sheet_kept_and_none_of_their_values_is(api, home):
+    """A program's `env` can change what it runs, so the sheet names each one, as the hand-add form shows what was typed.
+    They're kept, not refused: the same rows as hand-add, by the user's decision. A name isn't a key; its value may be."""
+    env = {"NODE_OPTIONS": FAKE, "DYLD_INSERT_LIBRARIES": FAKE + "2", "MINE_TOKEN": "${MY_TOKEN}",
+           "HTTPS_PROXY": f"http://me:{FAKE}@proxy.example.test"}
+    _claude(home, {"mine": {"command": "/opt/tools/mine", "args": ["--serve"], "env": env}})
+    scan = await _scan(api)
+    row = _row(scan, "claude_code:mine")
+    assert row["env"] == ["DYLD_INSERT_LIBRARIES", "HTTPS_PROXY", "MINE_TOKEN", "NODE_OPTIONS"]
+    assert (row["refused"], row["tick"], row["keys"], row["asks"]) == (None, False, 3, ["MY_TOKEN"])
+    assert FAKE not in json.dumps(scan) and "proxy.example.test" not in json.dumps(scan)
+
+
+async def test_every_kind_names_the_settings_it_will_start_with_and_only_those(api, home):
+    """The same two tables feed all three kinds, and a remote's headers go where a program's `env` goes."""
+    _claude(home, {"plain": {"command": "/opt/tools/plain"},
+                   "notes": {"command": "npx", "args": ["n"], "env": {"NOTES_TOKEN": FAKE, "MODE": "${MY_MODE}", "PATH": "/x"}},
+                   "vendor": {"type": "http", "url": REMOTE, "headers": {"X-Team": FAKE, "Authorization": "Bearer ${V}"}}})
+    _codex(home, f'[mcp_servers.mine]\ncommand = "/opt/tools/mine"\nenv = {{ B_KEY = "{FAKE}" }}\nenv_vars = ["A_KEY"]\n')
+    scan = await _scan(api)
+    assert _row(scan, "claude_code:plain")["env"] == []
+    assert _row(scan, "claude_code:notes")["env"] == ["MODE", "NOTES_TOKEN"]      # `PATH` is dropped, so it doesn't reach the program
+    assert _row(scan, "claude_code:vendor")["env"] == ["Authorization", "X-Team"]
+    assert _row(scan, "codex:mine")["env"] == ["A_KEY", "B_KEY"]
+    assert FAKE not in json.dumps(scan)
 
 
 async def test_a_folder_given_to_a_package_is_no_key_and_opens_no_network(api, home):

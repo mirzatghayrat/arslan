@@ -5,8 +5,9 @@ model's context. It reads only the top-level `mcpServers` of `~/.claude.json` (u
 `~/.codex/config.toml`, and writes to neither. A project's `.mcp.json` and Claude Code's local scope are on the card's
 list. Formats: https://code.claude.com/docs/en/mcp and https://learn.chatgpt.com/docs/extend/mcp?surface=cli
 
-`scan` is one sheet with ticks: each server's kind, what it runs or which host it opens, and how many keys it has,
-never a key. `add` takes the ticked ones, reads the file again, and adds what the sheet showed (`digest`), or nothing.
+`scan` is one sheet with ticks: each server's kind, what it runs or which host it opens, the names of its `env` or
+headers, and how many keys it has, never a key. `add` takes the ticked ones, reads the file again, and adds what the
+sheet showed (`digest`), or nothing.
 
 - **`npx` and `uvx`** go the CAP4 way, through `plugin_package`'s reading of that line: pinned, locked, scanned, tested,
   tool-pinned and sandboxed. **A remote** is added as written, since this click is the deliberate one: neither is held to
@@ -16,8 +17,9 @@ never a key. `add` takes the ticked ones, reads the file again, and adds what th
   encrypted `secrets`, leaving a `${NAME}` that `discovery.runtime_dict` fills at each start (SEC1). A name with no value
   (`${VAR}`, `Bearer ${VAR}`, `env_vars`, `bearer_token_env_var`, `env_http_headers`) is a key `add` must be given.
 - **A custom program** (anything but bare `npx` or `uvx`) is the user's decision of 2026-11-07, which loosens the card's
-  rule: offered and unticked, with its command and arguments shown, and added as the hand-add form adds one, so it runs as
-  the other tool runs it, with no sandbox. The sheet says so in words.
+  rule: offered and unticked, with its command, arguments and `env` names shown, and added as the hand-add form adds one,
+  so it runs as the other tool runs it, with no sandbox. Its `env` can load other code, so no name is refused and each is
+  named. The sheet says so in words.
 - **A server `enabled = false` in Codex,** or one with `enabled_tools` or `disabled_tools` (which don't come along), is
   listed and starts unticked, and a tick still takes it. So does the second tool's copy of a server (`same_as`).
 
@@ -141,6 +143,8 @@ class Found:
                 "command": shown[0] or None, "arguments": shown[1:], "address": self.address,
                 # What the sandbox will give it (`capability_install.grants_for`). A program runs outside it.
                 "network": self.kind in ("remote", "program") or (self.kind == "package" and bool(self.keys() or self.asked)),
+                # Names only, for all three kinds: `_add_one` starts each with these. In a program one can change what runs.
+                "env": sorted({*self.fixed, *self.asked}),
                 "keys": self.keys(), "asks": self.asks(), "on_there": self.on_there, "tool_limits": self.tool_limits,
                 "here": here, "same_as": same_as, "refused": self.refused, "refused_part": self.refused_part,
                 "tick": not (self.refused or here or same_as or self.tool_limits or not self.on_there or self.kind == "program")}
