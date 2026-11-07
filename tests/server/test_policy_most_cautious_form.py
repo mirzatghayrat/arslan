@@ -63,22 +63,31 @@ COMMANDS = [
     f"ls; {SCRIPT} -c {REACH}; bash -c 'ls; ls\nls\nls\nls'", f"{SCRIPT} -c x; watch 'ls; ls\nls\nls\nls'",
     f"{NESTED}; ls", f"{NESTED}\n{WIDE}  x", f"bash -c '{NESTED}'; ls",
 ]
-# Forms added through the seam: harmless, one with more lines than any command above, one past a limit, one naming the
-# stand-in, and one with an inline script that doesn't reach.
-EXTRAS = ["ls", "a\nb\nc\nd\ne\nf\ng\nh", NESTED, f"{WIDE}  x", f"{SCRIPT} -c x", "ls  -l\n\n  x"]
+# Forms added through the seam, each with the floor it forces on the verdict once it is read. Harmless ones force
+# nothing; one past a limit naming no rule likewise; the stand-in forms force forbid or ask, as a form under a limit and
+# as one past a limit (its squeezed linear passes must still name the rule). A dropped form shows as a missing floor.
+EXTRAS = {
+    "plain": ("ls", "run"), "many-lines": ("a\nb\nc\nd\ne\nf\ng\nh", "run"), "past-a-limit-noise": (NESTED, "run"),
+    "blanks": ("ls  -l\n\n  x", "run"), "script-no-reach": (f"{SCRIPT} -c x", "run"),
+    "stand-in": (f"{WIDE}  x", "forbid"), "stand-in-past-a-limit": (f"{WORD} x; {NESTED}", "forbid"),
+    "ask-past-a-limit": (f"{ASK_WORD} x; {NESTED}", "ask"),
+}
 
 
-@pytest.mark.parametrize("extra", EXTRAS, ids=["plain", "many-lines", "past-a-limit", "stand-in", "script", "blanks"])
+@pytest.mark.parametrize("extra,floor", EXTRAS.values(), ids=EXTRAS.keys())
+@pytest.mark.parametrize("where", ["append", "prepend"])
 @pytest.mark.parametrize("command", COMMANDS)
-def test_adding_a_form_never_lowers_the_verdict(stand_ins, monkeypatch, command, extra):
-    """Through the seam every reading takes its forms from (`_forms`): one more form, never a lower verdict."""
+def test_adding_a_form_never_lowers_the_verdict(stand_ins, monkeypatch, command, extra, floor, where):
+    """Through the seam every reading takes its forms from (`_forms`): one more form, never a lower verdict, at either
+    end. A form past a limit is read too, so one that names a rule raises the verdict even when nothing else does."""
     before = _verdict(command)
     real = tp._forms
-    monkeypatch.setattr(tp, "_forms", lambda text: (*real(text), extra))
+    monkeypatch.setattr(tp, "_forms",
+                        lambda text: (extra, *real(text)) if where == "prepend" else (*real(text), extra))
     after = _verdict(command)
-    assert RANK[after[0]] >= RANK[before[0]], (command, extra, before, after)
-    if before[0] == "forbid":
-        assert after == before, (command, extra)
+    # The property is about the level. A form that matches an earlier-ordered forbid rule may change which rule the
+    # card names, but never the level: forbid stays forbid.
+    assert RANK[after[0]] >= max(RANK[before[0]], RANK[floor]), (command, extra, before, after)
 
 
 def test_the_seam_is_what_every_reading_reads(stand_ins, monkeypatch):
@@ -113,10 +122,47 @@ def test_past_a_limit_every_form_under_the_limits_is_still_read(stand_ins):
 
 
 def test_past_a_blank_limit_as_written_its_text_is_read_squeezed():
-    """The one form not read as it is: every rule's command position reads such a run in time far beyond its length."""
+    """One of the two forms not read as it is: every rule's command position reads such a run in time far beyond its
+    length, so the linear passes read it squeezed."""
     command = "ls" + " " * shell_text._MAX_BLANK_RUN + "x"
     assert command not in tp._detection_texts(command)
     assert shell_text._squeeze_blank_runs(command) in tp._detection_texts(command)
+
+
+# ── a form that is itself past a limit (blocker 1) ────────────────────────────
+# The whole text and its normalized form are under the limits; a `-c` payload or a launcher argument, read on its own,
+# is past one: its `$(` openers are split by quotes in the text (counting none there) and whole in the argument. That
+# form is the other one not read raw. Main reads it with every rule; this head reads its own squeezed linear passes, so
+# a forbid in it still holds instead of dropping to `ask unreadable`.
+#
+# The stand-in forbid here needs its word and an operand (`zz-target`) on one line, as a real rule reads an operand to
+# the end of its line. An inner quote sits between them in the text, so the whole text's own linear passes break the two
+# apart (every quote is a line start there) and miss the forbid: only the form read on its own, with that quote gone,
+# keeps them together. So the whole-text passes alone are not enough, and the per-form pass is what catches it.
+TARGET = "zz-target"
+OPERAND_RULE = tp._POS + re.escape(WORD) + r"[^\n]*" + re.escape(TARGET)
+SPLIT_SUBST = "$'\"(\"'" * shell_text._MAX_NESTED_SUBSTITUTIONS       # NESTED `$(`, split by quotes in the text
+PAST_LIMIT_FORMS = {
+    "payload-single": f"sh -c '{WORD} \"q\" {TARGET}; {SPLIT_SUBST} '",
+    "payload-bash": f"bash -c '{WORD} \"q\" {TARGET}; {SPLIT_SUBST} '",
+    "launcher": f"watch '{WORD} \"q\" {TARGET}; {SPLIT_SUBST} '",
+    "launcher-tmux": f"tmux new '{WORD} \"q\" {TARGET}; {SPLIT_SUBST} '",
+}
+
+
+@pytest.fixture
+def operand_stand_in(monkeypatch):
+    rule = ("stand-in", re.compile(OPERAND_RULE, re.I | re.DOTALL), "a stand-in", False)
+    monkeypatch.setattr(tp, "_FORBID_C", [rule, *tp._FORBID_C])
+    return rule[1]
+
+
+@pytest.mark.parametrize("command", PAST_LIMIT_FORMS.values(), ids=PAST_LIMIT_FORMS.keys())
+def test_a_forbid_in_a_form_that_is_itself_past_a_limit_still_holds(operand_stand_in, command):
+    assert not shell_text.too_complex(command)                              # the whole text is under the limits
+    assert any(shell_text.too_complex(form) for form in tp._forms(command))  # but a form of it is past one
+    assert not any(operand_stand_in.search(f) for f in shell_text.over_limit_forms(command))  # whole-text passes miss it
+    assert _verdict(command) == ("forbid", "stand-in"), command
 
 
 # ── the inline-script check ───────────────────────────────────────────────────
@@ -171,4 +217,18 @@ def test_a_protected_name_in_a_script_is_read_in_every_form(monkeypatch):
     monkeypatch.setattr(tp, "_INLINE_SCRIPT", re.compile(tp._POS + re.escape(SCRIPT) + r"\b[^\n]*\s-c\b"))
     monkeypatch.setattr(tp, "_PROTECTED_NAME_C", re.compile(re.escape(REACH)))
     command = f"ls; {SCRIPT} -c {REACH}"
+    assert "protected-write" in tp.ask_rules(command)
+
+
+@pytest.mark.parametrize("command", SPLIT_WINS)
+def test_a_protected_name_is_read_where_a_split_form_would_win_the_most_lines_pick(monkeypatch, command):
+    """The protected-name check reads every form too, not the one with the most lines. Here a split form with more
+    lines holds no script, so reading only it (the most-lines pick) would turn `ask protected-write` into `run`. No
+    stand-in reach rule is set, so the one reason the command asks is the protected name."""
+    monkeypatch.setattr(tp, "_INLINE_SCRIPT", re.compile(tp._POS + re.escape(SCRIPT) + r"\b[^\n]*\s-c\b"))
+    monkeypatch.setattr(tp, "_PROTECTED_NAME_C", re.compile(re.escape(REACH)))
+    most_lines = max(tp._forms(command), key=_lines)
+    assert not any(tp._PROTECTED_NAME_C.search(s) for s in tp._inline_scripts(most_lines))     # a split form would win
+    assert any(tp._PROTECTED_NAME_C.search(s) for form in _main_forms(command) for s in tp._inline_scripts(form))
+    assert tp.assess(command) == tp.Assessment("ask", "protected-write", tp.describe("protected-write")), command
     assert "protected-write" in tp.ask_rules(command)

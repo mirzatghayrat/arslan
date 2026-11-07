@@ -338,18 +338,21 @@ def _forms(text: str) -> tuple[str, ...]:
 
 
 def _detection_texts(text: str) -> tuple[str, ...]:
-    """`_forms`, or when a form of it (the `-c` argument it hides, say) is past the parser limit, the forms still read
-    cheaply: every one of them under the limits, the text as written (the form main reads), and what the forbid rules
-    read of the text in linear passes (`shell_text.over_limit_forms`). `_unparseable` then says the command can't be
-    read, and a forbid holds past the limit, so asking can't let one run. A form past a limit adds the linear passes and
-    takes no other form out. The one form left out is the text as written with a blank run past its limit: every rule's
-    command position reads such a run in time far beyond its length, so the linear passes read it squeezed instead."""
+    """`_forms`, or when any form of it (the `-c` argument it hides, say) is past the parser limit, the forms still read
+    cheaply: every one under the limits as it is, and every one past a limit as what the forbid rules read of it in
+    linear passes (`shell_text.over_limit_forms`), the same squeezed passes the ruling's blank-run exception reads. So a
+    form past a limit is still read — main reads it with every rule — and no form the parser would scan is read raw.
+    `_unparseable` then says the command can't be read, and a forbid holds past the limit, so asking can't let one run.
+    Two forms are left out of the readable set, both read squeezed instead: the text as written when its own blank run
+    is past the limit (every rule's command position reads such a run in time far beyond its length), and any other form
+    past a limit, read through its own linear passes rather than raw."""
     forms = _forms(text)
     if not _over_limit(forms):
         return forms
-    readable = [form for form in forms if not shell_text.too_complex(form)]
-    as_written = [] if shell_text.blank_run_over_limit(text) else [text]
-    return tuple(dict.fromkeys((*as_written, *readable, *shell_text.over_limit_forms(text))))
+    out: list[str] = [] if shell_text.blank_run_over_limit(text) else [text]     # the text as written (the fork-bomb)
+    for form in forms:
+        out += shell_text.over_limit_forms(form) if shell_text.too_complex(form) else [form]
+    return tuple(dict.fromkeys(out))
 
 
 def _over_limit(forms: tuple[str, ...]) -> bool:
