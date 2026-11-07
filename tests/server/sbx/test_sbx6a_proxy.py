@@ -415,6 +415,56 @@ async def test_plain_http_goes_upstream_at_the_checked_address_on_any_port(monke
     assert got[0].startswith(b"CONNECT 93.184.216.34:" + (port_text[1:] or "80").encode() + b" HTTP/1.1\r\n")
 
 
+_ANSWERS = {"public.example": ["93.184.216.34"], "lan.example": ["192.168.1.5"],
+            "mixed.example": ["93.184.216.34", "192.168.1.5"]}
+
+
+def _table_dns(monkeypatch) -> list[str]:
+    """`getaddrinfo` from `_ANSWERS`, for the real `_resolve_pinned`. Anything else must be a numeric address, so
+    nothing reaches DNS. Returns the names looked up."""
+    real = sandbox_proxy.socket.getaddrinfo
+    asked = []
+
+    def lookup(host, port, family=0, type=0, proto=0, flags=0):
+        if host not in _ANSWERS:
+            return real(host, port, family, type, proto, flags | sandbox_proxy.socket.AI_NUMERICHOST)
+        asked.append(host)
+        return [(None, None, None, "", (address, port)) for address in _ANSWERS[host]]
+    monkeypatch.setattr(sandbox_proxy.socket, "getaddrinfo", lookup)
+    return asked
+
+
+@pytest.mark.parametrize("name", ["lan.example", "mixed.example"])
+@pytest.mark.parametrize(("request_line", "public_target"), [
+    ("CONNECT {}:443 HTTP/1.1", b"public.example:443"),
+    ("CONNECT {}:8443 HTTP/1.1", b"93.184.216.34:8443"),
+    ("GET http://{}/ HTTP/1.1", b"93.184.216.34:80"),
+    ("GET http://{}:443/ HTTP/1.1", b"93.184.216.34:443"),
+])
+async def test_a_non_public_answer_is_refused_before_the_system_proxy(monkeypatch, origin, name, request_line,
+                                                                      public_target):
+    """With a system proxy set, a refusal by the real check ends the request on either branch: the proxy is never
+    contacted, by name or otherwise. A public name on the same request does reach it, so the refusal is the check's."""
+    port, got = origin
+    asked = _table_dns(monkeypatch)
+    monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {"https": f"http://127.0.0.1:{port}"})
+    monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "proxy_bypass", lambda host: False)
+
+    async def trusted():
+        return []
+    monkeypatch.setattr(sandbox_proxy, "_trusted", trusted)
+    p = sandbox_proxy.LocalProxy()
+    await p.start()
+    try:
+        reply = await _ask(p.port, f"{request_line.format(name)}\r\nHost: {name}\r\n\r\n".encode())
+        assert got == [] and asked == [name]
+        assert reply.startswith(b"HTTP/1.1 403 Forbidden"), reply
+        await _ask(p.port, f"{request_line.format('public.example')}\r\nHost: public.example\r\n\r\n".encode())
+    finally:
+        await p.close()
+    assert len(got) == 1 and got[0].startswith(b"CONNECT " + public_target + b" HTTP/1.1\r\n")
+
+
 async def test_port_starts_one_proxy_and_reuses_it():
     sandbox_proxy._reset_for_tests()
     try:
