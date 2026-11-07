@@ -71,15 +71,25 @@ def _url_identity(url: str) -> str:
 
 
 def _line_identity(command: str, args: list[str]) -> str:
-    """What a stdio server runs. For a package, by name and without a version, so a pinned copy of it is the same."""
-    line = [_blind(arg) for arg in cs.shown(None, args)[1]]
+    """What a stdio server runs. For a package, by name and without a version, so a pinned copy of it is the same.
+    The name is never masked: SEC1 reads a long one as a key, and every masked name would be the same server."""
+    line = list(args)
+    package = []
     if command in plugin_package._RUNTIMES:
         while line and line[0] in ("-y", "--yes"):
             line.pop(0)
-        pinned = plugin_package._PINNED.fullmatch(line[0]) if line else None
-        if pinned:
-            line[0] = pinned.group(1)
-    return json.dumps([command, *line])
+        if line:
+            pinned = plugin_package._PINNED.fullmatch(line[0])
+            package = [pinned.group(1) if pinned else line.pop(0)]
+            if pinned:
+                line.pop(0)
+    return json.dumps([command, *package, *[_blind(arg) for arg in cs.shown(None, line)[1]]])
+
+
+def _package_shown(package: str) -> str:
+    """The package as written, even one SEC1 reads as a key by its look alone (a long name with a digit): it's what this
+    click installs. A part of it that holds a key by where it sits (an address's password) stays masked."""
+    return package if all(set(part) == {"where", "index"} for part in cs.find(None, [package])) else cs.shown(None, [package])[1][0]
 
 
 @dataclass
@@ -111,10 +121,17 @@ class Found:
         return sorted({variable for _, variable in self.asked.values()})
 
     def keys(self) -> int:
-        return len(self.fixed) + len(cs.find(self.url, self.args))
+        return len(self.fixed) + len(cs.find(self.url, self.line[1:] if self.line else self.args))
+
+    def _shown(self) -> list[str]:
+        """The command and its arguments, every key masked. A package's own name isn't one, and what comes before it is `-y`."""
+        if not self.line:
+            return cs.shown(None, [self.command or "", *self.args])[1]
+        before = self.args[:len(self.args) - len(self.line)]
+        return [self.command or "", *before, _package_shown(self.line[0]), *cs.shown(None, self.line[1:])[1]]
 
     def view(self, *, here: bool, same_as: str | None) -> dict:
-        shown = [untrusted.clean_name(part, 500) for part in cs.shown(None, [self.command or "", *self.args])[1]]
+        shown = [untrusted.clean_name(part, 500) for part in self._shown()]
         return {"id": self.id, "tool": self.tool, "name": self.name, "digest": self.digest, "kind": self.kind,
                 "command": shown[0] or None, "arguments": shown[1:], "address": self.address,
                 # What the sandbox will give it (`capability_install.grants_for`). A program would run outside it.
@@ -209,15 +226,20 @@ def _read_line(found: Found, name: str, spec: dict) -> None:
 
 
 def _found(tool: str, name: str, raw) -> Found:
-    found = Found(id=f"{tool}:{name}", tool=tool, name=untrusted.clean_name(name, 120), digest=_digest(tool, name, raw))
+    # A file's name can hold a lone surrogate, which a response can't encode: the id is opaque, and only has to match.
+    found = Found(id=f"{tool}:{name}".encode("utf-8", "backslashreplace").decode(), tool=tool,
+                  name=untrusted.clean_name(name, 120), digest="")
     try:
+        found.digest = _digest(tool, name, raw)
         if not isinstance(raw, dict):
             raise Refused("unreadable", name)
         found.on_there = raw.get("enabled") is not False
-        found.tool_limits = bool(raw.get("enabled_tools") or raw.get("disabled_tools"))
+        found.tool_limits = "enabled_tools" in raw or "disabled_tools" in raw
         _read_line(found, name, _codex_shape(raw) if tool == "codex" else raw)
     except Refused as exc:
         found.refused, found.refused_part = exc.code, untrusted.clean_name(exc.part, 200)
+    except (ValueError, RecursionError):    # one entry no parser can read (`.host` decodes a bad `xn--` label) or hash: the others stay
+        found.refused, found.refused_part = "unreadable", found.name
     return found
 
 

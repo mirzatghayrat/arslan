@@ -28,7 +28,8 @@ from server.mcp import session
 from server.mcp import supervisor as supervisor_module
 from server.registry import executors
 from server.services import (capability_allowlist, capability_flow, capability_install, capability_list,
-                             capability_runtime, capability_sandbox, capability_scan)
+                             capability_runtime, capability_sandbox, capability_scan, connection_import)
+from server.services import connection_secrets as cs
 
 RealClient = httpx.AsyncClient
 URL = "/api/v1/capability-import"
@@ -214,6 +215,43 @@ async def test_one_bad_entry_is_listed_as_unreadable_and_the_others_stay(api, ho
     assert _row(scan, "claude_code:notes")["refused"] is None
 
 
+@pytest.mark.parametrize("entry", [
+    {"type": "http", "url": "https://xn--a.example.test/"},             # reads as a URL; its host only fails when decoded
+    {"type": "http", "url": "https://\udc80.example.test/"},             # a lone surrogate
+    {"command": "npx", "args": ["n", "\udc80"]}])
+async def test_an_entry_no_parser_can_read_is_unreadable_and_the_sheet_stays(api, home, entry):
+    _claude(home, {"bad": entry, "notes": {"command": "npx", "args": ["n"]}})
+    scan = await _scan(api)
+    assert (_row(scan, "claude_code:bad")["refused"], _row(scan, "claude_code:bad")["tick"]) == ("unreadable", False)
+    assert _row(scan, "claude_code:notes")["refused"] is None
+    assert (await _add(api, scan, "claude_code:bad"))["claude_code:bad"]["state"] == "refused"
+
+
+async def test_a_name_that_cannot_be_written_as_text_does_not_stop_the_sheet(api, home):
+    _claude(home, {"bad\udc80": {"args": ["no command"]}, "notes": {"command": "npx", "args": ["other"]}})
+    scan = await _scan(api)
+    assert len(scan["servers"]) == 2 and _row(scan, "claude_code:notes")["refused"] is None
+    bad = next(row for row in scan["servers"] if row["id"] != "claude_code:notes")
+    response = await api.post(URL, json={"servers": [{"id": bad["id"], "digest": bad["digest"]}]})
+    assert response.json()["results"][0]["state"] == "refused"
+
+
+async def test_an_entry_nested_past_what_can_be_hashed_is_unreadable_and_the_sheet_stays(api, home, monkeypatch):
+    """Right at the edge the parser takes it and the digest doesn't: the depth moves with the stack, so the digest is told."""
+    real = json.dumps
+
+    def deep(value, **kwargs):
+        if isinstance(value, list) and value[1:2] == ["deep"]:
+            raise RecursionError
+        return real(value, **kwargs)
+    monkeypatch.setattr(connection_import.json, "dumps", deep)
+    _claude(home, {"deep": {"command": "npx", "args": ["n"]}, "notes": {"command": "npx", "args": ["other"]}})
+    scan = await _scan(api)
+    assert (_row(scan, "claude_code:deep")["refused"], _row(scan, "claude_code:deep")["tick"]) == ("unreadable", False)
+    assert (await _add(api, scan, "claude_code:deep"))["claude_code:deep"]["state"] == "refused"
+    assert _row(scan, "claude_code:notes")["refused"] is None
+
+
 # ── keys ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 async def test_the_scan_says_how_many_keys_and_shows_none(api, home, caplog):
@@ -331,11 +369,53 @@ async def test_a_server_off_in_codex_is_listed_unticked_and_a_tick_still_takes_i
 async def test_tool_limits_that_do_not_come_along_are_said_and_start_unticked(api, home):
     _codex(home, f'[mcp_servers.limited]\nurl = "{REMOTE}"\ndisabled_tools = ["danger"]\n'
                  f'[mcp_servers.narrow]\nurl = "https://b.example.test/m"\nenabled_tools = ["one"]\n'
+                 f'[mcp_servers.none]\nurl = "https://d.example.test/m"\nenabled_tools = []\n'
                  f'[mcp_servers.plain]\nurl = "https://c.example.test/m"\n')
     scan = await _scan(api)
-    for row_id, limited in (("limited", True), ("narrow", True), ("plain", False)):
+    for row_id, limited in (("limited", True), ("narrow", True), ("none", True), ("plain", False)):
         row = _row(scan, f"codex:{row_id}")
         assert (row["tool_limits"], row["tick"]) == (limited, not limited), row_id
+
+
+# ── the package the sheet shows is the one that installs ─────────────────────────────────────────────────────────
+
+LONG_NAME = "mcp0server1for2notes3and4tasks5"
+OTHER_LONG_NAME = "mcp9server8for7mail6and5files4"
+
+
+@pytest.mark.parametrize("command, package", [("npx", LONG_NAME), ("uvx", LONG_NAME), ("uvx", f"long-{LONG_NAME}==1.2.3")])
+async def test_a_long_package_name_shows_as_written_and_is_no_key(api, home, command, package):
+    assert cs.find(None, [package]), "a name this test is about reads as a key to SEC1"
+    _claude(home, {"long": {"command": command, "args": ["-y", package]}})
+    row = _row(await _scan(api), "claude_code:long")
+    assert (row["command"], row["arguments"]) == (command, ["-y", package])
+    assert (row["keys"], row["network"], row["refused"], row["tick"]) == (0, False, None, True)
+
+
+async def test_what_follows_the_package_is_still_masked_and_counted(api, home):
+    _claude(home, {"long": {"command": "npx", "args": ["-y", LONG_NAME, "--token", FAKE, FAKE + "abcdefghij"]}})
+    row = _row(await _scan(api), "claude_code:long")
+    assert row["arguments"][:2] == ["-y", LONG_NAME] and FAKE not in json.dumps(row)
+    assert (row["keys"], row["network"]) == (2, True)
+
+
+async def test_a_key_in_a_package_spec_stays_masked(api, home):
+    _claude(home, {"spec": {"command": "npx", "args": [f"https://user:{FAKE}@x.example.test/p.tgz"]}})
+    row = _row(await _scan(api), "claude_code:spec")
+    assert FAKE not in json.dumps(row) and "x.example.test" in row["arguments"][0]
+
+
+async def test_two_long_names_are_two_servers_on_the_sheet_and_against_what_is_here(api, home, execution_db):
+    async with execution_db() as db:
+        db.add(MCPServer(id=1, label="by hand", transport="stdio", command="npx", args=["-y", f"{LONG_NAME}@1.0.0"], state="off"))
+        await db.commit()
+    _claude(home, {"one": {"command": "npx", "args": [LONG_NAME]}, "two": {"command": "npx", "args": [OTHER_LONG_NAME]},
+                   "three": {"command": "uvx", "args": [OTHER_LONG_NAME]}, "four": {"command": "uvx", "args": ["-y", OTHER_LONG_NAME]}})
+    scan = await _scan(api)
+    assert _row(scan, "claude_code:one")["here"] is True
+    two = _row(scan, "claude_code:two")
+    assert (two["here"], two["same_as"], two["tick"]) == (False, None, True)
+    assert _row(scan, "claude_code:four")["same_as"] == "claude_code:three"
 
 
 # ── what's already here ──────────────────────────────────────────────────────────────────────────────────────────
@@ -465,6 +545,7 @@ class _World:
 
     def __init__(self, data):
         self.data, self.remote, self.sign_in, self.fail_lock, self.remote_status = data, [], False, None, None
+        self.notification_status = 202
 
     def __call__(self, request):
         host = request.url.host
@@ -487,7 +568,7 @@ class _World:
             return httpx.Response(self.remote_status)
         message = json.loads(request.content)
         if "id" not in message:
-            return httpx.Response(202)
+            return httpx.Response(self.notification_status)
         result = ({"protocolVersion": message["params"]["protocolVersion"], "capabilities": {"tools": {}},
                    "serverInfo": {"name": "vendor", "version": "1"}} if message["method"] == "initialize"
                   else {"tools": [{"name": "search", "description": "searches", "inputSchema": {"type": "object"}}]})
@@ -689,6 +770,31 @@ async def test_a_remote_that_answers_with_an_error_leaks_the_key_in_its_address_
     assert FAKE not in json.dumps(result)
     await _nothing_stored_holds(execution_db, FAKE)
     assert FAKE not in caplog.text
+
+
+@pytest.mark.real_mcp
+@pytest.mark.parametrize("status", [400, 403, 500, 502])
+async def test_a_remote_that_errors_after_initialize_leaks_the_key_in_its_address_nowhere(api, home, execution_db, world, caplog, status):
+    """The SDK's post writer logs a traceback whose last line quotes the whole address: the words and the type stay."""
+    caplog.set_level(logging.DEBUG)
+    world.notification_status = status
+    _claude(home, {"vendor": {"type": "http", "url": f"{REMOTE}?api_key={FAKE}"}})
+    (await _add(api, await _scan(api), "claude_code:vendor"))["claude_code:vendor"]
+    assert "Error in post_writer (HTTPStatusError)" in caplog.text
+    assert FAKE not in caplog.text
+
+
+def test_only_the_sdk_clients_tracebacks_lose_their_text():
+    def _log(name):
+        try:
+            raise ValueError("a detail")
+        except ValueError:
+            logger = logging.getLogger(name)
+            return logger.makeRecord(name, logging.ERROR, __file__, 1, "words %s", ("here",), sys.exc_info())
+    record = _log("mcp.client.streamable_http")
+    assert (record.getMessage(), record.exc_info) == ("words here (ValueError)", None)
+    other = _log("server.something")
+    assert other.getMessage() == "words here" and other.exc_info
 
 
 @pytest.mark.real_mcp

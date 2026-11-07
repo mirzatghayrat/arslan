@@ -122,6 +122,11 @@ def _install_redacting_record_factory() -> None:
     def make(*args, **kwargs):
         record = previous(*args, **kwargs)
         redactor.filter(record)
+        # The MCP SDK logs a connection's failure with a traceback, whose last line quotes the whole address, which can
+        # hold a key (CAP8-1). Its words and the exception's type say what happened.
+        if record.name.startswith("mcp.client") and record.exc_info and record.exc_info[0]:
+            record.msg, record.args = f"{record.getMessage()} ({record.exc_info[0].__name__})", ()
+            record.exc_info = None
         return record
     make.arslan_redacts = True
     logging.setLogRecordFactory(make)
