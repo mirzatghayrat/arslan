@@ -107,6 +107,9 @@ SCHEMA_400 = (MODEL_CALL_FAILED + " AND instr(error_text, 'HTTP 400') > 0 AND ("
 WAITING = "phase = 'waiting_user'"
 # turn_facts.py:105 (facts) and orchestrator/memory.py:165 (summary), after the answer
 FACTS, SUMMARY = "scope = 'memory_facts'", "scope = 'memory'"
+# SBX-7: a step whose run noted a sandbox denial (run_recorder keeps the code on `ref`), and the ledger's cards to
+# leave the sandbox.
+DENIED, LEAVING = _json("s.ref", "denial") + " IS NOT NULL", "kind = 'outside'"
 
 # (sql, names): one row of counts per week. Every `?` pair is the week's (start, end).
 WEEKLY = [
@@ -125,6 +128,10 @@ WEEKLY = [
      f"FROM approval_events WHERE {_week('created_at')}", ("cards_shown", "cards_auto")),
     (f"SELECT {_n(FACTS)}, {_n(SUMMARY)} FROM usage_ledger WHERE {_week('ts')}",
      ("memory_facts", "memory")),
+    (f"SELECT {_n(DENIED)} {STEPS}", ("rc_sandbox_denied",)),
+    # SBX-7: only cards that opened (SHOWN); one a run with nobody to ask refused was never a card.
+    (f"SELECT {_n(LEAVING + ' AND decided_by IN ' + SHOWN)} "
+     f"FROM approval_events WHERE {_week('created_at')}", ("leave_cards",)),
 ]
 # name -> GROUP BY query: (code, count) or, for tools, (code, calls, failed).
 BREAKDOWNS = {
@@ -271,6 +278,13 @@ def render(weeks: list[date], data: dict) -> str:
            "reach the ledger only after S4a. (The judgments table's command-card rows went with "
            "the shadow judge in C4; old ones age out under KEEP_DAYS.)")
     split("### Cards shown, by kind (ledger)", plain(data["shown_by_kind"]))
+    weekly("## Sandbox", ["Commands it stopped", "Cards to leave it"],
+           lambda w: [w["rc_sandbox_denied"], w["leave_cards"]],
+           "SBX-7; counts only, and never sent anywhere. Commands it stopped: run_command steps whose "
+           "run noted a sandbox denial (EPERM so far). An estimate, not a floor: it reads the command's own "
+           "output, so a command that prints the words counts and one that hides them does not, and a refusal "
+           "by the proxy (a 403, a failed lookup) doesn't count at all. Cards to leave it: outside cards that "
+           "opened. Their share of commands is a bench number (scripts/kernel_bench/report.py).")
     weekly("## Post-turn model calls", ["memory_facts rows", "memory rows"],
            lambda w: [w["memory_facts"], w["memory"]],
            "usage_ledger rows: one per scope and model, so about one per call (a scope that "

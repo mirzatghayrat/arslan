@@ -141,6 +141,7 @@ public final class FrameMapper {
         case "queued":
             return progressLine("Queued behind the current turn", now: now)
         case "propose_run_command":
+            // DELETE-BY: v0.1.65: the server no longer sends sandbox "retry" (a stop goes back to the model); keep only "outside".
             let outside = ["outside", "retry"].contains(frame["sandbox"] as? String ?? "")
             let line = frame["pretty"] as? String ?? frame["command"] as? String ?? ""
             let words = [line, frame["reason"] as? String ?? "", frame["rule"] as? String ?? ""].joined(separator: " ")

@@ -1,0 +1,267 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "This is a long answer that goes out while it is written. This is a long answer that goes out whi"
+ ],
+ [
+  "chunk",
+  "le it is written. This is a long answer "
+ ],
+ [
+  "chunk",
+  "that goes out while it is written. This "
+ ],
+ [
+  "chunk",
+  "is a long answer that goes out while it "
+ ],
+ [
+  "chunk",
+  "is written. This is a long answer that g"
+ ],
+ [
+  "chunk",
+  "oes out while it is written. This is a l"
+ ],
+ [
+  "chunk",
+  "ong answer that goes out while it is wri"
+ ],
+ [
+  "chunk",
+  "tten. This is a long answer that goes ou"
+ ],
+ [
+  "chunk",
+  "t while it is wr"
+ ],
+ [
+  "chunk",
+  "itten. This is a long answer that goes out while it is written. "
+ ],
+ [
+  "validated",
+  "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. "
+ ],
+ [
+  "checkpoint",
+  "validation_repair"
+ ],
+ [
+  "chunk",
+  "\n\nThese links were not verified: https://not-read.test/z"
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "Deterministic validation failed: bad one. Repair only within the existing task scope, permissions and remaining budget. Do not repeat successful or uncertain external writes. If repair is unavailable, state the failed checks and remaining work; do not claim acceptance.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "\n\nThis is a long answer that goes out while it is written. This is a long answer that goes out whi"
+ ],
+ [
+  "chunk",
+  "le it is written. This is a long answer "
+ ],
+ [
+  "chunk",
+  "that goes out while it is written. This "
+ ],
+ [
+  "chunk",
+  "is a long answer that goes out while it "
+ ],
+ [
+  "chunk",
+  "is written. This is a long answer that g"
+ ],
+ [
+  "chunk",
+  "oes out while it is written. This is a l"
+ ],
+ [
+  "chunk",
+  "ong answer that goes out while it is wri"
+ ],
+ [
+  "chunk",
+  "tten. This is a long answer that goes ou"
+ ],
+ [
+  "chunk",
+  "t while it is written"
+ ],
+ [
+  "chunk",
+  ". This is a long answer that goes out while it is written. again"
+ ],
+ [
+  "validated",
+  "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. \n\nThese links were not verified: https://not-read.test/z\n\nThis is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. again"
+ ],
+ [
+  "checkpoint",
+  "validation_repair"
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "Deterministic validation failed: bad one. Repair only within the existing task scope, permissions and remaining budget. Do not repeat successful or uncertain external writes. If repair is unavailable, state the failed checks and remaining work; do not claim acceptance.",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. again",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "Deterministic validation failed: bad two. Repair only within the existing task scope, permissions and remaining budget. Do not repeat successful or uncertain external writes. If repair is unavailable, state the failed checks and remaining work; do not claim acceptance.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\nTask acceptance criteria (these do not grant tools or permissions):\n[{\"kind\": \"mentions\", \"target\": \"x\"}]\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "\n\nThis is a long answer that goes out while it is written. This is a long answer that goes out whi"
+ ],
+ [
+  "chunk",
+  "le it is written. This is a long answer "
+ ],
+ [
+  "chunk",
+  "that goes out while it is written. This "
+ ],
+ [
+  "chunk",
+  "is a long answer that goes out while it "
+ ],
+ [
+  "chunk",
+  "is written. This is a long answer that g"
+ ],
+ [
+  "chunk",
+  "oes out while it is written. This is a l"
+ ],
+ [
+  "chunk",
+  "ong answer that goes out while it is wri"
+ ],
+ [
+  "chunk",
+  "tten. This is a long answer that goes ou"
+ ],
+ [
+  "chunk",
+  "t while it is written. Th"
+ ],
+ [
+  "chunk",
+  "is is a long answer that goes out while it is written. and again"
+ ],
+ [
+  "validated",
+  "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. \n\nThese links were not verified: https://not-read.test/z\n\nThis is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. again\n\nThis is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. and again"
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. \n\nThese links were not verified: https://not-read.test/z\n\nThis is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. again\n\nThis is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. This is a long answer that goes out while it is written. and again",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ],
+ [
+  "job",
+  {
+   "limit_reason": null,
+   "pause_reason": "task_validation_failed",
+   "repairs": 2
+  }
+ ]
+]

@@ -1,0 +1,122 @@
+[
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "chunk",
+  "This is a long answer that goes out while it is written. This is a long answer that goes out whi"
+ ],
+ [
+  "chunk",
+  "le it is written. This is a long answer "
+ ],
+ [
+  "chunk",
+  "that goes out while it is written. This "
+ ],
+ [
+  "chunk",
+  "is a long answer that goes out while it "
+ ],
+ [
+  "chunk",
+  "is written. This is a long answer that g"
+ ],
+ [
+  "chunk",
+  "oes out while it is written. This is a l"
+ ],
+ [
+  "chunk",
+  "ong answer that goes out while it is wri"
+ ],
+ [
+  "chunk",
+  "tten. This is a long answer that goes ou"
+ ],
+ [
+  "chunk",
+  "t while it is written. This is a long an"
+ ],
+ [
+  "chunk",
+  "swer that goes out while it is written. "
+ ],
+ [
+  "request",
+  {
+   "max_tokens": null,
+   "messages": [
+    {
+     "_turn_request": true,
+     "content": "the request",
+     "role": "user"
+    },
+    {
+     "_continuation": null,
+     "_finish": null,
+     "content": "Non-executable tool-call text omitted.",
+     "role": "assistant",
+     "tool_calls": []
+    },
+    {
+     "content": "The proposed answer was tool-call text, not a native tool request; it executed no action. Use an available native tool if needed, or give an honest answer stating the limitation. Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text.",
+     "role": "user"
+    }
+   ],
+   "system": "SYS\n\n<GUARD_NOTE>",
+   "tool_choice": null,
+   "tools": [
+    "edit_file",
+    "list_dir",
+    "read_file",
+    "web_extract",
+    "web_search",
+    "write_file"
+   ]
+  }
+ ],
+ [
+  "frame",
+  {
+   "keep": "",
+   "label": "Earlier draft, replaced: part of it was not right.",
+   "type": "stream_restart"
+  }
+ ],
+ [
+  "chunk",
+  "A plain answer after the stopped stream."
+ ],
+ [
+  "returned",
+  {
+   "escalation": null,
+   "external_seen": false,
+   "final": "A plain answer after the stopped stream.",
+   "history_compacted": false,
+   "stop_reason": null,
+   "tool_trace": []
+  }
+ ]
+]

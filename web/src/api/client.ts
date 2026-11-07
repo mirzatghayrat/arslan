@@ -314,13 +314,6 @@ export const api = {
   generateNotes: (topic: string) =>
     request<{ created: NoteDto[] }>("/brain/notes/generate", { method: "POST", body: JSON.stringify({ topic }) }),
   listSpawns: () => request<SpawnSummary[]>("/spawns"),
-  getSpawn: (id: number) => request<SpawnDetail>(`/spawns/${id}`),
-  deleteSpawn: (id: number) => request<void>(`/spawns/${id}`, { method: "DELETE" }),
-  updateConfig: (id: number, body: Partial<SpawnDetail>) =>
-    request<SpawnDetail>(`/spawns/${id}/config`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    }),
   getSettings: () => request<AppSettings>("/settings"),
   /** Why stored secrets cannot be read. Verdict key + counts; never plaintext. */
   getCryptoHealth: () => request<CryptoHealth>("/settings/crypto-health"),
@@ -510,8 +503,6 @@ export const api = {
   cancelRun: (id: number) => request<{ ok: boolean }>(`/runs/${id}/cancel`, { method: "POST" }),
   /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */
   redactAllRuns: () => request<{ redacted: number }>(`/runs/redact-all`, { method: "POST" }),
-  getKnowledge: (spawnId: number) =>
-    request<KnowledgeSource[]>(`/spawns/${spawnId}/knowledge`),
   ingestKnowledgeText: (spawnId: number, source: string, text: string, compress = false) =>
     request<IngestResult>(`/spawns/${spawnId}/knowledge`, {
       method: "POST",
@@ -541,11 +532,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url, compress }),
     }),
-  deleteKnowledge: (spawnId: number, source: string) =>
-    request<{ deleted: number }>(
-      `/spawns/${spawnId}/knowledge?source=${encodeURIComponent(source)}`,
-      { method: "DELETE" },
-    ),
   getPreferences: (spawnId: number) =>
     request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`),
   deletePreference: (spawnId: number, fact: string, identity?: { entry_id: string; expected_version: number }) =>
@@ -623,10 +609,6 @@ export const api = {
       `/collections/${id}/knowledge?source=${encodeURIComponent(source)}`,
       { method: "DELETE" },
     ),
-  bindCollection: (spawnId: number, cid: number) =>
-    request<{ bound: boolean }>(`/spawns/${spawnId}/collections/${cid}`, { method: "PUT" }),
-  unbindCollection: (spawnId: number, cid: number) =>
-    request<{ bound: boolean }>(`/spawns/${spawnId}/collections/${cid}`, { method: "DELETE" }),
   // ── Embedding ops: active provider status, backfill, local-model download ─────
   embeddingStatus: () => request<EmbeddingStatus>("/embedding/status"),
   reindexEmbeddings: () =>
@@ -642,6 +624,11 @@ export const listProviderConfigs = () =>
 
 export const addProviderConfig = (body: Omit<ProviderConfig, "id" | "is_primary">) =>
   request<ProviderConfig>("/settings/provider-configs", { method: "POST", body: JSON.stringify(body) });
+
+/** MODEL1 (v0.1.64): the provider's live model list for Add model, fetched once with the key just typed. The key
+ *  goes in the POST body only and is not stored; a failure answers with the built-in list (source "static"). */
+export const previewProviderModels = (body: { provider: string; base_url: string; api_key: string }) =>
+  request<ModelListResult>("/settings/provider-models/preview", { method: "POST", body: JSON.stringify(body) });
 
 export const updateProviderConfig = (id: number, body: Partial<ProviderConfig>) =>
   request<ProviderConfig>(`/settings/provider-configs/${id}`, { method: "PUT", body: JSON.stringify(body) });

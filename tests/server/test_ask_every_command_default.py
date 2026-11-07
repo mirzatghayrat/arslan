@@ -218,7 +218,7 @@ def _notice(db_path) -> str | None:
 
 @pytest.mark.parametrize("stored", ["ask_risky", None, " ASK_RISKY ", "garbage", ""])
 async def test_every_old_install_v0162_read_as_ask_risky_gets_a_one_time_notice(tmp_path, stored):
-    """R63 (user 10-24, "in practice, every old user"): v0.1.62 read everything but ask_all as ask_risky, its
+    """R63 (user 10-24: in practice, every old user): v0.1.62 read everything but ask_all as ask_risky, its
     default, so an install that never touched the setting was on it too. Each is told once, after the upgrade."""
     db = tmp_path / "old.db"
     _before_0070(db)

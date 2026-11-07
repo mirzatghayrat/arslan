@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db import session as db_session
-from server.db.models import Base, ConversationEvent, Run, RunStep, ScheduledTask, ScheduledTaskRun
+from server.db.models import Base, ConversationEvent, Run, RunStep, ScheduledTask, ScheduledTaskRun, Spawn
 from server.orchestrator import arslan, run_trace
 from server.services import run_recorder, scheduler, task_service
 from server.services.run_recorder import RUN_RAW_CAP
@@ -173,6 +173,8 @@ async def test_read_and_search_steps_keep_every_path_they_read(memdb):
 
 async def test_the_four_diagnostics_count_host_runs_and_still_skip_replays(client):
     async with client.db_maker() as db:
+        db.add(Spawn(id=9, name="Replay", domain_category="g", system_prompt="sp"))   # runs.spawn_id is a foreign key
+        await db.flush()
         for i in range(3):
             db.add(Run(conversation_id="c", spawn_id=None, spawn_name="Arslan", user_message=f"host {i}",
                        status="scored", task_tokens=10, total_ms=100, kind="host", error_kind="timeout"))

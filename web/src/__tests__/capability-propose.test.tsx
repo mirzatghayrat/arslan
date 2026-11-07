@@ -102,6 +102,16 @@ describe("where it ended", () => {
     expect(screen.getByTestId("capability-result")).toHaveTextContent('discover.result_on:{"name":"excel-mcp-server","count":26}');
   });
 
+  it("waiting for sign-in says so, as neither a success nor a failure", () => {
+    frame({ type: "capability_result", call_id: "cap-2", source_id: "s2", state: "needs_sign_in", name: "notes", tools: 0 });
+    const msgs = toUiMessages(useArslanStore.getState().items as never);
+    render(<CapabilityResultLine result={msgs[msgs.length - 1].capabilityResult!} />);
+    const line = screen.getByTestId("capability-result");
+    expect(line).toHaveAttribute("data-state", "needs_sign_in");
+    expect(line).toHaveTextContent('discover.result_signIn:{"name":"notes"}');
+    expect(line.className).toContain("text-ask");
+  });
+
   it("failed and blocked say so", () => {
     const { unmount } = render(<CapabilityResultLine result={{ state: "failed", name: "x", tools: 0, sourceId: "s", stage: "test", detail: "Connection closed" }} />);
     expect(screen.getByTestId("capability-result")).toHaveTextContent('discover.result_failed:{"name":"x","stage":"test","detail":"Connection closed"}');

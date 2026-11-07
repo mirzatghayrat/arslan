@@ -60,6 +60,7 @@ class RecipeExecution(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
+# DELETE-BY: v0.1.64, with C7c-4 (the model) and C7c-5 (the table and what points at it).
 class Spawn(Base):
     __tablename__ = "spawns"
 
@@ -340,7 +341,7 @@ class CapabilitySource(Base):
     what it may touch, and what the scan and the first test said."""
     __tablename__ = "capability_sources"
     __table_args__ = (
-        CheckConstraint("kind IN ('mcp','skill')", name="ck_capability_source_kind"),
+        CheckConstraint("kind IN ('mcp','skill','plugin')", name="ck_capability_source_kind"),
         CheckConstraint("state IN ('proposed','installed','failed','removed')", name="ck_capability_source_state"),
     )
     id = Column(String(36), primary_key=True)

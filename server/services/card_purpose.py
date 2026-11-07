@@ -91,7 +91,7 @@ def _closing(text: str, open_at: int) -> int:
     return -1
 
 
-def _parse(text: str) -> list[dict] | None:
+def _parse(text: str, depth: int = 0) -> list[dict] | None:
     """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
     is never closed (as commandSummary's `parse`)."""
     steps: list[dict] = []
@@ -121,7 +121,7 @@ def _parse(text: str) -> list[dict] | None:
                 end = text.find("`", i + 1) if ch == "`" else _closing(text, i + 1)
                 if end < 0:
                     return None
-                inner = _parse(text[i + 1 if ch == "`" else i + 2:end])
+                inner = _parse(text[i + 1 if ch == "`" else i + 2:end], depth + 1) if depth < 64 else None
                 if inner is None:
                     return None
                 step["subs"].extend(inner)
@@ -306,7 +306,7 @@ def _run(program: str) -> dict:
 
 
 def _over_network(program: str) -> dict:
-    """SMART-8 (#688/#689 reviews, Astra's two rounds; the user: 「简化吧」): a step that reaches another machine is
+    """SMART-8 (#688/#689 reviews, Astra's two rounds; the user asked for the simpler version): a step that reaches another machine is
     read only as a fixed line — no host, no file — because what it sends cannot be told from the command. `unsure` is
     set, so the risk row and the card say so, and the Mac card shows the whole command."""
     return _reading("overNetwork", {"program": program}, unsure=True)
@@ -316,7 +316,7 @@ def _over_network(program: str) -> dict:
 _NETWORK = {"curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "socat", "telnet", "ftp", "tftp", "lftp",
             "smbclient", "sftp", "ssh", "mosh", "autossh", "scp", "rsync", "mail", "mailx", "sendmail", "msmtp",
             "mutt", "aws", "gcloud", "gsutil", "gh", "az", "rclone", "s3cmd", "dig", "nslookup", "host", "ping",
-            "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine"}
+            "traceroute", "openssl", "ssh-copy-id", "docker", "podman", "kubectl", "twine", "azcopy"}
 #: Interpreters whose inline code (`-c`, `-e`, `--eval` in any attached form) could reach the network (Astra 7).
 _INLINE_CODE = {"python": r"^-[A-Za-z]*c", "python2": r"^-[A-Za-z]*c", "python3": r"^-[A-Za-z]*c",
                 "node": r"^(?:-[A-Za-z]*[ep]|--eval|--print)", "perl": r"^-[A-Za-z]*[eE]", "ruby": r"^-[A-Za-z]*e",
@@ -612,7 +612,7 @@ async def language() -> str:
 
 def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, lang: str = "en",
            outside: bool = False, unsandboxed: bool = False, host: str | None = None, shortcut_as_you: bool = False,
-           network: bool = False) -> str:
+           network: bool = False, delete_mode: str = "") -> str:
     """The card's title in `lang`: first the code's facts, where it runs when that is not this Mac's sandbox and
     whether it uses the network, in a fixed form; then the code's reading of `shell`; then Arslan's reason when it
     gave one. The reason is cut first, then the reading, so the whole title fits the phone's heading (PHONE_MAX) and
@@ -620,6 +620,12 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     nor the command's carry a bidi or zero-width character into the heading."""
     facts = []
     s = summarize(shell, rules)
+    # SMART-8: a delete card says how allow deletes (`delete_to_trash.card_mode`), so the phone's heading never
+    # reads the same for a move to the Trash and a permanent delete. Word for word with web `deleteMode`.
+    if delete_mode in ("trash", "protected") and s["purpose"]["key"] == "delete":
+        s["purpose"] = {**s["purpose"], "key": "toTrash"}
+    if delete_mode in _DELETE_FACTS:
+        facts.append(_say(lang, "fact", _DELETE_FACTS[delete_mode], {}))
     on_network = s["purpose"]["key"] == "overNetwork"              # the reading already says it uses the network
     if shortcut_as_you:
         facts.append(_say(lang, "fact", "shortcutAsYou", {}))
@@ -647,6 +653,9 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     else:
         text = _cut(reading, room)
     return f"{lead}{join}{text}" if lead else text
+
+
+_DELETE_FACTS = {"protected": "ownFilesStay", "permanent": "permanent", "sandboxed": "permanentSandbox"}
 
 
 def _cut(text: str, room: int) -> str:
