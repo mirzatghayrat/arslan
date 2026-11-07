@@ -5,10 +5,12 @@
 | | |
 |---|---|
 | Lane | ⑥Helper |
-| Review and merge | L11-3a and L11-3b write into or remove from the user's rules files, so both are on the security surface: another session reviews at effort=max, and the user merges. L11-3b is UI, so its mock goes to the user first. |
-| Branches | `claude/0164-l11-3a-remove`, `claude/0164-l11-3b-memory` |
-| Tier | should (with L11) |
-| Order | 3a first (a bug). 3b after the user OKs its mock. 3c is in this PR. |
+| Review and merge | **Corrected 2026-11-07.** Only L11-3b is left, and it is web only: it reads a practice's scope and writes nothing, to Memory or to any rules file. Another session reviews it at the effort `docs/sessions.md` §5 sets for what it touches. (The original line made 3a and 3b security surface because they wrote to or removed from the user's rules files; that writer is gone, see the status below.) |
+| Branches | `claude/0164-l11-3b-memory-scope` (3a's branch is not needed) |
+| Tier | should (with L11); **L11-3b must ship in the same release as #718 and #738** (tag checklist in STATUS) |
+| Order | 3b: its mock is done (option A below); build it from the mock. 3c is SMOKE step 5. |
+
+**Status (2026-11-07).** #681 (L11 (b) PR-A) removed the rule card, Add, Remove and the server-side writer of the rules record, so **3a and 3d have nothing left to fix** and are kept below only as history. #718 (PR-B) scopes a practice to a folder when a correction recurs there, and #738 (PR-C) puts that scope on Memory's list. Nothing shows it yet. 3b is that UI.
 
 ## What is there (main `6953a7c4`)
 
@@ -41,24 +43,35 @@
 
 **Size:** about +40 server lines and +10 web lines.
 
-## L11-3b: the offer and the line in Memory (mock first)
+## L11-3b: Memory says where a practice applies (option A, web only)
 
-**Today:**
-- Once the chat reloads, an unanswered offer is gone. The lesson keeps `rule_offer = offered`, so it is never offered again.
-- Memory's lesson rows say nothing about rules files.
+**Corrected 2026-11-07.** This section used to describe the rule offer, with Add, Not now, Open and Remove on each row. All of that went with #681: Arslan never writes a rules file on its own, and no offer exists to show.
 
-**Proposed (for the mock):** each lesson row in Memory's learned practices shows its rule state, from the evidence it already has:
-- **offered:** "Offered as a rule for `AGENTS.md`", with Add / Not now. Add sends the record's own conversation id, so the server's checks are unchanged: `conversation_changed`, `folder_changed` and `lesson_changed` still apply.
-- **added:** "In `AGENTS.md`", with Open (the reader) and Remove (3a's endpoint).
-- **skipped / removed:** nothing.
+**What is on main (after #718 and #738):**
+- **A practice is scoped to a folder** when the same correction recurs in one chosen folder, with every one of its corrections from that folder. A later correction elsewhere widens it for good. The rule table is in #718.
+- **Recall leaves a scoped practice out** of every other folder.
+- **Memory's list carries the scope:** `lessons.present()` returns `scope` as `{"folder": …}` for a scoped practice and `None` otherwise. The folder is the shortened name Overview uses (`~/…` under home, the full path elsewhere). `web/src/api/lessons.ts` types it as `scope?`.
+- **Nothing shows it.** A practice that applied everywhere can stop applying outside one folder with no notice, and Memory doesn't say why.
 
-**The mock:** the row in each state, English and Chinese, light and dark, like L11-0's. It also shows 3a's extra (the delete sheet's line), so the user can pick it there. Nothing is built before the user's OK.
+**What 3b builds (the user chose option A on mock v3; the mock stays outside the repo):**
+- **A tag on the practice's row** naming the folder it applies in.
+- **A hint under the list** saying that tagged practices apply only in their folder.
+- **The scope in the turn-on sheet** for a practice that is switched off, so turning it on says where it will apply.
+- **Nothing in chat:** no frame, no card, no notification. The correction that narrows a practice merges into its row without a frame (the docstring in `tests/server/test_l11_folder_scope.py` says so).
+- **Web only:** no server change, no migration, no Bridge change.
 
-**Size:** about +60 web lines and six-language strings in `web/src/locales/workbench.ts` (no JSON locale, #525).
+**Rules for the build:**
+- **Read `scope.folder`, not `evidence`.** `evidence` still carries the raw paths (`folder_scope`, `corrected_in`).
+- **Render the folder name as text.** It is any folder name on disk.
+- **Strings in all six languages** in `web/src/locales/workbench.ts` (no JSON locale, #525).
+
+**Size:** about +60 web lines.
+
+**Method:** web tests per state (a scoped practice shows the tag; one with `scope: null` shows none; the hint shows only when a tag does; the turn-on sheet names the folder), a hostile folder name rendered as text, and mutants on each. **External evidence:** CI runs cited, and SMOKE step 5 on a real Mac.
 
 ## L11-3c: the real-Mac smoke
 
-The steps #603 listed are added to `SMOKE.md` in this PR, under "K10 + L11".
+The steps #603 listed are in `SMOKE.md` under "K10 + L11". Step 5 there (added 2026-11-07) checks 3b's scope tag on a real Mac.
 
 ## L11-3d: from #621's effort=max review (#603's code)
 
@@ -83,7 +96,7 @@ Size: about +60 server lines. Security surface: an effort=max review, and the us
 
 ## Not here
 
-- **Showing the live card again after a reload,** by saving it as a thread item. 3b's Memory row covers the same need without a new kind of saved message.
+- **Showing the live card again after a reload.** The card is gone (#681), so there is nothing to show.
 - **Model-initiated writes** to `AGENTS.md` / `CLAUDE.md` (HR's rule, unchanged).
 
 ## Four lines (`docs/sessions.md` §6)
@@ -99,7 +112,7 @@ Size: about +60 server lines. Security surface: an effort=max review, and the us
      - A `file` key that isn't in the conversation's listing: refused.
      - A hard-linked or symlinked file is still refused (#603's N1, through the new path).
    - **3a, mutants:** match on `lesson_id` only; take `file` as a client path; skip the listing check.
-   - **3b:** web tests per state (offered, added, skipped and removed); Add from Memory sends the record's conversation; Remove calls 3a's endpoint and the row reloads. Mutants on each.
+   - **3b:** see its section (corrected 2026-11-07); the 3a items above are history.
 4. **External evidence:**
    - CI runs cited.
    - The SMOKE steps on a real Mac.

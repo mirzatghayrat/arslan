@@ -39,7 +39,8 @@ def test_protected_paths_are_arslans_own_plus_the_users_secrets():
                  ".config/rclone", ".rclone.conf", ".s3cfg", ".boto", ".gsutil",
                  "Library/Application Support/Google/Chrome", "Library/Application Support/Firefox",
                  "Library/Application Support/BraveSoftware", "Library/Application Support/Microsoft Edge",
-                 "Library/Application Support/Arc", "Library/Safari", "Library/Cookies"):
+                 "Library/Application Support/Arc", "Library/Safari", "Library/Cookies",
+                 ".claude.json", ".claude/backups", ".claude/.credentials.json", ".codex/config.toml", ".codex/auth.json"):
         assert real(home / name) in secrets, name
     assert not set(ours) & set(secrets)
     assert command_sandbox.default_protected() == [*ours, *secrets]       # existing callers unchanged
@@ -96,6 +97,28 @@ async def test_an_apple_event_from_the_sandbox_reaches_no_app(tmp_path):
     # SBX-3: on the default-deny base osascript can't even look the app up (-1728), before any event (-600).
     assert "(-1728)" in result["stderr"] and not result.get("sandbox_denied")     # no outside card for this
     assert hint_for("run_command", result).startswith("Apple Events can't be sent")
+
+
+@pytest.mark.macos
+@macos
+async def test_other_agents_config_files_are_closed_to_a_sandboxed_command(tmp_path, monkeypatch):
+    """They can hold API keys and sign-ins. Only these: the rest of the folder stays readable, as other folders do."""
+    home = tmp_path / "home"
+    closed = [home / name for name in (".claude.json", ".claude.json.backup", ".claude.json.backup.1794015861378",
+                                       ".claude/backups/.claude.json.backup.1", ".claude/.credentials.json",
+                                       ".codex/config.toml", ".codex/auth.json")]
+    neighbour = home / ".codex/notes.txt"
+    for path in (*closed, neighbour):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"canary-{path.name}\n")
+    monkeypatch.setenv("HOME", str(home))
+    work = tmp_path / "work"
+    work.mkdir()
+    for path in closed:
+        result = await terminal_exec.run(f"cat '{path}'", cwd=work, sandbox=True)
+        assert result["sandbox"] == "workspace" and result["sandbox_denied"] is True, path
+        assert "canary" not in result["stdout"]
+    assert (await terminal_exec.run(f"cat '{neighbour}'", cwd=work, sandbox=True))["stdout"] == "canary-notes.txt\n"
 
 
 def test_an_app_the_sandbox_cant_look_up_gets_the_apple_events_hint():

@@ -7,7 +7,7 @@
 | Lane | ③Hands |
 | Review | effort=max for both PRs (command policy, the sandbox path and a settings migration, `docs/sessions.md` §5) |
 | Order | ASK1-a after S2a-3 and SBX-8. ASK1-b after ASK1-a and HR's e rule. HR doesn't wait for ASK1. |
-| Size | Two PRs, about +350 product lines in all (ASK1-b's wording runs through six locales), plus tests. One migration each, reserved by ②Main: 0087 (the notice flag only) and 0088 (`outside_seen` only). ASK1-a also carries the sandbox-first change below, so ③Hands re-estimates in its 10 lines to ⓪Plan before code (`docs/sessions.md` §5). |
+| Size | Two PRs, about +350 product lines in all (ASK1-b's wording runs through six locales), plus tests. One migration each, reserved by ②Main: 0087 (the notice flag only) and 0088 (`outside_seen`, and the settings key that tracks the scheduled-task note, set to `pending`). ASK1-a also carries the sandbox-first change below, so ③Hands re-estimates in its 10 lines to ⓪Plan before code (`docs/sessions.md` §5). |
 
 ## The two gaps
 
@@ -33,8 +33,8 @@
 ## ASK1-a: the default
 
 - **New installs:** an unset `shell_confirm_policy` reads as `ask_risky`. Unknown spellings still read as `ask_all`: anything unreadable stays strict.
-- **Existing installs (the user, 2026-11-07, relayed by ④参谋):** a stored `ask_all` stays. An unset policy moves to `ask_risky`. Both get one note saying how to switch. The migration (0087) writes nothing to the policy: it only sets the notice, for existing installs (`runner.EXISTED_BEFORE_THIS_BOOT`, as 0070 does), and the window picks the note's text from what the policy reads.
-- **One note, tracked by the same key.** `shell_policy_switch_notice` stays as the mechanism, with new text: the migration sets it to `pending` on existing installs (a pending old notice is replaced, not shown twice), and the window writes `seen`. Its `DELETE-BY` moves to v0.1.65.
+- **Existing installs (the user, 2026-11-07, relayed by ④参谋):** a stored `ask_all` stays. An unset policy moves to `ask_risky`. Both get one note saying how to switch. **An install that already stores `ask_risky`** (chosen again after migration 0070) sees no change, so it gets no note: the migration sets the notice only where the stored policy isn't `ask_risky`, and for a stored `ask_risky` it also clears a pending 0070 notice, since it is the same key (⓪Plan, from #720's review; the max review checks it). The migration (0087) writes nothing to the policy: it only sets the notice, for existing installs (`runner.EXISTED_BEFORE_THIS_BOOT`, as 0070 does), and the window picks the note's text from what the policy reads.
+- **One note, tracked by the same key.** `shell_policy_switch_notice` stays as the mechanism, with new text: the migration sets it to `pending` on existing installs whose stored policy isn't `ask_risky` (a pending old notice is replaced, not shown twice; for a stored `ask_risky` a pending old notice is cleared and none is set), and the window writes `seen`. Its `DELETE-BY` moves to v0.1.65.
 - **Delete, with their `DELETE-BY` lines:** the known-issue sheet (this card owns its removal, not S2a-3's rebase) and 0070's notice text.
 - **Keep the migration file `_0070`:** it stays in the chain. Only its notice block and its `DELETE-BY` line go.
 - **Gate:**
@@ -52,7 +52,7 @@ This is what ASK1-a turns on by default, but it lands earlier, with ③Hands' S2
 - **The command reader decides the network, not whether a command runs.** With no named rule, a command the reader can't understand runs in the sandbox with no card and offline, with a note saying why. If it needs the network, the model passes `network: true`, which shows the existing network card. Commands the reader understands keep the proxy.
 - **Kept:** forbid, named layer ② rules (including on unreadable text), a card when there's no sandbox, S2a-1, and a stored `ask_all`.
 - **Exception:** when the working folder is home or contains it, unreadable text still gets a card, because the sandbox doesn't hold there.
-- CLS and S5b keep the breakers already on their cards (3 denials in a row in a turn, 20 in total per conversation and per job, then back to cards). The classifier doesn't see tool output, so a denial's text never reaches it.
+- CLS and S5b keep the breakers already on their cards (3 denials in a row in a turn, 20 in total per conversation and per job, then back to cards). The classifier doesn't see tool output, so a denial's text never reaches it. **Those breakers count the classifier's denials in auto mode. They don't cover sandbox stops under `ask_risky`,** so nothing yet bounds a model that keeps hitting the sandbox here. **⓪Plan's decision: no new bound under `ask_risky`, and this doesn't hold ASK1-a,** unless SBX-7's denial count shows a loop.
 - `ask_all` is unchanged: every command still asks.
 - References: Codex's `exec_policy.rs` and Claude Code's sandboxing docs (below).
 
@@ -87,7 +87,7 @@ The `file:line`s above, and the SBX card's B-1 and SBX-8 sections. SBX-8's card 
 
 - **Red tests first:**
   - an unset policy reads `ask_risky`, on a new install and on an existing one; a stored `ask_all` (kept) and unknown spellings read `ask_all`;
-  - the migration on a fresh install, on an upgrade with the policy unset, on stored `ask_all`, on stored `ask_risky`, each with and without a pending notice, run twice: it sets the notice and writes no policy;
+  - the migration on a fresh install, on an upgrade with the policy unset, on stored `ask_all`, on stored `ask_risky`, each with and without a pending notice, run twice: it sets the notice (except on stored `ask_risky`, where it sets none and clears a pending one) and writes no policy;
   - sandbox first: inside the sandbox a command that isn't dangerous runs with no card; a denial comes back as a tool result and makes no card; leaving needs the model's request with a reason; under `ask_all` every command asks;
   - `outside_seen`: recorded, sticky, migrated to true, read at fire;
   - a scheduled run under each policy, with and without `outside_seen`: runs, refuses and lists, offline;

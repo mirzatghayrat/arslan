@@ -70,14 +70,35 @@ describe("a stopped job's card", () => {
   });
 
   it("keeps a card set aside or handled on its row with its state (Q7)", async () => {
-    vi.mocked(proactiveApi.items).mockResolvedValue({ items: [
-      followup(6, "dismissed"), followup(5, "snoozed", { snooze_until: "2026-11-03T08:00:00Z" })] } as never);   // newest first, as the server lists
-    render(<StoppedJobCards conversationId="c1" onOpenConversation={vi.fn()} />);
-    const older = await screen.findByTestId("proactive-item-5");
-    const newer = screen.getByTestId("proactive-item-6");
-    expect(within(older).getByText(/proactive\.item\.snoozedUntil/)).toBeInTheDocument();
-    expect(within(newer).getByText("proactive.item.dismissed")).toBeInTheDocument();
-    expect(older.compareDocumentPosition(newer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();   // oldest first, as the conversation reads
+    // A handled card stays for 7 days after the fixtures' fixed date, so the clock is pinned inside them: unpinned, this
+    // failed from 2026-11-07 08:00 UTC on. Only Date is faked, so findBy's own timers still run.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-01T08:00:00Z"));
+    try {
+      vi.mocked(proactiveApi.items).mockResolvedValue({ items: [
+        followup(6, "dismissed"), followup(5, "snoozed", { snooze_until: "2026-11-03T08:00:00Z" })] } as never);   // newest first, as the server lists
+      render(<StoppedJobCards conversationId="c1" onOpenConversation={vi.fn()} />);
+      const older = await screen.findByTestId("proactive-item-5");
+      const newer = screen.getByTestId("proactive-item-6");
+      expect(within(older).getByText(/proactive\.item\.snoozedUntil/)).toBeInTheDocument();
+      expect(within(newer).getByText("proactive.item.dismissed")).toBeInTheDocument();
+      expect(older.compareDocumentPosition(newer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();   // oldest first, as the conversation reads
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a handled card once its 7 days are over", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-08T08:00:00Z"));
+    try {
+      vi.mocked(proactiveApi.items).mockResolvedValue({ items: [followup(6, "dismissed"), followup(5)] } as never);
+      render(<StoppedJobCards conversationId="c1" onOpenConversation={vi.fn()} />);
+      await screen.findByTestId("proactive-item-5");
+      expect(screen.queryByTestId("proactive-item-6")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("without a model, 「接着做」 says so and offers the model settings", async () => {

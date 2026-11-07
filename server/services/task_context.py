@@ -9,7 +9,7 @@ from arslan.companion.content_policy import normalized_memory
 from server.db import session as db_session
 from server.db.models import ConversationContext
 from server.services import personal_context as pc
-from server.services import phone_ids
+from server.services import phone_ids, sub_sessions
 
 
 def explicit_save_digest(user_message: str) -> str | None:
@@ -43,12 +43,14 @@ def precise_text_request(message: str) -> bool:
 async def load(conversation_id: str, *, user_message="", retrieval_query: str | None = None) -> pc.TaskMemoryContext:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(ConversationContext, conversation_id)
+        # SUB2: a sub-session's settings are read through its parents, each turn. Any other conversation reads its row.
+        settings = await sub_sessions.effective_settings(db, row) if row else None
         from server.services import settings_service
         from server.services.llm_factory import memory_models_are_local
         model_is_local = await memory_models_are_local(db)
         # 0.1.52 (D1): "Remember me and use it in conversations", default on.
         remember = await settings_service.memory_in_conversations(db)
-        if not model_is_local and not (row and row.temporary):
+        if not model_is_local and not (settings and settings.temporary):
             from sqlalchemy import text
             local_history = await db.scalar(text("""
                 SELECT 1 FROM context_receipts WHERE conversation_id=:cid AND owner_id=:owner
@@ -65,29 +67,29 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
     return pc.TaskMemoryContext(
         task_id=identity, run_id=f"turn-{identity}", conversation_id=conversation_id,
         query=user_message if retrieval_query is None else retrieval_query,
-        owner_id=row.owner_id if row else "local", project_id=row.project_id if row else None,
+        owner_id=row.owner_id if row else "local", project_id=settings.project_id if settings else None,
         model_is_local=model_is_local,
-        no_memory=bool(row.no_memory) if row else False,
+        no_memory=settings.no_memory if settings else False,
         # Q1b (#486 review, G1): a quick question learns nothing, and one the phone made with no kind stored is
         # read as one (phone_ids.kind_of).
-        no_learning=(bool(row and row.no_learning)
+        no_learning=(bool(settings and settings.no_learning)
                      or phone_ids.kind_of(conversation_id, row.kind if row else None) == "quick"),
-        temporary=bool(row.temporary) if row else False,
-        cloud_memory_allowed=bool(row.cloud_memory_allowed) if row else False,
+        temporary=settings.temporary if settings else False,
+        cloud_memory_allowed=settings.cloud_memory_allowed if settings else False,
         # On: a cloud model may use NORMAL entries in every conversation; the
         # per-conversation switches (no memory, temporary, sensitive) keep their meaning.
-        cloud_memory_default=remember and not (row and row.temporary),
+        cloud_memory_default=remember and not (settings and settings.temporary),
         auto_activate_noticed=remember,
-        allow_sensitive=bool(row.allow_sensitive) if row else False,
+        allow_sensitive=settings.allow_sensitive if settings else False,
         explicit_save_digest=digest, explicit_save_ref=f"turn:{identity}" if digest else None,
-        allow_global_save=bool(digest) and not (row and row.project_id),
+        allow_global_save=bool(digest) and not (settings and settings.project_id),
     )
 
 
 async def is_temporary(conversation_id: str) -> bool:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(ConversationContext, conversation_id)
-        return bool(row and row.temporary)
+        return bool(row and (await sub_sessions.effective_settings(db, row)).temporary)
 
 
 def source_message(message_id: int):

@@ -45,10 +45,19 @@ class NothingToMove(ValueError):
     """The part asked for is not there, holds no secret, or holds a placeholder already."""
 
 
+def _reads_as_a_path(value: str) -> bool:
+    """`./`, `../` and `~/` can't start base64. A bare `/` can, so it also needs a second `/` and no `+` or `=`.
+    **Stated limit:** a key that starts with `/`, has a second one and neither of those, with no name before it, reads
+    as a path: about 1 standard base64 key in 250, and no hex or prefixed key."""
+    return value.startswith(("./", "../", "~/")) or (
+        value.startswith("/") and "/" in value[1:] and not re.search(r"[+=]", value))
+
+
 def _random_looking(value: str) -> bool:
     """A long value that reads like a key, not a word: 24 or more characters of a token alphabet, with letters
-    and digits both, and more than 3.5 bits of entropy per character."""
-    if len(value) < 24 or not re.fullmatch(r"[A-Za-z0-9_\-.~+/=]+", value):
+    and digits both, and more than 3.5 bits of entropy per character. One that reads as a path is a path: masking it
+    hides what a program runs or a folder it's given, and a key named as one (`--token /x`) is still found by its name."""
+    if len(value) < 24 or _reads_as_a_path(value) or not re.fullmatch(r"[A-Za-z0-9_\-.~+/=]+", value):
         return False
     if not (re.search(r"[A-Za-z]", value) and re.search(r"[0-9]", value)):
         return False

@@ -93,13 +93,19 @@ xfail = 43
 ["server/sbx/test_sbx6_network.py"]
 markers = 8
 cases = 94
-xfail = 91
+xfail = 8
 
 # SBX-6p: four default trust checks, four toggle checks, eight LAN cases.
 ["server/sbx/test_sbx6_settings.py"]
 markers = 3
 cases = 16
-xfail = 16
+xfail = 6
+
+# 0.1.64 SBX-6a: a sandboxed command reaches the local proxy, which refuses a loopback destination.
+["server/sbx/test_sbx6a_proxy.py"]
+markers = 1
+cases = 1
+xfail = 0
 
 # Stock Pool semaphore refusal and a same-policy run-prefixed control.
 ["server/sbx/test_sbx_multiprocessing.py"]
@@ -198,8 +204,8 @@ xfail = 0
 # (-600), a command reads its own conversation's saved output and nothing else in that folder, and
 # outside the sandbox the minimal profile keeps Arslan's data closed and the user's secrets open.
 ["server/test_s2a1_sandbox.py"]
-markers = 3
-cases = 3
+markers = 4
+cases = 4
 xfail = 0
 
 # 0.1.63 S3a: a checkpoint is a real clonefile(2) copy on APFS, and its folder carries the
@@ -208,6 +214,13 @@ xfail = 0
 markers = 1
 cases = 1
 xfail = 0
+
+# S2a-3 d: local measurement; CI prints the runner counts. Sixteen corpus families, eight file/path
+# families, observation controls and a plain pipeline. Twelve individually measured script omissions.
+["server/test_shell_grammar_differential.py"]
+markers = 5
+cases = 50
+xfail = 12
 
 ["server/test_skill_import.py"]
 markers = 1
