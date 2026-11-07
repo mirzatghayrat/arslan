@@ -83,6 +83,14 @@ describe('header', () => {
     expect((c.querySelector('[data-testid=code-lang]') as HTMLElement).textContent).toBe('ui.code');
   });
 
+  it('tints the whole block, header and code alike, over an opaque base', () => {
+    const c = fence('bash', BASH);
+    const pre = c.querySelector('pre') as HTMLElement;
+    expect(pre.style.background).toBe('var(--color-fill)');
+    expect((c.querySelector('[data-testid=code-header]') as HTMLElement).style.background).toBe('var(--color-fill)');
+    expect((pre.parentElement as HTMLElement).style.background).toBe('var(--color-background)');
+  });
+
   it('has exactly one copy button, inside the header, not floating over the code', () => {
     const c = fence('bash', BASH);
     const buttons = c.querySelectorAll('button');
@@ -501,6 +509,37 @@ describe('colour tokens', () => {
     const sheet = readFileSync(resolve(here, '../index.css'), 'utf8');
     const used = new Set(Array.from(sheet.matchAll(/var\(--code-([a-z-]+)\)/g), (m) => m[1]));
     expect(Array.from(used).sort()).toEqual([...kinds].sort());
+  });
+
+  it('every token colour holds 4.5:1 on the tinted block, in every palette', () => {
+    const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const luminance = (c: number[]) => {
+      const [r, g, b] = c.map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrast = (a: number[], b: number[]) => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const backgrounds = Array.from(css.matchAll(/--background:\s*(#[0-9a-fA-F]{6})/g), (m) => rgb(m[1]));
+    expect(backgrounds).toHaveLength(12);
+    for (const [selector, isMode] of [[':root', (l: number) => l > 0.5], ['.dark', (l: number) => l <= 0.5]] as const) {
+      const rules = declared(selector);
+      const fill = rules.match(/--fill: rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/)!;
+      const alpha = Number(fill[4]);
+      for (const bg of backgrounds.filter((b) => isMode(luminance(b)))) {
+        const tinted = bg.map((v, i) => Math.round(v * (1 - alpha) + Number(fill[i + 1]) * alpha));
+        for (const kind of kinds) {
+          const hex = rules.match(new RegExp(`--code-${kind}: (#[0-9a-fA-F]{6})`))![1];
+          expect(contrast(rgb(hex), tinted), `${selector} ${kind} on ${tinted}`).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  });
+
+  it('operators and punctuation use a token that holds that, not the per-palette muted colour', () => {
+    const sheet = readFileSync(resolve(here, '../index.css'), 'utf8');
+    expect(sheet).toMatch(/\.md-code \.token\.operator,\s*\.md-code \.token\.punctuation,\s*\.md-code \.token\.parameter \{ color: var\(--code-comment\); \}/);
   });
 
   it('the component carries no colour literal for tokens', () => {

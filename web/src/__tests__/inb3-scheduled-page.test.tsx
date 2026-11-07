@@ -50,7 +50,7 @@ const away = (unattended: boolean, conversation_id = "conv-chat") => ({
   conversation_id, kind: "send", target: "mail:team", detail: "send mail", always_ok: false, always: [], unattended,
 });
 const watch = (id: number, label: string) => ({ id, kind: "web", target: `https://example.com/${id}`, label, enabled: true,
-  interval_s: 3600, notify: true, last_error: null, last_checked_at: null, last_changed_at: null });
+  interval_s: 3600, last_error: null, last_checked_at: null, last_changed_at: null });
 
 function seed() {
   vi.mocked(api.listScheduledTasks).mockResolvedValue([

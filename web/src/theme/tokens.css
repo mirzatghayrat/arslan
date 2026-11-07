@@ -152,10 +152,11 @@
 .dark { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; }
 
 /* FMT1 syntax colours for highlighted code: the iPhone mock's purple, orange and grey (green and red are ours: the mock
-   has no string or diff), so a code block reads the same on both. Light/dark only, not per palette (like the kit above). */
+   has no string or diff), so a code block reads the same on both. Light/dark only, not per palette (like the kit above).
+   The whole block is tinted with --fill, and each value holds 4.5:1 on that tint in every palette. */
 :root {
-  --code-comment: #6E6E73; --code-keyword: #8A3FFC; --code-number: #B55400;
-  --code-string: #1A7F4B; --code-inserted: #1A7F4B; --code-deleted: #C62828;
+  --code-comment: #69696E; --code-keyword: #823CEE; --code-number: #AB4F00;
+  --code-string: #197847; --code-inserted: #197847; --code-deleted: #C62828;
 }
 .dark {
   --code-comment: #8E8E93; --code-keyword: #C49BFF; --code-number: #FFB15C;

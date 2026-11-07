@@ -58,8 +58,9 @@ DEFAULT: dict = {
         "shopify.com", "box.com", "dropbox.com", "monday.com", "canva.com", "gitlab.com", "amazon.com",
         "huggingface.co", "paypal.com", "playwright.dev", "jetbrains.com", "docker.com", "postman.com", "slack.com",
         "salesforce.com"]),
-    # Microsoft's own top-level domain: its Registry remotes run on agent365.svc.cloud.microsoft.
-    "hosts": {"microsoft.com": ["cloud.microsoft"]},
+    # Microsoft's own top-level domain: its Registry remotes run on agent365.svc.cloud.microsoft. GitHub's remote MCP
+    # server runs on api.githubcopilot.com.
+    "hosts": {"github.com": ["githubcopilot.com"], "microsoft.com": ["cloud.microsoft"]},
     "accounts": {
         "modelcontextprotocol": 182288589, "anthropics": 76263028, "github": 9919, "microsoft": 6154722,
         "google": 1342004, "cloudflare": 314135, "stripe": 856813, "makenotion": 4792552, "atlassian": 168166,

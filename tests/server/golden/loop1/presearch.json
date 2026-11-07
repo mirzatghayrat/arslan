@@ -1,5 +1,9 @@
 [
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"query\": \"the pre-search\"}",
@@ -14,13 +18,21 @@
   "web_search"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "web_search",
   {
    "query": "the pre-search"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [

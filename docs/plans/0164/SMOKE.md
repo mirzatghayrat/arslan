@@ -61,3 +61,7 @@ The card's external evidence (`docs/plans/0164/SB1-sidebar.md`, Four lines §4) 
    - **Expected:** Overview says "Folder rules: off", and the next turn doesn't follow the file's rules.
 4. **Language (L11-1):** in a folder whose `AGENTS.md` says "Write files in English", ask in Chinese for a short note saved as a file.
    - **Expected:** the reply is in Chinese and the file is in English.
+5. **Scope (L11 (b), L11-3b; must ship with #718 and #738):** in one project folder, correct Arslan on the same thing twice (as in step 2). Then correct it once more in a different folder, or in a chat with no folder.
+   - **Expected, after the first two corrections:** Memory's learned practices show the practice with a tag naming that folder, and a hint under the list says tagged practices apply only there. In a new chat in that folder the practice applies; in a chat in another folder it doesn't.
+   - **Expected, after the third correction elsewhere:** the practice is for everywhere for good: the tag is gone, and it applies in both folders, even back in the first.
+   - **Also check:** a practice that is switched off names its folder in the sheet that turns it on; the folder name reads as plain text (try a folder with `<b>` in its name); and `AGENTS.md` is still byte for byte unchanged.

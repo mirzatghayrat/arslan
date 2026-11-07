@@ -23,6 +23,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"path\": \"a.md\", \"content\": \"x\"}",
@@ -37,6 +41,10 @@
   "write_file"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "write_file",
   {
@@ -44,7 +52,11 @@
    "path": "a.md"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -113,6 +125,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"path\": \"a.md\", \"old_string\": \"x\", \"new_string\": \"y\"}",
@@ -127,6 +143,10 @@
   "edit_file"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "edit_file",
   {
@@ -135,7 +155,11 @@
    "path": "a.md"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
@@ -228,6 +252,10 @@
   }
  ],
  [
+  "execution checkpoint",
+  "tool_admitted"
+ ],
+ [
   "frame",
   {
    "args_summary": "{\"path\": \"a.md\"}",
@@ -242,13 +270,21 @@
   "read_file"
  ],
  [
+  "limit",
+  20.0
+ ],
+ [
   "ran",
   "read_file",
   {
    "path": "a.md"
   },
   {
-   "offline": false
+   "caller": null,
+   "model": "_Model",
+   "offline": false,
+   "outside": false,
+   "unwrapped": false
   }
  ],
  [
