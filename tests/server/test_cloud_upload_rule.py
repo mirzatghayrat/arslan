@@ -175,5 +175,5 @@ def test_a_forbidden_first_command_stays_forbidden_past_the_limit():
 def test_nesting_under_the_limit_is_still_read_with_the_stack_a_turn_has_used():
     """The limit has to leave room: a turn's dispatch is already some frames deep when it reads a command."""
     def deep(frames: int):
-        return deep(frames - 1) if frames else tp.assess("$(" * 255 + "git push")
+        return deep(frames - 1) if frames else tp.assess("$(" * (shell_text._MAX_NESTED_SUBSTITUTIONS - 1) + "git push")
     assert deep(200).rule == "git-push"

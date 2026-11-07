@@ -30,6 +30,7 @@ holds a layer ③ command, and a command outside it runs with the user's own per
 """
 from __future__ import annotations
 
+import functools
 import re
 import shlex
 from dataclasses import dataclass
@@ -294,18 +295,22 @@ _LAUNCHER = re.compile(
     r"(?:watch|script|concurrently|parallel|tmux\s+(?:new(?:-session|-window)?|split-window|send-keys|respawn-pane)"
     r"|screen)(?=\s)")
 _ARG_END = frozenset({";", "&&", "||", "|", "&", "|&", ";;"})
+# shlex's own punctuation, and a newline: outside quotes it ends the launcher's command, inside them it is part of
+# the argument, and so a line of the command it runs.
+_LAUNCHER_PUNCTUATION = "();<>|&\n"
 
 
 def _launcher_args(text: str) -> tuple[str, ...]:
-    """Every quoted argument of a launcher, up to the end of its command (`concurrently 'a' 'b'` runs both)."""
+    """Every quoted argument of a launcher, up to the end of its command (`concurrently 'a' 'b'` runs both). An
+    argument may span lines (`watch 'ls<newline>x'`): read only to the first line, it had no closing quote and
+    wasn't read at all."""
     out: list[str] = []
     for match in _LAUNCHER.finditer(text):
-        rest = text[match.end():].split("\n", 1)[0]
-        lexer = shlex.shlex(rest, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
+        lexer = shlex.shlex(text[match.end():], posix=True, punctuation_chars=_LAUNCHER_PUNCTUATION)
+        lexer.whitespace, lexer.whitespace_split = " \t\r", True
         try:
             for token in lexer:
-                if token in _ARG_END:
+                if token in _ARG_END or ("\n" in token and not token.strip(_LAUNCHER_PUNCTUATION)):
                     break
                 if any(ch.isspace() for ch in token):
                     out.append(token)          # it was quoted: a command line, not one word
@@ -314,21 +319,49 @@ def _launcher_args(text: str) -> tuple[str, ...]:
     return tuple(out)
 
 
-def _detection_texts(text: str) -> tuple[str, ...]:
+@functools.lru_cache(maxsize=64)        # assess, the limit check and ask_rules all ask
+def _forms(text: str) -> tuple[str, ...]:
     """The forms the rules are matched against: as written, normalized, and the variants with a
     newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
     not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
-    `ls && git push` ran with no card."""
+    `ls && git push` ran with no card. Also the arguments of every launcher in any of them (one in a `-c` payload:
+    `sh -c 'watch "…"'`), read the same way. Every form is read by every rule, and none is chosen over another: the
+    verdict is the most cautious one any form gives, so a form added here can only add caution."""
     if shell_text.too_complex(text):
         return (text,)
-    inner = tuple(t for arg in _launcher_args(text) for t in _detection_texts(arg))
-    return (text, shell_text.normalize(text), *shell_text.variants(text), *inner)
+    found = (text, shell_text.normalize(text), *shell_text.variants(text))
+    forms = list(found)
+    for arg in dict.fromkeys(arg for form in found for arg in _launcher_args(form)):
+        # Shorter each time, so the reading ends: a marked form can be longer than the text, and so its argument.
+        forms += _forms(arg) if len(arg) < len(text) else (arg,)
+    return tuple(dict.fromkeys(forms))
+
+
+def _detection_texts(text: str) -> tuple[str, ...]:
+    """`_forms`, or when a form of it (the `-c` argument it hides, say) is past the parser limit, the forms still read
+    cheaply: every one of them under the limits, the text as written (the form main reads), and what the forbid rules
+    read of the text in linear passes (`shell_text.over_limit_forms`). `_unparseable` then says the command can't be
+    read, and a forbid holds past the limit, so asking can't let one run. A form past a limit adds the linear passes and
+    takes no other form out. The one form left out is the text as written with a blank run past its limit: every rule's
+    command position reads such a run in time far beyond its length, so the linear passes read it squeezed instead."""
+    forms = _forms(text)
+    if not _over_limit(forms):
+        return forms
+    readable = [form for form in forms if not shell_text.too_complex(form)]
+    as_written = [] if shell_text.blank_run_over_limit(text) else [text]
+    return tuple(dict.fromkeys((*as_written, *readable, *shell_text.over_limit_forms(text))))
+
+
+def _over_limit(forms: tuple[str, ...]) -> bool:
+    return any(shell_text.too_complex(form) for form in forms)
 
 
 def _masked_texts(texts: tuple[str, ...]) -> tuple[str, ...]:
     """Quoted prose masked out for the positionless forbid rules, except under a shell carrier
-    (sh -c, eval, source), whose quoted argument is code (Hermes' hardline matcher)."""
-    return tuple(t if shell_text.has_shell_carrier(t) else shell_text.mask_quoted_prose(t) for t in texts)
+    (sh -c, eval, source), whose quoted argument is code (Hermes' hardline matcher). A text with no quote has nothing
+    to mask."""
+    return tuple(t if not ("'" in t or '"' in t) or shell_text.has_shell_carrier(t) else shell_text.mask_quoted_prose(t)
+                 for t in texts)
 
 
 def _matches(pattern, texts) -> bool:
@@ -354,7 +387,7 @@ def _quotes_close(text: str) -> bool:
 
 def _unparseable(text: str) -> str:
     """Why the command's text cannot be read at all, or "": then no other rule can be trusted."""
-    if shell_text.too_complex(text):
+    if _over_limit(_forms(text)):
         return "too complex to read before running"
     if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"
@@ -370,14 +403,19 @@ def _inline_scripts(text: str):
         yield line + ("\n" + body.group(0) if body else "")
 
 
+def _scripts(texts: tuple[str, ...]):
+    """Every inline script in every form. A form with a newline at each command start ends a script's line where its
+    command does; a form with fewer lines reads more of it; a `-c` payload read with its own newlines can have more
+    lines than the whole command but holds only part of it. Any of them can be the one that shows what the script
+    reaches, so none is chosen over the others: the most cautious reading of them all is the verdict."""
+    return (script for form in texts for script in _inline_scripts(form))
+
+
 def _hidden_code(texts: tuple[str, ...]) -> str:
     """Why what this command runs cannot be read from its text, or "" (layer ②'s `unreadable`)."""
     if _matches(_FETCHED_CODE, texts):
         return "it runs code it downloads, decodes or builds"
-    # Each command on its own line: the variant with a newline at every command start (the most lines), so a
-    # script's "line" stops where its command does.
-    split = max(texts, key=lambda t: t.count("\n"))
-    if any(_SCRIPT_REACH.search(script) for script in _inline_scripts(split)):
+    if any(_SCRIPT_REACH.search(script) for script in _scripts(texts)):
         return "its script reaches out, starts programs or drives apps"
     return ""
 
@@ -447,8 +485,7 @@ _PROTECTED_NAME_C = re.compile(_PROTECTED_NAME + r"|/(?:private/)?etc/")
 def _script_names_protected(texts: tuple[str, ...]) -> bool:
     """An inline script whose code names a protected file: a script reaches ~/.zshrc through
     expanduser or Path.home(), which no path pattern sees."""
-    split = max(texts, key=lambda t: t.count("\n"))
-    return any(_PROTECTED_NAME_C.search(script) for script in _inline_scripts(split))
+    return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
 def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
