@@ -3056,7 +3056,7 @@ button:disabled {
 .md-code .token.deleted { color: var(--code-deleted); }
 .md-code .token.operator,
 .md-code .token.punctuation,
-.md-code .token.parameter { color: var(--muted-foreground); }
+.md-code .token.parameter { color: var(--code-comment); }
 
 /* FMT1 PR 2: a reply's lists, task checkboxes and formulas (the iPhone mock). */
 /* A formula's boxes and kerns can move anything anywhere, over the chat around the reply and under its clicks, so a reply stops
