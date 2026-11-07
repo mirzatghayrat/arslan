@@ -59,6 +59,8 @@ class TaskMemoryContext:
     explicit_save_digest: str | None = None
     allow_global_save: bool = False
     lease: ContextLease | None = None
+    # SUB3: a sub-session's turn: its tree's spending limit is read before each model request (task_service).
+    sub_session: bool = False
 
     @property
     def cloud_memory_effective(self) -> bool:

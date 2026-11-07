@@ -121,7 +121,7 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
         remoteHost={c.remoteHost} fingerprints={c.fingerprints}
         background={c.background} sandbox={c.sandbox} why={c.why} rule={c.rule} rules={c.rules} unreadable={c.unreadable} deleteMode={c.deleteMode} deleteTargets={c.deleteTargets} network={c.network}
         unsandboxed={c.unsandboxed}
-        options={c.options} alwaysLabel={c.alwaysLabel} permKind={c.permKind}
+        options={c.options} alwaysLabel={c.alwaysLabel} permKind={c.permKind} subSession={c.subSession}
         expiresAt={expires(c)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_run_command', callId, c, scope); clearPendingCommand(c.callId); }}
         onCancel={(callId, note) => { no('cancel_run_command', callId, note); clearPendingCommand(c.callId); }} />) })),
@@ -132,20 +132,20 @@ function AskCards({ send }: { send: (frame: Record<string, unknown>) => void }) 
     ...pendingWorkspaceWrites.map((w) => ({ seq: w.seq ?? 0, key: `ws:${w.callId}`, render: (queue: AskQueuePosition) => (
       <WorkspaceWriteCard callId={w.callId} workspace={w.workspace}
         action={w.action} path={w.path} background={w.background}
-        options={w.options} alwaysLabel={w.alwaysLabel}
+        options={w.options} alwaysLabel={w.alwaysLabel} subSession={w.subSession}
         expiresAt={expires(w)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_workspace_write', callId, w, scope); clearPendingWorkspaceWrite(w.callId); }}
         onCancel={(callId, note) => { no('cancel_workspace_write', callId, note); clearPendingWorkspaceWrite(w.callId); }} />) })),
     ...pendingActions.map((a) => ({ seq: a.seq ?? 0, key: `act:${a.callId}`, render: (queue: AskQueuePosition) => (
       <ActionApprovalCard kind={a.kind} target={a.target} detail={a.detail}
         options={a.options} alwaysLabel={a.alwaysLabel} title={a.title} why={a.why}
-        permKind={a.permKind} background={a.background}
+        permKind={a.permKind} background={a.background} subSession={a.subSession}
         expiresAt={expires(a)} queue={queue}
         onConfirm={(scope) => { yes('confirm_action', a.callId, a, scope); clearPendingAction(a.callId); }}
         onCancel={(note) => { no('cancel_action', a.callId, note); clearPendingAction(a.callId); }} />) })),
     ...pendingSchedules.map((s) => ({ seq: s.seq ?? 0, key: `sched:${s.callId}`, render: (queue: AskQueuePosition) => (
       <ScheduleGrantCard callId={s.callId} name={s.name} when={s.when} prompt={s.prompt}
-        background={s.background} options={s.options} alwaysLabel={s.alwaysLabel}
+        background={s.background} options={s.options} alwaysLabel={s.alwaysLabel} subSession={s.subSession}
         expiresAt={expires(s)} queue={queue}
         onConfirm={(callId, scope) => { yes('confirm_schedule', callId, s, scope); clearPendingSchedule(s.callId); }}
         onCancel={(callId, note) => { no('cancel_schedule', callId, note); clearPendingSchedule(s.callId); }} />) })),

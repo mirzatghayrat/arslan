@@ -669,6 +669,11 @@ class TaskRuntime:
                 value = await repo.checkpoint(self.task_id, self.attempt_id, budget.snapshot(),
                                               self.progress, reason=reason, retain_stopped=retain_stopped)
             self.emit(_state_frame(value))
+        context = personal_context.current()
+        if reason == "before_model" and context is not None and context.sub_session:
+            # SUB3: and its tree's shared limit, with this request's own spend saved just above.
+            from server.services import sub_sessions
+            await sub_sessions.check_tree_spend(context.conversation_id)
 
     def capture(self, event: dict):
         if event.get("type") == "run_cancelled":

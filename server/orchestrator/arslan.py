@@ -845,8 +845,16 @@ async def _notes_from_off_the_list(personal) -> bool:
         return True
 
 
-async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations) -> str:
-    """One background job's execution: the answer machinery without the chat stream."""
+async def _sub_session_tools() -> list[dict]:
+    """SUB3: what a sub-session is shown, and all it may run: `sub_sessions.TOOLS`, with no find_tools or use_tool."""
+    from server.services import sub_sessions
+    return [tool for tool in await _every_tool() if tool["key"] in sub_sessions.TOOLS]
+
+
+async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations, *,
+                          sub_session: bool = False) -> str:
+    """One background job's execution: the answer machinery without the chat stream. SUB3: a sub-session's job is
+    offered its own few tools."""
     ctx = await memory.assemble_working_context(conversation_id, budget=await memory.turn_budget(conversation_id))
     from server.services import personal_context
     traced = False
@@ -882,8 +890,8 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
             untrusted.carried(rule_files > 0):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
-            on_chunk=pieces.append, resolve_tools=_background_tools, resolve_callable=_background_callable,
-            allow_escalation=False,
+            on_chunk=pieces.append, resolve_tools=_sub_session_tools if sub_session else _background_tools,
+            resolve_callable=_sub_session_tools if sub_session else _background_callable, allow_escalation=False,
             confirm_command=confirmations.command, confirm_workspace_write=confirmations.workspace_write,
             confirm_schedule=confirmations.schedule, conversation_id=conversation_id,
             caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
