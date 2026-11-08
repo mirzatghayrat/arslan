@@ -230,11 +230,11 @@ cases = 1
 xfail = 0
 
 # S2a-3 d: local measurement; CI prints the runner counts. Sixteen corpus families, eight file/path
-# families, observation controls and a plain pipeline. Twelve individually measured script omissions.
+# families, observation controls and a plain pipeline. File scripts and program paths now read as not understood.
 ["server/test_shell_grammar_differential.py"]
 markers = 5
 cases = 50
-xfail = 12
+xfail = 0
 
 ["server/test_skill_import.py"]
 markers = 1

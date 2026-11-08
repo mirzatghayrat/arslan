@@ -35,7 +35,7 @@ import re
 import shlex
 from dataclasses import dataclass
 
-from server.services import shell_text
+from server.services import shell_grammar, shell_text
 
 MAX_COMMAND_CHARS = 8000
 
@@ -355,6 +355,14 @@ def _detection_texts(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(out))
 
 
+@functools.lru_cache(maxsize=64)
+def _command_texts(text: str) -> tuple[str, ...]:
+    """Reader commands with quotes removed, for named rules only. Match at their start: separators in an argument
+    are still data, not another command. Keep the existing regex limits on the rebuilt text too."""
+    forms = (" ".join(words) for words in shell_grammar.read(text).commands)
+    return tuple(shell_text.over_limit_forms(form)[0] if shell_text.too_complex(form) else form for form in forms)
+
+
 def _over_limit(forms: tuple[str, ...]) -> bool:
     return any(shell_text.too_complex(form) for form in forms)
 
@@ -476,10 +484,13 @@ def as_shell(command: str, argv=None) -> str:
 
 def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
     masked = None
+    commands = _command_texts(text)
     for key, pattern, why, quote_masked in _FORBID_C:
         if quote_masked:
             masked = masked or _masked_texts(texts)
-        if _matches(pattern, masked if quote_masked else texts):
+        named = not quote_masked and key != "arslan-keys"
+        if (_matches(pattern, masked if quote_masked else texts)
+                or (named and any(pattern.match(command) for command in commands))):
             return Assessment("forbid", key, why)
     return None
 
@@ -493,11 +504,14 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
     return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
-def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
-    found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
+def _layer_two(texts: tuple[str, ...], commands: tuple[str, ...] = ()) -> list[tuple[str, str]]:
+    found = [(key, why) for key, pattern, why in _ASK_C
+             if _matches(pattern, texts) or any(pattern.match(command) for command in commands)]
     if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
-    if _deletes_outside(texts):
+    if _deletes_outside(texts) or any(
+            (_DELETE_LINE.match(command) or _FIND_DELETE.match(command)) and _deletes_outside((command,))
+            for command in commands):
         found.insert(0, _DELETE_OUTSIDE)
     seen: set[str] = set()
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
@@ -517,7 +531,7 @@ def assess(command: str) -> Assessment:
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(texts)
+    found = _layer_two(texts, _command_texts(text))
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
     hidden = _hidden_code(texts)
@@ -536,7 +550,7 @@ def ask_rules(command: str) -> set[str]:
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(texts)} | ({UNREADABLE} if _hidden_code(texts) else set())
+    return {key for key, _why in _layer_two(texts, _command_texts(text))} | ({UNREADABLE} if _hidden_code(texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to
