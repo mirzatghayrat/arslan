@@ -33,6 +33,14 @@ Ordering discipline (plan adversarial review): the disabled gate runs BEFORE any
 filesystem access, so disabled runs (the test suites pin ``ARSLAN_SECRET_KEY_FILE=""``
 at conftest module top) can never stat, read, or warn about the real ``~/.arslan``.
 
+Claude Code sessions (v0.1.64): a process started from one carries ``CLAUDECODE=1``. With that
+marker and ``ARSLAN_SECRET_KEY_FILE`` UNSET, the bootstrap behaves like the disabled gate (no stat,
+read, write or mismatch comparison) and logs one warning naming the opt-in: set
+``ARSLAN_SECRET_KEY_FILE`` to the key file's path. Twice on 2026-11-07 a session's process read the
+real key file: a bare ``import server`` with the real HOME, and ``_warn_on_mismatch``, which reads it
+only to compare. An explicit path, or the set-but-empty off switch, keeps its meaning; the packaged
+app and a terminal never carry the marker.
+
 Import discipline: ``server.config`` imports this module at module-import time,
 so it must stay stdlib-only — importing anything under ``server.*`` here would
 cycle through ``server.config``.
@@ -50,6 +58,20 @@ logger = logging.getLogger(__name__)
 SECRET_FILE_ENV = "ARSLAN_SECRET_KEY_FILE"
 _SECRET_DIRNAME = ".arslan"
 _SECRET_FILENAME = "secret_key"
+# Claude Code sets this to "1" in every process it starts (see the module docstring).
+SESSION_MARKER_ENV = "CLAUDECODE"
+SESSION_OPT_IN = (
+    "Set ARSLAN_SECRET_KEY_FILE to the key file's path (default ~/.arslan/secret_key) "
+    "to use it from a Claude Code session."
+)
+
+
+def skips_key_file_for_session() -> bool:
+    """True when this process was started from a Claude Code session and was not told which key file to use.
+
+    Environment only: it never resolves the path, so it never touches the file system.
+    """
+    return os.environ.get(SESSION_MARKER_ENV) == "1" and os.environ.get(SECRET_FILE_ENV) is None
 
 
 def _resolve_secret_path(raw: str | None) -> Path:
@@ -173,6 +195,18 @@ def bootstrap_secret_key(
 
     # Gate — set-but-empty override disables the feature (test suites / opt-out).
     if raw_override is not None and not raw_override.strip():
+        return explicit
+
+    # Gate — a Claude Code session that did not name the file: as disabled, but loud. Before the path is
+    # resolved, since resolving it already stats it. Only constant text is logged, never a value.
+    if skips_key_file_for_session():
+        log.warning(
+            "Started from a Claude Code session with ARSLAN_SECRET_KEY_FILE unset: the secret key file was "
+            "not opened, so %s. %s",
+            "the explicit ARSLAN_SECRET_KEY is used without comparing it to the file" if explicit.strip()
+            else "this run has no secret key and stored provider keys will not decrypt",
+            SESSION_OPT_IN,
+        )
         return explicit
 
     path = _resolve_secret_path(raw_override)
