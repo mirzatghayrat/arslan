@@ -677,9 +677,11 @@ class RunPythonExecutor:
         if ext != ".py":
             return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
         root = _skill_scripts_root().resolve()
-        skill_dir = (root / m.group(1)).resolve()
+        # The entry and each sibling must resolve directly in this skill's own folder: a link to another skill's
+        # folder or files would otherwise run that skill's code under this key, past its switch (#786).
+        skill_dir = root / m.group(1)
         entry = (skill_dir / m.group(2)).resolve()
-        if not str(entry).startswith(str(root) + "/") or not entry.is_file():
+        if entry.parent != skill_dir or not entry.is_file():
             return f"skill script not found: {ref}"
 
         # Honest read: a non-UTF-8 file must return {ok:False} (via the error string), never
@@ -698,7 +700,7 @@ class RunPythonExecutor:
                 return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
             siblings = {p.name: _read(p)
                         for p in skill_dir.iterdir()
-                        if p.is_file() and p.suffix == ".py" and p != entry}
+                        if p.is_file() and p.suffix == ".py" and p != entry and p.resolve().parent == skill_dir}
             # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
             # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
             # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
