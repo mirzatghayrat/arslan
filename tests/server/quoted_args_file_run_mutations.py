@@ -18,7 +18,8 @@ MODES = ("ALLOW-PROGRAM-PATHS", "ALLOW-FILE-SCRIPTS", "DROP-NAMED-COMMANDS",
          "LOWERCASE-OPTION-VALUES", "REMOVE-AWS-COLOR", "REMOVE-RCLONE-RETRIES",
          "REMOVE-RCLONE-BANDWIDTH", "REMOVE-S3CMD-ENCODING", "DROP-XURL-GLOBAL-PARSE",
          "REMOVE-AWS-PROFILE", "FLIP-GCLOUD-QUIET", "DROP-SECURITY-ATTACHED-PROMPT",
-         "REMOVE-GSUTIL-OVERRIDE", "FLIP-CURL-SILENT")
+         "REMOVE-GSUTIL-OVERRIDE", "FLIP-CURL-SILENT",
+         "DROP-CLUSTER-SEPARATE-VALUE", "DROP-VERCEL-OPERATION-FLAG")
 OPTION_MODES = frozenset(MODES[6:])
 
 
@@ -31,7 +32,15 @@ def pytest_configure(config):
     mode = config.getoption("--quoted-file-mutation")
     if mode is None:
         raise pytest.UsageError("choose --quoted-file-mutation when loading this plugin")
-    if mode == "DROP-FALLBACK-RULE":
+    if mode == "DROP-CLUSTER-SEPARATE-VALUE":
+        source = inspect.getsource(tp._fully_accounted)
+        assert "consumes = offset == len(word)" in source
+        source = source.replace("consumes = offset == len(word)", "consumes = False")
+        exec(compile(source, "<DROP-CLUSTER-SEPARATE-VALUE>", "exec"), vars(tp))
+    elif mode == "DROP-VERCEL-OPERATION-FLAG":
+        original_dispatch = tp._dispatch_args
+        tp._dispatch_args = lambda program, args: (original_dispatch(program, args)[0], frozenset())
+    elif mode == "DROP-FALLBACK-RULE":
         tp._fully_accounted = lambda program, args: True
     elif mode.startswith("REMOVE-"):
         program, option = {

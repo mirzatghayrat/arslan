@@ -193,3 +193,49 @@ def unknowns():
             within = 2 if program in {"osascript", "curl", "wget", "open"} else min(1, len(seed))
             for position, index in (("before", 0), ("within", within), ("after", len(seed))):
                 yield f"unknown/{program}/{kind}/{position}", (program, *seed[:index], option, *seed[index:])
+
+
+# Code audit of _named_rules and _uploads: these share global stripping.
+# Only Vercel resolves an implicit operation from a global flag. The others
+# select explicit verbs; git and security have their own operation readers.
+GLOBAL_DISPATCH_PROGRAMS = frozenset("gsutil gcloud aws az azcopy rclone s3cmd gh xurl npm pnpm yarn cargo twine docker terraform kubectl vercel himalaya".split())
+IMPLICIT_OPERATIONS = {"vercel": ("--prod", "publish")}
+
+
+def vercel_directories():
+    for shape in ("production-directory", "production-end-directory", "production-yes-directory",
+                  "explicit-deployment", "working-directory-option"):
+        for i, directory in enumerate(("project", "./project", "../project", "project folder")):
+            args = {
+                "production-directory": ("--prod", directory),
+                "production-end-directory": ("--prod", "--", directory),
+                "production-yes-directory": ("--prod", "--yes", directory),
+                "explicit-deployment": ("deploy", "--prod", directory),
+                "working-directory-option": ("--prod", "--cwd", directory),
+            }[shape]
+            for family in FAMILIES:
+                for position in POSITIONS:
+                    yield f"vercel/{shape}/{i}/{family}/{position}", render(("vercel", *args), family, position)
+
+
+def implicit_controls():
+    for program, (flag, rule) in IMPLICIT_OPERATIONS.items():
+        for placement, args in {
+            "before-flag": ("project", flag),
+            "after-flag": (flag, "project"),
+            "after-end": (flag, "--", "project"),
+            "after-known-option": (flag, "--yes", "project"),
+            "quoted": (flag, "project folder"),
+            "attached": (flag, "--cwd=project folder"),
+        }.items():
+            yield f"implicit/{program}/{placement}", (program, *args), flag, rule
+
+
+def cluster_controls():
+    for unknown in (True, False):
+        words = ("curl", "-so", "--output", *(("--s2a3-unknown",) if unknown else ()),
+                 "-H", "-d sample", "https://example.invalid")
+        name = "option-looking-value-then-unknown" if unknown else "fully-known"
+        for family in FAMILIES:
+            for position in POSITIONS:
+                yield f"cluster-value/{name}/{family}/{position}", words, not unknown, render(words, family, position)

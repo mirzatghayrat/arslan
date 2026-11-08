@@ -6,10 +6,10 @@ are rule/position, expanded positives seed/position/wrapper, negatives
 carrier/kind/position, compositions seed/position/tail, and the independent
 sweep program/profile/position. Bucket-index rotation selects spellings.
 
-Baseline data records each case id, SHA-256 of its command text, and verdicts
+Baseline vectors bind ordered case ids and command fingerprints by corpus digests, with verdicts
 from main 3eec545b and original 9be27b5f. Generate it with:
   python -m tests.server.quoted_args_regenerate_baselines --main-source MAIN_SOURCE
-      --original-source ORIGINAL_SOURCE --output tests/server/quoted_args_baselines.json.gz
+      --original-source ORIGINAL_SOURCE --output tests/server/quoted_args_baselines.txt
 Each source directory must contain shell_grammar.py and terminal_policy.py
 exported from that revision, plus its unchanged shell_text.py. The generator
 executes Python policy definitions, then passes strings only to assess/read;
@@ -43,7 +43,7 @@ from tests.server.shell_differential_support import FILE_SEEDS
 
 from tests.server.quoted_args_baseline_data import levels
 from tests.server.quoted_args_option_profiles import (
-    sweep, program_controls, unknowns, render,
+    sweep, program_controls, unknowns, render, vercel_directories, implicit_controls, cluster_controls,
 )
 
 
@@ -163,10 +163,10 @@ def assert_matrix(result, *, negative=False, cautious_forbids=False):
                        ("run", "forbid", "forbid") for row in changes), changes
         else:
             assert not changes, changes
-    else:
+    elif result.get("kind") != "cluster":
         regressions = {transition: count for transition, count in result["transitions"]["pr_to_fixed"].items()
                        if RANK[transition.split("->")[1]] < RANK[transition.split("->")[0]]}
-        assert not regressions, regressions
+        assert not regressions, result["losses"]
 
 
 def control_rows():
@@ -184,10 +184,27 @@ GENERATORS = {
     "composition": lambda: ((case, text) for case, _, text in compositions()),
     "standalone": lambda: ((case, text) for case, text, _ in compositions()),
     "files": file_cases,
+    "vercel": vercel_directories,
+    "implicit": lambda: ((case, render(words, "single", "plain")) for case, words, _, _ in implicit_controls()),
+    "cluster": lambda: ((case, text) for case, _, _, text in cluster_controls()),
 }
 
 
 def assert_accounting(kind):
+    if kind == "implicit":
+        for case, words, flag, rule in implicit_controls():
+            assert tp._fully_accounted(words[0], words[1:]), case
+            assert flag in tp._dispatch_args(words[0], words[1:])[1], case
+            assert rule in tp._named_rules(words), case
+    if kind == "cluster":
+        for case, words, accounted, text in cluster_controls():
+            assert tp._fully_accounted(words[0], words[1:]) == accounted, case
+            original = levels(kind, case, text)[1]
+            actual = tp.assess(text).level
+            if not accounted:
+                assert actual == original, case
+            elif case.endswith("/single/plain"):
+                assert (original, actual) == ("ask", "run"), case
     if kind not in {"controls", "unknown"}:
         return
     source = program_controls if kind == "controls" else unknowns
@@ -198,7 +215,7 @@ def assert_accounting(kind):
             assert tp._named_rules(words) == tp._legacy_named_rules(words), case
 
 
-@pytest.mark.parametrize("kind", [kind for kind in GENERATORS if kind != "standalone"])
+@pytest.mark.parametrize("kind", [kind for kind in GENERATORS if kind not in {"standalone", "vercel", "cluster"}])
 def test_stored_baseline_evidence(kind, record_property):
     assert_accounting(kind)
     rows = stratified(GENERATORS[kind]())
@@ -211,10 +228,22 @@ def test_stored_baseline_evidence(kind, record_property):
         for case, standalone, text in stratified(compositions()):
             assert not sg.read(text).understood and not sg.read(text).commands, case
             assert RANK[tp.assess(text).level] >= RANK[tp.assess(standalone).level], case
+    if kind == "vercel":
+        for case, text in rows:
+            actual = tp.assess(text).level[0]
+            assert actual == "a", f"{kind}/{case}: expected a, actual {actual}"
     if kind != "files":
         assert_matrix(matrix(kind, rows), negative="negative" in kind,
                       cautious_forbids=kind == "negative")
     record_property("generated_rows", len(rows))
+
+
+def test_vercel_production_directory_retains_publish(record_property):
+    test_stored_baseline_evidence("vercel", record_property)
+
+
+def test_cluster_value_does_not_absorb_following_unknown(record_property):
+    test_stored_baseline_evidence("cluster", record_property)
 
 
 def matrix(kind, rows):
@@ -225,6 +254,8 @@ def matrix(kind, rows):
     fallbacks = Counter()
     fallback_cases = []
     count = 0
+    loosened = []
+    losses = []
     for case, text in rows:
         count += 1
         sg.read(text)
@@ -238,11 +269,15 @@ def matrix(kind, rows):
             transition = verdicts[a] + "->" + verdicts[b]
             transitions[label][transition] += 1
             classes[case.split("/")[0] + "/" + label][transition] += 1
+        if RANK[verdicts[2]] < RANK[verdicts[1]]:
+            loosened.append(case)
+            losses.append(f"{kind}/{case}: expected >= {verdicts[1][0]}, actual {verdicts[2][0]}")
         if verdicts[0] != verdicts[2]:
-            changes.append({"id": case, "main": verdicts[0], "pr": verdicts[1], "fixed": verdicts[2]})
+            changes.append({"id": case, "main": verdicts[0], "pr": verdicts[1], "fixed": verdicts[2],
+                            "matrix": kind, "expected": verdicts[0][0], "actual": verdicts[2][0]})
         if RANK[verdicts[2]] < RANK[verdicts[0]]:
-            toward_run.append(case)
-    return dict(cases=count, transitions=dict(transitions), by_class=dict(classes),
+            toward_run.append(f"{kind}/{case}: expected >= {verdicts[0][0]}, actual {verdicts[2][0]}")
+    return dict(kind=kind, cases=count, loosened=loosened, losses=losses, transitions=dict(transitions), by_class=dict(classes),
                 changed_from_main=changes, toward_run=toward_run,
                 fallback_cases=fallback_cases, fallback_programs=dict(fallbacks))
 

@@ -13,6 +13,7 @@ from tests.server.test_quoted_command_word import SEPARATORS
 from tests.server.quoted_args_baseline_data import levels
 from tests.server.quoted_args_option_profiles import (
     CORRECTIONS, SEEDS, program_controls, unknowns, render,
+    vercel_directories, implicit_controls, cluster_controls, GLOBAL_DISPATCH_PROGRAMS, IMPLICIT_OPERATIONS,
 )
 
 
@@ -393,3 +394,63 @@ def test_prefix_caps_still_bound_the_extra_policy_pass():
     assert prefix.refused and prefix.capped and len(prefix.commands) == sg.MAX_COMMANDS
     assert sg.read(command).commands == ()
     assert tp.assess(command).level == "ask"
+
+
+@pytest.mark.parametrize("case,command", list(vercel_directories()), ids=lambda value: value)
+def test_vercel_production_directory_retains_publish(case, command):
+    assert sg.read(command).understood, case
+    assert tp.assess(command).level == "ask", case
+
+
+@pytest.mark.parametrize("case,words,accounted,command", list(cluster_controls()), ids=lambda value: value if isinstance(value, str) else None)
+def test_cluster_value_does_not_absorb_following_unknown(case, words, accounted, command):
+    assert sg.read(command).understood, case
+    assert tp._fully_accounted(words[0], words[1:]) == accounted, case
+    main, original = levels("cluster", case, command)
+    actual = tp.assess(command).level
+    assert RANK[actual] >= RANK[main], case
+    if not accounted:
+        assert actual == original, case
+        assert tp._named_rules(words) == tp._legacy_named_rules(words), case
+    elif case.endswith("/single/plain"):
+        assert (original, actual) == ("ask", "run"), case
+
+
+@pytest.mark.parametrize("case,words,flag,rule", list(implicit_controls()), ids=lambda value: value if isinstance(value, str) else None)
+def test_implicit_operation_survives_global_stripping(case, words, flag, rule):
+    command = render(words, "single", "plain")
+    assert sg.read(command).understood, case
+    assert tp._fully_accounted(words[0], words[1:]), case
+    assert flag in tp._dispatch_args(words[0], words[1:])[1], case
+    assert rule in tp._named_rules(words), case
+    assert tp.assess(command).level == "ask", case
+
+
+def test_global_dispatch_audit_inventory():
+    assert set(tp._GLOBAL_OPTIONS) - {"git", "security"} == GLOBAL_DISPATCH_PROGRAMS
+    assert {program for program, flags in tp._OPERATION_FLAGS.items() if flags} == set(IMPLICIT_OPERATIONS)
+
+
+@pytest.mark.parametrize("change", ["membership", "order", "count", "command", "verdict", "matrix", "version"])
+def test_baseline_vectors_reject_stale_corpora(change):
+    from tests.server.quoted_args_baseline_data import encode, decode, fingerprint
+    rows = [("first", "echo one"), ("second", "echo two")]
+    cases = {"sample/" + case: (fingerprint(text), "run", "ask") for case, text in rows}
+    text = encode({"sample": rows}, cases, {})
+    assert len(decode(text, {"sample": lambda: rows})) == 2
+    if change == "membership":
+        rows[0] = ("other", rows[0][1])
+    elif change == "order":
+        rows.reverse()
+    elif change == "count":
+        rows.pop()
+    elif change == "command":
+        rows[0] = (rows[0][0], "echo changed")
+    elif change == "verdict":
+        text = text.replace("ra ra", "rf ra")
+    elif change == "matrix":
+        text = text.replace("[sample]", "[other]")
+    else:
+        text = text.replace('"generator_version":2', '"generator_version":0')
+    with pytest.raises(AssertionError):
+        decode(text, {"sample": lambda: rows})
