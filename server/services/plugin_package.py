@@ -35,8 +35,8 @@ from sqlalchemy import select, update
 from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
-from server.services import (capability_allowlist, capability_install, capability_runtime, mcp_pin, osv_check,
-                             skill_import)
+from server.services import (capability_allowlist, capability_install, capability_runtime, connection_secrets, mcp_pin,
+                             osv_check, skill_import)
 
 logger = logging.getLogger(__name__)
 
@@ -461,7 +461,8 @@ async def prepare(candidate: dict) -> dict:
 
 def card_fields(prepared: dict) -> dict:
     """What the card adds to `capability_flow.card_for`: every part, by its own name, and each connection with what it
-    is started with: its fixed `env` or `headers` and the `keys` it gets (a key two of them name is asked for once),
+    is started with: its fixed `env` or `headers` and its arguments (a credential's value masked, as SEC1 masks one) and
+    the `keys` it gets (a key two of them name is asked for once),
     the package locked for it, and what OSV.dev knows of that lock (`vulns`). Who published it is the plugin's own
     repository, which the list checked, never a Registry name's."""
     from server.services import capability_search
@@ -474,13 +475,17 @@ def card_fields(prepared: dict) -> dict:
             keys.setdefault(key["name"], key)
         remote = c["runtime"] == "remote"
         package = c.get("package")
+        # ⓪Plan's ruling: a fixed credential (the plugin author's) is named on the card, its value masked here, so it
+        # never reaches a frame; the install reads `connection["env"]` itself, never the card.
+        shown = {name: connection_secrets.shown_setting(name, value) for name, value in connection["env"].items()}
         connections.append({"name": untrusted.clean_name(c["name"], 120), "runtime": c["runtime"],
                             "package": {"identifier": package["identifier"], "version": package["version"]}
                                        if package else None, "vulns": connection["vulns"],
                             "version": c.get("version"), "remote_host": (c.get("remote") or {}).get("url"),
                             "network": capability_install.grants_for([], c["needs"])["network"],
-                            "arguments": [a["value"] for a in (c.get("package") or {}).get("arguments") or []],
-                            "env": {} if remote else connection["env"], "headers": connection["env"] if remote else {},
+                            "arguments": connection_secrets.shown(None, [a["value"] for a in (c.get("package") or {})
+                                                                         .get("arguments") or []])[1],
+                            "env": {} if remote else shown, "headers": shown if remote else {},
                             "keys": [key["name"] for key in c["needs"]["keys"]],
                             "lock": capability_install.lock_summary(locked)})
     skills = [{"key": s["key"], "name": s["info"]["name"], "summary": s["info"]["description"],

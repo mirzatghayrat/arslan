@@ -645,6 +645,42 @@ async def test_the_card_shows_what_each_connection_is_started_with(execution_db,
     assert sorted(k["name"] for k in fields["keys"]) == ["API_TOKEN", "Authorization"]
 
 
+FIXED_CREDENTIAL = "fixed-author-credential-9f8e7d6c5b4a"
+
+
+async def test_a_fixed_credential_shows_masked_keeping_its_name(execution_db, repo, fake_capability_prepare):
+    """⓪Plan's ruling for the web half: the card names every fixed header and env entry, and a value that is a
+    credential (by its name, or by its look, as SEC1 reads one) shows as ●●●●. The rest show as written."""
+    repo[".mcp.json"] = json.dumps({"mcpServers": {
+        "local": {"command": "npx", "args": ["-y", "x", "--read-only", "--api-key=fake-value"],
+                  "env": {"MODE": "fast", "SERVICE_TOKEN": "tok", "BASE": "https://user:hunter2@example.com/x"}},
+        "vendor": {"type": "http", "url": "https://mcp.linear.app/mcp",
+                   "headers": {"X-Team": "core", "Authorization": f"Bearer {FIXED_CREDENTIAL}",
+                               "X-Trace": "Zq81kLm2Xw93Pn4Rt5Yv6Ub7Sc8Od9",
+                               "X-Session": "Bearer Ak82jLq3Wz94Mn5Rs6Tv7Ux8Yb9Pc0"}}}})
+    fields = plugin_package.card_fields(await plugin_package.prepare(PLUGIN))
+    local, vendor = fields["connections"]
+    assert vendor["headers"] == {"X-Team": "core", "Authorization": "●●●●", "X-Trace": "●●●●", "X-Session": "●●●●"}
+    assert local["env"] == {"MODE": "fast", "SERVICE_TOKEN": "●●●●", "BASE": "https://user:●●●●@example.com/x"}
+    assert local["arguments"] == ["--read-only", "--api-key=●●●●"]
+    assert FIXED_CREDENTIAL not in json.dumps(fields) and "hunter2" not in json.dumps(fields)
+
+
+@pytest.mark.real_mcp
+async def test_a_fixed_credential_reaches_the_server_and_never_the_frame(execution_db, world):
+    """Masked where the card is made: the frame the window gets never holds the value, and the remote still gets it."""
+    from server.ws import protocol
+    world.files[".mcp.json"] = json.dumps({"mcpServers": {"vendor": {
+        "type": "http", "url": "https://mcp.linear.app/mcp", "headers": {"X-Api-Key": FIXED_CREDENTIAL}}}})
+    seen = []
+    out = await _propose(ask=_ask(seen=seen))
+    assert out["ok"] is True, out
+    frame = protocol.propose_capability("cap-x", seen[0])
+    assert frame["connections"][0]["headers"] == {"X-Api-Key": "●●●●"}
+    assert FIXED_CREDENTIAL not in json.dumps(frame)
+    assert world.remote_headers[0]["x-api-key"] == FIXED_CREDENTIAL
+
+
 async def test_a_key_two_connections_name_is_asked_once_and_each_says_it_gets_it(execution_db, repo,
                                                                                  fake_capability_prepare):
     repo[".mcp.json"] = json.dumps({"mcpServers": {
@@ -724,6 +760,59 @@ async def test_the_switch_turns_the_whole_group(execution_db, added):
     assert all(p.enabled is not False for p in await _rows_of(execution_db, SkillPack))
     assert all(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
     assert (await _plugin_row(added))["state"] == "on"
+
+
+@pytest.fixture
+async def page(execution_db, monkeypatch):
+    """The Capabilities page's own routes, as the web calls them. The built-in rows read settings and the Mac (the
+    browser's runtime, Hands), none of which a plugin touches: test_capability_list holds those."""
+    from fastapi import FastAPI
+
+    from server import auth
+    from server.api.capabilities import router
+
+    async def no_builtins():
+        return []
+    monkeypatch.setattr(capability_list, "_builtin_rows", no_builtins)
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-plugin-page-token")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                 headers={"Authorization": "Bearer synthetic-plugin-page-token"}) as client:
+        yield client
+
+
+async def test_the_page_switches_the_group_through_its_route_and_never_a_part(execution_db, added, page):
+    rows = (await page.get("/api/v1/capabilities")).json()
+    plugin = next(r for r in rows if r["key"] == f"plugin:{added.id}")
+    assert plugin["section"] == "plugins" and plugin["switch"] == "plugin" and plugin["state"] == "on"
+    parts = {p["name"]: p["key"] for p in plugin["parts"]}
+    assert not [r for r in rows if r["key"] in parts.values()]          # a part shows only inside its plugin
+
+    off = await page.put(f"/api/v1/capabilities/plugin:{added.id}", json={"on": False})
+    assert off.status_code == 200 and off.json()["state"] == "off"
+    assert "on" not in {p["state"] for p in off.json()["parts"]}
+    assert not any(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
+    assert all(p.enabled is False for p in await _rows_of(execution_db, SkillPack))
+
+    for key in (parts["release-notes"], parts["tools"]):
+        assert (await page.put(f"/api/v1/capabilities/{key}", json={"on": True})).status_code == 409
+        assert (await page.delete(f"/api/v1/capabilities/{key}")).status_code == 409
+    assert not any(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
+    assert all(p.enabled is False for p in await _rows_of(execution_db, SkillPack))
+
+    on = await page.put(f"/api/v1/capabilities/plugin:{added.id}", json={"on": True})
+    assert on.json()["state"] == "on" and all(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
+
+
+async def test_a_stopped_group_says_which_connection_and_the_route_switches_it_back(execution_db, added, page):
+    child = await _child(execution_db, "tools")
+    await plugin_package.stop_for(child, child.mcp_server_id)
+    rows = (await page.get("/api/v1/capabilities")).json()
+    plugin = next(r for r in rows if r["key"] == f"plugin:{added.id}")
+    assert (plugin["state"], plugin["reason"], plugin["detail"]) == ("setup", "plugin_stopped", "tools")
+    back = await page.put(f"/api/v1/capabilities/plugin:{added.id}", json={"on": True})
+    assert back.json()["reason"] is None
 
 
 async def test_switching_on_leaves_a_part_waiting_for_sign_in_off(execution_db, added):

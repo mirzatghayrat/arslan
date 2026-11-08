@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Escaped, isolate } from "../../lib/outsideText";
 import type { CapabilityCard } from "../../api/client.types";
 import { AskCard, type AskQueuePosition } from "../kit";
+import { PluginContains } from "./PluginContains";
 import { SecurityRow, ownVulnerable } from "./SecurityRow";
 
 const host = (url: string | null) => {
@@ -37,25 +38,29 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
   // CAP9, the user's question 5 as the board draws it: a known vulnerability in the package itself makes "Don't
   // install" the safe answer; installing stays possible, as a red, deliberate click (no ⌘⏎ for it on this card).
   const risky = ownVulnerable(card);
+  // CAP7b (board Main): a plugin is the same card, with what it contains in place of how one part runs.
+  const plugin = card.kind === "plugin";
   const run = card.kind === "skill" ? t("discover.card_runSkill")
     : card.runtime === "remote" ? t("discover.card_runRemote", { host: host(card.remote_host) })
     : t(card.network ? "discover.card_runSandboxNet" : "discover.card_runSandbox");
   const detail = (
     <div className="flex flex-col" data-testid="capability-card-rows">
       <Row label={t("discover.card_does")}><Escaped text={card.summary || card.name} /></Row>
-      <Row label={t("discover.card_source")}>
+      <Row label={t("discover.card_source")} testId="capability-card-source">
         {card.source_url ? <a href={card.source_url} target="_blank" rel="noopener noreferrer" className="underline"><Escaped text={card.repo ?? card.source_url} /></a> : <Escaped text={card.name} />}
         {card.stars != null && <span className="text-muted-foreground"> · ★ {card.stars}</span>}
         {card.pushed_days != null && <span className="text-muted-foreground"> · {t("discover.pushed", { count: card.pushed_days })}</span>}
         {card.version && <span className="text-muted-foreground"> · {card.version}</span>}
+        {plugin && card.commit && <span className="text-muted-foreground"> · {t("discover.source_commit", { sha: card.commit.slice(0, 12) })}</span>}
       </Row>
       <Row label={t("discover.card_license")} testId="capability-card-license">
         <span className="rounded-full bg-success/10 px-[7px] py-0.5 text-[11px] text-success">{card.license.spdx}</span>
         {card.license.read_from && <span className="text-muted-foreground"> {t("discover.lic_readFrom")}</span>}
       </Row>
+      {plugin && <Row label={t("discover.card_contains")} testId="capability-card-contains"><PluginContains card={card} /></Row>}
       {/* CAP9: what OSV.dev knows of the locked packages, the package itself first. */}
       <SecurityRow card={card} />
-      <Row label={t("discover.card_runs")} testId="capability-card-runs">
+      {!plugin && <Row label={t("discover.card_runs")} testId="capability-card-runs">
         {run}
         {card.runtime_download && <span className="block text-muted-foreground">
           {t("discover.card_download", { name: card.runtime_download.name, size: card.runtime_download.size_mb })}</span>}
@@ -64,7 +69,7 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
             {f}<button type="button" aria-label={t("discover.card_dropFolder")} data-testid={`capability-folder-drop-${f}`}
               onClick={() => setFolders(folders.filter(x => x !== f))}><X size={11} /></button></span>)}
         </span>}
-      </Row>
+      </Row>}
       {/* UNI1b (#586 review F2): under D2 this card is the guard, so it says what the skill's text hides. */}
       {card.kind === "skill" && (card.hidden?.count ?? 0) > 0 && <Row label={t("discover.card_hidden")} testId="capability-card-hidden">
         <span className="text-ask">{t("discover.card_hiddenText", { count: card.hidden!.count,
@@ -72,7 +77,8 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
             .filter(Boolean).join(" ") })}</span>
       </Row>}
       {/* A skill gets the scan, never a test run: under the user's D2 this card is the check (#519 recheck). */}
-      <Row label={t("discover.card_checks")}>{t(card.kind === "skill" ? "discover.card_checksSkill" : "discover.card_checksText")}</Row>
+      <Row label={t("discover.card_checks")}>{t(card.kind === "skill" ? "discover.card_checksSkill"
+        : plugin ? "discover.card_checksPlugin" : "discover.card_checksText")}</Row>
       {card.keys.length > 0 && <Row label={t("discover.card_needs")}>
         <span className="flex flex-col gap-1.5">
           {card.keys.map(k => <label key={k.name} className="flex flex-col gap-0.5">
@@ -89,10 +95,11 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
   );
   return (
     <AskCard testId="capability-card" who={t("discover.card_who")}
-      title={t(card.kind === "skill" ? "discover.card_titleSkill" : "discover.card_title", { name: isolate(card.name) })}
+      title={t(card.kind === "skill" ? "discover.card_titleSkill" : plugin ? "discover.card_titlePlugin" : "discover.card_title",
+        { name: isolate(card.name) })}
       said={card.why || null} detail={detail}
       context={card.retry ? [{ text: t("discover.card_retry", { step: card.retry }) }] : undefined}
-      extra={<span className="text-[11px] text-subtle-foreground">{t("discover.card_footer")}</span>}
+      extra={<span className="text-[11px] text-subtle-foreground">{t(plugin ? "discover.card_footerPlugin" : "discover.card_footer")}</span>}
       expiresAt={expiresAt} queue={queue} allowDisabled={missing.length > 0}
       allowLabel={t(risky ? "discover.card_installAnyway" : "discover.card_allow")}
       declineLabel={t(risky ? "discover.card_dontInstall" : "discover.card_decline")}
