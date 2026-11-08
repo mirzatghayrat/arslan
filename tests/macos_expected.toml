@@ -260,6 +260,13 @@ markers = 1
 cases = 1
 xfail = 0
 
+# 0.1.64 #733 item 14: a skill's script runs in the real sandbox while it is on, not at all once the user switches it
+# (or its plugin's group) off, and again once it is back on. One test, a skill on its own and a plugin's.
+["server/test_skill_off_run_python.py"]
+markers = 1
+cases = 2
+xfail = 0
+
 ["server/test_skill_script_failclosed.py"]
 markers = 3
 cases = 3

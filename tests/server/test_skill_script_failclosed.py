@@ -26,8 +26,9 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
-def skill_root(tmp_path, monkeypatch):
-    """Point ARSLAN_DATA_DIR at a temp dir and return the skill_scripts/<key> dir factory."""
+def skill_root(tmp_path, monkeypatch, execution_db):
+    """Point ARSLAN_DATA_DIR at a temp dir and return the skill_scripts/<key> dir factory. An empty library: no row
+    has switched these skills off (#733 item 14, test_skill_off_run_python.py)."""
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
 
     def _make(key: str):

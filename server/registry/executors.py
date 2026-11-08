@@ -710,12 +710,29 @@ class RunPythonExecutor:
             return f"技能文件不是有效 UTF-8:{exc.name},未执行"
         return entry_code, siblings, references
 
+    @staticmethod
+    async def _switched_off(ref: str) -> bool:
+        """#733 item 14: off means off. Whether the user switched off the skill `ref` names, on the Capabilities page
+        or with its plugin's group (which switches each of its skills the same way, `plugin_package._switch_parts`).
+        The key is the part `_load_skill_script` reads the folder by; no row, or an ill-formed ref, is left to it."""
+        from server.db import session as db_session
+        from server.db.models import SkillPack
+        async with db_session.AsyncSessionLocal() as db:
+            pack = await db.get(SkillPack, ref.strip().partition("/")[0])
+        return pack is not None and pack.enabled is False
+
     async def execute(self, args: dict) -> dict:
         from server.services import code_sandbox  # lazy import keeps boot path light
         extra_files: dict[str, str] | None = None
         read_only_files: dict[str, str] | None = None
         code = args.get("code") or ""
         if args.get("skill_script"):
+            # The sandbox never grants the scripts folder (the data folder is closed to it); this executor reads the
+            # files and hands the sandbox copies. So a switched-off skill is refused here, before any file is read.
+            if await self._switched_off(str(args["skill_script"])):
+                key = str(args["skill_script"]).strip().partition("/")[0]
+                return {"ok": False, "external": False,
+                        "error": f"skill switched off by the user: {key}. Its scripts don't run while it is off."}
             loaded = self._load_skill_script(str(args["skill_script"]))
             if isinstance(loaded, str):
                 return {"ok": False, "external": False, "error": loaded}
