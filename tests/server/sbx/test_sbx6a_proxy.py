@@ -243,7 +243,7 @@ async def test_too_many_connections_are_refused(proxy, origin, monkeypatch):
     _pin_to(monkeypatch, origin[0], [])                           # uncapped, this tunnel would open
     monkeypatch.setattr(sandbox_proxy, "_CONNECTIONS", 0)
     reply = await _ask(proxy.port, b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
-    assert reply.startswith(b"HTTP/1.1 403 Forbidden"), reply
+    assert reply.startswith(b"HTTP/1.1 503 Service Unavailable"), reply      # not the sandbox's 403 (#668 ruling)
 
 
 async def test_an_idle_tunnel_is_closed(proxy, origin, monkeypatch):
@@ -342,20 +342,20 @@ async def test_plain_http_is_forwarded_in_origin_form_and_closed_after(proxy, or
     assert "Proxy-" not in head
 
 
-@pytest.mark.parametrize("request_line", [
-    b"CONNECT 127.0.0.1:8741 HTTP/1.1",          # refused by the resolver: not public
-    b"GET http://192.168.1.2/ HTTP/1.1",
-    b"GET /relative HTTP/1.1",                    # not a proxy request
-    b"GET ftp://example.com/ HTTP/1.1",
-    b"CONNECT example.com HTTP/1.1",              # no port
-    b"CONNECT example.com:0 HTTP/1.1",
+@pytest.mark.parametrize(("request_line", "status"), [
+    (b"CONNECT 127.0.0.1:8741 HTTP/1.1", b"403 Forbidden"),        # refused by the resolver: not public
+    (b"GET http://192.168.1.2/ HTTP/1.1", b"403 Forbidden"),
+    (b"GET /relative HTTP/1.1", b"400 Bad Request"),               # not a proxy request
+    (b"GET ftp://example.com/ HTTP/1.1", b"400 Bad Request"),
+    (b"CONNECT example.com HTTP/1.1", b"400 Bad Request"),         # no port
+    (b"CONNECT example.com:0 HTTP/1.1", b"400 Bad Request"),
 ])
-async def test_what_the_proxy_refuses(proxy, monkeypatch, request_line):
+async def test_what_the_proxy_refuses(proxy, monkeypatch, request_line, status):
     def resolve(url, **kw):
         raise _BlockedHost("not public")
     monkeypatch.setattr(sandbox_proxy, "_resolve_pinned", resolve)
     reply = await _ask(proxy.port, request_line + b"\r\nHost: x\r\n\r\n")
-    assert reply.startswith(b"HTTP/1.1 403 Forbidden"), reply
+    assert reply.startswith(b"HTTP/1.1 " + status), reply
 
 
 async def test_it_chains_through_a_system_http_proxy_by_name(monkeypatch, origin):
