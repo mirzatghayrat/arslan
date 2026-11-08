@@ -389,9 +389,89 @@ def _verb(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[
 
 
 _GIT_VALUES = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"})
-_CLOUD_VALUES = frozenset({"--profile", "--region", "--project", "--configuration", "--account",
-                           "--endpoint-url", "--subscription", "--output", "-o", "-m"})
+# Option arities belong to a program: curl -O, wget -H and gsutil -m are flags.
+_OPTION_VALUES = {
+    "curl": frozenset({"-o", "-H", "-A", "-u", "-e", "-X", "-d", "-F", "-T",
+                       "--output", "--header", "--user-agent", "--user", "--referer", "--url",
+                       "--request", "--data", "--data-ascii", "--data-binary", "--data-raw",
+                       "--data-urlencode", "--form", "--form-string", "--upload-file", "--json"}),
+    "wget": frozenset({"-o", "-O", "-U", "-e", "--output-file", "--output-document",
+                       "--user-agent", "--execute", "--header", "--user", "--password",
+                       "--referer", "--method", "--post-data", "--post-file", "--body-data", "--body-file"}),
+    "gsutil": frozenset({"-o", "-h", "-u", "-i"}),
+    "gcloud": frozenset({"--project", "--configuration", "--account", "--billing-project",
+                         "--impersonate-service-account", "--flags-file", "--format", "--verbosity"}),
+    "aws": frozenset({"--profile", "--region", "--endpoint-url", "--output", "--query",
+                      "--ca-bundle", "--cli-read-timeout", "--cli-connect-timeout"}),
+    "az": frozenset({"--subscription", "--output", "-o", "--query"}),
+    "azcopy": frozenset({"--output-type", "--output-level", "--log-level"}),
+    "rclone": frozenset({"--config", "--log-file", "--log-level", "--transfers", "--checkers"}),
+    "s3cmd": frozenset({"-c", "--config", "--access_key", "--secret_key", "--host", "--host-bucket"}),
+    "gh": frozenset({"-R", "--repo", "--hostname", "-X", "--method", "-f", "-F", "--field",
+                     "--raw-field", "--input", "-H", "--header", "--cache", "-q", "--jq", "-t", "--template"}),
+    "http": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                       "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+    "https": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                        "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+    "xh": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                     "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+    "xhs": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                      "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+}
 _DELETE_PROGRAMS = frozenset({"rm", "rmdir", "unlink", "srm", "trash"})
+
+
+def _options(args: tuple[str, ...], values: frozenset[str]):
+    """Yield options with their values, or an empty option for a positional word.
+
+    Long assignments and attached short values never consume the next word.
+    A separate value is data even when it resembles an operation or option.
+    """
+    i = 0
+    ended = False
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if not ended and word == "--":
+            ended = True
+        elif ended or not word.startswith("-") or word == "-":
+            yield "", word
+        elif word.startswith("--"):
+            option, equals, value = word.partition("=")
+            if not equals and option in values and i < len(args):
+                value, i = args[i], i + 1
+            yield option, value
+        else:
+            for offset, letter in enumerate(word[1:], 2):
+                option = "-" + letter
+                value = ""
+                if option in values:
+                    value = word[offset:]
+                    if not value and i < len(args):
+                        value, i = args[i], i + 1
+                    yield option, value
+                    break
+                yield option, value
+
+
+def _security_verb(args: tuple[str, ...]) -> tuple[str, ...]:
+    # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        word = args[i]
+        if word == "--":
+            return args[i + 1:]
+        if word == "--help":
+            return ()
+        i += 1
+        if not word.startswith("--"):
+            for offset, letter in enumerate(word[1:], 2):
+                if letter == "h":
+                    return ()
+                if letter == "p":
+                    i += offset == len(word)
+                    break
+    return args[i:]
 
 
 def _named_rules(words: tuple[str, ...]) -> set[str]:
@@ -412,10 +492,12 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     if program == "sudo":
         found.add("sudo")
     if program == "security":
-        add("keychain-secrets", first in {"dump-keychain", "export"} or
-            first in {"find-generic-password", "find-internet-password"} and
-            any(w in {"-w", "-g"} for w in _security_flags(args[1:])))
-        add("keychain-write", bool(re.fullmatch(r"(?:add-|delete-|set-)[\w-]+|import", first)))
+        operation = _security_verb(args)
+        subcommand = operation[0].lower() if operation else ""
+        add("keychain-secrets", subcommand in {"dump-keychain", "export"} or
+            subcommand in {"find-generic-password", "find-internet-password"} and
+            any(w in {"-w", "-g"} for w in _security_flags(operation[1:])))
+        add("keychain-write", bool(re.fullmatch(r"(?:add-|delete-|set-)[\w-]+|import", subcommand)))
     if program in _DELETE_PROGRAMS:
         targets = _operands(args)
         add("delete-outside", not targets or any(_outside_target(w) for w in targets))
@@ -499,53 +581,45 @@ def _security_flags(args: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _api_writes(args: tuple[str, ...]) -> bool:
-    return any(w in {"-f", "-F", "--field", "--raw-field", "--input"} or
-               w.startswith(("--field=", "--raw-field=", "--input=")) or
-               w in {"-X", "--method"} and i + 1 < len(args) and args[i + 1].upper() != "GET" or
-               w.startswith("--method=") and w.partition("=")[2].upper() != "GET"
-               for i, w in enumerate(args))
+    return any(option in {"-f", "-F", "--field", "--raw-field", "--input"} or
+               option in {"-X", "--method"} and bool(value) and value.upper() != "GET"
+               for option, value in _options(args, _OPTION_VALUES["gh"]))
 
 
 def _uploads(program: str, args: tuple[str, ...]) -> bool:
     if program in {"curl", "wget"}:
-        skip = False
-        for i, w in enumerate(args):
-            if skip:
-                skip = False
-                continue
-            if w == "--":
-                break
-            if program == "curl" and (re.match(r"--(?:data|form|upload-file|json)(?:[-=]|$)", w)
-                                       or re.match(r"-[a-zA-Z]*[dFT]", w)):
+        methods = {"-X", "--request"} if program == "curl" else {"--method"}
+        for option, value in _options(args, _OPTION_VALUES[program]):
+            if program == "curl" and (re.match(r"--(?:data|form|upload-file|json)(?:-|$)", option)
+                                       or option in {"-d", "-F", "-T"}):
                 return True
-            if program == "wget" and re.match(r"--post", w):
+            if program == "wget" and option in {"--post-data", "--post-file", "--body-data", "--body-file"}:
                 return True
-            if w in {"-X", "--request", "--method"} and i + 1 < len(args) and args[i + 1].upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            if option in methods and value.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
                 return True
-            if re.fullmatch(r"(?:--request=|--method=|-X)(?:POST|PUT|PATCH|DELETE)", w, re.I):
-                return True
-            skip = w in {"-o", "-O", "-H", "-A", "-u", "-e", "--output", "--header", "--user", "--url", "--request", "--method", "-X"}
         return False
     if program in {"http", "https", "xh", "xhs"}:
-        operands = _operands(args, frozenset({"--pretty", "--style", "--print", "--output", "-o"}))
+        options = tuple(_options(args, _OPTION_VALUES[program]))
+        operands = tuple(value for option, value in options if not option)
         return bool(operands and operands[0].upper() in {"POST", "PUT", "PATCH", "DELETE"}) or any(
-            w in {"--form", "--multipart", "--raw", "-f"} for w in args) or any(
+            option in {"--form", "--multipart", "--raw", "-f"} for option, _ in options) or any(
             re.match(r"[A-Za-z_][\w.\-\[\]]*(?::=|=|@)(?!=)", w) for w in operands[1:])
-    verb = tuple(w.lower() for w in _verb(args, _CLOUD_VALUES))
+    values = _OPTION_VALUES.get(program, frozenset())
+    verb = tuple(w.lower() for w in _verb(args, values))
     if program == "gcloud" and verb and verb[0] in {"alpha", "beta"}:
-        verb = _verb(verb[1:], _CLOUD_VALUES)
+        verb = _verb(verb[1:], values)
     paths = {"gcloud": {"storage": {"cp", "mv", "rsync"}},
              "aws": {"s3": {"cp", "mv", "sync", "rm"}, "s3api": {"put-object", "upload-part"}},
              "gh": {"release": {"upload"}}}
     if program in paths and verb:
-        rest = _verb(verb[1:], _CLOUD_VALUES)
+        rest = _verb(verb[1:], values)
         return bool(rest and rest[0] in paths[program].get(verb[0], ()))
     if program == "az" and verb and verb[0] == "storage":
-        rest = _verb(verb[1:], _CLOUD_VALUES)
+        rest = _verb(verb[1:], values)
         if rest and rest[0] in {"blob", "file", "fs"}:
-            tail = _verb(rest[1:], _CLOUD_VALUES)
+            tail = _verb(rest[1:], values)
             if rest[0] == "fs" and tail and tail[0] == "file":
-                tail = _verb(tail[1:], _CLOUD_VALUES)
+                tail = _verb(tail[1:], values)
             return bool(tail and tail[0] in {"upload", "upload-batch", "sync"})
     verbs = {"gsutil": {"cp", "copy", "mv", "move", "ren", "rename", "rsync"},
              "azcopy": {"copy", "cp", "c", "sync", "sc", "s"},
