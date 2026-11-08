@@ -400,7 +400,9 @@ def _unparseable(text: str) -> str:
 def _inline_scripts(text: str):
     """Each inline script's own code: the rest of its line (`python3 -c "…"`) and, for a heredoc, its body."""
     for match in _INLINE_SCRIPT.finditer(text):
-        end = text.find("\n", match.start() + 1)
+        # its line starts at the program, past the blank lines `_POS` reads through: from the match start, a blank line
+        # before the program (`ls<newline><newline>python3 -c …`) was the script's whole line
+        end = text.find("\n", match.start() + len(match.group()) - len(match.group().lstrip()))
         line = text[match.start():] if end == -1 else text[match.start():end]
         body = _HEREDOC.match(text, text.find("<<", match.start())) if "<<" in line else None
         yield line + ("\n" + body.group(0) if body else "")
