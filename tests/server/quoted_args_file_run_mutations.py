@@ -14,7 +14,11 @@ MODES = ("ALLOW-PROGRAM-PATHS", "ALLOW-FILE-SCRIPTS", "DROP-NAMED-COMMANDS",
          "FLATTEN-OPERANDS", "DROP-REFUSED-PREFIX", "REFUSE-NON-SCRIPT-SUBCOMMANDS",
          "DROP-SECURITY-PASSWORD-TUPLE", "DROP-GSUTIL-UPLOAD-TUPLE", "DROP-GH-API-TUPLE",
          "DROP-PROGRAM-ARITIES", "DROP-SECURITY-GLOBAL-PARSE", "DROP-ATTACHED-SHORT",
-         "DROP-RAW-ASSIGNMENT")
+         "DROP-RAW-ASSIGNMENT", "DROP-FALLBACK-RULE", "DROP-CLUSTER-SPLIT",
+         "LOWERCASE-OPTION-VALUES", "REMOVE-AWS-COLOR", "REMOVE-RCLONE-RETRIES",
+         "REMOVE-RCLONE-BANDWIDTH", "REMOVE-S3CMD-ENCODING", "DROP-XURL-GLOBAL-PARSE",
+         "REMOVE-AWS-PROFILE", "FLIP-GCLOUD-QUIET", "DROP-SECURITY-ATTACHED-PROMPT",
+         "REMOVE-GSUTIL-OVERRIDE", "FLIP-CURL-SILENT")
 OPTION_MODES = frozenset(MODES[6:])
 
 
@@ -27,7 +31,40 @@ def pytest_configure(config):
     mode = config.getoption("--quoted-file-mutation")
     if mode is None:
         raise pytest.UsageError("choose --quoted-file-mutation when loading this plugin")
-    if mode in {"DROP-SECURITY-PASSWORD-TUPLE", "DROP-GSUTIL-UPLOAD-TUPLE", "DROP-GH-API-TUPLE"}:
+    if mode == "DROP-FALLBACK-RULE":
+        tp._fully_accounted = lambda program, args: True
+    elif mode.startswith("REMOVE-"):
+        program, option = {
+            "REMOVE-AWS-COLOR": ("aws", "--color"),
+            "REMOVE-RCLONE-RETRIES": ("rclone", "--retries"),
+            "REMOVE-RCLONE-BANDWIDTH": ("rclone", "--bwlimit"),
+            "REMOVE-S3CMD-ENCODING": ("s3cmd", "--encoding"),
+            "REMOVE-AWS-PROFILE": ("aws", "--profile"),
+            "REMOVE-GSUTIL-OVERRIDE": ("gsutil", "-o"),
+        }[mode]
+        tp._OPTION_VALUES[program] -= {option}
+    elif mode in {"FLIP-GCLOUD-QUIET", "FLIP-CURL-SILENT"}:
+        program, flag = ("gcloud", "--quiet") if mode == "FLIP-GCLOUD-QUIET" else ("curl", "-s")
+        tp._OPTION_VALUES[program] |= {flag}
+    elif mode == "DROP-CLUSTER-SPLIT":
+        def verb(args, values=frozenset()):
+            i = 0
+            while i < len(args) and args[i].startswith("-"):
+                if args[i] == "--":
+                    return args[i + 1:]
+                i += 2 if args[i] in values else 1
+            return args[i:]
+        tp._verb = verb
+    elif mode == "LOWERCASE-OPTION-VALUES":
+        original_uploads = tp._uploads
+        tp._uploads = lambda program, args: original_uploads(program, tuple(word.lower() for word in args))
+    elif mode == "DROP-XURL-GLOBAL-PARSE":
+        original_verb = tp._verb
+        tp._verb = lambda args, values=frozenset(): args if values == tp._OPTION_VALUES["xurl"] else original_verb(args, values)
+    elif mode == "DROP-SECURITY-ATTACHED-PROMPT":
+        original_security = tp._security_verb
+        tp._security_verb = lambda args: args if args and args[0].startswith("-p") and len(args[0]) > 2 else original_security(args)
+    elif mode in {"DROP-SECURITY-PASSWORD-TUPLE", "DROP-GSUTIL-UPLOAD-TUPLE", "DROP-GH-API-TUPLE"}:
         original_rules = tp._named_rules
         def rules(words):
             found = original_rules(words)

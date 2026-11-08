@@ -10,6 +10,10 @@ import pytest
 
 from server.services import shell_grammar as sg, terminal_policy as tp
 from tests.server.test_quoted_command_word import SEPARATORS
+from tests.server.quoted_args_baseline_data import levels
+from tests.server.quoted_args_option_profiles import (
+    CORRECTIONS, SEEDS, program_controls, unknowns, render,
+)
 
 
 # Independent seeds for named rules, with literal operands and no private corpus.
@@ -254,7 +258,11 @@ def test_rebuilt_text_obeys_the_existing_blank_run_limit():
 # review's changed operand classes; the remainder distinguish roles and words.
 OPERANDS = [
     ("keychain-help", ("security", "help", "dump-keychain"), "run"),
-    ("wipe-root-option-looking-file", ("rm", "-rf /", "local.txt"), "run"),
+    # Accepted cautious forbids at all seven positions: this dash-leading
+    # cluster cannot be split, so it keeps 9be27b5f's verdict. Whitespace does
+    # not make an option an operand: --exclude=a b and -d"foo bar" are real
+    # attached-value options, protected by test_spaced_attached_options below.
+    ("wipe-root-option-looking-file", ("rm", "-rf /", "local.txt"), "forbid"),
     ("wipe-root-local-file", ("rm", "/ local-file"), "ask"),
     ("wipe-home-local-file", ("rm", "~ local-file"), "ask"),
     ("macos-root-local-file", ("rm", "/System local-file"), "ask"),
@@ -288,9 +296,58 @@ def test_same_program_operands_keep_their_roles(name, words, level, position):
     assert tp.assess(command).level == level
 
 
+@pytest.mark.parametrize("words,option,value", [
+    (("rsync", "--exclude=a b", "report.txt", "remote:report.txt"), "--exclude", "a b"),
+    (("curl", "-dfoo bar", "https://example.invalid"), "-d", "foo bar"),
+], ids=["rsync/spaced-exclude-assignment", "curl/spaced-attached-post-data"])
+@pytest.mark.parametrize("position", SEPARATORS)
+def test_spaced_attached_options(words, option, value, position):
+    # Treating a dash-leading word as an operand merely because it contains
+    # whitespace would discard these options, including curl's posting data.
+    command = SEPARATORS[position] + operand_text(words)
+    assert sg.read(command).understood
+    assert tp._fully_accounted(words[0], words[1:])
+    assert (option, value) in list(tp._options(words[1:], tp._OPTION_VALUES[words[0]]))
+    assert tp.assess(command).level == "ask"
+
+
 REFUSED_TAILS = {"path": "./tool", "file": "python3 task.py",
                  "launcher": "watch status", "builtin": "alias sample=value"}
 RANK = {"run": 0, "ask": 1, "forbid": 2}
+
+
+@pytest.mark.parametrize("case,words", list(program_controls()), ids=lambda value: value if isinstance(value, str) else None)
+def test_every_program_option_controls(case, words):
+    command = render(words, "single", "plain")
+    sg.read(command)
+    assert tp._fully_accounted(words[0], words[1:]), case
+    main, original = levels("controls", case, command)
+    assert RANK[tp.assess(command).level] >= max(RANK[main], RANK[original]), case
+
+
+@pytest.mark.parametrize("case,words", list(unknowns()), ids=lambda value: value if isinstance(value, str) else None)
+def test_unknown_options_use_original_verdict(case, words):
+    command = render(words, "single", "plain")
+    sg.read(command)
+    assert not tp._fully_accounted(words[0], words[1:]), case
+    assert tp._named_rules(words) == tp._legacy_named_rules(words), case
+    main, original = levels("unknown", case, command)
+    assert RANK[tp.assess(command).level] >= max(RANK[main], RANK[original]), case
+
+
+@pytest.mark.parametrize("case,words", CORRECTIONS, ids=[row[0] for row in CORRECTIONS])
+@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("position", POSITIONS)
+def test_round_three_option_operations(case, words, family, position):
+    command = spelled(words, family, position)
+    assert sg.read(command).understood
+    assert tp._fully_accounted(words[0], words[1:]), case
+    assert tp.assess(command).level == ("forbid" if words[0] == "security" else "ask")
+
+
+def test_program_inventory_includes_every_tuple_table():
+    # A new program table must bring controls and an unknown-option sweep.
+    assert set(tp._OPTION_VALUES) | set(tp._OPTION_FLAGS) <= set(SEEDS)
 
 
 @pytest.mark.parametrize("words,level,rule", NAMED, ids=[str(i) + "-" + row[2] for i, row in enumerate(NAMED)])

@@ -1,18 +1,25 @@
-"""Reproducible text-only comparison of local objects and the working tree.
+"""Self-contained, text-only policy evidence; no Git metadata is read.
 
-Run as a Python module with --output pointing to an ignored evidence directory.
-Pytest collects six stratified checks by default; QUOTED_ARGS_EVIDENCE_FULL=1
-selects every generated row. Default strata keep every named rule, carrier,
-operand and option class and every command position. Historical word cases are
-grouped by rule/position; expanded positives by seed/position/wrapper; named
-positives by seed/position; negatives by carrier/kind/position; compositions by
-seed/position/tail. Select bucket number modulo bucket length, rotating spelling
-and seed choices instead of always taking the first. All 336 option positives,
-63 option negatives, 133 operand controls and twelve file cases run by default.
-Only Git object reads are subprocesses. Generated commands are passed solely to
-assess/read; no scripts, stubs or links are created or executed. The review's
-unpublished generator is unavailable: this reconstructs its documented shapes,
-not its exact input bytes. Counts are generated cases, including duplicates.
+The default suite uses stratified historical rows and every option control.
+QUOTED_ARGS_EVIDENCE_FULL=1 selects the full matrices. Historical word strata
+are rule/position, expanded positives seed/position/wrapper, negatives
+carrier/kind/position, compositions seed/position/tail, and the independent
+sweep program/profile/position. Bucket-index rotation selects spellings.
+
+Baseline data records each case id, SHA-256 of its command text, and verdicts
+from main 3eec545b and original 9be27b5f. Generate it with:
+  python -m tests.server.quoted_args_regenerate_baselines --main-source MAIN_SOURCE
+      --original-source ORIGINAL_SOURCE --output tests/server/quoted_args_baselines.json.gz
+Each source directory must contain shell_grammar.py and terminal_policy.py
+exported from that revision, plus its unchanged shell_text.py. The generator
+executes Python policy definitions, then passes strings only to assess/read;
+it never executes the generated command text. It uses supplied sources, not
+Git history. Missing or stale baseline rows fail explicitly, never skip.
+
+The review's unpublished generator is unavailable; the sweep reconstructs its
+399 profile counts and eight reported classes, not its exact input bytes.
+Counts include generated duplicates. Run this module with --output to write
+full matrix results; --cost additionally measures the current policy once.
 """
 import argparse
 from collections import Counter, defaultdict
@@ -21,10 +28,7 @@ import os
 from pathlib import Path
 import shlex
 import statistics
-import subprocess
-import sys
 import time
-import types
 
 import pytest
 
@@ -37,18 +41,10 @@ from tests.server.test_quoted_command_word import CASES, RULES, SEPARATORS, SHEL
 from tests.server.shell_differential_support import FILE_SEEDS
 
 
-def snapshot(revision):
-    modules = []
-    for basename in ("shell_grammar", "terminal_policy"):
-        source = subprocess.check_output(
-            ["git", "show", f"{revision}:server/services/{basename}.py"], text=True)
-        name = revision + "_" + basename
-        module = types.ModuleType(name)
-        sys.modules[name] = module
-        exec(compile(source, f"<{name}>", "exec"), module.__dict__)
-        modules.append(module)
-    modules[1].shell_grammar = modules[0]
-    return modules
+from tests.server.quoted_args_baseline_data import levels
+from tests.server.quoted_args_option_profiles import (
+    sweep, program_controls, unknowns, render,
+)
 
 
 def positives():
@@ -142,6 +138,8 @@ def stratified(rows):
             key = ("word", case.values[2], position)
         elif parts[0] in {"named", "expanded", "composition"}:
             key = tuple(parts[:2] + parts[3:])
+        elif parts[0] == "sweep":
+            key = tuple(parts[:3] + parts[4:])
         elif parts[0] == "data":
             key = tuple(parts[:1] + parts[2:])
         else:
@@ -150,67 +148,103 @@ def stratified(rows):
     return [bucket[i % len(bucket)] for i, bucket in enumerate(buckets.values())]
 
 
-def assert_matrix(result, *, negative=False):
+def assert_matrix(result, *, negative=False, cautious_forbids=False):
     assert not result["toward_run"], result["toward_run"]
     if negative:
-        assert not result["changed_from_main"], result["changed_from_main"]
+        # Exactly seven accepted cautious forbids: the unsplittable cluster
+        # keeps 9be27b5f's verdict. Whitespace cannot imply an operand; the
+        # --exclude=a b and -d"foo bar" controls retain option/value protection.
+        accepted = {f"operand/wipe-root-option-looking-file/{position}"
+                    for position in SEPARATORS}
+        changes = result["changed_from_main"]
+        if cautious_forbids:
+            assert {row["id"] for row in changes} == accepted, changes
+            assert all((row["main"], row["pr"], row["fixed"]) ==
+                       ("run", "forbid", "forbid") for row in changes), changes
+        else:
+            assert not changes, changes
     else:
         regressions = {transition: count for transition, count in result["transitions"]["pr_to_fixed"].items()
                        if RANK[transition.split("->")[1]] < RANK[transition.split("->")[0]]}
         assert not regressions, regressions
 
 
-@pytest.fixture(scope="module")
-def evidence_versions():
-    return [snapshot("3eec545b"), snapshot("9be27b5f"), (sg, tp)]
+def control_rows():
+    return ((case, render(words, "single", "plain")) for case, words in program_controls())
 
 
-@pytest.mark.parametrize("kind", ["positive", "negative", "option-positive", "option-negative", "composition", "files"])
-def test_local_object_evidence(kind, evidence_versions, record_property):
-    versions = evidence_versions
-    if kind == "files":
-        rows = list(file_cases())
-        for case, text in rows:
-            reading = sg.read(text)
+def unknown_rows():
+    return ((case, render(words, "single", "plain")) for case, words in unknowns())
+
+
+GENERATORS = {
+    "positive": positives, "negative": negatives,
+    "option-positive": option_positives, "option-negative": option_negatives,
+    "sweep": sweep, "controls": control_rows, "unknown": unknown_rows,
+    "composition": lambda: ((case, text) for case, _, text in compositions()),
+    "standalone": lambda: ((case, text) for case, text, _ in compositions()),
+    "files": file_cases,
+}
+
+
+def assert_accounting(kind):
+    if kind not in {"controls", "unknown"}:
+        return
+    source = program_controls if kind == "controls" else unknowns
+    for case, words in source():
+        expected = kind == "controls"
+        assert tp._fully_accounted(words[0], words[1:]) == expected, case
+        if not expected:
+            assert tp._named_rules(words) == tp._legacy_named_rules(words), case
+
+
+@pytest.mark.parametrize("kind", [kind for kind in GENERATORS if kind != "standalone"])
+def test_stored_baseline_evidence(kind, record_property):
+    assert_accounting(kind)
+    rows = stratified(GENERATORS[kind]())
+    for case, text in rows:
+        reading = sg.read(text)
+        if kind == "files":
             assert not reading.understood and reading.why and not reading.commands and not reading.capped, case
-            assert all(policy.assess(text).level == "run" for _, policy in versions), case
-    elif kind == "composition":
-        rows = stratified(compositions())
-        for case, standalone, text in rows:
-            reading = sg.read(text)
-            assert not reading.understood and not reading.commands, case
+            assert (*levels(kind, case, text), tp.assess(text).level) == ("run", "run", "run"), case
+    if kind == "composition":
+        for case, standalone, text in stratified(compositions()):
+            assert not sg.read(text).understood and not sg.read(text).commands, case
             assert RANK[tp.assess(text).level] >= RANK[tp.assess(standalone).level], case
-        assert_matrix(matrix(((case, text) for case, _, text in rows), versions))
-    else:
-        generate = {"positive": positives, "negative": negatives,
-                    "option-positive": option_positives, "option-negative": option_negatives}[kind]
-        rows = stratified(generate())
-        # Reading is a text-only check, including intentionally refused carriers.
-        for _, text in rows:
-            sg.read(text)
-        assert_matrix(matrix(rows, versions), negative="negative" in kind)
+    if kind != "files":
+        assert_matrix(matrix(kind, rows), negative="negative" in kind,
+                      cautious_forbids=kind == "negative")
     record_property("generated_rows", len(rows))
 
 
-def matrix(rows, versions):
+def matrix(kind, rows):
     transitions = defaultdict(Counter)
     classes = defaultdict(Counter)
     changes = []
     toward_run = []
+    fallbacks = Counter()
+    fallback_cases = []
     count = 0
     for case, text in rows:
         count += 1
-        levels = [policy.assess(text).level for _, policy in versions]
+        sg.read(text)
+        verdicts = [*levels(kind, case, text), tp.assess(text).level]
+        fallback_programs = {words[0].lower() for words in tp._command_words(text)
+                             if not tp._fully_accounted(words[0].lower(), words[1:])}
+        if fallback_programs:
+            fallback_cases.append(case)
+            fallbacks.update(fallback_programs)
         for a, b, label in ((0, 1, "main_to_pr"), (0, 2, "main_to_fixed"), (1, 2, "pr_to_fixed")):
-            transition = levels[a] + "->" + levels[b]
+            transition = verdicts[a] + "->" + verdicts[b]
             transitions[label][transition] += 1
             classes[case.split("/")[0] + "/" + label][transition] += 1
-        if levels[0] != levels[2]:
-            changes.append({"id": case, "main": levels[0], "pr": levels[1], "fixed": levels[2]})
-        if RANK[levels[2]] < RANK[levels[0]]:
+        if verdicts[0] != verdicts[2]:
+            changes.append({"id": case, "main": verdicts[0], "pr": verdicts[1], "fixed": verdicts[2]})
+        if RANK[verdicts[2]] < RANK[verdicts[0]]:
             toward_run.append(case)
     return dict(cases=count, transitions=dict(transitions), by_class=dict(classes),
-                changed_from_main=changes, toward_run=toward_run)
+                changed_from_main=changes, toward_run=toward_run,
+                fallback_cases=fallback_cases, fallback_programs=dict(fallbacks))
 
 
 def clear(policy):
@@ -219,7 +253,7 @@ def clear(policy):
             value.cache_clear()
 
 
-def cost(versions):
+def cost(versions, labels=("main", "pr", "fixed")):
     shapes = {
         "keychain-near-miss": lambda n: "security '" + ("find-generic-password " * (n // 22)) + "'",
         "git-near-miss": lambda n: "git '" + "x " * (n // 2) + "'",
@@ -235,7 +269,7 @@ def cost(versions):
         for size in (100, 500, 1000, 2000, 3800, 7600):
             text = make(size)
             row = {"shape": name, "size": size}
-            for label, (_, policy) in zip(("main", "pr", "fixed"), versions):
+            for label, (_, policy) in zip(labels, versions):
                 timings = []
                 for _ in range(3):
                     clear(policy)
@@ -249,11 +283,12 @@ def cost(versions):
         text = shapes["keychain-near-miss"](size)
         words = sg.read(text).commands[0]
         row = {"size": size}
-        old = versions[1][1]
-        for label, run in (
-            ("pr", lambda: [pattern.match(" ".join(words)) for _, pattern, _, masked in old._FORBID_C if not masked]),
-            ("fixed", lambda: tp._named_rules(words)),
-        ):
+        passes = [("fixed", lambda: tp._named_rules(words))]
+        if len(versions) > 1:
+            old = versions[1][1]
+            passes.insert(0, ("pr", lambda: [pattern.match(" ".join(words))
+                                           for _, pattern, _, masked in old._FORBID_C if not masked]))
+        for label, run in passes:
             timings = []
             for _ in range(3):
                 start = time.perf_counter()
@@ -267,57 +302,31 @@ def cost(versions):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--cost", action="store_true")
     args = parser.parse_args()
-    versions = [snapshot("3eec545b"), snapshot("9be27b5f"), (sg, tp)]
-    result = {"method": "reconstructed documented shapes; original review generator was not supplied"}
-    result["positive"] = matrix(positives(), versions)
-    result["negative"] = matrix(negatives(), versions)
-    result["option_positive"] = matrix(option_positives(), versions)
-    result["option_negative"] = matrix(option_negatives(), versions)
-    previous = snapshot("f0c45cd4")
-    result["option_before_fix"] = matrix(option_positives(), [*versions[:2], previous])
-    # These eight named classes reproduce the review's 56 changed negatives.
-    changed_names = {row[0] for row in OPERANDS[:8]}
-    result["review_changed_operands"] = matrix(
-        ((case, text) for case, text in negatives()
-         if case.startswith("operand/") and case.split("/")[1] in changed_names), versions)
-    composed = list(compositions())
-    result["composition"] = matrix(((case, text) for case, _, text in composed), versions)
-    for label, (_, policy) in zip(("main", "pr", "fixed"), versions):
-        losses = Counter()
-        for _, standalone, text in composed:
-            before, after = policy.assess(standalone).level, policy.assess(text).level
-            if RANK[after] < RANK[before]:
-                losses[before + "->" + after] += 1
-        result["composition"][label + "_standalone_losses"] = losses
-    files = []
-    for case, text in file_cases():
-        row = {"id": case}
-        for label, (reader, policy) in zip(("main", "pr", "fixed"), versions):
-            reading = reader.read(text)
-            row[label] = dict(understood=reading.understood, why=reading.why,
-                              empty=not reading.commands, capped=reading.capped,
-                              level=policy.assess(text).level)
-        files.append(row)
-    result["file_families"] = files
-    result["cost"] = cost(versions)
+    result = {}
+    for kind, generate in GENERATORS.items():
+        assert_accounting(kind)
+        if kind == "standalone":
+            continue
+        result[kind] = matrix(kind, generate())
+        print(kind, result[kind]["cases"], dict(result[kind]["transitions"]["pr_to_fixed"]),
+              "fallbacks", len(result[kind]["fallback_cases"]), flush=True)
+    losses = Counter()
+    for case, standalone, text in compositions():
+        before, after = tp.assess(standalone).level, tp.assess(text).level
+        if RANK[after] < RANK[before]:
+            losses[before + "->" + after] += 1
+    result["composition"]["fixed_standalone_losses"] = dict(losses)
+    if args.cost:
+        result["cost"] = cost([(sg, tp)], labels=("fixed",))
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "matrix.json").write_text(json.dumps(result, indent=2) + "\n")
-    for name in ("positive", "negative", "option_positive", "option_negative", "option_before_fix", "composition"):
-        value = result[name]
-        print(name, value["cases"], json.dumps(value["transitions"], sort_keys=True),
-              "toward-run", len(value["toward_run"]))
-    print("composition losses", result["composition"]["pr_standalone_losses"],
-          result["composition"]["fixed_standalone_losses"])
-    print("file families", len(files), "fixed refusals", sum(not row["fixed"]["understood"] for row in files))
-    for label in ("main", "pr", "fixed"):
-        print(label, "worst median ms", max(row[label + "_median_ms"] for row in result["cost"]["assessment"]))
-    print("isolated pass", result["cost"]["isolated_named_pass"])
-    for name in ("positive", "negative", "option_positive", "option_negative", "composition"):
-        assert_matrix(result[name], negative="negative" in name)
-    assert not result["composition"]["fixed_standalone_losses"]
-    assert all(not row["fixed"]["understood"] and row["fixed"]["empty"] and row["fixed"]["why"]
-               and not row["fixed"]["capped"] for row in files)
+    for kind in GENERATORS:
+        if kind not in {"files", "standalone"}:
+            assert_matrix(result[kind], negative="negative" in kind,
+                          cautious_forbids=kind == "negative")
+    assert not losses, losses
 
 
 if __name__ == "__main__":
