@@ -197,11 +197,12 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
-    """`(st_dev, st_ino)` of `path` itself (a link is not followed), or None where it can't be read: a folder whose
-    identity is unknown is then judged by its path, as before."""
+    """`(st_dev, st_ino)` of `path` itself (a link is not followed), or None when it isn't there. Any other error
+    (I/O, permission) propagates, so no profile is built (#772 round 3): a root whose identity can't be read would
+    otherwise drop out of the comparison and lose its holds. The command or server then doesn't start."""
     try:
         st = os.lstat(path)
-    except OSError:
+    except (FileNotFoundError, NotADirectoryError):
         return None
     return st.st_dev, st.st_ino
 

@@ -94,10 +94,10 @@ xfail = 0
 # protected ones can't be moved away or replaced under commands, an MCP server granted HOME, or the outside floor
 # (14 + 3 cases); writing beside them still works. Round 3 (#772 delta review): a work folder or grant given by a
 # case or NFD spelling still holds them (commands, MCP: 4 cases), and a skill or plugin folder that is a link can't
-# be replaced (3 cases).
+# be replaced (3 cases); a command in a spelt work folder whose identity can't be read doesn't run (1 case).
 ["server/sbx/test_sbx5a_aliases.py"]
-markers = 6
-cases = 26
+markers = 7
+cases = 27
 xfail = 0
 
 # 0.1.64 SBX-5a: the product paths under real seatbelt. Commands, the outside floor, an MCP server granted HOME

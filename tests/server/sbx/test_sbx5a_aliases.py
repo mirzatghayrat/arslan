@@ -234,7 +234,8 @@ def test_a_link_at_the_eval_marker_exempts_nothing(home, target):
 
 async def test_a_metadata_error_on_a_protected_folder_refuses_the_write(home, monkeypatch):
     """An error other than "not there" while reading a protected folder's identity refuses the write, rather than
-    reading the folder as absent; a write elsewhere is unaffected."""
+    reading the folder as absent. Conservative on purpose: every write checks every protected folder, so while the
+    error lasts a write anywhere else is refused too (this test checks only the write below the folder)."""
     data = config.data_dir()
     sentinel = _sentinel(data / "sub")
     real_stat, broken = os.stat, str(data.resolve())
@@ -250,6 +251,33 @@ async def test_a_metadata_error_on_a_protected_folder_refuses_the_write(home, mo
     monkeypatch.setattr(os, "stat", real_stat)
     assert refused["ok"] is False and "can't check" in refused["error"], refused
     assert sentinel.read_text() == "original"
+
+
+def _unreadable_identity(monkeypatch, path: Path) -> None:
+    """`os.lstat` fails with EIO for `path` alone (realpath, which skips lstat errors, is unaffected)."""
+    real_lstat, broken = os.lstat, str(path)
+
+    def failing(target, *args, **kwargs):
+        if os.fspath(target) == broken:
+            raise OSError(errno.EIO, "Input/output error")
+        return real_lstat(target, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", failing)
+
+
+@pytest.mark.parametrize("surface", ["commands", "mcp"])
+def test_a_root_whose_identity_cant_be_read_builds_no_profile(home, tmp_path, monkeypatch, surface):
+    """A work folder or grant by another spelling of ~, whose identity can't be read: no profile is built (an
+    error, never a profile without the holds), so the command or server doesn't start."""
+    _sentinel(home / ".agents" / "skills")
+    spelt = home.with_name(home.name.upper())
+    _unreadable_identity(monkeypatch, spelt)
+    with pytest.raises(OSError, match="Input/output error"):
+        if surface == "commands":
+            command_sandbox.commands_profile(spelt, offline=True)
+        else:
+            capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
+                                    {"root": str(tmp_path / "server"), "folders": [str(spelt)], "network": False})
 
 
 def test_the_scan_names_the_entry_it_couldnt_read(home, tmp_path, monkeypatch):
@@ -397,6 +425,23 @@ async def test_a_work_folder_or_grant_by_another_spelling_still_holds_the_ancest
         ("beside-create", "create", accented / ".agents" / "beside.txt")])
     assert out["rename"] in REFUSED and out["beside-create"] == "ok", out
     assert not (accented / "moved").exists() and sentinel.read_text() == "original"
+
+
+@pytest.mark.macos
+@macos
+async def test_a_command_in_a_spelt_work_folder_whose_identity_cant_be_read_doesnt_run(home, tmp_path, monkeypatch):
+    """End to end through terminal_exec: the profile isn't built, so the command never starts and the skills
+    folder's parent stays where it is (with a permissive profile the rename would succeed: see the test above)."""
+    sentinel = _sentinel(home / ".agents" / "skills")
+    spelt = home.with_name(home.name.upper())
+    assert spelt.is_dir(), "this volume does not fold case"
+    _unreadable_identity(monkeypatch, spelt)
+    command = " ".join(shlex.quote(part) for part in _probe([("rename", "rename", home / ".agents",
+                                                                spelt / "moved")]))
+    with pytest.raises(OSError, match="Input/output error"):
+        await terminal_exec.run(command, cwd=spelt, sandbox=True, offline=True)
+    assert (home / ".agents" / "skills").is_dir() and not (home / "moved").exists()
+    assert sentinel.read_text() == "original"
 
 
 @pytest.mark.macos
