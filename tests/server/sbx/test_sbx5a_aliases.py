@@ -13,6 +13,7 @@
 
 All targets are stand-ins under a scratch HOME. The probe prints one word per check, never contents.
 """
+import errno
 import json
 import os
 import shlex
@@ -216,6 +217,60 @@ def test_held_ancestors_are_the_folders_between_a_writable_root_and_a_protected_
     assert {home.resolve() / "linked", elsewhere.resolve()} <= set(planted)
 
 
+# ── round 3 (#772 delta review), portable ─────────────────────────────────────────────
+
+@pytest.mark.parametrize("target", ["runtimes", "."])
+def test_a_link_at_the_eval_marker_exempts_nothing(home, target):
+    """`<data>/workspace` exempts only a real folder there: a link to the runtimes, or to the data folder itself,
+    would otherwise make that folder a writable working folder."""
+    data = config.data_dir()
+    pointed = (data / target).resolve()
+    sentinel = _sentinel(pointed)
+    (data / "workspace").symlink_to(pointed, target_is_directory=True)
+    with pytest.raises(workspace_paths.PathEscape, match="skills, plugins or data"):
+        workspace_paths.resolve_in_workspace("sentinel", data / "workspace", for_write=True)
+    assert sentinel.read_text() == "original"
+
+
+async def test_a_metadata_error_on_a_protected_folder_refuses_the_write(home, monkeypatch):
+    """An error other than "not there" while reading a protected folder's identity refuses the write, rather than
+    reading the folder as absent; a write elsewhere is unaffected."""
+    data = config.data_dir()
+    sentinel = _sentinel(data / "sub")
+    real_stat, broken = os.stat, str(data.resolve())
+
+    def failing(path, *args, **kwargs):
+        if os.fspath(path) == broken:
+            raise OSError(errno.EIO, "Input/output error")
+        return real_stat(path, *args, **kwargs)
+
+    write, _ = _file_tools(monkeypatch, [home])
+    monkeypatch.setattr(os, "stat", failing)
+    refused = await write({"path": str(sentinel.relative_to(home)), "content": "changed"})
+    monkeypatch.setattr(os, "stat", real_stat)
+    assert refused["ok"] is False and "can't check" in refused["error"], refused
+    assert sentinel.read_text() == "original"
+
+
+def test_the_scan_names_the_entry_it_couldnt_read(home, tmp_path, monkeypatch):
+    """A file whose metadata can't be read stops the server, and the error names that file, not its folder."""
+    root = tmp_path / "srv"
+    (root / "lib").mkdir(parents=True)
+    unreadable = root / "lib" / "module.js"
+    unreadable.write_text("x")
+    real_lstat = os.lstat
+
+    def failing(path, *args, **kwargs):
+        if os.fspath(path) == str(unreadable):
+            raise OSError(errno.EIO, "Input/output error")
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", failing)
+    with pytest.raises(capability_sandbox.OutsideLink, match=r"lib/module\.js in this capability's folder"):
+        capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
+                                {"root": str(root), "folders": [], "network": False})
+
+
 # ── macOS: real seatbelt ─────────────────────────────────────────────────────────────
 
 def _probe(checks) -> list[str]:
@@ -317,3 +372,55 @@ async def test_an_ancestor_cant_be_replaced_by_a_new_folder_or_a_link(home, tmp_
                                                ("mkdir-missing", "mkdir", home / ".agents")])
     assert set(out.values()) <= REFUSED, out
     assert not (home / ".agents").exists() and (home / "bundles").resolve() == real_bundles.resolve()
+
+
+# ── round 3 (#772 delta review), real seatbelt ────────────────────────────────────────
+
+ACCENTED = unicodedata.normalize("NFC", "hóme")
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("surface", ["commands", "mcp"])
+@pytest.mark.parametrize("alias", ["case", "nfd"])
+async def test_a_work_folder_or_grant_by_another_spelling_still_holds_the_ancestors(home, tmp_path, monkeypatch,
+                                                                                 surface, alias):
+    """The writable root is given by another spelling of the folder the protected paths are under: still the
+    same folder, so the skills folder's parent can't be renamed away through it."""
+    accented = tmp_path / ACCENTED
+    monkeypatch.setenv("HOME", str(accented))
+    sentinel = _sentinel(accented / ".agents" / "skills")
+    spelt = tmp_path / (ACCENTED.upper() if alias == "case" else unicodedata.normalize("NFD", ACCENTED))
+    assert spelt.is_dir() and str(spelt) != str(accented), "this volume does not alias the spelling"
+    out = await _run(surface, spelt, tmp_path, [
+        ("rename", "rename", accented / ".agents", spelt / "moved"),
+        ("beside-create", "create", accented / ".agents" / "beside.txt")])
+    assert out["rename"] in REFUSED and out["beside-create"] == "ok", out
+    assert not (accented / "moved").exists() and sentinel.read_text() == "original"
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("surface", ["commands", "mcp", "outside"])
+async def test_a_skill_or_plugin_folder_that_is_a_link_cant_be_replaced(home, tmp_path, surface):
+    """The skills folder and the plugin folder are links to folders elsewhere: their targets are closed, and the
+    links themselves can't be removed, renamed or retargeted; things beside them still can."""
+    skills = _sentinel(home / "real-skills")
+    plugin = _sentinel(home / "real-plugin")
+    (home / ".agents").mkdir()
+    (home / ".agents" / "skills").symlink_to(skills.parent, target_is_directory=True)
+    (home / "bundles").mkdir()
+    (home / "bundles" / PLUGIN).symlink_to(plugin.parent, target_is_directory=True)
+    fake = home / "fake"
+    fake.mkdir()
+    out = await _run(surface, home, tmp_path, [
+        ("unlink-skills", "unlink", home / ".agents" / "skills"),
+        ("rename-skills", "rename", home / ".agents" / "skills", home / "moved"),
+        ("unlink-plugin", "unlink", home / "bundles" / PLUGIN),
+        ("beside-create", "create", home / ".agents" / "notes.txt"),
+        ("beside-link", "symlink", home / "bundles" / "other", fake)])
+    assert {out["unlink-skills"], out["rename-skills"], out["unlink-plugin"]} <= REFUSED, out
+    assert (out["beside-create"], out["beside-link"]) == ("ok", "ok"), out
+    assert (home / ".agents" / "skills").resolve() == skills.parent.resolve()
+    assert (home / "bundles" / PLUGIN).resolve() == plugin.parent.resolve()
+    assert skills.read_text() == plugin.read_text() == "original"

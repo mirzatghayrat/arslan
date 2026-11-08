@@ -103,29 +103,39 @@ def outside_links(root: Path) -> list[Path]:
     (a tool hard-linking from its own cache there) are fine. Symlinks are not followed. About 240 ms for a
     13,000-file node_modules (measured 2026-11-02).
 
-    SBX-5a (#772 review): a folder or file it can't read raises OutsideLink, so the server doesn't start: a link
-    behind a folder the scan can't list would be missed, and the folder made readable afterwards. What it can't
-    close is the time between the scan and the server's use: another process running as the user can add a link
-    after it (SECURITY.md); the server itself can't."""
+    SBX-5a (#772 review): a folder it can't list, or an entry whose metadata it can't read, raises OutsideLink
+    naming that folder or entry, so the server doesn't start: a link behind a folder the scan can't list would be
+    missed, and the folder made readable afterwards. (A file it can't open is fine: its link count is metadata.)
+    What it can't close is the time between seeing an entry and the server's use: another process running as the
+    user can add a link to a folder already scanned (SECURITY.md); the server itself can't."""
     seen: dict[tuple[int, int], list] = {}
     stack = [root]
     while stack:
         folder = stack.pop()
         try:
-            with os.scandir(folder) as entries:
-                for entry in entries:
-                    if entry.is_dir(follow_symlinks=False):
-                        stack.append(entry.path)
-                    elif entry.is_file(follow_symlinks=False):
-                        st = entry.stat(follow_symlinks=False)
-                        if st.st_nlink > 1:
-                            names = seen.setdefault((st.st_dev, st.st_ino), [st.st_nlink, []])
-                            names[1].append(Path(entry.path))
+            with os.scandir(folder) as listing:
+                entries = list(listing)
         except OSError as exc:
-            raise OutsideLink(f"refusing to start: {Path(folder).relative_to(root)} in this capability's folder "
-                              f"can't be checked for links from outside ({exc.strerror or exc}); reinstall the "
-                              "capability") from None
+            raise _unscanned(root, Path(folder), exc) from None
+        for entry in entries:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    stack.append(entry.path)
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                st = os.lstat(entry.path)
+            except OSError as exc:
+                raise _unscanned(root, Path(entry.path), exc) from None
+            if st.st_nlink > 1:
+                names = seen.setdefault((st.st_dev, st.st_ino), [st.st_nlink, []])
+                names[1].append(Path(entry.path))
     return sorted(p for nlink, paths in seen.values() if nlink > len(paths) for p in paths)
+
+
+def _unscanned(root: Path, path: Path, exc: OSError) -> OutsideLink:
+    return OutsideLink(f"refusing to start: {path.relative_to(root)} in this capability's folder can't be checked "
+                       f"for links from outside ({exc.strerror or exc}); reinstall the capability")
 
 
 def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, list[str], dict, str]:

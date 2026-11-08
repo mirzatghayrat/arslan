@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import stat
 import unicodedata
 from pathlib import Path
 
@@ -114,23 +115,36 @@ def _refuse_cap6b(path: Path, root: Path, user_path) -> None:
     (evals/companion/stable_recovery.py); Arslan keeps nothing of its own there.
 
     SBX-5a (#772 review): judged by what is on disk (`_within`), not by spelling, since APFS folds case and
-    Unicode normalization: `~/.agents/SKILLS` is the skills folder. The exemption goes by the same identity."""
+    Unicode normalization: `~/.agents/SKILLS` is the skills folder. The exemption goes by the same identity, and
+    only for a real folder at `<data>/workspace`: a link there would exempt whatever it points at, the runtimes or
+    the whole data folder (#772 delta review). A path whose identity can't be read (an error other than "not
+    there") is refused, not taken as absent."""
     from server import config
     from server.services import command_sandbox
     data = Path(config.data_dir()).resolve()
-    marked = _identity(data / "workspace")
+    marker = _stat(data / "workspace", follow=False)
+    marked = (marker.st_dev, marker.st_ino) if marker is not None and stat.S_ISDIR(marker.st_mode) else None
     exempt = marked is not None and any(_identity(a) == marked for a in (root, *root.parents))
     for folder in [*command_sandbox.cap6b_folders(), *([] if exempt else [data])]:
         if _within(path, folder):
             raise PathEscape(f"refusing to write Arslan's skills, plugins or data: {user_path}")
 
 
-def _identity(path: Path) -> tuple[int, int] | None:
+def _stat(path: Path, *, follow: bool = True) -> os.stat_result | None:
+    """`path`'s metadata, None when it isn't there. Any other error (I/O, permission, a link loop) raises
+    PathEscape: the check can't tell whether the path is one of Arslan's folders, so the write is refused."""
     try:
-        st = os.stat(path)
-    except OSError:
+        return os.stat(path) if follow else os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
         return None
-    return st.st_dev, st.st_ino
+    except OSError as exc:
+        raise PathEscape("refusing to write: can't check this path against Arslan's skills, plugins or data "
+                         f"({exc.strerror or exc})") from None
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    st = _stat(path)
+    return None if st is None else (st.st_dev, st.st_ino)
 
 
 def _folded(parts) -> tuple[str, ...]:

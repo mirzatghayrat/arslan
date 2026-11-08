@@ -156,12 +156,30 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
 
     `protected` paths count when they exist (nothing to move otherwise, and a missing ~/.config stays makeable).
     `planted` ones (CAP6b) count even when missing, since a folder made or linked where Arslan looks would be read
-    as skills, and by their spelling as well as their real path, so a link on the way can't be retargeted."""
+    as skills, and by their spelling as well as their real path, so a link on the way can't be retargeted. When the
+    CAP6b folder itself is a link, that entry is held too (its target is closed as a folder, not reopened).
+
+    Containment goes by `(st_dev, st_ino)` as well as by path (#772 delta review): `realpath` keeps the spelling it
+    is given, so a work folder spelt `~/HOME` or in NFD is the same folder as the ~ the protected paths are under.
+    A folder that doesn't exist yet is judged by its existing ancestors. Seatbelt matches the folder on disk, so a
+    literal in either spelling holds it."""
     roots = _resolved(writable)
+    ids = {i for i in map(_identity, roots) if i is not None}
+    seen: dict[Path, tuple[int, int] | None] = {}
     out: list[Path] = []
 
+    def inside(folder: Path) -> bool:
+        if any(folder == r or r in folder.parents for r in roots):
+            return True
+        for f in (folder, *folder.parents):
+            if f not in seen:
+                seen[f] = _identity(f)
+            if seen[f] in ids:
+                return True
+        return False
+
     def hold(folder: Path) -> None:
-        if folder not in out and any(folder == r or r in folder.parents for r in roots):
+        if folder not in out and inside(folder):
             out.append(folder)
 
     for path in [*(_real(p) for p in protected if _real(p).exists()), *(_real(p) for p in planted)]:
@@ -172,7 +190,20 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
         for folder in reversed(lexical.parents):
             if folder != folder.parent:
                 hold(_real(folder.parent) / folder.name)         # the name itself: a link there, not its target
+        entry = _real(lexical.parent) / lexical.name
+        if entry.is_symlink():
+            hold(entry)                                          # the CAP6b folder is a link: hold the link
     return out
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    """`(st_dev, st_ino)` of `path` itself (a link is not followed), or None where it can't be read: a folder whose
+    identity is unknown is then judged by its path, as before."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    return st.st_dev, st.st_ino
 
 
 # Kept for SBX-2's harness only: its `legacy-commands` base rebuilds main's commands profile from these as the

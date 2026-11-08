@@ -92,10 +92,12 @@ xfail = 0
 # 0.1.64 SBX-5a, second round (#772 review): the file tools refuse every spelling of a protected folder and write
 # the eval's folder by any; seatbelt refuses a case or NFD spelling of a closed folder; the folders above the
 # protected ones can't be moved away or replaced under commands, an MCP server granted HOME, or the outside floor
-# (14 + 3 cases); writing beside them still works.
+# (14 + 3 cases); writing beside them still works. Round 3 (#772 delta review): a work folder or grant given by a
+# case or NFD spelling still holds them (commands, MCP: 4 cases), and a skill or plugin folder that is a link can't
+# be replaced (3 cases).
 ["server/sbx/test_sbx5a_aliases.py"]
-markers = 4
-cases = 19
+markers = 6
+cases = 26
 xfail = 0
 
 # 0.1.64 SBX-5a: the product paths under real seatbelt. Commands, the outside floor, an MCP server granted HOME
