@@ -31,6 +31,8 @@ final class FakeBackend: BackendReads {
     var posted: [(String, [String: Any])] = []
     func json(_ path: String) async throws -> [String: Any] {
         asked.append(path)
+        // The read the Bridge makes before linking a conversation a phone names: an ordinary one, unless a test says.
+        if answers[path] == nil, path.hasSuffix("/history?limit=1") { return ["messages": []] }
         guard let answer = answers[path] else { throw BridgeError.code("mac_busy") }
         return try answer.get()
     }
@@ -42,7 +44,7 @@ final class FakeBackend: BackendReads {
 }
 
 final class ConversationLinksTests: XCTestCase {
-    func setUpPair(backend: BackendReads = NoBackend()) -> (MemoryStore, Mailbox, Mailbox, FakeChannels, ConversationLinks) {
+    func setUpPair(backend: BackendReads = FakeBackend()) -> (MemoryStore, Mailbox, Mailbox, FakeChannels, ConversationLinks) {
         let store = MemoryStore()
         let mac = Mailbox(deviceID: "mac-1", signing: .init(), exchange: .init(), store: store)
         let phone = Mailbox(deviceID: "iphone-1", signing: .init(), exchange: .init(), store: store)
@@ -161,6 +163,7 @@ final class ConversationLinksTests: XCTestCase {
         let (_, mac, phone, channels, links) = setUpPair(backend: backend)
         try await phone.send(type: "chat.send", body: ["conversation_id": "c-1", "text": "plan", "attachments": [], "client_msg_id": "c1"], to: "mac-1")
         for received in try await mac.receive() { await links.handle(received) }
+        backend.asked = []                                                     // the read before the link opened
         let chat = try XCTUnwrap(channels.opened["c-1"])
         await chat.onFrame(["type": "stream_start"])
         await chat.onFrame(["type": "stream_chunk", "content": "Here."])

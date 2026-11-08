@@ -105,6 +105,26 @@ public actor ConversationLinks {
         return (channel, mapper)
     }
 
+    /// A conversation a phone frame names (chat.send, task.stop), linked only once the Mac's own history read answers
+    /// for it, as chat.history links only after that read. A phone never opens a sub-session (SUB3, #767): the read
+    /// refuses one `not_found` (server/api/phone.py, `_off_the_phone`), and the backend can't tell this socket from a
+    /// Mac window's. Only a 200 links. Fails closed both ways, with no socket opened: the server's refusal (its 404
+    /// `not_found`) answers `not_found`, as an unknown conversation is; anything else is no answer for this
+    /// conversation (the backend down, a timeout, a 5xx, any other 4xx) and answers `mac_busy`, so a phone during an
+    /// outage doesn't take its conversation for gone. One already linked passed this, or came from the Mac's own
+    /// answers (chat.history, task.start, `/phone/live`, a new conversation's store call), which leave sub-sessions out.
+    func linkNamed(_ conversationID: String, now: Date) async throws {
+        if links[conversationID] == nil, conversationID != Self.pocket {
+            let path = "/api/v1/phone/conversations/\(conversationID.pathSegment)/history?limit=1"
+            do { _ = try await backend.json(path) } catch BridgeError.code("not_found") {
+                throw BridgeError.code("not_found")
+            } catch {
+                throw BridgeError.code("mac_busy")
+            }
+        }
+        try link(conversationID, now: now)
+    }
+
     /// The link closes for good (§5.7): a deleted conversation, or one idle and no longer live.
     func unlink(_ conversationID: String) {
         guard links.removeValue(forKey: conversationID) != nil else { return }
@@ -443,7 +463,8 @@ public actor ConversationLinks {
                 let ids = attachments.map { $0["id"] as? String ?? "" }
                 guard !ids.contains(where: \.isEmpty) else { throw BridgeError.code("malformed") }
                 let conversation = try await destination(of: body)
-                try link(conversation, now: now)
+                // A new one was just stored by the Mac, in the call that refuses any other stored kind (a sub-session).
+                if body["new_conversation_id"] == nil { try await linkNamed(conversation, now: now) } else { try link(conversation, now: now) }
                 // §5.7: it runs once every file it names is here (at once when it names none).
                 held.append(Held(from: received.from, envelopeID: related, clientID: clientID, conversationID: conversation,
                                  body: body, fileIDs: ids, at: now, sentAt: received.envelope["ts"] as? String))
@@ -522,7 +543,7 @@ public actor ConversationLinks {
                 _ = try await mailbox.send(type: "task.started", body: reply, to: received.from)
             case "task.stop":
                 guard let job = body["job_id"] as? String, !job.isEmpty else { throw BridgeError.code("malformed") }
-                if let conversation = body["conversation_id"] as? String { try link(conversation, now: now) }   // to hear it stop
+                if let conversation = body["conversation_id"] as? String { try await linkNamed(conversation, now: now) }   // to hear it stop
                 _ = try await backend.post("/api/v1/phone/tasks/\(job.pathSegment)/stop", body: [:])
             case "file.get":
                 guard let id = body["file_id"] as? String, !id.isEmpty else { throw BridgeError.code("malformed") }
