@@ -674,10 +674,12 @@ class TaskRuntime:
                                               self.progress, reason=reason, retain_stopped=retain_stopped)
             self.emit(_state_frame(value))
         context = personal_context.current()
-        if reason == "before_model" and context is not None and context.sub_session:
-            # SUB3: and its tree's shared limit, with this request's own spend saved just above.
+        if reason == "before_model" and context is not None:
+            # SUB3: and its tree's shared limit, with this request's own spend saved just above; SUB4: a summary
+            # turn's too, in its commander's conversation.
             from server.services import sub_sessions
-            await sub_sessions.check_tree_spend(context.conversation_id)
+            if context.sub_session or sub_sessions.is_summary(self.task_id):
+                await sub_sessions.check_tree_spend(context.conversation_id)
 
     def capture(self, event: dict):
         if event.get("type") == "run_cancelled":
