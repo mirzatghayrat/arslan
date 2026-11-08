@@ -7,8 +7,10 @@ need the script to run are macOS-only (Linux run_python refuses every script, P0
 import sys
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from server import config
+from server.db import session as db_session
 from server.db.models import CapabilitySource, SkillPack
 from server.registry.executors import RunPythonExecutor
 from server.services import capability_list, code_sandbox
@@ -90,6 +92,52 @@ async def test_a_plugin_switched_off_holds_its_skill_and_leaves_another_skill_al
     await capability_list.switch(SWITCH[PART], False)
     _refused(await _run(PART), PART)
     assert (await _run(ALONE))["ok"] is True
+
+
+async def test_a_failed_switch_lookup_runs_nothing_and_reads_no_file(scripts, monkeypatch):
+    """Fail closed: when the skill's row can't be read, the error surfaces and no script is read or run."""
+    class _BrokenSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get(self, *args, **kwargs):
+            raise OperationalError("SELECT skill_packs", {}, Exception("database is locked"))
+
+    def unread(ref):
+        raise AssertionError(f"a script was read although the switch could not be: {ref}")
+
+    monkeypatch.setattr(db_session, "AsyncSessionLocal", _BrokenSession)
+    monkeypatch.setattr(RunPythonExecutor, "_load_skill_script", staticmethod(unread))
+    with pytest.raises(OperationalError):
+        await _run(ALONE)
+    assert scripts == []
+
+
+async def test_a_link_to_another_skills_files_is_refused_and_a_plain_script_still_runs(scripts, tmp_path,
+                                                                                      monkeypatch):
+    """An off skill's code isn't reached under another key through a link: neither a folder of links to its folder
+    nor a file in an on skill's folder linking to its script, run directly or handed over as a sibling."""
+    handed: list[tuple[str, dict]] = []
+
+    async def ran(code, *, extra_files=None, read_only_files=None):
+        handed.append((code, extra_files))
+        return {"ok": True, "stdout": "RAN", "files": [], "sandboxed": True, "network_isolated": True}
+
+    monkeypatch.setattr(code_sandbox, "run_python", ran)
+    await capability_list.switch(SWITCH[ALONE], False)
+    root = tmp_path / "data" / "skill_scripts"
+    (root / "alias").symlink_to(root / ALONE, target_is_directory=True)
+    (root / PART / "via.py").symlink_to(root / ALONE / "main.py")
+    for ref in ("alias/main.py", f"{PART}/via.py"):
+        out = await RunPythonExecutor().execute({"skill_script": ref})
+        assert out == {"ok": False, "external": False, "error": f"skill script not found: {ref}"}, out
+    assert handed == []
+
+    assert (await _run(PART))["ok"] is True
+    assert handed == [((root / PART / "main.py").read_text(), {"helper.py": f"WORD = {PART!r}\n"})]
 
 
 @pytest.mark.macos               # selection for the macOS job, alongside the skip, never instead of it

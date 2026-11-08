@@ -174,6 +174,20 @@ async def test_a_plugin_of_skills_and_connections_comes_whole(execution_db, repo
     assert prepared["files"][".mcp.json"] and prepared["files"]["skills/release-notes/scripts/fmt.py"]
 
 
+async def test_a_pinned_ref_is_the_commit_its_files_are_read_at(execution_db, repo, fake_capability_prepare,
+                                                                 monkeypatch):
+    """An entry that pins a commit has its files read at that commit, not at whatever its default branch holds now."""
+    asked = []
+    read = plugin_package.snapshot
+
+    async def snapshot(repository, ref=None):
+        asked.append((repository, ref))
+        return await read(repository, ref)
+    monkeypatch.setattr(plugin_package, "snapshot", snapshot)
+    prepared = await plugin_package.prepare({**PLUGIN, "ref": SHA})
+    assert asked == [("anthropics/release-kit", SHA)] and prepared["commit"] == SHA
+
+
 async def test_a_subfolder_plugin_reads_only_its_folder(execution_db, repo, fake_capability_prepare):
     for path, text in list(repo.items()):
         repo[f"plugins/kit/{path}"] = text
@@ -622,6 +636,23 @@ async def test_a_stop_right_after_a_skills_row_commits_leaves_nothing(execution_
     else:
         assert (await _propose())["ok"] is False
     await _nothing_stays(execution_db)
+
+
+async def test_a_stops_undo_removes_only_the_skills_this_install_created(execution_db, repo, installs, monkeypatch):
+    """A skill already in the library before the install isn't the plugin's: the undo leaves it."""
+    async with execution_db() as db:
+        db.add(SkillPack(key="my-notes", name="mine", category="imported", description="d", tier="safe",
+                         status="registered", body="b"))
+        await db.commit()
+    real = skill_import.install_prepared
+
+    async def stops_after_the_row(skill, **kwargs):
+        await real(skill, **kwargs)
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(skill_import, "install_prepared", stops_after_the_row)
+    with pytest.raises(asyncio.CancelledError):
+        await _propose()
+    assert [p.key for p in await _rows_of(execution_db, SkillPack)] == ["my-notes"]
 
 
 async def test_the_card_names_each_connections_locked_package(execution_db, repo, fake_capability_prepare):
