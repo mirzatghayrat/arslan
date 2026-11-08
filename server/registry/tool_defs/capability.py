@@ -50,17 +50,19 @@ CAPABILITY = (
     # 0.1.57 §2: only after a wall, never as a first move; the result is outside content.
     Tool("find_capability",
          "When a step failed because none of your tools can do it (e.g. you can read an .xlsx's values "
-         "but not its formulas), search the official MCP Registry, GitHub and skill libraries for a "
-         "capability that can. Not a first move: try what you have first. Returns candidates with "
+         "but not its formulas), search the official MCP Registry, GitHub, skill libraries and the official plugin "
+         "directory for a capability that can. Not a first move: try what you have first. A GitHub link to a "
+         "plugin the user gave you goes in `need` as written. Returns candidates with "
          "license, how they would run and what they need; it installs nothing. "
-         "args: {need, keywords: [1-4 English words], kinds?: [mcp|skill|project]}.",
+         "args: {need, keywords: [1-4 English words], kinds?: [mcp|skill|plugin|project]}.",
          {
              "type": "object",
              "properties": {
                  "need": {"type": "string", "description": "What could not be done, in one sentence."},
                  "keywords": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"type": "string"},
                               "description": "1-4 short English search words, e.g. [\"excel\", \"xlsx\"]."},
-                 "kinds": {"type": "array", "items": {"type": "string", "enum": ["mcp", "skill", "project"]}}},
+                 "kinds": {"type": "array", "items": {"type": "string",
+                                                      "enum": ["mcp", "skill", "plugin", "project"]}}},
              "required": ["need", "keywords"]},
          traits=Traits(effect="external_write", parallel=False, outside=True, replay_safe=False, saves=False)),
     # 0.1.57 §3: propose one candidate find_capability returned (the card is the server's).

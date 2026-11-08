@@ -4,8 +4,8 @@ import type { ImportResult, ImportScan, ImportTick } from "./client.types";
 /** One row of GET /capabilities (0.1.55 §14, server/services/capability_list.py). */
 export interface CapabilityRow {
   key: string;
-  /** v0.1.64 CAP3a: the page's three groups. */
-  section: "builtin" | "skills" | "connections";
+  /** v0.1.64 CAP3a: the page's three groups; CAP7b's Plugins, once one is installed. */
+  section: "builtin" | "skills" | "connections" | "plugins";
   /** built in · installed (by you, or from a card) · authored (written by Arslan) · manual (a connection you added) */
   origin: "builtin" | "installed" | "authored" | "manual" | "unknown";   // unknown: no mark and not a seed (SKF1)
   /** Only what is not built in; the server refuses the rest too (DELETE /capabilities/{key}). */
@@ -23,13 +23,20 @@ export interface CapabilityRow {
   /** The tool keys this row stands for when it is on. */
   tools: string[];
   /** Which switch governs it; null = no switch (always on, or not switchable). */
-  switch: "setting" | "hands" | "mcp" | "skill" | null;
+  switch: "setting" | "hands" | "mcp" | "skill" | "plugin" | null;
+  /** CAP7b: a plugin's skills and connections, which switch and go only with it (server/services/capability_list). */
+  parts?: PluginPart[];
   reason: string | null;
   /** What the one step is: open_settings:<section>, open_tab:<tab>, connect. */
   fix: string | null;
   /** Server-supplied name (MCP label, skill name, a revised method's); built-ins are named by key. */
   name: string | null;
   detail: string | null;
+}
+
+export interface PluginPart {
+  kind: "skill" | "connection"; key: string; name: string | null; state: CapabilityRow["state"]; reason: string | null;
+  detail: string | null; last_used: string | null; source_id: string | null; fix: string | null;
 }
 
 /** A candidate as server/services/capability_search.py returns it (0.1.57 §2): here, a newer version in an update check. */

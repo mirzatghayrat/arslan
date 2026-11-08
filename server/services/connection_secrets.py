@@ -261,3 +261,12 @@ def shown(url: str | None, args) -> tuple[str | None, list[str]]:
     for _, target, start, end in sorted(_spans(url, args), key=lambda span: span[2], reverse=True):
         url, args = _replace(url, args, target, start, end, _MASK)
     return url, args
+
+
+def shown_setting(name: str, value: str) -> str:
+    """A fixed `env` entry's or header's value as every place may show it (CAP7b's plugin card): masked whole when its
+    name names a secret or it reads like a key (after a scheme word: `Bearer <key>`), as an option's value is, and an
+    address's secret parts masked."""
+    if _secret_value(name, re.sub(r"(?i)^\s*(?:bearer|basic|token)\s+", "", value)):
+        return _MASK
+    return (shown(value, [])[0] or value) if _URL.match(value) else value

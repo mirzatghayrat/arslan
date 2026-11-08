@@ -600,9 +600,9 @@ export interface RememberedFact {
 
 /** What the install-and-retry card shows (server/services/capability_flow.card_for). */
 export interface CapabilityCard {
-  kind: "mcp" | "skill"; name: string; summary: string; source_url: string | null; repo: string | null;
+  kind: "mcp" | "skill" | "plugin"; name: string; summary: string; source_url: string | null; repo: string | null;
   version: string | null; license: { spdx: string | null; read_from: string | null };
-  stars: number | null; pushed_days: number | null; runtime: "uv" | "node" | "mcpb" | "remote" | "skill";
+  stars: number | null; pushed_days: number | null; runtime: "uv" | "node" | "mcpb" | "remote" | "skill" | "plugin";
   runtime_download: { name: string; size_mb: number } | null; remote_host: string | null; network: boolean;
   folders: string[]; keys: { name: string; secret: boolean; required: boolean; description: string }[];
   why: string; retry: string;
@@ -610,6 +610,24 @@ export interface CapabilityCard {
   hidden?: { count: number; runs: string[]; more: number };
   /** CAP9: what OSV.dev knows of every locked package (server/services/osv_check.py). Absent on a skill's card. */
   vulns?: Vulns;
+  /** Who published it, as a fact (CAP4a-1). A plugin's is its own repository's account, never a package's. */
+  publisher?: { kind: "domain" | "github"; value: string } | null;
+  /** CAP7b: a plugin's card adds the commit read and every part (server/services/plugin_package.card_fields). */
+  commit?: string;
+  skills?: PluginSkill[];
+  connections?: PluginConnection[];
+}
+/** A skill inside a plugin, as its card shows it. */
+export interface PluginSkill {
+  key: string; name: string; summary: string; scripts: string[]; references: string[];
+  hidden?: { count: number; runs: string[]; more: number };
+}
+/** A connection inside a plugin, with what it is started with. A fixed credential's value comes masked (●●●●) from the
+ *  server; `keys` are the names it gets from what the user types on the card. */
+export interface PluginConnection {
+  name: string; runtime: "uv" | "node" | "remote"; package: { identifier: string; version: string } | null;
+  version: string | null; remote_host: string | null; network: boolean; arguments: string[];
+  env: Record<string, string>; headers: Record<string, string>; keys: string[]; vulns: Vulns;
 }
 export type Severity = "CRITICAL" | "HIGH" | "MODERATE" | "LOW" | "UNKNOWN";
 /** `loaded` false: no record of it answered, so its severity, summary and fixes are unknown, not none. `fixed` lists
@@ -646,7 +664,9 @@ export interface MemoryImportCard {
   entries: { id: string; text: string; ticked: boolean; same_as: string | null }[];
   left_out: MemoryImportLeftOut[];
 }
-export interface CapabilityResult { state: "on" | "failed" | "blocked" | "needs_sign_in"; name: string; tools: number;
+/** `refused` (CAP7b): a plugin that couldn't be added, with no card; `code` says why, `detail` names the part. `stopped`:
+ *  a plugin whose connection changed its tools while it went in, installed with every part off. */
+export interface CapabilityResult { state: "on" | "failed" | "blocked" | "needs_sign_in" | "refused" | "stopped"; name: string; tools: number;
   sourceId: string | null; stage?: string; code?: string; detail?: string }
 
 /** CAP8-1: one server on the import sheet (server/services/connection_import.py, `Found.view`). Never holds a key.
@@ -806,7 +826,7 @@ export type ArslanServerMessage =
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)
   // 0.1.57 §3.1: add a capability and retry — answered only in this window (it may carry a key).
   | ({ type: "propose_capability"; call_id: string } & (CapabilityCard | AuthoredSkillCard | MemoryImportCard))
-  | { type: "capability_result"; call_id: string | null; source_id: string | null; state: "on" | "failed" | "blocked" | "needs_sign_in";
+  | { type: "capability_result"; call_id: string | null; source_id: string | null; state: CapabilityResult["state"];
       name: string; tools: number; stage?: string; code?: string; detail?: string }
   | ({ type: "propose_action"; call_id: string; kind: ActionKind | (string & {}); target: string;
       detail: string; background?: boolean } & CardV2Fields)

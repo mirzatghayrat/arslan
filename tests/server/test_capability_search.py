@@ -1,5 +1,6 @@
 """0.1.57 P1: finding capabilities — the official MCP Registry, GitHub, reviewed skill libraries."""
 import inspect
+import json
 import re
 import pathlib
 
@@ -97,6 +98,7 @@ class Net:
 
     def __init__(self):
         self.calls, self.fail = [], set()
+        self.raw: dict[str, str] = {}             # raw.githubusercontent.com: path -> text (CAP7b's plugins)
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -128,6 +130,9 @@ class Net:
         if host == "codeload.github.com":
             return httpx.Response(200, content=library_archive()) if request.url.path == "/anthropics/skills/tar.gz/HEAD" \
                 else httpx.Response(404)
+        if host == "raw.githubusercontent.com":
+            text = self.raw.get(request.url.path)
+            return httpx.Response(200, text=text) if text is not None else httpx.Response(404)
         return httpx.Response(404)
 
 
@@ -374,3 +379,112 @@ async def test_a_failed_name_lookup_is_not_reported_as_the_registry_being_down(n
     monkeypatch.setattr(cs, "lookup_registry", broken)
     result = await cs.search("excel", words=["excel"], kinds={"mcp"})
     assert result["notes"] == []
+
+
+# ── CAP7b: plugins, from a pasted link and from the official phonebook ───────
+
+PIN = "0123456789abcdef0123456789abcdef01234567"
+PHONEBOOK_PATH = "/anthropics/claude-plugins-official/HEAD/.claude-plugin/marketplace.json"
+
+
+def _entry(name, source, **more):
+    return {"name": name, "description": f"{name}: tools for excel sheets", "category": "productivity",
+            "author": {"name": "Example"}, "homepage": "https://example.com", "source": source, **more}
+
+
+PHONEBOOK = {"name": "official", "plugins": [
+    _entry("sheet-tools", "./plugins/sheet-tools"),
+    _entry("sheet-charts", "./external_plugins/sheet-charts"),
+    _entry("excel-url", {"source": "url", "url": "https://github.com/acme/excel-plugin.git", "sha": PIN}),
+    _entry("excel-subdir", {"source": "git-subdir", "url": "https://github.com/acme/kits.git",
+                            "path": "plugins/excel-kit", "ref": "v1.2", "sha": PIN}),
+    _entry("excel-github", {"source": "github", "repo": "acme/excel-gh", "sha": PIN}),
+    _entry("excel-command", {"source": "command", "command": "some-tool plugin path", "mode": "link"}),
+    _entry("excel-gitlab", {"source": "url", "url": "https://gitlab.com/acme/excel.git", "sha": PIN}),
+    _entry("excel-escape", "../excel-escape"),
+    _entry("excel-branch", {"source": "git-subdir", "url": "https://github.com/acme/kits.git", "path": "p",
+                            "ref": "main"}),
+    _entry("excel-short-pin", {"source": "url", "url": "https://github.com/acme/excel-plugin.git", "sha": "0123abc"}),
+    _entry("excel-lsp", "./plugins/excel-lsp", lspServers={"x": {"command": "x"}}),
+    _entry("excel-loose", "./plugins/excel-loose", strict=False),
+    _entry("poetry", "./plugins/poetry", description="Write poems"),
+]}
+
+
+def _plugins(result):
+    return {c["name"]: c for c in result["candidates"] if c["kind"] == "plugin"}
+
+
+async def test_a_phonebook_entry_resolves_to_its_own_repository_at_its_pinned_commit(net):
+    net.raw[PHONEBOOK_PATH] = json.dumps(PHONEBOOK)
+    found = _plugins(await cs.search("excel sheets", words=["excel"], kinds={"plugin"}))
+    assert "poetry" not in found
+    tools = found["sheet-tools"]
+    assert (tools["repo"], tools["path"], tools["ref"], tools["source_url"], tools["not_here"]) == (
+        "anthropics/claude-plugins-official", "plugins/sheet-tools", None,
+        "https://github.com/anthropics/claude-plugins-official", None)
+    assert found["sheet-charts"]["path"] == "external_plugins/sheet-charts"      # one repository, each its own result
+    for name, repo, path in (("excel-url", "acme/excel-plugin", ""), ("excel-subdir", "acme/kits", "plugins/excel-kit"),
+                             ("excel-github", "acme/excel-gh", "")):
+        c = found[name]
+        assert (c["repo"], c["path"], c["ref"], c["not_here"]) == (repo, path, PIN, None), name
+        assert c["source_url"] == f"https://github.com/{repo}"
+    assert {c["id"] for c in found.values()} == {f"plugin-marketplace:{n}" for n in found}
+
+
+async def test_what_the_phonebook_names_but_cannot_be_installed_says_why_and_is_never_offered(net):
+    net.raw[PHONEBOOK_PATH] = json.dumps(PHONEBOOK)
+    found = _plugins(await cs.search("excel", words=["excel"], kinds={"plugin"}))
+    assert {n: c["not_here"] for n, c in found.items() if c["not_here"]} == {
+        "excel-command": "not_from_github", "excel-gitlab": "not_from_github", "excel-escape": "path_outside",
+        "excel-branch": "not_pinned", "excel-short-pin": "not_pinned", "excel-lsp": "other", "excel-loose": "other"}
+    from server.services import capability_flow
+    assert capability_flow.installable(found["excel-command"]) == "not_from_github"
+    assert capability_flow.installable(found["sheet-tools"]) is None
+
+
+async def test_the_phonebook_is_asked_only_for_plugins_and_its_absence_is_noted(net):
+    await cs.search("excel", words=["excel"], kinds={"mcp"})
+    assert not [u for u in net.calls if "raw.githubusercontent.com" in u]
+    result = await cs.search("excel", words=["excel"], kinds={"plugin"})       # no phonebook served: a 404
+    assert "plugins_unavailable" in result["notes"] and _plugins(result) == {}
+
+
+async def test_a_pasted_link_to_a_plugin_is_a_candidate_read_from_its_manifest(net):
+    net.raw["/acme/notes-kit/HEAD/plugins/notes/.claude-plugin/plugin.json"] = '{"name": "notes", "description": "Notes"}'
+    result = await cs.search("add https://github.com/acme/notes-kit/tree/main/plugins/notes please", words=["notes"],
+                             kinds={"plugin"})
+    c = _plugins(result)["notes"]
+    assert (c["repo"], c["path"], c["ref"], c["source_url"], c["summary"], c["not_here"]) == (
+        "acme/notes-kit", "plugins/notes", None, "https://github.com/acme/notes-kit", "Notes", None)
+    net.raw[f"/acme/pinned/{PIN}/.claude-plugin/plugin.json"] = '{"name": "pinned"}'
+    pinned = _plugins(await cs.search(f"https://github.com/acme/pinned/tree/{PIN}", words=["pinned"],
+                                      kinds={"plugin"}))["pinned"]
+    assert (pinned["repo"], pinned["path"], pinned["ref"]) == ("acme/pinned", "", PIN)
+    # A repository with no plugin manifest isn't offered as a plugin.
+    assert _plugins(await cs.search("https://github.com/acme/just-code", words=["code"], kinds={"plugin"})) == {}
+
+
+async def test_the_model_finds_plugins_by_default_and_a_proposal_reads_the_pinned_commit(net, execution_db,
+                                                                                           monkeypatch):
+    from server.registry.executors import EXECUTORS
+    from server.services import capability_flow, personal_context as pc, plugin_package
+    net.raw[PHONEBOOK_PATH] = json.dumps(PHONEBOOK)
+    ctx = pc.TaskMemoryContext(task_id="t1", run_id="r1", conversation_id="conv-plugin", model_is_local=True)
+    with pc.bind(ctx):
+        out = await EXECUTORS["find_capability"].execute({"need": "excel sheets", "keywords": ["excel"]})
+    assert any(c["kind"] == "plugin" for c in out["candidates"])
+    asked = []
+
+    async def snapshot(repo, ref=None):
+        asked.append((repo, ref))
+        raise plugin_package.Refused("moved", ref or "")
+    monkeypatch.setattr(plugin_package, "snapshot", snapshot)
+    frames = []
+
+    async def ask(card):
+        raise AssertionError("no card for a plugin that was refused")
+    result = await capability_flow.propose({"candidate_id": "plugin-marketplace:excel-subdir", "why": "x"},
+                                           conversation_id="conv-plugin", ask=ask, emit=frames.append)
+    assert asked == [("acme/kits", PIN)] and result["code"] == "moved"
+    assert frames[-1]["state"] == "refused" and frames[-1]["code"] == "moved"
