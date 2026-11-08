@@ -9,6 +9,7 @@ import time
 import pytest
 
 from server.services import shell_grammar as sg, terminal_policy as tp
+from tests.server.test_quoted_command_word import SEPARATORS
 
 
 # Independent seeds for named rules, with literal operands and no private corpus.
@@ -155,4 +156,92 @@ def test_rebuilt_text_obeys_the_existing_blank_run_limit():
     started = time.thread_time()
     assert tp.assess(command).rule == "unreadable"
     assert time.thread_time() - started < 1.0
-    assert all(not tp.shell_text.blank_run_over_limit(form) for form in tp._command_texts(command))
+    assert tp._command_words(command) == (("git", " " * 100 + "push"),)
+
+
+# Same-program operands, not echo-only controls. The first eight cover the
+# review's changed operand classes; the remainder distinguish roles and words.
+OPERANDS = [
+    ("keychain-help", ("security", "help", "dump-keychain"), "run"),
+    ("wipe-root-option-looking-file", ("rm", "-rf /", "local.txt"), "run"),
+    ("wipe-root-local-file", ("rm", "/ local-file"), "ask"),
+    ("wipe-home-local-file", ("rm", "~ local-file"), "ask"),
+    ("macos-root-local-file", ("rm", "/System local-file"), "ask"),
+    ("git-file-data", ("git", "show", "push notes.txt"), "run"),
+    ("delete-local-file", ("rm", "local /file"), "run"),
+    ("delete-quote-file", ("rm", "local'file"), "run"),
+    ("keychain-option-value", ("security", "find-generic-password", "-s", "-w"), "run"),
+    ("keychain-help-password", ("security", "help", "find-generic-password -w"), "run"),
+    ("git-help", ("git", "help", "push"), "run"),
+    ("git-revision", ("git", "show", "push"), "run"),
+    ("git-option-value", ("git", "-c", "alias.note=push", "status"), "run"),
+    ("delete-empty-file", ("rm", ""), "ask"),
+    ("delete-spaced-file", ("rm", "two words"), "run"),
+    ("delete-after-options", ("rm", "--", "-rf /"), "ask"),
+    ("publish-help", ("cargo", "help", "publish"), "run"),
+    ("upload-option-value", ("curl", "-H", "X-Note: --upload-file report.txt", "https://example.invalid"), "ask"),
+    ("disk-revision-data", ("diskutil", "info", "eraseDisk"), "run"),
+]
+
+
+def operand_text(words):
+    # Quote every argument, including simple words, to exercise the new pass.
+    return words[0] + " " + " ".join("'" + w.replace("'", "'\"'\"'") + "'" for w in words[1:])
+
+
+@pytest.mark.parametrize("name,words,level", OPERANDS, ids=["operand/" + row[0] for row in OPERANDS])
+@pytest.mark.parametrize("position", SEPARATORS)
+def test_same_program_operands_keep_their_roles(name, words, level, position):
+    command = SEPARATORS[position] + operand_text(words)
+    assert sg.read(command).understood
+    assert tp.assess(command).level == level
+
+
+REFUSED_TAILS = {"path": "./tool", "file": "python3 task.py",
+                 "launcher": "watch status", "builtin": "alias sample=value"}
+RANK = {"run": 0, "ask": 1, "forbid": 2}
+
+
+@pytest.mark.parametrize("words,level,rule", NAMED, ids=[str(i) + "-" + row[2] for i, row in enumerate(NAMED)])
+@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("position", POSITIONS)
+@pytest.mark.parametrize("tail", REFUSED_TAILS)
+def test_quoted_rules_hold_before_every_refused_tail(words, level, rule, family, position, tail):
+    standalone = spelled(words, family, position)
+    command = standalone + "; " + REFUSED_TAILS[tail]
+    reading = sg.read(command)
+    assert not reading.understood and reading.commands == () and reading.why
+    assert RANK[tp.assess(command).level] >= RANK[tp.assess(standalone).level]
+    assert RANK[tp.assess(command).level] >= RANK[level]
+
+
+@pytest.mark.parametrize("words", [("swift", "build"), ("bun", "install"), ("deno", "info")])
+@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("position", POSITIONS)
+def test_non_script_subcommands_stay_understood(words, family, position):
+    command = spelled(words, family, position)
+    assert sg.read(command).understood
+    assert tp.assess(command).level == "run"
+
+
+@pytest.mark.parametrize("command", ["swift build.swift", "bun install.js", "deno info.ts",
+                                     "swift run task.swift", "bun run task.js", "deno run task.ts"])
+def test_subcommand_exceptions_do_not_admit_script_files(command):
+    reading = sg.read(command)
+    assert not reading.understood and "script" in reading.why and reading.commands == ()
+
+
+@pytest.mark.parametrize("tail", REFUSED_TAILS.values())
+def test_prefix_reading_is_separate_from_complete_reading(tail):
+    command = "git 'push'; " + tail
+    prefix = sg.read_prefix(command)
+    assert prefix.refused and prefix.why and ("git", "push") in prefix.commands
+    assert not sg.read(command).understood and sg.read(command).commands == ()
+
+
+def test_prefix_caps_still_bound_the_extra_policy_pass():
+    command = "git 'push'; " + "true; " * sg.MAX_COMMANDS
+    prefix = sg.read_prefix(command)
+    assert prefix.refused and prefix.capped and len(prefix.commands) == sg.MAX_COMMANDS
+    assert sg.read(command).commands == ()
+    assert tp.assess(command).level == "ask"
