@@ -12,9 +12,10 @@
 # only with the tests that move it. A pin that differs right after a merge means two PRs combined: the second PR's
 # author recounts that file in a pin-only PR (docs/sessions.md §5).
 
+# Local collection after retiring 51 any-declared corpus cases; full run and CI confirmation pending.
 ["server/sbx/corpus/test_sbx2_corpus.py"]
-markers = 5
-cases = 222
+markers = 3
+cases = 171
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

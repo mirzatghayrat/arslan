@@ -95,7 +95,7 @@ CASES = [
 ]
 PARAMETERS = [pytest.param(case, mode, id=case.name + "-" + mode.value)
               for case in CASES
-              for mode in ([NetworkMode.NONE, NetworkMode.PROXY, NetworkMode.ANY_DECLARED]
+              for mode in ([NetworkMode.NONE, NetworkMode.PROXY]
                            if case.online else [NetworkMode.NONE])]
 
 
@@ -144,38 +144,6 @@ exit(finished && ok ? 0 : 1)
     record_property("returncode", code)
     # This row records compatibility/card cost; the kernel tests are hard gates.
     # Raw stdout/stderr is intentionally not retained (credential helpers included).
-
-
-@pytest.mark.macos
-@pytest.mark.sbx_mac
-@macos
-@pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
-def test_localhost_dev_server_measurement(sbx, record_property):
-    # SBX-M measures the deferred dev-server promise; refusal is not a pass gate.
-    sbx.network = NetworkMode.ANY_DECLARED
-    result = sbx.python("""
-import errno, socket
-with socket.socket() as server:
-    try:
-        server.bind(('127.0.0.1', 0))
-        server.listen(1)
-    except OSError as exc:
-        if exc.errno not in (errno.EPERM, errno.EACCES):
-            raise
-        print('refused')
-    else:
-        with socket.create_connection(server.getsockname(), timeout=3) as client:
-            peer, _ = server.accept()
-            with peer:
-                client.sendall(b'x')
-                assert peer.recv(1) == b'x'
-                peer.sendall(b'y')
-                assert client.recv(1) == b'y'
-        print('ok')
-""", probe="localhost-dev-server-bind-and-fetch")
-    record_property("probe", "localhost-dev-server-bind-and-fetch")
-    record_property("outcome", result.stdout.strip() if result.returncode == 0 else "tool-failed")
-    record_property("returncode", result.returncode)
 
 
 @pytest.mark.macos
@@ -233,33 +201,3 @@ assert child.wait(timeout=5) == 0
 """, probe="background-child-temp")
     record_property("outcome", "ok" if result.returncode == 0 else "tool-failed")
     # This tests child access, not the SBX-3 Run lifetime/boot sweep (not built yet).
-
-
-@pytest.mark.macos
-@pytest.mark.sbx_mac
-@macos
-@pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
-@pytest.mark.parametrize("kind", ["ssh-agent", "gpg-agent", "docker"])
-def test_real_socket_reachability(sbx, kind, record_property):
-    import os
-    # SBX-M's operator supplies exactly the socket to measure; no discovery of
-    # private folders and no protocol bytes, credential requests or Docker calls.
-    path = os.environ.get("SBX_" + kind.upper().replace("-", "_") + "_SOCKET")
-    if path is None:
-        record_property("outcome", "not-supplied")
-        return
-    sbx.network = NetworkMode.ANY_DECLARED
-    result = sbx.python("""
-import socket, sys
-with socket.socket(socket.AF_UNIX) as sock:
-    sock.settimeout(2)
-    try:
-        sock.connect(sys.argv[1])
-    except OSError as exc:
-        print(exc.errno)
-    else:
-        print(0)
-""", path, probe=kind)
-    assert result.returncode == 0, result.stderr
-    record_property("connect_errno", int(result.stdout))
-    record_property("outcome", "reachable" if int(result.stdout) == 0 else "unreachable")

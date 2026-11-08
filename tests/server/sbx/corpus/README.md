@@ -2,9 +2,7 @@
 
 The candidate is an **unused preset**, not a claim that the product is already
 sandboxed this way. SBX-M measures it before SBX-3 connects any entry point.
-The measured allowlist grants FSEvents in every mode, and the trust agent and
-mDNSResponder socket only in ANY_DECLARED. The latter is the daemon's whole
-client interface, accepted by the user until SBX-6, not a DNS-only grant. See
+The measured allowlist grants FSEvents in every mode. See
 `docs/plans/0164/SBX-measurement.md` for the decision and measured controls.
 Further additions require a named corpus result and Astra review.
 Preference reads are an allowed operation, but no cfprefsd lookup is granted.
@@ -22,8 +20,8 @@ The existing CI command (`pytest tests/ -m macos`) selects the SBX-2 corpus and
 the two compile checks in `test_sbx2_tcp_ports.py`.
 The platform skip applies only off macOS. A missing or nested Seatbelt, a syntax
 error, or a broken Python interpreter **fails** on macOS. Do not change this to
-an availability skip. The `sbx_mac` selection has 389 cases: 75 candidate assertion
-gates, 222 measurement rows, 75 commands cases, 16 service allowlist/UDP cases, and
+an availability skip. Historically, the `sbx_mac` selection had 389 cases:
+75 candidate assertion gates, 222 measurement rows, 75 commands cases, 16 service allowlist/UDP cases, and
 one Pool diagnosis. With two compile checks and the existing 70 macOS cases,
 the total is 461. Widening the port sample within
 the same two compile cases does not change that count.
@@ -43,12 +41,20 @@ Notification Center UI sibling absent on the headless runner. Removing that
 entry leaves 461 cases and 75 strict xfails; the successful live control remains
 mandatory for every retained service. Claude updates EXPECTED and
 EXPECTED_XFAIL in a commit on this same branch after the user pushes; there is
-no companion PR. The remaining 17 any-declared transitional cases are removed
-when SBX-6's proxy mode lands.
+no companion PR.
 (The EXPECTED and EXPECTED_XFAIL numbers above are history: since 2026-11-07 the pins are per file, in
 `tests/macos_expected.toml`.)
 Once SBX-3a registers its real commands adapter, these cases must run with zero
 skips and zero xfails.
+
+After SBX-6's proxy mode landed, the 17 transitional any-declared configurations
+were retired from this corpus: 13 online compatibility modes, one localhost
+dev-server measurement, and three optional real-socket measurements, each across
+three bases (51 collected cases). The corpus now collects 171 cases, down from
+222, with three macOS markers and zero strict xfails. These are local collection
+numbers; full execution and CI confirmation are pending. Historical baseline
+results remain historical evidence. The profile builder's separate any-declared
+policy tests and the product enum remain in place.
 
 Reference-only reproduction (not product validation): `HOME=/private/tmp/arslan-sbx-check-home .venv/bin/python -m pytest tests/server/sbx/test_sbx3_commands.py -p scripts.dev.sbx3_reference -m macos -q`.
 Add `--sbx-reference-permissive` to run the deliberate failing profile mutation.
@@ -140,21 +146,13 @@ those surfaces or resolve the postponed localhost-server decision.
   runs are represented. Remote fetches are small public fixtures, not model calls.
   Failed network/toolchain probes remain visible measurements, never skips.
 - Loopback gates use test-owned listeners. Proxy and port-22 refuse a supplied
-  Arslan-port stand-in over IPv4 and IPv4-mapped IPv6; any-declared rejects the
-  requested port exclusion before generating a profile. All three cases still
-  reject IPv4/IPv6 wildcard and loopback binds plus implicit listens. Every
-  candidate network mode denies binds/listens. The separate localhost dev-server
-  measurement still binds, serves and fetches under each base; it records `ok`,
-  `refused` (expected under the candidate), or `tool-failed`, without making
-  localhost server availability a pass gate. CI run 41002402918 measured that
+  Arslan-port stand-in over IPv4 and IPv4-mapped IPv6. The separate kernel tests
+  retain their bind/listen denials and profile-builder mode coverage.
+  CI run 41002402918 measured that
   Seatbelt's localhost bind filter also permits wildcard binds. The card's §3
   localhost dev-server promise is deferred by the user's decision; restoring it
   needs a card decision before SBX-3 wires the preset (for example a brokered
   listener or another approach). Unix-socket gates use a controlled listener.
-  For optional real connect-only measurements, the operator may supply
-  `SBX_SSH_AGENT_SOCKET`, `SBX_GPG_AGENT_SOCKET`, and `SBX_DOCKER_SOCKET` explicitly.
-  No directories are searched and no protocol bytes are sent. Missing inputs
-  are reported as `not-supplied`, not as a refusal.
 - New service names must be measured, not inferred from a missing service on a
   headless runner. The service-name list is representative, not an inventory of
   every alias on every supported OS. The default-deny boundary covers unlisted
