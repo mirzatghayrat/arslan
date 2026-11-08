@@ -5,14 +5,12 @@ No Git command or metadata is used. Sources are Python policy code; generated
 command strings are only passed to assess and read, never to a subprocess.
 """
 import argparse
-import gzip
 import hashlib
-import json
 from pathlib import Path
 import sys
 import types
 
-from tests.server.quoted_args_baseline_data import fingerprint
+from tests.server.quoted_args_baseline_data import fingerprint, encode
 from tests.server.quoted_args_file_run_evidence import GENERATORS
 
 
@@ -45,17 +43,16 @@ def main():
                              for path in (directory / (name + ".py")
                                           for name in ("shell_text", "shell_grammar", "terminal_policy"))}
     cases = {}
-    for kind, generate in GENERATORS.items():
-        for case, text in generate():
+    corpora = {kind: list(generate()) for kind, generate in GENERATORS.items()}
+    for kind, rows in corpora.items():
+        for case, text in rows:
             key = kind + "/" + case
             assert key not in cases, f"Duplicate baseline id: {key}"
             for reader, _ in versions:
                 reader.read(text)
             cases[key] = [fingerprint(text), *(policy.assess(text).level for _, policy in versions)]
         print(kind, "generated", flush=True)
-    encoded = (json.dumps(dict(schema=1, source_sha256=provenance, cases=cases),
-                          indent=1, sort_keys=True) + "\n").encode()
-    args.output.write_bytes(gzip.compress(encoded, mtime=0))
+    args.output.write_text(encode(corpora, cases, provenance))
     print("baseline cases", len(cases))
 
 
