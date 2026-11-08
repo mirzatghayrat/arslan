@@ -5,7 +5,7 @@ sandbox is off or cannot start (R4) or under "ask for all"."""
 import pytest
 
 from server.orchestrator import tool_loop
-from server.services import command_sandbox, terminal_exec, terminal_policy
+from server.services import command_sandbox, shell_grammar, terminal_exec, terminal_policy
 from server.orchestrator import command_gate
 
 T2_SCRIPT = '''python3 - <<'PY'
@@ -24,7 +24,12 @@ PY'''
     "node -e \"require('fs').writeFileSync('a.txt','https://x')\"",
 ])
 def test_plain_scripts_run_freely(command):
-    assert terminal_policy.assess(command) == terminal_policy.Assessment("run")
+    # S2a-3 step 3: one shell_grammar's reader does not understand is `unreadable` alone, and runs offline in the
+    # sandbox with no card (command_gate; the loop test below).
+    if shell_grammar.read(command).understood:
+        assert terminal_policy.assess(command) == terminal_policy.Assessment("run")
+    else:
+        assert terminal_policy.ask_rules(command) == {terminal_policy.UNREADABLE}
 
 
 @pytest.mark.parametrize("command,rule", [
@@ -41,7 +46,9 @@ def test_plain_scripts_run_freely(command):
     ("ls -la", ""),
 ])
 def test_scripts_that_reach_out_or_carry_another_reason_still_ask(command, rule):
-    assert terminal_policy.assess(command).rule == rule
+    # S2a-3 step 3: with no named rule, one shell_grammar's reader does not understand is `unreadable`.
+    unread = not rule and not shell_grammar.read(command).understood
+    assert terminal_policy.assess(command).rule == (terminal_policy.UNREADABLE if unread else rule)
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +62,7 @@ def setup(monkeypatch):
         return True
     monkeypatch.setattr(command_gate, "_asks_for_everything", no)
     monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
+    monkeypatch.setattr(command_gate, "_work_folder_holds_home", no)      # S2a-3 step 3: a working folder, not home
     yield
     command_sandbox._reset_for_tests()
 
@@ -123,13 +131,16 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(executio
         return {"approved": True, "scope": "once", "note": "", "by": "mac"}  # (the network card, after outside content)
     with permissions.asking_with(surface):
         ex = await _dispatch(monkeypatch, T2_SCRIPT, cards, cid="c2")
-    assert len(asked) == 1 and ex.outside == [True]          # S2a-2: that grant is the user's yes for layer ③
+    # S2a-2: that grant is the user's yes for layer ③. Since S2a-3 step 3 this script is `unreadable` when the reader
+    # does not understand it, and under a grant an unreadable command gets its card (⓪Plan's ruling 2).
+    carded = 0 if terminal_policy.assess(T2_SCRIPT).level == "run" else 1
+    assert len(asked) == 1 + carded and ex.outside == [True]
 
     async def ask_all():
         return True
     monkeypatch.setattr(command_gate, "_asks_for_everything", ask_all)
     await _dispatch(monkeypatch, T2_SCRIPT, cards)
-    assert len(asked) == 2                                   # the user chose to be asked for everything
+    assert len(asked) == 2 + carded                          # the user chose to be asked for everything
 
 
 async def test_where_seatbelt_cannot_start_layer_three_asks_and_nobody_to_ask_refuses(monkeypatch):

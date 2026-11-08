@@ -39,9 +39,10 @@ TERMINAL = (
                                                             "the working folder (moving files, installing "
                                                             "software). The user is asked."},
                          "network": {"type": "boolean",
-                                     "description": "The command needs the network (a download, an "
-                                                    "API). After you read outside content in this turn, "
-                                                    "commands run offline unless the user allows it."},
+                                     # S2a-3 step 3: an unread command runs offline too (command_gate).
+                                     "description": "Needs the network (a download, an API). Without it, "
+                                                    "a command run after outside content this turn, or "
+                                                    "one Arslan can't read, runs offline."},
                          "why": {"type": "string", "maxLength": 300,
                                  "description": "What this step does, in a sentence. With "
                                                 "outside_sandbox, why it must run outside. "

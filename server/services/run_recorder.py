@@ -484,5 +484,8 @@ class RunRecorder:
             if entry.get("paths"):
                 s["detail"]["paths"] = entry["paths"]      # INB6: run_trace.record
             # SBX-7: steps and entries pair by order, so the denial code only lands on a step of the same tool.
-            denial = entry.get("denial") if entry.get("tool") == s["ref"].get("tool") else None
-            s["ref"] = {**s["ref"], "ok": entry["ok"], **({"denial": denial} if denial else {})}
+            same = entry.get("tool") == s["ref"].get("tool")
+            denial = entry.get("denial") if same else None
+            offline = entry.get("offline") if same else None       # S2a-3 step 3, for SBX-8 (run_trace.note_offline)
+            s["ref"] = {**s["ref"], "ok": entry["ok"], **({"denial": denial} if denial else {}),
+                        **({"offline": offline} if offline else {})}
