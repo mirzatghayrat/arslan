@@ -201,6 +201,61 @@ async def test_results_stay_in_each_sub_session_and_the_commander_gets_one_summa
         assert ("Outline written" if job.goal == OUTLINE else "a fox at dawn") in (own.display_content or own.content)
 
 
+async def test_a_report_past_its_limit_is_cut_with_a_line_saying_so_and_one_at_the_limit_is_not(runs, monkeypatch):
+    """The outline's result is longer than REPORT_CHARS: the summary is given its first REPORT_CHARS characters and,
+    right there inside its frame, a line that it was shortened. The full text is where the line says. The cover's
+    result is exactly REPORT_CHARS long and carries no line."""
+    _sink(ROOT)
+    cut = sub_sessions.REPORT_CHARS
+    long, at_limit = "word " * (cut // 5 + 100) + "THE-LAST-LINE", "c" * cut
+    model = _Model({OUTLINE: _steps(final=long), COVER: _steps(final=at_limit)}, summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _start(OUTLINE, COVER)
+    await _wait(_settled)
+    [request] = model.requests["summary"]
+    sent = json.dumps(request["user"], ensure_ascii=False)
+    line = sub_sessions._CUT_LINE.format(chars=cut)
+    assert "4,000 characters" in line and sent.count(line) == 1 and _framed(sent, line)
+    assert json.dumps(long[:cut] + "\n" + line, ensure_ascii=False)[1:-1] in sent
+    assert "THE-LAST-LINE" not in sent
+    assert json.dumps(at_limit + "\n" + line)[1:-1] not in sent and at_limit in sent
+    outline = next(job for job in _children() if job.goal == OUTLINE)
+    [own] = await _messages(runs, outline.conversation_id)
+    assert "THE-LAST-LINE" in (own.display_content or own.content)
+
+
+async def test_a_reports_files_list_is_capped_and_says_how_many_more(runs, monkeypatch):
+    """Through the summary turn with the cap set to 2 (fifty writes through the tool loop would only make the test
+    slow): three files are two named and one counted, two files are both named. The job keeps every file. Then both
+    sides of the real cap."""
+    real = sub_sessions.REPORT_FILES
+    monkeypatch.setattr(sub_sessions, "REPORT_FILES", 2)
+    _sink(ROOT)
+
+    def writes(*paths):
+        return [("write_file", {"path": path, "content": "x"}) for path in paths]
+    model = _Model({OUTLINE: _steps(*writes("a.md", "b.md", "c.md"), final="outline ready"),
+                    COVER: _steps(*writes("d.md", "e.md"), final="cover ready")}, summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _start(OUTLINE, COVER)
+    await _wait(_settled)
+    [request] = model.requests["summary"]
+    sent = json.dumps(request["user"], ensure_ascii=False)
+    assert "Files it changed: a.md, b.md, and 1 more." in sent and "c.md" not in sent
+    assert "Files it changed: d.md, e.md." in sent
+    assert {job.goal: job.files for job in _children()} == {OUTLINE: ["a.md", "b.md", "c.md"],
+                                                            COVER: ["d.md", "e.md"]}
+    assert real == 50
+    monkeypatch.setattr(sub_sessions, "REPORT_FILES", real)
+
+    def listed(count):
+        report = {"sub_session": "sub-x", "files": [f"f{i}.md" for i in range(count)], "result": "ok"}
+        return sub_sessions._report_text(report).split("\n")[0]
+    assert listed(50).endswith("f49.md.") and "more" not in listed(50)
+    assert listed(51).endswith("f49.md, and 1 more.") and "f50.md" not in listed(51)
+    assert listed(0) == "Sub-session sub-x. Files it changed: none."
+
+
 @pytest.mark.parametrize("child_reads_page", [True, False], ids=["a-child-read-a-page", "clean"])
 async def test_a_report_from_a_child_that_read_outside_content_starts_the_summary_flagged(
         runs, monkeypatch, child_reads_page):
@@ -224,6 +279,28 @@ async def test_a_report_from_a_child_that_read_outside_content_starts_the_summar
     assert all(c.get("sub_session") is None for c in cards)       # the commander's own card, as for any job
     assert runner.runs == [(False, False)]
     assert [s.outcome for s in _summaries()] == ["done"]
+
+
+@pytest.mark.parametrize("grandchild_reads_page", [True, False], ids=["grandchild-read-a-page", "clean"])
+async def test_the_flag_is_carried_up_two_levels(runs, monkeypatch, grandchild_reads_page):
+    """A grandchild read a page; its parent's summary echoes the stand-in; the commander's summary obeys it."""
+    _sink(ROOT)
+    model = _Model({OUTLINE: _steps(final="outline: started the cover")
+                    + _steps(final=f"outline: the cover child says {POISON}"),
+                    COVER: _steps(*([PAGE] if grandchild_reads_page else []), final="cover ready")},
+                   summary=_steps(NOTE_ADD, final="summed up"))
+    model.hold[OUTLINE] = asyncio.Event()
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _start(OUTLINE)
+    [kid] = _children()
+    await sub_sessions.start(kid.conversation_id, COVER, outside_seen=False)
+    model.hold[OUTLINE].set()
+    await _wait(_settled)
+    [inner, outer] = sorted(_summaries(), key=lambda job: job.started_at)
+    assert inner.external_seen is grandchild_reads_page
+    async with runs() as db:
+        statuses = list((await db.scalars(select(MemoryEntry.status))).all())
+    assert statuses == (["proposed"] if grandchild_reads_page else ["active"])
 
 
 async def test_a_sub_session_nobody_can_vouch_for_counts_as_having_read_outside_content(runs, monkeypatch):
@@ -286,6 +363,42 @@ async def test_a_sub_session_waiting_for_the_users_answer_does_not_hold_the_summ
     assert len(_summaries()) == 2 and runner.runs == [(False, False)]
     second = json.dumps(model.requests["summary"][-1]["user"], ensure_ascii=False)
     assert "cover ready" in second and "outline ready" not in second
+
+
+async def test_one_summary_at_a_time_while_the_first_waits_for_a_job_slot(runs, monkeypatch):
+    """W's card waits (not at work), A ends: S1 starts but queues behind two other jobs. W is answered and ends while
+    S1 is still queued: its report must wait for S1, not start a second summary beside it."""
+    monkeypatch.setattr(background_jobs, "MAX_CONCURRENT", 2)
+    runner = _Run()
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", runner)
+    shown = _sink(ROOT, answer=False)
+    b1, b2 = "Blocker one", "Blocker two"
+    model = _Model({COVER: _steps(PAGE, COMMAND, final="cover ready"), OUTLINE: _steps(final="outline ready"),
+                    b1: _steps(final="b1 done"), b2: _steps(final="b2 done")},
+                   summary=_steps(final="first summary") + _steps(final="second summary"))
+    model.hold[b1], model.hold[b2] = asyncio.Event(), asyncio.Event()
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _start(COVER)
+    await _wait(lambda: _cards(shown))
+    await _start(OUTLINE)
+    j1 = await background_jobs.start("c-other-1", b1, [], outside_seen=False)
+    j2 = await background_jobs.start("c-other-2", b2, [], outside_seen=False)
+    await _wait(lambda: len(_summaries()) == 1)
+    [s1] = _summaries()
+    await asyncio.sleep(0.1)
+    assert s1.phase == "queued" or s1.phase != "running", s1.phase
+    [card] = _cards(shown)
+    _yes(card)
+    w = next(job for job in _children() if job.goal == COVER)
+    await _wait(lambda: w.task.done())
+    await asyncio.sleep(0.3)                               # thirty polls
+    assert s1.phase != "finished"
+    assert len(_summaries()) == 1, [s.phase for s in _summaries()]
+    model.hold[b1].set()
+    model.hold[b2].set()
+    await _wait(_settled)
+    assert len(_summaries()) == 2 and j1.outcome == j2.outcome == "done"
+    assert "cover ready" in json.dumps(model.requests["summary"][-1]["user"], ensure_ascii=False)
 
 
 async def test_a_sub_session_that_started_its_own_sums_them_up_as_a_sub_session_before_its_commander_does(
