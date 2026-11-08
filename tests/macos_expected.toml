@@ -83,11 +83,30 @@ markers = 1
 cases = 1
 xfail = 0
 
-# Kernel carry: eight MCP CAP6b/cache cases now wait for their feature (local measurement).
+# 0.1.64 SBX-5a: both features built, so all 43 former strict xfails run as real gates.
 ["server/sbx/test_sbx5_paths.py"]
 markers = 10
 cases = 78
-xfail = 43
+xfail = 0
+
+# 0.1.64 SBX-5a, second round (#772 review): the file tools refuse every spelling of a protected folder and write
+# the eval's folder by any; seatbelt refuses a case or NFD spelling of a closed folder; the folders above the
+# protected ones can't be moved away or replaced under commands, an MCP server granted HOME, or the outside floor
+# (14 + 3 cases); writing beside them still works. Round 3 (#772 delta review): a work folder or grant given by a
+# case or NFD spelling still holds them (commands, MCP: 4 cases), and a skill or plugin folder that is a link can't
+# be replaced (3 cases); a command in a spelt work folder whose identity can't be read doesn't run (1 case).
+["server/sbx/test_sbx5a_aliases.py"]
+markers = 7
+cases = 27
+xfail = 0
+
+# 0.1.64 SBX-5a: the product paths under real seatbelt. Commands, the outside floor, an MCP server granted HOME
+# and run_python keep off the skill and plugin folders and the user's caches and write their own caches; an MCP
+# server whose folder holds an outside hard link does not start, and starts once it is gone.
+["server/sbx/test_sbx5a_cap6b.py"]
+markers = 5
+cases = 5
+xfail = 0
 
 # 0.1.64 SBX-6 MCP proxy: a declared MCP server started the product's way reaches the real proxy and nothing
 # local round it; an undeclared one reaches nothing. Seatbelt is macOS-only.

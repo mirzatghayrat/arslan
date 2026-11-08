@@ -77,7 +77,7 @@ def test_default_writable_and_protected_cover_the_plan(tmp_path):
     writable = {r.path for r in command_sandbox.writable_roots(tmp_path)}
     # SBX-3 §1: /dev is narrowed to the listed devices (tests/server/sbx/test_sbx3a_commands_profile.py).
     assert str(tmp_path.resolve()) in writable and "/dev/null" in writable and "/dev" not in writable
-    assert str(command_sandbox._real(home / "Library" / "Caches")) in writable
+    assert str(command_sandbox._real(home / "Library" / "Caches")) not in writable   # SBX-5 §1c: read-only now
     protected = command_sandbox.default_protected()
     for p in (home / ".ssh", home / "Library" / "Keychains", home / ".arslan-updater.key"):
         assert command_sandbox._real(p) in protected

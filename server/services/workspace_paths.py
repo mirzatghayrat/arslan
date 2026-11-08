@@ -25,6 +25,9 @@ Rules, each one load-bearing:
 from __future__ import annotations
 
 import fnmatch
+import os
+import stat
+import unicodedata
 from pathlib import Path
 
 
@@ -100,7 +103,76 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
 
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
+    if for_write:
+        _refuse_cap6b(resolved, root, user_path)
     return resolved
+
+
+def _refuse_cap6b(path: Path, root: Path, user_path) -> None:
+    """SBX-5 CAP6b: write_file and edit_file never write the skill or plugin folders, nor Arslan's data folder
+    (it holds the MCP config, runtimes, capabilities' code), even when the working folder contains them or is
+    inside them. One folder is exempt: `<data>/workspace`, where an eval puts its profile's working folder
+    (evals/companion/stable_recovery.py); Arslan keeps nothing of its own there.
+
+    SBX-5a (#772 review): judged by what is on disk (`_within`), not by spelling, since APFS folds case and
+    Unicode normalization: `~/.agents/SKILLS` is the skills folder. The exemption goes by the same identity, and
+    only for a real folder at `<data>/workspace`: a link there would exempt whatever it points at, the runtimes or
+    the whole data folder (#772 delta review). A path whose identity can't be read (an error other than "not
+    there") is refused, not taken as absent."""
+    from server import config
+    from server.services import command_sandbox
+    data = Path(config.data_dir()).resolve()
+    marker = _stat(data / "workspace", follow=False)
+    marked = (marker.st_dev, marker.st_ino) if marker is not None and stat.S_ISDIR(marker.st_mode) else None
+    exempt = marked is not None and any(_identity(a) == marked for a in (root, *root.parents))
+    for folder in [*command_sandbox.cap6b_folders(), *([] if exempt else [data])]:
+        if _within(path, folder):
+            raise PathEscape(f"refusing to write Arslan's skills, plugins or data: {user_path}")
+
+
+def _stat(path: Path, *, follow: bool = True) -> os.stat_result | None:
+    """`path`'s metadata, None when it isn't there. Any other error (I/O, permission, a link loop) raises
+    PathEscape: the check can't tell whether the path is one of Arslan's folders, so the write is refused."""
+    try:
+        return os.stat(path) if follow else os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except OSError as exc:
+        raise PathEscape("refusing to write: can't check this path against Arslan's skills, plugins or data "
+                         f"({exc.strerror or exc})") from None
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    st = _stat(path)
+    return None if st is None else (st.st_dev, st.st_ino)
+
+
+def _folded(parts) -> tuple[str, ...]:
+    return tuple(unicodedata.normalize("NFC", unicodedata.normalize("NFC", part).casefold()) for part in parts)
+
+
+def _within(path: Path, folder: Path) -> bool:
+    """Whether `path` is `folder` or inside it. Its existing part by identity: some existing ancestor (or itself)
+    has the folder's `(st_dev, st_ino)`, whatever the spelling, a case or NFD one, or /System/Volumes/Data's. Its
+    missing part (folders `make_parents` would make) by name: folded (casefold, NFC) and compared with the
+    folder's names below the same existing ancestor, since a folder made by that name would be the protected one.
+    On a case-sensitive volume the fold can refuse a different folder: closed, not open."""
+    existing, missing = path, []
+    while _identity(existing) is None and existing != existing.parent:
+        missing.append(existing.name)
+        existing = existing.parent
+    missing.reverse()
+    target, here = _identity(folder), _identity(existing)
+    ancestors = [existing, *existing.parents]
+    if target is not None and any(_identity(a) == target for a in ancestors):
+        return True
+    if not missing or here is None:
+        return False
+    for above in folder.parents:                       # the folder's part below `existing`, by name
+        if _identity(above) == here:
+            rest = folder.parts[len(above.parts):]
+            return len(missing) >= len(rest) and _folded(missing[:len(rest)]) == _folded(rest)
+    return False
 
 
 def _contained(path: Path, root: Path) -> bool:
