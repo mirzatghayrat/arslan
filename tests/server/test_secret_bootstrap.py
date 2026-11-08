@@ -24,6 +24,13 @@ NOT_ROOT = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_session_marker(monkeypatch):
+    """These cases are the packaged app and a terminal: neither carries Claude Code's CLAUDECODE=1.
+    A session's own run has it, so it is cleared here; tests/server/test_session_secret_guard.py has the rest."""
+    monkeypatch.delenv("CLAUDECODE", raising=False)
+
+
 @pytest.fixture
 def keyfile(tmp_path, monkeypatch):
     """Point the feature at a tmp path whose parent does NOT exist yet.
