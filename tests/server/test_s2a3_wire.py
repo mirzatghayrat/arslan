@@ -190,6 +190,34 @@ async def test_a_named_rule_with_an_unread_command_still_gets_its_card(unread, m
     assert len(asked) == 1 and ex.ran == [] and "offline" not in steps[-1]
 
 
+@pytest.mark.parametrize("rules, offline", [({tp.UNREADABLE, "stand-in-rule"}, False), ({tp.UNREADABLE}, True)])
+async def test_only_unreadable_alone_takes_the_offline_branch(monkeypatch, rules, offline):
+    """`unreadable` with another named rule gets the ordinary card, which lists both; `unreadable` alone runs offline.
+    The card is the real one (command_confirm), its decision replaced, with every other offline condition true."""
+    from server.services import command_confirm, settings_service
+    first = "stand-in-rule" if len(rules) > 1 else tp.UNREADABLE
+    monkeypatch.setattr(tp, "assess", lambda command: tp.Assessment("ask", first, "stand-in"))
+    monkeypatch.setattr(tp, "ask_rules", lambda command: set(rules))
+
+    async def risky(db):
+        return "ask_risky"
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", risky)
+    shown: list = []
+
+    async def decide(request, context):
+        shown.append(request)
+        return permissions.Decision(False, "user", "once")
+    monkeypatch.setattr(permissions, "decide", decide)
+    ex, result, steps = await _gate(monkeypatch, {"command": STAND_IN}, command_confirm.Confirmations("c1").command)
+    if offline:
+        assert shown == [] and ex.ran == [{"offline": True, "outside": False}] and steps[-1]["offline"] == tp.UNREADABLE
+    else:
+        assert ex.ran == [] and result["ok"] is False and "offline" not in steps[-1]
+        [card] = shown
+        assert card.target == "rules:stand-in-rule|unreadable"
+        assert card.frame["rules"] == ["stand-in-rule", tp.UNREADABLE]
+
+
 # ── the home check, read on every call ───────────────────────────────────────
 
 @pytest.mark.parametrize("folder, card", [(lambda: Path.home(), True), (lambda: Path.home() / STAND_IN, False)])
