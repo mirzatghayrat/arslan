@@ -1,11 +1,22 @@
 """Text-only differential contracts for inline-script asks below reader limits.
 
 The source is never executed: only assess and its reader helpers see it.
-All shells/launchers cross every layout, separator and continuation without
-padding; the five padded sizes rotate separators across those same classes.
+By default, 1,680 stratified cases cover every class/carrier/separator triple,
+every pair of class, carrier, layout and separator, and each padded size for
+every class/carrier. One rotating layout/continuation covers 1,155 of the 4,620
+unpadded cells; 525 cases cover all class/carrier/padded-size strata.
+Set ARSLAN_INLINE_FULL=1 to run all 13,440 cases: every unpadded combination
+and both continuations, with five padded sizes rotating separators. The frozen
+input digest always checks the full generated set, including in the default run.
+Both modes also run the frozen-input and sample-coverage checks (1,682 default
+tests or 13,442 full tests). Only the sample caches repeated regex/form reads;
+full mode uses the original matcher without the test helper's cache.
 """
 import hashlib
+import os
 import shlex
+from functools import lru_cache
+from itertools import combinations, product
 
 import pytest
 
@@ -887,6 +898,51 @@ def specs():
 SPECS = tuple(specs())
 
 
+def sampled_indices():
+    for index, spec in enumerate(SPECS):
+        family, carrier, layout, lines, size, separator = spec
+        fi, ci, li = FAMILIES.index(family), CARRIERS.index(carrier), LAYOUTS.index(layout)
+        si = SEPARATORS.index(separator)
+        if size == 'none':
+            # Every class/carrier/separator triple, with one rotating layout
+            # and continuation. The offset retains the old-form witness below.
+            # Adding a second layout for the risky classes exceeded 30 seconds.
+            keep = li == (fi + ci + si + 2) % len(LAYOUTS) and lines == LINES[(fi + ci + si) % 2]
+        else:
+            zi = SIZES.index(size)
+            # All 5 x 21 x 5 size strata; the costly 255-substitution padding
+            # uses plain lines. Continuations still cross every other size.
+            line = 'plain' if size == 'substitutions-255' else LINES[(fi + ci + zi) % 2]
+            keep = li == (fi + ci + zi) % len(LAYOUTS) and lines == line
+        if keep:
+            yield index
+
+
+SAMPLED_INDICES = tuple(sampled_indices())
+
+
+@pytest.fixture(scope='module')
+def cached_matches():
+    """Reuse identical regex/form reads in the sample; full mode stays unmodified.
+
+    Call the real matcher on each form, retaining its boolean short circuit.
+    The bounded cache lives only for this module and includes the regex object
+    in its key, so a mutation's replacement pattern cannot borrow an old result.
+    """
+    if os.environ.get('ARSLAN_INLINE_FULL') == '1':
+        yield
+        return
+    original = tp._matches
+
+    @lru_cache(maxsize=4096)
+    def match(pattern, form):
+        return original(pattern, (form,))
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(tp, '_matches', lambda pattern, forms: any(match(pattern, form) for form in forms))
+        yield
+
+
 def case_id(spec):
     return '/'.join(spec).replace(' ', '-')
 
@@ -943,12 +999,14 @@ def text_for(spec):
 
 
 def parameters():
-    for index, spec in enumerate(SPECS):
+    indices = range(len(SPECS)) if os.environ.get('ARSLAN_INLINE_FULL') == '1' else SAMPLED_INDICES
+    for index in indices:
+        spec = SPECS[index]
         yield pytest.param(index, spec, id=case_id(spec))
 
 
 @pytest.mark.parametrize('index,spec', tuple(parameters()))
-def test_inline_policy_keeps_main_asks(index, spec, request, record_property):
+def test_inline_policy_keeps_main_asks(index, spec, request, record_property, cached_matches):
     text = text_for(spec)
     if len(text) > tp.MAX_COMMAND_CHARS:
         pytest.fail('generator exceeded the policy command length')
@@ -987,3 +1045,19 @@ def test_frozen_main_inputs():
     assert hashlib.sha256('\n'.join(hashes).encode()).hexdigest() == INPUT_SHA256
     assert set(MAIN_TABLE) == {case_id(spec[:4]) for spec in SPECS}
     assert all(len(row) == len(SEPARATORS) + len(SIZES) - 1 for row in MAIN_TABLE.values())
+
+
+def test_default_sample_coverage():
+    sample = [SPECS[index] for index in SAMPLED_INDICES]
+    unpadded = [spec for spec in sample if spec[4] == 'none']
+    assert len(sample) == len(set(sample)) == 1680
+    assert len({(s[0], s[1], s[2], s[5]) for s in unpadded}) == 1155
+    assert {(s[0], s[1], s[5]) for s in unpadded} == set(product(FAMILIES, CARRIERS, SEPARATORS))
+    factors = {0: FAMILIES, 1: CARRIERS, 2: LAYOUTS, 5: SEPARATORS}
+    for a, b in combinations(factors, 2):
+        assert {(s[a], s[b]) for s in unpadded} == set(product(factors[a], factors[b]))
+    assert {(s[0], s[1], s[4]) for s in sample if s[4] != 'none'} == set(
+        product(FAMILIES, CARRIERS, SIZES[1:]))
+    assert {s[3] for s in unpadded} == set(LINES)
+    # This old-form witness must survive sampling (ONLY-MOST-LINES mutation).
+    assert ('network-import', 'bash', 'own-line', 'plain', 'none', 'else') in unpadded

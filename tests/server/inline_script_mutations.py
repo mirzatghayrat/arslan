@@ -1,4 +1,8 @@
-"""Opt-in measurement/mutation controls; generated strings never leave assess."""
+"""Opt-in measurement/mutation controls; generated strings never leave assess.
+
+Mutations run the entire default sample, including its full-input digest.
+ARSLAN_INLINE_FULL=1 also applies here when an exhaustive mutation run is wanted.
+"""
 
 
 def pytest_addoption(parser):
@@ -24,26 +28,3 @@ def pytest_configure(config):
     else:
         original = gates.text_for
         gates.text_for = lambda spec: original(spec) + '\necho neutral'
-
-
-def pytest_collection_modifyitems(config, items):
-    mode = config.getoption('--inline-mutation')
-    if not mode:
-        return
-    selected, deselected = [], []
-    families = {'DROP-REACH': {'network-import', 'process-import'}, 'DROP-STARTUP': {'protected-startup'},
-                'ASK-ALL': {'harmless', 'data'},
-                'ONLY-MOST-LINES': {'network-import', 'process-import', 'protected-startup'}}
-    for item in items:
-        spec = getattr(getattr(item, 'callspec', None), 'params', {}).get('spec')
-        keep = False
-        if mode == 'DRIFT-GENERATOR':
-            keep = item.originalname == 'test_frozen_main_inputs'
-        elif spec:
-            keep = spec[0] in families[mode] and spec[1] in {'bash', 'watch', 'nested-c'} and spec[4] == 'none'
-        if keep:
-            selected.append(item)
-        else:
-            deselected.append(item)
-    items[:] = selected
-    config.hook.pytest_deselected(items=deselected)
