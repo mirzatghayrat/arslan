@@ -515,6 +515,10 @@ _GLOBAL_OPTIONS = {
 # likewise not meaningful ahead of its command word.
 _GLOBAL_OPTIONS["security"] = frozenset({"-p", "-q", "-v", "-i", "-h", "--help"})
 _GLOBAL_OPTIONS["git"] = _GIT_VALUES | {"--no-pager", "--bare"}
+# Global flags can select an implicit operation as well as modify a command.
+# Keep that meaning separate from the words left after global-option stripping.
+_OPERATION_FLAGS = {program: frozenset({"--prod"}) if program == "vercel" else frozenset()
+                    for program in _GLOBAL_OPTIONS}
 _VERB_PROGRAMS = frozenset(_GLOBAL_OPTIONS) | {
     "diskutil", "shortcuts", "imsg", "launchctl", "defaults", "tccutil",
 }
@@ -628,6 +632,13 @@ def _security_verb(args: tuple[str, ...]) -> tuple[str, ...]:
     return args[i:]
 
 
+def _dispatch_args(program: str, args: tuple[str, ...]) -> tuple[tuple[str, ...], frozenset[str]]:
+    values = _OPTION_VALUES.get(program, frozenset())
+    operations = frozenset(option for option, _ in _options(args, values)
+                           if option in _OPERATION_FLAGS[program])
+    return _verb(args, values), operations
+
+
 def _named_rules(words: tuple[str, ...]) -> set[str]:
     """Named operations on parsed argv, never on a flattened or reparsed command.
 
@@ -637,8 +648,9 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     program, args = words[0].lower(), words[1:]
     if not _fully_accounted(program, args):
         return _legacy_named_rules(words)
+    operations = frozenset()
     if program in _GLOBAL_OPTIONS and program not in {"security", "git"}:
-        args = _verb(args, _OPTION_VALUES.get(program, frozenset()))
+        args, operations = _dispatch_args(program, args)
     lower = tuple(w.lower() for w in args)
     first = lower[0] if lower else ""
     found: set[str] = set()
@@ -703,7 +715,7 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         or program == "docker" and (first == "push" or lower[:2] == ("image", "push"))
         or program == "terraform" and first in {"apply", "destroy"}
         or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
-        or program == "vercel" and (not args or first in {"deploy", "--prod"}))
+        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations))
     add("force-kill", program in {"killall", "pkill"})
     add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
         or program == "defaults" and first == "write" or program == "crontab" and first != "-l")
