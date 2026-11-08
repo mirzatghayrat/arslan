@@ -108,13 +108,19 @@ public actor ConversationLinks {
     /// A conversation a phone frame names (chat.send, task.stop), linked only once the Mac's own history read answers
     /// for it, as chat.history links only after that read. A phone never opens a sub-session (SUB3, #767): the read
     /// refuses one `not_found` (server/api/phone.py, `_off_the_phone`), and the backend can't tell this socket from a
-    /// Mac window's. Fails closed: whatever the read doesn't answer counts as a sub-session, `not_found`, as an
-    /// unknown conversation is, with no socket opened. One already linked passed this, or came from the Mac's own
+    /// Mac window's. Only a 200 links. Fails closed both ways, with no socket opened: the server's refusal (its 404
+    /// `not_found`) answers `not_found`, as an unknown conversation is; anything else is no answer for this
+    /// conversation (the backend down, a timeout, a 5xx, any other 4xx) and answers `mac_busy`, so a phone during an
+    /// outage doesn't take its conversation for gone. One already linked passed this, or came from the Mac's own
     /// answers (chat.history, task.start, `/phone/live`, a new conversation's store call), which leave sub-sessions out.
     func linkNamed(_ conversationID: String, now: Date) async throws {
         if links[conversationID] == nil, conversationID != Self.pocket {
             let path = "/api/v1/phone/conversations/\(conversationID.pathSegment)/history?limit=1"
-            guard (try? await backend.json(path)) != nil else { throw BridgeError.code("not_found") }
+            do { _ = try await backend.json(path) } catch BridgeError.code("not_found") {
+                throw BridgeError.code("not_found")
+            } catch {
+                throw BridgeError.code("mac_busy")
+            }
         }
         try link(conversationID, now: now)
     }
