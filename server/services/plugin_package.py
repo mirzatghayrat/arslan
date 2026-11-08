@@ -30,12 +30,13 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from server.db import session as db_session
-from server.db.models import CapabilitySource, SkillPack
+from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
-from server.services import capability_allowlist, capability_install, capability_runtime, mcp_pin, skill_import
+from server.services import (capability_allowlist, capability_install, capability_runtime, mcp_pin, osv_check,
+                             skill_import)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ _UNSAFE_ENV = re.compile(
     r"|NODE_(OPTIONS|PATH|COMPILE_CACHE|TLS_REJECT_UNAUTHORIZED|EXTRA_CA_CERTS|USE_ENV_PROXY)"
     r"|PYTHON(PATH|HOME|STARTUP|USERBASE|WARNINGS|BREAKPOINT|INSPECT|PYCACHEPREFIX|EXECUTABLE|HTTPSVERIFY)"
     r"|PATH|BASH_ENV|ENV|ZDOTDIR|PERL5(OPT|LIB)|RUBY(OPT|LIB)|_?JAVA_(TOOL_)?OPTIONS|JDK_JAVA_OPTIONS|CLASSPATH"
+    r"|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|OPENSSL_(CONF|MODULES|ENGINES)|__PYVENV_LAUNCHER__"
     r"|SSL_CERT_(FILE|DIR)|REQUESTS_CA_BUNDLE|CURL_CA_BUNDLE"
     r"|(UV|PIP)_(INDEX|INDEX_URL|DEFAULT_INDEX|EXTRA_INDEX_URL|FIND_LINKS|CONFIG_FILE)", re.I)
 #: Headers that ask the remote's front end to route the call somewhere other than the address on the card.
@@ -129,15 +131,18 @@ def read_archive(repo: str, data: bytes) -> Snapshot:
 
 
 async def snapshot(repo: str, ref: str | None = None) -> Snapshot:
-    """The repository at `ref` (a marketplace's pinned commit), else at the commit its default branch points at now."""
+    """The repository at the commit its default branch points at now. A marketplace's pinned commit (`ref`) has to be
+    that commit, else the plugin is refused (`moved`): GitHub serves a commit of any fork under the repository's own
+    name, so an archive read at `ref` could hold files the repository's owner never had, while the one-click list
+    checks that owner. A redirect isn't followed: it would read another repository than the one checked."""
     if not _REPO.fullmatch(repo or "") or not skill_import._plain_path(repo):      # `..` fits the pattern's characters
         raise Refused("not_github", str(repo))
     if ref and not _SHA.fullmatch(ref):
         raise Refused("not_pinned", ref)
     body = bytearray()
     try:
-        async with httpx.AsyncClient(timeout=ARCHIVE_TIMEOUT_S, follow_redirects=True) as client:
-            async with client.stream("GET", f"{CODELOAD}/{repo}/tar.gz/{ref or 'HEAD'}") as r:
+        async with httpx.AsyncClient(timeout=ARCHIVE_TIMEOUT_S, follow_redirects=False) as client:
+            async with client.stream("GET", f"{CODELOAD}/{repo}/tar.gz/HEAD") as r:
                 if r.status_code != 200:
                     raise Refused("unreachable", repo)
                 async for chunk in r.aiter_bytes():
@@ -146,7 +151,10 @@ async def snapshot(repo: str, ref: str | None = None) -> Snapshot:
                         raise Refused("too_large", repo)
     except httpx.HTTPError as exc:
         raise Refused("unreachable", repo) from exc
-    return await asyncio.to_thread(read_archive, repo, bytes(body))
+    snap = await asyncio.to_thread(read_archive, repo, bytes(body))
+    if ref and snap.sha != ref:
+        raise Refused("moved", ref)
+    return snap
 
 
 def _join(root: str, rel: str) -> str:
@@ -411,7 +419,12 @@ def _file_hashes(snap: Snapshot, prefix: str) -> dict[str, str]:
 
 async def prepare(candidate: dict) -> dict:
     """Everything before the card. Raises Refused, naming the part, with nothing kept."""
-    snap = await snapshot(candidate.get("repo") or "", candidate.get("ref"))
+    repo = candidate.get("repo") or ""
+    # The card and the ledger show `source_url`, the list checks `repo`, and the files come from `repo`: one names the
+    # other, or the card could point at a repository nothing was read from.
+    if candidate.get("source_url") != f"https://github.com/{repo}":
+        raise Refused("not_github", str(candidate.get("source_url")))
+    snap = await snapshot(repo, candidate.get("ref"))
     root = candidate.get("path") or ""
     manifest = _manifest(snap, root)
     _only_skills_and_connections(manifest, snap, root)
@@ -421,8 +434,8 @@ async def prepare(candidate: dict) -> dict:
     skills = await _skills(snap, paths, license_)
     allow = await capability_allowlist.current()
     prefix = f"{root}/" if root else ""
-    prepared = {"commit": snap.sha, "license": license_, "skills": skills, "connections": [], "manifest": manifest,
-                "files": await asyncio.to_thread(_file_hashes, snap, prefix)}
+    prepared = {"repo": snap.repo, "commit": snap.sha, "license": license_, "skills": skills, "connections": [],
+                "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix)}
     try:
         for name, spec in servers.items():
             if not isinstance(spec, dict):
@@ -432,10 +445,14 @@ async def prepare(candidate: dict) -> dict:
             connection = (_remote(candidate, name, spec, allow) if spec.get("url") or spec.get("type")
                           else await _package(candidate, name, spec, allow))
             try:
-                connection["locked"] = await capability_install.prepare(connection["candidate"])
+                # Its license is the plugin's, read at the pinned commit, not the repository's at a tag or HEAD.
+                connection["locked"] = await capability_install.prepare(connection["candidate"], license_=license_)
             except (capability_install.InstallFailure, capability_runtime.RuntimeFailure) as exc:
                 raise Refused(exc.code, name) from exc
-            prepared["connections"].append(connection)
+            prepared["connections"].append(connection)          # before OSV: a stop there discards this lock too
+            # CAP9, as a single install's card has it: what OSV.dev knows of this lock. Facts only: a hit refuses
+            # nothing, and the card makes No the default (the user's decision 5).
+            connection["vulns"] = await osv_check.check(connection["candidate"], connection["locked"])
     except BaseException:
         discard(prepared)
         raise
@@ -444,7 +461,10 @@ async def prepare(candidate: dict) -> dict:
 
 def card_fields(prepared: dict) -> dict:
     """What the card adds to `capability_flow.card_for`: every part, by its own name, and each connection with what it
-    is started with: its fixed `env` or `headers` and the `keys` it gets (a key two of them name is asked for once)."""
+    is started with: its fixed `env` or `headers` and the `keys` it gets (a key two of them name is asked for once),
+    the package locked for it, and what OSV.dev knows of that lock (`vulns`). Who published it is the plugin's own
+    repository, which the list checked, never a Registry name's."""
+    from server.services import capability_search
     spdx, read_from = prepared["license"]
     keys: dict[str, dict] = {}
     connections = []
@@ -453,7 +473,10 @@ def card_fields(prepared: dict) -> dict:
         for key in c["needs"]["keys"]:
             keys.setdefault(key["name"], key)
         remote = c["runtime"] == "remote"
+        package = c.get("package")
         connections.append({"name": untrusted.clean_name(c["name"], 120), "runtime": c["runtime"],
+                            "package": {"identifier": package["identifier"], "version": package["version"]}
+                                       if package else None, "vulns": connection["vulns"],
                             "version": c.get("version"), "remote_host": (c.get("remote") or {}).get("url"),
                             "network": capability_install.grants_for([], c["needs"])["network"],
                             "arguments": [a["value"] for a in (c.get("package") or {}).get("arguments") or []],
@@ -466,7 +489,8 @@ def card_fields(prepared: dict) -> dict:
                "hidden": untrusted.hidden_summary("\n".join([s["info"]["body"], *s["references"].values()]))}
               for s in prepared["skills"]]
     return {"commit": prepared["commit"], "license": {"spdx": spdx, "read_from": read_from}, "skills": skills,
-            "connections": connections, "keys": list(keys.values())[:12], "folders": []}
+            "connections": connections, "keys": list(keys.values())[:12], "folders": [],
+            "publisher": capability_search.publisher_of({"repo": prepared["repo"]})}
 
 
 def parent_of(candidate_id: str | None) -> str | None:
@@ -534,7 +558,9 @@ async def install(candidate: dict, prepared: dict, keys: dict, owner_id: str = "
     waiting: list[str] = []
 
     async def failed(result: dict) -> dict:
-        await _undo([*done, *[child.id for child in await _children(source_id) if child.id not in done]], written)
+        # The skills by their rows, not `written`: a stop right after a row commits never reaches the list.
+        await _undo([*done, *[child.id for child in await _children(source_id) if child.id not in done]],
+                    await _skill_keys(source_id))
         discard(prepared)
         async with db_session.AsyncSessionLocal() as db:
             row = await db.get(CapabilitySource, source_id)
@@ -630,12 +656,18 @@ async def remove(source_id: str) -> bool:
 async def finish_interrupted() -> None:
     """At boot, before any server starts. A plain Quit kills the server, so an install it cut short ran no undo: its
     row is still `proposed`, its finished parts are on, and only a group's switch and delete reach them, which a row
-    that never finished doesn't have. They go now. One that can't is tried again at the next boot."""
+    that never finished doesn't have. They go now. One that can't is tried again at the next boot, and until then its
+    parts are off: they're switched off first, in one commit, before the supervisor reads them."""
     async with db_session.AsyncSessionLocal() as db:
         ids = (await db.execute(select(CapabilitySource.id).where(CapabilitySource.kind == "plugin",
                                                                   CapabilitySource.state == "proposed"))).scalars().all()
     for source_id in ids:
         try:
+            servers = [child.mcp_server_id for child in await _children(source_id) if child.mcp_server_id]
+            async with db_session.AsyncSessionLocal() as db:
+                await db.execute(update(MCPServer).where(MCPServer.id.in_(servers)).values(host_allowed=False))
+                await db.execute(update(SkillPack).where(SkillPack.source_id == source_id).values(enabled=False))
+                await db.commit()
             await remove(source_id)
             async with db_session.AsyncSessionLocal() as db:
                 row = await db.get(CapabilitySource, source_id)

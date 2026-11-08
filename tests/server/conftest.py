@@ -358,7 +358,7 @@ def fake_capability_prepare(monkeypatch):
     test_cap4a2_lock_before_card.py, the real OSV check in test_cap9_osv_check.py."""
     from server.services import capability_install, osv_check
 
-    async def prepare(c):
+    async def prepare(c, **kwargs):
         return {"runtime": c.get("runtime"), "license": ("MIT", "LICENSE"), "staging": None,
                 "lock": {"file": "requirements.lock", "sha256": "0" * 64,
                          "packages": [{"name": "excel-mcp-server", "version": "1.1.2"}]}}
