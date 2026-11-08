@@ -11,7 +11,11 @@ import textwrap
 import pytest
 
 MODES = ("ALLOW-PROGRAM-PATHS", "ALLOW-FILE-SCRIPTS", "DROP-NAMED-COMMANDS",
-         "FLATTEN-OPERANDS", "DROP-REFUSED-PREFIX", "REFUSE-NON-SCRIPT-SUBCOMMANDS")
+         "FLATTEN-OPERANDS", "DROP-REFUSED-PREFIX", "REFUSE-NON-SCRIPT-SUBCOMMANDS",
+         "DROP-SECURITY-PASSWORD-TUPLE", "DROP-GSUTIL-UPLOAD-TUPLE", "DROP-GH-API-TUPLE",
+         "DROP-PROGRAM-ARITIES", "DROP-SECURITY-GLOBAL-PARSE", "DROP-ATTACHED-SHORT",
+         "DROP-RAW-ASSIGNMENT")
+OPTION_MODES = frozenset(MODES[6:])
 
 
 def pytest_addoption(parser):
@@ -23,7 +27,38 @@ def pytest_configure(config):
     mode = config.getoption("--quoted-file-mutation")
     if mode is None:
         raise pytest.UsageError("choose --quoted-file-mutation when loading this plugin")
-    if mode == "DROP-NAMED-COMMANDS":
+    if mode in {"DROP-SECURITY-PASSWORD-TUPLE", "DROP-GSUTIL-UPLOAD-TUPLE", "DROP-GH-API-TUPLE"}:
+        original_rules = tp._named_rules
+        def rules(words):
+            found = original_rules(words)
+            program, args = words[0].lower(), words[1:]
+            if mode == "DROP-SECURITY-PASSWORD-TUPLE" and program == "security":
+                operation = tp._security_verb(args)
+                if operation and operation[0] in {"find-generic-password", "find-internet-password"}:
+                    found.discard("keychain-secrets")
+            elif mode == "DROP-GSUTIL-UPLOAD-TUPLE" and program == "gsutil":
+                found.discard("upload")
+            elif mode == "DROP-GH-API-TUPLE" and program == "gh" and args[:1] == ("api",):
+                found.discard("publish")
+            return found
+        tp._named_rules = rules
+    elif mode == "DROP-PROGRAM-ARITIES":
+        # Restore the three conflicting entries from the shared value tables.
+        for program, flag in (("curl", "-O"), ("wget", "-H"), ("gsutil", "-m")):
+            tp._OPTION_VALUES[program] |= {flag}
+    elif mode == "DROP-SECURITY-GLOBAL-PARSE":
+        tp._security_verb = lambda args: args
+    elif mode in {"DROP-ATTACHED-SHORT", "DROP-RAW-ASSIGNMENT"}:
+        original_options = tp._options
+        def options(args, values):
+            # Drop only recognition of these attached forms; separate values,
+            # raw matching and every unrelated tuple operation remain intact.
+            args = tuple("--unrecognized" if (
+                mode == "DROP-ATTACHED-SHORT" and len(word) > 2 and word[:2] in {"-X", "-f", "-F"}
+                or mode == "DROP-RAW-ASSIGNMENT" and word.startswith("--raw=")) else word for word in args)
+            return original_options(args, values)
+        tp._options = options
+    elif mode == "DROP-NAMED-COMMANDS":
         tp._command_words = lambda text: ()
     elif mode == "DROP-REFUSED-PREFIX":
         tp._command_words = lambda text: sg.read(text).commands
@@ -57,6 +92,11 @@ def pytest_configure(config):
 
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(config, items):
+    mode = config.getoption("--quoted-file-mutation")
+    if mode in OPTION_MODES:
+        if any(item.path.name not in {"test_quoted_args_file_run.py", "quoted_args_file_run_evidence.py"} for item in items):
+            raise pytest.UsageError("select only the text-only regression or evidence module")
+        return
     expected = {
         "ALLOW-PROGRAM-PATHS": "test_every_program_path_is_unread",
         "ALLOW-FILE-SCRIPTS": "test_interpreter_file_families_are_unread",
@@ -64,6 +104,6 @@ def pytest_collection_modifyitems(config, items):
         "FLATTEN-OPERANDS": "test_same_program_operands_keep_their_roles",
         "DROP-REFUSED-PREFIX": "test_quoted_rules_hold_before_every_refused_tail",
         "REFUSE-NON-SCRIPT-SUBCOMMANDS": "test_non_script_subcommands_stay_understood",
-    }[config.getoption("--quoted-file-mutation")]
+    }[mode]
     if any(item.path.name != "test_quoted_args_file_run.py" or item.originalname != expected for item in items):
         raise pytest.UsageError("select only the mutation's named text-only family")

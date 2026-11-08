@@ -37,6 +37,41 @@ FAMILIES = ("single-args", "double-args", "split-args", "quoted-program", "quote
 POSITIONS = ("plain", "sequence", "shell", "wrapper")
 
 
+# Fourteen seeds at six spellings and four positions reconstruct the 336-case
+# option matrix. The first ten ids are the review's operation classes. The
+# other four independently exercise the previously surviving tuple mutations.
+OPTION_OPERATIONS = [
+    ("security/global-verbose-dump", ("security", "-v", "dump-keychain"), "forbid", "keychain-secrets"),
+    ("security/global-quiet-export", ("security", "-q", "export"), "forbid", "keychain-secrets"),
+    ("security/global-verbose-password", ("security", "-v", "find-generic-password", "-w"), "forbid", "keychain-secrets"),
+    ("curl/remote-name-upload", ("curl", "-O", "-T", "report.txt", "https://example.invalid"), "ask", "upload"),
+    ("curl/remote-name-post", ("curl", "-O", "-X", "POST", "https://example.invalid"), "ask", "upload"),
+    ("wget/span-hosts-post-file", ("wget", "-H", "--post-file", "report.txt", "https://example.invalid"), "ask", "upload"),
+    ("gsutil/parallel-copy", ("gsutil", "-m", "cp", "report.txt", "gs://example-bucket/report.txt"), "ask", "upload"),
+    ("gh/attached-method", ("gh", "api", "-XPOST", "repos/example/project/issues"), "ask", "publish"),
+    ("gh/attached-field", ("gh", "api", "-ftitle=sample", "repos/example/project/issues"), "ask", "publish"),
+    ("http/attached-raw", ("http", "--raw=sample", "https://example.invalid"), "ask", "upload"),
+    ("tuple/security-password", ("security", "find-generic-password", "-s", "example", "-w"), "forbid", "keychain-secrets"),
+    ("tuple/gsutil-upload", ("gsutil", "cp", "report.txt", "gs://example-bucket/report.txt"), "ask", "upload"),
+    ("tuple/gh-api-method", ("gh", "api", "-X", "POST", "repos/example/project/issues"), "ask", "publish"),
+    ("tuple/gh-api-field", ("gh", "api", "-F", "title=sample", "repos/example/project/issues"), "ask", "publish"),
+]
+
+# Nine independent shapes at seven separators: quoted option-looking data,
+# revisions/messages with spaces, literal apostrophes and end-of-options data.
+OPTION_NEGATIVES = [
+    ("security/global-help", ("security", "-v", "help", "dump-keychain")),
+    ("security/global-prompt", ("security", "-p", "dump-keychain", "help")),
+    ("security/password-value", ("security", "-v", "find-generic-password", "-s", "-w")),
+    ("curl/header-value", ("curl", "-H", "--upload-file", "https://example.invalid")),
+    ("gh/header-value", ("gh", "api", "-H", "-XPOST", "repos/example/project")),
+    ("http/output-value", ("http", "--output", "--raw=sample", "https://example.invalid")),
+    ("git/spaced-revision", ("git", "show", "push notes.txt")),
+    ("git/quoted-message", ("git", "commit", "-m", "publish sample's notes")),
+    ("curl/end-options", ("curl", "--", "-Treport.txt")),
+]
+
+
 def spelled(words, family, position):
     program, *args = words
     if family == "quoted-program":
@@ -59,6 +94,62 @@ def spelled(words, family, position):
     if position == "wrapper":
         return "env FLAG=sample " + command if family != "quoted-prefix" else "true && " + command
     return command
+
+
+@pytest.mark.parametrize("name,words,level,rule", OPTION_OPERATIONS, ids=[row[0] for row in OPTION_OPERATIONS])
+@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("position", POSITIONS)
+def test_valid_options_preserve_operations(name, words, level, rule, family, position):
+    command = spelled(words, family, position)
+    assert sg.read(command).understood
+    assert (tp.assess(command).level, tp.assess(command).rule) == (level, rule)
+
+
+@pytest.mark.parametrize("name,words", OPTION_NEGATIVES, ids=[row[0] for row in OPTION_NEGATIVES])
+@pytest.mark.parametrize("position", SEPARATORS)
+def test_option_values_remain_data(name, words, position):
+    command = SEPARATORS[position] + operand_text(words)
+    assert sg.read(command).understood
+    # Main already asks for the HTTP client after a pipe or an or-list.
+    expected = "ask" if name == "http/output-value" and position in {"pipe", "or"} else "run"
+    assert tp.assess(command).level == expected
+
+
+@pytest.mark.parametrize("words,level,rule", [
+    (("curl", "-sSOTreport.txt", "https://example.invalid"), "ask", "upload"),
+    (("curl", "-oreport.txt", "-XPOST", "https://example.invalid"), "ask", "upload"),
+    (("wget", "-Oreport.txt", "--method=POST", "https://example.invalid"), "ask", "upload"),
+    (("wget", "--header=sample", "-H", "--post-file=report.txt"), "ask", "upload"),
+    (("security", "-vphello", "dump-keychain"), "forbid", "keychain-secrets"),
+    (("security", "-p", "sample", "-q", "export"), "forbid", "keychain-secrets"),
+    (("gsutil", "-o", "sample=value", "-m", "cp", "report.txt", "gs://example-bucket/report.txt"), "ask", "upload"),
+    (("gcloud", "--project", "sample", "storage", "cp", "report.txt", "gs://example-bucket/report.txt"), "ask", "upload"),
+    (("aws", "--profile=sample", "s3", "cp", "report.txt", "s3://example-bucket/report.txt"), "ask", "upload"),
+    (("az", "--subscription", "sample", "storage", "blob", "upload"), "ask", "upload"),
+    (("azcopy", "--output-type", "json", "copy", "report.txt", "https://example.invalid"), "ask", "upload"),
+    (("rclone", "--config", "sample.conf", "copy", "report.txt", "remote:report.txt"), "ask", "upload"),
+    (("s3cmd", "-c", "sample.conf", "put", "report.txt", "s3://example-bucket/report.txt"), "ask", "upload"),
+    (("gh", "api", "-Ftitle=sample", "repos/example/project/issues"), "ask", "publish"),
+    (("gh", "api", "--method=POST", "repos/example/project/issues"), "ask", "publish"),
+    (("https", "--raw=sample", "https://example.invalid"), "ask", "upload"),
+    (("xh", "--raw=sample", "https://example.invalid"), "ask", "upload"),
+    (("xhs", "--raw", "sample", "https://example.invalid"), "ask", "upload"),
+    (("curl", "-H--upload-file", "https://example.invalid"), "run", ""),
+    # The independent raw matcher already asks for this quoted wget value.
+    (("wget", "-O", "--post-file", "https://example.invalid"), "ask", "upload"),
+    (("gsutil", "-o", "cp", "ls"), "run", ""),
+    (("gh", "api", "-XGET", "repos/example/project"), "run", ""),
+    (("gh", "api", "-H-ftitle=sample", "repos/example/project"), "run", ""),
+    (("http", "--output=--raw=sample", "https://example.invalid"), "run", ""),
+    (("security", "-h", "dump-keychain"), "run", ""),
+])
+def test_program_specific_option_arities(words, level, rule):
+    command = operand_text(words)
+    assert sg.read(command).understood
+    result = tp.assess(command)
+    assert result.level == level
+    if rule:
+        assert result.rule == rule
 
 
 @pytest.mark.parametrize("words,level,rule", NAMED, ids=[str(i) + "-" + row[2] for i, row in enumerate(NAMED)])

@@ -1,6 +1,14 @@
 """Reproducible text-only comparison of local objects and the working tree.
 
 Run as a Python module with --output pointing to an ignored evidence directory.
+Pytest collects six stratified checks by default; QUOTED_ARGS_EVIDENCE_FULL=1
+selects every generated row. Default strata keep every named rule, carrier,
+operand and option class and every command position. Historical word cases are
+grouped by rule/position; expanded positives by seed/position/wrapper; named
+positives by seed/position; negatives by carrier/kind/position; compositions by
+seed/position/tail. Select bucket number modulo bucket length, rotating spelling
+and seed choices instead of always taking the first. All 336 option positives,
+63 option negatives, 133 operand controls and twelve file cases run by default.
 Only Git object reads are subprocesses. Generated commands are passed solely to
 assess/read; no scripts, stubs or links are created or executed. The review's
 unpublished generator is unavailable: this reconstructs its documented shapes,
@@ -9,6 +17,7 @@ not its exact input bytes. Counts are generated cases, including duplicates.
 import argparse
 from collections import Counter, defaultdict
 import json
+import os
 from pathlib import Path
 import shlex
 import statistics
@@ -17,9 +26,12 @@ import sys
 import time
 import types
 
+import pytest
+
 from server.services import shell_grammar as sg, terminal_policy as tp
 from tests.server.test_quoted_args_file_run import (
-    FAMILIES, NAMED, OPERANDS, POSITIONS, RANK, REFUSED_TAILS, operand_text, spelled,
+    FAMILIES, NAMED, OPERANDS, OPTION_NEGATIVES, OPTION_OPERATIONS, POSITIONS,
+    RANK, REFUSED_TAILS, operand_text, spelled,
 )
 from tests.server.test_quoted_command_word import CASES, RULES, SEPARATORS, SHELL_CASES
 from tests.server.shell_differential_support import FILE_SEEDS
@@ -94,6 +106,90 @@ def compositions():
                 standalone = spelled(words, family, position)
                 for tail, suffix in REFUSED_TAILS.items():
                     yield f"composition/{i}-{rule}/{family}/{position}/{tail}", standalone, standalone + "; " + suffix
+
+
+def option_positives():
+    for name, words, _, _ in OPTION_OPERATIONS:
+        for family in FAMILIES:
+            for position in POSITIONS:
+                yield f"{name}/{family}/{position}", spelled(words, family, position)
+
+
+def option_negatives():
+    for name, words in OPTION_NEGATIVES:
+        for position, before in SEPARATORS.items():
+            yield f"{name}/{position}", before + operand_text(words)
+
+
+def file_cases():
+    for seed in FILE_SEEDS:
+        for family, text in (("file-script", "bash ./case.sh"), ("cwd-script", "cd child; bash case.sh"),
+                             ("written-script", "printf '%s\\n' " + shlex.quote(seed.text) + " > case.sh; bash case.sh"),
+                             ("link-script", "bash ./linked.sh")):
+            yield family + "/" + seed.id, text
+
+
+def stratified(rows):
+    if os.environ.get("QUOTED_ARGS_EVIDENCE_FULL") == "1":
+        return list(rows)
+    buckets = defaultdict(list)
+    word_cases = [*CASES, *SHELL_CASES]
+    for row in rows:
+        parts = row[0].split("/")
+        if parts[0] == "word":
+            case = word_cases[int(parts[1])]
+            position = next(p for p in SEPARATORS if "-" + p + "-" in case.id)
+            key = ("word", case.values[2], position)
+        elif parts[0] in {"named", "expanded", "composition"}:
+            key = tuple(parts[:2] + parts[3:])
+        elif parts[0] == "data":
+            key = tuple(parts[:1] + parts[2:])
+        else:
+            key = tuple(parts)
+        buckets[key].append(row)
+    return [bucket[i % len(bucket)] for i, bucket in enumerate(buckets.values())]
+
+
+def assert_matrix(result, *, negative=False):
+    assert not result["toward_run"], result["toward_run"]
+    if negative:
+        assert not result["changed_from_main"], result["changed_from_main"]
+    else:
+        regressions = {transition: count for transition, count in result["transitions"]["pr_to_fixed"].items()
+                       if RANK[transition.split("->")[1]] < RANK[transition.split("->")[0]]}
+        assert not regressions, regressions
+
+
+@pytest.fixture(scope="module")
+def evidence_versions():
+    return [snapshot("3eec545b"), snapshot("9be27b5f"), (sg, tp)]
+
+
+@pytest.mark.parametrize("kind", ["positive", "negative", "option-positive", "option-negative", "composition", "files"])
+def test_local_object_evidence(kind, evidence_versions, record_property):
+    versions = evidence_versions
+    if kind == "files":
+        rows = list(file_cases())
+        for case, text in rows:
+            reading = sg.read(text)
+            assert not reading.understood and reading.why and not reading.commands and not reading.capped, case
+            assert all(policy.assess(text).level == "run" for _, policy in versions), case
+    elif kind == "composition":
+        rows = stratified(compositions())
+        for case, standalone, text in rows:
+            reading = sg.read(text)
+            assert not reading.understood and not reading.commands, case
+            assert RANK[tp.assess(text).level] >= RANK[tp.assess(standalone).level], case
+        assert_matrix(matrix(((case, text) for case, _, text in rows), versions))
+    else:
+        generate = {"positive": positives, "negative": negatives,
+                    "option-positive": option_positives, "option-negative": option_negatives}[kind]
+        rows = stratified(generate())
+        # Reading is a text-only check, including intentionally refused carriers.
+        for _, text in rows:
+            sg.read(text)
+        assert_matrix(matrix(rows, versions), negative="negative" in kind)
+    record_property("generated_rows", len(rows))
 
 
 def matrix(rows, versions):
@@ -176,6 +272,10 @@ def main():
     result = {"method": "reconstructed documented shapes; original review generator was not supplied"}
     result["positive"] = matrix(positives(), versions)
     result["negative"] = matrix(negatives(), versions)
+    result["option_positive"] = matrix(option_positives(), versions)
+    result["option_negative"] = matrix(option_negatives(), versions)
+    previous = snapshot("f0c45cd4")
+    result["option_before_fix"] = matrix(option_positives(), [*versions[:2], previous])
     # These eight named classes reproduce the review's 56 changed negatives.
     changed_names = {row[0] for row in OPERANDS[:8]}
     result["review_changed_operands"] = matrix(
@@ -191,22 +291,19 @@ def main():
                 losses[before + "->" + after] += 1
         result["composition"][label + "_standalone_losses"] = losses
     files = []
-    for seed in FILE_SEEDS:
-        for family, text in (("file-script", "bash ./case.sh"), ("cwd-script", "cd child; bash case.sh"),
-                             ("written-script", "printf '%s\\n' " + shlex.quote(seed.text) + " > case.sh; bash case.sh"),
-                             ("link-script", "bash ./linked.sh")):
-            row = {"id": family + "/" + seed.id}
-            for label, (reader, policy) in zip(("main", "pr", "fixed"), versions):
-                reading = reader.read(text)
-                row[label] = dict(understood=reading.understood, why=reading.why,
-                                  empty=not reading.commands, capped=reading.capped,
-                                  level=policy.assess(text).level)
-            files.append(row)
+    for case, text in file_cases():
+        row = {"id": case}
+        for label, (reader, policy) in zip(("main", "pr", "fixed"), versions):
+            reading = reader.read(text)
+            row[label] = dict(understood=reading.understood, why=reading.why,
+                              empty=not reading.commands, capped=reading.capped,
+                              level=policy.assess(text).level)
+        files.append(row)
     result["file_families"] = files
     result["cost"] = cost(versions)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "matrix.json").write_text(json.dumps(result, indent=2) + "\n")
-    for name in ("positive", "negative", "composition"):
+    for name in ("positive", "negative", "option_positive", "option_negative", "option_before_fix", "composition"):
         value = result[name]
         print(name, value["cases"], json.dumps(value["transitions"], sort_keys=True),
               "toward-run", len(value["toward_run"]))
@@ -216,10 +313,8 @@ def main():
     for label in ("main", "pr", "fixed"):
         print(label, "worst median ms", max(row[label + "_median_ms"] for row in result["cost"]["assessment"]))
     print("isolated pass", result["cost"]["isolated_named_pass"])
-    assert not any(result[name]["toward_run"] for name in ("positive", "negative", "composition"))
-    assert not result["negative"]["changed_from_main"]
-    assert all(a == b for transition in result["positive"]["transitions"]["pr_to_fixed"]
-               for a, b in [transition.split("->")])
+    for name in ("positive", "negative", "option_positive", "option_negative", "composition"):
+        assert_matrix(result[name], negative="negative" in name)
     assert not result["composition"]["fixed_standalone_losses"]
     assert all(not row["fixed"]["understood"] and row["fixed"]["empty"] and row["fixed"]["why"]
                and not row["fixed"]["capped"] for row in files)
