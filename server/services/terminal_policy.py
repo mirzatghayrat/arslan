@@ -24,6 +24,13 @@ server/services/shell_text.py (S2b-1), Arslan's copy of Hermes' text handling: t
 pass, the variants with a newline at every real command start, and the quote masks. Hermes'
 MIT license is in THIRD_PARTY_NOTICES.md ("Terminal command reading").
 
+Operand-aware tuple rules may loosen the original flattened-tuple verdict only
+when _fully_accounted accepts every option in that program's own table. Unknown
+options, unsplittable clusters, missing values and unplaceable global options
+use the original bounded flattened matcher for that command. Argument spelling
+and case are preserved; only command words are normalized. Coverage gaps can
+therefore cost a confirmation, but cannot remove the original protection.
+
 Everything here is a pure function of the command text. It is a guard against mistakes and
 against instructions smuggled in through web pages, not a sandbox: the sandbox (S2a-1) is what
 holds a layer ③ command, and a command outside it runs with the user's own permissions.
@@ -379,12 +386,20 @@ def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tu
 
 
 def _verb(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
-    """Skip leading global options only; a later verb-looking operand stays data."""
+    """Skip leading options with separate, attached or clustered values."""
     i = 0
-    while i < len(args) and args[i].startswith("-"):
-        if args[i] == "--":
-            return args[i + 1:]
-        i += 2 if args[i] in values else 1
+    while i < len(args) and args[i].startswith("-") and args[i] != "-":
+        word = args[i]
+        i += 1
+        if word == "--":
+            return args[i:]
+        if word in values:
+            i += 1
+        elif not word.startswith("--"):
+            for offset, letter in enumerate(word[1:], 2):
+                if "-" + letter in values:
+                    i += offset == len(word)
+                    break
     return args[i:]
 
 
@@ -402,11 +417,11 @@ _OPTION_VALUES = {
     "gcloud": frozenset({"--project", "--configuration", "--account", "--billing-project",
                          "--impersonate-service-account", "--flags-file", "--format", "--verbosity"}),
     "aws": frozenset({"--profile", "--region", "--endpoint-url", "--output", "--query",
-                      "--ca-bundle", "--cli-read-timeout", "--cli-connect-timeout"}),
+                      "--ca-bundle", "--cli-read-timeout", "--cli-connect-timeout", "--color"}),
     "az": frozenset({"--subscription", "--output", "-o", "--query"}),
     "azcopy": frozenset({"--output-type", "--output-level", "--log-level"}),
-    "rclone": frozenset({"--config", "--log-file", "--log-level", "--transfers", "--checkers"}),
-    "s3cmd": frozenset({"-c", "--config", "--access_key", "--secret_key", "--host", "--host-bucket"}),
+    "rclone": frozenset({"--config", "--log-file", "--log-level", "--transfers", "--checkers", "--retries", "--bwlimit"}),
+    "s3cmd": frozenset({"-c", "--config", "--access_key", "--secret_key", "--host", "--host-bucket", "--encoding"}),
     "gh": frozenset({"-R", "--repo", "--hostname", "-X", "--method", "-f", "-F", "--field",
                      "--raw-field", "--input", "-H", "--header", "--cache", "-q", "--jq", "-t", "--template"}),
     "http": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
@@ -419,6 +434,145 @@ _OPTION_VALUES = {
                       "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
 }
 _DELETE_PROGRAMS = frozenset({"rm", "rmdir", "unlink", "srm", "trash"})
+
+
+# Tables are deliberately finite and program-specific. An omitted option uses
+# the legacy floor, including on programs whose supported table is empty.
+_OPTION_VALUES.update({
+    "git": _GIT_VALUES | {"-m", "--message", "--author", "--format"},
+    "security": frozenset({"-p", "-a", "-s", "-c", "-C", "-D", "-j", "-l", "-r", "-P", "-t"}),
+    "xurl": frozenset({"--auth", "--username"}),
+    "npm": frozenset({"--registry", "--prefix"}),
+    "pnpm": frozenset({"--registry", "--dir", "-C"}),
+    "yarn": frozenset({"--cwd", "--registry"}),
+    "cargo": frozenset({"--manifest-path", "--target-dir", "--color"}),
+    "twine": frozenset({"--repository", "-r", "--config-file"}),
+    "docker": frozenset({"--config", "--context", "-c", "--host", "-H"}),
+    "terraform": frozenset({"-chdir"}),
+    "kubectl": frozenset({"--context", "--namespace", "-n", "--kubeconfig"}),
+    "vercel": frozenset({"--cwd", "--token", "-t", "--scope"}),
+    "osascript": frozenset({"-e", "-l", "-s"}),
+    "open": frozenset({"-a", "-b"}),
+    "himalaya": frozenset({"--account", "-a", "--config", "-c"}),
+    "ssh": frozenset({"-p", "-i", "-o", "-F", "-J", "-l"}),
+    "scp": frozenset({"-P", "-i", "-o", "-F", "-J"}),
+    "sftp": frozenset({"-P", "-i", "-o", "-F", "-b"}),
+    "autossh": frozenset({"-M", "-p", "-i", "-o"}),
+    "rsync": frozenset({"-e", "--rsh", "--exclude", "--include"}),
+    "kill": frozenset({"-s"}), "pkill": frozenset({"-u", "-U", "-P"}),
+    "killall": frozenset({"-u", "-t"}),
+    "screencapture": frozenset({"-T", "-t", "-R", "-w"}),
+    "find": frozenset({"-name", "-path", "-type"}),
+})
+_OPTION_FLAGS = {
+    "curl": "-s -S -O -I -L -v -f --head --silent --show-error --location",
+    "wget": "-H -q -v -c --quiet --verbose --spider",
+    "gsutil": "-m -q -D -v", "gcloud": "-q --quiet --no-user-output-enabled",
+    "aws": "--debug --no-cli-pager --no-sign-request --no-verify-ssl",
+    "az": "--verbose --debug --only-show-errors", "azcopy": "--help --version",
+    "rclone": "-q -v --dry-run", "s3cmd": "-v -q -d --verbose --dry-run",
+    "gh": "--help --version --paginate --silent --include -i",
+    "http": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "https": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "xh": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "xhs": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "security": "-v -q -i -h --help -w -g", "xurl": "-v --verbose --help",
+    "git": "--no-pager --bare --global --system --list -l --get --get-all --show-origin",
+    "rm": "-f -r -R -i -I -v -d -P -W --force --recursive",
+    "rmdir": "-p -v", "unlink": "", "srm": "-f -r -R -v -s -m -z", "trash": "-v",
+    "dd": "", "diskutil": "", "newfs_apfs": "-v", "newfs_hfs": "-v -J",
+    "kill": "-1 -9 -KILL -SIGKILL", "shutdown": "-h -r -k", "reboot": "-q", "halt": "-q",
+    "poweroff": "", "sudo": "-n -S", "osascript": "-i", "shortcuts": "", "imsg": "",
+    "mail": "", "mailx": "", "mutt": "", "sendmail": "-t -i", "msmtp": "-t -i",
+    "himalaya": "--debug --trace", "ssh-copy-id": "", "sshpass": "", "mosh": "",
+    "ftp": "", "telnet": "", "socat": "", "ssh": "-v -q -N -T", "scp": "-r -q -v -p",
+    "sftp": "-q -v", "autossh": "-f -N", "nc": "-z -v -n -u", "ncat": "-z -v -n -u",
+    "netcat": "-z -v -n -u", "rsync": "-a -v -z -r --dry-run",
+    "npm": "--dry-run --silent", "pnpm": "--dry-run --silent", "yarn": "--silent",
+    "cargo": "-q -v --quiet --verbose --dry-run", "twine": "--verbose --non-interactive",
+    "docker": "-D --debug", "terraform": "-help -version", "kubectl": "--help",
+    "vercel": "--prod --yes -y --debug -d", "killall": "-9 -v -q", "pkill": "-9 -f -x",
+    "launchctl": "", "defaults": "", "crontab": "-l -r", "tccutil": "",
+    "networksetup": "-setairportpower", "systemsetup": "-settimezone",
+    "pmset": "-g -a -b -c", "spctl": "--status --master-disable --master-enable",
+    "scutil": "--set --get", "open": "-n -g -j -R -W -F -e -t",
+    "screencapture": "-x -i -c -C", "pbpaste": "",
+    "tee": "-a -i", "cp": "-R -r -f -i -p -v", "mv": "-f -i -n -v",
+    "ln": "-s -f -n", "install": "", "ditto": "", "truncate": "", "touch": "",
+    "chmod": "-R", "chown": "-R", "chflags": "-R", "xattr": "-w -d -r",
+    "sed": "", "perl": "", "ruby": "", "find": "-delete -exec -execdir -print",
+}
+_OPTION_FLAGS = {program: frozenset(flags.split()) for program, flags in _OPTION_FLAGS.items()}
+# Only these programs have leading options that this reader can place before a
+# subcommand. Other verb programs must fall back if a global option is present.
+_GLOBAL_OPTIONS = {
+    program: _OPTION_VALUES.get(program, frozenset()) | _OPTION_FLAGS[program]
+    for program in ("gsutil", "gcloud", "aws", "az", "azcopy", "rclone", "s3cmd", "gh",
+                    "git", "security", "xurl", "npm", "pnpm", "yarn", "cargo", "twine",
+                    "docker", "terraform", "kubectl", "vercel", "himalaya")
+}
+# Security's subcommand options are not global flags; git's commit options are
+# likewise not meaningful ahead of its command word.
+_GLOBAL_OPTIONS["security"] = frozenset({"-p", "-q", "-v", "-i", "-h", "--help"})
+_GLOBAL_OPTIONS["git"] = _GIT_VALUES | {"--no-pager", "--bare"}
+_VERB_PROGRAMS = frozenset(_GLOBAL_OPTIONS) | {
+    "diskutil", "shortcuts", "imsg", "launchctl", "defaults", "tccutil",
+}
+
+
+def _fully_accounted(program: str, args: tuple[str, ...]) -> bool:
+    """A single admission gate for every tuple rule; never guess an arity."""
+    values = _OPTION_VALUES.get(program, frozenset())
+    flags = _OPTION_FLAGS.get(program, frozenset())
+    globals_ = _GLOBAL_OPTIONS.get(program, frozenset())
+    before_command = program in _VERB_PROGRAMS
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if word == "--":
+            return True
+        if not word.startswith("-") or word == "-":
+            before_command = False
+            continue
+        option, equals, _ = word.partition("=")
+        if option in values or word in flags or word.startswith("--"):
+            if option not in values and (word not in flags or equals):
+                return False
+            options = (option,)
+            consumes = option in values and not equals
+        else:
+            options = []
+            consumes = False
+            for offset, letter in enumerate(word[1:], 2):
+                option = "-" + letter
+                if option not in values and option not in flags:
+                    return False
+                options.append(option)
+                if option in values:
+                    consumes = offset == len(word)
+                    break
+        if before_command and any(option not in globals_ for option in options):
+            return False
+        if consumes:
+            if i == len(args):
+                return False
+            i += 1
+    return True
+
+
+def _legacy_named_rules(words: tuple[str, ...]) -> set[str]:
+    """The original bounded flattened-tuple matcher, used only on coverage gaps."""
+    command = " ".join(words)
+    if shell_text.too_complex(command):
+        command = shell_text.over_limit_forms(command)[0]
+    found = {key for key, pattern, _, masked in _FORBID_C
+             if not masked and key != "arslan-keys" and pattern.match(command)}
+    found.update(key for key, pattern, _ in _ASK_C if pattern.match(command))
+    if ((_DELETE_LINE.match(command) or _FIND_DELETE.match(command))
+            and _deletes_outside((command,))):
+        found.add("delete-outside")
+    return found
 
 
 def _options(args: tuple[str, ...], values: frozenset[str]):
@@ -481,6 +635,10 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     The old text rules remain an independent conservative floor.
     """
     program, args = words[0].lower(), words[1:]
+    if not _fully_accounted(program, args):
+        return _legacy_named_rules(words)
+    if program in _GLOBAL_OPTIONS and program not in {"security", "git"}:
+        args = _verb(args, _OPTION_VALUES.get(program, frozenset()))
     lower = tuple(w.lower() for w in args)
     first = lower[0] if lower else ""
     found: set[str] = set()
@@ -605,27 +763,27 @@ def _uploads(program: str, args: tuple[str, ...]) -> bool:
             option in {"--form", "--multipart", "--raw", "-f"} for option, _ in options) or any(
             re.match(r"[A-Za-z_][\w.\-\[\]]*(?::=|=|@)(?!=)", w) for w in operands[1:])
     values = _OPTION_VALUES.get(program, frozenset())
-    verb = tuple(w.lower() for w in _verb(args, values))
-    if program == "gcloud" and verb and verb[0] in {"alpha", "beta"}:
+    verb = _verb(args, values)
+    if program == "gcloud" and verb and verb[0].lower() in {"alpha", "beta"}:
         verb = _verb(verb[1:], values)
     paths = {"gcloud": {"storage": {"cp", "mv", "rsync"}},
              "aws": {"s3": {"cp", "mv", "sync", "rm"}, "s3api": {"put-object", "upload-part"}},
              "gh": {"release": {"upload"}}}
     if program in paths and verb:
         rest = _verb(verb[1:], values)
-        return bool(rest and rest[0] in paths[program].get(verb[0], ()))
-    if program == "az" and verb and verb[0] == "storage":
+        return bool(rest and rest[0].lower() in paths[program].get(verb[0].lower(), ()))
+    if program == "az" and verb and verb[0].lower() == "storage":
         rest = _verb(verb[1:], values)
-        if rest and rest[0] in {"blob", "file", "fs"}:
+        if rest and rest[0].lower() in {"blob", "file", "fs"}:
             tail = _verb(rest[1:], values)
-            if rest[0] == "fs" and tail and tail[0] == "file":
+            if rest[0].lower() == "fs" and tail and tail[0].lower() == "file":
                 tail = _verb(tail[1:], values)
-            return bool(tail and tail[0] in {"upload", "upload-batch", "sync"})
+            return bool(tail and tail[0].lower() in {"upload", "upload-batch", "sync"})
     verbs = {"gsutil": {"cp", "copy", "mv", "move", "ren", "rename", "rsync"},
              "azcopy": {"copy", "cp", "c", "sync", "sc", "s"},
              "rclone": {"copy", "copyto", "move", "moveto", "sync", "bisync", "rcat", "copyurl"},
              "s3cmd": {"put", "sync", "cp", "mv"}}
-    return bool(verb and verb[0] in verbs.get(program, ()))
+    return bool(verb and verb[0].lower() in verbs.get(program, ()))
 
 
 def _over_limit(forms: tuple[str, ...]) -> bool:
