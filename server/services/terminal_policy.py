@@ -356,11 +356,202 @@ def _detection_texts(text: str) -> tuple[str, ...]:
 
 
 @functools.lru_cache(maxsize=64)
-def _command_texts(text: str) -> tuple[str, ...]:
-    """Reader commands with quotes removed, for named rules only. Match at their start: separators in an argument
-    are still data, not another command. Keep the existing regex limits on the rebuilt text too."""
-    forms = (" ".join(words) for words in shell_grammar.read(text).commands)
-    return tuple(shell_text.over_limit_forms(form)[0] if shell_text.too_complex(form) else form for form in forms)
+def _command_words(text: str) -> tuple[tuple[str, ...], ...]:
+    """Only additive checks may use a parsed prefix; it never grants permission."""
+    return shell_grammar.read_prefix(text).commands
+
+
+def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
+    """Operands after options, preserving each word, including empty words and `--`."""
+    out = []
+    options = True
+    skip = False
+    for word in args:
+        if skip:
+            skip = False
+        elif options and word == "--":
+            options = False
+        elif options and word.startswith("-") and word != "-":
+            skip = word in values
+        else:
+            out.append(word)
+    return tuple(out)
+
+
+def _verb(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
+    """Skip leading global options only; a later verb-looking operand stays data."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        if args[i] == "--":
+            return args[i + 1:]
+        i += 2 if args[i] in values else 1
+    return args[i:]
+
+
+_GIT_VALUES = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"})
+_CLOUD_VALUES = frozenset({"--profile", "--region", "--project", "--configuration", "--account",
+                           "--endpoint-url", "--subscription", "--output", "-o", "-m"})
+_DELETE_PROGRAMS = frozenset({"rm", "rmdir", "unlink", "srm", "trash"})
+
+
+def _named_rules(words: tuple[str, ...]) -> set[str]:
+    """Named operations on parsed argv, never on a flattened or reparsed command.
+
+    Each program decides which words are verbs, flags, option values or paths.
+    The old text rules remain an independent conservative floor.
+    """
+    program, args = words[0].lower(), words[1:]
+    lower = tuple(w.lower() for w in args)
+    first = lower[0] if lower else ""
+    found: set[str] = set()
+
+    def add(rule: str, matches: bool) -> None:
+        if matches:
+            found.add(rule)
+
+    if program == "sudo":
+        found.add("sudo")
+    if program == "security":
+        add("keychain-secrets", first in {"dump-keychain", "export"} or
+            first in {"find-generic-password", "find-internet-password"} and
+            any(w in {"-w", "-g"} for w in _security_flags(args[1:])))
+        add("keychain-write", bool(re.fullmatch(r"(?:add-|delete-|set-)[\w-]+|import", first)))
+    if program in _DELETE_PROGRAMS:
+        targets = _operands(args)
+        add("delete-outside", not targets or any(_outside_target(w) for w in targets))
+        add("trash", any(re.search(r"(?:^|/)\.Trash(?:es)?(?:/|$)", w, re.I) for w in targets))
+        if program == "rm":
+            add("wipe-root", any(re.fullmatch(r"/(?:(?:\.\.?)?/)*(?:\.\.?)?\**", w) for w in targets))
+            add("wipe-home", any(re.fullmatch(r"(?:~|\$\{?HOME\}?)(?:/?|/\*)?", w, re.I) for w in targets))
+            add("macos-roots", any(re.fullmatch(_ROOTS, w, re.I) for w in targets))
+    if program == "find":
+        actions = {"-delete", "-exec", "-execdir"}.intersection(args)
+        deleting = "-delete" in actions or any(
+            args[i] in {"-exec", "-execdir"} and args[i + 1].lower() in _DELETE_PROGRAMS
+            for i in range(len(args) - 1))
+        starts = args[:next((i for i, w in enumerate(args) if w.startswith("-") or w in {"!", "("}), len(args))]
+        add("delete-outside", deleting and (not starts or any(_outside_target(w) for w in starts)))
+        add("trash", deleting and any(re.search(r"(?:^|/)\.Trash(?:es)?(?:/|$)", w, re.I) for w in starts))
+    add("raw-disk", program == "dd" and any(re.match(r"of=/dev/r?disk\d", w, re.I) for w in args)
+        or program == "diskutil" and bool(re.fullmatch(r"erase\w*|zeroDisk|secureErase|randomDisk|partitionDisk|reformat", first, re.I))
+        or bool(re.fullmatch(r"newfs_\w+", program)))
+    if program == "kill":
+        add("kill-all", "-1" in args)
+        add("force-kill", any(w in {"-9", "-kill", "-sigkill"} for w in lower))
+    add("shutdown", program in {"shutdown", "reboot", "halt", "poweroff"})
+    add("apple-events", program == "osascript")
+    add("shortcuts", program == "shortcuts" and first == "run")
+    add("send-mail", program in {"mail", "mailx", "sendmail", "msmtp", "mutt"}
+        or program == "himalaya" and first in {"send", "write", "reply", "forward"})
+    add("send-message", program == "imsg" and first == "send"
+        or program == "xurl" and first in {"post", "tweet", "/2/tweets"})
+    add("upload", _uploads(program, args))
+    add("remote-shell", program in {"ssh", "ssh-copy-id", "sshpass", "autossh", "mosh", "scp", "sftp", "ftp", "telnet", "socat"}
+        or program in {"nc", "ncat", "netcat"} and not any(w.startswith("-") and "z" in w for w in args)
+        or program == "rsync" and any(":" in w for w in _operands(args)))
+    if program == "git":
+        verb = _verb(args, _GIT_VALUES)
+        add("git-push", bool(verb) and verb[0].lower() == "push")
+        add("protected-write", bool(verb) and verb[0].lower() == "config"
+            and bool({"--global", "--system"}.intersection(verb[1:]))
+            and not any(w in {"-l", "--list"} or w.startswith(("--get", "--show-")) for w in verb[1:]))
+    add("publish", program in {"npm", "pnpm", "yarn", "cargo"} and first == "publish"
+        or program == "twine" and first == "upload"
+        or program == "gh" and (len(lower) >= 2 and first in {"pr", "issue", "release", "repo", "gist"}
+                                and lower[1] in {"create", "delete", "merge", "close", "edit", "comment"}
+                                or first == "api" and _api_writes(args[1:]))
+        or program == "docker" and (first == "push" or lower[:2] == ("image", "push"))
+        or program == "terraform" and first in {"apply", "destroy"}
+        or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
+        or program == "vercel" and (not args or first in {"deploy", "--prod"}))
+    add("force-kill", program in {"killall", "pkill"})
+    add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
+        or program == "defaults" and first == "write" or program == "crontab" and first != "-l")
+    add("system-settings", program == "tccutil" and first == "reset"
+        or program in {"networksetup", "systemsetup"} and bool(re.fullmatch(r"-set\w*", first))
+        or program == "pmset" and first != "-g" or program == "spctl" or program == "scutil" and first == "--set")
+    if program == "open":
+        add("open-app", any(re.fullmatch(_SCRIPT_APPS, args[i + 1], re.I)
+                            for i, w in enumerate(args[:-1]) if re.fullmatch(r"-[a-zA-Z]*[ab]", w))
+            or any(re.match(r"[a-z][\w+.-]*:", w, re.I) or
+                   re.search(r"\.(?:app|command|tool|sh|terminal|workflow|scpt|applescript|shortcut)$", w, re.I)
+                   for w in _operands(args, frozenset({"-a", "-b"}))))
+    add("screen-clipboard", program in {"screencapture", "pbpaste"})
+    if program in {"tee", "cp", "mv", "ln", "install", "ditto", "rsync", "truncate", "touch",
+                   "chmod", "chown", "chflags", "xattr", "dd", "sed", "perl", "ruby"}:
+        add("protected-write", any(re.match(_PROTECTED_PATH, w.split("=", 1)[-1], re.I) for w in args))
+    return found
+
+
+def _security_flags(args: tuple[str, ...]) -> tuple[str, ...]:
+    # These options consume a value, even when that value looks like another option.
+    flags = []
+    skip = False
+    for word in args:
+        if skip:
+            skip = False
+        elif word == "--":
+            break
+        elif word.startswith("-"):
+            flags.append(word)
+            skip = word in {"-a", "-s", "-c", "-C", "-D", "-j", "-l", "-r", "-p", "-P", "-t"}
+    return tuple(flags)
+
+
+def _api_writes(args: tuple[str, ...]) -> bool:
+    return any(w in {"-f", "-F", "--field", "--raw-field", "--input"} or
+               w.startswith(("--field=", "--raw-field=", "--input=")) or
+               w in {"-X", "--method"} and i + 1 < len(args) and args[i + 1].upper() != "GET" or
+               w.startswith("--method=") and w.partition("=")[2].upper() != "GET"
+               for i, w in enumerate(args))
+
+
+def _uploads(program: str, args: tuple[str, ...]) -> bool:
+    if program in {"curl", "wget"}:
+        skip = False
+        for i, w in enumerate(args):
+            if skip:
+                skip = False
+                continue
+            if w == "--":
+                break
+            if program == "curl" and (re.match(r"--(?:data|form|upload-file|json)(?:[-=]|$)", w)
+                                       or re.match(r"-[a-zA-Z]*[dFT]", w)):
+                return True
+            if program == "wget" and re.match(r"--post", w):
+                return True
+            if w in {"-X", "--request", "--method"} and i + 1 < len(args) and args[i + 1].upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+                return True
+            if re.fullmatch(r"(?:--request=|--method=|-X)(?:POST|PUT|PATCH|DELETE)", w, re.I):
+                return True
+            skip = w in {"-o", "-O", "-H", "-A", "-u", "-e", "--output", "--header", "--user", "--url", "--request", "--method", "-X"}
+        return False
+    if program in {"http", "https", "xh", "xhs"}:
+        operands = _operands(args, frozenset({"--pretty", "--style", "--print", "--output", "-o"}))
+        return bool(operands and operands[0].upper() in {"POST", "PUT", "PATCH", "DELETE"}) or any(
+            w in {"--form", "--multipart", "--raw", "-f"} for w in args) or any(
+            re.match(r"[A-Za-z_][\w.\-\[\]]*(?::=|=|@)(?!=)", w) for w in operands[1:])
+    verb = tuple(w.lower() for w in _verb(args, _CLOUD_VALUES))
+    if program == "gcloud" and verb and verb[0] in {"alpha", "beta"}:
+        verb = _verb(verb[1:], _CLOUD_VALUES)
+    paths = {"gcloud": {"storage": {"cp", "mv", "rsync"}},
+             "aws": {"s3": {"cp", "mv", "sync", "rm"}, "s3api": {"put-object", "upload-part"}},
+             "gh": {"release": {"upload"}}}
+    if program in paths and verb:
+        rest = _verb(verb[1:], _CLOUD_VALUES)
+        return bool(rest and rest[0] in paths[program].get(verb[0], ()))
+    if program == "az" and verb and verb[0] == "storage":
+        rest = _verb(verb[1:], _CLOUD_VALUES)
+        if rest and rest[0] in {"blob", "file", "fs"}:
+            tail = _verb(rest[1:], _CLOUD_VALUES)
+            if rest[0] == "fs" and tail and tail[0] == "file":
+                tail = _verb(tail[1:], _CLOUD_VALUES)
+            return bool(tail and tail[0] in {"upload", "upload-batch", "sync"})
+    verbs = {"gsutil": {"cp", "copy", "mv", "move", "ren", "rename", "rsync"},
+             "azcopy": {"copy", "cp", "c", "sync", "sc", "s"},
+             "rclone": {"copy", "copyto", "move", "moveto", "sync", "bisync", "rcat", "copyurl"},
+             "s3cmd": {"put", "sync", "cp", "mv"}}
+    return bool(verb and verb[0] in verbs.get(program, ()))
 
 
 def _over_limit(forms: tuple[str, ...]) -> bool:
@@ -484,13 +675,13 @@ def as_shell(command: str, argv=None) -> str:
 
 def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
     masked = None
-    commands = _command_texts(text)
+    named_rules = set().union(*(_named_rules(words) for words in _command_words(text)))
     for key, pattern, why, quote_masked in _FORBID_C:
         if quote_masked:
             masked = masked or _masked_texts(texts)
         named = not quote_masked and key != "arslan-keys"
         if (_matches(pattern, masked if quote_masked else texts)
-                or (named and any(pattern.match(command) for command in commands))):
+                or (named and key in named_rules)):
             return Assessment("forbid", key, why)
     return None
 
@@ -504,14 +695,13 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
     return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
-def _layer_two(texts: tuple[str, ...], commands: tuple[str, ...] = ()) -> list[tuple[str, str]]:
+def _layer_two(texts: tuple[str, ...], commands: tuple[tuple[str, ...], ...] = ()) -> list[tuple[str, str]]:
+    named_rules = set().union(*(_named_rules(words) for words in commands))
     found = [(key, why) for key, pattern, why in _ASK_C
-             if _matches(pattern, texts) or any(pattern.match(command) for command in commands)]
+             if _matches(pattern, texts) or key in named_rules]
     if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
-    if _deletes_outside(texts) or any(
-            (_DELETE_LINE.match(command) or _FIND_DELETE.match(command)) and _deletes_outside((command,))
-            for command in commands):
+    if _deletes_outside(texts) or "delete-outside" in named_rules:
         found.insert(0, _DELETE_OUTSIDE)
     seen: set[str] = set()
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
@@ -531,7 +721,7 @@ def assess(command: str) -> Assessment:
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(texts, _command_texts(text))
+    found = _layer_two(texts, _command_words(text))
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
     hidden = _hidden_code(texts)
@@ -550,7 +740,7 @@ def ask_rules(command: str) -> set[str]:
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(texts, _command_texts(text))} | ({UNREADABLE} if _hidden_code(texts) else set())
+    return {key for key, _why in _layer_two(texts, _command_words(text))} | ({UNREADABLE} if _hidden_code(texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to

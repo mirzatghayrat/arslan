@@ -101,6 +101,7 @@ _LAUNCHERS = frozenset({"watch", "script", "tmux", "screen", "parallel", "concur
 _INTERPRETER = re.compile(r"(?:bash|sh|zsh|ksh|mksh|dash|ash|fish|csh|tcsh|pwsh|nu|xonsh|elvish|yash|rc|python|pypy|node"
                           r"|nodejs|deno|bun|perl|ruby|php|rscript|lua|luajit|tclsh|swift|julia)[0-9.-]*")
 _PYTHONS = ("python", "pypy")
+_NON_SCRIPT_SUBCOMMANDS = {"swift": {"build"}, "bun": {"install"}, "deno": {"info"}}
 _FIND_RUNS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 
 
@@ -111,6 +112,19 @@ class Reading:
     capped: bool = False       # past MAX_TEXT, MAX_COMMANDS or MAX_DEPTH: nothing more of it should be built
     # Each command as its words with quotes removed (an expansion shows as written). Empty unless `understood`.
     commands: tuple[tuple[str, ...], ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class PrefixReading:
+    """Commands parsed before a refusal, for additive policy checks only.
+
+    This is never evidence that the whole input is understood. In particular,
+    nothing after the first unread form is scanned or treated as a command.
+    """
+    commands: tuple[tuple[str, ...], ...] = ()
+    refused: bool = False
+    why: str = ""
+    capped: bool = False
 
 
 class _NotUnderstood(Exception):
@@ -608,6 +622,8 @@ class _Reader:
                     raise _NotUnderstood("its find runs a command, or may from an expansion")
         elif _INTERPRETER.fullmatch(base):
             first = args[0].literal if args else None
+            if first in _NON_SCRIPT_SUBCOMMANDS.get(base, ()):
+                return
             if base in ("bash", "sh") and first in ("-c", "-lc"):
                 if not _names_something(args[1:]):
                     raise _NotUnderstood("it runs a shell script that is not written out")
@@ -683,19 +699,27 @@ def _unseen(c: str) -> bool:
     return c not in " \t\n" and unicodedata.category(c)[0] in "CZ"
 
 
-def read(text: str) -> Reading:
-    """Whether `text` is in the grammar above, and every command it would start."""
+def read_prefix(text: str) -> PrefixReading:
+    """Read once, retaining parsed words separately from whole-input acceptance."""
     if not isinstance(text, str):
-        return Reading(understood=False, why="it is not text")
+        return PrefixReading(refused=True, why="it is not text")
     if len(text) > MAX_TEXT:
-        return Reading(understood=False, why="it is longer than Arslan reads", capped=True)
+        return PrefixReading(refused=True, why="it is longer than Arslan reads", capped=True)
     if any(map(_unseen, set(text))):
-        return Reading(understood=False, why="it contains control or invisible characters")
+        return PrefixReading(refused=True, why="it contains control or invisible characters")
     commands: list[tuple[str, ...]] = []
     try:
         _Reader(text, 0, commands).read_all()
     except _NotUnderstood as exc:
-        return Reading(understood=False, why=exc.why, capped=exc.capped)
+        return PrefixReading(commands=tuple(commands), refused=True, why=exc.why, capped=exc.capped)
     except RecursionError:
-        return Reading(understood=False, why="it nests commands deeper than Arslan reads", capped=True)
-    return Reading(understood=True, commands=tuple(commands))
+        return PrefixReading(commands=tuple(commands), refused=True,
+                             why="it nests commands deeper than Arslan reads", capped=True)
+    return PrefixReading(commands=tuple(commands))
+
+
+def read(text: str) -> Reading:
+    """Whether `text` is in the grammar above; a refusal never exposes partial commands."""
+    prefix = read_prefix(text)
+    return Reading(understood=not prefix.refused, why=prefix.why, capped=prefix.capped,
+                   commands=() if prefix.refused else prefix.commands)
