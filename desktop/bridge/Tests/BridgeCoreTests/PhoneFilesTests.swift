@@ -12,6 +12,7 @@ final class FilesBackend: BackendReads {
     var deleted: [String] = []
     func json(_ path: String) async throws -> [String: Any] {
         asked.append(path)
+        if answers[path] == nil, path.hasSuffix("/history?limit=1") { return ["messages": []] }   // an ordinary conversation
         guard let answer = answers[path] else { throw BridgeError.code("mac_busy") }
         return try answer.get()
     }

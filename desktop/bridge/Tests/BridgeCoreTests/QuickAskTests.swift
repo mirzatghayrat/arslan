@@ -302,6 +302,82 @@ final class QuickAskTests: XCTestCase {
         XCTAssertEqual(body(got[1])["run_id"] as? Int, 87)
     }
 
+    // ------------------------------------------------------------------ a sub-session (SUB3's open end, #767)
+
+    static let child = "sub-4f1c2a9e-0d3b-4c6a-9e21-7b5d8c3f0a14"
+
+    static func probe(_ id: String) -> String { "/api/v1/phone/conversations/\(id)/history?limit=1" }
+
+    /// A phone never opens a sub-session. A chat.send or task.stop naming one is answered `not_found`, as an unknown
+    /// conversation is, and nothing about it is linked or sent: the Mac's own history read refuses it, and the
+    /// Bridge links a conversation a phone names only once that read answers.
+    func testAChatSendOrTaskStopNamingASubSessionIsNotFoundAndNeverLinked() async throws {
+        let p = try await pair()
+        let child = Self.child
+        p.backend.answers[Self.probe(child)] = .failure(.code("not_found"))           // server/api/phone.py, _off_the_phone
+        p.backend.answers[Self.probe("trip")] = .success(["conversation_id": "trip", "messages": []])
+        p.backend.answers["POST /api/v1/phone/tasks/job-2/stop"] = .success(["job_id": "job-2", "stopped": true])
+        let sent = try await send(p, ["conversation_id": child, "text": "a", "attachments": [], "client_msg_id": "s1"])
+        let stopped = try await p.phone.send(type: "task.stop", body: ["job_id": "job-1", "conversation_id": child], to: "mac-1").id
+        _ = try await send(p, ["conversation_id": "trip", "text": "plan it", "attachments": [], "client_msg_id": "s2"])
+        _ = try await send(p, ["conversation_id": "trip", "text": "and again", "attachments": [], "client_msg_id": "s3"])
+        try await p.phone.send(type: "task.stop", body: ["job_id": "job-2", "conversation_id": "trip"], to: "mac-1")
+        try await run(p)
+        let got = try await heard(p)
+        XCTAssertEqual(errors(got).map(\.code), ["not_found", "not_found"])
+        XCTAssertEqual(errors(got).map(\.related), [sent, stopped])
+        XCTAssertEqual(got.filter { $0.type == "error" }.map { body($0)["message"] as? String },
+                       Array(repeating: ConversationLinks.message("not_found"), count: 2), "the words an unknown one gets")
+        XCTAssertNil(p.channels.opened[child], "never linked")
+        XCTAssertEqual(p.channels.openCount, 1)
+        XCTAssertEqual(words(p, "trip"), ["plan it", "and again"], "an ordinary conversation links as before")
+        XCTAssertEqual(p.backend.posted.map(\.0), ["/api/v1/phone/tasks/job-2/stop"], "nothing stopped in the sub-session")
+        XCTAssertEqual(p.backend.asked, [Self.probe(child), Self.probe(child), Self.probe("trip")],
+                       "read once before a link opens, not again while it is open")
+    }
+
+    /// Fails closed: when the Mac's read doesn't answer, whatever the reason, the conversation counts as a
+    /// sub-session. It is `not_found` and stays unlinked.
+    func testAConversationTheMacCannotVouchForIsNotFoundAndNeverLinked() async throws {
+        let p = try await pair()
+        p.backend.answers[Self.probe("c-busy")] = .failure(.code("mac_busy"))         // the backend is busy or down
+        p.backend.answers[Self.probe("c-404")] = .failure(.code("file_unavailable"))
+        p.backend.answers[Self.probe("c-bad")] = .failure(.code("malformed"))
+        for id in ["c-busy", "c-404", "c-bad"] {
+            _ = try await send(p, ["conversation_id": id, "text": "a", "attachments": [], "client_msg_id": id])
+        }
+        try await p.phone.send(type: "task.stop", body: ["job_id": "job-1", "conversation_id": "c-busy"], to: "mac-1")
+        try await run(p)
+        let got = try await heard(p)
+        XCTAssertEqual(errors(got).map(\.code), Array(repeating: "not_found", count: 4))
+        XCTAssertTrue(p.channels.opened.isEmpty, "never linked")
+        XCTAssertTrue(p.backend.posted.isEmpty, "no stop reached the Mac")
+    }
+
+    /// The same, through the Bridge's real HTTP client: the backend's 404 `not_found` for a sub-session (and any
+    /// other refusal) leaves it unlinked; a 200 links it.
+    func testTheBackendsRefusalOfASubSessionKeepsItUnlinked() async throws {
+        URLProtocol.registerClass(StubBackend.self)
+        defer { URLProtocol.unregisterClass(StubBackend.self) }
+        let store = MemoryStore(), channels = ClosingChannels()
+        let mac = Mailbox(deviceID: "mac-1", signing: .init(), exchange: .init(), store: store)
+        let phone = Mailbox(deviceID: "iphone-1", signing: .init(), exchange: .init(), store: store)
+        mac.add(peer: Peer(deviceID: "iphone-1", signing: phone.signing.publicKey, exchange: phone.exchange.publicKey))
+        phone.add(peer: Peer(deviceID: "mac-1", signing: mac.signing.publicKey, exchange: mac.exchange.publicKey))
+        let links = ConversationLinks(channels: channels, mailbox: mac, backend: LocalBackend(port: StubBackend.port, token: "t"))
+        for (status, answer, id) in [(404, #"{"detail": "not_found"}"#, Self.child), (500, "{}", "c-500"),
+                                     (200, #"{"conversation_id": "trip", "messages": []}"#, "trip")] {
+            StubBackend.answer = (status, answer)
+            try await phone.send(type: "chat.send", body: ["conversation_id": id, "text": "a", "attachments": [], "client_msg_id": id],
+                                 to: "mac-1")
+            for received in try await mac.receive() { await links.handle(received, now: t0) }
+        }
+        let got = try await phone.receive().filter { $0.type != "ack" }
+        XCTAssertEqual(errors(got).map(\.code), ["not_found", "not_found"])
+        XCTAssertEqual(Set(channels.opened.keys), ["trip"])
+        XCTAssertEqual(words(Pair(mac: mac, phone: phone, channels: channels, backend: FilesBackend(), links: links), "trip"), ["a"])
+    }
+
     func testAJobInThePocketIsLeftOutOfThePhonesStatus() async throws {
         let p = try await pair()
         let job: (String, String) -> [String: Any] = { id, conversation in
