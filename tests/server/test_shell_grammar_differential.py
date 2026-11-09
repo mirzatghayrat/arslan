@@ -114,21 +114,10 @@ def test_observation_is_contained_and_real(tmp_path, logging_stubs):
         assert pulse.stat().st_size == size
 
 
-# Measured individually. A refused reading or a complete prediction must become
-# XPASS(strict); newly generated ids do not inherit an expected failure.
-FILE_GAPS = {(family, seed_id)
-             for family in ("file-script", "cwd-script", "written-script", "link-script")
-             for seed_id in ("terminal_policy-e62b04aadf39", "ordinary-4a5b5cf7d452",
-                             "ordinary-07810e3b45ae")}
-
-
 @pytest.mark.macos
 @macos
 @pytest.mark.parametrize("family,seed", [
-    pytest.param(family, seed, id=family + "/" + seed.id,
-                 marks=pytest.mark.xfail(strict=True, raises=AssertionError,
-                     reason=family + "/" + seed.id + ": named script starts an unlisted program")
-                 if (family, seed.id) in FILE_GAPS else ())
+    pytest.param(family, seed, id=family + "/" + seed.id)
     for family in FILE_FAMILIES for seed in FILE_SEEDS])
 def test_file_family(tmp_path, logging_stubs, family, seed, record_property):
     counts = dict(cases=1, refused=0, compared=0, withheld=0, timed_out=0, nonzero=0)
@@ -141,12 +130,12 @@ def test_file_family(tmp_path, logging_stubs, family, seed, record_property):
         if not reading.understood:
             counts["refused"] = 1
             record_property("family_counts", json.dumps(counts))
-            return  # A fixed reader makes a pending case XPASS(strict).
+            return  # File scripts and program paths are outside the reader's grammar.
         observed, expired, code = h.run(text)
         counts.update(compared=1, timed_out=int(expired), nonzero=int(code != 0))
         record_property("family_counts", json.dumps(counts))
         record_property("observed", json.dumps(sorted(observed)))
-        # Instrumentation/setup failures must not be absorbed by gap xfails.
+        # An observation must be complete before comparing its prediction.
         if expired or code != 0 or seed.text.split()[0] not in observed:
             pytest.fail(f"file observation failed: {family}/{seed.id}: {observed}, {expired}, {code}")
         predicted = {Path(command[0]).name.lower() for command in reading.commands}

@@ -673,8 +673,10 @@ def _replace_simple_shell_expansions(word: str) -> str:
 
 
 def _strip_shell_word_syntax(word: str) -> str:
+    # `\` + newline is a line continuation: the shell removes both (`pyth\<newline>on3` is `python3`), so a word read on
+    # raw text never comes out with a newline in it (one would cut an interpreter's name in two).
     return "".join(
-        word[i + 1] if kind == "esc" else word[i]
+        ("" if word[i + 1] == "\n" else word[i + 1]) if kind == "esc" else word[i]
         for kind, i, _, _ in _scan_shell(word) if kind != "quote"
     )
 
@@ -830,7 +832,8 @@ def _iter_shell_command_word_spans(command: str) -> tuple[tuple[int, int, str], 
 
 
 def _payload_variants(root: str, fresh):
-    """The payloads program-bearing options in *root* carry, and theirs in turn, each with its starts marked too."""
+    """The payloads program-bearing options in *root* carry, and theirs in turn, each with its starts marked too, and
+    with its command words spelled as the shell runs them."""
     pending = [root]
     while pending:
         for payload in _execution_flag_findings(pending.pop()):
@@ -841,6 +844,9 @@ def _payload_variants(root: str, fresh):
                 marked_payload = _mark_command_starts(payload)
                 if marked_payload != payload and fresh(marked_payload):
                     yield marked_payload
+                for spelled in _spelled_out(marked_payload):        # a quoted command word, read as the shell runs it
+                    if fresh(spelled):
+                        yield spelled
                 pending.append(payload)
 
 
@@ -875,13 +881,27 @@ def _command_detection_variants(command: str):
         yield marked
     # The variants above track quotes on NORMALIZED text, where `\"` is `"`: in `cat "f\"n"; rm -rf /` the start
     # sat inside a phantom quote. Mark starts on the RAW command, then normalize (" \n" survives a trailing \).
-    faithful = _normalize_command_for_detection(_mark_command_starts(_mask_quoted_newlines(command), marker=" \n"))
+    marked_raw = _mark_command_starts(_mask_quoted_newlines(command), marker=" \n")
+    faithful = _normalize_command_for_detection(marked_raw)
     if fresh(faithful):
         yield faithful
-    # r\m, r''m: every command word deobfuscated in one variant per nesting level (spans applied sorted;
-    # overlapping ones wait a round). One variant per word was O(words * len) on long heredocs.
+    # r\m, r''m, 'rm': every command word spelled as the shell runs it. The anchored rules read a word only after a
+    # newline, so it is spelled out on the text as normalized and on the text with a newline at every command start
+    # (`faithful`'s, read on the raw text and normalized after): a spelled word after `;` `&&` `||` `|` `&` `(` or
+    # `then` needs both at once. Only command words are spelled out, so a quoted argument stays data.
+    for variant in _spelled_out(normalized):
+        if fresh(variant):
+            yield variant
+    for variant in _spelled_out(marked_raw):
+        if fresh(variant := _normalize_command_for_detection(variant)):
+            yield variant
+
+
+def _spelled_out(command: str):
+    """*command* with every command word deobfuscated, in one variant per nesting level (spans applied sorted;
+    overlapping ones wait a round). One variant per word was O(words * len) on long heredocs."""
     pending = sorted(
-        ((word_start, word_end, deobfuscated) for word_start, word_end, word in _iter_shell_command_word_spans(normalized)
+        ((word_start, word_end, deobfuscated) for word_start, word_end, word in _iter_shell_command_word_spans(command)
          if (deobfuscated := _deobfuscate_shell_word_for_detection(word)) and deobfuscated != word),
         key=lambda span: span[:2],
     )
@@ -893,9 +913,7 @@ def _command_detection_variants(command: str):
             else:
                 applied.append(span)
                 cursor = span[1]
-        variant = _splice(normalized, applied)
-        if fresh(variant):
-            yield variant
+        yield _splice(command, applied)
         pending = carry
 
 

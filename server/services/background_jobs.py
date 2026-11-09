@@ -55,6 +55,13 @@ class Job:
     outside_seen: bool | Callable[[], bool] = field(default=True, repr=False)
     # SUB3: a sub-session's job: the conversation that started it, where its cards are asked.
     parent_id: str | None = None
+    # SUB4: once it ended, whether any of its turns read outside content; None until then, or when it did not end on
+    # its own (stopped, failed outside a turn): not known, so it counts as yes. And the files it wrote.
+    external_seen: bool | None = None
+    files: list[str] = field(default_factory=list)
+    # SUB4: a summary turn's reports, each framed as outside content: given to the model after the goal, never stored
+    # as the goal (the card and the task show the goal).
+    reports: str | None = field(default=None, repr=False)
     results: dict = field(default_factory=dict)   # check_id -> status
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -155,20 +162,28 @@ def active() -> list[Job]:
     return sorted((job for job in _jobs.values() if job.phase != "finished"), key=lambda job: job.started_at)
 
 
+def unreported() -> list[Job]:
+    """SUB4: jobs whose run has not returned yet: running, or finished and still reporting."""
+    return [job for job in _jobs.values() if job.task is not None and not job.task.done()]
+
+
 async def start(conversation_id: str, goal: str, criteria: list[dict], *,
-                outside_seen: bool | Callable[[], bool], origin: str = "mac", parent_id: str | None = None) -> Job:
+                outside_seen: bool | Callable[[], bool], origin: str = "mac", parent_id: str | None = None,
+                reports: str | None = None) -> Job:
     """S64-0: the job runs in a clean context, but its goal is someone's words, and every caller
     says whether they may carry outside content. A turn passes `untrusted.turn_so_far()`, asked
     when the job gets its slot: a queued job reads the history after that turn may have read more.
     The phone passes False (the user's own words), an accepted Inbox proposal True (text Arslan
-    put together). SUB3: `parent_id` makes it a sub-session's job (`sub_sessions.start`)."""
+    put together). SUB3: `parent_id` makes it a sub-session's job (`sub_sessions.start`). SUB4: `reports` makes it a
+    summary turn (`sub_sessions`), its id marked so its spend counts in its tree after a restart too."""
     goal = " ".join(goal.split())[:4000]
     if not goal:
         raise ValueError("background_goal_required")
-    job = Job(job_id=f"job-{uuid.uuid4()}", conversation_id=conversation_id, goal=goal,
-              acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac",
+    from server.services.sub_sessions import SUMMARY_JOB
+    job = Job(job_id=f"{SUMMARY_JOB if reports is not None else 'job-'}{uuid.uuid4()}", conversation_id=conversation_id,
+              goal=goal, acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac",
               outside_seen=True if outside_seen is None else outside_seen,   # None: nobody knows
-              parent_id=parent_id)
+              parent_id=parent_id, reports=reports)
     _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,
@@ -239,6 +254,7 @@ async def _run(job: Job) -> None:
             with untrusted.carried(job.outside_seen) as run:    # each of its turns starts from it
                 final_text, phase, reason = await _execute(job)
             job.outside_seen = run["seen"]          # S64-0b: or one of its turns read outside content
+            job.external_seen = bool(run["seen"])   # SUB4: only a job that ended on its own is believed
     except asyncio.CancelledError:
         phase, reason = "cancelled", None
     except Exception as exc:  # noqa: BLE001 — a job failure is reported, never raised into the loop
@@ -257,8 +273,13 @@ async def _run(job: Job) -> None:
         job.detail = reason
         try:
             _emit(job)
-            await _report(job, final_text)
-            await _report_to_project(job)
+            # A sub-session's result is posted in its own conversation only; its parent hears of it framed, in one
+            # summary turn (SUB4).
+            posted = await _report(job, final_text)
+            if job.reports is None:         # SUB4: a summary's done is not the commander accepting the work
+                await _report_to_project(job)
+            if job.parent_id:
+                await _sub_session_ended(job, posted)
         finally:
             # Last: bookkeeping nobody waits on (CI 38293278888 — a job stopped mid-write left its
             # interrupted transaction holding SQLite's write lock until the garbage collector freed
@@ -289,6 +310,14 @@ async def _report_to_project(job: Job) -> None:
         await project_evidence.job_finished(job.conversation_id, job.job_id, job.goal, job.outcome or "")
     except Exception as exc:  # noqa: BLE001 — bookkeeping; the job's own result is already posted
         logger.warning("background job %s not reported to its project: %s", job.job_id, type(exc).__name__)
+
+
+async def _sub_session_ended(job: Job, text: str) -> None:
+    try:
+        from server.services import sub_sessions
+        sub_sessions.ended(job, text)
+    except Exception as exc:  # noqa: BLE001 — bookkeeping; the job's own result is already posted
+        logger.warning("background job %s not reported to its parent: %s", job.job_id, type(exc).__name__)
 
 
 async def _goal_not_reached(job: Job, text: str) -> bool:
@@ -340,12 +369,18 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
 
     async def function(conversation_id, instruction, emit):
         async def body(sink):
-            if not job.parent_id:
-                return await arslan.background_body(conversation_id, instruction, _job_sink(job, sink), confirmations)
-            # SUB3: a brief that may carry outside content reaches the model framed as such.
-            goal = untrusted.wrap_external(instruction) if job.outside_seen is not False else instruction
-            return await arslan.background_body(conversation_id, goal, _job_sink(job, sink), confirmations,
-                                                sub_session=True)
+            goal = instruction
+            if job.parent_id and job.outside_seen is not False:
+                goal = untrusted.wrap_external(goal)     # SUB3: a brief that may carry outside content, framed
+            if job.reports is not None:
+                goal = f"{goal}\n\n{job.reports}"       # SUB4: a summary turn's reports, framed each
+            runtime = task_service.current()
+            try:
+                return await arslan.background_body(conversation_id, goal, _job_sink(job, sink), confirmations,
+                                                    **({"sub_session": True} if job.parent_id else {}))
+            finally:
+                if runtime is not None:                  # SUB4: what it wrote, for its report
+                    job.files = list(dict.fromkeys((*job.files, *sub_sessions.files_written(runtime.trace))))
         return await host_run.execute(conversation_id, instruction, emit, body, announce=False)
 
     # 0.1.61: everything the job asks (permissions.decide, Hands too) asks on its own card surface.
@@ -398,8 +433,8 @@ def budget_stop_of(budget: dict, *, pause_reason: str | None, tier: str) -> dict
     return {"reason": reason, "used": used, "limit": limit, "tier": tier}
 
 
-async def _report(job: Job, text: str) -> None:
-    """Post the result, tell the shell, offer voice mode one line. Best-effort."""
+async def _report(job: Job, text: str) -> str:
+    """Post the result, tell the shell, offer voice mode one line. Best-effort. Returns what was posted."""
     from server.orchestrator import memory, untrusted
     from server.ws import protocol
     body = text.strip()
@@ -421,6 +456,7 @@ async def _report(job: Job, text: str) -> None:
                         title=job.goal, summary=body or None, work="job")
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
+    return body
 
 
 async def _budget_note(job: Job) -> str:

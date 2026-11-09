@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Advisory, CapabilityCard, Severity } from "../../api/client.types";
+import type { Advisory, CapabilityCard, Severity, Vulns } from "../../api/client.types";
 import { Escaped, isolate } from "../../lib/outsideText";
 import { Row } from "./CapabilityProposeCard";
 
@@ -28,35 +28,43 @@ function Advisories({ list }: { list: Advisory[] }) {
  */
 export function SecurityRow({ card }: { card: CapabilityCard }) {
   const { t } = useTranslation();
+  const row = (body: React.ReactNode) => <Row label={t("discover.card_security")} testId="capability-card-security">{body}</Row>;
+  if (card.kind === "skill") return row(t("discover.card_vulnSkill"));
+  // CAP7b: each of a plugin's connections by its own lock, by name; its skills have nothing to look up.
+  if (card.kind === "plugin") return row(<span className="flex flex-col gap-2">
+    {(card.connections ?? []).map(c => <span key={c.name} className="flex flex-col gap-0.5" data-testid="plugin-security">
+      <span className="font-medium"><Escaped text={c.name} /></span><Facts name={c.name} v={c.vulns} /></span>)}
+    {(card.skills ?? []).length > 0 && <span className="text-[12px] text-muted-foreground">{t("discover.card_vulnSkill")}</span>}
+  </span>);
+  return card.vulns ? row(<Facts name={card.name} v={card.vulns} />) : null;
+}
+
+/** What OSV.dev knows of one lock: a single install's, or one of a plugin's connections'. */
+function Facts({ name: plain, v }: { name: string; v: Vulns }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
-  const v = card.vulns;
-  if (card.kind === "skill") {
-    return <Row label={t("discover.card_security")} testId="capability-card-security">{t("discover.card_vulnSkill")}</Row>;
-  }
-  if (!v) return null;
   if (v.state === "skipped") {
     const why = v.why === "remote" ? "card_vulnRemote" : v.why === "bundle" ? "card_vulnBundle"
       : v.why === "no_lock" ? "card_vulnNoLock" : "card_vulnNotChecked";
-    return <Row label={t("discover.card_security")} testId="capability-card-security">{t(`discover.${why}`)}</Row>;
+    return <span>{t(`discover.${why}`)}</span>;
   }
   if (v.state === "not_checked") {
-    return <Row label={t("discover.card_security")} testId="capability-card-security">
+    return (
       <span className="flex flex-col gap-1">
         <span className="text-ask" data-testid="vuln-not-checked">
           {t(v.why === "empty_lock" ? "discover.card_vulnEmptyLock" : "discover.card_vulnNotChecked")}</span>
         <span className="text-[12px] text-muted-foreground">{t("discover.card_vulnStillApply")}</span>
       </span>
-    </Row>;
+    );
   }
   // #661 max review: the counts include what the lists leave out, and the package's own worst is told apart from
   // its dependencies'.
   const sev = (s: Severity | null) => (s ? t(`discover.sev_${s}`) : "");
   const ownCount = v.own.length + v.own_more;
   const depCount = v.count - ownCount;
-  const name = isolate(card.name);
+  const name = isolate(plain);
   const part = v.asked < v.packages;
   return (
-    <Row label={t("discover.card_security")} testId="capability-card-security">
       <span className="flex flex-col gap-1.5">
         {v.count === 0 ? <span data-testid="vuln-summary">
           {part ? t("discover.card_vulnNonePart", { count: v.asked }) : t("discover.card_vulnNone", { count: v.packages })}</span>
@@ -87,10 +95,11 @@ export function SecurityRow({ card }: { card: CapabilityCard }) {
           {part ? t("discover.card_vulnAskedPart", { asked: v.asked, count: v.packages })
             : t("discover.card_vulnAsked", { count: v.packages })}</span>
       </span>
-    </Row>
   );
 }
 
+const own = (v: Vulns | undefined) => v?.state === "checked" && v.own.length > 0;
 /** Whether the package being installed has a known vulnerability of its own (the user's question 5, as the board
- *  draws it: then "Don't install" is the safe answer and installing is a deliberate click). */
-export const ownVulnerable = (card: CapabilityCard) => card.vulns?.state === "checked" && card.vulns.own.length > 0;
+ *  draws it: then "Don't install" is the safe answer and installing is a deliberate click). CAP7b: any of a plugin's
+ *  connections' packages. */
+export const ownVulnerable = (card: CapabilityCard) => own(card.vulns) || (card.connections ?? []).some(c => own(c.vulns));

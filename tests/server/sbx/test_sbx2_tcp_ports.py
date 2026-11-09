@@ -131,13 +131,8 @@ def test_complete_network_and_mach_allow_lists(mode):
                             f'(allow network-outbound (remote tcp "localhost:{PROXY_PORT}"))'],
         NetworkMode.PORT_22: ['(allow network-outbound (remote tcp "localhost:*"))',
                               '(allow network-outbound (remote tcp "*:22"))'],
-        NetworkMode.ANY_DECLARED: ['(allow network-outbound (literal "/private/var/run/mDNSResponder"))',
-                                   '(allow network-outbound (remote tcp "localhost:*"))',
-                                   '(allow network-outbound (remote tcp "*:*"))'],
     }
     expected_mach = ['(allow mach-lookup (global-name "com.apple.FSEvents"))']
-    if mode == NetworkMode.ANY_DECLARED:
-        expected_mach += ['(allow mach-lookup (global-name "com.apple.trustd.agent"))']
     assert network == expected_network[mode], "complete network allow list changed"
     assert mach == expected_mach, "complete mach-lookup allow list changed"
 
@@ -150,4 +145,4 @@ def test_complete_mach_selector_rejects_wildcard_grant(monkeypatch):
 
     monkeypatch.setattr(sys.modules[__name__], "default_deny_profile", mutated)
     with pytest.raises(AssertionError, match="complete mach-lookup allow list changed"):
-        test_complete_network_and_mach_allow_lists(NetworkMode.ANY_DECLARED)
+        test_complete_network_and_mach_allow_lists(NetworkMode.PROXY)

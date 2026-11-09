@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { isolate } from "../lib/outsideText";
 import { ChevronRight, Download, KeyRound, MessageSquare, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { capabilitiesApi, type CapabilityRow } from "../api/capabilities";
+import { capabilitiesApi, type CapabilityRow, type PluginPart } from "../api/capabilities";
+import { PluginParts, partRow } from "./capabilities/PluginParts";
 import { ApiError } from "../api/client";
 import { matches } from "../lib/capabilitySearch";
 import { formatUiDate } from "../lib/localeFormatting";
@@ -14,9 +15,11 @@ import McpServers from "./McpServers";
 import SkillImportPanel from "./SkillImportPanel";
 import { Button, Dialog, Notice, confirmSheet, toast } from "./kit";
 
-const SECTIONS = ["builtin", "skills", "connections"] as const;
+/** CAP7b: Plugins first (board Group), drawn only once one is installed, as every group but Connections is. */
+const SECTIONS = ["plugins", "builtin", "skills", "connections"] as const;
 type Filter = "all" | "on" | "canTurnOn";
-type Sheet = { kind: "row"; key: string } | { kind: "link" } | { kind: "manual" } | { kind: "import" } | null;
+type Sheet = { kind: "row"; key: string } | { kind: "part"; part: PluginPart } | { kind: "link" } | { kind: "manual" }
+  | { kind: "import" } | null;
 /** Built-in details that are a note to show (others, like a runtime name, feed the reason). */
 const NOTES = new Set(["own_folder_only", "first_use_setup"]);
 const FOLD_AFTER = 6;
@@ -27,6 +30,7 @@ const DELETE_BODY: Record<string, string> = {
   "skills:authored": "capabilityList.deleteBodyAuthored", "skills:installed": "capabilityList.deleteBodyInstalledSkill",
   "skills:unknown": "capabilityList.deleteBodyAuthored",     // D2(2): deletable; no link to add it back, its text to the Trash
   "connections:manual": "capabilityList.deleteBodyManual", "connections:installed": "capabilityList.deleteBodyInstalledConnection",
+  "plugins:installed": "capabilityList.deleteBodyPlugin",
 };
 // One helper for outside text across the web (UNI1): lib/outsideText.
 export { isolate } from "../lib/outsideText";
@@ -61,6 +65,7 @@ export default function CapabilitySwitches() {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [openSections, setOpenSections] = useState<Set<string>>(new Set());
+  const [inside, setInside] = useState<string | null>(null);     // the plugin whose parts are shown
   const [sheet, setSheet] = useState<Sheet>(null);
   const load = useCallback(async () => {
     try { setRows(await capabilitiesApi.list()); setFailed(false); }
@@ -109,31 +114,56 @@ export default function CapabilitySwitches() {
   const isMethod = (row: CapabilityRow) => row.key.startsWith("method:");
   const name = (row: CapabilityRow) => row.name
     ?? (isMethod(row) ? t(`methods.${row.key.slice(7)}`) : t(`capabilityList.${row.key}_name`));
+  const stopped = (row: CapabilityRow) => row.reason === "plugin_stopped";
   const what = (row: CapabilityRow) => row.section === "builtin" ? t(`capabilityList.${row.key}_what`)
-    : isMethod(row) ? t("capabilityList.methodWhat") : row.section === "skills" ? row.detail ?? "" : "";
-  const used = (row: CapabilityRow) => usedLabel(t, row.last_used, i18n?.resolvedLanguage);
+    : isMethod(row) ? t("capabilityList.methodWhat")
+    : row.section === "plugins" && stopped(row) ? t("capabilityList.plugin_stopped", { name: row.detail ?? "" })
+    : row.section === "skills" || row.section === "plugins" ? row.detail ?? "" : "";
+  const usedAt = (iso: string | null) => usedLabel(t, iso, i18n?.resolvedLanguage);
+  const used = (row: CapabilityRow) => usedAt(row.last_used);
   const reason = (row: CapabilityRow) => row.reason
     ? t(`capabilityList.reason_${row.reason}`, { detail: row.detail ?? "Node.js", defaultValue: row.reason }) : "";
   const all = rows ?? [];
   const counts = { on: all.filter(r => r.state === "on").length, canTurnOn: all.filter(r => r.state === "off" || r.state === "setup").length };
   const inFilter = all.filter(r => filter === "all" || (filter === "on" ? r.state === "on" : r.state === "off" || r.state === "setup"));
   // A connection is also found by how it is reached ("the one I pointed at playwright").
-  const shown = inFilter.filter(r => matches({ key: r.key, name: name(r), description: [what(r), r.reach ?? ""].join(" ") }, query));
+  // A plugin is also found by what it holds.
+  const shown = inFilter.filter(r => matches({ key: r.key, name: name(r), description: [what(r), r.reach ?? "",
+    ...(r.parts ?? []).map(p => p.name ?? "")].join(" ") }, query));
   const searching = query.trim() !== "";
-  const opened = sheet?.kind === "row" ? all.find(r => r.key === sheet.key) : undefined;
+  const opened = sheet?.kind === "row" ? all.find(r => r.key === sheet.key) : sheet?.kind === "part" ? partRow(sheet.part)
+    : undefined;
 
   const row = (r: CapabilityRow) => {
+    if (r.parts) {
+      return <div key={r.key} data-testid={`cap-${r.key}`} data-state={r.state} className="border-t border-border first:border-t-0">
+        {line(r)}
+        <div className="flex flex-col gap-1.5 px-4 pb-2.5">
+          <button type="button" aria-expanded={inside === r.key} data-testid={`plugin-inside-${r.key}`}
+            className="self-start text-[12px] text-muted-foreground hover:text-foreground"
+            onClick={() => setInside(inside === r.key ? null : r.key)}>
+            {t(inside === r.key ? "capabilityList.plugin_hide" : "capabilityList.plugin_show")}</button>
+          {inside === r.key && <PluginParts row={r} used={usedAt} onOpenPart={part => open({ kind: "part", part })} />}
+        </div>
+      </div>;
+    }
+    return line(r);
+  };
+  const line = (r: CapabilityRow) => {
     const switchable = r.switch !== null && (r.state === "on" || r.state === "off");
-    return <div key={r.key} data-testid={`cap-${r.key}`} data-state={r.state}
-      className={`flex items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0 ${r.state === "na" ? "opacity-55" : ""}`}>
+    const own = !r.parts;
+    return <div key={r.key} data-testid={own ? `cap-${r.key}` : undefined} data-state={own ? r.state : undefined}
+      className={`flex items-center gap-3 px-4 py-2.5 ${own ? "border-t border-border first:border-t-0" : ""} ${r.state === "na" ? "opacity-55" : ""}`}>
       <button type="button" data-testid={`cap-open-${r.key}`} onClick={() => open({ kind: "row", key: r.key })}
         className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
         <span className="flex flex-wrap items-center gap-2 text-[14px]"><bdi>{name(r)}</bdi>
           <span className="inline-flex items-center gap-1 text-[11px] text-subtle-foreground">
-            <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${DOT[r.state]}`} />{t(`capabilityList.state_${r.state}`)}</span></span>
+            <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${DOT[r.state]}`} />
+            {t(stopped(r) ? "capabilityList.parked_stopped" : `capabilityList.state_${r.state}`)}</span></span>
         <span className="text-[12px] text-subtle-foreground">
           {/* What it does can be outside text: isolated, so it cannot pass for the origin beside it (#500 review). */}
-          {what(r) && <><bdi>{what(r)}</bdi> · </>}{t(`capabilityList.origin_${r.origin}`)} · {used(r)}
+          {stopped(r) ? <bdi>{what(r)}</bdi>
+            : <>{what(r) && <><bdi>{what(r)}</bdi> · </>}{t(`capabilityList.origin_${r.origin}`)} · {used(r)}</>}
           {r.section === "builtin" && r.detail && NOTES.has(r.detail) ? <> · {t(`capabilityList.detail_${r.detail}`)}</> : null}
           {r.state === "setup" && r.reason === "mcp_error" && r.detail ? <> · <span className="font-mono">{r.detail}</span></> : null}
         </span>
@@ -223,6 +253,7 @@ export default function CapabilitySwitches() {
       <p className="px-1 text-[12px] leading-relaxed text-subtle-foreground">{t("capabilityList.addFoot")}</p>
     </aside>
     {opened && <CapabilitySheet row={opened} name={name(opened)} what={what(opened)} used={used(opened)} error={error}
+      usedAt={usedAt} onOpenPart={part => open({ kind: "part", part })} onSwitch={(row, on) => void flip(row, on)}
       onClose={() => setSheet(null)} onDelete={row => void remove(row)} onChanged={() => void load()} />}
     {sheet?.kind === "link" && <Dialog open onClose={() => setSheet(null)} width={640} testId="cap-link-sheet" padded title={t("capabilityList.addLink")}>
       <SkillImportPanel onImported={() => void load()} /></Dialog>}

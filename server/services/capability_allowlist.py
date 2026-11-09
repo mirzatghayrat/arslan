@@ -269,9 +269,10 @@ async def confirm_account(c: dict, allow: dict) -> str | None:
 
 async def confirm_repository(c: dict, allow: dict) -> str | None:
     """CAP7b: a plugin's package has no Registry publisher, so the plugin's own repository answers: one of the listed
-    GitHub organizations, still the one the list names."""
+    GitHub organizations, still the one the list names. By `repo` alone, the repository its files are read from: a
+    Registry candidate's publisher is read from its id, which names no repository."""
     from server.services import capability_search
-    who = capability_search.publisher_of(c)
+    who = capability_search.publisher_of({"repo": c.get("repo")})
     if who is None or who["kind"] != "github":
         return PUBLISHER_UNKNOWN
     return await _confirm_login(who["value"].lower(), allow)

@@ -302,6 +302,125 @@ final class QuickAskTests: XCTestCase {
         XCTAssertEqual(body(got[1])["run_id"] as? Int, 87)
     }
 
+    // ------------------------------------------------------------------ a sub-session (SUB3's open end, #767)
+
+    static let child = "sub-4f1c2a9e-0d3b-4c6a-9e21-7b5d8c3f0a14"
+
+    static func probe(_ id: String) -> String { "/api/v1/phone/conversations/\(id)/history?limit=1" }
+
+    /// A phone never opens a sub-session. A chat.send or task.stop naming one is answered `not_found`, as an unknown
+    /// conversation is, and nothing about it is linked or sent: the Mac's own history read refuses it, and the
+    /// Bridge links a conversation a phone names only once that read answers.
+    func testAChatSendOrTaskStopNamingASubSessionIsNotFoundAndNeverLinked() async throws {
+        let p = try await pair()
+        let child = Self.child
+        p.backend.answers[Self.probe(child)] = .failure(.code("not_found"))           // server/api/phone.py, _off_the_phone
+        p.backend.answers[Self.probe("trip")] = .success(["conversation_id": "trip", "messages": []])
+        p.backend.answers["POST /api/v1/phone/tasks/job-2/stop"] = .success(["job_id": "job-2", "stopped": true])
+        let sent = try await send(p, ["conversation_id": child, "text": "a", "attachments": [], "client_msg_id": "s1"])
+        let stopped = try await p.phone.send(type: "task.stop", body: ["job_id": "job-1", "conversation_id": child], to: "mac-1").id
+        _ = try await send(p, ["conversation_id": "trip", "text": "plan it", "attachments": [], "client_msg_id": "s2"])
+        _ = try await send(p, ["conversation_id": "trip", "text": "and again", "attachments": [], "client_msg_id": "s3"])
+        try await p.phone.send(type: "task.stop", body: ["job_id": "job-2", "conversation_id": "trip"], to: "mac-1")
+        try await run(p)
+        let got = try await heard(p)
+        XCTAssertEqual(errors(got).map(\.code), ["not_found", "not_found"])
+        XCTAssertEqual(errors(got).map(\.related), [sent, stopped])
+        XCTAssertEqual(got.filter { $0.type == "error" }.map { body($0)["message"] as? String },
+                       Array(repeating: ConversationLinks.message("not_found"), count: 2), "the words an unknown one gets")
+        XCTAssertNil(p.channels.opened[child], "never linked")
+        XCTAssertEqual(p.channels.openCount, 1)
+        XCTAssertEqual(words(p, "trip"), ["plan it", "and again"], "an ordinary conversation links as before")
+        XCTAssertEqual(p.backend.posted.map(\.0), ["/api/v1/phone/tasks/job-2/stop"], "nothing stopped in the sub-session")
+        XCTAssertEqual(p.backend.asked, [Self.probe(child), Self.probe(child), Self.probe("trip")],
+                       "read once before a link opens, not again while it is open")
+    }
+
+    /// Fails closed, and tells a refusal from no answer: when the Mac's read isn't the server's refusal (`not_found`),
+    /// the Mac didn't answer for the conversation. The phone hears `mac_busy`, as it did before this check, not that
+    /// its conversation is gone; nothing is linked and no stop is posted.
+    func testAReadTheMacDoesNotAnswerIsBusyAndNeverLinked() async throws {
+        let p = try await pair()
+        let unanswered: [(String, String)] = [("c-busy", "mac_busy"), ("c-404", "file_unavailable"), ("c-bad", "malformed"),
+                                              ("c-400", "bad_request"), ("c-409", "conversation_exists"), ("c-413", "too_large")]
+        for (id, code) in unanswered { p.backend.answers[Self.probe(id)] = .failure(.code(code)) }
+        for (id, _) in unanswered {
+            _ = try await send(p, ["conversation_id": id, "text": "a", "attachments": [], "client_msg_id": id])
+        }
+        try await p.phone.send(type: "task.stop", body: ["job_id": "job-1", "conversation_id": "c-busy"], to: "mac-1")
+        try await run(p)
+        let got = try await heard(p)
+        XCTAssertEqual(errors(got).map(\.code), Array(repeating: "mac_busy", count: unanswered.count + 1))
+        XCTAssertEqual(got.filter { $0.type == "error" }.map { body($0)["message"] as? String },
+                       Array(repeating: ConversationLinks.message("mac_busy"), count: unanswered.count + 1))
+        XCTAssertTrue(p.channels.opened.isEmpty, "never linked")
+        XCTAssertTrue(p.backend.posted.isEmpty, "no stop reached the Mac")
+    }
+
+    /// A Bridge on the real HTTP client, answered by `StubBackend` (or nothing, on `port`).
+    func localPair(port: Int = StubBackend.port) -> (mac: Mailbox, phone: Mailbox, channels: ClosingChannels, links: ConversationLinks) {
+        let store = MemoryStore(), channels = ClosingChannels()
+        let mac = Mailbox(deviceID: "mac-1", signing: .init(), exchange: .init(), store: store)
+        let phone = Mailbox(deviceID: "iphone-1", signing: .init(), exchange: .init(), store: store)
+        mac.add(peer: Peer(deviceID: "iphone-1", signing: phone.signing.publicKey, exchange: phone.exchange.publicKey))
+        phone.add(peer: Peer(deviceID: "mac-1", signing: mac.signing.publicKey, exchange: mac.exchange.publicKey))
+        let links = ConversationLinks(channels: channels, mailbox: mac, backend: LocalBackend(port: port, token: "t"))
+        return (mac, phone, channels, links)
+    }
+
+    /// Through the Bridge's real HTTP client: only the backend's 404 `not_found` (a sub-session) is a refusal and
+    /// answers `not_found`. Any other status, 4xx included, isn't the Mac answering for the conversation: `mac_busy`.
+    /// Neither links; a 200 does.
+    func testOnlyTheBackendsNotFoundIsARefusalAndOnlyA200Links() async throws {
+        URLProtocol.registerClass(StubBackend.self)
+        defer { URLProtocol.unregisterClass(StubBackend.self) }
+        let (mac, phone, channels, links) = localPair()
+        let cases = [(404, #"{"detail": "not_found"}"#, Self.child), (404, "{}", "c-404"), (404, #"{"detail": "file_unavailable"}"#, "c-file"),
+                     (400, #"{"detail": "bad_request"}"#, "c-400"), (409, "{}", "c-409"), (422, "{}", "c-422"), (500, "{}", "c-500"),
+                     (503, "<html>", "c-503"), (200, #"{"conversation_id": "trip", "messages": []}"#, "trip")]
+        for (status, answer, id) in cases {
+            StubBackend.answer = (status, answer)
+            try await phone.send(type: "chat.send", body: ["conversation_id": id, "text": "a", "attachments": [], "client_msg_id": id],
+                                 to: "mac-1")
+            for received in try await mac.receive() { await links.handle(received, now: t0) }
+        }
+        let got = try await phone.receive().filter { $0.type != "ack" }
+        XCTAssertEqual(errors(got).map(\.code), ["not_found"] + Array(repeating: "mac_busy", count: cases.count - 2))
+        XCTAssertEqual(Set(channels.opened.keys), ["trip"])
+        XCTAssertEqual(words(Pair(mac: mac, phone: phone, channels: channels, backend: FilesBackend(), links: links), "trip"), ["a"])
+    }
+
+    /// No answer at all: the backend is down (a closed port, for real), or the read times out or loses its
+    /// connection. The phone's chat.send and task.stop each hear `mac_busy`; nothing is linked and no stop is posted.
+    func testWhenTheBackendIsDownOrTimesOutNothingIsLinkedOrStopped() async throws {
+        func ask(_ p: (mac: Mailbox, phone: Mailbox, channels: ClosingChannels, links: ConversationLinks),
+                 _ id: String) async throws -> [Received] {
+            try await p.phone.send(type: "chat.send", body: ["conversation_id": id, "text": "a", "attachments": [], "client_msg_id": id],
+                                   to: "mac-1")
+            try await p.phone.send(type: "task.stop", body: ["job_id": "job-1", "conversation_id": id], to: "mac-1")
+            for received in try await p.mac.receive() { await p.links.handle(received, now: t0) }
+            return try await p.phone.receive().filter { $0.type != "ack" }
+        }
+        // Down: nothing listens on port 1 and no stub answers it, so the connection is refused.
+        let down = localPair(port: 1)
+        let heardDown = try await ask(down, "c-down")
+        XCTAssertEqual(errors(heardDown).map(\.code), ["mac_busy", "mac_busy"], "the backend is down")
+        XCTAssertTrue(down.channels.opened.isEmpty, "down: never linked")
+
+        URLProtocol.registerClass(StubBackend.self)
+        defer { URLProtocol.unregisterClass(StubBackend.self); StubBackend.failure = nil }
+        for failure in [URLError(.timedOut), URLError(.networkConnectionLost), URLError(.cannotConnectToHost)] {
+            StubBackend.failure = failure
+            StubBackend.requests.reset()
+            let p = localPair()
+            let heardQuiet = try await ask(p, "c-quiet")
+            XCTAssertEqual(errors(heardQuiet).map(\.code), ["mac_busy", "mac_busy"], "\(failure.code)")
+            XCTAssertTrue(p.channels.opened.isEmpty, "\(failure.code): never linked")
+            XCTAssertEqual(StubBackend.requests.all, Array(repeating: "GET " + Self.probe("c-quiet"), count: 2),
+                           "\(failure.code): only the reads, no stop posted")
+        }
+    }
+
     func testAJobInThePocketIsLeftOutOfThePhonesStatus() async throws {
         let p = try await pair()
         let job: (String, String) -> [String: Any] = { id, conversation in
@@ -367,10 +486,29 @@ final class QuickAskTests: XCTestCase {
 final class StubBackend: URLProtocol {
     static let port = 9                                 // the discard port: nothing real listens there
     static var answer: (status: Int, body: String) = (200, "{}")
+    /// When set, every request fails with it instead (no answer: a timeout, a lost connection).
+    static var failure: URLError?
+    /// Each request as "METHOD path?query", in order.
+    static let requests = Requests()
+
+    final class Requests {
+        private let lock = NSLock()
+        private var seen: [String] = []
+        func add(_ request: String) { lock.lock(); seen.append(request); lock.unlock() }
+        func reset() { lock.lock(); seen = []; lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return seen }
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { request.url?.port == port }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        if let url = request.url {
+            Self.requests.add("\(request.httpMethod ?? "GET") \(url.path)" + (url.query.map { "?\($0)" } ?? ""))
+        }
+        if let failure = Self.failure {
+            client?.urlProtocol(self, didFailWithError: failure)
+            return
+        }
         guard let url = request.url, let response = HTTPURLResponse(url: url, statusCode: Self.answer.status, httpVersion: nil,
                                                                     headerFields: ["Content-Type": "application/json"]) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)

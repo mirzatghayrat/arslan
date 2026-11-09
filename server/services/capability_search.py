@@ -11,10 +11,15 @@ detection of the repository's LICENSE file (the source, not a package registry);
 install path (P2) reads the file itself at the pinned commit before anything is fetched.
 Package metadata (PyPI, npm, the MCP Registry) is never the basis — the registry has no
 license field at all (checked 2026-10-09).
+
+v0.1.64 CAP7b: plugins too, when asked for: a GitHub link the user pasted, and the official plugin
+phonebook, whose entries only point at repositories (`from_phonebook`). A plugin's license is read at
+its pinned commit before the card (plugin_package.prepare).
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -22,7 +27,7 @@ from dataclasses import asdict, dataclass, field
 
 import httpx
 
-from server.services import github_eval
+from server.services import github_eval, skill_import
 from server.services.skill_import import ALLOWED_LICENSES
 from arslan.aio import within
 
@@ -56,10 +61,10 @@ STOPWORDS = {"a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with
 @dataclass
 class Candidate:
     id: str
-    kind: str                     # mcp | skill | project
+    kind: str                     # mcp | skill | project | plugin (CAP7b)
     name: str
     summary: str
-    source: str                   # registry | github | library
+    source: str                   # registry | github | library | marketplace
     source_url: str | None
     repo: str | None              # owner/repo when known
     version: str | None = None
@@ -77,6 +82,7 @@ class Candidate:
     path: str | None = None       # a skill's SKILL.md inside its library
     by_hand: str | None = None    # CAP4a-3c: why it is not one-click (not_here "add_by_hand"), as
                                   # capability_allowlist names it
+    ref: str | None = None        # CAP7b: a plugin's pinned commit, all 40 digits (plugin_package.snapshot checks it)
 
     def view(self) -> dict:
         return asdict(self)
@@ -372,6 +378,115 @@ async def library_index(client: httpx.AsyncClient, library: str) -> list[Candida
     return _store(f"lib:{library}", index_archive(library, r.content))
 
 
+# ── CAP7b: plugins ───────────────────────────────────────────────────────────
+
+#: The official phonebook of plugins. An entry only points: it resolves to its own repository, read whole at one commit
+#: before the card (plugin_package.prepare), and what the phonebook says the plugin holds is never read.
+PLUGIN_PHONEBOOK = "anthropics/claude-plugins-official"
+RAW = "https://raw.githubusercontent.com"
+PHONEBOOK_MAX_BYTES = 4 * 1024 * 1024
+MANIFEST_MAX_BYTES = 64 * 1024
+MAX_LINKS = 2
+#: What an entry may say besides where it is. Anything else (its own `skills`, `lspServers`, …) adds parts the plugin's
+#: manifest doesn't name, so the entry isn't offered.
+_ENTRY_ABOUT = frozenset({"name", "description", "source", "category", "author", "homepage", "displayName", "version",
+                          "tags", "keywords", "license", "strict"})
+_REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+_GITHUB_GIT = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?")
+_PLUGIN_LINK = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?"
+                          r"(?:/tree/([^\s/?#]+)((?:/[^\s/?#]+)*))?/?(?=[\s?#]|$)")
+_PIN = re.compile(r"[0-9a-f]{40}")
+
+
+def _plugin(id_: str, name, summary, repo: str | None, path: str = "", ref: str | None = None,
+            not_here: str | None = None, source: str = "github") -> Candidate:
+    return Candidate(id=id_[:300], kind="plugin", name=str(name)[:100], summary=str(summary or "")[:300],
+                     source=source, source_url=f"https://github.com/{repo}" if repo else None, repo=repo,
+                     runtime="plugin", path=path, ref=ref, not_here=not_here, checked_at=time.time())
+
+
+def _plain_repo(repo) -> bool:
+    return isinstance(repo, str) and bool(_REPO.fullmatch(repo)) and skill_import._plain_path(repo)
+
+
+def from_phonebook(entry: dict, phonebook: str) -> Candidate | None:
+    """One entry, by where it points: a folder of the phonebook's own repository, or a GitHub repository (whole, or one
+    folder of it) at the commit the entry pins. Any other entry is shown with why it can't be added (`not_here`)."""
+    name = entry.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    src, repo, path, ref, why = entry.get("source"), None, "", None, None
+    if isinstance(src, str):
+        repo, path = phonebook, src[2:] if src.startswith("./") else src
+    elif isinstance(src, dict) and src.get("source") in ("github", "url", "git-subdir"):
+        found = _GITHUB_GIT.fullmatch(str(src.get("url") or ""))
+        repo = src.get("repo") if src.get("source") == "github" else found.group(1) if found else None
+        path, ref = src.get("path") or "", src.get("sha")
+        if not repo:
+            why = "not_from_github"
+        elif not (isinstance(ref, str) and _PIN.fullmatch(ref)):
+            why, ref = "not_pinned", None        # a branch or a tag moves under the card: one commit is read
+    else:
+        why = "not_from_github"
+    if why is None and (not _plain_repo(repo) or not isinstance(path, str)
+                        or (path and not skill_import._plain_path(path))):
+        why = "path_outside"
+    if why is None and (set(entry) - _ENTRY_ABOUT or entry.get("strict", True) is not True):
+        why = "other"
+    return _plugin(f"plugin-marketplace:{name}", name, entry.get("description"), None if why else repo,
+                   path if not why else "", ref, why, source="marketplace")
+
+
+async def _small_json(client: httpx.AsyncClient, url: str, limit: int):
+    body = bytearray()
+    async with client.stream("GET", url, timeout=TIMEOUT_S, follow_redirects=False) as r:
+        if r.status_code != 200:
+            raise httpx.HTTPStatusError(f"{r.status_code}", request=r.request, response=r)
+        async for chunk in r.aiter_bytes():
+            body += chunk
+            if len(body) > limit:
+                raise ValueError("too large")
+    return json.loads(body)
+
+
+async def phonebook(client: httpx.AsyncClient) -> list[Candidate]:
+    hit = _cached(f"phonebook:{PLUGIN_PHONEBOOK}", LIBRARY_CACHE_S)
+    if hit is not None:
+        return hit
+    data = await _small_json(client, f"{RAW}/{PLUGIN_PHONEBOOK}/HEAD/.claude-plugin/marketplace.json",
+                             PHONEBOOK_MAX_BYTES)
+    entries = data.get("plugins") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        raise ValueError("not a phonebook")
+    found = [from_phonebook(e, PLUGIN_PHONEBOOK) for e in entries[:1000] if isinstance(e, dict)]
+    return _store(f"phonebook:{PLUGIN_PHONEBOOK}", [c for c in found if c is not None])
+
+
+async def linked_plugins(client: httpx.AsyncClient, text: str) -> list[Candidate]:
+    """A GitHub link the user pasted, to a plugin's repository or one folder of it: a candidate when a plugin manifest
+    is there. A link at a commit pins it; at a branch, the default branch's head is what's read (and the card shows
+    which commit)."""
+    from server.services import plugin_package          # its manifest names only; the search installs nothing
+    out: list[Candidate] = []
+    for match in list(_PLUGIN_LINK.finditer(text or ""))[:MAX_LINKS]:
+        repo, tree, path = match.group(1), match.group(2), (match.group(3) or "").strip("/")
+        if not _plain_repo(repo) or (path and not skill_import._plain_path(path)):
+            continue
+        ref = tree if tree and _PIN.fullmatch(tree) else None
+        for name in plugin_package.MANIFESTS:
+            try:
+                manifest = await _small_json(client, f"{RAW}/{repo}/{ref or 'HEAD'}/{path + '/' if path else ''}{name}",
+                                             MANIFEST_MAX_BYTES)
+            except (httpx.HTTPError, ValueError):
+                continue
+            if isinstance(manifest, dict):
+                out.append(_plugin(f"plugin-link:{repo}" + (f":{path}" if path else ""),
+                                   manifest.get("name") or (path or repo).rsplit("/", 1)[-1],
+                                   manifest.get("description"), repo, path, ref))
+            break
+    return out
+
+
 def _matches(cand: Candidate, words: list[str]) -> int:
     hay = f"{cand.name} {cand.summary} {cand.repo or ''}".lower()
     return sum(1 for w in words if w in hay)
@@ -388,7 +503,9 @@ def rank(cands: list[Candidate], words: list[str]) -> list[Candidate]:
 
     def score(c: Candidate):
         usable = c.license["verdict"] == "usable"
-        installable = usable and c.not_here is None and c.runtime in ("uv", "node", "mcpb", "remote", "skill")
+        # A plugin's license is read at its pinned commit, before the card (capability_flow.installable).
+        installable = c.not_here is None and (c.kind == "plugin" or usable and c.runtime in (
+            "uv", "node", "mcpb", "remote", "skill"))
         # CAP4a-3c: an entry added by hand still runs here, so it outranks its repository's GitHub copy.
         runs_here = c.not_here in (None, "add_by_hand")
         value = (2 * _matches(c, words) / max(1, len(words)) + 2 * usable + 2 * runs_here
@@ -397,7 +514,8 @@ def rank(cands: list[Candidate], words: list[str]) -> list[Candidate]:
         return (-value, c.id)
     seen, out = set(), []
     for c in sorted(cands, key=score):
-        key = (c.repo or c.id).lower() if c.kind != "skill" or c.source != "library" else c.id
+        # A library's skills, and a phonebook's plugins, share one repository and are each their own result.
+        key = c.id if c.kind == "plugin" or (c.kind == "skill" and c.source == "library") else (c.repo or c.id).lower()
         if key in seen:
             continue
         seen.add(key)
@@ -414,7 +532,7 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
     found: list[Candidate] = []
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
         budgets = {"registry": REGISTRY_TIMEOUT_S, "library": LIBRARY_TIMEOUT_S, "github": TIMEOUT_S,
-                   "registry_lookup": TIMEOUT_S}
+                   "registry_lookup": TIMEOUT_S, "plugins": LIBRARY_TIMEOUT_S}
 
         async def guarded(name, coro):
             try:
@@ -433,6 +551,8 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
             jobs.append(guarded("github", search_github(" ".join(words[:2]) + " mcp")))
         if not kinds or "skill" in kinds:
             jobs += [guarded("library", library_index(client, lib)) for lib in SKILL_LIBRARIES]
+        if kinds and "plugin" in kinds:        # CAP7b: only when asked for (find_capability asks by default)
+            jobs += [guarded("plugins", phonebook(client)), guarded("plugins", linked_plugins(client, need))]
         for batch in await asyncio.gather(*jobs):
             found.extend(batch)
         # The fast way to the registry: GitHub's MCP repositories, looked up by name.
@@ -443,7 +563,7 @@ async def search(need: str, *, words: list[str] | None = None, kinds: set[str] |
         for entry in await asyncio.gather(*(guarded("registry_lookup", lookup_registry(client, r)) for r in ask)):
             if isinstance(entry, Candidate):
                 found.append(entry)
-    found = [c for c in found if c.source != "library" or _matches(c, words)]
+    found = [c for c in found if c.source not in ("library", "marketplace") or _matches(c, words)]
     if kinds:
         found = [c for c in found if c.kind in kinds]
     found = merge(found)

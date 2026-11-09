@@ -377,14 +377,16 @@ def _prepared_root() -> Path:
     return capabilities_root() / ".prepared"
 
 
-async def prepare(candidate: dict) -> dict:
+async def prepare(candidate: dict, *, license_: tuple[str | None, str | None] | None = None) -> dict:
     """Everything before the card (CAP4a-2): the candidate checked, the license read at the source (not usable:
     refused before anything is downloaded), Arslan's own pinned runtime ready, and for a package the lock resolved
     in a staging folder. The card shows `lock`; `install(prepared=…)` follows it. Nothing third-party is installed
-    or run here. `discard` removes the staging folder when the card is not a yes."""
+    or run here. `discard` removes the staging folder when the card is not a yes. `license_`: already read at the
+    commit being installed (a plugin's connection, CAP7b), so it isn't read again at a tag or HEAD."""
     _check_candidate(candidate)
     runtime = candidate["runtime"]
-    spdx, license_path = await source_license(candidate.get("repo"), (candidate.get("package") or {}).get("version"))
+    spdx, license_path = license_ if license_ is not None else await source_license(
+        candidate.get("repo"), (candidate.get("package") or {}).get("version"))
     from server.services.skill_import import _license_gate
     # CAP8-1: a line imported from the user's other tool has no repository to read, and is the user's own click, as a
     # server added by hand is: neither passes this gate.

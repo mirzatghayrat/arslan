@@ -25,7 +25,7 @@ from server.mcp import supervisor as supervisor_module
 from server.mcp.supervisor import StartResult, supervisor
 from server.services import (capability_allowlist, capability_dossier, capability_flow, capability_install,
                              capability_list, capability_runtime, capability_sandbox, capability_scan,
-                             capability_search, mcp_pin, plugin_package, settings_service, skill_import)
+                             capability_search, mcp_pin, osv_check, plugin_package, settings_service, skill_import)
 
 SHA = "a" * 40
 MIT = ("MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy of this software "
@@ -172,6 +172,20 @@ async def test_a_plugin_of_skills_and_connections_comes_whole(execution_db, repo
     linear = next(c for c in prepared["connections"] if c["candidate"]["name"] == "linear")["candidate"]
     assert linear["runtime"] == "remote" and linear["remote"]["url"] == "https://mcp.linear.app/mcp"
     assert prepared["files"][".mcp.json"] and prepared["files"]["skills/release-notes/scripts/fmt.py"]
+
+
+async def test_a_pinned_ref_is_the_commit_its_files_are_read_at(execution_db, repo, fake_capability_prepare,
+                                                                 monkeypatch):
+    """An entry that pins a commit has its files read at that commit, not at whatever its default branch holds now."""
+    asked = []
+    read = plugin_package.snapshot
+
+    async def snapshot(repository, ref=None):
+        asked.append((repository, ref))
+        return await read(repository, ref)
+    monkeypatch.setattr(plugin_package, "snapshot", snapshot)
+    prepared = await plugin_package.prepare({**PLUGIN, "ref": SHA})
+    assert asked == [("anthropics/release-kit", SHA)] and prepared["commit"] == SHA
 
 
 async def test_a_subfolder_plugin_reads_only_its_folder(execution_db, repo, fake_capability_prepare):
@@ -364,7 +378,8 @@ UNSAFE_ENV = ["NODE_OPTIONS", "node_options", "NODE_PATH", "NODE_COMPILE_CACHE",
               "GIT_SSH_COMMAND", "HTTP_PROXY", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "NO_PROXY",
               "NODE_TLS_REJECT_UNAUTHORIZED", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
               "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "PYTHONHTTPSVERIFY", "npm_config_registry", "UV_INDEX_URL",
-              "PIP_INDEX_URL"]
+              "PIP_INDEX_URL", "SHELLOPTS", "BASHOPTS", "PS4", "PROMPT_COMMAND", "OPENSSL_CONF", "OPENSSL_MODULES",
+              "OPENSSL_ENGINES", "__PYVENV_LAUNCHER__"]
 
 
 @pytest.mark.parametrize("name", UNSAFE_ENV)
@@ -485,6 +500,30 @@ async def test_a_remote_on_the_list_needs_no_listed_account(execution_db, repo, 
     assert [c["candidate"]["name"] for c in (await plugin_package.prepare(OFF_LIST))["connections"]] == ["it"]
 
 
+async def test_a_registry_name_is_not_the_repository_the_list_checks(execution_db, repo, fake_capability_prepare):
+    """A Registry candidate's publisher is read from its id: a listed organization's name there vouches for nothing
+    the plugin's own repository holds."""
+    named = {**OFF_LIST, "source": "registry", "id": "registry:io.github.anthropics/release-kit@1.0.0"}
+    with pytest.raises(plugin_package.Refused) as refused:
+        await plugin_package.prepare(named)
+    assert (refused.value.code, refused.value.by_hand) == ("add_by_hand", "publisher_not_listed")
+
+
+async def test_the_card_names_the_repository_as_who_published_it(execution_db, repo, installs):
+    seen = []
+    await _propose(plugin={**PLUGIN, "source": "registry", "id": "registry:io.github.microsoft/release-kit@1.0.0"},
+                   ask=_ask(approved=False, seen=seen))
+    assert seen[0]["publisher"] == {"kind": "github", "value": "anthropics"}
+
+
+@pytest.mark.parametrize("url", ["https://github.com/example/release-kit", "https://evil.example/anthropics/release-kit",
+                                 "https://github.com/anthropics/release-kit/tree/main/other", None])
+async def test_a_source_url_that_is_not_the_repositorys_refuses_it(execution_db, repo, fake_capability_prepare, url):
+    with pytest.raises(plugin_package.Refused) as refused:
+        await plugin_package.prepare({**PLUGIN, "source_url": url})
+    assert refused.value.code == "not_github"
+
+
 async def test_skills_are_not_held_to_the_list(execution_db, repo, installs):
     """As a single skill isn't (CAP4a-1): the pinned commit, the scan, the hashes and the card."""
     await capability_allowlist.save(CLOSED_LIST)
@@ -582,6 +621,47 @@ async def test_a_stop_midway_leaves_nothing(execution_db, repo, installs, monkey
     assert next(s for s in await _rows_of(execution_db, CapabilitySource) if s.kind == "plugin").state == "failed"
 
 
+@pytest.mark.parametrize("error", [RuntimeError("the database went away"), asyncio.CancelledError()])
+async def test_a_stop_right_after_a_skills_row_commits_leaves_nothing(execution_db, repo, installs, monkeypatch, error):
+    """The skill's row is in, but the call never returned: it goes with the rest, found by its row."""
+    real = skill_import.install_prepared
+
+    async def stops_after_the_row(skill, **kwargs):
+        await real(skill, **kwargs)
+        raise error
+    monkeypatch.setattr(skill_import, "install_prepared", stops_after_the_row)
+    if isinstance(error, asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError):
+            await _propose()
+    else:
+        assert (await _propose())["ok"] is False
+    await _nothing_stays(execution_db)
+
+
+async def test_a_stops_undo_removes_only_the_skills_this_install_created(execution_db, repo, installs, monkeypatch):
+    """A skill already in the library before the install isn't the plugin's: the undo leaves it."""
+    async with execution_db() as db:
+        db.add(SkillPack(key="my-notes", name="mine", category="imported", description="d", tier="safe",
+                         status="registered", body="b"))
+        await db.commit()
+    real = skill_import.install_prepared
+
+    async def stops_after_the_row(skill, **kwargs):
+        await real(skill, **kwargs)
+        raise asyncio.CancelledError()
+    monkeypatch.setattr(skill_import, "install_prepared", stops_after_the_row)
+    with pytest.raises(asyncio.CancelledError):
+        await _propose()
+    assert [p.key for p in await _rows_of(execution_db, SkillPack)] == ["my-notes"]
+
+
+async def test_the_card_names_each_connections_locked_package(execution_db, repo, fake_capability_prepare):
+    fields = plugin_package.card_fields(await plugin_package.prepare(PLUGIN))
+    by_name = {c["name"]: c for c in fields["connections"]}
+    assert by_name["tools"]["package"] == {"identifier": "markdown-tools", "version": "1.2.3"}
+    assert by_name["linear"]["package"] is None
+
+
 async def test_the_card_shows_what_each_connection_is_started_with(execution_db, repo, fake_capability_prepare):
     repo[".mcp.json"] = json.dumps({"mcpServers": {
         "local": {"command": "npx", "args": ["-y", "x", "--read-only"],
@@ -594,6 +674,42 @@ async def test_the_card_shows_what_each_connection_is_started_with(execution_db,
     assert local["keys"] == ["API_TOKEN"] and local["network"] is True
     assert vendor["headers"] == {"X-Team": "core"} and vendor["env"] == {} and vendor["keys"] == ["Authorization"]
     assert sorted(k["name"] for k in fields["keys"]) == ["API_TOKEN", "Authorization"]
+
+
+FIXED_CREDENTIAL = "fixed-author-credential-9f8e7d6c5b4a"
+
+
+async def test_a_fixed_credential_shows_masked_keeping_its_name(execution_db, repo, fake_capability_prepare):
+    """⓪Plan's ruling for the web half: the card names every fixed header and env entry, and a value that is a
+    credential (by its name, or by its look, as SEC1 reads one) shows as ●●●●. The rest show as written."""
+    repo[".mcp.json"] = json.dumps({"mcpServers": {
+        "local": {"command": "npx", "args": ["-y", "x", "--read-only", "--api-key=fake-value"],
+                  "env": {"MODE": "fast", "SERVICE_TOKEN": "tok", "BASE": "https://user:hunter2@example.com/x"}},
+        "vendor": {"type": "http", "url": "https://mcp.linear.app/mcp",
+                   "headers": {"X-Team": "core", "Authorization": f"Bearer {FIXED_CREDENTIAL}",
+                               "X-Trace": "Zq81kLm2Xw93Pn4Rt5Yv6Ub7Sc8Od9",
+                               "X-Session": "Bearer Ak82jLq3Wz94Mn5Rs6Tv7Ux8Yb9Pc0"}}}})
+    fields = plugin_package.card_fields(await plugin_package.prepare(PLUGIN))
+    local, vendor = fields["connections"]
+    assert vendor["headers"] == {"X-Team": "core", "Authorization": "●●●●", "X-Trace": "●●●●", "X-Session": "●●●●"}
+    assert local["env"] == {"MODE": "fast", "SERVICE_TOKEN": "●●●●", "BASE": "https://user:●●●●@example.com/x"}
+    assert local["arguments"] == ["--read-only", "--api-key=●●●●"]
+    assert FIXED_CREDENTIAL not in json.dumps(fields) and "hunter2" not in json.dumps(fields)
+
+
+@pytest.mark.real_mcp
+async def test_a_fixed_credential_reaches_the_server_and_never_the_frame(execution_db, world):
+    """Masked where the card is made: the frame the window gets never holds the value, and the remote still gets it."""
+    from server.ws import protocol
+    world.files[".mcp.json"] = json.dumps({"mcpServers": {"vendor": {
+        "type": "http", "url": "https://mcp.linear.app/mcp", "headers": {"X-Api-Key": FIXED_CREDENTIAL}}}})
+    seen = []
+    out = await _propose(ask=_ask(seen=seen))
+    assert out["ok"] is True, out
+    frame = protocol.propose_capability("cap-x", seen[0])
+    assert frame["connections"][0]["headers"] == {"X-Api-Key": "●●●●"}
+    assert FIXED_CREDENTIAL not in json.dumps(frame)
+    assert world.remote_headers[0]["x-api-key"] == FIXED_CREDENTIAL
 
 
 async def test_a_key_two_connections_name_is_asked_once_and_each_says_it_gets_it(execution_db, repo,
@@ -675,6 +791,59 @@ async def test_the_switch_turns_the_whole_group(execution_db, added):
     assert all(p.enabled is not False for p in await _rows_of(execution_db, SkillPack))
     assert all(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
     assert (await _plugin_row(added))["state"] == "on"
+
+
+@pytest.fixture
+async def page(execution_db, monkeypatch):
+    """The Capabilities page's own routes, as the web calls them. The built-in rows read settings and the Mac (the
+    browser's runtime, Hands), none of which a plugin touches: test_capability_list holds those."""
+    from fastapi import FastAPI
+
+    from server import auth
+    from server.api.capabilities import router
+
+    async def no_builtins():
+        return []
+    monkeypatch.setattr(capability_list, "_builtin_rows", no_builtins)
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-plugin-page-token")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                 headers={"Authorization": "Bearer synthetic-plugin-page-token"}) as client:
+        yield client
+
+
+async def test_the_page_switches_the_group_through_its_route_and_never_a_part(execution_db, added, page):
+    rows = (await page.get("/api/v1/capabilities")).json()
+    plugin = next(r for r in rows if r["key"] == f"plugin:{added.id}")
+    assert plugin["section"] == "plugins" and plugin["switch"] == "plugin" and plugin["state"] == "on"
+    parts = {p["name"]: p["key"] for p in plugin["parts"]}
+    assert not [r for r in rows if r["key"] in parts.values()]          # a part shows only inside its plugin
+
+    off = await page.put(f"/api/v1/capabilities/plugin:{added.id}", json={"on": False})
+    assert off.status_code == 200 and off.json()["state"] == "off"
+    assert "on" not in {p["state"] for p in off.json()["parts"]}
+    assert not any(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
+    assert all(p.enabled is False for p in await _rows_of(execution_db, SkillPack))
+
+    for key in (parts["release-notes"], parts["tools"]):
+        assert (await page.put(f"/api/v1/capabilities/{key}", json={"on": True})).status_code == 409
+        assert (await page.delete(f"/api/v1/capabilities/{key}")).status_code == 409
+    assert not any(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
+    assert all(p.enabled is False for p in await _rows_of(execution_db, SkillPack))
+
+    on = await page.put(f"/api/v1/capabilities/plugin:{added.id}", json={"on": True})
+    assert on.json()["state"] == "on" and all(s.host_allowed for s in await _rows_of(execution_db, MCPServer))
+
+
+async def test_a_stopped_group_says_which_connection_and_the_route_switches_it_back(execution_db, added, page):
+    child = await _child(execution_db, "tools")
+    await plugin_package.stop_for(child, child.mcp_server_id)
+    rows = (await page.get("/api/v1/capabilities")).json()
+    plugin = next(r for r in rows if r["key"] == f"plugin:{added.id}")
+    assert (plugin["state"], plugin["reason"], plugin["detail"]) == ("setup", "plugin_stopped", "tools")
+    back = await page.put(f"/api/v1/capabilities/plugin:{added.id}", json={"on": True})
+    assert back.json()["reason"] is None
 
 
 async def test_switching_on_leaves_a_part_waiting_for_sign_in_off(execution_db, added):
@@ -910,7 +1079,33 @@ def _codeload(monkeypatch, status=200, body=b""):
 async def test_the_snapshot_comes_from_one_archive_at_the_named_commit(monkeypatch):
     asked = _codeload(monkeypatch, body=_archive({"a.md": "x"}))
     snap = await plugin_package.snapshot("example/kit", SHA)
-    assert asked == [f"https://codeload.github.com/example/kit/tar.gz/{SHA}"] and snap.text("a.md") == "x"
+    assert asked == ["https://codeload.github.com/example/kit/tar.gz/HEAD"] and snap.text("a.md") == "x"
+    assert snap.sha == SHA
+
+
+async def test_a_pinned_commit_that_is_not_the_head_now_is_refused(monkeypatch):
+    """GitHub serves any fork's commit under the repository's name: a commit is only read as the head it is now."""
+    asked = _codeload(monkeypatch, body=_archive({"a.md": "x"}, sha="b" * 40))
+    with pytest.raises(plugin_package.Refused) as refused:
+        await plugin_package.snapshot("example/kit", SHA)
+    assert (refused.value.code, refused.value.part) == ("moved", SHA)
+    assert asked == ["https://codeload.github.com/example/kit/tar.gz/HEAD"]
+
+
+async def test_a_redirect_on_the_archive_read_is_not_followed(monkeypatch):
+    """A redirect would read another repository than the one the list checked."""
+    real, asked = httpx.AsyncClient, []
+
+    def handler(request):
+        asked.append(str(request.url))
+        if request.url.path.startswith("/example/"):
+            return httpx.Response(302, headers={"Location": "https://codeload.github.com/other/kit/tar.gz/HEAD"})
+        return httpx.Response(200, content=_archive({"a.md": "x"}))
+    monkeypatch.setattr(plugin_package.httpx, "AsyncClient",
+                        lambda **kwargs: real(transport=httpx.MockTransport(handler), **kwargs))
+    with pytest.raises(plugin_package.Refused) as refused:
+        await plugin_package.snapshot("example/kit")
+    assert refused.value.code == "unreachable" and asked == ["https://codeload.github.com/example/kit/tar.gz/HEAD"]
 
 
 @pytest.mark.parametrize("repository, ref, code", [("example/kit", None, "unreachable"), ("../up", None, "not_github"),
@@ -1008,13 +1203,17 @@ class _World:
     def __init__(self, data):
         self.data, self.files, self.remote_headers = data, dict(FILES), []
         self.account_id, self.fail_lock = capability_allowlist.DEFAULT["accounts"]["anthropics"], None
+        self.raw_asked, self.osv_hits = [], None        # OSV.dev doesn't answer unless a test gives it hits
 
     def __call__(self, request):
         url, host = str(request.url), request.url.host
         if host == "codeload.github.com":
             return httpx.Response(200, content=_archive(self.files))
-        if host == "raw.githubusercontent.com":
+        if host == "raw.githubusercontent.com":       # the repository's HEAD: a license the pinned commit may not have
+            self.raw_asked.append(url)
             return httpx.Response(200, text=MIT) if url.endswith("/HEAD/LICENSE") else httpx.Response(404)
+        if host == "api.osv.dev" and self.osv_hits is not None:
+            return self._osv(request)
         if host == "registry.npmjs.org":
             return httpx.Response(200, json={"latest": "1.2.3"})
         if host == "api.github.com":
@@ -1034,6 +1233,15 @@ class _World:
                    "serverInfo": {"name": "vendor", "version": "1"}} if message["method"] == "initialize"
                   else {"tools": [{"name": "search", "description": "searches", "inputSchema": {"type": "object"}}]})
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": message["id"], "result": result})
+
+    def _osv(self, request):
+        if request.url.path == "/v1/querybatch":
+            names = [q["package"]["name"] for q in json.loads(request.content)["queries"]]
+            return httpx.Response(200, json={"results": [{"vulns": [{"id": self.osv_hits[n]}]} if n in self.osv_hits
+                                                         else {} for n in names]})
+        vid = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, json={"id": vid, "summary": "prototype pollution",
+                                         "database_specific": {"severity": "HIGH"}})
 
     async def step(self, argv, *, cwd, env):
         """npm, offline: the lock names what was asked for, and `ci` writes it."""
@@ -1210,6 +1418,59 @@ async def test_an_account_that_changed_hands_is_caught_on_the_real_check(executi
     await _nothing_stays(execution_db)
 
 
+@pytest.mark.real_mcp
+async def test_a_connections_license_is_read_at_the_pinned_commit(execution_db, world):
+    world.files[".mcp.json"] = json.dumps({"mcpServers": {"notes": REAL_SERVERS["notes"]}})
+    out = await _propose(ask=_ask(keys=TYPED))
+    assert out["ok"] is True, out
+    child = await _child(execution_db, "notes")
+    assert (child.license_spdx, child.license_path) == ("MIT", "LICENSE") and world.raw_asked == []
+
+
+@pytest.mark.real_mcp
+async def test_a_license_the_pinned_commit_lacks_refuses_it_whatever_head_has(execution_db, world):
+    world.files = {k: v for k, v in FILES.items() if k != "LICENSE" and not k.startswith("skills/")}
+    world.files[".mcp.json"] = json.dumps({"mcpServers": {"notes": REAL_SERVERS["notes"]}})
+    asked = []
+    out = await _propose(ask=_ask(seen=asked))
+    assert (out["code"], out["part"]) == ("license", "notes") and asked == [] and world.prepared() == []
+
+
+@pytest.mark.real_mcp
+async def test_each_connection_carries_what_osv_knows_of_its_own_lock(execution_db, world):
+    world.files[".mcp.json"] = json.dumps({"mcpServers": REAL_SERVERS})
+    world.osv_hits = {"notes-server": "GHSA-2222-3333-4444"}
+    seen = []
+    out = await _propose(ask=_ask(keys=TYPED, seen=seen))
+    cards = {c["name"]: c for c in seen[0]["connections"]}
+    notes, files = cards["notes"]["vulns"], cards["files"]["vulns"]
+    assert notes["state"] == "checked" and notes["own_highest"] == "HIGH"
+    assert [a["id"] for a in notes["own"]] == ["GHSA-2222-3333-4444"] and notes["own"][0]["summary"] == "prototype pollution"
+    assert files["state"] == "checked" and files["count"] == 0
+    assert cards["vendor"]["vulns"] == {"state": "skipped", "why": "remote"}
+    assert out["ok"] is True, out                   # a hit warns: installing anyway stays the user's choice
+
+
+@pytest.mark.real_mcp
+async def test_osv_not_answering_is_not_checked_on_each_connection(execution_db, world):
+    world.files[".mcp.json"] = json.dumps({"mcpServers": REAL_SERVERS})
+    seen = []
+    await _propose(ask=_ask(approved=False, seen=seen))
+    assert [c["vulns"]["state"] for c in seen[0]["connections"]] == ["not_checked", "not_checked", "skipped"]
+
+
+@pytest.mark.real_mcp
+async def test_a_stop_while_osv_is_asked_leaves_no_staging(execution_db, world, monkeypatch):
+    world.files[".mcp.json"] = json.dumps({"mcpServers": REAL_SERVERS})
+
+    async def stopped(candidate, prepared):
+        raise asyncio.CancelledError
+    monkeypatch.setattr(osv_check, "check", stopped)
+    with pytest.raises(asyncio.CancelledError):
+        await plugin_package.prepare(PLUGIN)
+    assert world.prepared() == []
+
+
 class _HardStop(BaseException):
     """A plain Quit mid-install, as far as anything stored can tell: nothing after it runs, no handler sees it."""
 
@@ -1241,11 +1502,62 @@ async def test_a_hard_stop_midway_is_finished_at_the_next_boot(execution_db, wor
     assert all(s.state == "removed" for s in await _rows_of(execution_db, CapabilitySource) if s.kind == "mcp")
 
 
+@pytest.mark.real_mcp
+async def test_a_boot_step_that_cannot_finish_still_leaves_every_part_off(execution_db, world, monkeypatch):
+    """A Trash error keeps the row `proposed` for the next boot; until then none of its parts is on."""
+    world.files[".mcp.json"] = json.dumps({"mcpServers": REAL_SERVERS})
+    real, calls = skill_import.install_prepared, []
+
+    async def second_stops(skill, **kwargs):
+        calls.append(skill["key"])
+        if len(calls) == 2:
+            raise _HardStop
+        return await real(skill, **kwargs)
+    monkeypatch.setattr(skill_import, "install_prepared", second_stops)
+    with pytest.raises(_HardStop):
+        await _propose(ask=_ask(keys=TYPED))
+
+    def trash_full(path, prefix="x"):
+        raise OSError("the Trash is full")
+    monkeypatch.setattr(capability_install, "to_trash", trash_full)
+    await plugin_package.finish_interrupted()
+    parent = next(s for s in await _rows_of(execution_db, CapabilitySource) if s.kind == "plugin")
+    assert parent.state == "proposed"
+    servers, packs = await _rows_of(execution_db, MCPServer), await _rows_of(execution_db, SkillPack)
+    assert len(servers) == 3 and not any(s.host_allowed for s in servers)
+    assert len(packs) == 1 and all(p.enabled is False for p in packs)
+
+
 async def test_the_boot_step_leaves_an_installed_plugin_alone(execution_db, added):
     await plugin_package.finish_interrupted()
     async with execution_db() as db:
         assert (await db.get(CapabilitySource, added.id)).state == "installed"
     assert len(await _rows_of(execution_db, MCPServer)) == 2 and len(await _rows_of(execution_db, SkillPack)) == 2
+
+
+async def test_the_boot_step_takes_only_the_cut_short_plugins_parts(execution_db, added, repo, monkeypatch):
+    """Two plugins: the one a hard stop cut short goes, and the installed one keeps every part, on."""
+    for path in [p for p in repo if p.startswith("skills/")]:
+        del repo[path]
+    repo["skills/other/SKILL.md"] = SKILL_MD.format(name="other")
+    repo[".mcp.json"] = json.dumps({"mcpServers": {"other-tools": {"command": "npx", "args": ["-y", "other-tools"]}}})
+    real = skill_import.install_prepared
+
+    async def stops_after_the_row(skill, **kwargs):
+        await real(skill, **kwargs)
+        raise _HardStop
+    monkeypatch.setattr(skill_import, "install_prepared", stops_after_the_row)
+    with pytest.raises(_HardStop):
+        await _propose(plugin={**PLUGIN, "id": "github:anthropics/release-kit#other"})
+    assert len(await _rows_of(execution_db, MCPServer)) == 3
+    await plugin_package.finish_interrupted()
+    packs = await _rows_of(execution_db, SkillPack)
+    assert sorted(p.key for p in packs) == ["changelog-style", "release-notes"]
+    assert all(p.enabled is not False and p.source_id == added.id for p in packs)
+    servers = await _rows_of(execution_db, MCPServer)
+    assert sorted(s.label for s in servers) == ["linear", "tools"] and all(s.host_allowed for s in servers)
+    async with execution_db() as db:
+        assert (await db.get(CapabilitySource, added.id)).state == "installed"
 
 
 async def _stranded(execution_db, source_id):

@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Escaped } from "../lib/outsideText";
 import { useTranslation } from "react-i18next";
-import { capabilitiesApi, type CapabilityRow, type CapabilitySource } from "../api/capabilities";
+import { capabilitiesApi, type CapabilityRow, type CapabilitySource, type PluginPart } from "../api/capabilities";
+import { PluginParts } from "./capabilities/PluginParts";
 import { professionalMethodsApi, type ProfessionalMethod } from "../api/professionalMethods";
 import McpServers from "./McpServers";
 import { SourceDossier } from "./capabilities/AddedCapabilities";
@@ -17,17 +18,22 @@ import { Button, Dialog, Notice, Tag } from "./kit";
  * - a connection: its card (sign in, connect, tools). "MCP" is named only here.
  * Delete only on a `deletable` row; the server refuses the rest too.
  */
-export default function CapabilitySheet({ row, name, what, used, error, onClose, onDelete, onChanged }: {
+export default function CapabilitySheet({ row, name, what, used, error, onClose, onDelete, onChanged, usedAt, onOpenPart,
+  onSwitch }: {
   row: CapabilityRow; name: string; what: string; used: string;
   /** A failed delete, said here: the list behind the sheet cannot be seen (#500 review). */
   error?: string | null;
   onClose: () => void; onDelete: (row: CapabilityRow) => void; onChanged: () => void;
+  /** CAP7b, a plugin's sheet: what it holds, a part's own sheet (its sign-in), and the group's switch after a stop. */
+  usedAt?: (iso: string | null) => string; onOpenPart?: (part: PluginPart) => void;
+  onSwitch?: (row: CapabilityRow, on: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [method, setMethod] = useState<ProfessionalMethod | null>(null);
   const [source, setSource] = useState<CapabilitySource | null>(null);
   const [failed, setFailed] = useState(false);
-  const kind = row.section === "connections" ? "mcp" : row.section === "skills" ? "skill" : "builtin";
+  const kind = row.section === "connections" ? "mcp" : row.section === "skills" ? "skill"
+    : row.section === "plugins" ? "plugin" : "builtin";
   const server = row.key.startsWith("mcp:") ? Number(row.key.slice(4)) : undefined;
   async function open<T>(load: () => Promise<T>, show: (value: T) => void) {
     setFailed(false);
@@ -58,6 +64,13 @@ export default function CapabilitySheet({ row, name, what, used, error, onClose,
       {/* CAP4a-3d: a connection its Registry entry stopped, and the button that keeps it. */}
       {kind === "mcp" && row.source_id && <RegistryParked sourceId={row.source_id} onChanged={onChanged} />}
       {server !== undefined && <McpServers only={server} onChanged={onChanged} />}
+      {/* CAP7b: a stop says which connection changed its tools; switching the group back on keeps that one parked by
+          its own tool pin (plugin_package.switch), so only the rest come back. */}
+      {row.parts && row.reason === "plugin_stopped" && <div className="flex flex-col items-start gap-2" data-testid="plugin-stopped">
+        <p className="text-[12.5px] text-muted-foreground">{t("capabilityList.plugin_switchBackNote")}</p>
+        <Button size="sm" data-testid="plugin-switch-back" onClick={() => onSwitch?.(row, true)}>
+          {t("capabilityList.plugin_switchBack")}</Button></div>}
+      {row.parts && <PluginParts row={row} used={usedAt ?? (() => used)} onOpenPart={part => onOpenPart?.(part)} />}
       {row.origin === "builtin" && row.switch !== null &&
         <p className="text-[12px] text-subtle-foreground" data-testid="cap-sheet-builtin">{t("capabilityList.builtinHint")}</p>}
       {row.deletable && <div className="flex justify-end border-t border-border pt-3">

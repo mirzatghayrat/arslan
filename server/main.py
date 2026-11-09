@@ -154,6 +154,16 @@ _UNDECRYPTABLE_KEYS_MSG = (
 )
 
 
+def _session_key_file_hint() -> str:
+    """Appended to the canary when the secret bootstrap skipped the key file for a Claude Code session."""
+    from server import secret_bootstrap
+
+    if not secret_bootstrap.skips_key_file_for_session():
+        return ""
+    return " This server was started from a Claude Code session, so the key file was not read. " + (
+        secret_bootstrap.SESSION_OPT_IN)
+
+
 def _validate_settings(cfg, *, active_token: str | None = None, log: logging.Logger = logger) -> None:
     """Boot-fatal + advisory checks on effective settings.
 
@@ -433,7 +443,7 @@ async def lifespan(app: FastAPI):
         async with AsyncSessionLocal() as db:
             n_undecryptable = await provider_config_service.count_undecryptable_keys(db)
         if n_undecryptable:
-            logger.warning(_UNDECRYPTABLE_KEYS_MSG, n_undecryptable)
+            logger.warning(_UNDECRYPTABLE_KEYS_MSG + _session_key_file_hint(), n_undecryptable)
     except Exception as exc:  # noqa: BLE001 — key canary must never block boot
         logger.warning("provider-key decryptability canary failed (non-fatal): %s", exc)
 

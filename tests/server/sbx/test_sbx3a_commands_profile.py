@@ -11,7 +11,7 @@
 - Mail, Messages and Photos data are closed (§1, the user's Q3), like Desktop/Documents/Downloads while that
   setting is off. Safari's data is already a protected path.
 - The flip: commands run on SBX-2's default-deny base (`sandbox_profile.default_deny_profile`), with the user's
-  D1 (listening stays denied) and D2 (online is any-declared until SBX-6, offline is none). What the base
+  D1 (listening stays denied) and D2 (online is the proxy since SBX-6, offline is none). What the base
   closes last, 3a reopens after it: the work and project folders inside a closed folder, then the protected
   paths again, then the saved copies.
 
@@ -71,8 +71,11 @@ def test_the_writable_roots_are_tagged(tmp_path):
     assert [r for r in roots if r.tag == "in_scope"] == [command_sandbox.Root(str(tmp_path.resolve()), "in_scope")]
     tags = {r.path: r.tag for r in roots}
     home = Path.home()
+    from server.services import run_temp
+    # SBX-5 §1c: the one cache a command writes is Arslan's own; the user's are read-only.
     assert {path for path, tag in tags.items() if tag == "shared_cache"} == {
-        str(command_sandbox._real(home / name)) for name in ("Library/Caches", ".cache", ".npm")}
+        str(command_sandbox._real(run_temp.cache("commands")))}
+    assert not {str(command_sandbox._real(home / n)) for n in ("Library/Caches", ".cache", ".npm")} & set(tags)
     assert {r.path for r in roots if r.tag == "device"} == {
         "/dev/null", "/dev/zero", "/dev/tty", "/dev/ptmx", "/dev/fd", r"^/dev/ttys[0-9]+$"}
     assert "/dev" not in tags                                        # no longer all of /dev
@@ -139,14 +142,21 @@ def home(monkeypatch, tmp_path):
 def _base_for(home, network, **kw):
     roots = command_sandbox.writable_roots(home / "ws")
     return sandbox_profile.default_deny_profile(
-        [Path(r.path) for r in roots if r.tag != "device"], command_sandbox.default_protected(),
+        [Path(r.path) for r in roots if r.tag != "device"],
+        [*command_sandbox.default_protected(), *command_sandbox.cap6b_folders()],
         closed=command_sandbox.app_data(), network=network, **kw)
 
 
+def _shared_caches_read_only() -> str:
+    """SBX-5 §1c: the one rule 3a's preset always adds after the base."""
+    return "(deny file-write* " + " ".join(f'(subpath "{p}")' for p in command_sandbox.shared_caches()) + ")\n"
+
+
 def test_the_commands_profile_starts_with_the_base_text(home):
-    assert command_sandbox.commands_profile(home / "ws", offline=True) == _base_for(home, NetworkMode.NONE)
+    assert command_sandbox.commands_profile(home / "ws", offline=True) == (
+        _base_for(home, NetworkMode.NONE) + _shared_caches_read_only())
     online = command_sandbox.commands_profile(home / "ws", proxy_port=41000, bound_ports=[], system_proxies=[])
-    assert online == _base_for(home, NetworkMode.PROXY, proxy_port=41000)    # nothing to reopen: exactly the base
+    assert online == _base_for(home, NetworkMode.PROXY, proxy_port=41000) + _shared_caches_read_only()
 
 
 def test_online_is_the_proxy_and_offline_is_none(home):
@@ -177,15 +187,17 @@ def test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_c
     copy = home / "Library/Application Support/Arslan/out.txt"
     copy.write_text("x")
     text = command_sandbox.commands_profile(desk / "ws", closed=[desk], readable=[desk / "proj"], copies=[copy])
-    base = _base_for(home, NetworkMode.ANY_DECLARED)
+    base = _base_for(home, NetworkMode.NONE)
     assert not text.startswith(base)                        # the closed Desktop is part of the base's text
     shown = text.replace(os.path.realpath(home), "<H>").splitlines()
-    tail = shown[len(shown) - 4:]
+    tail = shown[len(shown) - 5:]
     assert tail[0] == '(allow file-read* file-write* file-map-executable (subpath "<H>/Desktop/ws"))'
     assert tail[1] == '(allow file-read* file-map-executable (subpath "<H>/Desktop/proj"))'
     assert tail[2].startswith("(deny file-read* file-write* file-map-executable ") and '"<H>/.ssh"' in tail[2]
-    assert tail[3] == '(allow file-read* (literal "<H>/Library/Application Support/Arslan/out.txt"))'
-    assert shown[len(shown) - 5].startswith("(deny network-outbound ")   # the base's protected sockets, before
+    assert '"<H>/.agents/skills"' in tail[2]                               # SBX-5: CAP6b closes again too
+    assert tail[3] == '(deny file-write* (subpath "<H>/Library/Caches") (subpath "<H>/.cache") (subpath "<H>/.npm"))'
+    assert tail[4] == '(allow file-read* (literal "<H>/Library/Application Support/Arslan/out.txt"))'
+    assert shown[len(shown) - 6].startswith("(deny network-outbound ")   # the base's protected sockets, before
 
 
 def test_the_sbx_harness_registers_the_product_preset():

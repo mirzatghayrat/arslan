@@ -422,9 +422,11 @@ class SubSessionAsker(BroadcastAsker):
         self.sub_session_id = sub_session_id
 
     async def __call__(self, frame: dict) -> dict:
+        from server.services import sub_sessions
         key = frame.get("dedupe")
-        return await super().__call__(frame | {"sub_session": True,
-                                               "dedupe": f"sub:{self.sub_session_id}:{key}" if key else key})
+        with sub_sessions.waiting_on_user(self.sub_session_id):     # SUB4: its parent's summary needn't wait on it
+            return await super().__call__(frame | {"sub_session": True,
+                                                   "dedupe": f"sub:{self.sub_session_id}:{key}" if key else key})
 
 
 class JobConfirmations(Confirmations):

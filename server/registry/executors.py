@@ -508,8 +508,9 @@ class FindCapabilityExecutor:
         words = [str(w)[:40] for w in (args.get("keywords") or []) if str(w).strip()][:4]
         if not need and not words:
             return {"ok": False, "error": "say what is needed (need) and 1-3 English search words (keywords)"}
-        # Capabilities by default: an open-source library is only found when asked for.
-        kinds = {k for k in (args.get("kinds") or []) if k in ("mcp", "skill", "project")} or {"mcp", "skill"}
+        # Capabilities by default (CAP7b: plugins too): an open-source library is only found when asked for.
+        kinds = {k for k in (args.get("kinds") or []) if k in ("mcp", "skill", "plugin", "project")} or {
+            "mcp", "skill", "plugin"}
         result = await capability_search.search(need, words=words, kinds=kinds)
         ctx = personal_context.current()
         capability_search.remember(ctx.conversation_id if ctx else None, result)
@@ -677,9 +678,11 @@ class RunPythonExecutor:
         if ext != ".py":
             return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
         root = _skill_scripts_root().resolve()
-        skill_dir = (root / m.group(1)).resolve()
+        # The entry and each sibling must resolve directly in this skill's own folder: a link to another skill's
+        # folder or files would otherwise run that skill's code under this key, past its switch (#786).
+        skill_dir = root / m.group(1)
         entry = (skill_dir / m.group(2)).resolve()
-        if not str(entry).startswith(str(root) + "/") or not entry.is_file():
+        if entry.parent != skill_dir or not entry.is_file():
             return f"skill script not found: {ref}"
 
         # Honest read: a non-UTF-8 file must return {ok:False} (via the error string), never
@@ -698,7 +701,7 @@ class RunPythonExecutor:
                 return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
             siblings = {p.name: _read(p)
                         for p in skill_dir.iterdir()
-                        if p.is_file() and p.suffix == ".py" and p != entry}
+                        if p.is_file() and p.suffix == ".py" and p != entry and p.resolve().parent == skill_dir}
             # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
             # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
             # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
@@ -710,12 +713,29 @@ class RunPythonExecutor:
             return f"技能文件不是有效 UTF-8:{exc.name},未执行"
         return entry_code, siblings, references
 
+    @staticmethod
+    async def _switched_off(ref: str) -> bool:
+        """#733 item 14: off means off. Whether the user switched off the skill `ref` names, on the Capabilities page
+        or with its plugin's group (which switches each of its skills the same way, `plugin_package._switch_parts`).
+        The key is the part `_load_skill_script` reads the folder by; no row, or an ill-formed ref, is left to it."""
+        from server.db import session as db_session
+        from server.db.models import SkillPack
+        async with db_session.AsyncSessionLocal() as db:
+            pack = await db.get(SkillPack, ref.strip().partition("/")[0])
+        return pack is not None and pack.enabled is False
+
     async def execute(self, args: dict) -> dict:
         from server.services import code_sandbox  # lazy import keeps boot path light
         extra_files: dict[str, str] | None = None
         read_only_files: dict[str, str] | None = None
         code = args.get("code") or ""
         if args.get("skill_script"):
+            # The sandbox never grants the scripts folder (the data folder is closed to it); this executor reads the
+            # files and hands the sandbox copies. So a switched-off skill is refused here, before any file is read.
+            if await self._switched_off(str(args["skill_script"])):
+                key = str(args["skill_script"]).strip().partition("/")[0]
+                return {"ok": False, "external": False,
+                        "error": f"skill switched off by the user: {key}. Its scripts don't run while it is off."}
             loaded = self._load_skill_script(str(args["skill_script"]))
             if isinstance(loaded, str):
                 return {"ok": False, "external": False, "error": loaded}

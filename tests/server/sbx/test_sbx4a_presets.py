@@ -127,7 +127,7 @@ def test_computation_starts_with_the_base_and_keeps_its_narrow_rules(home):
     lines = text.splitlines()
     after = lines[lines.index("(deny process-exec)") + 1:]          # only its own interpreter runs
     assert f'(allow process-exec (literal "{exe}"))' in after
-    assert f'(deny file-write* (subpath "{(work / "refs").resolve()}"))' == lines[-1]
+    assert f'(deny file-write* (subpath "{(work / "refs").resolve()}"))' in after    # SBX-5's CAP6b rule is last
     assert '(allow file-read-data (literal "/"))' in text
 
 
@@ -140,7 +140,8 @@ def test_mcp_closes_the_protected_paths_after_its_grants_and_reopens_its_own_fol
     lines = text.splitlines()
     protected = lines.index(f'(deny file-read* file-write* file-map-executable (subpath "{data.resolve()}"))')
     assert f'(allow file-read* file-map-executable (subpath "{runtime.resolve()}"))' in lines[protected:]
-    assert lines[-1] == f'(allow file-read* file-write* file-map-executable (subpath "{root.resolve()}"))'
+    # SBX-5's CAP6b and cache write denials follow it, last.
+    assert f'(allow file-read* file-write* file-map-executable (subpath "{root.resolve()}"))' in lines[protected:]
     assert '(allow network-outbound (remote tcp "localhost:41000"))' in text            # declared: the proxy (SBX-6)
     assert '(deny network-outbound (remote tcp "localhost:8741"))' in text and '"*:*"' not in text
     off = capability_sandbox.profile(root=root, folders=[], network=False, read=[])
@@ -153,7 +154,7 @@ def test_the_sbx_harness_registers_the_three_presets():
         assert BUILT_BASES[base] is not Harness._measurement_profile, base
 
 
-@pytest.mark.parametrize("mode", [NetworkMode.ANY_DECLARED, NetworkMode.PORT_22])
+@pytest.mark.parametrize("mode", [NetworkMode.PORT_22])
 def test_the_harness_refuses_an_mcp_mode_the_product_lacks(tmp_path, mode):
     """MCP has none and proxy only (SBX-6 MCP proxy): no quiet mapping to another mode."""
     from tests.server.sbx.harness import Harness

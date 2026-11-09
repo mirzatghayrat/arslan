@@ -290,22 +290,18 @@ def test_complete_network_allow_list(tmp_path, base):
 
 
 @pending("commands-proxy")
-@pytest.mark.parametrize("selection", ["explicit-any-declared", "default-online"])
+@pytest.mark.parametrize("selection", ["default-online"])
 def test_commands_retires_any_declared(tmp_path, selection):
     assert "commands-proxy" in BUILT_BASES, "SBX-6a commands-proxy adapter is not built"
     # The SBX-6 adapter must also exercise the actual commands preset. None means
     # no explicit network override: pass offline=False to its online selection.
     assert "commands" in BUILT_BASES, "SBX-6a must register the actual commands preset"
-    h = Harness(tmp_path, "commands", NetworkMode.ANY_DECLARED if selection == "explicit-any-declared" else None)
-    if selection == "explicit-any-declared":
-        with pytest.raises(ValueError, match="any-declared"):
-            h.profile()
-    else:
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            port = listener.getsockname()[1]
-            text = h.profile(offline=False, proxy_port=port, bound_ports=[], system_proxies=[])
-        grants = [line.strip() for line in text.splitlines() if re.match(
-            r"\s*\(allow\b.*\b(?:network|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
-        assert grants == ['(allow network-outbound (remote tcp "localhost:*"))',
-                          f'(allow network-outbound (remote tcp "localhost:{port}"))']
+    h = Harness(tmp_path, "commands", None)
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        text = h.profile(offline=False, proxy_port=port, bound_ports=[], system_proxies=[])
+    grants = [line.strip() for line in text.splitlines() if re.match(
+        r"\s*\(allow\b.*\b(?:network|default)\b", re.sub(r'"(?:\\.|[^"\\])*"', '""', line))]
+    assert grants == ['(allow network-outbound (remote tcp "localhost:*"))',
+                      f'(allow network-outbound (remote tcp "localhost:{port}"))']
