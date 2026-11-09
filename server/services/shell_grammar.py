@@ -31,8 +31,9 @@ startup files may start anything, and a copy of bash under another name is just 
 
 `folders` says, for each entry of `commands`, every folder it may run in, and `writes` every file a redirection writes
 with the folders it is opened in: "" is the work folder, and anything else is where a `cd` or `pushd` with a written-out
-target leads from it, joined as text (bash's own logical form). Each call starts a fresh shell in the work folder. A
-change that may fail (after `;`, `||`, a newline or `!`) leaves both folders possible; only `&&` gives the new one alone.
+target leads from it, joined as text and folded logically (`.` dropped, `x/..` cancelled). Each call starts a fresh
+shell in the work folder. A change that may fail (after `;`, `||`, a newline or `!`) leaves both folders possible;
+only `&&` gives the new one alone.
 A change in a pipeline segment, a ( … ), a $( … ), a bash -c or a backgrounded list stays there. A change the reader
 can't follow is not understood: no target, an option, `-`, a stack index, `popd`, a tilde other than `~` and `~/`,
 one inside a loop, one through a wrapper, or more than MAX_FOLDERS folders at once.
@@ -43,6 +44,7 @@ command is not understood and `capped` is set. Its time grows linearly with the 
 """
 from __future__ import annotations
 
+import posixpath
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -661,7 +663,7 @@ class _Reader:
         if (not value or value.startswith(("-", "+"))
                 or (value.startswith("~") and (args[0].quoted or not (value == "~" or value.startswith("~/"))))):
             raise _NotUnderstood(f"its {base} goes to a folder it doesn't write out")
-        moved = frozenset(value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}"
+        moved = frozenset(_logical_folder(value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}")
                           for f in self.here)
         if len(moved | self.here | self.failed) > MAX_FOLDERS:
             raise _NotUnderstood("it changes folder more ways than Arslan follows", capped=True)
@@ -680,6 +682,19 @@ class _Reader:
                 _Reader(args[1].text, self.depth + 1, self.out, here=self.here).read_all()
             elif first == "eval" or not _names_something(args[1:] if first == "-m" and base.startswith(_PYTHONS) else args):
                 raise _NotUnderstood(f"it runs {base} without naming a script first: what it runs, the text does not say")
+
+
+def _logical_folder(folder: str) -> str:
+    """Bash's default logical cd, without resolving the work folder or home on disk.
+
+    Home is an unknown anchor: a parent beyond it must remain outside, just like a leading parent beyond the work
+    folder. This folds only the shell's folder; delete operands keep their own parent-component check.
+    """
+    home = folder == "~" or folder.startswith("~/")
+    normal = posixpath.normpath(folder[2:] if home else folder)
+    if home:
+        return "~" if normal == "." else f"~/{normal}"
+    return "" if normal == "." else normal
 
 
 def _names_something(args: list[_Word]) -> bool:
