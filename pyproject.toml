@@ -196,6 +196,7 @@ packages = ["arslan"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py", "quoted_args_file_run_evidence.py"]
 timeout = 120
 # SBX evidence uses testcase properties, which are supported by the xunit1 schema.
 junit_family = "xunit1"

@@ -33,8 +33,8 @@ APP_DATA = (
 
 @pytest.mark.macos
 @macos
-# SBX-6 contract: online commands use PROXY; retirement itself is gated in
-# test_sbx6_network.py. The 13 transitional ANY_DECLARED cases are retired.
+# SBX-6 contract: online commands use PROXY. The 13 transitional any-declared
+# cases are retired, and the mode itself is deleted.
 @pytest.mark.parametrize("mode", [NetworkMode.NONE, NetworkMode.PROXY])
 @pytest.mark.parametrize("service", gates.SERVICES.values(), ids=gates.SERVICES.keys())
 def test_commands_services(sbx, mode, service, record_property):

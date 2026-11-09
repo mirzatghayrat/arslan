@@ -13,7 +13,10 @@ Three answers for any shell command:
           a link outside the sandbox, reading the screen or the clipboard — and a command this
           module cannot read (`unreadable`: unbalanced quoting, over the parser limit, `eval`,
           something downloaded or decoded piped into a shell, an inline script that reaches
-          out, starts programs or drives apps).
+          out, starts programs or drives apps, and since S2a-3 step 3 anything else with no
+          named rule that shell_grammar's reader does not understand). The tool loop runs a
+          command whose only rule is `unreadable` in the sandbox, offline, with no card, where it can
+          (command_gate); otherwise it asks.
   run     layer ③, everything else. The tool loop runs it in the workspace sandbox without a
           card when the sandbox can start (`command_sandbox.available()`); otherwise, or when
           the sandbox is switched off, it asks (target `unsandboxed:*`).
@@ -23,6 +26,13 @@ NousResearch/hermes-agent), keeping what applies to macOS. Commands are read thr
 server/services/shell_text.py (S2b-1), Arslan's copy of Hermes' text handling: the command-start
 pass, the variants with a newline at every real command start, and the quote masks. Hermes'
 MIT license is in THIRD_PARTY_NOTICES.md ("Terminal command reading").
+
+Operand-aware tuple rules may loosen the original flattened-tuple verdict only
+when _fully_accounted accepts every option in that program's own table. Unknown
+options, unsplittable clusters, missing values and unplaceable global options
+use the original bounded flattened matcher for that command. Argument spelling
+and case are preserved; only command words are normalized. Coverage gaps can
+therefore cost a confirmation, but cannot remove the original protection.
 
 Folder cancellation also checks retained prefixes in a supplied working folder. It is a guard against mistakes and
 against instructions smuggled in through web pages, not a sandbox: the sandbox (S2a-1) is what
@@ -358,6 +368,442 @@ def _detection_texts(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(out))
 
 
+@functools.lru_cache(maxsize=64)
+def _command_words(text: str) -> tuple[tuple[str, ...], ...]:
+    """Only additive checks may use a parsed prefix; it never grants permission."""
+    return shell_grammar.read_prefix(text).commands
+
+
+def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
+    """Operands after options, preserving each word, including empty words and `--`."""
+    out = []
+    options = True
+    skip = False
+    for word in args:
+        if skip:
+            skip = False
+        elif options and word == "--":
+            options = False
+        elif options and word.startswith("-") and word != "-":
+            skip = word in values
+        else:
+            out.append(word)
+    return tuple(out)
+
+
+def _verb(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
+    """Skip leading options with separate, attached or clustered values."""
+    i = 0
+    while i < len(args) and args[i].startswith("-") and args[i] != "-":
+        word = args[i]
+        i += 1
+        if word == "--":
+            return args[i:]
+        if word in values:
+            i += 1
+        elif not word.startswith("--"):
+            for offset, letter in enumerate(word[1:], 2):
+                if "-" + letter in values:
+                    i += offset == len(word)
+                    break
+    return args[i:]
+
+
+_GIT_VALUES = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"})
+# Option arities belong to a program: curl -O, wget -H and gsutil -m are flags.
+_OPTION_VALUES = {
+    "curl": frozenset({"-o", "-H", "-A", "-u", "-e", "-X", "-d", "-F", "-T",
+                       "--output", "--header", "--user-agent", "--user", "--referer", "--url",
+                       "--request", "--data", "--data-ascii", "--data-binary", "--data-raw",
+                       "--data-urlencode", "--form", "--form-string", "--upload-file", "--json"}),
+    "wget": frozenset({"-o", "-O", "-U", "-e", "--output-file", "--output-document",
+                       "--user-agent", "--execute", "--header", "--user", "--password",
+                       "--referer", "--method", "--post-data", "--post-file", "--body-data", "--body-file"}),
+    "gsutil": frozenset({"-o", "-h", "-u", "-i"}),
+    "gcloud": frozenset({"--project", "--configuration", "--account", "--billing-project",
+                         "--impersonate-service-account", "--flags-file", "--format", "--verbosity"}),
+    "aws": frozenset({"--profile", "--region", "--endpoint-url", "--output", "--query",
+                      "--ca-bundle", "--cli-read-timeout", "--cli-connect-timeout", "--color"}),
+    "az": frozenset({"--subscription", "--output", "-o", "--query"}),
+    "azcopy": frozenset({"--output-type", "--output-level", "--log-level"}),
+    "rclone": frozenset({"--config", "--log-file", "--log-level", "--transfers", "--checkers", "--retries", "--bwlimit"}),
+    "s3cmd": frozenset({"-c", "--config", "--access_key", "--secret_key", "--host", "--host-bucket", "--encoding"}),
+    "gh": frozenset({"-R", "--repo", "--hostname", "-X", "--method", "-f", "-F", "--field",
+                     "--raw-field", "--input", "-H", "--header", "--cache", "-q", "--jq", "-t", "--template"}),
+    "http": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                       "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+    "https": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                        "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+    "xh": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                     "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+    "xhs": frozenset({"--pretty", "--style", "--print", "-p", "--output", "-o", "--raw",
+                      "--auth", "-a", "--session", "--session-read-only", "--proxy", "--timeout"}),
+}
+_DELETE_PROGRAMS = frozenset({"rm", "rmdir", "unlink", "srm", "trash"})
+
+
+# Tables are deliberately finite and program-specific. An omitted option uses
+# the legacy floor, including on programs whose supported table is empty.
+_OPTION_VALUES.update({
+    "git": _GIT_VALUES | {"-m", "--message", "--author", "--format"},
+    "security": frozenset({"-p", "-a", "-s", "-c", "-C", "-D", "-j", "-l", "-r", "-P", "-t"}),
+    "xurl": frozenset({"--auth", "--username"}),
+    "npm": frozenset({"--registry", "--prefix"}),
+    "pnpm": frozenset({"--registry", "--dir", "-C"}),
+    "yarn": frozenset({"--cwd", "--registry"}),
+    "cargo": frozenset({"--manifest-path", "--target-dir", "--color"}),
+    "twine": frozenset({"--repository", "-r", "--config-file"}),
+    "docker": frozenset({"--config", "--context", "-c", "--host", "-H"}),
+    "terraform": frozenset({"-chdir"}),
+    "kubectl": frozenset({"--context", "--namespace", "-n", "--kubeconfig"}),
+    "vercel": frozenset({"--cwd", "--token", "-t", "--scope"}),
+    "osascript": frozenset({"-e", "-l", "-s"}),
+    "open": frozenset({"-a", "-b"}),
+    "himalaya": frozenset({"--account", "-a", "--config", "-c"}),
+    "ssh": frozenset({"-p", "-i", "-o", "-F", "-J", "-l"}),
+    "scp": frozenset({"-P", "-i", "-o", "-F", "-J"}),
+    "sftp": frozenset({"-P", "-i", "-o", "-F", "-b"}),
+    "autossh": frozenset({"-M", "-p", "-i", "-o"}),
+    "rsync": frozenset({"-e", "--rsh", "--exclude", "--include"}),
+    "kill": frozenset({"-s"}), "pkill": frozenset({"-u", "-U", "-P"}),
+    "killall": frozenset({"-u", "-t"}),
+    "screencapture": frozenset({"-T", "-t", "-R", "-w"}),
+    "find": frozenset({"-name", "-path", "-type"}),
+})
+_OPTION_FLAGS = {
+    "curl": "-s -S -O -I -L -v -f --head --silent --show-error --location",
+    "wget": "-H -q -v -c --quiet --verbose --spider",
+    "gsutil": "-m -q -D -v", "gcloud": "-q --quiet --no-user-output-enabled",
+    "aws": "--debug --no-cli-pager --no-sign-request --no-verify-ssl",
+    "az": "--verbose --debug --only-show-errors", "azcopy": "--help --version",
+    "rclone": "-q -v --dry-run", "s3cmd": "-v -q -d --verbose --dry-run",
+    "gh": "--help --version --paginate --silent --include -i",
+    "http": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "https": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "xh": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "xhs": "-v -q -f --form --multipart --verbose --quiet --check-status --ignore-stdin",
+    "security": "-v -q -i -h --help -w -g", "xurl": "-v --verbose --help",
+    "git": "--no-pager --bare --global --system --list -l --get --get-all --show-origin",
+    "rm": "-f -r -R -i -I -v -d -P -W --force --recursive",
+    "rmdir": "-p -v", "unlink": "", "srm": "-f -r -R -v -s -m -z", "trash": "-v",
+    "dd": "", "diskutil": "", "newfs_apfs": "-v", "newfs_hfs": "-v -J",
+    "kill": "-1 -9 -KILL -SIGKILL", "shutdown": "-h -r -k", "reboot": "-q", "halt": "-q",
+    "poweroff": "", "sudo": "-n -S", "osascript": "-i", "shortcuts": "", "imsg": "",
+    "mail": "", "mailx": "", "mutt": "", "sendmail": "-t -i", "msmtp": "-t -i",
+    "himalaya": "--debug --trace", "ssh-copy-id": "", "sshpass": "", "mosh": "",
+    "ftp": "", "telnet": "", "socat": "", "ssh": "-v -q -N -T", "scp": "-r -q -v -p",
+    "sftp": "-q -v", "autossh": "-f -N", "nc": "-z -v -n -u", "ncat": "-z -v -n -u",
+    "netcat": "-z -v -n -u", "rsync": "-a -v -z -r --dry-run",
+    "npm": "--dry-run --silent", "pnpm": "--dry-run --silent", "yarn": "--silent",
+    "cargo": "-q -v --quiet --verbose --dry-run", "twine": "--verbose --non-interactive",
+    "docker": "-D --debug", "terraform": "-help -version", "kubectl": "--help",
+    "vercel": "--prod --yes -y --debug -d", "killall": "-9 -v -q", "pkill": "-9 -f -x",
+    "launchctl": "", "defaults": "", "crontab": "-l -r", "tccutil": "",
+    "networksetup": "-setairportpower", "systemsetup": "-settimezone",
+    "pmset": "-g -a -b -c", "spctl": "--status --master-disable --master-enable",
+    "scutil": "--set --get", "open": "-n -g -j -R -W -F -e -t",
+    "screencapture": "-x -i -c -C", "pbpaste": "",
+    "tee": "-a -i", "cp": "-R -r -f -i -p -v", "mv": "-f -i -n -v",
+    "ln": "-s -f -n", "install": "", "ditto": "", "truncate": "", "touch": "",
+    "chmod": "-R", "chown": "-R", "chflags": "-R", "xattr": "-w -d -r",
+    "sed": "", "perl": "", "ruby": "", "find": "-delete -exec -execdir -print",
+}
+_OPTION_FLAGS = {program: frozenset(flags.split()) for program, flags in _OPTION_FLAGS.items()}
+# Only these programs have leading options that this reader can place before a
+# subcommand. Other verb programs must fall back if a global option is present.
+_GLOBAL_OPTIONS = {
+    program: _OPTION_VALUES.get(program, frozenset()) | _OPTION_FLAGS[program]
+    for program in ("gsutil", "gcloud", "aws", "az", "azcopy", "rclone", "s3cmd", "gh",
+                    "git", "security", "xurl", "npm", "pnpm", "yarn", "cargo", "twine",
+                    "docker", "terraform", "kubectl", "vercel", "himalaya")
+}
+# Security's subcommand options are not global flags; git's commit options are
+# likewise not meaningful ahead of its command word.
+_GLOBAL_OPTIONS["security"] = frozenset({"-p", "-q", "-v", "-i", "-h", "--help"})
+_GLOBAL_OPTIONS["git"] = _GIT_VALUES | {"--no-pager", "--bare"}
+# Global flags can select an implicit operation as well as modify a command.
+# Keep that meaning separate from the words left after global-option stripping.
+_OPERATION_FLAGS = {program: frozenset({"--prod"}) if program == "vercel" else frozenset()
+                    for program in _GLOBAL_OPTIONS}
+_VERB_PROGRAMS = frozenset(_GLOBAL_OPTIONS) | {
+    "diskutil", "shortcuts", "imsg", "launchctl", "defaults", "tccutil",
+}
+
+
+def _fully_accounted(program: str, args: tuple[str, ...]) -> bool:
+    """A single admission gate for every tuple rule; never guess an arity."""
+    values = _OPTION_VALUES.get(program, frozenset())
+    flags = _OPTION_FLAGS.get(program, frozenset())
+    globals_ = _GLOBAL_OPTIONS.get(program, frozenset())
+    before_command = program in _VERB_PROGRAMS
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if word == "--":
+            return True
+        if not word.startswith("-") or word == "-":
+            before_command = False
+            continue
+        option, equals, _ = word.partition("=")
+        if option in values or word in flags or word.startswith("--"):
+            if option not in values and (word not in flags or equals):
+                return False
+            options = (option,)
+            consumes = option in values and not equals
+        else:
+            options = []
+            consumes = False
+            for offset, letter in enumerate(word[1:], 2):
+                option = "-" + letter
+                if option not in values and option not in flags:
+                    return False
+                options.append(option)
+                if option in values:
+                    consumes = offset == len(word)
+                    break
+        if before_command and any(option not in globals_ for option in options):
+            return False
+        if consumes:
+            if i == len(args):
+                return False
+            i += 1
+    return True
+
+
+def _legacy_named_rules(words: tuple[str, ...]) -> set[str]:
+    """The original bounded flattened-tuple matcher, used only on coverage gaps."""
+    command = " ".join(words)
+    if shell_text.too_complex(command):
+        command = shell_text.over_limit_forms(command)[0]
+    found = {key for key, pattern, _, masked in _FORBID_C
+             if not masked and key != "arslan-keys" and pattern.match(command)}
+    found.update(key for key, pattern, _ in _ASK_C if pattern.match(command))
+    if ((_DELETE_LINE.match(command) or _FIND_DELETE.match(command))
+            and _deletes_outside((command,))):
+        found.add("delete-outside")
+    return found
+
+
+def _options(args: tuple[str, ...], values: frozenset[str]):
+    """Yield options with their values, or an empty option for a positional word.
+
+    Long assignments and attached short values never consume the next word.
+    A separate value is data even when it resembles an operation or option.
+    """
+    i = 0
+    ended = False
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if not ended and word == "--":
+            ended = True
+        elif ended or not word.startswith("-") or word == "-":
+            yield "", word
+        elif word.startswith("--"):
+            option, equals, value = word.partition("=")
+            if not equals and option in values and i < len(args):
+                value, i = args[i], i + 1
+            yield option, value
+        else:
+            for offset, letter in enumerate(word[1:], 2):
+                option = "-" + letter
+                value = ""
+                if option in values:
+                    value = word[offset:]
+                    if not value and i < len(args):
+                        value, i = args[i], i + 1
+                    yield option, value
+                    break
+                yield option, value
+
+
+def _security_verb(args: tuple[str, ...]) -> tuple[str, ...]:
+    # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        word = args[i]
+        if word == "--":
+            return args[i + 1:]
+        if word == "--help":
+            return ()
+        i += 1
+        if not word.startswith("--"):
+            for offset, letter in enumerate(word[1:], 2):
+                if letter == "h":
+                    return ()
+                if letter == "p":
+                    i += offset == len(word)
+                    break
+    return args[i:]
+
+
+def _dispatch_args(program: str, args: tuple[str, ...]) -> tuple[tuple[str, ...], frozenset[str]]:
+    values = _OPTION_VALUES.get(program, frozenset())
+    operations = frozenset(option for option, _ in _options(args, values)
+                           if option in _OPERATION_FLAGS[program])
+    return _verb(args, values), operations
+
+
+def _named_rules(words: tuple[str, ...]) -> set[str]:
+    """Named operations on parsed argv, never on a flattened or reparsed command.
+
+    Each program decides which words are verbs, flags, option values or paths.
+    The old text rules remain an independent conservative floor.
+    """
+    program, args = words[0].lower(), words[1:]
+    if not _fully_accounted(program, args):
+        return _legacy_named_rules(words)
+    operations = frozenset()
+    if program in _GLOBAL_OPTIONS and program not in {"security", "git"}:
+        args, operations = _dispatch_args(program, args)
+    lower = tuple(w.lower() for w in args)
+    first = lower[0] if lower else ""
+    found: set[str] = set()
+
+    def add(rule: str, matches: bool) -> None:
+        if matches:
+            found.add(rule)
+
+    if program == "sudo":
+        found.add("sudo")
+    if program == "security":
+        operation = _security_verb(args)
+        subcommand = operation[0].lower() if operation else ""
+        add("keychain-secrets", subcommand in {"dump-keychain", "export"} or
+            subcommand in {"find-generic-password", "find-internet-password"} and
+            any(w in {"-w", "-g"} for w in _security_flags(operation[1:])))
+        add("keychain-write", bool(re.fullmatch(r"(?:add-|delete-|set-)[\w-]+|import", subcommand)))
+    if program in _DELETE_PROGRAMS:
+        targets = _operands(args)
+        add("delete-outside", not targets or any(_outside_target(w) for w in targets))
+        add("trash", any(re.search(r"(?:^|/)\.Trash(?:es)?(?:/|$)", w, re.I) for w in targets))
+        if program == "rm":
+            add("wipe-root", any(re.fullmatch(r"/(?:(?:\.\.?)?/)*(?:\.\.?)?\**", w) for w in targets))
+            add("wipe-home", any(re.fullmatch(r"(?:~|\$\{?HOME\}?)(?:/?|/\*)?", w, re.I) for w in targets))
+            add("macos-roots", any(re.fullmatch(_ROOTS, w, re.I) for w in targets))
+    if program == "find":
+        actions = {"-delete", "-exec", "-execdir"}.intersection(args)
+        deleting = "-delete" in actions or any(
+            args[i] in {"-exec", "-execdir"} and args[i + 1].lower() in _DELETE_PROGRAMS
+            for i in range(len(args) - 1))
+        starts = args[:next((i for i, w in enumerate(args) if w.startswith("-") or w in {"!", "("}), len(args))]
+        add("delete-outside", deleting and (not starts or any(_outside_target(w) for w in starts)))
+        add("trash", deleting and any(re.search(r"(?:^|/)\.Trash(?:es)?(?:/|$)", w, re.I) for w in starts))
+    add("raw-disk", program == "dd" and any(re.match(r"of=/dev/r?disk\d", w, re.I) for w in args)
+        or program == "diskutil" and bool(re.fullmatch(r"erase\w*|zeroDisk|secureErase|randomDisk|partitionDisk|reformat", first, re.I))
+        or bool(re.fullmatch(r"newfs_\w+", program)))
+    if program == "kill":
+        add("kill-all", "-1" in args)
+        add("force-kill", any(w in {"-9", "-kill", "-sigkill"} for w in lower))
+    add("shutdown", program in {"shutdown", "reboot", "halt", "poweroff"})
+    add("apple-events", program == "osascript")
+    add("shortcuts", program == "shortcuts" and first == "run")
+    add("send-mail", program in {"mail", "mailx", "sendmail", "msmtp", "mutt"}
+        or program == "himalaya" and first in {"send", "write", "reply", "forward"})
+    add("send-message", program == "imsg" and first == "send"
+        or program == "xurl" and first in {"post", "tweet", "/2/tweets"})
+    add("upload", _uploads(program, args))
+    add("remote-shell", program in {"ssh", "ssh-copy-id", "sshpass", "autossh", "mosh", "scp", "sftp", "ftp", "telnet", "socat"}
+        or program in {"nc", "ncat", "netcat"} and not any(w.startswith("-") and "z" in w for w in args)
+        or program == "rsync" and any(":" in w for w in _operands(args)))
+    if program == "git":
+        verb = _verb(args, _GIT_VALUES)
+        add("git-push", bool(verb) and verb[0].lower() == "push")
+        add("protected-write", bool(verb) and verb[0].lower() == "config"
+            and bool({"--global", "--system"}.intersection(verb[1:]))
+            and not any(w in {"-l", "--list"} or w.startswith(("--get", "--show-")) for w in verb[1:]))
+    add("publish", program in {"npm", "pnpm", "yarn", "cargo"} and first == "publish"
+        or program == "twine" and first == "upload"
+        or program == "gh" and (len(lower) >= 2 and first in {"pr", "issue", "release", "repo", "gist"}
+                                and lower[1] in {"create", "delete", "merge", "close", "edit", "comment"}
+                                or first == "api" and _api_writes(args[1:]))
+        or program == "docker" and (first == "push" or lower[:2] == ("image", "push"))
+        or program == "terraform" and first in {"apply", "destroy"}
+        or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
+        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations))
+    add("force-kill", program in {"killall", "pkill"})
+    add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
+        or program == "defaults" and first == "write" or program == "crontab" and first != "-l")
+    add("system-settings", program == "tccutil" and first == "reset"
+        or program in {"networksetup", "systemsetup"} and bool(re.fullmatch(r"-set\w*", first))
+        or program == "pmset" and first != "-g" or program == "spctl" or program == "scutil" and first == "--set")
+    if program == "open":
+        add("open-app", any(re.fullmatch(_SCRIPT_APPS, args[i + 1], re.I)
+                            for i, w in enumerate(args[:-1]) if re.fullmatch(r"-[a-zA-Z]*[ab]", w))
+            or any(re.match(r"[a-z][\w+.-]*:", w, re.I) or
+                   re.search(r"\.(?:app|command|tool|sh|terminal|workflow|scpt|applescript|shortcut)$", w, re.I)
+                   for w in _operands(args, frozenset({"-a", "-b"}))))
+    add("screen-clipboard", program in {"screencapture", "pbpaste"})
+    if program in {"tee", "cp", "mv", "ln", "install", "ditto", "rsync", "truncate", "touch",
+                   "chmod", "chown", "chflags", "xattr", "dd", "sed", "perl", "ruby"}:
+        add("protected-write", any(re.match(_PROTECTED_PATH, w.split("=", 1)[-1], re.I) for w in args))
+    return found
+
+
+def _security_flags(args: tuple[str, ...]) -> tuple[str, ...]:
+    # These options consume a value, even when that value looks like another option.
+    flags = []
+    skip = False
+    for word in args:
+        if skip:
+            skip = False
+        elif word == "--":
+            break
+        elif word.startswith("-"):
+            flags.append(word)
+            skip = word in {"-a", "-s", "-c", "-C", "-D", "-j", "-l", "-r", "-p", "-P", "-t"}
+    return tuple(flags)
+
+
+def _api_writes(args: tuple[str, ...]) -> bool:
+    return any(option in {"-f", "-F", "--field", "--raw-field", "--input"} or
+               option in {"-X", "--method"} and bool(value) and value.upper() != "GET"
+               for option, value in _options(args, _OPTION_VALUES["gh"]))
+
+
+def _uploads(program: str, args: tuple[str, ...]) -> bool:
+    if program in {"curl", "wget"}:
+        methods = {"-X", "--request"} if program == "curl" else {"--method"}
+        for option, value in _options(args, _OPTION_VALUES[program]):
+            if program == "curl" and (re.match(r"--(?:data|form|upload-file|json)(?:-|$)", option)
+                                       or option in {"-d", "-F", "-T"}):
+                return True
+            if program == "wget" and option in {"--post-data", "--post-file", "--body-data", "--body-file"}:
+                return True
+            if option in methods and value.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+                return True
+        return False
+    if program in {"http", "https", "xh", "xhs"}:
+        options = tuple(_options(args, _OPTION_VALUES[program]))
+        operands = tuple(value for option, value in options if not option)
+        return bool(operands and operands[0].upper() in {"POST", "PUT", "PATCH", "DELETE"}) or any(
+            option in {"--form", "--multipart", "--raw", "-f"} for option, _ in options) or any(
+            re.match(r"[A-Za-z_][\w.\-\[\]]*(?::=|=|@)(?!=)", w) for w in operands[1:])
+    values = _OPTION_VALUES.get(program, frozenset())
+    verb = _verb(args, values)
+    if program == "gcloud" and verb and verb[0].lower() in {"alpha", "beta"}:
+        verb = _verb(verb[1:], values)
+    paths = {"gcloud": {"storage": {"cp", "mv", "rsync"}},
+             "aws": {"s3": {"cp", "mv", "sync", "rm"}, "s3api": {"put-object", "upload-part"}},
+             "gh": {"release": {"upload"}}}
+    if program in paths and verb:
+        rest = _verb(verb[1:], values)
+        return bool(rest and rest[0].lower() in paths[program].get(verb[0].lower(), ()))
+    if program == "az" and verb and verb[0].lower() == "storage":
+        rest = _verb(verb[1:], values)
+        if rest and rest[0].lower() in {"blob", "file", "fs"}:
+            tail = _verb(rest[1:], values)
+            if rest[0].lower() == "fs" and tail and tail[0].lower() == "file":
+                tail = _verb(tail[1:], values)
+            return bool(tail and tail[0].lower() in {"upload", "upload-batch", "sync"})
+    verbs = {"gsutil": {"cp", "copy", "mv", "move", "ren", "rename", "rsync"},
+             "azcopy": {"copy", "cp", "c", "sync", "sc", "s"},
+             "rclone": {"copy", "copyto", "move", "moveto", "sync", "bisync", "rcat", "copyurl"},
+             "s3cmd": {"put", "sync", "cp", "mv"}}
+    return bool(verb and verb[0].lower() in verbs.get(program, ()))
+
+
 def _over_limit(forms: tuple[str, ...]) -> bool:
     return any(shell_text.too_complex(form) for form in forms)
 
@@ -634,10 +1080,13 @@ def as_shell(command: str, argv=None) -> str:
 
 def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
     masked = None
+    named_rules = set().union(*(_named_rules(words) for words in _command_words(text)))
     for key, pattern, why, quote_masked in _FORBID_C:
         if quote_masked:
             masked = masked or _masked_texts(texts)
-        if _matches(pattern, masked if quote_masked else texts):
+        named = not quote_masked and key != "arslan-keys"
+        if (_matches(pattern, masked if quote_masked else texts)
+                or (named and key in named_rules)):
             return Assessment("forbid", key, why)
     return None
 
@@ -651,12 +1100,15 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
     return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
-def _layer_two(text: str, texts: tuple[str, ...], cwd: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
-    found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
+def _layer_two(texts: tuple[str, ...], commands: tuple[tuple[str, ...], ...], *,
+               text: str, cwd: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
+    named_rules = set().union(*(_named_rules(words) for words in commands))
+    found = [(key, why) for key, pattern, why in _ASK_C
+             if _matches(pattern, texts) or key in named_rules]
     moved_outside, moved_protected = _after_moves(text, cwd)
     if (_script_names_protected(texts) or moved_protected) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
-    if _deletes_outside(texts) or moved_outside:
+    if _deletes_outside(texts) or moved_outside or "delete-outside" in named_rules:
         found.insert(0, _DELETE_OUTSIDE)
     seen: set[str] = set()
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
@@ -676,13 +1128,25 @@ def assess(command: str, *, cwd: str | os.PathLike[str] | None = None) -> Assess
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(text, texts, cwd)
+    found = _layer_two(texts, _command_words(text), text=text, cwd=cwd)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
     hidden = _hidden_code(texts)
     if hidden:
         return Assessment("ask", UNREADABLE, hidden)
+    not_read = _not_understood(text)
+    if not_read:
+        return Assessment("ask", UNREADABLE, not_read)
     return Assessment("run")
+
+
+@functools.lru_cache(maxsize=64)        # assess and ask_rules both ask, several times a call
+def _not_understood(text: str) -> str:
+    """S2a-3 step 3 (design point 4): why shell_grammar's reader does not understand the command, or "". With no named
+    rule, such a command is `unreadable`, so its card, the approvals, the Island and the risk grade all read one table.
+    Named layer ② rules still read the raw text, so they come first."""
+    reading = shell_grammar.read(text)
+    return "" if reading.understood else (reading.why or "Arslan does not understand all of it")
 
 
 def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None) -> set[str]:
@@ -695,7 +1159,9 @@ def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None) -> set
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(text, texts, cwd)} | ({UNREADABLE} if _hidden_code(texts) else set())
+    named = {key for key, _why in _layer_two(texts, _command_words(text), text=text, cwd=cwd)}
+    # With no named rule, what asks is unreadable: its code is hidden, or the reader does not understand it (`assess`).
+    return named | ({UNREADABLE} if not named or _hidden_code(texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to

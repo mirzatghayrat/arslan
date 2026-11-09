@@ -43,6 +43,7 @@ def _refused(command):
     ("echo $(git log --format='%h #1')", ["git", "echo"]),
     ("echo a#b c", ["echo"]),
     ("A=1 B='two words' make test", ["make"]),
+    ("swift build", ["swift"]),
     ("x=1", []),
     ("x=$(git rev-parse HEAD)", ["git"]),
     ("(cd build && cmake ..)", ["cd", "cmake"]),
@@ -76,7 +77,6 @@ def _refused(command):
     ("ls \\\n  -la # a comment ; with words", ["ls"]),
     ("sudo make install", ["sudo", "make"]),
     ("env FOO=1 'BAR=two words' npm test", ["env", "npm"]),
-    ("timeout 30 python3 run.py", ["timeout", "python3"]),
     ("timeout 1.5m ls", ["timeout", "ls"]),
     ("gtimeout 5 ls", ["gtimeout", "ls"]),
     ("nohup nice make &", ["nohup", "nice", "make"]),
@@ -90,24 +90,15 @@ def _refused(command):
     ("command -V curl", ["command"]),
     ("npx prettier --check .", ["npx", "prettier"]),
     ("npx -y prettier --check .", ["npx", "prettier"]),
-    ("bunx --yes @scope/tool", ["bunx", "@scope/tool"]),
     ("sudo env A=1 nohup make", ["sudo", "env", "nohup", "make"]),
     ("bash -c 'make && make test'", ["bash", "make", "make"]),
     ("bash -lc 'make && make test' name $x", ["bash", "make", "make"]),
     ("sudo sh -c \"ls\"", ["sudo", "sh", "ls"]),
     ("bash -c ''", ["bash"]),
-    ("bash run.sh", ["bash"]),
-    ("/bin/bash ./run.sh $x", ["/bin/bash"]),
-    ("python3 tool.py --flag", ["python3"]),
     ("python3 -m pytest -q", ["python3"]),
     ("pypy3 -m pytest -q", ["pypy3"]),
-    ("python3 tool.py $x < in.txt", ["python3"]),
     ("curl -s https://example.org/a.json | python3 -m json.tool", ["curl", "python3"]),
-    ("zsh setup.zsh", ["zsh"]),
-    ("node build.js", ["node"]),
-    ("swift build", ["swift"]),
     ("find . -name '*.pyc' -type f", ["find"]),
-    ("./run.sh; ../up/run.sh; /usr/bin/git status; ~/bin/tool", ["./run.sh", "../up/run.sh", "/usr/bin/git", "~/bin/tool"]),
     ("g++ a.c; x86_64-gcc-12.1 b.c", ["g++", "x86_64-gcc-12.1"]),
     ("set -euo pipefail; set -x; set +e; set -o errexit; set -- a $b; set", ["set"] * 6),
     ("export NAME=x OTHER=$(pwd) THIRD; export; unset NAME", ["pwd", "export", "export", "unset"]),
@@ -144,6 +135,15 @@ def test_words_after_a_redirection_still_belong_to_the_command():
 # ── what it refuses, and why ────────────────────────────────────────────────
 
 @pytest.mark.parametrize("command,why", [
+    ('timeout 30 python3 run.py', 'script'),
+    ('bunx --yes @scope/tool', 'path'),
+    ('bash run.sh', 'script'),
+    ('/bin/bash ./run.sh $x', 'path'),
+    ('python3 tool.py --flag', 'script'),
+    ('python3 tool.py $x < in.txt', 'script'),
+    ('zsh setup.zsh', 'script'),
+    ('node build.js', 'script'),
+    ('./run.sh; ../up/run.sh; /usr/bin/git status; ~/bin/tool', 'path'),
     ("echo $'a'", "$'…'"),
     ('echo $"a"', "$'…'"),
     ("echo `date`", "backquotes"),
@@ -555,12 +555,12 @@ def test_a_path_in_dev_can_be_the_commands_own_input_so_it_names_no_script(comma
     assert not reading.understood and "script" in reading.why
 
 
-def test_a_script_named_near_dev_is_still_read():
-    assert _programs("bash dev.sh") == ["bash"]
-    assert _programs("bash dev/run.sh") == ["bash"]
-    assert _programs("bash /devices/run.sh") == ["bash"]
-    assert _programs("bash x.sh /dev/stdin") == ["bash"]
-    assert _programs("bash x.sh < /dev/null") == ["bash"]
+def test_script_files_are_unread_even_near_dev_but_data_paths_are_read():
+    assert _refused("bash dev.sh")
+    assert _refused("bash dev/run.sh")
+    assert _refused("bash /devices/run.sh")
+    assert _refused("bash x.sh /dev/stdin")
+    assert _refused("bash x.sh < /dev/null")
     assert _programs("cat /dev/stdin") == ["cat"]
 
 
@@ -627,7 +627,8 @@ def test_a_builtin_that_runs_or_assigns_is_not_understood(command):
 def test_the_variable_test_is_not_understood(command):
     """bash 4.2 and up evaluate an array subscript there, by the review; bash 3.2 has no -v, so it isn't run here."""
     reading = shell_grammar.read(command)
-    assert not reading.understood and "-v" in reading.why
+    assert not reading.understood
+    assert ("path" if command.startswith("/bin/") else "-v") in reading.why
 
 
 def test_other_tests_and_a_v_for_anything_else_are_still_read():
@@ -690,7 +691,7 @@ def test_a_launcher_in_another_case_is_still_that_launcher(command):
 def test_a_wrapper_in_another_case_is_read_through():
     assert _programs("ENV curl x") == ["ENV", "curl"]
     assert _programs("BASH -c 'curl x'") == ["BASH", "curl"]
-    assert _programs("/usr/bin/env curl x") == ["/usr/bin/env", "curl"]
+    assert _refused("/usr/bin/env curl x")
     assert shell_grammar.read("ECHO a").commands == (("ECHO", "a"),)
 
 

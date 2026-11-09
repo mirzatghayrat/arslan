@@ -20,9 +20,8 @@ def test_default_deny_golden():
 
 @pytest.mark.parametrize("mode", list(NetworkMode))
 def test_network_is_explicit_and_services_never_wholesale(mode):
-    ports = () if mode == NetworkMode.ANY_DECLARED else (43211, 43212)
     text = default_deny_profile(network=mode, proxy_port=43210 if mode == NetworkMode.PROXY else None,
-                                denied_ports=ports)
+                                denied_ports=(43211, 43212))
     assert "(allow default)" not in text
     assert "(allow mach-lookup)" not in text
     assert "(allow network*)" not in text
@@ -33,18 +32,9 @@ def test_network_is_explicit_and_services_never_wholesale(mode):
     if mode == NetworkMode.NONE:
         assert "(deny network*)" in text
         assert "(allow network" not in text
-    elif mode == NetworkMode.ANY_DECLARED:
-        assert '(allow network-outbound (remote tcp "*:*"))' in text
     else:
         assert '(deny network-outbound (remote tcp "localhost:43211"))' in text
         assert '(deny network-outbound (remote tcp "localhost:43212"))' in text
-
-
-@pytest.mark.parametrize("ports", [(49345,), (59626,), (22, 443)])
-def test_any_declared_rejects_port_denials(ports):
-    # Include the two reported dropped ports and a multi-port iterable.
-    with pytest.raises(ValueError, match="any-declared cannot enforce denied_ports"):
-        default_deny_profile(network="any-declared", denied_ports=iter(ports))
 
 
 def test_protection_is_last_even_inside_a_grant(tmp_path):
@@ -150,7 +140,7 @@ def test_evidence_and_artifacts_match_every_executed_profile(tmp_path, monkeypat
         h.run(["/usr/bin/true"], probe="mode-" + mode.value)
     override = h.profile(denied_ports=[43210])
     h.run(["/usr/bin/true"], probe="arslan-port-refusal", profile=override)
-    control = Harness(tmp_path, "outside-floor", NetworkMode.ANY_DECLARED, executions=h.executions)
+    control = Harness(tmp_path, "outside-floor", NetworkMode.PROXY, executions=h.executions)
     control.run(["/usr/bin/true"], probe="historical-control")
 
     # Teardown must not regenerate any profile, even if the adapter state changed.
@@ -160,7 +150,7 @@ def test_evidence_and_artifacts_match_every_executed_profile(tmp_path, monkeypat
     artifacts = tmp_path / "artifacts"
     h.record_executions(properties.__setitem__, artifacts)
     executions = json.loads(properties["executions"])
-    assert len(executions) == len(launch.call_args_list) == 6
+    assert len(executions) == len(launch.call_args_list) == len(NetworkMode) + 2
     for sequence, (execution, call) in enumerate(zip(executions, launch.call_args_list), 1):
         argv = call.args[0]
         assert argv[:2] == ["/usr/bin/sandbox-exec", "-p"]
@@ -171,12 +161,13 @@ def test_evidence_and_artifacts_match_every_executed_profile(tmp_path, monkeypat
         assert execution["sequence"] == sequence
         assert execution["result"] == "completed" and execution["returncode"] == 7
         assert "profile_text" not in execution
-    assert [e["network"] for e in executions[:4]] == [mode.value for mode in NetworkMode]
-    assert [e["probe"] for e in executions[:4]] == ["mode-" + mode.value for mode in NetworkMode]
-    assert executions[4]["probe"] == "arslan-port-refusal"
-    assert executions[4]["profile_override"] is True
-    assert executions[4]["profile_sha256"] != executions[3]["profile_sha256"]
-    assert executions[5]["base"] == "outside-floor"
+    modes = len(NetworkMode)
+    assert [e["network"] for e in executions[:modes]] == [mode.value for mode in NetworkMode]
+    assert [e["probe"] for e in executions[:modes]] == ["mode-" + mode.value for mode in NetworkMode]
+    assert executions[modes]["probe"] == "arslan-port-refusal"
+    assert executions[modes]["profile_override"] is True
+    assert executions[modes]["profile_sha256"] != executions[modes - 1]["profile_sha256"]
+    assert executions[modes + 1]["base"] == "outside-floor"
     assert "private stdout" not in properties["executions"]
     assert "private stderr" not in properties["executions"]
 

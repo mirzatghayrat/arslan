@@ -120,6 +120,12 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
             result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
         if tool_key == "run_command" and network.get("note") and isinstance(result, dict):
             result["network_note"] = network["note"]
+        if tool_key == "run_command" and plan.offline_reason and isinstance(result, dict):
+            # S2a-3 step 3: an unread command ran offline with no card. SBX-8 counts these from the run step (run_trace),
+            # never from this result.
+            result["offline_reason"] = plan.offline_reason
+            from server.orchestrator import run_trace
+            run_trace.note_offline(plan.offline_reason)
     except TaskError as exc:
         if exc.code not in _REFUSED_STEP:
             raise

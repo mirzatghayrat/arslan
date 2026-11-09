@@ -2,8 +2,8 @@
 
 "Understood" is an allowlist: a small part of bash 3.2, the shell terminal_exec runs (`/bin/bash -p -c`). A command
 is understood only when all of its text is in that part; otherwise `why` says what stopped the reader. Refusing costs
-little, so a form bash reads in a way that is hard to follow is refused, not modelled. terminal_policy reads the
-folders (S2a-3 step 4); nothing else reads this yet.
+little, so a form bash reads in a way that is hard to follow is refused, not modelled. The named policy rules read
+its commands and folders; the command gate asks when the reader does not understand the text.
 
 It reads:
   - words of unquoted characters, backslash escapes, '…' and "…"; $NAME, ${NAME}, the special parameters and $( … ),
@@ -17,16 +17,15 @@ It reads:
   - these wrappers, read through to the command they start, with no options: sudo, nohup, time, nice, caffeinate,
     command (also command -v), exec, env NAME=value…, timeout DURATION, npx / bunx [-y|--yes];
   - bash or sh -c or -lc with its script written out, read again as a command;
-  - a shell or interpreter whose first word names a script (for Python also -m MODULE) and has no /dev/ in it, find
-    without -exec and its relatives. Every word that decides this is written out.
+  - Python -m MODULE, and find without -exec and its relatives. Every word that decides this is written out.
 
 Everything else is not understood: other quoting forms, backquotes, arithmetic, brace expansion, ${…} with operators,
 process substitution, function definitions, [[ … ]], other builtins, a program named by an expansion or a pattern,
-any wrapper option, xargs, awk and other launchers.
+any / in a program word, a shell or interpreter running a file, any wrapper option, xargs, awk and other launchers.
 
 `commands` lists, when understood, every simple command in the text, on every branch whether or not a condition skips
 it, and each wrapper's command after the wrapper. It goes by name, and in any case, because the default macOS disk
-ignores case. It does not say what a named program goes on to start by itself: `make`, `git`, a script or a shell's
+ignores case. It does not say what a named program goes on to start by itself: `make`, `git`, a Python module or a shell's
 startup files may start anything, and a copy of bash under another name is just that name.
 
 `folders` says, for each entry of `commands`, every folder it may run in, and `writes` every file a redirection writes
@@ -111,10 +110,11 @@ _PLAIN_WRAPPERS = frozenset({"sudo", "nohup", "time", "nice", "caffeinate", "com
 _LAUNCHERS = frozenset({"watch", "script", "tmux", "screen", "parallel", "concurrently", "su", "sg", "runuser", "flock",
                         "entr", "nodemon", "arch", "xcrun", "stdbuf", "setsid", "sandbox-exec", "xargs", "gxargs", "gfind",
                         "awk", "gawk", "nawk", "mawk", "lockf"})
-# What takes code from the command line or its input, and is read only when its first word names a script.
+# Programs whose code is not in the command text, except the inline shells and Python modules read below.
 _INTERPRETER = re.compile(r"(?:bash|sh|zsh|ksh|mksh|dash|ash|fish|csh|tcsh|pwsh|nu|xonsh|elvish|yash|rc|python|pypy|node"
                           r"|nodejs|deno|bun|perl|ruby|php|rscript|lua|luajit|tclsh|swift|julia)[0-9.-]*")
 _PYTHONS = ("python", "pypy")
+_NON_SCRIPT_SUBCOMMANDS = {"swift": {"build"}, "bun": {"install"}, "deno": {"info"}}
 _FIND_RUNS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 
 
@@ -146,6 +146,19 @@ class _Out:
         self.commands: list[tuple[str, ...]] = []
         self.folders: list[tuple[str, ...]] = []
         self.writes: list[tuple[str, tuple[str, ...]]] = []
+
+
+@dataclass(frozen=True, kw_only=True)
+class PrefixReading:
+    """Commands parsed before a refusal, for additive policy checks only.
+
+    This is never evidence that the whole input is understood. In particular,
+    nothing after the first unread form is scanned or treated as a command.
+    """
+    commands: tuple[tuple[str, ...], ...] = ()
+    refused: bool = False
+    why: str = ""
+    capped: bool = False
 
 
 class _NotUnderstood(Exception):
@@ -651,6 +664,8 @@ class _Reader:
             name = words[0].literal
             if name is None:
                 raise _NotUnderstood("the program it runs comes from a variable, a substitution or a pattern")
+            if "/" in name:
+                raise _NotUnderstood("its program word contains a path")
             if not _PROGRAM.fullmatch(name):
                 raise _NotUnderstood("its program name, or a wrapper's option, is not one Arslan reads")
             if len(self.commands) >= MAX_COMMANDS:
@@ -658,7 +673,7 @@ class _Reader:
             self.commands.append(tuple(w.text for w in words))
             self.out.effects.append(tuple(w.text for w in words))
             self.out.folders.append(tuple(sorted(self.here)))
-            base = name.rsplit("/", 1)[-1].lower()
+            base = name.lower()
             args = words[1:]
             if base in _FOLDER_CHANGES:
                 self._change_folder(base, args, layers)
@@ -715,12 +730,14 @@ class _Reader:
                     raise _NotUnderstood("its find runs a command, or may from an expansion")
         elif _INTERPRETER.fullmatch(base):
             first = args[0].literal if args else None
+            if first in _NON_SCRIPT_SUBCOMMANDS.get(base, ()):
+                return
             if base in ("bash", "sh") and first in ("-c", "-lc"):
                 if not _names_something(args[1:]):
                     raise _NotUnderstood("it runs a shell script that is not written out")
                 _Reader(args[1].text, self.depth + 1, self.out, here=self.here).read_all()
-            elif first == "eval" or not _names_something(args[1:] if first == "-m" and base.startswith(_PYTHONS) else args):
-                raise _NotUnderstood(f"it runs {base} without naming a script first: what it runs, the text does not say")
+            elif not (first == "-m" and base.startswith(_PYTHONS) and _names_something(args[1:])):
+                raise _NotUnderstood(f"it runs a {base} script whose code the text does not say")
 
 
 def _logical_folder(folder: str) -> str:
@@ -827,28 +844,42 @@ def _unseen(c: str) -> bool:
     return c not in " \t\n" and unicodedata.category(c)[0] in "CZ"
 
 
+def _read_prefix(text: str, out: _Out) -> PrefixReading:
+    """Read once into shared observations, retaining commands on refusal only for additive rules."""
+    if not isinstance(text, str):
+        return PrefixReading(refused=True, why="it is not text")
+    if len(text) > MAX_TEXT:
+        return PrefixReading(refused=True, why="it is longer than Arslan reads", capped=True)
+    if any(map(_unseen, set(text))):
+        return PrefixReading(refused=True, why="it contains control or invisible characters")
+    try:
+        _Reader(text, 0, out).read_all()
+    except _NotUnderstood as exc:
+        return PrefixReading(commands=tuple(out.commands), refused=True, why=exc.why, capped=exc.capped)
+    except RecursionError:
+        return PrefixReading(commands=tuple(out.commands), refused=True,
+                             why="it nests commands deeper than Arslan reads", capped=True)
+    return PrefixReading(commands=tuple(out.commands))
+
+
+def read_prefix(text: str) -> PrefixReading:
+    """Read commands before a refusal for additive policy checks only."""
+    return _read_prefix(text, _Out())
+
+
 def read(text: str, *, fold_partial: bool = True,
          fold_guard: Callable[[str, int], bool] | None = None) -> Reading:
-    """Whether `text` is in the grammar above, and every command it would start.
+    """Read commands and folders; a refusal never exposes partial observations.
 
     With fold_partial=False, retain work-relative partial cancellations as written.
     Policy can supply fold_guard(prefix, effect_position) on a second reading to select
     candidates using the first reading's effect scopes. Filesystem checks belong to that
     optional policy callback; the default reader remains filesystem-free.
     """
-    if not isinstance(text, str):
-        return Reading(understood=False, why="it is not text")
-    if len(text) > MAX_TEXT:
-        return Reading(understood=False, why="it is longer than Arslan reads", capped=True)
-    if any(map(_unseen, set(text))):
-        return Reading(understood=False, why="it contains control or invisible characters")
     out = _Out(fold_partial, fold_guard)
-    try:
-        _Reader(text, 0, out).read_all()
-    except _NotUnderstood as exc:
-        return Reading(understood=False, why=exc.why, capped=exc.capped)
-    except RecursionError:
-        return Reading(understood=False, why="it nests commands deeper than Arslan reads", capped=True)
+    prefix = _read_prefix(text, out)
+    if prefix.refused:
+        return Reading(understood=False, why=prefix.why, capped=prefix.capped)
     # A background part can still be running when any later part of this text starts.
     out.effect_scopes.extend((start, end, end, len(out.effects)) for start, end in out.backgrounds)
     return Reading(understood=True, commands=tuple(out.commands), folders=tuple(out.folders), writes=tuple(out.writes),

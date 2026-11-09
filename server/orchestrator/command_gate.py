@@ -1,6 +1,7 @@
 """The gate in front of `run_command` (LOOP1 c2), in the order it has always asked: what never runs, leaving the sandbox,
-the command's own card, then the network after outside content. `check` answers with the refusal the model reads, or with
-what it settled for the execute stage."""
+the command's own card, then the network after outside content. Since S2a-3 step 3 a command whose only rule is
+`unreadable` runs offline in the sandbox with no card where it can (`_runs_offline_unread`). `check` answers with the
+refusal the model reads, or with what it settled for the execute stage."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -157,6 +158,43 @@ async def _sandbox_enabled() -> bool:
         return True
 
 
+async def _work_folder_holds_home() -> bool:
+    """S2a-3 step 3 (⓪Plan's ruling 7): whether the working folder is the home folder or holds it, read on every
+    call. There the sandbox may write all of home, so an unread command asks instead of running with no card. Compared
+    case-insensitively (the default macOS disk ignores case). No folder, or one that cannot be read, counts as yes."""
+    from pathlib import Path
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            folder = await settings_service.workspace_dir(db)
+        if folder is None:
+            return True
+        home = [part.casefold() for part in Path.home().resolve().parts]
+        work = [part.casefold() for part in Path(folder).resolve().parts]
+        return home[:len(work)] == work
+    except Exception:  # noqa: BLE001 — fails closed: unknown means it may hold home, so the command asks
+        return True
+
+
+#: S2a-3 step 3: what the model reads when an unread command ran offline in the sandbox with no card.
+OFFLINE_UNREAD_NOTE = ("ran offline in the sandbox: Arslan can't fully read this command ({why}), so it ran with no "
+                       "network and no card. If it needs the network, call run_command again with network: true; "
+                       "the user is asked first.")
+
+
+async def _runs_offline_unread(command: str, args: dict, verdict, *, confined: bool, outside_grant) -> bool:
+    """S2a-3 step 3 (design point 1): a command whose only rule is `unreadable` runs in the sandbox, offline, with no
+    card, when all of these hold: the sandbox is on and can start; no "ask for every command"; the working folder is
+    not home and does not hold it; the call has no `network: true` (that call gets today's card); and the
+    conversation has no grant to leave the sandbox (⓪Plan's ruling 2: then it gets a card). A background job with no
+    card callback takes this branch too (ruling 5)."""
+    from server.services import terminal_policy
+    return (verdict.level == "ask" and terminal_policy.ask_rules(command) == {terminal_policy.UNREADABLE}
+            and confined and outside_grant is None and args.get("network") is not True
+            and not await _asks_for_everything() and not await _work_folder_holds_home())
+
+
 @dataclass(frozen=True, slots=True)
 class CommandPlan:
     """What the command gate settled, for the execute stage. Any other tool runs with `NOT_A_COMMAND`."""
@@ -169,6 +207,7 @@ class CommandPlan:
     network: dict = field(default_factory=dict)     # {"offline", "note"} after outside content
     deletes_outside: bool = False
     confined: bool = False
+    offline_reason: str = ""        # S2a-3 step 3: why it runs offline with no card (`unreadable`), for SBX-8's count
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -189,6 +228,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     unwrapped = kept_wrapped = False   # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
     deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
+    offline_reason = ""                # S2a-3 step 3: an unread command runs offline in the sandbox, with no card
 
     def delete_kw(outside: bool) -> dict:
         """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
@@ -279,6 +319,10 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         unwrapped, kept_wrapped = _bare_once(
             command, by_user=_approvals.LAST_OUTCOME.get() == "approved"
             and _approvals.LAST_ANSWERED_BY.get() == "mac")
+    elif await _runs_offline_unread(command, args, verdict, confined=confined, outside_grant=outside_grant):
+        # S2a-3 step 3: no card, in the sandbox, offline. The note says why and how to ask for the network.
+        offline_reason = terminal_policy.UNREADABLE
+        network = {"offline": True, "note": OFFLINE_UNREAD_NOTE.format(why=verdict.reason[:200])}
     elif (verdict.level == "run" and not await _asks_for_everything()
           and (outside_grant is not None or (sandbox_on and command_sandbox.available()))):
         # S2a-2 layer ③: no card, and decided here only. In the sandbox only when it can start (R4: with
@@ -321,12 +365,13 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         run_outside = run_outside or unwrapped
         by_grant = by_grant and not unwrapped     # a bare run is the user's click on its card, not the grant
         net_clicked = net_due and decided is not None and decided.by == "user"
-    network = {} if net_clicked else await _network_after_outside_content(
-        command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
-        conversation_id=conversation_id)
+    if not offline_reason:     # an unread command already runs offline: nothing after outside content can add to it
+        network = {} if net_clicked else await _network_after_outside_content(
+            command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
+            conversation_id=conversation_id)
     if network.get("refused"):
         result = {"ok": False, "error": network["refused"]}
         return result
     return CommandPlan(command=command, run_outside=run_outside, by_grant=by_grant, sandbox_on=sandbox_on,
                        unwrapped=unwrapped, kept_wrapped=kept_wrapped, network=network,
-                       deletes_outside=deletes_outside, confined=confined)
+                       deletes_outside=deletes_outside, confined=confined, offline_reason=offline_reason)

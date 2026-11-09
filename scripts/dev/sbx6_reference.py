@@ -18,8 +18,6 @@ from tests.server.sbx import harness
 
 
 def reference(h, **parameters):
-    if h.base in {"commands", "commands-proxy"} and h.network == NetworkMode.ANY_DECLARED:
-        raise ValueError("commands no longer accept any-declared")
     trust_service = parameters.pop("trust_service", False)
     offline = parameters.pop("offline", False)
     mode = h.network if h.network is not None else NetworkMode.NONE if offline else NetworkMode.PROXY

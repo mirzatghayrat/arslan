@@ -1033,10 +1033,31 @@ def test_inline_policy_keeps_main_asks(index, spec, request, record_property, ca
     baseline = VERDICTS[MAIN_TABLE[group][offset]]
     record_property('main', baseline)
     if spec[0] in {'harmless', 'data'}:
-        assert verdict.level + ':' + verdict.rule == baseline
+        assert harmless_move_allowed(baseline, verdict.level + ':' + verdict.rule), (baseline, verdict)
     else:
         rank = {'run': 0, 'ask': 1, 'forbid': 2}
         assert rank[verdict.level] >= rank[baseline.split(':')[0]]
+
+
+# S2a-3 step 3 wires the reader into the policy: a command it does not understand asks as `unreadable` (and runs
+# offline in the sandbox with no card) where main ran it. That is the only move a harmless or data case may make.
+STEP3_MOVE = ('run:', 'ask:' + tp.UNREADABLE)
+
+
+def harmless_move_allowed(main: str, head: str) -> bool:
+    return head == main or (main, head) == STEP3_MOVE
+
+
+def test_harmless_move_rule_allows_only_the_step3_move():
+    assert harmless_move_allowed('run:', 'run:')
+    assert harmless_move_allowed('ask:' + tp.UNREADABLE, 'ask:' + tp.UNREADABLE)
+    assert harmless_move_allowed(*STEP3_MOVE)
+    # Negative controls: run→ask for another reason, any move toward run, and a forbid weakened or changed.
+    assert not harmless_move_allowed('run:', 'ask:stand-in-rule')
+    assert not harmless_move_allowed('run:', 'forbid:' + tp.UNREADABLE)
+    assert not harmless_move_allowed('ask:' + tp.UNREADABLE, 'run:')
+    assert not harmless_move_allowed('ask:stand-in-rule', 'ask:' + tp.UNREADABLE)
+    assert not harmless_move_allowed('forbid:stand-in-rule', 'ask:' + tp.UNREADABLE)
 
 
 def test_frozen_main_inputs():

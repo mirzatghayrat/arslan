@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from server.services import shell_text, terminal_policy as tp
+from server.services import shell_grammar, shell_text, terminal_policy as tp
 
 WORD = "zz-stand-in-word"
 CALL = WORD + " x"
@@ -171,7 +171,9 @@ def test_under_the_limits_the_scan_is_never_read(stand_in, monkeypatch, limit, p
 def test_quoted_prose_is_data_under_the_limits_and_a_command_past_them(stand_in, quote):
     """The one reading the scan changes, and only past a limit."""
     prose = f"echo {quote}ls; {CALL}{quote}"
-    assert _verdict(f"{UNDER['nested']}; {prose}") == ("run", "")
+    under = f"{UNDER['nested']}; {prose}"
+    # S2a-3 step 3: what shell_grammar's reader does not understand is `unreadable`, never the stand-in's rule.
+    assert _verdict(under) == (("run", "") if shell_grammar.read(under).understood else ("ask", tp.UNREADABLE))
     assert _verdict(f"{OVER['nested']}; {prose}") == ("forbid", STAND_IN)
 
 
