@@ -75,11 +75,17 @@ def test_git_spelling_never_authorizes_fold(name, tmp_path, monkeypatch):
     monkeypatch.setattr(tp, "_valid_fold_anchor", no_anchor)
     for tail in GIT_TAILS:
         for text in git_cases((name + " " + tail).rstrip()):
-            assert sg.read(text, fold_partial=False).understood, text
+            reading = sg.read(text, fold_partial=False)
+            assert reading.understood == ("/" not in name), text
+            if not reading.understood:
+                assert reading.why == "its program word contains a path"
             assert tp.assess(text, cwd=tmp_path).level == "ask", text
             assert tp.assess(text).level == "ask", text
         # A complete return must also retain its unfolded cautious decision.
         text = f"cd {A} && {name} {tail}; cd .. && {DEL} zz-file"
-        assert sg.read(text, fold_partial=False).understood, text
+        reading = sg.read(text, fold_partial=False)
+        assert reading.understood == ("/" not in name), text
+        if not reading.understood:
+            assert reading.why == "its program word contains a path"
         assert tp.assess(text, cwd=tmp_path).level == "ask", text
         assert tp.assess(text).level == "ask", text

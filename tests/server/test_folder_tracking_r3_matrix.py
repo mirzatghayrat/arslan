@@ -46,7 +46,8 @@ def load_revision(revision, monkeypatch):
 
 
 def repository_corpus():
-    return (matrix._parameters(matrix.policy_cases) | matrix._parameters(folders)
+    # Main moved this input to a standalone test; keep the reviewed corpus frozen.
+    return ({"python3 report.py"} | matrix._parameters(matrix.policy_cases) | matrix._parameters(folders)
             | matrix._chains()[0] | matrix._differential(folders._CHAINS))
 
 

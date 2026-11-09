@@ -12,6 +12,7 @@ from server.services import shell_grammar as sg, terminal_policy as tp
 from tests.server.test_s2a3_folder_tracking import A, B, DEL, FIND, TOOL, stand_in_rules  # noqa: F401
 from tests.server import test_folder_tracking_r3_matrix as revisions
 from tests.server import test_folder_tracking_matrix as matrix
+from tests.server.test_inline_script_asks import harmless_move_allowed
 
 CLASSES = {
     "REMOVE-LINK": "rm -rf {p}; ln -s zz-outside {p}",
@@ -195,7 +196,7 @@ def test_invalid_anchor(kind, tmp_path, monkeypatch):
     text = fold()
     assert tp.assess(text, cwd=anchor).level == "ask"
     assert tp.ask_rules(text, cwd=anchor) == {"delete-outside"}
-    assert tp._layer_two(text, tp._detection_texts(text), anchor) == [tp._DELETE_OUTSIDE]
+    assert tp._layer_two(tp._detection_texts(text), tp._command_words(text), text=text, cwd=anchor) == [tp._DELETE_OUTSIDE]
 
 
 def test_valid_anchor_checked_once(tmp_path, monkeypatch):
@@ -288,7 +289,8 @@ def test_round_four_matrices(tmp_path, monkeypatch):
                 assert before.level == after.level or (before.level, after.level) == ("run", "ask"), text
                 if before.level == after.level:
                     assert before.rule == after.rule, text
-                elif revision == revisions.ROUND_FOUR:
+                elif revision == revisions.ROUND_FOUR and not harmless_move_allowed(
+                        before.level + ":" + before.rule, after.level + ":" + after.rule):
                     assert any(words[0].lower().rsplit("/", 1)[-1] == "git"
                                for words in sg.read(text).commands), text
             report[revision][name] = dict(counts)
