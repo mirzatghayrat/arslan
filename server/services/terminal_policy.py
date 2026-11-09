@@ -486,6 +486,7 @@ def _protected(folders: tuple[str, ...], word: str) -> bool:
 
 # These names prove only the effects of the understood command text. Unknown options,
 # assignments, wrappers and launchers never inherit their child's proof.
+# Git is excluded: even status, log and diff can invoke configured helpers.
 _FOLD_BUILTINS = frozenset({"cd", "pushd", "popd", "pwd", "echo", "printf", "true", "false", ":", "test", "[", "[["})
 _FOLD_READ_OPTIONS = {
     "ls": frozenset({"-a", "-A", "-l", "-h", "-1", "-d", "-F", "-R"}),
@@ -494,11 +495,6 @@ _FOLD_READ_OPTIONS = {
     "head": frozenset({"-q", "-v"}),
     "tail": frozenset({"-q", "-v"}),
     "wc": frozenset({"-c", "-m", "-l", "-w", "-L"}),
-}
-_FOLD_GIT_OPTIONS = {
-    "status": frozenset({"--short", "--porcelain", "--branch", "-s", "-b", "--untracked-files=no"}),
-    "log": frozenset({"--oneline", "--stat", "--name-only", "--no-patch", "--no-ext-diff", "--no-textconv"}),
-    "diff": frozenset({"--stat", "--name-only", "--name-status", "--cached", "--staged", "--no-ext-diff", "--no-textconv"}),
 }
 
 
@@ -509,11 +505,7 @@ def _fold_effect_safe(words: tuple[str, ...] | None) -> bool:
     # Do not mistake an arbitrary executable with a builtin's basename for that builtin.
     if name in _FOLD_BUILTINS:
         return True
-    if name == "git":
-        if not args or args[0] not in _FOLD_GIT_OPTIONS:
-            return False
-        options = _FOLD_GIT_OPTIONS[args.pop(0)]
-    elif name in _FOLD_READ_OPTIONS:
+    if name in _FOLD_READ_OPTIONS:
         options = _FOLD_READ_OPTIONS[name]
     else:
         return False
