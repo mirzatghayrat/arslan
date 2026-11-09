@@ -1021,6 +1021,10 @@ def _safe_fold_prefix(prefix: str, cwd: str | os.PathLike[str] | None, checked: 
 
 def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[bool, bool]:
     """(deletes outside the working folder, writes a protected file) once a change of folder is followed."""
+    # Folder observations are additive only when the caller supplies a work folder.
+    # With no anchor, preserve main's text-only verdict and named rules exactly.
+    if cwd is None:
+        return False, False
     # Parse without partial work-relative folds, then choose each candidate at assessment time.
     # No filesystem verdict is cached across assessments.
     reading = shell_grammar.read(text, fold_partial=False)
@@ -1115,7 +1119,7 @@ def _layer_two(texts: tuple[str, ...], commands: tuple[tuple[str, ...], ...], *,
 
 
 def assess(command: str, *, cwd: str | os.PathLike[str] | None = None) -> Assessment:
-    """The layer and first rule; without cwd, retained work prefixes cannot be folded."""
+    """The layer and first rule; without cwd, folder observations never change the verdict."""
     text = str(command or "")
     if not text.strip():
         return Assessment("forbid", "empty", "no command")

@@ -34,8 +34,8 @@ target leads from it, joined as text and folded logically (`.` dropped, `x/..` c
 shell in the work folder. A change that may fail (after `;`, `||`, a newline or `!`) leaves both folders possible;
 only `&&` gives the new one alone.
 A change in a pipeline segment, a ( … ), a $( … ), a bash -c or a backgrounded list stays there. A change the reader
-can't follow is not understood: no target, an option, `-`, a stack index, `popd`, a tilde other than `~` and `~/`,
-one inside a loop, one through a wrapper, or more than MAX_FOLDERS folders at once.
+can't follow makes folder observations unknown for the rest of the text, without changing command parsing.
+An empty folder tuple means unknown; prefix parsing never follows folder changes.
 
 A read stops at MAX_TEXT characters, MAX_COMMANDS entries in `commands` and MAX_DEPTH levels; past any of them the
 command is not understood and `capped` is set. Its time grows linearly with the text: nothing is read again except a
@@ -135,9 +135,12 @@ class Reading:
 
 
 class _Out:
-    __slots__ = ("commands", "folders", "writes", "fold_partial", "fold_guard", "effects", "effect_scopes", "backgrounds")
+    __slots__ = ("commands", "folders", "writes", "fold_partial", "fold_guard", "effects", "effect_scopes", "backgrounds",
+                 "track_folders", "folders_known")
 
-    def __init__(self, fold_partial: bool = True, fold_guard=None):
+    def __init__(self, fold_partial: bool = True, fold_guard=None, *, track_folders=False):
+        self.track_folders = track_folders
+        self.folders_known = True
         self.fold_partial = fold_partial
         self.fold_guard = fold_guard
         self.effects = []
@@ -632,7 +635,7 @@ class _Reader:
             if op in ("<&", ">&") and word.text.startswith("-") and word.text != "-":
                 raise _NotUnderstood("its redirection has text after the -, which bash reads as a program")
             if op != "<" and not (op in ("<&", ">&") and (word.text.isdigit() or word.text == "-")):
-                self.out.writes.append((word.text, tuple(sorted(self.here))))
+                self.out.writes.append((word.text, tuple(sorted(self.here)) if self.out.folders_known else ()))
                 self.out.effects.append(None)
 
     def _simple(self) -> None:
@@ -672,10 +675,10 @@ class _Reader:
                 raise _NotUnderstood("it has more commands than Arslan reads before running", capped=True)
             self.commands.append(tuple(w.text for w in words))
             self.out.effects.append(tuple(w.text for w in words))
-            self.out.folders.append(tuple(sorted(self.here)))
+            self.out.folders.append(tuple(sorted(self.here)) if self.out.folders_known else ())
             base = name.lower()
             args = words[1:]
-            if base in _FOLDER_CHANGES:
+            if self.out.track_folders and self.out.folders_known and base in _FOLDER_CHANGES:
                 self._change_folder(base, args, layers)
             if base in _OTHER_BUILTINS:
                 raise _NotUnderstood(f"it uses `{base}`, which changes how the shell reads what follows")
@@ -700,12 +703,10 @@ class _Reader:
     def _change_folder(self, base: str, args: list[_Word], layers: int) -> None:
         """S2a-3 step 4: where a cd or pushd leads, from every folder the shell may be in."""
         value = args[0].literal if len(args) == 1 and base != "popd" else None
-        if layers or self.loops:
-            raise _NotUnderstood(f"it runs {base} {'through a wrapper' if layers else 'in a loop'}, which Arslan "
-                                 "doesn't follow")
-        if (not value or value.startswith(("-", "+"))
+        if (layers or self.loops or not value or value.startswith(("-", "+"))
                 or (value.startswith("~") and (args[0].quoted or not (value == "~" or value.startswith("~/"))))):
-            raise _NotUnderstood(f"its {base} goes to a folder it doesn't write out")
+            self.out.folders_known = False
+            return
         joined = (value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}"
                   for f in self.here)
         def select(folder):
@@ -720,7 +721,8 @@ class _Reader:
 
         moved = frozenset(select(f) for f in joined)
         if len(moved | self.here | self.failed) > MAX_FOLDERS:
-            raise _NotUnderstood("it changes folder more ways than Arslan follows", capped=True)
+            self.out.folders_known = False
+            return
         self.failed, self.here = self.failed | self.here, moved
 
     def _program(self, base: str, args: list[_Word]) -> None:
@@ -844,7 +846,7 @@ def _unseen(c: str) -> bool:
     return c not in " \t\n" and unicodedata.category(c)[0] in "CZ"
 
 
-def _read_prefix(text: str, out: _Out) -> PrefixReading:
+def _read_commands(text: str, out: _Out) -> PrefixReading:
     """Read once into shared observations, retaining commands on refusal only for additive rules."""
     if not isinstance(text, str):
         return PrefixReading(refused=True, why="it is not text")
@@ -862,9 +864,14 @@ def _read_prefix(text: str, out: _Out) -> PrefixReading:
     return PrefixReading(commands=tuple(out.commands))
 
 
+def _read_prefix(text: str) -> PrefixReading:
+    """Prefix mode has no folder-tracking side effects, including in nested readers."""
+    return _read_commands(text, _Out())
+
+
 def read_prefix(text: str) -> PrefixReading:
     """Read commands before a refusal for additive policy checks only."""
-    return _read_prefix(text, _Out())
+    return _read_prefix(text)
 
 
 def read(text: str, *, fold_partial: bool = True,
@@ -876,8 +883,8 @@ def read(text: str, *, fold_partial: bool = True,
     candidates using the first reading's effect scopes. Filesystem checks belong to that
     optional policy callback; the default reader remains filesystem-free.
     """
-    out = _Out(fold_partial, fold_guard)
-    prefix = _read_prefix(text, out)
+    out = _Out(fold_partial, fold_guard, track_folders=True)
+    prefix = _read_commands(text, out)
     if prefix.refused:
         return Reading(understood=False, why=prefix.why, capped=prefix.capped)
     # A background part can still be running when any later part of this text starts.
