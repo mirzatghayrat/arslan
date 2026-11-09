@@ -85,11 +85,11 @@ def negatives():
     separators = ("\n", "; ", " && ", " || ", " | ", " & ")
     for i, seed in enumerate(seeds):
         for kind, data in zip(("program", "phrase"), seed):
-            for carrier, render in carriers.items():
+            for carrier, wrap in carriers.items():
                 for position, before in SEPARATORS.items():
-                    yield f"data/{i}/{kind}/{carrier}/{position}", before + render(shlex.quote(data))
+                    yield f"data/{i}/{kind}/{carrier}/{position}", before + wrap(shlex.quote(data))
                 for j, separator in enumerate(separators):
-                    yield f"data/{i}/{kind}/{carrier}/inside-{j}", render(shlex.quote("prefix" + separator + data))
+                    yield f"data/{i}/{kind}/{carrier}/inside-{j}", wrap(shlex.quote("prefix" + separator + data))
     for name, words, _ in OPERANDS:
         for position, before in SEPARATORS.items():
             yield f"operand/{name}/{position}", before + operand_text(words)
