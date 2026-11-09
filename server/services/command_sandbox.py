@@ -373,8 +373,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     `sandbox_proxy`) and to loopback for dev servers, with no DNS inside. Loopback excludes every port Arslan
     listens on (`bound_ports`, read now when not given) and the system proxies' loopback ports
     (`system_proxies`, likewise), so neither is a way out round the proxy. Online with no proxy port, or with
-    Arslan's own ports unknown, is offline: closed, not open. Any-declared is retired for commands (D2's
-    interim until SBX-6). `network` and `proxy_port` go to the base as given, and `denied_ports` adds to the
+    Arslan's own ports unknown, is offline: closed, not open. `network` and `proxy_port` go to the base as given, and `denied_ports` adds to the
     excluded ports (SBX-3p's and SBX-6p's harness pass them). `trust_service` (the user's setting
     `sandbox_system_certificates`, default off) grants macOS's certificate trust service in proxy mode only, the
     one thing it adds, as sandbox-runtime's `enableWeakerNetworkIsolation` does: Swift, Xcode's and Go's tools
@@ -393,8 +392,6 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     if network is None:
         network = NetworkMode.NONE if offline or proxy_port is None else NetworkMode.PROXY
     network = NetworkMode(network)
-    if network == NetworkMode.ANY_DECLARED:
-        raise ValueError("commands no longer accept any-declared: online is the proxy (SBX-6)")
     if network in (NetworkMode.PROXY, NetworkMode.PORT_22):
         from server.services import sandbox_proxy
         bound = sandbox_proxy.listening_ports() if bound_ports is None else list(bound_ports)

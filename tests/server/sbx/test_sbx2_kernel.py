@@ -256,7 +256,7 @@ assert lib.sandbox_check(os.getpid(), b'appleevent-send', flag) == 1
 
 @pytest.mark.macos
 @macos
-@pytest.mark.parametrize("mode", [NetworkMode.PROXY, NetworkMode.ANY_DECLARED, NetworkMode.PORT_22])
+@pytest.mark.parametrize("mode", [NetworkMode.PROXY, NetworkMode.PORT_22])
 def test_listener_refusal_and_arslan_port_exclusion(sbx, mode):
     sbx.network = mode
     with socket.socket() as listener:
@@ -275,20 +275,16 @@ with socket.socket(int(sys.argv[2])) as sock:
 """
         allowed = sbx.python(source, port, socket.AF_INET, "127.0.0.1", probe="loopback-connect")
         assert allowed.returncode == 0 and allowed.stdout.strip() == "0", allowed.stderr
-        if mode == NetworkMode.ANY_DECLARED:
-            with pytest.raises(ValueError, match="any-declared cannot enforce denied_ports"):
-                sbx.profile(denied_ports=[port])
-        else:
-            mapped = "::ffff:127.0.0.1"
-            control = sbx.python(source, port, socket.AF_INET6, mapped,
-                                 profile="(version 1)(allow default)", probe="mapped-loopback-control")
-            assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
-            for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, mapped)):
-                denied = sbx.python(source, port, family, address,
-                                    profile=sbx.profile(denied_ports=[port]),
-                                    probe="arslan-port-refusal-" + family.name)
-                assert denied.returncode == 0, denied.stderr
-                assert int(denied.stdout) in (errno.EPERM, errno.EACCES)
+        mapped = "::ffff:127.0.0.1"
+        control = sbx.python(source, port, socket.AF_INET6, mapped,
+                             profile="(version 1)(allow default)", probe="mapped-loopback-control")
+        assert control.returncode == 0 and control.stdout.strip() == "0", control.stderr
+        for family, address in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, mapped)):
+            denied = sbx.python(source, port, family, address,
+                                profile=sbx.profile(denied_ports=[port]),
+                                probe="arslan-port-refusal-" + family.name)
+            assert denied.returncode == 0, denied.stderr
+            assert int(denied.stdout) in (errno.EPERM, errno.EACCES)
     result = sbx.python("""
 import errno, socket
 for family, hosts in ((socket.AF_INET, ('0.0.0.0', '127.0.0.1')),

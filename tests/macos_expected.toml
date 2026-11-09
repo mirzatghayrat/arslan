@@ -27,10 +27,10 @@ markers = 4
 cases = 9
 xfail = 0
 
-# SBX-2: 75 kernel assertions and 222 measurement rows (297 collected).
+# SBX-2: 75 kernel assertions and 222 measurement rows (297 collected); -17 when the any-declared mode was deleted.
 ["server/sbx/test_sbx2_kernel.py"]
 markers = 10
-cases = 75
+cases = 58
 xfail = 0
 
 # SBX-2 port follow-ups: one compile check for each of proxy and port-22.
@@ -116,10 +116,11 @@ markers = 2
 cases = 2
 xfail = 0
 
-# SBX-6p: 94 network cases (78, then +16 over #654's wider service list), real since SBX-6a and the MCP proxy.
+# SBX-6p: 94 network cases (78, then +16 over #654's wider service list), real since SBX-6a and the MCP proxy;
+# -16 when the any-declared mode was deleted.
 ["server/sbx/test_sbx6_network.py"]
 markers = 8
-cases = 94
+cases = 78
 xfail = 0
 
 # SBX-6p: four default trust checks, four toggle checks, eight LAN cases, real since SBX-6a and the MCP proxy.
@@ -147,10 +148,10 @@ markers = 1
 cases = 1
 xfail = 0
 
-# Measured DNS, FSEvents and trust service grants, each in all four modes.
+# Measured DNS, FSEvents and trust service grants, each in all three modes (four until any-declared was deleted).
 ["server/sbx/test_sbx_service_allowlist.py"]
 markers = 4
-cases = 16
+cases = 12
 xfail = 0
 
 ["server/test_artifact_store.py"]

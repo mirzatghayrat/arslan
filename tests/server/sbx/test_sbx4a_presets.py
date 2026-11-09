@@ -154,7 +154,7 @@ def test_the_sbx_harness_registers_the_three_presets():
         assert BUILT_BASES[base] is not Harness._measurement_profile, base
 
 
-@pytest.mark.parametrize("mode", [NetworkMode.ANY_DECLARED, NetworkMode.PORT_22])
+@pytest.mark.parametrize("mode", [NetworkMode.PORT_22])
 def test_the_harness_refuses_an_mcp_mode_the_product_lacks(tmp_path, mode):
     """MCP has none and proxy only (SBX-6 MCP proxy): no quiet mapping to another mode."""
     from tests.server.sbx.harness import Harness
