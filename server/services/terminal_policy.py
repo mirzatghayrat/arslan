@@ -24,16 +24,18 @@ server/services/shell_text.py (S2b-1), Arslan's copy of Hermes' text handling: t
 pass, the variants with a newline at every real command start, and the quote masks. Hermes'
 MIT license is in THIRD_PARTY_NOTICES.md ("Terminal command reading").
 
-Everything here is a pure function of the command text. It is a guard against mistakes and
+Folder cancellation also checks retained prefixes in a supplied working folder. It is a guard against mistakes and
 against instructions smuggled in through web pages, not a sandbox: the sandbox (S2a-1) is what
 holds a layer ③ command, and a command outside it runs with the user's own permissions.
 """
 from __future__ import annotations
 
 import functools
+import os
 import posixpath
 import re
 import shlex
+import stat
 from dataclasses import dataclass
 
 from server.services import shell_grammar, shell_text
@@ -482,16 +484,50 @@ def _protected(folders: tuple[str, ...], word: str) -> bool:
     return any(_PROTECTED_PATH_C.match(p) or _PROTECTED_PATH_C.match(posixpath.normpath(p)) for p in paths)
 
 
-@functools.lru_cache(maxsize=64)
-def _after_moves(text: str) -> tuple[bool, bool]:
+def _safe_fold_prefix(prefix: str, cwd: str | os.PathLike[str] | None, checked: dict[str, bool]) -> bool:
+    """Assessment-local lstat walk: missing, linked or uncheckable prefixes stay unfolded."""
+    if cwd is None:
+        return False
+    path = os.fspath(cwd)
+    parts = []
+    for part in prefix.split("/"):
+        parts.append(part)
+        key = "/".join(parts)
+        path = os.path.join(path, part)
+        if key not in checked:
+            try:
+                mode = os.lstat(path).st_mode
+                checked[key] = not stat.S_ISLNK(mode) and stat.S_ISDIR(mode)
+            except OSError:
+                checked[key] = False
+        if not checked[key]:
+            return False
+    return True
+
+
+def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[bool, bool]:
     """(deletes outside the working folder, writes a protected file) once a change of folder is followed."""
-    reading = shell_grammar.read(text)
+    # Parse without partial work-relative folds, then choose each candidate at assessment time.
+    # No filesystem verdict is cached across assessments.
+    reading = shell_grammar.read(text, fold_partial=False)
+    checked: dict[str, bool] = {}
+
+    def selected(folders: tuple[str, ...]) -> tuple[str, ...]:
+        result = []
+        for folder in folders:
+            prefix = shell_grammar._fold_prefix(folder)
+            result.append(shell_grammar._logical_folder(folder)
+                          if prefix and _safe_fold_prefix(prefix, cwd, checked) else folder)
+        return tuple(result)
+
     outside = protected = False
     for words, folders in zip(reading.commands, reading.folders):
-        moved = tuple(f for f in folders if f)
+        name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
+        if name not in _MOVED_DELETERS | _MOVED_FINDERS | _MOVED_WRITERS:
+            continue
+        moved = tuple(f for f in selected(folders) if f)
         if not moved:
             continue
-        name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
         operands = [w for w in args if not w.startswith("-") or w == "-"]
         if name in _MOVED_DELETERS:
             outside |= not operands or any(_outside_target(_joined(f, w)) for f in moved for w in operands)
@@ -500,7 +536,7 @@ def _after_moves(text: str) -> tuple[bool, bool]:
             outside |= any(_outside_target(_joined(f, start)) for f in moved)
         elif name in _MOVED_WRITERS:
             protected |= any(_protected(moved, w) for w in operands)
-    protected |= any(_protected(folders, target) for target, folders in reading.writes)
+    protected |= any(_protected(selected(folders), target) for target, folders in reading.writes)
     return outside, protected
 
 
@@ -533,9 +569,9 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
     return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
-def _layer_two(text: str, texts: tuple[str, ...]) -> list[tuple[str, str]]:
+def _layer_two(text: str, texts: tuple[str, ...], cwd: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
     found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
-    moved_outside, moved_protected = _after_moves(text)
+    moved_outside, moved_protected = _after_moves(text, cwd)
     if (_script_names_protected(texts) or moved_protected) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
     if _deletes_outside(texts) or moved_outside:
@@ -544,8 +580,8 @@ def _layer_two(text: str, texts: tuple[str, ...]) -> list[tuple[str, str]]:
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
 
 
-def assess(command: str) -> Assessment:
-    """The layer a command is in, with its first rule (the one its card names)."""
+def assess(command: str, *, cwd: str | os.PathLike[str] | None = None) -> Assessment:
+    """The layer and first rule; without cwd, retained work prefixes cannot be folded."""
     text = str(command or "")
     if not text.strip():
         return Assessment("forbid", "empty", "no command")
@@ -558,7 +594,7 @@ def assess(command: str) -> Assessment:
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(text, texts)
+    found = _layer_two(text, texts, cwd)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
     hidden = _hidden_code(texts)
@@ -567,17 +603,17 @@ def assess(command: str) -> Assessment:
     return Assessment("run")
 
 
-def ask_rules(command: str) -> set[str]:
+def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None) -> set[str]:
     """Every layer ② rule the command matches (and `unreadable`). `assess` names only the first,
     which is what the card shows; a card's target lists all of them (`rules:<rule>|<rule>`)."""
-    verdict = assess(command)
+    verdict = assess(command, cwd=cwd)
     if verdict.level != "ask":
         return set()
     text = str(command or "")
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(text, texts)} | ({UNREADABLE} if _hidden_code(texts) else set())
+    return {key for key, _why in _layer_two(text, texts, cwd)} | ({UNREADABLE} if _hidden_code(texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to

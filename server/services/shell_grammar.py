@@ -129,9 +129,10 @@ class Reading:
 
 
 class _Out:
-    __slots__ = ("commands", "folders", "writes")
+    __slots__ = ("commands", "folders", "writes", "fold_partial")
 
-    def __init__(self):
+    def __init__(self, fold_partial: bool = True):
+        self.fold_partial = fold_partial
         self.commands: list[tuple[str, ...]] = []
         self.folders: list[tuple[str, ...]] = []
         self.writes: list[tuple[str, tuple[str, ...]]] = []
@@ -663,8 +664,10 @@ class _Reader:
         if (not value or value.startswith(("-", "+"))
                 or (value.startswith("~") and (args[0].quoted or not (value == "~" or value.startswith("~/"))))):
             raise _NotUnderstood(f"its {base} goes to a folder it doesn't write out")
-        moved = frozenset(_logical_folder(value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}")
-                          for f in self.here)
+        joined = (value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}"
+                  for f in self.here)
+        moved = frozenset(_logical_folder(f) if self.out.fold_partial or not _fold_prefix(f) else f
+                          for f in joined)
         if len(moved | self.here | self.failed) > MAX_FOLDERS:
             raise _NotUnderstood("it changes folder more ways than Arslan follows", capped=True)
         self.failed, self.here = self.failed | self.here, moved
@@ -691,10 +694,34 @@ def _logical_folder(folder: str) -> str:
     folder. This folds only the shell's folder; delete operands keep their own parent-component check.
     """
     home = folder == "~" or folder.startswith("~/")
-    normal = posixpath.normpath(folder[2:] if home else folder)
+    collapsed = re.sub(r"/+", "/", folder)
+    normal = posixpath.normpath(collapsed[2:] if home else collapsed)
     if home:
         return "~" if normal == "." else f"~/{normal}"
     return "" if normal == "." else normal
+
+
+def _fold_prefix(folder: str) -> str:
+    """Work-relative prefix retained by a cancellation; empty means no containment check.
+
+    Only surviving components retained at a cancellation need checking.
+    Home, absolute and leading-parent destinations already remain outside the work anchor.
+    This is text-only; policy decides whether a retained prefix is safe on disk.
+    """
+    normal = _logical_folder(folder)
+    if not normal or normal.startswith(("/", "~")) or normal == ".." or normal.startswith("../"):
+        return ""
+    stack: list[str] = []
+    kept = 0
+    for part in folder.split("/"):
+        if part in ("", "."):
+            continue
+        if part == ".." and stack and stack[-1] != "..":
+            stack.pop()
+            kept = len(stack)
+        else:
+            stack.append(part)
+    return "/".join(stack[:kept])
 
 
 def _names_something(args: list[_Word]) -> bool:
@@ -764,15 +791,20 @@ def _unseen(c: str) -> bool:
     return c not in " \t\n" and unicodedata.category(c)[0] in "CZ"
 
 
-def read(text: str) -> Reading:
-    """Whether `text` is in the grammar above, and every command it would start."""
+def read(text: str, *, fold_partial: bool = True) -> Reading:
+    """Whether `text` is in the grammar above, and every command it would start.
+
+    With fold_partial=False, retain work-relative partial cancellations as written.
+    Policy can compare each with _logical_folder and check _fold_prefix on disk;
+    this reader never accesses the filesystem.
+    """
     if not isinstance(text, str):
         return Reading(understood=False, why="it is not text")
     if len(text) > MAX_TEXT:
         return Reading(understood=False, why="it is longer than Arslan reads", capped=True)
     if any(map(_unseen, set(text))):
         return Reading(understood=False, why="it contains control or invisible characters")
-    out = _Out()
+    out = _Out(fold_partial)
     try:
         _Reader(text, 0, out).read_all()
     except _NotUnderstood as exc:
