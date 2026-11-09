@@ -60,8 +60,8 @@ def test_not_understood_with_no_named_rule_is_unreadable_everywhere(unread):
 
 def test_a_named_rule_still_comes_first_and_alone(unread, monkeypatch):
     real = tp._layer_two
-    monkeypatch.setattr(tp, "_layer_two", lambda texts: [("stand-in-rule", "stand-in")]
-                        if any(t.startswith(STAND_IN) for t in texts) else real(texts))
+    monkeypatch.setattr(tp, "_layer_two", lambda texts, commands=(): [("stand-in-rule", "stand-in")]
+                        if any(t.startswith(STAND_IN) for t in texts) else real(texts, commands))
     assert tp.assess(STAND_IN) == tp.Assessment("ask", "stand-in-rule", "stand-in")
     assert tp.ask_rules(STAND_IN) == {"stand-in-rule"}
 
@@ -183,8 +183,8 @@ async def test_forbid_is_unchanged(monkeypatch):
 
 async def test_a_named_rule_with_an_unread_command_still_gets_its_card(unread, monkeypatch):
     real = tp._layer_two
-    monkeypatch.setattr(tp, "_layer_two", lambda texts: [("stand-in-rule", "stand-in")]
-                        if any(t.startswith(STAND_IN) for t in texts) else real(texts))
+    monkeypatch.setattr(tp, "_layer_two", lambda texts, commands=(): [("stand-in-rule", "stand-in")]
+                        if any(t.startswith(STAND_IN) for t in texts) else real(texts, commands))
     asked: list = []
     ex, result, steps = await _gate(monkeypatch, {"command": STAND_IN}, _cards(asked, False))
     assert len(asked) == 1 and ex.ran == [] and "offline" not in steps[-1]
