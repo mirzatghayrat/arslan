@@ -23,23 +23,33 @@ MODES = ("ALLOW-PROGRAM-PATHS", "ALLOW-FILE-SCRIPTS", "DROP-NAMED-COMMANDS",
          "REMOVE-GSUTIL-OVERRIDE", "FLIP-CURL-SILENT",
          "DROP-CLUSTER-SEPARATE-VALUE", "DROP-VERCEL-OPERATION-FLAG", "DROP-END-BOUNDARY",
          "SENTINEL-AS-VALUE", "IMPORT-TRUST-FROM-FIXTURE",
-         "SKIP-CURRENT-SOURCE-HASH", "SKIP-SOURCE-COMMITS")
+         "SKIP-CURRENT-SOURCE-HASH", "SKIP-SOURCE-COMMITS",
+         "COLLAPSE-DUPLICATE-KEYS", "FIRST-COMMIT-ONLY", "ORIGINAL-COMMIT-ONLY")
 OPTION_MODES = frozenset(MODES[6:])
-LOADER_MODES = frozenset(MODES[-4:])
+LOADER_MODES = frozenset(MODES[-7:])
 
 
 def mutate_loader(source, mode):
     """Transform Python definitions in memory, including fresh scratch imports."""
+    if mode == "COLLAPSE-DUPLICATE-KEYS":
+        line = '    header = _header_value(json.loads(lines[1][2:], object_pairs_hook=_HeaderObject))\n'
+        assert source.count(line) == 1
+        return source.replace(line, '    header = json.loads(lines[1][2:])\n')
     if mode == "IMPORT-TRUST-FROM-FIXTURE":
         marker = "# END GENERATED SOURCE HASHES\n"
         assert source.count(marker) == 1
         return source.replace(marker, marker + (
             'SOURCE_SHA256 = json.loads(Path(__file__).with_name("quoted_args_baselines.txt")'
             '.read_text().splitlines()[1][2:])["source_sha256"]\n'))
-    if mode == "SKIP-SOURCE-COMMITS":
+    if mode in {"SKIP-SOURCE-COMMITS", "FIRST-COMMIT-ONLY", "ORIGINAL-COMMIT-ONLY"}:
         line = '    assert header["source_commits"] == SOURCE_COMMITS, "Unexpected baseline sources"\n'
         assert source.count(line) == 1
-        return source.replace(line, "")
+        replacement = ""
+        if mode != "SKIP-SOURCE-COMMITS":
+            key = "main" if mode == "FIRST-COMMIT-ONLY" else "original"
+            replacement = (f'    assert header["source_commits"]["{key}"] == SOURCE_COMMITS["{key}"], '
+                           '"Unexpected baseline sources"\n')
+        return source.replace(line, replacement)
     start = source.index("    # This source is unchanged")
     end = source.index("\n\ndef decode", start)
     if mode == "SKIP-CURRENT-SOURCE-HASH":
