@@ -501,7 +501,10 @@ def test_baseline_vectors_reject_corrupt_provenance(change):
     assert f"recorded {recorded}" in message
 
 
-@pytest.mark.parametrize("change", ["clean", "fixture-hash", "current-source", "source-commits"])
+@pytest.mark.parametrize("change", [
+    "clean", "fixture-hash", "current-source", "source-commits-original", "source-commits-main",
+    "duplicate-bad-first", "duplicate-null-first", "duplicate-same", "duplicate-source-bad-first",
+])
 def test_baseline_fresh_import_validates_independent_trust(tmp_path, change):
     import importlib.util
     import json
@@ -531,10 +534,26 @@ def test_baseline_fresh_import_validates_independent_trust(tmp_path, change):
     elif change == "current-source":
         source.write_bytes(source.read_bytes() + b"\n# Changed source bytes.\n")
         expected_message = "current/shell_text.py: expected 9945605da48225cb5d6cf609f3419c61217a6ece6c7da7700b05a663d7e7c560, recorded "
-    elif change == "source-commits":
-        header["source_commits"]["original"] = "0" * 40
+    elif change.startswith("source-commits-"):
+        header["source_commits"][change.removeprefix("source-commits-")] = "0" * 40
         expected_message = "Unexpected baseline sources"
     lines[1] = "# " + json.dumps(header)
+    if change.startswith("duplicate-"):
+        if change == "duplicate-source-bad-first":
+            key = "main"
+            first = {"unknown.py": "0" * 64}
+            repeated = header["source_sha256"][key]
+            path = "$/source_sha256/main"
+        else:
+            key = "shell_grammar.py"
+            repeated = header["source_sha256"]["main"][key]
+            first = {"duplicate-bad-first": "0" * 64,
+                     "duplicate-null-first": None, "duplicate-same": repeated}[change]
+            path = "$/source_sha256/main/shell_grammar.py"
+        entry = json.dumps(key) + ": " + json.dumps(repeated)
+        assert lines[1].count(entry) == 1
+        lines[1] = lines[1].replace(entry, json.dumps(key) + ": " + json.dumps(first) + ", " + entry)
+        expected_message = f"Duplicate baseline header key: {path}: first {first!r}, repeated {repeated!r}"
     fixture.write_text("\n".join(lines) + "\n")
     spec = importlib.util.spec_from_file_location("scratch_baseline", loader)
     module = importlib.util.module_from_spec(spec)

@@ -24,6 +24,25 @@ SOURCE_SHA256 = {
 CHAR_LEVELS = {"r": "run", "a": "ask", "f": "forbid"}
 
 
+class _HeaderObject(list):
+    """Preserve JSON object pairs, including duplicates, separately from arrays."""
+
+
+def _header_value(value, path="$"):
+    if isinstance(value, _HeaderObject):
+        result = {}
+        for key, child in value:
+            child = _header_value(child, f"{path}/{key}")
+            assert key not in result, (
+                f"Duplicate baseline header key: {path}/{key}: "
+                f"first {result.get(key)!r}, repeated {child!r}")
+            result[key] = child
+        return result
+    if isinstance(value, list):
+        return [_header_value(child, f"{path}/{index}") for index, child in enumerate(value)]
+    return value
+
+
 def fingerprint(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
@@ -80,7 +99,7 @@ def decode(text, generators):
     lines = text.splitlines()
     if len(lines) < 2 or not lines[1].startswith("# "):
         validate_source_hashes(None)  # Reports the first missing file and its expected hash.
-    header = json.loads(lines[1][2:])
+    header = _header_value(json.loads(lines[1][2:], object_pairs_hook=_HeaderObject))
     validate_source_hashes(header.get("source_sha256"))
     assert header["schema"] == 2 and header["generator_version"] == GENERATOR_VERSION, "Unsupported baseline version"
     assert header["source_commits"] == SOURCE_COMMITS, "Unexpected baseline sources"
