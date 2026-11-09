@@ -41,6 +41,19 @@ def test_and_gives_the_new_folder_alone(text, folders):
     assert _folders(text) == folders
 
 
+@pytest.mark.parametrize("text, folders", [
+    pytest.param(f"cd {A} && {TOOL} && cd .. && {TOOL}", ("",), id="fold-work"),
+    pytest.param(f"cd {A}/{B} && cd .. && {TOOL}", (A,), id="fold-partial"),
+    pytest.param(f"cd {A} && cd ../.. && {TOOL}", ("..",), id="fold-outside"),
+    pytest.param(f"cd .. && cd {A} && {TOOL}", (f"../{A}",), id="leading-parent"),
+    pytest.param(f"cd ./{A}/. && cd ../. && {TOOL}", ("",), id="fold-dots"),
+    pytest.param(f"cd ~/{A} && cd .. && {TOOL}", ("~",), id="fold-home"),
+    pytest.param(f"cd ~ && cd .. && {TOOL}", ("~/..",), id="home-parent"),
+])
+def test_folder_paths_fold_logically(text, folders):
+    assert _folders(text) == folders
+
+
 @pytest.mark.parametrize("join", ["; ", " || ", "\n", " & "])
 def test_a_change_that_may_fail_leaves_both_folders(join):
     expected = ("",) if join == " & " else ("", A)        # backgrounded, it never moves this shell
@@ -145,6 +158,7 @@ _CHAINS = [
     "cd ~/{a} && cd .. && {p}",
     "pushd {a} > /dev/null && {p}",
     "cd {a} && cd .. && cd {a}/{b} && {p}",
+    "cd {a} && {p} && cd .. && {p}",
 ]
 
 
@@ -172,7 +186,7 @@ def test_every_folder_bash_runs_a_command_in_is_one_the_reader_names(chain, tmp_
     text = re.sub(r"\{p\}", lambda _: f'echo {next(marks)} "$PWD"', text)
     reading = shell_grammar.read(text)
     assert reading.understood, reading.why
-    named = {c[1]: {_normal(f) for f in folders}
+    named = {c[1]: set(folders)
              for c, folders in zip(reading.commands, reading.folders) if c[0] == "echo" and c[1].isdigit()}
     ran = subprocess.run([*terminal_exec.SHELL, "-c", text], cwd=work, capture_output=True, text=True, timeout=10,
                          env={"PATH": "/usr/bin:/bin", "HOME": str(home)})
@@ -213,6 +227,8 @@ def _verdict(text: str) -> tuple[str, str]:
     f"cd ~ | {TOOL}; {DEL} zz-file",
     f"cd ~ & {DEL} zz-file",
     f"cd {A} && {DEL} -f zz-file",
+    pytest.param(f"cd {A} && {TOOL} && cd .. && {DEL} zz-file", id="fold-delete-work"),
+    pytest.param(f"cd {A}/{B} && cd .. && {DEL} zz-file", id="fold-delete-partial"),
 ])
 def test_a_delete_in_the_work_folder_runs(text):
     assert _verdict(text) == ("run", "")
@@ -232,6 +248,11 @@ def test_a_delete_in_the_work_folder_runs(text):
     f"cd ~ && {FIND} zz-dir -delete",
     f"cd ~ && {FIND} -delete",
     f"if {TOOL}; then cd ~; fi; {DEL} zz-file",
+    pytest.param(f"cd ~ && echo $({DEL} zz-file)", id="outer-substitution"),
+    pytest.param(f"cd ~ && bash -c '{DEL} zz-file'", id="outer-shell"),
+    pytest.param(f"cd ..; cd {A} && {DEL} zz-file", id="every-folder"),
+    pytest.param(f"cd .. && cd {A} && {DEL} zz-file", id="leading-parent-delete"),
+    pytest.param(f"cd {A}/{B} && cd .. && {DEL} ../zz-file", id="operand-parent"),
 ])
 def test_a_delete_after_moving_outside_asks(text):
     assert _verdict(text) == ("ask", "delete-outside")
@@ -246,6 +267,8 @@ def test_a_delete_after_moving_outside_asks(text):
     f"cd ~/{GUARDED} && {PUT} zz-file",
     f"cd ~/{A} && {PUT} ../{GUARDED}/zz-file",       # normalized
     f"cd ~/{A} && {TOOL} > ../{GUARDED}/zz-file",
+    pytest.param(f"cd ~ && {TOOL} <> {GUARDED}/zz-file", id="read-write"),
+    pytest.param(f"cd {A} && cd ~ && {TOOL} > {GUARDED}/zz-file", id="home-after-move"),
 ])
 def test_a_write_into_the_protected_folder_after_moving_asks(text):
     assert _verdict(text) == ("ask", "protected-write")
