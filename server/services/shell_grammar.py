@@ -48,6 +48,7 @@ import posixpath
 import re
 import unicodedata
 from dataclasses import dataclass
+from typing import Callable
 
 MAX_TEXT = 8000             # terminal_policy.MAX_COMMAND_CHARS forbids anything longer
 MAX_COMMANDS = 256
@@ -127,12 +128,21 @@ class Reading:
     folders: tuple[tuple[str, ...], ...] = ()                   # one per command; "" is the work folder
     writes: tuple[tuple[str, tuple[str, ...]], ...] = ()        # (file, its folders) for each redirection that writes
 
+    # Ordered effect observations; None is a write or an assignment of unknown effect.
+    effects: tuple[tuple[str, ...] | None, ...] = ()
+    # Events in [start, end) also depend on [other_start, other_end), e.g. another pipeline segment.
+    effect_scopes: tuple[tuple[int, int, int, int], ...] = ()
+
 
 class _Out:
-    __slots__ = ("commands", "folders", "writes", "fold_partial")
+    __slots__ = ("commands", "folders", "writes", "fold_partial", "fold_guard", "effects", "effect_scopes", "backgrounds")
 
-    def __init__(self, fold_partial: bool = True):
+    def __init__(self, fold_partial: bool = True, fold_guard=None):
         self.fold_partial = fold_partial
+        self.fold_guard = fold_guard
+        self.effects = []
+        self.effect_scopes = []
+        self.backgrounds = []
         self.commands: list[tuple[str, ...]] = []
         self.folders: list[tuple[str, ...]] = []
         self.writes: list[tuple[str, tuple[str, ...]]] = []
@@ -215,6 +225,7 @@ class _Reader:
 
     def peek(self):
         if self.peeked is None:
+            self.peek_effect_start = len(self.out.effects)
             self.peeked = self._token()
         return self.peeked
 
@@ -416,11 +427,13 @@ class _Reader:
                 return
             if not separated:
                 raise _NotUnderstood("its syntax is not one Arslan reads")
+            effect_start = self.peek_effect_start
             before = (self.here, self.failed)
             self._and_or()
             empty = separated = False
             if self.peek() in (("op", ";"), ("op", "&")):
                 if self.take() == ("op", "&"):
+                    self.out.backgrounds.append((effect_start, len(self.out.effects)))
                     self.here, self.failed = before      # a backgrounded list runs in a subshell
                 separated = True
 
@@ -439,17 +452,25 @@ class _Reader:
         self._settle()
 
     def _pipeline(self) -> None:
+        self.peek()
+        start = self.peek_effect_start
         negated = self._at("!")
         if negated:
             self.take()
         before = (self.here, self.failed)
         self._command()
+        segments = [(start, len(self.out.effects))]
         while self.peek() == ("op", "|"):
             self.here, self.failed = before      # each segment runs in a subshell of its own
             self.take()
             self._skip_newlines()
+            start = self.peek_effect_start
             self._command()
+            segments.append((start, len(self.out.effects)))
             self.here, self.failed = before
+        for start, end in segments:
+            if end < segments[-1][1]:
+                self.out.effect_scopes.append((start, end, end, segments[-1][1]))
         if negated:
             self._settle()
 
@@ -471,12 +492,15 @@ class _Reader:
         if compound is None:
             self._simple()
             return
+        start = len(self.out.effects)
         self.depth += 1
         self._check_depth()
         compound(self)
         self.depth -= 1
+        end = len(self.out.effects)
         while self.peek()[0] == "redir":
             self._redirection()
+        self.out.effect_scopes.append((start, end, end, len(self.out.effects)))
 
     def _subshell(self) -> None:
         self.take()
@@ -596,6 +620,7 @@ class _Reader:
                 raise _NotUnderstood("its redirection has text after the -, which bash reads as a program")
             if op != "<" and not (op in ("<&", ">&") and (word.text.isdigit() or word.text == "-")):
                 self.out.writes.append((word.text, tuple(sorted(self.here))))
+                self.out.effects.append(None)
 
     def _simple(self) -> None:
         words: list[_Word] = []
@@ -609,6 +634,7 @@ class _Reader:
             word = self.take()[1]
             if not words and word.assigns is not None:
                 _check_assigned(word.assigns)
+                self.out.effects.append(None)
             else:
                 words.append(word)
             if self.peek() == ("op", "("):
@@ -630,6 +656,7 @@ class _Reader:
             if len(self.commands) >= MAX_COMMANDS:
                 raise _NotUnderstood("it has more commands than Arslan reads before running", capped=True)
             self.commands.append(tuple(w.text for w in words))
+            self.out.effects.append(tuple(w.text for w in words))
             self.out.folders.append(tuple(sorted(self.here)))
             base = name.rsplit("/", 1)[-1].lower()
             args = words[1:]
@@ -666,8 +693,17 @@ class _Reader:
             raise _NotUnderstood(f"its {base} goes to a folder it doesn't write out")
         joined = (value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}"
                   for f in self.here)
-        moved = frozenset(_logical_folder(f) if self.out.fold_partial or not _fold_prefix(f) else f
-                          for f in joined)
+        def select(folder):
+            normal = _logical_folder(folder)
+            prefix = _fold_prefix(folder)
+            # The optional policy guard runs at the move, not at a later endpoint. The first
+            # reading has already collected effects from all concurrent segments and redirects.
+            if (self.out.fold_guard is not None and ".." in folder.split("/") and normal != folder
+                    and not normal.startswith(("/", "~")) and ".." not in normal.split("/")):
+                return normal if self.out.fold_guard(prefix, len(self.out.effects)) else folder
+            return normal if self.out.fold_partial or not prefix else folder
+
+        moved = frozenset(select(f) for f in joined)
         if len(moved | self.here | self.failed) > MAX_FOLDERS:
             raise _NotUnderstood("it changes folder more ways than Arslan follows", capped=True)
         self.failed, self.here = self.failed | self.here, moved
@@ -791,12 +827,14 @@ def _unseen(c: str) -> bool:
     return c not in " \t\n" and unicodedata.category(c)[0] in "CZ"
 
 
-def read(text: str, *, fold_partial: bool = True) -> Reading:
+def read(text: str, *, fold_partial: bool = True,
+         fold_guard: Callable[[str, int], bool] | None = None) -> Reading:
     """Whether `text` is in the grammar above, and every command it would start.
 
     With fold_partial=False, retain work-relative partial cancellations as written.
-    Policy can compare each with _logical_folder and check _fold_prefix on disk;
-    this reader never accesses the filesystem.
+    Policy can supply fold_guard(prefix, effect_position) on a second reading to select
+    candidates using the first reading's effect scopes. Filesystem checks belong to that
+    optional policy callback; the default reader remains filesystem-free.
     """
     if not isinstance(text, str):
         return Reading(understood=False, why="it is not text")
@@ -804,11 +842,14 @@ def read(text: str, *, fold_partial: bool = True) -> Reading:
         return Reading(understood=False, why="it is longer than Arslan reads", capped=True)
     if any(map(_unseen, set(text))):
         return Reading(understood=False, why="it contains control or invisible characters")
-    out = _Out(fold_partial)
+    out = _Out(fold_partial, fold_guard)
     try:
         _Reader(text, 0, out).read_all()
     except _NotUnderstood as exc:
         return Reading(understood=False, why=exc.why, capped=exc.capped)
     except RecursionError:
         return Reading(understood=False, why="it nests commands deeper than Arslan reads", capped=True)
-    return Reading(understood=True, commands=tuple(out.commands), folders=tuple(out.folders), writes=tuple(out.writes))
+    # A background part can still be running when any later part of this text starts.
+    out.effect_scopes.extend((start, end, end, len(out.effects)) for start, end in out.backgrounds)
+    return Reading(understood=True, commands=tuple(out.commands), folders=tuple(out.folders), writes=tuple(out.writes),
+                   effects=tuple(out.effects), effect_scopes=tuple(out.effect_scopes))

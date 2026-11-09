@@ -484,6 +484,82 @@ def _protected(folders: tuple[str, ...], word: str) -> bool:
     return any(_PROTECTED_PATH_C.match(p) or _PROTECTED_PATH_C.match(posixpath.normpath(p)) for p in paths)
 
 
+# These names prove only the effects of the understood command text. Unknown options,
+# assignments, wrappers and launchers never inherit their child's proof.
+_FOLD_BUILTINS = frozenset({"cd", "pushd", "popd", "pwd", "echo", "printf", "true", "false", ":", "test", "[", "[["})
+_FOLD_READ_OPTIONS = {
+    "ls": frozenset({"-a", "-A", "-l", "-h", "-1", "-d", "-F", "-R"}),
+    "cat": frozenset({"-n", "-b", "-s", "-v", "-e", "-t", "-u"}),
+    "grep": frozenset({"-i", "-v", "-n", "-c", "-l", "-L", "-h", "-H", "-q", "-s", "-w", "-x", "-F", "-E"}),
+    "head": frozenset({"-q", "-v"}),
+    "tail": frozenset({"-q", "-v"}),
+    "wc": frozenset({"-c", "-m", "-l", "-w", "-L"}),
+}
+_FOLD_GIT_OPTIONS = {
+    "status": frozenset({"--short", "--porcelain", "--branch", "-s", "-b", "--untracked-files=no"}),
+    "log": frozenset({"--oneline", "--stat", "--name-only", "--no-patch", "--no-ext-diff", "--no-textconv"}),
+    "diff": frozenset({"--stat", "--name-only", "--name-status", "--cached", "--staged", "--no-ext-diff", "--no-textconv"}),
+}
+
+
+def _fold_effect_safe(words: tuple[str, ...] | None) -> bool:
+    if not words:
+        return False
+    name, *args = words
+    # Do not mistake an arbitrary executable with a builtin's basename for that builtin.
+    if name in _FOLD_BUILTINS:
+        return True
+    if name == "git":
+        if not args or args[0] not in _FOLD_GIT_OPTIONS:
+            return False
+        options = _FOLD_GIT_OPTIONS[args.pop(0)]
+    elif name in _FOLD_READ_OPTIONS:
+        options = _FOLD_READ_OPTIONS[name]
+    else:
+        return False
+    operands = False
+    for arg in args:
+        # Expansion can supply an option; even quoted expansion has no known value here.
+        if any(char in arg for char in "$`*?["):
+            return False
+        if arg == "--":
+            operands = True
+        elif not operands and arg.startswith("-") and arg != "-" and arg not in options:
+            return False
+    return True
+
+
+def _fold_effects_allow(reading: shell_grammar.Reading, point: int) -> bool:
+    dependencies = set(range(point))
+    for start, end, other_start, other_end in reading.effect_scopes:
+        if start <= point - 1 < end:
+            dependencies.update(range(other_start, other_end))
+    return all(_fold_effect_safe(reading.effects[event]) for event in dependencies)
+
+
+def _valid_fold_anchor(cwd) -> str | None:
+    """Accept an existing, exactly spelled absolute directory, with no linked component."""
+    try:
+        path = os.fspath(cwd)
+        if (not isinstance(path, str) or not path.startswith("/") or "\0" in path
+                or any(part in ("", ".", "..") for part in path.split("/")[1:])):
+            return None
+        if os.path.realpath(path, strict=True) != path:
+            return None
+        current = "/"
+        for part in path.split("/")[1:]:
+            # realpath does not canonicalize case on every case-insensitive filesystem.
+            if part not in os.listdir(current):
+                return None
+            current = os.path.join(current, part)
+            mode = os.lstat(current).st_mode
+            if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+                return None
+        return path
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def _safe_fold_prefix(prefix: str, cwd: str | os.PathLike[str] | None, checked: dict[str, bool]) -> bool:
     """Assessment-local lstat walk: missing, linked or uncheckable prefixes stay unfolded."""
     if cwd is None:
@@ -511,21 +587,35 @@ def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[
     # No filesystem verdict is cached across assessments.
     reading = shell_grammar.read(text, fold_partial=False)
     checked: dict[str, bool] = {}
+    anchor_checked = False
+    anchor = None
 
-    def selected(folders: tuple[str, ...]) -> tuple[str, ...]:
-        result = []
-        for folder in folders:
-            prefix = shell_grammar._fold_prefix(folder)
-            result.append(shell_grammar._logical_folder(folder)
-                          if prefix and _safe_fold_prefix(prefix, cwd, checked) else folder)
-        return tuple(result)
+    def guard(prefix: str, point: int) -> bool:
+        nonlocal anchor_checked, anchor
+        if not _fold_effects_allow(reading, point):
+            return False
+        # Complete returns need no retained-prefix evidence, but earlier effects can
+        # replace the work anchor too, so they use the same effect veto.
+        if not prefix:
+            return True
+        if not anchor_checked:
+            anchor = _valid_fold_anchor(cwd) if cwd is not None else None
+            anchor_checked = True
+        return _safe_fold_prefix(prefix, anchor, checked)
+
+    if reading.understood:
+        reading = shell_grammar.read(text, fold_partial=False, fold_guard=guard)
+        if not reading.understood:
+            # Vetoed complete returns can grow the folder union past its cap.
+            # Losing that extent must not discard all path evidence toward run.
+            return True, True
 
     outside = protected = False
     for words, folders in zip(reading.commands, reading.folders):
         name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
         if name not in _MOVED_DELETERS | _MOVED_FINDERS | _MOVED_WRITERS:
             continue
-        moved = tuple(f for f in selected(folders) if f)
+        moved = tuple(f for f in folders if f)
         if not moved:
             continue
         operands = [w for w in args if not w.startswith("-") or w == "-"]
@@ -536,7 +626,7 @@ def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[
             outside |= any(_outside_target(_joined(f, start)) for f in moved)
         elif name in _MOVED_WRITERS:
             protected |= any(_protected(moved, w) for w in operands)
-    protected |= any(_protected(selected(folders), target) for target, folders in reading.writes)
+    protected |= any(_protected(folders, target) for target, folders in reading.writes)
     return outside, protected
 
 
