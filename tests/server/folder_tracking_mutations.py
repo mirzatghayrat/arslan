@@ -17,6 +17,7 @@ import pytest
 MODES = (
     "R2-SUBSTITUTION-WORK", "R2-SHELL-WORK", "R2-IGNORE-READ-WRITE",
     "R2-RELATIVE-HOME", "R2-LAST-FOLDER", "FOLD-NONE", "FOLD-DROP-LEADING",
+    "R3-NO-LSTAT", "R3-LAST-COMPONENT", "R3-MISSING-SAFE", "R3-ERROR-SAFE", "R3-HOME-CLAMP",
     "BASE-DROP-MOVES", "BASE-DROP-FAILED", "BASE-OR-EXACT", "BASE-PIPE-LEAK",
     "BASE-SUBSHELL-LEAK", "BASE-BACKGROUND-LEAK", "BASE-DROP-WRITES", "BASE-DROP-POLICY",
 )
@@ -62,6 +63,19 @@ def pytest_configure(config):
         _replace(patch, reader, "_change_folder", 'value.startswith(("/", "~"))', 'value.startswith("/")')
     elif mode == "R2-LAST-FOLDER":
         _replace(patch, tp, "_after_moves", "for f in moved for w in operands", "for f in moved[-1:] for w in operands")
+    elif mode == "R3-NO-LSTAT":
+        patch.setattr(tp, "_safe_fold_prefix", lambda *args: True)
+    elif mode == "R3-LAST-COMPONENT":
+        _replace(patch, tp, "_safe_fold_prefix", 'if key not in checked:',
+                 'if key != prefix:\n            continue\n        if key not in checked:')
+    elif mode == "R3-MISSING-SAFE":
+        _replace(patch, tp, "_safe_fold_prefix", 'except OSError:',
+                 'except FileNotFoundError:\n                checked[key] = True\n            except OSError:')
+    elif mode == "R3-ERROR-SAFE":
+        _replace(patch, tp, "_safe_fold_prefix", 'except OSError:\n                checked[key] = False',
+                 'except OSError:\n                checked[key] = True')
+    elif mode == "R3-HOME-CLAMP":
+        _replace(patch, sg, "_logical_folder", 'collapsed[2:] if home else collapsed', 'folder[2:] if home else collapsed')
     elif mode == "FOLD-NONE":
         patch.setattr(sg, "_logical_folder", lambda folder: folder)
     elif mode == "FOLD-DROP-LEADING":
@@ -90,5 +104,3 @@ def pytest_configure(config):
         _replace(patch, reader, "_redirection", "self.out.writes.append((word.text, tuple(sorted(self.here))))", "pass")
     elif mode == "BASE-DROP-POLICY":
         _replace(patch, tp, "_after_moves", "return outside, protected", "return False, False")
-    tp._after_moves.cache_clear()
-    config.add_cleanup(tp._after_moves.cache_clear)

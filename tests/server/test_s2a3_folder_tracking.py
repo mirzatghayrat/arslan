@@ -1,11 +1,10 @@
 """S2a-3 step 4: the folder a command runs in, followed through a change of folder within one command.
 
-Stand-ins only (the user's decision, 2026-11-07): the path rules are swapped for a stand-in deleter, writer and finder
+Stand-ins only: the path rules are swapped for a stand-in deleter, writer and finder
 and a protected stand-in folder, and chains are built from their structure with stand-in folder names. The differential
 runs the real bash in a scratch work folder and a scratch home, with nothing but cd, pushd and echo in it."""
 from __future__ import annotations
 
-import os
 import posixpath
 import re
 import subprocess
@@ -209,9 +208,6 @@ def stand_in_rules(monkeypatch):
     monkeypatch.setattr(tp, "_MOVED_WRITERS", frozenset({PUT}))
     monkeypatch.setattr(tp, "_MOVED_FINDERS", frozenset({FIND}))
     monkeypatch.setattr(tp, "_PROTECTED_PATH_C", re.compile(r"~/" + GUARDED + r"(?:/|$)"))
-    tp._after_moves.cache_clear()
-    yield
-    tp._after_moves.cache_clear()
 
 
 def _verdict(text: str) -> tuple[str, str]:
@@ -228,10 +224,12 @@ def _verdict(text: str) -> tuple[str, str]:
     f"cd ~ & {DEL} zz-file",
     f"cd {A} && {DEL} -f zz-file",
     pytest.param(f"cd {A} && {TOOL} && cd .. && {DEL} zz-file", id="fold-delete-work"),
-    pytest.param(f"cd {A}/{B} && cd .. && {DEL} zz-file", id="fold-delete-partial"),
+    pytest.param(f"cd {A}/{B} && cd .. && {DEL} zz-file", id="fold-delete-partial-no-link"),
 ])
-def test_a_delete_in_the_work_folder_runs(text):
-    assert _verdict(text) == ("run", "")
+def test_a_delete_in_the_work_folder_runs(text, tmp_path):
+    (tmp_path / A / B).mkdir(parents=True)
+    verdict = tp.assess(text, cwd=tmp_path)
+    assert (verdict.level, verdict.rule) == ("run", "")
 
 
 @pytest.mark.parametrize("text", [
@@ -254,8 +252,10 @@ def test_a_delete_in_the_work_folder_runs(text):
     pytest.param(f"cd .. && cd {A} && {DEL} zz-file", id="leading-parent-delete"),
     pytest.param(f"cd {A}/{B} && cd .. && {DEL} ../zz-file", id="operand-parent"),
 ])
-def test_a_delete_after_moving_outside_asks(text):
-    assert _verdict(text) == ("ask", "delete-outside")
+def test_a_delete_after_moving_outside_asks(text, tmp_path):
+    (tmp_path / A / B).mkdir(parents=True)
+    verdict = tp.assess(text, cwd=tmp_path)
+    assert (verdict.level, verdict.rule) == ("ask", "delete-outside")
 
 
 @pytest.mark.parametrize("text", [
@@ -298,7 +298,10 @@ def test_the_card_lists_the_rule():
     assert tp.ask_rules(f"cd ~ && {TOOL} > {GUARDED}") == {"protected-write"}
 
 
-def test_the_stand_ins_are_not_real_programs():
-    for name in (DEL, PUT, FIND, TOOL):
-        assert not any(os.path.exists(os.path.join(d, name)) for d in ("/bin", "/usr/bin", "/usr/local/bin",
-                                                                          "/opt/homebrew/bin"))
+def test_the_differential_only_runs_builtin_observations():
+    for chain in _CHAINS:
+        text = (chain.replace("{a}", A).replace("{b}", B).replace("{m}", MISSING)
+                .replace("{p}", 'echo 0 "$PWD"'))
+        reading = shell_grammar.read(text)
+        assert reading.understood
+        assert {words[0] for words in reading.commands} <= {"cd", "pushd", "echo", "bash"}

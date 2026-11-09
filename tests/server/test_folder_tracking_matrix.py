@@ -106,14 +106,14 @@ def _differential(chains):
     }
 
 
-def _compare(texts, baseline):
+def _compare(texts, baseline, cwd):
     counts = Counter({key: 0 for key in (
         "strings", "unchanged", "run_to_ask", "run_to_not_understood", "run_to_forbid",
         "ask_forbid_changes", "wrong_direction", "rule_changes", "reader_not_understood",
     )})
     transitions = Counter()
     for text in sorted(texts):
-        before, after = baseline.assess(text), tp.assess(text)
+        before, after = baseline.assess(text), tp.assess(text, cwd=cwd)
         counts["strings"] += 1
         transitions[f"{before.level}->{after.level}"] += 1
         counts["reader_not_understood"] += not shell_grammar.read(text).understood
@@ -133,7 +133,17 @@ def _compare(texts, baseline):
     return dict(counts), dict(sorted(transitions.items()))
 
 
-def test_policy_matrix(baseline_policy):
+def make_plain_tree(texts, work):
+    """Materialize the matrix's explicitly link-free work-relative assumption."""
+    for text in texts:
+        reading = shell_grammar.read(text)
+        for possibilities in reading.folders:
+            for folder in possibilities:
+                if folder and not folder.startswith(("/", "~")) and ".." not in folder.split("/"):
+                    (work / folder).mkdir(parents=True, exist_ok=True)
+
+
+def test_policy_matrix(baseline_policy, tmp_path):
     generated, folded = _chains()
     cohorts = {
         "existing_policy": _parameters(policy_cases),
@@ -142,9 +152,10 @@ def test_policy_matrix(baseline_policy):
         "differential_original": _differential(folders._CHAINS[:19]),
         "differential_added": _differential(folders._CHAINS[19:]),
     }
-    report = {name: _compare(texts, baseline_policy) for name, texts in cohorts.items()}
-    report["total_unique"] = _compare(set.union(*cohorts.values()), baseline_policy)
-    report["fold_inside"] = _compare(folded, baseline_policy)
+    make_plain_tree(set.union(*cohorts.values()), tmp_path)
+    report = {name: _compare(texts, baseline_policy, tmp_path) for name, texts in cohorts.items()}
+    report["total_unique"] = _compare(set.union(*cohorts.values()), baseline_policy, tmp_path)
+    report["fold_inside"] = _compare(folded, baseline_policy, tmp_path)
     assert report["fold_inside"][0]["unchanged"] == len(folded)
     # Include the intervening-command shape used by the new real-bash case.
     text = f"cd {folders.A} && {folders.TOOL} && cd .. && {folders.DEL} zz-file"
