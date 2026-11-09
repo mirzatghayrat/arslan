@@ -1,0 +1,680 @@
+"""What Arslan's terminal may run, and when it asks first (0.1.48; three layers since v0.1.63 S2a-2).
+
+Three answers for any shell command:
+
+  forbid  layer ①, never, inside the sandbox or out: wiping the disk, the home folder or a
+          system folder, writing a raw disk, shutting the Mac down, fork bombs, killing every
+          process, reading passwords out of the keychain, touching Arslan's own key files,
+          anything that needs sudo.
+  ask     layer ②, this time only (the card offers nothing to remember, and a stored "Always"
+          does not answer it): sending or publishing something, deleting outside the working
+          folder, killing other programs, changing how the Mac starts or behaves, the keychain
+          or system settings, controlling other apps (osascript, Shortcuts), opening an app or
+          a link outside the sandbox, reading the screen or the clipboard — and a command this
+          module cannot read (`unreadable`: unbalanced quoting, over the parser limit, `eval`,
+          something downloaded or decoded piped into a shell, an inline script that reaches
+          out, starts programs or drives apps).
+  run     layer ③, everything else. The tool loop runs it in the workspace sandbox without a
+          card when the sandbox can start (`command_sandbox.available()`); otherwise, or when
+          the sandbox is switched off, it asks (target `unsandboxed:*`).
+
+The rules are Arslan's own; the hard floor (layer ①) is adapted from Hermes Agent's (MIT;
+NousResearch/hermes-agent), keeping what applies to macOS. Commands are read through
+server/services/shell_text.py (S2b-1), Arslan's copy of Hermes' text handling: the command-start
+pass, the variants with a newline at every real command start, and the quote masks. Hermes'
+MIT license is in THIRD_PARTY_NOTICES.md ("Terminal command reading").
+
+Folder cancellation also checks retained prefixes in a supplied working folder. It is a guard against mistakes and
+against instructions smuggled in through web pages, not a sandbox: the sandbox (S2a-1) is what
+holds a layer ③ command, and a command outside it runs with the user's own permissions.
+"""
+from __future__ import annotations
+
+import functools
+import os
+import posixpath
+import re
+import shlex
+import stat
+from dataclasses import dataclass
+
+from server.services import shell_grammar, shell_text
+
+MAX_COMMAND_CHARS = 8000
+
+_POS = shell_text.CMDPOS        # command position: start, after ; | && $( ` and sudo/env wrappers
+
+# ── layer ①: forbid ──────────────────────────────────────────────────────────
+
+# A path a recursive delete must never reach, wrapped in a matching quote pair or bare with a
+# terminator, so `rm -rf "/"` and `$(rm -rf /)` are caught (Hermes' `_hardline_rm_path`).
+def _rm_path(alternatives: str) -> str:
+    return rf"(?:[\"'](?:{alternatives})[\"']|(?:{alternatives})(?:\s|$|[)`;|&]))"
+
+
+_RM = _POS + r"rm\s+(?:-[^\s]*\s+)*"
+# The macOS roots: Hermes' Linux list where macOS has the folder (/etc, /usr, /var, /bin, /sbin,
+# /private behind them) and the macOS ones (0.1.48's `macos-roots`), each with an optional glob.
+_ROOTS = "|".join(f"/{name}(?:/\\*)?" for name in (
+    "etc", "usr", "var", "bin", "sbin", "private", "System", "Library", "Applications", "Users", "Volumes", "opt"))
+_RAW_DISK = r"/dev/r?disk\d"
+# (rule, pattern, why, quote_masked): a positionless rule (no command word to anchor: a redirect,
+# a function definition) is matched with quoted prose masked out, so `echo "x > /dev/disk2"` is data.
+_FORBID = [
+    ("keychain-secrets", _POS + r"security\s+(?:[^\n]*\s)?(?:find-(?:generic|internet)-password[^\n]*\s-w\b|"
+                                r"find-(?:generic|internet)-password[^\n]*\s-g\b|dump-keychain|export\b)",
+     "reads passwords out of the keychain", False),
+    ("arslan-keys", r"(?:\.arslan/secret_key|\.arslan-updater\.key|arslan-signing-backup)",
+     "touches Arslan's own key files", False),
+    # Arslan has no terminal to type an admin password into, and should not act as root:
+    # a command that needs sudo is one to hand to the user.
+    ("sudo", r"(?:^|[\n;&|`(]|\$\()\s*sudo\b", "needs administrator rights; run it yourself", False),
+    # Any root-anchored path that collapses to "/" ("/", "//", "/.", "/../..", a trailing glob), or
+    # `rm -rf / *` (Hermes' rule, unchanged).
+    ("wipe-root", _RM + _rm_path(r"/(?:(?:\.\.?)?/)*(?:\.\.?)?\**|/ \*"), "recursive delete of the whole disk", False),
+    ("wipe-home", _RM + _rm_path(r"(?:~|\$\{?HOME\}?)(?:/?|/\*)?"), "recursive delete of your home folder", False),
+    ("macos-roots", _RM + _rm_path(_ROOTS), "recursive delete of a macOS system folder", False),
+    ("raw-disk", _POS + r"(?:dd\b[^\n]*\bof=" + _RAW_DISK
+                 + r"|diskutil\s+(?:erase\w*|zeroDisk|secureErase|randomDisk|partitionDisk|reformat)\b"
+                 + r"|newfs_\w+)", "erases or overwrites a disk", False),
+    ("raw-disk", r">\s*" + _RAW_DISK, "overwrites a disk", True),
+    ("fork-bomb", r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:", "a fork bomb (freezes the Mac)", True),
+    ("kill-all", _POS + r"kill\s+(?:-[^\s]+\s+)*-1\b", "kills every process", False),
+    ("shutdown", _POS + r"(?:shutdown|reboot|halt|poweroff)\b", "shuts down or restarts the Mac", False),
+]
+
+# ── layer ②: this time only ──────────────────────────────────────────────────
+
+# 0.1.62 F4a (R2): how osascript and `shortcuts run` are reached in command position however
+# they are written: through `command` (not `command -v`, which only looks it up), `exec` (with
+# -a NAME, -c, -l), or `xargs` with its options, named by a path or not. Built so it never
+# backtracks: every alternative starts differently, and no blank between words crosses a line
+# break (`_H`), so many lines of launchers are tried line by line (an overlapping first version
+# took ~3x longer per xargs option; one that let `exec` match in two places and across lines took
+# cubic time). Its own command position for that reason: Hermes' `_CMDPOS` also consumes `exec`
+# and lets blanks cross lines. An xargs option that takes a value is case-sensitive (-r and -p
+# are flags; -R and -P take values) and has the value attached (-n1, -I{}) or after blanks (-n 1,
+# -I {}; the command-start pass splits {} across a line). S2a-2: every layer ② rule is reached
+# this way (`_CMD`), so `/usr/bin/git push`, `command git push` and `xargs curl -d` ask too.
+_H = r"[^\S\n]"
+_ONCE_POS = (r"(?:^|[\n`]|\$\()" + _H + r"*(?:sudo" + _H + r"+(?:-\S+" + _H + r"+)*)?"
+             r"(?:\w+=\S*" + _H + r"+)*"
+             r"(?:(?:[^\s=]*/)?env" + _H + r"+(?:-\S+" + _H + r"+)*(?:\w+=\S*" + _H + r"+)*)?"
+             r"(?:(?:nohup|setsid|time|nice|caffeinate|timeout" + _H + r"+\S+|xcrun|arch" + _H + r"+-\S+)"
+             + _H + r"+)*")
+_XARGS_VALUE = r"(?:\{\s*\}|[^\s{-]\S*)"
+_XARGS_OPT = (r"(?:--\S+|(?-i:-[IJLPRSEdins])(?:" + _H + r"+" + _XARGS_VALUE + r"|\S+)"
+              r"|(?-i:-[^\sIJLPRSEdins-])\S*)")
+_LAUNCHED = (r"(?:command" + _H + r"+(?:-p" + _H + r"+)?"
+             r"|builtin" + _H + r"+command" + _H + r"+"
+             r"|exec" + _H + r"+(?:-a" + _H + r"+\S+" + _H + r"+|-[cl]+" + _H + r"+)*"
+             r"|xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+)*"
+             r"(?:[^\s=]*/)?")         # a path, never a VAR=value assignment
+_CMD = _ONCE_POS + _LAUNCHED
+# SMART-8: a delete reaching into a Trash. Finder emptying it needs Apple Events, which both profiles deny, and
+# mac_applescript refuses it itself (`hands_service`). A permanent delete from the Trash is the user's own act;
+# allowed deletes go to the Trash (`delete_to_trash`), so Arslan never takes them out of it. It reads commands: a
+# launcher (`/bin/rm`, `command rm`, `FOO=1 rm`, `timeout 5 rm`) is read through, and prose or a read-only `find` that
+# only names the Trash is not refused. Forms this can't prove (a glob or variable naming the folder) stay on the
+# delete card, which no grant answers (#686 review).
+_DELETER = r"(?:rm|rmdir|unlink|srm)\b"
+_FORBID.append(
+    ("trash", r"(?:" + _CMD + _DELETER + r"[^\n;&|]*\.Trash(?:es)?(?:[/\"'\s)`*]|$)"
+              r"|" + _CMD + r"find\b[^\n;&|]*\.Trash(?:es)?\b[^\n;&|]*\s(?:-delete\b|-exec(?:dir)?\s+(?:[^\s]*/)?"
+              + _DELETER + r")"
+              # a delete after changing into a Trash (`cd ~/.Trash && rm -rf *`)
+              + r"|" + _CMD + r"(?:builtin" + _H + r"+)?(?:cd|chdir|pushd)\b[^\n;&|]*\.Trash(?:es)?\b.*?(?:\b"
+              + _DELETER + r"|\s-delete\b))",
+     "deletes from or empties the Trash; that's yours to do", False))
+# The program itself, not a longer name that starts with it (osascript.sh, osascriptx); a
+# redirection may follow it directly (osascript<<EOF, osascript>/dev/null).
+_END = r"(?=$|[\s;&|)`'\"<>])"
+# HTTP methods that change something, and HTTPie / xh sending data: a method word, or a request
+# item (`key=value`, `key:=json`, `field@file`), a form, or a body on stdin.
+_WRITE = r"(?:POST|PUT|PATCH|DELETE)"
+# One shell word: plain characters, a backslash escape, or a quoted part (`"Cache-Control:public, max-age=3600"`).
+_WORD = r"""(?:\\.|[^\s"'\\]|"[^"\n]*"|'[^'\n]*')"""
+
+
+def _opts(stop: str) -> str:
+    """A cloud CLI's options before its next word (`-m`, `--profile "work account"`, `--region=eu-west-1`): each an
+    option and at most one value that is neither an option nor the word `stop` names, then the blanks before it
+    (#693 review). Linear: an option starts with `-` and a value can't, so each word is read one way only."""
+    word = _WORD + r"+(?<![;&|])"                           # `;`, `&` or `|` ending it ends the command
+    return r"(?:" + _H + r"+-" + word + r"(?:" + _H + r"+(?!-|(?:" + stop + r")" + _END + r")" + word + r")?)*" + _H + r"+"
+_HTTPIE = r"(?:https?|xhs?)"
+# Apps that run what they are given (`open -a`/`-b`): terminals, script and automation apps.
+_SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty|script\s+editor|automator"
+                r"|shortcuts(?:\s+events)?|system\s+events|com\.apple\.(?:terminal|scripteditor2|automator|shortcuts)"
+                r"|com\.googlecode\.iterm2|dev\.warp\.\S+)")
+# Files that make something run later, or hold the user's keys (②Main's review of S2a-2): shell startup
+# files, SSH (authorized_keys, config), the credential folders, launch agents, and other agents' settings. In the sandbox a write to
+# them fails; outside it (a grant to leave the sandbox, or no sandbox at all) it would not, so a write asks,
+# this time only. Reads are not here: ssh, git push and gh read them outside the sandbox (S2a-1).
+_PROTECTED_NAME = (r"(?:\.ssh(?=/|\b)|\.(?:zshrc|zshenv|zprofile|zlogin|zlogout|bashrc|bash_profile|bash_login"
+                   r"|bash_logout|profile|inputrc|cshrc|tcshrc|kshrc)(?![\w.-])|\.config/(?:fish|gh|gcloud)(?=/|\b)"
+                   r"|\.(?:aws|gnupg|kube|azure|gsutil)(?=/|\b)|\.config/rclone(?=/|\b)"
+                   r"|\.docker/config\.json|\.(?:netrc|npmrc|pypirc|git-credentials|gitconfig|rclone\.conf|s3cfg|boto)"
+                   r"(?![\w.-])|Library/(?:LaunchAgents|LaunchDaemons|StartupItems|Keychains)(?=/|\b)"
+                   # other agents' settings start programs (hooks, MCP servers) the next time they run
+                   r"|\.(?:cursor|codex|claude|gemini|hermes|continue)/|\.claude\.json\b"
+                   r"|Library/Application Support/Claude/)")
+_PROTECTED_PATH = (r"[\"']?(?:(?:~|\$HOME|\$\{HOME\}|/Users/[^/\s'\"]+)/" + _PROTECTED_NAME
+                   + r"|/(?:private/)?etc/|/Library/(?:LaunchAgents|LaunchDaemons|StartupItems)(?=/|\b))")
+_ASK = [
+    # F4a: first, so a card for a script that also uploads names the app it drives
+    ("apple-events", _CMD + r"osascript" + _END, "controls other apps (it could send, delete or buy)"),
+    ("shortcuts", _CMD + r"shortcuts" + _H + r"+run" + _END, "runs one of your Shortcuts"),
+    # sends something out
+    ("send-mail", _CMD + r"(?:mail|mailx|sendmail|msmtp|mutt|himalaya" + _H + r"+(?:send|write|reply|forward))" + _END,
+     "sends email"),
+    ("send-message", _CMD + r"(?:imsg" + _H + r"+send|xurl\b[^\n]*(?:post|tweet|/2/tweets))", "sends a message or posts"),
+    ("upload", _CMD + r"(?:curl\b[^\n]*(?:\s(?-i:-[a-zA-Z]*[dFT])\b|\s--(?:data[a-z-]*|form[a-z-]*|upload-file|json)\b"
+                      r"|\s(?-i:-[a-zA-Z]*X)\s*[\"']?" + _WRITE + r"\b|--request(?:=|\s+)[\"']?" + _WRITE + r"\b)"
+                      r"|wget\b[^\n]*--(?:post[a-z-]*|method(?:=|\s+)[\"']?(?:" + _WRITE + r"))"
+                      r"|" + _HTTPIE + r"(?:\s+-\S+)*\s+[\"']?" + _WRITE + r"\b"
+                      r"|" + _HTTPIE + r"\b[^\n]*(?:\s--(?:form|multipart|raw)\b|\s-f\b|\s[A-Za-z_][\w.\-\[\]]*(?::=|=|@)(?!=))"
+                      r")", "sends data to a website or a cloud"),
+    # Cloud storage uploads (Astra on #688/#689, via ⓪Plan, 2026-11-03), `aws s3` among them: the verb, not the
+    # direction (a download asks too). Options may come before each word (`aws --profile p s3 --region r cp`).
+    ("upload", _CMD + r"(?:gcloud" + _opts(r"alpha|beta|storage") + r"(?:(?:alpha|beta)" + _opts(r"storage") + r")?"
+                      r"storage" + _opts(r"cp|mv|rsync") + r"(?:cp|mv|rsync)"
+                      r"|gsutil" + _opts(r"cp|copy|mv|move|ren|rename|rsync") + r"(?:cp|copy|mv|move|ren|rename|rsync)"
+                      r"|aws" + _opts(r"s3|s3api") + r"(?:s3" + _opts(r"cp|mv|sync|rm") + r"(?:cp|mv|sync|rm)"
+                      r"|s3api" + _opts(r"put-object|upload-part") + r"(?:put-object|upload-part))"
+                      r"|gh" + _opts(r"release") + r"release" + _opts(r"upload") + r"upload"
+                      r"|azcopy" + _opts(r"copy|cp|c|sync|sc|s") + r"(?:copy|cp|c|sync|sc|s)"
+                      r"|az" + _opts(r"storage") + r"storage" + _opts(r"blob|file|fs") + r"(?:blob|file|fs" + _opts(r"file")
+                      + r"file)" + _opts(r"upload|upload-batch|sync") + r"(?:upload(?:-batch)?|sync)"
+                      r"|rclone" + _opts(r"copy|copyto|move|moveto|sync|bisync|rcat|copyurl")
+                      + r"(?:copy|copyto|move|moveto|sync|bisync|rcat|copyurl)"
+                      r"|s3cmd" + _opts(r"put|sync|cp|mv") + r"(?:put|sync|cp|mv))(?:" + _END + r"|(?=\$))",
+     "sends data to a website or a cloud"),
+    # a body piped in or redirected in: `cat d.json | http url`, `http url < d.json`
+    ("upload", r"\|\s*(?:[^\s=|]*/)?" + _HTTPIE + _END, "sends data to a website or a cloud"),
+    ("upload", _CMD + _HTTPIE + r"\b[^\n|;&]*\s<\s*[^\s<]", "sends data to a website or a cloud"),
+    # `rsync a host:/b` too (0.1.48's `\S+:)\b` wanted a word character after the colon).
+    # A raw socket (nc, telnet…) sends whatever it is given: `nc mail.example.com 25` is an email. A
+    # port check (`nc -z`, `-zv`) sends nothing.
+    ("remote-shell", _CMD + r"(?:ssh|ssh-copy-id|sshpass|autossh|mosh|scp|sftp|ftp|telnet|socat|(?:nc|ncat|netcat)(?!\s+-[a-zA-Z]*z))"
+     + _END
+     + r"|" + _CMD
+     + r"rsync\b[^\n]*\S:", "connects to another machine"),
+    # bash opens the connection itself, with no program named (zsh has no such path).
+    ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
+    ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
+    ("publish", _CMD + r"(?:npm\s+publish|pnpm\s+publish|yarn\s+publish|twine\s+upload|cargo\s+publish"
+                       r"|gh\s+(?:pr|issue|release|repo|gist)\s+(?:create|delete|merge|close|edit|comment)"
+                       r"|gh\s+api\b[^\n]*(?:\s-[a-zA-Z]*X\s*[\"']?" + _WRITE + r"\b|\s--method(?:=|\s+)[\"']?(?!GET\b)\w"
+                       r"|\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$|\S))"
+                       r"|docker\s+(?:image\s+)?push|terraform\s+(?:apply|destroy)"
+                       r"|kubectl\s+(?:apply|create|delete|replace|patch|scale|rollout)"
+                       r"|vercel(?:\s+(?:deploy|--prod)|\s*$|\s*[;&|]))",
+     "publishes or changes something online"),
+    # deletes or stops things
+    ("force-kill", _CMD + r"(?:kill" + _H + r"+(?:-[^\s]+" + _H + r"+)*-(?:9|KILL|SIGKILL)\b|killall|pkill)" + _END,
+     "force-quits other programs"),
+    # changes how the Mac behaves
+    ("login-items", _CMD + r"(?:launchctl\s+(?:load|bootstrap|enable|submit)|defaults\s+write|crontab(?!\s+-l\b))" + _END,
+     "changes how your Mac starts or behaves"),
+    ("keychain-write", _CMD + r"security\s+(?:add-\w+|delete-\w+|import|set-\w+)\b", "changes your keychain"),
+    ("system-settings", _CMD + r"(?:tccutil\s+reset|networksetup\s+-set\w*|systemsetup\s+-set\w*|pmset(?!\s+-g\b)"
+     + r"|spctl|scutil\s+--set)\b", "changes system settings (network, privacy, power, security)"),
+    # reaches outside the sandbox through the system (S2a's open question): what `open` starts runs outside
+    # the sandbox (LaunchServices). A document opened in its viewer is harmless (`open -a Preview x.pdf`);
+    # a link, a file that runs (an app, a script, a workflow), or an app that runs scripts (a terminal,
+    # Script Editor, Automator, Shortcuts, System Events: `open -a Terminal x.command`) is not.
+    ("open-app", _CMD + r"open\s+(?:[^\n;&|]*\s)?(?:-[a-zA-Z]*[ab]\s+[\"']?" + _SCRIPT_APPS + r"\b"
+                        r"|[\"']?[a-z][\w+.-]*:"
+                        r"|[^\s;&|]*\.(?:app|command|tool|sh|terminal|workflow|scpt|applescript|shortcut)[\"']?(?:\s|$|[;&|)]))",
+     "opens an app, a script or a link outside the sandbox"),
+    ("screen-clipboard", _CMD + r"(?:screencapture|pbpaste)" + _END, "reads your screen or clipboard"),
+    # a write into a protected file: a redirect, a program that writes its operands, or an in-place edit
+    ("protected-write", r"(?:>>?|&>>?|>\|)\s*" + _PROTECTED_PATH + r"|" + _CMD
+     + r"(?:tee|cp|mv|ln|install|ditto|rsync|truncate|touch|chmod|chown|chflags|xattr|dd|sed|perl|ruby)" + _END
+     + r"[^\n;&|]*?(?:\s|=)" + _PROTECTED_PATH
+     # ~/.gitconfig by git itself: core.hooksPath, an alias or core.sshCommand runs code later
+     + r"|" + _CMD + r"git\s+config\s+(?:[^\n;&|]*\s)?--(?:global|system)\b"
+     + r"(?![^\n;&|]*\s(?:--get[\w-]*|--list|-l|--show-\w+)\b)",
+     "changes your shell startup, SSH, credential, login or agent settings files"),
+]
+#: Layer ② by group. The names are stable: the M1 driver answers cards by them
+#: (scripts/kernel_bench/arslan_driver.py) and task_service reads the outbound ones.
+SEND_OUT_RULES = frozenset({"send-mail", "send-message", "upload", "remote-shell", "git-push", "publish"})
+#: What may have left something behind elsewhere when it fails (task_service.known_local_failure).
+OUTBOUND_RULES = SEND_OUT_RULES | {"apple-events", "shortcuts"}
+#: The two whose approved plain call may run with no sandbox at all (U11, task_service.unwrapped_once).
+BARE_RULES = frozenset({"apple-events", "shortcuts"})
+UNREADABLE = "unreadable"
+#: Rules a card answers for this one time only: nothing to remember, and no stored answer stands.
+ONCE_ONLY_RULES = frozenset({key for key, _, _ in _ASK}) | {"delete-outside", UNREADABLE}
+
+# An inline script (python -c, node -e, a heredoc …) that reaches out, starts programs, drives
+# apps or hides its code: the text alone cannot say what it does (0.1.52's `_SCRIPT_REACH`). Not
+# osascript: it is layer ② already (`apple-events`), and its approved plain call may run bare (U11).
+_INLINE_SCRIPT = re.compile(
+    _POS + r"(?:python[0-9.]*|node|nodejs|deno|bun|perl|ruby|php|lua|tclsh|swift)\b[^\n]*"
+           r"(?:\s-[a-zA-Z]*[ceE]\b|<<|\s-(?:$|\s))", re.I)
+_SCRIPT_REACH = re.compile("|".join((
+    # Python modules that reach out, spawn programs or hide code (a URL inside data is fine)
+    r"\b(?:requests|urllib\d?|httpx|aiohttp|http\.client|socket|smtplib|ftplib|paramiko|telnetlib|webbrowser"
+    r"|subprocess|pty|ctypes|multiprocessing|importlib|base64|codecs|marshal|pickle)\b",
+    # calls that run other programs or evaluate code
+    r"\b(?:os\.(?:system|popen|exec\w*|spawn\w*)|popen\d?|__import__|eval|exec|compile|system|fetch)\s*\(",
+    # other apps
+    r"\b(?:osascript|applescript|nsapplescript|appscript|scriptingbridge)\b|\bshortcuts\s+run\b",
+    # node, perl, ruby
+    r"require\(\s*['\"](?:https?|http2|net|dgram|tls|child_process)['\"]|\b(?:XMLHttpRequest|WebSocket)\b",
+    r"\bqx\b|\bopen3\b|\bLWP\b|IO::Socket|Net::\w+|`",
+)), re.I)
+_SHELLS = r"(?:ba|z|k|da|c|tc|fi)?sh"
+# Code the command fetches, decodes or builds, then runs: eval; source/. of a process
+# substitution; a download or decode piped into a shell or an interpreter; `sh <(curl …)`.
+_FETCHED_CODE = re.compile("|".join((
+    _POS + r"eval\b",
+    _POS + r"(?:source|\.)\s+<\(",
+    r"(?:curl|wget|fetch|nc|ncat|base64\s+(?:-d|-D|--decode)|xxd\s+-r|openssl\s+(?:enc|base64)\b[^\n|]*\s-d)\b[^\n|]*\|"
+    r"\s*(?:sudo\s+)?(?:env\s+)?(?:" + _SHELLS + r"|python[0-9.]*|perl|ruby|node)\b",
+    r"\b" + _SHELLS + r"\s+(?:-\S+\s+)*<\(\s*(?:curl|wget)\b",
+    r"\b" + _SHELLS + r"\s+-c\s+[\"']?\$\(\s*(?:curl|wget)\b",
+)), re.I)
+
+_FORBID_C = [(k, re.compile(p, re.I | re.DOTALL), w, masked) for k, p, w, masked in _FORBID]
+_ASK_C = [(k, re.compile(p, re.I), w) for k, p, w in _ASK]
+
+
+@dataclass(frozen=True)
+class Assessment:
+    level: str              # "run" | "ask" | "forbid"
+    rule: str = ""          # the layer ② rule, `unreadable`, or the forbid rule; "" for run
+    reason: str = ""
+
+
+# Programs that run the shell command they are given as one quoted argument, like `sh -c` (which
+# Hermes' variants already read): `watch 'rm -rf ~'`, `script -q /dev/null -c '…'`, `tmux new '…'`.
+# Their argument is read as a command too (②Main's review of S2a-2).
+_LAUNCHER = re.compile(
+    r"(?:^|[\n;&|(]\s*)(?:(?:npx|bunx|pnpm\s+dlx|yarn\s+dlx)\s+(?:-\S+\s+)*)?"
+    r"(?:watch|script|concurrently|parallel|tmux\s+(?:new(?:-session|-window)?|split-window|send-keys|respawn-pane)"
+    r"|screen)(?=\s)")
+_ARG_END = frozenset({";", "&&", "||", "|", "&", "|&", ";;"})
+# shlex's own punctuation, and a newline: outside quotes it ends the launcher's command, inside them it is part of
+# the argument, and so a line of the command it runs.
+_LAUNCHER_PUNCTUATION = "();<>|&\n"
+
+
+def _launcher_args(text: str) -> tuple[str, ...]:
+    """Every quoted argument of a launcher, up to the end of its command (`concurrently 'a' 'b'` runs both). An
+    argument may span lines (`watch 'ls<newline>x'`): read only to the first line, it had no closing quote and
+    wasn't read at all."""
+    out: list[str] = []
+    for match in _LAUNCHER.finditer(text):
+        lexer = shlex.shlex(text[match.end():], posix=True, punctuation_chars=_LAUNCHER_PUNCTUATION)
+        lexer.whitespace, lexer.whitespace_split = " \t\r", True
+        try:
+            for token in lexer:
+                if token in _ARG_END or ("\n" in token and not token.strip(_LAUNCHER_PUNCTUATION)):
+                    break
+                if any(ch.isspace() for ch in token):
+                    out.append(token)          # it was quoted: a command line, not one word
+        except ValueError:
+            continue                           # unclosed quotes are `unreadable` already
+    return tuple(out)
+
+
+@functools.lru_cache(maxsize=64)        # assess, the limit check and ask_rules all ask
+def _forms(text: str) -> tuple[str, ...]:
+    """The forms the rules are matched against: as written, normalized, and the variants with a
+    newline at every real (quote-aware) command start (`shell_text`). `_POS` anchors at a newline,
+    not at `;` `&&` `|` `(`, so without the variants only the first command of a chain was checked:
+    `ls && git push` ran with no card. Also the arguments of every launcher in any of them (one in a `-c` payload:
+    `sh -c 'watch "…"'`), read the same way. Every form is read by every rule, and none is chosen over another: the
+    verdict is the most cautious one any form gives, so a form added here can only add caution."""
+    if shell_text.too_complex(text):
+        return (text,)
+    found = (text, shell_text.normalize(text), *shell_text.variants(text))
+    forms = list(found)
+    for arg in dict.fromkeys(arg for form in found for arg in _launcher_args(form)):
+        # Shorter each time, so the reading ends: a marked form can be longer than the text, and so its argument.
+        forms += _forms(arg) if len(arg) < len(text) else (arg,)
+    return tuple(dict.fromkeys(forms))
+
+
+def _detection_texts(text: str) -> tuple[str, ...]:
+    """`_forms`, or when any form of it (the `-c` argument it hides, say) is past the parser limit, the forms still read
+    cheaply: every one under the limits as it is, and every one past a limit as what the forbid rules read of it in
+    linear passes (`shell_text.over_limit_forms`), the same squeezed passes the ruling's blank-run exception reads. So a
+    form past a limit is still read — main reads it with every rule — and no form the parser would scan is read raw.
+    `_unparseable` then says the command can't be read, and a forbid holds past the limit, so asking can't let one run.
+    Two forms are left out of the readable set, both read squeezed instead: the text as written when its own blank run
+    is past the limit (every rule's command position reads such a run in time far beyond its length), and any other form
+    past a limit, read through its own linear passes rather than raw."""
+    forms = _forms(text)
+    if not _over_limit(forms):
+        return forms
+    out: list[str] = [] if shell_text.blank_run_over_limit(text) else [text]     # the text as written (the fork-bomb)
+    for form in forms:
+        out += shell_text.over_limit_forms(form) if shell_text.too_complex(form) else [form]
+    return tuple(dict.fromkeys(out))
+
+
+def _over_limit(forms: tuple[str, ...]) -> bool:
+    return any(shell_text.too_complex(form) for form in forms)
+
+
+def _masked_texts(texts: tuple[str, ...]) -> tuple[str, ...]:
+    """Quoted prose masked out for the positionless forbid rules, except under a shell carrier
+    (sh -c, eval, source), whose quoted argument is code (Hermes' hardline matcher). A text with no quote has nothing
+    to mask."""
+    return tuple(t if not ("'" in t or '"' in t) or shell_text.has_shell_carrier(t) else shell_text.mask_quoted_prose(t)
+                 for t in texts)
+
+
+def _matches(pattern, texts) -> bool:
+    return any(pattern.search(t) for t in texts)
+
+
+_HEREDOC = re.compile(r"<<-?\s*([\"']?)(\w+)\1[^\n]*\n.*?(?:\n\s*\2[^\S\n]*(?=\n|$)|\Z)", re.S)
+
+
+def _quotes_close(text: str) -> bool:
+    """Whether the command's own quoting closes. A heredoc's body is data, not shell (a "don't" in a
+    script's prose is fine), so it is left out; a `#` comment ends its line."""
+    shell = _HEREDOC.sub("<<HEREDOC\n", text)
+    lexer = shlex.shlex(shell, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        for _token in lexer:
+            pass
+    except ValueError:
+        return False
+    return True
+
+
+def _unparseable(text: str) -> str:
+    """Why the command's text cannot be read at all, or "": then no other rule can be trusted."""
+    if _over_limit(_forms(text)):
+        return "too complex to read before running"
+    if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
+        return "its quoting does not close, so what runs cannot be read"
+    return ""
+
+
+def _inline_scripts(text: str):
+    """Each inline script's own code: the rest of its line (`python3 -c "…"`) and, for a heredoc, its body."""
+    for match in _INLINE_SCRIPT.finditer(text):
+        # its line starts at the program, past the blank lines `_POS` reads through: from the match start, a blank line
+        # before the program (`ls<newline><newline>python3 -c …`) was the script's whole line
+        end = text.find("\n", match.start() + len(match.group()) - len(match.group().lstrip()))
+        line = text[match.start():] if end == -1 else text[match.start():end]
+        body = _HEREDOC.match(text, text.find("<<", match.start())) if "<<" in line else None
+        yield line + ("\n" + body.group(0) if body else "")
+
+
+def _scripts(texts: tuple[str, ...]):
+    """Every inline script in every form. A form with a newline at each command start ends a script's line where its
+    command does; a form with fewer lines reads more of it; a `-c` payload read with its own newlines can have more
+    lines than the whole command but holds only part of it. Any of them can be the one that shows what the script
+    reaches, so none is chosen over the others: the most cautious reading of them all is the verdict."""
+    return (script for form in texts for script in _inline_scripts(form))
+
+
+def _hidden_code(texts: tuple[str, ...]) -> str:
+    """Why what this command runs cannot be read from its text, or "" (layer ②'s `unreadable`)."""
+    if _matches(_FETCHED_CODE, texts):
+        return "it runs code it downloads, decodes or builds"
+    if any(_SCRIPT_REACH.search(script) for script in _scripts(texts)):
+        return "its script reaches out, starts programs or drives apps"
+    return ""
+
+
+# rm and its kin at a command start, and their operands; a target outside the working folder (the
+# command's cwd), or one the text cannot pin down, asks.
+_DELETE_LINE = re.compile(_ONCE_POS + _LAUNCHED + r"(rm|rmdir|unlink|trash|srm)" + _END + r"([^\n;&|)`]*)", re.I)
+_FIND_DELETE = re.compile(_POS + r"find\s+([^\n;&|]*?)\s(?:-delete\b|-exec(?:dir)?\s+(?:[^\s]*/)?rm\b)", re.I)
+
+
+def _outside_target(word: str) -> bool:
+    word = word.strip()
+    if not word:
+        return False
+    if word.startswith(("/", "~", "$")) or "$(" in word or "`" in word or "${" in word:
+        return True
+    if "{" in word and "}" in word:
+        return True                     # a placeholder (`parallel 'rm {}'`): filled in from what it reads
+    return ".." in word.replace("\\", "/").split("/")
+
+
+def _deletes_outside(texts: tuple[str, ...]) -> bool:
+    for text in texts:
+        for match in _DELETE_LINE.finditer(text):
+            if re.search(r"\bxargs\b", match.group(0), re.I):
+                return True                     # xargs adds what it reads to the targets: unknown
+            try:
+                words = shlex.split(match.group(2), comments=False, posix=True)
+            except ValueError:
+                return True                     # the text cannot say what it deletes
+            targets = [w for w in words if not w.startswith("-") or w == "-"]
+            if not targets or any(_outside_target(w) for w in targets):
+                return True
+        for match in _FIND_DELETE.finditer(text):
+            starts = match.group(1).split()
+            if not starts or starts[0].startswith("-") or _outside_target(starts[0]):
+                return True
+    return False
+
+
+_DELETE_OUTSIDE = ("delete-outside", "deletes files outside the working folder")   # in ONCE_ONLY_RULES above
+
+# S2a-3 step 4: the path rules again, for a command after a change of folder, with each relative path joined to every
+# folder shell_grammar says it may run in. Text the reader doesn't understand is judged as before (step 3 wires that).
+_MOVED_DELETERS = frozenset({"rm", "rmdir", "unlink", "trash", "srm"})
+_MOVED_WRITERS = frozenset({"tee", "cp", "mv", "ln", "install", "ditto", "rsync", "truncate", "touch", "chmod", "chown",
+                            "chflags", "xattr", "dd", "sed", "perl", "ruby"})
+_MOVED_FINDERS = frozenset({"find"})
+_PROTECTED_PATH_C = re.compile(_PROTECTED_PATH, re.I)
+
+
+def _joined(folder: str, word: str) -> str:
+    return word if word.startswith(("/", "~", "$")) else f"{folder.rstrip('/')}/{word}"
+
+
+def _protected(folders: tuple[str, ...], word: str) -> bool:
+    paths = [_joined(f, part) for f in folders if f for part in {word, word.split("=", 1)[-1]}]
+    return any(_PROTECTED_PATH_C.match(p) or _PROTECTED_PATH_C.match(posixpath.normpath(p)) for p in paths)
+
+
+def _safe_fold_prefix(prefix: str, cwd: str | os.PathLike[str] | None, checked: dict[str, bool]) -> bool:
+    """Assessment-local lstat walk: missing, linked or uncheckable prefixes stay unfolded."""
+    if cwd is None:
+        return False
+    path = os.fspath(cwd)
+    parts = []
+    for part in prefix.split("/"):
+        parts.append(part)
+        key = "/".join(parts)
+        path = os.path.join(path, part)
+        if key not in checked:
+            try:
+                mode = os.lstat(path).st_mode
+                checked[key] = not stat.S_ISLNK(mode) and stat.S_ISDIR(mode)
+            except OSError:
+                checked[key] = False
+        if not checked[key]:
+            return False
+    return True
+
+
+def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[bool, bool]:
+    """(deletes outside the working folder, writes a protected file) once a change of folder is followed."""
+    # Parse without partial work-relative folds, then choose each candidate at assessment time.
+    # No filesystem verdict is cached across assessments.
+    reading = shell_grammar.read(text, fold_partial=False)
+    checked: dict[str, bool] = {}
+
+    def selected(folders: tuple[str, ...]) -> tuple[str, ...]:
+        result = []
+        for folder in folders:
+            prefix = shell_grammar._fold_prefix(folder)
+            result.append(shell_grammar._logical_folder(folder)
+                          if prefix and _safe_fold_prefix(prefix, cwd, checked) else folder)
+        return tuple(result)
+
+    outside = protected = False
+    for words, folders in zip(reading.commands, reading.folders):
+        name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
+        if name not in _MOVED_DELETERS | _MOVED_FINDERS | _MOVED_WRITERS:
+            continue
+        moved = tuple(f for f in selected(folders) if f)
+        if not moved:
+            continue
+        operands = [w for w in args if not w.startswith("-") or w == "-"]
+        if name in _MOVED_DELETERS:
+            outside |= not operands or any(_outside_target(_joined(f, w)) for f in moved for w in operands)
+        elif name in _MOVED_FINDERS and "-delete" in args:
+            start = args[0] if args and not args[0].startswith("-") else "."
+            outside |= any(_outside_target(_joined(f, start)) for f in moved)
+        elif name in _MOVED_WRITERS:
+            protected |= any(_protected(moved, w) for w in operands)
+    protected |= any(_protected(selected(folders), target) for target, folders in reading.writes)
+    return outside, protected
+
+
+def as_shell(command: str, argv=None) -> str:
+    """One shell string from either form the tool accepts ({command} or legacy {command, argv})."""
+    command = str(command or "").strip()
+    if not command:
+        return ""          # argv alone is not a command; joining would run `'' <argv>`
+    if isinstance(argv, list) and argv:
+        command = shlex.join([command, *[str(a) for a in argv]])
+    return command
+
+
+def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
+    masked = None
+    for key, pattern, why, quote_masked in _FORBID_C:
+        if quote_masked:
+            masked = masked or _masked_texts(texts)
+        if _matches(pattern, masked if quote_masked else texts):
+            return Assessment("forbid", key, why)
+    return None
+
+
+_PROTECTED_NAME_C = re.compile(_PROTECTED_NAME + r"|/(?:private/)?etc/")
+
+
+def _script_names_protected(texts: tuple[str, ...]) -> bool:
+    """An inline script whose code names a protected file: a script reaches ~/.zshrc through
+    expanduser or Path.home(), which no path pattern sees."""
+    return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
+
+
+def _layer_two(text: str, texts: tuple[str, ...], cwd: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
+    found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
+    moved_outside, moved_protected = _after_moves(text, cwd)
+    if (_script_names_protected(texts) or moved_protected) and not any(k == "protected-write" for k, _ in found):
+        found.append(("protected-write", describe("protected-write")))
+    if _deletes_outside(texts) or moved_outside:
+        found.insert(0, _DELETE_OUTSIDE)
+    seen: set[str] = set()
+    return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
+
+
+def assess(command: str, *, cwd: str | os.PathLike[str] | None = None) -> Assessment:
+    """The layer and first rule; without cwd, retained work prefixes cannot be folded."""
+    text = str(command or "")
+    if not text.strip():
+        return Assessment("forbid", "empty", "no command")
+    if len(text) > MAX_COMMAND_CHARS:
+        return Assessment("forbid", "too-long", "command is too long to review")
+    texts = _detection_texts(text)
+    forbidden = _forbid(text, texts)
+    if forbidden is not None:
+        return forbidden
+    unparseable = _unparseable(text)
+    if unparseable:
+        return Assessment("ask", UNREADABLE, unparseable)
+    found = _layer_two(text, texts, cwd)
+    if found:
+        return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
+    hidden = _hidden_code(texts)
+    if hidden:
+        return Assessment("ask", UNREADABLE, hidden)
+    return Assessment("run")
+
+
+def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None) -> set[str]:
+    """Every layer ② rule the command matches (and `unreadable`). `assess` names only the first,
+    which is what the card shows; a card's target lists all of them (`rules:<rule>|<rule>`)."""
+    verdict = assess(command, cwd=cwd)
+    if verdict.level != "ask":
+        return set()
+    text = str(command or "")
+    if _unparseable(text):
+        return {UNREADABLE}
+    texts = _detection_texts(text)
+    return {key for key, _why in _layer_two(text, texts, cwd)} | ({UNREADABLE} if _hidden_code(texts) else set())
+
+
+# JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to
+# Objective-C, so U11's bare run is plain AppleScript only: wrapped, its Apple Events are blocked.
+_OTHER_OSA_LANGUAGE = re.compile(_CMD + r"osascript\b[^\n;&|]*\s-l\s*[\"']?(?!applescript\b)\w", re.I)
+
+
+# bash 3.2 scans a substitution without knowing here-documents, so text in one can end it early and the rest runs: a
+# numbered list in a commit message can delete a folder (#723 review). `$((` is arithmetic and `<<<` a here-string.
+_HEREDOC_IN_SUBSTITUTION = re.compile(r"""(?:\$\((?!\()|[<>]\()[^)]*(?<!<)<<-?\s*[\\'"]?\w""")
+
+
+def heredoc_in_substitution(command: str) -> bool:
+    """A here-document inside `$( )`, `<( )` or `>( )`. Misses one after a `)` in the same substitution, which text
+    inside the body can't write."""
+    return bool(_HEREDOC_IN_SUBSTITUTION.search(str(command or "")))
+
+
+def other_osa_language(command: str) -> bool:
+    """An osascript in a language other than AppleScript (JXA): it cannot reach an app from a command."""
+    return _matches(_OTHER_OSA_LANGUAGE, _detection_texts(str(command or "")))
+
+
+def risk_grade(command: str) -> str:
+    """The LOW/MEDIUM/HIGH grade the confirmation layer speaks (run/ask/forbid)."""
+    return {"run": "LOW", "ask": "MEDIUM", "forbid": "HIGH"}[assess(command).level]
+
+
+# ── "don't ask again", remembered by rule (0.1.48–0.1.62) ────────────────────
+# Since S2a-2 no command card offers "Always", and the stored `legacy_rule` rows are not read by
+# any decision (layer ② is this-time-only; layer ③ needs no card in the sandbox). Settings still
+# lists them; S6 deletes this and the old panel when it lands (v0.1.64 if S6 moves).
+
+async def always_allowed(db) -> set[str]:
+    """Rules the user said not to ask about again (0.1.61: `legacy_rule` rows in the permission
+    store), for Settings' list only. Unreadable means none."""
+    from server.services import permission_store
+    try:
+        return {r.target for r in await permission_store.list_rules(db, "legacy_rule")}
+    except Exception:  # noqa: BLE001 — a standing permission is never inferred from an error
+        return set()
+
+
+async def forget(db, rule: str) -> None:
+    from server.services import permission_store
+    await permission_store.delete_rule_by(db, "legacy_rule", rule)
+    await db.commit()
+
+
+# Rules S2a-2 retired (in the sandbox they run with no card): stored `legacy_rule` rows still carry
+# them, and Settings lists those in the words their cards used. Goes with `always_allowed` (S6).
+_RETIRED = {"delete": "deletes files", "install": "installs software"}
+
+
+def describe(rule: str) -> str:
+    """What a rule is about, in the words its card used when it asked."""
+    for key, _, why in _ASK:
+        if key == rule:
+            return why
+    if rule == _DELETE_OUTSIDE[0]:
+        return _DELETE_OUTSIDE[1]
+    if rule in _RETIRED:
+        return _RETIRED[rule]
+    return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule

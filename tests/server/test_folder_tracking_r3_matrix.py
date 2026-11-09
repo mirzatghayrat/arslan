@@ -2,13 +2,9 @@
 from collections import Counter
 from itertools import product
 import json
-from pathlib import Path
-import re
-import subprocess
-import sys
-import types
 
 from server.services import terminal_policy as tp
+from tests.server.folder_revision_data import load_revision as load_frozen_revision
 from tests.server import test_folder_tracking_matrix as matrix
 from tests.server import test_s2a3_folder_tracking as folders
 from tests.server.test_s2a3_folder_tracking import stand_in_rules  # noqa: F401
@@ -23,23 +19,7 @@ MAINS = (
 
 def load_revision(revision, monkeypatch):
     """Do not use the main-only matrix fixture for a folder-tracking revision."""
-    modules = {}
-    names = ("shell_grammar", "shell_text", "terminal_policy") if revision in (ROUND_TWO, ROUND_THREE, ROUND_FOUR) else ("shell_text", "terminal_policy")
-    for name in names:
-        source = subprocess.run(
-            ["git", "show", f"{revision}:server/services/{name}.py"],
-            cwd=Path(__file__).resolve().parents[2], check=True, capture_output=True, text=True,
-        ).stdout
-        module = types.ModuleType(f"_r3_{revision}_{name}")
-        monkeypatch.setitem(sys.modules, module.__name__, module)
-        if name == "terminal_policy":
-            source, count = re.subn(r"^from server.services import (?:shell_grammar, )?shell_text$", "", source,
-                                    flags=re.M)
-            assert count == 1
-            module.__dict__.update(modules)
-        exec(compile(source, f"{revision}/{name}.py", "exec"), module.__dict__)
-        modules[name] = module
-    policy = modules["terminal_policy"]
+    policy = load_frozen_revision(revision, monkeypatch)
     for name in ("_MOVED_DELETERS", "_MOVED_WRITERS", "_MOVED_FINDERS", "_PROTECTED_PATH_C"):
         setattr(policy, name, getattr(tp, name))
     return policy

@@ -1,52 +1,26 @@
-"""Opt-in, reproducible policy comparison; generated shell text is never executed.
-
-Set ARSLAN_FOLDER_BASELINE to a locally available commit. Only git show reads the
-two baseline modules; no fetch or checkout is needed. The historical 4,810-input
-corpus is absent, so this matrix reports its replacement cohorts explicitly.
-"""
+"""Reproducible frozen-policy comparison; generated shell text is never executed."""
 from __future__ import annotations
 
 from collections import Counter
 from itertools import product
 import json
 import os
-from pathlib import Path
 import posixpath
 import re
-import subprocess
-import sys
-import types
 
 import pytest
 
 from server.services import shell_grammar, terminal_policy as tp
+from tests.server.folder_revision_data import load_revision
 from tests.server import test_s2a3_folder_tracking as folders, test_terminal_policy as policy_cases
 from tests.server.test_s2a3_folder_tracking import stand_in_rules  # noqa: F401
 
 
 @pytest.fixture
 def baseline_policy(monkeypatch):
-    revision = os.environ.get("ARSLAN_FOLDER_BASELINE")
-    if not revision:
-        pytest.skip("set ARSLAN_FOLDER_BASELINE to a local baseline commit")
+    revision = os.environ.get("ARSLAN_FOLDER_BASELINE", "c6647eb915249d77d84e8a243dacf03eb931044c")
     assert re.fullmatch(r"[0-9a-f]{40}", revision), "use a full, immutable commit ID"
-    root = Path(__file__).resolve().parents[2]
-    modules = {}
-    for name in ("shell_text", "terminal_policy"):
-        source = subprocess.run(
-            ["git", "show", f"{revision}:server/services/{name}.py"],
-            cwd=root, check=True, capture_output=True, text=True,
-        ).stdout
-        module = types.ModuleType(f"_folder_baseline_{name}")
-        monkeypatch.setitem(sys.modules, module.__name__, module)
-        if name == "terminal_policy":
-            imported = "from server.services import shell_text"
-            assert source.count(imported) == 1
-            source = source.replace(imported, "")
-            module.shell_text = modules["shell_text"]
-        exec(compile(source, f"{revision}/{name}.py", "exec"), module.__dict__)
-        modules[name] = module
-    return modules["terminal_policy"]
+    return load_revision(revision, monkeypatch)
 
 
 def _parameters(module):
