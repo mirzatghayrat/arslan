@@ -465,7 +465,7 @@ def test_operation_looking_data_does_not_select_publish(case, words):
     assert tp.assess(command).level == "run", case  # Main and original also run.
 
 
-@pytest.mark.parametrize("change", ["hash", "provenance", "header", "missing-file", "extra-file", "missing-source", "extra-source"])
+@pytest.mark.parametrize("change", ["hash", "provenance", "header", "missing-file", "extra-file", "missing-source", "extra-source", "unknown-file-sentinel"])
 def test_baseline_vectors_reject_corrupt_provenance(change):
     import json
     from pathlib import Path
@@ -481,8 +481,9 @@ def test_baseline_vectors_reject_corrupt_provenance(change):
         del header["source_sha256"]
     elif change == "missing-file":
         del header["source_sha256"][source][name]
-    elif change == "extra-file":
-        name, expected, recorded = "unknown.py", "<absent>", "0" * 64
+    elif change in {"extra-file", "unknown-file-sentinel"}:
+        name, expected = "unknown.py", "<absent>"
+        recorded = "<absent>" if change == "unknown-file-sentinel" else "0" * 64
         header["source_sha256"][source][name] = recorded
     elif change == "missing-source":
         del header["source_sha256"][source]
@@ -498,3 +499,49 @@ def test_baseline_vectors_reject_corrupt_provenance(change):
     assert f"{source}/{name}" in message
     assert f"expected {expected}" in message
     assert f"recorded {recorded}" in message
+
+
+@pytest.mark.parametrize("change", ["clean", "fixture-hash", "current-source", "source-commits"])
+def test_baseline_fresh_import_validates_independent_trust(tmp_path, change):
+    import importlib.util
+    import json
+    from pathlib import Path
+    from tests.server.quoted_args_file_run_evidence import GENERATORS
+
+    # Copy inputs before importing: a fixture-derived import-time table must not
+    # authenticate its own corrupted header. No process, shell or Git is used.
+    root = Path(__file__).resolve().parents[2]
+    directory = tmp_path / "tests/server"
+    directory.mkdir(parents=True)
+    loader = directory / "quoted_args_baseline_data.py"
+    loader.write_bytes(Path(__file__).with_name(loader.name).read_bytes())
+    fixture = directory / "quoted_args_baselines.txt"
+    lines = Path(__file__).with_name(fixture.name).read_text().splitlines()
+    header = json.loads(lines[1][2:])
+    source = tmp_path / "server/services/shell_text.py"
+    source.parent.mkdir(parents=True)
+    source.write_bytes((root / "server/services/shell_text.py").read_bytes())
+    expected_message = None
+    if change == "fixture-hash":
+        header["source_sha256"]["original"]["terminal_policy.py"] = "0" * 64
+        # This trust anchor is literal, independent of the fixture and module.
+        expected_message = (
+            "original/terminal_policy.py: expected "
+            "0aa7e22f5faefc3c132c02f8c8fe77561b0acb7214a9d4ba43112f42ecf5b82d, recorded " + "0" * 64)
+    elif change == "current-source":
+        source.write_bytes(source.read_bytes() + b"\n# Changed source bytes.\n")
+        expected_message = "current/shell_text.py: expected 9945605da48225cb5d6cf609f3419c61217a6ece6c7da7700b05a663d7e7c560, recorded "
+    elif change == "source-commits":
+        header["source_commits"]["original"] = "0" * 40
+        expected_message = "Unexpected baseline sources"
+    lines[1] = "# " + json.dumps(header)
+    fixture.write_text("\n".join(lines) + "\n")
+    spec = importlib.util.spec_from_file_location("scratch_baseline", loader)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    if expected_message is None:
+        assert len(module.decode(fixture.read_text(), GENERATORS)) == 37672
+    else:
+        with pytest.raises(AssertionError) as failure:
+            module.decode(fixture.read_text(), GENERATORS)
+        assert expected_message in str(failure.value)

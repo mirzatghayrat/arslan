@@ -52,19 +52,27 @@ def validate_source_hashes(recorded):
     """Compare every source/file against committed trust metadata, without Git."""
     recorded = {} if recorded is None else recorded
     assert isinstance(recorded, dict), f"Invalid source-hash mapping: expected mapping, recorded {recorded!r}"
+    # Complete both directions of membership before comparing any hash values.
     for source in sorted(SOURCE_SHA256.keys() | recorded.keys()):
         expected = SOURCE_SHA256.get(source, {})
         actual = recorded.get(source, {})
         assert source in SOURCE_SHA256 and isinstance(actual, dict), (
             f"Baseline source hash mismatch: {source}/<mapping>: expected {expected!r}, recorded {actual!r}")
         for name in sorted(expected.keys() | actual.keys()):
-            wanted, found = expected.get(name, "<absent>"), actual.get(name, "<missing>")
+            assert name in expected, (
+                f"Baseline source hash mismatch: {source}/{name}: expected <absent>, recorded {actual[name]}")
+            assert source in recorded and name in actual, (
+                f"Baseline source hash mismatch: {source}/{name}: expected {expected[name]}, recorded <missing>")
+    for source, expected in SOURCE_SHA256.items():
+        for name, wanted in expected.items():
+            found = recorded[source][name]
             assert wanted == found, (
                 f"Baseline source hash mismatch: {source}/{name}: expected {wanted}, recorded {found}")
     # This source is unchanged from main and is available in shallow checkouts.
     path = Path(__file__).resolve().parents[2] / "server/services/shell_text.py"
     wanted = SOURCE_SHA256["main"][path.name]
-    found = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "<missing>"
+    assert path.is_file(), f"Baseline source hash mismatch: current/{path.name}: expected {wanted}, recorded <missing>"
+    found = hashlib.sha256(path.read_bytes()).hexdigest()
     assert wanted == found, f"Baseline source hash mismatch: current/{path.name}: expected {wanted}, recorded {found}"
 
 
