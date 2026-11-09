@@ -13,7 +13,10 @@ Three answers for any shell command:
           a link outside the sandbox, reading the screen or the clipboard — and a command this
           module cannot read (`unreadable`: unbalanced quoting, over the parser limit, `eval`,
           something downloaded or decoded piped into a shell, an inline script that reaches
-          out, starts programs or drives apps).
+          out, starts programs or drives apps, and since S2a-3 step 3 anything else with no
+          named rule that shell_grammar's reader does not understand). The tool loop runs a
+          command whose only rule is `unreadable` in the sandbox, offline, with no card, where it can
+          (command_gate); otherwise it asks.
   run     layer ③, everything else. The tool loop runs it in the workspace sandbox without a
           card when the sandbox can start (`command_sandbox.available()`); otherwise, or when
           the sandbox is switched off, it asks (target `unsandboxed:*`).
@@ -971,7 +974,19 @@ def assess(command: str) -> Assessment:
     hidden = _hidden_code(texts)
     if hidden:
         return Assessment("ask", UNREADABLE, hidden)
+    not_read = _not_understood(text)
+    if not_read:
+        return Assessment("ask", UNREADABLE, not_read)
     return Assessment("run")
+
+
+@functools.lru_cache(maxsize=64)        # assess and ask_rules both ask, several times a call
+def _not_understood(text: str) -> str:
+    """S2a-3 step 3 (design point 4): why shell_grammar's reader does not understand the command, or "". With no named
+    rule, such a command is `unreadable`, so its card, the approvals, the Island and the risk grade all read one table.
+    Named layer ② rules still read the raw text, so they come first."""
+    reading = shell_grammar.read(text)
+    return "" if reading.understood else (reading.why or "Arslan does not understand all of it")
 
 
 def ask_rules(command: str) -> set[str]:
@@ -984,7 +999,9 @@ def ask_rules(command: str) -> set[str]:
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(texts, _command_words(text))} | ({UNREADABLE} if _hidden_code(texts) else set())
+    named = {key for key, _why in _layer_two(texts, _command_words(text))}
+    # With no named rule, what asks is unreadable: its code is hidden, or the reader does not understand it (`assess`).
+    return named | ({UNREADABLE} if not named or _hidden_code(texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to

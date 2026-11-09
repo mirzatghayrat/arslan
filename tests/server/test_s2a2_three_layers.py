@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from server.orchestrator import tool_loop, untrusted
-from server.services import approvals, command_sandbox, permissions, terminal_exec, terminal_policy as tp
+from server.services import approvals, command_sandbox, permissions, shell_grammar, terminal_exec, terminal_policy as tp
 from server.ws import protocol
 from server.orchestrator import command_gate
 
@@ -108,7 +108,17 @@ def test_what_cannot_be_read_asks_this_time_only(command):
     "crontab -l", "nc -z localhost 8080", "nc -zv localhost 5432", "ls ~/.ncrc", "sync",
 ])
 def test_layer_three_runs(command):
-    assert tp.assess(command) == tp.Assessment("run")
+    _runs_or_is_only_unreadable(command)
+
+
+def _runs_or_is_only_unreadable(command):
+    """S2a-3 step 3: with no named rule, what shell_grammar's reader does not understand is `unreadable` alone, and runs
+    offline in the sandbox with no card (command_gate); what it understands is layer ③."""
+    verdict = tp.assess(command)
+    if shell_grammar.read(command).understood:
+        assert verdict == tp.Assessment("run"), verdict
+    else:
+        assert (verdict.level, verdict.rule, tp.ask_rules(command)) == ("ask", tp.UNREADABLE, {tp.UNREADABLE})
 
 
 def test_a_card_lists_every_rule_it_matched():
@@ -301,7 +311,7 @@ def test_a_write_into_startup_ssh_credential_or_agent_files_asks_this_time_only(
     "concurrently 'npm run dev' 'npm run api'", "watch ls; echo 'rm -rf ~ is bad'", "screen -ls",
 ])
 def test_reads_and_the_working_folder_still_run(command):
-    assert tp.assess(command).level == "run", tp.assess(command)
+    _runs_or_is_only_unreadable(command)
 
 
 @pytest.mark.parametrize("command,rule", [

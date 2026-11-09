@@ -11,7 +11,7 @@ from server.services.run_recorder import RUN_RAW_CAP
 
 _trace: ContextVar[list[dict] | None] = ContextVar("run_trace", default=None)
 # SBX-7: a sandbox denial of the command being run, waiting for that call's entry. A dict, so a note made in a
-# task the call awaits (asyncio.wait_for copies the context) still reaches it.
+# task the call awaits (asyncio.wait_for copies the context) still reaches it. S2a-3 step 3's offline mark rides with it.
 _denial: ContextVar[dict | None] = ContextVar("run_denial", default=None)
 _prompt: ContextVar[dict | None] = ContextVar("run_prompt", default=None)
 # v0.1.64 INB2: whether the run's turns took in anything off the "about you" allowlist (untrusted.known_local,
@@ -50,6 +50,9 @@ def record(*, tool: str, args, result, ok: bool, error: str | None, ms: int | No
     denial = held.pop("code", None) if held is not None else None
     if denial:
         entry["denial"] = denial                     # SBX-7: kept whole however long the output result_raw cuts
+    offline = held.pop("offline", None) if held is not None else None
+    if offline:
+        entry["offline"] = offline                   # S2a-3 step 3: SBX-8's count of unread commands run offline
     buf.append(entry)
 
 
@@ -60,6 +63,15 @@ def note_denial(code: str) -> None:
     held = _denial.get()
     if held is not None:
         held["code"] = code
+
+
+def note_offline(reason: str) -> None:
+    """S2a-3 step 3: the command being run ran offline in the sandbox with no card, because of `reason`
+    (`unreadable`). Like a denial, it goes on that call's entry and the run step's `ref`, where SBX-8 counts it, and
+    never into what the model reads."""
+    held = _denial.get()
+    if held is not None:
+        held["offline"] = reason
 
 
 def snapshot() -> list[dict]:
