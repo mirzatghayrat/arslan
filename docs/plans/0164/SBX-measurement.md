@@ -364,8 +364,14 @@ when SBX-6's proxy mode lands: remove those 17 transitional cases. Product onlin
 
 ## Gate 2 review: accepted daemon interface (2026-11-01)
 
-**DELETE-BY: SBX-6.** ANY_DECLARED keeps the exact Unix socket
-`/private/var/run/mDNSResponder` until the proxy replaces this transitional
+**Deleted in v0.1.64, after SBX-6.** Once #771 moved MCP to the proxy, no
+product preset used ANY_DECLARED, so the mode, its mDNSResponder socket grant
+and its `com.apple.trustd.agent` grant were removed from `sandbox_profile.py`,
+with the opt-in dns_sd probe below. No mode grants the socket now. The rest of
+this section records the decision and the measurements as they were.
+
+ANY_DECLARED kept the exact Unix socket
+`/private/var/run/mDNSResponder` until the proxy replaced this transitional
 network mode for commands. This is the daemon's **whole client interface**,
 including service registration, NAT port mapping and browsing, not a DNS-only
 capability. Seatbelt filters the socket path at connect(); it does not constrain
@@ -444,7 +450,8 @@ check reproduced that failure. The installed SDK identifies these exports in
 libSystem; changing the loader to `/usr/lib/libSystem.B.dylib` made the import,
 library-load and symbol-resolution check pass. No DNS-SD operation is called
 by that startup check. After the correction, the call sequence ran **once per
-profile**, with no repeated operation measurement.
+profile**, with no repeated operation measurement. The probe,
+`scripts/dev/test_dnssd_probe.py`, was deleted with the mode; this was its command:
 
 ```sh
 HOME=/private/tmp/arslan-sbx-check-home ARSLAN_SECRET_KEY_FILE= ARSLAN_DNSSD_PROBE=1 .venv/bin/python -m pytest scripts/dev/test_dnssd_probe.py -q -s
@@ -472,8 +479,8 @@ a refusal. Holding the NAT request open was not measured. No completed router
 mapping is established.** No peer-side advertisement visibility, router state,
 discovered service identity or Local
 Network prompt outcome was recorded. Callback multiplicity does not establish
-a count of distinct services. These limits leave the user's broader-interface
-acceptance and `DELETE-BY: SBX-6` unchanged.
+a count of distinct services. These limits left the user's broader-interface
+acceptance unchanged until the mode was deleted after SBX-6.
 
 The named `DNSSD-missing-library` mutation restores the original invalid loader
 and fails the no-operation startup check. Its full-path-keyed backup was copied

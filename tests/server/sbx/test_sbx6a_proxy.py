@@ -117,11 +117,6 @@ def test_online_is_the_proxy_port_and_loopback_minus_arslans_ports(home):
     assert "(deny network-bind network-inbound)" in text                  # D1 stands
 
 
-def test_any_declared_is_retired_for_commands(home):
-    with pytest.raises(ValueError, match="any-declared"):
-        command_sandbox.commands_profile(home / "ws", network=NetworkMode.ANY_DECLARED)
-
-
 def test_online_with_no_proxy_or_unknown_ports_is_offline(home, monkeypatch):
     offline = command_sandbox.commands_profile(home / "ws", offline=True)
     assert command_sandbox.commands_profile(home / "ws") == offline                  # no proxy port

@@ -53,8 +53,8 @@ dev-server measurement, and three optional real-socket measurements, each across
 three bases (51 collected cases). The corpus now collects 171 cases, down from
 222, with three macOS markers and zero strict xfails. These are local collection
 numbers; full execution and CI confirmation are pending. Historical baseline
-results remain historical evidence. The profile builder's separate any-declared
-policy tests and the product enum remain in place.
+results remain historical evidence. The product enum and the profile builder's
+any-declared policy tests were deleted afterwards.
 
 Reference-only reproduction (not product validation): `HOME=/private/tmp/arslan-sbx-check-home .venv/bin/python -m pytest tests/server/sbx/test_sbx3_commands.py -p scripts.dev.sbx3_reference -m macos -q`.
 Add `--sbx-reference-permissive` to run the deliberate failing profile mutation.

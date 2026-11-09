@@ -11,7 +11,7 @@
 - Mail, Messages and Photos data are closed (§1, the user's Q3), like Desktop/Documents/Downloads while that
   setting is off. Safari's data is already a protected path.
 - The flip: commands run on SBX-2's default-deny base (`sandbox_profile.default_deny_profile`), with the user's
-  D1 (listening stays denied) and D2 (online is any-declared until SBX-6, offline is none). What the base
+  D1 (listening stays denied) and D2 (online is the proxy since SBX-6, offline is none). What the base
   closes last, 3a reopens after it: the work and project folders inside a closed folder, then the protected
   paths again, then the saved copies.
 
@@ -187,7 +187,7 @@ def test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_c
     copy = home / "Library/Application Support/Arslan/out.txt"
     copy.write_text("x")
     text = command_sandbox.commands_profile(desk / "ws", closed=[desk], readable=[desk / "proj"], copies=[copy])
-    base = _base_for(home, NetworkMode.ANY_DECLARED)
+    base = _base_for(home, NetworkMode.NONE)
     assert not text.startswith(base)                        # the closed Desktop is part of the base's text
     shown = text.replace(os.path.realpath(home), "<H>").splitlines()
     tail = shown[len(shown) - 5:]

@@ -118,19 +118,12 @@ TTY_DEVICES = (literal("/dev/tty"), literal("/dev/ptmx"), '(regex #"^/dev/ttys[0
 class NetworkMode(str, Enum):
     NONE = "none"
     PROXY = "proxy"
-    ANY_DECLARED = "any-declared"
     PORT_22 = "port-22"
 
 
 # Exact names only, justified by corpus rows; never import a system profile.
 SYSTEM_MACH_SERVICES = {
     "com.apple.FSEvents": tuple(NetworkMode),  # node-watch-none-default-deny
-    # DNS alone does not restore swift-certificate-any-declared-default-deny.
-    "com.apple.trustd.agent": (NetworkMode.ANY_DECLARED,),
-}
-SYSTEM_UNIX_SOCKETS = {
-    # dns-any-declared-default-deny; PORT_22 accepts IPv4 literals, never DNS.
-    "/private/var/run/mDNSResponder": (NetworkMode.ANY_DECLARED,),
 }
 
 
@@ -153,10 +146,9 @@ def default_deny_profile(
     per run; omitting it permits no POSIX IPC. This is name isolation, not an
     ownership check. Do not give two runs the same prefix.
 
-    Network grants are TCP only. Unix sockets are a separate exact allowlist;
+    Network grants are TCP only, and no mode grants a Unix socket;
     online modes allow outbound localhost connections. Proxy and port-22 exclude
-    supplied Arslan listener ports; any-declared rejects nonempty denied_ports
-    because Seatbelt cannot reliably enforce them alongside its wildcard grant.
+    supplied Arslan listener ports.
     Port-22 also rejects excluding port 22: its non-localhost allow covers that port.
     All modes deny binds/listens: Seatbelt's localhost bind filter also permits
     wildcard binds. Restoring dev servers requires a
@@ -167,8 +159,6 @@ def default_deny_profile(
     for port in (*denied_ports, *((proxy_port,) if proxy_port is not None else ())):
         if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
             raise ValueError("ports must be integers from 1 to 65535")
-    if network == NetworkMode.ANY_DECLARED and denied_ports:
-        raise ValueError("any-declared cannot enforce denied_ports; use proxy, port-22, or none")
     if network == NetworkMode.PORT_22 and 22 in denied_ports:
         raise ValueError("port-22 cannot exclude port 22; use proxy or none")
     if network == NetworkMode.PROXY and proxy_port is None:
@@ -204,15 +194,11 @@ def default_deny_profile(
         if network in modes:
             rules.allow("mach-lookup", f"(global-name {sbpl_string(name)})")
     if network != NetworkMode.NONE:
-        sockets = [real(path) for path, modes in SYSTEM_UNIX_SOCKETS.items() if network in modes]
-        rules.allow_paths("network-outbound", sockets, literal)
         rules.allow("network-outbound", '(remote tcp "localhost:*")')
         if network == NetworkMode.PROXY:
             # Load-bearing with localhost:*: removing this can drop TCP denies.
             # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
             rules.allow("network-outbound", remote_tcp("localhost", proxy_port))
-        elif network == NetworkMode.ANY_DECLARED:
-            rules.allow("network-outbound", '(remote tcp "*:*")')
         elif network == NetworkMode.PORT_22:
             # Load-bearing with localhost:*: removing this can drop TCP denies.
             # https://github.com/mirzatghayrat/arslan/pull/570#issuecomment-6538778801
