@@ -23,6 +23,7 @@ MODES = (
     "R4-PROTOTYPE", "R4-NO-ANCHOR", "R4-NUL", "R4-ANCHOR-LAST", "R4-ANCHOR-LATE",
     "BASE-DROP-MOVES", "BASE-DROP-FAILED", "BASE-OR-EXACT", "BASE-PIPE-LEAK",
     "BASE-SUBSHELL-LEAK", "BASE-BACKGROUND-LEAK", "BASE-DROP-WRITES", "BASE-DROP-POLICY",
+    "GIT-ALLOWED",
 )
 
 
@@ -57,7 +58,20 @@ def pytest_configure(config):
     patch = pytest.MonkeyPatch()
     config.add_cleanup(patch.undo)
     reader = sg._Reader
-    if mode == "R4-NO-VETO":
+    if mode == "GIT-ALLOWED":
+        # Restore exactly the removed status/log/diff proof, process-locally.
+        patch.setattr(tp, "_FOLD_GIT_OPTIONS", {
+            "status": frozenset({"--short", "--porcelain", "--branch", "-s", "-b", "--untracked-files=no"}),
+            "log": frozenset({"--oneline", "--stat", "--name-only", "--no-patch", "--no-ext-diff", "--no-textconv"}),
+            "diff": frozenset({"--stat", "--name-only", "--name-status", "--cached", "--staged", "--no-ext-diff", "--no-textconv"}),
+        }, raising=False)
+        _replace(patch, tp, "_fold_effect_safe", "if name in _FOLD_READ_OPTIONS:",
+                 'if name == "git":\n'
+                 '        if not args or args[0] not in _FOLD_GIT_OPTIONS:\n'
+                 '            return False\n'
+                 '        options = _FOLD_GIT_OPTIONS[args.pop(0)]\n'
+                 '    elif name in _FOLD_READ_OPTIONS:')
+    elif mode == "R4-NO-VETO":
         patch.setattr(tp, "_fold_effects_allow", lambda *args: True)
     elif mode == "R4-FIRST-ONLY":
         patch.setattr(tp, "_fold_effects_allow", lambda reading, point: tp._fold_effect_safe(reading.effects[0]))

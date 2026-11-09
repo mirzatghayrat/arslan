@@ -88,7 +88,9 @@ def test_effect_veto(effect, tmp_path, monkeypatch):
 def test_allowlisted_chain(program, tmp_path):
     (tmp_path / A / B).mkdir(parents=True)
     text = program + "\n" + fold()
-    assert tp.assess(text, cwd=tmp_path).level == "run", text
+    assert sg.read(text).understood, text
+    expected = "ask" if program.startswith("git ") else "run"
+    assert tp.assess(text, cwd=tmp_path).level == expected, text
 
 
 @pytest.mark.parametrize("program", [
@@ -241,14 +243,25 @@ def test_common_overask(tmp_path, monkeypatch):
     (tmp_path / A / B).mkdir(parents=True)
     (tmp_path / A / "zz-deep" / B).mkdir(parents=True)
     baseline = revisions.load_revision(revisions.ROUND_THREE, monkeypatch)
+    round_four = revisions.load_revision(revisions.ROUND_FOUR, monkeypatch)
+    before_counts, changes = Counter(), Counter()
     report = Counter()
     for preceding, text in common_cases():
         assert baseline.assess(text, cwd=tmp_path).level == "run"
         after = tp.assess(text, cwd=tmp_path).level
-        expected = "ask" if preceding in COMMON[-3:] else "run"
+        before = round_four.assess(text, cwd=tmp_path).level
+        before_counts[before] += 1
+        if before != after:
+            assert (before, after, preceding) == ("run", "ask", "git status")
+            changes[preceding] += 1
+        expected = "ask" if preceding in (*COMMON[-3:], "git status") else "run"
         assert after == expected, text
         report[after] += 1
-    assert report == {"run": 432, "ask": 144}
+    assert before_counts == {"run": 432, "ask": 144}
+    assert changes == {"git status": 48}
+    assert report == {"run": 384, "ask": 192}
+    print("R5_COMMON_BEFORE " + json.dumps(before_counts))
+    print("R5_COMMON_NEW_ASKS " + json.dumps(changes))
     print("R4_COMMON " + json.dumps(report))
     with monkeypatch.context() as prototype:
         prototype.setattr(tp, "_fold_effect_safe", lambda words: bool(words and words[0] in tp._FOLD_BUILTINS))
@@ -263,16 +276,21 @@ def test_round_four_matrices(tmp_path, monkeypatch):
     assert len(corpora["structural"]) == 11816
     matrix.make_plain_tree(set.union(*corpora.values()), tmp_path)
     report = {}
-    for revision in (revisions.MAINS[0], revisions.ROUND_THREE):
+    for revision in (revisions.MAINS[0], revisions.ROUND_THREE, revisions.ROUND_FOUR):
         baseline = revisions.load_revision(revision, monkeypatch)
         report[revision] = {}
         for name, texts in corpora.items():
             counts = Counter()
             for text in texts:
-                before = baseline.assess(text, **({"cwd": tmp_path} if revision == revisions.ROUND_THREE else {}))
+                before = baseline.assess(text, **({"cwd": tmp_path} if revision != revisions.MAINS[0] else {}))
                 after = tp.assess(text, cwd=tmp_path)
                 counts[before.level + "->" + after.level] += 1
                 assert before.level == after.level or (before.level, after.level) == ("run", "ask"), text
+                if before.level == after.level:
+                    assert before.rule == after.rule, text
+                elif revision == revisions.ROUND_FOUR:
+                    assert any(words[0].lower().rsplit("/", 1)[-1] == "git"
+                               for words in sg.read(text).commands), text
             report[revision][name] = dict(counts)
     invalid = Counter()
     for text in corpora["repository"]:
@@ -308,6 +326,7 @@ def test_plain_moves_have_the_existing_effect_gap(tmp_path, monkeypatch):
 
 def test_round_three_topologies(tmp_path, monkeypatch):
     baseline = revisions.load_revision(revisions.ROUND_THREE, monkeypatch)
+    round_four = revisions.load_revision(revisions.ROUND_FOUR, monkeypatch)
     report = {}
     for topology in ("plain", "outside-link", "inside-link", "deep-link", "missing"):
         work, outside = tmp_path / topology, tmp_path / (topology + "-outside")
@@ -331,6 +350,8 @@ def test_round_three_topologies(tmp_path, monkeypatch):
             text = f"{move} {prefix}/{B} && {parent} {up} && {end}"
             before, after = baseline.assess(text, cwd=work), tp.assess(text, cwd=work)
             assert (before.level, before.rule) == (after.level, after.rule)
+            previous = round_four.assess(text, cwd=work)
+            assert (previous.level, previous.rule) == (after.level, after.rule)
             counts[before.level + "->" + after.level] += 1
         assert counts == {"run->run" if topology == "plain" else "ask->ask": 24}
         report[topology] = dict(counts)
