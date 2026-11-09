@@ -2,7 +2,8 @@
 
 "Understood" is an allowlist: a small part of bash 3.2, the shell terminal_exec runs (`/bin/bash -p -c`). A command
 is understood only when all of its text is in that part; otherwise `why` says what stopped the reader. Refusing costs
-little, so a form bash reads in a way that is hard to follow is refused, not modelled. Nothing reads this yet.
+little, so a form bash reads in a way that is hard to follow is refused, not modelled. The named policy rules also
+read its commands; the command gate does not yet use `understood`.
 
 It reads:
   - words of unquoted characters, backslash escapes, '…' and "…"; $NAME, ${NAME}, the special parameters and $( … ),
@@ -16,16 +17,15 @@ It reads:
   - these wrappers, read through to the command they start, with no options: sudo, nohup, time, nice, caffeinate,
     command (also command -v), exec, env NAME=value…, timeout DURATION, npx / bunx [-y|--yes];
   - bash or sh -c or -lc with its script written out, read again as a command;
-  - a shell or interpreter whose first word names a script (for Python also -m MODULE) and has no /dev/ in it, find
-    without -exec and its relatives. Every word that decides this is written out.
+  - Python -m MODULE, and find without -exec and its relatives. Every word that decides this is written out.
 
 Everything else is not understood: other quoting forms, backquotes, arithmetic, brace expansion, ${…} with operators,
 process substitution, function definitions, [[ … ]], other builtins, a program named by an expansion or a pattern,
-any wrapper option, xargs, awk and other launchers.
+any / in a program word, a shell or interpreter running a file, any wrapper option, xargs, awk and other launchers.
 
 `commands` lists, when understood, every simple command in the text, on every branch whether or not a condition skips
 it, and each wrapper's command after the wrapper. It goes by name, and in any case, because the default macOS disk
-ignores case. It does not say what a named program goes on to start by itself: `make`, `git`, a script or a shell's
+ignores case. It does not say what a named program goes on to start by itself: `make`, `git`, a Python module or a shell's
 startup files may start anything, and a copy of bash under another name is just that name.
 
 A read stops at MAX_TEXT characters, MAX_COMMANDS entries in `commands` and MAX_DEPTH levels; past any of them the
@@ -97,10 +97,11 @@ _PLAIN_WRAPPERS = frozenset({"sudo", "nohup", "time", "nice", "caffeinate", "com
 _LAUNCHERS = frozenset({"watch", "script", "tmux", "screen", "parallel", "concurrently", "su", "sg", "runuser", "flock",
                         "entr", "nodemon", "arch", "xcrun", "stdbuf", "setsid", "sandbox-exec", "xargs", "gxargs", "gfind",
                         "awk", "gawk", "nawk", "mawk", "lockf"})
-# What takes code from the command line or its input, and is read only when its first word names a script.
+# Programs whose code is not in the command text, except the inline shells and Python modules read below.
 _INTERPRETER = re.compile(r"(?:bash|sh|zsh|ksh|mksh|dash|ash|fish|csh|tcsh|pwsh|nu|xonsh|elvish|yash|rc|python|pypy|node"
                           r"|nodejs|deno|bun|perl|ruby|php|rscript|lua|luajit|tclsh|swift|julia)[0-9.-]*")
 _PYTHONS = ("python", "pypy")
+_NON_SCRIPT_SUBCOMMANDS = {"swift": {"build"}, "bun": {"install"}, "deno": {"info"}}
 _FIND_RUNS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 
 
@@ -111,6 +112,19 @@ class Reading:
     capped: bool = False       # past MAX_TEXT, MAX_COMMANDS or MAX_DEPTH: nothing more of it should be built
     # Each command as its words with quotes removed (an expansion shows as written). Empty unless `understood`.
     commands: tuple[tuple[str, ...], ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class PrefixReading:
+    """Commands parsed before a refusal, for additive policy checks only.
+
+    This is never evidence that the whole input is understood. In particular,
+    nothing after the first unread form is scanned or treated as a command.
+    """
+    commands: tuple[tuple[str, ...], ...] = ()
+    refused: bool = False
+    why: str = ""
+    capped: bool = False
 
 
 class _NotUnderstood(Exception):
@@ -572,12 +586,14 @@ class _Reader:
             name = words[0].literal
             if name is None:
                 raise _NotUnderstood("the program it runs comes from a variable, a substitution or a pattern")
+            if "/" in name:
+                raise _NotUnderstood("its program word contains a path")
             if not _PROGRAM.fullmatch(name):
                 raise _NotUnderstood("its program name, or a wrapper's option, is not one Arslan reads")
             if len(self.commands) >= MAX_COMMANDS:
                 raise _NotUnderstood("it has more commands than Arslan reads before running", capped=True)
             self.commands.append(tuple(w.text for w in words))
-            base = name.rsplit("/", 1)[-1].lower()
+            base = name.lower()
             args = words[1:]
             if base in _OTHER_BUILTINS:
                 raise _NotUnderstood(f"it uses `{base}`, which changes how the shell reads what follows")
@@ -606,12 +622,14 @@ class _Reader:
                     raise _NotUnderstood("its find runs a command, or may from an expansion")
         elif _INTERPRETER.fullmatch(base):
             first = args[0].literal if args else None
+            if first in _NON_SCRIPT_SUBCOMMANDS.get(base, ()):
+                return
             if base in ("bash", "sh") and first in ("-c", "-lc"):
                 if not _names_something(args[1:]):
                     raise _NotUnderstood("it runs a shell script that is not written out")
                 _Reader(args[1].text, self.depth + 1, self.commands).read_all()
-            elif first == "eval" or not _names_something(args[1:] if first == "-m" and base.startswith(_PYTHONS) else args):
-                raise _NotUnderstood(f"it runs {base} without naming a script first: what it runs, the text does not say")
+            elif not (first == "-m" and base.startswith(_PYTHONS) and _names_something(args[1:])):
+                raise _NotUnderstood(f"it runs a {base} script whose code the text does not say")
 
 
 def _names_something(args: list[_Word]) -> bool:
@@ -681,19 +699,27 @@ def _unseen(c: str) -> bool:
     return c not in " \t\n" and unicodedata.category(c)[0] in "CZ"
 
 
-def read(text: str) -> Reading:
-    """Whether `text` is in the grammar above, and every command it would start."""
+def read_prefix(text: str) -> PrefixReading:
+    """Read once, retaining parsed words separately from whole-input acceptance."""
     if not isinstance(text, str):
-        return Reading(understood=False, why="it is not text")
+        return PrefixReading(refused=True, why="it is not text")
     if len(text) > MAX_TEXT:
-        return Reading(understood=False, why="it is longer than Arslan reads", capped=True)
+        return PrefixReading(refused=True, why="it is longer than Arslan reads", capped=True)
     if any(map(_unseen, set(text))):
-        return Reading(understood=False, why="it contains control or invisible characters")
+        return PrefixReading(refused=True, why="it contains control or invisible characters")
     commands: list[tuple[str, ...]] = []
     try:
         _Reader(text, 0, commands).read_all()
     except _NotUnderstood as exc:
-        return Reading(understood=False, why=exc.why, capped=exc.capped)
+        return PrefixReading(commands=tuple(commands), refused=True, why=exc.why, capped=exc.capped)
     except RecursionError:
-        return Reading(understood=False, why="it nests commands deeper than Arslan reads", capped=True)
-    return Reading(understood=True, commands=tuple(commands))
+        return PrefixReading(commands=tuple(commands), refused=True,
+                             why="it nests commands deeper than Arslan reads", capped=True)
+    return PrefixReading(commands=tuple(commands))
+
+
+def read(text: str) -> Reading:
+    """Whether `text` is in the grammar above; a refusal never exposes partial commands."""
+    prefix = read_prefix(text)
+    return Reading(understood=not prefix.refused, why=prefix.why, capped=prefix.capped,
+                   commands=() if prefix.refused else prefix.commands)
