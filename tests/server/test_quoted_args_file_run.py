@@ -215,10 +215,13 @@ def test_python_modules_remain_understood(program):
 
 
 @pytest.mark.parametrize("words", [("bash", "task.sh"), ("python3", "task.py"), ("./tool", "--version")])
-def test_reader_refusal_does_not_wire_the_command_gate(words):
+def test_reader_refusal_asks_as_unreadable(words):
+    """S2a-3 step 3 wires the reader into the policy: a script run it refuses asks as `unreadable`, which runs
+    offline in the sandbox with no card."""
     command = " ".join(words)
     assert not sg.read(command).understood
-    assert tp.assess(command).level == "run"
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", tp.UNREADABLE)
 
 
 @pytest.mark.parametrize("data", [

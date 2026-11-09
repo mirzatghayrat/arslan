@@ -148,6 +148,18 @@ def stratified(rows):
     return [bucket[i % len(bucket)] for i, bucket in enumerate(buckets.values())]
 
 
+def step3_move(row):
+    return (row["main"], row["fixed"], row.get("rule")) == ("run", "ask", tp.UNREADABLE)
+
+
+def test_step3_move_is_only_run_to_ask_unreadable():
+    assert step3_move({"main": "run", "fixed": "ask", "rule": tp.UNREADABLE})
+    assert not step3_move({"main": "run", "fixed": "ask", "rule": "stand-in-rule"})
+    assert not step3_move({"main": "run", "fixed": "forbid", "rule": tp.UNREADABLE})
+    assert not step3_move({"main": "ask", "fixed": "run", "rule": ""})
+    assert not step3_move({"main": "forbid", "fixed": "ask", "rule": tp.UNREADABLE})
+
+
 def assert_matrix(result, *, negative=False, cautious_forbids=False):
     assert not result["toward_run"], result["toward_run"]
     if negative:
@@ -156,7 +168,9 @@ def assert_matrix(result, *, negative=False, cautious_forbids=False):
         # --exclude=a b and -d"foo bar" controls retain option/value protection.
         accepted = {f"operand/wipe-root-option-looking-file/{position}"
                     for position in SEPARATORS}
-        changes = result["changed_from_main"]
+        # S2a-3 step 3: a command the reader does not understand asks as `unreadable` (offline in the sandbox, no
+        # card) where main ran it. That move is set aside; every other change from main is still checked below.
+        changes = [row for row in result["changed_from_main"] if not step3_move(row)]
         if cautious_forbids:
             assert {row["id"] for row in changes} == accepted, changes
             assert all((row["main"], row["pr"], row["fixed"]) ==
@@ -223,7 +237,10 @@ def test_stored_baseline_evidence(kind, record_property):
         reading = sg.read(text)
         if kind == "files":
             assert not reading.understood and reading.why and not reading.commands and not reading.capped, case
-            assert (*levels(kind, case, text), tp.assess(text).level) == ("run", "run", "run"), case
+            # Main and the original ran a script; since S2a-3 step 3 the reader's refusal asks as `unreadable`.
+            assert levels(kind, case, text) == ("run", "run"), case
+            head = tp.assess(text)
+            assert (head.level, head.rule) == ("ask", tp.UNREADABLE), case
     if kind == "composition":
         for case, standalone, text in stratified(compositions()):
             assert not sg.read(text).understood and not sg.read(text).commands, case
@@ -259,7 +276,8 @@ def matrix(kind, rows):
     for case, text in rows:
         count += 1
         sg.read(text)
-        verdicts = [*levels(kind, case, text), tp.assess(text).level]
+        head = tp.assess(text)
+        verdicts = [*levels(kind, case, text), head.level]
         fallback_programs = {words[0].lower() for words in tp._command_words(text)
                              if not tp._fully_accounted(words[0].lower(), words[1:])}
         if fallback_programs:
@@ -274,7 +292,7 @@ def matrix(kind, rows):
             losses.append(f"{kind}/{case}: expected >= {verdicts[1][0]}, actual {verdicts[2][0]}")
         if verdicts[0] != verdicts[2]:
             changes.append({"id": case, "main": verdicts[0], "pr": verdicts[1], "fixed": verdicts[2],
-                            "matrix": kind, "expected": verdicts[0][0], "actual": verdicts[2][0]})
+                            "rule": head.rule, "matrix": kind, "expected": verdicts[0][0], "actual": verdicts[2][0]})
         if RANK[verdicts[2]] < RANK[verdicts[0]]:
             toward_run.append(f"{kind}/{case}: expected >= {verdicts[0][0]}, actual {verdicts[2][0]}")
     return dict(kind=kind, cases=count, loosened=loosened, losses=losses, transitions=dict(transitions), by_class=dict(classes),

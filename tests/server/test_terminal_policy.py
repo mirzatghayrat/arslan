@@ -8,13 +8,20 @@ from server.services import terminal_policy as tp
 
 
 @pytest.mark.parametrize("command", [
-    'remindctl add "Buy milk" --due tomorrow', "ls -la ~/Downloads | head", "python3 report.py",
+    'remindctl add "Buy milk" --due tomorrow', "ls -la ~/Downloads | head",
     "pandoc notes.md -o notes.docx", "ffmpeg -i in.mov out.mp4", "git status", "git log --oneline -5",
     "curl -s https://example.com", "cat report.md", "mkdir -p out && cp a.txt out/", "echo shutdown later",
     'echo "use sudo later"', "ls /System", "open -a Preview report.pdf",
 ])
 def test_everyday_commands_just_run(command):
     assert tp.assess(command).level == "run"
+
+
+def test_running_a_script_file_asks_as_unreadable():
+    """The reader does not read a script's file, so since S2a-3 step 3 running one asks as `unreadable`: it runs
+    offline in the sandbox with no card (the proxy's network comes back with NET)."""
+    verdict = tp.assess("python3 report.py")
+    assert (verdict.level, verdict.rule) == ("ask", tp.UNREADABLE)
 
 
 @pytest.mark.parametrize("command,rule", [

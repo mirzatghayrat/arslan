@@ -137,8 +137,11 @@ def test_an_inline_script_whose_interpreter_has_a_line_continuation_is_read(comm
 
 
 @pytest.mark.parametrize("where", WRAPS)
-def test_a_continued_interpreter_with_a_plain_script_still_runs(where):
-    assert tp.assess(WRAPS[where].format('pyth\\\non3 -c "print(1)"')).level == "run"
+def test_a_continued_interpreter_with_a_plain_script_asks_as_unreadable(where):
+    """No named rule: the reader does not understand an inline script, so since S2a-3 step 3 it asks as
+    `unreadable` and runs offline in the sandbox with no card."""
+    verdict = tp.assess(WRAPS[where].format('pyth\\\non3 -c "print(1)"'))
+    assert (verdict.level, verdict.rule) == (ASK, tp.UNREADABLE)
 
 
 def test_a_line_continuation_in_a_command_word_is_joined_not_kept():
@@ -167,8 +170,11 @@ def test_an_inline_script_after_a_blank_line_is_read(command, rule):
 
 
 @pytest.mark.parametrize("where", BLANK_BEFORE)
-def test_a_plain_script_after_a_blank_line_still_runs(where):
-    assert tp.assess(BLANK_BEFORE[where].format('python3 -c "print(1)"')).level == "run"
+def test_a_plain_script_after_a_blank_line_asks_as_unreadable(where):
+    """No named rule: the reader does not understand an inline script, so since S2a-3 step 3 it asks as
+    `unreadable` and runs offline in the sandbox with no card."""
+    verdict = tp.assess(BLANK_BEFORE[where].format('python3 -c "print(1)"'))
+    assert (verdict.level, verdict.rule) == (ASK, tp.UNREADABLE)
 
 
 @pytest.mark.parametrize("command", [
