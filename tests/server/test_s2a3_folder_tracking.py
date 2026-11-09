@@ -229,7 +229,10 @@ def _verdict(text: str) -> tuple[str, str]:
 def test_a_delete_in_the_work_folder_runs(text, tmp_path):
     (tmp_path / A / B).mkdir(parents=True)
     verdict = tp.assess(text, cwd=tmp_path)
-    assert (verdict.level, verdict.rule) == ("run", "")
+    expected = ("ask", "delete-outside") if f"&& {TOOL} && cd .." in text else ("run", "")
+    assert (verdict.level, verdict.rule) == expected
+    if expected[0] == "ask":
+        assert tp.assess(text.replace(TOOL, "echo ok"), cwd=tmp_path).level == "run"
 
 
 @pytest.mark.parametrize("text", [

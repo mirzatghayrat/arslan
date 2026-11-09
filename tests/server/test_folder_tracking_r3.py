@@ -49,22 +49,24 @@ def test_full_return_can_cancel_a_link(tmp_path, monkeypatch):
     (tmp_path / A).symlink_to(tmp_path / "zz-real", target_is_directory=True)
     def unexpected(path):
         pytest.fail("full return needs no prefix check")
-    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, lstat=unexpected))
+    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, listdir=os.listdir, lstat=unexpected))
     assert tp.assess(f"cd {A} && cd .. && {DEL} zz-file", cwd=tmp_path).level == "run"
 
 
 @pytest.mark.parametrize("error", [errno.EACCES, errno.ENAMETOOLONG, errno.EIO])
 def test_uncheckable_prefix_stays_unfolded(error, tmp_path, monkeypatch):
     def fails(path):
-        raise OSError(error, "stand-in error")
-    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, lstat=fails))
+        if str(path).startswith(str(tmp_path) + "/"):
+            raise OSError(error, "stand-in error")
+        return os.lstat(path)
+    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, listdir=os.listdir, lstat=fails))
     assert tp.assess(_delete(A), cwd=tmp_path).level == "ask"
 
 
 def test_unknown_work_folder_stays_unfolded(monkeypatch):
     def unexpected(path):
         pytest.fail("unknown work folder must not be inspected")
-    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, lstat=unexpected))
+    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, listdir=os.listdir, lstat=unexpected))
     assert tp.assess(_delete(A)).level == "ask"
 
 
@@ -74,10 +76,11 @@ def test_checks_are_assessment_local_and_each_component_is_checked_once(tmp_path
     calls = []
 
     def record(path):
-        calls.append(os.fspath(path))
+        if str(path).startswith(str(tmp_path) + "/"):
+            calls.append(os.fspath(path))
         return original(path)
 
-    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, lstat=record))
+    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, listdir=os.listdir, lstat=record))
     text = _delete(f"{A}/zz-real") + f" && {DEL} zz-other"
     assert tp.assess(text, cwd=tmp_path).level == "run"
     assert calls == [str(tmp_path / A), str(tmp_path / A / "zz-real")]
@@ -91,7 +94,7 @@ def test_checks_are_assessment_local_and_each_component_is_checked_once(tmp_path
 def test_no_fold_means_no_filesystem_access(tmp_path, monkeypatch):
     def unexpected(path):
         pytest.fail("no fold needs no filesystem access")
-    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, lstat=unexpected))
+    monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, listdir=os.listdir, lstat=unexpected))
     for text in (f"cd {A} && {DEL} zz-file", f"cd .. && {DEL} zz-file", f"{TOOL}"):
         tp.assess(text, cwd=tmp_path)
     assert sg.read(_delete(A)).understood

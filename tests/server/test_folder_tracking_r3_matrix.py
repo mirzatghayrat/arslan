@@ -13,18 +13,17 @@ from tests.server import test_folder_tracking_matrix as matrix
 from tests.server import test_s2a3_folder_tracking as folders
 from tests.server.test_s2a3_folder_tracking import stand_in_rules  # noqa: F401
 
+ROUND_THREE = "be8c1393cb2be8aacfbd960b1496d2a1da02f05f"
 ROUND_TWO = "1925e15895f675027e496d15d82a05d221065169"
 MAINS = (
     "c6647eb915249d77d84e8a243dacf03eb931044c",
-    "06b2c785fe8660f42348e4ae01d0ac02daf0ed3e",
-    "3eec545b48b7f97f3047ce97037fbf10075abe6d",
 )
 
 
 def load_revision(revision, monkeypatch):
     """Do not use the main-only matrix fixture for a folder-tracking revision."""
     modules = {}
-    names = ("shell_grammar", "shell_text", "terminal_policy") if revision == ROUND_TWO else ("shell_text", "terminal_policy")
+    names = ("shell_grammar", "shell_text", "terminal_policy") if revision in (ROUND_TWO, ROUND_THREE) else ("shell_text", "terminal_policy")
     for name in names:
         source = subprocess.run(
             ["git", "show", f"{revision}:server/services/{name}.py"],

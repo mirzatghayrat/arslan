@@ -18,6 +18,9 @@ MODES = (
     "R2-SUBSTITUTION-WORK", "R2-SHELL-WORK", "R2-IGNORE-READ-WRITE",
     "R2-RELATIVE-HOME", "R2-LAST-FOLDER", "FOLD-NONE", "FOLD-DROP-LEADING",
     "R3-NO-LSTAT", "R3-LAST-COMPONENT", "R3-MISSING-SAFE", "R3-ERROR-SAFE", "R3-HOME-CLAMP",
+    "R4-NO-VETO", "R4-FIRST-ONLY", "R4-PIPELINE", "R4-SUBSHELL", "R4-SUBSTITUTION",
+    "R4-NESTED-SHELL", "R4-BACKGROUND", "R4-BLOCKLIST", "R4-NO-REDIRECTION", "R4-NO-OPTIONS",
+    "R4-PROTOTYPE", "R4-NO-ANCHOR", "R4-NUL", "R4-ANCHOR-LAST", "R4-ANCHOR-LATE",
     "BASE-DROP-MOVES", "BASE-DROP-FAILED", "BASE-OR-EXACT", "BASE-PIPE-LEAK",
     "BASE-SUBSHELL-LEAK", "BASE-BACKGROUND-LEAK", "BASE-DROP-WRITES", "BASE-DROP-POLICY",
 )
@@ -30,7 +33,7 @@ def pytest_addoption(parser):
 def _replace(patch, owner, name, old, new, *, count=1):
     original = getattr(owner, name)
     original = getattr(original, "__wrapped__", original)
-    source = textwrap.dedent(inspect.getsource(original))
+    source = getattr(original, "__mutation_source__", None) or textwrap.dedent(inspect.getsource(original))
     assert source.count(old) == count, (name, old)
     namespace = dict(original.__globals__)
     exec(compile(source.replace(old, new), original.__code__.co_filename, "exec"), namespace)
@@ -39,6 +42,7 @@ def _replace(patch, owner, name, old, new, *, count=1):
     # Keep the live globals: each test installs stand-in rules after plugin configuration.
     replacement = types.FunctionType(body.__code__, original.__globals__, name, body.__defaults__, body.__closure__)
     replacement.__kwdefaults__ = body.__kwdefaults__
+    replacement.__mutation_source__ = source.replace(old, new)
     if hasattr(changed, "__wrapped__"):
         replacement = functools.lru_cache(maxsize=64)(replacement)
     patch.setattr(owner, name, replacement)
@@ -53,7 +57,54 @@ def pytest_configure(config):
     patch = pytest.MonkeyPatch()
     config.add_cleanup(patch.undo)
     reader = sg._Reader
-    if mode == "R2-SUBSTITUTION-WORK":
+    if mode == "R4-NO-VETO":
+        patch.setattr(tp, "_fold_effects_allow", lambda *args: True)
+    elif mode == "R4-FIRST-ONLY":
+        patch.setattr(tp, "_fold_effects_allow", lambda reading, point: tp._fold_effect_safe(reading.effects[0]))
+    elif mode == "R4-PIPELINE":
+        _replace(patch, reader, "_pipeline", "for start, end in segments:",
+                 'for start, end in segments[:-1]:\n        self.out.effects[start:end] = [("true",)] * (end - start)\n    for start, end in segments:')
+    elif mode in ("R4-SUBSHELL", "R4-SUBSTITUTION", "R4-NESTED-SHELL"):
+        method = {"R4-SUBSHELL": "_subshell", "R4-SUBSTITUTION": "_dollar", "R4-NESTED-SHELL": "_program"}[mode]
+        original = getattr(reader, method)
+        def hidden(self, *args):
+            if mode == "R4-NESTED-SHELL" and args[0] not in ("bash", "sh"):
+                return original(self, *args)
+            start = len(self.out.effects) - (mode == "R4-NESTED-SHELL")
+            result = original(self, *args)
+            self.out.effects[start:] = [("true",)] * (len(self.out.effects) - start)
+            return result
+        patch.setattr(reader, method, hidden)
+    elif mode == "R4-BACKGROUND":
+        _replace(patch, reader, "list_until", "self.here, self.failed = before",
+                 'self.out.effects[effect_start:] = [("true",)] * (len(self.out.effects) - effect_start)\n                self.here, self.failed = before')
+    elif mode == "R4-BLOCKLIST":
+        original = tp._fold_effect_safe
+        patch.setattr(tp, "_fold_effect_safe", lambda words: original(words) or bool(words and words[0].startswith("zz-")))
+    elif mode == "R4-NO-REDIRECTION":
+        _replace(patch, reader, "_redirection", "self.out.effects.append(None)", 'self.out.effects.append(("true",))')
+    elif mode == "R4-NO-OPTIONS":
+        _replace(patch, tp, "_fold_effect_safe", "operands = False", "return True\n    operands = False")
+    elif mode == "R4-PROTOTYPE":
+        patch.setattr(tp, "_fold_effect_safe", lambda words: bool(words and words[0] in tp._FOLD_BUILTINS))
+        original = tp._fold_effects_allow
+        patch.setattr(tp, "_fold_effects_allow", lambda reading, point: not reading.writes and original(reading, point))
+    elif mode == "R4-NO-ANCHOR":
+        patch.setattr(tp, "_valid_fold_anchor", lambda cwd: cwd)
+    elif mode == "R4-NUL":
+        _replace(patch, tp, "_valid_fold_anchor", ' or "\\0" in path', '')
+        _replace(patch, tp, "_valid_fold_anchor", "OSError, ValueError, TypeError", "OSError, TypeError")
+    elif mode == "R4-ANCHOR-LAST":
+        def last_anchor(cwd):
+            try:
+                return cwd if tp.stat.S_ISDIR(tp.os.lstat(cwd).st_mode) else None
+            except (OSError, ValueError, TypeError):
+                return None
+        patch.setattr(tp, "_valid_fold_anchor", last_anchor)
+    elif mode == "R4-ANCHOR-LATE":
+        _replace(patch, tp, "_after_moves", "if not anchor_checked:",
+                 "_safe_fold_prefix(prefix, cwd, checked)\n        if not anchor_checked:")
+    elif mode == "R2-SUBSTITUTION-WORK":
         _replace(patch, reader, "_dollar", "in_substitution=True, here=self.here", "in_substitution=True")
     elif mode == "R2-SHELL-WORK":
         _replace(patch, reader, "_program", ", here=self.here", "")
