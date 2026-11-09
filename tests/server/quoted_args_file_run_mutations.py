@@ -19,7 +19,7 @@ MODES = ("ALLOW-PROGRAM-PATHS", "ALLOW-FILE-SCRIPTS", "DROP-NAMED-COMMANDS",
          "REMOVE-RCLONE-BANDWIDTH", "REMOVE-S3CMD-ENCODING", "DROP-XURL-GLOBAL-PARSE",
          "REMOVE-AWS-PROFILE", "FLIP-GCLOUD-QUIET", "DROP-SECURITY-ATTACHED-PROMPT",
          "REMOVE-GSUTIL-OVERRIDE", "FLIP-CURL-SILENT",
-         "DROP-CLUSTER-SEPARATE-VALUE", "DROP-VERCEL-OPERATION-FLAG")
+         "DROP-CLUSTER-SEPARATE-VALUE", "DROP-VERCEL-OPERATION-FLAG", "DROP-END-BOUNDARY")
 OPTION_MODES = frozenset(MODES[6:])
 
 
@@ -40,6 +40,12 @@ def pytest_configure(config):
     elif mode == "DROP-VERCEL-OPERATION-FLAG":
         original_dispatch = tp._dispatch_args
         tp._dispatch_args = lambda program, args: (original_dispatch(program, args)[0], frozenset())
+    elif mode == "DROP-END-BOUNDARY":
+        original_dispatch = tp._dispatch_args
+        def dispatch(program, args):
+            stripped, operations = original_dispatch(program, args)
+            return stripped, operations | (set(args) & tp._OPERATION_FLAGS[program])
+        tp._dispatch_args = dispatch
     elif mode == "DROP-FALLBACK-RULE":
         tp._fully_accounted = lambda program, args: True
     elif mode.startswith("REMOVE-"):

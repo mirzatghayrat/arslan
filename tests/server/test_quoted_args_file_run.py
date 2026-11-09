@@ -13,7 +13,7 @@ from tests.server.test_quoted_command_word import SEPARATORS
 from tests.server.quoted_args_baseline_data import levels
 from tests.server.quoted_args_option_profiles import (
     CORRECTIONS, SEEDS, program_controls, unknowns, render,
-    vercel_directories, implicit_controls, cluster_controls, GLOBAL_DISPATCH_PROGRAMS, IMPLICIT_OPERATIONS,
+    vercel_directories, implicit_controls, implicit_negative_controls, cluster_controls, GLOBAL_DISPATCH_PROGRAMS, IMPLICIT_OPERATIONS,
 )
 
 
@@ -433,10 +433,10 @@ def test_global_dispatch_audit_inventory():
 
 @pytest.mark.parametrize("change", ["membership", "order", "count", "command", "verdict", "matrix", "version"])
 def test_baseline_vectors_reject_stale_corpora(change):
-    from tests.server.quoted_args_baseline_data import encode, decode, fingerprint
+    from tests.server.quoted_args_baseline_data import encode, decode, fingerprint, SOURCE_SHA256
     rows = [("first", "echo one"), ("second", "echo two")]
     cases = {"sample/" + case: (fingerprint(text), "run", "ask") for case, text in rows}
-    text = encode({"sample": rows}, cases, {})
+    text = encode({"sample": rows}, cases, SOURCE_SHA256)
     assert len(decode(text, {"sample": lambda: rows})) == 2
     if change == "membership":
         rows[0] = ("other", rows[0][1])
@@ -454,3 +454,47 @@ def test_baseline_vectors_reject_stale_corpora(change):
         text = text.replace('"generator_version":2', '"generator_version":0')
     with pytest.raises(AssertionError):
         decode(text, {"sample": lambda: rows})
+
+
+@pytest.mark.parametrize("case,words", list(implicit_negative_controls()), ids=lambda value: value if isinstance(value, str) else None)
+def test_operation_looking_data_does_not_select_publish(case, words):
+    command = render(words, "single", "plain")
+    assert sg.read(command).understood, case
+    assert tp._fully_accounted(words[0], words[1:]), case
+    assert tp._dispatch_args(words[0], words[1:])[1] == frozenset(), case
+    assert tp.assess(command).level == "run", case  # Main and original also run.
+
+
+@pytest.mark.parametrize("change", ["hash", "provenance", "header", "missing-file", "extra-file", "missing-source", "extra-source"])
+def test_baseline_vectors_reject_corrupt_provenance(change):
+    import json
+    from pathlib import Path
+    from tests.server.quoted_args_baseline_data import decode, SOURCE_SHA256
+    lines = Path(__file__).with_name("quoted_args_baselines.txt").read_text().splitlines()
+    header = json.loads(lines[1][2:])
+    source, name = "main", "shell_grammar.py"
+    expected, recorded = SOURCE_SHA256[source][name], "<missing>"
+    if change == "hash":
+        recorded = "0" * 64
+        header["source_sha256"][source][name] = recorded
+    elif change in {"provenance", "header"}:
+        del header["source_sha256"]
+    elif change == "missing-file":
+        del header["source_sha256"][source][name]
+    elif change == "extra-file":
+        name, expected, recorded = "unknown.py", "<absent>", "0" * 64
+        header["source_sha256"][source][name] = recorded
+    elif change == "missing-source":
+        del header["source_sha256"][source]
+    else:
+        source, name, expected, recorded = "unknown", "<mapping>", "{}", "{}"
+        header["source_sha256"][source] = {}
+    lines[1] = "# " + json.dumps(header)
+    if change == "header":
+        del lines[1]
+    with pytest.raises(AssertionError) as failure:
+        decode("\n".join(lines), {})
+    message = str(failure.value)
+    assert f"{source}/{name}" in message
+    assert f"expected {expected}" in message
+    assert f"recorded {recorded}" in message

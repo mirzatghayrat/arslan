@@ -7,6 +7,20 @@ from pathlib import Path
 GENERATOR_VERSION = 2
 SOURCE_COMMITS = {"main": "3eec545b48b7f97f3047ce97037fbf10075abe6d",
                   "original": "9be27b5ff62c7dbd385b1fbf97be0246d06e26ca"}
+# BEGIN GENERATED SOURCE HASHES
+SOURCE_SHA256 = {
+    "main": {
+        "shell_text.py": "9945605da48225cb5d6cf609f3419c61217a6ece6c7da7700b05a663d7e7c560",
+        "shell_grammar.py": "a5da268e6d68be1d8fad8bea474445cf595b32aa28653ed813fddba85381072e",
+        "terminal_policy.py": "2d1dcf613b797a263e2247468a2a091fbfeae6b10975e872b8132ff1d03f6256"
+    },
+    "original": {
+        "shell_text.py": "9945605da48225cb5d6cf609f3419c61217a6ece6c7da7700b05a663d7e7c560",
+        "shell_grammar.py": "9df83e76fd1f6bd366f9f52813d81d90842d2a0667933e25f165a9ff12c6d25d",
+        "terminal_policy.py": "0aa7e22f5faefc3c132c02f8c8fe77561b0acb7214a9d4ba43112f42ecf5b82d"
+    }
+}
+# END GENERATED SOURCE HASHES
 CHAR_LEVELS = {"r": "run", "a": "ask", "f": "forbid"}
 
 
@@ -34,10 +48,32 @@ def encode(corpora, verdicts, source_hashes):
             + "# " + json.dumps(header, separators=(",", ":")) + "\n" + "\n".join(sections) + "\n")
 
 
+def validate_source_hashes(recorded):
+    """Compare every source/file against committed trust metadata, without Git."""
+    recorded = {} if recorded is None else recorded
+    assert isinstance(recorded, dict), f"Invalid source-hash mapping: expected mapping, recorded {recorded!r}"
+    for source in sorted(SOURCE_SHA256.keys() | recorded.keys()):
+        expected = SOURCE_SHA256.get(source, {})
+        actual = recorded.get(source, {})
+        assert source in SOURCE_SHA256 and isinstance(actual, dict), (
+            f"Baseline source hash mismatch: {source}/<mapping>: expected {expected!r}, recorded {actual!r}")
+        for name in sorted(expected.keys() | actual.keys()):
+            wanted, found = expected.get(name, "<absent>"), actual.get(name, "<missing>")
+            assert wanted == found, (
+                f"Baseline source hash mismatch: {source}/{name}: expected {wanted}, recorded {found}")
+    # This source is unchanged from main and is available in shallow checkouts.
+    path = Path(__file__).resolve().parents[2] / "server/services/shell_text.py"
+    wanted = SOURCE_SHA256["main"][path.name]
+    found = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "<missing>"
+    assert wanted == found, f"Baseline source hash mismatch: current/{path.name}: expected {wanted}, recorded {found}"
+
+
 def decode(text, generators):
     lines = text.splitlines()
-    assert len(lines) >= 2 and lines[1].startswith("# "), "Missing baseline provenance header"
+    if len(lines) < 2 or not lines[1].startswith("# "):
+        validate_source_hashes(None)  # Reports the first missing file and its expected hash.
     header = json.loads(lines[1][2:])
+    validate_source_hashes(header.get("source_sha256"))
     assert header["schema"] == 2 and header["generator_version"] == GENERATOR_VERSION, "Unsupported baseline version"
     assert header["source_commits"] == SOURCE_COMMITS, "Unexpected baseline sources"
     assert list(header["matrices"]) == list(generators), "Baseline matrix membership/order mismatch"

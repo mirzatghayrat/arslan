@@ -231,6 +231,12 @@ def implicit_controls():
             yield f"implicit/{program}/{placement}", (program, *args), flag, rule
 
 
+def implicit_negative_controls():
+    # Both historical sources return run for these data-only operation spellings.
+    yield "operation-after-end-is-data", ("vercel", "project", "--", "--prod")
+    yield "operation-as-option-value", ("vercel", "--cwd", "--prod", "project")
+
+
 def cluster_controls():
     for unknown in (True, False):
         words = ("curl", "-so", "--output", *(("--s2a3-unknown",) if unknown else ()),

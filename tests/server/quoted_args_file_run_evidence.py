@@ -43,7 +43,7 @@ from tests.server.shell_differential_support import FILE_SEEDS
 
 from tests.server.quoted_args_baseline_data import levels
 from tests.server.quoted_args_option_profiles import (
-    sweep, program_controls, unknowns, render, vercel_directories, implicit_controls, cluster_controls,
+    sweep, program_controls, unknowns, render, vercel_directories, implicit_controls, implicit_negative_controls, cluster_controls,
 )
 
 
@@ -362,6 +362,15 @@ def main():
             assert_matrix(result[kind], negative="negative" in kind,
                           cautious_forbids=kind == "negative")
     assert not losses, losses
+
+
+@pytest.mark.parametrize("case,words", list(implicit_negative_controls()), ids=lambda value: value if isinstance(value, str) else None)
+def test_operation_looking_data_does_not_select_publish(case, words):
+    command = render(words, "single", "plain")
+    assert sg.read(command).understood, case
+    assert tp._fully_accounted(words[0], words[1:]), case
+    assert tp._dispatch_args(words[0], words[1:])[1] == frozenset(), case
+    assert tp.assess(command).level == "run", case  # Main and original also run.
 
 
 if __name__ == "__main__":
