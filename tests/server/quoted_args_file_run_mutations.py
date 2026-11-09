@@ -5,7 +5,9 @@ Load with -p tests.server.quoted_args_file_run_mutations and choose
 ALLOW-PROGRAM-PATHS selects every_program_path; ALLOW-FILE-SCRIPTS selects
 interpreter_file_families; DROP-NAMED-COMMANDS selects named_rules_read.
 """
+import importlib.machinery
 import inspect
+from pathlib import Path
 import textwrap
 
 import pytest
@@ -19,8 +21,54 @@ MODES = ("ALLOW-PROGRAM-PATHS", "ALLOW-FILE-SCRIPTS", "DROP-NAMED-COMMANDS",
          "REMOVE-RCLONE-BANDWIDTH", "REMOVE-S3CMD-ENCODING", "DROP-XURL-GLOBAL-PARSE",
          "REMOVE-AWS-PROFILE", "FLIP-GCLOUD-QUIET", "DROP-SECURITY-ATTACHED-PROMPT",
          "REMOVE-GSUTIL-OVERRIDE", "FLIP-CURL-SILENT",
-         "DROP-CLUSTER-SEPARATE-VALUE", "DROP-VERCEL-OPERATION-FLAG", "DROP-END-BOUNDARY")
+         "DROP-CLUSTER-SEPARATE-VALUE", "DROP-VERCEL-OPERATION-FLAG", "DROP-END-BOUNDARY",
+         "SENTINEL-AS-VALUE", "IMPORT-TRUST-FROM-FIXTURE",
+         "SKIP-CURRENT-SOURCE-HASH", "SKIP-SOURCE-COMMITS")
 OPTION_MODES = frozenset(MODES[6:])
+LOADER_MODES = frozenset(MODES[-4:])
+
+
+def mutate_loader(source, mode):
+    """Transform Python definitions in memory, including fresh scratch imports."""
+    if mode == "IMPORT-TRUST-FROM-FIXTURE":
+        marker = "# END GENERATED SOURCE HASHES\n"
+        assert source.count(marker) == 1
+        return source.replace(marker, marker + (
+            'SOURCE_SHA256 = json.loads(Path(__file__).with_name("quoted_args_baselines.txt")'
+            '.read_text().splitlines()[1][2:])["source_sha256"]\n'))
+    if mode == "SKIP-SOURCE-COMMITS":
+        line = '    assert header["source_commits"] == SOURCE_COMMITS, "Unexpected baseline sources"\n'
+        assert source.count(line) == 1
+        return source.replace(line, "")
+    start = source.index("    # This source is unchanged")
+    end = source.index("\n\ndef decode", start)
+    if mode == "SKIP-CURRENT-SOURCE-HASH":
+        return source[:start] + source[end:]
+    # Restore the previous comparison, including its string-sentinel collision.
+    begin = source.index("    # Complete both directions of membership")
+    old = '''    for source in sorted(SOURCE_SHA256.keys() | recorded.keys()):
+        expected = SOURCE_SHA256.get(source, {})
+        actual = recorded.get(source, {})
+        assert source in SOURCE_SHA256 and isinstance(actual, dict), (
+            f"Baseline source hash mismatch: {source}/<mapping>: expected {expected!r}, recorded {actual!r}")
+        for name in sorted(expected.keys() | actual.keys()):
+            wanted, found = expected.get(name, "<absent>"), actual.get(name, "<missing>")
+            assert wanted == found, (
+                f"Baseline source hash mismatch: {source}/{name}: expected {wanted}, recorded {found}")
+'''
+    return source[:begin] + old + source[start:]
+
+
+def install_loader_mutation(config, mode):
+    original = importlib.machinery.SourceFileLoader.get_code
+    def get_code(loader, fullname):
+        if Path(loader.path).name == "quoted_args_baseline_data.py":
+            source = mutate_loader(Path(loader.path).read_text(), mode)
+            return compile(source, loader.path, "exec")
+        return original(loader, fullname)
+    patch = pytest.MonkeyPatch()
+    patch.setattr(importlib.machinery.SourceFileLoader, "get_code", get_code)
+    config.add_cleanup(patch.undo)
 
 
 def pytest_addoption(parser):
@@ -32,6 +80,9 @@ def pytest_configure(config):
     mode = config.getoption("--quoted-file-mutation")
     if mode is None:
         raise pytest.UsageError("choose --quoted-file-mutation when loading this plugin")
+    if mode in LOADER_MODES:
+        install_loader_mutation(config, mode)
+        return
     if mode == "DROP-CLUSTER-SEPARATE-VALUE":
         source = inspect.getsource(tp._fully_accounted)
         assert "consumes = offset == len(word)" in source
