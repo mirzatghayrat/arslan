@@ -3,14 +3,25 @@
 Source directories contain shell_text.py, shell_grammar.py, terminal_policy.py.
 No Git command or metadata is used. Sources are Python policy code; generated
 command strings are only passed to assess and read, never to a subprocess.
+
+Normal regeneration validates source hashes against the committed loader table.
+To refresh trust metadata, first verify the supplied historical source trees and
+SOURCE_COMMITS, then pass --loader-output LOADER alongside --output FIXTURE.
+This writes the header and the loader's marked table from the same hashes;
+review and commit both outputs together. Use scratch outputs to verify that an
+unchanged regeneration matches both committed files byte-for-byte. Never copy
+trust hashes from an unverified fixture header.
 """
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import sys
 import types
 
-from tests.server.quoted_args_baseline_data import fingerprint, encode
+from tests.server import quoted_args_baseline_data as baseline_data
+from tests.server.quoted_args_baseline_data import fingerprint, encode, validate_source_hashes
+from tests.server.quoted_args_option_profiles import implicit_negative_controls, render
 from tests.server.quoted_args_file_run_evidence import GENERATORS
 
 
@@ -35,6 +46,7 @@ def main():
     parser.add_argument("--main-source", type=Path, required=True)
     parser.add_argument("--original-source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--loader-output", type=Path, help="explicitly refresh the trusted source table in this loader copy")
     args = parser.parse_args()
     versions = [source_version(args.main_source, "main"), source_version(args.original_source, "original")]
     provenance = {}
@@ -42,6 +54,14 @@ def main():
         provenance[label] = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                              for path in (directory / (name + ".py")
                                           for name in ("shell_text", "shell_grammar", "terminal_policy"))}
+    if args.loader_output is None:
+        validate_source_hashes(provenance)
+    # Keep these two boundary controls outside the unchanged historical vectors.
+    for case, words in implicit_negative_controls():
+        text = render(words, "single", "plain")
+        for reader, policy in versions:
+            assert reader.read(text).understood, case
+            assert policy.assess(text).level == "run", case
     cases = {}
     corpora = {kind: list(generate()) for kind, generate in GENERATORS.items()}
     for kind, rows in corpora.items():
@@ -53,6 +73,12 @@ def main():
             cases[key] = [fingerprint(text), *(policy.assess(text).level for _, policy in versions)]
         print(kind, "generated", flush=True)
     args.output.write_text(encode(corpora, cases, provenance))
+    if args.loader_output is not None:
+        loader = Path(baseline_data.__file__).read_text()
+        start = loader.index("# BEGIN GENERATED SOURCE HASHES\n")
+        end = loader.index("# END GENERATED SOURCE HASHES\n", start)
+        table = "# BEGIN GENERATED SOURCE HASHES\nSOURCE_SHA256 = " + json.dumps(provenance, indent=4) + "\n"
+        args.loader_output.write_text(loader[:start] + table + loader[end:])
     print("baseline cases", len(cases))
 
 
