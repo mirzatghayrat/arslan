@@ -114,25 +114,34 @@ def test_a_redirection_is_opened_where_its_command_runs():
     f"cd ${A.replace('-', '_')}", f"cd \"$(echo {A})\"", "cd zz-*",
     f"cd {A} {B}",
     "cd ''",
-    f"CDPATH={A} cd {B}",
     f"command cd {A}", f"time cd {A}", f"exec cd {A}",
     f"for x in 1 2; do cd {A}; done",
     f"while {TOOL}; do cd {A}; done",
     f"until cd {A}; do {TOOL}; done",
 ])
-def test_a_change_the_reader_cannot_follow_is_not_understood(text):
+def test_a_change_the_reader_cannot_follow_preserves_commands(text):
+    reading = shell_grammar.read(text + "; echo ok")
+    assert reading.understood
+    assert reading.commands[-1] == ("echo", "ok")
+    assert reading.folders[-1] == ()
+
+
+@pytest.mark.parametrize("text", [f"CDPATH={A} cd {B}"])
+def test_a_code_variable_assignment_is_still_not_understood(text):
     assert not shell_grammar.read(text).understood
 
 
 def test_a_change_in_a_subshell_in_a_loop_is_not_followed_either():
-    assert not shell_grammar.read(f"for x in 1; do (cd {A}); done").understood
+    reading = shell_grammar.read(f"for x in 1; do (cd {A}); done; echo ok")
+    assert reading.understood and reading.folders[-1] == ()
 
 
-def test_too_many_folders_at_once_is_capped():
+def test_too_many_folders_only_loses_folder_observations():
     fits = "; ".join([f"cd {A}"] * (shell_grammar.MAX_FOLDERS - 1))
     assert len(_folders(f"{fits}; {TOOL}")) == shell_grammar.MAX_FOLDERS
     reading = shell_grammar.read(f"{fits}; cd {A}; {TOOL}")
-    assert not reading.understood and reading.capped
+    assert reading.understood and not reading.capped
+    assert reading.folders[-1] == ()
 
 
 # ── the real bash agrees ─────────────────────────────────────────────────────
@@ -210,8 +219,8 @@ def stand_in_rules(monkeypatch):
     monkeypatch.setattr(tp, "_PROTECTED_PATH_C", re.compile(r"~/" + GUARDED + r"(?:/|$)"))
 
 
-def _verdict(text: str) -> tuple[str, str]:
-    a = tp.assess(text)
+def _verdict(text: str, cwd) -> tuple[str, str]:
+    a = tp.assess(text, cwd=cwd)
     return a.level, a.rule
 
 
@@ -273,8 +282,8 @@ def test_a_delete_after_moving_outside_asks(text, tmp_path):
     pytest.param(f"cd ~ && {TOOL} <> {GUARDED}/zz-file", id="read-write"),
     pytest.param(f"cd {A} && cd ~ && {TOOL} > {GUARDED}/zz-file", id="home-after-move"),
 ])
-def test_a_write_into_the_protected_folder_after_moving_asks(text):
-    assert _verdict(text) == ("ask", "protected-write")
+def test_a_write_into_the_protected_folder_after_moving_asks(text, tmp_path):
+    assert _verdict(text, tmp_path) == ("ask", "protected-write")
 
 
 @pytest.mark.parametrize("text", [
@@ -286,19 +295,19 @@ def test_a_write_into_the_protected_folder_after_moving_asks(text):
     f"{TOOL} > {GUARDED}/zz-file",
     f"(cd ~); {TOOL} > {GUARDED}/zz-file",
 ])
-def test_other_writes_run(text):
-    assert _verdict(text) == ("run", "")
+def test_other_writes_run(text, tmp_path):
+    assert _verdict(text, tmp_path) == ("run", "")
 
 
 def test_a_command_the_reader_does_not_understand_is_judged_as_before():
-    """Step 3 wires `not understood` itself; here only the folders of understood text are followed."""
-    assert not shell_grammar.read(f"cd; {DEL} zz-file").understood
+    """An unknown folder does not change main's command reading."""
+    assert shell_grammar.read(f"cd; {DEL} zz-file").understood
     assert tp._after_moves(f"cd; {DEL} zz-file") == (False, False)
 
 
-def test_the_card_lists_the_rule():
-    assert tp.ask_rules(f"cd ~ && {DEL} zz-file") == {"delete-outside"}
-    assert tp.ask_rules(f"cd ~ && {TOOL} > {GUARDED}") == {"protected-write"}
+def test_the_card_lists_the_rule(tmp_path):
+    assert tp.ask_rules(f"cd ~ && {DEL} zz-file", cwd=tmp_path) == {"delete-outside"}
+    assert tp.ask_rules(f"cd ~ && {TOOL} > {GUARDED}", cwd=tmp_path) == {"protected-write"}
 
 
 def test_the_differential_only_runs_builtin_observations():

@@ -63,11 +63,11 @@ def test_uncheckable_prefix_stays_unfolded(error, tmp_path, monkeypatch):
     assert tp.assess(_delete(A), cwd=tmp_path).level == "ask"
 
 
-def test_unknown_work_folder_stays_unfolded(monkeypatch):
+def test_unknown_work_folder_preserves_main(monkeypatch):
     def unexpected(path):
         pytest.fail("unknown work folder must not be inspected")
     monkeypatch.setattr(tp, "os", SimpleNamespace(fspath=os.fspath, path=os.path, listdir=os.listdir, lstat=unexpected))
-    assert tp.assess(_delete(A)).level == "ask"
+    assert tp.assess(_delete(A)).level == "run"
 
 
 def test_checks_are_assessment_local_and_each_component_is_checked_once(tmp_path, monkeypatch):

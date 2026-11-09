@@ -23,7 +23,7 @@ MODES = (
     "R4-PROTOTYPE", "R4-NO-ANCHOR", "R4-NUL", "R4-ANCHOR-LAST", "R4-ANCHOR-LATE",
     "BASE-DROP-MOVES", "BASE-DROP-FAILED", "BASE-OR-EXACT", "BASE-PIPE-LEAK",
     "BASE-SUBSHELL-LEAK", "BASE-BACKGROUND-LEAK", "BASE-DROP-WRITES", "BASE-DROP-POLICY",
-    "GIT-ALLOWED",
+    "GIT-ALLOWED", "PREFIX-USES-CHANGE-FOLDER",
 )
 
 
@@ -58,7 +58,10 @@ def pytest_configure(config):
     patch = pytest.MonkeyPatch()
     config.add_cleanup(patch.undo)
     reader = sg._Reader
-    if mode == "GIT-ALLOWED":
+    if mode == "PREFIX-USES-CHANGE-FOLDER":
+        _replace(patch, reader, "_started",
+                 "self.out.track_folders and self.out.folders_known", "self.out.folders_known")
+    elif mode == "GIT-ALLOWED":
         # Restore exactly the removed status/log/diff proof, process-locally.
         patch.setattr(tp, "_FOLD_GIT_OPTIONS", {
             "status": frozenset({"--short", "--porcelain", "--branch", "-s", "-b", "--untracked-files=no"}),
@@ -166,6 +169,6 @@ def pytest_configure(config):
     elif mode == "BASE-BACKGROUND-LEAK":
         _replace(patch, reader, "list_until", "self.here, self.failed = before", "pass")
     elif mode == "BASE-DROP-WRITES":
-        _replace(patch, reader, "_redirection", "self.out.writes.append((word.text, tuple(sorted(self.here))))", "pass")
+        _replace(patch, reader, "_redirection", "self.out.writes.append((word.text, tuple(sorted(self.here)) if self.out.folders_known else ()))", "pass")
     elif mode == "BASE-DROP-POLICY":
         _replace(patch, tp, "_after_moves", "return outside, protected", "return False, False")

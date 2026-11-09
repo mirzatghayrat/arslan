@@ -45,10 +45,10 @@ def test_effect_or_unreadable_never_authorizes_fold(kind, tmp_path, monkeypatch)
         for supplied, cwd in ((True, tmp_path), (False, None)):
             before, after = baseline.assess(text, cwd=cwd), tp.assess(text, cwd=cwd)
             assert before.level == ("run" if supplied else "ask"), text
-            assert after.level == "ask", text
-            assert after.rule == tp._DELETE_OUTSIDE[0], text
+            assert after.level == ("ask" if supplied else "run"), text
+            assert after.rule == (tp._DELETE_OUTSIDE[0] if supplied else ""), text
             counts[f"{'supplied' if supplied else 'unknown'}:{before.level}->{after.level}"] += 1
-    assert counts == {"supplied:run->ask": 48, "unknown:ask->ask": 48}
+    assert counts == {"supplied:run->ask": 48, "unknown:ask->run": 48}
     print("R5_GIT_CONFIG " + json.dumps({kind: counts}, sort_keys=True))
 
 
@@ -80,7 +80,7 @@ def test_git_spelling_never_authorizes_fold(name, tmp_path, monkeypatch):
             if not reading.understood:
                 assert reading.why == "its program word contains a path"
             assert tp.assess(text, cwd=tmp_path).level == "ask", text
-            assert tp.assess(text).level == "ask", text
+            assert tp.assess(text).level == ("ask" if "/" in name else "run"), text
         # A complete return must also retain its unfolded cautious decision.
         text = f"cd {A} && {name} {tail}; cd .. && {DEL} zz-file"
         reading = sg.read(text, fold_partial=False)
@@ -88,4 +88,4 @@ def test_git_spelling_never_authorizes_fold(name, tmp_path, monkeypatch):
         if not reading.understood:
             assert reading.why == "its program word contains a path"
         assert tp.assess(text, cwd=tmp_path).level == "ask", text
-        assert tp.assess(text).level == "ask", text
+        assert tp.assess(text).level == ("ask" if "/" in name else "run"), text

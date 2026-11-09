@@ -133,6 +133,6 @@ def test_policy_matrix(baseline_policy, tmp_path):
     assert report["fold_inside"][0]["unchanged"] == len(folded)
     # Include the intervening-command shape used by the new real-bash case.
     text = f"cd {folders.A} && {folders.TOOL} && cd .. && {folders.DEL} zz-file"
-    assert tp.assess(text).level == "ask"
+    assert tp.assess(text, cwd=tmp_path).level == "ask"
     assert baseline_policy.assess(text).level == "run"
     print("FOLDER_MATRIX " + json.dumps(report, sort_keys=True))

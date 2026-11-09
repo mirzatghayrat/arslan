@@ -62,7 +62,9 @@ def test_mutating_class(kind, tmp_path):
         assert sg.read(text).understood, text
         expected = "forbid" if kind == "PRIVILEGED-LINK" else "ask"
         assert tp.assess(text, cwd=tmp_path).level == expected, text
-        assert tp.assess(text).level == expected, text
+        # Without cwd the original text-only policy remains authoritative.
+        assert tp.assess(text).level == ("forbid" if kind == "PRIVILEGED-LINK"
+                                        else "ask" if kind == "REMOTE-RSYNC" else "run"), text
 
 
 @pytest.mark.parametrize("effect", [
@@ -298,17 +300,20 @@ def test_round_four_matrices(tmp_path, monkeypatch):
     for text in corpora["repository"]:
         valid = tp.assess(text, cwd=tmp_path)
         bad = tp.assess(text, cwd=str(tmp_path) + "/.")
-        assert bad == tp.assess(text), text
+        assert bad == tp.assess(text, cwd=tmp_path / "zz-missing-anchor"), text
         invalid[valid.level + "->" + bad.level] += 1
     assert invalid["run->ask"] == 66
     report["invalid_anchor"] = dict(invalid)
     print("R4_MATRIX " + json.dumps(report, sort_keys=True))
 
 
-def test_vetoed_returns_cannot_overflow_toward_run():
+def test_vetoed_returns_overflow_loses_only_folder_observations(tmp_path):
     text = "zz-opaque; " + (f"cd {A} && cd .. && " * 8) + DEL + " zz-file"
     assert sg.read(text).understood
-    assert tp.assess(text).level == "ask"
+    reading = sg.read(text, fold_partial=False, fold_guard=lambda *args: False)
+    assert reading.understood and reading.folders[-1] == ()
+    assert reading.commands[-1] == (DEL, "zz-file")
+    assert tp.assess(text, cwd=tmp_path).level == "run"
 
 
 def test_plain_moves_have_the_existing_effect_gap(tmp_path, monkeypatch):
