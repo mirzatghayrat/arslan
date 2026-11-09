@@ -2,7 +2,8 @@
 
 "Understood" is an allowlist: a small part of bash 3.2, the shell terminal_exec runs (`/bin/bash -p -c`). A command
 is understood only when all of its text is in that part; otherwise `why` says what stopped the reader. Refusing costs
-little, so a form bash reads in a way that is hard to follow is refused, not modelled. Nothing reads this yet.
+little, so a form bash reads in a way that is hard to follow is refused, not modelled. terminal_policy reads the
+folders (S2a-3 step 4); nothing else reads this yet.
 
 It reads:
   - words of unquoted characters, backslash escapes, '…' and "…"; $NAME, ${NAME}, the special parameters and $( … ),
@@ -28,6 +29,14 @@ it, and each wrapper's command after the wrapper. It goes by name, and in any ca
 ignores case. It does not say what a named program goes on to start by itself: `make`, `git`, a script or a shell's
 startup files may start anything, and a copy of bash under another name is just that name.
 
+`folders` says, for each entry of `commands`, every folder it may run in, and `writes` every file a redirection writes
+with the folders it is opened in: "" is the work folder, and anything else is where a `cd` or `pushd` with a written-out
+target leads from it, joined as text (bash's own logical form). Each call starts a fresh shell in the work folder. A
+change that may fail (after `;`, `||`, a newline or `!`) leaves both folders possible; only `&&` gives the new one alone.
+A change in a pipeline segment, a ( … ), a $( … ), a bash -c or a backgrounded list stays there. A change the reader
+can't follow is not understood: no target, an option, `-`, a stack index, `popd`, a tilde other than `~` and `~/`,
+one inside a loop, one through a wrapper, or more than MAX_FOLDERS folders at once.
+
 A read stops at MAX_TEXT characters, MAX_COMMANDS entries in `commands` and MAX_DEPTH levels; past any of them the
 command is not understood and `capped` is set. Its time grows linearly with the text: nothing is read again except a
 `bash -c` script, once per level.
@@ -41,6 +50,8 @@ from dataclasses import dataclass
 MAX_TEXT = 8000             # terminal_policy.MAX_COMMAND_CHARS forbids anything longer
 MAX_COMMANDS = 256
 MAX_DEPTH = 8               # a level is a $( … ), a ( … ), any other compound command, a bash -c or a wrapper
+MAX_FOLDERS = 8             # folders a command may run in
+_FOLDER_CHANGES = frozenset({"cd", "pushd", "popd"})
 
 _META = frozenset(" \t\n;&|()<>")
 _REDIRECTIONS = ("&>", "<<<", "<<-", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">")
@@ -111,6 +122,17 @@ class Reading:
     capped: bool = False       # past MAX_TEXT, MAX_COMMANDS or MAX_DEPTH: nothing more of it should be built
     # Each command as its words with quotes removed (an expansion shows as written). Empty unless `understood`.
     commands: tuple[tuple[str, ...], ...] = ()
+    folders: tuple[tuple[str, ...], ...] = ()                   # one per command; "" is the work folder
+    writes: tuple[tuple[str, tuple[str, ...]], ...] = ()        # (file, its folders) for each redirection that writes
+
+
+class _Out:
+    __slots__ = ("commands", "folders", "writes")
+
+    def __init__(self):
+        self.commands: list[tuple[str, ...]] = []
+        self.folders: list[tuple[str, ...]] = []
+        self.writes: list[tuple[str, tuple[str, ...]]] = []
 
 
 class _NotUnderstood(Exception):
@@ -146,13 +168,18 @@ class _Word:
 
 
 class _Reader:
-    def __init__(self, text: str, depth: int, commands: list[tuple[str, ...]], in_substitution: bool = False):
+    def __init__(self, text: str, depth: int, out: _Out, in_substitution: bool = False,
+                 here: frozenset[str] = frozenset({""})):
         self.s = text
         self.i = 0
         self.depth = depth
         self._check_depth()
-        self.commands = commands             # shared by every nested reading
+        self.out = out                       # shared by every nested reading
+        self.commands = out.commands
         self.in_substitution = in_substitution
+        self.here = here                     # the folders the next command may run in
+        self.failed: frozenset[str] = frozenset()   # where it is instead if a change of folder since failed
+        self.loops = 0
         self.heredocs: list[tuple[str, bool, bool]] = []    # (delimiter, quoted, strip tabs) waiting for a newline
         self.peeked = None
 
@@ -322,7 +349,7 @@ class _Reader:
         if nxt == "[" or s.startswith("((", i + 1):
             raise _NotUnderstood("it uses shell arithmetic")
         if nxt == "(":
-            inner = _Reader(s, self.depth + 1, self.commands, in_substitution=True)
+            inner = _Reader(s, self.depth + 1, self.out, in_substitution=True, here=self.here)
             inner.i = i + 2
             inner.list_until(closing=True, may_be_empty=True)
             inner.take()
@@ -386,27 +413,42 @@ class _Reader:
                 return
             if not separated:
                 raise _NotUnderstood("its syntax is not one Arslan reads")
+            before = (self.here, self.failed)
             self._and_or()
             empty = separated = False
             if self.peek() in (("op", ";"), ("op", "&")):
-                self.take()
+                if self.take() == ("op", "&"):
+                    self.here, self.failed = before      # a backgrounded list runs in a subshell
                 separated = True
+
+    def _settle(self) -> None:
+        self.here, self.failed = self.here | self.failed, frozenset()
 
     def _and_or(self) -> None:
         self._pipeline()
+        exact = True                             # every pipeline so far succeeded, if the next one runs
         while self.peek() in (("op", "&&"), ("op", "||")):
-            self.take()
+            exact = self.take() == ("op", "&&") and exact
+            if not exact:
+                self._settle()
             self._skip_newlines()
             self._pipeline()
+        self._settle()
 
     def _pipeline(self) -> None:
-        if self._at("!"):
+        negated = self._at("!")
+        if negated:
             self.take()
+        before = (self.here, self.failed)
         self._command()
         while self.peek() == ("op", "|"):
+            self.here, self.failed = before      # each segment runs in a subshell of its own
             self.take()
             self._skip_newlines()
             self._command()
+            self.here, self.failed = before
+        if negated:
+            self._settle()
 
     def _command(self) -> None:
         token = self.peek()
@@ -437,8 +479,10 @@ class _Reader:
         self.take()
         if self.s.startswith("(", self.i):
             raise _NotUnderstood("it uses shell arithmetic")
+        before = (self.here, self.failed)
         self.list_until(closing=True)
         self.take()
+        self.here, self.failed = before
 
     def _group(self) -> None:
         self.take()
@@ -480,14 +524,18 @@ class _Reader:
         if not self._at("do"):
             raise _NotUnderstood("its for loop is not one Arslan reads")
         self.take()
+        self.loops += 1
         self.list_until(_DONE)
+        self.loops -= 1
         self.take()
 
     def _loop(self) -> None:
         self.take()
+        self.loops += 1                          # a change of folder in a loop moves again each time round
         self.list_until(_DO)
         self.take()
         self.list_until(_DONE)
+        self.loops -= 1
         self.take()
 
     def _case(self) -> None:
@@ -543,6 +591,8 @@ class _Reader:
                 raise _NotUnderstood("its redirection opens a network socket")
             if op in ("<&", ">&") and word.text.startswith("-") and word.text != "-":
                 raise _NotUnderstood("its redirection has text after the -, which bash reads as a program")
+            if op != "<" and not (op in ("<&", ">&") and (word.text.isdigit() or word.text == "-")):
+                self.out.writes.append((word.text, tuple(sorted(self.here))))
 
     def _simple(self) -> None:
         words: list[_Word] = []
@@ -577,8 +627,11 @@ class _Reader:
             if len(self.commands) >= MAX_COMMANDS:
                 raise _NotUnderstood("it has more commands than Arslan reads before running", capped=True)
             self.commands.append(tuple(w.text for w in words))
+            self.out.folders.append(tuple(sorted(self.here)))
             base = name.rsplit("/", 1)[-1].lower()
             args = words[1:]
+            if base in _FOLDER_CHANGES:
+                self._change_folder(base, args, layers)
             if base in _OTHER_BUILTINS:
                 raise _NotUnderstood(f"it uses `{base}`, which changes how the shell reads what follows")
             if base in SAFE_BUILTINS:
@@ -599,6 +652,21 @@ class _Reader:
             if layers > MAX_DEPTH:
                 raise _NotUnderstood("it nests commands deeper than Arslan reads", capped=True)
 
+    def _change_folder(self, base: str, args: list[_Word], layers: int) -> None:
+        """S2a-3 step 4: where a cd or pushd leads, from every folder the shell may be in."""
+        value = args[0].literal if len(args) == 1 and base != "popd" else None
+        if layers or self.loops:
+            raise _NotUnderstood(f"it runs {base} {'through a wrapper' if layers else 'in a loop'}, which Arslan "
+                                 "doesn't follow")
+        if (not value or value.startswith(("-", "+"))
+                or (value.startswith("~") and (args[0].quoted or not (value == "~" or value.startswith("~/"))))):
+            raise _NotUnderstood(f"its {base} goes to a folder it doesn't write out")
+        moved = frozenset(value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}"
+                          for f in self.here)
+        if len(moved | self.here | self.failed) > MAX_FOLDERS:
+            raise _NotUnderstood("it changes folder more ways than Arslan follows", capped=True)
+        self.failed, self.here = self.failed | self.here, moved
+
     def _program(self, base: str, args: list[_Word]) -> None:
         if base == "find":
             for w in args:
@@ -609,7 +677,7 @@ class _Reader:
             if base in ("bash", "sh") and first in ("-c", "-lc"):
                 if not _names_something(args[1:]):
                     raise _NotUnderstood("it runs a shell script that is not written out")
-                _Reader(args[1].text, self.depth + 1, self.commands).read_all()
+                _Reader(args[1].text, self.depth + 1, self.out, here=self.here).read_all()
             elif first == "eval" or not _names_something(args[1:] if first == "-m" and base.startswith(_PYTHONS) else args):
                 raise _NotUnderstood(f"it runs {base} without naming a script first: what it runs, the text does not say")
 
@@ -689,11 +757,11 @@ def read(text: str) -> Reading:
         return Reading(understood=False, why="it is longer than Arslan reads", capped=True)
     if any(map(_unseen, set(text))):
         return Reading(understood=False, why="it contains control or invisible characters")
-    commands: list[tuple[str, ...]] = []
+    out = _Out()
     try:
-        _Reader(text, 0, commands).read_all()
+        _Reader(text, 0, out).read_all()
     except _NotUnderstood as exc:
         return Reading(understood=False, why=exc.why, capped=exc.capped)
     except RecursionError:
         return Reading(understood=False, why="it nests commands deeper than Arslan reads", capped=True)
-    return Reading(understood=True, commands=tuple(commands))
+    return Reading(understood=True, commands=tuple(out.commands), folders=tuple(out.folders), writes=tuple(out.writes))

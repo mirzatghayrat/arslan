@@ -31,11 +31,12 @@ holds a layer ③ command, and a command outside it runs with the user's own per
 from __future__ import annotations
 
 import functools
+import posixpath
 import re
 import shlex
 from dataclasses import dataclass
 
-from server.services import shell_text
+from server.services import shell_grammar, shell_text
 
 MAX_COMMAND_CHARS = 8000
 
@@ -463,6 +464,45 @@ def _deletes_outside(texts: tuple[str, ...]) -> bool:
 
 _DELETE_OUTSIDE = ("delete-outside", "deletes files outside the working folder")   # in ONCE_ONLY_RULES above
 
+# S2a-3 step 4: the path rules again, for a command after a change of folder, with each relative path joined to every
+# folder shell_grammar says it may run in. Text the reader doesn't understand is judged as before (step 3 wires that).
+_MOVED_DELETERS = frozenset({"rm", "rmdir", "unlink", "trash", "srm"})
+_MOVED_WRITERS = frozenset({"tee", "cp", "mv", "ln", "install", "ditto", "rsync", "truncate", "touch", "chmod", "chown",
+                            "chflags", "xattr", "dd", "sed", "perl", "ruby"})
+_MOVED_FINDERS = frozenset({"find"})
+_PROTECTED_PATH_C = re.compile(_PROTECTED_PATH, re.I)
+
+
+def _joined(folder: str, word: str) -> str:
+    return word if word.startswith(("/", "~", "$")) else f"{folder.rstrip('/')}/{word}"
+
+
+def _protected(folders: tuple[str, ...], word: str) -> bool:
+    paths = [_joined(f, part) for f in folders if f for part in {word, word.split("=", 1)[-1]}]
+    return any(_PROTECTED_PATH_C.match(p) or _PROTECTED_PATH_C.match(posixpath.normpath(p)) for p in paths)
+
+
+@functools.lru_cache(maxsize=64)
+def _after_moves(text: str) -> tuple[bool, bool]:
+    """(deletes outside the working folder, writes a protected file) once a change of folder is followed."""
+    reading = shell_grammar.read(text)
+    outside = protected = False
+    for words, folders in zip(reading.commands, reading.folders):
+        moved = tuple(f for f in folders if f)
+        if not moved:
+            continue
+        name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
+        operands = [w for w in args if not w.startswith("-") or w == "-"]
+        if name in _MOVED_DELETERS:
+            outside |= not operands or any(_outside_target(_joined(f, w)) for f in moved for w in operands)
+        elif name in _MOVED_FINDERS and "-delete" in args:
+            start = args[0] if args and not args[0].startswith("-") else "."
+            outside |= any(_outside_target(_joined(f, start)) for f in moved)
+        elif name in _MOVED_WRITERS:
+            protected |= any(_protected(moved, w) for w in operands)
+    protected |= any(_protected(folders, target) for target, folders in reading.writes)
+    return outside, protected
+
 
 def as_shell(command: str, argv=None) -> str:
     """One shell string from either form the tool accepts ({command} or legacy {command, argv})."""
@@ -493,11 +533,12 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
     return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
-def _layer_two(texts: tuple[str, ...]) -> list[tuple[str, str]]:
+def _layer_two(text: str, texts: tuple[str, ...]) -> list[tuple[str, str]]:
     found = [(key, why) for key, pattern, why in _ASK_C if _matches(pattern, texts)]
-    if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
+    moved_outside, moved_protected = _after_moves(text)
+    if (_script_names_protected(texts) or moved_protected) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
-    if _deletes_outside(texts):
+    if _deletes_outside(texts) or moved_outside:
         found.insert(0, _DELETE_OUTSIDE)
     seen: set[str] = set()
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
@@ -517,7 +558,7 @@ def assess(command: str) -> Assessment:
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(texts)
+    found = _layer_two(text, texts)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
     hidden = _hidden_code(texts)
@@ -536,7 +577,7 @@ def ask_rules(command: str) -> set[str]:
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    return {key for key, _why in _layer_two(texts)} | ({UNREADABLE} if _hidden_code(texts) else set())
+    return {key for key, _why in _layer_two(text, texts)} | ({UNREADABLE} if _hidden_code(texts) else set())
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to
