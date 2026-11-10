@@ -622,23 +622,7 @@ def _options(args: tuple[str, ...], values: frozenset[str]):
 
 
 def _security_verb(args: tuple[str, ...]) -> tuple[str, ...]:
-    # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
-    i = 0
-    while i < len(args) and args[i].startswith("-"):
-        word = args[i]
-        if word == "--":
-            return args[i + 1:]
-        if word == "--help":
-            return ()
-        i += 1
-        if not word.startswith("--"):
-            for offset, letter in enumerate(word[1:], 2):
-                if letter == "h":
-                    return ()
-                if letter == "p":
-                    i += offset == len(word)
-                    break
-    return args[i:]
+    return shell_grammar.security_operation(args)[0]
 
 
 def _dispatch_args(program: str, args: tuple[str, ...]) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -846,6 +830,9 @@ def _unparseable(text: str) -> str:
         return "too complex to read before running"
     if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"
+    if any(words[0].lower() == "security" and shell_grammar.security_operation(words[1:])[1]
+           for words in _command_words(text)):
+        return "its security reads operations from stdin"
     return ""
 
 

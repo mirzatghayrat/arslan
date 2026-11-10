@@ -726,6 +726,10 @@ class _Reader:
         self.failed, self.here = self.failed | self.here, moved
 
     def _program(self, base: str, args: list[_Word]) -> None:
+        # Prefix mode keeps later argv visible to the independent forbid floor.
+        if (base == "security" and self.out.track_folders
+                and security_operation(tuple(w.text for w in args))[1]):
+            raise _NotUnderstood("its security reads operations from stdin")
         if base == "find":
             for w in args:
                 if w.literal is None or w.text in _FIND_RUNS:
@@ -777,6 +781,34 @@ def _fold_prefix(folder: str) -> str:
         else:
             stack.append(part)
     return "/".join(stack[:kept])
+
+
+def security_operation(args: tuple[str, ...]) -> tuple[tuple[str, ...], bool]:
+    """The argv operation and whether security instead accepts operations on stdin.
+
+    Shared with named policy rules so prompt values and option clusters have one
+    interpretation. With no operation, even inherited stdin can supply commands.
+    """
+    # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
+    interactive = False
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        word = args[i]
+        if word == "--":
+            return args[i + 1:], interactive or i + 1 == len(args)
+        if word == "--help":
+            return (), False
+        i += 1
+        if not word.startswith("--"):
+            for offset, letter in enumerate(word[1:], 2):
+                if letter == "i":
+                    interactive = True
+                if letter == "h":
+                    return (), False
+                if letter == "p":
+                    i += offset == len(word)
+                    break
+    return args[i:], interactive or i >= len(args)
 
 
 def _names_something(args: list[_Word]) -> bool:
