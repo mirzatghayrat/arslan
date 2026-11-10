@@ -108,28 +108,32 @@ class Confirmations:
             # more than this time (the Inbox, the phone and the island: this time); the island never answers
             # it at all. Always a card: the tool loop reads the stored grant itself, and writes its row when
             # the command runs (`permissions._ALWAYS_ASKS`).
+            frame = {**protocol.propose_run_command(
+                uuid.uuid4().hex, command, argv,
+                reason=verdict.reason if verdict.level == "ask" else "",
+                sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
+                **_delete_keys(delete, shell)}
             request = permissions.Request(
-                kind="outside", target="*", title=card_purpose.phrase(shell, why, rules, lang=lang, outside=True,
-                                                                      network=network, delete_mode=delete),
+                kind="outside", target="*", title=card_purpose.phrase(
+                    shell, why, rules, lang=lang, outside=True, network=network, delete_mode=delete,
+                    reading=card_purpose.frame_reading(frame, shell)),    # the frame's reading, not a second one
                 model_title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
-                why=why, frame={**protocol.propose_run_command(
-                    uuid.uuid4().hex, command, argv,
-                    reason=verdict.reason if verdict.level == "ask" else "",
-                    sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
-                    **_delete_keys(delete, shell)})
+                why=why, frame=frame)
         elif remote_host:
             # A remote command takes none of the shortcuts: the local risk grade describes a binary on THIS
             # machine, and `git` over there is not the same program (P3b 裁决③). `remote` is answered this
             # time only (`permissions._ONCE_ONLY`): nothing is remembered.
+            frame = protocol.propose_run_command(
+                uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
+                remote_host=remote_host, fingerprints=list(fingerprints or []), why=why, rules=rules,
+                unreadable=unreadable)
             request = permissions.Request(
                 kind="remote", target=remote_target(host or remote_host),
-                title=card_purpose.phrase(shell, why, rules, lang=lang, host=remote_host),
+                title=card_purpose.phrase(shell, why, rules, lang=lang, host=remote_host,
+                                          reading=card_purpose.frame_reading(frame, shell)),
                 model_title=f"Run `{shell[:80]}` on {remote_host}?",
                 detail=shell,
-                frame=protocol.propose_run_command(
-                    uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
-                    remote_host=remote_host, fingerprints=list(fingerprints or []), why=why, rules=rules,
-                    unreadable=unreadable))
+                frame=frame)
         else:
             request = None
         if request is not None:

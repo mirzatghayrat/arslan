@@ -2,6 +2,8 @@
 // command is for and touches is the server's reading (card_purpose.summarize, tests/server/test_smart8_plain_title.py).
 import { describe, expect, it } from "vitest";
 import { commandRisk, summaryOf, unread } from "../lib/commandRisk";
+import { initialArslanState, useArslanStore } from "../stores/arslanStore";
+import { serverSummary } from "./serverReading";
 
 describe("commandRisk", () => {
   it("a plain command in the sandbox", () => {
@@ -85,5 +87,17 @@ describe("the frame's summary (LOOP1 d1)", () => {
   it("a frame without one names the command's first word by its file name, and nothing else", () => {
     expect(unread("/usr/bin/ffmpeg -i in.mov out.mp4")).toEqual({ purpose: { key: "run", params: { program: "ffmpeg" } },
                                                                  touches: [], more: 0, unsure: false });
+  });
+
+  it("reaches the store's card whole: a later step that uses the network, and the steps after the first", () => {
+    // #817 review: `unsure` (the network line, the command unfolded) and `more` ("(and N more steps)") are carried
+    // from the frame, never defaulted. The server's own reading of this line, from the shared vectors.
+    const line = "rm old.log && curl https://example.org";
+    useArslanStore.setState(initialArslanState(), true);
+    useArslanStore.getState().handleFrame({ type: "propose_run_command", call_id: "d1", command: line, argv: [],
+      pretty: line, reason: "", summary: serverSummary(line) } as never);
+    const card = useArslanStore.getState().pendingCommands.find(c => c.callId === "d1");
+    expect(card?.summary).toEqual({ purpose: { key: "delete", params: { count: 1 } }, touches: ["old.log"], more: 1,
+                                    unsure: true });
   });
 });

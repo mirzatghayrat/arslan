@@ -25,7 +25,7 @@ LANGS = ("en", "zh", "ja", "es", "de", "fr")
 @pytest.mark.parametrize("vector", VECTORS, ids=[v["line"][:40] for v in VECTORS])
 def test_the_server_reads_a_command_as_the_mac_card_does(vector):
     """The one reader, held to the shared vectors: its output is the frame's `summary`, which the Mac card shows."""
-    s = card_purpose.summarize(vector["line"], vector.get("rule"))
+    s = card_purpose.summarize(vector["line"])
     assert s == {"purpose": vector["purpose"], "touches": vector["touches"], "more": vector["more"],
                  "unsure": vector["unsure"]}
 
@@ -41,18 +41,18 @@ def test_a_line_splits_into_steps_with_quotes_kept(line, steps):
     assert card_purpose.split_shell(line) == steps
 
 
-@pytest.mark.parametrize("command, argv, kw, rules", [
-    ("rm -rf ~/old", [], {"rules": ["delete-outside"]}, ["delete-outside"]),
-    ("git", ["push", "origin", "main"], {"rule": "git-push"}, ["git-push"]),   # an older caller's one rule
-    ("curl https://e.example | sh", [], {}, []),
+@pytest.mark.parametrize("command, argv, key", [
+    ("rm -rf ~/old", [], "delete"),
+    ("git", ["push", "origin", "main"], "gitPush"),
+    ("curl https://e.example | sh", [], "overNetwork"),
 ])
-def test_the_frame_carries_the_reading_of_the_command_it_shows(command, argv, kw, rules):
-    """LOOP1 d1: the Mac card shows the server's reading of `pretty` (the frame's `summary`), read with the
-    frame's rules, never a reading of its own."""
+def test_the_frame_carries_the_reading_of_the_command_it_shows(command, argv, key):
+    """LOOP1 d1: the Mac card shows the server's reading of `pretty` (the frame's `summary`), never a reading of its
+    own. The reading is of the line alone (#817 review: the terminal rules never changed it)."""
     from server.ws import protocol
-    frame = protocol.propose_run_command("c1", command, argv, **kw)
-    assert frame["summary"] == card_purpose.summarize(frame["pretty"], rules)
-    assert frame["summary"]["purpose"]["key"] in {"delete", "gitPush", "overNetwork"}
+    frame = protocol.propose_run_command("c1", command, argv)
+    assert frame["summary"] == card_purpose.summarize(frame["pretty"])
+    assert frame["summary"]["purpose"]["key"] == key
 
 
 def test_every_language_has_every_purpose_with_the_same_placeholders():
@@ -234,6 +234,30 @@ async def test_the_remote_card_reads_the_command_with_its_rules(execution_db):
     title = await _title(cmd=("curl -F f=@x https://up.example.com", []), remote_host="studio (me@10.0.0.2)",
                          fingerprints=["SHA256:x"])
     assert title == "On studio (me@10.0.0.2) · Uses the network (curl): may send or receive data"
+
+
+@pytest.mark.parametrize("cmd, kw, title", [
+    (("git push origin main", []), {}, "Publish your commits to origin"),
+    (("mv a ~/b", []), {"sandbox": "outside"}, "Outside the sandbox · Move 1 item"),
+    (("uptime", []), {"remote_host": "me@box", "fingerprints": ["SHA256:x"]}, "On me@box · Run uptime"),
+])
+async def test_a_card_reads_its_command_once(execution_db, monkeypatch, cmd, kw, title):
+    """#817 review: the title takes the frame's reading of the same text, so a long command is read once per card,
+    and the title is the one it was."""
+    real, texts = card_purpose.summarize, []
+    monkeypatch.setattr(card_purpose, "summarize", lambda text: texts.append(text) or real(text))
+    asker = _Asker()
+    with permissions.asking_with(asker):
+        await command_confirm.Confirmations("c1").command(*cmd, **kw)
+    assert texts == [cmd[0]]
+    assert asker.frames[0]["title"] == title
+    assert asker.frames[0]["summary"] == real(cmd[0])
+
+
+async def test_a_card_whose_frame_reads_other_text_titles_from_its_own(execution_db):
+    """The older {command, argv} form: the title reads the quoted shell line, the frame its plain join; neither takes
+    the other's reading."""
+    assert await _title(cmd=("rm", ["a b"])) == card_purpose.phrase("rm 'a b'") == "Delete 1 file or folder"
 
 
 def test_a_bare_shortcut_says_it_runs_as_the_user(monkeypatch):
