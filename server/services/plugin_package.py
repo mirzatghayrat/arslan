@@ -322,7 +322,7 @@ def remote_url(name: str, spec: dict) -> str:
 
 def _remote(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
     url = remote_url(name, spec)
-    why = capability_allowlist.listed_remote(url, allow)
+    why = capability_allowlist.listed_remote(url, allow) if allow is not None else None     # None: an import (CAP8-2)
     if why:
         raise Refused("add_by_hand", name, by_hand=why)
     keys, fixed = [], {}
@@ -377,19 +377,20 @@ async def _package(plugin: dict, name: str, spec: dict, allow: dict) -> dict:
     """A package has no Registry publisher here, so the plugin's own repository answers to the list."""
     command, args = package_line(name, spec)
     keys, fixed = _env_keys(name, spec.get("env"))
-    why = await capability_allowlist.confirm_repository(plugin, allow)
+    why = await capability_allowlist.confirm_repository(plugin, allow) if allow is not None else None
     if why:
         raise Refused("add_by_hand", name, by_hand=why)
     return await pinned_package(plugin, name, command, args, keys, fixed)
 
 
-async def _skills(snap: Snapshot, paths: list[str], spdx_and_path: tuple) -> list[dict]:
+async def _skills(snap: Snapshot, paths: list[str], spdx_and_path: tuple, prepare_one=None) -> list[dict]:
+    """`prepare_one`: how one skill is prepared, `skill_import.prepare_skill` unless the plugin is imported (CAP8-2)."""
     prepared: list[dict] = []
     keys: set[str] = set()
     for path in paths:
         try:
-            skill = await skill_import.prepare_skill(f"{snap.repo}@{snap.sha}", path, snapshot=snap,
-                                                     repo_license=spdx_and_path[0])
+            skill = await (prepare_one or skill_import.prepare_skill)(f"{snap.repo}@{snap.sha}", path, snapshot=snap,
+                                                                      repo_license=spdx_and_path[0])
         except ValueError as exc:
             raise Refused("skill", str(exc)[:200]) from exc
         key = skill["key"]
@@ -425,25 +426,41 @@ async def prepare(candidate: dict) -> dict:
     if candidate.get("source_url") != f"https://github.com/{repo}":
         raise Refused("not_github", str(candidate.get("source_url")))
     snap = await snapshot(repo, candidate.get("ref"))
-    root = candidate.get("path") or ""
+    return await prepare_read(candidate, snap, candidate.get("path") or "")
+
+
+def parts(snap: Snapshot, root: str = "") -> tuple[dict, list[str], dict[str, dict]]:
+    """The manifest, its skills' SKILL.md paths and its MCP servers, or Refused: hooks, commands, agents or anything
+    not recognised refuse the whole plugin, before anything is prepared."""
     manifest = _manifest(snap, root)
     _only_skills_and_connections(manifest, snap, root)
     paths = _skill_files(manifest, snap, root)
     servers = _servers(manifest, snap, root)
+    for name, spec in servers.items():
+        if not isinstance(spec, dict):
+            raise Refused("unreadable", name)
+        if _FOLDER_VARS.search(json.dumps(spec)):
+            raise Refused("needs_plugin_folder", name)
+    return manifest, paths, servers
+
+
+async def prepare_read(candidate: dict, snap: Snapshot, root: str, *, imported=None) -> dict:
+    """`prepare` on a plugin already read. `imported` (CAP8-2): a plugin copied in from the user's other tool by the
+    user's click, and how each of its skills is prepared. Its connections then aren't held to the one-click list or
+    the license gate, as CAP8-1's aren't; everything else is as above."""
+    manifest, paths, servers = parts(snap, root)
     license_ = _license(snap, root)
-    skills = await _skills(snap, paths, license_)
-    allow = await capability_allowlist.current()
+    skills = await _skills(snap, paths, license_, imported)
+    allow = None if imported else await capability_allowlist.current()
     prefix = f"{root}/" if root else ""
     prepared = {"repo": snap.repo, "commit": snap.sha, "license": license_, "skills": skills, "connections": [],
                 "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix)}
     try:
         for name, spec in servers.items():
-            if not isinstance(spec, dict):
-                raise Refused("unreadable", name)
-            if _FOLDER_VARS.search(json.dumps(spec)):
-                raise Refused("needs_plugin_folder", name)
             connection = (_remote(candidate, name, spec, allow) if spec.get("url") or spec.get("type")
                           else await _package(candidate, name, spec, allow))
+            if imported:
+                connection["candidate"]["source"] = "import"      # `capability_install.prepare`'s license gate
             try:
                 # Its license is the plugin's, read at the pinned commit, not the repository's at a tag or HEAD.
                 connection["locked"] = await capability_install.prepare(connection["candidate"], license_=license_)

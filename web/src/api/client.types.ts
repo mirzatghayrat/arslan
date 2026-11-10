@@ -687,15 +687,28 @@ export interface ImportRow {
   /** Whether it starts ticked. */
   tick: boolean;
 }
+/** CAP8-2: one of Claude Code's skills on the import sheet (server/services/tool_import.py, `Item.view`). `id` and
+ *  `same_as` are opaque, as a server row's are. A plugin row comes back too (`plugins`), and the sheet doesn't draw it
+ *  yet: its card before the install needs a board of its own first. */
+export interface ImportSkillRow {
+  id: string; tool: "claude_code"; kind: "skill"; name: string; digest: string; key: string | null;
+  description: string | null; scripts: string[]; references: string[];
+  /** Files in its folder that don't come along. */
+  left: number;
+  scan: "clean" | "warn" | "blocked" | null;
+  here: boolean; same_as: string | null; refused: string | null; refused_part: string | null; tick: boolean;
+}
 export interface ImportScan {
   tools: { tool: ImportRow["tool"]; state: "read" | "missing" | "malformed"; count: number }[];
   servers: ImportRow[];
+  skills?: ImportSkillRow[];
 }
 export interface ImportTick { id: string; digest: string; keys: Record<string, string> }
 export interface ImportResult {
   id: string;
   state: "on" | "added" | "needs_sign_in" | "failed" | "blocked" | "refused" | "here" | "needs_keys" | "gone" | "changed";
   code?: string; stage?: string; detail?: string; keys?: string[]; tools?: number; source_id?: string; server_id?: number;
+  key?: string;
 }
 
 /** K8a: text a reply showed and then replaced, with the server's label for it. */

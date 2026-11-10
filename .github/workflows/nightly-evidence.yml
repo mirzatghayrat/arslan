@@ -1,0 +1,76 @@
+name: Nightly evidence
+
+# The full evidence corpora, once a day. The default suite (ci.yml's `backend`) runs
+# a fixed sample of each corpus; FOLDER_TRACKING_EVIDENCE_FULL=1 and
+# QUOTED_ARGS_EVIDENCE_FULL=1 select every text. This is the one place both are set.
+#
+# Not a required check, and it cannot become one by accident: it runs on a schedule
+# and by hand, never on a pull request. A failure shows as a red run on the Actions
+# page under this workflow's name.
+#
+# Run it by hand: Actions > Nightly evidence > Run workflow, or
+#   gh workflow run nightly-evidence.yml --ref main
+on:
+  schedule:
+    - cron: "23 3 * * *" # 03:23 UTC daily; off the hour, when scheduled runs queue
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    # Measured 2026-11-10 on a loaded 14-core dev machine, with both switches set: 615 tests
+    # in 178 s; the longest file (r6) about 165 s on its worker. --dist loadfile keeps each
+    # file on one worker, so on a 4-vCPU runner the slowest file sets the time: expect
+    # roughly 5 to 10 minutes with setup. 30 leaves room for a slower runner without letting
+    # a hang hold the runner for the default 6 hours.
+    timeout-minutes: 30
+    env:
+      # Every module that reads either switch, listed by path so the run names exactly what
+      # it covers. The next step fails if a module under tests/ reads a switch and is missing
+      # here, so a new corpus cannot be skipped silently. A listed path that disappears fails
+      # pytest itself ("file or directory not found").
+      EVIDENCE_MODULES: >-
+        tests/server/quoted_args_file_run_evidence.py
+        tests/server/test_folder_tracking_r3_matrix.py
+        tests/server/test_folder_tracking_r4.py
+        tests/server/test_folder_tracking_r6.py
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          # The backend job's interpreter; see the reason on its Install uv step in ci.yml.
+          python-version: "3.11"
+
+      - name: Install dependencies and the test environment
+        uses: ./.github/workflows/backend-python
+
+      - name: Every module that reads a switch is in EVIDENCE_MODULES
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in $(git grep -l -E 'FOLDER_TRACKING_EVIDENCE_FULL|QUOTED_ARGS_EVIDENCE_FULL' -- tests/); do
+            case " $EVIDENCE_MODULES " in
+              *" $f "*) echo "listed: $f" ;;
+              *) echo "::error file=$f::reads an evidence switch but is not in EVIDENCE_MODULES"; missing=1 ;;
+            esac
+          done
+          exit "$missing"
+
+      - name: Pytest (full evidence corpora)
+        # The backend job's flags (-q -rfEs -n auto --dist loadfile) and its TMPDIR, for the
+        # reasons on ci.yml's Pytest step.
+        env:
+          TMPDIR: ${{ runner.temp }}
+          FOLDER_TRACKING_EVIDENCE_FULL: "1"
+          QUOTED_ARGS_EVIDENCE_FULL: "1"
+        # EVIDENCE_MODULES is unquoted on purpose: one argument per path.
+        run: .venv/bin/pytest $EVIDENCE_MODULES -q -rfEs -n auto --dist loadfile
