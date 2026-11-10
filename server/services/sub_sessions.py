@@ -52,6 +52,8 @@ MAX_DEPTH = 3
 SUB = "sub"
 #: SUB5a: the kind a deleted conversation's row is left with (`tombstone`).
 DELETED = "deleted"
+#: SUB5b: every sub-session's id starts with this (`create_child`), so one whose row is gone still reads as one.
+CHILD_PREFIX = "sub-"
 #: SUB3 (card, rule 10): how many sub-sessions one conversation may start, by its layer (a commander, a sub-session),
 #: and how many may be alive at once in one tree. The bench may move these numbers.
 MAX_CHILDREN = {1: 4, 2: 2}
@@ -177,7 +179,7 @@ async def create_child(db, parent_id: str, child_id: str | None = None) -> Conve
     if await depth(db, parent_id) >= MAX_DEPTH:
         raise SubSessionError("sub_session_depth")
     child = ConversationContext(
-        id=child_id or f"sub-{uuid4()}", owner_id=parent.owner_id, kind=SUB, parent_id=parent_id,
+        id=child_id or f"{CHILD_PREFIX}{uuid4()}", owner_id=parent.owner_id, kind=SUB, parent_id=parent_id,
         project_id=effective.project_id, no_learning=True, sub_state=WORKING,
         cloud_memory_allowed=effective.cloud_memory_allowed, allow_sensitive=effective.allow_sensitive)
     db.add(child)
@@ -476,22 +478,41 @@ async def sub_ids(db, ids: list[str]) -> set[str]:
 
 # -- SUB5b: where a sub-session's work shows, and how a job in one runs ------------------------------------------
 
+def refusal(conversation_id: str, row: ConversationContext | None) -> str | None:
+    """Why no job may start in this conversation (None: it may). Fail closed: a sub-session is never read as an
+    ordinary conversation, which would give its job every tool, memory and learning, its cards in its own window, no
+    tree limit and no report up.
+    - `conversation_deleted`: it was deleted (`is_deleted`: its tombstone, or this process's mark).
+    - `sub_session_parent_missing`: it is a sub-session whose parent can't be named. Its row says sub-session with no
+      parent, or it has no row but the id only `create_child` gives (CHILD_PREFIX), read from the id as
+      `phone_ids.kind_of` reads a quick question. A sub-session a delete's keep promoted has a `chat` row: ordinary."""
+    if is_deleted(conversation_id, row):
+        return "conversation_deleted"
+    if row is None:
+        return "sub_session_parent_missing" if conversation_id.startswith(CHILD_PREFIX) else None
+    return "sub_session_parent_missing" if row.kind == SUB and not row.parent_id else None
+
+
 async def placement(conversation_id: str) -> tuple[str | None, str | None]:
     """For a job about to start in this conversation: its stored parent and the top of its chain, or (None, None)
     when it isn't a sub-session. Read from the stored kind, never this process's memory, so a job anyone starts in a
     sub-session (an accepted Inbox follow-up, a typed turn's background work) is the sub-session's: offered `TOOLS`
-    only, its cards asked in its parent, the tree's spend, its report going up. One whose parent can't be named is
-    refused (`sub_session_parent_missing`)."""
+    only, its cards asked in its parent, the tree's spend, its report going up. Refused (SubSessionError) where
+    `refusal` says so. Its row records WORKING, as `start` writes it: it owes its parent this job's report, so a
+    restart meanwhile tells the parent (`report_restart`)."""
     from server.db import session as db_session
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(ConversationContext, conversation_id)
+        if code := refusal(conversation_id, row):
+            raise SubSessionError(code)
         if row is None or row.kind != SUB:
             return None, None
-        if not row.parent_id:
-            raise SubSessionError("sub_session_parent_missing")
-        top = await root_of(db, conversation_id)
-    _parents[conversation_id] = row.parent_id      # its parent's summary waits for this job too (`_at_work`)
-    return row.parent_id, top
+        parent_id, top = row.parent_id, await root_of(db, conversation_id)
+        if row.sub_state != WORKING:
+            row.sub_state = WORKING
+            await db.commit()
+    _parents[conversation_id] = parent_id      # its parent's summary waits for this job too (`_at_work`)
+    return parent_id, top
 
 
 async def commanders(db, ids) -> dict[str, str]:

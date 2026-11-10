@@ -216,6 +216,91 @@ async def test_a_sub_session_whose_parent_cant_be_named_starts_no_job(memory):  
     assert background_jobs._jobs == {}
 
 
+async def _row_gone_or_deleted(db, how):
+    """KID made by `create_child`, then its row removed (`row-gone`) or left a tombstone after a restart forgot the
+    process's mark (`tombstone`)."""
+    await _family(db, KID)
+    if how == "row-gone":
+        await db.delete(await db.get(ConversationContext, KID))
+    else:
+        await sub_sessions.tombstone(db, [KID])
+    await db.commit()
+    sub_sessions._deleted.clear()
+
+
+REFUSED = {"row-gone": "sub_session_parent_missing", "tombstone": "conversation_deleted"}
+
+
+@pytest.mark.parametrize("how", ["row-gone", "tombstone"])
+async def test_a_follow_up_for_a_sub_session_with_no_row_or_a_tombstone_is_refused_not_run_as_ordinary(
+        api, follow_up, how):
+    """Its job would otherwise run as an ordinary conversation's: memory and learning on, the browser, its card in its
+    own window, no tree check and no report up. The Inbox's accept refuses it before claiming the item."""
+    async with api.db() as db:
+        db.add(ConversationContext(id=ROOT, no_memory=True))
+        await db.commit()
+        await _row_gone_or_deleted(db, how)
+        item = ProactiveItem(kind="job_followup", fingerprint="job:gone", source_key="job:gone",
+                             title_key="title.job_followup", evidence=[{"key": "job.goal"}], goal=GOAL, status="new",
+                             conversation_id=KID, created_at=datetime.utcnow())
+        db.add(item)
+        await db.commit()
+    in_kid = _sink(KID)
+    got = await api.post(f"/api/v1/proactive/items/{item.id}/accept", json={})
+    assert got.status_code == 422 and got.json()["detail"] == {"code": REFUSED[how]}
+    async with api.db() as db:
+        assert (await db.get(ProactiveItem, item.id)).status == "new"
+    assert background_jobs._jobs == {} and in_kid == []
+
+
+@pytest.mark.parametrize("how", ["row-gone", "tombstone"])
+async def test_no_caller_starts_a_job_in_a_sub_session_with_no_row_or_a_tombstone(memory, how):  # noqa: F811
+    """`placement` itself refuses, whoever starts the job (a typed turn's background work, the phone, a summary)."""
+    async with memory() as db:
+        await _row_gone_or_deleted(db, how)
+    with pytest.raises(sub_sessions.SubSessionError, match=REFUSED[how]):
+        await background_jobs.start(KID, GOAL, [], outside_seen=True)
+    assert background_jobs._jobs == {}
+
+
+async def test_an_id_that_only_looks_like_a_sub_session_by_its_row_is_ordinary(memory):  # noqa: F811
+    """The counterparts: a sub-session a delete's keep promoted (a `chat` row, its `sub-` id kept), and an ordinary
+    conversation with no row yet, run as ordinary."""
+    async with memory() as db:
+        db.add(ConversationContext(id="sub-promoted", kind="chat"))
+        await db.commit()
+    for cid in ("sub-promoted", "thread-new"):
+        assert await sub_sessions.placement(cid) == (None, None)
+
+
+async def test_a_summary_waits_for_a_follow_up_started_after_a_restart(memory):  # noqa: F811
+    """A restart forgets which sub-session is whose; a job started in one is its parent's work again (`_at_work`), so
+    the parent's summary doesn't sum up while it runs."""
+    async with memory() as db:
+        await _family(db, KID, KID2)
+    sub_sessions._parents.clear()                     # a restart
+    background_jobs._slots = asyncio.Semaphore(0)
+    try:
+        job = await background_jobs.start(KID, GOAL, [], outside_seen=True)
+        assert sub_sessions._at_work(ROOT)
+    finally:
+        job.task.cancel()
+        await asyncio.wait({job.task})
+        background_jobs._slots = None
+
+
+async def test_a_card_under_the_commander_wins_over_its_own_reminder(memory, monkeypatch):  # noqa: F811
+    async with memory() as db:
+        await _family(db, KID)
+        db.add(ArslanMessage(conversation_id=ROOT, role="user", content="words"))
+        db.add(ProactiveItem(kind="job_followup", fingerprint="job:r", source_key="job:r", title_key="t",
+                             evidence=[], goal="again", status="new", conversation_id=ROOT,
+                             created_at=datetime.utcnow()))
+        await db.commit()
+        monkeypatch.setattr(approvals, "all_pending", lambda: [{"conversation_id": KID, "call_id": "c1"}])
+        assert await progress.waiting_reasons(db) == {ROOT: "card"}
+
+
 # -- 2. the whole app's summaries and lists ------------------------------------------------------------------------
 
 async def test_the_island_and_the_status_count_a_sub_sessions_work_once_as_its_commanders(api):

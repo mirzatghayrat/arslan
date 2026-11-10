@@ -349,9 +349,10 @@ async def accept(item_id: int, conversation_id: str | None = None) -> dict:
             raise ProactiveError("invalid_conversation")
         from server.db.companion_models import ConversationContext
         from server.services import sub_sessions
-        if sub_sessions.is_deleted(conversation_id, await db.get(ConversationContext, conversation_id)):
-            # SUB5a: its job would be refused at its slot, with the item gone from the inbox. Nothing claimed.
-            raise ProactiveError("conversation_deleted")
+        # SUB5a: a deleted conversation; SUB5b: a sub-session whose parent can't be named. Its job would be refused
+        # when it starts, with the item already claimed. Nothing claimed.
+        if code := sub_sessions.refusal(conversation_id, await db.get(ConversationContext, conversation_id)):
+            raise ProactiveError(code)
         goal, criteria = item.goal, list(item.criteria or [])
     if not await model_configured():
         raise ProactiveError("no_model")         # nothing claimed: the item stays in the inbox
