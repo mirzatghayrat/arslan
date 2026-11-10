@@ -362,6 +362,22 @@ def test_past_the_cap_the_profiles_hold_them_by_name_and_otherwise_do_not(home, 
     assert all(line in make().splitlines() for make in build.values())
 
 
+def test_the_note_says_why_when_the_folder_is_too_large_to_map(home, monkeypatch):
+    """⓪Plan (#813 review 6): past the cap, new repositories can't be made in the sandbox; the stop note says why."""
+    ws = _tree(home / "ws")
+    why = "too large to map, so new repositories (git init, git clone) can't be created in the sandbox"
+    entries = run_later.WALK_ENTRIES
+    command_sandbox.commands_profile(ws)
+    assert why not in command_sandbox.note(ws)
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", 3)
+    command_sandbox.commands_profile(ws)
+    assert why in command_sandbox.note(ws)
+    assert why not in command_sandbox.note(home / "other")
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", entries)
+    command_sandbox.commands_profile(ws)                      # a complete walk clears it again
+    assert why not in command_sandbox.note(ws)
+
+
 # ── core.hooksPath ───────────────────────────────────────────────────────────
 
 def _repo(folder: Path, config: str) -> Path:

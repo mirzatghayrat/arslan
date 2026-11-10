@@ -207,6 +207,18 @@ def held_ancestors(writable, protected, *, planted=(), kept=()) -> list[Path]:
     return out
 
 
+#: Work folders whose last held-folder walk stopped at its cap (or an unlistable folder): their profile holds the
+#: run-later folders by name, so a new repository can't be created there. `note` says why (⓪Plan, #813 review 6).
+_TOO_LARGE: set[Path] = set()
+
+
+def too_large_to_map(workspace: Path) -> bool:
+    try:
+        return _real(workspace) in _TOO_LARGE
+    except OSError:
+        return False
+
+
 def run_later_folders(folders, *, roots=()) -> tuple[list[Path], tuple[str, ...]]:
     """HR-1's ancestor hold (#813 review 6): the held run-later folders that exist under `folders` and `roots` (the
     walk's) and each of `folders`' `core.hooksPath` target, as `run_later.kernel_filters` takes them, for
@@ -220,7 +232,9 @@ def run_later_folders(folders, *, roots=()) -> tuple[list[Path], tuple[str, ...]
         if target is not None and run_later._is_folder(target):
             kept.append(_real(target))
     if walk.complete:
+        _TOO_LARGE.difference_update(_real(f) for f in folders)
         return kept, ()
+    _TOO_LARGE.update(_real(f) for f in folders)
     _log.warning("HR-1: the held-folder walk stopped at its cap or an unlistable folder; held folders are held by "
                  "name in this run, so making one (git init, git clone) is refused")
     return kept, run_later.folder_filters(folders, roots=roots)
@@ -686,6 +700,9 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 + " Commands also can't change files that make something run later (git hooks and config, "
                 "editor tasks, agent and package settings), even in the working folder: if that is what it "
                 "changed, use write_file, which asks the user, or tell the user what to change.")
+        if too_large_to_map(workspace):
+            head += (" This working folder is too large to map, so new repositories (git init, git clone) can't be "
+                     "created in the sandbox here.")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")
