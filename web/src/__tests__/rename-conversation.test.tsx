@@ -19,7 +19,7 @@ import ConversationHeader, { HDR_LABEL, HDR_RUN, HDR_SECONDARY } from "../compon
 import ConversationControls from "../components/companion/ConversationControls";
 import { companionApi, type ConversationContext } from "../api/companion";
 import { seedTitledThreadIds, shouldAutoTitle } from "../lib/autoTitle";
-import { applyGeneratedTitle, renameThread } from "../lib/threadTitles";
+import { applyGeneratedTitle, firstMessageMayRetitle, renameThread } from "../lib/threadTitles";
 import { persistThreads, restoreThreads } from "../lib/sessionPersistence";
 import type { Message } from "../types";
 
@@ -315,5 +315,13 @@ describe("autoTitle never renames what the user named", () => {
     expect(shouldAutoTitle({ title: "New Session", history })).toBe(true);   // the exchange alone would title it
     expect(seedTitledThreadIds(restored).has("t")).toBe(true);
     expect(seedTitledThreadIds([{ id: "t", title: "New Session" }]).has("t")).toBe(false);
+  });
+
+  it("the first-message retitle never touches a name the user typed, even one that reads like a placeholder", () => {
+    expect(firstMessageMayRetitle({ title: "New Session" })).toBe(true);
+    expect(firstMessageMayRetitle({ title: "Orchestration thread 3" })).toBe(true);
+    expect(firstMessageMayRetitle({ title: "New Session", userTitled: true })).toBe(false);
+    expect(firstMessageMayRetitle({ title: "New Session", temporary: true })).toBe(false);
+    expect(firstMessageMayRetitle({ title: "Weekly report" })).toBe(false);
   });
 });

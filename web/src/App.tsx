@@ -49,7 +49,7 @@ import { resolveSection, type SettingsSectionId } from './components/settings/se
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
-import { threadDisplayTitle, renameThread, applyGeneratedTitle } from './lib/threadTitles';
+import { threadDisplayTitle, renameThread, applyGeneratedTitle, firstMessageMayRetitle } from './lib/threadTitles';
 import ConversationHeader from './components/conversation/ConversationHeader';
 import { useConversationIndex } from './hooks/useConversationIndex';
 import { useNotificationRoutes } from './hooks/useNotificationRoutes';
@@ -562,7 +562,7 @@ export default function App() {
 
           // Rename thread if empty/default title when receiving first message from user
           let updatedTitle = t.title;
-          if (!t.temporary && (t.title === 'New Session' || t.title.startsWith('Orchestration thread'))) {
+          if (firstMessageMayRetitle(t)) {
             const userMsg = newHistory.find(m => m.sender === 'user');
             if (userMsg) {
               const cleaned = userMsg.text.replace(/[#*`_]/g, '').trim();

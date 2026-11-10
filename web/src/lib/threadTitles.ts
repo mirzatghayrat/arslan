@@ -23,6 +23,14 @@ export function renameThread<T extends Titled>(threads: T[], id: string, title: 
     ? { ...thread, title: next, defaultTitle: undefined, userTitled: true } : thread));
 }
 
+/** Whether the first user message may replace a thread's placeholder title. Only App's fallback for a chat with no
+ * `onSendMessage` reaches this today, but `userTitled` stays checked: a name the user typed can read "New Session",
+ * and it must never be overwritten if that path becomes reachable. */
+export function firstMessageMayRetitle(thread: { title: string; temporary?: boolean; userTitled?: boolean }): boolean {
+  return !thread.temporary && !thread.userTitled
+    && (thread.title === "New Session" || thread.title.startsWith("Orchestration thread"));
+}
+
 /** A generated title lands only on a thread the user has not named; the titler can answer after a rename. */
 export function applyGeneratedTitle<T extends Titled>(threads: T[], id: string, title: string): T[] {
   return threads.map((thread) => (thread.id === id && !thread.userTitled
