@@ -4,6 +4,9 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
+/** A name longer than this is no longer a name; the sidebar and the header truncate far sooner. */
+export const RENAME_MAX_LENGTH = 120;
+
 export default function RenameInput({ value, onRename, onClose, className = "", testId }: {
   value: string;
   onRename: (title: string) => void;
@@ -24,7 +27,7 @@ export default function RenameInput({ value, onRename, onClose, className = "", 
     if (save && next && next !== value.trim()) onRename(next);
     onClose(byKey);
   };
-  return <input ref={ref} type="text" defaultValue={value} aria-label={t("sidebar.renameLabel")} data-testid={testId}
+  return <input ref={ref} type="text" defaultValue={value} maxLength={RENAME_MAX_LENGTH} aria-label={t("sidebar.renameLabel")} data-testid={testId}
     // The row and the header react to clicks and keys; typing in here is not one of them.
     onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}
     onKeyDown={(event) => {

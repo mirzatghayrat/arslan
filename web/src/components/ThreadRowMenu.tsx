@@ -7,10 +7,11 @@
 //
 // Purely presentational: all side effects are delegated to the callbacks the
 // sidebar/App wire up. Styling uses semantic tokens only (no raw colors).
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useDismissable } from "../hooks/useDismissable";
+import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
 import AnchoredPortal from "./AnchoredPortal";
 import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder, Pin, PinOff, Pencil } from "lucide-react";
 import { confirmSheet } from "./kit";
@@ -70,6 +71,11 @@ export default function ThreadRowMenu({
   //    Measured before replacing it: clicking the backdrop closed the menu,
   //    clicking anywhere else did not, and Escape did nothing at all.
   const { anchorRef, floatingRef } = useDismissable<HTMLSpanElement, HTMLDivElement>(open, close);
+  // Keyboard: focus into the menu on open (and into the project list when it replaces it), arrows between
+  // items, focus back on ⋯ when it closes.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const onMenuKeyDown = useMenuKeyboard(open, triggerRef, menuRef, picking);
 
   const itemClass =
     "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-sans text-left text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all";
@@ -77,6 +83,7 @@ export default function ThreadRowMenu({
   return (
     <span ref={anchorRef} className="relative inline-flex">
       <button
+        ref={triggerRef}
         type="button"
         aria-label={t("sidebar.thread_menu")}
         title={t("sidebar.thread_menu")}
@@ -93,8 +100,10 @@ export default function ThreadRowMenu({
 
       <AnchoredPortal anchorRef={anchorRef} floatingRef={floatingRef} open={open}>
         <div
+          ref={menuRef}
           role="menu"
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={onMenuKeyDown}
           className="w-52 bg-surface-raised border border-border-strong rounded-lg shadow-lg p-1"
         >
           {picking && onMove ? (

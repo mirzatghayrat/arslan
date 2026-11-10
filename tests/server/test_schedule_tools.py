@@ -56,6 +56,8 @@ async def test_creates_a_cron_task(db):
     async with db() as s:
         (task,) = (await s.execute(select(ScheduledTask))).scalars().all()
     assert task.cron == "0 9 * * *" and task.schedule_kind == "cron"
+    # SUB5a: no conversation named means one of its own, never a reused id's `scheduled-<id>`.
+    assert task.conversation_id.startswith("scheduled-") and task.conversation_id != f"scheduled-{task.id}"
 
 
 async def test_an_invalid_cron_is_refused_and_nothing_lands(db):

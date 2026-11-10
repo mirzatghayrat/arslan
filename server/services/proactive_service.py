@@ -344,6 +344,11 @@ async def accept(item_id: int, conversation_id: str | None = None) -> dict:
         conversation_id = conversation_id or item.conversation_id
         if not conversation_id or len(conversation_id) > 50:
             raise ProactiveError("invalid_conversation")
+        from server.db.companion_models import ConversationContext
+        from server.services import sub_sessions
+        if sub_sessions.is_deleted(conversation_id, await db.get(ConversationContext, conversation_id)):
+            # SUB5a: its job would be refused at its slot, with the item gone from the inbox. Nothing claimed.
+            raise ProactiveError("conversation_deleted")
         goal, criteria = item.goal, list(item.criteria or [])
     if not await model_configured():
         raise ProactiveError("no_model")         # nothing claimed: the item stays in the inbox

@@ -22,9 +22,10 @@ between an approval's commit and its hash write (#795 review) waits for the hash
 just-approved skill off.
 
 Not read: a folder name that is not a plain key (lowercase letters, digits and hyphens, at most 60), a seed's key,
-the key of a skill Arslan already has from elsewhere, a folder that is a link or holds one, and one past the size
-caps. CAP6b (command_sandbox.cap6b_folders, workspace_paths) keeps the model from reading or writing the folder by
-any other way.
+the key of a skill Arslan already has from elsewhere, a folder that is a link or holds one, one that holds a file
+with another name on disk (a hard link: the other name may be another skill's file or one outside every skill, whose
+bytes a yes would pin as this skill's), and one past the size caps. CAP6b (command_sandbox.cap6b_folders,
+workspace_paths) keeps the model from reading or writing the folder by any other way.
 """
 from __future__ import annotations
 
@@ -61,10 +62,13 @@ ARSLAN, OTHER = "arslan", "other"
 #: What the model is told when a folder skill's files no longer match what was approved.
 CHANGED = ("its files in ~/.agents/skills changed since they were approved, so it is switched off. The user can "
            "look at it again on the Capabilities page.")
+# macOS 11+: no part of the path may be a link at the open (as file_tools._NOFOLLOW). Where it is missing (Linux CI),
+# O_NOFOLLOW covers the last part only. Never both: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY (EINVAL).
+_NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
 
 
 class Unreadable(Exception):
-    """A skill folder Arslan does not read (a link, too large, no valid SKILL.md)."""
+    """A skill folder Arslan does not read (a link, a hard link, too large, no valid SKILL.md)."""
 
 
 class Changed(Exception):
@@ -210,8 +214,9 @@ def _read_file(path: Path) -> bytes:
 
 def read_folder(key: str) -> dict:
     """Every file of the skill's folder, hashed, with the text of each that is UTF-8, and its SKILL.md parsed. A link
-    anywhere in it (the folder itself included) is refused, and each file is opened without following one, so what
-    was hashed is what is used. Raises Unreadable."""
+    anywhere in it (the folder itself included), or a file with another name on disk, is refused, and each file is
+    opened without following a link and must be the file that was checked, so what was hashed is what is used. Raises
+    Unreadable."""
     from server.services import skill_import
     files, texts = _read_tree(folder(key))
     raw = texts.get("SKILL.md")
@@ -222,6 +227,10 @@ def read_folder(key: str) -> dict:
 
 
 def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
+    # The folders above the skill's own may be links (~/.agents linked elsewhere is supported, command_sandbox
+    # held_ancestors), and the opens below follow none: so they start from the real path. The skill's folder and
+    # everything in it are still looked at as they are.
+    base = base.parent.resolve() / base.name
     try:
         info = os.lstat(base)
     except OSError as exc:
@@ -244,15 +253,26 @@ def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
                 continue
             path = here / name
             try:
-                mode = os.lstat(path).st_mode
+                info = os.lstat(path)
             except OSError as exc:                  # gone between the listing and here
                 raise Unreadable("a file can't be read") from exc
-            if not stat.S_ISREG(mode):
+            if not stat.S_ISREG(info.st_mode):
                 raise Unreadable("holds a link or a special file")
+            if info.st_nlink > 1:
+                raise Unreadable("a file has another name on disk (a hard link)")
             if len(files) >= MAX_FILES:
                 raise Unreadable("too many files")
+            # Opened as _read_file does, and it must be the file just looked at (its device and inode). O_NONBLOCK: a
+            # FIFO swapped in can't hold the open. _NOFOLLOW: nor a folder on the way swapped for a link after the walk
+            # looked at it, where O_NOFOLLOW_ANY exists. Not in _read_file: CAP8-2's import reads another tool's skills
+            # with it, and whether a second name refuses those is that import's to decide.
             try:
-                data = _read_file(path)
+                fd = os.open(path, os.O_RDONLY | _NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as handle:
+                    opened = os.fstat(handle.fileno())
+                    if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                        raise Unreadable("a file changed while it was read")
+                    data = handle.read(MAX_BYTES + 1)
             except OSError as exc:
                 raise Unreadable("a file can't be read") from exc
             total += len(data)

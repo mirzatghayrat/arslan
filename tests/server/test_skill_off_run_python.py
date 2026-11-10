@@ -118,8 +118,10 @@ async def test_a_failed_switch_lookup_runs_nothing_and_reads_no_file(scripts, mo
 
 async def test_a_link_to_another_skills_files_is_refused_and_a_plain_script_still_runs(scripts, tmp_path,
                                                                                       monkeypatch):
-    """An off skill's code isn't reached under another key through a link: neither a folder of links to its folder
-    nor a file in an on skill's folder linking to its script, run directly or handed over as a sibling."""
+    """An off skill's code isn't reached under another key through a link: neither a folder linking to its folder
+    (under a key with a row of its own: a key with none is refused before any file is read) nor a file in an on
+    skill's folder linking to its script, run directly or beside the script that runs. Each refusal names the link.
+    The plain script runs once the link beside it is gone."""
     handed: list[tuple[str, dict]] = []
 
     async def ran(code, *, extra_files=None, read_only_files=None):
@@ -128,14 +130,21 @@ async def test_a_link_to_another_skills_files_is_refused_and_a_plain_script_stil
 
     monkeypatch.setattr(code_sandbox, "run_python", ran)
     await capability_list.switch(SWITCH[ALONE], False)
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(_pack("alias"))
+        await db.commit()
     root = tmp_path / "data" / "skill_scripts"
     (root / "alias").symlink_to(root / ALONE, target_is_directory=True)
     (root / PART / "via.py").symlink_to(root / ALONE / "main.py")
-    for ref in ("alias/main.py", f"{PART}/via.py"):
+    linked = "is a link (a symlink), so Arslan won't run or read it"
+    for ref, error in (("alias/main.py", f"skill folder {linked}: alias"),
+                       (f"{PART}/via.py", f"skill file {linked}: {PART}/via.py"),
+                       (f"{PART}/main.py", f"skill file {linked}: {PART}/via.py")):
         out = await RunPythonExecutor().execute({"skill_script": ref})
-        assert out == {"ok": False, "external": False, "error": f"skill script not found: {ref}"}, out
+        assert out == {"ok": False, "external": False, "error": error}, out
     assert handed == []
 
+    (root / PART / "via.py").unlink()
     assert (await _run(PART))["ok"] is True
     assert handed == [((root / PART / "main.py").read_text(), {"helper.py": f"WORD = {PART!r}\n"})]
 
