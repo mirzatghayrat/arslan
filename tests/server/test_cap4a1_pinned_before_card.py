@@ -189,17 +189,36 @@ async def test_a_leftover_folder_never_joins_the_skill(monkeypatch, tmp_path):
 
 
 async def test_arslans_own_leftover_in_the_skills_folder_never_joins_the_skill(monkeypatch, tmp_path):
-    """CAP6a: the same for a folder the manifest says Arslan installed, when no row holds it any more."""
+    """CAP6a: the same for a folder the manifest says Arslan installed, when no row holds it any more and it is still
+    exactly what Arslan wrote there."""
     from server.services import agent_skills
     leftover = tmp_path / "home" / ".agents" / "skills" / "weekly-report"
     (leftover / "scripts").mkdir(parents=True)
+    (leftover / "SKILL.md").write_text(MD)
     (leftover / "scripts" / "evil.py").write_text("print('not on the card')\n")
-    agent_skills.record("weekly-report", by=agent_skills.ARSLAN, files={})
+    agent_skills.record("weekly-report", by=agent_skills.ARSLAN, files=agent_skills.read_folder("weekly-report")["files"])
     _github(monkeypatch, GOOD)
     out, cards = await _propose(monkeypatch, approve=True)
     assert out["ok"], out
     assert sorted(p.name for p in (leftover / "scripts").iterdir()) == ["run.py"]
     assert (tmp_path / "home" / ".Trash" / "Arslan leftover skill files weekly-report" / "scripts" / "evil.py").is_file()
+
+
+async def test_a_folder_that_no_longer_matches_arslans_hashes_is_never_taken(monkeypatch, tmp_path):
+    """#795 review: Arslan's entry outlived its row, and the folder under that name is someone else's now (it
+    differs from the hashes): the install is refused and the folder stays, untouched."""
+    from server.services import agent_skills
+    folder = tmp_path / "home" / ".agents" / "skills" / "weekly-report"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(MD)
+    agent_skills.record("weekly-report", by=agent_skills.ARSLAN, files=agent_skills.read_folder("weekly-report")["files"])
+    (folder / "SKILL.md").write_text(MD + "\nthe user's own now\n")
+    _github(monkeypatch, GOOD)
+    prepared = await skill_import.prepare_skill("acme/skills@" + SHA, "skills/weekly/SKILL.md")
+    with pytest.raises(ValueError, match="already in ~/.agents/skills"):
+        await skill_import.install_prepared(prepared)
+    assert (folder / "SKILL.md").read_text() == MD + "\nthe user's own now\n"
+    assert not (tmp_path / "home" / ".Trash").exists()
 
 
 async def test_a_link_under_the_key_is_moved_never_written_through(monkeypatch, tmp_path):

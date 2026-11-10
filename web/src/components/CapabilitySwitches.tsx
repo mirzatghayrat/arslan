@@ -69,7 +69,7 @@ export default function CapabilitySwitches() {
   const [inside, setInside] = useState<string | null>(null);     // the plugin whose parts are shown
   const [sheet, setSheet] = useState<Sheet>(null);
   const [folderCard, setFolderCard] = useState<SkillFolder | null>(null);
-  const load =useCallback(async () => {
+  const load = useCallback(async () => {
     try { setRows(await capabilitiesApi.list()); setFailed(false); }
     catch { setFailed(true); }
   }, []);

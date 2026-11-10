@@ -489,7 +489,7 @@ async def switch(key: str, on: bool) -> None:
         from server.services import agent_skills
         if on and await agent_skills.needs_card(key[6:]):
             try:
-                card = agent_skills.card(key[6:])
+                card = await asyncio.to_thread(agent_skills.card, key[6:])       # off the event loop
             except Exception:  # noqa: BLE001 — a folder that can't be read has nothing to approve: it stays off
                 card = None
             raise NeedsCard(key, card)

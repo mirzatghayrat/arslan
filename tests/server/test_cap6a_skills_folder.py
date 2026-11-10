@@ -465,3 +465,88 @@ async def test_the_dossier_removal_takes_arslans_folder_with_no_row_left(home, e
     assert not (home / ".agents" / "skills" / "weekly-report").exists()
     assert (home / ".Trash" / "Arslan skill weekly-report" / "SKILL.md").is_file()
     assert "weekly-report" not in agent_skills.entries()
+
+
+@pytest.mark.parametrize("whose", ["another tool's entry", "arslan's entry, the folder changed since"])
+async def test_the_dossier_removal_never_takes_a_folder_that_isnt_still_arslans(home, execution_db, whose):
+    """#795 delta review: only a folder still exactly as Arslan installed it goes to the Trash. Another tool's, or one
+    that no longer matches Arslan's hashes (the user's own by now), stays, with its entry."""
+    from server.db.models import CapabilitySource
+    from server.services import capability_dossier
+    async with execution_db() as db:
+        db.add(CapabilitySource(id="src-1", kind="skill", name="Weekly report", candidate_id="github:acme/skills:w",
+                                runtime="skill", needs={}, grants={}, state="installed", skill_key="weekly-report"))
+        await db.commit()
+    folder = _place(home, key="weekly-report")
+    if whose.startswith("another"):
+        agent_skills.record("weekly-report", by=agent_skills.OTHER, files=None)
+    else:
+        agent_skills.record("weekly-report", by=agent_skills.ARSLAN,
+                            files=agent_skills.read_folder("weekly-report")["files"])
+        (folder / "SKILL.md").write_text(SKILL_MD + "\nthe user's own now\n")
+    kept = agent_skills.entries()["weekly-report"]
+    await capability_dossier.remove("src-1")
+    assert (folder / "SKILL.md").exists() and agent_skills.entries()["weekly-report"] == kept
+    assert not (home / ".Trash").exists()
+
+
+# ── #795 delta review: a frontmatter that grows when read, a re-approval, a lost hash file ─────────────────────
+
+def _alias_chain(levels: int) -> str:
+    lines = ["---", "l0: &l0 [x, x, x, x, x, x, x, x, x]"]
+    lines += [f"l{i}: &l{i} [" + ", ".join([f"*l{i - 1}"] * 9) + "]" for i in range(1, levels)]
+    return "\n".join([*lines, f"name: *l{levels - 1}", "description: d", "---", "", "## Trigger", "x", ""])
+
+
+async def test_a_frontmatter_of_aliases_is_refused_at_once(home):
+    """A few hundred bytes of chained aliases grow without bound once turned into text: refused before that, fast,
+    by the parser and so by the folder's reading (never adopted)."""
+    import time
+    from server.services import skill_import
+    text = _alias_chain(9)
+    assert len(text) < 600
+    started = time.monotonic()
+    assert skill_import.parse_skill_md(text, "x/SKILL.md") is None
+    assert time.monotonic() - started < 1.0          # without the refusal: minutes, and gigabytes
+    _place(home, key="zz-aliases", text=text)
+    await agent_skills.sync()
+    assert await _pack("zz-aliases") is None
+    # an anchor alone, and a name or description that is a list or a mapping, are refused too
+    for meta in ("name: &a x\ndescription: d", "name: [a, b]\ndescription: d", "name: n\ndescription: {a: b}"):
+        assert skill_import.parse_skill_md(f"---\n{meta}\n---\n\n## Trigger\nx\n") is None, meta
+    assert skill_import.parse_skill_md("---\nname: 2026\ndescription: d\n---\n\n## Trigger\nx\n")["name"] == "2026"
+
+
+async def test_a_reapproval_whose_hash_write_fails_leaves_it_needing_its_card(api, home, monkeypatch):
+    """Version 1 approved, version 2 approved, the new hashes never written: even with the folder back at version 1's
+    bytes, read_skill refuses (the earlier hashes were cleared before the commit)."""
+    folder = _place(home)
+    await _row()
+    await _approve(api)
+    (folder / "SKILL.md").write_text(SKILL_MD + "\nversion 2\n")
+    digest = agent_skills.card("pdf-notes")["digest"]
+    real = agent_skills.record
+
+    def record(key, *, by, files):
+        if files is not None:
+            raise OSError("the disk is full")
+        real(key, by=by, files=files)
+    monkeypatch.setattr(agent_skills, "record", record)
+    with pytest.raises(OSError):
+        await agent_skills.approve("pdf-notes", digest)
+    monkeypatch.setattr(agent_skills, "record", real)
+    (folder / "SKILL.md").write_text(SKILL_MD)                 # back to version 1
+    out = await ReadSkillExecutor().execute({"key": "pdf-notes"})
+    assert out["ok"] is False and "changed since they were approved" in out["error"], out
+
+
+async def test_a_lost_hash_file_is_healed_at_the_next_read_of_the_folder(api, home, tmp_path):
+    """The lost manifest: the next sync writes another tool's row back as never approved, so its card can be
+    approved again (not stuck at not_found)."""
+    _place(home)
+    await _row()
+    (tmp_path / "data" / "agent_skills.json").unlink()
+    await agent_skills.sync()
+    assert agent_skills.entries()["pdf-notes"] == {"by": "other", "files": None}
+    await _approve(api)
+    assert (await ReadSkillExecutor().execute({"key": "pdf-notes"}))["ok"]

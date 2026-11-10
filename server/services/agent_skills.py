@@ -22,6 +22,7 @@ any other way.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -221,6 +222,14 @@ def _read_or_none(key: str) -> dict | None:
         return None
 
 
+def still_arslans(key: str) -> bool:
+    """Whether the folder under `key` is still exactly what Arslan installed there: its entry says Arslan's and the
+    files match the recorded hashes. Only then may a cleanup move it to the Trash; a folder that differs may be the
+    user's or another tool's by now, and stays where it is."""
+    entry = entries().get(key)
+    return bool(entry) and entry.get("by") == ARSLAN and _matches(_read_or_none(key), entry)
+
+
 async def _orphan(key: str) -> bool:
     """A row another tool's folder made, whose manifest entry is gone (the manifest lost, or a save that never
     happened): never approved, so it needs its card and is never read as Arslan's own (fail closed)."""
@@ -231,15 +240,24 @@ async def _orphan(key: str) -> bool:
 
 # ── the registry's view ────────────────────────────────────────────────────────────────────────────────────────
 
-async def sync() -> dict[str, str]:
-    """Read the folder and bring the rows in line: a new skill folder becomes a row "from another tool", switched off
-    until its card; one whose files changed is switched off; one another tool removed goes (Arslan's own stays, off,
-    for the user to delete). Returns each folder skill's status: "ok", "new" (never approved), "changed" or "gone"."""
+def _list_and_read() -> tuple[list[str], dict[str, dict | None]]:
+    """The folder's plain-named skills and each one read (None: unreadable). Blocking: run in a thread."""
     base = root()
     try:
         names = sorted(e.name for e in os.scandir(base) if plain_key(e.name))[:MAX_SKILLS] if base.is_dir() else []
     except OSError:
         names = []
+    return names, {key: _read_or_none(key) for key in names if key not in SEEDED}
+
+
+async def sync() -> dict[str, str]:
+    """Read the folder and bring the rows in line: a new skill folder becomes a row "from another tool", switched off
+    until its card; one whose files changed is switched off; one another tool removed goes (Arslan's own stays, off,
+    for the user to delete). Returns each folder skill's status: "ok", "new" (never approved), "changed" or "gone".
+
+    The folder is listed and read in a worker thread, off the event loop: a slow disk or a large folder never holds
+    up the server."""
+    names, reads = await asyncio.to_thread(_list_and_read)
     known = entries()
     status: dict[str, str] = {}
     # The manifest changes only after the rows' commit: a failure on the way leaves the rows as they were and the
@@ -264,7 +282,7 @@ async def sync() -> dict[str, str]:
             pack = packs.get(key)
             if pack is not None and key not in known and pack.category != OTHER_TOOL:
                 continue                       # a skill Arslan has from elsewhere: the folder never shadows it
-            read = _read_or_none(key)
+            read = reads.get(key)
             if pack is None:
                 if read is None:
                     continue
@@ -308,7 +326,7 @@ async def checked(key: str) -> dict | None:
     known = entries()
     if key not in known and not await _orphan(key):
         return None
-    read = _read_or_none(key)               # any failure to read is a mismatch: switched off
+    read = await asyncio.to_thread(_read_or_none, key)      # any failure to read is a mismatch: switched off
     if not _matches(read, known.get(key)):
         await _switch_off(key)
         raise Changed(key)
@@ -321,7 +339,7 @@ async def needs_card(key: str) -> bool:
     known = entries()
     if key not in known:
         return await _orphan(key)
-    return not _matches(_read_or_none(key), known[key])
+    return not _matches(await asyncio.to_thread(_read_or_none, key), known[key])
 
 
 def card(key: str) -> dict:
@@ -359,9 +377,11 @@ async def approve(key: str, shown: str) -> None:
         raise NotApproved("not_found")
     if await capability_list._part_of_a_plugin(f"skill:{key}"):
         raise NotApproved("part_of_a_plugin")    # only its plugin's switch reaches a part (CAP7b)
-    try:
+    def read_and_card() -> tuple[dict, dict]:
         read = read_folder(key)                # one read: what is checked here is what is recorded
-        now = _card(key, read)
+        return read, _card(key, read)
+    try:
+        read, now = await asyncio.to_thread(read_and_card)
     except Exception as exc:  # noqa: BLE001 — anything that stops the reading approves nothing
         raise NotApproved("unreadable") from exc
     if now["digest"] != shown:
@@ -374,10 +394,14 @@ async def approve(key: str, shown: str) -> None:
             raise NotApproved("not_found")
         info = read["info"]
         pack.name, pack.description, pack.body, pack.enabled = info["name"], info["description"], info["body"], True
+        by = known[key].get("by") or OTHER
+        # A re-approval clears the earlier hashes first: if the row commits and the new hashes never get written,
+        # the folder (even back at the earlier files) reads as unapproved beside the new text, never as approved.
+        record(key, by=by, files=None)
         await db.commit()
     # After the commit: a commit that fails leaves the files unapproved. Until this line a read finds them
     # unapproved and switches the skill off again (fail closed).
-    record(key, by=known[key].get("by") or OTHER, files=read["files"])
+    record(key, by=by, files=read["files"])
 
 
 def write_new(base: Path, expected: dict[str, str]) -> dict[str, str]:

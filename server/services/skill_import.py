@@ -56,6 +56,17 @@ def _data_dir() -> Path:
     return config.data_dir()
 
 
+class _NoAliases(yaml.SafeLoader):
+    """`safe_load` with no anchors or aliases (v0.1.64 CAP6a review). A few hundred bytes of chained aliases load as
+    shared references and grow without bound once turned into text: a skill another tool puts in ~/.agents/skills,
+    read at every start, could stall the server. Refused while composing, before anything is built."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent) or getattr(self.peek_event(), "anchor", None) is not None:
+            raise yaml.YAMLError("anchors and aliases are not read in a SKILL.md frontmatter")
+        return super().compose_node(parent, index)
+
+
 def parse_skill_md(raw: str, path: str = "") -> dict | None:
     """Parse a standard SKILL.md: YAML frontmatter (needs name+description) + markdown body. The key is the
     name's ASCII letters and digits; a name with none (Chinese, for example) takes its folder's, else a short
@@ -64,10 +75,13 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
     if not m:
         return None
     try:
-        meta = yaml.safe_load(m.group(1)) or {}
-    except yaml.YAMLError:
+        meta = yaml.load(m.group(1), Loader=_NoAliases) or {}
+    except (yaml.YAMLError, RecursionError):
         return None
     if not isinstance(meta, dict) or not meta.get("name") or not meta.get("description"):
+        return None
+    # And a name or description is a plain value, never a list or a mapping (only those are turned into text).
+    if isinstance(meta["name"], (list, dict)) or isinstance(meta["description"], (list, dict)):
         return None
     # UNI1: the name and description through the one name cleaner; the body keeps ordinary text, and loses
     # only Tag and control characters (`cleaned` says whether it lost any).
@@ -440,8 +454,9 @@ async def install_prepared(prepared: dict, *, source_id: str | None = None) -> d
     if os.path.lexists(leftover):
         capability_install.to_trash(leftover, prefix="Arslan leftover skill files")
     folder = agent_skills.folder(key)
-    if (agent_skills.entries().get(key) or {}).get("by") == agent_skills.ARSLAN and os.path.lexists(folder):
-        # Arslan's own folder with no row (a removal cut short): a leftover too, never joined to the new skill.
+    if agent_skills.still_arslans(key):
+        # Arslan's own folder with no row (a removal cut short), exactly as it installed it: a leftover too, never
+        # joined to the new skill. One that differs from its hashes may be someone else's now: refused below.
         capability_install.to_trash(folder, prefix="Arslan leftover skill files")
         agent_skills.forget(key)
     body = _body(prepared, key, info, sha, stored, stored_refs)
