@@ -646,7 +646,11 @@ BASH_32_BUILTINS = (". : [ alias bg bind break builtin caller cd command compgen
 @pytest.mark.parametrize("builtin", BASH_32_BUILTINS)
 def test_every_bash_builtin_is_either_read_or_refused(builtin):
     reading = shell_grammar.read(builtin)
-    if builtin in shell_grammar.SAFE_BUILTINS or builtin in ("exec", "command"):
+    if builtin in ("cd", "pushd", "popd"):           # Unknown folder observations do not refuse commands.
+        assert reading.understood and reading.commands == ((builtin,),)
+        if builtin != "popd":
+            assert shell_grammar.read(f"{builtin} zz-folder").commands == ((builtin, "zz-folder"),)
+    elif builtin in shell_grammar.SAFE_BUILTINS or builtin in ("exec", "command"):
         assert reading.understood, reading.why
         assert reading.commands == ((builtin,),)
     else:
