@@ -74,6 +74,18 @@ export default function CapabilitySwitches() {
     catch { setFailed(true); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // CAP6a part 2: told once, in one line, that the imported skills moved to the folder other tools share. "Seen" is
+  // written as soon as it shows, so it never shows again, whether or not the page stays open.
+  const [exported, setExported] = useState(0);
+  useEffect(() => {
+    let live = true;
+    capabilitiesApi.exportNotice().then(({ count }) => {
+      if (!live || !count) return;
+      setExported(count);
+      void capabilitiesApi.exportNoticeSeen().catch(() => { /* at worst it shows once more next time */ });
+    }).catch(() => { /* no line: nothing else depends on it */ });
+    return () => { live = false; };
+  }, []);
 
   const merge = (next: CapabilityRow) => setRows(old => old?.map(r => (r.key === next.key ? { ...r, ...next } : r)) ?? old);
   async function flip(row: CapabilityRow, on: boolean) {
@@ -205,6 +217,7 @@ export default function CapabilitySwitches() {
         {rows && <div className="min-w-[200px] flex-1"><CapabilityFilter testId="cap-search" value={query} onChange={setQuery}
           shown={shown.length} total={inFilter.length} /></div>}
       </div>
+      {exported > 0 && <Notice testId="cap-export-notice">{t("capabilityList.exportedNotice", { count: exported })}</Notice>}
       {failed && <Notice tone="error" role="alert">{t("capabilityList.loadFailed")}</Notice>}
       {error && <Notice tone="error" role="alert">{error}</Notice>}
       {rows && searching && shown.length === 0 &&

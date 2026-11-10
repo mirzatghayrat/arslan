@@ -17,8 +17,9 @@ the data folder, as every skill did before CAP6a. The one-time export (`export_i
 the skills imported before CAP6a into the folder at start, once.
 
 Every change to the manifest that goes with a commit of the rows holds `manifest_lock()` from its first write to its
-last, and so does every reading of the folder that switches skills off: a reload between an approval's commit and
-its hash write (#795 review) waits for the hashes instead of switching the just-approved skill off.
+last, and so does every switch-off after a reading of the folder (the reading itself is done before it): a reload
+between an approval's commit and its hash write (#795 review) waits for the hashes instead of switching the
+just-approved skill off.
 
 Not read: a folder name that is not a plain key (lowercase letters, digits and hyphens, at most 60), a seed's key,
 the key of a skill Arslan already has from elsewhere, a folder that is a link or holds one, and one past the size
@@ -53,6 +54,9 @@ MAX_SKILLS = 200
 MAX_FILES = 100
 MAX_BYTES = 5_000_000            # one skill's files together
 _KEY = re.compile(r"[a-z0-9][a-z0-9-]{0,59}")
+#: Files Finder writes into any folder it opens. Never read or run by anything, so never hashed: one would read as a
+#: change and switch the skill off (#808 review).
+_IGNORED = frozenset({".DS_Store"})
 ARSLAN, OTHER = "arslan", "other"
 #: What the model is told when a folder skill's files no longer match what was approved.
 CHANGED = ("its files in ~/.agents/skills changed since they were approved, so it is switched off. The user can "
@@ -162,11 +166,11 @@ def scripts_dir(key: str) -> Path:
     """Where a skill's bundled scripts are: `scripts/` in its folder, or (not yet exported) the data folder's
     `skill_scripts/<key>/`, as RunPythonExecutor and the registry's health checks have read them.
 
-    The data-folder branch here and in `references_dir` stays after the export (`export_imported`): it is where a
-    skill the export could not move keeps working (a folder another tool has under its key, a failure), and where an
-    exported skill falls back to if the manifest is lost (the export leaves the data folder's copy in place).
-    DELETE-BY: not before v0.1.66, and only after a skill the export kept (`export_state()["kept"]`) has a way to
-    move, and a lost manifest a way to heal without the copy."""
+    After the export (`export_imported`) the data-folder branch here and in `references_dir` serves only what it did
+    not move: a skill switched off at the time, or one it kept (a folder another tool has under its key, a failure;
+    `export_state()["kept"]`). An exported skill's copy is removed once its folder is checked.
+    DELETE-BY: v0.1.64 (CAP6a). The release check lists it; what then still reads from the data folder (the skills
+    above) needs the user's decision before the branch goes."""
     from server import config
     return folder(key) / "scripts" if is_folder_skill(key) else Path(config.data_dir()) / "skill_scripts" / key
 
@@ -179,8 +183,13 @@ def references_dir(key: str) -> Path:
 # ── reading one folder ─────────────────────────────────────────────────────────────────────────────────────────
 
 def _read_file(path: Path) -> bytes:
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    """A regular file's bytes, never through a link. Opened without blocking and checked as opened (#808 review): a
+    FIFO swapped in after the caller's lstat would otherwise hold the open until something writes to it. Raises
+    OSError for anything that is not a regular file."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise OSError(f"not a regular file: {path.name}")
         return handle.read(MAX_BYTES + 1)
 
 
@@ -216,6 +225,8 @@ def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
             if (here / name).is_symlink():
                 raise Unreadable("holds a link")
         for name in sorted(names):
+            if name in _IGNORED:
+                continue
             path = here / name
             try:
                 mode = os.lstat(path).st_mode
@@ -296,15 +307,35 @@ async def sync() -> dict[str, str]:
     for the user to delete). Returns each folder skill's status: "ok", "new" (never approved), "changed" or "gone".
 
     The folder is listed and read in a worker thread, off the event loop: a slow disk or a large folder never holds
-    up the server. All of it under `manifest_lock()`, the listing included: an approval or an install half done
-    (its rows committed and its hashes not yet written, or the other way round) is waited for, never read."""
-    async with manifest_lock():
-        return await _sync()
-
-
-async def _sync() -> dict[str, str]:
+    up the server. The read is not under `manifest_lock()` (#808 review: one slow read held up every install, approval
+    and folder-skill read). The rows and the manifest change under it, after it is taken: an approval or an install
+    half done (its rows committed and its hashes not yet written, or the other way round) is waited for. A skill
+    whose manifest entry changed while the folder was read (an install, an approval, a delete) is read again then."""
+    before = entries()
     names, reads = await asyncio.to_thread(_list_and_read)
-    known = entries()
+    async with manifest_lock():
+        known = entries()
+        moved = sorted(k for k in set(known) | set(before) if known.get(k) != before.get(k))
+        if moved:
+            names, reads = await asyncio.to_thread(_read_again, names, reads, moved)
+        return await _sync(names, reads, known)
+
+
+def _read_again(names: list[str], reads: dict, keys: list[str]) -> tuple[list[str], dict]:
+    """`_list_and_read` again for `keys` only: what an Arslan writer changed while the folder was being read."""
+    names, reads = set(names), dict(reads)
+    for key in keys:
+        if os.path.lexists(folder(key)):
+            names.add(key)
+            if key not in SEEDED:
+                reads[key] = _read_or_none(key)
+        else:
+            names.discard(key)
+            reads.pop(key, None)
+    return sorted(names), reads
+
+
+async def _sync(names: list[str], reads: dict, known: dict) -> dict[str, str]:
     status: dict[str, str] = {}
     # The manifest changes only after the rows' commit: a failure on the way leaves the rows as they were and the
     # manifest too, never a row whose entry is gone (and an entry with no row reads as nothing).
@@ -373,7 +404,11 @@ async def checked(key: str) -> dict | None:
     if key not in known and not await _orphan(key):
         return None
     read = await asyncio.to_thread(_read_or_none, key)      # any failure to read is a mismatch: switched off
-    async with manifest_lock():          # the hashes as they are once an approval in progress has written them
+    if _matches(read, entries().get(key)):
+        return read
+    # A mismatch: compared again under the lock, so an approval in progress (its row on, its hashes not yet written)
+    # is waited for instead of switched off.
+    async with manifest_lock():
         if not _matches(read, entries().get(key)):
             await _switch_off(key)
             raise Changed(key)
@@ -489,14 +524,18 @@ def skill_md(name: str, description: str, body: str) -> str:
 # ── the one-time export (CAP6a, second part) ───────────────────────────────────────────────────────────────────
 #
 # Skills imported before CAP6a (`SkillPack` rows with category "imported" or a `source_id`) have their scripts and
-# references in <data>/skill_scripts/<key>/. `export_imported` moves each, at the same version, into
-# ~/.agents/skills/<key>/ with part 1's install path (`write_new`: each file created new, then read back) and hash
-# records (`record`, by Arslan). The rows are not changed: the manifest entry is what makes a row folder-backed.
+# references in <data>/skill_scripts/<key>/. `export_imported` moves each one that is switched on, at the same
+# version, into ~/.agents/skills/<key>/ with part 1's install path (`write_new`: each file created new, then read
+# back) and hash records (`record`, by Arslan). The rows are not changed: the manifest entry is what makes a row
+# folder-backed. A skill the user switched off stays in the data folder (the shared folder would show it to other
+# tools as available). Once a skill's folder passes the check after (count and hashes), its data-folder copy goes:
+# there is never a second copy (the plan's decision 3); the backup keeps one.
 #
-# Where it runs: at start (server/main.py), after the seeds and before the folder is first read (`sync`) and before
-# any request. Nothing else changes the rows or the folder then, so every skill goes over in one consistent state, and
-# the start's `sync` already finds each exported skill "ok". Its file work runs in a worker thread (as `sync` reads
-# the folder since #795): a large data folder or a slow disk never holds up the event loop.
+# Where it runs: at start (server/main.py `_boot_skills`), after a cut-short plugin install is cleaned up
+# (plugin_package.finish_interrupted: its parts are never exported, then removed) and before the folder is first
+# read (`sync`) and before any request. Nothing else changes the rows or the folder then, so every skill goes over in
+# one consistent state, and the start's `sync` already finds each exported skill "ok". Its file work runs in a worker
+# thread (as `sync` reads the folder since #795): a large data folder or a slow disk never holds up the event loop.
 #
 # What happens if Arslan stops at each step (none of these states is ever read wrongly, and the next start finishes):
 #  1. Making the backup: a `.partial` folder under <data>/backups. Nothing else changed. Next start: it goes, and the
@@ -508,12 +547,17 @@ def skill_md(name: str, description: str, body: str) -> str:
 #     Arslan has from elsewhere is never shadowed), and the skill reads from the data folder. Next start: the folder
 #     holds exactly the files the export writes (SKILL.md is deterministic), so it is taken as the export's own.
 #  5. Hashes recorded, not yet checked: the skill is folder-backed, its files read back against the hashes when they
-#     were written. Next start: the record "running" lists its key, so it is checked then.
-#  6. Checked, record "done" not yet written: next start checks again and writes it.
+#     were written (from the original files). Next start: the record "running" lists its key, so it is checked then,
+#     against those recorded hashes.
+#  6. Checked, its data-folder copy being removed (all, part or none of it gone), record "done" not yet written: the
+#     skill is folder-backed and runs from the folder, never from what is left of the copy. Next start: checked
+#     again against its recorded hashes (the copy is not needed for that), and what is left of the copy goes.
 #  7. Done: the export never runs again.
 # A failure at any step but the backup leaves that one skill where it was (its manifest entry forgotten, its folder,
 # when the export made it, to the Trash), working from the data folder, and the export goes on with the others. A
-# failed backup changes nothing; the next start tries again. The data folder's copy is never removed by the export.
+# failed backup changes nothing; the next start tries again. The data folder's copy goes only after its skill passed
+# the check. After that, a lost manifest leaves the skill's row (its text still reads) but not its scripts: it fails
+# closed (run_python finds nothing), as a skill installed since #795 does.
 
 EXPORT_BACKUP = "cap6a-skill-export"
 _STAGE = ".arslan-export-"
@@ -532,7 +576,7 @@ def _data_folder(key: str) -> Path:
 
 def _candidate(pack: SkillPack, known: dict, running: set[str]) -> bool:
     imported = (pack.category == "imported" or pack.source_id is not None) and pack.category != OTHER_TOOL
-    return (imported and plain_key(pack.key) and pack.key not in SEEDED
+    return (imported and pack.enabled is not False and plain_key(pack.key) and pack.key not in SEEDED
             and (pack.key not in known or pack.key in running))
 
 
@@ -574,6 +618,10 @@ def _clear(path: Path) -> None:
         shutil.rmtree(path)
 
 
+def _write_rows(path: Path, rows: dict) -> None:
+    path.write_text(json.dumps(rows, indent=1, sort_keys=True), encoding="utf-8")
+
+
 def _backup(packs: list[dict], olds: dict[str, dict[str, str]]) -> str:
     """Before anything moves: each candidate's row (its text included) and its whole data folder, under
     <data>/backups/, then read back. Made under a `.partial` name and renamed whole, so a backup that is there is
@@ -595,7 +643,7 @@ def _backup(packs: list[dict], olds: dict[str, dict[str, str]]) -> str:
             if os.path.lexists(_data_folder(key)):
                 shutil.copytree(_data_folder(key), partial / "skill_scripts" / key, symlinks=True)
             rows[key] = {**pack, "files": _hashes(olds.get(key, {}))}
-        (partial / "skills.json").write_text(json.dumps(rows, indent=1, sort_keys=True), encoding="utf-8")
+        _write_rows(partial / "skills.json", rows)
         # Read back: every file the export copies is in the backup byte for byte, and so is every row.
         for key, files in olds.items():
             for rel, text in files.items():
@@ -673,6 +721,8 @@ def _export(packs: list[dict], running: set[str]) -> dict:
     kept: dict[str, str] = {}
     olds: dict[str, dict[str, str]] = {}
     for pack in packs:
+        if pack["key"] in known:
+            continue             # recorded by a start cut short: checked below against its recorded hashes
         try:
             olds[pack["key"]] = _old_files(pack["key"])
         except _Kept as why:
@@ -687,11 +737,14 @@ def _export(packs: list[dict], running: set[str]) -> dict:
         key = pack["key"]
         if key in kept:
             continue
+        if key in known:
+            # Its hashes were read back against the original files when they were written; its data-folder copy
+            # may be gone already (step 6), so it is checked against them.
+            wants[key] = dict(known[key].get("files") or {})
+            continue
         expected = {**olds[key], "SKILL.md": skill_md(pack["name"] or key, pack["description"] or "",
                                                      (pack["body"] or "").strip())}
         wants[key] = _hashes(expected)
-        if key in known:
-            continue                                 # recorded by a start cut short: checked below
         if skill_import.parse_skill_md(expected["SKILL.md"], f"{key}/SKILL.md") is None:
             kept[key] = "its text is not a valid SKILL.md"
             continue
@@ -699,20 +752,27 @@ def _export(packs: list[dict], running: set[str]) -> dict:
             _export_one(key, expected, wants[key])
         except _Kept as why:
             kept[key] = str(why)
-    exported = []
+    exported, left = [], []
     for key, want in sorted(wants.items()):
         if key in kept:
             continue
         entry = entries().get(key)
         if entry is not None and entry.get("by") == ARSLAN and _same(_read_or_none(key), want):
             exported.append(key)
+            # Checked: the data folder's copy goes, so there is one copy (the backup keeps another). A copy that
+            # can't go is left and reported; the skill runs from its folder either way.
+            try:
+                _clear(_data_folder(key))
+            except OSError as exc:
+                logger.warning("the data-folder copy of skill %s was not removed: %s", key, type(exc).__name__)
+                left.append(key)
             continue
-        forget(key)                                  # back to the data folder, which the export never touched
+        forget(key)                                  # back to the data folder, which is still whole
         kept[key] = "check failed"
     if sorted(exported + list(kept)) != sorted(p["key"] for p in packs):
         raise RuntimeError("the export lost count of its skills")      # never: every candidate is in one of them
     report = {"state": "done", "exported": exported, "kept": dict(sorted(kept.items())), "backup": backup,
-              "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+              "copies_left": left, "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     _save(entries(), export=report)
     return report
 
@@ -734,7 +794,7 @@ async def export_imported() -> dict | None:
                      for p in (await db.execute(select(SkillPack).order_by(SkillPack.key))).scalars()
                      if _candidate(p, known, running)]
         if not packs:
-            report = {"state": "done", "exported": [], "kept": {}, "backup": None,
+            report = {"state": "done", "exported": [], "kept": {}, "backup": None, "copies_left": [],
                       "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
             _save(entries(), export=report)
             return report
@@ -744,3 +804,19 @@ async def export_imported() -> dict | None:
     logger.info("skills exported to ~/.agents/skills: %d (kept in the data folder: %d)", len(report["exported"]),
                 len(report["kept"]))
     return report
+
+
+def export_notice() -> int:
+    """How many skills the export moved, while the one line that tells the user (on the Capabilities page) has not
+    been shown yet; 0 otherwise. The folder is shared, so other tools can now read and use them."""
+    state = export_state()
+    if not state or state.get("state") != "done" or state.get("notice_shown"):
+        return 0
+    return len(state.get("exported") or [])
+
+
+def export_notice_shown() -> None:
+    """The page showed the line: it never shows again (recorded in the export's record, in the data folder)."""
+    state = export_state()
+    if state and state.get("state") == "done" and not state.get("notice_shown"):
+        _save(entries(), export={**state, "notice_shown": True})

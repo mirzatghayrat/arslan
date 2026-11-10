@@ -303,6 +303,33 @@ async def _start_mcp_supervisor() -> bool:
     return True
 
 
+async def _boot_skills() -> None:
+    """After the seeds, before the MCP supervisor and any request. Each step is logged and never blocks boot."""
+    from server.services import agent_skills, plugin_package
+
+    # CAP7b: a plugin install a plain Quit cut short goes, before the supervisor can start what it left on. First:
+    # its parts are switched off and removed before the export could move them into the shared folder (#808 review).
+    try:
+        await plugin_package.finish_interrupted()
+    except Exception as exc:  # noqa: BLE001 — must never block boot
+        logger.warning("plugin installs cut short were not checked at boot (non-fatal): %s", exc)
+
+    # CAP6a part 2: skills imported before CAP6a go to ~/.agents/skills once, here: before the folder is first read
+    # and before any request, so nothing changes the rows or the folder meanwhile (agent_skills.export_imported has
+    # the steps and what a stop at each leaves). Its file work runs in a worker thread. A failure leaves every skill
+    # working from the data folder as before.
+    try:
+        await agent_skills.export_imported()
+    except Exception as exc:  # noqa: BLE001 — never blocks boot; the next start tries again
+        logger.warning("imported skills were not exported to ~/.agents/skills at boot (non-fatal): %s", exc)
+
+    # CAP6a: ~/.agents/skills is read at start, after the seeds: a skill whose files changed is switched off.
+    try:
+        await agent_skills.sync()
+    except Exception as exc:  # noqa: BLE001 — never blocks boot; read_skill checks each folder skill anyway
+        logger.warning("the skill folder was not read at boot (non-fatal): %s", exc)
+
+
 async def _boot_mcp() -> None:
     """MCP at boot (0.1.61 §B1): the supervisor. It never breaks boot."""
     try:
@@ -374,32 +401,7 @@ async def lifespan(app: FastAPI):
 
     await seed_registry()
 
-    # CAP6a part 2: skills imported before CAP6a go to ~/.agents/skills once, here: before the folder is first read
-    # and before any request, so nothing changes the rows or the folder meanwhile (agent_skills.export_imported has
-    # the steps and what a stop at each leaves). Its file work runs in a worker thread. A failure leaves every skill
-    # working from the data folder as before, and never blocks boot.
-    try:
-        from server.services import agent_skills
-
-        await agent_skills.export_imported()
-    except Exception as exc:  # noqa: BLE001 — never blocks boot; the next start tries again
-        logger.warning("imported skills were not exported to ~/.agents/skills at boot (non-fatal): %s", exc)
-
-    # CAP6a: ~/.agents/skills is read at start, after the seeds: a skill whose files changed is switched off.
-    try:
-        from server.services import agent_skills
-
-        await agent_skills.sync()
-    except Exception as exc:  # noqa: BLE001 — never blocks boot; read_skill checks each folder skill anyway
-        logger.warning("the skill folder was not read at boot (non-fatal): %s", exc)
-
-    # CAP7b: a plugin install a plain Quit cut short goes, before the supervisor can start what it left on.
-    try:
-        from server.services import plugin_package
-
-        await plugin_package.finish_interrupted()
-    except Exception as exc:  # noqa: BLE001 — must never block boot
-        logger.warning("plugin installs cut short were not checked at boot (non-fatal): %s", exc)
+    await _boot_skills()
 
     # 0.1.61 §B1: the MCP supervisor starts every enabled server in the background; the PB-4
     # opt-in health sweep runs only when the supervisor is off. Never blocks boot.
