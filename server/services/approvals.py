@@ -488,8 +488,9 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
 
     def plain(old: str, **where) -> str:
         # #689 review 2: a card that also asks for the network says so in its title.
+        # #817 review: the frame's reading of the same text, when it has one, so the command is read once.
         return card_purpose.phrase(shell, why, rules, lang=lang, network=network, delete_mode=delete_mode,
-                                   **where) if lang else old
+                                   reading=card_purpose.frame_reading(frame, shell), **where) if lang else old
     if rules:
         # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
         # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.

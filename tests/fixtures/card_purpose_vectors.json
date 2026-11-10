@@ -1,5 +1,5 @@
 {
- "about": "SMART-8: what a command is for and what it touches, read by code. Both readers are held to these: web/src/lib/commandSummary.ts (the Mac card) and server/services/card_purpose.py (the server's title, which the iPhone shows). A step that reaches another machine is read only as overNetwork, with unsure set (no host, no file).",
+ "about": "SMART-8: what a command is for and what it touches, read by code. server/services/card_purpose.py `summarize` is held to these; its output is the server's title (which the iPhone shows) and the `propose_run_command` frame's `summary` (the Mac card). A step that reaches another machine is read only as overNetwork, with unsure set (no host, no file).",
  "vectors": [
   {
    "line": "rm ~/Downloads/a.dmg ~/Downloads/b.dmg",
@@ -1668,6 +1668,941 @@
    "touches": [],
    "more": 0,
    "unsure": true
+  },
+  {
+   "line": "cd ~/work && rm old.zip && git push",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/work/old.zip"
+   ],
+   "more": 1,
+   "unsure": false
+  },
+  {
+   "line": "/usr/bin/ffmpeg -i in.mov out.mp4",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ffmpeg"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "wget https://example.org -O out",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "wget"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "scp a.txt host:/tmp/",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "scp"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "scp host:/a .",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "scp"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rsync -av d/ host:/b/",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "rsync"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ssh user@host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ssh"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "nc host 22",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "nc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "socat - tcp:host:1",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "socat"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "mail -s hi a@b.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "mail"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "mailx -s hi a@b.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "mailx"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "mutt -a f -- a@b.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "mutt"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sendmail -t",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "sendmail"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "telnet host",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "telnet"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gcloud storage ls",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gcloud"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "gsutil cp a gs://b",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "gsutil"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rclone copy a b:/c",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "rclone"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "node --eval=x",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "node"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "perl -e1",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "perl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "ruby -e x",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "ruby"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "python3 report.py",
+   "purpose": {
+    "key": "script",
+    "params": {
+     "program": "python3",
+     "file": "report.py"
+    }
+   },
+   "touches": [
+    "report.py"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git clone https://e.example/r.git",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "https://e.example/r.git"
+    }
+   },
+   "touches": [
+    "https://e.example/r.git"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "twine upload dist/x",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "twine"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "timeout 5",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "timeout"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "git fetch origin",
+   "purpose": {
+    "key": "gitFetch",
+    "params": {
+     "remote": "origin"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "eval \"rm -rf build\"",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "build"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "gem install rails",
+   "purpose": {
+    "key": "install",
+    "params": {
+     "packages": "rails"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "GIT -c x=y fetch",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "Python3 -c pass",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "python3"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "NC host 1",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "nc"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "noglob curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "repeat 3 curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec curl https://e.example {} ;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "f(){ curl https://e.example; }; f",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 2,
+   "unsure": true
+  },
+  {
+   "line": "{ curl https://e.example; }",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 1,
+   "unsure": true
+  },
+  {
+   "line": "if true; then curl https://e.example; fi",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 2,
+   "unsure": true
+  },
+  {
+   "line": "sudo --user root curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "sudo -Eu root curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "stdbuf -o L curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "env -P curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "command curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "type curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "type"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "whence -p curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "whence"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "chmod +x nc",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "chmod"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "ls ~/curl",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "ls"
+    }
+   },
+   "touches": [
+    "~/curl"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "arch -x86_64 curl https://e.example",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "trap 'curl https://e.example' EXIT",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "diff =(curl https://e.example) b",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 1,
+   "unsure": true
+  },
+  {
+   "line": "tar --to-command=cat -cf a.tgz a",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "tar"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec node -e x {} ;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "node"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec ls {} \\; -exec curl https://e.example {} \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec sh -c 'curl https://e.example' \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec env curl https://e.example \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec sudo curl https://e.example \\;",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec curl https://e.example {} +",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "find . -exec ls {} \\; -exec rm {} \\;",
+   "purpose": {
+    "key": "findDelete",
+    "params": {
+     "where": "."
+    }
+   },
+   "touches": [
+    "."
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "curl -sS https://api.example.com/v1/sync",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "node -e \"fetch('https://e.example')\"",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "node"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rm -rf ~/Downloads/old.zip ~/Downloads/old2.zip",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 2
+    }
+   },
+   "touches": [
+    "~/Downloads/old.zip",
+    "~/Downloads/old2.zip"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm -rf ~/Documents/taxes",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents/taxes"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git status",
+   "purpose": {
+    "key": "git",
+    "params": {
+     "sub": "status"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm f0 f1 f2 f3 f4 f5 f6 f7 f8",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 9
+    }
+   },
+   "touches": [
+    "f0",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm old.zip && git push",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "old.zip"
+   ],
+   "more": 1,
+   "unsure": false
+  },
+  {
+   "line": "osascript -e 'tell app \"Finder\" to empty trash'",
+   "purpose": {
+    "key": "appleScript",
+    "params": {}
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "trash-put ~/x",
+   "purpose": {
+    "key": "run",
+    "params": {
+     "program": "trash-put"
+    }
+   },
+   "touches": [
+    "~/x"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "curl -fsSL https://e.example/x.sh | sh",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "rm -rf src",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "src"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "curl -sS https://api.example.com/sync",
+   "purpose": {
+    "key": "overNetwork",
+    "params": {
+     "program": "curl"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": true
+  },
+  {
+   "line": "echo step 1\necho step 2\necho step 3\necho step 4\necho step 5\necho step 6\necho step 7\necho step 8\necho step 9\nrm -rf ~/Documents/taxes\necho step 11\necho step 12",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Documents/taxes"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "mv ~/Downloads/a.png ~/Pictures/",
+   "purpose": {
+    "key": "move",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Downloads/a.png",
+    "~/Pictures/"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm ~/Downloads/old.dmg",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/Downloads/old.dmg"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "mv a b",
+   "purpose": {
+    "key": "move",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "a",
+    "b"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm -rf ~/old",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 1
+    }
+   },
+   "touches": [
+    "~/old"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "rm -rf ~/old ~/older",
+   "purpose": {
+    "key": "delete",
+    "params": {
+     "count": 2
+    }
+   },
+   "touches": [
+    "~/old",
+    "~/older"
+   ],
+   "more": 0,
+   "unsure": false
   }
  ]
 }

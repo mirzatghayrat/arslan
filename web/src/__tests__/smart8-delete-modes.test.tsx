@@ -5,7 +5,8 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { commandRisk, deletePurpose, summarize } from "../lib/commandSummary";
+import { commandRisk, deletePurpose } from "../lib/commandRisk";
+import { serverSummary } from "./serverReading";
 import en from "../locales/en.json";
 import zh from "../locales/zh.json";
 import ja from "../locales/ja.json";
@@ -21,7 +22,7 @@ vi.mock("react-i18next", () => ({
 import RunCommandCard from "../components/RunCommandCard";
 
 const card = (deleteMode?: string, deleteTargets?: string[]) => render(
-  <RunCommandCard callId="c1" pretty="rm -rf ~/old" rules={["delete-outside"]} deleteMode={deleteMode}
+  <RunCommandCard callId="c1" pretty="rm -rf ~/old" summary={serverSummary("rm -rf ~/old")} rules={["delete-outside"]} deleteMode={deleteMode}
     deleteTargets={deleteTargets} onConfirm={vi.fn()} onCancel={vi.fn()} />);
 
 describe("the risk row by delete mode", () => {
@@ -44,13 +45,13 @@ describe("the risk row by delete mode", () => {
 });
 
 describe("the purpose by delete mode", () => {
-  const read = summarize("rm -rf ~/old ~/older").purpose;
+  const read = serverSummary("rm -rf ~/old ~/older").purpose;
   it("a move to the Trash says so, with its count", () => {
     for (const mode of ["trash", "protected"]) expect(deletePurpose(read, mode)).toEqual({ ...read, key: "toTrash" });
   });
   it("anything else stays a delete", () => {
     for (const mode of ["permanent", "sandboxed", undefined]) expect(deletePurpose(read, mode).key).toBe("delete");
-    expect(deletePurpose(summarize("git status").purpose, "trash").key).not.toBe("toTrash");
+    expect(deletePurpose(serverSummary("git status").purpose, "trash").key).not.toBe("toTrash");
   });
 });
 

@@ -177,7 +177,7 @@ async def test_a_named_rule_first_leaves_the_kind_unsaid(execution_db):
 
 
 def _ts_set(name: str) -> set[str]:
-    src = (ROOT / "web/src/lib/commandSummary.ts").read_text(encoding="utf-8")
+    src = (ROOT / "web/src/lib/commandRisk.ts").read_text(encoding="utf-8")
     body = re.search(rf"export const {name} = new Set\(\[(.*?)\]\)", src, re.S)
     assert body, name
     return set(re.findall(r'"([a-z-]+)"', body.group(1)))
