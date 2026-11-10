@@ -108,6 +108,9 @@ async def test_apple_events_stay_refused(loosest, monkeypatch):
     text = hr.first_command(_THREE + "test_layer_two_asks_this_time_only", "apple-events")
     cards, started, _ = await _run(monkeypatch, text, approve_card=False)
     assert len(cards) == 1 and started == []
+    # A plain call (one that U11 would run bare), approved by something other than the asking window's own click:
+    # it stays wrapped, so the profile still refuses Apple Events.
+    monkeypatch.setattr("server.services.task_service.unwrapped_once", lambda command: True)
     approvals.LAST_OUTCOME.set(None)
     cards, started, _ = await _run(monkeypatch, text, approve_card=True)
     assert len(cards) == 1 and "(deny appleevent-send)" in _profile(started).splitlines()

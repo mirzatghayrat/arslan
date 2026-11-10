@@ -149,6 +149,16 @@ def test_every_once_only_rule_is_never_auto_by_its_text_or_its_card():
     assert not hard_rules.never_auto(_command(harmless))
 
 
+def test_an_ask_rule_not_yet_placed_is_never_auto(monkeypatch):
+    """A rule added to the parser later, before it is placed in NEVER_AUTO_RULES, fails closed."""
+    harmless = hr.first_command(HARMLESS_CASES)
+    monkeypatch.setattr(tp, "assess", lambda command: tp.Assessment("ask", STAND_IN, STAND_IN))
+    monkeypatch.setattr(tp, "ask_rules", lambda command: {STAND_IN})
+    assert STAND_IN not in hard_rules.NEVER_AUTO_RULES
+    assert hard_rules.never_auto(_command(harmless)) is True
+    assert hard_rules.never_auto(_command(harmless, target="rules:" + STAND_IN)) is True
+
+
 def test_a_forbidden_command_is_never_auto():
     for case in hr.cases(FORBID_CASES):
         assert hard_rules.never_auto(_command(case["command"])), case["rule"]

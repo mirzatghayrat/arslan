@@ -11,7 +11,7 @@ test that proves it:
 
 The rule keys and kinds come from the tables that decide them (terminal_policy, permissions), never copied: a row
 names a key, and tests/server/test_hard_rules.py fails when a key or a kind has no row, or a row's test is not
-collected. This module decides nothing yet but `never_auto`; the island reads its command part.
+collected. This module decides nothing yet but `never_auto`; the island reads its rule set (it doesn't call it).
 """
 from __future__ import annotations
 
@@ -179,7 +179,8 @@ def never_auto(request) -> bool:
         if not isinstance(detail, str) or not isinstance(target, str):
             return True
         named = set(target.removeprefix("rules:").split("|")) if target.startswith("rules:") else set()
-        if (terminal_policy.assess(detail).level == "forbid"
-                or (named | terminal_policy.ask_rules(detail)) & NEVER_AUTO_RULES):
+        # Fails closed: anything but a plain run, or any rule at all (a once-only one, or one added to the parser
+        # later and not yet placed), is the user's to answer.
+        if terminal_policy.assess(detail).level != "run" or named or terminal_policy.ask_rules(detail):
             return True
     return _writes_run_later(request)
