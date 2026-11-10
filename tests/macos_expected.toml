@@ -45,6 +45,13 @@ markers = 14
 cases = 58
 xfail = 0
 
+# Step 5 local counts: one ran; three spool and two signal rows lack a usable control.
+# The skipped boundaries are unmeasured. Recount on the macOS CI host; skips still fail its gate.
+["server/sbx/test_sbx3_outside_reach.py"]
+markers = 3
+cases = 1
+xfail = 0
+
 # 0.1.64 SBX-3a §1a: a sandboxed command writes its own run's TMPDIR. Seatbelt is macOS-only.
 ["server/sbx/test_sbx3_run_temp.py"]
 markers = 1
