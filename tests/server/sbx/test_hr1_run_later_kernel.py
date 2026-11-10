@@ -71,6 +71,21 @@ def test_a_plain_write_to_each_family_is_refused_and_one_beside_it_is_not(sbx, f
 
 @pytest.mark.macos
 @macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_a_dependency_folder_may_hold_them_and_the_same_names_elsewhere_stay_refused(sbx):
+    """#813 review: a package under node_modules ships its own CI and editor files, which nothing runs from there.
+    The same names at the work folder's root and in an ordinary nested folder stay refused."""
+    dependency = f"node_modules/{STAND_IN}"
+    names = [".github/workflows/ci.yml", ".vscode/settings.json"]
+    inside = [f"{dependency}/{n}" for n in names]
+    outside = [*names, *(f"{STAND_IN}-lib/{n}" for n in names), *(f"not-node_modules/{n}" for n in names)]
+    _prepare(sbx.work, (*inside, *outside))
+    assert _write(sbx, sbx.work, (*inside, *outside)) == {**{n: "written" for n in inside},
+                                                          **{n: "refused" for n in outside}}
+
+
+@pytest.mark.macos
+@macos
 @pytest.mark.parametrize("sbx", ["mcp"], indirect=True)
 def test_an_mcp_server_cannot_write_them_in_a_granted_folder(sbx):
     granted = sbx.root / "granted"

@@ -52,6 +52,12 @@ FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hooks", (".pre-commit-config.yaml", ".husky/**")),
 )
 
+#: Dependency folders: a package installed there ships its own CI, editor and hook files, which nothing runs or loads
+#: from there, so they pass the user's test as ordinary files. Without this a dependency install fails (#813 review).
+#: Matched as a path component on the real path the kernel sees, so a link named so elsewhere gains nothing. The
+#: tool caches (.venv, uv and pip unpack folders) wait for Codex's measurement.
+DEPENDENCY_FOLDERS = ("node_modules",)
+
 _ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_*")
 
 
@@ -91,9 +97,17 @@ def _fits(parts: tuple[str, ...], names: tuple[str, ...]) -> bool:
     return all(fnmatch.fnmatchcase(part.casefold(), name.casefold()) for part, name in zip(parts, names))
 
 
+def dependency_regex() -> str:
+    """A path with a dependency folder as one of its folders (not as its last component)."""
+    return "^.*/(" + "|".join(map(_component, DEPENDENCY_FOLDERS)) + ")/.*$"
+
+
 def family(path) -> str | None:
-    """The family of the first name `path` matches at any depth, or None."""
+    """The family of the first name `path` matches at any depth, or None (and None inside a dependency folder)."""
     parts = tuple(p for p in PurePath(os.fspath(path)).parts if p not in ("/", ""))
+    folded = {name.casefold() for name in DEPENDENCY_FOLDERS}
+    if any(part.casefold() in folded for part in parts[:-1]):
+        return None
     for name, patterns in FAMILIES:
         for pattern in patterns:
             names = tuple(pattern.split("/"))
@@ -222,7 +236,9 @@ def kernel_filters(folders: Iterable[Path]) -> list[tuple[str, ...]]:
     the `core.hooksPath` targets of `folders` (the work folder, or an MCP server's granted folders) when any is
     set: the folder by its real path and by its name in its real parent, so a link there can't be swapped."""
     from server.services.sandbox_profile import real, regex, subpath
-    out = [tuple(regex(pattern_regex(p)) for p in patterns) for _, patterns in FAMILIES]
+    outside_dependencies = f"(require-not {regex(dependency_regex())})"
+    out = [tuple(f"(require-all {regex(pattern_regex(p))} {outside_dependencies})" for p in patterns)
+           for _, patterns in FAMILIES]
     targets: list[str] = []
     for folder in folders:
         target = hooks_path(folder)

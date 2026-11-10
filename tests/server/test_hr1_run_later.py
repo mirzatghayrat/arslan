@@ -27,8 +27,9 @@ from server.services import (capability_sandbox, command_sandbox, permissions, r
 
 STAND_IN = "zz-stand-in-word"
 
-#: The run-later denies, as every profile writes them (one line per family, in run_later.FAMILIES' order).
-RUN_LATER_TEXT = """\
+#: The names' regexes, one deny line per family in run_later.FAMILIES' order. Every profile writes each regex
+#: wrapped as `(require-all <regex> DEPENDENCY_TEXT)` (RUN_LATER_TEXT below).
+RUN_LATER_REGEXES = """\
 (deny file-write* (regex #"^.*/[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss](/.*)?$") (regex #"^.*/[.][Gg][Ii][Tt]/[Cc][Oo][Nn][Ff][Ii][Gg]$") (regex #"^.*/[.][Gg][Ii][Tt]/[Cc][Oo][Nn][Ff][Ii][Gg][.][Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee]$") (regex #"^.*/[.][Gg][Ii][Tt]/[Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee][Ss]/[^/]*/[Cc][Oo][Nn][Ff][Ii][Gg][.][Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee]$") (regex #"^.*/[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]/[^/]*/[Hh][Oo][Oo][Kk][Ss](/.*)?$") (regex #"^.*/[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]/[^/]*/[Cc][Oo][Nn][Ff][Ii][Gg]$") (regex #"^.*/[.][Gg][Ii][Tt][Mm][Oo][Dd][Uu][Ll][Ee][Ss]$"))
 (deny file-write* (regex #"^.*/[.][Ee][Nn][Vv][Rr][Cc]$"))
 (deny file-write* (regex #"^.*/[.][Gg][Ii][Tt][Hh][Uu][Bb]/[Ww][Oo][Rr][Kk][Ff][Ll][Oo][Ww][Ss](/.*)?$") (regex #"^.*/[.][Gg][Ii][Tt][Ll][Aa][Bb]-[Cc][Ii][.][Yy][Mm][Ll]$") (regex #"^.*/[.][Cc][Ii][Rr][Cc][Ll][Ee][Cc][Ii](/.*)?$") (regex #"^.*/[Aa][Zz][Uu][Rr][Ee]-[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee][Ss][.][Yy][Mm][Ll]$") (regex #"^.*/[Jj][Ee][Nn][Kk][Ii][Nn][Ss][Ff][Ii][Ll][Ee]$") (regex #"^.*/[Bb][Ii][Tt][Bb][Uu][Cc][Kk][Ee][Tt]-[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee][Ss][.][Yy][Mm][Ll]$"))
@@ -79,16 +80,24 @@ def _regexes() -> list[str]:
     return [run_later.pattern_regex(p) for _, patterns in run_later.FAMILIES for p in patterns]
 
 
+#: Every name's regex is written as `(require-all <regex> <this>)`: never inside a dependency folder (#813 review).
+DEPENDENCY_TEXT = '(require-not (regex #"^.*/([Nn][Oo][Dd][Ee]_[Mm][Oo][Dd][Uu][Ll][Ee][Ss])/.*$"))'
+#: The run-later denies, exactly as every profile writes them.
+RUN_LATER_TEXT = re.sub(r'(\(regex #"[^"]*"\))', lambda m: f"(require-all {m.group(1)} {DEPENDENCY_TEXT})",
+                        RUN_LATER_REGEXES)
+
+
 def _by_regex(path: str) -> bool:
     # The SBPL text is POSIX extended syntax that Python's re reads the same way (classes, groups, ?, *, anchors).
-    return any(re.fullmatch(r, path) for r in _regexes())
+    return (any(re.fullmatch(r, path) for r in _regexes())
+            and not re.fullmatch(run_later.dependency_regex(), path))
 
 
 # ── the list: two forms that agree ───────────────────────────────────────────
 
 def test_the_kernel_text_is_these_rules(tmp_path):
     lines = "".join("(deny file-write* " + " ".join(f) + ")\n" for f in run_later.kernel_filters([tmp_path]))
-    assert lines == RUN_LATER_TEXT
+    assert lines == RUN_LATER_TEXT and RUN_LATER_TEXT.count("(require-all ") == RUN_LATER_REGEXES.count("(regex ")
     assert [name for name, _ in run_later.FAMILIES] == ["git", "envrc", "ci", "editor", "agent", "package", "hooks"]
 
 
@@ -101,6 +110,35 @@ def test_a_held_name_matches_at_any_depth_in_both_forms(path, family):
 @pytest.mark.parametrize("path", ORDINARY)
 def test_an_ordinary_look_alike_matches_neither_form(path):
     assert not run_later.matches(path) and not _by_regex(path)
+
+
+DEPENDENCY = [f"/w/node_modules/{STAND_IN}/.github/workflows/ci.yml", f"/w/node_modules/{STAND_IN}/.vscode/settings.json",
+              f"/w/a/node_modules/@{STAND_IN}/x/.husky/pre-commit", f"/w/NODE_MODULES/{STAND_IN}/.npmrc"]
+# The same names outside a dependency folder: a component that only contains the word is not one.
+NOT_DEPENDENCY = ["/w/.github/workflows/ci.yml", f"/w/{STAND_IN}-lib/.vscode/settings.json",
+                  "/w/not-node_modules/.github/workflows/ci.yml", "/w/node_modules_x/.vscode/settings.json",
+                  "/w/node_modules.bak/.npmrc", "/w/node_modules"]
+
+
+@pytest.mark.parametrize("path", DEPENDENCY)
+def test_a_dependency_folder_holds_ordinary_files_in_both_forms(path):
+    assert not run_later.matches(path) and not _by_regex(path)
+
+
+@pytest.mark.parametrize("path", NOT_DEPENDENCY)
+def test_the_same_names_outside_a_dependency_folder_stay_held(path):
+    if path.endswith("/node_modules"):
+        assert not run_later.matches(path)                        # an ordinary name, and no folder above it
+        return
+    assert run_later.matches(path) and _by_regex(path)
+
+
+def test_a_substring_exemption_would_be_caught():
+    """Mutant: any path containing the word, rather than the folder as a component, is exempt."""
+    substring = "^.*node_modules.*$"
+    held = [p for p in NOT_DEPENDENCY if "node_modules" in p and not p.endswith("/node_modules")]
+    assert all(re.fullmatch(substring, p) for p in held)          # the mutant would exempt them: the test above refuses
+    assert not any(re.fullmatch(run_later.dependency_regex(), p) for p in held)
 
 
 def test_a_relative_path_is_matched_by_its_names():
