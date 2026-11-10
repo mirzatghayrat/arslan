@@ -16,7 +16,10 @@ Three answers for any shell command:
           out, starts programs or drives apps, and since S2a-3 step 3 anything else with no
           named rule that shell_grammar's reader does not understand). The tool loop runs a
           command whose only rule is `unreadable` in the sandbox, offline, with no card, where it can
-          (command_gate); otherwise it asks.
+          (command_gate); otherwise it asks. Since S2a-3 step 5, only for a command that runs outside the
+          sandbox (`outside=True`) and only where no named rule matched: a program that asks macOS to act for
+          it (`outside-reach`: open, at, batch, launchctl, shortcuts, networksetup and tccutil past their
+          read-only forms, security create- and unlock-). Inside, the sandbox's profile refuses those services.
   run     layer ③, everything else. The tool loop runs it in the workspace sandbox without a
           card when the sandbox can start (`command_sandbox.available()`); otherwise, or when
           the sandbox is switched off, it asks (target `unsandboxed:*`).
@@ -257,7 +260,7 @@ OUTBOUND_RULES = SEND_OUT_RULES | {"apple-events", "shortcuts"}
 BARE_RULES = frozenset({"apple-events", "shortcuts"})
 UNREADABLE = "unreadable"
 #: Rules a card answers for this one time only: nothing to remember, and no stored answer stands.
-ONCE_ONLY_RULES = frozenset({key for key, _, _ in _ASK}) | {"delete-outside", UNREADABLE}
+ONCE_ONLY_RULES = frozenset({key for key, _, _ in _ASK}) | {"delete-outside", "outside-reach", UNREADABLE}
 
 # An inline script (python -c, node -e, a heredoc …) that reaches out, starts programs, drives
 # apps or hides its code: the text alone cannot say what it does (0.1.52's `_SCRIPT_REACH`). Not
@@ -911,6 +914,51 @@ def _deletes_outside(texts: tuple[str, ...]) -> bool:
 
 
 _DELETE_OUTSIDE = ("delete-outside", "deletes files outside the working folder")   # in ONCE_ONLY_RULES above
+# S2a-3 step 5: outside the sandbox, a program that hands work to a macOS service (LaunchServices, atrun, launchd,
+# the Shortcuts, network configuration and privacy daemons, securityd) acts past the command. Asked only there, only
+# where no named rule matched, and read from the reader's commands. In ONCE_ONLY_RULES above.
+OUTSIDE_REACH = ("outside-reach", "asks macOS to act for it outside the sandbox")
+_REACH_PROGRAMS = frozenset({"open", "at", "batch", "launchctl", "shortcuts", "networksetup", "tccutil"})
+# A small allow set of the forms that only read, which run outside too: at's -l listing, launchctl's list and print
+# verbs, shortcuts list, networksetup's -get/-list/-print/-show/-is queries, and help (a bare name prints usage, except
+# at and batch, which read a job from stdin). crontab needs no entry: every form but -l is login-items already.
+_REACH_READ_ONLY = {
+    "at": frozenset({"-l"}),
+    "launchctl": frozenset({"", "list", "print", "print-cache", "print-disabled", "blame", "error", "help", "version",
+                            "getenv", "managerpid", "manageruid", "managername"}),
+    "shortcuts": frozenset({"", "list", "help", "-h", "--help"}),
+    "tccutil": frozenset({"", "-h", "--help", "--version"}),
+}
+# #798 review: a help or version word reads only when it is the whole command; with more after it, a verb there may
+# still act. networksetup takes one query, so every option word on it must be one. The other read-only verbs (at -l,
+# launchctl list/print…, shortcuts list) are judged on the first word only: their later words are labels, folders and
+# job numbers, and no table here says which of those a real program would also act on.
+_REACH_HELP = frozenset({"help", "version", "-h", "--help", "-help", "--version", "-version"})
+_NETWORKSETUP_READS = re.compile(r"-(?:get|list|print|show|is)\w*|-help|-version")
+
+
+def _reaches_outside(commands: tuple[tuple[str, ...], ...]) -> bool:
+    for words in commands:
+        if not words:
+            continue
+        program, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
+        verb = args[0].lower() if args else ""
+        if program == "security":
+            operation = _security_verb(args)
+            if operation and operation[0].lower().startswith(("create-", "unlock-")):
+                return True
+        elif program not in _REACH_PROGRAMS:
+            continue
+        elif verb in _REACH_HELP and len(args) > 1:
+            return True
+        elif program == "networksetup":
+            options = [word.lower() for word in args if word.startswith("-")]     # a bare name prints its usage
+            if args and (not args[0].startswith("-") or not all(_NETWORKSETUP_READS.fullmatch(o) for o in options)):
+                return True
+        elif verb not in _REACH_READ_ONLY.get(program, frozenset()):
+            return True
+    return False
+
 
 # S2a-3 step 4: the path rules again, for a command after a change of folder, with each relative path joined to every
 # folder shell_grammar says it may run in. Text the reader doesn't understand is judged as before (step 3 wires that).
@@ -1105,7 +1153,7 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
 
 
 def _layer_two(texts: tuple[str, ...], commands: tuple[tuple[str, ...], ...], *,
-               text: str, cwd: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
+               text: str, cwd: str | os.PathLike[str] | None = None, outside: bool = False) -> list[tuple[str, str]]:
     named_rules = set().union(*(_named_rules(words) for words in commands))
     found = [(key, why) for key, pattern, why in _ASK_C
              if _matches(pattern, texts) or key in named_rules]
@@ -1114,12 +1162,16 @@ def _layer_two(texts: tuple[str, ...], commands: tuple[tuple[str, ...], ...], *,
         found.append(("protected-write", describe("protected-write")))
     if _deletes_outside(texts) or moved_outside or "delete-outside" in named_rules:
         found.insert(0, _DELETE_OUTSIDE)
+    # S2a-3 step 5: on the words themselves, never through `_named_rules` (its `_fully_accounted` fallback reads text)
+    if outside and not found and _reaches_outside(commands):
+        found.append(OUTSIDE_REACH)
     seen: set[str] = set()
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
 
 
-def assess(command: str, *, cwd: str | os.PathLike[str] | None = None) -> Assessment:
-    """The layer and first rule; without cwd, folder observations never change the verdict."""
+def assess(command: str, *, cwd: str | os.PathLike[str] | None = None, outside: bool = False) -> Assessment:
+    """The layer and first rule; without cwd, folder observations never change the verdict. `outside`: the command
+    runs outside the sandbox (S2a-3 step 5, `outside-reach`); False reads exactly as before it."""
     text = str(command or "")
     if not text.strip():
         return Assessment("forbid", "empty", "no command")
@@ -1132,7 +1184,7 @@ def assess(command: str, *, cwd: str | os.PathLike[str] | None = None) -> Assess
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(texts, _command_words(text), text=text, cwd=cwd)
+    found = _layer_two(texts, _command_words(text), text=text, cwd=cwd, outside=outside)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
     hidden = _hidden_code(texts)
@@ -1153,17 +1205,17 @@ def _not_understood(text: str) -> str:
     return "" if reading.understood else (reading.why or "Arslan does not understand all of it")
 
 
-def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None) -> set[str]:
+def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None, outside: bool = False) -> set[str]:
     """Every layer ② rule the command matches (and `unreadable`). `assess` names only the first,
     which is what the card shows; a card's target lists all of them (`rules:<rule>|<rule>`)."""
-    verdict = assess(command, cwd=cwd)
+    verdict = assess(command, cwd=cwd, outside=outside)
     if verdict.level != "ask":
         return set()
     text = str(command or "")
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    named = {key for key, _why in _layer_two(texts, _command_words(text), text=text, cwd=cwd)}
+    named = {key for key, _why in _layer_two(texts, _command_words(text), text=text, cwd=cwd, outside=outside)}
     # With no named rule, what asks is unreadable: its code is hidden, or the reader does not understand it (`assess`).
     return named | ({UNREADABLE} if not named or _hidden_code(texts) else set())
 
@@ -1189,9 +1241,9 @@ def other_osa_language(command: str) -> bool:
     return _matches(_OTHER_OSA_LANGUAGE, _detection_texts(str(command or "")))
 
 
-def risk_grade(command: str) -> str:
+def risk_grade(command: str, *, outside: bool = False) -> str:
     """The LOW/MEDIUM/HIGH grade the confirmation layer speaks (run/ask/forbid)."""
-    return {"run": "LOW", "ask": "MEDIUM", "forbid": "HIGH"}[assess(command).level]
+    return {"run": "LOW", "ask": "MEDIUM", "forbid": "HIGH"}[assess(command, outside=outside).level]
 
 
 # ── "don't ask again", remembered by rule (0.1.48–0.1.62) ────────────────────
@@ -1227,6 +1279,8 @@ def describe(rule: str) -> str:
             return why
     if rule == _DELETE_OUTSIDE[0]:
         return _DELETE_OUTSIDE[1]
+    if rule == OUTSIDE_REACH[0]:
+        return OUTSIDE_REACH[1]
     if rule in _RETIRED:
         return _RETIRED[rule]
     return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule

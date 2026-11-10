@@ -60,7 +60,7 @@ def test_not_understood_with_no_named_rule_is_unreadable_everywhere(unread):
 
 def test_a_named_rule_still_comes_first_and_alone(unread, monkeypatch):
     real = tp._layer_two
-    monkeypatch.setattr(tp, "_layer_two", lambda texts, commands=(), *, text, cwd=None: [("stand-in-rule", "stand-in")]
+    monkeypatch.setattr(tp, "_layer_two", lambda texts, commands=(), *, text, cwd=None, **_: [("stand-in-rule", "stand-in")]
                         if any(t.startswith(STAND_IN) for t in texts) else real(texts, commands, text=text, cwd=cwd))
     assert tp.assess(STAND_IN) == tp.Assessment("ask", "stand-in-rule", "stand-in")
     assert tp.ask_rules(STAND_IN) == {"stand-in-rule"}
@@ -175,7 +175,7 @@ async def test_with_no_card_callback_and_home_it_is_refused_not_run(unread, monk
 
 
 async def test_forbid_is_unchanged(monkeypatch):
-    monkeypatch.setattr(tp, "assess", lambda command, *, cwd=None: tp.Assessment("forbid", "stand-in-rule", "stand-in"))
+    monkeypatch.setattr(tp, "assess", lambda command, *, cwd=None, **_: tp.Assessment("forbid", "stand-in-rule", "stand-in"))
     asked: list = []
     ex, result, _ = await _gate(monkeypatch, {"command": STAND_IN}, _cards(asked, True))
     assert asked == [] and ex.ran == [] and "never runs" in result["error"]
@@ -183,7 +183,7 @@ async def test_forbid_is_unchanged(monkeypatch):
 
 async def test_a_named_rule_with_an_unread_command_still_gets_its_card(unread, monkeypatch):
     real = tp._layer_two
-    monkeypatch.setattr(tp, "_layer_two", lambda texts, commands=(), *, text, cwd=None: [("stand-in-rule", "stand-in")]
+    monkeypatch.setattr(tp, "_layer_two", lambda texts, commands=(), *, text, cwd=None, **_: [("stand-in-rule", "stand-in")]
                         if any(t.startswith(STAND_IN) for t in texts) else real(texts, commands, text=text, cwd=cwd))
     asked: list = []
     ex, result, steps = await _gate(monkeypatch, {"command": STAND_IN}, _cards(asked, False))
@@ -196,8 +196,8 @@ async def test_only_unreadable_alone_takes_the_offline_branch(monkeypatch, rules
     The card is the real one (command_confirm), its decision replaced, with every other offline condition true."""
     from server.services import command_confirm, settings_service
     first = "stand-in-rule" if len(rules) > 1 else tp.UNREADABLE
-    monkeypatch.setattr(tp, "assess", lambda command, *, cwd=None: tp.Assessment("ask", first, "stand-in"))
-    monkeypatch.setattr(tp, "ask_rules", lambda command: set(rules))
+    monkeypatch.setattr(tp, "assess", lambda command, *, cwd=None, **_: tp.Assessment("ask", first, "stand-in"))
+    monkeypatch.setattr(tp, "ask_rules", lambda command, **_: set(rules))
 
     async def risky(db):
         return "ask_risky"

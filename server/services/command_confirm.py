@@ -77,7 +77,7 @@ class Confirmations:
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
                       fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
-                      network: bool = False, host: str | None = None, delete: str = "") -> bool:
+                      network: bool = False, host: str | None = None, delete: str = "", outside: bool = False) -> bool:
         """Called, a card is shown: which commands need none (layer ③ in the sandbox) is the tool loop's to
         decide, once (S2a-2). `sandbox` (0.1.51 P3): "outside" — the model asks to run this command
         outside the sandbox. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
@@ -87,14 +87,15 @@ class Confirmations:
         from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
         from server.services import card_purpose
-        risk = effective_risk(remote_host, command, argv)
+        outside = outside or sandbox == "outside"   # S2a-3 step 5: it runs outside the sandbox, so read it that way
+        risk = effective_risk(remote_host, command, argv, outside=outside)
         shell = terminal_policy.as_shell(command, argv)
-        verdict = terminal_policy.assess(shell)
+        verdict = terminal_policy.assess(shell, outside=outside)
         # SMART-8 (#688 review 1, 3, 5): every rule it matched goes on every command card, with why it could not be
         # read when that is one of them; the card's risk row names each and takes the worst.
         # SMART-8 (#689): every card's title is its plain purpose in the user's language (the iPhone's heading).
         lang = await card_purpose.language()
-        rules = sorted(terminal_policy.ask_rules(shell))
+        rules = sorted(terminal_policy.ask_rules(shell, outside=outside))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
@@ -141,7 +142,9 @@ class Confirmations:
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable)
         frame.update(_delete_keys(delete, shell))
-        unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
+        # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
+        # its rules card too; otherwise as before, "ask for every command" asks where it would run.
+        unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
                                              unsandboxed=unsandboxed, lang=lang, why=why,
                                              delete_mode=delete)
