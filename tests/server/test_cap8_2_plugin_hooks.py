@@ -78,7 +78,9 @@ async def test_a_hook_on_each_of_the_16_quiet_events_may_come_in(api, home, even
 
 
 @pytest.mark.parametrize("where", ["hooks.json", "manifest path", "manifest inline", "a skill's frontmatter"])
-@pytest.mark.parametrize("event", ["PreToolUse", "Stop", "UserPromptSubmit", "PermissionRequest", "SubagentStop"])
+# HOOK-1: PreToolUse, Stop and UserPromptSubmit (with `command`) are stored now (test_hook1_hooks_stored.py).
+@pytest.mark.parametrize("event", ["PermissionRequest", "SubagentStop", "PreCompact", "UserPromptExpansion",
+                                   "TaskCreated"])
 async def test_a_blocking_hook_is_refused_and_leaves_no_files(api, home, offline, tmp_path, event, where):
     files = {**PLUGIN_FILES, **CONNECTION}
     manifest = {"name": "release-kit", "version": "1.0.0", "description": "Release notes"}
@@ -187,22 +189,24 @@ async def test_an_allowed_hook_is_installed_and_never_registered_or_run(api, hom
     assert row["hooks"] == ["SessionStart", "PostToolUse", "SessionEnd"]
     card = (await _post(api, plugins=[_tick(row)]))[row["id"]]
     assert card["state"] == "card" and card["card"]["hooks"] == ["SessionStart", "PostToolUse", "SessionEnd"]
-    assert command not in json.dumps(card)                                       # the event, never what it runs
+    # HOOK-1: the card shows each hook's exact command, and the plugin's row stores it; still nothing runs it.
+    assert [h["command"] for h in card["card"]["hook_rows"]] == [command] * 3
     done = (await _post(api, plugins=[_tick(row, card=card["card_digest"])]))[row["id"]]
     assert done["state"] == "on", done
     await agent_skills.sync()
     assert (await api.get("/api/v1/capabilities")).status_code == 200
     # Never run: no process was started with it, and what it would have made isn't there.
     assert not ran.exists() and not [call for call in spawns if str(ran) in call]
-    # Never registered: no file Arslan wrote and no row holds it, and no hooks file came along.
+    # Never registered: no file Arslan wrote and no row but the plugin's holds it, and no hooks file came along.
     written = _files_under(home / ".agents", tmp_path / "data")
     assert written and not [path for path, data in written.items() if str(ran).encode() in data]
     assert not [path for path in written if Path(path).name in ("hooks.json", "format.sh")]
-    rows = [*(await _all(CapabilitySource)), *(await _all(SkillPack))]
+    rows = [*(r for r in await _all(CapabilitySource) if r.kind != "plugin"), *(await _all(SkillPack))]
     assert not [r for r in rows if str(ran) in json.dumps({c.name: getattr(r, c.name) for c in r.__table__.columns},
                                                           default=str)]
     plugin = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
     assert plugin.candidate["hooks"] == ["SessionStart", "PostToolUse", "SessionEnd"]
+    assert [h["command"] for h in plugin.candidate["hook_rows"]] == [command] * 3
     # The skill's frontmatter hooks are stripped: Arslan's SKILL.md has its name and description only.
     head = (agent_skills.folder("release-notes") / "SKILL.md").read_text().split("---")[1]
     assert set(yaml.safe_load(head)) == {"name", "description"}
@@ -210,11 +214,11 @@ async def test_an_allowed_hook_is_installed_and_never_registered_or_run(api, hom
 
 async def test_a_skills_frontmatter_hooks_are_judged_and_stripped(api, home):
     _skill(home, "quiet-notes", text=_frontmatter_skill("quiet-notes", "SessionStart"))
-    _skill(home, "guard-notes", text=_frontmatter_skill("guard-notes", "PreToolUse"))
+    _skill(home, "guard-notes", text=_frontmatter_skill("guard-notes", "PermissionRequest"))
     scan = await _scan(api)
     quiet, guard = _row(scan, "skills", "quiet-notes"), _row(scan, "skills", "guard-notes")
     assert quiet["refused"] is None and quiet["hooks"] == ["SessionStart"]
-    assert guard["refused"] == "hooks" and guard["refused_part"] == "PreToolUse" and guard["tick"] is False
+    assert guard["refused"] == "hooks" and guard["refused_part"] == "PermissionRequest" and guard["tick"] is False
     results = await _post(api, skills=[_tick(quiet), _tick(guard)])
     assert results[quiet["id"]]["state"] == "added" and results[guard["id"]]["state"] == "refused"
     assert await _pack("guard-notes") is None and not agent_skills.folder("guard-notes").exists()
@@ -269,7 +273,7 @@ def github(monkeypatch):
     return repo
 
 
-@pytest.mark.parametrize("event", ["PreToolUse", "FutureEvent"])
+@pytest.mark.parametrize("event", ["PermissionRequest", "FutureEvent"])
 async def test_a_github_skill_with_a_blocking_or_unknown_hook_is_refused_and_leaves_no_files(home, github, tmp_path,
                                                                                            event):
     github["guard/SKILL.md"] = _frontmatter_skill("guard", event)
@@ -302,12 +306,13 @@ async def test_capability_flows_skill_card_names_the_hooks(home, github, monkeyp
     cand = {"kind": "skill", "repo": "acme/kit", "path": "notes/SKILL.md", "version": SHA, "source": "library"}
     prepared, _ = await capability_flow.prepare_skill(cand)
     assert prepared["hooks"] == ["PostToolUse"]
-    github["guard/SKILL.md"] = _frontmatter_skill("guard", "Stop")
-    with pytest.raises(ValueError, match="Stop"):
+    github["guard/SKILL.md"] = _frontmatter_skill("guard", "SubagentStop")
+    with pytest.raises(ValueError, match="SubagentStop"):
         await capability_flow.prepare_skill({**cand, "path": "guard/SKILL.md"})
 
 
-@pytest.mark.parametrize(("event", "readable"), [("SessionEnd", True), ("PreToolUse", False), ("FutureEvent", False)])
+@pytest.mark.parametrize(("event", "readable"), [("SessionEnd", True), ("PermissionRequest", False),
+                                                  ("FutureEvent", False)])
 async def test_a_skill_another_tool_put_in_the_shared_folder_goes_by_the_same_rule(api, home, event, readable):
     _write(home / ".agents" / "skills" / "theirs", {"SKILL.md": _frontmatter_skill("theirs", event)})
     await agent_skills.sync()
@@ -349,17 +354,20 @@ def _update(home: Path, version: str, files: dict, old: str) -> None:
 async def test_an_update_adding_a_blocking_hook_switches_it_off_until_its_card(api, home, offline):
     await _install(api, home, {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart")})
     old = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
-    # An update with only quiet hooks changes nothing here: Arslan's copy is as the card showed it.
-    _update(home, "1.1.0", {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart", "SessionEnd")}, "1.0.0")
+    # An update that changes no hook changes nothing here: Arslan's copy is as the card showed it. (HOOK-1: one that
+    # changes any hook, a quiet one included, switches it off: test_hook1_hooks_stored.py.)
+    _update(home, "1.1.0", {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart"),
+                            "skills/release-notes/scripts/fmt.py": "print('v2')\n"}, "1.0.0")
     row = _row(await _scan(api), "plugins", "release-kit")
     assert row["here"] is True and all(p.enabled for p in await _all(SkillPack))
     # One adding a blocking hook: the group goes off, its switch won't turn it on, and the sheet shows why.
-    _update(home, "1.2.0", {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart", "PreToolUse")}, "1.1.0")
+    _update(home, "1.2.0", {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart", "PermissionRequest")}, "1.1.0")
     row = _row(await _scan(api), "plugins", "release-kit")
-    assert row["refused"] == "hooks" and row["refused_part"] == "PreToolUse" and row["here"] is False
+    assert row["refused"] == "hooks" and row["refused_part"] == "PermissionRequest" and row["here"] is False
     assert not any(p.enabled for p in await _all(SkillPack))
     listed = next(r for r in (await api.get("/api/v1/capabilities")).json() if r["key"] == f"plugin:{old.id}")
-    assert listed["state"] == "setup" and listed["reason"] == "plugin_hooks" and listed["detail"] == "PreToolUse"
+    assert listed["state"] == "setup" and listed["reason"] == "plugin_hooks"
+    assert listed["detail"] == "PermissionRequest"
     switched = await api.put(f"/api/v1/capabilities/plugin:{old.id}", json={"on": True})
     assert switched.status_code == 409
     assert not any(p.enabled for p in await _all(SkillPack))
@@ -387,7 +395,7 @@ async def test_a_failed_install_after_the_cards_yes_leaves_the_old_group_as_it_w
     files = {**PLUGIN_FILES, **CONNECTION, "hooks/hooks.json": _hooks("SessionStart")}
     await _install(api, home, files)
     old = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
-    _update(home, "1.1.0", {**files, "hooks/hooks.json": _hooks("PreToolUse")}, "1.0.0")
+    _update(home, "1.1.0", {**files, "hooks/hooks.json": _hooks("PermissionRequest")}, "1.0.0")
     await _scan(api)
     _update(home, "1.2.0", {**files, "skills/release-notes/scripts/fmt.py": "print('new')\n"}, "1.1.0")
     row = _row(await _scan(api), "plugins", "release-kit")
@@ -400,7 +408,7 @@ async def test_a_failed_install_after_the_cards_yes_leaves_the_old_group_as_it_w
     done = (await _post(api, plugins=[_tick(row, card=card["card_digest"])]))[row["id"]]
     assert done["state"] == "failed", done
     stored = {r.id: r for r in await _all(CapabilitySource) if r.kind == "plugin"}
-    assert stored[old.id].state == "installed" and stored[old.id].test["hooks_added"]["event"] == "PreToolUse"
+    assert stored[old.id].state == "installed" and stored[old.id].test["hooks_added"]["event"] == "PermissionRequest"
     assert {p.key: (p.body, p.source_id, p.enabled) for p in await _all(SkillPack)} == packs
     assert {key: _files_under(agent_skills.folder(key)) for key in folders} == folders
     assert {key: agent_skills.entries()[key] for key in folders} == entries
@@ -456,12 +464,12 @@ async def test_a_swap_stopped_at_each_step_is_settled_at_the_next_start(api, hom
     files = {**PLUGIN_FILES, **CONNECTION, "hooks/hooks.json": _hooks("SessionStart")}
     await _install(api, home, files)
     old = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
-    _update(home, "1.1.0", {**files, "hooks/hooks.json": _hooks("PreToolUse")}, "1.0.0")
+    _update(home, "1.1.0", {**files, "hooks/hooks.json": _hooks("PermissionRequest")}, "1.0.0")
     await _scan(api)
     _update(home, "1.2.0", {**files, "skills/release-notes/scripts/fmt.py": "print('new')\n"}, "1.1.0")
     row = _row(await _scan(api), "plugins", "release-kit")
     card = (await _post(api, plugins=[_tick(row)]))[row["id"]]
-    keys = ("release-notes", "changelog-style")
+    keys =("release-notes", "changelog-style")
     folders = {key: _files_under(agent_skills.folder(key)) for key in keys}
     entries = {key: agent_skills.entries()[key] for key in keys}
     packs = {p.key: (p.name, p.body, p.source_id, p.enabled, p.category) for p in await _all(SkillPack)}
@@ -487,7 +495,7 @@ async def test_a_swap_stopped_at_each_step_is_settled_at_the_next_start(api, hom
     assert not list(agent_skills.root().glob(".arslan-swap-*"))
     live = [r for r in await _all(CapabilitySource) if r.kind == "mcp" and r.state != "removed"]
     if step <= 5:
-        assert plugins[old.id].state == "installed" and plugins[old.id].test["hooks_added"]["event"] == "PreToolUse"
+        assert plugins[old.id].state == "installed" and plugins[old.id].test["hooks_added"]["event"] == "PermissionRequest"
         assert [r.state for i, r in plugins.items() if i != old.id] in ([], ["failed"])
         assert {p.key: (p.name, p.body, p.source_id, p.enabled, p.category) for p in await _all(SkillPack)} == packs
         assert {key: _files_under(agent_skills.folder(key)) for key in keys} == folders

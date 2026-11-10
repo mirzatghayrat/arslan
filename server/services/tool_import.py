@@ -64,7 +64,7 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.models import CapabilitySource, SkillPack
 from server.orchestrator import untrusted
-from server.services import agent_skills, plugin_package, skill_import
+from server.services import agent_skills, plugin_hooks, plugin_package, skill_import
 from server.services.plugin_package import Refused, Snapshot
 from server.services.skill_forge import MAX_SKILL_BYTES
 
@@ -206,7 +206,7 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
     if info is None:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
     try:
-        hooks = skill_import.frontmatter_hooks(raw)          # the same rule as every other way a skill comes in
+        hook_rows = skill_import.frontmatter_hook_rows(raw)  # the same rule as every other way a skill comes in
     except skill_import.HookRefused as exc:
         raise Refused(exc.code, exc.part) from None
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
@@ -227,7 +227,8 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
                 if p.startswith(prefix) and p not in files and p not in named]
     return {"key": info["key"], "info": info, "full_name": snap.repo, "commit": snap.sha, "license": None,
             "license_source": "none", "skill_md": raw, "scripts": scripts, "references": references, "files": files,
-            "sizes": sizes, "skipped": skipped, "imported_from": FROM, "hooks": hooks}
+            "sizes": sizes, "skipped": skipped, "imported_from": FROM, "hooks": [row["event"] for row in hook_rows],
+            "hook_rows": hook_rows}
 
 
 async def _skill_here(key: str, besides: frozenset[str] = frozenset()) -> bool:
@@ -272,6 +273,7 @@ class Item:
     refused_part: str | None = None
     scan: str | None = None
     hooks: list[str] = field(default_factory=list)
+    hook_rows: list[dict] | None = None     # HOOK-1: a plugin's hooks as they'd be stored, once judged
     taken: bool = False             # refused only because a skill of its key is here (`_read`), not for its files
 
     @property
@@ -326,7 +328,8 @@ async def _item(kind: str, where: str, name: str, files) -> Item:
                 raise Refused("blocked", ", ".join(sorted({f["rule"] for f in scan["findings"] if f["level"] == "high"})))
         else:
             item.snap = _snapshot(name, files)
-            item.hooks = plugin_package.judged_hooks(item.snap)     # first: no other refusal hides a blocking hook
+            item.hook_rows = plugin_package.judged_hooks(item.snap)     # first: no other refusal hides a blocking hook
+            item.hooks = [row["event"] for row in item.hook_rows]
             manifest, paths, servers = plugin_package.parts(item.snap, hooks=True)
             item.identity = str(manifest.get("name") or name)
             item.name = untrusted.clean_name(item.identity, 120)
@@ -404,16 +407,32 @@ async def _judged_again(items: list[Item]) -> None:
     on a blocking or unknown event is switched off until its card. Hooks are judged first (`judged_hooks`), and a
     copy refused for anything else is switched off too, since that refusal could hide one. Matched by where Claude
     Code keeps it, which a copy too broken to name itself still has. Only at this scan: the page's load reads
-    nothing."""
+    nothing.
+
+    HOOK-1: an update that adds, removes or changes any hook (`plugin_hooks.changed`), a quiet one included, switches
+    it off the same way (code `hooks_changed`), so its card is shown again. Its own skills then no longer count as
+    already here, as for a plugin marked earlier (`_marked`)."""
     imported = [row for row in await _plugin_rows()
                 if row.state == "installed" and str(row.candidate_id).startswith(f"{SOURCE}:")]
+    marked = False
     for item in items:
-        if item.kind != "plugin" or not item.refused or item.taken:
+        if item.kind != "plugin":
             continue
         for row in imported:
-            if _place(str(row.candidate_id)[len(SOURCE) + 1:]) == _place(item.id):
+            if _place(str(row.candidate_id)[len(SOURCE) + 1:]) != _place(item.id):
+                continue
+            if item.refused and not item.taken:
                 event = (item.refused_part or "") if item.refused == "hooks" else ""
                 await plugin_package.hooks_added(row.id, event, item.refused)
+            elif item.hook_rows is not None and (event := plugin_hooks.changed(row.candidate or {}, item.hook_rows)
+                                                 ) is not None:
+                await plugin_package.hooks_added(row.id, untrusted.clean_name(event, 80), "hooks_changed")
+                marked = True
+    besides = frozenset((await _marked()).values()) if marked else frozenset()
+    for item in items if marked else []:
+        if item.taken and not [key for key in item.plugin.get("skills") or [] if await _skill_here(key, besides)]:
+            item.refused = item.refused_part = None
+            item.taken = False
 
 
 async def scan() -> dict:
@@ -473,7 +492,8 @@ async def _add_plugin(item: Item | None, tick: dict) -> dict:
         shown = _keyed("card", card, prepared["files"])
         if tick.get("card") != shown:       # CAP7b's order: the card, then a yes to exactly it
             return {"state": "card", "card": card, "card_digest": shown}
-        candidate.update(summary=card["summary"], hooks=card["hooks"])     # kept on its row: what the card showed
+        # Kept on its row: what the card showed, and (HOOK-1) every hook as stored, each with its switch.
+        candidate.update(summary=card["summary"], hooks=card["hooks"], hook_rows=prepared["hook_rows"])
         keys = tick.get("keys") or {}
         out = await (plugin_package.replace(old, candidate, prepared, keys) if old is not None
                      else plugin_package.install(candidate, prepared, keys))

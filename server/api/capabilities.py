@@ -32,6 +32,19 @@ async def switch_capability(key: str, body: Switch) -> dict:
     return row or {"key": key}
 
 
+@router.put("/capability-hooks/{owner}/{hook_id}")
+async def switch_hook(owner: str, hook_id: str, body: Switch) -> dict:
+    """HOOK-1: one hook's own switch, stored (`plugin:<id>` or `skill:<key>`). Nothing runs a hook in this version.
+    404: no such hook. 409: one that never runs (won't run, or matches nothing in Arslan) can't go on."""
+    from server.services import plugin_hooks
+    done = await plugin_hooks.switch(owner, hook_id, body.on)
+    if done is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found"})
+    if done is False:
+        raise HTTPException(status_code=409, detail={"code": "never_runs"})
+    return {"owner": owner, "id": hook_id, "on": body.on}
+
+
 class Approve(BaseModel):
     digest: str
 

@@ -161,13 +161,16 @@ def manifest_lock() -> asyncio.Lock:
 
 
 def record(key: str, *, by: str, files: dict[str, str] | None, written: dict[str, str] | None = None,
-           hooks: list[str] | None = None) -> None:
+           hooks: list[str] | None = None, hook_rows: list[dict] | None = None) -> None:
     """Load, change and save with no await between, so two writers in the event loop never interleave. `written`:
     the hashes of what Arslan just wrote into the folder (an install); otherwise what is kept stays. `hooks` (an
-    install): the quiet events of the frontmatter hooks stripped from Arslan's copy, for its card; otherwise kept."""
+    install): the events of the frontmatter hooks stripped from Arslan's copy, for its card; otherwise kept.
+    `hook_rows` (HOOK-1): those hooks as stored, each with its switch (`plugin_hooks`); otherwise kept. Never run."""
     skills = entries()
     kept = hooks if hooks is not None else (skills.get(key) or {}).get("hooks")
-    skills[key] = {"by": by, "files": files, **({"hooks": list(kept)} if kept else {})}
+    rows = hook_rows if hook_rows is not None else (skills.get(key) or {}).get("hook_rows")
+    skills[key] = {"by": by, "files": files, **({"hooks": list(kept)} if kept else {}),
+                   **({"hook_rows": list(rows)} if rows else {})}
     mine = _written()
     if written is not None:
         mine[key] = written
@@ -237,10 +240,11 @@ def read_folder(key: str) -> dict:
     # CAP8-2's hook rule, here too: another tool's skill with a hook on a blocking or unknown event is never read
     # (so never switched on); one with quiet hooks is, and its card says they won't run. The folder isn't Arslan's.
     try:
-        hooks = skill_import.frontmatter_hooks(raw)
+        hook_rows = skill_import.frontmatter_hook_rows(raw)
     except skill_import.HookRefused as exc:
         raise Unreadable(str(exc)) from None
-    return {"files": files, "texts": texts, "info": parsed, "hooks": hooks}
+    return {"files": files, "texts": texts, "info": parsed, "hooks": [row["event"] for row in hook_rows],
+            "hook_rows": hook_rows}
 
 
 def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
@@ -487,8 +491,17 @@ def card(key: str) -> dict:
     return _card(key, read_folder(key))
 
 
+def _hook_rows(known: dict, read: dict) -> list[dict]:
+    """A skill's hooks as stored (HOOK-1): those its folder declares, with the switches its record kept, or (Arslan's
+    copy, whose SKILL.md holds none) its record's."""
+    from server.services import plugin_hooks
+    if read.get("hook_rows"):
+        return plugin_hooks.carry(known.get("hook_rows"), read["hook_rows"])
+    return known.get("hook_rows") or []
+
+
 def _card(key: str, read: dict) -> dict:
-    from server.services import capability_scan
+    from server.services import capability_scan, plugin_hooks
     from server.orchestrator import untrusted
     known = entries().get(key) or {"by": OTHER, "files": None}
     texts, info = read["texts"], read["info"]
@@ -504,6 +517,9 @@ def _card(key: str, read: dict) -> dict:
             "scan": scan, "digest": digest(read["files"]),
             # CAP8-2: hooks that won't run, the folder's own and those stripped from Arslan's copy at its install.
             "hooks": [*(known.get("hooks") or []), *(read.get("hooks") or [])],
+            # HOOK-1: their rows, switches as stored: Arslan's copy keeps them in its record (stripped from the
+            # folder); another tool's folder holds its own, each switch as its record last kept it.
+            "hook_rows": plugin_hooks.card_rows(_hook_rows(known, read)),
             # The folder is shared by several tools: what is installed there, others may read and use (CAP6a).
             "shared_folder": True}
 
@@ -545,7 +561,9 @@ async def approve(key: str, shown: str) -> None:
             await db.commit()
         # After the commit: a commit that fails leaves the files unapproved. A stop before this line leaves them
         # unapproved too, and the next read switches the skill off (fail closed).
-        record(key, by=by, files=read["files"])
+        # HOOK-1: a folder's own hooks are stored with what was approved, each switch as its record kept it.
+        record(key, by=by, files=read["files"],
+               **({"hook_rows": _hook_rows(known[key], read)} if read["hook_rows"] else {}))
 
 
 def write_new(base: Path, expected: dict[str, str]) -> dict[str, str]:
