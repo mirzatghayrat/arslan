@@ -570,7 +570,10 @@ def skill_md(name: str, description: str, body: str) -> str:
 #     against those recorded hashes.
 #  6. Checked, its data-folder copy being removed (all, part or none of it gone), record "done" not yet written: the
 #     skill is folder-backed and runs from the folder, never from what is left of the copy. Next start: checked
-#     again against its recorded hashes (the copy is not needed for that), and what is left of the copy goes.
+#     again against its recorded hashes (the copy is not needed for that), and what is left of the copy goes. If the
+#     folder changed meanwhile: with the copy still whole, the skill goes back to it (entry forgotten); with the
+#     copy gone, the entry stays, so the skill reads as changed, off until its card (reported "changed since its
+#     export"; the backups keep the original).
 #  7. Done: the export never runs again.
 # A failure at any step but the backup leaves that one skill where it was (its manifest entry forgotten, its folder,
 # when the export made it, to the Trash), working from the data folder, and the export goes on with the others. A
@@ -733,6 +736,15 @@ def _same(read: dict | None, want: dict[str, str]) -> bool:
     return all(read["files"][rel] == digest for rel, digest in want.items())
 
 
+def _copy_whole(key: str, want: dict[str, str]) -> bool:
+    """Whether the data folder still holds exactly the scripts and references `want` records for the skill (so it can
+    go back to reading them)."""
+    try:
+        return _hashes(_old_files(key)) == {rel: digest for rel, digest in want.items() if rel != "SKILL.md"}
+    except (_Kept, OSError):
+        return False
+
+
 def _export(packs: list[dict], running: set[str]) -> dict:
     """The export's file work, in a worker thread. See the notes above `EXPORT_BACKUP` for each step."""
     from server.services import skill_import
@@ -785,6 +797,12 @@ def _export(packs: list[dict], running: set[str]) -> dict:
             except OSError as exc:
                 logger.warning("the data-folder copy of skill %s was not removed: %s", key, type(exc).__name__)
                 left.append(key)
+            continue
+        if key in known and not _copy_whole(key, want):
+            # Recorded by a start cut short, its data-folder copy (part or all) already removed, and its folder
+            # changed since (#808 review): nothing to go back to. Its entry stays, so it reads as changed: switched
+            # off by the next read or sync, and its card shows the changed files. The backups keep the original.
+            kept[key] = "changed since its export"
             continue
         forget(key)                                  # back to the data folder, which is still whole
         kept[key] = "check failed"

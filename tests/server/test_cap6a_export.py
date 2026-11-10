@@ -627,3 +627,118 @@ async def test_at_start_a_cut_short_plugin_install_goes_before_the_export(monkey
     monkeypatch.setattr(agent_skills, "sync", step("sync"))
     await main._boot_skills()
     assert order == ["finish_interrupted", "export", "sync"]
+
+
+# ── #808 review, second round ──────────────────────────────────────────────────────────────────────────────────
+
+async def _two_installs(monkeypatch, first, second):
+    """`first` takes the manifest's lock and stops before its row's commit; `second` starts meanwhile."""
+    reached, release = _pause_commit(monkeypatch, after=False)
+    one = asyncio.create_task(first)
+    await asyncio.wait_for(reached.wait(), 5)
+    two = asyncio.create_task(second)
+    await asyncio.sleep(0.2)
+    release.set()
+    await asyncio.wait_for(one, 5)
+    with pytest.raises(ValueError, match="already exists"):
+        await asyncio.wait_for(two, 5)
+
+
+async def test_an_install_behind_a_copied_in_skill_of_the_key_never_takes_it_for_a_leftover(home, monkeypatch):
+    """A CAP8-2 copy (Arslan's, not approved) holds the lock; a card-approved install of the key waits. Once the copy's
+    row is there, the install is refused: the copy keeps its folder, its entry and its card."""
+    from server.services import capability_list
+    await _two_installs(monkeypatch, skill_import.install_prepared(_prepared(), approved=False),
+                        skill_import.install_prepared(_prepared()))
+    assert agent_skills.entries()["weekly-report"] == {"by": "arslan", "files": None}
+    assert agent_skills.folder("weekly-report").is_dir() and not (home / ".Trash").exists()
+    assert await agent_skills.needs_card("weekly-report")
+    with pytest.raises(capability_list.NeedsCard):
+        await capability_list.switch("skill:weekly-report", True)
+
+
+async def test_a_copied_in_install_behind_an_approved_one_never_takes_its_folder(home, monkeypatch):
+    await _two_installs(monkeypatch, skill_import.install_prepared(_prepared()),
+                        skill_import.install_prepared(_prepared(), approved=False))
+    entry = agent_skills.entries()["weekly-report"]
+    assert entry["by"] == "arslan" and entry["files"] and not (home / ".Trash").exists()
+    assert (await _pack()).enabled is True
+    assert (await ReadSkillExecutor().execute({"key": "weekly-report"}))["ok"]
+
+
+async def test_what_arslan_wrote_is_never_what_was_approved(home, monkeypatch):
+    """A CAP8-2 copy's `written` hashes tell a delete it is Arslan's own; they never let it be read or run."""
+    await skill_import.install_prepared(_prepared(), approved=False)
+
+    async def forced_on():
+        async with db_session.AsyncSessionLocal() as db:
+            (await db.get(SkillPack, "weekly-report")).enabled = True
+            await db.commit()
+    await forced_on()
+    out = await ReadSkillExecutor().execute({"key": "weekly-report"})
+    assert out["ok"] is False and "changed since they were approved" in out["error"], out
+    assert (await _pack()).enabled is False
+    await forced_on()
+    handed = _sandbox(monkeypatch)
+    out = await RunPythonExecutor().execute({"skill_script": "weekly-report/run.py"})
+    assert out["ok"] is False and handed == [] and (await _pack()).enabled is False, out
+    await forced_on()
+    assert await agent_skills.sync() == {"weekly-report": "new"} and (await _pack()).enabled is False
+
+
+async def test_deleting_an_exported_skill_takes_a_data_copy_the_export_left(api, home, monkeypatch):
+    data = await _imported(scripts={"run.py": RUN})
+    real = agent_skills._clear
+
+    def clear(path):
+        if path == agent_skills._data_folder("weekly-report"):
+            raise OSError("busy")
+        return real(path)
+    monkeypatch.setattr(agent_skills, "_clear", clear)
+    assert (await agent_skills.export_imported())["copies_left"] == ["weekly-report"] and data.exists()
+    monkeypatch.setattr(agent_skills, "_clear", real)
+    response = await api.delete("/api/v1/capabilities/skill:weekly-report")
+    assert response.status_code == 200, response.text
+    assert not data.exists() and (home / ".Trash" / "Arslan skill files weekly-report" / "run.py").is_file()
+    handed = _sandbox(monkeypatch)
+    out = await RunPythonExecutor().execute({"skill_script": "weekly-report/run.py"})
+    assert out["ok"] is False and handed == [], out
+
+
+@pytest.mark.parametrize("copy", ["gone", "whole"])
+async def test_a_folder_changed_after_a_start_cut_short_past_the_check(home, monkeypatch, copy):
+    """Stopped after the check (its data-folder copy removed, or not yet), then the folder changes before the next
+    start. With the copy whole, the skill goes back to it; with it gone, its entry stays, so it reads as changed and is
+    off until its card: never a row that runs with nothing checked."""
+    data = await _imported(scripts={"run.py": RUN})
+    real_save, real_clear = agent_skills._save, agent_skills._clear
+
+    def save(skills, export=None, written=None):
+        if export and export.get("state") == "done":
+            raise _Crash()
+        return real_save(skills, export=export, written=written)
+
+    def clear(path):
+        if path == agent_skills._data_folder("weekly-report"):
+            raise _Crash()
+        return real_clear(path)
+    monkeypatch.setattr(agent_skills, "_save" if copy == "gone" else "_clear", save if copy == "gone" else clear)
+    with pytest.raises(_Crash):
+        await agent_skills.export_imported()
+    monkeypatch.setattr(agent_skills, "_save", real_save)
+    monkeypatch.setattr(agent_skills, "_clear", real_clear)
+    assert data.exists() is (copy == "whole")
+    skill_md = agent_skills.folder("weekly-report") / "SKILL.md"
+    skill_md.write_text(skill_md.read_text() + "\nA line added since.\n")
+    report = await agent_skills.export_imported()
+    if copy == "gone":
+        assert report["kept"] == {"weekly-report": "changed since its export"}, report
+        assert agent_skills.entries()["weekly-report"]["by"] == "arslan"
+        assert await agent_skills.sync() == {"weekly-report": "changed"}
+        assert (await _pack()).enabled is False and await agent_skills.needs_card("weekly-report")
+        handed = _sandbox(monkeypatch)
+        assert (await RunPythonExecutor().execute({"skill_script": "weekly-report/run.py"}))["ok"] is False
+        assert handed == []
+    else:
+        assert report["kept"] == {"weekly-report": "check failed"}, report
+        await _works_from_the_data_folder(monkeypatch)

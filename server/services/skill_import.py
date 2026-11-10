@@ -461,14 +461,19 @@ async def install_prepared(prepared: dict, *, source_id: str | None = None, appr
         if await db.get(SkillPack, key) is not None:
             raise ValueError(f"skill '{key}' already exists in the library")
     stored, stored_refs = list(prepared["scripts"]), list(prepared["references"])
-    leftover = _data_dir() / "skill_scripts" / key
-    if os.path.lexists(leftover):
-        capability_install.to_trash(leftover, prefix="Arslan leftover skill files")
     folder = agent_skills.folder(key)
     body = _body(prepared, key, info, sha, stored, stored_refs)
     # Under the manifest's lock from the folder to the row's commit: a reload in between (agent_skills.sync) would
     # find the folder and its hashes with no row yet, and take it for another tool's skill (#795 review).
     async with agent_skills.manifest_lock():
+        # Asked again under the lock (#808 review): another install of the key may have taken the lock first and
+        # committed its row meanwhile. Its folder is not a leftover; this one is refused before anything is touched.
+        async with db_session.AsyncSessionLocal() as db:
+            if await db.get(SkillPack, key) is not None:
+                raise ValueError(f"skill '{key}' already exists in the library")
+        leftover = _data_dir() / "skill_scripts" / key
+        if os.path.lexists(leftover):
+            capability_install.to_trash(leftover, prefix="Arslan leftover skill files")
         if agent_skills.still_arslans(key):
             # Arslan's own folder with no row (a removal cut short), exactly as it installed it: a leftover too,
             # never joined to the new skill. One that differs from its hashes may be someone else's now: refused.
