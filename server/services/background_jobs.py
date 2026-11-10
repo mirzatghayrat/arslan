@@ -369,6 +369,8 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
 
     async def function(conversation_id, instruction, emit):
         async def body(sink):
+            if job.reports is not None:                  # SUB5a: its task row is written; a restart is this turn's
+                await sub_sessions.summing(job.job_id)
             goal = instruction
             if job.parent_id and job.outside_seen is not False:
                 goal = untrusted.wrap_external(goal)     # SUB3: a brief that may carry outside content, framed
@@ -483,7 +485,17 @@ async def report_interrupted() -> int:
     """Boot pass, after `task_service.recover_interrupted`: jobs never survive a
     restart (they live in this process). Each one the restart cut short is
     closed as cancelled and its conversation is told, once, in plain words —
-    a job that silently vanished would look like it was still coming."""
+    a job that silently vanished would look like it was still coming. SUB5a: then
+    each sub-session's parent that was still waiting is told, also for one whose job
+    never had a slot (`sub_sessions.report_restart`)."""
+    from server.services import sub_sessions
+    try:
+        return await _report_interrupted_jobs()
+    finally:
+        await sub_sessions.report_restart()
+
+
+async def _report_interrupted_jobs() -> int:
     from sqlalchemy import select
     from server.db import session as db_session
     from server.db.models import CompanionTask
