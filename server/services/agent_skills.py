@@ -16,9 +16,10 @@ The registry still lists skills from `SkillPack`: a folder skill has a row like 
 the data folder, as every skill did before CAP6a, until the one-time export moves them (CAP6a's second part).
 
 Not read: a folder name that is not a plain key (lowercase letters, digits and hyphens, at most 60), a seed's key,
-the key of a skill Arslan already has from elsewhere, a folder that is a link or holds one, and one past the size
-caps. CAP6b (command_sandbox.cap6b_folders, workspace_paths) keeps the model from reading or writing the folder by
-any other way.
+the key of a skill Arslan already has from elsewhere, a folder that is a link or holds one, one that holds a file
+with another name on disk (a hard link: the other name may be another skill's file or one outside every skill, whose
+bytes a yes would pin as this skill's), and one past the size caps. CAP6b (command_sandbox.cap6b_folders,
+workspace_paths) keeps the model from reading or writing the folder by any other way.
 """
 from __future__ import annotations
 
@@ -51,7 +52,7 @@ CHANGED = ("its files in ~/.agents/skills changed since they were approved, so i
 
 
 class Unreadable(Exception):
-    """A skill folder Arslan does not read (a link, too large, no valid SKILL.md)."""
+    """A skill folder Arslan does not read (a link, a hard link, too large, no valid SKILL.md)."""
 
 
 class Changed(Exception):
@@ -146,8 +147,9 @@ def _read_file(path: Path) -> bytes:
 
 def read_folder(key: str) -> dict:
     """Every file of the skill's folder, hashed, with the text of each that is UTF-8, and its SKILL.md parsed. A link
-    anywhere in it (the folder itself included) is refused, and each file is opened without following one, so what
-    was hashed is what is used. Raises Unreadable."""
+    anywhere in it (the folder itself included), or a file with another name on disk, is refused, and each file is
+    opened without following a link and must be the file that was checked, so what was hashed is what is used. Raises
+    Unreadable."""
     from server.services import skill_import
     files, texts = _read_tree(folder(key))
     raw = texts.get("SKILL.md")
@@ -178,15 +180,25 @@ def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
         for name in sorted(names):
             path = here / name
             try:
-                mode = os.lstat(path).st_mode
+                info = os.lstat(path)
             except OSError as exc:                  # gone between the listing and here
                 raise Unreadable("a file can't be read") from exc
-            if not stat.S_ISREG(mode):
+            if not stat.S_ISREG(info.st_mode):
                 raise Unreadable("holds a link or a special file")
+            if info.st_nlink > 1:
+                raise Unreadable("a file has another name on disk (a hard link)")
             if len(files) >= MAX_FILES:
                 raise Unreadable("too many files")
+            # Opened as _read_file does, and it must be the file just looked at (its device and inode). O_NONBLOCK: a
+            # FIFO swapped in can't hold the open. Not in _read_file: CAP8-2's import reads another tool's skills with
+            # it, and whether a second name refuses those is that import's to decide.
             try:
-                data = _read_file(path)
+                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                with os.fdopen(fd, "rb") as handle:
+                    opened = os.fstat(handle.fileno())
+                    if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                        raise Unreadable("a file changed while it was read")
+                    data = handle.read(MAX_BYTES + 1)
             except OSError as exc:
                 raise Unreadable("a file can't be read") from exc
             total += len(data)
