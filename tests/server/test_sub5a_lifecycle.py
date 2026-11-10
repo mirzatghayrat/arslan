@@ -245,6 +245,7 @@ async def test_a_summed_up_sub_session_owes_nothing_and_a_later_restart_says_not
     assert await _states(runs, [child.conversation_id]) == {child.conversation_id: sub_sessions.WORKING}
     await _wait(_settled)
     await _wait(lambda: not sub_sessions._summing)
+    assert await _states(runs, [child.conversation_id]) == {child.conversation_id: None}     # cleared when it ended
     db = await restart()
     assert await _states(db, [child.conversation_id]) == {child.conversation_id: None}
     assert await _said(db, ROOT) == [("summed up", "done")]
@@ -287,14 +288,17 @@ async def _live_turn(db, cid) -> tuple[int, asyncio.Task]:
 
 async def test_the_windows_stop_stops_the_commanders_sub_sessions_and_theirs_and_no_summary_follows(
         runs, client, monkeypatch):  # noqa: F811
+    """The voice-over had finished and its report waited for the outline: it goes with the stop too."""
     _sink(ROOT)
     model = _Model({OUTLINE: _steps(final="outline ready"), COVER: _steps(final="cover ready"),
-                    OTHER_BRIEF: _steps(final="other ready")}, summary=_steps(final="summed up"))
+                    OTHER_BRIEF: _steps(final="other ready"), THIRD: _steps(final="voice-over ready")},
+                   summary=_steps(final="summed up"))
     for side in (OUTLINE, COVER, OTHER_BRIEF):
         model.hold[side] = asyncio.Event()
     monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
-    await _start(OUTLINE)
-    [kid] = _children()
+    await _start(OUTLINE, THIRD)
+    kid, done = _by_goal()[OUTLINE], _by_goal()[THIRD]
+    await _wait(lambda: done.task.done() and sub_sessions._reports.get(ROOT))
     grandchild = await sub_sessions.start(kid.conversation_id, COVER, outside_seen=False)
     elsewhere = await sub_sessions.start(OTHER, OTHER_BRIEF, outside_seen=False)
     await _wait(lambda: all(model.requests[side] for side in (OUTLINE, COVER, OTHER_BRIEF)))
@@ -310,10 +314,20 @@ async def test_the_windows_stop_stops_the_commanders_sub_sessions_and_theirs_and
         await asyncio.sleep(0.2)                                # twenty polls
         assert _summaries() == [] and model.requests["summary"] == [] and ROOT not in sub_sessions._summaries
         assert sub_sessions._reports == {}
-        assert await _states(runs, [kid.conversation_id, grandchild, elsewhere]) == {
-            kid.conversation_id: None, grandchild: None, elsewhere: sub_sessions.WORKING}
+        assert await _states(runs, [kid.conversation_id, done.conversation_id, grandchild, elsewhere]) == {
+            kid.conversation_id: None, done.conversation_id: None, grandchild: None, elsewhere: sub_sessions.WORKING}
     finally:
         run_registry.unregister(run_id, ROOT)
+
+
+async def _refused(awaitable) -> str | None:
+    """The refusal's code, or None when it started. Not pytest.raises: when its "did not raise" (a BaseException)
+    ended this test, the run never exited."""
+    try:
+        await awaitable
+    except sub_sessions.SubSessionError as exc:
+        return exc.code
+    return None
 
 
 async def test_a_sub_session_the_stopped_turn_starts_afterwards_never_runs(runs, client, monkeypatch):  # noqa: F811
@@ -338,15 +352,13 @@ async def test_a_sub_session_the_stopped_turn_starts_afterwards_never_runs(runs,
         await entered.wait()
         assert (await client.post(f"/api/v1/runs/{run_id}/cancel")).status_code == 202
         gate.set()
-        with pytest.raises(sub_sessions.SubSessionError) as made:
-            await starting
-        assert made.value.code == "sub_session_stopped" and background_jobs._jobs == {}
+        assert await _refused(starting) == "sub_session_stopped" and background_jobs._jobs == {}
         async with runs() as db:
             [child] = await sub_sessions.children(db, ROOT)
         assert await _states(runs, [child]) == {child: None}
-        with execution_context.bind_run(run_id), pytest.raises(sub_sessions.SubSessionError) as later:
-            await sub_sessions.start(ROOT, COVER, outside_seen=False)
-        assert later.value.code == "sub_session_stopped"
+        with execution_context.bind_run(run_id):
+            later = sub_sessions.start(ROOT, COVER, outside_seen=False)
+            assert await _refused(later) == "sub_session_stopped"
         async with runs() as db:
             assert await sub_sessions.children(db, ROOT) == [child]
         with execution_context.bind_run(run_id + 1):
