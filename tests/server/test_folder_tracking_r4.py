@@ -281,11 +281,14 @@ def test_round_four_matrices(tmp_path, monkeypatch):
     assert len(corpora["repository"]) == 1340
     assert len(corpora["structural"]) == 11816
     matrix.make_plain_tree(set.union(*corpora.values()), tmp_path)
+    # The revision comparison runs the fixed sample by default (FOLDER_TRACKING_EVIDENCE_FULL=1: every
+    # text); the invalid-anchor count below always reads the whole repository corpus.
+    samples = {name: revisions.sampled(texts) for name, texts in corpora.items()}
     report = {}
     for revision in (revisions.MAINS[0], revisions.ROUND_THREE, revisions.ROUND_FOUR):
         baseline = revisions.load_revision(revision, monkeypatch)
         report[revision] = {}
-        for name, texts in corpora.items():
+        for name, texts in samples.items():
             counts = Counter()
             for text in texts:
                 before = baseline.assess(text, **({"cwd": tmp_path} if revision != revisions.MAINS[0] else {}))
