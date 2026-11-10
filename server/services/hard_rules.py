@@ -109,6 +109,8 @@ RUN_LATER: tuple[HardRule, ...] = (
              _HR1 + "test_the_hooks_path_target_is_denied_and_an_unreadable_config_builds_no_profile"),
     HardRule("run-later/mcp-preset", "run-later", "kernel", "server.services.capability_sandbox:profile",
              _HR1_KERNEL + "test_an_mcp_server_cannot_write_them_in_a_granted_folder"),
+    HardRule("run-later/ancestor-hold", "run-later", "kernel", f"{_SANDBOX}:held_ancestors",
+             _HR1_KERNEL + "test_the_held_folders_and_the_folders_above_them_stay_in_place_and_an_ordinary_one_moves"),
     HardRule("run-later/outside-under-a-grant", "run-later", "kernel", f"{_SANDBOX}:minimal_profile",
              _HR1 + "test_only_a_click_on_its_own_card_lifts_the_hold_outside"),
 )

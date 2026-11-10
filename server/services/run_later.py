@@ -13,6 +13,8 @@ Each name matches at any depth. It has two forms, which tests/server/test_hr1_ru
                    writable roots in the commands and MCP profiles, so the last rule wins (command_sandbox,
                    capability_sandbox); plus the work folder's `core.hooksPath` target, as a path;
   `matches`        the same names for Python, for HR-2's file tools.
+The folders above them are held in place by literal (`held_folders`, the ancestor hold, #813 review 6), so a rename
+can't take a held name out of its path.
 
 APFS ignores letter case, so both forms do too: the regex spells each letter as a class, `matches` folds case.
 Whether the kernel needs the classes was not measured here (a write in another case to an existing name may reach
@@ -31,6 +33,7 @@ import fnmatch
 import os
 import stat
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path, PurePath
 
 #: The names, by family. A pattern is path components; `*` in one is any run of characters but `/`, and a final
@@ -266,14 +269,10 @@ def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> li
     set: the folder by its real path and by its name in its real parent, so a link there can't be swapped.
     Each name is wrapped to exempt dependency folders only when `exempts` holds for the real paths of `folders`
     and `roots` (an MCP server's own folder); otherwise it is the bare regex. The regexes stay built from constants."""
-    from server.services.sandbox_profile import real, regex, subpath
+    from server.services.sandbox_profile import real, subpath
     folders = list(folders)
-    if exempts(real(Path(os.path.abspath(p))) for p in (*folders, *roots)):
-        outside_dependencies = f"(require-not {regex(dependency_regex())})"
-        out = [tuple(f"(require-all {regex(pattern_regex(p))} {outside_dependencies})" for p in patterns)
-               for _, patterns in FAMILIES]
-    else:
-        out = [tuple(regex(pattern_regex(p)) for p in patterns) for _, patterns in FAMILIES]
+    exempt = _exempt(folders, roots)
+    out = [tuple(_filter(pattern_regex(p), exempt) for p in patterns) for _, patterns in FAMILIES]
     targets: list[str] = []
     for folder in folders:
         target = hooks_path(folder)
@@ -286,3 +285,156 @@ def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> li
     if targets:
         out.append(tuple(targets))
     return out
+
+
+def _exempt(folders: Iterable[Path], roots: Iterable[Path]) -> bool:
+    from server.services.sandbox_profile import real
+    return exempts(real(Path(os.path.abspath(p))) for p in (*folders, *roots))
+
+
+def _filter(pattern: str, exempt: bool) -> str:
+    """One regex filter, wrapped to leave dependency folders out when `exempt`."""
+    from server.services.sandbox_profile import regex
+    if not exempt:
+        return regex(pattern)
+    return f"(require-all {regex(pattern)} (require-not {regex(dependency_regex())}))"
+
+
+# ── the ancestor hold (#813 review 6, ⓪Plan's option B) ─────────────────────
+#
+# The names above match by path. A command could rename a folder above one (`.git`, `.git/hooks`, `.vscode`, a
+# submodule's `.git/modules`), write inside it under the new name, where no regex sees a held path, and rename it
+# back. So the profiles also deny `file-write*` as a literal on every existing folder that is a held folder
+# (`HELD_FOLDERS`) and on every folder above it up to the root (`command_sandbox.held_ancestors`, SBX-5a's
+# mechanism): a literal holds that one folder in place (rename, removal, mode) while files inside are created,
+# written and removed as before. The files themselves are the regexes' (writes), never literals here.
+#
+# A held folder that doesn't exist yet needs nothing, by design: `git init`, `git clone` and a first `.vscode` are
+# made by mkdir. The residual is a folder prepared elsewhere, outside every held name, and renamed into a fresh place
+# (SECURITY.md); git's consumer-view check is HR-1b's.
+
+def _held_folder_tree() -> dict[str, dict]:
+    """The held folders as a tree of case-folded names: each pattern's leading components that are plain names (up to
+    its first `*`), the last component left out unless the pattern ends in `**` (then that folder is one).
+    {".git": {"hooks": {}, "worktrees": {}, "modules": {}}, ".vscode": {}, ...}"""
+    tree: dict[str, dict] = {}
+    for _, patterns in FAMILIES:
+        for pattern in patterns:
+            parts = pattern.split("/")
+            parts = parts[:-1]                      # a file, or the `**` after a folder that is held itself
+            node = tree
+            for part in parts:
+                if "*" in part:
+                    break                           # renaming a `*` component keeps the path matching
+                node = node.setdefault(part.casefold(), {})
+    return tree
+
+
+HELD_FOLDERS = _held_folder_tree()
+
+#: The walk's caps (#813 review 6). Past either, or on a folder it can't list, the walk is incomplete and the profile
+#: holds the held folders by name instead (`folder_filters`): closed, at the cost of making one (`git init`, `git
+#: clone`) in that run. Measured on APFS tmp trees, warm (2026-11-11): the walk takes about 10 ms for 5,000 entries
+#: and 90 ms for 49,500 (4,500 folders), where the whole commands profile took about 110 ms.
+WALK_ENTRIES = 50_000
+WALK_DEPTH = 32
+
+
+@dataclass(frozen=True)
+class HeldWalk:
+    folders: tuple[Path, ...]       # the held folders found, by real path, each after the ones above it
+    complete: bool                  # False: a cap was reached or a folder couldn't be listed
+
+
+class _Incomplete(Exception):
+    pass
+
+
+def _listing(folder: Path, budget: list[int]) -> list[os.DirEntry]:
+    """The folder's entries, counted against `budget`. A folder gone since it was seen lists as empty; any other
+    error, or the budget running out, ends the walk incomplete."""
+    entries = []
+    try:
+        with os.scandir(folder) as found:
+            for entry in found:
+                budget[0] -= 1
+                if budget[0] < 0:
+                    raise _Incomplete
+                entries.append(entry)
+    except (FileNotFoundError, NotADirectoryError):
+        return []
+    except OSError:
+        raise _Incomplete from None
+    return entries
+
+
+def _is_folder_entry(entry: os.DirEntry) -> bool:
+    """A folder itself, links not followed (a link's target is matched by its real path already)."""
+    try:
+        return entry.is_dir(follow_symlinks=False)
+    except OSError:
+        raise _Incomplete from None
+
+
+def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), max_entries: int | None = None,
+                 max_depth: int | None = None) -> HeldWalk:
+    """The existing held folders under `folders` (the work folder, or an MCP server's granted folders and its own),
+    found by a bounded walk of real paths (caps `WALK_ENTRIES` and `WALK_DEPTH` unless given). Links aren't followed.
+    Dependency folders are skipped when `exempts` holds for `folders` and `roots`, as `kernel_filters` exempts them;
+    otherwise they are walked too. A held folder with held folders of its own (`.git`) is searched for those only,
+    never walked (git's objects)."""
+    from server.services.sandbox_profile import real
+    max_entries = WALK_ENTRIES if max_entries is None else max_entries
+    max_depth = WALK_DEPTH if max_depth is None else max_depth
+    folders = [real(Path(os.path.abspath(p))) for p in folders]
+    skip = _exempt(folders, roots)
+    starts = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
+    budget = [max_entries]
+    found: list[Path] = []
+
+    def inside_held(folder: Path, tree: dict) -> None:
+        for entry in _listing(folder, budget):
+            sub = tree.get(entry.name.casefold())
+            if sub is not None and _is_folder_entry(entry):
+                found.append(folder / entry.name)
+                if sub:
+                    inside_held(folder / entry.name, sub)
+
+    stack = [(start, 0) for start in reversed(starts)]
+    try:
+        while stack:
+            folder, depth = stack.pop()
+            for entry in _listing(folder, budget):
+                if not _is_folder_entry(entry):
+                    continue
+                name = entry.name.casefold()
+                if skip and name in _FOLDED_DEPENDENCIES:
+                    continue
+                path = folder / entry.name
+                tree = HELD_FOLDERS.get(name)
+                if tree is not None:
+                    found.append(path)
+                    if tree:
+                        inside_held(path, tree)
+                        continue
+                if depth + 1 > max_depth:
+                    raise _Incomplete
+                stack.append((path, depth + 1))
+    except _Incomplete:
+        return HeldWalk(tuple(dict.fromkeys(found)), False)
+    return HeldWalk(tuple(dict.fromkeys(found)), True)
+
+
+def _chains(tree: dict, above: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
+    out = []
+    for name, sub in tree.items():
+        out.append((*above, name))
+        out.extend(_chains(sub, (*above, name)))
+    return out
+
+
+def folder_filters(folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> tuple[str, ...]:
+    """The fallback when the walk is incomplete: every held folder held by its name at any depth (the folder itself,
+    not what's inside), with the same dependency exemption as `kernel_filters`. Making one is then refused too."""
+    exempt = _exempt(list(folders), roots)
+    return tuple(_filter("^.*/" + "/".join(map(_component, chain)) + "$", exempt) for chain in _chains(HELD_FOLDERS))

@@ -259,6 +259,109 @@ def test_the_outside_floor_holds_them_only_when_given_the_work_folder(home):
     assert all(not line.startswith("(allow") or "file-write" not in line for line in text)
 
 
+# ── the ancestor hold (#813 review 6, option B) ─────────────────────────────
+
+def _tree(ws: Path) -> Path:
+    """Held folders at the top and below, git's own folders (searched for its held ones only), a nested repository
+    under `.claude`, a dependency's repository, an ordinary folder, and a link named like a held folder."""
+    for folder in (".git/hooks", f".git/modules/{STAND_IN}/hooks", ".git/worktrees", ".git/objects/.vscode",
+                   "sub/.vscode", "sub/.husky", f".claude/worktrees/{STAND_IN}/.git/hooks",
+                   f"node_modules/{STAND_IN}/.git/hooks", f"node_modules/{STAND_IN}/.vscode", f"{STAND_IN}-plain"):
+        (ws / folder).mkdir(parents=True, exist_ok=True)
+    (ws / "sub" / ".cursor").symlink_to(ws / f"{STAND_IN}-plain")
+    return ws
+
+
+def _found(ws: Path, *names: str) -> list[Path]:
+    return [Path(os.path.realpath(ws)) / name for name in names]
+
+
+def test_the_walk_finds_the_held_folders_each_after_the_ones_above_it(tmp_path):
+    ws = _tree(tmp_path / "ws")
+    walk = run_later.held_folders([ws])
+    assert walk.complete
+    expected = _found(ws, ".git", ".git/hooks", ".git/modules", ".git/worktrees", ".claude",
+                      f".claude/worktrees/{STAND_IN}/.git", f".claude/worktrees/{STAND_IN}/.git/hooks",
+                      "sub/.vscode", "sub/.husky")
+    assert sorted(walk.folders) == sorted(expected)
+    assert all(walk.folders.index(f.parent) < walk.folders.index(f) for f in walk.folders if f.parent in walk.folders)
+
+
+def test_the_held_folders_are_the_plain_names_above_the_held_files():
+    assert run_later.HELD_FOLDERS == {".git": {"hooks": {}, "worktrees": {}, "modules": {}}, ".vscode": {},
+                                      ".claude": {}, ".codex": {}, ".gemini": {}, ".cursor": {}, ".husky": {}}
+
+
+def test_inside_a_dependency_folder_the_walk_holds_nothing_unless_the_root_is_inside_one(tmp_path):
+    ws = _tree(tmp_path / "ws")
+    assert not any("node_modules" in f.parts for f in run_later.held_folders([ws]).folders)
+    inside = _tree(tmp_path / "node_modules" / "ws")                     # a root inside one: no exemption
+    found = run_later.held_folders([inside]).folders
+    assert set(_found(inside, f"node_modules/{STAND_IN}/.git", f"node_modules/{STAND_IN}/.vscode")) <= set(found)
+
+
+@pytest.mark.parametrize("caps", [{"max_entries": 3}, {"max_depth": 1}])
+def test_the_walk_stops_at_its_caps_incomplete(tmp_path, caps):
+    ws = _tree(tmp_path / "ws")
+    assert not run_later.held_folders([ws], **caps).complete
+    assert run_later.held_folders([ws], max_entries=1000, max_depth=8).complete
+
+
+def test_a_folder_the_walk_cannot_list_ends_it_incomplete(tmp_path):
+    ws = _tree(tmp_path / "ws")
+    shut = ws / f"{STAND_IN}-plain"
+    shut.chmod(0)
+    try:
+        assert not run_later.held_folders([ws]).complete
+    finally:
+        shut.chmod(0o700)
+
+
+def _held_line(text: str) -> str:
+    """The deny line with the folders `held_ancestors` holds as literals (the last one with the work folder's)."""
+    return [line for line in text.splitlines() if line.startswith("(deny file-write* (literal")][-1]
+
+
+def test_the_profiles_hold_the_held_folders_and_the_folders_above_them_in_order(home):
+    ws = _tree(home / "ws")
+    real = Path(os.path.realpath(ws))
+    order = [real, real / "sub", real / "sub" / ".vscode"]
+    git = [real / ".git", real / ".git" / "hooks"]
+    texts = {"commands": command_sandbox.commands_profile(ws),
+             "mcp": capability_sandbox.profile(root=home / "mcp", folders=[str(ws)], network=False, read=[]),
+             "floor": command_sandbox.minimal_profile(run_later_in=ws)}
+    for name, text in texts.items():
+        line = _held_line(text)
+        for chain in (order, git):
+            spots = [line.index(f'(literal "{f}")') for f in chain]
+            assert spots == sorted(spots), name
+        assert f'(literal "{real / ".git" / "objects"}")' not in line
+        assert f"{real}/node_modules" not in text, name                    # a dependency's folders are not held
+        assert f'(literal "{real / f"{STAND_IN}-plain"}")' not in line     # nor an ordinary folder
+    # The floor holds them all the way up, as every folder is writable there.
+    assert '(literal "/")' in _held_line(texts["floor"])
+
+
+def test_the_mcp_preset_holds_them_in_its_own_folder_too(home):
+    root = _tree(home / "mcp")
+    line = _held_line(capability_sandbox.profile(root=root, folders=[], network=False, read=[]))
+    assert f'(literal "{os.path.realpath(root / ".git" / "hooks")}")' in line
+
+
+def test_past_the_cap_the_profiles_hold_them_by_name_and_otherwise_do_not(home, monkeypatch):
+    ws = _tree(home / "ws")
+    by_name = run_later.folder_filters([ws])
+    assert by_name[0] == ('(require-all (regex #"^.*/[.][Gg][Ii][Tt]$") '
+                          f'(require-not (regex #"{run_later.dependency_regex()}")))')
+    build = {"commands": lambda: command_sandbox.commands_profile(ws),
+             "mcp": lambda: capability_sandbox.profile(root=home / "mcp", folders=[str(ws)], network=False, read=[]),
+             "floor": lambda: command_sandbox.minimal_profile(run_later_in=ws)}
+    line = f"(deny file-write* {' '.join(by_name)})"
+    assert all(line not in make() for make in build.values())
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", 3)
+    assert all(line in make().splitlines() for make in build.values())
+
+
 # ── core.hooksPath ───────────────────────────────────────────────────────────
 
 def _repo(folder: Path, config: str) -> Path:

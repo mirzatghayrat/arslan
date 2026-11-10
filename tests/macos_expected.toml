@@ -28,10 +28,13 @@ xfail = 0
 # outside floor that holds them, and that checkout in German and Chinese carry the git note; an MCP server's own
 # folder inside node_modules keeps every name held (8 cases, #813 review 4). A checkout under `2>&1` gets the note
 # from stdout; a commit whose hook prints its `.husky` path and the add of an ignored `.envrc` name a held file without
-# a refusal and get none (3 cases, #813 review 5).
+# a refusal and get none (3 cases, #813 review 5). The ancestor hold: the held folders and the folders above them stay
+# in place in both presets and under the floor, a rename round trip leaves no held file (.git, .vscode, .husky),
+# committing still works and `rm -rf .git` fails, a dependency's folders still move, and past the walk's cap they are
+# held by name (9 cases, #813 review 6).
 ["server/sbx/test_hr1_run_later_kernel.py"]
-markers = 13
-cases = 25
+markers = 20
+cases = 34
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

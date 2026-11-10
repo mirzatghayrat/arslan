@@ -12,7 +12,9 @@ them, and that checkout with git's messages in German and Chinese all carry the 
 the floor; #813 reviews 4 and 5). That checkout under `2>&1` carries it from stdout, and a commit whose hook prints its
 `.husky` path or the add of an ignored `.envrc`, which name a held file without a refusal, carry none (#813 review 5).
 In the MCP preset: the same in a granted folder and the server's own folder, and an own folder inside
-node_modules keeps every name held.
+node_modules keeps every name held. The ancestor hold (#813 review 6): the held folders and the folders above them
+can't be renamed or removed in either preset or under the floor, a rename round trip leaves no held file, an ordinary
+folder and a dependency's folders still move, and past the walk's cap the folders are held by name.
 
 Plain writes with stand-in names only. The bypass corpus (letter case, Unicode forms, renames into place, hard links,
 a `.git` that is a link or a file, submodules, bare repositories, a hooksPath pointing outside) is Codex's.
@@ -500,3 +502,144 @@ def test_the_everyday_git_flow_in_the_sandbox(sbx):
     config_only = [s for s, (_, refused, effect) in measured.items()
                    if effect != "yes" and refused == CONFIG and "--template=" not in s]
     assert len(config_only) == FLOW_CONFIG_ONLY
+
+
+# ── the ancestor hold (#813 review 6, option B) ─────────────────────────────
+
+_MOVE = """
+import json, os, sys
+out = []
+for pair in sys.argv[1:]:
+    source, target = pair.split('|')
+    try:
+        os.rename(source, target)
+    except PermissionError:
+        out.append('refused')
+    else:
+        out.append('moved')
+print(json.dumps(out))
+"""
+
+
+def _moves(sbx, folder, pairs, *, profile=None) -> list[str]:
+    """Each rename in the sandbox, in order: 'moved' or 'refused'."""
+    args = [f"{folder / a}|{folder / b}" for a, b in pairs]
+    result = sbx.python(_MOVE, *args, probe="hr1-ancestor-rename", profile=profile)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def _hooked_repo(work, name: str = ".") -> None:
+    """Outside the sandbox: a repository (with git's sample hooks), a `.vscode`, a `.husky` and an ordinary folder."""
+    folder = work / name
+    folder.mkdir(parents=True, exist_ok=True)
+    assert _git(folder, "init", "-q").returncode == 0
+    for sub in (".vscode", ".husky", f"{STAND_IN}-plain"):
+        (folder / sub).mkdir()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_the_held_folders_and_the_folders_above_them_stay_in_place_and_an_ordinary_one_moves(sbx):
+    """Renaming `.git`, `.git/hooks`, `.vscode`, `.husky`, or the work folder's subfolder that holds a repository is
+    refused (that last one is a documented cost); an ordinary folder beside them still moves."""
+    _hooked_repo(sbx.work, "sub")
+    pairs = [("sub/.git", f"sub/{STAND_IN}-g"), ("sub/.git/hooks", f"sub/.git/{STAND_IN}-h"),
+             ("sub/.vscode", f"sub/{STAND_IN}-v"), ("sub/.husky", f"sub/{STAND_IN}-k"), ("sub", f"{STAND_IN}-sub"),
+             (f"sub/{STAND_IN}-plain", f"sub/{STAND_IN}-moved")]
+    assert _moves(sbx, sbx.work, pairs) == ["refused"] * 5 + ["moved"]
+    assert (sbx.work / "sub" / ".git" / "hooks").is_dir() and (sbx.work / "sub" / f"{STAND_IN}-moved").is_dir()
+
+
+#: The round trip: rename the folder away, write the held file under the new name, rename it back.
+ROUND_TRIPS = {
+    ".git": (".git", "hooks", f"pre-commit-{STAND_IN}"),
+    ".vscode": (".vscode", None, "tasks.json"),
+    ".husky": (".husky", None, "pre-commit"),
+}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("case", sorted(ROUND_TRIPS))
+def test_the_rename_round_trip_leaves_no_held_file_on_disk(sbx, case):
+    folder, inner, name = ROUND_TRIPS[case]
+    _hooked_repo(sbx.work)
+    away = f"{STAND_IN}-away"
+    written = "/".join(p for p in (away, inner, name) if p)
+    script = (f"mv {folder} {away}; mkdir -p {away}/{inner or '.'}; printf zz > {written}; mv {away} {folder}; "
+              "exit 0")
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-ancestor-round-trip")
+    assert ran.returncode == 0
+    held = sbx.work / folder / (inner or "") / name
+    assert not held.exists() and (sbx.work / folder).is_dir()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_removing_a_repository_is_refused_and_committing_still_works(sbx):
+    """`rm -rf .git` fails inside the sandbox (a documented cost: it removes what isn't held before it stops), and
+    after the hold an ordinary write and commit still work."""
+    _hooked_repo(sbx.work)
+    (sbx.work / f"{STAND_IN}.txt").write_text("one\n")
+    who = " ".join(WHO)
+    commit = f"echo two >> {STAND_IN}.txt && git add {STAND_IN}.txt && git {who} commit -qm one && git log --oneline"
+    ran = sbx.run(["/bin/bash", "-p", "-c", commit], probe="hr1-ancestor-commit")
+    assert ran.returncode == 0 and len(ran.stdout.splitlines()) == 1
+    removed = sbx.run(["/bin/bash", "-p", "-c", "rm -rf .git"], probe="hr1-ancestor-rm")
+    assert removed.returncode != 0
+    assert (sbx.work / ".git" / "hooks").is_dir()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["mcp"], indirect=True)
+def test_an_mcp_server_cannot_move_them_in_a_granted_folder_or_its_own(sbx):
+    granted = sbx.root / "granted"
+    sbx.granted_folders = [granted]
+    for folder in (granted, sbx.work):
+        _hooked_repo(folder)
+        assert _moves(sbx, folder, [(".git", f"{STAND_IN}-g"), (".vscode", f"{STAND_IN}-v"),
+                                    (f"{STAND_IN}-plain", f"{STAND_IN}-moved")]) == ["refused", "refused", "moved"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["outside-floor"], indirect=True)
+def test_under_the_outside_floor_that_holds_them_the_folders_stay_in_place(sbx):
+    _hooked_repo(sbx.work)
+    assert _moves(sbx, sbx.work, [(".git", f"{STAND_IN}-g"), (f"{STAND_IN}-plain", f"{STAND_IN}-moved")],
+                  profile=_floor_profile(sbx)) == ["refused", "moved"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_a_dependency_folders_own_repository_still_moves(sbx):
+    """The node_modules exemption: a package's folders are not held, the same ones beside it are."""
+    dependency = f"node_modules/{STAND_IN}"
+    _hooked_repo(sbx.work, dependency)
+    _hooked_repo(sbx.work, f"{STAND_IN}-lib")
+    pairs = [(f"{dependency}/.git", f"{dependency}/g"), (f"{dependency}/.vscode", f"{dependency}/v"),
+             (dependency, f"node_modules/{STAND_IN}-2"), (f"{STAND_IN}-lib/.git", f"{STAND_IN}-lib/g")]
+    assert _moves(sbx, sbx.work, pairs) == ["moved", "moved", "moved", "refused"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_past_the_walks_cap_the_held_folders_are_held_by_name(sbx, monkeypatch):
+    """Closed, not open: past the cap every held folder is held by its name wherever it is moved (the folders above
+    it are then free), at the cost of making one (git init) in that run."""
+    from server.services import run_later
+    _hooked_repo(sbx.work, "sub")
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", 1)
+    moved = f"{STAND_IN}-sub"
+    assert _moves(sbx, sbx.work, [("sub", moved), (f"{moved}/.git", f"{moved}/g"), (f"{moved}/.git/hooks", f"{moved}/h"),
+                                  (f"{moved}/.vscode", f"{moved}/v"), (f"{moved}/{STAND_IN}-plain", f"{moved}/p")]) == [
+        "moved", "refused", "refused", "refused", "moved"]
+    made = sbx.run(["/bin/bash", "-p", "-c", f"mkdir -p {STAND_IN}-fresh/.git"], probe="hr1-ancestor-cap-mkdir")
+    assert made.returncode != 0 and not (sbx.work / f"{STAND_IN}-fresh" / ".git").exists()

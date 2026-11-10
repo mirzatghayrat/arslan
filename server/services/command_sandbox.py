@@ -30,6 +30,7 @@ Leaving the sandbox is always a click (see tool_loop): the model asks, or the us
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import stat
@@ -46,6 +47,7 @@ from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_
 _SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 _TRUST_SERVICE = '(global-name "com.apple.trustd.agent")'   # SBX-6a, the user's setting
 _available: bool | None = None
+_log = logging.getLogger(__name__)
 
 # strerror(EPERM): what seatbelt returns for a denied file operation, and what
 # sandbox-exec prints when it cannot start inside another sandbox.
@@ -148,7 +150,7 @@ def cap6b_spellings(plugin_folder: Path | None = None) -> list[Path]:
     return [Path.home() / ".agents" / "skills", *([plugin] if plugin is not None else [])]
 
 
-def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
+def held_ancestors(writable, protected, *, planted=(), kept=()) -> list[Path]:
     """SBX-5a (#772 review): the folders between a writable root and a protected path, root included, which the
     profiles deny `file-write*` as literals. A rule on a folder holds its contents but not its parents: a process
     that may write ~ could rename ~/.agents away, skills inside, and use them there. A literal is that one folder
@@ -163,7 +165,10 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
     Containment goes by `(st_dev, st_ino)` as well as by path (#772 delta review): `realpath` keeps the spelling it
     is given, so a work folder spelt `~/HOME` or in NFD is the same folder as the ~ the protected paths are under.
     A folder that doesn't exist yet is judged by its existing ancestors. Seatbelt matches the folder on disk, so a
-    literal in either spelling holds it."""
+    literal in either spelling holds it.
+
+    HR-1 (#813 review 6): `kept` folders (the held run-later folders the walk found, `run_later_folders`) are held
+    themselves as well as every folder above them, up to and including the root, when they exist."""
     roots = _resolved(writable)
     ids = {i for i in map(_identity, roots) if i is not None}
     seen: dict[Path, tuple[int, int] | None] = {}
@@ -194,7 +199,31 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
         entry = _real(lexical.parent) / lexical.name
         if entry.is_symlink():
             hold(entry)                                          # the CAP6b folder is a link: hold the link
+    for path in kept:
+        folder = _real(path)
+        if folder.exists():
+            for each in (*reversed(folder.parents), folder):
+                hold(each)
     return out
+
+
+def run_later_folders(folders, *, roots=()) -> tuple[list[Path], tuple[str, ...]]:
+    """HR-1's ancestor hold (#813 review 6): the held run-later folders that exist under `folders` and `roots` (the
+    walk's) and each of `folders`' `core.hooksPath` target, as `run_later.kernel_filters` takes them, for
+    `held_ancestors(kept=...)`; and the name filters to deny when the walk was incomplete (`run_later.folder_filters`;
+    empty when it was complete). A hooksPath that can't be read raises, as in `kernel_filters`."""
+    folders, roots = list(folders), list(roots)
+    walk = run_later.held_folders([*folders, *roots], roots=roots)
+    kept = list(walk.folders)
+    for folder in folders:
+        target = run_later.hooks_path(folder)
+        if target is not None and run_later._is_folder(target):
+            kept.append(_real(target))
+    if walk.complete:
+        return kept, ()
+    _log.warning("HR-1: the held-folder walk stopped at its cap or an unlistable folder; held folders are held by "
+                 "name in this run, so making one (git init, git clone) is refused")
+    return kept, run_later.folder_filters(folders, roots=roots)
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
@@ -424,9 +453,14 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     for filters in run_later.kernel_filters([workspace]):
         after.deny("file-write*", *filters)
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
-    held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder))
+    # HR-1 (#813 review 6): nor the held run-later folders in the work folder and every folder above them.
+    kept, by_name = run_later_folders([workspace])
+    held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),
+                          kept=kept)
     if held:
         after.deny("file-write*", *map(literal, held))
+    if by_name:
+        after.deny("file-write*", *by_name)
     if trust_service and network == NetworkMode.PROXY:
         after.allow("mach-lookup", _TRUST_SERVICE)
     after.allow_paths("file-read*", map(_real, copies), literal)
@@ -468,10 +502,14 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
     rules.deny("file-read* file-write*", *(file_or_folder(p) for p in cap6b_folders(plugin_folder)))
     for filters in run_later.kernel_filters([run_later_in]) if run_later_in is not None else ():
         rules.deny("file-write*", *filters)
-    # SBX-5a (#772 review): everything is writable out here, so every folder above those is held.
-    held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder))
+    # SBX-5a (#772 review): everything is writable out here, so every folder above those is held. HR-1 (#813 review
+    # 6): with `run_later_in`, so are the held run-later folders in the work folder and every folder above them.
+    kept, by_name = run_later_folders([run_later_in]) if run_later_in is not None else ([], ())
+    held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder), kept=kept)
     if held:
         rules.deny("file-write*", *map(literal, held))
+    if by_name:
+        rules.deny("file-write*", *by_name)
     rules.allow_paths("file-read*", map(_real, copies), literal)
     return rules.text()
 
