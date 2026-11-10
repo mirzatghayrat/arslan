@@ -1,5 +1,6 @@
 import pytest
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.orchestrator import command_gate
 
 
@@ -24,10 +25,10 @@ async def test_run_command_refused_without_confirm_cb(monkeypatch):
     # pin "ask for every command" — this test is about the missing callback.
     monkeypatch.setattr(command_gate, "_asks_for_everything", _yes)
     trace, convo = [], []
-    r = await tool_loop._dispatch_tool(
+    r = await tool_loop._run_tool(
         "run_command", {"command": "git", "argv": ["status"]}, "{}",
-        resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=trace, convo=convo, confirm_command=None)
+        ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+                 tool_trace=trace, convo=convo, confirm_command=None))
     assert r["ok"] is False
     assert "nobody to ask" in r["error"]  # S1 (U14 c): a scheduled run's refusal says what decide() says
     assert calls == []
@@ -44,10 +45,10 @@ async def test_run_command_declined_by_user(monkeypatch):
         return False
 
     trace, convo = [], []
-    r = await tool_loop._dispatch_tool(
+    r = await tool_loop._run_tool(
         "run_command", {"command": "git", "argv": ["status"]}, "{}",
-        resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=trace, convo=convo, confirm_command=_deny)
+        ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+                 tool_trace=trace, convo=convo, confirm_command=_deny))
     assert r["ok"] is False
     assert "declined" in r["error"].lower()
 
@@ -66,10 +67,10 @@ async def test_run_command_approved_runs(monkeypatch):
         return True
 
     trace, convo = [], []
-    r = await tool_loop._dispatch_tool(
+    r = await tool_loop._run_tool(
         "run_command", {"command": "git", "argv": ["status"]}, "{}",
-        resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=trace, convo=convo, confirm_command=_approve)
+        ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+                 tool_trace=trace, convo=convo, confirm_command=_approve))
     assert r["ok"] is True
     assert ran == [{"command": "git", "argv": ["status"]}]
 
@@ -88,8 +89,8 @@ async def test_other_tools_unaffected_by_confirm_cb(monkeypatch):
         raise AssertionError("confirm_command must not gate non-run_command tools")
 
     trace, convo = [], []
-    r = await tool_loop._dispatch_tool(
-        "web_search", {"query": "x"}, "{}", resolve_tools=_resolve_ws,
+    r = await tool_loop._run_tool(
+        "web_search", {"query": "x"}, "{}", ToolTurn(resolve_tools=_resolve_ws,
         emit=lambda e: None, tool_timeout_s=5, tool_trace=trace, convo=convo,
-        confirm_command=_deny)
+        confirm_command=_deny))
     assert r["ok"] is True

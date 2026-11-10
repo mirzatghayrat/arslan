@@ -11,6 +11,7 @@ import pytest
 from server.db import session as db_session
 from server.db.models import Setting
 from server.orchestrator import tool_loop, untrusted
+from server.orchestrator.turn_state import ToolTurn
 from server.services import approvals, card_purpose, command_confirm, command_sandbox, permissions
 from server.orchestrator import command_gate
 from server.orchestrator import tool_gates
@@ -307,9 +308,9 @@ async def test_nobody_to_ask_lists_the_card_by_its_purpose(execution_db, monkeyp
 
     async def _resolve():
         return [{"key": "ssh_run", "description": "run"}]
-    await tool_loop._dispatch_tool("ssh_run", {"host": "box", "command": "uptime"}, "{}", resolve_tools=_resolve,
-                                   emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
-                                   confirm_command=None, conversation_id="c1")
+    await tool_loop._run_tool("ssh_run", {"host": "box", "command": "uptime"}, "{}", ToolTurn(resolve_tools=_resolve,
+                              emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                              confirm_command=None, conversation_id="c1"))
     assert listed == ["On box · Run uptime"]
 
 

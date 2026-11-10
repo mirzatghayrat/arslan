@@ -53,38 +53,38 @@ async def _spend(n: int) -> int:
 
 @pytest.fixture(autouse=True)
 def _clean_counter():
-    tool_loop.reset_hermetic_fetch_budget()
+    replay_safety.reset_hermetic_fetch_budget()
     replay_safety._hermetic_attempts_inflight = 0
     yield
-    tool_loop.reset_hermetic_fetch_budget()
+    replay_safety.reset_hermetic_fetch_budget()
     replay_safety._hermetic_attempts_inflight = 0
 
 
 async def test_the_probe_can_see_spend_at_all():
     """⓪ Before asserting anything about the cap, prove the counter moves."""
-    assert tool_loop.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == 0
+    assert replay_safety.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == 0
     await _spend(3)
-    assert tool_loop.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == 3
+    assert replay_safety.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == 3
 
 
 async def test_the_cap_binds_when_nothing_else_is_running():
     """The baseline the concurrent case is compared against."""
-    allowed = await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 10)
-    assert allowed == tool_loop.HERMETIC_FETCH_BUDGET
+    allowed = await _spend(replay_safety.HERMETIC_FETCH_BUDGET + 10)
+    assert allowed == replay_safety.HERMETIC_FETCH_BUDGET
 
 
 async def test_a_second_attempt_starting_does_not_refund_the_first():
-    tool_loop.begin_hermetic_attempt()            # attempt A
+    replay_safety.begin_hermetic_attempt()            # attempt A
     spent = await _spend(40)
     assert spent == 40, "the fixture no longer reaches the interesting state"
 
-    tool_loop.begin_hermetic_attempt()            # attempt B, a DIFFERENT spawn
+    replay_safety.begin_hermetic_attempt()            # attempt B, a DIFFERENT spawn
 
-    extra = await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 10)
+    extra = await _spend(replay_safety.HERMETIC_FETCH_BUDGET + 10)
 
     total = spent + extra
-    assert total <= tool_loop.HERMETIC_FETCH_BUDGET, (
-        f"attempt A spent {total} against a cap of {tool_loop.HERMETIC_FETCH_BUDGET} — "
+    assert total <= replay_safety.HERMETIC_FETCH_BUDGET, (
+        f"attempt A spent {total} against a cap of {replay_safety.HERMETIC_FETCH_BUDGET} — "
         "a concurrent attempt refunded it"
     )
 
@@ -93,13 +93,13 @@ async def test_a_serial_attempt_still_gets_its_own_allowance():
     """The other half. Sharing must apply to OVERLAP, not to succession — a
     counter that never refreshes is the process-lifetime failure the original
     reset existed to prevent, and it would satisfy the test above."""
-    tool_loop.begin_hermetic_attempt()
-    assert await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 5) == tool_loop.HERMETIC_FETCH_BUDGET
-    tool_loop.end_hermetic_attempt()
+    replay_safety.begin_hermetic_attempt()
+    assert await _spend(replay_safety.HERMETIC_FETCH_BUDGET + 5) == replay_safety.HERMETIC_FETCH_BUDGET
+    replay_safety.end_hermetic_attempt()
 
-    tool_loop.begin_hermetic_attempt()            # A has finished; B is new
+    replay_safety.begin_hermetic_attempt()            # A has finished; B is new
     assert await _spend(5) == 5, "a serial attempt inherited a spent allowance"
-    tool_loop.end_hermetic_attempt()
+    replay_safety.end_hermetic_attempt()
 
 
 async def test_a_reset_still_starts_a_fresh_allowance_for_a_new_attempt():
@@ -110,8 +110,8 @@ async def test_a_reset_still_starts_a_fresh_allowance_for_a_new_attempt():
     attempt after a restart gets the budget and every later one is refused,
     which reads as a broken feature rather than a limit.
     """
-    await _spend(tool_loop.HERMETIC_FETCH_BUDGET + 5)
-    assert tool_loop.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == tool_loop.HERMETIC_FETCH_BUDGET
+    await _spend(replay_safety.HERMETIC_FETCH_BUDGET + 5)
+    assert replay_safety.hermetic_fetches_used(REPLAY_CONVERSATION_ID) == replay_safety.HERMETIC_FETCH_BUDGET
 
-    tool_loop.reset_hermetic_fetch_budget(REPLAY_CONVERSATION_ID)
+    replay_safety.reset_hermetic_fetch_budget(REPLAY_CONVERSATION_ID)
     assert await _spend(5) == 5, "a genuinely new attempt got no allowance"

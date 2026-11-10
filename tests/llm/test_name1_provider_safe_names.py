@@ -27,7 +27,7 @@ from arslan.llm.adapter import LLMAdapter
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
 from arslan.llm.providers.openai_provider import OpenAIProvider
-from server.orchestrator import tool_loop
+from server.orchestrator import model_step, tool_loop
 from server.registry import executors
 
 RULES = {
@@ -46,10 +46,10 @@ SCHEMA = {"type": "object", "properties": {"path": {"type": "string"}}, "require
 def native(monkeypatch):
     monkeypatch.delenv("ARSLAN_TOOL_PROTOCOL", raising=False)
     param_heal.forget()
-    tool_loop._BAD_TOOLS.clear()
+    model_step._BAD_TOOLS.clear()
     yield
     param_heal.forget()
-    tool_loop._BAD_TOOLS.clear()
+    model_step._BAD_TOOLS.clear()
 
 
 @pytest.fixture(autouse=True)

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import Base, Setting
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.registry.executors import EXECUTORS
 from server.services import ssh_exec, ssh_nodes
 
@@ -47,9 +48,9 @@ async def _tools():
 
 
 async def _dispatch(args, *, confirm=None, emit=None):
-    return await tool_loop._dispatch_tool(
-        "enroll_node", args, "{}", resolve_tools=_tools, emit=(emit or (lambda e: None)),
-        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=confirm)
+    return await tool_loop._run_tool(
+        "enroll_node", args, "{}", ToolTurn(resolve_tools=_tools, emit=(emit or (lambda e: None)),
+        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=confirm))
 
 
 # ── the tool proposes and nothing else ─────────────────────────────────────────

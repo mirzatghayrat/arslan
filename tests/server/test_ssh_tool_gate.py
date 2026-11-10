@@ -91,6 +91,7 @@ async def test_a_scheduled_turn_cannot_ssh(tmp_path, monkeypatch):
     engine, _ = await _wire(tmp_path, monkeypatch, ssh_enabled="true")
     from server.orchestrator import arslan as arslan_mod
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
     from server.services import scheduler, ssh_exec
 
     captured = {}
@@ -105,12 +106,12 @@ async def test_a_scheduled_turn_cannot_ssh(tmp_path, monkeypatch):
     async def fake_answer(conversation_id, user_message, emit, **kw):
         captured["confirm_command"] = kw.get("confirm_command")
         # Whatever else the turn does, this is what an ssh attempt inside it hits.
-        captured["result"] = await tool_loop._dispatch_tool(
+        captured["result"] = await tool_loop._run_tool(
             "ssh_run",
             {"host": "192.168.1.8", "user": "someone", "command": "git", "argv": ["status"]},
             "{}",
-            resolve_tools=lambda: _tools(), emit=emit, tool_timeout_s=5,
-            tool_trace=[], convo=[], confirm_command=kw.get("confirm_command"))
+            ToolTurn(resolve_tools=lambda: _tools(), emit=emit, tool_timeout_s=5,
+                     tool_trace=[], convo=[], confirm_command=kw.get("confirm_command")))
         emit({"type": "stream_start", "source": "arslan"})
         emit({"type": "stream_end", "message_id": 1})
         return {"ok": True}

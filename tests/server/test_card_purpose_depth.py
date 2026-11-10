@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from server.orchestrator import command_gate, tool_loop, untrusted
+from server.orchestrator.turn_state import ToolTurn
 from server.orchestrator import tool_gates
 from server.services import approvals, card_purpose, command_confirm, command_sandbox, permissions
 
@@ -185,8 +186,8 @@ async def test_a_remote_command_with_nobody_to_ask_is_refused_with_its_card_list
 
     async def _resolve():
         return [{"key": "ssh_run", "description": "run"}]
-    result = await tool_loop._dispatch_tool("ssh_run", {"host": "box", "command": DEEP[shape]}, "{}",
-                                            resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-                                            tool_trace=[], convo=[], confirm_command=None, conversation_id="c1")
+    result = await tool_loop._run_tool("ssh_run", {"host": "box", "command": DEEP[shape]}, "{}",
+                                       ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+                                       tool_trace=[], convo=[], confirm_command=None, conversation_id="c1"))
     assert listed == ["On box · " + TITLE[shape]]
     assert "confirmation" in str(result)

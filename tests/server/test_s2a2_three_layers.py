@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from server.orchestrator import tool_loop, untrusted
+from server.orchestrator.turn_state import ToolTurn
 from server.services import approvals, command_sandbox, permissions, shell_grammar, terminal_exec, terminal_policy as tp
 from server.ws import protocol
 from server.orchestrator import command_gate
@@ -187,9 +188,9 @@ async def _run(monkeypatch, args, cards, *, available=True):
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
     trace: list = []
-    await tool_loop._dispatch_tool("run_command", args, "{}", resolve_tools=resolve, emit=lambda e: None,
-                                   tool_timeout_s=5, tool_trace=trace, convo=[], confirm_command=cards,
-                                   conversation_id="c1")
+    await tool_loop._run_tool("run_command", args, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None,
+                              tool_timeout_s=5, tool_trace=trace, convo=[], confirm_command=cards,
+                              conversation_id="c1"))
     return ex, trace
 
 
