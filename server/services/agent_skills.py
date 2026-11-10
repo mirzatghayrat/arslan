@@ -168,12 +168,18 @@ def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
     total = 0
     for current, dirs, names in os.walk(base, followlinks=False):
         here = Path(current)
+        # Python's own byte-code cache: never read or run (run_python takes only the `.py` texts), and written by
+        # whatever ran a script, so it would read as a change.
+        dirs[:] = [name for name in dirs if name != "__pycache__"]
         for name in sorted(dirs):
             if (here / name).is_symlink():
                 raise Unreadable("holds a link")
         for name in sorted(names):
             path = here / name
-            mode = os.lstat(path).st_mode
+            try:
+                mode = os.lstat(path).st_mode
+            except OSError as exc:                  # gone between the listing and here
+                raise Unreadable("a file can't be read") from exc
             if not stat.S_ISREG(mode):
                 raise Unreadable("holds a link or a special file")
             if len(files) >= MAX_FILES:
@@ -204,10 +210,23 @@ def _matches(read: dict | None, entry: dict | None) -> bool:
 
 
 def _read_or_none(key: str) -> dict | None:
+    """The folder, or None when it can't be read for any reason (a file gone mid-read, a SKILL.md the YAML reader
+    chokes on): that folder only counts as unreadable, and never stops the others' reading."""
     try:
         return read_folder(key)
     except Unreadable:
         return None
+    except Exception as exc:  # noqa: BLE001 — one folder's failure is that folder's, read as unreadable
+        logger.warning("skill folder %s could not be read: %s", key, type(exc).__name__)
+        return None
+
+
+async def _orphan(key: str) -> bool:
+    """A row another tool's folder made, whose manifest entry is gone (the manifest lost, or a save that never
+    happened): never approved, so it needs its card and is never read as Arslan's own (fail closed)."""
+    async with db_session.AsyncSessionLocal() as db:
+        pack = await db.get(SkillPack, key)
+    return pack is not None and pack.category == OTHER_TOOL
 
 
 # ── the registry's view ────────────────────────────────────────────────────────────────────────────────────────
@@ -223,6 +242,9 @@ async def sync() -> dict[str, str]:
         names = []
     known = entries()
     status: dict[str, str] = {}
+    # The manifest changes only after the rows' commit: a failure on the way leaves the rows as they were and the
+    # manifest too, never a row whose entry is gone (and an entry with no row reads as nothing).
+    later: dict[str, dict | None] = {}
     async with db_session.AsyncSessionLocal() as db:
         keys = sorted(set(names) | set(known))
         packs = {p.key: p for p in (await db.execute(select(SkillPack).where(SkillPack.key.in_(keys)))).scalars()}
@@ -231,7 +253,7 @@ async def sync() -> dict[str, str]:
             if known[key].get("by") == OTHER:
                 if pack is not None and pack.category == OTHER_TOOL:
                     await db.delete(pack)
-                forget(key)
+                later[key] = None
                 continue
             if pack is not None:
                 pack.enabled = False
@@ -249,13 +271,13 @@ async def sync() -> dict[str, str]:
                 info = read["info"]
                 db.add(SkillPack(key=key, name=info["name"], category=OTHER_TOOL, description=info["description"],
                                  tier="safe", status="registered", body=info["body"], enabled=False))
-                record(key, by=OTHER, files=None)
+                later[key] = {"by": OTHER, "files": None}
                 status[key] = "new"
                 continue
             entry = known.get(key)
             if entry is None:                  # the manifest was lost: read as never approved
                 entry = {"by": OTHER, "files": None}
-                record(key, **entry)
+                later[key] = entry
             if _matches(read, entry):
                 status[key] = "ok"
                 continue
@@ -264,6 +286,11 @@ async def sync() -> dict[str, str]:
                 logger.warning("skill folder %s changed since it was approved; switched off", key)
             status[key] = "new" if entry.get("files") is None else "changed"
         await db.commit()
+    for key, entry in later.items():
+        if entry is None:
+            forget(key)
+        else:
+            record(key, **entry)
     return status
 
 
@@ -279,19 +306,22 @@ async def checked(key: str) -> dict | None:
     """For read_skill and run_python: None for a skill that is not folder-backed; otherwise the folder as read now,
     when it matches what was approved. Raises Changed (and switches the skill off) when it doesn't."""
     known = entries()
-    if key not in known:
+    if key not in known and not await _orphan(key):
         return None
-    read = _read_or_none(key)
-    if not _matches(read, known[key]):
+    read = _read_or_none(key)               # any failure to read is a mismatch: switched off
+    if not _matches(read, known.get(key)):
         await _switch_off(key)
         raise Changed(key)
     return read
 
 
 async def needs_card(key: str) -> bool:
-    """Whether switching this skill on needs its card first: a folder skill never approved, or changed since."""
+    """Whether switching this skill on needs its card first: a folder skill never approved, or changed since, or
+    another tool's whose manifest entry is gone."""
     known = entries()
-    return key in known and not _matches(_read_or_none(key), known[key])
+    if key not in known:
+        return await _orphan(key)
+    return not _matches(_read_or_none(key), known[key])
 
 
 def card(key: str) -> dict:
@@ -323,14 +353,17 @@ def _card(key: str, read: dict) -> dict:
 async def approve(key: str, shown: str) -> None:
     """The card's yes: record exactly the files the card showed (by `shown`, its digest) and switch the skill on, its
     row's text from that SKILL.md. Refused when the files changed after the card, or the scan blocks them."""
+    from server.services import capability_list
     known = entries()
     if key not in known:
         raise NotApproved("not_found")
+    if await capability_list._part_of_a_plugin(f"skill:{key}"):
+        raise NotApproved("part_of_a_plugin")    # only its plugin's switch reaches a part (CAP7b)
     try:
         read = read_folder(key)                # one read: what is checked here is what is recorded
-    except Unreadable as exc:
+        now = _card(key, read)
+    except Exception as exc:  # noqa: BLE001 — anything that stops the reading approves nothing
         raise NotApproved("unreadable") from exc
-    now = _card(key, read)
     if now["digest"] != shown:
         raise NotApproved("changed")
     if now["scan"]["level"] == "blocked":
@@ -341,8 +374,10 @@ async def approve(key: str, shown: str) -> None:
             raise NotApproved("not_found")
         info = read["info"]
         pack.name, pack.description, pack.body, pack.enabled = info["name"], info["description"], info["body"], True
-        record(key, by=known[key].get("by") or OTHER, files=read["files"])
         await db.commit()
+    # After the commit: a commit that fails leaves the files unapproved. Until this line a read finds them
+    # unapproved and switches the skill off again (fail closed).
+    record(key, by=known[key].get("by") or OTHER, files=read["files"])
 
 
 def write_new(base: Path, expected: dict[str, str]) -> dict[str, str]:

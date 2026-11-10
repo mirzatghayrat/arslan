@@ -490,8 +490,8 @@ async def switch(key: str, on: bool) -> None:
         if on and await agent_skills.needs_card(key[6:]):
             try:
                 card = agent_skills.card(key[6:])
-            except agent_skills.Unreadable:
-                card = None                    # nothing to approve: it stays off
+            except Exception:  # noqa: BLE001 — a folder that can't be read has nothing to approve: it stays off
+                card = None
             raise NeedsCard(key, card)
         async with db_session.AsyncSessionLocal() as db:
             pack = await db.get(SkillPack, key[6:])

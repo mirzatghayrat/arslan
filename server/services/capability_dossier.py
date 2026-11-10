@@ -159,7 +159,13 @@ async def remove(source_id: str) -> None:
             # Nothing holds the key: the folder is this source's leftover, which run_python could still load
             # (#499 recheck nit). to_trash moves a link itself.
             from server import config
+            from server.services import agent_skills
             capability_install.to_trash(config.data_dir() / "skill_scripts" / row.skill_key)
+            # CAP6a: and its folder in ~/.agents/skills, when the manifest says Arslan put it there (never another
+            # tool's), with its hashes.
+            if (agent_skills.entries().get(row.skill_key) or {}).get("by") == agent_skills.ARSLAN:
+                capability_install.to_trash(agent_skills.folder(row.skill_key), prefix="Arslan skill")
+                agent_skills.forget(row.skill_key)
         async with db_session.AsyncSessionLocal() as db:
             pack = await db.get(SkillPack, row.skill_key) if ours else None
             if pack is not None:

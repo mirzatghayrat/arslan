@@ -303,3 +303,165 @@ async def test_an_install_never_replaces_another_tools_folder(home):
         await skill_import.install_prepared(_prepared())
     assert sorted(p.name for p in folder.iterdir()) == ["SKILL.md"] and (folder / "SKILL.md").read_text() == SKILL_MD
     assert await _pack("weekly-report") is None and not (home / ".Trash").exists()
+
+
+# ── #795 review: fail closed when a folder can't be read, or a row's entry is gone ─────────────────────────────
+
+DEEP = "---\nname: " + "[" * 5000 + "]" * 5000 + "\ndescription: d\n---\n## Trigger\nx\n"
+
+
+async def _never_on_without_its_card(api, key: str = "pdf-notes") -> None:
+    """Whatever is left of the skill, switching it on never works without its card, and read_skill never serves it."""
+    response = await api.put(f"/api/v1/capabilities/skill:{key}", json={"on": True})
+    assert response.status_code == 409, response.text
+    out = await ReadSkillExecutor().execute({"key": key})
+    assert out["ok"] is False, out
+    pack = await _pack(key)
+    assert pack is None or pack.enabled is False
+
+
+async def test_a_folder_the_reader_chokes_on_never_stops_the_others(api, home):
+    """A SKILL.md the YAML reader can't take (it raises RecursionError) is that folder's problem only: the sync goes
+    on, the folder another tool removed loses its row in the same commit, and nothing is left to switch on."""
+    folder = _place(home)
+    await _row()
+    import shutil
+    shutil.rmtree(folder)
+    _place(home, key="zz-deep", text=DEEP)
+    await agent_skills.sync()                                   # no exception
+    assert await _pack() is None and "pdf-notes" not in agent_skills.entries()
+    assert await _pack("zz-deep") is None
+    await _never_on_without_its_card(api)
+
+
+async def test_a_file_gone_mid_read_never_stops_the_others(api, home, monkeypatch):
+    """A file that goes between the folder's listing and its read (another tool rewriting its skill)."""
+    folder = _place(home)
+    await _row()
+    import os
+    import shutil
+    shutil.rmtree(folder)
+    moving = _place(home, key="zz-moving", **{"notes.txt": "x\n"})
+    real = os.walk
+
+    def walk(top, **kwargs):
+        for current, dirs, names in real(top, **kwargs):
+            if Path(current) == moving:
+                (moving / "notes.txt").unlink(missing_ok=True)
+            yield current, dirs, names
+    monkeypatch.setattr(agent_skills.os, "walk", walk)
+    await agent_skills.sync()
+    assert await _pack() is None and "pdf-notes" not in agent_skills.entries()
+    await _never_on_without_its_card(api)
+
+
+def _commit_fails(monkeypatch) -> None:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    async def commit(self):
+        raise RuntimeError("the database is gone")
+    monkeypatch.setattr(AsyncSession, "commit", commit)
+
+
+async def test_a_sync_whose_commit_fails_leaves_the_hash_file_as_it_was(api, home, monkeypatch):
+    folder = _place(home)
+    await _row()
+    kept = agent_skills.entries()
+    import shutil
+    shutil.rmtree(folder)
+    _place(home, key="other-one")
+    _commit_fails(monkeypatch)
+    with pytest.raises(RuntimeError):
+        await agent_skills.sync()
+    assert agent_skills.entries() == kept                      # nothing forgotten, nothing new, as the rows
+
+
+async def test_an_approval_whose_commit_fails_approves_nothing(api, home, monkeypatch):
+    _place(home)
+    await _row()
+    digest = agent_skills.card("pdf-notes")["digest"]
+    _commit_fails(monkeypatch)
+    with pytest.raises(RuntimeError):
+        await agent_skills.approve("pdf-notes", digest)
+    assert agent_skills.entries()["pdf-notes"]["files"] is None
+
+
+async def test_another_tools_row_with_no_hashes_kept_needs_its_card(api, home, tmp_path):
+    """The hash file lost (or never saved): another tool's row is never approved, at the switch and at read_skill."""
+    _place(home)
+    await _row()
+    (tmp_path / "data" / "agent_skills.json").unlink()
+    with pytest.raises(capability_list.NeedsCard):
+        await capability_list.switch("skill:pdf-notes", True)
+    async with db_session.AsyncSessionLocal() as db:            # even if something switched it on
+        (await db.get(SkillPack, "pdf-notes")).enabled = True
+        await db.commit()
+    out = await ReadSkillExecutor().execute({"key": "pdf-notes"})
+    assert out["ok"] is False and "changed since they were approved" in out["error"], out
+    assert (await _pack()).enabled is False
+
+
+async def test_an_approved_skill_the_reader_chokes_on_is_switched_off(api, home):
+    folder = _place(home)
+    await _row()
+    await _approve(api)
+    (folder / "SKILL.md").write_text(DEEP)
+    out = await ReadSkillExecutor().execute({"key": "pdf-notes"})
+    assert out["ok"] is False and "changed since they were approved" in out["error"], out
+    assert (await _pack()).enabled is False
+    response = await api.put("/api/v1/capabilities/skill:pdf-notes", json={"on": True})
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "needs_card"
+
+
+async def test_a_plugins_part_is_never_approved_alone(api, home, execution_db):
+    from server.db.models import CapabilitySource
+    from server.services import skill_import
+    async with execution_db() as db:
+        db.add(CapabilitySource(id="plug-1", kind="plugin", name="Plug", candidate_id="github:x/plug", runtime="plugin",
+                                needs={}, grants={}, state="installed"))
+        await db.commit()
+    await skill_import.install_prepared(_prepared(), source_id="plug-1")
+    folder = home / ".agents" / "skills" / "weekly-report"
+    kept = agent_skills.entries()["weekly-report"]
+    (folder / "SKILL.md").write_text((folder / "SKILL.md").read_text() + "\nmore\n")
+    digest = agent_skills.card("weekly-report")["digest"]
+    response = await api.post("/api/v1/skill-folder/weekly-report/approve", json={"digest": digest})
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "part_of_a_plugin"
+    assert agent_skills.entries()["weekly-report"] == kept
+
+
+async def test_pythons_byte_code_cache_is_not_a_change(api, home):
+    folder = _place(home, **{"scripts__main.py": "print(1)\n"})
+    await _row()
+    await _approve(api)
+    (folder / "scripts" / "__pycache__").mkdir()
+    (folder / "scripts" / "__pycache__" / "main.cpython-311.pyc").write_bytes(b"\x00\x01")
+    assert (await ReadSkillExecutor().execute({"key": "pdf-notes"}))["ok"]
+
+
+async def test_a_folder_inside_that_is_a_link_is_not_read(home, tmp_path):
+    folder = _place(home)
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "elsewhere" / "run.py").write_text("print('not the skill')\n")
+    (folder / "scripts").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    await capability_list.capabilities()
+    assert await _pack() is None
+
+
+async def test_the_dossier_removal_takes_arslans_folder_with_no_row_left(home, execution_db):
+    """A source whose skill row is gone: its folder in ~/.agents/skills (the manifest says Arslan's) goes to the
+    Trash with its hashes, as the data folder's leftover does."""
+    from server.db.models import CapabilitySource
+    from server.services import capability_dossier, skill_import
+    async with execution_db() as db:
+        db.add(CapabilitySource(id="src-1", kind="skill", name="Weekly report", candidate_id="github:acme/skills:w",
+                                runtime="skill", needs={}, grants={}, state="installed", skill_key="weekly-report"))
+        await db.commit()
+    await skill_import.install_prepared(_prepared(), source_id="src-1")
+    async with execution_db() as db:
+        await db.delete(await db.get(SkillPack, "weekly-report"))
+        await db.commit()
+    await capability_dossier.remove("src-1")
+    assert not (home / ".agents" / "skills" / "weekly-report").exists()
+    assert (home / ".Trash" / "Arslan skill weekly-report" / "SKILL.md").is_file()
+    assert "weekly-report" not in agent_skills.entries()
