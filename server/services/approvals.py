@@ -307,7 +307,9 @@ def island_may_answer(frame: dict) -> bool:
             return False                   # another machine, outside the sandbox, or the network too (S2a-2)
         from server.services import terminal_policy
         verdict = terminal_policy.assess(str(frame.get("pretty") or ""))
-        return verdict.level != "forbid" and verdict.rule not in _island_risky_rules()
+        # S2a-3 step 5: and the card's own rules, read where it runs (`outside-reach` only outside the sandbox)
+        return (verdict.level != "forbid" and verdict.rule not in _island_risky_rules()
+                and not set(frame.get("rules") or ()) & _island_risky_rules())
     return False
 
 

@@ -113,7 +113,7 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     why = str(args.get("why") or "").strip()[:300]
     decision = await permissions.decide(permissions.Request(   # SMART-8: the plain purpose, never `why` (as above)
         kind="network", target="network:*", title=card_purpose.phrase(   # read with its rules (Astra 5)
-            command, "", sorted(terminal_policy.ask_rules(command)), lang=await card_purpose.language(),
+            command, "", sorted(terminal_policy.ask_rules(command, outside=not inside)), lang=await card_purpose.language(),
             network=True), detail=command,
         model_title=f"Let `{command[:80]}` use the network?", why=why, conversation_ok=inside, once_only=not inside),
         permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
@@ -275,6 +275,13 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     outside_grant = await _outside_grant(conversation_id, command)
     run_outside = sandbox_on and outside_grant is not None
     by_grant = run_outside            # the grant is what lets this command run outside the sandbox
+    # S2a-3 step 5: with a grant, or no sandbox to run in, it runs outside, and `outside-reach` asks. Its card reads it
+    # the same way (`outside=True` to confirm_command, only where that changes the reading; an outside_sandbox card
+    # says so itself).
+    outside = outside_grant is not None or not confined
+    if outside:
+        verdict = terminal_policy.assess(command, outside=True)
+    out_kw = {"outside": True} if verdict.rule == terminal_policy.OUTSIDE_REACH[0] else {}
     net_due = _network_card_due(command, args)
     net_kw = {"network": True} if net_due else {}
     net_clicked = False                # the command's own card, clicked, asked for the network too
@@ -342,7 +349,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
                 if verdict.level == "ask" or ask_all else
                 "this command would run outside the sandbox here (it is switched off or cannot start), "
                 "which needs the user's OK, and nobody can be asked here",
-                _approvals._command_request(command, sorted(terminal_policy.ask_rules(command)), None,
+                _approvals._command_request(command, sorted(terminal_policy.ask_rules(command, outside=outside)), None,
                                             ask_all=ask_all, lang=await card_purpose.language(),
                                             why=str(args.get("why") or "").strip()[:300]),
                 conversation_id)}
@@ -352,7 +359,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
         said = str(args.get("why") or "").strip()[:300]
         approved = await confirm_command(command, argv, **({"why": said} if said else {}), **net_kw,
-                                         **delete_kw(run_outside))
+                                         **delete_kw(run_outside), **out_kw)
         if not approved:
             result = {"ok": False, "error": _declined("user declined this command", "this command")}
             return result
