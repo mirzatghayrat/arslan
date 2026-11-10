@@ -37,6 +37,8 @@ MESSAGES = {
         "sub_summary_goal": "Sum up what the sub-sessions reported",   # SUB4
         # SUB5a: a commander still waiting on its sub-sessions when Arslan restarted.
         "sub_sessions_interrupted": "Sub-sessions interrupted by a restart: {count}. Their reports were not summed up, and nothing was started again. Tell me to continue if you still want it.",
+        # SUB5a: the window's stop dropped the reports of sub-sessions that had already finished.
+        "sub_sessions_stopped_reports": "Sub-sessions that had finished before the stop: {count}. Their reports went with the stop and were not summed up; each one's result is in its own conversation.",
         "job_out_of_budget_tree": "This sub-session stopped before finishing: {goal}. Its group of sub-sessions reached their shared dollar limit ({used} of {limit}) after {steps} steps here, and nothing was written up. Ask the conversation that started it to narrow the work.",
         "proactive_goal_followup": "Continue the earlier background work: {goal} First check what was already saved, then finish only what is missing.",
         "proactive_goal_scheduled": "The scheduled task “{name}” has been failing or was paused. Find the most likely cause from its recent runs and tell me the one change to make. Its prompt is: {prompt}",
@@ -78,6 +80,7 @@ MESSAGES = {
         "job_out_of_budget_usd": "后台作业在做完之前到了美元上限：{goal}。它花了 {used}（上限 {limit}），共做了 {steps} 步，还没有整理成结果。可以让我缩小范围重新开始，或在「设置 → 高级」里调大每个任务的美元上限。",
         "sub_summary_goal": "汇总各子会话的汇报",
         "sub_sessions_interrupted": "因重启中断的子会话：{count} 个。它们的汇报没有汇总，也没有重新开始。如果还需要，跟我说继续。",
+        "sub_sessions_stopped_reports": "停止前已经完成的子会话：{count} 个。它们的汇报随停止一起丢弃，没有汇总；各自的结果在它们自己的会话里。",
         "job_out_of_budget_tree": "这个子会话没做完就停了：{goal}。它所在的这组子会话到了共用的美元上限（{used}，上限 {limit}），它在这里做了 {steps} 步，还没有整理成结果。可以让开出它的那段对话缩小范围。",
         "proactive_goal_followup": "接着做之前的后台工作：{goal} 先看已经保存了什么，再只做还缺的部分。",
         "proactive_goal_scheduled": "定时任务「{name}」一直失败或已被暂停。请根据它最近几次的运行找出最可能的原因，并告诉我该改哪一处。它的提示词是：{prompt}",
@@ -119,6 +122,7 @@ MESSAGES = {
         "job_out_of_budget_usd": "バックグラウンド作業が完了前にドル上限に達しました：{goal}。{steps} ステップで {used} を使いました（上限 {limit}）。結果はまだまとめていません。範囲を絞って再開するか、「設定 → 詳細」でタスクごとのドル上限を増やしてください。",
         "sub_summary_goal": "サブセッションの報告をまとめる",
         "sub_sessions_interrupted": "再起動で中断されたサブセッション：{count} 件。報告はまとめておらず、やり直しもしていません。必要なら「続けて」と伝えてください。",
+        "sub_sessions_stopped_reports": "停止の前に終わっていたサブセッション：{count} 件。報告は停止とともに破棄され、まとめていません。それぞれの結果は各自の会話にあります。",
         "job_out_of_budget_tree": "このサブセッションは完了前に止まりました：{goal}。同じグループのサブセッションが共有のドル上限に達しました（{used}、上限 {limit}）。ここでは {steps} ステップ進み、結果はまだまとめていません。開始した会話に範囲を絞るよう頼んでください。",
         "proactive_goal_followup": "先ほどのバックグラウンド作業を続けてください：{goal} まず保存済みの内容を確認し、足りない部分だけ仕上げてください。",
         "proactive_goal_scheduled": "スケジュールされたタスク「{name}」が失敗を続けているか停止されました。最近の実行から最も可能性の高い原因を見つけ、直すべき点を一つ教えてください。プロンプトは：{prompt}",
@@ -160,6 +164,7 @@ MESSAGES = {
         "job_out_of_budget_usd": "El trabajo en segundo plano llegó a su límite en dólares antes de terminar: {goal}. Gastó {used} de su límite de {limit} tras {steps} pasos y no dejó nada redactado. Pídeme que lo empiece de nuevo con un alcance más acotado, o sube el límite en dólares por tarea en Ajustes → Avanzado.",
         "sub_summary_goal": "Resumir lo que informaron las subsesiones",
         "sub_sessions_interrupted": "Subsesiones interrumpidas por un reinicio: {count}. Sus informes no se resumieron y no se volvió a empezar nada. Dime que continúe si todavía lo necesitas.",
+        "sub_sessions_stopped_reports": "Subsesiones que habían terminado antes de detener: {count}. Sus informes se descartaron con la detención y no se resumieron; el resultado de cada una está en su propia conversación.",
         "job_out_of_budget_tree": "Esta subsesión se detuvo antes de terminar: {goal}. Su grupo de subsesiones llegó a su límite compartido en dólares ({used} de {limit}) tras {steps} pasos aquí, y no dejó nada redactado. Pide a la conversación que la inició que acote el trabajo.",
         "proactive_goal_followup": "Continúa el trabajo en segundo plano anterior: {goal} Primero revisa lo que ya se guardó y luego termina solo lo que falta.",
         "proactive_goal_scheduled": "La tarea programada «{name}» ha estado fallando o se pausó. Encuentra la causa más probable a partir de sus ejecuciones recientes y dime el único cambio que hacer. Su indicación es: {prompt}",
@@ -201,6 +206,7 @@ MESSAGES = {
         "job_out_of_budget_usd": "Die Hintergrundarbeit hat ihr Dollar-Limit erreicht, bevor sie fertig war: {goal}. Sie hat nach {steps} Schritten {used} von {limit} ausgegeben und noch nichts zusammengefasst. Bitte mich, sie mit engerem Umfang neu zu starten, oder erhöhe das Dollar-Limit pro Aufgabe unter Einstellungen → Erweitert.",
         "sub_summary_goal": "Zusammenfassen, was die Teilgespräche berichtet haben",
         "sub_sessions_interrupted": "Durch einen Neustart unterbrochene Teilgespräche: {count}. Ihre Berichte wurden nicht zusammengefasst, und nichts wurde neu gestartet. Sag mir, ob ich weitermachen soll.",
+        "sub_sessions_stopped_reports": "Teilgespräche, die vor dem Stopp fertig waren: {count}. Ihre Berichte wurden mit dem Stopp verworfen und nicht zusammengefasst; das Ergebnis von jedem steht in seinem eigenen Gespräch.",
         "job_out_of_budget_tree": "Dieses Teilgespräch hat aufgehört, bevor es fertig war: {goal}. Seine Gruppe von Teilgesprächen hat ihr gemeinsames Dollar-Limit erreicht ({used} von {limit}), nach {steps} Schritten hier, und noch nichts zusammengefasst. Bitte das Gespräch, das es gestartet hat, den Umfang einzugrenzen.",
         "proactive_goal_followup": "Setze die frühere Hintergrundarbeit fort: {goal} Prüfe zuerst, was schon gespeichert wurde, und erledige dann nur, was fehlt.",
         "proactive_goal_scheduled": "Die geplante Aufgabe „{name}“ schlägt fehl oder wurde pausiert. Finde aus den letzten Läufen die wahrscheinlichste Ursache und nenne mir die eine Änderung. Ihr Prompt lautet: {prompt}",
@@ -242,6 +248,7 @@ MESSAGES = {
         "job_out_of_budget_usd": "Le travail en arrière-plan a atteint son plafond en dollars avant la fin : {goal}. Il a dépensé {used} sur {limit} en {steps} étapes, sans rien rédiger. Demande-moi de le relancer avec un périmètre plus étroit, ou relève le plafond en dollars par tâche dans Réglages → Avancé.",
         "sub_summary_goal": "Résumer ce que les sous-sessions ont rapporté",
         "sub_sessions_interrupted": "Sous-sessions interrompues par un redémarrage : {count}. Leurs rapports n'ont pas été résumés, et rien n'a été relancé. Dis-moi de continuer si tu en as encore besoin.",
+        "sub_sessions_stopped_reports": "Sous-sessions terminées avant l'arrêt : {count}. Leurs rapports sont partis avec l'arrêt et n'ont pas été résumés ; le résultat de chacune est dans sa propre conversation.",
         "job_out_of_budget_tree": "Cette sous-session s’est arrêtée avant la fin : {goal}. Son groupe de sous-sessions a atteint son plafond commun en dollars ({used} sur {limit}) après {steps} étapes ici, sans rien rédiger. Demande à la conversation qui l’a lancée de réduire le périmètre.",
         "proactive_goal_followup": "Poursuis le travail en arrière-plan précédent : {goal} Vérifie d’abord ce qui a déjà été enregistré, puis termine seulement ce qui manque.",
         "proactive_goal_scheduled": "La tâche planifiée « {name} » échoue ou a été mise en pause. Trouve la cause la plus probable d’après ses dernières exécutions et dis-moi l’unique changement à faire. Son prompt est : {prompt}",

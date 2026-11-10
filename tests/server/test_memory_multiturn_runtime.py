@@ -356,6 +356,14 @@ async def test_deleted_task_source_cannot_recreate_derived_memory_from_old_summa
     async with execution_db() as db:
         deleted = await delete_conversation(source_conversation, db=db)
         assert deleted["deleted"]["arslan_messages"] >= 1
+    # SUB5a: in the process that deleted it, a turn there is refused its context outright (`sub_sessions.deleted`).
+    # A restart forgets that; the retained identity below must still hold then.
+    from arslan.companion.memory import MemoryError
+    from server.services import sub_sessions
+    with pytest.raises(MemoryError, match="conversation_deleted"):
+        await extract_turn(source_conversation, "Reingest old task summary: " + paraphrase,
+                           lambda event: None, paraphrase)
+    sub_sessions._deleted.discard(source_conversation)          # what the next process knows
     # Re-extraction of an old summary with its retained conversation identity
     # is blocked even when candidate wording differs from the deleted digest.
     replayed = await extract_turn(source_conversation, "Reingest old task summary: " + paraphrase,

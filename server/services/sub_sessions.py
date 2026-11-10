@@ -155,8 +155,10 @@ async def create_child(db, parent_id: str, child_id: str | None = None) -> Conve
     parent can take that back later. Its name comes from its first message, as every conversation's does.
 
     A parent with no row yet gets one (an ordinary conversation has none until a setting changes), so that a chain with
-    a row missing can fail closed. Deleting a conversation keeps its row today, so a deleted parent isn't a missing one:
-    removing the rows is SUB5's cascade."""
+    a row missing can fail closed. SUB5a: a parent deleted in this process (`deleted`) has no row either, and is
+    refused (`conversation_deleted`): its turn may go on after the delete, and a fresh row would carry the defaults."""
+    if deleted(parent_id):
+        raise SubSessionError("conversation_deleted")
     parent = await db.get(ConversationContext, parent_id)
     if parent is None:
         parent = ConversationContext(id=parent_id)
@@ -288,6 +290,8 @@ async def check_tree_spend(conversation_id: str) -> None:
     from arslan.execution_budget import current
     from server.db import session as db_session
     from server.services import settings_service
+    if deleted(conversation_id):     # SUB5a: its row is gone, so its tree reads as one that spent nothing
+        raise SubSessionError("conversation_deleted")
     budget = current()
     async with db_session.AsyncSessionLocal() as db:
         usd_cap = await settings_service.task_usd_cap(db)
@@ -329,6 +333,7 @@ _waiting: dict[str, int] = {}                   # a sub-session -> its cards wai
 _summing: dict[str, list[str]] = {}             # SUB5a: a summary turn's job -> the sub-sessions it sums up
 _hushed: set[str] = set()                       # SUB5a: jobs stopped with what they work for: they report nothing
 _stopped_runs: set[int] = set()                 # SUB5a: runs the window stopped (`stopping`)
+_deleted: set[str] = set()                      # SUB5a: conversations deleted in this process (`deleted`)
 
 
 def files_written(trace) -> list[str]:
@@ -447,7 +452,7 @@ def _reset_for_tests() -> None:
     _starting = None
     for task in _summaries.values():
         task.cancel()
-    for held in (_reports, _summaries, _parents, _waiting, _summing, _hushed, _stopped_runs):
+    for held in (_reports, _summaries, _parents, _waiting, _summing, _hushed, _stopped_runs, _deleted):
         held.clear()
 
 
@@ -474,8 +479,21 @@ async def looser_than_chain(db, row: ConversationContext, values: dict) -> bool:
 
 # -- SUB5a: restart, stop, delete -----------------------------------------------------------------------------------
 
-#: How long deleting a sub-session waits for its stopped job to end before its rows go.
+#: How long deleting a conversation waits for its stopped jobs to end before its rows go.
 STOP_WAIT_S = 10.0
+
+
+def deleted(conversation_id: str) -> bool:
+    """Whether this conversation was deleted in this process. A missing context row means two things: an ordinary
+    conversation that never had one (none until a setting changes) reads the defaults, as it always did; a deleted
+    one must not, since what it had chosen went with its row. This tells them apart: one rule with SUB2's, where a
+    chain that can't be read fails closed, except that nothing of a deleted conversation runs at all. Its context
+    load (`task_context.load`, which every job and turn goes through), a sub-session under it (`create_child`) and
+    its tree's limit (`check_tree_spend`) are refused with `conversation_deleted`.
+
+    Marked before the delete stops its jobs, and never cleared. In memory only: jobs and turns live in this process,
+    and none survives a restart (`background_jobs.report_interrupted`), so after one nothing of it runs by itself."""
+    return conversation_id in _deleted
 
 
 async def _set_state(ids, state: str | None, db=None) -> None:
@@ -544,17 +562,27 @@ def _forget(ids) -> None:
 async def stop_tree(db, conversation_id: str) -> list[str]:
     """A run of this conversation was stopped: every sub-session under it that is still at work stops too, and
     what they owed it goes with them: no report, no summary turn (the user stopped that work). In `db`'s transaction;
-    the caller commits. Returns the jobs stopped."""
-    from server.services import background_jobs
+    the caller commits. Returns the jobs stopped.
+
+    The reports of its own sub-sessions that had already finished go too; it gets one line saying how many, as a
+    restart writes one (`report_restart`). Their results are in their own conversations."""
+    from server.db.models import ArslanMessage
+    from server.services import background_jobs, runtime_messages
     below = (await tree(db, conversation_id))[1:]
     stopped = []
+    finished = {report["sub_session"] for report in _reports.get(conversation_id, ())}
     # One that has just finished and not reported yet can't be stopped, but its report goes too.
     for job in {job.job_id: job for job in (*background_jobs.active(), *background_jobs.unreported())}.values():
         if job.conversation_id in below:
             _hushed.add(job.job_id)
             if background_jobs.stop(job.conversation_id, job.job_id):
                 stopped.append(job.job_id)
+            elif job.parent_id == conversation_id:
+                finished.add(job.conversation_id)
     _forget([conversation_id, *below])
+    if finished:                    # read before this transaction writes, as `report_restart` does
+        db.add(ArslanMessage(conversation_id=conversation_id, role="arslan", content=runtime_messages.render(
+            "sub_sessions_stopped_reports", await runtime_messages.selected_locale(), count=len(finished))))
     await _set_state(below, None, db)
     return stopped
 
@@ -583,43 +611,55 @@ async def before_delete(db, conversation_id: str, *, choice: str | None,
     - `sub_sessions_choice_required` when it has sub-sessions and `choice` is neither "delete" nor "keep".
     A sub-session deleted while its parent waits on it reports `stopped`; the others report as usual. With "keep"
     its direct sub-sessions are promoted (`_promote`). Changes go into `db`'s transaction; the caller deletes the
-    rows and commits."""
+    rows and commits.
+
+    Fail closed, both halves: what goes is marked deleted first (`deleted`: from then on nothing of it loads a
+    context or starts a sub-session), and its own jobs, queued, running or reporting, a summary turn too, are stopped
+    and waited for before its rows go (`_stop_for_delete`). A queued job reads its settings only when it gets a slot,
+    and would find no row. The checks and the mark are made under the lock `start` holds, so a sub-session being
+    started either has its job by then (`sub_sessions_running`) or is refused (`create_child`). A failure after
+    the mark leaves it marked: refused, never looser."""
     from server.services import background_jobs
-    row = await db.get(ConversationContext, conversation_id)
-    is_sub = row is not None and row.kind == SUB
-    if is_sub and not as_sub_session:
-        raise SubSessionError("not_found")
-    below = (await tree(db, conversation_id))[1:]
-    if any(job.conversation_id in below for job in (*background_jobs.active(), *background_jobs.unreported())):
-        raise SubSessionError("sub_sessions_running")
-    direct = await children(db, conversation_id)
-    if direct and choice not in ("delete", "keep"):
-        raise SubSessionError("sub_sessions_choice_required", sub_sessions=len(direct))
-    if is_sub:
-        await _stop_for_delete(conversation_id, row.parent_id)
-    kept = direct if choice == "keep" else []
+    global _starting
+    if _starting is None:
+        _starting = asyncio.Lock()
+    async with _starting:
+        row = await db.get(ConversationContext, conversation_id)
+        is_sub = row is not None and row.kind == SUB
+        if is_sub and not as_sub_session:
+            raise SubSessionError("not_found")
+        below = (await tree(db, conversation_id))[1:]
+        if any(job.conversation_id in below for job in (*background_jobs.active(), *background_jobs.unreported())):
+            raise SubSessionError("sub_sessions_running")
+        direct = await children(db, conversation_id)
+        if direct and choice not in ("delete", "keep"):
+            raise SubSessionError("sub_sessions_choice_required", sub_sessions=len(direct))
+        kept = direct if choice == "keep" else []
+        gone = [conversation_id] if kept else [conversation_id, *below]
+        _deleted.update(gone)
+    await _stop_for_delete(gone, conversation_id if is_sub else None, row.parent_id if is_sub else None)
     for child_id in kept:
         await _promote(db, child_id)
-    gone = [conversation_id] if kept else [conversation_id, *below]
     _forget(gone)
     for cid in gone:
         _parents.pop(cid, None)
     return gone, kept
 
 
-async def _stop_for_delete(conversation_id: str, parent_id: str | None) -> None:
-    """A sub-session being deleted: its own job stops and ends before its rows go, and its report to its parent,
-    one still waiting or the one that stop leaves, reads `stopped`, with no result: the user deleted what it said."""
+async def _stop_for_delete(gone: list[str], sub_session: str | None, parent_id: str | None) -> None:
+    """The jobs of the conversations being deleted stop and end before their rows go. A sub-session's report to its
+    parent, one still waiting or the one that stop leaves, reads `stopped`, with no result: the user deleted what it
+    said. One that outlives STOP_WAIT_S is refused its next context load and its tree's limit (`deleted`)."""
     from server.services import background_jobs
 
     def mark() -> None:
-        for report in _reports.get(parent_id, ()):
-            if report["sub_session"] == conversation_id:
+        for report in _reports.get(parent_id, ()) if sub_session else ():
+            if report["sub_session"] == sub_session:
                 report.update(outcome="stopped", result="")
     mark()
-    jobs = [job for job in background_jobs.unreported() if job.conversation_id == conversation_id]
+    jobs = [job for job in background_jobs.unreported() if job.conversation_id in gone]
     for job in jobs:
-        background_jobs.stop(conversation_id, job.job_id)
+        background_jobs.stop(job.conversation_id, job.job_id)
     if jobs:
         await asyncio.wait({job.task for job in jobs}, timeout=STOP_WAIT_S)
         mark()

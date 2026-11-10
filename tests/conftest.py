@@ -173,6 +173,16 @@ def _real_secret_folder_never_opened():
 
 
 @pytest.fixture(autouse=True)
+def _no_deleted_conversation_carried_over():
+    """SUB5a: a conversation deleted in this process is refused its context from then on (`sub_sessions.deleted`).
+    Each test starts with none, so one that reuses an id another test deleted (in the same worker) still runs."""
+    from server.services import sub_sessions
+    sub_sessions._deleted.clear()
+    yield
+    sub_sessions._deleted.clear()
+
+
+@pytest.fixture(autouse=True)
 def _session_global_restored():
     """Repair, then fail, a test that replaced `db_session.AsyncSessionLocal` and kept it.
 

@@ -31,7 +31,7 @@ from server.db.task_models import CompanionTask
 from server.orchestrator import memory as memory_mod
 from server.registry import executors
 from server.services import (approvals, background_jobs, checkpoints, execution_context, run_reaper, run_registry,
-                             runtime_messages, sub_sessions, task_service, turn_undo)
+                             runtime_messages, sub_sessions, task_context, task_service, turn_undo)
 from tests.server.test_s64_0_outside_content_gaps import _Run, memory  # noqa: F401  (the fixture)
 from tests.server.test_sub4_report import (  # noqa: F401  (the fixture)
     COMMAND, COVER, OUTLINE, PAGE, ROOT, _Model, _cards, _children, _settled, _sink, _start, _steps, _summaries,
@@ -109,6 +109,28 @@ async def restart(runs, monkeypatch, tmp_path):  # noqa: F811
 
 def _line(count: int) -> str:
     return runtime_messages.render("sub_sessions_interrupted", "en", count=count)
+
+
+def _stop_line(count: int) -> str:
+    return runtime_messages.render("sub_sessions_stopped_reports", "en", count=count)
+
+
+def _loads(monkeypatch) -> list[tuple]:
+    """Every context load from here on: (conversation, no_memory, no_learning, sub_session), or (conversation,
+    "refused", code)."""
+    seen = []
+    real = task_context.load
+
+    async def load(conversation_id, **kw):
+        try:
+            ctx = await real(conversation_id, **kw)
+        except Exception as exc:
+            seen.append((conversation_id, "refused", getattr(exc, "code", type(exc).__name__)))
+            raise
+        seen.append((conversation_id, ctx.no_memory, ctx.no_learning, ctx.sub_session))
+        return ctx
+    monkeypatch.setattr(task_context, "load", load)
+    return seen
 
 
 async def _states(db, ids) -> dict:
@@ -314,6 +336,9 @@ async def test_the_windows_stop_stops_the_commanders_sub_sessions_and_theirs_and
         await asyncio.sleep(0.2)                                # twenty polls
         assert _summaries() == [] and model.requests["summary"] == [] and ROOT not in sub_sessions._summaries
         assert sub_sessions._reports == {}
+        # The voice-over's dropped report is the only one that had finished (the outline and the cover were
+        # stopped): the commander is told, in one line, as a restart tells it.
+        assert await _said(runs, ROOT) == [(_stop_line(1), None)]
         assert await _states(runs, [kid.conversation_id, done.conversation_id, grandchild, elsewhere]) == {
             kid.conversation_id: None, done.conversation_id: None, grandchild: None, elsewhere: sub_sessions.WORKING}
     finally:
@@ -456,12 +481,12 @@ async def test_an_ordinary_conversations_context_row_goes_with_it(runs, client):
 
 async def test_kept_sub_sessions_become_chats_no_looser_than_they_were(runs, client):  # noqa: F811
     """The commander allowed cloud memory and sensitive data when its sub-session started, then turned memory off and
-    took sensitive data back. The kept sub-session's own row still says what it started with; what it read was
-    stricter, and that is what it keeps. Its own sub-session stays under it."""
+    took cloud memory and sensitive data back. The kept sub-session's own row still says what it started with; what
+    it read was stricter, and that is what it keeps. Its own sub-session stays under it."""
     child, grandchild = await _family(runs, cloud_memory_allowed=True, allow_sensitive=True)
     async with runs() as db:
         root = await db.get(ConversationContext, ROOT)
-        root.no_memory, root.allow_sensitive = True, False
+        root.no_memory, root.cloud_memory_allowed, root.allow_sensitive = True, False, False
         await db.commit()
         own = await db.get(ConversationContext, child)
         assert (own.no_memory, own.allow_sensitive, own.cloud_memory_allowed) == (False, True, True)
@@ -473,7 +498,7 @@ async def test_kept_sub_sessions_become_chats_no_looser_than_they_were(runs, cli
         row = await db.get(ConversationContext, child)
         assert (row.kind, row.parent_id, row.sub_state, row.version) == ("chat", None, None, 2)
         assert (row.no_memory, row.no_learning, row.temporary, row.cloud_memory_allowed, row.allow_sensitive) == (
-            True, True, False, True, False)
+            True, True, False, False, False)
         assert await sub_sessions.effective_settings(db, row) == before
         grand = await db.get(ConversationContext, grandchild)
         assert (grand.kind, grand.parent_id) == ("sub", child)
@@ -524,6 +549,166 @@ async def test_a_deleted_sub_session_its_commander_waits_on_reports_stopped_and_
     assert "voice-over ready" in sent and "cover ready" not in sent
     gone = [jobs[goal].conversation_id for goal in (COVER, OUTLINE)]
     assert set((await _left(runs, gone)).values()) == {(False, 0, 0, 0)}
+
+
+async def test_deleting_a_commander_whose_summary_waits_drops_it(runs, client, monkeypatch):  # noqa: F811
+    """The outline is done and its report waits while the user talks to the commander (its turn lock is held). The
+    commander is deleted with it: once the lock is free, no summary turn runs in the deleted conversation."""
+    from server.ws import arslan as ws_arslan
+    _sink(ROOT)
+    model = _Model({OUTLINE: _steps(final="outline ready")}, summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    lock = ws_arslan._turn_lock(ROOT)
+    await lock.acquire()
+    try:
+        await _start(OUTLINE)
+        await _wait(lambda: all(job.task.done() for job in _children()) and ROOT in sub_sessions._summaries)
+        got = await client.delete(f"/api/v1/conversations/{ROOT}?sub_sessions=delete")
+        assert got.status_code == 200, got.text
+    finally:
+        lock.release()
+    await asyncio.sleep(0.3)                                    # thirty polls
+    assert [job for job in background_jobs._jobs.values() if job.conversation_id == ROOT] == []
+    assert sub_sessions._summaries == {} and sub_sessions._reports == {} and model.requests["summary"] == []
+
+
+# -- delete never loosens a job's settings ----------------------------------------------------------------------------
+
+PRIVATE, PRIVATE_GOAL = "c-private", "Tidy the private notes"
+PLAIN, PLAIN_GOAL = "c-plain", "Plan the week"
+
+
+async def _private(db):
+    """A conversation with memory and learning off, and a message."""
+    async with db() as session:
+        session.add(ConversationContext(id=PRIVATE, no_memory=True, no_learning=True))
+        session.add(ArslanMessage(conversation_id=PRIVATE, role="user", content="hello"))
+        await session.commit()
+
+
+async def _queued_behind_the_outline(monkeypatch, model):
+    """The only job slot is held by the outline; PRIVATE's job waits for it."""
+    monkeypatch.setattr(background_jobs, "MAX_CONCURRENT", 1)
+    model.hold[OUTLINE] = asyncio.Event()
+    await _start(OUTLINE)
+    await _wait(lambda: model.requests[OUTLINE])
+    job = await background_jobs.start(PRIVATE, PRIVATE_GOAL, [], outside_seen=False)
+    assert job.phase == "queued"
+    return job
+
+
+async def test_a_queued_job_of_a_deleted_conversation_is_stopped_before_its_row_goes(runs, client, monkeypatch):  # noqa: F811
+    """It would read its settings when it gets its slot, and find none. It is stopped instead: it never loads a context
+    and never asks the model."""
+    seen = _loads(monkeypatch)
+    model = _Model({OUTLINE: _steps(final="outline ready"), PRIVATE_GOAL: _steps(final="tidied")},
+                   summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _private(runs)
+    job = await _queued_behind_the_outline(monkeypatch, model)
+    got = await client.delete(f"/api/v1/conversations/{PRIVATE}")
+    assert got.status_code == 200 and got.json()["deleted"]["conversation_contexts"] == 1
+    assert job.task.done() and job.outcome == "stopped"
+    model.hold[OUTLINE].set()
+    await _wait(_settled)
+    assert [load for load in seen if load[0] == PRIVATE] == [] and model.requests[PRIVATE_GOAL] == []
+    assert await _said(runs, PRIVATE) == []
+
+
+async def test_a_job_that_finds_its_conversation_deleted_refuses_to_run(runs, client, monkeypatch):  # noqa: F811
+    """The second half, alone: a job the delete could not stop (here, a stop that reaches nothing) gets its slot after
+    the row went. Its context load refuses, so it never runs on an ordinary conversation's defaults; and so does a
+    chat turn's."""
+    seen = _loads(monkeypatch)
+    model = _Model({OUTLINE: _steps(final="outline ready"), PRIVATE_GOAL: _steps(final="tidied")},
+                   summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _private(runs)
+    job = await _queued_behind_the_outline(monkeypatch, model)
+    monkeypatch.setattr(background_jobs, "stop", lambda conversation_id, job_id: False)
+    monkeypatch.setattr(sub_sessions, "STOP_WAIT_S", 0.05)
+    assert (await client.delete(f"/api/v1/conversations/{PRIVATE}")).status_code == 200
+    assert job.phase == "queued"
+    model.hold[OUTLINE].set()
+    await _wait(lambda: job.task.done())
+    assert [load for load in seen if load[0] == PRIVATE] == [(PRIVATE, "refused", "conversation_deleted")]
+    assert job.outcome == "blocked" and model.requests[PRIVATE_GOAL] == []
+    from arslan.companion.memory import MemoryError
+    with pytest.raises(MemoryError, match="conversation_deleted"):
+        await task_context.load(PRIVATE, user_message="hello again")
+    assert (await _left(runs, [PRIVATE]))[PRIVATE] == (False, 0, 0, 0)
+
+
+async def test_an_ordinary_conversation_that_never_had_a_row_still_runs(runs, client, monkeypatch):  # noqa: F811
+    """Most conversations have no context row until a setting changes: one that never had one is not a deleted one,
+    also right after another conversation was deleted."""
+    seen = _loads(monkeypatch)
+    model = _Model({PLAIN_GOAL: _steps(final="planned")})
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _private(runs)
+    assert (await client.delete(f"/api/v1/conversations/{PRIVATE}")).status_code == 200
+    job = await background_jobs.start(PLAIN, PLAIN_GOAL, [], outside_seen=False)
+    await _wait(lambda: job.task.done())
+    assert job.outcome == "done" and len(model.requests[PLAIN_GOAL]) == 1
+    assert seen == [(PLAIN, False, False, False)]
+
+
+async def test_a_deleted_commanders_live_turn_cannot_start_a_sub_session(runs, client):  # noqa: F811
+    """The commander's turn goes on after its conversation is deleted. A sub-session it asks for is refused: it would
+    give the deleted commander a fresh row with the defaults and run under it."""
+    async with runs() as db:
+        db.add(ConversationContext(id=ROOT, no_memory=True))
+        db.add(ArslanMessage(conversation_id=ROOT, role="user", content="make a video"))
+        await db.commit()
+    assert (await client.delete(f"/api/v1/conversations/{ROOT}")).status_code == 200
+    assert await _refused(sub_sessions.start(ROOT, OUTLINE, outside_seen=False)) == "conversation_deleted"
+    assert background_jobs._jobs == {}
+    async with runs() as db:
+        assert await db.get(ConversationContext, ROOT) is None
+        assert await sub_sessions.children(db, ROOT) == []
+
+
+async def test_a_delete_during_a_sub_sessions_start_waits_for_it_and_then_finds_it_at_work(
+        runs, client, monkeypatch):  # noqa: F811
+    """The child's row is committed and its brief is being stored, so it has no job yet. The delete waits for the start
+    to finish, then finds its job and refuses (409): the child runs under its commander's row, memory off."""
+    seen = _loads(monkeypatch)
+    model = _Model({OUTLINE: _steps(final="outline ready")}, summary=_steps(final="summed up"))
+    model.hold[OUTLINE] = asyncio.Event()
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    async with runs() as db:
+        db.add(ConversationContext(id=ROOT, no_memory=True))
+        await db.commit()
+    entered, gate = asyncio.Event(), asyncio.Event()
+    real = memory_mod.add_message
+
+    async def slow(cid, role, content, **kw):
+        if cid.startswith("sub-") and not gate.is_set():
+            entered.set()
+            await gate.wait()
+        return await real(cid, role, content, **kw)
+    monkeypatch.setattr(memory_mod, "add_message", slow)
+    starting = asyncio.ensure_future(sub_sessions.start(ROOT, OUTLINE, outside_seen=False))
+    await entered.wait()
+    deleting = asyncio.ensure_future(client.delete(f"/api/v1/conversations/{ROOT}?sub_sessions=delete"))
+    await asyncio.sleep(0.2)
+    assert not deleting.done()
+    gate.set()
+    child = await starting
+    got = await deleting
+    assert got.status_code == 409 and got.json()["detail"]["code"] == "sub_sessions_running"
+    await _wait(lambda: model.requests[OUTLINE])
+    assert seen == [(child, True, True, True)]
+    assert (await _left(runs, [ROOT, child]))[ROOT][0] and (await _left(runs, [child]))[child][0]
+    model.hold[OUTLINE].set()
+    await _wait(_settled)
+
+
+async def test_a_deleted_sub_sessions_job_that_outlives_the_wait_is_refused_its_next_model_request(runs):  # noqa: F811
+    """Its row is gone, so its tree can't be read: it would read as a tree of one that spent nothing, with no shared
+    limit. Its next model request is refused instead."""
+    sub_sessions._deleted.add("sub-gone")
+    assert await _refused(sub_sessions.check_tree_spend("sub-gone")) == "conversation_deleted"
 
 
 # -- undo -------------------------------------------------------------------------------------------------------------
