@@ -577,32 +577,48 @@ def _held_for_git(token: str, folder: Path, root: Path, target: Path | None) -> 
                for base in (folder, *folder.parents))
 
 
-def git_refused(result: dict, *, command: str, cwd: Path, hold: bool = False) -> bool:
-    """HR-1 (#813 review 4): a git command whose stderr names a file the kernel holds from it, whatever the words
-    around that path and whatever the exit code. checkout and switch exit 0 with a held tracked file left as it was;
-    a tracking checkout, `push -u` and `--set-upstream-to` exit 0 with the upstream unsaved (`.git/config`). Keyed on
-    the path, not on git's words, which LANG and LC_ALL translate. In the workspace sandbox, and under the outside
-    floor when it holds them (`hold`: let out under this conversation's grant with no click on its own card).
-    Heuristic on purpose: a false positive only adds a note."""
+def git_refused_paths(result: dict, *, command: str, cwd: Path, hold: bool = False) -> list[str]:
+    """HR-1 (#813 reviews 4 and 5): the held paths a git command's refusal lines name, whatever the exit code. A line
+    counts only when it carries the EPERM text (`_DENIED`) and names a file the kernel holds from git; on stdout as well
+    as stderr (`2>&1`). checkout and switch exit 0 with a held tracked file left as it was; a tracking checkout, `push
+    -u` and `--set-upstream-to` exit 0 with the upstream unsaved (`.git/config`). git translates its own words (LANG,
+    LC_ALL) but not the path, and macOS doesn't translate strerror, so "Operation not permitted" ends the line in
+    every language git speaks. Without that text a held path is only named (a hook printing its own path, a hint, a
+    pathspec error, a diff), not refused. In the workspace sandbox, and under the outside floor when it holds them
+    (`hold`: let out under this conversation's grant with no click on its own card)."""
     where = result.get("sandbox")
     if not (where == "workspace" or (where == "outside" and hold)):
-        return False
-    stderr = result.get("stderr") or ""
-    tokens =[t for t in (run.rstrip(".") for run in _PATH_RUN.findall(stderr)) if t.strip(".")]
+        return []
+    lines = [line for stream in (result.get("stderr") or "", result.get("stdout") or "")
+             for line in stream.splitlines() if _DENIED.search(line)]
+    tokens = [t for line in lines for t in (run.rstrip(".") for run in _PATH_RUN.findall(line)) if t.strip(".")]
     if not tokens or not _is_git(command):
-        return False
+        return []
     folder = Path(os.path.abspath(cwd))
     try:
         target = run_later.hooks_path(folder)
     except OSError:
         target = None           # only a note: the profile itself failed closed on this already
     root = _real(folder)
-    return any(_held_for_git(token, folder, root, target) for token in tokens)
+    return [token for token in tokens if _held_for_git(token, folder, root, target)]
+
+
+def git_refused(result: dict, *, command: str, cwd: Path, hold: bool = False) -> bool:
+    """`git_refused_paths` names one. Heuristic on purpose: a false positive only adds a note."""
+    return bool(git_refused_paths(result, command=command, cwd=cwd, hold=hold))
+
+
+def git_setup_failed(result: dict, held: list[str]) -> bool:
+    """HR-1 (#813 review 5): a git step that failed outright on the repository's own config or hooks only (clone,
+    init, `remote add`, a `git config` write): a non-zero exit, and every held path git named is inside a `.git` folder.
+    Nothing in the work tree moved, so the ordinary stop note (or, under the floor, the floor's) fits it, not the git
+    note's partly updated tree."""
+    return bool(held) and not result.get("ok") and all(".git" in Path(token).parts for token in held)
 
 
 def git_note() -> str:
     """HR-1 (#813 review 4): what the model reads when `git_refused` holds, in the sandbox or under the outside floor,
-    at any exit code. Not the stop note: running it again outside the sandbox doesn't help (the floor holds these files
+    at any exit code, except for a setup step that failed outright (`git_setup_failed`). Not the stop note: running it again outside the sandbox doesn't help (the floor holds these files
     too, and only the user's click on that command's own card lifts it), so it ends with the user, not outside_sandbox."""
     return ("Commands can't change files that make something run later (git config or hooks, editor or agent "
             "settings), and git needed to change some of them here, so it didn't update them, even if it exited 0: "

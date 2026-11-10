@@ -8,8 +8,10 @@ fast-forward merge that must change a held file git tracks, where the model read
 node_modules folder has no exemption. CI files are written like any other (#813 review 3: their guard is HR-2b's push
 card), and the everyday git flow is measured step by step (the count of steps refused only on `.git/config` decides
 HR-1b). The steps refused only on `.git/config` that exit 0, the held-file checkout under the outside floor that holds
-them, and that checkout with git's messages in German and Chinese all carry the git note, with one denial (#813
-review 4). In the MCP preset: the same in a granted folder and the server's own folder, and an own folder inside
+them, and that checkout with git's messages in German and Chinese all carry the git note, with one denial (none under
+the floor; #813 reviews 4 and 5). That checkout under `2>&1` carries it from stdout, and a commit whose hook prints its
+`.husky` path or the add of an ignored `.envrc`, which name a held file without a refusal, carry none (#813 review 5).
+In the MCP preset: the same in a granted folder and the server's own folder, and an own folder inside
 node_modules keeps every name held.
 
 Plain writes with stand-in names only. The bypass corpus (letter case, Unicode forms, renames into place, hard links,
@@ -184,9 +186,11 @@ def _explained(monkeypatch, ran, *, cwd, command: str, mode: str = "workspace", 
     return result, trace[0].get("denial"), noted
 
 
-def _noted_once(explained) -> None:
+def _noted_once(explained, *, floor: bool = False) -> None:
+    """The git note, with one EPERM denial in the sandbox and none under the floor (#813 review 5)."""
     result, denial, noted = explained
-    assert result.get("note") == command_sandbox.git_note() and denial == "eperm" and noted == ["eperm"]
+    assert result.get("note") == command_sandbox.git_note()
+    assert (denial, noted) == ((None, []) if floor else ("eperm", ["eperm"]))
 
 
 @pytest.mark.macos
@@ -250,14 +254,70 @@ def _floor_profile(sbx) -> str:
 @pytest.mark.parametrize("sbx", ["outside-floor"], indirect=True)
 def test_under_the_outside_floor_a_checkout_that_must_change_a_held_file_gets_the_note(sbx, monkeypatch):
     """#813 review 4: under the floor that holds them, checkout to a branch whose tracked held file differs exits 0,
-    moves HEAD and keeps the old file. The model reads the same git note, with one EPERM denial."""
+    moves HEAD and keeps the old file. The model reads the same git note, with no denial (#813 review 5: SBX-7 counts
+    the workspace sandbox's, and the floor's other refusals record none)."""
     head = _held_branch(sbx.work)
     script = f"git checkout -q {STAND_IN}"
     ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-floor-git-held-tracked", profile=_floor_profile(sbx))
     assert ran.returncode == 0
     assert (sbx.work / HELD_TRACKED).read_text() == "old\n" and (sbx.work / f"{STAND_IN}.txt").read_text() == "new\n"
     assert _git(sbx.work, "rev-parse", "HEAD").stdout != head
-    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script, mode="outside", hold=True))
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script, mode="outside", hold=True), floor=True)
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_under_2_and_1_the_refusal_on_stdout_still_gets_the_note(sbx, monkeypatch):
+    """#813 review 5: with `2>&1` git's refusal line reaches stdout, at exit 0. Both streams are read."""
+    _held_branch(sbx.work)
+    script = f"git checkout -q {STAND_IN} 2>&1"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-held-tracked-2-and-1")
+    assert ran.returncode == 0 and ran.stderr == "" and command_sandbox._DENIED.search(ran.stdout)
+    assert (sbx.work / HELD_TRACKED).read_text() == "old\n"
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script))
+
+
+def _hook_prints_its_path(work) -> str:
+    """Outside the sandbox: a repository whose `core.hooksPath` is `.husky`, with a pre-commit hook that prints a line
+    naming itself to stderr (as hook managers do), and an ordinary file staged in the sandbox."""
+    assert _git(work, "init", "-q", "-b", "main").returncode == 0
+    hook = work / ".husky" / "pre-commit"
+    hook.parent.mkdir()
+    hook.write_text(f"#!/bin/sh\necho '{STAND_IN} .husky/pre-commit' >&2\n")
+    hook.chmod(0o755)
+    assert _git(work, "config", "core.hooksPath", ".husky").returncode == 0
+    (work / f"{STAND_IN}.txt").write_text("one\n")
+    who = " ".join(WHO)
+    return f"git add {STAND_IN}.txt && git {who} commit -qm one"
+
+
+def _ignored_envrc(work) -> str:
+    """Outside the sandbox: a repository that ignores `.envrc`, with one beside it (made outside: it's held)."""
+    assert _git(work, "init", "-q", "-b", "main").returncode == 0
+    (work / ".gitignore").write_text(".envrc\n")
+    (work / ".envrc").write_text(f"export {STAND_IN.upper().replace('-', '_')}=1\n")
+    return "git add .envrc"
+
+
+#: #813 review 5: git names a held file with no refusal on the line. (setup, exit code, the path git's line names)
+NAMED_NOT_REFUSED = {"a commit whose hook prints its path": (_hook_prints_its_path, 0, ".husky/pre-commit"),
+                     "add of an ignored .envrc": (_ignored_envrc, 1, ".envrc")}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("case", sorted(NAMED_NOT_REFUSED))
+def test_git_naming_a_held_file_without_a_refusal_gets_no_note(sbx, monkeypatch, case):
+    """#813 review 5: the commit succeeds with the hook's line naming `.husky/pre-commit` on stderr; the add of an
+    ignored `.envrc` fails with git naming it. Neither was refused: no note and no denial."""
+    setup, exit_code, named = NAMED_NOT_REFUSED[case]
+    script = setup(sbx.work)
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-named-not-refused")
+    assert ran.returncode == exit_code and named in ran.stderr and not command_sandbox._DENIED.search(ran.stderr)
+    result, denial, noted = _explained(monkeypatch, ran, cwd=sbx.work, command=script)
+    assert "note" not in result and denial is None and noted == []
 
 
 @pytest.mark.macos

@@ -502,7 +502,7 @@ WIDE_COLON = chr(0xFF1A)                 # git's Chinese messages put it right a
 
 
 def _explained(tmp_path, monkeypatch, *, exit_code: int, stderr: str, sandbox: str = "workspace",
-               command: str = CHECKOUT, hold: bool = False, cwd=None):
+               command: str = CHECKOUT, hold: bool = False, cwd=None, stdout: str = ""):
     """terminal_exec.explain on a fake result: the result, the denial on the run trace, and how many times a denial
     was noted (SBX-7: exactly one per run)."""
     from server.orchestrator import run_trace
@@ -513,7 +513,7 @@ def _explained(tmp_path, monkeypatch, *, exit_code: int, stderr: str, sandbox: s
         noted.append(code)
         real_note(code)
     monkeypatch.setattr(run_trace, "note_denial", counting)
-    result = {"ok": exit_code == 0, "exit_code": exit_code, "stdout": "", "stderr": stderr, "cwd": str(tmp_path),
+    result = {"ok": exit_code == 0, "exit_code": exit_code, "stdout": stdout, "stderr": stderr, "cwd": str(tmp_path),
               "sandbox": sandbox}
     if exit_code:
         result["error"] = f"exit code {exit_code}"
@@ -524,12 +524,16 @@ def _explained(tmp_path, monkeypatch, *, exit_code: int, stderr: str, sandbox: s
     return result, trace[0].get("denial"), noted
 
 
-def _git_noted(explained) -> bool:
-    """Whether the git note was given; when it was, with exactly one `eperm` denial noted (never two)."""
+def _git_noted(explained, *, floor: bool = False) -> bool:
+    """Whether the git note was given; when it was, with exactly one `eperm` denial noted (never two), or, under the
+    outside floor, none (#813 review 5: SBX-7 counts the workspace sandbox's denials)."""
     result, denial, noted = explained
     if result.get("note") != command_sandbox.git_note():
         return False
-    assert denial == "eperm" and noted == ["eperm"], noted
+    if floor:
+        assert denial is None and noted == [], noted
+    else:
+        assert denial == "eperm" and noted == ["eperm"], noted
     return True
 
 
@@ -538,9 +542,10 @@ def _nothing(explained) -> bool:
     return "note" not in result and denial is None and noted == []
 
 
-#: A translated line with no EPERM text at all (stand-in German words around the path).
-GERMAN = "Fehler: Konnte alte Datei '.vscode/settings.json' nicht entfernen: Vorgang nicht zulaessig\n"
-#: git's lines naming a held file, in its English words and others (git translates the words, never the path).
+#: A translated line: stand-in German words around the path, and macOS's strerror, which it never translates.
+GERMAN = "Fehler: Konnte alte Datei '.vscode/settings.json' nicht entfernen: Operation not permitted\n"
+#: git's refusal lines naming a held file, in its English words and others (git translates the words, never the path,
+#: and macOS never translates "Operation not permitted").
 HELD_LINES = [
     GIT_REFUSED, CONFIG_REFUSED, CONFIG_REFUSED * 2,
     f"warning: unable to unlink '.husky/{STAND_IN}': Operation not permitted\n",
@@ -548,12 +553,14 @@ HELD_LINES = [
     "error: unable to create symlink .vscode/settings.json: Operation not permitted\n",
     "error: unable to write file .npmrc mode 100644: Operation not permitted\n",
     "fatal: cannot create directory at '.husky': Operation not permitted\n",
-    f"error: cannot copy '/{STAND_IN}/templates/hooks/pre-push.sample' to '/w/.git/hooks/pre-push.sample'\n",
+    f"error: cannot copy '/{STAND_IN}/templates/hooks/pre-push.sample' to '/w/.git/hooks/pre-push.sample': "
+    "Operation not permitted\n",
     GERMAN,
     "Fehler: Konnte Konfigurationsdatei '.git/config' nicht sperren.: Operation not permitted\n",
-    f"{STAND_IN}{WIDE_COLON}{STAND_IN} .git/config{WIDE_COLON}{STAND_IN}\n",
-    f"{STAND_IN}{WIDE_COLON}unable to unlink old '.envrc'{WIDE_COLON}{STAND_IN}\n",
-    f"{STAND_IN} .git/config.worktree.\n",
+    f"{STAND_IN}{WIDE_COLON}{STAND_IN} .git/config{WIDE_COLON}Operation not permitted\n",
+    f"{STAND_IN}{WIDE_COLON}unable to unlink old '.envrc'{WIDE_COLON}Operation not permitted\n",
+    f"{STAND_IN} .git/config.worktree. Operation not permitted\n",
+    f"{STAND_IN}\n{GIT_REFUSED}{STAND_IN}\n",                    # the refusal line among others
 ]
 
 
@@ -568,13 +575,32 @@ def test_a_git_line_naming_a_held_file_gets_the_note_at_exit_0_with_one_denial(t
 
 
 def test_a_git_line_naming_a_held_file_at_exit_1_is_a_stop_with_the_git_note(tmp_path, monkeypatch):
-    for line in (GIT_REFUSED, CONFIG_REFUSED):
+    """A refusal on a work-tree file (merge, stash, rebase): the tree may be partly updated, so the git note."""
+    for line in (GIT_REFUSED, GERMAN, CONFIG_REFUSED + GIT_REFUSED):
         explained = _explained(tmp_path, monkeypatch, exit_code=1, stderr=line)
         assert _git_noted(explained) and explained[0]["sandbox_denied"] is True
         assert explained[0]["error"] == "the sandbox stopped this command (exit code 1)"
-    # A translated line with no EPERM text at all, at exit 1: still the note, one denial, but not read as a stop.
-    explained = _explained(tmp_path, monkeypatch, exit_code=1, stderr=GERMAN)
-    assert _git_noted(explained) and "sandbox_denied" not in explained[0]
+
+
+SETUP_REFUSED = [CONFIG_REFUSED,
+                 f"fatal: cannot copy '/{STAND_IN}/templates/hooks/pre-push.sample' to "
+                 f"'/w/{STAND_IN}/.git/hooks/pre-push.sample': Operation not permitted\n",
+                 f"error: could not lock config file {STAND_IN}/.git/config: Operation not permitted\n"]
+
+
+@pytest.mark.parametrize("line", SETUP_REFUSED)
+def test_a_setup_step_that_failed_on_the_repositorys_own_config_or_hooks_gets_the_stop_note(tmp_path, monkeypatch,
+                                                                                          line):
+    """#813 review 5: clone, init, remote add and a config write fail outright (non-zero) on `.git` only: nothing in
+    the work tree moved, so the ordinary stop note (one denial) in the sandbox, and the floor's own note, which says
+    only a click on its own card lifts the hold, under the floor (no denial). At exit 0 the git note, as before."""
+    result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=128, stderr=line, command=f"git clone {STAND_IN}")
+    assert result["note"] == command_sandbox.note(tmp_path) and result["sandbox_denied"] is True
+    assert denial == "eperm" and noted == ["eperm"]
+    result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=128, stderr=line, sandbox="outside", hold=True,
+                                       command=f"git clone {STAND_IN}")
+    assert "without the user's click on its own card" in result["note"] and denial is None and noted == []
+    assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=0, stderr=line))
 
 
 def test_the_hooks_path_target_counts_from_the_work_folder_and_below_it(tmp_path, monkeypatch):
@@ -589,7 +615,7 @@ def test_the_hooks_path_target_counts_from_the_work_folder_and_below_it(tmp_path
 def test_the_outside_floor_gets_the_git_note_only_when_it_holds_them(tmp_path, monkeypatch):
     for line, exit_code in [(GIT_REFUSED, 0), (CONFIG_REFUSED, 0), (GIT_REFUSED, 1)]:
         assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=exit_code, stderr=line, sandbox="outside",
-                                     hold=True))
+                                     hold=True), floor=True)
         for sandbox, hold in [("outside", False), ("off", True), ("off", False)]:
             result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=exit_code, stderr=line,
                                                sandbox=sandbox, hold=hold)
@@ -605,8 +631,10 @@ def test_the_outside_floor_gets_the_git_note_only_when_it_holds_them(tmp_path, m
 
 
 def test_only_a_git_command_naming_a_held_file_gets_the_git_note(tmp_path, monkeypatch):
-    # Another program printing a held path: no git note (at exit 1 the ordinary stop note, as before).
-    for command in (f"python3 {STAND_IN}.py", f"{STAND_IN}-git checkout x", f"cat {STAND_IN}.gitx"):
+    # Another program printing a held path: no git note (at exit 1 the ordinary stop note, as before). `.git` in a
+    # path is not the word git (#813 review 5).
+    for command in (f"python3 {STAND_IN}.py", f"{STAND_IN}-git checkout x", f"cat {STAND_IN}.gitx", "cat .git/config",
+                    f"cp {STAND_IN} .git/hooks/pre-commit"):
         assert _nothing(_explained(tmp_path, monkeypatch, exit_code=0, stderr=GIT_REFUSED, command=command))
         result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=1, stderr=GIT_REFUSED, command=command)
         assert result["note"] == command_sandbox.note(tmp_path) and denial == "eperm" and noted == ["eperm"]
@@ -616,9 +644,76 @@ def test_only_a_git_command_naming_a_held_file_gets_the_git_note(tmp_path, monke
                  "error: unable to unlink old 'src/config': Operation not permitted\n",
                  f"{STAND_IN}: Operation not permitted\n", "Switched to branch 'main'\n"):
         assert _nothing(_explained(tmp_path, monkeypatch, exit_code=0, stderr=line))
-    # git's line on stdout only (git writes its errors to stderr): nothing.
-    result = {"ok": True, "exit_code": 0, "stdout": GIT_REFUSED, "stderr": "", "sandbox": "workspace"}
-    assert not command_sandbox.git_refused(result, command=CHECKOUT, cwd=tmp_path)
+
+
+def test_a_refusal_on_stdout_under_2_and_1_gets_the_note(tmp_path, monkeypatch):
+    """#813 review 5: `git checkout <b> 2>&1`, `push -u ... 2>&1`: git's refusal line reaches stdout, at exit 0. Both
+    streams are read, each on its own."""
+    for line in (GIT_REFUSED, CONFIG_REFUSED, GERMAN):
+        assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=0, stderr="", stdout=line,
+                                     command=f"{CHECKOUT} 2>&1 | tail -n 3"))
+        assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=0, stderr=f"{STAND_IN}\n", stdout=line))
+    # The EPERM text on one stream and a held path only on the other is no refusal line.
+    assert _nothing(_explained(tmp_path, monkeypatch, exit_code=0, stderr=f"{STAND_IN}: Operation not permitted\n",
+                               stdout="diff --git a/.npmrc b/.npmrc\n"))
+
+
+#: #813 review 5: git (or a command with `git` as a path word) naming a held file with no refusal on that line. Each
+#: got a false git note and an `eperm` while only the path was keyed. (exit code, stdout, stderr, command)
+NAMED_NOT_REFUSED = {
+    "a commit whose hook prints its own path": (
+        0, f"[main 1a2b3c4] {STAND_IN}\n", f"{STAND_IN} .husky/pre-commit\n", f"git commit -qm {STAND_IN}"),
+    "the not-executable hook hint": (
+        0, "", "hint: The '.git/hooks/pre-commit' hook was ignored because it's not set as executable.\n"
+               "hint: You can disable this warning with `git config advice.ignoredHook false`.\n",
+        f"git commit -qm {STAND_IN}"),
+    "a pathspec error on checkout": (
+        1, "", "error: pathspec '.vscode/settings.json' did not match any file(s) known to git\n",
+        "git checkout -- .vscode/settings.json"),
+    "a pathspec error on rm --cached": (
+        128, "", "fatal: pathspec '.envrc' did not match any files\n", "git rm --cached .envrc"),
+    "ls-files --error-unmatch": (
+        1, "", "error: pathspec '.npmrc' did not match any file(s) known to git\n"
+               "Did you forget to 'git add'?\n", "git ls-files --error-unmatch .npmrc"),
+    "add of an ignored .envrc": (
+        1, "", "The following paths are ignored by one of your .gitignore files:\n.envrc\n"
+               "hint: Use -f if you really want to add them.\n", "git add .envrc"),
+    "show of a held file": (
+        128, "", "fatal: path '.npmrc' does not exist in 'HEAD'\n", "git show HEAD:.npmrc"),
+    "show's diff on stdout": (
+        0, "diff --git a/.npmrc b/.npmrc\n--- a/.npmrc\n+++ b/.npmrc\n", "", "git show HEAD"),
+    "a git apply that doesn't apply": (
+        1, "", "error: patch failed: .vscode/settings.json:1\n"
+               "error: .vscode/settings.json: patch does not apply\n", f"git apply {STAND_IN}.patch"),
+    "the CRLF warning": (
+        0, "", "warning: in the working copy of '.vscode/settings.json', CRLF will be replaced by LF the next time "
+               "Git touches it\n", "git add -A"),
+    "a bad config line": (
+        128, "", "fatal: bad config line 3 in file .git/config\n", "git status"),
+    "config --list --show-origin": (
+        0, "file:.git/config\tcore.bare=false\n", "", "git config --list --show-origin"),
+    "ls of a path with git as a word": (
+        1, "", "ls: git/.npmrc: No such file or directory\n", "ls git/.npmrc"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(NAMED_NOT_REFUSED))
+def test_a_held_path_named_without_a_refusal_gets_no_note(tmp_path, monkeypatch, case):
+    exit_code, stdout, stderr, command = NAMED_NOT_REFUSED[case]
+    assert _nothing(_explained(tmp_path, monkeypatch, exit_code=exit_code, stdout=stdout, stderr=stderr,
+                               command=command))
+    assert _nothing(_explained(tmp_path, monkeypatch, exit_code=exit_code, stdout=stdout, stderr=stderr,
+                               command=command, sandbox="outside", hold=True))
+
+
+def test_a_work_folder_inside_a_dependency_folder_keeps_the_git_note(tmp_path, monkeypatch):
+    """#813 review 5: the held-path check uses the work folder's root rule, as the kernel does. A work folder inside
+    node_modules holds every name, so git's refusal there still gets the note; a node_modules below an ordinary work
+    folder is exempt (test above)."""
+    work = tmp_path / "node_modules" / STAND_IN / "work"
+    work.mkdir(parents=True)
+    for line in (GIT_REFUSED, f"error: unable to unlink old 'node_modules/{STAND_IN}/.npmrc': Operation not permitted\n"):
+        assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=0, stderr=line, cwd=work))
 
 
 @pytest.mark.parametrize("command", [CHECKOUT, f"cd sub && /usr/bin/git switch {STAND_IN}", "g'i't checkout x",

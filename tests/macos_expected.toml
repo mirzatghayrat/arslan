@@ -26,10 +26,12 @@ xfail = 0
 # every name held (1 case, #813 review 2). CI files are written like any other, and the everyday git flow is measured
 # step by step (2 cases, #813 review 3). The four config-only refusals at exit 0, the held-file checkout under the
 # outside floor that holds them, and that checkout in German and Chinese carry the git note; an MCP server's own
-# folder inside node_modules keeps every name held (8 cases, #813 review 4).
+# folder inside node_modules keeps every name held (8 cases, #813 review 4). A checkout under `2>&1` gets the note
+# from stdout; a commit whose hook prints its `.husky` path and the add of an ignored `.envrc` name a held file without
+# a refusal and get none (3 cases, #813 review 5).
 ["server/sbx/test_hr1_run_later_kernel.py"]
-markers = 11
-cases = 22
+markers = 13
+cases = 25
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

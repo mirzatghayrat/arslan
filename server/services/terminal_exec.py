@@ -278,8 +278,12 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
     SBX-7 denial code through run_trace, never on the result, once per run. `hold`: the outside floor held the files
     that make something run later (HR-1)."""
     from server.services import command_sandbox
-    # HR-1 (#813 review 4): git named a held file in its errors (in the sandbox, or under a floor that holds them).
-    git = command_sandbox.git_refused(result, command=command, cwd=cwd, hold=hold)
+    # HR-1 (#813 reviews 4 and 5): git's refusal lines name a held file (in the sandbox, or under a floor that holds
+    # them). A step that failed outright on the repository's own config or hooks (clone, init, remote add, a config
+    # write) gets the stop note or the floor's instead: the git note is for a tree that may be partly updated, or a
+    # step that exited 0 with its upstream or setting unsaved.
+    held = command_sandbox.git_refused_paths(result, command=command, cwd=cwd, hold=hold)
+    git = bool(held) and not command_sandbox.git_setup_failed(result, held)
     if command_sandbox.stopped_by_sandbox(result) and _reads_a_saved_output(result):
         # S2a-1 piece 5: a saved tool output this conversation was not given. read_file reads it;
         # running the command outside the sandbox would open far more than one copy, so no card.
@@ -311,10 +315,12 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
     elif git:
         # HR-1 (#813 review 4): git exits 0 when the kernel refused a held file it had to change (checkout and switch:
         # HEAD moved, that file left as it was) or its config (a tracking checkout, push -u, --set-upstream-to: no
-        # upstream saved); under the outside floor at any exit code, and in the sandbox when git's line carries no
-        # EPERM text. Not a failed step, but one denial, and the same note as in the stop above.
-        from server.orchestrator import run_trace
-        run_trace.note_denial("eperm")
+        # upstream saved); and under the outside floor at any exit code. The same note as in the stop above. In the
+        # sandbox, not a failed step but one denial. Under the floor no denial (#813 review 5): SBX-7 counts the
+        # workspace sandbox's denials, and the floor's other refusals record none either.
+        if result.get("sandbox") == "workspace":
+            from server.orchestrator import run_trace
+            run_trace.note_denial("eperm")
         result["note"] = command_sandbox.git_note()
     elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
         result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "
