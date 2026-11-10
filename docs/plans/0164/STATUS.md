@@ -2,7 +2,60 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-07 (UTC, morning), by ⓪Plan. The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+**Updated:** 2026-11-10 (UTC, evening), by ⓪Plan: the list of what's left, below. Before that, 2026-11-07 (UTC, morning). The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+
+### 2026-11-10, evening: what's left (single source)
+
+This list supersedes every "what's left" count below and is now the one source for counts. Anything added later gets a line here, in the same docs PR, saying who decided it. Since the 11-07 morning count, 57 non-docs PRs have merged.
+
+**In review (6):** #805 (SUB5b), #808 (CAP6a export), #813 (HR-1), #816 (skill file identity), #817 (LOOP1 d1, a Bridge frame the user merges), #819 (SUB5d sidebar).
+
+**To build (48), by area:**
+- **SUB (8):**
+  - SUB5c: one writable folder per sub-session.
+  - SUB5f: the phone's counts and child list, a frame the user merges; ①iOS builds the phone side.
+  - SUB5e: opens the tool after the bench.
+  - #799's follow-up: the pause wording and the heartbeat re-enabling a paused task.
+  - A stop for a commander whose turn has ended, before SUB5e.
+  - The sidebar search. The user approved its mock on 2026-11-10; ⑥Helper builds it after #819.
+  - SUB6 and SUB7: `delegate_work` is still in arslan.py, parallel_reads.py and tool_execute.py (SUB card :179, :189).
+- **HR (4):**
+  - HR-1b: a one-click git config grant with an allowlist revert, and `.sample` hooks.
+  - HR-2a: the write_file run-later card.
+  - HR-2b: the push card lists CI files, plus a card after a git refusal. The user decided this on 2026-11-10.
+  - HR-3: the text hint.
+- **Command policy (4):**
+  - The deploy-program rule. It was on ⓪Plan's list from 2026-11-08 and was measured on 11-10: 99 deploy and secret verbs run with no card.
+  - The 6 rows main under-forbids.
+  - #376's remaining cases, re-measured.
+  - `security -i` reading verbs from stdin, measured first.
+- **ASK1 (2):** ASK1-a (the default flip, after HR-1b) and ASK1-b.
+- **Classifier and S5 (3):** CLS, S5a and S5b.
+- **LOOP1 (4):** c3c, built locally and not yet opened; d2; z, which is 2 PRs (LOOP1 :53-54).
+- **CAP (7):**
+  - CAP8-2's plugin rows. The user approved the mock and the hook rule on 2026-11-10.
+  - The CAP8-2 import's hard-link refusal.
+  - CAP11: a Bridge frame the user decides.
+  - HOOK-1 to HOOK-4. The user moved hook running into the end of v0.1.64 on 2026-11-10, told to ⑤CAP; README §2 item 8 still says after v0.1.65 and is corrected in the next docs batch. The card waits for the user.
+- **SBX (2):**
+  - SBX-5b: the allow-once card for other apps' data (SBX :299).
+  - The SBX settings UI: certificates and trusted devices (SBX :293). The backend exists; a mock comes first.
+- **INB (4):** INB7-d, INB7-e, INB7-f and INB9. `build_brief` is still in proactive_service.py (INB :381, :451-453).
+- **C7c (4):** C7c-3b to C7c-6, covering 37 `DELETE-BY: v0.1.64` markers in server/, web/src and scripts.
+- **Overdue deletions (2):**
+  - The SBX-2 adapter (command_sandbox.py:213), with sbx5_reference.py and sbx6_reference.py.
+  - The SUB3 bench markers (kernel_bench/runner.py:98, tool_record.py:23).
+- **Other must items (4):**
+  - ACM: README §3.2 marks it must and no card is written. Who owns it, or whether SMART-8 absorbed it, is open.
+  - #298b: README §3.3 marks it must; #298 is open.
+  - SIDE-1 and SIDE-2: 2 PRs, mock first.
+
+**Total:** 6 in review and 48 to build, 54 in all. ④参谋's independent count is about 45 that block the tag plus about 17 that don't. The two are being reconciled into must and not-must in the next docs batch.
+
+**Not PRs:**
+- The SBX-8 sitting: the user runs it; the runbook is in SBX-measurement.md.
+- The real-Mac checks listed below.
+- Codex's bypass corpus and an Astra review for HR-1.
 
 ### 2026-11-07, morning
 
