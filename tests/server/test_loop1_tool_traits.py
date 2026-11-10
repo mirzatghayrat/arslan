@@ -19,7 +19,7 @@ def test_the_derived_sets_are_the_ones_before_a6():
         "update_plan", "desktop_apps", "desktop_look"}
     assert task_service._LOCAL_WRITE_TOOLS == {
         "write_file", "edit_file", "run_python", "remember", "create_skill", "import_memories",
-        "start_background_work", "stop_background_work", "attach_file"}
+        "start_background_work", "stop_background_work", "attach_file", "verify"}   # CAP10: verify writes only its copy
     assert replay_safety.REPLAY_SAFE_BUILTINS == {"web_search", "web_extract", "render_chart", "run_python",
                                                   "read_skill"}
     assert tool_loop.WRAP_UP_TOOLS == {"write_file", "edit_file"}
@@ -28,7 +28,8 @@ def test_the_derived_sets_are_the_ones_before_a6():
     assert untrusted._OUTSIDE_TOOLS == {
         "web_search", "web_extract", "read_file", "search_files", "conversation_search", "recall", "find_capability",
         "delegate_work", "task_progress", "browser_open", "browser_look", "browser_back", "browser_click",
-        "browser_type", "browser_select", "browser_press"}
+        "browser_type", "browser_select", "browser_press",
+        "verify"}       # CAP10: what a project's own tests printed
     assert parallel_reads.READS <= task_service._READ_TOOLS
 
 

@@ -5,7 +5,7 @@ model may only see tools that are read-only or fully sandboxed and produce nothi
 persistent that a live turn would. This is an explicit ALLOW-list, not an MCP
 deny-list: everything not named here is dropped — every MCP tool (side effects on a
 real server), `create_skill` (asks to save a skill), `import_memories` (asks to store
-what the user pasted), the interactive `ask_user_choice`,
+what the user pasted), `verify` (runs a project's code), the interactive `ask_user_choice`,
 and any future tool default to unsafe until proven hermetic.
 
 Why exactly these five:
