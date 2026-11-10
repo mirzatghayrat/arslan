@@ -562,7 +562,7 @@ export default function App() {
 
           // Rename thread if empty/default title when receiving first message from user
           let updatedTitle = t.title;
-          if (!t.temporary && !t.userTitled && (t.title === 'New Session' || t.title.startsWith('Orchestration thread'))) {
+          if (!t.temporary && (t.title === 'New Session' || t.title.startsWith('Orchestration thread'))) {
             const userMsg = newHistory.find(m => m.sender === 'user');
             if (userMsg) {
               const cleaned = userMsg.text.replace(/[#*`_]/g, '').trim();
