@@ -58,6 +58,7 @@ Heads and states are as read on 2026-11-07 at 02:48 UTC; main is `ac34420f`. The
 - **HPW's real-Mac check gets one more case:** a target app opened in the background, pasted into with `front: true`. The 500 ms and 100 ms waits were never measured on a real Mac.
 - **SBX-6a with a system proxy** on a real Mac (an upstream proxy resolves a name again, so the LAN decision must hold at the first lookup).
 - **The Reminders cleanup after the STY2 bench stays the user's** (`cleanup_t1`, with `--delete --yes`).
+- **SUB on a real Mac:** at the real-Mac sitting, open a commander conversation that started sub-sessions from the phone, and check that its steps and reports show how many are running and how many are done.
 
 **Flakes to add to the list** (`test_uni1b_hidden_characters` and `test_mcp_exposure` are already on it in the section below):
 - `test_cloud_upload_rule::test_balanced_nesting_reaches_a_card_too` (a 5 s wall-clock budget under load);
