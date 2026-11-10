@@ -1502,7 +1502,11 @@
     "status": {
       "running": "Running",
       "waiting": "Waiting on you",
-      "done": "Done"
+      "done": "Done",
+      "stopped": "Stopped",
+      "failed": "Failed",
+      "interrupted": "Interrupted",
+      "ended": "Ended without finishing"
     },
     "toggle": "Show or hide its sub-sessions ({{count}})",
     "header": "This is a sub-session of «{{name}}»; it reports to it when done.",

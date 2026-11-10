@@ -186,7 +186,7 @@ export default function Sidebar(props: SidebarProps) {
             onClose={byKey => { setRenaming(null); if (byKey) document.getElementById(`active-thread-btn-${thread.id}`)?.focus(); }} />
         : <span className="min-w-0 flex-1 truncate" title={title}
             onDoubleClick={renameable ? () => setRenaming(thread.id) : undefined}>{title}</span>}
-      {depth > 0 && <SubStatusIcon status={subStatus(meta[thread.id]?.state)} />}
+      {depth > 0 && <SubStatusIcon status={subStatus(meta[thread.id])} />}
       {below.length > 0 && !editing && <button type="button" aria-expanded={open} data-testid={`sub-toggle-${thread.id}`}
         aria-label={t("subTree.toggle", { count: descendants(thread.id, forest).length })}
         onClick={event => { event.stopPropagation(); setTrees(prev => ({ ...prev, [thread.id]: !open })); }}

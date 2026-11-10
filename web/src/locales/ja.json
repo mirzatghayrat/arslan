@@ -1502,7 +1502,11 @@
     "status": {
       "running": "実行中",
       "waiting": "あなた待ち",
-      "done": "完了"
+      "done": "完了",
+      "stopped": "停止",
+      "failed": "失敗",
+      "interrupted": "中断",
+      "ended": "完了せずに終了"
     },
     "toggle": "サブセッションを表示／非表示（{{count}}）",
     "header": "これは「{{name}}」のサブセッションです。終わると報告します。",

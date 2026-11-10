@@ -52,6 +52,22 @@ async def test_a_sub_session_whose_card_waits_reads_waiting(client, monkeypatch)
     assert after[CHILD]["state"] != "waiting"
 
 
+async def test_the_list_says_how_an_ended_sub_session_ended(client, monkeypatch):
+    """A stop, a restart and a job that didn't get there each read apart from a finished one (the status icon's label)."""
+    await _family(client, monkeypatch)
+    async with client.db_maker() as session:
+        for cid, outcome in ((ROOT, "done"), (CHILD, "stopped"), (GRANDCHILD, "interrupted")):
+            session.add(ArslanMessage(conversation_id=cid, role="arslan", content="result", job_outcome=outcome,
+                                      timestamp=datetime(2026, 11, 7, 13)))
+        await session.commit()
+    rows = {r["conversation_id"]: r for r in (await client.get("/api/v1/conversations")).json()}
+    assert [(rows[c]["state"], rows[c]["outcome"]) for c in (CHILD, GRANDCHILD)] == [
+        ("failed", "stopped"), ("unfinished", "interrupted")]
+    assert rows[ROOT]["outcome"] == "done"
+    phone = (await client.get("/api/v1/phone/conversations")).json()["conversations"]
+    assert all("outcome" not in r for r in phone)
+
+
 async def test_every_phone_route_still_hides_sub_sessions(client, monkeypatch):
     await _family(client, monkeypatch)
     phone = (await client.get("/api/v1/phone/conversations")).json()["conversations"]

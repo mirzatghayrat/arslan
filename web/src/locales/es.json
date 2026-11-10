@@ -1502,7 +1502,11 @@
     "status": {
       "running": "En curso",
       "waiting": "Esperando por ti",
-      "done": "Hecha"
+      "done": "Hecha",
+      "stopped": "Detenida",
+      "failed": "Fallida",
+      "interrupted": "Interrumpida",
+      "ended": "Terminó sin acabar"
     },
     "toggle": "Mostrar u ocultar sus subsesiones ({{count}})",
     "header": "Esta es una subsesión de «{{name}}»; le informa cuando termina.",

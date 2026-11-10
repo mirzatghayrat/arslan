@@ -23,6 +23,8 @@ export interface ConversationMeta {
   waitingOn?: WaitingOn;
   /** SUB5d: the conversation that started this sub-session (unset for any other). */
   parentId?: string;
+  /** SUB5d: how its latest job ended (the server's `outcome`), when nothing runs or waits there. */
+  outcome?: string;
 }
 
 /** INB5b-3: what a waiting conversation waits on (the server's `waiting_on`): a card to approve (a decision), a card that went
@@ -67,6 +69,7 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
       pinned: row.pinned === true,
       ...(row.state === "waiting" && WAITING_ON.includes(row.waiting_on as WaitingOn) ? { waitingOn: row.waiting_on as WaitingOn } : {}),
       ...(typeof row.parent_id === "string" && row.parent_id ? { parentId: row.parent_id } : {}),
+      ...(typeof row.outcome === "string" && row.outcome ? { outcome: row.outcome } : {}),
     };
   }
   return out;

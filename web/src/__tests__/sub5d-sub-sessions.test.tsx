@@ -164,6 +164,37 @@ describe("the sidebar", () => {
   });
 });
 
+describe("a sub-session that ended without finishing", () => {
+  // As the server's list sends them: a stop reads "failed" with outcome "stopped"; a restart and a job that didn't get there
+  // both read "unfinished", told apart by `outcome`.
+  const rows = metaFrom([
+    { conversation_id: "cmd", title: "", message_count: 1 },
+    { conversation_id: "stopped", title: "", message_count: 1, parent_id: "cmd", state: "failed", outcome: "stopped" },
+    { conversation_id: "failed", title: "", message_count: 1, parent_id: "cmd", state: "unfinished", outcome: "partial" },
+    { conversation_id: "interrupted", title: "", message_count: 1, parent_id: "cmd", state: "unfinished", outcome: "interrupted" },
+    { conversation_id: "finished", title: "", message_count: 1, parent_id: "cmd", state: "done_unseen", outcome: "done" },
+  ]);
+  const kids = ["cmd", "stopped", "failed", "interrupted", "finished"].map((id) => ({ id, title: `T-${id}` }));
+
+  it("shows a still grey hollow ring labelled with what happened; only a finished one shows the check", () => {
+    render(<Sidebar {...baseProps} threads={kids} meta={rows} />);
+    fireEvent.click(screen.getByTestId("sub-toggle-cmd"));                     // nothing runs, so the tree starts closed
+    for (const id of ["stopped", "failed", "interrupted"]) {
+      const icon = within(row(id)!).getByRole("img", { name: `subTree.status.${id}` });
+      expect(icon).toHaveAttribute("title", `subTree.status.${id}`);
+      expect(icon).toHaveAttribute("data-look", "hollow-ring");
+      expect(icon.querySelector(".animate-spin, .animate-pulse")).toBeNull();
+    }
+    const done = within(row("finished")!).getByRole("img", { name: "subTree.status.done" });
+    expect(done).toHaveAttribute("data-look", "check");
+  });
+
+  it("is not at work: its tree starts closed and can be deleted", () => {
+    const forest = buildForest(Object.keys(rows), rows);
+    expect(startsOpen("cmd", forest, rows)).toBe(false);
+  });
+});
+
 describe("the status icon", () => {
   it("moves while running or waiting, and stays still with reduced motion asked for", () => {
     const { rerender } = render(<SubStatusIcon status="running" />);

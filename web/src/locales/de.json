@@ -1502,7 +1502,11 @@
     "status": {
       "running": "Läuft",
       "waiting": "Wartet auf dich",
-      "done": "Fertig"
+      "done": "Fertig",
+      "stopped": "Angehalten",
+      "failed": "Fehlgeschlagen",
+      "interrupted": "Unterbrochen",
+      "ended": "Beendet, ohne fertig zu werden"
     },
     "toggle": "Teilgespräche ein- oder ausblenden ({{count}})",
     "header": "Dies ist ein Teilgespräch von „{{name}}“; es meldet sich dort, wenn es fertig ist.",

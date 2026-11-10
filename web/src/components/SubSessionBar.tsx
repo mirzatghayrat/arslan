@@ -55,7 +55,7 @@ export default function SubSessionBar({ conversationId, threads, meta, usdCap, u
       <ul className="flex flex-col">
         {below.map(id => <li key={id} className="flex items-center gap-2 py-1 text-[13px]" style={{ paddingLeft: depthOf(id) * 14 }}
           data-testid={`sub-session-item-${id}`}>
-          <SubStatusIcon status={subStatus(meta[id]?.state)} />
+          <SubStatusIcon status={subStatus(meta[id])} />
           <span className="min-w-0 flex-1 truncate">{name(id)}</span>
           <Button size="sm" tone="secondary" onClick={() => onOpen(id)}>{t("subTree.open")}</Button>
         </li>)}

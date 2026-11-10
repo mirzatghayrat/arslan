@@ -1502,7 +1502,11 @@
     "status": {
       "running": "En cours",
       "waiting": "En attente de toi",
-      "done": "Terminée"
+      "done": "Terminée",
+      "stopped": "Arrêtée",
+      "failed": "Échouée",
+      "interrupted": "Interrompue",
+      "ended": "Finie sans aboutir"
     },
     "toggle": "Afficher ou masquer ses sous-sessions ({{count}})",
     "header": "Ceci est une sous-session de « {{name}} » ; elle lui rend compte une fois terminée.",

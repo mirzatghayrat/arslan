@@ -198,6 +198,8 @@ export interface ServerConversation {
   waiting_on?: string | null;
   /** SUB5d: the conversation that started this sub-session (the window's list only). */
   parent_id?: string | null;
+  /** SUB5d: how its latest job ended (done, stopped, interrupted, partial…) when nothing runs or waits there. */
+  outcome?: string | null;
 }
 
 /**

@@ -1502,7 +1502,11 @@
     "status": {
       "running": "进行中",
       "waiting": "等你处理",
-      "done": "已完成"
+      "done": "已完成",
+      "stopped": "已停止",
+      "failed": "失败",
+      "interrupted": "已中断",
+      "ended": "没做完就结束了"
     },
     "toggle": "展开或收起子会话（{{count}}）",
     "header": "这是「{{name}}」的子会话，做完会向它汇报。",
