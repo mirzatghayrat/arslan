@@ -1504,6 +1504,7 @@
   "subTree": {
     "status": {
       "running": "Läuft",
+      "reporting": "Meldet sich",
       "waiting": "Wartet auf dich",
       "done": "Fertig",
       "stopped": "Angehalten",
@@ -1523,7 +1524,7 @@
       "also_one": "Auch sein Teilgespräch löschen",
       "also_other": "Auch seine {{count}} Teilgespräche löschen",
       "keepNote": "Seine Teilgespräche bleiben als normale Gespräche, mit unveränderten Einstellungen.",
-      "stopFirst": "Ein Teilgespräch darunter arbeitet noch. Halte es zuerst an, dann lösche.",
+      "stopFirst": "Ein Teilgespräch darunter arbeitet oder meldet noch. Halte es an oder warte auf seine Meldung, dann lösche.",
       "choiceRequired": "Es hat jetzt {{count}} Teilgespräche. Wähle noch einmal, was mit ihnen geschieht.",
       "failed": "Löschen hat nicht geklappt. Versuche es noch einmal."
     }

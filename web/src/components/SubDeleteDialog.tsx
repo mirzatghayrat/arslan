@@ -8,8 +8,10 @@ export interface SubDeleteTarget {
   title: string;
   /** Its sub-sessions at every level. */
   count: number;
-  /** One of them is running or waiting on you. */
+  /** One of them is running, reporting or waiting on you. */
   running: boolean;
+  /** It is a sub-session itself: the server deletes one only when named as one (else 404). */
+  subSession?: boolean;
 }
 
 /** SUB5d (the approved mock): deleting a conversation that started sub-sessions. "Also delete its N sub-sessions" is
@@ -33,7 +35,7 @@ export default function SubDeleteDialog({ target, onClose, onDeleted }: {
     setBusy(true);
     setError(null);
     try {
-      await deleteConversation(target.id, { subSessions: choice });
+      await deleteConversation(target.id, { subSessions: choice, subSession: target.subSession });
       onDeleted(target.id, choice);
     } catch (err) {
       const code = err instanceof ApiError ? (err.detail as { code?: string } | undefined)?.code ?? err.message : "";

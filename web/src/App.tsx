@@ -525,23 +525,32 @@ export default function App() {
   const handleDeleteThread = (id: string) => {
     const forest = buildForest(threads.map((th) => th.id), conversationIndex.meta);
     const below = descendants(id, forest);
+    const thread = threads.find((th) => th.id === id);
+    const title = thread ? threadDisplayTitle(thread, t) : id;
+    // A sub-session is named as one, at any level (the PR review: one with sub-sessions of its own got 404).
+    const subSession = Boolean(conversationIndex.meta[id]?.parentId);
     if (below.length) {
-      const thread = threads.find((th) => th.id === id);
-      setSubDelete({ id, title: thread ? threadDisplayTitle(thread, t) : id, count: below.length,
-        running: busyBelow(id, forest, conversationIndex.meta) });
+      setSubDelete({ id, title, count: below.length, running: busyBelow(id, forest, conversationIndex.meta), subSession });
       return;
     }
-    if (id in forest.parentOf) {
+    if (subSession) {
       deleteConversation(id, { subSession: true }).then(() => removeThreads([id]),
         (err) => showToast(err instanceof ApiError && err.status === 409 ? t('subTree.delete.stopFirst') : t('subTree.delete.failed')));
       return;
     }
-    deleteConversation(id).catch((err) => {
-      // Best-effort — the row is already gone from the UI, but a failed server-side
-      // purge must be observable rather than silently swallowed.
+    // Waited for, so a conversation whose sub-sessions the window doesn't know yet (before the first poll) gets the
+    // dialog, with the server's count, instead of vanishing until the next poll.
+    deleteConversation(id).then(() => removeThreads([id]), (err) => {
+      const detail = err instanceof ApiError ? err.detail as { code?: string; sub_sessions?: number } | undefined : undefined;
+      if (err instanceof ApiError && err.status === 422 && detail?.code === 'sub_sessions_choice_required') {
+        setSubDelete({ id, title, count: detail.sub_sessions ?? 0, running: false });
+        return;
+      }
+      if (err instanceof ApiError && err.status === 409) { showToast(t('subTree.delete.stopFirst')); return; }
+      // Best-effort, as before: a failed server-side purge must be observable rather than silently swallowed.
       console.error(`[deleteConversation] backend purge failed for ${id}`, err);
+      removeThreads([id]);
     });
-    removeThreads([id]);
   };
   const removeThreads = (ids: string[]) => {
     ids.forEach(discardComposerDraft);
@@ -567,7 +576,7 @@ export default function App() {
       setActiveSection('arslan');
       setPanelView('default');
     } else {
-      setThreads(remaining);
+      setThreads((prev) => prev.filter((th) => !ids.includes(th.id)));   // after an awaited delete, from the latest list
     }
   };
 

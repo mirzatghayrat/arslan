@@ -1504,6 +1504,7 @@
   "subTree": {
     "status": {
       "running": "Running",
+      "reporting": "Reporting",
       "waiting": "Waiting on you",
       "done": "Done",
       "stopped": "Stopped",
@@ -1523,7 +1524,7 @@
       "also_one": "Also delete its sub-session",
       "also_other": "Also delete its {{count}} sub-sessions",
       "keepNote": "Its sub-sessions stay as ordinary conversations, with their settings unchanged.",
-      "stopFirst": "A sub-session under it is still working. Stop it first, then delete.",
+      "stopFirst": "A sub-session under it is still working or reporting. Stop it, or wait for its report, then delete.",
       "choiceRequired": "It has {{count}} sub-sessions now. Choose again what happens to them.",
       "failed": "Couldn't delete it. Try again."
     }

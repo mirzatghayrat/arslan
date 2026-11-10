@@ -25,6 +25,8 @@ export interface ConversationMeta {
   parentId?: string;
   /** SUB5d: how its latest job ended (the server's `outcome`), when nothing runs or waits there. */
   outcome?: string;
+  /** SUB5d: finished, still reporting to its parent (the server's `reporting`). */
+  reporting?: boolean;
 }
 
 /** INB5b-3: what a waiting conversation waits on (the server's `waiting_on`): a card to approve (a decision), a card that went
@@ -70,6 +72,7 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
       ...(row.state === "waiting" && WAITING_ON.includes(row.waiting_on as WaitingOn) ? { waitingOn: row.waiting_on as WaitingOn } : {}),
       ...(typeof row.parent_id === "string" && row.parent_id ? { parentId: row.parent_id } : {}),
       ...(typeof row.outcome === "string" && row.outcome ? { outcome: row.outcome } : {}),
+      ...(row.reporting === true ? { reporting: true } : {}),
     };
   }
   return out;

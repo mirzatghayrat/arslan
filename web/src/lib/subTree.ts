@@ -5,13 +5,14 @@ import type { ConversationMeta, ConversationState } from "./conversationMeta";
 /** What a sub-session's status icon shows: running (a spinning ring), waiting on you (a breathing dot), done (a check, only
  *  for one that finished its work), or one of the ways it ended without finishing (a still grey hollow ring, labelled
  *  stopped, failed, interrupted, or "ended" when nothing says how). */
-export type SubStatus = "running" | "waiting" | "done" | "stopped" | "failed" | "interrupted" | "ended";
+export type SubStatus = "running" | "reporting" | "waiting" | "done" | "stopped" | "failed" | "interrupted" | "ended";
 
 /** The server's state and outcome (server/services/phone_reads.describe): a stop reads "failed" with outcome "stopped"; a
  *  restart and a job that didn't get there (partial, blocked, out of budget) both read "unfinished", told apart by outcome. */
-export function subStatus(meta?: Pick<ConversationMeta, "state" | "outcome">): SubStatus {
+export function subStatus(meta?: Pick<ConversationMeta, "state" | "outcome" | "reporting">): SubStatus {
   const state: ConversationState | undefined = meta?.state;
-  if (state === "working") return "running";
+  // Finished, its report not delivered yet: still at work for the server (a delete answers 409), so a running ring.
+  if (state === "working") return meta?.reporting ? "reporting" : "running";
   if (state === "waiting") return "waiting";
   if (state === "done" || state === "done_unseen") return "done";
   if (meta?.outcome === "stopped") return "stopped";
@@ -21,7 +22,7 @@ export function subStatus(meta?: Pick<ConversationMeta, "state" | "outcome">): S
 }
 
 /** Still at work: running, or waiting on you. */
-export const atWork = (status: SubStatus) => status === "running" || status === "waiting";
+export const atWork = (status: SubStatus) => status === "running" || status === "reporting" || status === "waiting";
 
 export interface Forest {
   /** Each conversation's sub-sessions, in the order they were given. */

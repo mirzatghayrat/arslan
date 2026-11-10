@@ -200,6 +200,8 @@ export interface ServerConversation {
   parent_id?: string | null;
   /** SUB5d: how its latest job ended (done, stopped, interrupted, partial…) when nothing runs or waits there. */
   outcome?: string | null;
+  /** SUB5d: a sub-session whose job finished but whose report isn't delivered yet (its state reads working). */
+  reporting?: boolean;
 }
 
 /**

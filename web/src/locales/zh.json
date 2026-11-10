@@ -1504,6 +1504,7 @@
   "subTree": {
     "status": {
       "running": "进行中",
+      "reporting": "正在汇报",
       "waiting": "等你处理",
       "done": "已完成",
       "stopped": "已停止",
@@ -1520,10 +1521,10 @@
     "spendNoLimit": "已花 {{spent}}，不限美元",
     "delete": {
       "title": "删除「{{name}}」？",
-      "also_one": "同时删除它的 {{count}} 个子会话",
-      "also_other": "同时删除它的 {{count}} 个子会话",
+      "also_one": "也删掉它下面的 {{count}} 个子会话",
+      "also_other": "也删掉它下面的 {{count}} 个子会话",
       "keepNote": "它的子会话会留下来，变成普通对话，设置不变。",
-      "stopFirst": "下面还有子会话在干活。先停下它，再删除。",
+      "stopFirst": "下面还有子会话在干活或正在汇报。先停下它，或等它汇报完，再删除。",
       "choiceRequired": "它现在有 {{count}} 个子会话。请重新选择怎么处理它们。",
       "failed": "没删成，再试一次。"
     }

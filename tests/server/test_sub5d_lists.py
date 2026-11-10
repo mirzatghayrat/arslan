@@ -8,12 +8,13 @@
 """
 import uuid
 from datetime import datetime
+from types import SimpleNamespace
 
 from server.db import session as db_session
 from server.db.companion_models import ConversationContext, Project
 from server.db.models import ArslanMessage
 from server.db.task_models import CompanionTask, TaskAttempt, TaskRevision
-from server.services import sub_sessions
+from server.services import background_jobs, sub_sessions
 
 ROOT, CHILD, GRANDCHILD = "c-root", "c-child", "c-grandchild"
 
@@ -66,6 +67,26 @@ async def test_the_list_says_how_an_ended_sub_session_ended(client, monkeypatch)
     assert rows[ROOT]["outcome"] == "done"
     phone = (await client.get("/api/v1/phone/conversations")).json()["conversations"]
     assert all("outcome" not in r for r in phone)
+
+
+async def test_a_finished_sub_session_still_reporting_reads_at_work(client, monkeypatch):
+    """Its job has finished but its report isn't delivered yet: the delete refuses it (409), so the list says so."""
+    await _family(client, monkeypatch)
+    async with client.db_maker() as session:
+        session.add(ArslanMessage(conversation_id=CHILD, role="arslan", content="result", job_outcome="done",
+                                  timestamp=datetime(2026, 11, 7, 13)))
+        await session.commit()
+    monkeypatch.setattr(background_jobs, "unreported", lambda: [SimpleNamespace(conversation_id=CHILD)])
+    rows = {r["conversation_id"]: r for r in (await client.get("/api/v1/conversations")).json()}
+    assert (rows[CHILD]["state"], rows[CHILD]["reporting"]) == ("working", True)
+    assert rows[GRANDCHILD]["reporting"] is False
+    phone = (await client.get("/api/v1/phone/conversations")).json()["conversations"]
+    assert all("reporting" not in r for r in phone)
+
+
+async def test_the_spend_of_an_unknown_conversation_is_not_found(client, monkeypatch):
+    await _family(client, monkeypatch)
+    assert (await client.get("/api/v1/conversations/c-nobody/sub-sessions/spend")).status_code == 404
 
 
 async def test_every_phone_route_still_hides_sub_sessions(client, monkeypatch):

@@ -1504,6 +1504,7 @@
   "subTree": {
     "status": {
       "running": "En cours",
+      "reporting": "Rend compte",
       "waiting": "En attente de toi",
       "done": "Terminée",
       "stopped": "Arrêtée",
@@ -1523,7 +1524,7 @@
       "also_one": "Supprimer aussi sa sous-session",
       "also_other": "Supprimer aussi ses {{count}} sous-sessions",
       "keepNote": "Ses sous-sessions restent des conversations ordinaires, avec leurs réglages inchangés.",
-      "stopFirst": "Une sous-session en dessous travaille encore. Arrête-la d'abord, puis supprime.",
+      "stopFirst": "Une sous-session en dessous travaille ou rend compte encore. Arrête-la ou attends son compte rendu, puis supprime.",
       "choiceRequired": "Elle a maintenant {{count}} sous-sessions. Choisis à nouveau ce qu'elles deviennent.",
       "failed": "La suppression a échoué. Réessaie."
     }

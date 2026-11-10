@@ -108,6 +108,7 @@ describe("the sidebar", () => {
     expect(row("s1a")).toHaveAttribute("data-depth", "2");
     expect(row("cmd")).not.toHaveAttribute("data-depth");
     expect(screen.getByTestId("sub-toggle-cmd")).toHaveTextContent("2");
+    expect(screen.getByTestId("sub-toggle-cmd")).toHaveAttribute("aria-label", 'subTree.toggle {"count":3}');   // every level
     expect(screen.getByTestId("sub-toggle-cmd")).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByTestId("sub-toggle-done")).toHaveAttribute("aria-expanded", "false");
     expect(within(screen.getByTestId("sub-tree-cmd")).queryByText("T-plain")).toBeNull();
@@ -187,6 +188,17 @@ describe("a sub-session that ended without finishing", () => {
     }
     const done = within(row("finished")!).getByRole("img", { name: "subTree.status.done" });
     expect(done).toHaveAttribute("data-look", "check");
+  });
+
+  it("one that finished but is still reporting reads at work: a running ring labelled reporting, and the tree is busy", () => {
+    const reporting = metaFrom([
+      { conversation_id: "cmd", title: "", message_count: 1 },
+      { conversation_id: "rep", title: "", message_count: 1, parent_id: "cmd", state: "working", reporting: true },
+    ]);
+    render(<Sidebar {...baseProps} threads={[{ id: "cmd", title: "c" }, { id: "rep", title: "r" }]} meta={reporting} />);
+    const icon = within(row("rep")!).getByRole("img", { name: "subTree.status.reporting" });
+    expect(icon).toHaveAttribute("data-look", "spinning-ring");
+    expect(startsOpen("cmd", buildForest(["cmd", "rep"], reporting), reporting)).toBe(true);
   });
 
   it("is not at work: its tree starts closed and can be deleted", () => {

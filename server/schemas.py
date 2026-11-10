@@ -797,6 +797,8 @@ class ConversationListItem(BaseModel):
     #: SUB5d: how its latest job ended (done, stopped, interrupted, partial, blocked, out_of_budget) when nothing runs or waits
     #: there; None otherwise. The window's list only (phones build theirs field by field).
     outcome: str | None = None
+    #: SUB5d: a sub-session whose job has finished but whose report isn't delivered yet (read as working). The window's list only.
+    reporting: bool = False
     #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
     origin: str = "mac"
     #: The last message, one line.

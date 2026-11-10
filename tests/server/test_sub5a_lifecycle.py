@@ -495,8 +495,9 @@ async def test_a_commander_is_not_deleted_while_a_sub_session_under_it_works(run
 async def test_a_commander_with_sub_sessions_needs_an_explicit_choice(runs, client):  # noqa: F811
     child, grandchild = await _family(runs)
     got = await client.delete(f"/api/v1/conversations/{ROOT}")
+    # SUB5d: every level counts (child and grandchild), as the window's dialog says "its N sub-sessions".
     assert got.status_code == 422 and got.json()["detail"] == {"code": "sub_sessions_choice_required",
-                                                                "sub_sessions": 1}
+                                                                "sub_sessions": 2}
     assert (await client.delete(f"/api/v1/conversations/{ROOT}?sub_sessions=maybe")).status_code == 422
     assert set((await _left(runs, [ROOT, child, grandchild])).values()) == {(True, 1, 1, 1)}
 

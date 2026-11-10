@@ -121,7 +121,10 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool 
     parents = dict((await db.execute(select(ConversationContext.id, ConversationContext.parent_id).where(
         ConversationContext.id.in_([c.conversation_id for c in out if kinds.get(c.conversation_id) == "sub"]))))
         .all()) if sub else {}
-    from server.services import sub_sessions
+    from server.services import background_jobs, sub_sessions
+    # SUB5d: a sub-session whose job has finished but whose report isn't delivered yet still counts as at work (the
+    # delete refuses it with 409 `sub_sessions_running`), so its row reads working, marked `reporting`.
+    reporting = {job.conversation_id for job in background_jobs.unreported()} if sub else set()
     for item in out:
         for key, value in extra.get(item.conversation_id, {}).items():
             setattr(item, key, value)
@@ -134,6 +137,8 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool 
         # sub-session's own row reads waiting while one of its cards waits (sub_sessions.waiting_on_user).
         if item.parent_id and sub_sessions._waiting.get(item.conversation_id):
             item.state, item.waiting_on = "waiting", "card"
+        elif item.parent_id and item.state not in ("working", "waiting") and item.conversation_id in reporting:
+            item.state, item.reporting = "working", True
     return out
 
 
@@ -142,7 +147,11 @@ async def sub_session_spend(conversation_id: str, db: AsyncSession = Depends(get
     """SUB5d: what the tree this conversation is in has spent, as its limit counts it (`sub_sessions.check_tree_spend`:
     every sub-session under the commander and its summary turns, not the commander's own turns). The window reads the
     limit itself from the per-task dollar cap in Settings."""
+    from server.db.companion_models import ConversationContext
     from server.services import sub_sessions
+    row = await db.get(ConversationContext, conversation_id)
+    if row is None or row.kind == "deleted":      # one in no tree has no row (a commander gets one); SUB5a's tombstone
+        raise HTTPException(404, detail="not_found")
     root = await sub_sessions.root_of(db, conversation_id)
     spent = await sub_sessions.tree_spend(db, (await sub_sessions.tree(db, root))[1:], summaries_in=root)
     return {"spent_usd": round(spent, 4)}
