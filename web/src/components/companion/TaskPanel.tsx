@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ClipboardCheck, RefreshCw, Square } from "lucide-react";
+import { Activity, CircleAlert, CircleCheck, CircleDashed, CircleSlash, ClipboardCheck, Hand, ListChecks, RefreshCw, Square, type LucideIcon } from "lucide-react";
+import { HDR_CHIP, HDR_LABEL, HDR_RUN, HDR_SECONDARY } from "../conversation/ConversationHeader";
+
+/** The run state's icon, all the header has left of it at ≤ 560px (the text is its tooltip and accessible name). */
+const PHASE_ICON: Record<string, LucideIcon> = {
+  queued: CircleDashed, running: Activity, verifying: ListChecks, waiting_user: Hand,
+  succeeded: CircleCheck, failed: CircleAlert, cancelled: CircleSlash,
+};
 import { useTranslation } from "react-i18next";
 import { tasksApi, type TaskAction, type TaskDetail, type TaskSummary } from "../../api/tasks";
 import { useArslanStore } from "../../stores/arslanStore";
@@ -139,13 +146,30 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
   // 0.1.42: in the chat's header row the chip is for work that needs a look.
   // An answered question ends "succeeded"; showing that on every chat was noise.
   if (compact && !open && (phase === "succeeded" || phase === "cancelled")) return null;
-  return <div className={compact ? "flex min-w-0 items-center gap-3 text-xs" : "flex shrink-0 items-center justify-between gap-3 border-b border-border/50 px-5 py-2 text-xs"}>
-    <button className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground"
-      onClick={() => { setSelected(latest?.spec.id ?? relevantFrame?.task_id ?? null); setError(null); setOpen(true); }}>
-      <ClipboardCheck size={14} /><span>{t("tasks.taskStatus")}</span><span className="truncate">{t(`tasks.${phase ?? relevantFrame?.phase ?? "queued"}`)}</span>
-    </button>
-    {active && latest && <button className="inline-flex items-center gap-1 text-destructive disabled:opacity-50" disabled={busy}
-      onClick={() => void perform(() => tasksApi.cancel(latest))}><Square size={12} />{t("tasks.stop")}</button>}
+  const shownPhase = phase ?? relevantFrame?.phase ?? "queued";
+  const openStatus = () => { setSelected(latest?.spec.id ?? relevantFrame?.task_id ?? null); setError(null); setOpen(true); };
+  const PhaseIcon = PHASE_ICON[shownPhase] ?? CircleDashed;
+  return <div className={compact ? "flex shrink-0 items-center gap-1 text-xs" : "flex shrink-0 items-center justify-between gap-3 border-b border-border/50 px-5 py-2 text-xs"}>
+    {compact
+      // In the conversation header (ConversationHeader): the task-status chip and the run-state chip, one button.
+      ? <button type="button" className={`inline-flex shrink-0 items-center gap-1 hover:[&>span]:text-foreground ${HDR_RUN}`}
+          aria-label={`${t("tasks.taskStatus")} · ${t(`tasks.${shownPhase}`)}`} onClick={openStatus}>
+          <span data-hdr-chip="secondary" title={`${t("tasks.taskStatus")} · ${t(`tasks.${shownPhase}`)}`}
+            className={`${HDR_CHIP} ${HDR_SECONDARY} text-muted-foreground`}>
+            <ClipboardCheck size={13} className="shrink-0" aria-hidden /><span className={HDR_LABEL}>{t("tasks.taskStatus")}</span></span>
+          <span data-hdr-chip="run" title={t(`tasks.${shownPhase}`)}
+            className={`${HDR_CHIP} ${shownPhase === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
+            <PhaseIcon size={13} className="shrink-0" aria-hidden /><span className={HDR_LABEL}>{t(`tasks.${shownPhase}`)}</span></span>
+        </button>
+      : <button className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground" onClick={openStatus}>
+          <ClipboardCheck size={14} /><span>{t("tasks.taskStatus")}</span><span className="truncate">{t(`tasks.${shownPhase}`)}</span>
+        </button>}
+    {active && latest && (compact
+      ? <button type="button" data-hdr-chip="run" title={t("tasks.stop")} aria-label={t("tasks.stop")} disabled={busy}
+          className={`${HDR_CHIP} ${HDR_RUN} text-destructive disabled:opacity-50`}
+          onClick={() => void perform(() => tasksApi.cancel(latest))}><Square size={12} className="shrink-0" aria-hidden /><span className={HDR_LABEL}>{t("tasks.stop")}</span></button>
+      : <button className="inline-flex items-center gap-1 text-destructive disabled:opacity-50" disabled={busy}
+          onClick={() => void perform(() => tasksApi.cancel(latest))}><Square size={12} />{t("tasks.stop")}</button>)}
     {open && <CompanionDialog title={t("tasks.taskStatus")} onClose={() => setOpen(false)} busy={busy}>
       <div className="space-y-4 text-sm">
         <div className="flex gap-2"><select className={inputClass} aria-label={t("tasks.chooseTask")} value={selected ?? ""} disabled={busy}

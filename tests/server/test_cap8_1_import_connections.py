@@ -192,8 +192,10 @@ async def test_a_malformed_file_reads_as_nothing_says_so_and_never_quotes_itself
     (home / ".claude.json").write_text(claude)
     _codex(home, codex)
     scan = await _scan(api)
-    assert scan == {"tools": [{"tool": "claude_code", "state": "malformed", "count": 0},
-                              {"tool": "codex", "state": "malformed", "count": 0}], "servers": []}
+    # CAP8-2's skills and plugins share the sheet; none are in this home.
+    assert {key: scan[key] for key in ("tools", "servers", "skills", "plugins")} == {
+        "tools": [{"tool": "claude_code", "state": "malformed", "count": 0},
+                  {"tool": "codex", "state": "malformed", "count": 0}], "servers": [], "skills": [], "plugins": []}
     assert FAKE not in json.dumps(scan) and FAKE not in caplog.text
 
 
