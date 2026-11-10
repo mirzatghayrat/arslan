@@ -19,14 +19,15 @@ cases = 171
 xfail = 0
 
 # 0.1.64 HR-1: real seatbelt refuses a plain write to one name of each run-later family in the commands preset
-# (7 cases) and in an MCP server's granted and own folders, and git still commits, branches, checks out and stashes
+# (6 cases) and in an MCP server's granted and own folders, and git still commits, branches, checks out and stashes
 # inside the sandbox while a config write fails. A dependency folder (node_modules) may hold those names, and the same
 # names elsewhere stay refused (1 case, #813 review). checkout and a fast-forward merge that must change a tracked held
 # file leave it as it was, and git's real output carries the note (2 cases); a work folder inside node_modules keeps
-# every name held (1 case, #813 review 2).
+# every name held (1 case, #813 review 2). CI files are written like any other, and the everyday git flow is measured
+# step by step (2 cases, #813 review 3).
 ["server/sbx/test_hr1_run_later_kernel.py"]
-markers = 6
-cases = 13
+markers = 8
+cases = 14
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

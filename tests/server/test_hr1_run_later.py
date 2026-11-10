@@ -32,7 +32,6 @@ STAND_IN = "zz-stand-in-word"
 RUN_LATER_REGEXES = """\
 (deny file-write* (regex #"^.*/[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss](/.*)?$") (regex #"^.*/[.][Gg][Ii][Tt]/[Cc][Oo][Nn][Ff][Ii][Gg]$") (regex #"^.*/[.][Gg][Ii][Tt]/[Cc][Oo][Nn][Ff][Ii][Gg][.][Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee]$") (regex #"^.*/[.][Gg][Ii][Tt]/[Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee][Ss]/[^/]*/[Cc][Oo][Nn][Ff][Ii][Gg][.][Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee]$") (regex #"^.*/[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]/[^/]*/[Hh][Oo][Oo][Kk][Ss](/.*)?$") (regex #"^.*/[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]/[^/]*/[Cc][Oo][Nn][Ff][Ii][Gg]$") (regex #"^.*/[.][Gg][Ii][Tt][Mm][Oo][Dd][Uu][Ll][Ee][Ss]$"))
 (deny file-write* (regex #"^.*/[.][Ee][Nn][Vv][Rr][Cc]$"))
-(deny file-write* (regex #"^.*/[.][Gg][Ii][Tt][Hh][Uu][Bb]/[Ww][Oo][Rr][Kk][Ff][Ll][Oo][Ww][Ss](/.*)?$") (regex #"^.*/[.][Gg][Ii][Tt][Ll][Aa][Bb]-[Cc][Ii][.][Yy][Mm][Ll]$") (regex #"^.*/[.][Cc][Ii][Rr][Cc][Ll][Ee][Cc][Ii](/.*)?$") (regex #"^.*/[Aa][Zz][Uu][Rr][Ee]-[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee][Ss][.][Yy][Mm][Ll]$") (regex #"^.*/[Jj][Ee][Nn][Kk][Ii][Nn][Ss][Ff][Ii][Ll][Ee]$") (regex #"^.*/[Bb][Ii][Tt][Bb][Uu][Cc][Kk][Ee][Tt]-[Pp][Ii][Pp][Ee][Ll][Ii][Nn][Ee][Ss][.][Yy][Mm][Ll]$"))
 (deny file-write* (regex #"^.*/[.][Vv][Ss][Cc][Oo][Dd][Ee]/[Tt][Aa][Ss][Kk][Ss][.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[.][Vv][Ss][Cc][Oo][Dd][Ee]/[Ll][Aa][Uu][Nn][Cc][Hh][.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[.][Vv][Ss][Cc][Oo][Dd][Ee]/[Ss][Ee][Tt][Tt][Ii][Nn][Gg][Ss][.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[.][Vv][Ss][Cc][Oo][Dd][Ee]/[Mm][Cc][Pp][.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[^/]*[.][Cc][Oo][Dd][Ee]-[Ww][Oo][Rr][Kk][Ss][Pp][Aa][Cc][Ee]$"))
 (deny file-write* (regex #"^.*/[.][Cc][Ll][Aa][Uu][Dd][Ee]/[Ss][Ee][Tt][Tt][Ii][Nn][Gg][Ss][^/]*[.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[.][Cc][Ll][Aa][Uu][Dd][Ee]/[Ll][Aa][Uu][Nn][Cc][Hh][.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[.][Mm][Cc][Pp][.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[.][Cc][Oo][Dd][Ee][Xx]/[Cc][Oo][Nn][Ff][Ii][Gg][.][Tt][Oo][Mm][Ll]$") (regex #"^.*/[.][Gg][Ee][Mm][Ii][Nn][Ii]/[Ss][Ee][Tt][Tt][Ii][Nn][Gg][Ss][.][Jj][Ss][Oo][Nn]$") (regex #"^.*/[.][Cc][Uu][Rr][Ss][Oo][Rr]/[^/]*[.][Jj][Ss][Oo][Nn]$"))
 (deny file-write* (regex #"^.*/[.][Nn][Pp][Mm][Rr][Cc]$") (regex #"^.*/[.][Yy][Aa][Rr][Nn][Rr][Cc]$") (regex #"^.*/[.][Yy][Aa][Rr][Nn][Rr][Cc][.][Yy][Mm][Ll]$") (regex #"^.*/[Pp][Ii][Pp][.][Cc][Oo][Nn][Ff]$") (regex #"^.*/[Uu][Vv][.][Tt][Oo][Mm][Ll]$"))
@@ -47,10 +46,6 @@ HELD = [
     (f"/w/.git/modules/{STAND_IN}/hooks/post-checkout", "git"), (f"/w/.git/modules/{STAND_IN}/config", "git"),
     ("/w/.gitmodules", "git"), ("/w/sub/.gitmodules", "git"),
     ("/w/.envrc", "envrc"), ("/w/a/b/.envrc", "envrc"),
-    (f"/w/.github/workflows/{STAND_IN}.yml", "ci"), ("/w/.github/workflows", "ci"), ("/w/x/.gitlab-ci.yml", "ci"),
-    ("/w/.gitlab-ci.yml", "ci"), ("/w/.circleci/config.yml", "ci"), ("/w/.circleci", "ci"),
-    ("/w/azure-pipelines.yml", "ci"), ("/w/Jenkinsfile", "ci"), ("/w/sub/Jenkinsfile", "ci"),
-    ("/w/bitbucket-pipelines.yml", "ci"),
     ("/w/.vscode/tasks.json", "editor"), ("/w/.vscode/launch.json", "editor"), ("/w/.vscode/settings.json", "editor"),
     ("/w/.vscode/mcp.json", "editor"), (f"/w/{STAND_IN}.code-workspace", "editor"), ("/w/a/.vscode/tasks.json", "editor"),
     ("/w/.claude/settings.json", "agent"), ("/w/.claude/settings.local.json", "agent"),
@@ -62,8 +57,13 @@ HELD = [
     ("/w/.pre-commit-config.yaml", "hooks"), ("/w/.husky/pre-commit", "hooks"), ("/w/.husky/_/h", "hooks"),
     ("/w/.husky", "hooks"),
 ]
-# Ordinary files: the instruction files (the user's ruling), the rest of `.git`, and names beside the held ones.
-ORDINARY = [
+#: CI files: recognised (`is_ci_file`, for HR-2b's push card), not held (the user's list decision, #813 review 3).
+CI = [f"/w/.github/workflows/{STAND_IN}.yml", "/w/.github/workflows", "/w/x/.gitlab-ci.yml", "/w/.gitlab-ci.yml",
+      "/w/.circleci/config.yml", "/w/.circleci", "/w/azure-pipelines.yml", "/w/Jenkinsfile", "/w/sub/Jenkinsfile",
+      "/w/bitbucket-pipelines.yml", f".github/workflows/{STAND_IN}.yml", "/w/.GitHub/Workflows/x.yml"]
+# Ordinary files: the instruction files (the user's ruling), CI files, the rest of `.git`, and names beside the held
+# ones.
+ORDINARY = [*CI,
     "/w/AGENTS.md", "/w/CLAUDE.md", "/w/CLAUDE.local.md", "/w/GEMINI.md", "/w/.cursorrules", "/w/a/AGENTS.md",
     "/w/.claude/CLAUDE.md", f"/w/.claude/commands/{STAND_IN}.md", f"/w/.claude/agents/{STAND_IN}.md",
     f"/w/.cursor/rules/{STAND_IN}.mdc", f"/w/.codex/{STAND_IN}.md", "/w/.gemini/GEMINI.md",
@@ -98,7 +98,7 @@ def _by_regex(path: str) -> bool:
 def test_the_kernel_text_is_these_rules(tmp_path):
     lines = "".join("(deny file-write* " + " ".join(f) + ")\n" for f in run_later.kernel_filters([tmp_path]))
     assert lines == RUN_LATER_TEXT and RUN_LATER_TEXT.count("(require-all ") == RUN_LATER_REGEXES.count("(regex ")
-    assert [name for name, _ in run_later.FAMILIES] == ["git", "envrc", "ci", "editor", "agent", "package", "hooks"]
+    assert [name for name, _ in run_later.FAMILIES] == ["git", "envrc", "editor", "agent", "package", "hooks"]
 
 
 @pytest.mark.parametrize("path, family", HELD)
@@ -112,11 +112,24 @@ def test_an_ordinary_look_alike_matches_neither_form(path):
     assert not run_later.matches(path) and not _by_regex(path)
 
 
-DEPENDENCY = [f"/w/node_modules/{STAND_IN}/.github/workflows/ci.yml", f"/w/node_modules/{STAND_IN}/.vscode/settings.json",
+@pytest.mark.parametrize("path", ORDINARY)
+def test_ci_files_are_recognised_for_the_push_card_and_nothing_else_is(path):
+    """#813 review 3: their guard moves to HR-2b's push card, which names a pushed change to one."""
+    assert run_later.is_ci_file(path) is (path in CI)
+
+
+def test_ci_files_are_kept_out_of_the_kernel_text(tmp_path):
+    text = "".join(" ".join(f) for f in run_later.kernel_filters([tmp_path]))
+    assert "[Ww][Oo][Rr][Kk][Ff][Ll][Oo][Ww][Ss]" not in text and "[Jj][Ee][Nn][Kk][Ii][Nn][Ss]" not in text
+    assert all(run_later.pattern_regex(p) not in text for p in run_later.CI_FILES)
+    assert all(run_later.is_ci_file(f"/w/{p.removesuffix('/**')}") for p in run_later.CI_FILES)
+
+
+DEPENDENCY = [f"/w/node_modules/{STAND_IN}/.vscode/tasks.json", f"/w/node_modules/{STAND_IN}/.vscode/settings.json",
               f"/w/a/node_modules/@{STAND_IN}/x/.husky/pre-commit", f"/w/NODE_MODULES/{STAND_IN}/.npmrc"]
 # The same names outside a dependency folder: a component that only contains the word is not one.
-NOT_DEPENDENCY = ["/w/.github/workflows/ci.yml", f"/w/{STAND_IN}-lib/.vscode/settings.json",
-                  "/w/not-node_modules/.github/workflows/ci.yml", "/w/node_modules_x/.vscode/settings.json",
+NOT_DEPENDENCY = ["/w/.vscode/tasks.json", f"/w/{STAND_IN}-lib/.vscode/settings.json",
+                  "/w/not-node_modules/.vscode/tasks.json", "/w/node_modules_x/.vscode/settings.json",
                   "/w/node_modules.bak/.npmrc", "/w/node_modules"]
 
 
@@ -149,7 +162,7 @@ INSIDE_DEPENDENCY_ROOTS = [f"/n/node_modules/{STAND_IN}/repo", "/n/node_modules"
 def test_a_root_inside_a_dependency_folder_keeps_every_name_held(root):
     """A repository kept inside node_modules: nothing exempts its names, not even a nested node_modules below it."""
     assert not run_later.exempts([root])
-    for rest, family in [(".github/workflows/ci.yml", "ci"), (".git/hooks/pre-commit", "git"),
+    for rest, family in [(".vscode/tasks.json", "editor"), (".git/hooks/pre-commit", "git"),
                          (f"node_modules/{STAND_IN}/.npmrc", "package"), ("a/node_modules/x/.husky/h", "hooks")]:
         assert run_later.family(f"{root}/{rest}", root) == family and run_later.matches(f"{root}/{rest}", root)
 
@@ -158,7 +171,7 @@ def test_below_an_ordinary_root_a_nested_dependency_folder_stays_exempt():
     assert run_later.exempts(["/w", "/w/node_modules_x", "/w/not-node_modules"])
     for path in DEPENDENCY:
         assert run_later.family(path, "/w") is None and not run_later.matches(path, "/w")
-    assert run_later.matches("/w/.github/workflows/ci.yml", "/w")
+    assert run_later.matches("/w/.vscode/tasks.json", "/w")
     assert run_later.family(DEPENDENCY[0]) is None                # no root: a dependency folder anywhere exempts
 
 
@@ -456,7 +469,7 @@ async def test_the_executor_and_terminal_exec_pass_the_hold_to_the_outside_floor
 def test_the_note_names_them_and_points_to_write_file(tmp_path):
     note = command_sandbox.note(tmp_path)
     sentence = note[note.index("Commands also can't change"):note.index("Find a way")]
-    assert "git hooks and config, CI, editor tasks, agent and package settings" in sentence
+    assert "git hooks and config, editor tasks, agent and package settings" in sentence and "CI" not in sentence
     assert "write_file" in sentence and "outside_sandbox" not in sentence
     assert "Commands also can't change" not in command_sandbox.note(tmp_path, proxy=True)
     assert "partly updated" not in note and "partly updated" in command_sandbox.note(tmp_path, git=True)
@@ -464,7 +477,7 @@ def test_the_note_names_them_and_points_to_write_file(tmp_path):
 
 # ── git's refusal line: the note even at exit 0 (#813 review 1) ──────────────
 
-GIT_REFUSED = f"error: unable to unlink old '.github/workflows/{STAND_IN}.yml': Operation not permitted\n"
+GIT_REFUSED = "error: unable to unlink old '.vscode/settings.json': Operation not permitted\n"
 
 
 def _explained(tmp_path, *, exit_code: int, stderr: str, sandbox: str = "workspace"):
@@ -487,7 +500,7 @@ def test_git_refusing_a_held_file_at_exit_0_shows_the_note_and_one_denial(tmp_pa
     assert "sandbox_denied" not in result and "error" not in result and result["ok"] is True
     # A removal is a warning in git's words, a new file (exit 0 too) an error, and a new folder a fatal one: all count.
     for line in (f"warning: unable to unlink '.husky/{STAND_IN}': Operation not permitted\n",
-                 f"error: unable to create file .github/workflows/{STAND_IN}.yml: Operation not permitted\n",
+                 f"error: unable to create file .husky/{STAND_IN}: Operation not permitted\n",
                  "fatal: cannot create directory at '.husky': Operation not permitted\n"):
         assert "partly updated" in _explained(tmp_path, exit_code=0, stderr=line)[0]["note"]
 

@@ -419,7 +419,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
     # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
     after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
-    # HR-1: nor the files that make something run later (git hooks and config, CI, editor tasks, agent and package
+    # HR-1: nor the files that make something run later (git hooks and config, editor tasks, agent and package
     # settings, the work folder's core.hooksPath), after every grant and reopen. Raises when hooksPath can't be read.
     for filters in run_later.kernel_filters([workspace]):
         after.deny("file-write*", *filters)
@@ -579,13 +579,13 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
         head = ("The sandbox stopped this command: commands may write only inside the working folder "
                 f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data." + shut
                 # HR-1: for these, not outside_sandbox.
-                + " Commands also can't change files that make something run later (git hooks and config, CI, "
+                + " Commands also can't change files that make something run later (git hooks and config, "
                 "editor tasks, agent and package settings), even in the working folder: if that is what it "
                 "changed, use write_file, which asks the user, or tell the user what to change.")
     if git:
         # HR-1 (#813 review): git's own refusal line (`git_refused`), shown even when git exited 0.
         head += (" git couldn't change some files in the work tree, so it may be only partly updated, even if git "
-                 "exited 0: files that run later (git hooks and config, CI, editor tasks, agent and package settings) "
+                 "exited 0: files that run later (git hooks and config, editor tasks, agent and package settings) "
                  "kept their old content. Check `git status` and tell the user which ones; don't commit over them "
                  "(a `commit -a` now would undo that change).")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "

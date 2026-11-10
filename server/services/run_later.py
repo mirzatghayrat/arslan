@@ -1,11 +1,12 @@
 """Files that make something run later (v0.1.64 HR-1): the list, and the two forms that hold it.
 
 The user's test for a name on this list: another program runs it, or loads it as configuration. A write to one of
-these, made by a sandboxed command or an MCP server now, would run later outside the sandbox: a git hook, a CI job,
-an editor task, an agent's hooks and MCP servers, a package manager's settings. Instruction files (AGENTS.md,
-CLAUDE.md, CLAUDE.local.md, GEMINI.md, .cursorrules and any other instruction `.md`) are ordinary files, by the
-user's ruling: Claude Code and Codex don't guard them separately either. Package scripts and Makefiles are out of
-scope (HR's design).
+these, made by a sandboxed command or an MCP server now, would run later outside the sandbox: a git hook, an editor
+task, an agent's hooks and MCP servers, a package manager's settings. Instruction files (AGENTS.md, CLAUDE.md,
+CLAUDE.local.md, GEMINI.md, .cursorrules and any other instruction `.md`) are ordinary files, by the user's ruling:
+Claude Code and Codex don't guard them separately either. Package scripts and Makefiles are out of scope (HR's
+design). CI files are recognised (`CI_FILES`, `is_ci_file`) but not denied, by the user's list decision: a CI job
+runs on the CI service after a push, so their guard is the push card (HR-2b).
 
 Each name matches at any depth. It has two forms, which tests/server/test_hr1_run_later.py keeps in agreement:
   `kernel_filters` SBPL regexes built only from the constants here (never a path from outside), written after the
@@ -39,8 +40,6 @@ FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("git", (".git/hooks/**", ".git/config", ".git/config.worktree", ".git/worktrees/*/config.worktree",
              ".git/modules/*/hooks/**", ".git/modules/*/config", ".gitmodules")),
     ("envrc", (".envrc",)),                                     # direnv runs it on cd
-    ("ci", (".github/workflows/**", ".gitlab-ci.yml", ".circleci/**", "azure-pipelines.yml", "Jenkinsfile",
-            "bitbucket-pipelines.yml")),
     # Editors run tasks and launch configs, and load settings and MCP servers (VS Code reads .vscode/mcp.json).
     ("editor", (".vscode/tasks.json", ".vscode/launch.json", ".vscode/settings.json", ".vscode/mcp.json",
                 "*.code-workspace")),
@@ -51,6 +50,12 @@ FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("package", (".npmrc", ".yarnrc", ".yarnrc.yml", "pip.conf", "uv.toml")),
     ("hooks", (".pre-commit-config.yaml", ".husky/**")),
 )
+
+#: CI files: recognised, not denied (the user's list decision, #813 review 3). A CI job runs only after a push, on
+#: the CI service and not on this Mac, so their guard moves to the push card (HR-2b), which uses `is_ci_file` to name
+#: a pushed change to one. The same pattern form as FAMILIES; not in the kernel's profiles nor in `matches`.
+CI_FILES: tuple[str, ...] = (".github/workflows/**", ".gitlab-ci.yml", ".circleci/**", "azure-pipelines.yml",
+                             "Jenkinsfile", "bitbucket-pipelines.yml")
 
 #: Dependency folders: a package installed there ships its own CI, editor and hook files, which nothing runs or loads
 #: from there, so they pass the user's test as ordinary files. Without this a dependency install fails (#813 review).
@@ -137,6 +142,13 @@ def matches(path, root=None) -> bool:
     is a write into a file that runs later. The names only; the work folder's `core.hooksPath` target is
     `hooks_path`'s."""
     return family(path, root) is not None
+
+
+def is_ci_file(path) -> bool:
+    """Whether `path` (relative to a repository, or absolute) names a CI file (CI_FILES) at any depth, letter case
+    folded. For HR-2b's push card; nothing is refused by it."""
+    parts = _parts(path)
+    return any(_fits(parts[i:], tuple(pattern.split("/"))) for pattern in CI_FILES for i in range(len(parts)))
 
 
 # ── core.hooksPath: read, never run ─────────────────────────────────────────
