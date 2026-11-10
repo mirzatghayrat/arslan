@@ -11,6 +11,9 @@ from tests.server import test_folder_tracking_matrix as matrix
 from tests.server import test_s2a3_folder_tracking as folders
 from tests.server.test_s2a3_folder_tracking import stand_in_rules  # noqa: F401
 
+# Whole-corpus comparisons: over pytest-timeout's 120 s default on CI runners and under load.
+pytestmark = pytest.mark.timeout(600)
+
 ROUND_FOUR = "d0057b2fa2f0c674996d0148424007f670136c95"
 ROUND_THREE = "be8c1393cb2be8aacfbd960b1496d2a1da02f05f"
 ROUND_TWO = "1925e15895f675027e496d15d82a05d221065169"
@@ -53,7 +56,6 @@ def transitions(texts, baseline, cwd):
     return dict(sorted(counts.items()))
 
 
-@pytest.mark.timeout(600)  # whole-corpus comparison; over 120 s on CI runners
 def test_revision_comparisons(tmp_path, monkeypatch):
     corpora = {"repository": repository_corpus(), "structural": structural_corpus()}
     assert len(corpora["structural"]) == 11816
