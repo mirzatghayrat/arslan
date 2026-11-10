@@ -370,6 +370,8 @@ From the memory plan, item 17 (`docs/plans/0162/README.md` §8). The user pastes
 - 只在副本里跑，或者只给这个文件夹写权限；默认断网。缺依赖时报「需要装依赖」，要联网就出卡，只给「这一次」。
 - 跑的是陌生代码，**SBX 没合，这个 PR 不开**。
 
+**As built:** `verify` has an executor (`VerifyExecutor`) and the service `server/services/project_verify.py`; no change to the tool loop, the command layers or the sandbox profiles. The command is one of a fixed few (`npm test`, `python3 -m pytest -q -x` or the project's `.venv`/`venv` python, `make test` / `make check`), never text from the project. It runs on a copy in a fresh temp folder (the copy is the run's only writable folder besides its temp and the commands cache); `node_modules`, `.venv`, `venv` and `.git` are linked, so they are read in place and never written, and a planted git hook cannot reach the user's repository. The network card is `permissions` kind `network`, `once_only`, so no grant answers it and a run with nobody to ask gets no. Without seatbelt it refuses before discovery and runs nothing.
+
 ### CAP11 ⑤ iPhone 能看、不能批（用户点头才做）
 
 - 能力卡（安装卡和 CAP2a 的过渡卡）发到手机，手机上只显示，按钮是「回到 Mac 上确认」。
