@@ -332,12 +332,23 @@ def _held_folder_tree() -> dict[str, dict]:
 
 HELD_FOLDERS = _held_folder_tree()
 
-#: The walk's caps (#813 review 6). Past either, or on a folder it can't list, the walk is incomplete and the profile
-#: holds the held folders by name instead (`folder_filters`): closed, at the cost of making one (`git init`, `git
-#: clone`) in that run. Measured on APFS tmp trees, warm (2026-11-11): the walk takes about 10 ms for 5,000 entries
-#: and 90 ms for 49,500 (4,500 folders), where the whole commands profile took about 110 ms.
+#: The walk's caps (#813 review 6). Past any of them, or on a folder it can't list, the walk is incomplete and the
+#: profile holds the held folders by name instead (`folder_filters`): closed and constant in size, at the cost of
+#: making a new one (a `.git`, a first `.vscode`) in that run. Measured on APFS tmp trees, warm (2026-11-11): the walk
+#: takes about 10 ms for 5,000 entries and 90 ms for 49,500 (4,500 folders), where the whole commands profile took
+#: about 110 ms.
 WALK_ENTRIES = 50_000
 WALK_DEPTH = 32
+#: #813 review 7: every held folder found, and every folder above it, becomes a literal in the profile, which goes to
+#: `sandbox-exec -p` on the command line (ARG_MAX is 1 MiB on macOS, the environment included) and is built on the
+#: event loop for every command. Uncapped, 2,000 small repositories took 23 s to build and the command couldn't
+#: start at all (E2BIG, a 1.2 MB profile). So the walk also stops after `WALK_HELD` held folders, and after
+#: `WALK_HELD_BYTES` of literals for them and the folders above them inside the walk (the count alone doesn't bound
+#: that: 256 folders each 32 deep under long names could still pass ARG_MAX). Either keeps the profile well under the
+#: limit: measured at the cap with 2,000 repositories in a pytest tmp folder, the commands profile is about 73 KB
+#: (19 KB with none) and builds in about 0.03 s; the byte cap bounds the held literals to 128 KiB whatever the layout.
+WALK_HELD = 256
+WALK_HELD_BYTES = 128 * 1024
 
 
 @dataclass(frozen=True)
@@ -376,27 +387,50 @@ def _is_folder_entry(entry: os.DirEntry) -> bool:
         raise _Incomplete from None
 
 
+#: What `(literal "…")` and the space before it add to a path in the profile.
+_LITERAL_BYTES = len('(literal "")') + 1
+
+
 def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), max_entries: int | None = None,
-                 max_depth: int | None = None) -> HeldWalk:
+                 max_depth: int | None = None, max_held: int | None = None,
+                 max_held_bytes: int | None = None) -> HeldWalk:
     """The existing held folders under `folders` (the work folder, or an MCP server's granted folders and its own),
-    found by a bounded walk of real paths (caps `WALK_ENTRIES` and `WALK_DEPTH` unless given). Links aren't followed.
-    Dependency folders are skipped when `exempts` holds for `folders` and `roots`, as `kernel_filters` exempts them;
-    otherwise they are walked too. A held folder with held folders of its own (`.git`) is searched for those only,
-    never walked (git's objects)."""
+    found by a bounded walk of real paths (caps `WALK_ENTRIES`, `WALK_DEPTH`, `WALK_HELD` and `WALK_HELD_BYTES`
+    unless given). Links aren't followed. Dependency folders are skipped when `exempts` holds for `folders` and
+    `roots`, as `kernel_filters` exempts them; otherwise they are walked too. A held folder with held folders of its
+    own (`.git`) is searched for those only, never walked (git's objects)."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
+    max_held = WALK_HELD if max_held is None else max_held
+    max_held_bytes = WALK_HELD_BYTES if max_held_bytes is None else max_held_bytes
     folders = [real(Path(os.path.abspath(p))) for p in folders]
     skip = _exempt(folders, roots)
     starts = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
     budget = [max_entries]
     found: list[Path] = []
+    counted: set[Path] = set(starts)          # the folders whose literal is counted (the starts: by the caller)
+    held_bytes = [0]
+
+    def keep(path: Path) -> None:
+        """`path` is held: count it and the folders above it in the walk (each once) against the caps, which end the
+        walk before it is kept when it would pass either."""
+        if len(found) >= max_held:
+            raise _Incomplete
+        for folder in (path, *path.parents):
+            if folder in counted:
+                break                         # it, and every folder above it, is counted already
+            counted.add(folder)
+            held_bytes[0] += len(os.fsencode(folder)) + _LITERAL_BYTES
+        if held_bytes[0] > max_held_bytes:
+            raise _Incomplete
+        found.append(path)
 
     def inside_held(folder: Path, tree: dict) -> None:
         for entry in _listing(folder, budget):
             sub = tree.get(entry.name.casefold())
             if sub is not None and _is_folder_entry(entry):
-                found.append(folder / entry.name)
+                keep(folder / entry.name)
                 if sub:
                     inside_held(folder / entry.name, sub)
 
@@ -413,7 +447,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), max_ent
                 path = folder / entry.name
                 tree = HELD_FOLDERS.get(name)
                 if tree is not None:
-                    found.append(path)
+                    keep(path)
                     if tree:
                         inside_held(path, tree)
                         continue

@@ -31,10 +31,11 @@ xfail = 0
 # a refusal and get none (3 cases, #813 review 5). The ancestor hold: the held folders and the folders above them stay
 # in place in both presets and under the floor, a rename round trip leaves no held file (.git, .vscode, .husky),
 # committing still works and `rm -rf .git` fails, a dependency's folders still move, and past the walk's cap they are
-# held by name (9 cases, #813 review 6).
+# held by name (9 cases, #813 review 6). 2,000 repositories take the held-folder cap's fallback fast, and a command
+# still starts there with a hook write refused (1 case, #813 review 7).
 ["server/sbx/test_hr1_run_later_kernel.py"]
-markers = 20
-cases = 34
+markers = 21
+cases = 35
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

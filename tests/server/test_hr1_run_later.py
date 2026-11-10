@@ -300,11 +300,56 @@ def test_inside_a_dependency_folder_the_walk_holds_nothing_unless_the_root_is_in
     assert set(_found(inside, f"node_modules/{STAND_IN}/.git", f"node_modules/{STAND_IN}/.vscode")) <= set(found)
 
 
-@pytest.mark.parametrize("caps", [{"max_entries": 3}, {"max_depth": 1}])
+@pytest.mark.parametrize("caps", [{"max_entries": 3}, {"max_depth": 1}, {"max_held": 8}, {"max_held_bytes": 400}])
 def test_the_walk_stops_at_its_caps_incomplete(tmp_path, caps):
-    ws = _tree(tmp_path / "ws")
-    assert not run_later.held_folders([ws], **caps).complete
-    assert run_later.held_folders([ws], max_entries=1000, max_depth=8).complete
+    ws = _tree(tmp_path / "ws")                                    # 9 held folders
+    walk = run_later.held_folders([ws], **caps)
+    assert not walk.complete
+    assert len(walk.folders) <= caps.get("max_held", 9)
+    assert run_later.held_folders([ws], max_entries=1000, max_depth=8, max_held=9).complete
+
+
+def _repositories(ws: Path, count: int) -> Path:
+    for i in range(count):
+        for sub in (".git/hooks", ".vscode"):
+            (ws / "fixtures" / f"r{i:04}" / sub).mkdir(parents=True)
+    return ws
+
+
+def test_the_held_folder_cap_keeps_the_profile_small(home):
+    """#813 review 7: the walk returns at most `WALK_HELD` folders, so the literals stay a fraction of ARG_MAX."""
+    ws = _repositories(home / "ws", 400)                            # 1,200 held folders
+    walk = run_later.held_folders([ws])
+    assert not walk.complete and len(walk.folders) == run_later.WALK_HELD
+    text = command_sandbox.commands_profile(ws)
+    assert len(text.encode()) < 256 * 1024
+
+
+def test_the_held_byte_cap_bounds_deep_long_paths(tmp_path):
+    """Fewer held folders than the count cap, each under a long chain of its own: the byte cap ends the walk."""
+    ws = tmp_path / "ws"
+    for i in range(40):
+        chain = ws.joinpath(*(f"{i:02}-{'x' * 60}-{depth}" for depth in range(12)))
+        (chain / ".vscode").mkdir(parents=True)
+    walk = run_later.held_folders([ws])
+    assert not walk.complete and len(walk.folders) < run_later.WALK_HELD
+    assert run_later.held_folders([ws], max_held_bytes=10**9).complete
+
+
+def test_holding_many_folders_and_the_folders_above_them_is_linear(tmp_path):
+    """#813 review 7: `held_ancestors` judged membership against a list, quadratic in the folders held. 1,000
+    repositories (3,000 held folders, uncapped walk) now take about 0.2 s alone; the list took 6 to 8 s. The bound is
+    generous for a loaded parallel run."""
+    import time
+    ws = _repositories(tmp_path / "ws", 1000)
+    walk = run_later.held_folders([ws], max_held=10**6, max_held_bytes=10**9)
+    started = time.perf_counter()
+    held = command_sandbox.held_ancestors([ws], [], kept=walk.folders)
+    took = time.perf_counter() - started
+    print(f"\nHR-1 review 7: 3,000 held folders, hold {took:.3f} s")
+    assert walk.complete and len(walk.folders) == 3000
+    assert len(held) == len(set(held)) == 1 + 1 + 4000                      # ws, fixtures, each r, .git, hooks, .vscode
+    assert took < 2.0
 
 
 def test_a_folder_the_walk_cannot_list_ends_it_incomplete(tmp_path):
@@ -362,10 +407,15 @@ def test_past_the_cap_the_profiles_hold_them_by_name_and_otherwise_do_not(home, 
     assert all(line in make().splitlines() for make in build.values())
 
 
+_WHY = "too large to map, so Arslan holds the folders those files live in (such as .git and .vscode) by name"
+
+
 def test_the_note_says_why_when_the_folder_is_too_large_to_map(home, monkeypatch):
-    """⓪Plan (#813 review 6): past the cap, new repositories can't be made in the sandbox; the stop note says why."""
+    """⓪Plan (#813 review 6): past the cap, the held folders are held by name; the stop note says so (review 7: and
+    doesn't blame the size for git init or clone, which HR-1 refuses in every folder)."""
+    monkeypatch.setattr(command_sandbox, "_TOO_LARGE", set())
     ws = _tree(home / "ws")
-    why = "too large to map, so new repositories (git init, git clone) can't be created in the sandbox"
+    why = _WHY
     entries = run_later.WALK_ENTRIES
     command_sandbox.commands_profile(ws)
     assert why not in command_sandbox.note(ws)
@@ -376,6 +426,26 @@ def test_the_note_says_why_when_the_folder_is_too_large_to_map(home, monkeypatch
     monkeypatch.setattr(run_later, "WALK_ENTRIES", entries)
     command_sandbox.commands_profile(ws)                      # a complete walk clears it again
     assert why not in command_sandbox.note(ws)
+
+
+def test_an_mcp_servers_walk_or_the_floors_does_not_change_the_command_note(home, monkeypatch):
+    """#813 review 7: only the commands profile's own walk of the work folder marks or clears it. An MCP server's walk
+    covers its own folder too, and the floor's note is another one."""
+    monkeypatch.setattr(command_sandbox, "_TOO_LARGE", set())
+    ws = _tree(home / "ws")
+    others = (lambda: capability_sandbox.profile(root=home / "mcp", folders=[str(ws)], network=False, read=[]),
+              lambda: command_sandbox.minimal_profile(run_later_in=ws))
+    entries = run_later.WALK_ENTRIES
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", 3)
+    for make in others:                                       # their incomplete walks don't mark it
+        make()
+        assert _WHY not in command_sandbox.note(ws)
+    command_sandbox.commands_profile(ws)
+    assert _WHY in command_sandbox.note(ws)
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", entries)
+    for make in others:                                       # nor do their complete walks clear it
+        make()
+        assert _WHY in command_sandbox.note(ws)
 
 
 # ── core.hooksPath ───────────────────────────────────────────────────────────

@@ -173,6 +173,7 @@ def held_ancestors(writable, protected, *, planted=(), kept=()) -> list[Path]:
     ids = {i for i in map(_identity, roots) if i is not None}
     seen: dict[Path, tuple[int, int] | None] = {}
     out: list[Path] = []
+    judged: set[Path] = set()           # #813 review 7: membership by set, so the build is linear in `kept`
 
     def inside(folder: Path) -> bool:
         if any(folder == r or r in folder.parents for r in roots):
@@ -185,7 +186,10 @@ def held_ancestors(writable, protected, *, planted=(), kept=()) -> list[Path]:
         return False
 
     def hold(folder: Path) -> None:
-        if folder not in out and inside(folder):
+        if folder in judged:
+            return
+        judged.add(folder)
+        if inside(folder):
             out.append(folder)
 
     for path in [*(_real(p) for p in protected if _real(p).exists()), *(_real(p) for p in planted)]:
@@ -207,8 +211,10 @@ def held_ancestors(writable, protected, *, planted=(), kept=()) -> list[Path]:
     return out
 
 
-#: Work folders whose last held-folder walk stopped at its cap (or an unlistable folder): their profile holds the
-#: run-later folders by name, so a new repository can't be created there. `note` says why (⓪Plan, #813 review 6).
+#: Work folders whose last commands-profile walk stopped at a cap (or an unlistable folder): their profile holds the
+#: run-later folders by name. `note` says why (⓪Plan, #813 review 6). Keyed by the folder that walk started from and
+#: set or cleared only by `commands_profile` (#813 review 7): an MCP server's walk covers its own folder as well, so
+#: its outcome says nothing about the work folder's.
 _TOO_LARGE: set[Path] = set()
 
 
@@ -232,11 +238,9 @@ def run_later_folders(folders, *, roots=()) -> tuple[list[Path], tuple[str, ...]
         if target is not None and run_later._is_folder(target):
             kept.append(_real(target))
     if walk.complete:
-        _TOO_LARGE.difference_update(_real(f) for f in folders)
         return kept, ()
-    _TOO_LARGE.update(_real(f) for f in folders)
-    _log.warning("HR-1: the held-folder walk stopped at its cap or an unlistable folder; held folders are held by "
-                 "name in this run, so making one (git init, git clone) is refused")
+    _log.warning("HR-1: the held-folder walk stopped at a cap or an unlistable folder; held folders are held by "
+                 "name in this run, so a new one (a .git, a first .vscode) can't be made")
     return kept, run_later.folder_filters(folders, roots=roots)
 
 
@@ -469,6 +473,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
     # HR-1 (#813 review 6): nor the held run-later folders in the work folder and every folder above them.
     kept, by_name = run_later_folders([workspace])
+    (_TOO_LARGE.add if by_name else _TOO_LARGE.discard)(_real(workspace))       # this walk's root only (review 7)
     held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),
                           kept=kept)
     if held:
@@ -518,6 +523,8 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
         rules.deny("file-write*", *filters)
     # SBX-5a (#772 review): everything is writable out here, so every folder above those is held. HR-1 (#813 review
     # 6): with `run_later_in`, so are the held run-later folders in the work folder and every folder above them.
+    # Only those (#813 review 7): the walk covers the work folder, so a held folder elsewhere on disk keeps its files
+    # held by name (`kernel_filters` above matches at any depth) but is not held in place.
     kept, by_name = run_later_folders([run_later_in]) if run_later_in is not None else ([], ())
     held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder), kept=kept)
     if held:
@@ -701,8 +708,9 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 "editor tasks, agent and package settings), even in the working folder: if that is what it "
                 "changed, use write_file, which asks the user, or tell the user what to change.")
         if too_large_to_map(workspace):
-            head += (" This working folder is too large to map, so new repositories (git init, git clone) can't be "
-                     "created in the sandbox here.")
+            # #813 review 7: true under HR-1 alone (git init and clone fail in every sandboxed folder); HR-1b revisits.
+            head += (" This working folder is too large to map, so Arslan holds the folders those files live in "
+                     "(such as .git and .vscode) by name everywhere in it.")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")

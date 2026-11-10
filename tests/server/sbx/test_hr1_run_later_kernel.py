@@ -643,3 +643,32 @@ def test_past_the_walks_cap_the_held_folders_are_held_by_name(sbx, monkeypatch):
         "moved", "refused", "refused", "refused", "moved"]
     made = sbx.run(["/bin/bash", "-p", "-c", f"mkdir -p {STAND_IN}-fresh/.git"], probe="hr1-ancestor-cap-mkdir")
     assert made.returncode != 0 and not (sbx.work / f"{STAND_IN}-fresh" / ".git").exists()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_two_thousand_repositories_build_fast_fall_back_by_name_and_a_command_still_starts(sbx):
+    """#813 review 7: uncapped, 2,000 small repositories took 23 s to build and the profile was past ARG_MAX, so no
+    command could start. With the held-folder cap the walk and build stay fast, the profile holds them by name, a
+    command starts, a hook write is refused, and a repository past the cap keeps its `.git` held by name."""
+    import time
+    from server.services import run_later
+    fixtures = sbx.work / "fixtures"
+    for i in range(2000):
+        for sub in (".git/hooks", ".vscode"):
+            (fixtures / f"r{i:04}" / sub).mkdir(parents=True)
+    started = time.perf_counter()
+    text = sbx.profile()
+    took = time.perf_counter() - started
+    print(f"\nHR-1 review 7: 2,000 repositories, walk + build {took:.3f} s, profile {len(text.encode())} bytes")
+    assert took < 1.0
+    assert f"(deny file-write* {' '.join(run_later.folder_filters([sbx.work]))})" in text.splitlines()
+    assert command_sandbox.too_large_to_map(sbx.work)
+    hook, beside = f"fixtures/r1999/.git/hooks/{STAND_IN}", f"fixtures/r1999/{STAND_IN}.txt"
+    assert _write(sbx, sbx.work, (hook, beside)) == {hook: "refused", beside: "written"}
+    real = os.path.realpath(fixtures)
+    past = next(f"r{i:04}" for i in range(2000) if f'(literal "{real}/r{i:04}")' not in text)
+    moved = f"{STAND_IN}-past"
+    assert _moves(sbx, fixtures, [(past, moved), (f"{moved}/.git", f"{moved}/g"), (f"{moved}/.vscode", f"{moved}/v")]) \
+        == ["moved", "refused", "refused"]
