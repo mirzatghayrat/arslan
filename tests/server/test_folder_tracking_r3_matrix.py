@@ -1,7 +1,13 @@
-"""Local-object delta comparison with each revision's own text, grammar and policy."""
-from collections import Counter
+"""Local-object delta comparison with each revision's own text, grammar and policy.
+
+FOLDER_TRACKING_EVIDENCE_FULL=1 runs every text of the whole-corpus comparisons here and in
+test_folder_tracking_r4.py and test_folder_tracking_r6.py; the default suite runs the fixed sample
+described in sampled(). Corpus sizes are still asserted on the full corpora.
+"""
+from collections import Counter, defaultdict
 from itertools import product
 import json
+import os
 
 import pytest
 
@@ -20,6 +26,37 @@ ROUND_TWO = "1925e15895f675027e496d15d82a05d221065169"
 MAINS = (
     "c6647eb915249d77d84e8a243dacf03eb931044c",
 )
+FULL = os.environ.get("FOLDER_TRACKING_EVIDENCE_FULL") == "1"
+
+
+def _moves(text):
+    """The cd targets of a plain `cd X && ... && END` chain, or None for any other text."""
+    *steps, _ = text.split(" && ")
+    if steps and all(step.startswith("cd ") and not any(c in step[3:] for c in " \n;|&") for step in steps):
+        return tuple(step[3:] for step in steps)
+    return None
+
+
+def sampled(texts):
+    """Every text when FULL; otherwise the default suite's fixed, deterministic sample.
+
+    Kept whole: every text that is not a plain cd chain, and every chain of one or two moves, so each
+    target, each ordered pair of targets and each endpoint still meet. Chains of three or more moves
+    are grouped by all moves but the last; each group keeps one member, rotating through the sorted
+    members by group order, so every (last move, endpoint) combination still occurs at depth.
+    """
+    texts = sorted(texts)
+    if FULL:
+        return texts
+    kept, groups = [], defaultdict(list)
+    for text in texts:
+        moves = _moves(text)
+        if moves is None or len(moves) < 3:
+            kept.append(text)
+        else:
+            groups[moves[:-1]].append(text)
+    kept += [group[i % len(group)] for i, group in enumerate(groups.values())]
+    return sorted(kept)
 
 
 def load_revision(revision, monkeypatch):
@@ -60,6 +97,7 @@ def test_revision_comparisons(tmp_path, monkeypatch):
     corpora = {"repository": repository_corpus(), "structural": structural_corpus()}
     assert len(corpora["structural"]) == 11816
     matrix.make_plain_tree(set.union(*corpora.values()), tmp_path)
+    corpora = {name: sampled(texts) for name, texts in corpora.items()}
     report = {}
     for revision in (*MAINS, ROUND_TWO):
         baseline = load_revision(revision, monkeypatch)

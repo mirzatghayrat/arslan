@@ -141,6 +141,8 @@ def test_every_once_only_rule_is_never_auto_by_its_text_or_its_card():
     by_rule = {c["rule"]: c["command"] for c in reversed(hr.cases(ASK_CASES))}
     by_rule["protected-write"] = hr.first_command(PROTECTED_CASES)
     by_rule[tp.UNREADABLE] = hr.first_command(UNREADABLE_CASES)
+    from tests.server.test_s2a3_outside_reach import GAPS        # asks only outside: never_auto reads it that way
+    by_rule[tp.OUTSIDE_REACH[0]] = GAPS[0]
     assert set(by_rule) == set(tp.ONCE_ONLY_RULES)
     harmless = hr.first_command(HARMLESS_CASES)
     for rule, text in by_rule.items():
@@ -152,8 +154,8 @@ def test_every_once_only_rule_is_never_auto_by_its_text_or_its_card():
 def test_an_ask_rule_not_yet_placed_is_never_auto(monkeypatch):
     """A rule added to the parser later, before it is placed in NEVER_AUTO_RULES, fails closed."""
     harmless = hr.first_command(HARMLESS_CASES)
-    monkeypatch.setattr(tp, "assess", lambda command: tp.Assessment("ask", STAND_IN, STAND_IN))
-    monkeypatch.setattr(tp, "ask_rules", lambda command: {STAND_IN})
+    monkeypatch.setattr(tp, "assess", lambda command, **kw: tp.Assessment("ask", STAND_IN, STAND_IN))
+    monkeypatch.setattr(tp, "ask_rules", lambda command, **kw: {STAND_IN})
     assert STAND_IN not in hard_rules.NEVER_AUTO_RULES
     assert hard_rules.never_auto(_command(harmless)) is True
     assert hard_rules.never_auto(_command(harmless, target="rules:" + STAND_IN)) is True

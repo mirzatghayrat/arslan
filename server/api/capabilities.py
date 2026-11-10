@@ -115,9 +115,10 @@ async def capability_allowlist_reset() -> dict:
 
 @router.get("/capability-import")
 async def capability_import_scan() -> dict:
-    """The sheet: each server in those two files, with its kind and host and how many keys, never a key."""
-    from server.services import connection_import
-    return await connection_import.scan()
+    """The sheet: each server in those two files, with its kind and host and how many keys, never a key; and (CAP8-2)
+    Claude Code's skills and plugins, each with what it holds."""
+    from server.services import connection_import, tool_import
+    return {**await connection_import.scan(), **await tool_import.scan()}
 
 
 class ImportTick(BaseModel):
@@ -126,15 +127,28 @@ class ImportTick(BaseModel):
     keys: dict[str, str] = {}
 
 
+class PluginTick(ImportTick):
+    card: str | None = None         # CAP8-2: the digest of the card a plugin's first add answered with
+
+
 class ImportIn(BaseModel):
     servers: list[ImportTick]
+    skills: list[ImportTick] = []
+    plugins: list[PluginTick] = []
 
 
 @router.post("/capability-import")
 async def capability_import_add(body: ImportIn) -> dict:
-    """Add the ticked ones, each with its own result: one that fails doesn't stop the others."""
-    from server.services import connection_import
-    return {"results": await connection_import.add([tick.model_dump() for tick in body.servers])}
+    """Add the ticked ones, each with its own result: one that fails doesn't stop the others. A server's id starts
+    with its tool, a skill's or plugin's with `skill:` or `plugin:`, so one list holds every result.
+
+    A plugin is refused here for now: its card comes before its install, on the sheet, and that card has no board
+    yet, so no user has seen one. DELETE-BY: CAP8-2's plugin follow-up (the card's board approved), which passes
+    `body.plugins` to `tool_import.add` instead."""
+    from server.services import connection_import, tool_import
+    return {"results": [*await connection_import.add([tick.model_dump() for tick in body.servers]),
+                        *await tool_import.add([tick.model_dump() for tick in body.skills], []),
+                        *[{"id": tick.id, "state": "refused", "code": "plugins_later"} for tick in body.plugins]]}
 
 
 @router.get("/capability-sources")

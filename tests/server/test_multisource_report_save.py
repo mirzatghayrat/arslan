@@ -5,7 +5,7 @@ removed in C8-2 (v0.1.63); the save path it guarded stays, and `len(adapter.call
 proves no extra model request rides on a saved report.
 """
 from arslan.companion.research import receipt
-from server.orchestrator import tool_loop
+from server.orchestrator import tool_batch, tool_loop
 from tests.server.test_native_loop import _NativeAdapter, _LLMResp, _tc
 
 
@@ -44,7 +44,7 @@ async def test_a_multisource_report_saves_without_an_extra_model_call(monkeypatc
         return tool_loop._record_tool_result(name, args, result, turn.emit,
             turn.tool_trace, assistant_content, turn.convo)
 
-    monkeypatch.setattr(tool_loop, "_run_tool", dispatch)
+    monkeypatch.setattr(tool_batch, "_run_tool", dispatch)
     result = await tool_loop.run_native(system="s", user_content="Compare and save.", history=[],
         emit=lambda _: None, on_chunk=lambda _: None, resolve_tools=resolve, adapter_override=adapter)
     assert (tmp_path / "report.md").read_text() == content

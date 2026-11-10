@@ -3,6 +3,7 @@ import { File, Globe, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { OPEN_ARTIFACT, restoreDock, saveDock, validArtifact, type DockTab } from "../lib/workDock";
 import { useWorkbench } from "../stores/workbenchStore";
+import { useDividerDrag } from "../hooks/useDividerDrag";
 import BrowserReader from "./BrowserReader";
 import ArtifactPreview from "./ArtifactPreview";
 
@@ -85,6 +86,7 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     if (url) addBrowser(url);
   }, [embedded, pendingUrl]);   // eslint-disable-line react-hooks/exhaustive-deps -- addBrowser reads this render's tabs
   function resize(value: number) { setWidth(Math.max(300, Math.min(760, window.innerWidth - 360, value))); }
+  const drag = useDividerDrag(open && !narrow && !embedded, clientX => resize(window.innerWidth - clientX));
   function moveTab(event: React.KeyboardEvent, index: number) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
@@ -132,9 +134,7 @@ export default function WorkDock({ open, onOpen, onClose, conversationId, taskId
     {!narrow && <div role="separator" tabIndex={0} aria-label={t("dock.resize")} aria-orientation="vertical" aria-valuemin={300} aria-valuemax={760} aria-valuenow={Math.round(width)}
       className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none hover:bg-primary/25 focus:bg-primary/25"
       onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resize(width + (event.key === "ArrowLeft" ? 20 : -20)); } }}
-      onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); }}
-      onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(window.innerWidth - event.clientX); }}
-      onPointerUp={event => event.currentTarget.releasePointerCapture(event.pointerId)} />}
+      {...drag} />}
     <header className="flex items-center gap-2 border-b border-border p-3"><h2 className="min-w-0 flex-1 text-sm font-semibold">{t("dock.title")}</h2>
       <button className="rounded p-1.5 hover:bg-surface" onClick={() => addBrowser()} aria-label={t("dock.newBrowser")}><Plus size={17} /></button>
       <button className="rounded p-1.5 hover:bg-surface" onClick={onClose} aria-label={t("dock.close")}><X size={17} /></button>

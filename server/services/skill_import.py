@@ -439,10 +439,12 @@ async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str
             "files": files, "sizes": sizes, "skipped": skipped}
 
 
-async def install_prepared(prepared: dict, *, source_id: str | None = None) -> dict:
+async def install_prepared(prepared: dict, *, source_id: str | None = None, approved: bool = True) -> dict:
     """Write exactly what `prepare_skill` fetched, then the row. No second fetch, so what was scanned and shown is
     what is installed (CAP4a-1). `source_id`: the plugin it belongs to (CAP7b), in the row's one commit, so a hard
-    stop never leaves it outside its group.
+    stop never leaves it outside its group. `approved=False` (CAP8-2, a skill copied in from another tool, which no
+    card has shown yet): the row starts off and no hashes are recorded as approved, so its first switch-on shows
+    CAP6a's card.
 
     v0.1.64 CAP6a: into ~/.agents/skills/<key>/ (agent_skills), the open standard's folder: a SKILL.md holding the
     row's text, its scripts under `scripts/` and references under `references/`. The hash of every file goes to
@@ -480,8 +482,8 @@ async def install_prepared(prepared: dict, *, source_id: str | None = None) -> d
         try:
             skill_md = agent_skills.skill_md(info["name"], info["description"], body)
             files = agent_skills.write_new(folder, _expected(prepared, skill_md))
-            agent_skills.record(key, by=agent_skills.ARSLAN, files=files)
-            return await _install_row(prepared, key, info, body, stored, stored_refs, source_id)
+            agent_skills.record(key, by=agent_skills.ARSLAN, files=files if approved else None)
+            return await _install_row(prepared, key, info, body, stored, stored_refs, source_id, enabled=approved)
         except BaseException:
             agent_skills.forget(key)
             capability_install.to_trash(folder, prefix="Arslan failed skill import")
@@ -508,10 +510,12 @@ def _write_folder(folder: Path, prepared: dict, skill_md: str | None = None) -> 
 def _body(prepared: dict, key: str, info: dict, sha: str, stored: list, stored_refs: list) -> str:
     spdx, source = prepared["license"], prepared["license_source"]
     today = datetime.now(timezone.utc).date().isoformat()
+    # CAP8-2: copied from the user's other tool, so no repository, commit or license to name.
+    where = prepared.get("imported_from") or (f"https://github.com/{prepared['full_name']} at {sha[:12]} "
+                                              f"({spdx}{'' if source == 'repo' else ', ' + source})")
     # "verbatim" only when nothing went (UNI1: Tag and control characters do).
     attribution = (f"> Imported {'with hidden characters removed' if info.get('cleaned') else 'verbatim'} "
-                   f"from https://github.com/{prepared['full_name']} at {sha[:12]} "
-                   f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
+                   f"from {where} on {today}.\n\n")
     body = attribution + info["body"]
     if stored:
         body += ("\n\n## Bundled scripts\n"
@@ -527,12 +531,12 @@ def _body(prepared: dict, key: str, info: dict, sha: str, stored: list, stored_r
 
 
 async def _install_row(prepared: dict, key: str, info: dict, body: str, stored: list, stored_refs: list,
-                       source_id: str | None = None) -> dict:
+                       source_id: str | None = None, *, enabled: bool = True) -> dict:
     spdx, source, sha = prepared["license"], prepared["license_source"], prepared["commit"]
     async with db_session.AsyncSessionLocal() as db:
         row = SkillPack(key=key, name=info["name"], category="imported",
                         description=info["description"], tier="safe",
-                        status="registered", body=body, source_id=source_id)
+                        status="registered", body=body, source_id=source_id, enabled=enabled)
         db.add(row)
         await db.commit()
     return {"key": key, "name": info["name"], "description": info["description"],
