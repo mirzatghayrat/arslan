@@ -98,9 +98,11 @@ def _tidy(body: str) -> str:
 
 
 def _files_stored(key: str) -> bool:
-    """Whether skill_import left anything under this key's folder; a dangling link counts (#472 F8)."""
+    """Whether skill_import left anything under this key's folder; a dangling link counts (#472 F8). Or whether a
+    skill folder of that name is in ~/.agents/skills (CAP6a: another tool's, or one being read)."""
     from server.registry.executors import _skill_scripts_root
-    return os.path.lexists(_skill_scripts_root() / key)
+    from server.services import agent_skills
+    return os.path.lexists(_skill_scripts_root() / key) or os.path.lexists(agent_skills.folder(key))
 
 
 async def _conversation_read_outside(conversation_id: str | None) -> bool:

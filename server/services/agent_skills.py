@@ -1,0 +1,365 @@
+"""`~/.agents/skills` as a skill source (v0.1.64 CAP6a, docs/plans/0164/CAP-capabilities.md §CAP6a).
+
+The open standard's folder, shared by several tools: a skill is `<name>/SKILL.md` with its `scripts/` and
+`references/` beside it. Skills Arslan installs go there (skill_import.install_prepared), and skills another tool
+put there are listed too, as "from another tool": a switch and no delete (capability_list refuses the delete on the
+server), and a card before their first use.
+
+What Arslan approved is kept in its own data folder, never in the skill's (`agent_skills.json`): for each skill
+folder it reads, who put it there and the SHA-256 of every file at the time it was approved (`files`; None until a
+card says yes). The folder is read at start and when the Capabilities list loads (`sync`), and again on every
+`read_skill` and skill `run_python` (`checked`), which use exactly the bytes they hashed. A folder whose files no
+longer match is switched off, and switching it on shows the card again.
+
+The registry still lists skills from `SkillPack`: a folder skill has a row like any other (its text, as approved, in
+`body`), and the manifest says which rows are backed by a folder. A row with no manifest entry reads its files from
+the data folder, as every skill did before CAP6a, until the one-time export moves them (CAP6a's second part).
+
+Not read: a folder name that is not a plain key (lowercase letters, digits and hyphens, at most 60), a seed's key,
+the key of a skill Arslan already has from elsewhere, a folder that is a link or holds one, and one past the size
+caps. CAP6b (command_sandbox.cap6b_folders, workspace_paths) keeps the model from reading or writing the folder by
+any other way.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import os
+import re
+import stat
+from pathlib import Path
+
+from sqlalchemy import select
+
+from server.db import session as db_session
+from server.db.models import SkillPack
+from server.registry.skill_trust import OTHER_TOOL, SEEDED
+
+logger = logging.getLogger(__name__)
+
+MANIFEST = "agent_skills.json"
+MAX_SKILLS = 200
+MAX_FILES = 100
+MAX_BYTES = 5_000_000            # one skill's files together
+_KEY = re.compile(r"[a-z0-9][a-z0-9-]{0,59}")
+ARSLAN, OTHER = "arslan", "other"
+#: What the model is told when a folder skill's files no longer match what was approved.
+CHANGED = ("its files in ~/.agents/skills changed since they were approved, so it is switched off. The user can "
+           "look at it again on the Capabilities page.")
+
+
+class Unreadable(Exception):
+    """A skill folder Arslan does not read (a link, too large, no valid SKILL.md)."""
+
+
+class Changed(Exception):
+    """A folder skill whose files differ from what was approved (or that cannot be read now)."""
+
+
+class NotApproved(Exception):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def root() -> Path:
+    """The folder as Arslan looks it up, the one CAP6b closes (command_sandbox.cap6b_spellings, first entry)."""
+    from server.services import command_sandbox
+    return command_sandbox.cap6b_spellings(None)[0]
+
+
+def folder(key: str) -> Path:
+    return root() / key
+
+
+def plain_key(key: str) -> bool:
+    return bool(key) and _KEY.fullmatch(key) is not None
+
+
+# ── the manifest, in Arslan's data folder ──────────────────────────────────────────────────────────────────────
+
+def _manifest_path() -> Path:
+    from server import config
+    return Path(config.data_dir()) / MANIFEST
+
+
+def entries() -> dict[str, dict]:
+    """Every folder skill Arslan reads: {key: {"by": "arslan"|"other", "files": {path: sha256} | None}}. A missing
+    or unreadable manifest is empty: then no row is folder-backed, and nothing reads as approved."""
+    try:
+        data = json.loads(_manifest_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    skills = data.get("skills") if isinstance(data, dict) else None
+    return {k: v for k, v in (skills or {}).items() if plain_key(k) and isinstance(v, dict)}
+
+
+def _save(skills: dict[str, dict]) -> None:
+    path = _manifest_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{MANIFEST}.{os.getpid()}.tmp")
+    temp.write_text(json.dumps({"version": 1, "skills": skills}, indent=1, sort_keys=True), encoding="utf-8")
+    os.replace(temp, path)
+
+
+def record(key: str, *, by: str, files: dict[str, str] | None) -> None:
+    """Load, change and save with no await between, so two writers in the event loop never interleave."""
+    skills = entries()
+    skills[key] = {"by": by, "files": files}
+    _save(skills)
+
+
+def forget(key: str) -> None:
+    skills = entries()
+    if skills.pop(key, None) is not None:
+        _save(skills)
+
+
+def is_folder_skill(key: str) -> bool:
+    return key in entries()
+
+
+def scripts_dir(key: str) -> Path:
+    """Where a skill's bundled scripts are: `scripts/` in its folder, or (not yet exported) the data folder's
+    `skill_scripts/<key>/`, as RunPythonExecutor and the registry's health checks have read them.
+
+    DELETE-BY: v0.1.64, CAP6a's second PR (the one-time export): once every imported skill is in the folder, the
+    data-folder branch here and in `references_dir` goes (keep only what a backup restore needs)."""
+    from server import config
+    return folder(key) / "scripts" if is_folder_skill(key) else Path(config.data_dir()) / "skill_scripts" / key
+
+
+def references_dir(key: str) -> Path:
+    from server import config
+    return (folder(key) if is_folder_skill(key) else Path(config.data_dir()) / "skill_scripts" / key) / "references"
+
+
+# ── reading one folder ─────────────────────────────────────────────────────────────────────────────────────────
+
+def _read_file(path: Path) -> bytes:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as handle:
+        return handle.read(MAX_BYTES + 1)
+
+
+def read_folder(key: str) -> dict:
+    """Every file of the skill's folder, hashed, with the text of each that is UTF-8, and its SKILL.md parsed. A link
+    anywhere in it (the folder itself included) is refused, and each file is opened without following one, so what
+    was hashed is what is used. Raises Unreadable."""
+    from server.services import skill_import
+    files, texts = _read_tree(folder(key))
+    raw = texts.get("SKILL.md")
+    parsed = skill_import.parse_skill_md(raw, f"{key}/SKILL.md") if raw is not None else None
+    if parsed is None:
+        raise Unreadable("no valid SKILL.md")
+    return {"files": files, "texts": texts, "info": parsed}
+
+
+def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
+    try:
+        info = os.lstat(base)
+    except OSError as exc:
+        raise Unreadable("missing") from exc
+    if not stat.S_ISDIR(info.st_mode):
+        raise Unreadable("not a folder")
+    files: dict[str, str] = {}
+    texts: dict[str, str] = {}
+    total = 0
+    for current, dirs, names in os.walk(base, followlinks=False):
+        here = Path(current)
+        for name in sorted(dirs):
+            if (here / name).is_symlink():
+                raise Unreadable("holds a link")
+        for name in sorted(names):
+            path = here / name
+            mode = os.lstat(path).st_mode
+            if not stat.S_ISREG(mode):
+                raise Unreadable("holds a link or a special file")
+            if len(files) >= MAX_FILES:
+                raise Unreadable("too many files")
+            try:
+                data = _read_file(path)
+            except OSError as exc:
+                raise Unreadable("a file can't be read") from exc
+            total += len(data)
+            if total > MAX_BYTES:
+                raise Unreadable("too large")
+            rel = path.relative_to(base).as_posix()
+            files[rel] = hashlib.sha256(data).hexdigest()
+            try:
+                texts[rel] = data.decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+    return files, texts
+
+
+def digest(files: dict[str, str]) -> str:
+    return hashlib.sha256(json.dumps(sorted(files.items())).encode("utf-8")).hexdigest()
+
+
+def _matches(read: dict | None, entry: dict | None) -> bool:
+    """The hash check: the folder as read now is exactly what was approved."""
+    return read is not None and entry is not None and entry.get("files") is not None and read["files"] == entry["files"]
+
+
+def _read_or_none(key: str) -> dict | None:
+    try:
+        return read_folder(key)
+    except Unreadable:
+        return None
+
+
+# ── the registry's view ────────────────────────────────────────────────────────────────────────────────────────
+
+async def sync() -> dict[str, str]:
+    """Read the folder and bring the rows in line: a new skill folder becomes a row "from another tool", switched off
+    until its card; one whose files changed is switched off; one another tool removed goes (Arslan's own stays, off,
+    for the user to delete). Returns each folder skill's status: "ok", "new" (never approved), "changed" or "gone"."""
+    base = root()
+    try:
+        names = sorted(e.name for e in os.scandir(base) if plain_key(e.name))[:MAX_SKILLS] if base.is_dir() else []
+    except OSError:
+        names = []
+    known = entries()
+    status: dict[str, str] = {}
+    async with db_session.AsyncSessionLocal() as db:
+        keys = sorted(set(names) | set(known))
+        packs = {p.key: p for p in (await db.execute(select(SkillPack).where(SkillPack.key.in_(keys)))).scalars()}
+        for key in sorted(set(known) - set(names)):
+            pack = packs.get(key)
+            if known[key].get("by") == OTHER:
+                if pack is not None and pack.category == OTHER_TOOL:
+                    await db.delete(pack)
+                forget(key)
+                continue
+            if pack is not None:
+                pack.enabled = False
+            status[key] = "gone"
+        for key in names:
+            if key in SEEDED:
+                continue
+            pack = packs.get(key)
+            if pack is not None and key not in known and pack.category != OTHER_TOOL:
+                continue                       # a skill Arslan has from elsewhere: the folder never shadows it
+            read = _read_or_none(key)
+            if pack is None:
+                if read is None:
+                    continue
+                info = read["info"]
+                db.add(SkillPack(key=key, name=info["name"], category=OTHER_TOOL, description=info["description"],
+                                 tier="safe", status="registered", body=info["body"], enabled=False))
+                record(key, by=OTHER, files=None)
+                status[key] = "new"
+                continue
+            entry = known.get(key)
+            if entry is None:                  # the manifest was lost: read as never approved
+                entry = {"by": OTHER, "files": None}
+                record(key, **entry)
+            if _matches(read, entry):
+                status[key] = "ok"
+                continue
+            if pack.enabled is not False:
+                pack.enabled = False
+                logger.warning("skill folder %s changed since it was approved; switched off", key)
+            status[key] = "new" if entry.get("files") is None else "changed"
+        await db.commit()
+    return status
+
+
+async def _switch_off(key: str) -> None:
+    async with db_session.AsyncSessionLocal() as db:
+        pack = await db.get(SkillPack, key)
+        if pack is not None and pack.enabled is not False:
+            pack.enabled = False
+            await db.commit()
+
+
+async def checked(key: str) -> dict | None:
+    """For read_skill and run_python: None for a skill that is not folder-backed; otherwise the folder as read now,
+    when it matches what was approved. Raises Changed (and switches the skill off) when it doesn't."""
+    known = entries()
+    if key not in known:
+        return None
+    read = _read_or_none(key)
+    if not _matches(read, known[key]):
+        await _switch_off(key)
+        raise Changed(key)
+    return read
+
+
+async def needs_card(key: str) -> bool:
+    """Whether switching this skill on needs its card first: a folder skill never approved, or changed since."""
+    known = entries()
+    return key in known and not _matches(_read_or_none(key), known[key])
+
+
+def card(key: str) -> dict:
+    """The card before a folder skill's first use, or after its files changed (CAP4's facts: the whole SKILL.md, the
+    scan's findings first, every file). It says the folder is shared. `digest` is what a yes approves. Raises
+    Unreadable."""
+    return _card(key, read_folder(key))
+
+
+def _card(key: str, read: dict) -> dict:
+    from server.services import capability_scan
+    from server.orchestrator import untrusted
+    known = entries().get(key) or {"by": OTHER, "files": None}
+    texts, info = read["texts"], read["info"]
+    references = {p: t for p, t in texts.items() if p.startswith("references/")}
+    code = {p: t for p, t in texts.items() if p != "SKILL.md" and p not in references}
+    scan = capability_scan.scan_skill("\n".join((texts["SKILL.md"], info["frontmatter"], info["name"],
+                                                 info["description"], info["body"])), code, references)
+    return {"kind": "skill_folder", "key": key, "name": info["name"], "description": info["description"],
+            "origin": "installed" if known.get("by") == ARSLAN else "other_tool",
+            "changed": known.get("files") is not None, "folder": f"~/.agents/skills/{key}",
+            "skill_md": texts["SKILL.md"], "hidden": untrusted.hidden_summary(info["body"]),
+            "files": sorted(read["files"]), "unscanned": sorted(p for p in read["files"] if p not in texts),
+            "scan": scan, "digest": digest(read["files"]),
+            # The folder is shared by several tools: what is installed there, others may read and use (CAP6a).
+            "shared_folder": True}
+
+
+async def approve(key: str, shown: str) -> None:
+    """The card's yes: record exactly the files the card showed (by `shown`, its digest) and switch the skill on, its
+    row's text from that SKILL.md. Refused when the files changed after the card, or the scan blocks them."""
+    known = entries()
+    if key not in known:
+        raise NotApproved("not_found")
+    try:
+        read = read_folder(key)                # one read: what is checked here is what is recorded
+    except Unreadable as exc:
+        raise NotApproved("unreadable") from exc
+    now = _card(key, read)
+    if now["digest"] != shown:
+        raise NotApproved("changed")
+    if now["scan"]["level"] == "blocked":
+        raise NotApproved("blocked")
+    async with db_session.AsyncSessionLocal() as db:
+        pack = await db.get(SkillPack, key)
+        if pack is None:
+            raise NotApproved("not_found")
+        info = read["info"]
+        pack.name, pack.description, pack.body, pack.enabled = info["name"], info["description"], info["body"], True
+        record(key, by=known[key].get("by") or OTHER, files=read["files"])
+        await db.commit()
+
+
+def write_new(base: Path, expected: dict[str, str]) -> dict[str, str]:
+    """Write a skill Arslan installs into its new folder (made by the caller): each file created new, never through
+    a link, then the folder read back. Returns the hashes the manifest keeps; ValueError when the folder holds
+    anything else."""
+    for rel in sorted(expected):
+        target = base / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            out.write(expected[rel])
+    try:
+        found = _read_tree(base)[0]
+    except Unreadable as exc:
+        raise ValueError(f"the skill's folder does not match what was checked: {exc}") from exc
+    want = {rel: hashlib.sha256(text.encode("utf-8")).hexdigest() for rel, text in expected.items()}
+    if found != want:
+        raise ValueError("the skill's folder does not match what was checked")
+    return want
