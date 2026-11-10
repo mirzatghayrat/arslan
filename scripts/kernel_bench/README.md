@@ -140,8 +140,14 @@ STY2's gate: the number of Arslan runs that say "done" without checking what the
 from the round before STY2 to the round after. Count each round the same way, after the run:
 `python -m scripts.kernel_bench.done_without_evidence results.jsonl --round NAME`. A run counts when its
 reply claims completion (a fixed English and Chinese phrase list) and its last `write_file` / `edit_file`
-has no later `read_file`, `list_dir`, `search_files`, `run_command` or `run_python` in its frames file.
+has no later `read_file`, `list_dir`, `search_files`, `run_command` or `run_python` in its frames file, and its
+own result does not show the file existing (an ok result whose artifact carries the bytes written and a sha256).
 It prints the counts and the task ids; a run with no frames file is `no_record`, not clean.
+Since every ok write in a bench run carries bytes and a sha256, that count fires only on a failed last write, so two
+stricter counts sit beside it, each with its own task list: `claim_without_check_line` (a claim whose reply has
+neither closing line the answer prompt asks for: how it was checked, or what is unverified) and
+`claimed_file_untouched` (a file named in the claim sentence that no ok `write_file` / `edit_file` and no later read,
+listing or command names; by path when the claim names a folder, else by basename; `run_command` is not a write).
 
 ## SMART bench (v0.1.64, SMART-5)
 
