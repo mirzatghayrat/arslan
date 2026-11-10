@@ -536,7 +536,7 @@ def test_baseline_fresh_import_validates_independent_trust(tmp_path, change):
             "0aa7e22f5faefc3c132c02f8c8fe77561b0acb7214a9d4ba43112f42ecf5b82d, recorded " + "0" * 64)
     elif change == "current-source":
         source.write_bytes(source.read_bytes() + b"\n# Changed source bytes.\n")
-        expected_message = "current/shell_text.py: expected 9945605da48225cb5d6cf609f3419c61217a6ece6c7da7700b05a663d7e7c560, recorded "
+        expected_message = "current/shell_text.py: expected 83d99db09fb9805726dfc58b679426f0ba8f599eddeeac7ab6f8b1bbbc0f4571, recorded "
     elif change.startswith("source-commits-"):
         header["source_commits"][change.removeprefix("source-commits-")] = "0" * 40
         expected_message = "Unexpected baseline sources"

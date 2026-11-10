@@ -50,7 +50,7 @@ def mutate_loader(source, mode):
             replacement = (f'    assert header["source_commits"]["{key}"] == SOURCE_COMMITS["{key}"], '
                            '"Unexpected baseline sources"\n')
         return source.replace(line, replacement)
-    start = source.index("    # This source is unchanged")
+    start = source.index("    # The current source is independently pinned")
     end = source.index("\n\ndef decode", start)
     if mode == "SKIP-CURRENT-SOURCE-HASH":
         return source[:start] + source[end:]
