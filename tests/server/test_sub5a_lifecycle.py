@@ -49,11 +49,14 @@ async def _fresh(monkeypatch, execution_db):    # torn down before the database 
     yield
     # What is still held stops here and ends while the test's loop runs.
     monkeypatch.setattr(sub_sessions, "ended", lambda job, text: None)    # a job cancelled here reports nothing
-    tasks = [job.task for job in background_jobs._jobs.values() if job.task and not job.task.done()]
-    tasks += [task for task in sub_sessions._summaries.values() if not task.done()]
-    for task in tasks:
-        task.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
+    for _ in range(5):                  # a summary cancelled mid-start may have started its job: until none is left
+        tasks = [job.task for job in background_jobs._jobs.values() if job.task and not job.task.done()]
+        tasks += [task for task in sub_sessions._summaries.values() if not task.done()]
+        if not tasks:
+            break
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
     for module in (background_jobs, sub_sessions, approvals):
         module._reset_for_tests()
     from tests.server import test_sub4_report
@@ -349,6 +352,8 @@ async def test_a_sub_session_the_stopped_turn_starts_afterwards_never_runs(runs,
         with execution_context.bind_run(run_id + 1):
             await sub_sessions.start(ROOT, COVER, outside_seen=False)
         assert [job.goal for job in _children()] == [COVER]
+        run_registry.unregister(run_id, ROOT)
+        await _wait(_settled)
     finally:
         run_registry.unregister(run_id, ROOT)
         turn.cancel()
