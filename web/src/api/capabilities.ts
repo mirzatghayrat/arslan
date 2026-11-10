@@ -123,6 +123,11 @@ export const capabilitiesApi = {
   /** CAP6a: the card's yes for a skill in ~/.agents/skills: exactly the files the card showed (409 when they changed). */
   approveSkillFolder: (key: string, digest: string) =>
     request<CapabilityRow>(`/skill-folder/${encodeURIComponent(key)}/approve`, json("POST", { digest })),
+  /** CAP6a part 2: how many imported skills the one-time export moved to ~/.agents/skills (`count`) and how many stay
+   *  in Arslan's own folder (`kept`), until the line saying so was shown once (then zeros); `exportNoticeSeen`
+   *  records that it was. */
+  exportNotice: () => request<{ count: number; kept: number }>("/skill-export-notice"),
+  exportNoticeSeen: () => request<{ ok: boolean }>("/skill-export-notice/seen", { method: "POST" }),
   /** v0.1.64 CAP3a: delete one row (only a `deletable` one; the server refuses the rest). */
   deleteRow: (key: string) => request<{ ok: boolean }>(`/capabilities/${rowPath(key)}`, { method: "DELETE" }),
   /** CAP8-1: read what Claude Code and Codex have configured, on the user's click. */

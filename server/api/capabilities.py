@@ -51,6 +51,21 @@ async def approve_skill_folder(key: str, body: Approve) -> dict:
     return row or {"key": f"skill:{key}"}
 
 
+@router.get("/skill-export-notice")
+async def skill_export_notice() -> dict:
+    """CAP6a part 2: how many imported skills the one-time export moved to ~/.agents/skills (`count`) and how many it
+    left in Arslan's own folder (`kept`), until the Capabilities page has shown its one line about it (then zeros)."""
+    from server.services import agent_skills
+    return agent_skills.export_notice()
+
+
+@router.post("/skill-export-notice/seen")
+async def skill_export_notice_seen() -> dict:
+    from server.services import agent_skills
+    agent_skills.export_notice_shown()
+    return {"ok": True}
+
+
 @router.delete("/capabilities/{key:path}")
 async def remove_capability(key: str) -> dict:
     """v0.1.64 CAP3a-1: delete what the user installed, Arslan wrote or the user added by hand; refuse the rest
