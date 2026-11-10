@@ -374,6 +374,17 @@ async def lifespan(app: FastAPI):
 
     await seed_registry()
 
+    # CAP6a part 2: skills imported before CAP6a go to ~/.agents/skills once, here: before the folder is first read
+    # and before any request, so nothing changes the rows or the folder meanwhile (agent_skills.export_imported has
+    # the steps and what a stop at each leaves). Its file work runs in a worker thread. A failure leaves every skill
+    # working from the data folder as before, and never blocks boot.
+    try:
+        from server.services import agent_skills
+
+        await agent_skills.export_imported()
+    except Exception as exc:  # noqa: BLE001 — never blocks boot; the next start tries again
+        logger.warning("imported skills were not exported to ~/.agents/skills at boot (non-fatal): %s", exc)
+
     # CAP6a: ~/.agents/skills is read at start, after the seeds: a skill whose files changed is switched off.
     try:
         from server.services import agent_skills

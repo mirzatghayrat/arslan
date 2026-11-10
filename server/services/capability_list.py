@@ -555,6 +555,9 @@ def skill_to_trash(pack) -> None:
             raise NotRemovable(pack.key)
         capability_install.to_trash(folder, prefix="Arslan skill")
         agent_skills.forget(pack.key)
+        # CAP6a part 2: an exported skill's copy in the data folder (the export leaves it), which run_python would
+        # otherwise still load under the key once the row is gone. to_trash moves a link itself.
+        capability_install.to_trash(config.data_dir() / "skill_scripts" / pack.key, prefix="Arslan skill files")
         return
     folder = config.data_dir() / "skill_scripts" / pack.key
     if folder.is_symlink():

@@ -47,6 +47,13 @@ ALLOWED_LICENSES = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC",
                     "Unlicense", "CC0-1.0", "0BSD"}
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
+#: The most a SKILL.md frontmatter, and its name and description as YAML reads them, may hold before they are parsed
+#: and cleaned (#795 review: a 5 MB plain scalar took seconds to parse and clean, on the event loop in the dossier
+#: and at start). The open standard allows 64 characters for a name and 1,024 for a description, and the cleaner
+#: keeps 100 and 300; these leave room for marks and escapes, never for megabytes. Past them: not a valid SKILL.md.
+_MAX_FRONTMATTER = 20_000
+_MAX_NAME = 1_000
+_MAX_DESCRIPTION = 5_000
 
 
 def _data_dir() -> Path:
@@ -72,7 +79,7 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
     name's ASCII letters and digits; a name with none (Chinese, for example) takes its folder's, else a short
     hash of `path`, never "" (#539 review 9: "" put the files at skill_scripts/'s root)."""
     m = _FRONTMATTER_RE.match(raw or "")
-    if not m:
+    if not m or len(m.group(1)) > _MAX_FRONTMATTER:
         return None
     try:
         meta = yaml.load(m.group(1), Loader=_NoAliases) or {}
@@ -83,6 +90,8 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
     # And a name or description is a plain value, never a list or a mapping (only those are turned into text).
     if isinstance(meta["name"], (list, dict)) or isinstance(meta["description"], (list, dict)):
         return None
+    if len(str(meta["name"])) > _MAX_NAME or len(str(meta["description"])) > _MAX_DESCRIPTION:
+        return None                                  # before the cleaner, which walks every character
     # UNI1: the name and description through the one name cleaner; the body keeps ordinary text, and loses
     # only Tag and control characters (`cleaned` says whether it lost any).
     from server.orchestrator import untrusted
@@ -454,27 +463,29 @@ async def install_prepared(prepared: dict, *, source_id: str | None = None) -> d
     if os.path.lexists(leftover):
         capability_install.to_trash(leftover, prefix="Arslan leftover skill files")
     folder = agent_skills.folder(key)
-    if agent_skills.still_arslans(key):
-        # Arslan's own folder with no row (a removal cut short), exactly as it installed it: a leftover too, never
-        # joined to the new skill. One that differs from its hashes may be someone else's now: refused below.
-        capability_install.to_trash(folder, prefix="Arslan leftover skill files")
-        agent_skills.forget(key)
     body = _body(prepared, key, info, sha, stored, stored_refs)
-    head = yaml.safe_dump({"name": info["name"], "description": info["description"]}, allow_unicode=True,
-                          sort_keys=False)
-    folder.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        folder.mkdir()
-    except FileExistsError:
-        raise ValueError(f"a skill folder named '{key}' is already in ~/.agents/skills (another tool's)") from None
-    try:
-        files = agent_skills.write_new(folder, _expected(prepared, f"---\n{head}---\n\n{body}\n"))
-        agent_skills.record(key, by=agent_skills.ARSLAN, files=files)
-        return await _install_row(prepared, key, info, body, stored, stored_refs, source_id)
-    except BaseException:
-        agent_skills.forget(key)
-        capability_install.to_trash(folder, prefix="Arslan failed skill import")
-        raise
+    # Under the manifest's lock from the folder to the row's commit: a reload in between (agent_skills.sync) would
+    # find the folder and its hashes with no row yet, and take it for another tool's skill (#795 review).
+    async with agent_skills.manifest_lock():
+        if agent_skills.still_arslans(key):
+            # Arslan's own folder with no row (a removal cut short), exactly as it installed it: a leftover too,
+            # never joined to the new skill. One that differs from its hashes may be someone else's now: refused.
+            capability_install.to_trash(folder, prefix="Arslan leftover skill files")
+            agent_skills.forget(key)
+        folder.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            raise ValueError(f"a skill folder named '{key}' is already in ~/.agents/skills (another tool's)") from None
+        try:
+            skill_md = agent_skills.skill_md(info["name"], info["description"], body)
+            files = agent_skills.write_new(folder, _expected(prepared, skill_md))
+            agent_skills.record(key, by=agent_skills.ARSLAN, files=files)
+            return await _install_row(prepared, key, info, body, stored, stored_refs, source_id)
+        except BaseException:
+            agent_skills.forget(key)
+            capability_install.to_trash(folder, prefix="Arslan failed skill import")
+            raise
 
 
 def _expected(prepared: dict, skill_md: str | None = None) -> dict[str, str]:
