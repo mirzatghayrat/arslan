@@ -61,6 +61,7 @@
   "task_progress": { "family": "plan" },
   "update_plan": { "family": "plan" },
   "use_tool": { "family": "capability", "arg": "name" },
+  "verify": { "family": "command", "arg": "folder" },
   "web_extract": { "family": "web", "arg": "url", "host": true },
   "web_search": { "family": "search", "arg": "query" },
   "whats_new": { "family": "read" },

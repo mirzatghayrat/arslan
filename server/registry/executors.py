@@ -39,6 +39,7 @@ from server.registry.net_pin import _BlockedHost
 from server.registry.search_providers import (AnthropicNativeProvider, DeepSeekNativeProvider, DuckDuckGoHtmlProvider,
                                               SearchBlocked, deepseek_native_base, get_provider)
 from server.services import terminal_exec as _terminal_exec
+from server.registry import hands_tools as _hands_tools
 from server.services import chart_echarts, settings_service
 
 logger = logging.getLogger(__name__)
@@ -888,6 +889,49 @@ class RunCommandExecutor:
         return result
 
 
+class VerifyExecutor:
+    """CAP10 (v0.1.64): a project's smoke test, run once in the sandbox on a copy of a folder in the working folder
+    (server/services/project_verify.py). It never runs outside the sandbox: there is no switch for that."""
+
+    key = "verify"
+    # One network card at most, the copy, then the run under its own limit.
+    timeout_s = _hands_tools.CARD_S + _terminal_exec.MAX_TIMEOUT_S + 60
+
+    async def execute(self, args: dict) -> dict:
+        from arslan import execution_budget
+        from server.db import session as db_session
+        from server.services import background_jobs, personal_context, project_verify, terminal_exec, workspace_paths
+        async with db_session.AsyncSessionLocal() as db:
+            root = await settings_service.workspace_dir(db)
+            default_read = await settings_service.default_read_enabled(db)
+        if root is None:
+            return {"ok": False, "executed": False, "error": "no workspace is configured — set one in Settings first"}
+        try:
+            folder = workspace_paths.resolve_in_workspace(str(args.get("folder") or "."), root)
+        except (workspace_paths.PathEscape, workspace_paths.SecretFile) as exc:
+            return {"ok": False, "executed": False, "error": str(exc)}
+        if not folder.is_dir():
+            return {"ok": False, "executed": False, "error": f"not a folder: {args.get('folder')}"}
+        limit = terminal_exec.timeout_of(args.get("timeout_s") or project_verify.DEFAULT_TIMEOUT_S)
+        budget = execution_budget.current()
+        if budget is not None:     # as run_command: the run's own limit stops it before the turn's does
+            left = budget.remaining_seconds()
+            limit = min(limit, int(left - _COMMAND_TURN_RESERVE_S))
+            if limit < terminal_exec.MIN_TIMEOUT_S:
+                return {"ok": False, "code": "time_limit", "executed": False,
+                        "error": f"not started: {int(left)} s are left in this run, too little for a test run"}
+        closed, readable = [], []
+        if not default_read:       # 0.1.59: closed Desktop/Documents/Downloads stay closed to the run too
+            closed = workspace_paths.green_roots()
+            readable = await _project_folders()
+        ctx = personal_context.current()
+        return await project_verify.run(folder, network=args.get("network") is True,
+                                        why=str(args.get("why") or "").strip()[:300], timeout_s=limit,
+                                        closed=closed, readable=readable,
+                                        conversation_id=ctx.conversation_id if ctx else None,
+                                        job_id=background_jobs._inside_job.get())
+
+
 async def _project_folders() -> list:
     """Active projects' folders (0.1.59): they stay open to commands when Desktop, Documents and
     Downloads are closed, so a project kept in Documents keeps working."""
@@ -1026,7 +1070,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
     RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(), MyStatusExecutor(),
-    FindCapabilityExecutor(),
+    FindCapabilityExecutor(), VerifyExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),

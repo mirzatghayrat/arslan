@@ -47,7 +47,7 @@ BUILT_IN_TOOLS = frozenset("""
     mac_applescript mac_list_shortcuts mac_run_shortcut memory_note my_status read_file read_skill recall
     remember render_chart render_deck run_command run_python scan_local_network schedule_task
     search_files ssh_probe ssh_run start_background_work stop_background_work task_progress
-    web_extract web_search whats_new write_file
+    verify web_extract web_search whats_new write_file
     ask_user_choice propose_capability propose_plan_change update_plan
 """.split())
 

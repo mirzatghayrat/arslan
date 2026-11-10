@@ -2,8 +2,8 @@
 
 "Understood" is an allowlist: a small part of bash 3.2, the shell terminal_exec runs (`/bin/bash -p -c`). A command
 is understood only when all of its text is in that part; otherwise `why` says what stopped the reader. Refusing costs
-little, so a form bash reads in a way that is hard to follow is refused, not modelled. The named policy rules also
-read its commands; the command gate does not yet use `understood`.
+little, so a form bash reads in a way that is hard to follow is refused, not modelled. The named policy rules read
+its commands and folders; the command gate asks when the reader does not understand the text.
 
 It reads:
   - words of unquoted characters, backslash escapes, '…' and "…"; $NAME, ${NAME}, the special parameters and $( … ),
@@ -28,19 +28,32 @@ it, and each wrapper's command after the wrapper. It goes by name, and in any ca
 ignores case. It does not say what a named program goes on to start by itself: `make`, `git`, a Python module or a shell's
 startup files may start anything, and a copy of bash under another name is just that name.
 
+`folders` says, for each entry of `commands`, every folder it may run in, and `writes` every file a redirection writes
+with the folders it is opened in: "" is the work folder, and anything else is where a `cd` or `pushd` with a written-out
+target leads from it, joined as text and folded logically (`.` dropped, `x/..` cancelled). Each call starts a fresh
+shell in the work folder. A change that may fail (after `;`, `||`, a newline or `!`) leaves both folders possible;
+only `&&` gives the new one alone.
+A change in a pipeline segment, a ( … ), a $( … ), a bash -c or a backgrounded list stays there. A change the reader
+can't follow makes folder observations unknown for the rest of the text, without changing command parsing.
+An empty folder tuple means unknown; prefix parsing never follows folder changes.
+
 A read stops at MAX_TEXT characters, MAX_COMMANDS entries in `commands` and MAX_DEPTH levels; past any of them the
 command is not understood and `capped` is set. Its time grows linearly with the text: nothing is read again except a
 `bash -c` script, once per level.
 """
 from __future__ import annotations
 
+import posixpath
 import re
 import unicodedata
 from dataclasses import dataclass
+from typing import Callable
 
 MAX_TEXT = 8000             # terminal_policy.MAX_COMMAND_CHARS forbids anything longer
 MAX_COMMANDS = 256
 MAX_DEPTH = 8               # a level is a $( … ), a ( … ), any other compound command, a bash -c or a wrapper
+MAX_FOLDERS = 8             # folders a command may run in
+_FOLDER_CHANGES = frozenset({"cd", "pushd", "popd"})
 
 _META = frozenset(" \t\n;&|()<>")
 _REDIRECTIONS = ("&>", "<<<", "<<-", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">")
@@ -112,6 +125,30 @@ class Reading:
     capped: bool = False       # past MAX_TEXT, MAX_COMMANDS or MAX_DEPTH: nothing more of it should be built
     # Each command as its words with quotes removed (an expansion shows as written). Empty unless `understood`.
     commands: tuple[tuple[str, ...], ...] = ()
+    folders: tuple[tuple[str, ...], ...] = ()                   # one per command; "" is the work folder
+    writes: tuple[tuple[str, tuple[str, ...]], ...] = ()        # (file, its folders) for each redirection that writes
+
+    # Ordered effect observations; None is a write or an assignment of unknown effect.
+    effects: tuple[tuple[str, ...] | None, ...] = ()
+    # Events in [start, end) also depend on [other_start, other_end), e.g. another pipeline segment.
+    effect_scopes: tuple[tuple[int, int, int, int], ...] = ()
+
+
+class _Out:
+    __slots__ = ("commands", "folders", "writes", "fold_partial", "fold_guard", "effects", "effect_scopes", "backgrounds",
+                 "track_folders", "folders_known")
+
+    def __init__(self, fold_partial: bool = True, fold_guard=None, *, track_folders=False):
+        self.track_folders = track_folders
+        self.folders_known = True
+        self.fold_partial = fold_partial
+        self.fold_guard = fold_guard
+        self.effects = []
+        self.effect_scopes = []
+        self.backgrounds = []
+        self.commands: list[tuple[str, ...]] = []
+        self.folders: list[tuple[str, ...]] = []
+        self.writes: list[tuple[str, tuple[str, ...]]] = []
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -160,13 +197,18 @@ class _Word:
 
 
 class _Reader:
-    def __init__(self, text: str, depth: int, commands: list[tuple[str, ...]], in_substitution: bool = False):
+    def __init__(self, text: str, depth: int, out: _Out, in_substitution: bool = False,
+                 here: frozenset[str] = frozenset({""})):
         self.s = text
         self.i = 0
         self.depth = depth
         self._check_depth()
-        self.commands = commands             # shared by every nested reading
+        self.out = out                       # shared by every nested reading
+        self.commands = out.commands
         self.in_substitution = in_substitution
+        self.here = here                     # the folders the next command may run in
+        self.failed: frozenset[str] = frozenset()   # where it is instead if a change of folder since failed
+        self.loops = 0
         self.heredocs: list[tuple[str, bool, bool]] = []    # (delimiter, quoted, strip tabs) waiting for a newline
         self.peeked = None
 
@@ -199,6 +241,7 @@ class _Reader:
 
     def peek(self):
         if self.peeked is None:
+            self.peek_effect_start = len(self.out.effects)
             self.peeked = self._token()
         return self.peeked
 
@@ -336,7 +379,7 @@ class _Reader:
         if nxt == "[" or s.startswith("((", i + 1):
             raise _NotUnderstood("it uses shell arithmetic")
         if nxt == "(":
-            inner = _Reader(s, self.depth + 1, self.commands, in_substitution=True)
+            inner = _Reader(s, self.depth + 1, self.out, in_substitution=True, here=self.here)
             inner.i = i + 2
             inner.list_until(closing=True, may_be_empty=True)
             inner.take()
@@ -400,27 +443,52 @@ class _Reader:
                 return
             if not separated:
                 raise _NotUnderstood("its syntax is not one Arslan reads")
+            effect_start = self.peek_effect_start
+            before = (self.here, self.failed)
             self._and_or()
             empty = separated = False
             if self.peek() in (("op", ";"), ("op", "&")):
-                self.take()
+                if self.take() == ("op", "&"):
+                    self.out.backgrounds.append((effect_start, len(self.out.effects)))
+                    self.here, self.failed = before      # a backgrounded list runs in a subshell
                 separated = True
+
+    def _settle(self) -> None:
+        self.here, self.failed = self.here | self.failed, frozenset()
 
     def _and_or(self) -> None:
         self._pipeline()
+        exact = True                             # every pipeline so far succeeded, if the next one runs
         while self.peek() in (("op", "&&"), ("op", "||")):
-            self.take()
+            exact = self.take() == ("op", "&&") and exact
+            if not exact:
+                self._settle()
             self._skip_newlines()
             self._pipeline()
+        self._settle()
 
     def _pipeline(self) -> None:
-        if self._at("!"):
+        self.peek()
+        start = self.peek_effect_start
+        negated = self._at("!")
+        if negated:
             self.take()
+        before = (self.here, self.failed)
         self._command()
+        segments = [(start, len(self.out.effects))]
         while self.peek() == ("op", "|"):
+            self.here, self.failed = before      # each segment runs in a subshell of its own
             self.take()
             self._skip_newlines()
+            start = self.peek_effect_start
             self._command()
+            segments.append((start, len(self.out.effects)))
+            self.here, self.failed = before
+        for start, end in segments:
+            if end < segments[-1][1]:
+                self.out.effect_scopes.append((start, end, end, segments[-1][1]))
+        if negated:
+            self._settle()
 
     def _command(self) -> None:
         token = self.peek()
@@ -440,19 +508,24 @@ class _Reader:
         if compound is None:
             self._simple()
             return
+        start = len(self.out.effects)
         self.depth += 1
         self._check_depth()
         compound(self)
         self.depth -= 1
+        end = len(self.out.effects)
         while self.peek()[0] == "redir":
             self._redirection()
+        self.out.effect_scopes.append((start, end, end, len(self.out.effects)))
 
     def _subshell(self) -> None:
         self.take()
         if self.s.startswith("(", self.i):
             raise _NotUnderstood("it uses shell arithmetic")
+        before = (self.here, self.failed)
         self.list_until(closing=True)
         self.take()
+        self.here, self.failed = before
 
     def _group(self) -> None:
         self.take()
@@ -494,14 +567,18 @@ class _Reader:
         if not self._at("do"):
             raise _NotUnderstood("its for loop is not one Arslan reads")
         self.take()
+        self.loops += 1
         self.list_until(_DONE)
+        self.loops -= 1
         self.take()
 
     def _loop(self) -> None:
         self.take()
+        self.loops += 1                          # a change of folder in a loop moves again each time round
         self.list_until(_DO)
         self.take()
         self.list_until(_DONE)
+        self.loops -= 1
         self.take()
 
     def _case(self) -> None:
@@ -557,6 +634,9 @@ class _Reader:
                 raise _NotUnderstood("its redirection opens a network socket")
             if op in ("<&", ">&") and word.text.startswith("-") and word.text != "-":
                 raise _NotUnderstood("its redirection has text after the -, which bash reads as a program")
+            if op != "<" and not (op in ("<&", ">&") and (word.text.isdigit() or word.text == "-")):
+                self.out.writes.append((word.text, tuple(sorted(self.here)) if self.out.folders_known else ()))
+                self.out.effects.append(None)
 
     def _simple(self) -> None:
         words: list[_Word] = []
@@ -570,6 +650,7 @@ class _Reader:
             word = self.take()[1]
             if not words and word.assigns is not None:
                 _check_assigned(word.assigns)
+                self.out.effects.append(None)
             else:
                 words.append(word)
             if self.peek() == ("op", "("):
@@ -593,8 +674,12 @@ class _Reader:
             if len(self.commands) >= MAX_COMMANDS:
                 raise _NotUnderstood("it has more commands than Arslan reads before running", capped=True)
             self.commands.append(tuple(w.text for w in words))
+            self.out.effects.append(tuple(w.text for w in words))
+            self.out.folders.append(tuple(sorted(self.here)) if self.out.folders_known else ())
             base = name.lower()
             args = words[1:]
+            if self.out.track_folders and self.out.folders_known and base in _FOLDER_CHANGES:
+                self._change_folder(base, args, layers)
             if base in _OTHER_BUILTINS:
                 raise _NotUnderstood(f"it uses `{base}`, which changes how the shell reads what follows")
             if base in SAFE_BUILTINS:
@@ -615,6 +700,31 @@ class _Reader:
             if layers > MAX_DEPTH:
                 raise _NotUnderstood("it nests commands deeper than Arslan reads", capped=True)
 
+    def _change_folder(self, base: str, args: list[_Word], layers: int) -> None:
+        """S2a-3 step 4: where a cd or pushd leads, from every folder the shell may be in."""
+        value = args[0].literal if len(args) == 1 and base != "popd" else None
+        if (layers or self.loops or not value or value.startswith(("-", "+"))
+                or (value.startswith("~") and (args[0].quoted or not (value == "~" or value.startswith("~/"))))):
+            self.out.folders_known = False
+            return
+        joined = (value if value.startswith(("/", "~")) or not f else f"{f.rstrip('/')}/{value}"
+                  for f in self.here)
+        def select(folder):
+            normal = _logical_folder(folder)
+            prefix = _fold_prefix(folder)
+            # The optional policy guard runs at the move, not at a later endpoint. The first
+            # reading has already collected effects from all concurrent segments and redirects.
+            if (self.out.fold_guard is not None and ".." in folder.split("/") and normal != folder
+                    and not normal.startswith(("/", "~")) and ".." not in normal.split("/")):
+                return normal if self.out.fold_guard(prefix, len(self.out.effects)) else folder
+            return normal if self.out.fold_partial or not prefix else folder
+
+        moved = frozenset(select(f) for f in joined)
+        if len(moved | self.here | self.failed) > MAX_FOLDERS:
+            self.out.folders_known = False
+            return
+        self.failed, self.here = self.failed | self.here, moved
+
     def _program(self, base: str, args: list[_Word]) -> None:
         if base == "find":
             for w in args:
@@ -627,9 +737,46 @@ class _Reader:
             if base in ("bash", "sh") and first in ("-c", "-lc"):
                 if not _names_something(args[1:]):
                     raise _NotUnderstood("it runs a shell script that is not written out")
-                _Reader(args[1].text, self.depth + 1, self.commands).read_all()
+                _Reader(args[1].text, self.depth + 1, self.out, here=self.here).read_all()
             elif not (first == "-m" and base.startswith(_PYTHONS) and _names_something(args[1:])):
                 raise _NotUnderstood(f"it runs a {base} script whose code the text does not say")
+
+
+def _logical_folder(folder: str) -> str:
+    """Bash's default logical cd, without resolving the work folder or home on disk.
+
+    Home is an unknown anchor: a parent beyond it must remain outside, just like a leading parent beyond the work
+    folder. This folds only the shell's folder; delete operands keep their own parent-component check.
+    """
+    home = folder == "~" or folder.startswith("~/")
+    collapsed = re.sub(r"/+", "/", folder)
+    normal = posixpath.normpath(collapsed[2:] if home else collapsed)
+    if home:
+        return "~" if normal == "." else f"~/{normal}"
+    return "" if normal == "." else normal
+
+
+def _fold_prefix(folder: str) -> str:
+    """Work-relative prefix retained by a cancellation; empty means no containment check.
+
+    Only surviving components retained at a cancellation need checking.
+    Home, absolute and leading-parent destinations already remain outside the work anchor.
+    This is text-only; policy decides whether a retained prefix is safe on disk.
+    """
+    normal = _logical_folder(folder)
+    if not normal or normal.startswith(("/", "~")) or normal == ".." or normal.startswith("../"):
+        return ""
+    stack: list[str] = []
+    kept = 0
+    for part in folder.split("/"):
+        if part in ("", "."):
+            continue
+        if part == ".." and stack and stack[-1] != "..":
+            stack.pop()
+            kept = len(stack)
+        else:
+            stack.append(part)
+    return "/".join(stack[:kept])
 
 
 def _names_something(args: list[_Word]) -> bool:
@@ -699,27 +846,48 @@ def _unseen(c: str) -> bool:
     return c not in " \t\n" and unicodedata.category(c)[0] in "CZ"
 
 
-def read_prefix(text: str) -> PrefixReading:
-    """Read once, retaining parsed words separately from whole-input acceptance."""
+def _read_commands(text: str, out: _Out) -> PrefixReading:
+    """Read once into shared observations, retaining commands on refusal only for additive rules."""
     if not isinstance(text, str):
         return PrefixReading(refused=True, why="it is not text")
     if len(text) > MAX_TEXT:
         return PrefixReading(refused=True, why="it is longer than Arslan reads", capped=True)
     if any(map(_unseen, set(text))):
         return PrefixReading(refused=True, why="it contains control or invisible characters")
-    commands: list[tuple[str, ...]] = []
     try:
-        _Reader(text, 0, commands).read_all()
+        _Reader(text, 0, out).read_all()
     except _NotUnderstood as exc:
-        return PrefixReading(commands=tuple(commands), refused=True, why=exc.why, capped=exc.capped)
+        return PrefixReading(commands=tuple(out.commands), refused=True, why=exc.why, capped=exc.capped)
     except RecursionError:
-        return PrefixReading(commands=tuple(commands), refused=True,
+        return PrefixReading(commands=tuple(out.commands), refused=True,
                              why="it nests commands deeper than Arslan reads", capped=True)
-    return PrefixReading(commands=tuple(commands))
+    return PrefixReading(commands=tuple(out.commands))
 
 
-def read(text: str) -> Reading:
-    """Whether `text` is in the grammar above; a refusal never exposes partial commands."""
-    prefix = read_prefix(text)
-    return Reading(understood=not prefix.refused, why=prefix.why, capped=prefix.capped,
-                   commands=() if prefix.refused else prefix.commands)
+def _read_prefix(text: str) -> PrefixReading:
+    """Prefix mode has no folder-tracking side effects, including in nested readers."""
+    return _read_commands(text, _Out())
+
+
+def read_prefix(text: str) -> PrefixReading:
+    """Read commands before a refusal for additive policy checks only."""
+    return _read_prefix(text)
+
+
+def read(text: str, *, fold_partial: bool = True,
+         fold_guard: Callable[[str, int], bool] | None = None) -> Reading:
+    """Read commands and folders; a refusal never exposes partial observations.
+
+    With fold_partial=False, retain work-relative partial cancellations as written.
+    Policy can supply fold_guard(prefix, effect_position) on a second reading to select
+    candidates using the first reading's effect scopes. Filesystem checks belong to that
+    optional policy callback; the default reader remains filesystem-free.
+    """
+    out = _Out(fold_partial, fold_guard, track_folders=True)
+    prefix = _read_commands(text, out)
+    if prefix.refused:
+        return Reading(understood=False, why=prefix.why, capped=prefix.capped)
+    # A background part can still be running when any later part of this text starts.
+    out.effect_scopes.extend((start, end, end, len(out.effects)) for start, end in out.backgrounds)
+    return Reading(understood=True, commands=tuple(out.commands), folders=tuple(out.folders), writes=tuple(out.writes),
+                   effects=tuple(out.effects), effect_scopes=tuple(out.effect_scopes))

@@ -34,15 +34,18 @@ use the original bounded flattened matcher for that command. Argument spelling
 and case are preserved; only command words are normalized. Coverage gaps can
 therefore cost a confirmation, but cannot remove the original protection.
 
-Everything here is a pure function of the command text. It is a guard against mistakes and
+Folder cancellation also checks retained prefixes in a supplied working folder. It is a guard against mistakes and
 against instructions smuggled in through web pages, not a sandbox: the sandbox (S2a-1) is what
 holds a layer ③ command, and a command outside it runs with the user's own permissions.
 """
 from __future__ import annotations
 
 import functools
+import os
+import posixpath
 import re
 import shlex
+import stat
 from dataclasses import dataclass
 
 from server.services import shell_grammar, shell_text
@@ -909,6 +912,165 @@ def _deletes_outside(texts: tuple[str, ...]) -> bool:
 
 _DELETE_OUTSIDE = ("delete-outside", "deletes files outside the working folder")   # in ONCE_ONLY_RULES above
 
+# S2a-3 step 4: the path rules again, for a command after a change of folder, with each relative path joined to every
+# folder shell_grammar says it may run in. Text the reader doesn't understand is judged as before (step 3 wires that).
+_MOVED_DELETERS = frozenset({"rm", "rmdir", "unlink", "trash", "srm"})
+_MOVED_WRITERS = frozenset({"tee", "cp", "mv", "ln", "install", "ditto", "rsync", "truncate", "touch", "chmod", "chown",
+                            "chflags", "xattr", "dd", "sed", "perl", "ruby"})
+_MOVED_FINDERS = frozenset({"find"})
+_PROTECTED_PATH_C = re.compile(_PROTECTED_PATH, re.I)
+
+
+def _joined(folder: str, word: str) -> str:
+    return word if word.startswith(("/", "~", "$")) else f"{folder.rstrip('/')}/{word}"
+
+
+def _protected(folders: tuple[str, ...], word: str) -> bool:
+    paths = [_joined(f, part) for f in folders if f for part in {word, word.split("=", 1)[-1]}]
+    return any(_PROTECTED_PATH_C.match(p) or _PROTECTED_PATH_C.match(posixpath.normpath(p)) for p in paths)
+
+
+# These names prove only the effects of the understood command text. Unknown options,
+# assignments, wrappers and launchers never inherit their child's proof.
+# Git is excluded: even status, log and diff can invoke configured helpers.
+_FOLD_BUILTINS = frozenset({"cd", "pushd", "popd", "pwd", "echo", "printf", "true", "false", ":", "test", "[", "[["})
+_FOLD_READ_OPTIONS = {
+    "ls": frozenset({"-a", "-A", "-l", "-h", "-1", "-d", "-F", "-R"}),
+    "cat": frozenset({"-n", "-b", "-s", "-v", "-e", "-t", "-u"}),
+    "grep": frozenset({"-i", "-v", "-n", "-c", "-l", "-L", "-h", "-H", "-q", "-s", "-w", "-x", "-F", "-E"}),
+    "head": frozenset({"-q", "-v"}),
+    "tail": frozenset({"-q", "-v"}),
+    "wc": frozenset({"-c", "-m", "-l", "-w", "-L"}),
+}
+
+
+def _fold_effect_safe(words: tuple[str, ...] | None) -> bool:
+    if not words:
+        return False
+    name, *args = words
+    # Do not mistake an arbitrary executable with a builtin's basename for that builtin.
+    if name in _FOLD_BUILTINS:
+        return True
+    if name in _FOLD_READ_OPTIONS:
+        options = _FOLD_READ_OPTIONS[name]
+    else:
+        return False
+    operands = False
+    for arg in args:
+        # Expansion can supply an option; even quoted expansion has no known value here.
+        if any(char in arg for char in "$`*?["):
+            return False
+        if arg == "--":
+            operands = True
+        elif not operands and arg.startswith("-") and arg != "-" and arg not in options:
+            return False
+    return True
+
+
+def _fold_effects_allow(reading: shell_grammar.Reading, point: int) -> bool:
+    dependencies = set(range(point))
+    for start, end, other_start, other_end in reading.effect_scopes:
+        if start <= point - 1 < end:
+            dependencies.update(range(other_start, other_end))
+    return all(_fold_effect_safe(reading.effects[event]) for event in dependencies)
+
+
+def _valid_fold_anchor(cwd) -> str | None:
+    """Accept an existing, exactly spelled absolute directory, with no linked component."""
+    try:
+        path = os.fspath(cwd)
+        if (not isinstance(path, str) or not path.startswith("/") or "\0" in path
+                or any(part in ("", ".", "..") for part in path.split("/")[1:])):
+            return None
+        if os.path.realpath(path, strict=True) != path:
+            return None
+        current = "/"
+        for part in path.split("/")[1:]:
+            # realpath does not canonicalize case on every case-insensitive filesystem.
+            if part not in os.listdir(current):
+                return None
+            current = os.path.join(current, part)
+            mode = os.lstat(current).st_mode
+            if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+                return None
+        return path
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _safe_fold_prefix(prefix: str, cwd: str | os.PathLike[str] | None, checked: dict[str, bool]) -> bool:
+    """Assessment-local lstat walk: missing, linked or uncheckable prefixes stay unfolded."""
+    if cwd is None:
+        return False
+    path = os.fspath(cwd)
+    parts = []
+    for part in prefix.split("/"):
+        parts.append(part)
+        key = "/".join(parts)
+        path = os.path.join(path, part)
+        if key not in checked:
+            try:
+                mode = os.lstat(path).st_mode
+                checked[key] = not stat.S_ISLNK(mode) and stat.S_ISDIR(mode)
+            except OSError:
+                checked[key] = False
+        if not checked[key]:
+            return False
+    return True
+
+
+def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[bool, bool]:
+    """(deletes outside the working folder, writes a protected file) once a change of folder is followed."""
+    # Folder observations are additive only when the caller supplies a work folder.
+    # With no anchor, preserve main's text-only verdict and named rules exactly.
+    if cwd is None:
+        return False, False
+    # Parse without partial work-relative folds, then choose each candidate at assessment time.
+    # No filesystem verdict is cached across assessments.
+    reading = shell_grammar.read(text, fold_partial=False)
+    checked: dict[str, bool] = {}
+    anchor_checked = False
+    anchor = None
+
+    def guard(prefix: str, point: int) -> bool:
+        nonlocal anchor_checked, anchor
+        if not _fold_effects_allow(reading, point):
+            return False
+        # Complete returns need no retained-prefix evidence, but earlier effects can
+        # replace the work anchor too, so they use the same effect veto.
+        if not prefix:
+            return True
+        if not anchor_checked:
+            anchor = _valid_fold_anchor(cwd) if cwd is not None else None
+            anchor_checked = True
+        return _safe_fold_prefix(prefix, anchor, checked)
+
+    if reading.understood:
+        reading = shell_grammar.read(text, fold_partial=False, fold_guard=guard)
+        if not reading.understood:
+            # Vetoed complete returns can grow the folder union past its cap.
+            # Losing that extent must not discard all path evidence toward run.
+            return True, True
+
+    outside = protected = False
+    for words, folders in zip(reading.commands, reading.folders):
+        name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
+        if name not in _MOVED_DELETERS | _MOVED_FINDERS | _MOVED_WRITERS:
+            continue
+        moved = tuple(f for f in folders if f)
+        if not moved:
+            continue
+        operands = [w for w in args if not w.startswith("-") or w == "-"]
+        if name in _MOVED_DELETERS:
+            outside |= not operands or any(_outside_target(_joined(f, w)) for f in moved for w in operands)
+        elif name in _MOVED_FINDERS and "-delete" in args:
+            start = args[0] if args and not args[0].startswith("-") else "."
+            outside |= any(_outside_target(_joined(f, start)) for f in moved)
+        elif name in _MOVED_WRITERS:
+            protected |= any(_protected(moved, w) for w in operands)
+    protected |= any(_protected(folders, target) for target, folders in reading.writes)
+    return outside, protected
+
 
 def as_shell(command: str, argv=None) -> str:
     """One shell string from either form the tool accepts ({command} or legacy {command, argv})."""
@@ -942,20 +1104,22 @@ def _script_names_protected(texts: tuple[str, ...]) -> bool:
     return any(_PROTECTED_NAME_C.search(script) for script in _scripts(texts))
 
 
-def _layer_two(texts: tuple[str, ...], commands: tuple[tuple[str, ...], ...] = ()) -> list[tuple[str, str]]:
+def _layer_two(texts: tuple[str, ...], commands: tuple[tuple[str, ...], ...], *,
+               text: str, cwd: str | os.PathLike[str] | None = None) -> list[tuple[str, str]]:
     named_rules = set().union(*(_named_rules(words) for words in commands))
     found = [(key, why) for key, pattern, why in _ASK_C
              if _matches(pattern, texts) or key in named_rules]
-    if _script_names_protected(texts) and not any(k == "protected-write" for k, _ in found):
+    moved_outside, moved_protected = _after_moves(text, cwd)
+    if (_script_names_protected(texts) or moved_protected) and not any(k == "protected-write" for k, _ in found):
         found.append(("protected-write", describe("protected-write")))
-    if _deletes_outside(texts) or "delete-outside" in named_rules:
+    if _deletes_outside(texts) or moved_outside or "delete-outside" in named_rules:
         found.insert(0, _DELETE_OUTSIDE)
     seen: set[str] = set()
     return [(k, w) for k, w in found if not (k in seen or seen.add(k))]
 
 
-def assess(command: str) -> Assessment:
-    """The layer a command is in, with its first rule (the one its card names)."""
+def assess(command: str, *, cwd: str | os.PathLike[str] | None = None) -> Assessment:
+    """The layer and first rule; without cwd, folder observations never change the verdict."""
     text = str(command or "")
     if not text.strip():
         return Assessment("forbid", "empty", "no command")
@@ -968,7 +1132,7 @@ def assess(command: str) -> Assessment:
     unparseable = _unparseable(text)
     if unparseable:
         return Assessment("ask", UNREADABLE, unparseable)
-    found = _layer_two(texts, _command_words(text))
+    found = _layer_two(texts, _command_words(text), text=text, cwd=cwd)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
     hidden = _hidden_code(texts)
@@ -989,17 +1153,17 @@ def _not_understood(text: str) -> str:
     return "" if reading.understood else (reading.why or "Arslan does not understand all of it")
 
 
-def ask_rules(command: str) -> set[str]:
+def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None) -> set[str]:
     """Every layer ② rule the command matches (and `unreadable`). `assess` names only the first,
     which is what the card shows; a card's target lists all of them (`rules:<rule>|<rule>`)."""
-    verdict = assess(command)
+    verdict = assess(command, cwd=cwd)
     if verdict.level != "ask":
         return set()
     text = str(command or "")
     if _unparseable(text):
         return {UNREADABLE}
     texts = _detection_texts(text)
-    named = {key for key, _why in _layer_two(texts, _command_words(text))}
+    named = {key for key, _why in _layer_two(texts, _command_words(text), text=text, cwd=cwd)}
     # With no named rule, what asks is unreadable: its code is hidden, or the reader does not understand it (`assess`).
     return named | ({UNREADABLE} if not named or _hidden_code(texts) else set())
 
