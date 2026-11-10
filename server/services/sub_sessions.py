@@ -576,7 +576,7 @@ async def stop_with(db, run_id: int, task_id: str | None) -> None:
 async def before_delete(db, conversation_id: str, *, choice: str | None,
                         as_sub_session: bool) -> tuple[list[str], list[str]]:
     """DELETE /conversations/{id}: which conversations go and which of its sub-sessions stay, as top-level chats
-    (the user's decision, 2026-11-07: the dialog asks, "also delete its N sub-sessions" ticked by default). Raises
+    (the user's decision, 2026-11-07: the dialog offers to delete its sub-sessions too, ticked by default). Raises
     SubSessionError:
     - `not_found` for a sub-session not named as one (`as_sub_session`): what a phone's `conversation.delete` gets;
     - `sub_sessions_running` while anything under it is at work;
