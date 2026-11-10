@@ -482,7 +482,7 @@ async def install_prepared(prepared: dict, *, source_id: str | None = None, appr
         try:
             skill_md = agent_skills.skill_md(info["name"], info["description"], body)
             files = agent_skills.write_new(folder, _expected(prepared, skill_md))
-            agent_skills.record(key, by=agent_skills.ARSLAN, files=files if approved else None)
+            agent_skills.record(key, by=agent_skills.ARSLAN, files=files if approved else None, written=files)
             return await _install_row(prepared, key, info, body, stored, stored_refs, source_id, enabled=approved)
         except BaseException:
             agent_skills.forget(key)

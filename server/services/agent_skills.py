@@ -119,13 +119,24 @@ def export_state() -> dict | None:
     return state if isinstance(state, dict) else None
 
 
-def _save(skills: dict[str, dict], export: dict | None = None) -> None:
-    """The whole manifest in one atomic replace. The export's record is kept as it is unless `export` is given."""
+def _written() -> dict[str, dict]:
+    """What Arslan wrote into each folder it installed, by its hashes, kept apart from what was approved (`files`): a
+    skill CAP8-2 copied in from another tool is Arslan's copy before any card says yes. Only `still_arslans` reads
+    it, to tell Arslan's own folder (which a delete may move to the Trash) from one changed since."""
+    written = _load().get("written")
+    return {k: v for k, v in (written.items() if isinstance(written, dict) else ()) if isinstance(v, dict)}
+
+
+def _save(skills: dict[str, dict], export: dict | None = None, written: dict | None = None) -> None:
+    """The whole manifest in one atomic replace. The export's record and `written` are kept as they are unless given;
+    a key's `written` goes with its entry."""
     path = _manifest_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {"version": 1, "skills": skills}
     if (kept := export if export is not None else export_state()) is not None:
         data["export"] = kept
+    if mine := {k: v for k, v in (written if written is not None else _written()).items() if k in skills}:
+        data["written"] = mine
     temp = path.with_name(f".{MANIFEST}.{os.getpid()}.tmp")
     temp.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
     os.replace(temp, path)
@@ -145,11 +156,15 @@ def manifest_lock() -> asyncio.Lock:
     return lock
 
 
-def record(key: str, *, by: str, files: dict[str, str] | None) -> None:
-    """Load, change and save with no await between, so two writers in the event loop never interleave."""
+def record(key: str, *, by: str, files: dict[str, str] | None, written: dict[str, str] | None = None) -> None:
+    """Load, change and save with no await between, so two writers in the event loop never interleave. `written`:
+    the hashes of what Arslan just wrote into the folder (an install); otherwise what is kept stays."""
     skills = entries()
     skills[key] = {"by": by, "files": files}
-    _save(skills)
+    mine = _written()
+    if written is not None:
+        mine[key] = written
+    _save(skills, written=mine)
 
 
 def forget(key: str) -> None:
@@ -278,7 +293,11 @@ def still_arslans(key: str) -> bool:
     files match the recorded hashes. Only then may a cleanup move it to the Trash; a folder that differs may be the
     user's or another tool's by now, and stays where it is."""
     entry = entries().get(key)
-    return bool(entry) and entry.get("by") == ARSLAN and _matches(_read_or_none(key), entry)
+    if not entry or entry.get("by") != ARSLAN:
+        return False
+    # What was approved, or else what Arslan wrote (a CAP8-2 copy before its card).
+    mine = entry.get("files") if entry.get("files") is not None else _written().get(key)
+    return _matches(_read_or_none(key), {"files": mine})
 
 
 async def _orphan(key: str) -> bool:
