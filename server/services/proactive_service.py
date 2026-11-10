@@ -173,8 +173,11 @@ async def build_brief(now_utc: datetime, now_local: datetime, locale: str) -> de
             kinds[item.kind] = kinds.get(item.kind, 0) + 1
         lines.append(policy.Evidence("brief.open", {"count": len(open_items), "kinds": kinds}))
     if running:
-        lines.append(policy.Evidence("brief.running", {"count": len(running)},
-                                     quote=" · ".join(j.goal[:60] for j in running[:3])))
+        # SUB5b: a sub-session's work counts once, as its commander's, and its brief is not quoted as a job of its own.
+        own = [j for j in running if not j.commander]
+        under = {j.commander for j in running if j.commander} - {j.conversation_id for j in own}
+        lines.append(policy.Evidence("brief.running", {"count": len(own) + len(under)},
+                                     quote=" · ".join(j.goal[:60] for j in own[:3])))
     if soon:
         lines.append(policy.Evidence("brief.schedules", {"count": len(soon)},
                                      quote=" · ".join(t.name[:40] for t in soon[:3])))

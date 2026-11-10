@@ -174,8 +174,9 @@ async def run_origins(db: AsyncSession, runs: list[Run]) -> dict[int, str]:
 _PHONE_BATCH = 200
 
 
-def _scoped(since: datetime | None, until: datetime | None, model: str | None):
-    """The runs the list may show (user kinds, newest first) within a span and a model."""
+def _scoped(since: datetime | None, until: datetime | None, model: str | None, *, whole_app: bool = True):
+    """The runs the list may show (user kinds, newest first) within a span and a model. SUB5b: across the whole app, a
+    sub-session's runs are left out (it is opened from its commander, and its runs listed in its own conversation)."""
     # E2: replay runs (kind='replay') are the gate's internal two-arm evidence — they never
     # surface in the runs list. get_run detail stays unfiltered so the card can link into a
     # specific replay run's trace. 0.1.58: scheduled fires are listed too — Activity's tiles
@@ -188,6 +189,9 @@ def _scoped(since: datetime | None, until: datetime | None, model: str | None):
         q = q.where(Run.created_at < _naive_utc(until))
     if model:
         q = q.where(Run.model == model)
+    if whole_app:
+        from server.services import sub_sessions
+        q = q.where(sub_sessions.not_sub(Run.conversation_id))
     return q
 
 
@@ -339,7 +343,7 @@ async def list_runs(
     db: AsyncSession = Depends(get_session),
 ) -> list[RunListItemOut]:
     asking = _asking()
-    q = _chip(_scoped(since, until, model), outcome, origin, asking)
+    q = _chip(_scoped(since, until, model, whole_app=conversation_id is None), outcome, origin, asking)
     # Every row says whether it used Mac apps (the axis dims what the chip leaves out), so the trace is read for every list; it is
     # read again only when it changed.
     named, unnamed = await asyncio.to_thread(_hands_calls_now)

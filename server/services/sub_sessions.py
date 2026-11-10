@@ -17,6 +17,10 @@ once the M64 bench passes on its branch.
 SUB4: a sub-session that ends leaves a report (`ended`); its result is posted in its own conversation only. Once
 nothing under its parent is at work and the parent is idle, one summary turn runs there with every report framed as
 outside content (`_summarise`).
+
+SUB5b: any job that starts in a sub-session runs as the sub-session's, read from the stored kind (`placement`).
+Whole-app summaries count a sub-session's work as the top of its chain's (`commanders`); the whole app's lists leave it
+out (`not_sub`); a brief framed as outside content marks the sub-session's later typed turns too.
 """
 from __future__ import annotations
 
@@ -219,7 +223,8 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
                 raise SubSessionError("sub_session_alive")
             child = (await create_child(db, parent_id)).id
             await db.commit()
-        framed = untrusted.wrap_external(brief) if outside_seen else None
+        # SUB5b: under a line of its own, so a later turn the user types there starts as having read outside content too.
+        framed = untrusted.sub_session_brief(brief) if outside_seen else None
         await memory.add_message(child, "user", framed or brief, display_content=brief if framed else None)
         _parents[child] = parent_id
         await background_jobs.start(child, brief, [], outside_seen=outside_seen, parent_id=parent_id)
@@ -426,6 +431,38 @@ async def sub_ids(db, ids: list[str]) -> set[str]:
         return set()
     return set((await db.execute(select(ConversationContext.id).where(
         ConversationContext.id.in_(ids), ConversationContext.kind == SUB))).scalars())
+
+
+# -- SUB5b: where a sub-session's work shows, and how a job in one runs ------------------------------------------
+
+async def placement(conversation_id: str) -> tuple[str | None, str | None]:
+    """For a job about to start in this conversation: its stored parent and the top of its chain, or (None, None)
+    when it isn't a sub-session. Read from the stored kind, never this process's memory, so a job anyone starts in a
+    sub-session (an accepted Inbox follow-up, a typed turn's background work) is the sub-session's: offered `TOOLS`
+    only, its cards asked in its parent, the tree's spend, its report going up. One whose parent can't be named is
+    refused (`sub_session_parent_missing`)."""
+    from server.db import session as db_session
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(ConversationContext, conversation_id)
+        if row is None or row.kind != SUB:
+            return None, None
+        if not row.parent_id:
+            raise SubSessionError("sub_session_parent_missing")
+        top = await root_of(db, conversation_id)
+    _parents[conversation_id] = row.parent_id      # its parent's summary waits for this job too (`_at_work`)
+    return row.parent_id, top
+
+
+async def commanders(db, ids) -> dict[str, str]:
+    """Each of these conversations that is a sub-session, with the top of its chain: the conversation the Mac lists it
+    under. What sums up the whole app (the island, notifications, the waiting badge) counts its work as that one's."""
+    return {cid: await root_of(db, cid) for cid in await sub_ids(db, [cid for cid in set(ids) if cid])}
+
+
+def not_sub(column):
+    """A SQL condition for the whole app's lists: rows whose conversation isn't a sub-session (or that have none)."""
+    from sqlalchemy import or_
+    return or_(column.is_(None), column.not_in(select(ConversationContext.id).where(ConversationContext.kind == SUB)))
 
 
 async def looser_than_chain(db, row: ConversationContext, values: dict) -> bool:

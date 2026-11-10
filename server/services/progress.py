@@ -84,7 +84,17 @@ async def waiting_reasons(db: AsyncSession) -> dict[str, str]:
     reasons = dict.fromkeys(pending, "card")
     for cid in existing:
         reasons.setdefault(cid, "away" if cid in unanswered else "reminder")
-    return reasons
+    # SUB5b: a sub-session has no row of its own; it is listed under the top of its chain, which waits for it, once.
+    from server.services import sub_sessions
+    tops = await sub_sessions.commanders(db, reasons)
+    merged: dict[str, str] = {}
+    for cid, why in sorted(reasons.items(), key=lambda item: _FIRST.index(item[1])):
+        merged.setdefault(tops.get(cid, cid), why)
+    return merged
+
+
+#: Which reason a conversation waiting on more than one shows: a card, then an away entry, then a reminder.
+_FIRST = ("card", "away", "reminder")
 
 
 async def waiting_conversations(db: AsyncSession) -> set[str]:
