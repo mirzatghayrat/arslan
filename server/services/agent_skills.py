@@ -49,6 +49,9 @@ ARSLAN, OTHER = "arslan", "other"
 #: What the model is told when a folder skill's files no longer match what was approved.
 CHANGED = ("its files in ~/.agents/skills changed since they were approved, so it is switched off. The user can "
            "look at it again on the Capabilities page.")
+# macOS 11+: no part of the path may be a link at the open (as file_tools._NOFOLLOW). Where it is missing (Linux CI),
+# O_NOFOLLOW covers the last part only. Never both: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY (EINVAL).
+_NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
 
 
 class Unreadable(Exception):
@@ -160,6 +163,10 @@ def read_folder(key: str) -> dict:
 
 
 def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
+    # The folders above the skill's own may be links (~/.agents linked elsewhere is supported, command_sandbox
+    # held_ancestors), and the opens below follow none: so they start from the real path. The skill's folder and
+    # everything in it are still looked at as they are.
+    base = base.parent.resolve() / base.name
     try:
         info = os.lstat(base)
     except OSError as exc:
@@ -190,10 +197,11 @@ def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
             if len(files) >= MAX_FILES:
                 raise Unreadable("too many files")
             # Opened as _read_file does, and it must be the file just looked at (its device and inode). O_NONBLOCK: a
-            # FIFO swapped in can't hold the open. Not in _read_file: CAP8-2's import reads another tool's skills with
-            # it, and whether a second name refuses those is that import's to decide.
+            # FIFO swapped in can't hold the open. _NOFOLLOW: nor a folder on the way swapped for a link after the walk
+            # looked at it, where O_NOFOLLOW_ANY exists. Not in _read_file: CAP8-2's import reads another tool's skills
+            # with it, and whether a second name refuses those is that import's to decide.
             try:
-                fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+                fd = os.open(path, os.O_RDONLY | _NOFOLLOW | os.O_NONBLOCK)
                 with os.fdopen(fd, "rb") as handle:
                     opened = os.fstat(handle.fileno())
                     if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):

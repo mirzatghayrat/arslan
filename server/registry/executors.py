@@ -8,6 +8,7 @@ Server executors return {ok, ...} dicts.
 from __future__ import annotations
 
 import asyncio
+import errno
 from typing import NamedTuple
 import logging
 import os
@@ -64,6 +65,11 @@ class _NotUtf8(Exception):
         super().__init__(name)
 
 
+# macOS 11+: no part of the path may be a link at the open (as file_tools._NOFOLLOW). Where it is missing (Linux CI),
+# O_NOFOLLOW covers the last part only. Never both: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY (EINVAL).
+_NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
+
+
 class _NotOwnFile(Exception):
     """A data-folder skill file that may not be the skill's own (`_own_skill_text`): turned into an honest {ok:False}
     that names the cause."""
@@ -94,8 +100,14 @@ def _own_skill_text(key: str, rel: str, errors: str = "strict") -> str | None:
     if info.st_nlink > 1:
         raise _NotOwnFile(f"skill file has another name on disk (a hard link), so Arslan won't run or read it: "
                           f"{key}/{rel}")
-    # O_NONBLOCK: a FIFO swapped in after the lstat can't hold the open; the fstat below refuses it.
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    # O_NONBLOCK: a FIFO swapped in after the lstat can't hold the open; the fstat below refuses it. _NOFOLLOW: a
+    # folder on the way swapped for a link after its lstat isn't followed either, where O_NOFOLLOW_ANY exists.
+    try:
+        fd = os.open(path, os.O_RDONLY | _NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:        # a link at the open: named like the lstat's, never the absolute path
+            raise _NotOwnFile(f"skill file is a link (a symlink), so Arslan won't run or read it: {key}/{rel}") from None
+        raise
     with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
         opened = os.fstat(handle.fileno())
         if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):

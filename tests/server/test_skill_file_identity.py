@@ -86,12 +86,36 @@ def _swap_at_open(monkeypatch, target: Path, outside: Path, swapped_in: str) -> 
             done.append(path)
             if swapped_in == "fifo":
                 os.mkfifo(target.with_name(".swap"))
+            elif swapped_in == "symlink":
+                target.with_name(".swap").symlink_to(outside)
             else:
                 os.link(outside, target.with_name(".swap"))
             os.replace(target.with_name(".swap"), target)
         return real_open(path, flags, *args, **kwargs)
 
     monkeypatch.setattr(os, "open", racing_open)
+
+
+def _swap_folder_at_lstat(monkeypatch, target: Path, folder: Path, decoy: Path) -> list:
+    """The wider race: after `folder` (on the way to `target`) was looked at, and right before `target` is, `folder`
+    becomes a link to `decoy`, which holds a plain file by the same name. The file's lstat and a by-path open then
+    both follow the link to the decoy's file, so the identity match alone can't tell. Returns the list that records
+    the swap."""
+    real_lstat, want, done = os.lstat, str(target.resolve()), []
+
+    def racing_lstat(path, *args, **kwargs):
+        if not done and os.fspath(path) == want:
+            done.append(path)
+            folder.rename(folder.with_name(".moved"))
+            folder.symlink_to(decoy, target_is_directory=True)
+        return real_lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", racing_lstat)
+    return done
+
+
+needs_nofollow_any = pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW_ANY"),
+                                        reason="closed by O_NOFOLLOW_ANY (macOS); O_NOFOLLOW covers the last part only")
 
 
 # ── the data folder: skill_scripts/<key> ────────────────────────────────────────────────────────────────────────────
@@ -168,6 +192,55 @@ async def test_a_file_swapped_after_its_check_is_refused(env, monkeypatch, swapp
     _swap_at_open(monkeypatch, on / "main.py", env["outside"], swapped_in)
     _refused(await _run("on-a/main.py"),
              "skill file changed while Arslan opened it, so Arslan won't run or read it: on-a/main.py")
+    assert env["handed"] == []
+
+
+@pytest.mark.parametrize("reader", ["run_python", "read_skill"])
+async def test_a_file_swapped_for_a_link_at_its_open_is_refused_by_name(env, monkeypatch, tmp_path, reader):
+    """The open follows no link (O_NOFOLLOW, or O_NOFOLLOW_ANY on macOS) and fails with ELOOP. That is the named link
+    refusal, with the path under its key, never a tool failure carrying the data folder's absolute path."""
+    on = env["scripts"] / "on-a"
+    (on / "references").mkdir(parents=True)
+    (on / "main.py").write_text("print('on-a')\n")
+    (on / "references" / "notes.md").write_text("# notes\n")
+    await _add(_pack("on-a"))
+    rel = "main.py" if reader == "run_python" else "references/notes.md"
+    _swap_at_open(monkeypatch, on / rel, env["outside"], "symlink")
+    if reader == "run_python":
+        out = await _run("on-a/main.py")
+    else:
+        out = await ReadSkillExecutor().execute({"key": "on-a", "section": "references/notes.md"})
+    _refused(out, _link(f"on-a/{rel}"))
+    assert str(tmp_path) not in repr(out) and env["handed"] == []
+
+
+@needs_nofollow_any
+@pytest.mark.parametrize("reader", ["run_python", "read_skill"])
+async def test_a_folder_swapped_for_a_link_after_its_check_is_refused(env, monkeypatch, reader):
+    """A folder on the way (the skill's own, or references/) made a link after its lstat and before the file's: the
+    file's lstat and the open would follow it to the decoy's file, which passes the identity match. O_NOFOLLOW_ANY
+    refuses any link on the way at the open."""
+    on = env["scripts"] / "on-a"
+    (on / "references").mkdir(parents=True)
+    (on / "main.py").write_text("print('on-a')\n")
+    (on / "references" / "notes.md").write_text("# notes\n")
+    if reader == "run_python":                      # the key folder becomes a link to a switched-off skill's folder
+        off = env["scripts"] / "off-b"
+        off.mkdir()
+        (off / "main.py").write_text("print('RAN-OFF-B')\n")
+        await _add(_pack("on-a"), _pack("off-b", enabled=False))
+        done = _swap_folder_at_lstat(monkeypatch, on / "main.py", on, off)
+        out, rel = await _run("on-a/main.py"), "main.py"
+    else:                                           # references/ becomes a link to a folder outside every skill
+        decoy = env["home"] / "docs" / "references"
+        decoy.mkdir(parents=True)
+        (decoy / "notes.md").write_text(CANARY + "\n")
+        await _add(_pack("on-a"))
+        done = _swap_folder_at_lstat(monkeypatch, on / "references" / "notes.md", on / "references", decoy)
+        out = await ReadSkillExecutor().execute({"key": "on-a", "section": "references/notes.md"})
+        rel = "references/notes.md"
+    assert done, "the swap never happened"
+    _refused(out, _link(f"on-a/{rel}"))
     assert env["handed"] == []
 
 
@@ -265,6 +338,27 @@ async def test_a_folder_file_swapped_after_its_check_is_unreadable(env, monkeypa
     _swap_at_open(monkeypatch, folder / "references" / "notes.md", env["outside"], swapped_in)
     with pytest.raises(agent_skills.Unreadable, match="changed while it was read"):
         agent_skills.read_folder("on-a")
+
+
+@needs_nofollow_any
+async def test_a_folder_in_a_folder_skill_swapped_for_a_link_after_the_walk_is_unreadable(env, monkeypatch):
+    folder = _place(env, "on-a", **{"references/notes.md": "# notes\n"})
+    decoy = env["home"] / "docs" / "references"
+    decoy.mkdir(parents=True)
+    (decoy / "notes.md").write_text(CANARY + "\n")
+    done = _swap_folder_at_lstat(monkeypatch, folder / "references" / "notes.md", folder / "references", decoy)
+    with pytest.raises(agent_skills.Unreadable):
+        agent_skills.read_folder("on-a")
+    assert done, "the swap never happened"
+
+
+async def test_a_skills_folder_reached_through_a_linked_agents_folder_still_reads(env):
+    """~/.agents linked elsewhere is supported (CAP6b holds the link): the opens that follow no link on the way start
+    from the real path above the skill's own folder."""
+    (env["home"] / "dotfiles" / "agents").mkdir(parents=True)
+    (env["home"] / ".agents").symlink_to(env["home"] / "dotfiles" / "agents", target_is_directory=True)
+    _place(env, "on-a", **{"references/notes.md": "# notes\n"})
+    assert sorted(agent_skills.read_folder("on-a")["files"]) == ["SKILL.md", "references/notes.md"]
 
 
 async def test_an_install_cut_short_before_its_row_does_not_run(env):
