@@ -77,6 +77,16 @@ KEPT_WRAPPED_HINT = (
     "own actions), touch a file (read, write, save, export, a file path), hand off a URL or the clipboard, "
     "delete, send or pay. Use mac_applescript if it is in your tools: its card shows the user the whole "
     "script. Otherwise tell the user what you needed.")
+# STY2 r4: inside the command sandbox osascript can't load Standard Additions or an app's scripting dictionary, so a
+# valid script (`return current date`, `set now to (current date)`, an app's terms in a tell block) fails to compile
+# with -2740 or -2741, the text a real typo prints (probe of 2026-11-10, macOS 26). T1 spent about 20 calls guessing
+# syntax over 9 of them. The note says both causes and names no way out of the sandbox: that stays the card's to
+# offer, and only for Apple Events (above). Only osascript's own compile-error form (`start:end: syntax error: …
+# (-2740|-2741)`), and only in the command sandbox ("workspace"): the outside wrapper was not measured.
+_SANDBOX_OSA_COMPILE = re.compile(r"\d+:\d+: syntax error: [^\n]*\((?:-2740|-2741)\)")
+SANDBOX_OSA_COMPILE_HINT = (
+    "Inside the command sandbox, osascript can't load Standard Additions or an app's dictionary, so even a valid "
+    "script may fail to compile here. A real typo prints the same error.")
 
 
 def hint_for(tool_key: str, result: dict) -> str | None:
@@ -86,6 +96,8 @@ def hint_for(tool_key: str, result: dict) -> str | None:
     text = " ".join(str(result.get(k) or "") for k in ("error", "stderr", "stdout", "summary"))
     if result.get("sandbox") in ("workspace", "outside") and _SANDBOX_APPLE_EVENTS.search(text):
         return KEPT_WRAPPED_HINT if result.get("kept_wrapped") else SANDBOX_APPLE_EVENTS_HINT
+    if result.get("sandbox") == "workspace" and _SANDBOX_OSA_COMPILE.search(text):
+        return SANDBOX_OSA_COMPILE_HINT
     if tool_key == "web_extract":
         error = str(result.get("error") or "")
         if error.startswith(_WEB_GUARD_PREFIX):
