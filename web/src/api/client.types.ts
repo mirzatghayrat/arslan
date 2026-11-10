@@ -612,6 +612,8 @@ export interface CapabilityCard {
   vulns?: Vulns;
   /** Who published it, as a fact (CAP4a-1). A plugin's is its own repository's account, never a package's. */
   publisher?: { kind: "domain" | "github"; value: string } | null;
+  /** CAP6a: a skill installs into ~/.agents/skills, which several tools share; the card says so. */
+  shared_folder?: boolean;
   /** CAP7b: a plugin's card adds the commit read and every part (server/services/plugin_package.card_fields). */
   commit?: string;
   skills?: PluginSkill[];

@@ -22,6 +22,7 @@ row on the server, not only by the page hiding its button (the CAP card: securit
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import sys
 from datetime import datetime
@@ -29,6 +30,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 
 from server.db import session as db_session
+
+logger = logging.getLogger(__name__)
 
 DELETABLE = ("installed", "authored", "manual", "unknown")    # unknown: the user's D2(2), 2026-10-30
 # A key the server may delete by: what every skill writer makes (skill_forge, skill_import, the seeder). The key
@@ -278,6 +281,8 @@ def _skill_origin(pack) -> str:
     plain key."""
     from server.registry import skill_trust
     from server.services import skill_forge
+    if pack.category == skill_trust.OTHER_TOOL:                   # CAP6a: switched, never deleted from here
+        return "other_tool"
     if pack.category in skill_forge.WRITTEN:
         return "authored"
     if skill_trust.has_users_mark(pack):                          # imported, or a capability source
@@ -287,14 +292,26 @@ def _skill_origin(pack) -> str:
 
 async def _skill_rows() -> list[dict]:
     from server.db.models import SkillPack
+    from server.services import agent_skills
+    # CAP6a: ~/.agents/skills is read again first: a new skill folder shows, one that changed is off.
+    try:
+        folders = await agent_skills.sync()
+    except Exception as exc:  # noqa: BLE001 — the list still loads; read_skill checks each folder skill anyway
+        logger.warning("the skill folder was not read: %s", exc)
+        folders = {}
     async with db_session.AsyncSessionLocal() as db:
         packs = (await db.execute(select(SkillPack).where(
             SkillPack.status == "registered", SkillPack.body.is_not(None), func.trim(SkillPack.body) != "",
         ).order_by(SkillPack.key))).scalars().all()
     return [_row(f"skill:{p.key}", "off" if p.enabled is False else "on", switch="skill",
                  name=p.name or p.key, detail=p.description[:160] if p.description else None,   # clean: models.py, 0082
-                 section="skills", origin=_skill_origin(p), source_id=p.source_id, removable=safe_skill_key(p.key))
+                 section="skills", origin=_skill_origin(p), source_id=p.source_id, removable=safe_skill_key(p.key),
+                 reason=_FOLDER_REASONS.get(folders.get(p.key, "ok")))
             for p in packs]
+
+
+#: A folder skill's state the page says (CAP6a): switching it on shows its card first.
+_FOLDER_REASONS = {"new": "skill_needs_card", "changed": "skill_changed", "gone": "skill_folder_gone"}
 
 
 async def _method_rows() -> list[dict]:
@@ -438,6 +455,14 @@ class NotSwitchable(Exception):
     pass
 
 
+class NeedsCard(Exception):
+    """CAP6a: a skill in ~/.agents/skills goes on only through its card: never approved (another tool put it there),
+    or its files changed since. `card` is what the page shows (agent_skills.card)."""
+    def __init__(self, key: str, card: dict | None):
+        super().__init__(key)
+        self.card = card
+
+
 async def switch(key: str, on: bool) -> None:
     """Turn one row on or off through the switch that already governs it."""
     from server.services import hands_service, mcp_service, plugin_package, settings_service
@@ -461,6 +486,13 @@ async def switch(key: str, on: bool) -> None:
         return
     if key.startswith("skill:"):
         from server.db.models import SkillPack
+        from server.services import agent_skills
+        if on and await agent_skills.needs_card(key[6:]):
+            try:
+                card = await asyncio.to_thread(agent_skills.card, key[6:])       # off the event loop
+            except Exception:  # noqa: BLE001 — a folder that can't be read has nothing to approve: it stays off
+                card = None
+            raise NeedsCard(key, card)
         async with db_session.AsyncSessionLocal() as db:
             pack = await db.get(SkillPack, key[6:])
             if pack is None:
@@ -512,8 +544,17 @@ def skill_to_trash(pack) -> None:
     import yaml
 
     from server import config
-    from server.services import capability_install
+    from server.services import agent_skills, capability_install
     if not safe_skill_key(pack.key):
+        return
+    if agent_skills.is_folder_skill(pack.key):
+        # CAP6a: a skill Arslan installed in ~/.agents/skills, whose folder already holds its SKILL.md. Only the
+        # delete button reaches here, and only for what Arslan installed (`DELETABLE`: never "other_tool").
+        folder = agent_skills.folder(pack.key)
+        if folder.is_symlink():
+            raise NotRemovable(pack.key)
+        capability_install.to_trash(folder, prefix="Arslan skill")
+        agent_skills.forget(pack.key)
         return
     folder = config.data_dir() / "skill_scripts" / pack.key
     if folder.is_symlink():

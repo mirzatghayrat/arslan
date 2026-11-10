@@ -142,7 +142,8 @@ async def test_an_import_is_pinned_to_one_commit_and_records_each_files_checksum
     monkeypatch.setattr(skill_import, "full_sha", _full_sha)
     pinned = await skill_import.import_skill("mattpocock/skills@ABCDEF1234567", "skills/handoff/SKILL.md")
     assert pinned["commit"] == full and set(shas) == {full}
-    assert (tmp_path / "home" / ".Trash" / "Arslan leftover skill files handoff" / "run.py").is_file()   # the first's
+    # the first's (CAP6a: its folder in ~/.agents/skills, which the manifest says Arslan installed)
+    assert (tmp_path / "home" / ".Trash" / "Arslan leftover skill files handoff" / "scripts" / "run.py").is_file()
     with pytest.raises(ValueError, match="not a commit id"):
         await skill_import.import_skill("mattpocock/skills@main;rm", "skills/handoff/SKILL.md")
 
@@ -166,7 +167,8 @@ async def test_import_stores_scripts_and_notes_them(maker, monkeypatch, tmp_path
     _mock_github(monkeypatch, license="MIT", tree=tree, raws=raws)
     out = await skill_import.import_skill("x/y", "skills/handoff/SKILL.md")
     assert sorted(out["scripts"]) == ["helper.py", "main_calc.py"]     # .sh ignored (.py only)
-    assert (tmp_path / "skill_scripts" / "handoff" / "main_calc.py").exists()
+    # CAP6a: into ~/.agents/skills/<key>/scripts/
+    assert (tmp_path / "home" / ".agents" / "skills" / "handoff" / "scripts" / "main_calc.py").exists()
     async with maker() as db:
         row = await db.get(SkillPack, "handoff")
     assert "## Bundled scripts" in row.body and "handoff/main_calc.py" in row.body

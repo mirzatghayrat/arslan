@@ -6,8 +6,9 @@ export interface CapabilityRow {
   key: string;
   /** v0.1.64 CAP3a: the page's three groups; CAP7b's Plugins, once one is installed. */
   section: "builtin" | "skills" | "connections" | "plugins";
-  /** built in · installed (by you, or from a card) · authored (written by Arslan) · manual (a connection you added) */
-  origin: "builtin" | "installed" | "authored" | "manual" | "unknown";   // unknown: no mark and not a seed (SKF1)
+  /** built in · installed (by you, or from a card) · authored (written by Arslan) · manual (a connection you added) ·
+   *  other_tool (CAP6a: a skill another tool put in ~/.agents/skills; switched, never deleted here) */
+  origin: "builtin" | "installed" | "authored" | "manual" | "unknown" | "other_tool";   // unknown: no mark, not a seed
   /** Only what is not built in; the server refuses the rest too (DELETE /capabilities/{key}). */
   deletable: boolean;
   /** When it was last used, from the run records; null: not used yet. */
@@ -32,6 +33,15 @@ export interface CapabilityRow {
   /** Server-supplied name (MCP label, skill name, a revised method's); built-ins are named by key. */
   name: string | null;
   detail: string | null;
+}
+
+/** CAP6a: the card before a skill from ~/.agents/skills is first used, or after its files changed
+ *  (server/services/agent_skills.card). Switching it on answers 409 `needs_card` with this. */
+export interface SkillFolderCard {
+  kind: "skill_folder"; key: string; name: string; description: string; origin: "installed" | "other_tool";
+  changed: boolean; folder: string; skill_md: string; hidden: { count: number; runs: string[]; more: number };
+  files: string[]; unscanned: string[]; digest: string; shared_folder: boolean;
+  scan: { level: "clean" | "notes" | "blocked"; findings: { rule: string; level: string; file: string; line: number; excerpt: string }[] };
 }
 
 export interface PluginPart {
@@ -110,6 +120,9 @@ export const capabilitiesApi = {
   switch: (key: string, on: boolean) => request<CapabilityRow>(`/capabilities/${rowPath(key)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }),
   }),
+  /** CAP6a: the card's yes for a skill in ~/.agents/skills: exactly the files the card showed (409 when they changed). */
+  approveSkillFolder: (key: string, digest: string) =>
+    request<CapabilityRow>(`/skill-folder/${encodeURIComponent(key)}/approve`, json("POST", { digest })),
   /** v0.1.64 CAP3a: delete one row (only a `deletable` one; the server refuses the rest). */
   deleteRow: (key: string) => request<{ ok: boolean }>(`/capabilities/${rowPath(key)}`, { method: "DELETE" }),
   /** CAP8-1: read what Claude Code and Codex have configured, on the user's click. */

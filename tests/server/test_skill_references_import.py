@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, SkillPack
-from server.services import skill_import
+from server.services import agent_skills, skill_import
 
 pytestmark = pytest.mark.asyncio
 
@@ -80,7 +80,7 @@ async def test_import_stores_references_and_notes_them(maker, monkeypatch, tmp_p
 
     # .py ignored, big.md trimmed by the per-file size cap
     assert sorted(out["references"]) == ["guide.md", "notes.txt"]
-    ref_dir = tmp_path / "skill_scripts" / "handoff" / "references"
+    ref_dir = agent_skills.root() / "handoff" / "references"      # CAP6a: ~/.agents/skills (this test's own)
     assert (ref_dir / "guide.md").exists()
     assert (ref_dir / "notes.txt").exists()
     assert not (ref_dir / "big.md").exists()
@@ -106,7 +106,7 @@ async def test_import_reference_count_cap(maker, monkeypatch, tmp_path):
     out = await skill_import.import_skill("x/y", "skills/handoff/SKILL.md")
 
     assert len(out["references"]) == skill_import._MAX_REFERENCES
-    ref_dir = tmp_path / "skill_scripts" / "handoff" / "references"
+    ref_dir = agent_skills.root() / "handoff" / "references"
     assert len(list(ref_dir.glob("*.md"))) == skill_import._MAX_REFERENCES
 
 

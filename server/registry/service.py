@@ -27,6 +27,18 @@ def _skill_scripts_root() -> Path:
     mirrors ``RunPythonExecutor._load_skill_script``'s resolution root."""
     return config.data_dir() / "skill_scripts"
 
+
+def _scripts_dir(key: str) -> Path:
+    """CAP6a: `scripts/` of a skill in ~/.agents/skills, else its folder under ``_skill_scripts_root()``."""
+    from server.services import agent_skills
+    return agent_skills.scripts_dir(key)
+
+
+def _references_dir(key: str) -> Path:
+    from server.services import agent_skills
+    return agent_skills.references_dir(key)
+
+
 def is_assignable(tier: str, status: str) -> bool:
     """Base assignability predicate: safe tier + wired/registered status."""
     return tier == "safe" and status in ASSIGNABLE_STATUSES
@@ -75,7 +87,7 @@ def skill_has_scripts(key: str) -> bool:
     run_python(skill_script="<key>/<file>.py"). Fail-closed on any FS error → False."""
     if not key:
         return False
-    root = _skill_scripts_root() / key
+    root = _scripts_dir(key)
     try:
         return any(p.is_file() and p.suffix == ".py" for p in root.iterdir())
     except OSError:
@@ -90,7 +102,7 @@ def skill_has_references(key: str) -> bool:
     Fail-closed on any FS error → False."""
     if not key:
         return False
-    root = _skill_scripts_root() / key / "references"
+    root = _references_dir(key)
     try:
         return any(p.is_file() for p in root.iterdir())
     except OSError:
@@ -101,7 +113,7 @@ def _skill_script_paths(key: str) -> list[Path]:
     """Top-level (non-references/) files bundled under skill_scripts/<key>/."""
     if not key:
         return []
-    root = _skill_scripts_root() / key
+    root = _scripts_dir(key)
     try:
         return [p for p in root.iterdir() if p.is_file()]
     except OSError:
@@ -195,7 +207,7 @@ def _reference_paths(key: str) -> list[Path]:
     """Files under data_dir/skill_scripts/<key>/references/ (fail-closed → [])."""
     if not key:
         return []
-    root = _skill_scripts_root() / key / "references"
+    root = _references_dir(key)
     try:
         return [p for p in root.iterdir() if p.is_file()]
     except OSError:
