@@ -71,6 +71,59 @@ describe("ThreadRowMenu", () => {
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith("t1"));
   });
 
+  it("by keyboard: focus into the menu, arrows wrap, Home and End, Esc closes, focus back on ⋯", () => {
+    setup({ onRename: vi.fn(), onPin: vi.fn() });
+    const more = screen.getByLabelText("sidebar.thread_menu");
+    fireEvent.click(more);
+    const menu = screen.getByRole("menu");
+    const items = screen.getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["sidebar.rename", "sidebar.pin", "sidebar.archive", "sidebar.delete"]);
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(menu, { key: "ArrowUp" });
+    fireEvent.keyDown(menu, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(items[3]);                    // wraps back
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[0]);                    // wraps forward
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(document.activeElement).toBe(items[3]);
+    fireEvent.keyDown(menu, { key: "Home" });
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("focus goes back on ⋯ on every close: an item, ⋯ itself, a click outside", () => {
+    const { onArchive } = setup({ onPin: vi.fn() });
+    const more = screen.getByLabelText("sidebar.thread_menu");
+    const reopen = () => { fireEvent.click(more); expect(document.activeElement?.getAttribute("role")).toBe("menuitem"); };
+    reopen();
+    fireEvent.click(screen.getByText("sidebar.archive"));
+    expect(onArchive).toHaveBeenCalledWith("t1");
+    expect(document.activeElement).toBe(more);
+    reopen();
+    fireEvent.click(more);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(more);
+    reopen();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("Move to project: focus goes to the project list, and back to the list on Back", () => {
+    setup({ projects: [{ id: "p1", name: "Alpha" }], onMove: vi.fn() });
+    fireEvent.click(screen.getByLabelText("sidebar.thread_menu"));
+    fireEvent.click(screen.getByText("sidebar.moveToProject"));
+    expect(document.activeElement?.textContent).toBe("sidebar.moveBack");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
+    expect(document.activeElement).toBe(screen.getByTestId("thread-move-to-p1"));
+    fireEvent.click(screen.getByText("sidebar.moveBack"));
+    expect(document.activeElement?.textContent).toBe("sidebar.moveToProject");
+  });
+
   it("in the archived variant, Unarchive calls onUnarchive(threadId)", () => {
     const onUnarchive = vi.fn();
     setup({ archived: true, onUnarchive });
