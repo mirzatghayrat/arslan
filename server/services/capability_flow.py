@@ -370,6 +370,8 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); nothing was added"}
         card.update(commit=prepared["commit"], files=prepared["files"], sizes=prepared["sizes"],
                     skipped=prepared["skipped"], scan=scan,
+                    # CAP8-2's hook rule: the frontmatter hooks that won't run (a blocking one refused it above).
+                    hooks=prepared.get("hooks") or [],
                     # UNI1b (#586 review F2, F4): under D2 this card is the guard, so it says how many characters of
                     # the skill's text and its references show nothing, as the import panel does.
                     hidden=untrusted.hidden_summary("\n".join([prepared["info"]["body"],

@@ -160,11 +160,14 @@ def manifest_lock() -> asyncio.Lock:
     return lock
 
 
-def record(key: str, *, by: str, files: dict[str, str] | None, written: dict[str, str] | None = None) -> None:
+def record(key: str, *, by: str, files: dict[str, str] | None, written: dict[str, str] | None = None,
+           hooks: list[str] | None = None) -> None:
     """Load, change and save with no await between, so two writers in the event loop never interleave. `written`:
-    the hashes of what Arslan just wrote into the folder (an install); otherwise what is kept stays."""
+    the hashes of what Arslan just wrote into the folder (an install); otherwise what is kept stays. `hooks` (an
+    install): the quiet events of the frontmatter hooks stripped from Arslan's copy, for its card; otherwise kept."""
     skills = entries()
-    skills[key] = {"by": by, "files": files}
+    kept = hooks if hooks is not None else (skills.get(key) or {}).get("hooks")
+    skills[key] = {"by": by, "files": files, **({"hooks": list(kept)} if kept else {})}
     mine = _written()
     if written is not None:
         mine[key] = written
@@ -204,12 +207,20 @@ def references_dir(key: str) -> Path:
 def _read_file(path: Path) -> bytes:
     """A regular file's bytes, never through a link. Opened without blocking and checked as opened (#808 review): a
     FIFO swapped in after the caller's lstat would otherwise hold the open until something writes to it. Raises
-    OSError for anything that is not a regular file."""
+    OSError for anything that is not a regular file, and TooLarge for one over MAX_BYTES, which is refused, never cut
+    (#809 review: a cut file's hash covers only its start)."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as handle:
         if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
             raise OSError(f"not a regular file: {path.name}")
-        return handle.read(MAX_BYTES + 1)
+        data = handle.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        raise TooLarge(f"larger than {MAX_BYTES} bytes: {path.name}")
+    return data
+
+
+class TooLarge(OSError):
+    """A file `_read_file` refuses for its size."""
 
 
 def read_folder(key: str) -> dict:
@@ -223,7 +234,13 @@ def read_folder(key: str) -> dict:
     parsed = skill_import.parse_skill_md(raw, f"{key}/SKILL.md") if raw is not None else None
     if parsed is None:
         raise Unreadable("no valid SKILL.md")
-    return {"files": files, "texts": texts, "info": parsed}
+    # CAP8-2's hook rule, here too: another tool's skill with a hook on a blocking or unknown event is never read
+    # (so never switched on); one with quiet hooks is, and its card says they won't run. The folder isn't Arslan's.
+    try:
+        hooks = skill_import.frontmatter_hooks(raw)
+    except skill_import.HookRefused as exc:
+        raise Unreadable(str(exc)) from None
+    return {"files": files, "texts": texts, "info": parsed, "hooks": hooks}
 
 
 def _read_tree(base: Path) -> tuple[dict[str, str], dict[str, str]]:
@@ -485,6 +502,8 @@ def _card(key: str, read: dict) -> dict:
             "skill_md": texts["SKILL.md"], "hidden": untrusted.hidden_summary(info["body"]),
             "files": sorted(read["files"]), "unscanned": sorted(p for p in read["files"] if p not in texts),
             "scan": scan, "digest": digest(read["files"]),
+            # CAP8-2: hooks that won't run, the folder's own and those stripped from Arslan's copy at its install.
+            "hooks": [*(known.get("hooks") or []), *(read.get("hooks") or [])],
             # The folder is shared by several tools: what is installed there, others may read and use (CAP6a).
             "shared_folder": True}
 

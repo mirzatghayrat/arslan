@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Escaped, isolate } from "../../lib/outsideText";
 import type { CapabilityCard } from "../../api/client.types";
 import { AskCard, type AskQueuePosition } from "../kit";
+import { HooksRow } from "./HooksRow";
 import { PluginContains } from "./PluginContains";
 import { SecurityRow, ownVulnerable } from "./SecurityRow";
 
@@ -58,6 +59,8 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
         {card.license.read_from && <span className="text-muted-foreground"> {t("discover.lic_readFrom")}</span>}
       </Row>
       {plugin && <Row label={t("discover.card_contains")} testId="capability-card-contains"><PluginContains card={card} /></Row>}
+      {/* CAP8-2's hook rule: a skill's (or a plugin's skills') frontmatter hooks, which Arslan doesn't run. */}
+      <HooksRow hooks={card.hooks} kind={plugin ? "plugin" : "skill"} />
       {/* CAP9: what OSV.dev knows of the locked packages, the package itself first. */}
       <SecurityRow card={card} />
       {!plugin && <Row label={t("discover.card_runs")} testId="capability-card-runs">

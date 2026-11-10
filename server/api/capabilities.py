@@ -140,15 +140,13 @@ class ImportIn(BaseModel):
 @router.post("/capability-import")
 async def capability_import_add(body: ImportIn) -> dict:
     """Add the ticked ones, each with its own result: one that fails doesn't stop the others. A server's id starts
-    with its tool, a skill's or plugin's with `skill:` or `plugin:`, so one list holds every result.
-
-    A plugin is refused here for now: its card comes before its install, on the sheet, and that card has no board
-    yet, so no user has seen one. DELETE-BY: CAP8-2's plugin follow-up (the card's board approved), which passes
-    `body.plugins` to `tool_import.add` instead."""
+    with its tool, a skill's or plugin's with `skill:` or `plugin:`, so one list holds every result. A plugin's first
+    add answers `card` (its board, 2026-11-10: the sheet adds the other picks, then shows it), and only one sent back
+    with that card's digest goes in."""
     from server.services import connection_import, tool_import
     return {"results": [*await connection_import.add([tick.model_dump() for tick in body.servers]),
-                        *await tool_import.add([tick.model_dump() for tick in body.skills], []),
-                        *[{"id": tick.id, "state": "refused", "code": "plugins_later"} for tick in body.plugins]]}
+                        *await tool_import.add([tick.model_dump() for tick in body.skills],
+                                               [tick.model_dump() for tick in body.plugins])]}
 
 
 @router.get("/capability-sources")
