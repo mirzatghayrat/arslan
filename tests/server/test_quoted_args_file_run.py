@@ -562,7 +562,8 @@ def test_baseline_fresh_import_validates_independent_trust(tmp_path, change):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     if expected_message is None:
-        assert len(module.decode(fixture.read_text(), GENERATORS)) == 37672
+        # 37672, plus 64 controls and 96 unknown-option rows for the eight deploy CLIs on the publish rule
+        assert len(module.decode(fixture.read_text(), GENERATORS)) == 37832
     else:
         with pytest.raises(AssertionError) as failure:
             module.decode(fixture.read_text(), GENERATORS)

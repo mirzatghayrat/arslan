@@ -4,6 +4,7 @@
 changes the system, reaches another app or the screen, or cannot be read (`unreadable`); no stored answer
 stands and the island cannot approve it. ③ everything else — runs in the sandbox without a card when the
 sandbox can start (R4), and asks (`unsandboxed:*`) when it cannot or is switched off."""
+import shlex
 from unittest.mock import AsyncMock
 
 import pytest
@@ -43,6 +44,50 @@ def test_quoted_text_and_plain_paths_are_not_the_floor(command):
 
 # ── ② this time only ─────────────────────────────────────────────────────────
 
+# Deploy CLIs: their deploy and write verbs ask like vercel's (`publish`), and a shell on a deployed machine asks as
+# `remote-shell`, in each wrapper that was measured; read-only verbs, help and the bare program (it prints help) run.
+_WRAPPERS = (lambda c: c, lambda c: "sh -c " + shlex.quote(c), lambda c: "cd x && " + c, lambda c: "npx " + c)
+_DEPLOY_ASKS = [
+    *[(command, "publish") for command in (
+        "netlify deploy", "netlify deploy --prod", "netlify --auth t deploy",
+        "fly deploy", "fly secrets set K=V", "fly apps destroy x", "fly scale count 2", "fly -a x deploy",
+        "fly --app=x deploy", "fly deploy --remote-only", "flyctl deploy", "flyctl secrets set K=V",
+        "flyctl apps destroy x", "flyctl scale count 2", "flyctl -t tok deploy",
+        "heroku releases:rollback", "heroku config:set K=V", "heroku apps:destroy x", "heroku container:release web",
+        "heroku releases:rollback -a x", "heroku -a x config:set K=V",
+        "railway up", "railway up --detach", "railway -s svc up",
+        "wrangler deploy", "wrangler publish", "wrangler versions deploy", "wrangler pages deploy dist",
+        "wrangler pages publish dist", "wrangler secret put K", "wrangler rollback", "wrangler --env prod deploy",
+        "firebase deploy", "firebase deploy --only hosting", "firebase hosting:channel:deploy x",
+        "firebase functions:delete f", "firebase database:set /x f", "firebase --project prod deploy --only hosting",
+        "helm install x ./c", "helm upgrade x ./c", "helm upgrade --install x ./c", "helm uninstall x",
+        "helm rollback x 1", "helm push c.tgz oci://r", "helm -n ns install x ./c", "helm --kube-context c uninstall x",
+    )],
+    *[(command, "remote-shell") for command in (
+        "fly ssh console", "flyctl ssh console", "fly -a x ssh console", "heroku run bash", "heroku -a x run bash",
+    )],
+]
+DEPLOY_ASKS = [(wrap(command), rule) for command, rule in _DEPLOY_ASKS for wrap in _WRAPPERS]
+DEPLOY_RUNS = [wrap(command) for command in (
+    "netlify", "netlify status", "netlify sites:list", "netlify env:list", "netlify logs", "netlify build",
+    "netlify dev", "netlify --help", "netlify login --help", "netlify deployx",
+    "fly", "fly status", "fly logs", "fly apps list", "fly releases", "fly version", "fly --help", "fly login --help",
+    "fly scale show", "fly secrets list", "fly ssh issue", "fly -a x status", "flyctl", "flyctl logs", "flyctl status",
+    "flyctl --help", "flyctl login --help",
+    "heroku", "heroku apps", "heroku logs", "heroku ps", "heroku releases", "heroku config", "heroku config:get K",
+    "heroku info", "heroku status", "heroku --help", "heroku login --help",
+    "railway", "railway status", "railway logs", "railway whoami", "railway list", "railway --help",
+    "railway login --help",
+    "wrangler", "wrangler whoami", "wrangler tail", "wrangler dev", "wrangler deployments list",
+    "wrangler versions list", "wrangler secret list", "wrangler kv namespace list", "wrangler --help",
+    "wrangler login --help",
+    "firebase", "firebase projects:list", "firebase apps:list", "firebase functions:log",
+    "firebase hosting:channel:list", "firebase emulators:start", "firebase --help", "firebase login --help",
+    "helm", "helm list", "helm status x", "helm history x", "helm get values x", "helm show values ./c",
+    "helm template x ./c", "helm lint ./c", "helm version", "helm --help", "helm login --help", "helm -n ns list",
+) for wrap in _WRAPPERS]
+
+
 @pytest.mark.parametrize("command,rule", [
     # sends something out, with F2's spellings
     ("mail -s hi a@example.com", "send-mail"), ("imsg send x", "send-message"),
@@ -81,6 +126,7 @@ def test_quoted_text_and_plain_paths_are_not_the_floor(command):
     ("env -i osascript", "apple-events"), ("nice osascript", "apple-events"), ("timeout 5 osascript", "apple-events"),
     ("caffeinate osascript", "apple-events"), ("xcrun osascript", "apple-events"), ("arch -arm64 osascript", "apple-events"),
     ("exec -a NAME osascript", "apple-events"), ("builtin command osascript", "apple-events"), ("shortcuts run X", "shortcuts"),
+    *DEPLOY_ASKS,
 ])
 def test_layer_two_asks_this_time_only(command, rule):
     verdict = tp.assess(command)
@@ -106,6 +152,7 @@ def test_what_cannot_be_read_asks_this_time_only(command):
     "pbcopy < x", "python3 x.py", "python3 -c 'print(1)'", "swift build", "say hi", "make && make test",
     "git commit -m \"fix: don't crash\"", "cat <<EOF\nit's here\nEOF", "python3 - <<'PY'\nprint(\"don't\")\nPY",
     "crontab -l", "nc -z localhost 8080", "nc -zv localhost 5432", "ls ~/.ncrc", "sync",
+    *DEPLOY_RUNS,
 ])
 def test_layer_three_runs(command):
     _runs_or_is_only_unreadable(command)

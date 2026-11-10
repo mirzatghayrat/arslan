@@ -81,6 +81,18 @@ def named_family():
             yield form + separator + seed
 
 
+# A rule added after MAIN on purpose: the deploy CLIs' deploy and write verbs ask as `publish`, and a shell on a
+# deployed machine as `remote-shell`. The option profiles' controls and unknown-option rows name these programs, so
+# exactly those rows may move from run to that one rule; every other row, and the reader on every row, stays main's.
+DEPLOY_PROGRAMS = frozenset("netlify fly flyctl heroku railway wrangler firebase helm".split())
+
+
+def later_deploy_rule(text, before, after):
+    return ((before.level, after.level) == ('run', 'ask') and after.rule in {'publish', 'remote-shell'}
+            and tp.ask_rules(text) == {after.rule}
+            and any(words and words[0].lower() in DEPLOY_PROGRAMS for words in sg.read(text).commands))
+
+
 @pytest.mark.parametrize("corpus", ('named', 'policy', *evidence.GENERATORS))
 def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
     baseline = load_revision(MAIN, monkeypatch)
@@ -93,10 +105,15 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
         rows = list(evidence.GENERATORS[corpus]())
         texts = (text for _, text in (rows if revisions.FULL else evidence.stratified(rows)))
     counts = Counter()
+    later = 0
     for text in texts:
         before, after = baseline.assess(text), tp.assess(text)
+        main_rules = baseline.ask_rules(text)
+        if later_deploy_rule(text, before, after):
+            later += 1
+            before, main_rules = after, {after.rule}    # the cwd check below then holds the new rule
         assert (after.level, after.rule, after.reason) == (before.level, before.rule, before.reason), text
-        assert tp.ask_rules(text) == baseline.ask_rules(text), text
+        assert tp.ask_rules(text) == main_rules, text
         main_read, reading = baseline.shell_grammar.read(text), sg.read(text)
         assert (reading.understood, reading.why, reading.capped, reading.commands) == (
             main_read.understood, main_read.why, main_read.capped, main_read.commands), text
@@ -106,7 +123,7 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
             assert anchored.rule == before.rule, text
         counts[before.level + '->' + anchored.level] += 1
     print('R6_IDENTITY ' + json.dumps({'corpus': corpus, 'cases': sum(counts.values()),
-                                     'differences': 0, 'with_cwd': counts}, sort_keys=True))
+                                     'differences': 0, 'later_deploy_rule': later, 'with_cwd': counts}, sort_keys=True))
 
 
 def test_folder_corpus_identity_and_transitions(tmp_path, monkeypatch, prefix_never_tracks):

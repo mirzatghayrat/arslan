@@ -212,7 +212,9 @@ _ASK = [
     ("remote-shell", _CMD + r"(?:ssh|ssh-copy-id|sshpass|autossh|mosh|scp|sftp|ftp|telnet|socat|(?:nc|ncat|netcat)(?!\s+-[a-zA-Z]*z))"
      + _END
      + r"|" + _CMD
-     + r"rsync\b[^\n]*\S:", "connects to another machine"),
+     + r"rsync\b[^\n]*\S:"
+     # a shell or a command on a deployed machine (a fly.io machine, a Heroku dyno)
+     + r"|" + _CMD + r"(?:fly(?:ctl)?\s+ssh\s+console|heroku\s+run)" + _END, "connects to another machine"),
     # bash opens the connection itself, with no program named (zsh has no such path).
     ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
@@ -222,7 +224,17 @@ _ASK = [
                        r"|\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$|\S))"
                        r"|docker\s+(?:image\s+)?push|terraform\s+(?:apply|destroy)"
                        r"|kubectl\s+(?:apply|create|delete|replace|patch|scale|rollout)"
-                       r"|vercel(?:\s+(?:deploy|--prod)|\s*$|\s*[;&|]))",
+                       r"|vercel(?:\s+(?:deploy|--prod)|\s*$|\s*[;&|])"
+                       # Deploy and hosting CLIs: their deploy and write verbs only. Unlike vercel, the bare program
+                       # prints help, so it runs; read-only verbs (status, logs, list) run too.
+                       r"|netlify\s+deploy" + _END
+                       + r"|fly(?:ctl)?\s+(?:deploy|secrets\s+set|apps\s+destroy|scale\s+count)" + _END
+                       + r"|heroku\s+(?:releases:rollback|config:set|apps:destroy|container:release)" + _END
+                       + r"|railway\s+up" + _END
+                       + r"|wrangler\s+(?:deploy|publish|rollback|versions\s+deploy|pages\s+(?:deploy|publish)"
+                       r"|secret\s+put)" + _END
+                       + r"|firebase\s+(?:deploy|hosting:channel:deploy|functions:delete|database:set)" + _END
+                       + r"|helm\s+(?:install|upgrade|uninstall|rollback|push)" + _END + r")",
      "publishes or changes something online"),
     # deletes or stops things
     ("force-kill", _CMD + r"(?:kill" + _H + r"+(?:-[^\s]+" + _H + r"+)*-(?:9|KILL|SIGKILL)\b|killall|pkill)" + _END,
@@ -460,6 +472,14 @@ _OPTION_VALUES.update({
     "terraform": frozenset({"-chdir"}),
     "kubectl": frozenset({"--context", "--namespace", "-n", "--kubeconfig"}),
     "vercel": frozenset({"--cwd", "--token", "-t", "--scope"}),
+    "netlify": frozenset({"--auth", "--filter"}),
+    "fly": frozenset({"-a", "--app", "-c", "--config", "-t", "--access-token"}),
+    "flyctl": frozenset({"-a", "--app", "-c", "--config", "-t", "--access-token"}),
+    "heroku": frozenset({"-a", "--app", "-r", "--remote"}),
+    "railway": frozenset({"-s", "--service", "-e", "--environment"}),
+    "wrangler": frozenset({"-c", "--config", "-e", "--env", "--cwd"}),
+    "firebase": frozenset({"-P", "--project", "--config", "--account", "--token", "--only", "-m", "--message"}),
+    "helm": frozenset({"-n", "--namespace", "--kube-context", "--kubeconfig"}),
     "osascript": frozenset({"-e", "-l", "-s"}),
     "open": frozenset({"-a", "-b"}),
     "himalaya": frozenset({"--account", "-a", "--config", "-c"}),
@@ -500,7 +520,12 @@ _OPTION_FLAGS = {
     "npm": "--dry-run --silent", "pnpm": "--dry-run --silent", "yarn": "--silent",
     "cargo": "-q -v --quiet --verbose --dry-run", "twine": "--verbose --non-interactive",
     "docker": "-D --debug", "terraform": "-help -version", "kubectl": "--help",
-    "vercel": "--prod --yes -y --debug -d", "killall": "-9 -v -q", "pkill": "-9 -f -x",
+    "vercel": "--prod --yes -y --debug -d",
+    "netlify": "-h --help --version --debug", "fly": "-h --help --version --debug --verbose",
+    "flyctl": "-h --help --version --debug --verbose", "heroku": "-h --help --version",
+    "railway": "-h -V --help --version --json", "wrangler": "-h -v --help --version",
+    "firebase": "-h -V --help --version --debug --json --non-interactive", "helm": "-h --help --debug",
+    "killall": "-9 -v -q", "pkill": "-9 -f -x",
     "launchctl": "", "defaults": "", "crontab": "-l -r", "tccutil": "",
     "networksetup": "-setairportpower", "systemsetup": "-settimezone",
     "pmset": "-g -a -b -c", "spctl": "--status --master-disable --master-enable",
@@ -518,7 +543,8 @@ _GLOBAL_OPTIONS = {
     program: _OPTION_VALUES.get(program, frozenset()) | _OPTION_FLAGS[program]
     for program in ("gsutil", "gcloud", "aws", "az", "azcopy", "rclone", "s3cmd", "gh",
                     "git", "security", "xurl", "npm", "pnpm", "yarn", "cargo", "twine",
-                    "docker", "terraform", "kubectl", "vercel", "himalaya")
+                    "docker", "terraform", "kubectl", "vercel", "himalaya", "netlify", "fly", "flyctl",
+                    "heroku", "railway", "wrangler", "firebase", "helm")
 }
 # Security's subcommand options are not global flags; git's commit options are
 # likewise not meaningful ahead of its command word.
@@ -709,7 +735,9 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     add("upload", _uploads(program, args))
     add("remote-shell", program in {"ssh", "ssh-copy-id", "sshpass", "autossh", "mosh", "scp", "sftp", "ftp", "telnet", "socat"}
         or program in {"nc", "ncat", "netcat"} and not any(w.startswith("-") and "z" in w for w in args)
-        or program == "rsync" and any(":" in w for w in _operands(args)))
+        or program == "rsync" and any(":" in w for w in _operands(args))
+        or program in {"fly", "flyctl"} and lower[:2] == ("ssh", "console")
+        or program == "heroku" and first == "run")
     if program == "git":
         verb = _verb(args, _GIT_VALUES)
         add("git-push", bool(verb) and verb[0].lower() == "push")
@@ -724,7 +752,16 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         or program == "docker" and (first == "push" or lower[:2] == ("image", "push"))
         or program == "terraform" and first in {"apply", "destroy"}
         or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
-        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations))
+        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations)
+        or program == "netlify" and first == "deploy"
+        or program in {"fly", "flyctl"} and (first == "deploy" or lower[:2] in {
+            ("secrets", "set"), ("apps", "destroy"), ("scale", "count")})
+        or program == "heroku" and first in {"releases:rollback", "config:set", "apps:destroy", "container:release"}
+        or program == "railway" and first == "up"
+        or program == "wrangler" and (first in {"deploy", "publish", "rollback"} or lower[:2] in {
+            ("versions", "deploy"), ("pages", "deploy"), ("pages", "publish"), ("secret", "put")})
+        or program == "firebase" and first in {"deploy", "hosting:channel:deploy", "functions:delete", "database:set"}
+        or program == "helm" and first in {"install", "upgrade", "uninstall", "rollback", "push"})
     add("force-kill", program in {"killall", "pkill"})
     add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
         or program == "defaults" and first == "write" or program == "crontab" and first != "-l")

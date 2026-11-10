@@ -47,6 +47,10 @@ SEEDS = {
     "open": ("-a", "Terminal"), "screencapture": ("capture.png",), "pbpaste": (),
     "rsync": ("report.txt", "remote:report.txt"), "find": ("../archive", "-delete"),
     "pip": ("upload",), "uv": ("publish",),
+    # Deploy CLIs on the publish rule: one deploy or write verb each. Not in PROFILE_COUNTS: the sweep reconstructs
+    # the review's published per-program inventory, which predates them; controls and unknowns cover them.
+    "netlify": ("deploy",), "fly": ("deploy",), "flyctl": ("deploy",), "heroku": ("config:set", "SAMPLE=value"),
+    "railway": ("up",), "wrangler": ("deploy",), "firebase": ("deploy",), "helm": ("install", "sample", "./chart"),
 }
 for _program in "http https xh xhs".split():
     SEEDS[_program] = ("POST", "https://example.invalid", "field=sample")
@@ -75,6 +79,9 @@ OPTIONS = {
     "scp": ("-v", "-P", ""), "sftp": ("-v", "-P", ""), "autossh": ("-N", "-M", ""),
     "rsync": ("-v", "-e", "--rsh"), "killall": ("-v", "-u", ""), "pkill": ("-f", "-u", ""),
     "xurl": ("-v", "", "--auth"),
+    "netlify": ("--debug", "", "--auth"), "fly": ("--debug", "-a", "--app"), "flyctl": ("--verbose", "-t", "--access-token"),
+    "heroku": ("", "-a", "--app"), "railway": ("--json", "-s", "--service"), "wrangler": ("-v", "-e", "--env"),
+    "firebase": ("--debug", "-P", "--project"), "helm": ("--debug", "-n", "--namespace"),
 }
 for _program in "http https xh xhs".split():
     OPTIONS[_program] = ("-v", "-o", "--output")
@@ -198,7 +205,9 @@ def unknowns():
 # Code audit of _named_rules and _uploads: these share global stripping.
 # Only Vercel resolves an implicit operation from a global flag. The others
 # select explicit verbs; git and security have their own operation readers.
-GLOBAL_DISPATCH_PROGRAMS = frozenset("gsutil gcloud aws az azcopy rclone s3cmd gh xurl npm pnpm yarn cargo twine docker terraform kubectl vercel himalaya".split())
+# The deploy CLIs select explicit verbs too (none is implicit: their bare program prints help).
+GLOBAL_DISPATCH_PROGRAMS = frozenset("gsutil gcloud aws az azcopy rclone s3cmd gh xurl npm pnpm yarn cargo twine docker terraform kubectl vercel himalaya"
+                                     " netlify fly flyctl heroku railway wrangler firebase helm".split())
 IMPLICIT_OPERATIONS = {"vercel": ("--prod", "publish")}
 
 
