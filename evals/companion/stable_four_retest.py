@@ -14,6 +14,14 @@ OPT_IN = "authorized-four-22-requests-usd3"
 ENV = "ARSLAN_STABLE_FOUR"
 REQUESTS, USD = 22, "3.00"
 EXTRA_FILES = set()
+# LOOP1 (v0.1.64) moved these out of arslan.py and tool_loop.py, and the turns frozen here run through them: the loop's
+# phases and stages, the prompt's rules, and the tool table.
+LOOP1_SPLITS = {f"server/orchestrator/{name}.py" for name in (
+    "answer_guards", "answer_rules", "answer_salvage", "command_gate", "model_step", "tool_batch", "tool_execute",
+    "tool_gates", "turn_answer", "turn_state", "turn_stream")} | {"server/registry/tool.py"} | {
+    f"server/registry/tool_defs/{name}.py" for name in (
+        "__init__", "browser", "capability", "files", "hands", "mac", "memory", "network", "schedule", "tasks",
+        "terminal", "web")}
 MAX_REVIEW_OUTPUT_TOKENS = 8192
 CAPS = {"S2-R1": 8, "S2-R4": 7, "S2-D3": 4, "S2-M2": 3}
 RUNNERS = {case: "tests/server/test_stable_" + (
@@ -70,7 +78,7 @@ def bound():
 def freeze():
     grant()
     parent = json.loads((PARENT / "contract.json").read_bytes())
-    files = set(parent["frozen_files"]) | set(RUNNERS.values()) | EXTRA_FILES | {
+    files = set(parent["frozen_files"]) | set(RUNNERS.values()) | EXTRA_FILES | LOOP1_SPLITS | {
         "evals/companion/stable_four_retest.py", "tests/server/test_stable_four_live.py",
         "tests/test_stable_four_grant.py", "server/services/input_formats.py",
         "server/orchestrator/arslan.py", "server/orchestrator/tool_loop.py"}

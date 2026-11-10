@@ -6,6 +6,7 @@ import contextlib
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select
@@ -709,6 +710,42 @@ async def _handle_answer_body(
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
     source: str | None = None, steerable: bool = False,
 ) -> str | None:
+    """One answer turn, in its phases (LOOP1 c3c): the turn's context, the dispatch through the tool loop, a choice
+    card, or the reply stored with what follows it."""
+    turn = await _answer_context(conversation_id, user_message, extra_system=extra_system,
+                                 attached_context=attached_context, images=images)
+    result = await _answer_dispatch(
+        conversation_id, user_message, emit, turn, attached_context=attached_context, images=images,
+        confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
+        confirm_schedule=confirm_schedule, source=source, steerable=steerable)
+    if result is _NO_REPLY:
+        return None
+    compact = await _answer_clarify(conversation_id, emit, result)
+    if compact is not None:
+        return compact
+    return await _answer_reply(conversation_id, user_message, emit, result, attached_context)
+
+
+@dataclass(frozen=True, slots=True)
+class _AnswerContext:
+    """What the turn's request carries, worked out before it goes out, and what of it is outside content."""
+    ctx: dict
+    system: str
+    context: str
+    llm_user: object
+    kb_block: str
+    card: str
+    traced: bool
+    rule_files: int
+
+
+#: The dispatch sent an error frame instead of a reply: the turn ends with nothing stored.
+_NO_REPLY = object()
+
+
+async def _answer_context(conversation_id: str, user_message: str, *, extra_system: str,
+                          attached_context: str | None, images: list[dict] | None) -> _AnswerContext:
+    """The turn's history, memory, project card, knowledge, folder rules and system text, and its request."""
     # K2: history by the turn model's context window (context_window), not a fixed 3000.
     ctx = await memory.assemble_working_context(
         conversation_id, budget=await memory.turn_budget(conversation_id, has_images=bool(images)))
@@ -740,7 +777,17 @@ async def _handle_answer_body(
 
     # A plain string when there are no images; a neutral block list otherwise (providers translate it).
     llm_user = _with_turn_context(context, build_user_blocks(user_message, attached_context, images))
+    return _AnswerContext(ctx=ctx, system=system, context=context, llm_user=llm_user, kb_block=kb_block, card=card,
+                          traced=traced, rule_files=rule_files)
 
+
+async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventSink, turn: _AnswerContext, *,
+                           attached_context: str | None, images: list[dict] | None, confirm_command,
+                           confirm_workspace_write, confirm_schedule, source: str | None, steerable: bool):
+    """The turn through the tool loop, on the tools its kind allows. A picture the model refused is read here and the
+    turn sent again without it. Returns the loop's result, or `_NO_REPLY` once an error frame went out."""
+    ctx, system, context, llm_user = turn.ctx, turn.system, turn.context, turn.llm_user
+    kb_block, card, traced, rule_files = turn.kb_block, turn.card, turn.traced, turn.rule_files
     emit({"type": "stream_start", "source": "arslan"})
 
     async def _dispatch(user_content):
@@ -816,14 +863,19 @@ async def _handle_answer_body(
                 raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly
                 emit(await llm_errors.error_frame(retry_exc))
-                return
+                return _NO_REPLY
         else:
             # Order is the point: vision_errors is the NARROWEST reading (it only
             # fires on image-specific refusals), llm_errors covers the
             # billing/auth/rate family, and the raw text is what survives when
             # neither recognises the fault — never an invented diagnosis.
             emit(await llm_errors.error_frame(exc, had_images=bool(images)))
-            return
+            return _NO_REPLY
+    return result
+
+
+async def _answer_clarify(conversation_id: str, emit: EventSink, result: dict) -> str | None:
+    """The choice card the turn ended with, stored and shown; None when it ended without one."""
     # PA-3: the model asked for a structured user choice — ask_user_choice is a
     # TERMINAL tool, so the loop ended the turn with validated/clamped {question,
     # options}. Persist a compact text twin (question + bulleted labels) so
@@ -841,6 +893,14 @@ async def _handle_answer_body(
               "usage": _usage_frame(usage_sink.detail())})
         emit(protocol.clarify_options(clarify["question"], clarify["options"]))
         return compact
+    return None
+
+
+async def _answer_reply(conversation_id: str, user_message: str, emit: EventSink, result: dict,
+                        attached_context: str | None) -> str:
+    """The reply, with the promise check's correction and the sources' footer when they apply, stored with the turn's
+    tool summary, and the stream closed with the turn's usage. `attached_context` is read for the footer only: it
+    never goes to the model from here, so no images go with it."""
     full = result.get("final") or ""
     # HX-1 A2 空头支票拦截: PROMISE_RE on a turn that called no tool (a turn that really searched may
     # honestly narrate in-progress work, HX acceptance #1). 0.1.63 K5: the spawn tier is gone (nothing set
