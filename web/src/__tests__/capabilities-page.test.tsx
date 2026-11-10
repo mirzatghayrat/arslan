@@ -39,7 +39,8 @@ vi.mock("../api/mcp", () => ({
 
 
 vi.mock("../api/capabilities", () => ({
-  capabilitiesApi: { list: vi.fn(async () => []), switch: vi.fn(), deleteRow: vi.fn(), source: vi.fn() },
+  capabilitiesApi: { list: vi.fn(async () => []), switch: vi.fn(), deleteRow: vi.fn(), source: vi.fn(),
+    exportNotice: vi.fn(async () => ({ count: 0 })), exportNoticeSeen: vi.fn() },
 }));
 
 import { api } from "../api/client";

@@ -8,8 +8,11 @@ Server executors return {ok, ...} dicts.
 from __future__ import annotations
 
 import asyncio
+import errno
 from typing import NamedTuple
 import logging
+import os
+import stat
 from pathlib import Path
 
 import httpx
@@ -61,6 +64,55 @@ class _NotUtf8(Exception):
         self.name = name
         super().__init__(name)
 
+
+# macOS 11+: no part of the path may be a link at the open (as file_tools._NOFOLLOW). Where it is missing (Linux CI),
+# O_NOFOLLOW covers the last part only. Never both: macOS refuses O_NOFOLLOW | O_NOFOLLOW_ANY (EINVAL).
+_NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
+
+
+class _NotOwnFile(Exception):
+    """A data-folder skill file that may not be the skill's own (`_own_skill_text`): turned into an honest {ok:False}
+    that names the cause."""
+
+
+def _own_skill_text(key: str, rel: str, errors: str = "strict") -> str | None:
+    """The text of `skill_scripts/<key>/<rel>` when it is the skill's own file; None when no regular file is there.
+
+    Arslan reads it with its own rights and hands the text to the sandbox or the model, and resolve() can't see a hard
+    link's other name, which may be another skill's script (one switched off) or a file outside every skill. So: no
+    link on the way (the skill's folder, `references/`, the file), no other name on disk, and the file opened without
+    following a link must be the one looked at (its device and inode). Raises _NotOwnFile naming the cause, or
+    UnicodeDecodeError when `errors` is "strict"."""
+    parts = [key, *rel.split("/")]
+    path = _skill_scripts_root().resolve()
+    for depth, part in enumerate(parts, 1):
+        path = path / part
+        try:
+            info = os.lstat(path)
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        if stat.S_ISLNK(info.st_mode):
+            kind = "file" if depth == len(parts) else "folder"
+            raise _NotOwnFile(f"skill {kind} is a link (a symlink), so Arslan won't run or read it: "
+                              + "/".join(parts[:depth]))
+    if not stat.S_ISREG(info.st_mode):
+        return None
+    if info.st_nlink > 1:
+        raise _NotOwnFile(f"skill file has another name on disk (a hard link), so Arslan won't run or read it: "
+                          f"{key}/{rel}")
+    # O_NONBLOCK: a FIFO swapped in after the lstat can't hold the open; the fstat below refuses it. _NOFOLLOW: a
+    # folder on the way swapped for a link after its lstat isn't followed either, where O_NOFOLLOW_ANY exists.
+    try:
+        fd = os.open(path, os.O_RDONLY | _NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:        # a link at the open: named like the lstat's, never the absolute path
+            raise _NotOwnFile(f"skill file is a link (a symlink), so Arslan won't run or read it: {key}/{rel}") from None
+        raise
+    with os.fdopen(fd, encoding="utf-8", errors=errors) as handle:
+        opened = os.fstat(handle.fileno())
+        if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+            raise _NotOwnFile(f"skill file changed while Arslan opened it, so Arslan won't run or read it: {key}/{rel}")
+        return handle.read()
 
 
 class SearchConfig(NamedTuple):
@@ -678,38 +730,38 @@ class RunPythonExecutor:
         ext = "." + m.group(2).rsplit(".", 1)[-1].lower()
         if ext != ".py":
             return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
-        root = _skill_scripts_root().resolve()
-        # The entry and each sibling must resolve directly in this skill's own folder: a link to another skill's
-        # folder or files would otherwise run that skill's code under this key, past its switch (#786).
-        skill_dir = root / m.group(1)
-        entry = (skill_dir / m.group(2)).resolve()
-        if entry.parent != skill_dir or not entry.is_file():
-            return f"skill script not found: {ref}"
+        key, name = m.group(1), m.group(2)
 
         # Honest read: a non-UTF-8 file must return {ok:False} (via the error string), never
-        # raise UnicodeDecodeError to an unhandled crash. Returns text or an error string.
-        def _read(p) -> str:
+        # raise UnicodeDecodeError to an unhandled crash. Returns text, or None when there is no such file.
+        def _read(rel: str) -> str | None:
             try:
-                return p.read_text(encoding="utf-8")
+                return _own_skill_text(key, rel)
             except UnicodeDecodeError:
-                raise _NotUtf8(p.name) from None
+                raise _NotUtf8(rel.rpartition("/")[2]) from None
 
+        # Each file handed over is the skill's own (_own_skill_text): one that is a link, or has another name on disk,
+        # refuses the run as one that isn't UTF-8 does. Otherwise another skill's code would run under this key, past
+        # its switch (#786), or a file outside every skill would reach the sandbox.
         try:
-            entry_code = _read(entry)
+            entry_code = _read(name)
+            if entry_code is None:
+                return f"skill script not found: {ref}"
             need = RunPythonExecutor._scan_requires(entry_code)
             if need:
                 kind, raw = need
                 return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
-            siblings = {p.name: _read(p)
-                        for p in skill_dir.iterdir()
-                        if p.is_file() and p.suffix == ".py" and p != entry and p.resolve().parent == skill_dir}
+            skill_dir = _skill_scripts_root().resolve() / key
+            siblings = {p.name: text for p in skill_dir.iterdir()
+                        if p.suffix == ".py" and p.name != name and (text := _read(p.name)) is not None}
             # Bundled references (PC-2): read-only docs the script may need. Only the .md/.txt
             # basenames PC-2 stores; their CONTENT is copied — the stored originals are never
             # handed to the sandbox, and the sandbox places the copies read-only (PC-3 ②).
             ref_dir = (skill_dir / "references")
-            references = {p.name: _read(p)
-                          for p in (ref_dir.iterdir() if ref_dir.is_dir() else [])
-                          if p.is_file() and p.suffix in (".md", ".txt")}
+            references = {p.name: text for p in (ref_dir.iterdir() if ref_dir.is_dir() else [])
+                          if p.suffix in (".md", ".txt") and (text := _read(f"references/{p.name}")) is not None}
+        except _NotOwnFile as exc:
+            return str(exc)
         except _NotUtf8 as exc:
             return f"技能文件不是有效 UTF-8:{exc.name},未执行"
         return entry_code, siblings, references
@@ -742,15 +794,22 @@ class RunPythonExecutor:
         return texts[entry_path], siblings, flat("references/", (".md", ".txt"))
 
     @staticmethod
-    async def _switched_off(ref: str) -> bool:
-        """#733 item 14: off means off. Whether the user switched off the skill `ref` names, on the Capabilities page
-        or with its plugin's group (which switches each of its skills the same way, `plugin_package._switch_parts`).
-        The key is the part `_load_skill_script` reads the folder by; no row, or an ill-formed ref, is left to it."""
+    async def _switched_off(ref: str) -> str | None:
+        """#733 item 14: off means off. Why the skill `ref` names doesn't run, or None: the user switched it off, on the
+        Capabilities page or with its plugin's group (which switches each of its skills the same way,
+        `plugin_package._switch_parts`), or it has no row, so it isn't installed (fail closed: a removed skill's
+        leftover folder, or an install stopped before its row). The key is the part `_load_skill_script` reads the
+        folder by; an ill-formed ref is left to it once its key has a row."""
         from server.db import session as db_session
         from server.db.models import SkillPack
+        key = ref.strip().partition("/")[0]
         async with db_session.AsyncSessionLocal() as db:
-            pack = await db.get(SkillPack, ref.strip().partition("/")[0])
-        return pack is not None and pack.enabled is False
+            pack = await db.get(SkillPack, key)
+        if pack is None:
+            return f"skill not installed: {key}. Arslan has no record of it, so its scripts don't run."
+        if pack.enabled is False:
+            return f"skill switched off by the user: {key}. Its scripts don't run while it is off."
+        return None
 
     async def execute(self, args: dict) -> dict:
         from server.services import code_sandbox  # lazy import keeps boot path light
@@ -759,11 +818,11 @@ class RunPythonExecutor:
         code = args.get("code") or ""
         if args.get("skill_script"):
             # The sandbox never grants the scripts folder (the data folder is closed to it); this executor reads the
-            # files and hands the sandbox copies. So a switched-off skill is refused here, before any file is read.
-            if await self._switched_off(str(args["skill_script"])):
-                key = str(args["skill_script"]).strip().partition("/")[0]
-                return {"ok": False, "external": False,
-                        "error": f"skill switched off by the user: {key}. Its scripts don't run while it is off."}
+            # files and hands the sandbox copies. So a switched-off skill, or one with no row, is refused here, before
+            # any file is read.
+            refused = await self._switched_off(str(args["skill_script"]))
+            if refused:
+                return {"ok": False, "external": False, "error": refused}
             # CAP6a: a skill in ~/.agents/skills runs from the bytes whose hashes were just checked against what was
             # approved; one that changed since is switched off instead.
             from server.services import agent_skills
@@ -989,7 +1048,7 @@ class ReadSkillExecutor:
         section = (args.get("section") or "").strip()
         if section.startswith("references/"):
             # Read a bundled reference from data_dir/skill_scripts/<key>/references/ (stored at
-            # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
+            # import time, PC-2). Caged: validated basename, the skill's own file (_own_skill_text), read-only.
             # Only skill_import stores references, so only an imported skill has any: files under
             # another skill's key are leftovers of a removed or failed import (v0.1.64 #472 F8).
             if folder_read is None and row.category != "imported":
@@ -1005,16 +1064,14 @@ class ReadSkillExecutor:
                     return {"ok": False, "external": False, "error": f"reference is not UTF-8 text: {section}"}
                 return {"ok": True, "external": outside, "body": text[:self._READ_SKILL_CAP],
                         "summary": f"skill {skey} · {section}"}
-            root = (_skill_scripts_root() / skey / "references").resolve()
-            target = (root / fname).resolve()
-            if not str(target).startswith(str(root) + "/") or not target.is_file():
-                return {"ok": False, "external": False, "error": f"reference not found: {section}"}
             # Honest read: a non-UTF-8 reference must not crash — replace undecodable bytes
             # rather than raise UnicodeDecodeError (mirrors _load_skill_script._read's guard).
             try:
-                text = target.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                text = target.read_text(encoding="utf-8", errors="replace")
+                text = _own_skill_text(skey, f"references/{fname}", errors="replace")
+            except _NotOwnFile as exc:
+                return {"ok": False, "external": False, "error": str(exc)}
+            if text is None:
+                return {"ok": False, "external": False, "error": f"reference not found: {section}"}
             return {"ok": True, "external": outside, "body": text[:self._READ_SKILL_CAP],
                     "summary": f"技能 {skey} · {section}"}
         if section:

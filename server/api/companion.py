@@ -275,7 +275,8 @@ async def pin_conversation(conversation_id: str, body: ConversationPin, repo=Dep
     if len(conversation_id) > 100 or not conversation_id.strip():
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
     row = await repo.db.get(ConversationContext, conversation_id)
-    if row and row.owner_id != USER.owner_id:
+    from server.services import sub_sessions
+    if row and (row.owner_id != USER.owner_id or row.kind == sub_sessions.DELETED):  # SUB5a: a tombstone stays one
         raise HTTPException(404, detail={"code": "conversation_not_found"})
     from sqlalchemy.dialects.sqlite import insert
     statement = insert(ConversationContext).values(id=conversation_id, owner_id=USER.owner_id, version=1,
@@ -298,7 +299,8 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
         if project is None or project.owner_id != USER.owner_id or project.status != "active":
             raise MemoryError("project_not_available")
     row = await repo.db.get(ConversationContext, conversation_id)
-    if row and row.owner_id != USER.owner_id:
+    from server.services import sub_sessions
+    if row and (row.owner_id != USER.owner_id or row.kind == sub_sessions.DELETED):  # SUB5a: a tombstone stays one
         raise HTTPException(404, detail={"code": "conversation_not_found"})
     if phone_ids.kind_of(conversation_id, row.kind if row else None) == "quick" and not body.no_learning:
         # #490 review, 5: a quick question learns nothing until the user turns it into a chat (phone.py, Q1 #3).

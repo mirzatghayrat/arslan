@@ -8,8 +8,8 @@ which its refusal and expiry texts quote (the user's own words are about the car
 command it was).
 
 The title is Arslan's own reason for the step when it gave one (`run_command`'s `why`), cleaned as a name is (UNI1);
-else a summary read from the command by code, the same reading the Mac card makes (web/src/lib/commandSummary.ts).
-Both readers are held to tests/fixtures/card_purpose_vectors.json. It is in the user's language (the `language`
+else a summary read from the command by code (`summarize`, held to tests/fixtures/card_purpose_vectors.json), which
+the Mac card shows too: it comes on the `propose_run_command` frame as `summary` (LOOP1 d1). It is in the user's language (the `language`
 setting), from web/src/locales/card-purposes.json, which the packaged app carries in server/resources.
 
 What the step touches and its risk are not in the title: the Mac card shows them in its own rows, and the phone its
@@ -113,7 +113,7 @@ def _closing(text: str, open_at: int) -> int:
 
 def _parse(text: str, depth: int = 0) -> list[dict] | None:
     """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
-    is never closed (as commandSummary's `parse`). Raises _TooDeep at a `$(…)` nested past READ_DEPTH, where it reads
+    is never closed. Raises _TooDeep at a `$(…)` nested past READ_DEPTH, where it reads
     no further."""
     steps: list[dict] = []
     step = {"tokens": [], "piped": False, "subs": []}
@@ -434,7 +434,7 @@ def _step(w: dict, depth: int, work: dict) -> dict:
                 continue
             line = " ".join(_requote(t) for t in slice_)
             _deeper(work, line, depth + 1)
-            r = _read(line, [], depth + 1, work)
+            r = _read(line, depth + 1, work)
             if r and r["unsure"]:
                 return _over_network(str(r["purpose"]["params"].get("program") or program))
             if r and r["purpose"]["key"] in ("delete", "deleteSome", "findDelete"):
@@ -532,7 +532,7 @@ def _flatten(steps: list[dict], container: dict | None, out: list[dict], ctx: di
         prev = node
 
 
-def _read(text: str, rules: list[str], depth: int = 0, work: dict | None = None) -> dict | None:
+def _read(text: str, depth: int = 0, work: dict | None = None) -> dict | None:
     """The line read: its purpose, what it touches, how many real steps it has, and whether a transfer in it was not
     fully read (`unsure`). `depth`, `work`: as `_flatten`'s; a line read on its own may read READ_WORK times its
     length again. Raises _TooDeep past READ_DEPTH or READ_WORK."""
@@ -601,18 +601,17 @@ def _read(text: str, rules: list[str], depth: int = 0, work: dict | None = None)
             "unsure": any(r["unsure"] for r in real)}
 
 
-def summarize(text: str, rules: str | list[str] | None = None) -> dict:
+def summarize(text: str) -> dict:
     """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...], "more": n,
-    "unsure": bool}`, as web/src/lib/commandSummary.ts reads it (both are held to
-    tests/fixtures/card_purpose_vectors.json). `unsure`: a transfer in it was not fully read, so it may send local
-    data. `rules`: the server's terminal rules for the line (one, or several). A line it cannot read (a quote never
-    closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says Arslan could not read all of
+    "unsure": bool}`, the frame's `summary` the Mac card shows (held to tests/fixtures/card_purpose_vectors.json).
+    `unsure`: a transfer in it was not fully read, so it may send local data. Read from the line alone: the server's
+    terminal rules for it change nothing here (#817 review). A line it cannot read (a quote never closed) reads as
+    "Run <its first word>"; one read past READ_DEPTH or READ_WORK says Arslan could not read all of
     it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part not read may send local
     data, so its card keeps that warning."""
-    listed = [rules] if isinstance(rules, str) else list(rules or [])
     program = _base((text.strip().split() or [""])[0])
     try:
-        r = _read(text, listed)
+        r = _read(text)
     except _TooDeep:
         return {"purpose": {"key": "notAllRead", "params": {"program": program}}, "touches": [], "more": 0,
                 "unsure": True}
@@ -657,14 +656,17 @@ async def language() -> str:
 
 def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, lang: str = "en",
            outside: bool = False, unsandboxed: bool = False, host: str | None = None, shortcut_as_you: bool = False,
-           network: bool = False, delete_mode: str = "") -> str:
+           network: bool = False, delete_mode: str = "", reading: dict | None = None) -> str:
     """The card's title in `lang`: first the code's facts, where it runs when that is not this Mac's sandbox and
     whether it uses the network, in a fixed form; then the code's reading of `shell`; then Arslan's reason when it
     gave one. The reason is cut first, then the reading, so the whole title fits the phone's heading (PHONE_MAX) and
     no fact is pushed off it (#689 review 1 and its second round). Cleaned as a name is, so neither the model's words
-    nor the command's carry a bidi or zero-width character into the heading."""
+    nor the command's carry a bidi or zero-width character into the heading.
+    `reading`: `summarize(shell)` when the caller already has it (the card's frame `summary`, read from the same
+    text), so a long command is read once per card (#817 review); it is not changed. `rules` is not read: the reading
+    does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument."""
     facts = []
-    s = summarize(shell, rules)
+    s = dict(reading) if reading is not None else summarize(shell)
     # SMART-8: a delete card says how allow deletes (`delete_to_trash.card_mode`), so the phone's heading never
     # reads the same for a move to the Trash and a permanent delete. Word for word with web `deleteMode`.
     if delete_mode in ("trash", "protected") and s["purpose"]["key"] == "delete":
@@ -698,6 +700,12 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     else:
         text = _cut(reading, room)
     return f"{lead}{join}{text}" if lead else text
+
+
+def frame_reading(frame: dict | None, shell: str) -> dict | None:
+    """A `propose_run_command` frame's `summary` when it was read from `shell` itself (its `pretty` is that text), for
+    `phrase(reading=…)`; else None, and the title reads `shell` on its own (#817 review)."""
+    return frame.get("summary") if frame and frame.get("pretty") == shell else None
 
 
 _DELETE_FACTS = {"protected": "ownFilesStay", "permanent": "permanent", "sandboxed": "permanentSandbox"}

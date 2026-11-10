@@ -9,6 +9,7 @@ import sys
 
 import pytest
 
+from server.db.models import SkillPack
 from server.registry.executors import RunPythonExecutor
 
 pytestmark = pytest.mark.asyncio
@@ -26,10 +27,15 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
-def skill_root(tmp_path, monkeypatch, execution_db):
-    """Point ARSLAN_DATA_DIR at a temp dir and return the skill_scripts/<key> dir factory. An empty library: no row
-    has switched these skills off (#733 item 14, test_skill_off_run_python.py)."""
+async def skill_root(tmp_path, monkeypatch, execution_db):
+    """Point ARSLAN_DATA_DIR at a temp dir and return the skill_scripts/<key> dir factory. The library holds the row
+    of the one skill these tests make, `handoff`, switched on: a folder with no row is not an installed skill and
+    never runs (test_skill_file_identity.py), and an off one doesn't either (test_skill_off_run_python.py)."""
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
+    async with execution_db() as db:
+        db.add(SkillPack(key="handoff", name="Handoff", category="imported", description="d", tier="safe",
+                         status="registered", body="## Trigger\nx"))
+        await db.commit()
 
     def _make(key: str):
         d = tmp_path / "skill_scripts" / key

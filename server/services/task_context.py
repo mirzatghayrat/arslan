@@ -45,6 +45,10 @@ def precise_text_request(message: str) -> bool:
 async def load(conversation_id: str, *, user_message="", retrieval_query: str | None = None) -> pc.TaskMemoryContext:
     async with db_session.AsyncSessionLocal() as db:
         row = await db.get(ConversationContext, conversation_id)
+        if sub_sessions.is_deleted(conversation_id, row):
+            # SUB5a: a deleted conversation runs nothing, also after a restart (its row is a tombstone).
+            from arslan.companion.memory import MemoryError
+            raise MemoryError("conversation_deleted")
         # SUB2: a sub-session's settings are read through its parents, each turn. Any other conversation reads its row.
         settings = await sub_sessions.effective_settings(db, row) if row else None
         from server.services import settings_service

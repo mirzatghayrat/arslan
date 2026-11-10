@@ -1182,6 +1182,9 @@
       "paused": "paused",
       "skipped": "skipped"
     },
+    "reason": {
+      "conversation_deleted": "Paused: the conversation it writes into was deleted. Delete this task, or make it again."
+    },
     "action": {
       "pause": "Pause",
       "resume": "Resume",

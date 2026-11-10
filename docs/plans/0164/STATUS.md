@@ -2,7 +2,92 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-07 (UTC, morning), by ⓪Plan. The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+**Updated:** 2026-11-10 (UTC, evening), by ⓪Plan: the list of what's left, below. Before that, 2026-11-07 (UTC, morning). The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+
+### 2026-11-10, evening: what's left (single source)
+
+This list supersedes every "what's left" count below and is now the one source for counts. Anything added later gets a line here, in the same docs PR, saying who decided it. Since the 11-07 morning count, 57 non-docs PRs have merged.
+
+**In review (6):** #805 (SUB5b), #808 (CAP6a export), #813 (HR-1), #816 (skill file identity), #817 (LOOP1 d1, a Bridge frame the user merges), #819 (SUB5d sidebar).
+
+**To build (48), by area:**
+- **SUB (8):**
+  - SUB5c: one writable folder per sub-session.
+  - SUB5f: the phone's counts and child list, a frame the user merges; ①iOS builds the phone side.
+  - SUB5e: opens the tool after the bench.
+  - #799's follow-up: the pause wording and the heartbeat re-enabling a paused task.
+  - A stop for a commander whose turn has ended, before SUB5e.
+  - The sidebar search. The user approved its mock on 2026-11-10; ⑥Helper builds it after #819.
+  - SUB6 and SUB7: `delegate_work` is still in arslan.py, parallel_reads.py and tool_execute.py (SUB card :179, :189).
+- **HR (4):**
+  - HR-1b: a one-click git config grant with an allowlist revert, and `.sample` hooks.
+  - HR-2a: the write_file run-later card.
+  - HR-2b: the push card lists CI files, plus a card after a git refusal. The user decided this on 2026-11-10.
+  - HR-3: the text hint.
+- **Command policy (4):**
+  - The deploy-program rule. It was on ⓪Plan's list from 2026-11-08 and was measured on 11-10: 99 deploy and secret verbs run with no card.
+  - The 6 rows main under-forbids.
+  - #376's remaining cases, re-measured.
+  - `security -i` reading verbs from stdin, measured first.
+- **ASK1 (2):** ASK1-a (the default flip, after HR-1b) and ASK1-b.
+- **Classifier and S5 (3):** CLS, S5a and S5b.
+- **LOOP1 (4):** c3c, built locally and not yet opened; d2; z, which is 2 PRs (LOOP1 :53-54).
+- **CAP (7):**
+  - CAP8-2's plugin rows. The user approved the mock and the hook rule on 2026-11-10.
+  - The CAP8-2 import's hard-link refusal.
+  - CAP11: a Bridge frame the user decides.
+  - HOOK-1 to HOOK-4. The user moved hook running into the end of v0.1.64 on 2026-11-10, told to ⑤CAP; README §2 item 8 still says after v0.1.65 and is corrected in the next docs batch. The card waits for the user.
+- **SBX (2):**
+  - SBX-5b: the allow-once card for other apps' data (SBX :299).
+  - The SBX settings UI: certificates and trusted devices (SBX :293). The backend exists; a mock comes first.
+- **INB (4):** INB7-d, INB7-e, INB7-f and INB9. `build_brief` is still in proactive_service.py (INB :381, :451-453).
+- **C7c (4):** C7c-3b to C7c-6, covering 37 `DELETE-BY: v0.1.64` markers in server/, web/src and scripts.
+- **Overdue deletions (2):**
+  - The SBX-2 adapter (command_sandbox.py:213), with sbx5_reference.py and sbx6_reference.py.
+  - The SUB3 bench markers (kernel_bench/runner.py:98, tool_record.py:23).
+- **Other must items (4):**
+  - ACM: README §3.2 marks it must and no card is written. Who owns it, or whether SMART-8 absorbed it, is open.
+  - #298b: README §3.3 marks it must; #298 is open.
+  - SIDE-1 and SIDE-2: 2 PRs, mock first.
+
+**Total:** 6 in review and 48 to build, 54 in all. ④参谋's independent count is about 45 that block the tag plus about 17 that don't. The two are being reconciled into must and not-must in the next docs batch.
+
+**Should items added by the user on 2026-11-11 (10):** these join the list, bringing it to 64.
+- S6 (README:112).
+- S4a follow-ups: an unopened card shows as expired, and Settings lists approvals that run outside the sandbox (0162/README:262). These may fold into S6's PR.
+- S4b (README:112).
+- IMG1-B: a CSP on the main window (README:211).
+- NET: a site allowlist for the proxy (README:99). Card first.
+- MCPF1 (MCPF1 card:5).
+- C5a (README:108).
+- K6 (README:111).
+- L6: background processes (README:100). Card first, after the sandbox chain.
+- L7: goal mode (README:100). Card first; it merges only if the M64 bench doesn't regress.
+
+**Order (the user, 2026-11-11):** do everything, in three tiers. Lanes work in parallel; a tier only sets priority, and nothing waits for a whole tier. ⓪Plan reports each finished tier to ④参谋.
+- **Tier 1, security (20):**
+  - HR-1, HR-1b, HR-2a, HR-2b and HR-3.
+  - The 4 command-policy items.
+  - #816 and the CAP8-2 hard-link refusal.
+  - SBX-5b, the SBX settings UI (mock first) and the SBX-2 adapter deletion.
+  - ASK1-a and ASK1-b.
+  - CLS, S5a and S5b.
+  - #298b.
+- **Tier 2, features and cleanup (34):**
+  - SUB: 5b, 5c, 5d, 5e, 5f, #799's follow-up, the commander stop, SUB6, SUB7 and the search.
+  - LOOP1: d1, c3c, d2 and z (2 PRs).
+  - CAP: the 6a export, the 8-2 plugin rows, CAP11 and HOOK-1 to HOOK-4.
+  - INB7-d/e/f and INB9.
+  - C7c (4 PRs).
+  - ACM.
+  - SIDE (2 PRs).
+  - The SUB3 markers.
+- **Tier 3:** the 10 should items above, in 9 or 10 PRs. S6, S4b, IMG1-B and NET may run alongside tier 1, since they are security.
+
+**Not PRs:**
+- The SBX-8 sitting: the user runs it; the runbook is in SBX-measurement.md.
+- The real-Mac checks listed below.
+- Codex's bypass corpus and an Astra review for HR-1.
 
 ### 2026-11-07, morning
 
@@ -275,6 +360,7 @@ SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun
 - **Recounting a Codex or count-touching PR after main moves is gone since #716.** The macOS job's counts are pinned per file in `tests/macos_expected.toml` (`markers`, `cases`, `xfail`), so a PR changes only the tables of the files it touches; see `docs/sessions.md` §3. Take the numbers from the macOS job on the PR, which prints what it saw. The ci.yml `EXPECTED` / `EXPECTED_XFAIL` and the mirror's `EXPECTED_TOTAL` / `PARAMETERIZED_EXTRA_CASES` no longer exist.
 - **Re-OK after a merge of main:** compare the PR's own +/- lines against its base before and after, excluding only the resolved files.
 - **Reviewer subagents:** Opus, at effort=max on the security surface and high otherwise. Resume the same reviewer for deltas.
+- **Model for security work (the user, 2026-11-10):** security reviews and security code run on Claude Opus 5.5 or a stronger model, such as Fable 5.2. A review states which model it ran on.
 - **When a Claude safety check stops adversarial probing:** don't route around it. The user decides; Codex Astra covers it via ⑦Codex.
 - **Arm while CI is pending:** a CLEAN PR can't be armed.
 
