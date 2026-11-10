@@ -137,6 +137,10 @@ export default function CapabilitySwitches() {
   const what = (row: CapabilityRow) => row.section === "builtin" ? t(`capabilityList.${row.key}_what`)
     : isMethod(row) ? t("capabilityList.methodWhat")
     : row.section === "plugins" && stopped(row) ? t("capabilityList.plugin_stopped", { name: row.detail ?? "" })
+    // CAP8-2: an update in Claude Code added a blocking hook; only its card on the Import sheet brings it back.
+    : row.section === "plugins" && row.reason === "plugin_hooks" ? t("capabilityList.plugin_hooks", { name: row.detail ?? "" })
+    // Or its copy is refused for anything else, which could hide such a hook.
+    : row.section === "plugins" && row.reason === "plugin_refused" ? t("capabilityList.plugin_refused", { name: row.detail ?? "" })
     : row.section === "skills" || row.section === "plugins" ? row.detail ?? "" : "";
   const usedAt = (iso: string | null) => usedLabel(t, iso, i18n?.resolvedLanguage);
   const used = (row: CapabilityRow) => usedAt(row.last_used);

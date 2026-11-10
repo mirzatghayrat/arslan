@@ -277,6 +277,42 @@ SCENARIOS: dict[str, dict] = {
     "protocol_text_stops_the_stream": dict(replies=[Reply(LONG + '{"tool": "web_search", "args": {"query": "x"}}'),
                                                     Reply("A plain answer after the stopped stream.")],
                                            expect="stream_restart"),
+    # LOOP1 c3c: branches of the answer no pin above reached. A stream that stopped at a tool call is protocol text even
+    # when the reply's first JSON object is not one (the stream reads every object; the answer guard only the first).
+    "stream_stopped_after_other_json": dict(replies=[
+        Reply(LONG + 'Data {"a": 1}, then {"args": {"query": "x"}, "tool": "web_search"}'), Reply("A plain answer.")],
+        expect="Non-executable tool-call text omitted"),
+    # The forced step's answer is not corrected for a capability it denies: nothing may be called any more.
+    "forced_step_denial_is_kept": dict(replies=[_call("web_search", {"query": "q"}), Reply("I can't save that to a file.")],
+                                       max_tool_calls=1, expect="I can't save that to a file."),
+    # A denial in an answer that claims, promises or writes a tool call gets that bounce, not the capability correction.
+    "denial_with_a_claim": dict(replies=[Reply("I searched and found it, but I can't save that to a file."),
+                                         Reply("Here is what I know.")], expect="lacks a successful web_search receipt"),
+    "denial_with_a_promise": dict(replies=[Reply("I can't save that to a file. I'll fetch that for you now."),
+                                           Reply("Here is what I know.")], expect="only promises future action"),
+    "denial_with_tool_call_text": dict(replies=[
+        Reply('I can\'t save that to a file. {"tool": "web_search", "args": {"query": "x"}}'), Reply("Here is what I know.")],
+        expect="Non-executable tool-call text omitted"),
+    "streamed_denial_bounced": dict(replies=[Reply(LONG + "I can't save that to a file."), Reply("I can write it now.")],
+                                    expect="stream_restart"),
+    "claim_after_the_search_is_kept": dict(replies=[_call("web_search", {"query": "q"}), Reply("I searched and found it.")],
+                                           expect="I searched and found it."),
+    "forced_step_claim_is_replaced": dict(replies=[
+        _call("read_file", {"path": "a.md"}), Reply("I searched and found it."), Reply("Written from the notes.")],
+        max_tool_calls=1, expect="Reference notes"),
+    "forced_step_tool_call_text_is_replaced": dict(replies=[
+        _call("read_file", {"path": "a.md"}), Reply('{"tool": "web_search", "args": {"query": "x"}}'),
+        Reply("Written from the notes.")], max_tool_calls=1, expect="Reference notes"),
+    "deferral_with_no_tools_is_salvaged": dict(replies=[Reply("I'll fetch that for you now."),
+                                                        Reply("A plain answer from the salvage.")], tools=[],
+                                               expect="legacy request"),
+    "protocol_text_drops_its_continuation": dict(replies=[
+        Reply('Let me look {"tool": "web_search", "args": {"query": "x"}}', continuation=THOUGHT), Reply("A plain answer.")],
+        expect="Non-executable tool-call text omitted"),
+    "streamed_claim_kept_after_work": dict(replies=[
+        _call("read_file", {"path": "a.md"}), Reply("I searched everywhere. " + LONG),
+        Reply("I searched everywhere again. " + LONG), Reply("I searched everywhere a third time. " + LONG), Reply("")],
+        expect="legacy request"),
     "capability_denied_bounced": dict(replies=[Reply("I can't save that to a file.", continuation=THOUGHT),
                                                Reply("I can write it now.")], expect="Your answer says you cannot write"),
     "echo_stripped_drops_the_continuation": dict(replies=[
@@ -380,6 +416,11 @@ SCENARIOS: dict[str, dict] = {
         _call("use_tool", {"name": "propose_plan_change", "arguments": {
             "levels": [{"name": "one", "band": "doing"}], "reason": "changed"}}), Reply("No project here.")],
         tools=FINDERS, callable=[*REACHABLE, *_table("propose_plan_change")], expect="this conversation has no project"),
+    # LOOP1 c3c: the capability family is answered after the unwrap too, so its card reaches a call through use_tool.
+    "skill_card_on_demand": dict(replies=[
+        _call("use_tool", {"name": "create_skill", "arguments": {
+            "key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}}), Reply("Saved it.")],
+        tools=FINDERS, callable=[*REACHABLE, *_table("create_skill")], setup="skill_saved", expect='"saved": "weekly"'),
     "cut_offs_count_toward_no_progress": dict(replies=[
         Reply(None, [golden._tc("write_file", {"path": "a.md", "content": "par"}, f"t{index}") for index in range(3)],
               finish="length"), Reply("Stopped asking.")], expect="task_no_progress"),
@@ -625,6 +666,23 @@ SCENARIOS: dict[str, dict] = {
     "checks_on_a_streamed_answer": dict(replies=[Reply(LONG), Reply(LONG + "again"), Reply(LONG + "and again")],
                                         job=[["bad one"], ["bad two"], ["bad three"]], answer_only=True,
                                         links=["https://not-read.test/z"], expect="not-read.test/z"),
+    # LOOP1 c3c: the checks read the whole answer as shown, earlier steps' text included (`links_in_answer`: the fake
+    # gives only the links in the text it is handed); a forced step and a repeated failure get no repair; a salvaged
+    # answer's repair carries no continuation of the reply it replaced.
+    "links_from_an_earlier_step": dict(replies=[
+        Reply(LONG + "Source: https://not-read.test/z", [golden._tc("web_search", {"query": "q"}, "c1")]),
+        Reply(LONG + "more"), Reply(LONG + "fixed")], job=[["bad one"], []], answer_only=True,
+        links=["https://not-read.test/z"], links_in_answer=True, expect="Deterministic validation failed"),
+    "job_forced_step_gets_no_repair": dict(replies=[_call("web_search", {"query": "q"}), Reply("Final.")],
+                                           max_tool_calls=1, job=[["bad one"]], expect="task_validation_failed"),
+    "streamed_forced_step_fails_its_checks": dict(replies=[
+        _call("web_search", {"query": "q"}), Reply(LONG + "Source: https://not-read.test/z")], max_tool_calls=1,
+        job=[["bad one"]], answer_only=True, links=["https://not-read.test/z"], expect="These links were not verified"),
+    "same_checks_fail_twice": dict(replies=[Reply("First."), Reply("Second.")], job=[["bad one"], ["bad one"]],
+                                   expect="task_validation_failed"),
+    "salvaged_answer_repaired": dict(replies=[
+        Reply("", continuation=THOUGHT), Reply("A plain answer from the salvage."), Reply("Repaired.")],
+        job=[["bad one"], []], expect="Deterministic validation failed"),
     "job_stops_on_no_progress": dict(replies=[*_searches(5), Reply("Blocked.")], tools=_table("web_search"),
                                      answers=NOTHING_FOUND, job=[[]], expect="task_no_progress"),
     "job_saved_then_no_progress": dict(replies=[
@@ -923,7 +981,8 @@ def _job(log, monkeypatch, spec):
         return {"failures": reports.pop(0)}
     monkeypatch.setattr(task_validation, "validate_output", validate)
     monkeypatch.setattr(task_validation, "failures", lambda report: report["failures"])
-    monkeypatch.setattr(task_validation, "unverified_links", lambda *_args: spec.get("links", []))
+    monkeypatch.setattr(task_validation, "unverified_links", lambda answer, *_args: [
+        link for link in spec.get("links", []) if not spec.get("links_in_answer") or link in answer])
     monkeypatch.setattr(task_validation, "failure_output", lambda output, report, _locale: (
         f"{output}\n[checks failed: {report['failures']}]"))
     return runtime

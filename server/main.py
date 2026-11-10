@@ -307,6 +307,15 @@ async def _boot_skills() -> None:
     """After the seeds, before the MCP supervisor and any request. Each step is logged and never blocks boot."""
     from server.services import agent_skills, plugin_package
 
+    # CAP8-2: a plugin swap a stop cut short (an imported plugin replaced by its card's yes) is finished or put back by
+    # its record (plugin_package's restart matrix). First: a set-aside skill whose folder is still under its key, with
+    # no row or entry, would read as another tool's at the sync below, and putting the old group back takes the new
+    # group's same-key skills out itself, before finish_interrupted or the export look at either. File work in a thread.
+    try:
+        await plugin_package.finish_swaps()
+    except Exception as exc:  # noqa: BLE001 — must never block boot
+        logger.warning("plugin swaps cut short were not settled at boot (non-fatal): %s", exc)
+
     # CAP7b: a plugin install a plain Quit cut short goes, before the supervisor can start what it left on. First:
     # its parts are switched off and removed before the export could move them into the shared folder (#808 review).
     try:

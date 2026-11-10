@@ -218,6 +218,25 @@ async def test_a_backup_that_reads_back_wrong_exports_nothing(home, tmp_path, mo
     assert (data / "run.py").read_text() == RUN
 
 
+async def test_the_backup_is_read_back_against_the_original_bytes(home, tmp_path):
+    """#808 review: the read-back compares each copy with the data folder's own bytes, not with the text the export
+    writes, which reads CRLF as LF: a skill with a CRLF script backs up and exports, its bytes kept exactly."""
+    crlf = "print('a')\r\nprint('b')\r\n"
+    data = await _imported(scripts={"run.py": RUN})
+    (data / "run.py").write_bytes(crlf.encode())
+    report = await agent_skills.export_imported()
+    assert report["exported"] == ["weekly-report"] and report["kept"] == {}, report
+    backup = tmp_path / "data" / report["backup"]
+    assert (backup / "skill_scripts" / "weekly-report" / "run.py").read_bytes() == crlf.encode()
+
+
+async def test_the_notice_never_counts_a_skill_changed_since_its_export_as_not_moved(home):
+    """#808 review: "changed since its export" was moved (off until its card), so it's in neither count."""
+    agent_skills._save({}, export={"state": "done", "exported": ["aa-moved"], "backup": None, "copies_left": [],
+                                   "kept": {"bb-changed": agent_skills.CHANGED_SINCE_EXPORT, "cc-clash": "clash"}})
+    assert agent_skills.export_notice() == {"count": 1, "kept": 1}
+
+
 async def test_it_runs_once(home, tmp_path):
     await _imported()
     assert (await agent_skills.export_imported())["exported"] == ["weekly-report"]

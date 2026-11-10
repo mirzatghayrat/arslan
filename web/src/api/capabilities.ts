@@ -41,6 +41,8 @@ export interface SkillFolderCard {
   kind: "skill_folder"; key: string; name: string; description: string; origin: "installed" | "other_tool";
   changed: boolean; folder: string; skill_md: string; hidden: { count: number; runs: string[]; more: number };
   files: string[]; unscanned: string[]; digest: string; shared_folder: boolean;
+  /** CAP8-2: one event per frontmatter hook that won't run (its own, or those stripped from Arslan's copy). */
+  hooks?: string[];
   scan: { level: "clean" | "notes" | "blocked"; findings: { rule: string; level: string; file: string; line: number; excerpt: string }[] };
 }
 
@@ -132,9 +134,10 @@ export const capabilitiesApi = {
   deleteRow: (key: string) => request<{ ok: boolean }>(`/capabilities/${rowPath(key)}`, { method: "DELETE" }),
   /** CAP8-1: read what Claude Code and Codex have configured, on the user's click. */
   importScan: () => request<ImportScan>("/capability-import"),
-  /** CAP8-2: `skills` are Claude Code's, copied in switched off. */
-  importAdd: (servers: ImportTick[], skills: ImportTick[] = []) =>
-    request<{ results: ImportResult[] }>("/capability-import", json("POST", { servers, skills })),
+  /** CAP8-2: `skills` are Claude Code's, copied in switched off. A plugin's first add answers `card`; it goes in only
+   *  when sent again with that card's digest (`card`). */
+  importAdd: (servers: ImportTick[], skills: ImportTick[] = [], plugins: ImportTick[] = []) =>
+    request<{ results: ImportResult[] }>("/capability-import", json("POST", { servers, skills, plugins })),
 };
 
 function rowPath(key: string): string {
