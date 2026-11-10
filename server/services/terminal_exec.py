@@ -35,6 +35,10 @@ OUTSIDE_SANDBOX: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal
 # the user approved and whose command is one plain call (task_service.unwrapped_once): no wrapper.
 UNWRAPPED: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_unwrapped", default=False)
 
+# HR-1: set by the tool loop only, for one call let out of the sandbox by this conversation's grant with no click on
+# its own card: the outside floor keeps the files that make something run later unwritable (ruling 2).
+HOLD_RUN_LATER: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_hold_run_later", default=False)
+
 SHELL = ("/bin/bash", "-p")
 DEFAULT_TIMEOUT_S = 120
 MIN_TIMEOUT_S = 5
@@ -148,7 +152,8 @@ def _reads_a_saved_output(result: dict) -> bool:
 
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
               offline: bool = False, sandbox: bool = False, closed: list[Path] = (),
-              readable: list[Path] = (), copies: list[Path] = (), unwrapped: bool = False) -> dict:
+              readable: list[Path] = (), copies: list[Path] = (), unwrapped: bool = False,
+              hold_run_later: bool = False) -> dict:
     """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
     cannot start, the command runs as before and the result says
     sandbox="unavailable" (offline mode still refuses without isolation).
@@ -163,7 +168,8 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     from server.services import execution_context, run_temp
     with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
         return await _run(command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
-                          readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key)
+                          readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
+                          hold_run_later=hold_run_later)
 
 
 async def trust_service_allowed() -> bool:
@@ -179,7 +185,8 @@ async def trust_service_allowed() -> bool:
 
 
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
-               readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int) -> dict:
+               readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int,
+               hold_run_later: bool = False) -> dict:
     # bash writes here-document temp files under TMPDIR and a nested zsh (`zsh -c`, a `#!/bin/zsh` script) under
     # TMPPREFIX: where /tmp is not writable a `python3 - <<'PY'` save would fail (0.1.49 bench). Both stay in the run's folder.
     # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
@@ -204,7 +211,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                                          copies=copies, proxy_port=proxy_port, trust_service=trust) or []
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
-        prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies) or []
+        prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies,
+                                                 run_later_in=cwd if hold_run_later else None) or []
         mode = "outside" if prefix else "off"
     if offline and not prefix:
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),

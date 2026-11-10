@@ -39,6 +39,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from server.services import run_later
 from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_profile, file_or_folder, literal,
                                              real as _real, regex, subpath)
 
@@ -418,6 +419,10 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
     # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
     after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
+    # HR-1: nor the files that make something run later (git hooks and config, CI, editor tasks, agent and package
+    # settings, the work folder's core.hooksPath), after every grant and reopen. Raises when hooksPath can't be read.
+    for filters in run_later.kernel_filters([workspace]):
+        after.deny("file-write*", *filters)
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
     held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder))
     if held:
@@ -440,13 +445,18 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
                                                   trust_service=trust_service)]
 
 
-def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None) -> str:
+def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None,
+                    run_later_in: Path | None = None) -> str:
     """S2a-1 piece 4 (decision U11): what a command the user let out of the sandbox, or one run with
     the sandbox off, still may not do — send Apple Events, reach the network when offline, read or
     write Arslan's own data, keys and Hands' folder (files and sockets). The user's secrets stay open:
     ssh, git push, gh and aws need them out here. The saved copies this conversation was given stay
     readable, file by file (piece 5). An approved plain osascript or `shortcuts run` runs with no
-    wrapper at all (`task_service.unwrapped_once`): any seatbelt wrapper blocks Apple Events."""
+    wrapper at all (`task_service.unwrapped_once`): any seatbelt wrapper blocks Apple Events.
+
+    HR-1: `run_later_in` (the work folder) is given when the command left the sandbox under this conversation's
+    grant, with no click on its own card: then the files that make something run later stay unwritable, anywhere,
+    as inside the sandbox (ruling 2: only that click lifts them)."""
     rules = Profile("allow")
     rules.deny("appleevent-send")
     if offline:
@@ -456,6 +466,8 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
     rules.deny("network-outbound", *ours)
     # SBX-5 CAP6b: the skill and plugin folders are closed outside too (CAP6a); the user's secrets stay open.
     rules.deny("file-read* file-write*", *(file_or_folder(p) for p in cap6b_folders(plugin_folder)))
+    for filters in run_later.kernel_filters([run_later_in]) if run_later_in is not None else ():
+        rules.deny("file-write*", *filters)
     # SBX-5a (#772 review): everything is writable out here, so every folder above those is held.
     held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder))
     if held:
@@ -464,12 +476,14 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
     return rules.text()
 
 
-def outside_wrapper(*, offline: bool = False, copies: list[Path] = ()) -> list[str] | None:
+def outside_wrapper(*, offline: bool = False, copies: list[Path] = (),
+                    run_later_in: Path | None = None) -> list[str] | None:
     """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
     command outside the sandbox runs as before)."""
     if not available():
         return None
-    return ["/usr/bin/sandbox-exec", "-p", minimal_profile(offline=offline, copies=copies)]
+    return ["/usr/bin/sandbox-exec", "-p", minimal_profile(offline=offline, copies=copies,
+                                                           run_later_in=run_later_in)]
 
 
 def available() -> bool:
@@ -547,7 +561,11 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 "non-public destination (this Mac, the local network or a link-local address).")
     else:
         head = ("The sandbox stopped this command: commands may write only inside the working folder "
-                f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data." + shut)
+                f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data." + shut
+                # HR-1: for these, not outside_sandbox.
+                + " Commands also can't change files that make something run later (git hooks and config, CI, "
+                "editor tasks, agent and package settings), even in the working folder: if that is what it "
+                "changed, use write_file, which asks the user, or tell the user what to change.")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")

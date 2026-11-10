@@ -632,7 +632,8 @@ async def test_both_routes_sit_behind_the_same_auth_as_their_neighbours(api, hom
 
 def test_no_model_tool_reaches_this_only_the_route_does():
     """Nothing but the route imports the module, so no tool, job or prompt can call it or read what it reads; and
-    nothing else in the server names the two files but `command_sandbox`, which names them to deny them."""
+    nothing else in the server names the two files but `command_sandbox`, which names them to deny them, and
+    `run_later` (HR-1), which names a project's `.codex/config.toml` to deny writes to it."""
     server = pathlib.Path(capability_flow.__file__).parents[1]
     importers, readers = [], []
     for path in server.rglob("*.py"):
@@ -644,7 +645,7 @@ def test_no_model_tool_reaches_this_only_the_route_does():
             if re.search(r"\.claude\.json|\.codex\b(?!-)", text):
                 readers.append(relative)
     assert importers == ["api/capabilities.py"]
-    assert readers == ["services/command_sandbox.py"]
+    assert sorted(readers) == ["services/command_sandbox.py", "services/run_later.py"]
 
 
 # ── the install, real from the route down ───────────────────────────────────────────────────────────────────────

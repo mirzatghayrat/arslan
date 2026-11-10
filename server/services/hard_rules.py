@@ -5,7 +5,7 @@ test that proves it:
 
   DIRECT      what a command's text alone decides: the parser's forbid rules (layer ①) and this-time-only rules
               (layer ②), and what the gate refuses before any card;
-  RUN_LATER   writes into files that make something run later (empty here; HR-1 fills it);
+  RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-2 adds the file tools);
   NEVER_AUTO  what only the user answers, never a grant, a rule, a mode or a classifier (`never_auto`);
   ABSOLUTE    what holds under the least strict settings Arslan has, and the network cut after outside content, by path.
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from server.services import permissions, terminal_policy
+from server.services import permissions, run_later, terminal_policy
 
 #: Where a rule is held: the command's text, the seatbelt profile, the tool loop's gate, the permission ladder.
 LAYERS = ("parser", "kernel", "gate", "permissions")
@@ -92,9 +92,26 @@ DIRECT: tuple[HardRule, ...] = (
     _refused("jxa", "gate", f"{_GATE}:check", _GATE_TEST.format("JXA")),
 )
 
-#: HR-1 fills this (run_later.py: the names, the kernel's deny in the commands and MCP profiles), HR-2 its file-tool
-#: rows and HR-3 the direct forms outside the sandbox. Empty until then: nothing here is held yet.
-RUN_LATER: tuple[HardRule, ...] = ()
+_HR1 = _T + "test_hr1_run_later.py::"
+_HR1_KERNEL = _T + "sbx/test_hr1_run_later_kernel.py::"
+
+
+def _later(family: str) -> HardRule:
+    return HardRule("run-later/" + family, "run-later", "kernel", f"{_SANDBOX}:commands_profile",
+                    _HR1_KERNEL + "test_a_plain_write_to_each_family_is_refused_and_one_beside_it_is_not")
+
+
+#: HR-1: the names (run_later.FAMILIES), held by the kernel for commands in the sandbox, MCP servers and a command
+#: let out under this conversation's grant. HR-2 adds the file tools' rows, HR-3 the direct forms outside the sandbox.
+RUN_LATER: tuple[HardRule, ...] = (
+    *map(_later, (name for name, _ in run_later.FAMILIES)),
+    HardRule("run-later/hooks-path", "run-later", "kernel", "server.services.run_later:hooks_path",
+             _HR1 + "test_the_hooks_path_target_is_denied_and_an_unreadable_config_builds_no_profile"),
+    HardRule("run-later/mcp-preset", "run-later", "kernel", "server.services.capability_sandbox:profile",
+             _HR1_KERNEL + "test_an_mcp_server_cannot_write_them_in_a_granted_folder"),
+    HardRule("run-later/outside-under-a-grant", "run-later", "kernel", f"{_SANDBOX}:minimal_profile",
+             _HR1 + "test_only_a_click_on_its_own_card_lifts_the_hold_outside"),
+)
 
 NEVER_AUTO: tuple[HardRule, ...] = (
     HardRule("once-only-rules", "once-only", "permissions", f"{_PERMS}:_find_standing",
@@ -164,8 +181,8 @@ if not _NAMED <= FORBID_KEYS | ASK_KEYS or not (NEVER_AUTO_KINDS | MAY_AUTO_KIND
 
 
 def _writes_run_later(request) -> bool:
-    """HR-1 and HR-2 fill this: a write, by a command or a file tool, into a file that makes something run later
-    (RUN_LATER). Nothing is held here yet."""
+    """HR-2 fills this: a file tool's write into a file that makes something run later (`run_later.matches`). A
+    command's writes are held by the kernel since HR-1 (RUN_LATER), not read from its request here."""
     return False
 
 

@@ -18,6 +18,14 @@ markers = 3
 cases = 171
 xfail = 0
 
+# 0.1.64 HR-1: real seatbelt refuses a plain write to one name of each run-later family in the commands preset
+# (7 cases) and in an MCP server's granted and own folders, and git still commits, branches, checks out and stashes
+# inside the sandbox while a config write fails.
+["server/sbx/test_hr1_run_later_kernel.py"]
+markers = 3
+cases = 9
+xfail = 0
+
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
 # protected folder named in ASCII, CJK, accents, emoji or with a control character is closed; a
 # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
