@@ -2,7 +2,46 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-07 (UTC, morning), by ⓪Plan. The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+**Updated:** 2026-11-10 (UTC, evening), by ⓪Plan: the list of what's left, below. Before that, 2026-11-07 (UTC, morning). The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+
+### 2026-11-10, evening: what's left
+
+This list supersedes every "what's left" count below. Items are named, so a count can be checked against it. Since the 11-07 morning count, 57 non-docs PRs have merged.
+
+**In review (6):** #805 (SUB5b), #808 (CAP6a export), #813 (HR-1), #816 (skill file identity), #817 (LOOP1 d1, a Bridge frame the user merges), #819 (SUB5d sidebar).
+
+**To build (34), by lane:**
+- **SUB (②Main, 6):**
+  - SUB5c: one writable folder per sub-session.
+  - SUB5f: the phone's counts and child list, a frame the user merges; ①iOS builds the phone side.
+  - SUB5e: opens the tool after the bench.
+  - #799's follow-up: the pause wording and the heartbeat re-enabling a paused task.
+  - A stop for a commander whose turn has ended, before SUB5e.
+  - The sidebar search, approved mock, built by ⑥Helper after #819.
+- **HR (③Hands, 4):**
+  - HR-1b: a one-click git config grant with an allowlist revert, and `.sample` hooks.
+  - HR-2a: the write_file run-later card.
+  - HR-2b: the push card lists CI files, plus a card after a git refusal.
+  - HR-3: the text hint.
+- **Command policy (⑥Helper and Codex, 4):**
+  - The deploy-program rule.
+  - The 6 rows main under-forbids.
+  - #376's remaining cases, re-measured.
+  - `security -i` reading verbs from stdin, measured first.
+- **ASK1 (③Hands, 2):** ASK1-a (the default flip, after HR-1b) and ASK1-b.
+- **Classifier and S5 (3):** CLS, S5a and S5b.
+- **LOOP1 (3):** c3c, built locally and not yet opened; then d2 and z.
+- **CAP (⑤CAP, 7):**
+  - CAP8-2's plugin rows: the mock is approved, and the hook rule is the user's.
+  - The CAP8-2 import's hard-link refusal (⑥Helper).
+  - CAP11: a Bridge frame the user decides.
+  - HOOK-1 to HOOK-4, at the end of v0.1.64; the card waits for the user.
+- **SIDE (1):** mock first.
+
+**Not PRs:**
+- The SBX-8 sitting: the user runs it; the runbook is in SBX-measurement.md.
+- The real-Mac checks listed below.
+- Codex's bypass corpus and an Astra review for HR-1.
 
 ### 2026-11-07, morning
 
