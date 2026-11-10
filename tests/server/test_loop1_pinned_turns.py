@@ -357,6 +357,43 @@ SCENARIOS: dict[str, dict] = {
         *_searches(5), Reply("Blocked; here is what is verified.")], tools=_table("create_skill", "web_search"),
         later_tools=_table("create_skill", "web_search", "write_file"), setup="skill_saved", answers=NOTHING_FOUND,
         expect="Repeated actions made no progress. Explain what was verified"),
+    # LOOP1 c3b: branches of the batch no pin above reached. use_tool is unwrapped only when it is in the table; naming
+    # run_command through it is a direct call only when nobody can be asked; a later save that compacts nothing keeps
+    # the earlier compaction; escalate keeps the text already shown; a lane keeps the progress fingerprints.
+    "use_tool_not_in_the_table": dict(replies=[
+        _call("use_tool", {"name": "attach_file", "arguments": {"path": "a.md"}}), Reply("Done.")],
+        tools=_table("web_search"), callable=REACHABLE, expect="tool_unavailable"),
+    "use_tool_names_a_command_someone_can_ask": dict(replies=[
+        _call("use_tool", {"name": "run_command", "arguments": {"command": "ls"}}), Reply("Done.")],
+        tools=[*FINDERS, *_table("run_command")], callable=REACHABLE, setup="command_card",
+        expect="already in your tool list"),
+    "unshown_tool_called_with_bad_arguments": dict(replies=[_call("attach_file", {}), Reply("Done.")],
+                                                   tools=FINDERS, callable=REACHABLE, expect="send use_tool again"),
+    # A tool a card's refresh shows mid-batch is a shown tool for the rest of that batch: called by its name, it runs
+    # directly, and is not unwrapped (and refused as "already in your tool list").
+    "a_tool_shown_mid_batch_runs_directly": dict(replies=[
+        _batch(("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c1"),
+               ("attach_file", {"path": "a.md"}, "c2")), Reply("Attached.")],
+        tools=[*FINDERS, *_table("create_skill")], later_tools=[*FINDERS, *_table("create_skill", "attach_file")],
+        callable=[*REACHABLE, *_table("create_skill")], setup="skill_saved", expect='["ran", "attach_file"'),
+    "plan_change_on_demand": dict(replies=[
+        _call("use_tool", {"name": "propose_plan_change", "arguments": {
+            "levels": [{"name": "one", "band": "doing"}], "reason": "changed"}}), Reply("No project here.")],
+        tools=FINDERS, callable=[*REACHABLE, *_table("propose_plan_change")], expect="this conversation has no project"),
+    "cut_offs_count_toward_no_progress": dict(replies=[
+        Reply(None, [golden._tc("write_file", {"path": "a.md", "content": "par"}, f"t{index}") for index in range(3)],
+              finish="length"), Reply("Stopped asking.")], expect="task_no_progress"),
+    "research_saved_twice": dict(replies=[
+        _batch(("web_extract", {"url": "https://example.test/a"}, "c1"), ("web_extract", {"url": "https://example.test/b"}, "c2")),
+        _call("write_file", {"path": "report.md", "content": LINKS}, "c3"),
+        _call("write_file", {"path": "second.md", "content": "more"}, "c4"), Reply("Saved both.")],
+        expect='"history_compacted": true'),
+    "escalate_after_text": dict(replies=[
+        Reply(LONG, [golden._tc("escalate", {"kind": "capability", "need": "a scanner", "context": "PDF"}, "c1")])],
+        allow_escalation=True, expect='"escalation"'),
+    "lane_keeps_its_fingerprints": dict(replies=[
+        _call("web_search", {"query": "a"}, "c1"), _call("web_search", {"query": "b"}, "c2"), Reply("Done.")],
+        setup="lane_fingerprints", expect='"loop_progress", ["'),
     "choice_card": dict(replies=[
         Reply("Which one?", [golden._tc("ask_user_choice", {"question": "Which?", "options": [
             {"label": "A"}, {"label": "B"}]}, "c1"), golden._tc("web_search", {"query": "never run"}, "c2")])],
@@ -802,6 +839,13 @@ def _setup(spec, log, monkeypatch, saved, kwargs):
         monkeypatch.setattr(background_jobs, "inside_job", lambda: True)
     elif setup == "lane":
         kwargs["progress_lane"] = _runtime(log, {})
+    elif setup == "lane_fingerprints":
+        lane = _runtime(log, {})
+
+        async def checkpoint(reason):
+            log.append(["checkpoint", reason, list(lane.progress.loop_fingerprints)])
+        lane.checkpoint = checkpoint
+        kwargs["progress_lane"] = lane
     elif setup == "presearch":
         async def classify(*_args, **_own):
             return types.SimpleNamespace(needs=True, tool="web_search", query="the pre-search")

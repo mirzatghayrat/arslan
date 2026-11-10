@@ -1051,18 +1051,22 @@ async def cancel_run(run_id: int, db: AsyncSession = Depends(get_session)) -> di
 
     The registry is process-local: a live run is only cancellable in the process
     executing it. When the registry misses, the DB row disambiguates 404 vs 409.
+
+    SUB5a: the sub-sessions under the run's conversation stop with it, and so does one the stopped turn
+    would start afterwards (`sub_sessions.stopping`, `stop_with`).
     """
-    from server.services import task_service
+    from server.services import sub_sessions, task_service
+    sub_sessions.stopping(run_id)
     task_id = task_service.task_for_run(run_id)
     if task_id is not None:
         await task_service.cancel(task_id)
-        return {"ok": True}
-    if run_registry.cancel(run_id):
-        return {"ok": True}
-    run = await db.get(Run, run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="run not found")
-    raise HTTPException(status_code=409, detail=f"run is not cancellable (status={run.status})")
+    elif not run_registry.cancel(run_id):
+        run = await db.get(Run, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        raise HTTPException(status_code=409, detail=f"run is not cancellable (status={run.status})")
+    await sub_sessions.stop_with(db, run_id, task_id)
+    return {"ok": True}
 
 
 @router.post("/runs/{run_id}/rescore")

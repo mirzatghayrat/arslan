@@ -753,6 +753,10 @@
     "capabilities": "Capacités",
     "new_chat": "Nouvelle conversation",
     "thread_menu": "Actions de conversation",
+    "rename": "Renommer",
+    "renameLabel": "Nom de la conversation",
+    "renameHint": "{{title}} (cliquer pour renommer)",
+    "headerMore": "Plus",
     "archive": "Archiver",
     "unarchive": "Désarchiver",
     "delete": "Supprimer",
@@ -1177,6 +1181,9 @@
       "error": "erreur",
       "paused": "en pause",
       "skipped": "ignorée"
+    },
+    "reason": {
+      "conversation_deleted": "En pause : la conversation dans laquelle elle écrit a été supprimée. Supprimez cette tâche ou recréez-la."
     },
     "action": {
       "pause": "Mettre en pause",

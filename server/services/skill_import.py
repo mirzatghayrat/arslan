@@ -9,8 +9,9 @@ Safety/discipline:
   • LICENSE GATE enforced SERVER-SIDE on both scan and import: repo license must be in the
     permissive allowlist; no license / copyleft / unknown → not importable. 绝不捆绑未核实。
   • Attribution prepended into the imported body (source repo · license · date).
-  • Scripts: .py only, per-file and per-skill caps, stored under data_dir/skill_scripts/<key>/;
-    they execute ONLY inside the P1 sandbox (network-denied, env-scrubbed, tmpdir).
+  • Scripts: .py only, per-file and per-skill caps, stored under ~/.agents/skills/<key>/scripts/ since v0.1.64
+    CAP6a (before it, data_dir/skill_scripts/<key>/); they execute ONLY inside the P1 sandbox (network-denied,
+    env-scrubbed, tmpdir), from copies run_python reads after checking their hashes (agent_skills.checked).
   • Import refuses keys that already exist (no silent overwrite of library content).
 """
 from __future__ import annotations
@@ -55,6 +56,17 @@ def _data_dir() -> Path:
     return config.data_dir()
 
 
+class _NoAliases(yaml.SafeLoader):
+    """`safe_load` with no anchors or aliases (v0.1.64 CAP6a review). A few hundred bytes of chained aliases load as
+    shared references and grow without bound once turned into text: a skill another tool puts in ~/.agents/skills,
+    read at every start, could stall the server. Refused while composing, before anything is built."""
+
+    def compose_node(self, parent, index):
+        if self.check_event(yaml.AliasEvent) or getattr(self.peek_event(), "anchor", None) is not None:
+            raise yaml.YAMLError("anchors and aliases are not read in a SKILL.md frontmatter")
+        return super().compose_node(parent, index)
+
+
 def parse_skill_md(raw: str, path: str = "") -> dict | None:
     """Parse a standard SKILL.md: YAML frontmatter (needs name+description) + markdown body. The key is the
     name's ASCII letters and digits; a name with none (Chinese, for example) takes its folder's, else a short
@@ -63,10 +75,13 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
     if not m:
         return None
     try:
-        meta = yaml.safe_load(m.group(1)) or {}
-    except yaml.YAMLError:
+        meta = yaml.load(m.group(1), Loader=_NoAliases) or {}
+    except (yaml.YAMLError, RecursionError):
         return None
     if not isinstance(meta, dict) or not meta.get("name") or not meta.get("description"):
+        return None
+    # And a name or description is a plain value, never a list or a mapping (only those are turned into text).
+    if isinstance(meta["name"], (list, dict)) or isinstance(meta["description"], (list, dict)):
         return None
     # UNI1: the name and description through the one name cleaner; the body keeps ordinary text, and loses
     # only Tag and control characters (`cleaned` says whether it lost any).
@@ -415,61 +430,81 @@ async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str
             "files": files, "sizes": sizes, "skipped": skipped}
 
 
-async def install_prepared(prepared: dict, *, source_id: str | None = None) -> dict:
-    """Write exactly what `prepare_skill` fetched: its scripts and references under data_dir/skill_scripts/<key>/,
-    then the row. No second fetch, so what was scanned and shown is what is installed (CAP4a-1). `source_id`: the
-    plugin it belongs to (CAP7b), in the row's one commit, so a hard stop never leaves it outside its group.
+async def install_prepared(prepared: dict, *, source_id: str | None = None, approved: bool = True) -> dict:
+    """Write exactly what `prepare_skill` fetched, then the row. No second fetch, so what was scanned and shown is
+    what is installed (CAP4a-1). `source_id`: the plugin it belongs to (CAP7b), in the row's one commit, so a hard
+    stop never leaves it outside its group. `approved=False` (CAP8-2, a skill copied in from another tool, which no
+    card has shown yet): the row starts off and no hashes are recorded as approved, so its first switch-on shows
+    CAP6a's card.
 
-    #539 review 2 and 8: a folder already under the key has no row (checked first), so it is a removed or failed
-    import's leftover; it goes to the Trash before anything is written, or its files would join the skill
-    unscanned. Every file is created new, never through a link, then the folder is read back against the
+    v0.1.64 CAP6a: into ~/.agents/skills/<key>/ (agent_skills), the open standard's folder: a SKILL.md holding the
+    row's text, its scripts under `scripts/` and references under `references/`. The hash of every file goes to
+    Arslan's data folder, never the skill's. That folder is shared, so one already there under the key (another
+    tool's skill) is refused, never replaced or moved.
+
+    #539 review 2 and 8: a leftover under the key (a removed or failed import: in the data folder from before CAP6a,
+    or a folder the manifest says Arslan installed) goes to the Trash first. Every file is created new, never through a link, then the folder is read back against the
     prepared hashes: exactly those files, those bytes. On any failure the folder goes to the Trash and no row is
     written."""
-    from server.services import capability_install
+    from server.services import agent_skills, capability_install
     key, info, sha = prepared["key"], prepared["info"], prepared["commit"]
     async with db_session.AsyncSessionLocal() as db:
         if await db.get(SkillPack, key) is not None:
             raise ValueError(f"skill '{key}' already exists in the library")
     stored, stored_refs = list(prepared["scripts"]), list(prepared["references"])
-    folder = _data_dir() / "skill_scripts" / key
-    if os.path.lexists(folder):
+    leftover = _data_dir() / "skill_scripts" / key
+    if os.path.lexists(leftover):
+        capability_install.to_trash(leftover, prefix="Arslan leftover skill files")
+    folder = agent_skills.folder(key)
+    if agent_skills.still_arslans(key):
+        # Arslan's own folder with no row (a removal cut short), exactly as it installed it: a leftover too, never
+        # joined to the new skill. One that differs from its hashes may be someone else's now: refused below.
         capability_install.to_trash(folder, prefix="Arslan leftover skill files")
+        agent_skills.forget(key)
+    body = _body(prepared, key, info, sha, stored, stored_refs)
+    head = yaml.safe_dump({"name": info["name"], "description": info["description"]}, allow_unicode=True,
+                          sort_keys=False)
+    folder.parent.mkdir(parents=True, exist_ok=True)
     try:
-        if stored or stored_refs:
-            _write_folder(folder, prepared)
-        return await _install_row(prepared, key, info, sha, stored, stored_refs, source_id)
+        folder.mkdir()
+    except FileExistsError:
+        raise ValueError(f"a skill folder named '{key}' is already in ~/.agents/skills (another tool's)") from None
+    try:
+        files = agent_skills.write_new(folder, _expected(prepared, f"---\n{head}---\n\n{body}\n"))
+        agent_skills.record(key, by=agent_skills.ARSLAN, files=files if approved else None)
+        return await _install_row(prepared, key, info, body, stored, stored_refs, source_id, enabled=approved)
     except BaseException:
+        agent_skills.forget(key)
         capability_install.to_trash(folder, prefix="Arslan failed skill import")
         raise
 
 
-def _write_folder(folder: Path, prepared: dict) -> None:
-    """The prepared files, each created new (O_EXCL, never through a link), then read back: the folder holds
-    exactly them, byte for byte."""
-    expected = {fname: content for fname, content in prepared["scripts"].items()}
+def _expected(prepared: dict, skill_md: str | None = None) -> dict[str, str]:
+    expected = {f"scripts/{fname}": content for fname, content in prepared["scripts"].items()}
     expected.update({f"references/{fname}": content for fname, content in prepared["references"].items()})
+    if skill_md is not None:
+        expected["SKILL.md"] = skill_md
+    return expected
+
+
+def _write_folder(folder: Path, prepared: dict, skill_md: str | None = None) -> dict[str, str]:
+    """The prepared files in a new folder, each created new (O_EXCL, never through a link), then read back: the
+    folder holds exactly them, byte for byte."""
+    from server.services import agent_skills
     folder.parent.mkdir(parents=True, exist_ok=True)
     folder.mkdir()
-    if prepared["references"]:
-        (folder / "references").mkdir()
-    for rel, content in expected.items():
-        fd = os.open(folder / rel, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as out:
-            out.write(content)
-    found = {str(path.relative_to(folder)): hashlib.sha256(path.read_bytes()).hexdigest()
-             for path in folder.rglob("*") if not path.is_dir() or path.is_symlink()}
-    if found != {rel: hashlib.sha256(content.encode("utf-8")).hexdigest() for rel, content in expected.items()}:
-        raise ValueError("the skill's folder does not match what was checked")
+    return agent_skills.write_new(folder, _expected(prepared, skill_md))
 
 
-async def _install_row(prepared: dict, key: str, info: dict, sha: str, stored: list, stored_refs: list,
-                       source_id: str | None = None) -> dict:
+def _body(prepared: dict, key: str, info: dict, sha: str, stored: list, stored_refs: list) -> str:
     spdx, source = prepared["license"], prepared["license_source"]
     today = datetime.now(timezone.utc).date().isoformat()
+    # CAP8-2: copied from the user's other tool, so no repository, commit or license to name.
+    where = prepared.get("imported_from") or (f"https://github.com/{prepared['full_name']} at {sha[:12]} "
+                                              f"({spdx}{'' if source == 'repo' else ', ' + source})")
     # "verbatim" only when nothing went (UNI1: Tag and control characters do).
     attribution = (f"> Imported {'with hidden characters removed' if info.get('cleaned') else 'verbatim'} "
-                   f"from https://github.com/{prepared['full_name']} at {sha[:12]} "
-                   f"({spdx}{'' if source == 'repo' else ', ' + source}) on {today}.\n\n")
+                   f"from {where} on {today}.\n\n")
     body = attribution + info["body"]
     if stored:
         body += ("\n\n## Bundled scripts\n"
@@ -481,11 +516,16 @@ async def _install_row(prepared: dict, key: str, info: dict, sha: str, stored: l
                  "Reference docs shipped with this skill. Read one via the read_skill tool with "
                  '{"key": "' + key + '", "section": "references/<file>"}:\n'
                  + "\n".join(f"- `references/{f}`" for f in stored_refs))
+    return body
 
+
+async def _install_row(prepared: dict, key: str, info: dict, body: str, stored: list, stored_refs: list,
+                       source_id: str | None = None, *, enabled: bool = True) -> dict:
+    spdx, source, sha = prepared["license"], prepared["license_source"], prepared["commit"]
     async with db_session.AsyncSessionLocal() as db:
         row = SkillPack(key=key, name=info["name"], category="imported",
                         description=info["description"], tier="safe",
-                        status="registered", body=body, source_id=source_id)
+                        status="registered", body=body, source_id=source_id, enabled=enabled)
         db.add(row)
         await db.commit()
     return {"key": key, "name": info["name"], "description": info["description"],

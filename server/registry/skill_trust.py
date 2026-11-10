@@ -20,9 +20,12 @@ from server.registry.seed_catalog import SKILLS
 from server.services.skill_forge import WRITTEN
 
 SEEDED = frozenset(key for key, *_ in SKILLS)
+#: CAP6a: a skill another tool put in ~/.agents/skills (server/services/agent_skills.py). Switched, never deleted
+#: (capability_list's origin "other_tool"), and the seeder never retires it.
+OTHER_TOOL = "other-tool"
 #: D7's user marks, in one place (#519 review): a category one of these, or a capability source. seeder._USERS_SKILL
 #: is built from them; `has_users_mark` is the same rule on a row.
-USER_CATEGORIES = ("imported", *WRITTEN)
+USER_CATEGORIES = ("imported", *WRITTEN, OTHER_TOOL)
 
 
 def has_users_mark(pack) -> bool:

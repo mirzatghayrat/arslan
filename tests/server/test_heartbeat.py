@@ -64,6 +64,8 @@ async def test_enabling_with_a_checklist_creates_an_arslan_task(db):
     assert t.target == "arslan"                     # runs through the unattended path
     assert t.interval_s == heartbeat.DEFAULT_INTERVAL_S
     assert t.enabled is True
+    # SUB5a: turned off and on, it is made again, likely with the old id: its conversation is never `scheduled-<id>`.
+    assert t.conversation_id.startswith("scheduled-") and t.conversation_id != f"scheduled-{t.id}"
 
 
 async def test_the_suggested_cadence_is_hours_not_minutes(db):

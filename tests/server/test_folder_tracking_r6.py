@@ -73,8 +73,12 @@ def named_family():
     seeds.update(' '.join((program, *(shlex.quote(arg) if not arg.isalnum() else '"' + arg + '"'
                                      for arg in shlex.split(rest))))
                  for _, _, program, rest in words.RULES if '&&' not in rest and '<' not in rest)
-    for form, separator, seed in product(CD_FORMS, SEPARATORS, sorted(seeds)):
-        yield form + separator + seed
+    seeds = sorted(seeds)
+    for (f, form), (s, separator), (j, seed) in product(enumerate(CD_FORMS), enumerate(SEPARATORS), enumerate(seeds)):
+        # Default sample (FOLDER_TRACKING_EVIDENCE_FULL=1 keeps all): a Latin square, so every seed
+        # meets every separator once and the move form rotates, reaching every form under each separator.
+        if revisions.FULL or f == (j + s) % len(CD_FORMS):
+            yield form + separator + seed
 
 
 @pytest.mark.parametrize("corpus", ('named', 'policy', *evidence.GENERATORS))
@@ -85,7 +89,9 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
     elif corpus == 'policy':
         texts = matrix._parameters(matrix.policy_cases) | matrix._parameters(words) | matrix._parameters(quoted)
     else:
-        texts = (text for _, text in evidence.GENERATORS[corpus]())
+        # By default the quoted-argument suite's own stratified rows; every row with FULL.
+        rows = list(evidence.GENERATORS[corpus]())
+        texts = (text for _, text in (rows if revisions.FULL else evidence.stratified(rows)))
     counts = Counter()
     for text in texts:
         before, after = baseline.assess(text), tp.assess(text)
@@ -115,7 +121,8 @@ def test_folder_corpus_identity_and_transitions(tmp_path, monkeypatch, prefix_ne
     plain = tmp_path / 'matrices'
     plain.mkdir()
     matrix.make_plain_tree(set.union(*corpora.values()), plain)
-    cohorts = [(name, texts, plain) for name, texts in corpora.items()]
+    # Fixed sample by default; FOLDER_TRACKING_EVIDENCE_FULL=1 runs every text.
+    cohorts = [(name, revisions.sampled(texts), plain) for name, texts in corpora.items()]
     for topology in ('plain', 'outside-link', 'inside-link', 'deep-link', 'missing'):
         work, outside = tmp_path / topology, tmp_path / (topology + '-outside')
         work.mkdir()

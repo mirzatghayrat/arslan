@@ -374,6 +374,14 @@ async def lifespan(app: FastAPI):
 
     await seed_registry()
 
+    # CAP6a: ~/.agents/skills is read at start, after the seeds: a skill whose files changed is switched off.
+    try:
+        from server.services import agent_skills
+
+        await agent_skills.sync()
+    except Exception as exc:  # noqa: BLE001 — never blocks boot; read_skill checks each folder skill anyway
+        logger.warning("the skill folder was not read at boot (non-fatal): %s", exc)
+
     # CAP7b: a plugin install a plain Quit cut short goes, before the supervisor can start what it left on.
     try:
         from server.services import plugin_package

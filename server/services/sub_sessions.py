@@ -18,6 +18,12 @@ SUB4: a sub-session that ends leaves a report (`ended`); its result is posted in
 nothing under its parent is at work and the parent is idle, one summary turn runs there with every report framed as
 outside content (`_summarise`).
 
+SUB5a: what a restart, a stop and a delete do to them. Each sub-session's row says what it still owes its parent
+(`sub_state`, migration 0091), written when that changes and only read at boot (`report_restart`). The window's stop
+of a conversation's run stops everything under it, and a sub-session that turn would start afterwards
+(`stopping`, `stop_tree`). Deleting a conversation goes through `before_delete`, and leaves its row a tombstone that
+refuses it from then on (`tombstone`, `is_deleted`).
+
 SUB5b: any job that starts in a sub-session runs as the sub-session's, read from the stored kind (`placement`).
 Whole-app summaries count a sub-session's work as the top of its chain's (`commanders`); the whole app's lists leave it
 out (`not_sub`); a brief framed as outside content marks the sub-session's later typed turns too.
@@ -27,12 +33,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import dataclasses
 import logging
 import math
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from arslan.execution_budget import BudgetExceeded
 from server.db.companion_models import ConversationContext
@@ -42,6 +50,8 @@ logger = logging.getLogger(__name__)
 #: A conversation, a sub-session, and the one layer below it.
 MAX_DEPTH = 3
 SUB = "sub"
+#: SUB5a: the kind a deleted conversation's row is left with (`tombstone`).
+DELETED = "deleted"
 #: SUB3 (card, rule 10): how many sub-sessions one conversation may start, by its layer (a commander, a sub-session),
 #: and how many may be alive at once in one tree. The bench may move these numbers.
 MAX_CHILDREN = {1: 4, 2: 2}
@@ -55,6 +65,11 @@ TREE_CAP_MULTIPLIER = 3
 TOOLS = frozenset({"read_file", "list_dir", "search_files", "write_file", "edit_file", "run_command",
                    "web_search", "web_extract", "update_plan"})
 _starting: asyncio.Lock | None = None
+#: SUB5a (migration 0091), a sub-session's `sub_state`: WORKING from the commit that makes it until a summary turn that
+#: holds its report runs (queued, running, waiting on a card, or ended with its report not summed up yet); SUMMING
+#: while that summary turn runs; cleared (NULL) when it ends, when its report is dropped, or when it stops being a
+#: sub-session. INTERRUPTED: a restart found it WORKING.
+WORKING, SUMMING, INTERRUPTED = "working", "summing", "interrupted"
 
 #: How a child reads each column. strictest_on: on if anyone along the chain has it on. strictest_off: on only if
 #: everyone along the chain has it on. parent: the top of the chain's value. own: the child's own.
@@ -71,6 +86,7 @@ INHERITANCE: dict[str, str] = {
     "parent_id": "own",
     "learns_after_message_id": "own",
     "pinned": "own",
+    "sub_state": "own",
     "version": "own",
     "created_at": "own",
     "updated_at": "own",
@@ -80,9 +96,9 @@ _OFF = tuple(name for name, how in INHERITANCE.items() if how == "strictest_off"
 
 
 class SubSessionError(Exception):
-    def __init__(self, code: str):
+    def __init__(self, code: str, **extra):
         super().__init__(code)
-        self.code = code
+        self.code, self.extra = code, extra
 
 
 class TreeLimitReached(BudgetExceeded):
@@ -146,9 +162,11 @@ async def create_child(db, parent_id: str, child_id: str | None = None) -> Conve
     parent can take that back later. Its name comes from its first message, as every conversation's does.
 
     A parent with no row yet gets one (an ordinary conversation has none until a setting changes), so that a chain with
-    a row missing can fail closed. Deleting a conversation keeps its row today, so a deleted parent isn't a missing one:
-    removing the rows is SUB5's cascade."""
+    a row missing can fail closed. SUB5a: a parent deleted in this process (`deleted`) has no row either, and is
+    refused (`conversation_deleted`): its turn may go on after the delete, and a fresh row would carry the defaults."""
     parent = await db.get(ConversationContext, parent_id)
+    if is_deleted(parent_id, parent):
+        raise SubSessionError("conversation_deleted")
     if parent is None:
         parent = ConversationContext(id=parent_id)
         db.add(parent)
@@ -160,7 +178,7 @@ async def create_child(db, parent_id: str, child_id: str | None = None) -> Conve
         raise SubSessionError("sub_session_depth")
     child = ConversationContext(
         id=child_id or f"sub-{uuid4()}", owner_id=parent.owner_id, kind=SUB, parent_id=parent_id,
-        project_id=effective.project_id, no_learning=True,
+        project_id=effective.project_id, no_learning=True, sub_state=WORKING,
         cloud_memory_allowed=effective.cloud_memory_allowed, allow_sensitive=effective.allow_sensitive)
     db.add(child)
     await db.flush()
@@ -201,18 +219,24 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
 
     `outside_seen`: the starting turn read outside content. The brief is then stored and given to the model framed as
     outside content, and every turn of the job starts as having read some (`untrusted.carried`). Either way the brief
-    is not the user's words: the job drops what the user asked to save (`background_jobs._execute`)."""
+    is not the user's words: the job drops what the user asked to save (`background_jobs._execute`).
+
+    SUB5a: refused (`sub_session_stopped`) once the window stopped the turn that starts it (`stopping`), checked
+    again right before its job starts, with no await between, so a stop either refuses it or finds its job."""
     from server.db import session as db_session
     from server.orchestrator import memory, untrusted
-    from server.services import background_jobs
+    from server.services import background_jobs, execution_context
     brief = brief.strip()
     if not brief:
         raise SubSessionError("sub_session_brief_required")
+    turn = execution_context.current_run_id()
     global _starting
     if _starting is None:
         _starting = asyncio.Lock()
     async with _starting:            # two starts in one tree must not both pass the counts
         async with db_session.AsyncSessionLocal() as db:
+            if turn in _stopped_runs:
+                raise SubSessionError("sub_session_stopped")
             layer = await depth(db, parent_id)
             if layer >= MAX_DEPTH:
                 raise SubSessionError("sub_session_depth")
@@ -226,6 +250,9 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
         # SUB5b: under a line of its own, so a later turn the user types there starts as having read outside content too.
         framed = untrusted.sub_session_brief(brief) if outside_seen else None
         await memory.add_message(child, "user", framed or brief, display_content=brief if framed else None)
+        if turn in _stopped_runs:        # stopped while this one was being made: it never runs, and owes nothing
+            await _set_state([child], None)
+            raise SubSessionError("sub_session_stopped")
         _parents[child] = parent_id
         await background_jobs.start(child, brief, [], outside_seen=outside_seen, parent_id=parent_id)
     return child
@@ -273,6 +300,9 @@ async def check_tree_spend(conversation_id: str) -> None:
     from server.services import settings_service
     budget = current()
     async with db_session.AsyncSessionLocal() as db:
+        # SUB5a: a deleted one is out of its tree, so its tree would read as one that spent nothing.
+        if is_deleted(conversation_id, await db.get(ConversationContext, conversation_id)):
+            raise SubSessionError("conversation_deleted")
         usd_cap = await settings_service.task_usd_cap(db)
         if usd_cap is None:
             if budget is not None:
@@ -309,6 +339,10 @@ _reports: dict[str, list[dict]] = {}
 _summaries: dict[str, asyncio.Task] = {}        # a commander's summary, waiting or running: one at a time
 _parents: dict[str, str] = {}                   # a sub-session started in this process -> its parent
 _waiting: dict[str, int] = {}                   # a sub-session -> its cards waiting for the user's answer
+_summing: dict[str, list[str]] = {}             # SUB5a: a summary turn's job -> the sub-sessions it sums up
+_hushed: set[str] = set()                       # SUB5a: jobs stopped with what they work for: they report nothing
+_stopped_runs: set[int] = set()                 # SUB5a: runs the window stopped (`stopping`)
+_deleted: set[str] = set()                      # SUB5a: conversations deleted in this process (`deleted`)
 
 
 def files_written(trace) -> list[str]:
@@ -336,7 +370,11 @@ def waiting_on_user(sub_session_id: str):
 
 def ended(job, text: str) -> None:
     """A sub-session's job ended (`done`, `partial`, `blocked`, `stopped`, `out_of_budget`): its report waits for its
-    parent's summary turn. Whether it read outside content is its job's own record; not known counts as yes."""
+    parent's summary turn. Whether it read outside content is its job's own record; not known counts as yes. SUB5a:
+    one stopped with what it works for (`stop_tree`) leaves none."""
+    if job.job_id in _hushed:
+        _hushed.discard(job.job_id)
+        return
     _reports.setdefault(job.parent_id, []).append({
         "sub_session": job.conversation_id, "outcome": job.outcome or "blocked", "result": (text or "").strip(),
         "files": list(job.files), "outside": job.external_seen is not False})
@@ -408,7 +446,10 @@ async def _summarise(parent_id: str) -> None:
                 framed += f"\n\n{waiting} more sub-session(s) are waiting for the user's answer on a card."
             job = await background_jobs.start(parent_id, goal, [], outside_seen=any(r["outside"] for r in reports),
                                               parent_id=above, reports=f"{_SUMMARY_NOTE}\n\n{framed}")
+            ids = _summing[job.job_id] = [r["sub_session"] for r in reports]
             await asyncio.wait({job.task})
+            _summing.pop(job.job_id, None)
+            await _set_state(ids, None)         # SUB5a: summed up, however that turn ended
     except Exception as exc:  # noqa: BLE001 — the reports wait for the next sub-session that ends
         logger.warning("summary turn for %s not started: %s", parent_id, type(exc).__name__)
     finally:
@@ -420,7 +461,7 @@ def _reset_for_tests() -> None:
     _starting = None
     for task in _summaries.values():
         task.cancel()
-    for held in (_reports, _summaries, _parents, _waiting):
+    for held in (_reports, _summaries, _parents, _waiting, _summing, _hushed, _stopped_runs, _deleted):
         held.clear()
 
 
@@ -475,3 +516,240 @@ async def looser_than_chain(db, row: ConversationContext, values: dict) -> bool:
         return True
     return (any(getattr(chain, name) and not values.get(name) for name in _ON)
             or any(values.get(name) and not getattr(chain, name) for name in _OFF))
+
+
+# -- SUB5a: restart, stop, delete -----------------------------------------------------------------------------------
+
+#: How long deleting a conversation waits for its stopped jobs to end before its rows go.
+STOP_WAIT_S = 10.0
+
+
+def deleted(conversation_id: str) -> bool:
+    """Whether a delete of this conversation began in this process (`before_delete`). It covers what the tombstone
+    can't yet: from the delete's checks until its commit writes the tombstone, the delete waits up to STOP_WAIT_S for
+    the conversation's jobs, and a sub-session its live turn starts meanwhile would land under it outside the ids
+    being deleted. Also after a failed commit: refused, never looser. Never cleared; a restart forgets it, and the
+    tombstone holds from then on (`is_deleted`)."""
+    return conversation_id in _deleted
+
+
+def is_deleted(conversation_id: str, row: ConversationContext | None) -> bool:
+    """Whether this conversation was deleted: its row is a tombstone (`tombstone`), or a delete of it began in this
+    process (`deleted`). Nothing of a deleted conversation runs: its context load (`task_context.load`, which every
+    turn and job goes through), a sub-session under it (`create_child`) and its tree's limit (`check_tree_spend`) are
+    refused with `conversation_deleted`, and the phone's and the settings' routes leave the tombstone as it is.
+
+    Why a tombstone: there is no conversations table. A conversation is its messages and, once a setting changes,
+    its context row, and a first message to an id nothing has seen is what makes one (the window's `thread-<uuid>`,
+    the phone's `phone-<uuid>`, a scheduled task's `scheduled-<id>` on each fire). So a missing row means a new
+    conversation and reads the defaults, as it always did; only a row can say "deleted", also after a restart."""
+    return conversation_id in _deleted or (row is not None and row.kind == DELETED)
+
+
+async def tombstone(db, ids) -> int:
+    """DELETE /conversations/{id}, in its transaction: each of these conversations' context rows becomes a tombstone
+    (kind DELETED, the strictest values, no project, pin, parent, state or learning mark), one written where none
+    was. Its settings are never read again (`is_deleted` refuses first); they are strict in case something does.
+    Returns how many rows held a conversation's settings before (the delete's `conversation_contexts` count).
+
+    `temporary` stays off: the window's socket sends a temporary conversation's frames down a path of their own
+    (`server/ws/arslan.py`); off, each of its turns takes the ordinary one, through the refusing load."""
+    from sqlalchemy import func
+    from sqlalchemy.dialects.sqlite import insert
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return 0
+    held = await db.scalar(select(func.count()).select_from(ConversationContext).where(
+        ConversationContext.id.in_(ids), ConversationContext.kind.is_distinct_from(DELETED)))
+    now = datetime.utcnow()
+    values = dict(kind=DELETED, project_id=None, parent_id=None, no_memory=True, no_learning=True, temporary=False,
+                  cloud_memory_allowed=False, allow_sensitive=False, pinned=False, sub_state=None,
+                  learns_after_message_id=None, updated_at=now)
+    for cid in ids:
+        statement = insert(ConversationContext).values(id=cid, version=1, created_at=now, **values)
+        await db.execute(statement.on_conflict_do_update(
+            index_elements=[ConversationContext.id],
+            set_={**values, "version": ConversationContext.version + 1}))
+    return int(held or 0)
+
+
+async def _set_state(ids, state: str | None, db=None) -> None:
+    """Write `sub_state` for these sub-sessions: in `db`'s transaction when given, else committed here."""
+    ids = list(ids)
+    if not ids:
+        return
+    statement = update(ConversationContext).where(ConversationContext.id.in_(ids),
+                                                  ConversationContext.kind == SUB).values(sub_state=state)
+    if db is not None:
+        await db.execute(statement)
+        return
+    from server.db import session as db_session
+    async with db_session.AsyncSessionLocal() as session:
+        await session.execute(statement)
+        await session.commit()
+
+
+async def summing(job_id: str) -> None:
+    """A summary turn's own run began (its task row is written): a restart from here on cuts that turn, which is
+    closed as any job's (`background_jobs.report_interrupted`), not the sub-sessions it sums up."""
+    await _set_state(_summing.get(job_id, ()), SUMMING)
+
+
+async def report_restart() -> int:
+    """Boot, after `background_jobs` closed the jobs the restart cut short, each in its own conversation (a
+    sub-session's too, so each records it). Only the rows are read, nothing is worked out from the past:
+    WORKING → INTERRUPTED, and each parent gets one line for all of its own, in the same commit. No summary turn
+    starts and nothing runs again: the parent waits for the user to say continue. SUMMING → cleared: its summary
+    turn was running, and is closed as any job. Returns how many were interrupted."""
+    from server.db import session as db_session
+    from server.db.models import ArslanMessage
+    from server.services import runtime_messages
+    locale = await runtime_messages.selected_locale()
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(select(ConversationContext).where(
+            ConversationContext.kind == SUB, ConversationContext.sub_state.in_((WORKING, SUMMING))))).scalars().all()
+        owed: dict[str, int] = {}
+        for row in rows:
+            if row.sub_state == WORKING and row.parent_id:
+                owed[row.parent_id] = owed.get(row.parent_id, 0) + 1
+            row.sub_state = INTERRUPTED if row.sub_state == WORKING else None
+        for parent_id, count in owed.items():
+            db.add(ArslanMessage(conversation_id=parent_id, role="arslan",
+                                 content=runtime_messages.render("sub_sessions_interrupted", locale, count=count)))
+        await db.commit()
+    return sum(owed.values())
+
+
+def stopping(run_id: int) -> None:
+    """The window stops this run (POST /runs/{id}/cancel), called before anything else: a sub-session the stopped turn
+    would start from now on is refused (`start`), as H3's `hands_service.carry_stop_to` stops a job a stopped turn
+    starts."""
+    _stopped_runs.add(int(run_id))
+
+
+def _forget(ids) -> None:
+    """What waits in memory for these conversations goes: the reports for them and their summary turn."""
+    for cid in ids:
+        _reports.pop(cid, None)
+        task = _summaries.pop(cid, None)
+        if task is not None:
+            task.cancel()
+
+
+async def stop_tree(db, conversation_id: str) -> list[str]:
+    """A run of this conversation was stopped: every sub-session under it that is still at work stops too, and
+    what they owed it goes with them: no report, no summary turn (the user stopped that work). In `db`'s transaction;
+    the caller commits. Returns the jobs stopped.
+
+    The reports of its own sub-sessions that had already finished go too; it gets one line saying how many, as a
+    restart writes one (`report_restart`). Their results are in their own conversations."""
+    from server.db.models import ArslanMessage
+    from server.services import background_jobs, runtime_messages
+    below = (await tree(db, conversation_id))[1:]
+    stopped = []
+    finished = {report["sub_session"] for report in _reports.get(conversation_id, ())}
+    # One that has just finished and not reported yet can't be stopped, but its report goes too.
+    for job in {job.job_id: job for job in (*background_jobs.active(), *background_jobs.unreported())}.values():
+        if job.conversation_id in below:
+            _hushed.add(job.job_id)
+            if background_jobs.stop(job.conversation_id, job.job_id):
+                stopped.append(job.job_id)
+            elif job.parent_id == conversation_id:
+                finished.add(job.conversation_id)
+    _forget([conversation_id, *below])
+    if finished:                    # read before this transaction writes, as `report_restart` does
+        db.add(ArslanMessage(conversation_id=conversation_id, role="arslan", content=runtime_messages.render(
+            "sub_sessions_stopped_reports", await runtime_messages.selected_locale(), count=len(finished))))
+    await _set_state(below, None, db)
+    return stopped
+
+
+async def stop_with(db, run_id: int, task_id: str | None) -> None:
+    """POST /runs/{id}/cancel stopped this run: a chat turn's, or a sub-session's job, stops what is under its
+    conversation. A conversation's own job or a summary turn is not what started its sub-sessions."""
+    from server.db.models import Run
+    from server.services import background_jobs
+    job = background_jobs._jobs.get(task_id) if task_id else None
+    if job is not None and (job.parent_id is None or job.reports is not None):
+        return
+    run = await db.get(Run, run_id)
+    if run is not None:
+        await stop_tree(db, run.conversation_id)
+        await db.commit()
+
+
+async def before_delete(db, conversation_id: str, *, choice: str | None,
+                        as_sub_session: bool) -> tuple[list[str], list[str]]:
+    """DELETE /conversations/{id}: which conversations go and which of its sub-sessions stay, as top-level chats
+    (the user's decision, 2026-11-07: the dialog offers to delete its sub-sessions too, ticked by default). Raises
+    SubSessionError:
+    - `not_found` for a sub-session not named as one (`as_sub_session`): what a phone's `conversation.delete` gets;
+    - `sub_sessions_running` while anything under it is at work;
+    - `sub_sessions_choice_required` when it has sub-sessions and `choice` is neither "delete" nor "keep".
+    A sub-session deleted while its parent waits on it reports `stopped`; the others report as usual. With "keep"
+    its direct sub-sessions are promoted (`_promote`). Changes go into `db`'s transaction; the caller deletes the
+    rows and commits.
+
+    Fail closed, both halves: what goes is marked deleted first (`deleted`: from then on nothing of it loads a
+    context or starts a sub-session), and its own jobs, queued, running or reporting, a summary turn too, are stopped
+    and waited for before its rows go (`_stop_for_delete`). The caller then leaves each a tombstone (`tombstone`),
+    which refuses it after a restart too. The checks and the mark are made under the lock `start` holds, so a
+    sub-session being started either has its job by then (`sub_sessions_running`) or is refused (`create_child`). A
+    failure after the mark leaves it marked: refused, never looser."""
+    from server.services import background_jobs
+    global _starting
+    if _starting is None:
+        _starting = asyncio.Lock()
+    async with _starting:
+        row = await db.get(ConversationContext, conversation_id)
+        is_sub = row is not None and row.kind == SUB
+        if is_sub and not as_sub_session:
+            raise SubSessionError("not_found")
+        below = (await tree(db, conversation_id))[1:]
+        if any(job.conversation_id in below for job in (*background_jobs.active(), *background_jobs.unreported())):
+            raise SubSessionError("sub_sessions_running")
+        direct = await children(db, conversation_id)
+        if direct and choice not in ("delete", "keep"):
+            raise SubSessionError("sub_sessions_choice_required", sub_sessions=len(direct))
+        kept = direct if choice == "keep" else []
+        gone = [conversation_id] if kept else [conversation_id, *below]
+        _deleted.update(gone)
+    await _stop_for_delete(gone, conversation_id if is_sub else None, row.parent_id if is_sub else None)
+    for child_id in kept:
+        await _promote(db, child_id)
+    _forget(gone)
+    for cid in gone:
+        _parents.pop(cid, None)
+    return gone, kept
+
+
+async def _stop_for_delete(gone: list[str], sub_session: str | None, parent_id: str | None) -> None:
+    """The jobs of the conversations being deleted stop and end before their rows go. A sub-session's report to its
+    parent, one still waiting or the one that stop leaves, reads `stopped`, with no result: the user deleted what it
+    said. One that outlives STOP_WAIT_S is refused its next context load and its tree's limit (`deleted`)."""
+    from server.services import background_jobs
+
+    def mark() -> None:
+        for report in _reports.get(parent_id, ()) if sub_session else ():
+            if report["sub_session"] == sub_session:
+                report.update(outcome="stopped", result="")
+    mark()
+    jobs = [job for job in background_jobs.unreported() if job.conversation_id in gone]
+    for job in jobs:
+        background_jobs.stop(job.conversation_id, job.job_id)
+    if jobs:
+        await asyncio.wait({job.task for job in jobs}, timeout=STOP_WAIT_S)
+        mark()
+
+
+async def _promote(db, conversation_id: str) -> None:
+    """A sub-session whose parent is deleted without it becomes a top-level chat, and no looser than it was: what
+    it read through its chain is written onto its own row now, the strictest of that chain (`effective_settings`,
+    which also keeps learning off). Its own sub-sessions stay under it."""
+    row = await db.get(ConversationContext, conversation_id)
+    effective = await effective_settings(db, row)
+    for field in dataclasses.fields(EffectiveSettings):
+        setattr(row, field.name, getattr(effective, field.name))
+    row.kind, row.parent_id, row.sub_state = "chat", None, None
+    row.version, row.updated_at = row.version + 1, datetime.utcnow()
+    _parents.pop(conversation_id, None)

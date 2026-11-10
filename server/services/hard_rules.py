@@ -79,6 +79,8 @@ DIRECT: tuple[HardRule, ...] = (
     *map(_ask, ("apple-events", "shortcuts", "send-mail", "send-message", "upload", "remote-shell", "git-push",
                 "publish", "force-kill", "login-items", "keychain-write", "system-settings", "open-app",
                 "screen-clipboard", "delete-outside")),
+    _ask(terminal_policy.OUTSIDE_REACH[0],                 # S2a-3 step 5: only when the command runs outside
+         _T + "test_s2a3_outside_reach.py::test_a_gap_asks_once_outside_and_runs_inside"),
     _ask("protected-write",
          _T + "test_s2a2_three_layers.py::test_a_write_into_startup_ssh_credential_or_agent_files_asks_this_time_only"),
     _ask(terminal_policy.UNREADABLE, _T + "test_s2a2_three_layers.py::test_what_cannot_be_read_asks_this_time_only",
@@ -181,6 +183,8 @@ def never_auto(request) -> bool:
         named = set(target.removeprefix("rules:").split("|")) if target.startswith("rules:") else set()
         # Fails closed: anything but a plain run, or any rule at all (a once-only one, or one added to the parser
         # later and not yet placed), is the user's to answer.
-        if terminal_policy.assess(detail).level != "run" or named or terminal_policy.ask_rules(detail):
+        # Read as if it ran outside the sandbox, the more cautious reading (S2a-3 step 5's outside-reach).
+        if (terminal_policy.assess(detail, outside=True).level != "run" or named
+                or terminal_policy.ask_rules(detail, outside=True)):
             return True
     return _writes_run_later(request)

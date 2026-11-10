@@ -6,7 +6,6 @@ import hashlib
 import json
 import logging
 import os
-from dataclasses import replace
 
 from arslan.execution_budget import BudgetExceeded, governed
 from arslan.llm import tool_names, trajectory, usage_sink
@@ -16,19 +15,17 @@ from server.orchestrator import run_trace
 from server.orchestrator.answer_guards import _embeds_protocol, _is_deferral_stub, _unverified_claim
 from server.orchestrator.answer_salvage import (
     _CHAT_TIMEOUT_S, _chat_miss_message, _fallback_with_digest, _salvage_plain, _synthesize_from_findings)
-from server.orchestrator import command_gate, on_demand, parallel_reads, tool_execute, tool_gates, turn_context
+from server.orchestrator import command_gate, on_demand, tool_execute, tool_gates, turn_context
 from server.orchestrator.command_gate import _nobody_to_ask, _scheduled_command_refused
 from server.orchestrator.model_step import (
     _SENT_IS_FINAL, _SchemaDrops, _context_parts, _hiding, _model_call, _rendered_size, _server_trims)
 from server.orchestrator.turn_stream import (
-    _UNVERIFIED_BOUNCES, TextShown, _StepStream, _TurnText, _correct, _kept_note, _not_verified, _progress_updates, _shown,
-    _streams_answer)
+    _UNVERIFIED_BOUNCES, TextShown, _StepStream, _TurnText, _correct, _kept_note, _not_verified, _streams_answer)
 from server.orchestrator.turn_state import (  # noqa: F401
     TOOL_TIMEOUT_S, ResolveTools, StepMode, StepReply, ToolTurn, TurnRequest, TurnState)
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
-from server.services import steering
 from server.services.llm_factory import build_adapter
 from server.services.replay_safety import _check_fetch_budget
 # Tests read these here. DELETE-BY: v0.1.64, with LOOP1's slice z.
@@ -37,7 +34,7 @@ from server.orchestrator.answer_guards import (  # noqa: F401
 from server.orchestrator.answer_salvage import _chat_retry, _clean_findings  # noqa: F401
 from server.orchestrator.model_step import (  # noqa: F401
     _BAD_TOOLS, _REFUSES_IMAGES, CONTINUE_PROMPT, _recover_truncation, _refused_tool, _render_request)
-from server.orchestrator.turn_stream import _JSON_HOLD, _STREAM_HOLD, _label_locale  # noqa: F401
+from server.orchestrator.turn_stream import _JSON_HOLD, _STREAM_HOLD, _label_locale, _progress_updates  # noqa: F401
 from server.services.replay_safety import (  # noqa: F401
     HERMETIC_FETCH_BUDGET, _hermetic_fetches, begin_hermetic_attempt, end_hermetic_attempt, hermetic_fetches_used,
     reset_hermetic_fetch_budget)
@@ -254,32 +251,6 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     return result
 
 
-def _planned_read(call: dict, neutral_call: dict, wired_keys: set, params_by_key: dict) -> tuple[str, dict] | None:
-    """K9a: the call's name and arguments as the batch loop will see them, when it is called by its own name
-    with arguments that parse and fit its table; otherwise None (it cannot run next to others)."""
-    fn = call.get("function") or {}
-    name = str(fn.get("name") or "")
-    args = fn.get("arguments")
-    if not isinstance(args, dict):
-        args, bad_json = _parse_arguments(neutral_call["arguments_raw"])
-        if bad_json is not None or not isinstance(args, dict):
-            return None
-    if name not in wired_keys or name in ("use_tool", "find_tools"):
-        return None
-    if name in params_by_key and _schema_problem(args, params_by_key[name]):
-        return None
-    return name, args
-
-
-def _read_steers(steers: list, convo: list[dict], pending: list) -> None:
-    """K9b: the messages sent while the turn worked join it after the batch's results (K1's order: tool
-    results, then the user's text). They become part of the turn when the next request carries them
-    (_commit_steers); until then `pending` holds them, and run_native hands back what no request carried."""
-    for steer in steers:
-        convo.append({"role": "user", "content": steer.content})
-        pending.append(steer)
-
-
 async def _commit_steers(pending: list, conversation_id: str) -> None:
     """K9b: the request about to go carries these messages: each is stored as a user message tagged with this
     run (so the undo of the turn, S3b, takes it with the turn and never counts it as a later one), one from the
@@ -383,15 +354,6 @@ def _progress_note(policy) -> str:
 
 _OFFLINE_NOTE = (" Files you already fetched can still be processed with run_command (it runs without "
                  "network now).")
-
-# K9b: a call of the batch not started when the user sent a message (it is read right after these results).
-SKIPPED_FOR_MESSAGE = ("Not run: the user sent a message while you were working. It comes right after these "
-                       "results; read it first, then call this again only if it still makes sense.")
-TRUNCATED_CALL_ERROR = (
-    "The output limit was reached while writing this call's arguments; nothing was executed. "
-    "Split the work: write the first part with write_file, then append each further part with "
-    "edit_file (replace the file's current last line with that line plus the next part), "
-    "or shorten the payload.")
 
 
 async def _log_degrade_hint(conversation_id, tool_key, count) -> None:
@@ -1338,27 +1300,21 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     max_tool_calls is an optional explicit compatibility ceiling, never a default.
 
     LOOP1 c3: the turn opens (`_open_turn`, `_presearch`), then each step runs its phases (`_step_mode`,
-    `_step_notes`, `_fit_history`, `_request`) and either its tool batch or its answer, below.
+    `_step_notes`, `_fit_history`, `_request`) and either its tool batch (`tool_batch.run_batch`) or its answer, below.
     """
-    # The request's fields by name, for the batch and the answer below (LOOP1 c3b and c3c take those to phases).
-    user_content, emit, on_chunk = request.user_content, request.emit, request.on_chunk
-    allow_escalation, confirm_command, conversation_id, steerable = (
-        request.allow_escalation, request.confirm_command, request.conversation_id, request.steerable)
+    # The request's fields by name, for the answer below (LOOP1 c3c takes it to its phases).
+    user_content, on_chunk = request.user_content, request.on_chunk
     opened = await _open_turn(request, state)
     if opened is not None:
         return opened
     await _presearch(request, state)
-    from server.orchestrator import agent_status
+    from server.orchestrator import agent_status, tool_batch      # tool_batch imports this module
     state.offline_note = _OFFLINE_NOTE if "run_command" in state.wired_keys else ""
     state.can_save = bool(WRAP_UP_TOOLS & state.wired_keys)
-    # Set once when the turn opened and never rebound, so the batch and the answer below read them by name, as before.
-    a, budget, runtime, acceptance_runtime, policy = (
-        state.adapter, state.budget, state.runtime, state.acceptance_runtime, state.policy)
-    system, resolve_tools, resolve_callable, turn_state, plan = (
-        state.system, state.resolve_tools, state.resolve_callable, state.recovery, state.plan)
-    call_ids, tool_trace, turn_text, research_source_feedback, link_hints, offline_note = (
-        state.call_ids, state.tool_trace, state.turn_text, state.research_source_feedback, state.link_hints,
-        state.offline_note)
+    # Set once when the turn opened and never rebound, so the answer below reads them by name, as before.
+    a, budget, runtime, acceptance_runtime, system, turn_state, tool_trace, turn_text = (
+        state.adapter, state.budget, state.runtime, state.acceptance_runtime, state.system, state.recovery,
+        state.tool_trace, state.turn_text)
     for step in range(state.request_ceiling):
         mode = _step_mode(request, state, step)
         notes, wrap_up = await _step_notes(request, state, mode)
@@ -1366,261 +1322,15 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
         reply = await _request(request, state, mode, notes)
         if isinstance(reply, dict):
             return reply
-        forced, finishing = mode.forced, mode.finishing
+        forced = mode.forced
         resp, stream, tool_calls = reply.resp, reply.stream, reply.tool_calls
         convo = state.convo                 # rebound only when the history is fitted, above
 
         if not forced and tool_calls:
-            provider_content = getattr(resp, "provider_content", None)
-            history_start = len(convo)
-            calls = trajectory.unique_ids(
-                [trajectory.call_from_response(call, f"call_{step}_{index}")
-                 for index, call in enumerate(tool_calls)], call_ids, step)
-            convo.append(trajectory.assistant(
-                resp.content, calls,
-                continuation=({"protocol": "gemini", "provider_content": provider_content}
-                              if provider_content else getattr(resp, "continuation", None)),
-                finish=getattr(resp, "finish_reason", None)))
-            marks: list[tuple[int, str]] = []
-            # K8b: Claude's progress updates, shown as notes before the calls they introduce; never part of the
-            # answer, never spoken, not on the phone (the Bridge maps no `note`).
-            for update in _progress_updates(a, resp):
-                emit({"type": "note", "text": update[:400]})
-            # A reply cut by the output limit may carry incomplete arguments in
-            # ANY of its calls: execute none of them (0.1.49 S6).
-            cut_off = getattr(resp, "finish_reason", None) == "length"
-            if cut_off:
-                turn_state.truncated_calls += 1
-            elif any((call.get("function") or {}).get("name") != "update_plan" for call in tool_calls):
-                state.tool_steps += 1
-            # K9a: consecutive reads of this reply run together (parallel_reads); never in a reply cut off
-            # or while wrapping up.
-            reads = None if cut_off or wrap_up else await parallel_reads.plan(
-                [_planned_read(call, neutral_call, state.wired_keys, state.params_by_key)
-                 for call, neutral_call in zip(tool_calls, calls)])
-            steered = False                     # K9b: a message sent meanwhile waits: the rest is not started
-            for index, (call, neutral_call) in enumerate(zip(tool_calls, calls)):
-                marks.append((len(convo), neutral_call["id"]))
-                fn = call.get("function") or {}
-                name = str(fn.get("name") or "")
-                # K9b: the boundary after the previous call (or group of reads): a message sent meanwhile is
-                # read before anything else runs. A call not started is not run, and still gets a result. The
-                # message is taken after the batch, right as it is read (nothing can fall between the two).
-                # A reply cut off by the output limit runs none of its calls and reads nothing after them: each
-                # keeps its truncation note.
-                if not steered and index and steerable and conversation_id and not cut_off \
-                        and steering.waiting(conversation_id):
-                    steered = True
-                if steered and not (reads is not None and reads.has(index)):
-                    _record_tool_result(name, {}, {"ok": False, "external": False, "code": "skipped_for_message",
-                                                   "error": SKIPPED_FOR_MESSAGE},
-                                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
-                    continue
-                args = fn.get("arguments")
-                bad_json = None
-                if not isinstance(args, dict) and not cut_off:
-                    args, bad_json = _parse_arguments(neutral_call["arguments_raw"])
-                if not isinstance(args, dict):
-                    args = {}
-                if cut_off:
-                    result = _record_tool_result(name, {}, {"ok": False, "external": False, "code": "output_truncated",
-                        "error": TRUNCATED_CALL_ERROR}, emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
-                    policy.observe(name, {}, result)
-                    continue
-                if bad_json is not None:
-                    result = _record_tool_result(name, {}, {"ok": False, "external": False,
-                        "code": "invalid_arguments_json",
-                        "error": f"The arguments for {name} were not valid JSON ({bad_json}); nothing was "
-                                 "executed. Send the call again with a JSON object."},
-                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
-                    policy.observe(name, {}, result)
-                    continue
-                schema_problem = (_schema_problem(args, state.params_by_key.get(name)) if name in state.params_by_key
-                                  else None)
-                if schema_problem:
-                    result = _record_tool_result(name, args, {"ok": False, "external": False,
-                        "code": "invalid_arguments",
-                        "error": f"Invalid arguments for {name}: {schema_problem}. Nothing was executed; "
-                                 "send the call again with corrected arguments."},
-                        emit, tool_trace, json.dumps({"tool": name, "args": args}, ensure_ascii=False), convo)
-                    policy.observe(name, args, result)
-                    continue
-                if name == "escalate" and allow_escalation:
-                    return {"final": _shown(turn_text), "tool_trace": tool_trace,
-                            "escalation": {"kind": str(args.get("kind") or "data"),
-                                           "need": str(args.get("need") or "").strip(),
-                                           "context": str(args.get("context") or "").strip()}}
-                # K7: find_tools ranks what this turn can run but was not shown. use_tool, or a direct call
-                # of such a tool, goes on under the tool's real name once its arguments check out against
-                # its own table, so the approval, the trace and the receipts are a direct call's.
-                on_demand_call = False
-                if name == "find_tools" and "find_tools" in state.wired_keys:
-                    emit({"type": "tool_call", "tool": name, "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    unseen = [t for t in await resolve_callable() if t["key"] not in state.wired_keys]
-                    result = _record_tool_result(name, args, on_demand.find(str(args.get("query") or ""), unseen, _tool_params),
-                                                 emit, tool_trace, json.dumps({"tool": name, "args": args}, ensure_ascii=False),
-                                                 convo)
-                    policy.observe(name, args, result)
-                    continue
-                if (name == "use_tool" and str(args.get("name") or "").strip() == "run_command"
-                        and _nobody_to_ask(confirm_command)):
-                    # v0.1.63: refused (and listed) as a direct call is, not "no tool named run_command".
-                    inner = args.get("arguments")
-                    name, args = "run_command", inner if isinstance(inner, dict) else {}
-                elif "use_tool" in state.wired_keys and (name == "use_tool" or name not in state.wired_keys):
-                    reachable = {t["key"]: t for t in await resolve_callable()}
-                    if name == "use_tool" or name in reachable:
-                        wanted = args if name == "use_tool" else {"name": name, "arguments": args}
-                        real, inner, refusal = on_demand.unwrap(wanted, reachable, state.wired_keys, _tool_params,
-                                                                _schema_problem)
-                        if refusal is not None:
-                            result = _record_tool_result(name, args, refusal, emit, tool_trace,
-                                                         json.dumps({"tool": name, "args": args}, ensure_ascii=False), convo)
-                            policy.observe(name, args, result)
-                            continue
-                        name, args, on_demand_call = real, inner, True
-                        on_demand.note_used(on_demand.conversation(conversation_id), name)
-                # A neutral trace record, not a prompt-level execution protocol.
-                assistant_content = json.dumps({"tool": name, "args": args}, ensure_ascii=False)
-                # 0.1.50 S2: the plan is host bookkeeping — no executor, no tool
-                # budget, no progress signal; allowed during wrap-up too.
-                if name == "propose_plan_change" and (name in state.wired_keys or on_demand_call):
-                    # 0.1.56 §7: bookkeeping like update_plan — the proposal waits for the
-                    # user on a card; nothing in the plan changes here.
-                    emit({"type": "tool_call", "tool": name,
-                          "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    outcome = await _propose_plan_change(args, emit)
-                    _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
-                    continue
-                if name in ("propose_capability", "create_skill", "import_memories") and (name in state.wired_keys
-                                                                                           or on_demand_call):
-                    # 0.1.57 §3: the install-and-retry card; v0.1.64 CAP2a: the save-a-skill card, on the
-                    # same channel (DELETE-BY: v0.1.65, when "for you to look at" takes a written skill); CAP8b: the
-                    # memory import card. A blocking ask in THIS window (confirm_command carries it); a job or a
-                    # turn nobody watches adds nothing. On success the tools are read again, so the new
-                    # capability (or read_skill's list) is there for the rest of this turn.
-                    emit({"type": "tool_call", "tool": name,
-                          "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    from server.services import background_jobs, capability_flow, memory_import, skill_forge
-                    ask = None if background_jobs.inside_job() else getattr(confirm_command, "ask_capability", None)
-                    if name == "create_skill":
-                        outcome = await skill_forge.propose(args, conversation_id=conversation_id, ask=ask)
-                    elif name == "import_memories":
-                        outcome = await memory_import.propose(args, conversation_id=conversation_id, ask=ask)
-                    else:
-                        outcome = await capability_flow.propose(args, conversation_id=conversation_id, ask=ask,
-                                                                emit=emit)
-                    refresh = bool(outcome.pop("refresh", False))
-                    _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
-                    if refresh:
-                        state.wired = await resolve_tools()
-                        state.wired_keys = {t["key"] for t in state.wired}
-                        state.schemas = _native_tool_schemas(state.wired, allow_escalation=allow_escalation)
-                        state.params_by_key = {t["key"]: _tool_params(t) for t in state.wired}
-                    continue
-                if name == "update_plan" and "update_plan" in state.wired_keys:
-                    emit({"type": "tool_call", "tool": name,
-                          "args_summary": json.dumps(args, ensure_ascii=False)[:200]})
-                    outcome = plan.update(args)
-                    _record_tool_result(name, args, outcome, emit, tool_trace, assistant_content, convo)
-                    if outcome.get("ok"):
-                        from server.services import desktop_status
-                        desktop_status.note_plan(plan.items)
-                    continue
-                ran = reads is not None and reads.has(index)    # K9a: it already ran with the reads next to it
-                if policy.stopped and not (finishing and name in FINISH_TOOLS) and not ran:
-                    state.wrap_refused += bool(wrap_up)
-                    _record_tool_result(name, {}, {"ok": False, "external": False,
-                        "code": "task_no_progress", "error": "Execution paused after repeated work without progress."},
-                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
-                    continue
-                if wrap_up and name not in FINISH_TOOLS:
-                    state.wrap_refused += 1
-                    _record_tool_result(name, {}, {"ok": False, "external": False, "code": "wrap_up",
-                        "error": "Wrapping up: no more research. Write the deliverable from what you have."
-                                 + offline_note},
-                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
-                    continue
-                # PA-3 terminal tool: a VALID ask_user_choice call ends the turn — the
-                # caller emits the clarify_options card and waits for the user's click.
-                # Gated on the RESOLVED toolset so loops that don't wire it (spawns)
-                # fall through to the normal "tool not available" dispatch error.
-                if name == "ask_user_choice" and "ask_user_choice" in state.wired_keys:
-                    clarify, err = _parse_clarify_args(args)
-                    if err is not None:
-                        result = _record_tool_result(
-                            name, args, {"ok": False, "external": False, "error": err},
-                            emit, tool_trace, assistant_content, convo)
-                        policy.observe(name, args, result)
-                        continue
-                    if runtime:
-                        runtime.pause_reason = "task_input_required"
-                    return {"final": _shown(turn_text), "escalation": None, "clarify": clarify,
-                            "tool_trace": tool_trace}
-                if budget.tool_calls >= budget.limits.tool_calls and not ran:
-                    # The batch crossed the hard tool budget: record the rest as
-                    # not run and let the next step (forced) deliver what was
-                    # gathered, instead of aborting the turn with an empty reply.
-                    result = _record_tool_result(name, {}, {"ok": False, "external": False,
-                        "code": "task_budget_exhausted",
-                        "error": "The tool budget for this turn is used up: this call did not run. "
-                                 "Answer with what you already have."},
-                        emit, tool_trace, json.dumps({"tool": name, "args": {}}), convo)
-                    continue
-                from server.services import terminal_exec
-                offline = terminal_exec.OFFLINE.set(True) if wrap_up and name == "run_command" else None
-                try:
-                    turn = _tool_turn(request, state)
-                    if reads is not None and reads.launchable(index):
-                        await reads.run(index, lambda key, arguments, **own: _run_tool(
-                            key, arguments, json.dumps({"tool": key, "args": arguments}, ensure_ascii=False),
-                            replace(turn, **own)),
-                            exhausted=lambda: budget.tool_calls >= budget.limits.tool_calls)
-                    if reads is not None and reads.has(index):
-                        result = reads.take(index, emit=emit, tool_trace=tool_trace, convo=convo)
-                    else:
-                        result = await _run_tool(name, args, assistant_content, turn)
-                finally:
-                    if offline is not None:
-                        terminal_exec.OFFLINE.reset(offline)
-                if not policy.observe(name, args, result) and policy.count >= 2 and convo \
-                        and convo[-1].get("role") == "tool":
-                    convo[-1]["content"] += _progress_note(policy)
-                # 0.1.50: a saved table of links gets the host link check (link_check).
-                if name in WRAP_UP_TOOLS and result.get("ok") is True and convo \
-                        and convo[-1].get("role") == "tool":
-                    note = await _link_check_note(name, args, result, tool_trace, link_hints)
-                    if note:
-                        convo[-1]["content"] += note
-                if not provider_content:
-                    if name == "web_extract" and _web_read_feedback(name, args, result) is not None:
-                        research_source_feedback.append((convo[-1], result))
-                    elif (name == "write_file" and result.get("ok") is True and not _SENT_IS_FINAL.get()
-                          and len(research_source_feedback) >= 2
-                          and str(args.get("path", "")).lower().endswith((".md", ".txt"))):
-                        # K3b: never on a provider that clears old results itself (Claude's native path):
-                        # editing what was sent sends the prompt cache back to the system prompt, and the
-                        # request rewrites the whole history (45k tokens in K3's Claude run, T2 r1).
-                        from server.orchestrator import saved_context
-                        state.history_compacted = saved_context.compact_saved_context(
-                            convo, research_source_feedback, args.get("content")) or state.history_compacted
-                if runtime:
-                    runtime.progress = runtime.progress.model_copy(update={
-                        "loop_fingerprints": tuple(sorted(policy.seen))[-256:]})
-                    await runtime.checkpoint("loop_progress")
-            # Each handled call appended one record; bind them to the call ids. The
-            # Gemini provider pair and the old "invocation completed" text are now
-            # renderings of this trajectory (trajectory.to_legacy), not rewrites.
-            _claim_results(convo, marks)
-            if steerable and conversation_id and not cut_off:
-                # The boundary after the batch: what waits joins the turn (no await between take and read).
-                _read_steers(steering.take(conversation_id), convo, state.steers)
-            # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
-            # passed the window and went out as the answer, where it stays (and in the stored answer).
-            narration = agent_status.strip_echo((resp.content or "").strip())
-            if narration and not (stream is not None and stream.released):
-                emit({"type": "note", "text": narration[:400]})
-            state.pending_feedback = len(convo) - history_start
+            # Each call through its stages: arguments, host tools, the unwrap, the gates, execute and after.
+            ended = await tool_batch.run_batch(request, state, step, mode, reply, wrap_up)
+            if ended is not None:
+                return ended
             continue
 
         # No tool calls (or forced) → resp.content should be the FINAL answer. GUARD: the model

@@ -753,6 +753,10 @@
     "capabilities": "Fähigkeiten",
     "new_chat": "Neues Gespräch",
     "thread_menu": "Gesprächsaktionen",
+    "rename": "Umbenennen",
+    "renameLabel": "Name des Gesprächs",
+    "renameHint": "{{title}} (zum Umbenennen klicken)",
+    "headerMore": "Mehr",
     "archive": "Archivieren",
     "unarchive": "Archivierung aufheben",
     "delete": "Löschen",
@@ -1177,6 +1181,9 @@
       "error": "Fehler",
       "paused": "pausiert",
       "skipped": "übersprungen"
+    },
+    "reason": {
+      "conversation_deleted": "Pausiert: Die Unterhaltung, in die sie schreibt, wurde gelöscht. Lösche diese Aufgabe oder lege sie neu an."
     },
     "action": {
       "pause": "Pausieren",

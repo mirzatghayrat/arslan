@@ -89,7 +89,7 @@ async def sync_task() -> None:
         if existing is None:
             task = ScheduledTask(
                 name=TASK_NAME, prompt=build_prompt(checklist), spawn_id=None,
-                target="arslan", conversation_id=None,
+                target="arslan", conversation_id=scheduler.own_conversation(),   # SUB5a: never a reused id's
                 schedule_kind="interval", interval_s=interval,
                 enabled=True, consecutive_failures=0)
             task.next_due_at = scheduler.compute_next_due(task, datetime.utcnow())

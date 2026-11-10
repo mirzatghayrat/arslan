@@ -402,14 +402,15 @@ async def test_a_child_stays_unsearchable_when_its_parent_is_gone(client, monkey
     await _api_family(client, monkeypatch)
     await _say(client, ROOT, "a needle in the parent")
     await _say(client, CHILD, "a needle in the child")
-    if gone == "deleted":
-        assert (await client.delete(f"/api/v1/conversations/{ROOT}")).status_code == 200
+    if gone == "deleted":       # SUB5a: with its sub-sessions; deleting it alone keeps the child as a chat
+        assert (await client.delete(f"/api/v1/conversations/{ROOT}?sub_sessions=delete")).status_code == 200
     else:
         async with client.db_maker() as session:
             await session.delete(await session.get(ConversationContext, ROOT))
             await session.commit()
-    async with client.db_maker() as session:          # nothing removes the child's own words yet (SUB5)
-        assert await session.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == CHILD)) is not None
+    async with client.db_maker() as session:          # SUB5a's cascade takes the child's own words with it
+        left = await session.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == CHILD))
+    assert (left is None) is (gone == "deleted")
     assert CHILD not in await _searched("needle")
 
 

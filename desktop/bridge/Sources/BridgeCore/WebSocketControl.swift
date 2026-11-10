@@ -8,6 +8,16 @@ public final class WebSocketControl: NSObject, ControlChannel {
     let origin: String
     var task: URLSessionWebSocketTask?
     var stopped = false
+    /// `run`'s task makes and drops the socket while `send` (the poll loop, the conversation links) and `stop` reach
+    /// it from others: `task` and `stopped` are only touched under this lock, never held across an `await` or a send.
+    let socketLock = NSLock()
+    func socketLocked<T>(_ body: () throws -> T) rethrows -> T {
+        socketLock.lock()
+        defer { socketLock.unlock() }
+        return try body()
+    }
+    /// The socket right now, read under the lock.
+    var currentTask: URLSessionWebSocketTask? { socketLocked { task } }
     lazy var session = URLSession(configuration: .ephemeral)
     public var onFrame: (([String: Any]) async -> Void)?
     public var onConnect: (() async -> Void)?
@@ -22,7 +32,7 @@ public final class WebSocketControl: NSObject, ControlChannel {
     }
 
     public func send(_ frame: [String: Any]) async throws {
-        guard let task else { throw BridgeError.code("mac_busy") }    // between reconnects
+        guard let task = currentTask else { throw BridgeError.code("mac_busy") }    // between reconnects
         let text = String(decoding: try JSONSerialization.data(withJSONObject: frame), as: UTF8.self)
         try await task.send(.string(text))     // before the handshake completes, URLSession holds it
     }
@@ -38,16 +48,19 @@ public final class WebSocketControl: NSObject, ControlChannel {
         var request = URLRequest(url: url)
         request.setValue(origin, forHTTPHeaderField: "Origin")
         let task = session.webSocketTask(with: request)
-        self.task = task
+        socketLocked { self.task = task }
         task.resume()
         return task
     }
 
     /// Close for good (§5.7: the conversation was deleted, or its link is no longer kept): no reconnect.
     public func stop() {
-        stopped = true
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
+        let task = socketLocked { () -> URLSessionWebSocketTask? in
+            stopped = true
+            defer { self.task = nil }
+            return self.task
+        }
+        task?.cancel(with: .goingAway, reason: nil)    // outside the lock
         // The session is not invalidated: `run` may be about to make its next task on it, and a task
         // on an invalidated session throws. The loop sees `stopped` and makes none.
     }
@@ -56,10 +69,10 @@ public final class WebSocketControl: NSObject, ControlChannel {
     public func run(startingWith first: URLSessionWebSocketTask? = nil) async {
         var delay: UInt64 = 1
         var next = first
-        while !stopped {
+        while !socketLocked({ stopped }) {
             let task = next ?? connect()
             next = nil
-            if stopped { task.cancel(with: .goingAway, reason: nil); return }    // stopped while it was being made
+            if socketLocked({ stopped }) { task.cancel(with: .goingAway, reason: nil); return }    // stopped while it was being made
             do {
                 await onConnect?()
                 while true {
@@ -75,9 +88,9 @@ public final class WebSocketControl: NSObject, ControlChannel {
                 }
             } catch {
                 task.cancel(with: .goingAway, reason: nil)
-                self.task = nil
+                socketLocked { self.task = nil }
             }
-            if stopped { return }
+            if socketLocked({ stopped }) { return }
             try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
             delay = min(delay * 2, 30)
         }

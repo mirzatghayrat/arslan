@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { isolate } from "../lib/outsideText";
 import { ChevronRight, Download, KeyRound, MessageSquare, Sparkles, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { capabilitiesApi, type CapabilityRow, type PluginPart } from "../api/capabilities";
+import { capabilitiesApi, type CapabilityRow, type PluginPart, type SkillFolderCard as SkillFolder } from "../api/capabilities";
 import { PluginParts, partRow } from "./capabilities/PluginParts";
+import SkillFolderCard from "./capabilities/SkillFolderCard";
 import { ApiError } from "../api/client";
 import { matches } from "../lib/capabilitySearch";
 import { formatUiDate } from "../lib/localeFormatting";
@@ -67,18 +68,24 @@ export default function CapabilitySwitches() {
   const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [inside, setInside] = useState<string | null>(null);     // the plugin whose parts are shown
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [folderCard, setFolderCard] = useState<SkillFolder | null>(null);
   const load = useCallback(async () => {
     try { setRows(await capabilitiesApi.list()); setFailed(false); }
     catch { setFailed(true); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  const merge = (next: CapabilityRow) => setRows(old => old?.map(r => (r.key === next.key ? { ...r, ...next } : r)) ?? old);
   async function flip(row: CapabilityRow, on: boolean) {
     setBusy(row.key); setError(null);
     try {
-      const next = await capabilitiesApi.switch(row.key, on);
-      setRows(old => old?.map(r => (r.key === row.key ? { ...r, ...next } : r)) ?? old);
-    } catch { setError(t("capabilityList.failed")); }
+      merge(await capabilitiesApi.switch(row.key, on));
+    } catch (failure) {
+      // CAP6a: a skill from ~/.agents/skills goes on only through its card (never approved, or changed since).
+      const detail = failure instanceof ApiError ? failure.detail as { code?: string; card?: SkillFolder | null } : undefined;
+      if (detail?.code === "needs_card" && detail.card) setFolderCard(detail.card);
+      else setError(t("capabilityList.failed"));
+    }
     finally { setBusy(null); }
   }
   function fix(row: CapabilityRow) {
@@ -165,6 +172,8 @@ export default function CapabilitySwitches() {
           {stopped(r) ? <bdi>{what(r)}</bdi>
             : <>{what(r) && <><bdi>{what(r)}</bdi> · </>}{t(`capabilityList.origin_${r.origin}`)} · {used(r)}</>}
           {r.section === "builtin" && r.detail && NOTES.has(r.detail) ? <> · {t(`capabilityList.detail_${r.detail}`)}</> : null}
+          {/* CAP6a: a skill from ~/.agents/skills that needs its card (new, or changed since the last yes). */}
+          {r.section === "skills" && r.reason ? <> · <span className="text-ask" data-testid={`cap-reason-${r.key}`}>{reason(r)}</span></> : null}
           {r.state === "setup" && r.reason === "mcp_error" && r.detail ? <> · <span className="font-mono">{r.detail}</span></> : null}
         </span>
       </button>
@@ -258,6 +267,8 @@ export default function CapabilitySwitches() {
     {sheet?.kind === "link" && <Dialog open onClose={() => setSheet(null)} width={640} testId="cap-link-sheet" padded title={t("capabilityList.addLink")}>
       <SkillImportPanel onImported={() => void load()} /></Dialog>}
     {sheet?.kind === "import" && <ImportConnections onClose={() => setSheet(null)} onChanged={() => void load()} />}
+    {folderCard && <SkillFolderCard card={folderCard} onClose={() => setFolderCard(null)}
+      onApproved={next => { merge(next); setFolderCard(null); }} />}
     {sheet?.kind === "manual" && <Dialog open onClose={() => setSheet(null)} width={640} testId="cap-manual-sheet" padded title={t("capabilityList.addByHand")}>
       <div className="flex flex-col gap-3"><p className="text-[12px] text-subtle-foreground">{t("capabilityList.addByHandHint")}</p>
         <McpServers form onChanged={() => { void load(); setSheet(null); }} /></div></Dialog>}

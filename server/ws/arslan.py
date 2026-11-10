@@ -46,7 +46,7 @@ def _turn_lock(conversation_id: str) -> asyncio.Lock:
     return lock
 
 
-def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
+def effective_risk(remote_host: str | None, command: str, argv: list, *, outside: bool = False) -> str:
     """The grade a confirmation is decided on.
 
     Remote is HIGH unconditionally (P3b 裁决③): the local rules describe this machine,
@@ -55,7 +55,7 @@ def effective_risk(remote_host: str | None, command: str, argv: list) -> str:
     from server.services import terminal_policy
     if remote_host:
         return "HIGH"
-    return terminal_policy.risk_grade(terminal_policy.as_shell(command, argv))
+    return terminal_policy.risk_grade(terminal_policy.as_shell(command, argv), outside=outside)
 
 
 async def _history(conversation_id: str) -> list[dict]:
@@ -489,10 +489,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                               remote_host: str | None = None,
                               fingerprints: list | None = None,
                               sandbox: str | None = None, why: str = "", network: bool = False,
-                              host: str | None = None, delete: str = "") -> bool:
+                              host: str | None = None, delete: str = "", outside: bool = False) -> bool:
         """See `command_confirm.Confirmations.command`."""
         return await ladder.command(command, argv, remote_host=remote_host, fingerprints=fingerprints,
-                                    sandbox=sandbox, why=why, network=network, host=host, delete=delete)
+                                    sandbox=sandbox, why=why, network=network, host=host, delete=delete,
+                                    outside=outside)
 
     async def confirm_capability(card: dict) -> dict:
         """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key);

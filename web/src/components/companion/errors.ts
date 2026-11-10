@@ -37,6 +37,7 @@ export function taskErrorKey(code: string): string | null {
   // C7b-3 (v0.1.63): recipes were removed; an old recipe-driven task cannot be resumed.
   if (code === "task_invalid_driver") return "tasks.cannotResume";
   if (code === "conversation_local_history") return "tasks.localHistory";
+  if (code === "conversation_deleted") return "tasks.conversationDeleted";   // SUB5a: e.g. deleted from the phone
   if (code === "execution_failed" || code === "task_execution_failed") return "tasks.executionFailed";
   if (code === "task_version_conflict" || code === "task_attempt_stale") return "companion.conflict";
   if (code === "credentials_not_task_data" || code === "credentials_not_review_data") return "companion.credentialError";

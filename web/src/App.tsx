@@ -49,7 +49,8 @@ import { resolveSection, type SettingsSectionId } from './components/settings/se
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
-import { threadDisplayTitle } from './lib/threadTitles';
+import { threadDisplayTitle, renameThread, applyGeneratedTitle, firstMessageMayRetitle } from './lib/threadTitles';
+import ConversationHeader from './components/conversation/ConversationHeader';
 import { useConversationIndex } from './hooks/useConversationIndex';
 import { useNotificationRoutes } from './hooks/useNotificationRoutes';
 import ConversationStage from './components/conversation/ConversationStage';
@@ -67,6 +68,8 @@ interface ArslanThread {
   temporary?: boolean;
   /** 0.1.58 §4: started in this project (the server lists it only after its first message). */
   projectId?: string;
+  /** The user named it; never auto-titled again (lib/threadTitles renameThread). */
+  userTitled?: boolean;
 }
 
 export default function App() {
@@ -146,6 +149,15 @@ export default function App() {
   const titledThreadIds = useRef<Set<string>>(
     seedTitledThreadIds(restoredInit.threads),
   );
+
+  // Rename from the sidebar or the conversation header. The name lives where every title does — the
+  // thread list, persisted by persistThreads — and is marked userTitled so nothing auto-titles it later,
+  // even a name that reads like a placeholder. Web only: it is not sent to the server or the phone.
+  const renameConversation = useCallback((threadId: string, title: string) => {
+    if (!title.trim()) return;
+    titledThreadIds.current.add(threadId);
+    setThreads((prev) => renameThread(prev, threadId, title));
+  }, []);
 
   // Gate item ⑦ — recover conversations from the SERVER on boot.
   //
@@ -262,11 +274,8 @@ export default function App() {
         // S3-M3 fold-in: pass the conversation id so the titler's tokens are
         // ledgered against this conversation (TitleIn.conversation_id).
         (msg) => api.generateTitle(msg, capturedThreadId),
-        (tid, title) => {
-          setThreads((prev) =>
-            prev.map((t) => (t.id === tid ? { ...t, title, defaultTitle: undefined } : t)),
-          );
-        },
+        // A rename made while the titler was still answering wins (applyGeneratedTitle).
+        (tid, title) => setThreads((prev) => applyGeneratedTitle(prev, tid, title)),
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -553,7 +562,7 @@ export default function App() {
 
           // Rename thread if empty/default title when receiving first message from user
           let updatedTitle = t.title;
-          if (!t.temporary && (t.title === 'New Session' || t.title.startsWith('Orchestration thread'))) {
+          if (firstMessageMayRetitle(t)) {
             const userMsg = newHistory.find(m => m.sender === 'user');
             if (userMsg) {
               const cleaned = userMsg.text.replace(/[#*`_]/g, '').trim();
@@ -619,6 +628,7 @@ export default function App() {
         onArchiveThread={handleArchiveThread}
         onUnarchiveThread={handleUnarchiveThread}
         onDeleteThread={handleDeleteThread}
+        onRenameThread={renameConversation}
         backendStatus={backendStatus}
         meta={conversationIndex.meta}
         projects={sidebarProjects}
@@ -655,25 +665,19 @@ export default function App() {
                 it outside chat would reintroduce the bug fixed in v0.1.8 —
                 every non-chat screen becomes unmovable. Empty, same height, no
                 layout shift (decision A). */}
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex flex-1 items-center gap-2 min-w-0">
               {activeSection === 'arslan' ? (
-                <>
-                  {/* The dot IS the "active session workspace" label — it was
-                      three words of chrome saying what a green dot already says. */}
-                  <span className="w-2 h-2 rounded-full bg-success shrink-0"></span>
-                  <span className="text-xs font-sans text-foreground font-medium truncate">
-                    {threadDisplayTitle(activeThread, t)}
-                  </span>
-                  {/* 0.1.42: one header row — title · project (opens project and
-                      memory settings) · a status chip only for work that needs a look. */}
-                  {activeSection === 'arslan' && <div data-testid="conversation-context-bar" className="flex min-w-0 items-center gap-3 pl-2">
-                    <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
-                      onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
-                        ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
-                    {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
-                      onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
-                  </div>}
-                </>
+                /* 0.1.42: one header row — title · project (opens project and memory settings) · a status chip only
+                   for work that needs a look. v0.1.64: the title is first and renames the conversation on click, and
+                   the chips give way by the header's own width (ConversationHeader). */
+                <ConversationHeader title={threadDisplayTitle(activeThread, t)}
+                  onRename={activeThread && !activeThread.temporary ? title => renameConversation(activeThread.id, title) : undefined}>
+                  <ConversationControls compact key={`context:${activeThreadId}`} conversationId={activeThreadId} running={arslanRunning} empty={orchestratorChatHistory.length === 0}
+                    onChanged={context => setThreads(prev => prev.map(thread => thread.id === context.conversation_id && thread.temporary !== context.temporary
+                      ? { ...thread, temporary: context.temporary, ...(context.temporary ? { title: t('companion.temporary') } : {}) } : thread))} />
+                  {!activeThread?.temporary && <TaskPanel compact key={`task:${activeThreadId}`} conversationId={activeThreadId}
+                    onResume={task => { useArslanStore.getState().clearError(); wsSend({ type: 'resume_task', task_id: task.spec.id, expected_version: task.version }); }} />}
+                </ConversationHeader>
               ) : (
                 /* 🔴 The bar itself must stay on EVERY section — it carries
                    data-tauri-drag-region, and v0.1.7 shipped with it only on

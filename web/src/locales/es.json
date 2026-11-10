@@ -753,6 +753,10 @@
     "capabilities": "Capacidades",
     "new_chat": "Nueva conversación",
     "thread_menu": "Acciones de conversación",
+    "rename": "Cambiar nombre",
+    "renameLabel": "Nombre de la conversación",
+    "renameHint": "{{title}} (haz clic para cambiar el nombre)",
+    "headerMore": "Más",
     "archive": "Archivar",
     "unarchive": "Desarchivar",
     "delete": "Eliminar",
@@ -1177,6 +1181,9 @@
       "error": "error",
       "paused": "pausada",
       "skipped": "omitida"
+    },
+    "reason": {
+      "conversation_deleted": "En pausa: se eliminó la conversación en la que escribe. Elimina esta tarea o créala de nuevo."
     },
     "action": {
       "pause": "Pausar",

@@ -82,6 +82,15 @@ const ACTION_BTN =
 const INPUT_CLS =
   "w-full bg-background border border-border-strong rounded-xl px-3 py-2 text-xs font-sans text-foreground focus:outline-none focus:border-primary";
 
+// SUB5a: a reason the server writes as a code; any other reason is shown as it was written.
+const REASON_CODES = new Set(["conversation_deleted"]);
+function reasonText(reason: string | null, t: (key: string) => string): string | null {
+  return reason && REASON_CODES.has(reason) ? t(`scheduled.reason.${reason}`) : reason;
+}
+
+/** A task that writes into a conversation of its own (scheduler.own_conversation): the form leaves the field empty. */
+const ownConversation = (id: string | null | undefined) => !id || id.startsWith("scheduled-");
+
 // ── outcome badge ──────────────────────────────────────────────────────────────
 function OutcomeBadge({ task }: { task: ScheduledTaskDto }) {
   const { t } = useTranslation();
@@ -90,7 +99,7 @@ function OutcomeBadge({ task }: { task: ScheduledTaskDto }) {
       <span
         className="sched-badge sched-badge--paused"
         data-testid="sched-badge"
-        title={task.paused_reason ?? undefined}
+        title={reasonText(task.paused_reason, t) ?? undefined}
       >
         {t("scheduled.outcome.paused")}
       </span>
@@ -126,7 +135,9 @@ function TaskForm({
   const [kind, setKind] = useState<"interval" | "cron">(editing?.schedule_kind === "cron" ? "cron" : "interval");
   const [intervalS, setIntervalS] = useState(editing?.interval_s != null ? String(editing.interval_s) : "3600");
   const [cron, setCron] = useState(editing?.cron ?? "");
-  const [conversationId, setConversationId] = useState(editing?.conversation_id ?? "");
+  // SUB5a: empty means its own conversation; saved empty, the server keeps the one it has.
+  const [conversationId, setConversationId] = useState(
+    ownConversation(editing?.conversation_id) ? "" : editing?.conversation_id ?? "");
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -550,9 +561,14 @@ export default function ScheduledTasksCard({ onOpenRun, attention, details, onOp
                                       : t("scheduled.outcome.error")}
                                   </td>
                                   <td className="usage-card__num">{fmtWhen(r.started_at, i18n?.resolvedLanguage)}</td>
-                                  <td title={r.reason ?? undefined}>
-                                    {r.reason ? (r.reason.length > 120 ? `${r.reason.slice(0, 120)}…` : r.reason) : "—"}
-                                  </td>
+                                  {(() => {
+                                    const reason = reasonText(r.reason, t);
+                                    return (
+                                      <td title={reason ?? undefined}>
+                                        {reason ? (reason.length > 120 ? `${reason.slice(0, 120)}…` : reason) : "—"}
+                                      </td>
+                                    );
+                                  })()}
                                   <td>
                                     {r.run_id != null && (
                                       <button

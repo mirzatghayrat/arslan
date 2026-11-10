@@ -715,6 +715,33 @@ class RunPythonExecutor:
         return entry_code, siblings, references
 
     @staticmethod
+    def _from_folder(ref: str, read: dict) -> tuple[str, dict[str, str], dict[str, str]] | str:
+        """`_load_skill_script` for a skill in ~/.agents/skills (CAP6a): the entry and its sibling `.py` files from
+        `scripts/`, its `.md`/`.txt` references from `references/`, all taken from `read`, the folder as
+        agent_skills.checked read and hashed it (no second read, so nothing can change in between)."""
+        import re as _re
+        m = _re.fullmatch(r"([a-z0-9-]+)/([A-Za-z0-9._-]+\.[A-Za-z0-9]+)", (ref or "").strip())
+        if not m:
+            return "invalid 'skill_script' — expected '<skill-key>/<file>.py'"
+        ext = "." + m.group(2).rsplit(".", 1)[-1].lower()
+        if ext != ".py":
+            return f"此脚本需 非python:{ext},当前沙箱只支持 .py,未执行"
+        texts, entry_path = read["texts"], f"scripts/{m.group(2)}"
+        if entry_path not in texts:
+            return (f"技能文件不是有效 UTF-8:{m.group(2)},未执行" if entry_path in read["files"]
+                    else f"skill script not found: {ref}")
+        need = RunPythonExecutor._scan_requires(texts[entry_path])
+        if need:
+            kind, raw = need
+            return f"此脚本疑似需 {kind}(脚本声明 requires: {raw}),当前沙箱不支持,未执行"
+
+        def flat(folder: str, suffixes: tuple[str, ...]) -> dict[str, str]:
+            return {path[len(folder):]: text for path, text in texts.items()
+                    if path.startswith(folder) and "/" not in path[len(folder):] and path.endswith(suffixes)}
+        siblings = {name: text for name, text in flat("scripts/", (".py",)).items() if name != m.group(2)}
+        return texts[entry_path], siblings, flat("references/", (".md", ".txt"))
+
+    @staticmethod
     async def _switched_off(ref: str) -> bool:
         """#733 item 14: off means off. Whether the user switched off the skill `ref` names, on the Capabilities page
         or with its plugin's group (which switches each of its skills the same way, `plugin_package._switch_parts`).
@@ -737,7 +764,16 @@ class RunPythonExecutor:
                 key = str(args["skill_script"]).strip().partition("/")[0]
                 return {"ok": False, "external": False,
                         "error": f"skill switched off by the user: {key}. Its scripts don't run while it is off."}
-            loaded = self._load_skill_script(str(args["skill_script"]))
+            # CAP6a: a skill in ~/.agents/skills runs from the bytes whose hashes were just checked against what was
+            # approved; one that changed since is switched off instead.
+            from server.services import agent_skills
+            key = str(args["skill_script"]).strip().partition("/")[0]
+            try:
+                read = await agent_skills.checked(key) if agent_skills.plain_key(key) else None
+            except agent_skills.Changed:
+                return {"ok": False, "external": False, "error": f"skill {key}: {agent_skills.CHANGED}"}
+            loaded = (self._from_folder(str(args["skill_script"]), read) if read is not None
+                      else self._load_skill_script(str(args["skill_script"])))
             if isinstance(loaded, str):
                 return {"ok": False, "external": False, "error": loaded}
             code, extra_files, references = loaded
@@ -936,6 +972,13 @@ class ReadSkillExecutor:
         if row.enabled is False:
             # 0.1.55 §14: switched off on the Capabilities page — off means not used.
             return {"ok": False, "external": False, "error": f"skill switched off by the user: {skey}"}
+        # CAP6a: a skill in ~/.agents/skills is read only while its files are what was approved (their hashes, in
+        # Arslan's data folder); one that changed is switched off here, and its card shows again.
+        from server.services import agent_skills
+        try:
+            folder_read = await agent_skills.checked(skey)
+        except agent_skills.Changed:
+            return {"ok": False, "external": False, "error": f"skill {skey}: {agent_skills.CHANGED}"}
         # The user's D2(1), 2026-10-30 (v0.1.64 SKF1): every skill is trusted and read unframed, as Claude
         # Code and Codex do; 0.1.57 decision 5's frame no longer applies to skills. skill_trust is the one
         # place that decides, and states the limit (the same trust model as approved MCP servers' text).
@@ -948,11 +991,19 @@ class ReadSkillExecutor:
             # import time, PC-2). Caged: validated basename, resolve() traversal guard, read-only.
             # Only skill_import stores references, so only an imported skill has any: files under
             # another skill's key are leftovers of a removed or failed import (v0.1.64 #472 F8).
-            if row.category != "imported":
+            if folder_read is None and row.category != "imported":
                 return {"ok": False, "external": False, "error": f"no attached files: {section}"}
             fname = section[len("references/"):]
             if not _re.fullmatch(r"[A-Za-z0-9._-]+\.(md|txt)", fname):
                 return {"ok": False, "external": False, "error": "invalid reference filename"}
+            if folder_read is not None:                       # the bytes that were just hashed (CAP6a)
+                if f"references/{fname}" not in folder_read["files"]:
+                    return {"ok": False, "external": False, "error": f"reference not found: {section}"}
+                text = folder_read["texts"].get(f"references/{fname}")
+                if text is None:
+                    return {"ok": False, "external": False, "error": f"reference is not UTF-8 text: {section}"}
+                return {"ok": True, "external": outside, "body": text[:self._READ_SKILL_CAP],
+                        "summary": f"skill {skey} · {section}"}
             root = (_skill_scripts_root() / skey / "references").resolve()
             target = (root / fname).resolve()
             if not str(target).startswith(str(root) + "/") or not target.is_file():

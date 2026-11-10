@@ -7,12 +7,13 @@
 //
 // Purely presentational: all side effects are delegated to the callbacks the
 // sidebar/App wire up. Styling uses semantic tokens only (no raw colors).
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useDismissable } from "../hooks/useDismissable";
+import { useMenuKeyboard } from "../hooks/useMenuKeyboard";
 import AnchoredPortal from "./AnchoredPortal";
-import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder, Pin, PinOff } from "lucide-react";
+import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FolderInput, FolderMinus, ChevronLeft, Folder, Pin, PinOff, Pencil } from "lucide-react";
 import { confirmSheet } from "./kit";
 
 interface ThreadRowMenuProps {
@@ -29,6 +30,11 @@ interface ThreadRowMenuProps {
   /** SB1-2: pin it to the top of the sidebar, or unpin it (offered only where the sidebar passes it). */
   pinned?: boolean;
   onPin?: (id: string, pinned: boolean) => void;
+  /** Rename it in place (the sidebar shows the editor in the row). */
+  onRename?: (id: string) => void;
+  /** Controlled by the sidebar so a right-click on the row opens this same menu; uncontrolled otherwise. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export default function ThreadRowMenu({
@@ -42,9 +48,14 @@ export default function ThreadRowMenu({
   onMove,
   pinned = false,
   onPin,
+  onRename,
+  open: openProp,
+  onOpenChange,
 }: ThreadRowMenuProps) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = (next: boolean) => { if (onOpenChange) onOpenChange(next); else setOwnOpen(next); };
   const [picking, setPicking] = useState(false);
 
   const close = () => {
@@ -60,6 +71,11 @@ export default function ThreadRowMenu({
   //    Measured before replacing it: clicking the backdrop closed the menu,
   //    clicking anywhere else did not, and Escape did nothing at all.
   const { anchorRef, floatingRef } = useDismissable<HTMLSpanElement, HTMLDivElement>(open, close);
+  // Keyboard: focus into the menu on open (and into the project list when it replaces it), arrows between
+  // items, focus back on ⋯ when it closes.
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const onMenuKeyDown = useMenuKeyboard(open, triggerRef, menuRef, picking);
 
   const itemClass =
     "w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] font-sans text-left text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04] transition-all";
@@ -67,12 +83,13 @@ export default function ThreadRowMenu({
   return (
     <span ref={anchorRef} className="relative inline-flex">
       <button
+        ref={triggerRef}
         type="button"
         aria-label={t("sidebar.thread_menu")}
         title={t("sidebar.thread_menu")}
         onClick={(e) => {
           e.stopPropagation();
-          setOpen((o) => !o);
+          setOpen(!open);
         }}
         className="opacity-0 group-hover:opacity-100 focus:opacity-100 aria-expanded:opacity-100 w-5 h-5 flex items-center justify-center rounded text-subtle-foreground hover:text-primary hover:bg-primary/10 transition-all shrink-0"
         aria-expanded={open}
@@ -83,8 +100,10 @@ export default function ThreadRowMenu({
 
       <AnchoredPortal anchorRef={anchorRef} floatingRef={floatingRef} open={open}>
         <div
+          ref={menuRef}
           role="menu"
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={onMenuKeyDown}
           className="w-52 bg-surface-raised border border-border-strong rounded-lg shadow-lg p-1"
         >
           {picking && onMove ? (
@@ -107,6 +126,12 @@ export default function ThreadRowMenu({
             </div>
           ) : (
               <>
+                {onRename && (
+                  <button type="button" role="menuitem" className={itemClass} data-testid="thread-rename"
+                    onClick={() => { close(); onRename(threadId); }}>
+                    <Pencil className="w-3.5 h-3.5 text-subtle-foreground shrink-0" /><span>{t("sidebar.rename")}</span>
+                  </button>
+                )}
                 {onPin && (
                   <button type="button" role="menuitem" className={itemClass} data-testid="thread-pin"
                     onClick={() => { onPin(threadId, !pinned); close(); }}>

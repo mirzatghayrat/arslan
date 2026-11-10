@@ -753,6 +753,10 @@
     "capabilities": "Capabilities",
     "new_chat": "New chat",
     "thread_menu": "Conversation actions",
+    "rename": "Rename",
+    "renameLabel": "Conversation name",
+    "renameHint": "{{title}} (click to rename)",
+    "headerMore": "More",
     "archive": "Archive",
     "unarchive": "Unarchive",
     "delete": "Delete",
@@ -1177,6 +1181,9 @@
       "error": "error",
       "paused": "paused",
       "skipped": "skipped"
+    },
+    "reason": {
+      "conversation_deleted": "Paused: the conversation it writes into was deleted. Delete this task, or make it again."
     },
     "action": {
       "pause": "Pause",
