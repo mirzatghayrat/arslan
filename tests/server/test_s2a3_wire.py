@@ -6,7 +6,8 @@ conversation has no grant to leave the sandbox (⓪Plan's ruling 2). The note sa
 for the network; the run step carries a mark SBX-8 counts. And `assess` folds "the reader does not understand it, no
 named rule" into `unreadable`, so the card, the approvals, the Island and the risk grade read one table.
 
-No real command text: the reader (`shell_grammar.read`) is replaced so that a placeholder is "not understood"."""
+No real command text: the reader (`shell_grammar.read`, and `read_prefix`, the policy's one pass since LOOP1 d2) is
+replaced so that a placeholder is "not understood"."""
 from __future__ import annotations
 
 import contextlib
@@ -25,20 +26,28 @@ WHY = "stand-in reason"
 
 def _clear_reading():
     """The policy keeps the reader's answer per text; a test that replaces the reader starts from none."""
-    getattr(getattr(tp, "_not_understood", None), "cache_clear", lambda: None)()
+    getattr(getattr(tp, "_parsed", None), "cache_clear", lambda: None)()     # LOOP1 d2: the one parse's cache
 
 
 @pytest.fixture
 def unread(monkeypatch):
     """The reader does not understand the placeholder; anything else reads as it does on main."""
-    real = shell_grammar.read
+    real, real_prefix = shell_grammar.read, shell_grammar.read_prefix
 
     def read(text, *, fold_partial=True, fold_guard=None):
         if isinstance(text, str) and text.startswith(STAND_IN):
             return shell_grammar.Reading(understood=False, why=WHY)
         return real(text, fold_partial=fold_partial, fold_guard=fold_guard)
+
+    def read_prefix(text):
+        """The policy's one pass since LOOP1 d2: refused the same way, with the commands it read before."""
+        found = real_prefix(text)
+        if isinstance(text, str) and text.startswith(STAND_IN):
+            return shell_grammar.PrefixReading(commands=found.commands, refused=True, why=WHY)
+        return found
     _clear_reading()
     monkeypatch.setattr(shell_grammar, "read", read)
+    monkeypatch.setattr(shell_grammar, "read_prefix", read_prefix)
     yield
     _clear_reading()
 
