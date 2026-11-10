@@ -351,10 +351,43 @@ WALK_HELD = 256
 WALK_HELD_BYTES = 128 * 1024
 
 
+#: #813 review 8: the home folders macOS's privacy controls (TCC) protect. Listing one can raise a privacy prompt, so
+#: the walk never lists them, nor the folders the user keeps closed (`private_folders`); their contents are held by
+#: name instead (`private_filters`).
+PRIVATE_HOME_FOLDERS = ("Desktop", "Documents", "Downloads", "Library", "Pictures", "Movies", "Music")
+
+
+def private_folders(closed: Iterable[Path] = ()) -> list[Path]:
+    """The folders the walk never lists, by real path (`~` may itself be a link): the user's closed folders and
+    `PRIVATE_HOME_FOLDERS` in the home folder. Whether they exist is not checked here."""
+    from server.services.sandbox_profile import real
+    home = Path.home()
+    out = [real(Path(os.path.abspath(os.path.expanduser(str(p))))) for p in closed]
+    out += [real(home / name) for name in PRIVATE_HOME_FOLDERS]
+    return list(dict.fromkeys(out))
+
+
+def _identities(folders: Iterable[Path]) -> set[tuple[int, int]]:
+    """`(st_dev, st_ino)` of each folder that exists (the folder's own metadata: reading it lists nothing). A
+    folder whose metadata can't be read is left out: nothing reaches it through the walk's listing either way."""
+    out = set()
+    for folder in folders:
+        try:
+            st = os.stat(folder)
+        except OSError:
+            continue
+        if stat.S_ISDIR(st.st_mode):
+            out.add((st.st_dev, st.st_ino))
+    return out
+
+
 @dataclass(frozen=True)
 class HeldWalk:
     folders: tuple[Path, ...]       # the held folders found, by real path, each after the ones above it
     complete: bool                  # False: a cap was reached or a folder couldn't be listed
+    #: #813 review 8: the private folders (`private_folders`) the walk met inside a walked folder and didn't list,
+    #: by real path; the profiles hold the held folders inside them by name (`private_filters`).
+    skipped: tuple[Path, ...] = ()
 
 
 class _Incomplete(Exception):
@@ -391,14 +424,19 @@ def _is_folder_entry(entry: os.DirEntry) -> bool:
 _LITERAL_BYTES = len('(literal "")') + 1
 
 
-def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), max_entries: int | None = None,
-                 max_depth: int | None = None, max_held: int | None = None,
+def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed: Iterable[Path] = (),
+                 max_entries: int | None = None, max_depth: int | None = None, max_held: int | None = None,
                  max_held_bytes: int | None = None) -> HeldWalk:
     """The existing held folders under `folders` (the work folder, or an MCP server's granted folders and its own),
     found by a bounded walk of real paths (caps `WALK_ENTRIES`, `WALK_DEPTH`, `WALK_HELD` and `WALK_HELD_BYTES`
     unless given). Links aren't followed. Dependency folders are skipped when `exempts` holds for `folders` and
     `roots`, as `kernel_filters` exempts them; otherwise they are walked too. A held folder with held folders of its
-    own (`.git`) is searched for those only, never walked (git's objects)."""
+    own (`.git`) is searched for those only, never walked (git's objects).
+
+    #813 review 8: a private folder (`private_folders(closed)`: the closed ones and the TCC home folders) met below
+    a walked folder is never listed, nor anything under it; it is returned in `skipped`. It is recognised by its
+    `(st_dev, st_ino)`, so a spelling in another case or Unicode form is the same folder. A walked folder that is one
+    of them or lies inside one (a work folder in ~/Documents) is walked: Arslan works there already."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
@@ -406,6 +444,11 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), max_ent
     max_held_bytes = WALK_HELD_BYTES if max_held_bytes is None else max_held_bytes
     folders = [real(Path(os.path.abspath(p))) for p in folders]
     skip = _exempt(folders, roots)
+    private_list = private_folders(closed)
+    private_paths = set(map(str, private_list))
+    private = _identities(private_list)
+    private_inodes = {ino for _, ino in private}
+    skipped: list[Path] = []
     starts = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
     budget = [max_entries]
     found: list[Path] = []
@@ -445,6 +488,9 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), max_ent
                 if skip and name in _FOLDED_DEPENDENCIES:
                     continue
                 path = folder / entry.name
+                if _is_private(entry, path, private, private_inodes, private_paths):
+                    skipped.append(path)
+                    continue
                 tree = HELD_FOLDERS.get(name)
                 if tree is not None:
                     keep(path)
@@ -455,8 +501,23 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), max_ent
                     raise _Incomplete
                 stack.append((path, depth + 1))
     except _Incomplete:
-        return HeldWalk(tuple(dict.fromkeys(found)), False)
-    return HeldWalk(tuple(dict.fromkeys(found)), True)
+        return HeldWalk(tuple(dict.fromkeys(found)), False, tuple(dict.fromkeys(skipped)))
+    return HeldWalk(tuple(dict.fromkeys(found)), True, tuple(dict.fromkeys(skipped)))
+
+
+def _is_private(entry: os.DirEntry, path: Path, private: set[tuple[int, int]], inodes: set[int],
+                paths: set[str]) -> bool:
+    """`entry` (a folder) is a private folder: by its real path's spelling, or by `(st_dev, st_ino)` (the inode from
+    the listing, the device read only when the inode is one of theirs)."""
+    if str(path) in paths:
+        return True
+    try:
+        if entry.inode() not in inodes:
+            return False
+        st = entry.stat(follow_symlinks=False)
+    except OSError:
+        raise _Incomplete from None
+    return (st.st_dev, st.st_ino) in private
 
 
 def _chains(tree: dict, above: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
@@ -472,3 +533,18 @@ def folder_filters(folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> tu
     not what's inside), with the same dependency exemption as `kernel_filters`. Making one is then refused too."""
     exempt = _exempt(list(folders), roots)
     return tuple(_filter("^.*/" + "/".join(map(_component, chain)) + "$", exempt) for chain in _chains(HELD_FOLDERS))
+
+
+def held_name_regex() -> str:
+    """Every held folder by its name at any depth, as one regex (the alternation of `folder_filters`' names)."""
+    return "^.*/(" + "|".join("/".join(map(_component, chain)) for chain in _chains(HELD_FOLDERS)) + ")$"
+
+
+def private_filters(skipped: Iterable[Path], folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> tuple[str, ...]:
+    """#813 review 8: the by-name hold inside the private folders the walk didn't list (`HeldWalk.skipped`), one
+    filter each: `(require-all (subpath <folder>) <held_name_regex>)`, with the same dependency exemption as
+    `kernel_filters`. The path goes into a `subpath` string literal, never into the regex. Making a held folder in
+    there is refused too; elsewhere in the walked folders it is not."""
+    from server.services.sandbox_profile import subpath
+    names = _filter(held_name_regex(), _exempt(list(folders), roots))
+    return tuple(f"(require-all {subpath(folder)} {names})" for folder in dict.fromkeys(skipped))

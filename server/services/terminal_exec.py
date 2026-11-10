@@ -212,7 +212,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
         prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies,
-                                                 run_later_in=cwd if hold_run_later else None) or []
+                                                 run_later_in=cwd if hold_run_later else None, closed=closed) or []
         mode = "outside" if prefix else "off"
     if offline and not prefix:
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),

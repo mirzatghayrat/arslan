@@ -225,23 +225,27 @@ def too_large_to_map(workspace: Path) -> bool:
         return False
 
 
-def run_later_folders(folders, *, roots=()) -> tuple[list[Path], tuple[str, ...]]:
+def run_later_folders(folders, *, roots=(), closed=()) -> tuple[list[Path], tuple[str, ...], bool]:
     """HR-1's ancestor hold (#813 review 6): the held run-later folders that exist under `folders` and `roots` (the
     walk's) and each of `folders`' `core.hooksPath` target, as `run_later.kernel_filters` takes them, for
-    `held_ancestors(kept=...)`; and the name filters to deny when the walk was incomplete (`run_later.folder_filters`;
-    empty when it was complete). A hooksPath that can't be read raises, as in `kernel_filters`."""
+    `held_ancestors(kept=...)`; and the name filters to deny: inside each private folder the walk didn't list
+    (#813 review 8: `closed` and the TCC home folders, `run_later.private_filters`), and everywhere when the walk was
+    incomplete (`run_later.folder_filters`). A skipped private folder is kept too, so it and the folders above it
+    stay in place and its by-name hold can't be renamed away. The third value is whether the walk was complete.
+    A hooksPath that can't be read raises, as in `kernel_filters`."""
     folders, roots = list(folders), list(roots)
-    walk = run_later.held_folders([*folders, *roots], roots=roots)
-    kept = list(walk.folders)
+    walk = run_later.held_folders([*folders, *roots], roots=roots, closed=closed)
+    kept = [*walk.skipped, *walk.folders]
     for folder in folders:
         target = run_later.hooks_path(folder)
         if target is not None and run_later._is_folder(target):
             kept.append(_real(target))
+    by_name = run_later.private_filters(walk.skipped, folders, roots=roots)
     if walk.complete:
-        return kept, ()
+        return kept, by_name, True
     _log.warning("HR-1: the held-folder walk stopped at a cap or an unlistable folder; held folders are held by "
                  "name in this run, so a new one (a .git, a first .vscode) can't be made")
-    return kept, run_later.folder_filters(folders, roots=roots)
+    return kept, (*by_name, *run_later.folder_filters(folders, roots=roots)), False
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
@@ -472,8 +476,10 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
         after.deny("file-write*", *filters)
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
     # HR-1 (#813 review 6): nor the held run-later folders in the work folder and every folder above them.
-    kept, by_name = run_later_folders([workspace])
-    (_TOO_LARGE.add if by_name else _TOO_LARGE.discard)(_real(workspace))       # this walk's root only (review 7)
+    # #813 review 8: the walk never lists the user's closed folders nor the TCC home folders (`closed` is the user's
+    # list, before Arslan's own data is added); it holds the held folders inside them by name.
+    kept, by_name, complete = run_later_folders([workspace], closed=closed)
+    (_TOO_LARGE.discard if complete else _TOO_LARGE.add)(_real(workspace))      # this walk's root only (review 7)
     held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),
                           kept=kept)
     if held:
@@ -499,7 +505,7 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None,
-                    run_later_in: Path | None = None) -> str:
+                    run_later_in: Path | None = None, closed: list[Path] = ()) -> str:
     """S2a-1 piece 4 (decision U11): what a command the user let out of the sandbox, or one run with
     the sandbox off, still may not do — send Apple Events, reach the network when offline, read or
     write Arslan's own data, keys and Hands' folder (files and sockets). The user's secrets stay open:
@@ -509,7 +515,8 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
 
     HR-1: `run_later_in` (the work folder) is given when the command left the sandbox under this conversation's
     grant, with no click on its own card: then the files that make something run later stay unwritable, anywhere,
-    as inside the sandbox (ruling 2: only that click lifts them)."""
+    as inside the sandbox (ruling 2: only that click lifts them). `closed` (the user's closed folders) only tells
+    that walk which folders it never lists (#813 review 8); nothing is closed by it out here."""
     rules = Profile("allow")
     rules.deny("appleevent-send")
     if offline:
@@ -524,8 +531,10 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
     # SBX-5a (#772 review): everything is writable out here, so every folder above those is held. HR-1 (#813 review
     # 6): with `run_later_in`, so are the held run-later folders in the work folder and every folder above them.
     # Only those (#813 review 7): the walk covers the work folder, so a held folder elsewhere on disk keeps its files
-    # held by name (`kernel_filters` above matches at any depth) but is not held in place.
-    kept, by_name = run_later_folders([run_later_in]) if run_later_in is not None else ([], ())
+    # held by name (`kernel_filters` above matches at any depth) but is not held in place. #813 review 8: the walk
+    # never lists the closed and TCC home folders; the held folders inside them are held by name.
+    kept, by_name, _ = (run_later_folders([run_later_in], closed=closed) if run_later_in is not None
+                        else ([], (), True))
     held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder), kept=kept)
     if held:
         rules.deny("file-write*", *map(literal, held))
@@ -536,13 +545,13 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
 
 
 def outside_wrapper(*, offline: bool = False, copies: list[Path] = (),
-                    run_later_in: Path | None = None) -> list[str] | None:
+                    run_later_in: Path | None = None, closed: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
     command outside the sandbox runs as before)."""
     if not available():
         return None
     return ["/usr/bin/sandbox-exec", "-p", minimal_profile(offline=offline, copies=copies,
-                                                           run_later_in=run_later_in)]
+                                                           run_later_in=run_later_in, closed=closed)]
 
 
 def available() -> bool:

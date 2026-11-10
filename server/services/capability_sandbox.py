@@ -91,7 +91,8 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], p
         rules.deny("file-write*", *filters)
     # SBX-5a (#772 review): nor are the folders above the protected ones moved or replaced through a grant. HR-1
     # (#813 review 6): nor the held run-later folders in a granted folder or its own, and every folder above them.
-    kept, by_name = command_sandbox.run_later_folders(granted, roots=[real(root), own])
+    # #813 review 8: the walk never lists the TCC home folders (a granted ~); it holds what's inside them by name.
+    kept, by_name, _ = command_sandbox.run_later_folders(granted, roots=[real(root), own])
     held = command_sandbox.held_ancestors(
         [*granted, own, real(root)], [*command_sandbox.default_protected(), *command_sandbox.shared_caches(), peer],
         planted=command_sandbox.cap6b_spellings(plugin_folder), kept=kept)

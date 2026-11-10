@@ -448,6 +448,126 @@ def test_an_mcp_servers_walk_or_the_floors_does_not_change_the_command_note(home
         assert _WHY in command_sandbox.note(ws)
 
 
+# ── the walk skips private folders (#813 review 8) ───────────────────────────
+
+CLOSED = f"{STAND_IN}-closed"
+#: Written out, not read from run_later: a folder dropped from its list must turn these tests red.
+TCC = ("Desktop", "Documents", "Downloads", "Library", "Pictures", "Movies", "Music")
+
+
+def _private_home(home: Path) -> tuple[list[Path], Path]:
+    """A scratch home with the seven TCC folders and a closed one, each holding a repository (and one deeper), plus an
+    ordinary folder with its own."""
+    for name in (*TCC, CLOSED, f"{STAND_IN}-plain"):
+        for sub in (".git/hooks", f"{STAND_IN}/.git/hooks", ".vscode"):
+            (home / name / sub).mkdir(parents=True, exist_ok=True)
+    real = Path(os.path.realpath(home))
+    return [real / name for name in TCC], real / CLOSED
+
+
+def _recorded(monkeypatch) -> list[Path]:
+    """Every folder `os.scandir` opens from now on, by real path."""
+    opened: list[Path] = []
+    real_scandir = os.scandir
+
+    def scandir(path="."):
+        opened.append(Path(os.path.realpath(path)))
+        return real_scandir(path)
+    monkeypatch.setattr(run_later.os, "scandir", scandir)
+    return opened
+
+
+def _builders(home: Path, closed: Path) -> dict:
+    """Each profile that walks the work folder, with the scratch home as the work folder (a granted folder in the MCP
+    preset), and the folders each skips: the closed one only where the user's closed list reaches it (the MCP preset
+    has none)."""
+    tcc = [Path(os.path.realpath(home)) / name for name in TCC]
+    return {
+        "walk": (lambda: run_later.held_folders([home], closed=[closed]), [*tcc, closed]),
+        "commands": (lambda: command_sandbox.commands_profile(home, closed=[closed]), [*tcc, closed]),
+        "floor": (lambda: command_sandbox.minimal_profile(run_later_in=home, closed=[closed]), [*tcc, closed]),
+        "mcp": (lambda: capability_sandbox.profile(root=home.parent / "mcp", folders=[str(home)], network=False,
+                                                   read=[]), tcc),
+    }
+
+
+@pytest.mark.parametrize("which", ["walk", "commands", "floor", "mcp"])
+def test_the_walk_never_lists_the_closed_or_privacy_protected_home_folders(home, monkeypatch, which):
+    """⓪Plan (#813 review 8): listing ~/Documents and the like can raise a privacy prompt, and a closed folder is the
+    user's to keep closed. Neither they nor anything under them is opened; the ordinary folder beside them is."""
+    tcc, closed = _private_home(home)
+    make, skipped = _builders(home, closed)[which]
+    opened = _recorded(monkeypatch)
+    made = make()
+    assert opened, which
+    inside = [f for f in opened if any(f == s or s in f.parents for s in skipped)]
+    assert inside == [], which
+    assert Path(os.path.realpath(home)) / f"{STAND_IN}-plain" / STAND_IN in opened
+    if which == "walk":
+        assert made.complete and sorted(made.skipped) == sorted([*tcc, closed])
+        assert not any(s in f.parents for f in made.folders for s in made.skipped)
+        assert Path(os.path.realpath(home)) / f"{STAND_IN}-plain" / ".git" / "hooks" in made.folders
+
+
+def test_a_home_that_is_a_link_still_skips_them_by_real_path(home, monkeypatch, tmp_path):
+    """`~` may itself be a link: the private folders are compared by real path, as the walk sees them."""
+    tcc, closed = _private_home(home)
+    link = tmp_path / f"{STAND_IN}-home-link"
+    link.symlink_to(home)
+    monkeypatch.setattr(Path, "home", lambda: link)
+    opened = _recorded(monkeypatch)
+    walk = run_later.held_folders([link], closed=[link / CLOSED])
+    assert sorted(walk.skipped) == sorted([*tcc, closed])
+    assert not [f for f in opened if any(f == s or s in f.parents for s in walk.skipped)]
+
+
+def test_a_work_folder_inside_one_is_walked_as_before(home):
+    """Arslan works in the work folder already: one inside ~/Documents (or a closed folder) is walked, not skipped."""
+    tcc, closed = _private_home(home)
+    for start in (tcc[1] / STAND_IN, closed / STAND_IN):
+        walk = run_later.held_folders([start], closed=[closed])
+        assert walk.complete and walk.skipped == () and start / ".git" / "hooks" in walk.folders
+
+
+def _held_names_text() -> str:
+    """The by-name hold's regex, written out (one alternation of the held folders' names), dependency folders out."""
+    return ('(require-all (regex #"^.*/([.][Gg][Ii][Tt]|[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss]|'
+            '[.][Gg][Ii][Tt]/[Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee][Ss]|[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]|'
+            '[.][Vv][Ss][Cc][Oo][Dd][Ee]|[.][Cc][Ll][Aa][Uu][Dd][Ee]|[.][Cc][Oo][Dd][Ee][Xx]|[.][Gg][Ee][Mm][Ii][Nn][Ii]|'
+            '[.][Cc][Uu][Rr][Ss][Oo][Rr]|[.][Hh][Uu][Ss][Kk][Yy])$") '
+            f'(require-not (regex #"{run_later.dependency_regex()}")))')
+
+
+@pytest.mark.parametrize("which", ["commands", "floor", "mcp"])
+def test_the_profiles_hold_the_held_folders_in_them_by_name_and_not_by_literal(home, which):
+    """Inside a skipped folder every held folder is held by name, `(require-all (subpath <folder>) <names>)`, the path
+    in a string literal; the skipped folder itself is held in place (so the by-name hold can't be renamed away), and
+    nothing inside it is a literal. The ordinary folder beside them keeps its literals and no by-name hold."""
+    tcc, closed = _private_home(home)
+    make, skipped = _builders(home, closed)[which]
+    text = make()
+    by_name = [line for line in text.splitlines() if "(require-all (subpath" in line]
+    assert len(by_name) == 1, which
+    for folder in skipped:
+        assert f'(require-all (subpath "{folder}") {_held_names_text()})' in by_name[0], (which, folder)
+    held = _held_line(text)
+    plain = Path(os.path.realpath(home)) / f"{STAND_IN}-plain"
+    for folder in skipped:
+        assert f'(literal "{folder}")' in held, (which, folder)
+        assert f'(literal "{folder}/' not in text, (which, folder)
+    assert f'(literal "{plain / ".git" / "hooks"}")' in held
+    assert f'(subpath "{plain}")' not in text
+    if which == "mcp":
+        assert f'(subpath "{closed}")' not in by_name[0]                      # no closed list there: walked
+        assert f'(literal "{closed / ".git" / "hooks"}")' in held
+
+
+def test_with_nothing_to_skip_the_profiles_have_no_by_name_hold(home):
+    ws = _tree(home / "ws")
+    assert "(require-all (subpath" not in command_sandbox.commands_profile(ws)
+    assert command_sandbox.too_large_to_map(ws) is False
+
+
 # ── core.hooksPath ───────────────────────────────────────────────────────────
 
 def _repo(folder: Path, config: str) -> Path:

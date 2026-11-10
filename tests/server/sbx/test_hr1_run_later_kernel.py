@@ -21,6 +21,7 @@ a `.git` that is a link or a file, submodules, bare repositories, a hooksPath po
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -672,3 +673,64 @@ def test_two_thousand_repositories_build_fast_fall_back_by_name_and_a_command_st
     moved = f"{STAND_IN}-past"
     assert _moves(sbx, fixtures, [(past, moved), (f"{moved}/.git", f"{moved}/g"), (f"{moved}/.vscode", f"{moved}/v")]) \
         == ["moved", "refused", "refused"]
+
+
+# ── the walk skips private folders (#813 review 8) ───────────────────────────
+
+def _home_profile(sbx) -> str:
+    """The commands profile with the harness's scratch HOME as the work folder, built under that HOME and temp."""
+    import tempfile
+    from server.services.sandbox_profile import NetworkMode
+    with pytest.MonkeyPatch.context() as environment:
+        for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
+            environment.setenv(name, sbx.env[name])
+        environment.setattr(tempfile, "tempdir", str(sbx.temp))
+        return command_sandbox.commands_profile(sbx.home, temp=sbx.temp, network=NetworkMode.NONE,
+                                                ipc_prefix=sbx.ipc_prefix, bound_ports=[], system_proxies=[])
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("private", ["Documents", "Library"])
+def test_in_a_skipped_folder_the_held_folders_are_held_by_name_and_elsewhere_not(sbx, private):
+    """⓪Plan (#813 review 8), with the scratch HOME as the work folder: the walk doesn't list ~/Documents or ~/Library,
+    so a repository inside is held by name: a hook write and a rename of its `.git` (and the round trip through one)
+    are refused, and so is making a new `.git` in there. In an ordinary folder of the home a new `.git` is still made
+    (what `git init` does first; git init itself then stops on the hooks folder, under HR-1, in either place)."""
+    repo = f"{private}/{STAND_IN}"
+    _hooked_repo(sbx.home, repo)
+    _hooked_repo(sbx.home, f"{STAND_IN}-plain-repo")
+    text = _home_profile(sbx)
+    assert f'(require-all (subpath "{os.path.realpath(sbx.home / private)}")' in text
+    hook = f"{repo}/.git/hooks/{STAND_IN}"
+    wrote = sbx.python(_WRITE, sbx.home / hook, sbx.home / f"{repo}/{STAND_IN}.txt", probe="hr1-private-write",
+                       profile=text)
+    assert json.loads(wrote.stdout) == {str(sbx.home / hook): "refused",
+                                        str(sbx.home / f"{repo}/{STAND_IN}.txt"): "written"}
+    assert _moves(sbx, sbx.home, [(f"{repo}/.git", f"{repo}/g"), (f"{repo}/.vscode", f"{repo}/v"),
+                                  (f"{repo}/{STAND_IN}-plain", f"{repo}/p")], profile=text) == [
+        "refused", "refused", "moved"]
+    home = shlex.quote(str(sbx.home))                               # the harness runs in its work folder
+    away = f"{repo}/{STAND_IN}-away"
+    trip = sbx.run(["/bin/bash", "-p", "-c", f"cd {home} || exit 9; mv {repo}/.git {away}; mkdir -p {away}/hooks; "
+                    f"printf zz > {away}/hooks/pre-commit; mv {away} {repo}/.git; exit 0"],
+                   probe="hr1-private-round-trip", profile=text)
+    assert trip.returncode == 0 and not (sbx.home / repo / ".git" / "hooks" / "pre-commit").exists()
+    assert not (sbx.home / away).exists() and (sbx.home / repo / ".git" / "hooks").is_dir()
+    made = {}
+    for where in (f"{private}/{STAND_IN}-fresh", f"{STAND_IN}-fresh"):
+        ran = sbx.run(["/bin/bash", "-p", "-c", f"cd {home} && mkdir -p {where} && mkdir {where}/.git"],
+                      probe="hr1-private-mkdir", profile=text)
+        made[where] = (ran.returncode == 0, (sbx.home / where / ".git").is_dir())
+    assert made == {f"{private}/{STAND_IN}-fresh": (False, False), f"{STAND_IN}-fresh": (True, True)}
+    inits = {}
+    for where in (f"{private}/{STAND_IN}-init", f"{STAND_IN}-init"):
+        ran = sbx.run(["/bin/bash", "-p", "-c", f"cd {home} && mkdir -p {where} && cd {where} && git init -q"],
+                      probe="hr1-private-git-init", profile=text)
+        inits[where] = (ran.returncode, (sbx.home / where / ".git").is_dir(), _refused(ran.stderr))
+    print(f"\nHR-1 review 8: git init under the home-as-work-folder profile: {json.dumps(inits)}")
+    # Measured 2026-11-11: both exit 1. The ordinary folder's .git is made and git stops on HR-1's hooks folder, as
+    # in any work folder; in the private folder its .git isn't made at all.
+    assert inits[f"{STAND_IN}-init"][1:] == (True, (".git/hooks",))
+    assert inits[f"{private}/{STAND_IN}-init"][1] is False           # the private folder's is not
