@@ -75,10 +75,10 @@ async def finish(request: TurnRequest, state: TurnState, mode: StepMode, reply: 
     # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or a
     # SHORT deferral stub that promises action without delivering. A long, substantive answer is
     # KEPT even if it mentions action verbs — describing capabilities ("我能搜索、画图表") is not a
-    # deferral (live bug: capability answers were bounced to the digest/继续 floor). When rejected,
+    # deferral (live bug: capability answers were bounced to the digest/「继续」 floor). When rejected,
     # repair — but HOW depends on whether any tool actually ran this turn:
     #   • tool_trace non-empty  → a real research round: synthesize the answer from the gathered
-    #     findings (may honestly fall to a findings-digest + 继续 nudge — work WAS done).
+    #     findings (may honestly fall to a findings-digest + 「继续」 nudge — work WAS done).
     #   • tool_trace EMPTY      → a chat/meta turn (or a first-step narration stub). There are NO
     #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
     #     lie. Salvage a direct plain-text answer instead.
