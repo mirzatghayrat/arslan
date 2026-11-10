@@ -54,8 +54,10 @@ FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 #: Dependency folders: a package installed there ships its own CI, editor and hook files, which nothing runs or loads
 #: from there, so they pass the user's test as ordinary files. Without this a dependency install fails (#813 review).
-#: Matched as a path component on the real path the kernel sees, so a link named so elsewhere gains nothing. The
-#: tool caches (.venv, uv and pip unpack folders) wait for Codex's measurement.
+#: Matched as a path component on the real path the kernel sees, so a link named so elsewhere gains nothing. Only
+#: below the root (the work folder, or an MCP server's own and granted folders): when a root's real path already
+#: passes through one (a repository kept inside node_modules), its profile has no exemption and every name stays
+#: held (`exempts`, #813 review 2). The tool caches (.venv, uv and pip unpack folders) wait for Codex's measurement.
 DEPENDENCY_FOLDERS = ("node_modules",)
 
 _ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_*")
@@ -102,11 +104,25 @@ def dependency_regex() -> str:
     return "^.*/(" + "|".join(map(_component, DEPENDENCY_FOLDERS)) + ")/.*$"
 
 
-def family(path) -> str | None:
-    """The family of the first name `path` matches at any depth, or None (and None inside a dependency folder)."""
-    parts = tuple(p for p in PurePath(os.fspath(path)).parts if p not in ("/", ""))
-    folded = {name.casefold() for name in DEPENDENCY_FOLDERS}
-    if any(part.casefold() in folded for part in parts[:-1]):
+def _parts(path) -> tuple[str, ...]:
+    return tuple(p for p in PurePath(os.fspath(path)).parts if p not in ("/", ""))
+
+
+_FOLDED_DEPENDENCIES = frozenset(name.casefold() for name in DEPENDENCY_FOLDERS)
+
+
+def exempts(roots: Iterable) -> bool:
+    """Whether a profile (or a check) for these roots exempts dependency folders: only when no root's path has one
+    as a component, itself included. Callers pass real paths, as the kernel matches them."""
+    return not any(part.casefold() in _FOLDED_DEPENDENCIES for root in roots for part in _parts(root))
+
+
+def family(path, root=None) -> str | None:
+    """The family of the first name `path` matches at any depth, or None. None inside a dependency folder too, unless
+    `root` is given and its own path has one (`exempts`): the same rule as the kernel's for that root, which HR-2
+    passes (the work folder, by its real path). Without `root` a dependency folder anywhere on the path exempts."""
+    parts = _parts(path)
+    if (root is None or exempts([root])) and any(part.casefold() in _FOLDED_DEPENDENCIES for part in parts[:-1]):
         return None
     for name, patterns in FAMILIES:
         for pattern in patterns:
@@ -116,10 +132,11 @@ def family(path) -> str | None:
     return None
 
 
-def matches(path) -> bool:
-    """Whether a write to `path` (as given: HR-2 passes the resolved path) is a write into a file that runs later.
-    The names only; the work folder's `core.hooksPath` target is `hooks_path`'s."""
-    return family(path) is not None
+def matches(path, root=None) -> bool:
+    """Whether a write to `path` (as given: HR-2 passes the resolved path, and the work folder's real path as `root`)
+    is a write into a file that runs later. The names only; the work folder's `core.hooksPath` target is
+    `hooks_path`'s."""
+    return family(path, root) is not None
 
 
 # ── core.hooksPath: read, never run ─────────────────────────────────────────
@@ -231,14 +248,20 @@ def hooks_path(folder: Path) -> Path | None:
     return None
 
 
-def kernel_filters(folders: Iterable[Path]) -> list[tuple[str, ...]]:
+def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> list[tuple[str, ...]]:
     """The SBPL filters a profile denies `file-write*` over, one tuple per family in FAMILIES' order, then one for
     the `core.hooksPath` targets of `folders` (the work folder, or an MCP server's granted folders) when any is
-    set: the folder by its real path and by its name in its real parent, so a link there can't be swapped."""
+    set: the folder by its real path and by its name in its real parent, so a link there can't be swapped.
+    Each name is wrapped to exempt dependency folders only when `exempts` holds for the real paths of `folders`
+    and `roots` (an MCP server's own folder); otherwise it is the bare regex. The regexes stay built from constants."""
     from server.services.sandbox_profile import real, regex, subpath
-    outside_dependencies = f"(require-not {regex(dependency_regex())})"
-    out = [tuple(f"(require-all {regex(pattern_regex(p))} {outside_dependencies})" for p in patterns)
-           for _, patterns in FAMILIES]
+    folders = list(folders)
+    if exempts(real(Path(os.path.abspath(p))) for p in (*folders, *roots)):
+        outside_dependencies = f"(require-not {regex(dependency_regex())})"
+        out = [tuple(f"(require-all {regex(pattern_regex(p))} {outside_dependencies})" for p in patterns)
+               for _, patterns in FAMILIES]
+    else:
+        out = [tuple(regex(pattern_regex(p)) for p in patterns) for _, patterns in FAMILIES]
     targets: list[str] = []
     for folder in folders:
         target = hooks_path(folder)

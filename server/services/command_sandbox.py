@@ -545,12 +545,28 @@ def trust_check_failed(result: dict) -> bool:
     return bool(_TRUST_FAILED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
+#: HR-1 (#813 review): git's own lines for a work-tree file it couldn't replace, remove, create or make a folder for
+#: (a held file the repository tracks). checkout and switch print them and still exit 0: HEAD moves and the held file
+#: keeps its old content. A config write (`could not write config file`) is not one: the work tree is untouched.
+_GIT_REFUSED = re.compile(r"^(?:error|warning|fatal): (?:unable to (?:unlink|create file|create symlink|write file)|"
+                          r"cannot create directory at)\b[^\n]*: Operation not permitted$", re.M)
+
+
+def git_refused(result: dict) -> bool:
+    """A command in the workspace sandbox whose output has git's line for a work-tree file the sandbox refused,
+    whatever the exit code."""
+    if result.get("sandbox") != "workspace":
+        return False
+    return bool(_GIT_REFUSED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
+
+
 def refused_outside(result: dict) -> bool:
     """A command under the minimal outside profile that failed with EPERM (piece 4)."""
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False) -> str:
+def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False,
+         git: bool = False) -> str:
     shut = ""
     if closed:
         names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
@@ -566,6 +582,12 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 + " Commands also can't change files that make something run later (git hooks and config, CI, "
                 "editor tasks, agent and package settings), even in the working folder: if that is what it "
                 "changed, use write_file, which asks the user, or tell the user what to change.")
+    if git:
+        # HR-1 (#813 review): git's own refusal line (`git_refused`), shown even when git exited 0.
+        head += (" git couldn't change some files in the work tree, so it may be only partly updated, even if git "
+                 "exited 0: files that run later (git hooks and config, CI, editor tasks, agent and package settings) "
+                 "kept their old content. Check `git status` and tell the user which ones; don't commit over them "
+                 "(a `commit -a` now would undo that change).")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")

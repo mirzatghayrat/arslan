@@ -2,9 +2,10 @@
 
 In the commands preset (the product's `commands_profile`, through SBX's harness, under a scratch HOME): a plain write
 to one name of each family in the work folder is refused, and a plain write to an ordinary file beside it succeeds
-(the instruction files among them). git still commits, branches, checks out and stashes inside the sandbox; a
-`git config` write fails there, the compatibility cost. In the MCP preset: the same in a granted folder and the
-server's own folder.
+(the instruction files among them). git still commits, branches, checks out and stashes inside the sandbox when no
+held file differs; a `git config` write fails there, the compatibility cost, and so do checkout (at exit 0) and a
+fast-forward merge that must change a held file git tracks, where the model reads the note. A work folder inside a
+node_modules folder has no exemption. In the MCP preset: the same in a granted folder and the server's own folder.
 
 Plain writes with stand-in names only. The bypass corpus (letter case, Unicode forms, renames into place, hard links,
 a `.git` that is a link or a file, submodules, bare repositories, a hooksPath pointing outside) is Codex's.
@@ -123,3 +124,59 @@ def test_git_still_commits_branches_checks_out_and_stashes_in_the_sandbox(sbx):
     # The compatibility cost: a config write (as remote add, set-upstream and init make) is refused.
     refused = sbx.run(["/bin/bash", "-p", "-c", f"git config {STAND_IN}.key value"], probe="hr1-git-config")
     assert refused.returncode != 0 and (sbx.work / ".git" / "config").read_bytes() == config
+
+
+HELD_CI = f".github/workflows/{STAND_IN}.yml"
+WHO = ["-c", f"user.name={STAND_IN}", "-c", "user.email=zz@example.invalid", "-c", "commit.gpgsign=false"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("command, exit_code, head_moves", [("checkout -q", 0, True), ("merge -q --ff-only", 1, False)])
+def test_git_that_must_change_a_tracked_held_file_leaves_it_and_the_model_reads_the_note(sbx, command, exit_code,
+                                                                                         head_moves):
+    """#813 review 1: a branch that changes a tracked CI file. checkout exits 0 with HEAD moved and the CI file as it
+    was (a later `commit -a` would undo the branch's change); merge --ff-only exits 1. git's real output, through
+    terminal_exec's own result path, carries the note at either exit code, with one EPERM denial."""
+    from server.orchestrator import run_trace
+    from server.services import terminal_exec
+    # The repository is made outside the sandbox, as above: main has the old content, the branch the new.
+    def commit(content: str, *args: str) -> None:
+        (sbx.work / HELD_CI).parent.mkdir(parents=True, exist_ok=True)
+        for name in (HELD_CI, f"{STAND_IN}.txt"):
+            (sbx.work / name).write_text(content)
+        for step in (args, ["add", "-A"], ["commit", "-qm", content]):
+            assert _git(sbx.work, *WHO, *step).returncode == 0
+    commit("old\n", "init", "-q", "-b", "main")
+    commit("new\n", "checkout", "-qb", STAND_IN)
+    assert _git(sbx.work, "checkout", "-q", "main").returncode == 0
+    head = _git(sbx.work, "rev-parse", "HEAD").stdout
+    ran = sbx.run(["/bin/bash", "-p", "-c", f"git {command} {STAND_IN}"], probe="hr1-git-held-tracked")
+    assert ran.returncode == exit_code
+    assert (sbx.work / HELD_CI).read_text() == "old\n"                     # the held file kept its old content
+    assert (_git(sbx.work, "rev-parse", "HEAD").stdout != head) is head_moves
+    assert (sbx.work / f"{STAND_IN}.txt").read_text() == "new\n"          # the ordinary file was updated
+    result = {"ok": ran.returncode == 0, "exit_code": ran.returncode, "stdout": ran.stdout, "stderr": ran.stderr,
+              "cwd": str(sbx.work), "sandbox": "workspace"}
+    if ran.returncode:
+        result["error"] = f"exit code {ran.returncode}"
+    with run_trace.collecting() as trace:
+        terminal_exec.explain(result, cwd=sbx.work, closed=[], mode="workspace", timed_out=False)
+        run_trace.record(tool="run_command", args={}, result=result, ok=result["ok"], error=None, ms=1)
+    assert "partly updated" in result["note"] and "git status" in result["note"]
+    assert trace[0].get("denial") == "eperm"
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_a_work_folder_inside_a_dependency_folder_keeps_every_name_held(sbx):
+    """#813 review 2: the exemption is for node_modules below the work folder only. A work folder whose real path
+    already passes through one holds every name, a nested node_modules below it included."""
+    sbx.work = sbx.root / "node_modules" / STAND_IN / "work"
+    sbx.work.mkdir(parents=True)
+    names = [".github/workflows/ci.yml", ".vscode/settings.json", f"node_modules/{STAND_IN}/.npmrc"]
+    _prepare(sbx.work, (*names, f"{STAND_IN}.txt"))
+    assert _write(sbx, sbx.work, (*names, f"{STAND_IN}.txt")) == {**{n: "refused" for n in names},
+                                                                   f"{STAND_IN}.txt": "written"}

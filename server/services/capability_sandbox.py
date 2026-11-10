@@ -84,9 +84,10 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], p
     rules.deny("file-write*", *(subpath(p) for p in command_sandbox.cap6b_folders(plugin_folder)))
     rules.deny("file-write*", *(subpath(p) for p in command_sandbox.shared_caches()))
     # HR-1 (ruling 5): nor the files that make something run later, in its own folder or a granted one, nor a
-    # granted folder's core.hooksPath target. Raises when that can't be read: the server doesn't start.
+    # granted folder's core.hooksPath target. Raises when that can't be read: the server doesn't start. No
+    # node_modules exemption when its own folder or a granted one already lies inside such a folder (#813 review).
     from server.services import run_later
-    for filters in run_later.kernel_filters(granted):
+    for filters in run_later.kernel_filters(granted, roots=[real(root), own]):
         rules.deny("file-write*", *filters)
     # SBX-5a (#772 review): nor are the folders above the protected ones moved or replaced through a grant.
     held = command_sandbox.held_ancestors(

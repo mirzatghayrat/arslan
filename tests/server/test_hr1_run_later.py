@@ -141,6 +141,43 @@ def test_a_substring_exemption_would_be_caught():
     assert not any(re.fullmatch(run_later.dependency_regex(), p) for p in held)
 
 
+#: #813 review 2: roots whose own path passes through a dependency folder (the folder itself included).
+INSIDE_DEPENDENCY_ROOTS = [f"/n/node_modules/{STAND_IN}/repo", "/n/node_modules", f"/n/NODE_MODULES/{STAND_IN}"]
+
+
+@pytest.mark.parametrize("root", INSIDE_DEPENDENCY_ROOTS)
+def test_a_root_inside_a_dependency_folder_keeps_every_name_held(root):
+    """A repository kept inside node_modules: nothing exempts its names, not even a nested node_modules below it."""
+    assert not run_later.exempts([root])
+    for rest, family in [(".github/workflows/ci.yml", "ci"), (".git/hooks/pre-commit", "git"),
+                         (f"node_modules/{STAND_IN}/.npmrc", "package"), ("a/node_modules/x/.husky/h", "hooks")]:
+        assert run_later.family(f"{root}/{rest}", root) == family and run_later.matches(f"{root}/{rest}", root)
+
+
+def test_below_an_ordinary_root_a_nested_dependency_folder_stays_exempt():
+    assert run_later.exempts(["/w", "/w/node_modules_x", "/w/not-node_modules"])
+    for path in DEPENDENCY:
+        assert run_later.family(path, "/w") is None and not run_later.matches(path, "/w")
+    assert run_later.matches("/w/.github/workflows/ci.yml", "/w")
+    assert run_later.family(DEPENDENCY[0]) is None                # no root: a dependency folder anywhere exempts
+
+
+def test_the_kernel_text_has_no_exemption_for_a_root_inside_a_dependency_folder(home, tmp_path):
+    """The bare regexes, for the work folder by its real path: a link with an ordinary name gains nothing."""
+    inside = tmp_path / "node_modules" / STAND_IN / "repo"
+    inside.mkdir(parents=True)
+    (tmp_path / f"{STAND_IN}-link").symlink_to(inside)
+    for folders, roots in [([inside], []), ([tmp_path / f"{STAND_IN}-link"], []), ([tmp_path / "node_modules"], []),
+                           ([tmp_path], [inside])]:
+        lines = "".join("(deny file-write* " + " ".join(f) + ")\n" for f in run_later.kernel_filters(folders,
+                                                                                                    roots=roots))
+        assert lines == RUN_LATER_REGEXES and "require-not" not in lines
+    # And in the profiles: the commands preset for that work folder, the MCP preset for a grant there.
+    assert RUN_LATER_REGEXES.splitlines()[0] in command_sandbox.commands_profile(inside).splitlines()
+    mcp = capability_sandbox.profile(root=home / "mcp", folders=[str(inside)], network=False, read=[])
+    assert RUN_LATER_REGEXES.splitlines()[0] in mcp.splitlines() and DEPENDENCY_TEXT not in mcp
+
+
 def test_a_relative_path_is_matched_by_its_names():
     assert run_later.matches(".envrc") and run_later.matches("a/.git/hooks/x") and not run_later.matches("AGENTS.md")
 
@@ -282,6 +319,34 @@ def test_a_permission_error_fails_closed_and_no_repository_reads_as_none(tmp_pat
         run_later.kernel_filters([ws])
 
 
+async def test_an_lstat_error_while_walking_up_fails_closed(tmp_path, monkeypatch):
+    """#813 review: an error other than a missing `.git` (here on the parent's, reached from a folder below it)
+    builds no profile and starts no command; it isn't read as "no repository"."""
+    ws = _repo(tmp_path / "ws", f"[core]\n\thooksPath = {STAND_IN}\n")
+    (ws / "sub").mkdir()
+    real_lstat = os.lstat
+
+    def denied(path, *a, **k):
+        if Path(path) == ws / ".git":
+            raise PermissionError(13, "Permission denied")
+        return real_lstat(path, *a, **k)
+    monkeypatch.setattr(run_later.os, "lstat", denied)
+    with pytest.raises(PermissionError):
+        run_later.hooks_path(ws / "sub")
+    with pytest.raises(PermissionError):
+        command_sandbox.commands_profile(ws / "sub")
+    started: list = []
+
+    async def spawn(*a, **k):
+        started.append(a)
+        raise AssertionError("started")
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    monkeypatch.setattr(terminal_exec.asyncio, "create_subprocess_exec", spawn)
+    with pytest.raises(PermissionError):
+        await terminal_exec.run(f"echo {STAND_IN}", cwd=ws / "sub", sandbox=True)
+    assert started == []
+
+
 def test_a_fifo_where_the_config_is_does_not_stall_and_fails_closed(tmp_path):
     ws = tmp_path / "ws"
     (ws / ".git").mkdir(parents=True)
@@ -394,3 +459,52 @@ def test_the_note_names_them_and_points_to_write_file(tmp_path):
     assert "git hooks and config, CI, editor tasks, agent and package settings" in sentence
     assert "write_file" in sentence and "outside_sandbox" not in sentence
     assert "Commands also can't change" not in command_sandbox.note(tmp_path, proxy=True)
+    assert "partly updated" not in note and "partly updated" in command_sandbox.note(tmp_path, git=True)
+
+
+# ── git's refusal line: the note even at exit 0 (#813 review 1) ──────────────
+
+GIT_REFUSED = f"error: unable to unlink old '.github/workflows/{STAND_IN}.yml': Operation not permitted\n"
+
+
+def _explained(tmp_path, *, exit_code: int, stderr: str, sandbox: str = "workspace"):
+    from server.orchestrator import run_trace
+    result = {"ok": exit_code == 0, "exit_code": exit_code, "stdout": "", "stderr": stderr, "cwd": str(tmp_path),
+              "sandbox": sandbox}
+    if exit_code:
+        result["error"] = f"exit code {exit_code}"
+    with run_trace.collecting() as trace:
+        terminal_exec.explain(result, cwd=tmp_path, closed=[], mode=sandbox, timed_out=False)
+        run_trace.record(tool="run_command", args={}, result=result, ok=result["ok"], error=None, ms=1)
+    return result, trace[0].get("denial")
+
+
+def test_git_refusing_a_held_file_at_exit_0_shows_the_note_and_one_denial(tmp_path):
+    """git checkout moved HEAD and exited 0, leaving the held file as it was: not a failed step, but the model reads
+    the note, and SBX-7 counts one EPERM denial."""
+    result, denial = _explained(tmp_path, exit_code=0, stderr=GIT_REFUSED)
+    assert "partly updated" in result["note"] and "git status" in result["note"] and denial == "eperm"
+    assert "sandbox_denied" not in result and "error" not in result and result["ok"] is True
+    # A removal is a warning in git's words, a new file (exit 0 too) an error, and a new folder a fatal one: all count.
+    for line in (f"warning: unable to unlink '.husky/{STAND_IN}': Operation not permitted\n",
+                 f"error: unable to create file .github/workflows/{STAND_IN}.yml: Operation not permitted\n",
+                 "fatal: cannot create directory at '.husky': Operation not permitted\n"):
+        assert "partly updated" in _explained(tmp_path, exit_code=0, stderr=line)[0]["note"]
+
+
+def test_git_refusing_a_held_file_at_exit_1_adds_the_same_sentence_to_the_stop(tmp_path):
+    result, denial = _explained(tmp_path, exit_code=1, stderr=GIT_REFUSED)
+    assert result["sandbox_denied"] is True and "partly updated" in result["note"] and denial == "eperm"
+    assert result["error"] == "the sandbox stopped this command (exit code 1)"
+
+
+def test_only_gits_work_tree_lines_in_the_workspace_sandbox_count(tmp_path):
+    # A config write is a stop, but the work tree is untouched: no sentence about it.
+    config, denial = _explained(tmp_path, exit_code=4,
+                                stderr="error: could not write config file .git/config: Operation not permitted\n")
+    assert config["sandbox_denied"] is True and "partly updated" not in config["note"] and denial == "eperm"
+    # Any other tool's EPERM at exit 0, and git's line outside the workspace sandbox: nothing.
+    for stderr, sandbox in [(f"{STAND_IN}: Operation not permitted\n", "workspace"), (GIT_REFUSED, "outside"),
+                            (GIT_REFUSED, "off")]:
+        result, denial = _explained(tmp_path, exit_code=0, stderr=stderr, sandbox=sandbox)
+        assert "note" not in result and denial is None
