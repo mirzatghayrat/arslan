@@ -382,7 +382,7 @@ final class PhoneFilesTests: XCTestCase {
         let socket = WebSocketControl(port: 9, token: "t", path: "/ws/arslan/gone")    // nothing listens on 9
         socket.stop()
         await socket.run()                       // returns at once, instead of retrying every 1…30 s for ever
-        XCTAssertNil(socket.task)
+        XCTAssertNil(socket.currentTask)
     }
 
     // ------------------------------------------------------------------ live links
