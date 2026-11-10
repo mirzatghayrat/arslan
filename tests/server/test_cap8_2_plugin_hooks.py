@@ -416,6 +416,105 @@ async def test_a_failed_install_after_the_cards_yes_leaves_the_old_group_as_it_w
     assert (agent_skills.folder("release-notes") / "scripts" / "fmt.py").read_text() == "print('new')\n"
 
 
+class _Stop(BaseException):
+    """The process stopping there: not an Exception, so no handler on the way catches it, as none would run."""
+
+
+def _stops(step: int):
+    """(owner, name, stand-in) that stop `replace` at that step of plugin_package's restart matrix."""
+    def stop(*args, **kwargs):
+        raise _Stop()
+    real_aside, real_forget, real_trash = plugin_package._aside, agent_skills.forget, plugin_package._trash_aside
+    forgotten: list = []
+
+    def part_aside(held, back=False):
+        real_aside(held[:1], back)
+        raise _Stop()
+
+    def part_forget(key):
+        if forgotten:
+            raise _Stop()
+        forgotten.append(key)
+        real_forget(key)
+
+    def part_trash(held):
+        real_trash(held[:1])
+        raise _Stop()
+    return {1: (agent_skills, "_written", stop), 2: (plugin_package, "_aside", stop),
+            3: (plugin_package, "_aside", part_aside), 4: (agent_skills, "forget", part_forget),
+            5: (skill_import, "install_prepared", stop), 6: (plugin_package, "remove", stop),
+            7: (plugin_package, "_skill_keys", stop), 8: (plugin_package, "_trash_aside", part_trash),
+            9: (plugin_package, "_clear_record", stop)}[step]
+
+
+@pytest.mark.parametrize("step", range(1, 10))
+async def test_a_swap_stopped_at_each_step_is_settled_at_the_next_start(api, home, offline, step):
+    """The restart matrix in plugin_package: a stop at each step of the swap, then the start's own steps in their
+    order. Before the new group is complete (1-5) the old group is back exactly; after (6-9) the swap is finished.
+    Either way no record and no set-aside folder is left."""
+    from server import main
+    files = {**PLUGIN_FILES, **CONNECTION, "hooks/hooks.json": _hooks("SessionStart")}
+    await _install(api, home, files)
+    old = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
+    _update(home, "1.1.0", {**files, "hooks/hooks.json": _hooks("PreToolUse")}, "1.0.0")
+    await _scan(api)
+    _update(home, "1.2.0", {**files, "skills/release-notes/scripts/fmt.py": "print('new')\n"}, "1.1.0")
+    row = _row(await _scan(api), "plugins", "release-kit")
+    card = (await _post(api, plugins=[_tick(row)]))[row["id"]]
+    keys = ("release-notes", "changelog-style")
+    folders = {key: _files_under(agent_skills.folder(key)) for key in keys}
+    entries = {key: agent_skills.entries()[key] for key in keys}
+    packs = {p.key: (p.name, p.body, p.source_id, p.enabled, p.category) for p in await _all(SkillPack)}
+    owner, name, stand_in = _stops(step)
+    real, real_settle = getattr(owner, name), plugin_package.settle
+
+    async def dead(old_id):
+        """A stopped process runs no `finally`: the swap's own settle never comes (steps 6-9 stop inside it)."""
+    setattr(owner, name, stand_in)
+    if step <= 5:
+        plugin_package.settle = dead
+    try:
+        with pytest.raises(_Stop):
+            await tool_import.add([], [_tick(row, card=card["card_digest"])])
+    finally:
+        setattr(owner, name, real)
+        plugin_package.settle = real_settle
+    stopped = {r.id: r for r in await _all(CapabilitySource) if r.kind == "plugin"}
+    assert bool((stopped[old.id].test or {}).get("swap")) is (step >= 2)       # the record, from the first commit on
+    await main._boot_skills()                         # the start: swaps, cut-short installs, export, the folder's read
+    plugins = {r.id: r for r in await _all(CapabilitySource) if r.kind == "plugin"}
+    assert not any((r.test or {}).get("swap") for r in plugins.values())
+    assert not list(agent_skills.root().glob(".arslan-swap-*"))
+    live = [r for r in await _all(CapabilitySource) if r.kind == "mcp" and r.state != "removed"]
+    if step <= 5:
+        assert plugins[old.id].state == "installed" and plugins[old.id].test["hooks_added"]["event"] == "PreToolUse"
+        assert [r.state for i, r in plugins.items() if i != old.id] in ([], ["failed"])
+        assert {p.key: (p.name, p.body, p.source_id, p.enabled, p.category) for p in await _all(SkillPack)} == packs
+        assert {key: _files_under(agent_skills.folder(key)) for key in keys} == folders
+        assert {key: agent_skills.entries()[key] for key in keys} == entries
+        assert [plugin_package.parent_of(r.candidate_id) for r in live] == [old.id]
+        assert (await api.put(f"/api/v1/capabilities/plugin:{old.id}", json={"on": True})).status_code == 409
+    else:
+        new = next(r for i, r in plugins.items() if i != old.id)
+        assert plugins[old.id].state == "removed" and new.state == "installed"
+        assert {p.key: (p.source_id, p.enabled) for p in await _all(SkillPack)} == {key: (new.id, True) for key in keys}
+        assert [plugin_package.parent_of(r.candidate_id) for r in live] == [new.id]
+        assert (agent_skills.folder("release-notes") / "scripts" / "fmt.py").read_text() == "print('new')\n"
+
+
+async def test_the_start_settles_swaps_before_anything_else_reads_the_skills(monkeypatch):
+    """First at start: before the cut-short installs, the export and the folder's first read (why: main._boot_skills)."""
+    from server import main
+    seen: list[str] = []
+    for owner, name in ((plugin_package, "finish_swaps"), (plugin_package, "finish_interrupted"),
+                        (agent_skills, "export_imported"), (agent_skills, "sync")):
+        async def step(_name=name):
+            seen.append(_name)
+        monkeypatch.setattr(owner, name, step)
+    await main._boot_skills()
+    assert seen == ["finish_swaps", "finish_interrupted", "export_imported", "sync"]
+
+
 # ── #809's review: what plugins rely on ──────────────────────────────────────────────────────────────────────────
 
 async def test_a_file_over_the_cap_is_refused_never_cut(api, home, tmp_path):

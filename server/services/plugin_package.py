@@ -610,12 +610,14 @@ async def _undo(source_ids: list[str], skill_keys: list[str]) -> None:
             logger.warning("a plugin's part could not be removed after a failed install", exc_info=True)
 
 
-async def install(candidate: dict, prepared: dict, keys: dict, owner_id: str = "local") -> dict:
+async def install(candidate: dict, prepared: dict, keys: dict, owner_id: str = "local", *,
+                  source_id: str | None = None) -> dict:
     """Every part, connections first (the test is what most often fails). One that doesn't pass takes the others with
     it: "on" here means the whole plugin, or `failed` / `blocked` with nothing kept. A connection's tool list changing
-    while the rest go in stops the plugin as it would later (`stop_for`): `stopped`, installed with every part off."""
+    while the rest go in stops the plugin as it would later (`stop_for`): `stopped`, installed with every part off.
+    `source_id`: the new row's id, when a swap recorded it beforehand (`replace`)."""
     from server.services import capability_flow
-    source_id = uuid.uuid4().hex
+    source_id = source_id or uuid.uuid4().hex
     spdx, read_from = prepared["license"]
     manifest = prepared["manifest"]
     now = datetime.utcnow()
@@ -772,67 +774,142 @@ async def hooks_added(source_id: str, event: str) -> None:
         await db.commit()
 
 
-_SWAP = ".arslan-swap-"       # not a plain key: no reader of ~/.agents/skills takes it
+# ── CAP8-2: install, then swap ─────────────────────────────────────────────────────────────────────────────────────
+#
+# An imported group switched off for a hook (`hooks_added`) is replaced by its card's yes (`replace`). The new group's
+# skills share the old one's keys, so the old skills are set aside first; the new group goes in whole; only then does
+# the old one go. The swap is recorded when it starts, on the old group's row (`test["swap"]`: the new group's id, and
+# for each old skill its row's values, manifest entry, what Arslan wrote and its set-aside name), and `settle` reads
+# only that record: the new group's row `installed` means finish, anything else means put back. It clears the record
+# last. The restart matrix, the steps of `replace` and what a stop at each leaves (`finish_swaps`, first at start):
+#  1. Before the first commit: nothing changed, and no record. Nothing to do.
+#  2. The first commit: the record and the old skill rows' removal, together. Their folders and manifest entries are
+#     still where they were. Put back: each row from the record (the rest are already in place).
+#  3. Each folder renamed to its set-aside name (`.arslan-swap-<key>`, which no reader of the folder takes): some moved,
+#     some not. Put back: each moved one renamed back.
+#  4. Each manifest entry forgotten: some gone. Put back: each entry from the record.
+#  5. The new group's install, under the id the record names: no row yet, its row `proposed` with parts going in, or
+#     `failed` after its own undo. Not complete: what is left of it goes (a `proposed` one is removed and marked
+#     `failed`, as `finish_interrupted` would), then the old group is put back as in 2-4.
+#  6. Its row `installed` (or `stopped`, also `installed`): complete. Finish: the old group is removed and the set-aside
+#     folders go to the Trash.
+#  7. The old group's removal, part or all done. Finish, as in 6: `remove` takes what is left.
+#  8. The set-aside folders to the Trash, some or all. Finish, as in 6.
+#  9. The record cleared, last. Before it, a stop finishes (or puts back) again: each step is safe to run twice.
+# A stop during `settle` itself is one of these states, so the next start finishes it.
+
+_SWAP = ".arslan-swap-"
 
 
-async def _hold(source_id: str) -> list[dict]:
-    """The group's skills set aside, so the new group's (which share their keys) can go in: each row's values, its
-    manifest entry and what Arslan wrote, kept here, and its folder moved beside it under a name nothing reads."""
+def _aside(held: list[dict], back: bool = False) -> None:
+    """Each held skill's folder to its set-aside name, or back. Only what is there moves, onto nothing. Blocking."""
     from server.services import agent_skills
-    held: list[dict] = []
+    for one in held:
+        here, aside = agent_skills.folder(one["row"]["key"]), agent_skills.root() / one["aside"]
+        source, target = (aside, here) if back else (here, aside)
+        if os.path.lexists(source) and not os.path.lexists(target):
+            os.rename(source, target)
+        elif back and os.path.lexists(source):
+            logger.warning("a set-aside skill folder could not go back: its key holds another folder (%s)",
+                           one["row"]["key"])
+
+
+def _trash_aside(held: list[dict]) -> None:
+    from server.services import agent_skills
+    for one in held:
+        capability_install.to_trash(agent_skills.root() / one["aside"], prefix="Arslan replaced skill")
+
+
+async def _set_aside(old_id: str, new_id: str) -> None:
+    """Steps 2-4 of the matrix above. The record and the rows' removal are one commit; the folders and entries after."""
+    from server.services import agent_skills
     async with agent_skills.manifest_lock():
+        known, written = agent_skills.entries(), agent_skills._written()
         async with db_session.AsyncSessionLocal() as db:
-            for pack in (await db.execute(select(SkillPack).where(SkillPack.source_id == source_id))).scalars().all():
-                key, folder = pack.key, agent_skills.folder(pack.key)
-                one = {"row": {c.name: getattr(pack, c.name) for c in SkillPack.__table__.columns},
-                       "entry": agent_skills.entries().get(key), "written": agent_skills._written().get(key),
-                       "folder": folder, "aside": agent_skills.root() / f"{_SWAP}{key}"}
-                held.append(one)
-                if os.path.lexists(folder):
-                    capability_install.to_trash(one["aside"], prefix="Arslan stale skill swap")
-                    os.rename(folder, one["aside"])
-                agent_skills.forget(key)
+            old = await db.get(CapabilitySource, old_id)
+            packs = (await db.execute(select(SkillPack).where(SkillPack.source_id == old_id))).scalars().all()
+            held = [{"row": {c.name: getattr(p, c.name) for c in SkillPack.__table__.columns},
+                     "entry": known.get(p.key), "written": written.get(p.key), "aside": f"{_SWAP}{p.key}"}
+                    for p in packs]
+            old.test = {**(old.test or {}), "swap": {"new": new_id, "held": held}}
+            for pack in packs:
                 await db.delete(pack)
-            await db.commit()
-    return held
+            await db.commit()                                                   # step 2
+        await asyncio.to_thread(_aside, held)                                   # step 3
+        for one in held:
+            agent_skills.forget(one["row"]["key"])                              # step 4
 
 
-async def _unhold(held: list[dict]) -> None:
-    """`_hold` undone: each folder, entry and row back as it was."""
+async def _put_back(held: list[dict]) -> None:
+    """Steps 2-4 undone, from the record: each folder, entry and row as it was. Safe to run twice."""
     from server.services import agent_skills
     async with agent_skills.manifest_lock():
+        await asyncio.to_thread(_aside, held, True)
+        for one in held:
+            if one["entry"] is not None:
+                agent_skills.record(one["row"]["key"], by=one["entry"]["by"], files=one["entry"].get("files"),
+                                    written=one["written"], hooks=one["entry"].get("hooks") or [])
         async with db_session.AsyncSessionLocal() as db:
             for one in held:
-                if os.path.lexists(one["aside"]) and not os.path.lexists(one["folder"]):
-                    os.rename(one["aside"], one["folder"])
-                if one["entry"] is not None:
-                    agent_skills.record(one["row"]["key"], by=one["entry"]["by"], files=one["entry"].get("files"),
-                                        written=one["written"], hooks=one["entry"].get("hooks") or [])
-                db.add(SkillPack(**one["row"]))
+                if await db.get(SkillPack, one["row"]["key"]) is None:
+                    db.add(SkillPack(**one["row"]))
             await db.commit()
+
+
+async def _clear_record(old_id: str) -> None:
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(CapabilitySource, old_id)
+        row.test = {k: v for k, v in (row.test or {}).items() if k != "swap"}
+        await db.commit()
+
+
+async def settle(old_id: str) -> None:
+    """Finish or put back the swap recorded on this group's row, by the record alone; the record is cleared last."""
+    async with db_session.AsyncSessionLocal() as db:
+        old = await db.get(CapabilitySource, old_id)
+        swap = (old.test or {}).get("swap") if old is not None else None
+        new = await db.get(CapabilitySource, swap["new"]) if swap else None
+    if not swap:
+        return
+    if new is not None and new.state == "installed":                          # steps 6-8: finish
+        await remove(old_id)
+        await asyncio.to_thread(_trash_aside, swap["held"])
+    else:                                                                      # steps 2-5: put back
+        if new is not None and new.state == "proposed":     # cut short with its parts in: they go, as at boot
+            await remove(new.id)
+            async with db_session.AsyncSessionLocal() as db:
+                row = await db.get(CapabilitySource, new.id)
+                row.state, row.error = "failed", "interrupted"
+                await db.commit()
+        await _put_back(swap["held"])
+    await _clear_record(old_id)                                                # step 9
 
 
 async def replace(old_id: str, candidate: dict, prepared: dict, keys: dict) -> dict:
-    """CAP8-2: an imported group switched off for a hook (`hooks_added`), replaced by its card's yes. Install, then
-    swap: the old group's skills are set aside (`_hold`), the new group goes in whole, and only then does the old one
-    go. An install that doesn't finish (`failed`, `blocked`, or stopped by a cancel) puts them back: the old group
-    stays as it was, off, marked, with its card. Its connections are never touched until the new group is in."""
-    held = await _hold(old_id)
+    """CAP8-2: an imported group switched off for a hook, replaced by its card's yes: install, then swap (the matrix
+    above). An install that doesn't finish (`failed`, `blocked`, a cancel) puts the old group back as it was, off,
+    marked, with its card; its connections are never touched until the new group is in."""
+    new_id = uuid.uuid4().hex
+    await _set_aside(old_id, new_id)
     try:
-        out = await install(candidate, prepared, keys)
-    except BaseException:
-        await asyncio.shield(_unhold(held))
-        raise
-    if out["state"] not in ("on", "stopped"):         # `install` has taken its own parts out already
-        await _unhold(held)
-        return out
-    try:
-        await remove(old_id)
-        for one in held:
-            capability_install.to_trash(one["aside"], prefix="Arslan replaced skill")
-    except Exception:  # noqa: BLE001 — the new group is in; what is left of the old one is off and can be deleted
-        logger.warning("an imported plugin's old group was not all removed after its update", exc_info=True)
-    return out
+        return await install(candidate, prepared, keys, source_id=new_id)
+    finally:
+        await asyncio.shield(settle(old_id))
+
+
+async def finish_swaps() -> None:
+    """At start, before `finish_interrupted`, the export and the folder's first read: each swap a stop cut short is
+    finished or put back by its record (the matrix above). First, because a set-aside skill whose folder is still under
+    its key, with no row and no entry, would read as another tool's skill at `agent_skills.sync`; and because putting
+    the old group back needs the new group's skills, which share its keys, out first, which this does itself."""
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.execute(select(CapabilitySource).where(CapabilitySource.kind == "plugin"))).scalars().all()
+        ids = [row.id for row in rows if (row.test or {}).get("swap")]
+    for old_id in ids:
+        try:
+            await settle(old_id)
+        except Exception as exc:  # noqa: BLE001 — never a reason to stop the boot; the next one tries again
+            logger.warning("a plugin swap cut short was not settled at boot (%s): %s", old_id, exc)
 
 
 async def stop_for(child: CapabilitySource, server_id: int) -> None:
