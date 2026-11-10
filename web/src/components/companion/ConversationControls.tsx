@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Settings2, Shield } from "lucide-react";
+import { BookX, CircleOff, Settings2, Shield } from "lucide-react";
+import { HDR_CHIP, HDR_LABEL, HDR_SECONDARY } from "../conversation/ConversationHeader";
 import { useTranslation } from "react-i18next";
 import { companionApi, type ConversationContext, type Project } from "../../api/companion";
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
@@ -36,18 +37,34 @@ export default function ConversationControls({ conversationId, running, empty, o
     } catch (cause) { setError(companionError(cause)); }
     finally { setBusy(false); }
   }
+  // In the conversation header (ConversationHeader): one button, its chips inside, so every chip opens these settings
+  // and ⋯ can stand in for any of them.
+  const settingsLabel = t("companion.conversationSettings");
+  const flags = context?.temporary ? [[t("companion.temporary"), Shield] as const]
+    : [...(context?.no_memory ? [[t("companion.noMemory"), CircleOff] as const] : []), ...(context?.no_learning ? [[t("companion.noLearning"), BookX] as const] : [])];
+  const headerChip = (text: string, Icon: typeof Settings2, tone = "text-muted-foreground") =>
+    <span key={text} data-hdr-chip="secondary" title={text} className={`${HDR_CHIP} ${HDR_SECONDARY} ${tone}`}>
+      <Icon size={13} className="shrink-0" aria-hidden /><span className={`max-w-[14em] truncate ${HDR_LABEL}`}>{text}</span></span>;
   return <div className={compact ? "min-w-0 text-xs" : "shrink-0 border-b border-border/60 px-5 py-2 text-xs"}>
-    <div className={compact ? "flex min-w-0 items-center gap-3 whitespace-nowrap" : "flex flex-wrap items-center gap-3"}><button className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground disabled:opacity-50"
+    {compact ? <div className="flex shrink-0 items-center gap-1">
+      <button type="button" className="inline-flex shrink-0 items-center gap-1 hover:[&>span]:text-foreground disabled:opacity-50"
+        aria-label={[settingsLabel, projectName, ...flags.map(([text]) => text)].filter(Boolean).join(" · ")}
+        disabled={!context} onClick={() => { setError(null); setDraft(context); }}>
+        {headerChip(projectName ?? settingsLabel, Settings2)}
+        {flags.map(([text, Icon]) => headerChip(text, Icon, Icon === Shield ? "text-primary" : "text-muted-foreground"))}
+      </button>
+      {!draft && error && <span role="alert" className="whitespace-nowrap text-destructive">{t(error)}</span>}
+    </div> :
+    <div className="flex flex-wrap items-center gap-3"><button className="inline-flex min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground disabled:opacity-50"
       aria-label={t("companion.conversationSettings")} title={t("companion.conversationSettings")}
       disabled={!context} onClick={() => { setError(null); setDraft(context); }}><Settings2 size={14} className="shrink-0" />
-      {/* In the one-line header the project IS the button; with none it says what it opens. */}
-      <span className="truncate">{compact && projectName ? projectName : t("companion.conversationSettings")}</span></button>
-      {!compact && context?.project_id && <span className="text-primary">{projectName ?? t("companion.project")}</span>}
+      <span className="truncate">{t("companion.conversationSettings")}</span></button>
+      {context?.project_id && <span className="text-primary">{projectName ?? t("companion.project")}</span>}
       {context?.temporary ? <span className="inline-flex items-center gap-1 text-primary"><Shield size={13} />{t("companion.temporary")}</span> : <>
         {context?.no_memory && <span>{t("companion.noMemory")}</span>}{context?.no_learning && <span>{t("companion.noLearning")}</span>}
       </>}
       {!draft && error && <span role="alert" className="text-destructive">{t(error)}</span>}
-    </div>
+    </div>}
     {!compact && context?.temporary && <p className="mt-2 leading-relaxed text-muted-foreground">{t("companion.temporaryHint")}</p>}
     {draft && <CompanionDialog title={t("companion.conversationSettings")} onClose={() => setDraft(null)} busy={busy}>
       <div className="space-y-4 text-sm">

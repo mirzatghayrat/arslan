@@ -4,6 +4,7 @@ import type { Section } from "../lib/sections";
 import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Activity, PanelLeft, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ThreadRowMenu from "./ThreadRowMenu";
+import RenameInput from "./RenameInput";
 import type { BackendStatus } from "../hooks/useBackendStatus";
 import BackgroundJobs from "./companion/BackgroundJobs";
 import { threadDisplayTitle } from "../lib/threadTitles";
@@ -54,6 +55,8 @@ interface SidebarProps {
   onMoveToProject?: (threadId: string, projectId: string | null) => void;
   /** SB1-2: pin or unpin a conversation (App stores it on the server). */
   onPinThread?: (threadId: string, pinned: boolean) => void;
+  /** Rename a conversation in place: right-click → Rename, double-click its title, ⋯ → Rename, or F2 on the row. */
+  onRenameThread?: (threadId: string, title: string) => void;
 }
 /** SB1-2: what a dragged conversation row carries, so a project header takes only a conversation. */
 const DRAG_TYPE = "application/x-arslan-conversation";
@@ -61,9 +64,11 @@ export default function Sidebar(props: SidebarProps) {
   const { threads, activeThreadId, onSelectThread, onAddThread,
     activeSection, onChangeSection, onArchiveThread, onUnarchiveThread,
     onDeleteThread, backendStatus, onOpenConversation, waiting = 0, scheduledDot = false, meta = {},
-    projects = [], onStartInProject, onOpenProject, onMoveToProject, onPinThread } = props;
+    projects = [], onStartInProject, onOpenProject, onMoveToProject, onPinThread, onRenameThread } = props;
   const { t, i18n } = useTranslation();
   const [archivedOpen, setArchivedOpen] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const [openMonths, setOpenMonths] = useState<string[]>([]);
   const [openedFor, setOpenedFor] = useState<string | null>(null);
   const collapsed = useSidebar((s) => s.collapsed);
@@ -143,22 +148,36 @@ export default function Sidebar(props: SidebarProps) {
   function renderThread(thread: ArslanThread, archived: boolean) {
     const active = activeSection === "arslan" && activeThreadId === thread.id;
     // SB1-2: a conversation row drags onto a project (the same move as "Move to project…").
-    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary;
+    const editing = renaming === thread.id;
+    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary && !editing;
+    // A temporary conversation is never stored, so it has nothing to rename (and no row menu).
+    const renameable = Boolean(onRenameThread) && !thread.temporary;
+    const title = threadDisplayTitle(thread, t);
     return <div key={thread.id} id={`active-thread-btn-${thread.id}`} role="button" tabIndex={0}
       draggable={draggable || undefined}
       onDragStart={draggable ? event => { event.dataTransfer.setData(DRAG_TYPE, thread.id); event.dataTransfer.effectAllowed = "move"; } : undefined}
-      onClick={() => openThread(thread.id)} onKeyDown={event => {
+      onClick={() => { if (!editing) openThread(thread.id); }} onKeyDown={event => {
         if (event.target !== event.currentTarget) return;
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openThread(thread.id); }
-      }} className={rowClass(active)}>
+        else if (event.key === "F2" && renameable) { event.preventDefault(); setRenaming(thread.id); }
+      }}
+      onContextMenu={renameable ? event => { event.preventDefault(); setMenuFor(thread.id); } : undefined}
+      className={rowClass(active)}>
       {active && marker}<ConversationGlyph meta={meta[thread.id]} />
-      <span className="min-w-0 flex-1 truncate">{threadDisplayTitle(thread, t)}</span>
+      {editing && onRenameThread
+        ? <RenameInput value={title} testId={`thread-rename-input-${thread.id}`}
+            onRename={next => onRenameThread(thread.id, next)}
+            onClose={byKey => { setRenaming(null); if (byKey) document.getElementById(`active-thread-btn-${thread.id}`)?.focus(); }} />
+        : <span className="min-w-0 flex-1 truncate" title={title}
+            onDoubleClick={renameable ? () => setRenaming(thread.id) : undefined}>{title}</span>}
       {meta[thread.id]?.origin === "phone" &&
         <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
-      {!thread.temporary && <ThreadRowMenu threadId={thread.id} archived={archived}
+      {!thread.temporary && !editing && <ThreadRowMenu threadId={thread.id} archived={archived}
         onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
         projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject}
-        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) ? onPinThread : undefined} />}
+        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) ? onPinThread : undefined}
+        onRename={renameable ? id => setRenaming(id) : undefined}
+        open={menuFor === thread.id} onOpenChange={open => setMenuFor(open ? thread.id : null)} />}
     </div>;
   }
   function toggleMonth(id: string) {

@@ -26,6 +26,8 @@ export interface PersistedThread {
   archived?: boolean;
   /** 0.1.58 §4: started in a project (known before the server lists it — a new chat has no messages). */
   projectId?: string;
+  /** The user named it (sidebar or header rename): never auto-titled again, whatever the name looks like. */
+  userTitled?: true;
 }
 
 export interface RestoredThreads {
@@ -58,6 +60,7 @@ interface ThreadLike {
   archived?: boolean;
   temporary?: boolean;
   projectId?: string;
+  userTitled?: boolean;
 }
 
 /**
@@ -78,6 +81,7 @@ export function persistThreads(
       ...(t.memberSpawnIds ? { memberSpawnIds: t.memberSpawnIds } : {}),
       ...(t.archived ? { archived: true } : {}),
       ...(t.projectId ? { projectId: t.projectId } : {}),
+      ...(t.userTitled ? { userTitled: true as const } : {}),
     }));
     localStorage.setItem(THREADS_KEY, JSON.stringify(slim));
     localStorage.setItem(ACTIVE_THREAD_KEY, slim.some(t => t.id === activeThreadId) ? activeThreadId : slim[0]?.id ?? "");
@@ -118,7 +122,7 @@ export function restoreThreads(): RestoredThreads {
       if (Array.isArray(parsed)) {
         threads = parsed
           .filter(
-            (t): t is { id: string; title: string; defaultTitle?: boolean; memberSpawnIds?: string[]; archived?: boolean; projectId?: string } =>
+            (t): t is { id: string; title: string; defaultTitle?: boolean; memberSpawnIds?: string[]; archived?: boolean; projectId?: string; userTitled?: boolean } =>
               !!t && typeof t.id === "string" && typeof t.title === "string",
           )
           .map((t) => ({
@@ -131,6 +135,7 @@ export function restoreThreads(): RestoredThreads {
               : {}),
             ...(t.archived === true ? { archived: true } : {}),
             ...(typeof t.projectId === "string" && t.projectId ? { projectId: t.projectId } : {}),
+            ...(t.userTitled === true ? { userTitled: true as const } : {}),
           }));
       }
     }
