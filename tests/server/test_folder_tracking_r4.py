@@ -273,6 +273,7 @@ def test_common_overask(tmp_path, monkeypatch):
     print("R4_PROTOTYPE_COMMON " + json.dumps(prototype_counts))
 
 
+@pytest.mark.timeout(600)  # the whole-corpus matrix takes about 115 s on a Mac, longer on CI runners
 def test_round_four_matrices(tmp_path, monkeypatch):
     corpora = {"repository": revisions.repository_corpus(), "structural": revisions.structural_corpus()}
     assert len(corpora["repository"]) == 1340
