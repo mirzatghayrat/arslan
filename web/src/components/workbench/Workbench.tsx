@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import { filesApi, type ConversationFile } from "../../api/files";
 import { backgroundJobsApi } from "../../api/tasks";
 import { useDismissable } from "../../hooks/useDismissable";
+import { useDividerDrag } from "../../hooks/useDividerDrag";
 import { OPEN_ARTIFACT, validArtifact } from "../../lib/workDock";
 import { useArslanStore } from "../../stores/arslanStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -108,6 +109,7 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
   }, [conversationId, reader, closeReader]);
 
   const touched = useMemo(() => new Set(files.map((f) => f.title)), [files]);
+  const drag = useDividerDrag(open, (clientX) => setWidth(window.innerWidth - clientX));
   if (!open) return null;
   // DIFF1: two columns side by side need the panel's full width.
   const shownWidth = reader?.kind === "diff" || reader?.kind === "repo-diff" ? MAX_WIDTH : reader ? Math.max(width, READER_WIDTH) : width;
@@ -119,9 +121,7 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
       <div role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t("dock.resize")}
         className="absolute -left-1 top-0 z-30 h-full w-2 cursor-col-resize touch-none outline-none after:absolute after:left-1 after:top-0 after:h-full after:w-px after:content-[''] hover:after:bg-border-strong focus-visible:ring-2 focus-visible:ring-ring"
         onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); setWidth(width + (e.key === "ArrowLeft" ? 20 : -20)); } }}
-        onPointerDown={(e) => e.currentTarget.setPointerCapture(e.pointerId)}
-        onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) setWidth(window.innerWidth - e.clientX); }}
-        onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)} />
+        {...drag} />
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="inline-flex rounded-lg bg-fill p-0.5 text-[12.5px]" role="tablist">
           {TABS.map((k) => { const Icon = ICON[k]; return <button key={k} type="button" role="tab" aria-selected={tab === k && !reader}
