@@ -262,9 +262,9 @@ def waiters(call_id: str) -> int:
 
 def _island_risky_rules() -> frozenset[str]:
     """S2a-2: every layer ② rule (it sends, deletes, changes the system or reaches another app) and
-    `unreadable` — read from terminal_policy, never copied — plus the network card's kind."""
-    from server.services import terminal_policy
-    return terminal_policy.ONCE_ONLY_RULES | {"network"}
+    `unreadable` — never_auto's command part (hard_rules, HR-0), never copied — plus the network card's kind."""
+    from server.services import hard_rules
+    return hard_rules.NEVER_AUTO_RULES | {"network"}
 #: The permission kinds whose `propose_action` card the island answers (0.1.61 §A4: "Once (For
 #: this task) or No for folder, app (look and act, merged), screen, MCP tool, schedule, site and
 #: Shortcut cards"). Everything else opens Arslan: money, send, delete, a risky step in an app, a

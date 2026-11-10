@@ -14,6 +14,9 @@ from tests.server import test_folder_tracking_r3_matrix as revisions
 from tests.server import test_folder_tracking_matrix as matrix
 from tests.server.test_inline_script_asks import harmless_move_allowed
 
+# Whole-corpus comparisons: over pytest-timeout's 120 s default on CI runners and under load.
+pytestmark = pytest.mark.timeout(600)
+
 CLASSES = {
     "REMOVE-LINK": "rm -rf {p}; ln -s zz-outside {p}",
     "RENAME-LINK": "mv {p} zz-moved; ln -s zz-outside {p}",
@@ -273,7 +276,6 @@ def test_common_overask(tmp_path, monkeypatch):
     print("R4_PROTOTYPE_COMMON " + json.dumps(prototype_counts))
 
 
-@pytest.mark.timeout(600)  # the whole-corpus matrix takes about 115 s on a Mac, longer on CI runners
 def test_round_four_matrices(tmp_path, monkeypatch):
     corpora = {"repository": revisions.repository_corpus(), "structural": revisions.structural_corpus()}
     assert len(corpora["repository"]) == 1340

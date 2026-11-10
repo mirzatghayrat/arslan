@@ -159,6 +159,12 @@ markers = 1
 cases = 1
 xfail = 0
 
+# v0.1.64 CAP10: verify runs a small project's tests in the commands sandbox; its network and writes outside are refused.
+["server/test_cap10_verify.py"]
+markers = 2
+cases = 2
+xfail = 0
+
 # 2026-10-09 (0.1.57 P2): an installed capability's MCP server profile (deny by default):
 # only its folder and the granted one, a protected folder stays closed inside a grant,
 # the network only when declared. Seatbelt is macOS-only. Appended boundary case.
