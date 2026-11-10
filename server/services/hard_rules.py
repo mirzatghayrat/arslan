@@ -28,12 +28,15 @@ ASK_KEYS = terminal_policy.ONCE_ONLY_RULES
 #: A command whose rules overlap these is never answered by anything but the user's click (`never_auto`).
 NEVER_AUTO_RULES = terminal_policy.ONCE_ONLY_RULES
 #: Kinds only the user answers: the once-only kinds, the network after outside content, leaving the sandbox.
-NEVER_AUTO_KINDS = permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"}
+#: Full access still asks these (S5's table), so nothing automatic answers them either (CLS: never what full access
+#: would still ask).
+FULL_ACCESS_ASKS = frozenset({"send", "site", "shortcut"})
+NEVER_AUTO_KINDS = permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
 #: Kinds whose request decides (a command by its rules; HR-2 adds a write by its path). Written out, not derived: a
 #: kind added to permissions.KINDS is never answered automatically until it is placed here or in NEVER_AUTO_KINDS
 #: (the meta-test fails meanwhile).
-MAY_AUTO_KINDS = frozenset({"command", "folder", "send", "destructive", "screen", "app", "shortcut", "site",
-                            "mcp_tool", "schedule", "workspace_write"})
+MAY_AUTO_KINDS = frozenset({"command", "folder", "destructive", "screen", "app", "mcp_tool", "schedule",
+                            "workspace_write"})
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,8 @@ NEVER_AUTO: tuple[HardRule, ...] = (
     HardRule("outside", "always-asks", "permissions", f"{_PERMS}:decide",
              _T + "test_s4a_outside_remote.py::test_review_3_the_outside_card_is_shown_even_with_a_grant_and_writes_no_grant_row",
              kinds=permissions._ALWAYS_ASKS),
+    HardRule("full-access-still-asks", "user-only", "permissions", "server.services.hard_rules:never_auto",
+             _T + "test_hard_rules.py::test_what_full_access_still_asks_is_never_auto", kinds=FULL_ACCESS_ASKS),
     HardRule("unknown-kind", "fails-closed", "permissions", f"{_PERMS}:_check",
              _T + "test_permissions.py::test_an_unknown_kind_raises_before_anything_is_asked_stored_or_recorded"),
 )

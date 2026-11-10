@@ -119,6 +119,24 @@ def test_never_auto_by_kind(kind):
         kind in hard_rules.NEVER_AUTO_KINDS)
 
 
+FULL_ACCESS_STILL_ASKS = ("send", "site", "shortcut")       # written out: S5's table and CLS, not derived
+
+
+@pytest.mark.parametrize("kind", FULL_ACCESS_STILL_ASKS)
+def test_what_full_access_still_asks_is_never_auto(kind):
+    assert kind in permissions.KINDS
+    assert hard_rules.never_auto(Request(kind=kind, target="x", title="t", once_only=False)) is True
+
+
+@pytest.mark.parametrize("kind", FULL_ACCESS_STILL_ASKS)
+def test_taking_a_full_access_kind_back_out_is_found(kind, monkeypatch):
+    """Mutant: the kind moved back to MAY_AUTO_KINDS. never_auto then lets it through, which the test above refuses,
+    and it is placed twice, which the coverage check refuses."""
+    monkeypatch.setattr(hard_rules, "MAY_AUTO_KINDS", hard_rules.MAY_AUTO_KINDS | {kind})
+    assert hard_rules.never_auto(Request(kind=kind, target="x", title="t", once_only=False)) is False
+    assert _kind_gaps(set(permissions.KINDS), hard_rules.NEVER_AUTO, hard_rules.MAY_AUTO_KINDS)[1] == {kind}
+
+
 def test_every_once_only_rule_is_never_auto_by_its_text_or_its_card():
     by_rule = {c["rule"]: c["command"] for c in reversed(hr.cases(ASK_CASES))}
     by_rule["protected-write"] = hr.first_command(PROTECTED_CASES)
