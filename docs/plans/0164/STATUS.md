@@ -10,7 +10,7 @@ This list supersedes every "what's left" count below and is now the one source f
 
 **In review (6):** #805 (SUB5b), #808 (CAP6a export), #813 (HR-1), #816 (skill file identity), #817 (LOOP1 d1, a Bridge frame the user merges), #819 (SUB5d sidebar).
 
-**To build (52), by area:**
+**To build (48), by area:**
 - **SUB (8):**
   - SUB5c: one writable folder per sub-session.
   - SUB5f: the phone's counts and child list, a frame the user merges; ①iOS builds the phone side.
@@ -45,12 +45,12 @@ This list supersedes every "what's left" count below and is now the one source f
 - **Overdue deletions (2):**
   - The SBX-2 adapter (command_sandbox.py:213), with sbx5_reference.py and sbx6_reference.py.
   - The SUB3 bench markers (kernel_bench/runner.py:98, tool_record.py:23).
-- **Other must items (3):**
+- **Other must items (4):**
   - ACM: README §3.2 marks it must and no card is written. Who owns it, or whether SMART-8 absorbed it, is open.
   - #298b: README §3.3 marks it must; #298 is open.
-  - SIDE, as SIDE-1 and SIDE-2 (counted here as one line; it's 2 PRs, mock first).
+  - SIDE-1 and SIDE-2: 2 PRs, mock first.
 
-**Total:** 6 in review and 52 to build, about 58. ④参谋's independent count is about 45 that block the tag plus about 17 that don't. The two are being reconciled into must and not-must in the next docs batch.
+**Total:** 6 in review and 48 to build, 54 in all. ④参谋's independent count is about 45 that block the tag plus about 17 that don't. The two are being reconciled into must and not-must in the next docs batch.
 
 **Not PRs:**
 - The SBX-8 sitting: the user runs it; the runbook is in SBX-measurement.md.
