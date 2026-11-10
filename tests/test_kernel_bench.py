@@ -3,6 +3,7 @@
 The sample bake-off found three bugs in its own tooling — a date glued to a number, an
 unreadable .xlsx, and heartbeats resetting the driver's idle timer. Each has a test here.
 """
+import datetime
 import json
 import os
 import subprocess
@@ -19,22 +20,31 @@ HERE = Path(__file__).resolve().parents[1] / "scripts" / "kernel_bench"
 
 # ── T3 checker ────────────────────────────────────────────────────────────────
 
+# A run date on which FY2023-FY2025 were Apple's last three completed fiscal years (FY2025's
+# 10-K was filed on 2025-10-31; FY2026's on 2026-11-03).
+FY23_25 = datetime.date(2025, 11, 10)
+FY24_26_TABLE = ("| FY | End | Revenue | Net income |\n| FY2024 | 2024-09-28 | 391,035 | 93,736 |\n"
+                 "| FY2025 | 2025-09-27 | 416,161 | 112,010 |\n| FY2026 | 2026-09-26 | 478,834 | {ni26} |\n"
+                 "Source: Apple Form 10-K (sec.gov)\n")
+
+
 def test_t3_csv_in_millions_with_dates_next_to_numbers(tmp_path):
     (tmp_path / "apple.csv").write_text(
         "FY,End,Revenue,Net income\nFY2025,2025-09-27,416161,112010\nFY2024,2024-09-28,391035,93736\n"
         "FY2023,2023-09-30,383285,96995\nSource: SEC 10-K\n")
-    assert check_t3.check(str(tmp_path)) == {"file": "apple.csv", "correct_of_6": 6, "source": True, "score": 3}
+    assert check_t3.check(str(tmp_path), when=FY23_25) == {
+        "file": "apple.csv", "correct_of_6": 6, "source": True, "score": 3, "years": [2023, 2024, 2025]}
 
 
 def test_t3_rounded_billions_without_a_source_scores_two(tmp_path):
     (tmp_path / "t.md").write_text("| FY | Rev | NI |\n| 2023 | $383.29B | $97.0B |\n| 2024 | 391.04 | 93.74 |\n| 2025 | 416.16 | 112.01 |\n")
-    res = check_t3.check(str(tmp_path))
+    res = check_t3.check(str(tmp_path), when=FY23_25)
     assert res["correct_of_6"] == 6 and res["source"] is False and res["score"] == 2
 
 
 def test_t3_wrong_numbers_score_zero(tmp_path):
     (tmp_path / "t.md").write_text("FY2023 380 90 FY2024 385 91 FY2025 400 100 sec.gov\n")
-    assert check_t3.check(str(tmp_path))["score"] == 0
+    assert check_t3.check(str(tmp_path), when=FY23_25)["score"] == 0
 
 
 def test_t3_reads_an_xlsx_without_a_library(tmp_path):
@@ -42,7 +52,36 @@ def test_t3_reads_an_xlsx_without_a_library(tmp_path):
         z.writestr("xl/sharedStrings.xml", "<sst><si><t>Source: SEC 10-K</t></si></sst>")
         z.writestr("xl/worksheets/sheet1.xml", "<sheetData>" + "".join(
             f"<c><v>{v}</v></c>" for v in (383.285, 391.035, 416.161, 96.995, 93.736, 112.01)) + "</sheetData>")
-    assert check_t3.check(str(tmp_path))["score"] == 3
+    assert check_t3.check(str(tmp_path), when=FY23_25)["score"] == 3
+
+
+def test_t3_scores_the_three_years_completed_by_the_run_date(tmp_path):
+    # The STY2 r4 round ran on 2026-11-10, after FY2026's 10-K: FY2024-FY2026 is the right answer
+    # and FY2023-FY2025 is one year stale. The day before that 10-K, FY2023-FY2025 is still right.
+    (tmp_path / "t.md").write_text(FY24_26_TABLE.format(ni26="132,175"))
+    res = check_t3.check(str(tmp_path), when=datetime.date(2026, 11, 10))
+    assert (res["years"], res["correct_of_6"], res["score"]) == ([2024, 2025, 2026], 6, 3)
+    assert check_t3.check(str(tmp_path), when=datetime.date(2026, 11, 3))["years"] == [2024, 2025, 2026]
+    before = check_t3.check(str(tmp_path), when=datetime.date(2026, 11, 2))
+    assert (before["years"], before["correct_of_6"], before["score"]) == ([2023, 2024, 2025], 4, 2)
+    (tmp_path / "t.md").write_text(
+        "FY2023 383,285 96,995 FY2024 391,035 93,736 FY2025 416,161 112,010 Source: 10-K\n")
+    stale = check_t3.check(str(tmp_path), when=datetime.date(2026, 11, 10))
+    assert (stale["correct_of_6"], stale["score"]) == (4, 2)
+
+
+def test_t3_a_wrong_number_for_an_asked_year_is_not_counted(tmp_path):
+    (tmp_path / "t.md").write_text(FY24_26_TABLE.format(ni26="131,175"))   # FY2026 net income off by $1B
+    res = check_t3.check(str(tmp_path), when=datetime.date(2026, 11, 10))
+    assert (res["correct_of_6"], res["score"]) == (5, 2)
+
+
+def test_t3_a_completed_year_with_no_truth_is_reported_not_scored_against_older_years(tmp_path):
+    # FY2027 ends on 2027-09-25 and its figures are not in the checker: no silent stale answer key.
+    (tmp_path / "t.md").write_text(FY24_26_TABLE.format(ni26="132,175"))
+    res = check_t3.check(str(tmp_path), when=datetime.date(2027, 10, 1))
+    assert (res["years"], res["no_truth"], res["score"]) == ([2025, 2026, 2027], [2027], 0)
+    assert check_t3.check(str(tmp_path), when=datetime.date(2027, 9, 25))["years"] == [2024, 2025, 2026]
 
 
 # ── T5 checker ────────────────────────────────────────────────────────────────
@@ -223,9 +262,9 @@ def test_offpeak_halves_the_reported_cost_and_paired_view_lines_up_repeats():
 
 def test_t3_whole_billion_roundings_pass_but_near_misses_do_not(tmp_path):
     (tmp_path / "t.md").write_text("FY2023 $383B $97B FY2024 $391B $94B FY2025 $416B $112B sec.gov\n")
-    assert check_t3.check(str(tmp_path))["correct_of_6"] == 6
+    assert check_t3.check(str(tmp_path), when=FY23_25)["correct_of_6"] == 6
     (tmp_path / "t.md").write_text("FY2023 $385B FY2024 $393B FY2025 $418B sec.gov\n")   # each ~0.45% off
-    assert check_t3.check(str(tmp_path))["correct_of_6"] == 0
+    assert check_t3.check(str(tmp_path), when=FY23_25)["correct_of_6"] == 0
 
 
 def test_outside_the_sandbox_the_driver_declines_every_card(monkeypatch):

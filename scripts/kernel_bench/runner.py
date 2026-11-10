@@ -59,7 +59,7 @@ CHECKS = {
     "T1": lambda run, reply, ctx: check_t1.check(ctx["list"], reply,
                                                  started=datetime.datetime.fromtimestamp(ctx["started"])),
     "T2": lambda run, reply, ctx: check_t2.check(run, reply),
-    "T3": lambda run, reply, ctx: check_t3.check(run),
+    "T3": lambda run, reply, ctx: check_t3.check(run, when=datetime.date.fromtimestamp(ctx["started"])),
     "T4": lambda run, reply, ctx: check_t4.check(reply, ctx["site"].log(), mode="change",
                                                  initial=ctx["initial"], change=ctx.get("change")),
     "T4x": lambda run, reply, ctx: check_t4.check(reply, ctx["site"].log(), mode="expired",
