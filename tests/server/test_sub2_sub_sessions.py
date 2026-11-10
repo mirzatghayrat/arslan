@@ -4,7 +4,8 @@ filtering; the user sees no change until SUB3 starts sub-sessions.
 - A child's settings are read through its parents each time they are used, never copied once: when the parent
   tightens later, the child's next turn follows. Each setting takes the strictest value along the chain.
 - A child can't be set looser than its chain (422 `sub_session_inherits`).
-- A child never appears in a list of conversations, on the Mac or the phone, even while it runs.
+- A child never appears in a phone's list of conversations, even while it runs. (SUB5d: the window's list returns it
+  with its parent, for the sidebar's tree.)
 """
 from datetime import datetime
 from types import SimpleNamespace
@@ -274,19 +275,21 @@ async def _say(client, cid, text="hello"):
         await session.commit()
 
 
-async def test_a_child_is_in_no_conversation_list(client, monkeypatch):
+async def test_a_child_is_in_no_phone_list(client, monkeypatch):
+    """SUB5d: the window's list returns it with its parent (test_sub5d_lists.py); no phone list does."""
     await _api_family(client, monkeypatch)
     await _say(client, ROOT)
     await _say(client, CHILD)
-    ids = lambda rows: [r["conversation_id"] for r in rows]  # noqa: E731
-    assert ids((await client.get("/api/v1/conversations")).json()) == [ROOT]
+    ids = lambda rows: sorted(r["conversation_id"] for r in rows)  # noqa: E731
+    assert ids((await client.get("/api/v1/conversations")).json()) == sorted([ROOT, CHILD])
     phone = lambda rows: [r["id"] for r in rows["conversations"]]  # noqa: E731
     assert phone((await client.get("/api/v1/phone/conversations")).json()) == [ROOT]
     assert phone((await client.get("/api/v1/phone/conversations", params={"kind": "quick"})).json()) == []
     assert (await client.get("/api/v1/phone/live")).json()["conversation_ids"] == [ROOT]
 
 
-async def test_a_child_is_not_in_its_projects_conversations(client, monkeypatch):
+async def test_a_child_is_in_its_projects_conversations_under_its_parent(client, monkeypatch):
+    """SUB5d: listed with its parent, so the project's tab shows it under the conversation that started it."""
     await _api_family(client, monkeypatch)
     async with client.db_maker() as session:
         session.add(Project(id="p1", name="P"))
@@ -296,7 +299,7 @@ async def test_a_child_is_not_in_its_projects_conversations(client, monkeypatch)
     await _say(client, ROOT)
     await _say(client, CHILD)
     rows = (await client.get("/api/v1/projects/p1/conversations")).json()
-    assert [r["conversation_id"] for r in rows] == [ROOT]
+    assert sorted((r["conversation_id"], r["parent_id"]) for r in rows) == sorted([(ROOT, None), (CHILD, ROOT)])
 
 
 async def test_a_running_child_stays_off_the_phone(client, monkeypatch):

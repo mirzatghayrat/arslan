@@ -21,6 +21,8 @@ export interface ConversationMeta {
   pinned?: boolean;
   /** INB5b-3: what a waiting row waits on. Unset when it does not wait, or on an older server, which reads as a card. */
   waitingOn?: WaitingOn;
+  /** SUB5d: the conversation that started this sub-session (unset for any other). */
+  parentId?: string;
 }
 
 /** INB5b-3: what a waiting conversation waits on (the server's `waiting_on`): a card to approve (a decision), a card that went
@@ -64,6 +66,7 @@ export function metaFrom(rows: ServerConversation[]): Record<string, Conversatio
       lastAt: typeof row.last_at === "string" && row.last_at ? utcIso(row.last_at) : null,
       pinned: row.pinned === true,
       ...(row.state === "waiting" && WAITING_ON.includes(row.waiting_on as WaitingOn) ? { waitingOn: row.waiting_on as WaitingOn } : {}),
+      ...(typeof row.parent_id === "string" && row.parent_id ? { parentId: row.parent_id } : {}),
     };
   }
   return out;

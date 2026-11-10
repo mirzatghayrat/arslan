@@ -35,13 +35,15 @@ async def list_conversations(
     db: AsyncSession = Depends(get_session),
 ) -> list[ConversationListItem]:
     """Every conversation that has messages, most recently active first; quick questions (Q1) are left
-    out: they have a list of their own on the phone and never reach the sidebar. So are sub-sessions (SUB2)."""
-    return await conversation_list(db)
+    out: they have a list of their own on the phone and never reach the sidebar. SUB5d: sub-sessions are in it, each
+    with its `parent_id`, so the window's sidebar builds the tree; every phone route still leaves them out (SUB2)."""
+    return await conversation_list(db, sub=True)
 
 
-async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[ConversationListItem]:
+async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool = False) -> list[ConversationListItem]:
     """Every conversation that has messages, most recently active first: the ordinary ones, or with
-    `quick` only the stored quick questions (Q1, migration 0071).
+    `quick` only the stored quick questions (Q1, migration 0071). With `sub` (the window's list only, SUB5d) the
+    sub-sessions too.
 
     🔴 The point of this endpoint is DISCOVERY. Every sibling here takes the id
     as a path parameter, which silently made the frontend's localStorage the
@@ -102,7 +104,8 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
     kinds = dict((await db.execute(select(ConversationContext.id, ConversationContext.kind).where(
         ConversationContext.id.in_([c.conversation_id for c in out])))).all())
     # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
-    out = [c for c in out if phone_ids.in_list(c.conversation_id, kinds.get(c.conversation_id), quick=quick)]
+    out = [c for c in out if phone_ids.in_list(c.conversation_id, kinds.get(c.conversation_id), quick=quick)
+           or (sub and not quick and kinds.get(c.conversation_id) == "sub")]
     # What each one is and how it stands — the sidebar's glyphs, the phone's task list. The retired pocket
     # (Q1 card, #4) is an ordinary conversation here, named after its first message; the Bridge keeps it from phones.
     from server.services import phone_reads
@@ -113,6 +116,10 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
             ConversationContext.project_id.isnot(None)))).all())
     pinned = set((await db.execute(select(ConversationContext.id).where(       # SB1-2
         ConversationContext.id.in_([c.conversation_id for c in out]), ConversationContext.pinned.is_(True)))).scalars())
+    parents = dict((await db.execute(select(ConversationContext.id, ConversationContext.parent_id).where(
+        ConversationContext.id.in_([c.conversation_id for c in out if kinds.get(c.conversation_id) == "sub"]))))
+        .all()) if sub else {}
+    from server.services import sub_sessions
     for item in out:
         for key, value in extra.get(item.conversation_id, {}).items():
             setattr(item, key, value)
@@ -120,7 +127,23 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False) -> list[Co
             item.kind = "quick"                 # Q1: the stored kind wins; describe works out the rest as before
         item.project_id = projects.get(item.conversation_id)
         item.pinned = item.conversation_id in pinned
+        item.parent_id = parents.get(item.conversation_id)
+        # SUB5d: a sub-session's card is asked in its parent's conversation, so the island lists the parent; the
+        # sub-session's own row reads waiting while one of its cards waits (sub_sessions.waiting_on_user).
+        if item.parent_id and sub_sessions._waiting.get(item.conversation_id):
+            item.state, item.waiting_on = "waiting", "card"
     return out
+
+
+@router.get("/conversations/{conversation_id}/sub-sessions/spend")
+async def sub_session_spend(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """SUB5d: what the tree this conversation is in has spent, as its limit counts it (`sub_sessions.check_tree_spend`:
+    every sub-session under the commander and its summary turns, not the commander's own turns). The window reads the
+    limit itself from the per-task dollar cap in Settings."""
+    from server.services import sub_sessions
+    root = await sub_sessions.root_of(db, conversation_id)
+    spent = await sub_sessions.tree_spend(db, (await sub_sessions.tree(db, root))[1:], summaries_in=root)
+    return {"spent_usd": round(spent, 4)}
 
 
 @router.get("/conversations/{conversation_id}/usage", response_model=ConversationUsageOut)

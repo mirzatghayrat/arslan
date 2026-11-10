@@ -1497,5 +1497,28 @@
   },
   "waiting": {
     "count": "あなた待ち：{{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "実行中",
+      "waiting": "あなた待ち",
+      "done": "完了"
+    },
+    "toggle": "サブセッションを表示／非表示（{{count}}）",
+    "header": "これは「{{name}}」のサブセッションです。終わると報告します。",
+    "back": "「{{name}}」に戻る",
+    "panel": "サブセッション",
+    "open": "開く",
+    "spend": "使用 {{spent}}、上限 {{limit}}（タスクごと {{each}} × {{times}}）",
+    "spendNoLimit": "使用 {{spent}}、ドル上限なし",
+    "delete": {
+      "title": "「{{name}}」を削除しますか？",
+      "also_one": "サブセッション {{count}} 件も削除",
+      "also_other": "サブセッション {{count}} 件も削除",
+      "keepNote": "サブセッションは普通の会話として残り、設定はそのままです。",
+      "stopFirst": "下のサブセッションがまだ動いています。先に止めてから削除してください。",
+      "choiceRequired": "いまはサブセッションが {{count}} 件あります。どうするかもう一度選んでください。",
+      "failed": "削除できませんでした。もう一度お試しください。"
+    }
   }
 }

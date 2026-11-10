@@ -460,8 +460,8 @@ async def phone_live(limit: int = Query(20, ge=1, le=50), db: AsyncSession = Dep
     """The conversations the Bridge keeps a socket open on, so their answers, progress and
     shared cards reach the phone live: the newest `limit`, then every one with a running job.
     Never a temporary conversation: closing a socket on one clears its unsaved turn."""
-    from server.api.conversations import list_conversations
-    newest = [r.conversation_id for r in await list_conversations(db)]
+    from server.api.conversations import conversation_list
+    newest = [r.conversation_id for r in await conversation_list(db)]     # SUB5d: the list without sub-sessions
     jobs = [job.conversation_id for job in background_jobs.active()]
     subs = await sub_sessions.sub_ids(db, jobs)           # SUB2: a running sub-session stays off the phone too
     jobs = [cid for cid in jobs if cid not in subs]

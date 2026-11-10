@@ -17,7 +17,10 @@ import { firstLiveThread } from './lib/threadLifecycle';
 import { normalizeLanguage } from './lib/languages';
 import { toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
-import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, deleteConversation } from './api/client';
+import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, deleteConversation, ApiError } from './api/client';
+import SubDeleteDialog, { type SubDeleteTarget } from './components/SubDeleteDialog';
+import SubSessionBar from './components/SubSessionBar';
+import { buildForest, busyBelow, descendants } from './lib/subTree';
 import { useStreamingText } from './hooks/useStreamingText';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
@@ -516,15 +519,35 @@ export default function App() {
   // best-effort like other calls). If it was the active thread, select the first
   // remaining non-archived thread; if none remain, mint a fresh session. The
   // persisted active-thread key is rewritten by the persistThreads effect.
+  // SUB5d: a conversation with sub-sessions asks first in its own dialog (what happens to them, SubDeleteDialog), and a
+  // sub-session is deleted as one (`?sub_session=true`); both wait for the server, which refuses while one runs.
+  const [subDelete, setSubDelete] = useState<SubDeleteTarget | null>(null);
   const handleDeleteThread = (id: string) => {
-    discardComposerDraft(id);
-    const remaining = threads.filter((th) => th.id !== id);
-    const wasActive = id === activeThreadId;
+    const forest = buildForest(threads.map((th) => th.id), conversationIndex.meta);
+    const below = descendants(id, forest);
+    if (below.length) {
+      const thread = threads.find((th) => th.id === id);
+      setSubDelete({ id, title: thread ? threadDisplayTitle(thread, t) : id, count: below.length,
+        running: busyBelow(id, forest, conversationIndex.meta) });
+      return;
+    }
+    if (id in forest.parentOf) {
+      deleteConversation(id, { subSession: true }).then(() => removeThreads([id]),
+        (err) => showToast(err instanceof ApiError && err.status === 409 ? t('subTree.delete.stopFirst') : t('subTree.delete.failed')));
+      return;
+    }
     deleteConversation(id).catch((err) => {
       // Best-effort — the row is already gone from the UI, but a failed server-side
       // purge must be observable rather than silently swallowed.
       console.error(`[deleteConversation] backend purge failed for ${id}`, err);
     });
+    removeThreads([id]);
+  };
+  const removeThreads = (ids: string[]) => {
+    ids.forEach(discardComposerDraft);
+    const remaining = threads.filter((th) => !ids.includes(th.id));
+    const wasActive = ids.includes(activeThreadId);
+    const id = ids[0];
     if (wasActive) {
       useArslanStore.getState().resetForNewConversation();
       const next = firstLiveThread(remaining, id);
@@ -756,7 +779,9 @@ export default function App() {
                   setPanelView('default');
                 }}
                 conversationId={activeThreadId}
-                header={header}
+                header={<><SubSessionBar conversationId={activeThreadId} threads={threads} meta={conversationIndex.meta}
+                  usdCap={settings.taskUsdCap} usdCapEnabled={settings.taskUsdCapEnabled !== false}
+                  onOpen={(id) => openCardConversation(id, false)} />{header}</>}
                 footer={footer}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
@@ -841,6 +866,10 @@ export default function App() {
       {/* 0.1.55 surface kit: the one toast stack and the one confirm sheet. */}
       <ToastHost />
       <ConfirmHost />
+      <SubDeleteDialog target={subDelete} onClose={() => setSubDelete(null)} onDeleted={(id, choice) => {
+        setSubDelete(null);
+        removeThreads(choice === 'delete' ? [id, ...descendants(id, buildForest(threads.map((th) => th.id), conversationIndex.meta))] : [id]);
+      }} />
       <ShellPolicySwitchNotice />
 
     </div>

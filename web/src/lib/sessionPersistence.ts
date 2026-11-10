@@ -196,6 +196,8 @@ export interface ServerConversation {
   pinned?: boolean;
   /** INB5b-3: what a "waiting" row waits on, "card" or "reminder" (the window's list only). */
   waiting_on?: string | null;
+  /** SUB5d: the conversation that started this sub-session (the window's list only). */
+  parent_id?: string | null;
 }
 
 /**
