@@ -350,7 +350,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
                 "this command would run outside the sandbox here (it is switched off or cannot start), "
                 "which needs the user's OK, and nobody can be asked here",
                 _approvals._command_request(command, sorted(terminal_policy.ask_rules(command, outside=outside)), None,
-                                            ask_all=ask_all, lang=await card_purpose.language(),
+                                            ask_all=ask_all, unsandboxed=bool(out_kw), lang=await card_purpose.language(),
                                             why=str(args.get("why") or "").strip()[:300]),
                 conversation_id)}
             return result

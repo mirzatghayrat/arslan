@@ -475,7 +475,8 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
     `network`: the card also asks for the network (after outside content), and its title says so. A
     click on it stands for the network this time only; a grant that answers it later does not.
     `unsandboxed`: under "ask for every command", the command would run with no sandbox around it
-    (`runs_unsandboxed`), so its card is marked like layer ③'s and the island leaves it.
+    (`runs_unsandboxed`), so its card is marked like layer ③'s and the island leaves it. A rules card takes it too
+    when it runs outside (S2a-3 step 5's `outside-reach`: the caller says so, `Confirmations.command(outside=True)`).
 
     `lang` (SMART-8, the card mock the user OK'd with its iPhone board): the title is the step's plain purpose in that
     language (`card_purpose.phrase`: Arslan's `why`, else read from the command), which the phone shows as the
@@ -492,16 +493,22 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
     if rules:
         # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
         # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.
+        # S2a-3 step 5 (#798 review 1): `unsandboxed` here, the command runs with no sandbox around it (a grant, the
+        # setting off, seatbelt unable to start), so its card is marked and titled like layer ③'s outside card.
         where = ""
         bare = task_service.unwrapped_once(shell)
         if bare:
             where = (" It runs as you, outside the sandbox; Arslan cannot see what the Shortcut does."
                      if "shortcuts" in rules else " It runs outside the sandbox, this once.")
+        elif unsandboxed:
+            where = " It runs outside the sandbox, this once."
         old = f"Run `{shell[:80]}`?{where}{net}"
         return permissions.Request(kind="command", target="rules:" + "|".join(rules),
-                                   title=plain(old, shortcut_as_you=bool(bare) and "shortcuts" in rules, outside=bool(bare)),
+                                   title=plain(old, shortcut_as_you=bool(bare) and "shortcuts" in rules, outside=bool(bare),
+                                               unsandboxed=unsandboxed),
                                    model_title=old if lang else "", detail=shell,
-                                   conversation_ok=False, once_only=True, frame=frame)
+                                   conversation_ok=False, once_only=True,
+                                   frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame)
     if ask_all:
         old = f"Run `{shell[:80]}`?{net}"
         return permissions.Request(kind="command", target="text:" + shell, title=plain(old, unsandboxed=unsandboxed),

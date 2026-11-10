@@ -142,7 +142,9 @@ class Confirmations:
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable)
         frame.update(_delete_keys(delete, shell))
-        unsandboxed = ask_all and await approvals.runs_unsandboxed(self.conversation_id)
+        # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
+        # its rules card too; otherwise as before, "ask for every command" asks where it would run.
+        unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
                                              unsandboxed=unsandboxed, lang=lang, why=why,
                                              delete_mode=delete)

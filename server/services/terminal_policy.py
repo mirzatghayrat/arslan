@@ -929,6 +929,12 @@ _REACH_READ_ONLY = {
     "shortcuts": frozenset({"", "list", "help", "-h", "--help"}),
     "tccutil": frozenset({"", "-h", "--help", "--version"}),
 }
+# #798 review: a help or version word reads only when it is the whole command; with more after it, a verb there may
+# still act. networksetup takes one query, so every option word on it must be one. The other read-only verbs (at -l,
+# launchctl list/print…, shortcuts list) are judged on the first word only: their later words are labels, folders and
+# job numbers, and no table here says which of those a real program would also act on.
+_REACH_HELP = frozenset({"help", "version", "-h", "--help", "-help", "--version", "-version"})
+_NETWORKSETUP_READS = re.compile(r"-(?:get|list|print|show|is)\w*|-help|-version")
 
 
 def _reaches_outside(commands: tuple[tuple[str, ...], ...]) -> bool:
@@ -941,10 +947,15 @@ def _reaches_outside(commands: tuple[tuple[str, ...], ...]) -> bool:
             operation = _security_verb(args)
             if operation and operation[0].lower().startswith(("create-", "unlock-")):
                 return True
+        elif program not in _REACH_PROGRAMS:
+            continue
+        elif verb in _REACH_HELP and len(args) > 1:
+            return True
         elif program == "networksetup":
-            if not re.fullmatch(r"|-(?:get|list|print|show|is)\w*|-help|-version", verb):
+            options = [word.lower() for word in args if word.startswith("-")]     # a bare name prints its usage
+            if args and (not args[0].startswith("-") or not all(_NETWORKSETUP_READS.fullmatch(o) for o in options)):
                 return True
-        elif program in _REACH_PROGRAMS and verb not in _REACH_READ_ONLY.get(program, frozenset()):
+        elif verb not in _REACH_READ_ONLY.get(program, frozenset()):
             return True
     return False
 
