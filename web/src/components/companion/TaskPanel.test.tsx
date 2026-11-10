@@ -41,6 +41,27 @@ describe("task controls", () => {
     render(<TaskPanel compact conversationId="conversation" onResume={vi.fn()} />);
     expect(await screen.findByRole("button", { name: /tasks.taskStatus/ })).toHaveTextContent("tasks.waiting_user");
   });
+  it("in the header: a task-status chip that moves into ⋯ at 400 and a run-state chip that stays, each icon + tooltip", async () => {
+    const running: TaskDetail = { ...task, pause_reason: null, state: { ...task.state, phase: "running" } };
+    vi.mocked(tasksApi.list).mockResolvedValue([running]);
+    render(<TaskPanel compact conversationId="conversation" onResume={vi.fn()} />);
+    const button = await screen.findByRole("button", { name: "tasks.taskStatus · tasks.running" });
+    expect(button.className).toContain("@max-[300px]/hdr:hidden");
+    const status = button.querySelector<HTMLElement>('[data-hdr-chip="secondary"]')!;
+    const run = button.querySelector<HTMLElement>('[data-hdr-chip="run"]')!;
+    expect(status).toHaveAttribute("title", "tasks.taskStatus · tasks.running");
+    expect(status.className).toContain("@max-[400px]/hdr:hidden");
+    expect(run).toHaveAttribute("title", "tasks.running");
+    expect(run.className).not.toContain("@max-[400px]/hdr:hidden");
+    for (const chip of [status, run]) {
+      expect(chip.className).toContain("whitespace-nowrap");
+      expect(chip.querySelector("svg")).not.toBeNull();
+      expect(chip.querySelector("span")!.className).toContain("@max-[560px]/hdr:hidden");
+    }
+    const stop = screen.getByRole("button", { name: "tasks.stop" });
+    expect(stop).toHaveAttribute("data-hdr-chip", "run");
+    expect(stop).toHaveAttribute("title", "tasks.stop");
+  });
   it("does not treat a pre-0.1.42 chat answer (only a user-review check) as work", () => {
     const legacy = { ...task, spec: { ...task.spec, acceptance: [{ id: "user-review", description: "Review", evaluator: "human" as const }] } };
     expect(shownInHeader(legacy)).toBe(false);
