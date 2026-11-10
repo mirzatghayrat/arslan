@@ -8,8 +8,8 @@ which its refusal and expiry texts quote (the user's own words are about the car
 command it was).
 
 The title is Arslan's own reason for the step when it gave one (`run_command`'s `why`), cleaned as a name is (UNI1);
-else a summary read from the command by code, the same reading the Mac card makes (web/src/lib/commandSummary.ts).
-Both readers are held to tests/fixtures/card_purpose_vectors.json. It is in the user's language (the `language`
+else a summary read from the command by code (`summarize`, held to tests/fixtures/card_purpose_vectors.json), which
+the Mac card shows too: it comes on the `propose_run_command` frame as `summary` (LOOP1 d1). It is in the user's language (the `language`
 setting), from web/src/locales/card-purposes.json, which the packaged app carries in server/resources.
 
 What the step touches and its risk are not in the title: the Mac card shows them in its own rows, and the phone its
@@ -113,7 +113,7 @@ def _closing(text: str, open_at: int) -> int:
 
 def _parse(text: str, depth: int = 0) -> list[dict] | None:
     """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
-    is never closed (as commandSummary's `parse`). Raises _TooDeep at a `$(…)` nested past READ_DEPTH, where it reads
+    is never closed. Raises _TooDeep at a `$(…)` nested past READ_DEPTH, where it reads
     no further."""
     steps: list[dict] = []
     step = {"tokens": [], "piped": False, "subs": []}
@@ -603,8 +603,8 @@ def _read(text: str, rules: list[str], depth: int = 0, work: dict | None = None)
 
 def summarize(text: str, rules: str | list[str] | None = None) -> dict:
     """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...], "more": n,
-    "unsure": bool}`, as web/src/lib/commandSummary.ts reads it (both are held to
-    tests/fixtures/card_purpose_vectors.json). `unsure`: a transfer in it was not fully read, so it may send local
+    "unsure": bool}`, the frame's `summary` the Mac card shows (held to tests/fixtures/card_purpose_vectors.json).
+    `unsure`: a transfer in it was not fully read, so it may send local
     data. `rules`: the server's terminal rules for the line (one, or several). A line it cannot read (a quote never
     closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says Arslan could not read all of
     it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part not read may send local

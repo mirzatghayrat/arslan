@@ -12,6 +12,7 @@ vi.mock("../components/settings/TerminalRulesPanel", () => ({ default: () => nul
 vi.mock("../components/BrowserPanel", () => ({ default: () => null }));
 
 import RunCommandCard from "../components/RunCommandCard";
+import { serverSummary } from "./serverReading";
 import AdvancedSection from "../components/settings/AdvancedSection";
 
 afterEach(() => cleanup());
@@ -19,7 +20,8 @@ afterEach(() => cleanup());
 describe("RunCommandCard sandbox questions", () => {
   it("asking to leave says so, and its \"In this conversation\" is for this conversation", () => {
     const onConfirm = vi.fn();
-    render(<RunCommandCard callId="c1" pretty="mv ~/Downloads/a.png ~/Pictures/" sandbox="outside" permKind="outside"
+    render(<RunCommandCard callId="c1" pretty="mv ~/Downloads/a.png ~/Pictures/" summary={serverSummary("mv ~/Downloads/a.png ~/Pictures/")}
+                           sandbox="outside" permKind="outside"
                            options={["once", "conversation"]} onConfirm={onConfirm} onCancel={vi.fn()} />);
     expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent("runcmd.purpose.move");
     expect(screen.getByTestId("ask-risk-row").textContent).toMatch(/^runcmd\.risk\.outside/);
@@ -31,7 +33,8 @@ describe("RunCommandCard sandbox questions", () => {
   });
 
   it("asking up front leads with Arslan's reason, marked as its words, and says first that it leaves the sandbox", () => {
-    render(<RunCommandCard callId="c2" pretty="rm ~/Downloads/old.dmg" sandbox="outside" why="clean up Downloads"
+    render(<RunCommandCard callId="c2" pretty="rm ~/Downloads/old.dmg" summary={serverSummary("rm ~/Downloads/old.dmg")}
+                           sandbox="outside" why="clean up Downloads"
                            rules={["delete-outside"]} reason="deletes files" onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent("clean up Downloads");
     expect(screen.getByTestId("ask-purpose-from")).toHaveTextContent("kit.purposeFromArslan");
@@ -41,11 +44,11 @@ describe("RunCommandCard sandbox questions", () => {
   });
 
   it("a background job's card offers this conversation too (S4a), and an ordinary card is unchanged", () => {
-    render(<RunCommandCard callId="c3" pretty="mv a b" sandbox="outside" background permKind="outside"
+    render(<RunCommandCard callId="c3" pretty="mv a b" summary={serverSummary("mv a b")} sandbox="outside" background permKind="outside"
                            options={["once", "conversation"]} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("runcmd-scope-conversation")).toBeInTheDocument();
     cleanup();
-    render(<RunCommandCard callId="c4" pretty="git status" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    render(<RunCommandCard callId="c4" pretty="git status" summary={serverSummary("git status")} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent("runcmd.purpose.git");
     expect(screen.getByTestId("ask-purpose-from")).toHaveTextContent("kit.purposeFromCommand");
     expect(screen.getByTestId("ask-risk-row")).toHaveTextContent("runcmd.risk.sandboxed");

