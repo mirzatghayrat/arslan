@@ -144,9 +144,12 @@ def discover(folder: Path) -> Plan | None:
     return None
 
 
-def copy_project(src: Path, dst: Path) -> None:
+def copy_project(src: Path, dst: Path, *, left_out: frozenset[Path] = frozenset()) -> None:
     """Copy `src` to `dst` (which must not exist): files and links as they are, never following a link; the folders
-    in LINKED as links to where they are; no SKIPPED caches, sockets or devices. TooBig past MAX_FILES or MAX_BYTES."""
+    in LINKED as links to where they are; no SKIPPED caches, sockets or devices, and no folder whose real path is in
+    `left_out` (a folder the user keeps closed: in place the sandbox refuses it, so the copy must not carry it).
+    TooBig past MAX_FILES or MAX_BYTES."""
+    from server.services.sandbox_profile import real
     count = {"files": 0, "bytes": 0}
 
     def walk(here: Path, there: Path) -> None:
@@ -157,6 +160,8 @@ def copy_project(src: Path, dst: Path) -> None:
                 if entry.is_symlink():
                     os.symlink(os.readlink(entry.path), target)
                 elif entry.is_dir(follow_symlinks=False):
+                    if left_out and real(Path(entry.path)) in left_out:
+                        continue
                     if entry.name in LINKED:
                         os.symlink(entry.path, target)
                     elif entry.name not in SKIPPED:
@@ -269,15 +274,31 @@ async def run(folder: Path, *, network: bool, why: str, timeout_s: int, closed: 
             return _refused("no_proxy", "the network was allowed, but Arslan's sandbox proxy can't start, so the run "
                                         "would have no network: nothing was run", command=plan.command)
         online = True
+    # 0.1.59's closed folders that this folder holds: in place the sandbox refuses them, so the copy leaves them out.
+    # One that holds this folder is the user's own working folder there, reopened as run_command's is.
+    here = real(folder)
+    held = frozenset(p for p in map(real, closed) if here in p.parents)
     with tempfile.TemporaryDirectory(prefix="arslan-verify-", dir=real(Path(tempfile.gettempdir())),
                                      ignore_cleanup_errors=True) as scratch:
         copy = Path(scratch) / (folder.name or "project")
         try:
-            await asyncio.to_thread(copy_project, folder, copy)
+            await asyncio.to_thread(copy_project, folder, copy, left_out=held)
         except TooBig as exc:
             return _refused("too_big", f"this folder is too big to copy for a smoke test ({exc}): nothing was run")
         except OSError as exc:
             return _refused("copy_failed", f"the folder could not be copied: {exc}")
         out = await terminal_exec.run(plan.command, cwd=copy, timeout_s=timeout_s, offline=not online, sandbox=True,
                                       closed=closed, readable=[folder, *readable])
-    return _result(plan, out, online)
+    fell_back = False
+    if online:
+        # The commands profile is offline when Arslan's own listening ports can't be read (command_sandbox, SBX-6):
+        # read them as it does, so the result says what the run had, not what was allowed.
+        from server.services import sandbox_proxy
+        fell_back = await asyncio.to_thread(sandbox_proxy.listening_ports) is None
+    result = _result(plan, out, online and not fell_back)
+    if fell_back:
+        result["network"] = "off: allowed this once, but the sandbox could not open it for this run"
+    if held:
+        result["left_out"] = (f"{len(held)} folder(s) the user keeps closed (Settings: Desktop, Documents, "
+                              "Downloads is off) were not copied")
+    return result

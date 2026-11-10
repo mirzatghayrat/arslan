@@ -141,6 +141,20 @@ def test_a_folder_too_big_to_copy_is_refused(tmp_path, monkeypatch):
         project_verify.copy_project(src, tmp_path / "copy")
 
 
+def test_a_folder_too_many_bytes_to_copy_is_refused(tmp_path, monkeypatch):
+    src = _write(tmp_path / "proj", {"big.bin": "x" * 2048})
+    monkeypatch.setattr(project_verify, "MAX_BYTES", 1024)
+    with pytest.raises(project_verify.TooBig):
+        project_verify.copy_project(src, tmp_path / "copy")
+
+
+def test_the_scan_for_test_files_stops_at_its_cap(tmp_path, monkeypatch):
+    _write(tmp_path / "proj", {**{f"tests/data{i}.txt": "" for i in range(10)}, "tests/deep/test_late.py": ""})
+    assert project_verify.discover(tmp_path / "proj").runner == "pytest"
+    monkeypatch.setattr(project_verify, "_SCAN_MAX", 5)
+    assert project_verify.discover(tmp_path / "proj") is None
+
+
 # ── the run, with terminal_exec stubbed ──────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -150,8 +164,8 @@ def runs(monkeypatch):
 
     async def fake_run(command, *, cwd, timeout_s=120, offline=False, sandbox=False, closed=(), readable=(), **kw):
         seen.append({"command": command, "cwd": Path(cwd), "offline": offline, "sandbox": sandbox,
-                     "readable": list(readable), "files": sorted(p.name for p in Path(cwd).iterdir()),
-                     "timeout_s": timeout_s})
+                     "readable": list(readable), "closed": list(closed),
+                     "files": sorted(p.name for p in Path(cwd).iterdir()), "timeout_s": timeout_s})
         return {"ok": True, "exit_code": 0, "stdout": "....\n4 passed in 0.1s\n", "stderr": "", "cwd": str(cwd),
                 "sandbox": "workspace", **({"offline": True} if offline else {})}
     async def proxy_port():
@@ -160,6 +174,7 @@ def runs(monkeypatch):
     monkeypatch.setattr(terminal_exec, "run", fake_run)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(sandbox_proxy, "port", proxy_port)
+    monkeypatch.setattr(sandbox_proxy, "listening_ports", lambda: [8000])   # known: the profile can go online
     return seen
 
 
@@ -190,7 +205,7 @@ async def test_it_runs_once_offline_in_the_sandbox_on_a_copy_with_no_card(tmp_pa
     out = await _verify(proj)
     assert len(runs) == 1 and cards["requests"] == []
     run = runs[0]
-    assert run["offline"] is True and run["sandbox"] is True
+    assert run["offline"] is True and run["sandbox"] is True and run["timeout_s"] == 60
     assert run["cwd"] != proj and proj not in run["cwd"].parents and "tests" in run["files"]
     assert proj in run["readable"]                     # the linked folders are read where they are
     assert not run["cwd"].exists()                     # the copy goes with the run
@@ -220,6 +235,12 @@ async def test_the_network_is_a_card_for_this_run_only(tmp_path, runs, cards):
     assert (req.kind, req.once_only, req.conversation_ok) == ("network", True, False)
     assert permissions.options_for(req) == ["once"] and req.why == "it downloads a fixture"
     assert runs[0]["offline"] is False and out["network"] == "on, this once"
+
+
+async def test_an_allowed_network_the_profile_could_not_open_is_reported_off(tmp_path, runs, cards, monkeypatch):
+    monkeypatch.setattr(sandbox_proxy, "listening_ports", lambda: None)   # the profile then falls back to offline
+    out = await _verify(_project(tmp_path), network=True)
+    assert runs[0]["offline"] is False and out["network"].startswith("off")
 
 
 async def test_a_no_on_the_network_card_runs_nothing(tmp_path, runs, cards):
@@ -299,6 +320,15 @@ async def test_the_tail_is_the_end_of_a_long_output(tmp_path, runs, cards, monke
     assert len(out["stdout_tail"]) <= project_verify.STDOUT_TAIL + 10
 
 
+async def test_the_stderr_tail_is_the_end_of_a_long_stderr(tmp_path, runs, cards, monkeypatch):
+    async def noisy(command, *, cwd, **kw):
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "\n".join(f"warn {i}" for i in range(5000)),
+                "cwd": str(cwd), "sandbox": "workspace"}
+    monkeypatch.setattr(terminal_exec, "run", noisy)
+    out = await _verify(_project(tmp_path))
+    assert out["stderr_tail"].endswith("warn 4999") and len(out["stderr_tail"]) <= project_verify.STDERR_TAIL + 10
+
+
 # ── the card for real: permissions offers this time only, and nothing it stores answers the next one ─────
 
 async def test_a_conversation_answer_on_the_card_is_still_this_time_only(tmp_path, runs, monkeypatch):
@@ -346,6 +376,49 @@ async def test_the_executor_takes_a_folder_inside_the_working_folder_only(tmp_pa
         await engine.dispose()
     assert inside["ok"] is True and len(runs) == 1
     assert escaped["ok"] is False and dotdot["ok"] is False and "outside the workspace" in escaped["error"]
+
+
+async def test_with_desktop_documents_downloads_off_a_closed_folder_inside_is_not_copied(tmp_path, runs, cards,
+                                                                                         monkeypatch):
+    from server.registry.executors import EXECUTORS
+    from server.services import workspace_paths
+    from tests.server.test_workspace_tool_gate import _wire
+    ws = tmp_path / "ws"
+    _write(_project(ws), {"Documents/secret.txt": "closed"})
+    closed = ws / "proj" / "Documents"
+    monkeypatch.setattr(workspace_paths, "green_roots", lambda: [closed])
+    engine = await _wire(tmp_path, monkeypatch, workspace=str(ws), default_read=False)
+    try:
+        out = await EXECUTORS["verify"].execute({"folder": "proj"})
+    finally:
+        await engine.dispose()
+    assert runs[0]["closed"] == [closed] and "Documents" not in runs[0]["files"] and "tests" in runs[0]["files"]
+    assert "1 folder(s)" in out["left_out"]
+
+
+async def test_the_time_limits_hold(tmp_path, runs, cards, monkeypatch):
+    from arslan import execution_budget
+    from server.registry.executors import EXECUTORS
+    from tests.server.test_workspace_tool_gate import _wire
+    _project(tmp_path / "ws")
+    engine = await _wire(tmp_path, monkeypatch, workspace=str(tmp_path / "ws"), default_read=True)
+
+    class Left:
+        def __init__(self, seconds):
+            self.seconds = seconds
+
+        def remaining_seconds(self):
+            return self.seconds
+    try:
+        await EXECUTORS["verify"].execute({"folder": "proj", "timeout_s": 99999})        # clamped to the most
+        monkeypatch.setattr(execution_budget, "current", lambda: Left(45))
+        await EXECUTORS["verify"].execute({"folder": "proj"})                            # what the turn has left
+        monkeypatch.setattr(execution_budget, "current", lambda: Left(31))
+        short = await EXECUTORS["verify"].execute({"folder": "proj"})
+    finally:
+        await engine.dispose()
+    assert [r["timeout_s"] for r in runs] == [terminal_exec.MAX_TIMEOUT_S, 15]
+    assert (short["code"], short["executed"]) == ("time_limit", False)
 
 
 def test_verify_is_found_on_demand_and_never_resident():
