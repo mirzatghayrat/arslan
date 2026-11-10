@@ -128,7 +128,11 @@ def frontmatter_hooks(raw: str) -> list[str]:
     Any other or unknown event raises HookRefused, so the skill is refused whole: dropping a guard silently is what the
     rule forbids. Only called on one `parse_skill_md` took, so the frontmatter is capped and holds no alias."""
     from server.services import plugin_package
-    meta = yaml.load(_FRONTMATTER_RE.match(raw).group(1), Loader=_NoAliases) or {}
+    text = _FRONTMATTER_RE.match(raw).group(1)
+    node = yaml.compose(text, Loader=_NoAliases)
+    if isinstance(node, yaml.MappingNode) and [getattr(key, "value", None) for key, _ in node.value].count("hooks") > 1:
+        raise HookRefused("unreadable", "hooks")       # read by the last here, maybe by another or refused elsewhere
+    meta = yaml.load(text, Loader=_NoAliases) or {}
     hooks = meta.get("hooks") if isinstance(meta, dict) else None
     if hooks is None:
         return []

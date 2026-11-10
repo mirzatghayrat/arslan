@@ -170,11 +170,29 @@ describe("a skill's hooks, on every skill card", () => {
   });
 });
 
+describe("Capabilities after an update in Claude Code", () => {
+  const marked = (reason: string, detail: string) => ({ key: "plugin:p3", section: "plugins", origin: "installed",
+    deletable: true, last_used: null, source_id: "p3", reach: null, state: "setup", tools: [], switch: "plugin", reason,
+    fix: null, name: "release-kit", detail, parts: [] }) as unknown as Awaited<ReturnType<typeof capabilitiesApi.list>>[number];
+
+  it.each([
+    ["plugin_hooks", "PreToolUse", "now has a hook that can block actions (PreToolUse)"],
+    ["plugin_refused", "commands", "changed and can't be imported as it is (commands)"],
+  ])("says why it is off (%s)", async (reason, detail, text) => {
+    listSpy.mockResolvedValue([marked(reason, detail)]);
+    render(<CapabilitySwitches />);
+    const plugin = await screen.findByTestId("cap-plugin:p3");
+    expect(plugin).toHaveTextContent(text);
+    expect(plugin).toHaveTextContent("Import it again");
+  });
+});
+
 describe("the words", () => {
   it.each(["zh", "ja", "es", "de", "fr"] as const)("%s has the plugin keys in its own words", (language) => {
     const there = capabilityListMessages[language] as Record<string, string>;
     const keys = Object.keys(en).filter(key => key.startsWith("import_card") || key.startsWith("import_plugin")
       || key.startsWith("hookWhen_") || key.startsWith("import_refused_hooks") || key === "plugin_hooks"
+      || key === "plugin_refused"
       || key === "hooksWarnSkill");
     expect(keys.length).toBeGreaterThan(20);
     for (const key of keys) {

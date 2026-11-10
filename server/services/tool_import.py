@@ -171,7 +171,9 @@ def _listed() -> tuple[list[dict], list[tuple]]:
     skills_state, names = _folders(skills)
     for name in names:                                  # `_folders` lists MAX_ITEMS at most
         files = read(skills / name)
-        plugin = isinstance(files, dict) and _PLUGIN_MANIFEST in files
+        # As Claude Code's disk opens it: a manifest folder in another case makes a plugin too, refused for it.
+        plugin = isinstance(files, dict) and any(plugin_package.fold(path) == plugin_package.fold(_PLUGIN_MANIFEST)
+                                                 for path in files)
         out.append(("plugin" if plugin else "skill", f"skills/{name}", name, files))
     cache = _claude() / "plugins" / "cache"
     cache_state, marketplaces = _folders(cache)
@@ -270,6 +272,7 @@ class Item:
     refused_part: str | None = None
     scan: str | None = None
     hooks: list[str] = field(default_factory=list)
+    taken: bool = False             # refused only because a skill of its key is here (`_read`), not for its files
 
     @property
     def marketplace(self) -> str | None:
@@ -323,13 +326,12 @@ async def _item(kind: str, where: str, name: str, files) -> Item:
                 raise Refused("blocked", ", ".join(sorted({f["rule"] for f in scan["findings"] if f["level"] == "high"})))
         else:
             item.snap = _snapshot(name, files)
+            item.hooks = plugin_package.judged_hooks(item.snap)     # first: no other refusal hides a blocking hook
             manifest, paths, servers = plugin_package.parts(item.snap, hooks=True)
             item.identity = str(manifest.get("name") or name)
             item.name = untrusted.clean_name(item.identity, 120)
-            item.hooks = plugin_package.quiet_hooks(manifest, item.snap)
             # Every skill prepared and scanned now, as the add does: refusals show on the sheet, not after a tick.
             skills = await plugin_package._skills(item.snap, paths, (None, None), _offline_skill)
-            item.hooks += [event for s in skills for event in s["hooks"]]
             item.plugin = {"skills": [s["key"] for s in skills], "connections": [untrusted.clean_name(n, 120)
                                                                                  for n in servers]}
     except Refused as exc:
@@ -381,7 +383,7 @@ async def _read() -> tuple[list[dict], list[Item]]:
             continue
         for key in item.plugin.get("skills") or []:
             if await _skill_here(key, besides):
-                item.refused, item.refused_part = "skill", f"skill '{key}' already exists in the library"
+                item.refused, item.refused_part, item.taken = "skill", f"skill '{key}' already exists in the library", True
                 break
     return folders, items
 
@@ -392,14 +394,26 @@ async def _is_here(item: Item, plugins: set[str]) -> bool:
     return item.identity in plugins or f"{SOURCE}:{item.id}" in plugins
 
 
+def _place(item_id: str) -> str:
+    """Where Claude Code keeps a plugin, without its version: `plugin:plugins/<marketplace>/<plugin>`."""
+    return item_id.rsplit("/", 1)[0] if item_id.startswith("plugin:plugins/") else item_id
+
+
 async def _judged_again(items: list[Item]) -> None:
     """The hook rule after an update (the user's rule 4): an installed import whose other-tool copy now has a hook
-    on a blocking or unknown event is switched off until its card. Only at this scan: the page's load reads nothing."""
-    imported = {row.name: row for row in await _plugin_rows()
-                if row.state == "installed" and str(row.candidate_id).startswith(f"{SOURCE}:")}
+    on a blocking or unknown event is switched off until its card. Hooks are judged first (`judged_hooks`), and a
+    copy refused for anything else is switched off too, since that refusal could hide one. Matched by where Claude
+    Code keeps it, which a copy too broken to name itself still has. Only at this scan: the page's load reads
+    nothing."""
+    imported = [row for row in await _plugin_rows()
+                if row.state == "installed" and str(row.candidate_id).startswith(f"{SOURCE}:")]
     for item in items:
-        if item.kind == "plugin" and item.refused == "hooks" and item.identity in imported:
-            await plugin_package.hooks_added(imported[item.identity].id, item.refused_part or "")
+        if item.kind != "plugin" or not item.refused or item.taken:
+            continue
+        for row in imported:
+            if _place(str(row.candidate_id)[len(SOURCE) + 1:]) == _place(item.id):
+                event = (item.refused_part or "") if item.refused == "hooks" else ""
+                await plugin_package.hooks_added(row.id, event, item.refused)
 
 
 async def scan() -> dict:

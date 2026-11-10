@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import tarfile
+import unicodedata
 import uuid
 import zlib
 from dataclasses import dataclass
@@ -62,6 +63,10 @@ QUIET_HOOK_EVENTS = frozenset({
     "SubagentStart", "StopFailure", "InstructionsLoaded", "CwdChanged", "DirectoryAdded", "FileChanged", "PostCompact",
     "PostModelSwitch", "SessionEnd"})
 HOOKS_FILE = "hooks/hooks.json"
+#: The names Claude Code opens by one fixed spelling, inside a plugin ("/" at the end: a folder). The default macOS
+#: disk opens each for any letter case or Unicode form that folds to it, so each is found that way (`_one_spelling`).
+_FIXED = (*MANIFESTS, *MCP_FILES, HOOKS_FILE, *(part for part, _ in _PARTS), "skills/", ".claude-plugin/",
+          ".codex-plugin/")
 _FOLDER_VARS = re.compile(r"\$\{?(?:CLAUDE_PLUGIN_ROOT|CLAUDE_PLUGIN_DATA|CLAUDE_SKILL_DIR|PLUGIN_ROOT|PLUGIN_DATA)\b")
 _ANY_VAR = re.compile(r"\$\{")
 _WHOLE_VAR = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
@@ -182,6 +187,31 @@ def _inside(value) -> str:
     return plain
 
 
+def fold(path: str) -> str:
+    """A path as a disk that ignores letter case and Unicode form compares it (APFS, the macOS default): `Hooks`,
+    `HOOKS`, `hooKs` (KELVIN SIGN) and `hookſ` (LONG S) are all `hooks`."""
+    return unicodedata.normalize("NFD", unicodedata.normalize("NFD", path).casefold())
+
+
+def _under(path: str, name: str) -> bool:
+    return path == name or (name.endswith("/") and path.startswith(name))
+
+
+def _one_spelling(snap: Snapshot, root: str, names: tuple = _FIXED) -> None:
+    """Raises Refused("unreadable", naming the file) for a file that disk opens as one of `names` (or inside one) by
+    another spelling, which Claude Code would read and Arslan's exact lookup wouldn't, and for two files it would open
+    as one, of which Claude Code reads either."""
+    prefix = f"{root}/" if root else ""
+    seen: dict[str, str] = {}
+    for path in snap.files:
+        rel = path[len(prefix):] if path.startswith(prefix) else None
+        if rel is None:
+            continue
+        if seen.setdefault(fold(rel), rel) != rel or any(_under(fold(rel), fold(name)) and not _under(rel, name)
+                                                         for name in names):
+            raise Refused("unreadable", rel)
+
+
 def _manifest(snap: Snapshot, root: str) -> dict:
     for name in MANIFESTS:
         path = _join(root, name)
@@ -254,15 +284,36 @@ def quiet_hooks(manifest: dict, snap: Snapshot, root: str = "") -> list[str]:
     return events
 
 
+def judged_hooks(snap: Snapshot, root: str = "") -> list[str]:
+    """Every hook of an imported plugin (CAP8-2), judged before any other part can refuse it, so no other refusal hides
+    a blocking one (an update is judged again by this verdict): `quiet_hooks`, then each skill's frontmatter hooks.
+    Raises Refused, as `hook_events`."""
+    _one_spelling(snap, root)
+    manifest = _manifest(snap, root)
+    events = quiet_hooks(manifest, snap, root)
+    for path in _skill_files(manifest, snap, root):
+        raw = snap.text(path)
+        if skill_import.parse_skill_md(raw, path) is not None:          # one that doesn't parse is refused later
+            try:
+                events += skill_import.frontmatter_hooks(raw)
+            except skill_import.HookRefused as exc:
+                raise Refused(exc.code, exc.part) from None
+    return events
+
+
 def _skill_files(manifest: dict, snap: Snapshot, root: str) -> list[str]:
     extra = manifest.get("skills")
     folders = ["skills", *(_inside(v) for v in (extra if isinstance(extra, list) else [extra] if extra else []))]
+    _one_spelling(snap, root, tuple(f"{folder}/" for folder in folders if folder))
     found: list[str] = []
     for folder in folders:
         base = _join(root, folder)
         prefix = f"{base}/" if base else ""
         for path in sorted(snap.files):
             rel = path[len(prefix):] if path.startswith(prefix) else None
+            leaf = (rel or "").rsplit("/", 1)[-1]
+            if rel is not None and rel.count("/") <= 1 and fold(leaf) == fold("SKILL.md") and leaf != "SKILL.md":
+                raise Refused("unreadable", path)                      # Claude Code's disk opens it as SKILL.md
             if rel is not None and (rel == "SKILL.md" or (rel.endswith("/SKILL.md") and rel.count("/") == 1)):
                 if path not in found:
                     found.append(path)
@@ -483,7 +534,8 @@ async def prepare(candidate: dict) -> dict:
 def parts(snap: Snapshot, root: str = "", *, hooks: bool = False) -> tuple[dict, list[str], dict[str, dict]]:
     """The manifest, its skills' SKILL.md paths and its MCP servers, or Refused: hooks, commands, agents or anything
     not recognised refuse the whole plugin, before anything is prepared. `hooks` (an import, CAP8-2): hooks are left to
-    the hook rule, which the caller applies (`quiet_hooks`); every other part refuses it as before."""
+    the hook rule, which the caller applies (`judged_hooks`); every other part refuses it as before."""
+    _one_spelling(snap, root)
     manifest = _manifest(snap, root)
     _only_skills_and_connections(manifest, snap, root, hooks)
     paths = _skill_files(manifest, snap, root)
@@ -501,16 +553,15 @@ async def prepare_read(candidate: dict, snap: Snapshot, root: str, *, imported=N
     user's click, and how each of its skills is prepared. Its connections then aren't held to the one-click list or
     the license gate, as CAP8-1's aren't, and its hooks go by the hook rule (`hooks`: one event per hook, its skills'
     frontmatter hooks included, which `imported` judges and Arslan's own SKILL.md leaves out); everything else is as
-    above. A refused hook refuses before anything is prepared or locked."""
+    above. A refused hook refuses before anything is prepared or locked, and before any other part refuses it."""
+    hooks = judged_hooks(snap, root) if imported else []
     manifest, paths, servers = parts(snap, root, hooks=imported is not None)
-    hooks = quiet_hooks(manifest, snap, root) if imported else []
     license_ = _license(snap, root)
     skills = await _skills(snap, paths, license_, imported)
     allow = None if imported else await capability_allowlist.current()
     prefix = f"{root}/" if root else ""
     prepared = {"repo": snap.repo, "commit": snap.sha, "license": license_, "skills": skills, "connections": [],
-                "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix),
-                "hooks": hooks + [event for skill in skills for event in skill.get("hooks") or []]}
+                "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix), "hooks": hooks}
     try:
         for name, spec in servers.items():
             connection = (_remote(candidate, name, spec, allow) if spec.get("url") or spec.get("type")
@@ -760,17 +811,19 @@ async def finish_interrupted() -> None:
             logger.warning("a plugin install cut short was not undone at boot (%s): %s", source_id, exc)
 
 
-async def hooks_added(source_id: str, event: str) -> None:
+async def hooks_added(source_id: str, event: str, code: str = "hooks") -> None:
     """CAP8-2's hook rule after an update: the other tool's copy of this imported plugin now has a hook on a blocking
-    or unknown event. Every part goes off, and `switch` keeps it off; only its card on the import sheet brings it back
-    (`replace`: the new group goes in, then this one goes). Marked once."""
+    or unknown event, or is refused for anything else (`code`, which may hide one). Every part goes off, and `switch`
+    keeps it off; only its card on the import sheet brings it back (`replace`: the new group goes in, then this one
+    goes). Marked once."""
     row = await _plugin(source_id)
     if row is None or row.state != "installed" or (row.test or {}).get("hooks_added"):
         return
     await _switch_parts(source_id, False)
     async with db_session.AsyncSessionLocal() as db:
         stored = await db.get(CapabilitySource, source_id)
-        stored.test = {**(stored.test or {}), "hooks_added": {"event": event, "at": datetime.utcnow().isoformat() + "Z"}}
+        stored.test = {**(stored.test or {}), "hooks_added": {"event": event, "code": code,
+                                                              "at": datetime.utcnow().isoformat() + "Z"}}
         await db.commit()
 
 
@@ -778,40 +831,89 @@ async def hooks_added(source_id: str, event: str) -> None:
 #
 # An imported group switched off for a hook (`hooks_added`) is replaced by its card's yes (`replace`). The new group's
 # skills share the old one's keys, so the old skills are set aside first; the new group goes in whole; only then does
-# the old one go. The swap is recorded when it starts, on the old group's row (`test["swap"]`: the new group's id, and
-# for each old skill its row's values, manifest entry, what Arslan wrote and its set-aside name), and `settle` reads
-# only that record: the new group's row `installed` means finish, anything else means put back. It clears the record
-# last. The restart matrix, the steps of `replace` and what a stop at each leaves (`finish_swaps`, first at start):
+# the old one go. The swap is recorded when it starts, on the old group's row (`test["swap"]`: the new group's id; for
+# each old skill its row's values, manifest entry, what Arslan wrote and its set-aside name; and each new skill's key
+# and file names, before any of its folders is written), and `settle` reads only that record: the new group's row
+# `installed` means finish, anything else means put back. It clears the record last, and only once the old group is
+# whole again. The restart matrix, the steps of `replace` and what a stop at each leaves (`finish_swaps`, first at
+# start):
 #  1. Before the first commit: nothing changed, and no record. Nothing to do.
 #  2. The first commit: the record and the old skill rows' removal, together. Their folders and manifest entries are
 #     still where they were. Put back: each row from the record (the rest are already in place).
 #  3. Each folder renamed to its set-aside name (`.arslan-swap-<key>`, which no reader of the folder takes): some moved,
 #     some not. Put back: each moved one renamed back.
 #  4. Each manifest entry forgotten: some gone. Put back: each entry from the record.
-#  5. The new group's install, under the id the record names: no row yet, its row `proposed` with parts going in, or
-#     `failed` after its own undo. Not complete: what is left of it goes (a `proposed` one is removed and marked
-#     `failed`, as `finish_interrupted` would), then the old group is put back as in 2-4.
+#  5. The new group's install, under the id the record names: no row yet; its row `proposed` with parts going in,
+#     a new skill's folder perhaps written (whole or in part, with or without its entry) and its row not yet; or
+#     `failed` after its own undo. Not complete: a `proposed` one is removed and marked `failed` (as
+#     `finish_interrupted` would), each new skill's folder the record names that has no row goes to the Trash with its
+#     entry (only a folder holding nothing but that skill's file names, and under an old skill's key only once the old
+#     folder is set aside), then the old group is put back as in 2-4.
 #  6. Its row `installed` (or `stopped`, also `installed`): complete. Finish: the old group is removed and the set-aside
 #     folders go to the Trash.
 #  7. The old group's removal, part or all done. Finish, as in 6: `remove` takes what is left.
 #  8. The set-aside folders to the Trash, some or all. Finish, as in 6.
 #  9. The record cleared, last. Before it, a stop finishes (or puts back) again: each step is safe to run twice.
-# A stop during `settle` itself is one of these states, so the next start finishes it.
+# A stop during `settle` itself is one of these states, so the next start finishes it. If an old folder can't go back
+# (its key holds a folder that isn't the new skill's), or the record names a path outside the skills folder, nothing
+# more is done: the record stays, the start logs it, and the next start tries again. A new swap of that group is
+# refused while a record is there.
 
 _SWAP = ".arslan-swap-"
 
 
-def _aside(held: list[dict], back: bool = False) -> None:
-    """Each held skill's folder to its set-aside name, or back. Only what is there moves, onto nothing. Blocking."""
+def _aside(held: list[dict], back: bool = False) -> list[str]:
+    """Each held skill's folder to its set-aside name, or back. Only what is there moves, onto nothing. Blocking.
+    Returns the keys whose folder couldn't go back."""
     from server.services import agent_skills
+    stuck = []
     for one in held:
         here, aside = agent_skills.folder(one["row"]["key"]), agent_skills.root() / one["aside"]
         source, target = (aside, here) if back else (here, aside)
         if os.path.lexists(source) and not os.path.lexists(target):
             os.rename(source, target)
         elif back and os.path.lexists(source):
-            logger.warning("a set-aside skill folder could not go back: its key holds another folder (%s)",
-                           one["row"]["key"])
+            stuck.append(one["row"]["key"])
+    return stuck
+
+
+def _only(base, names: set[str]) -> bool:
+    """A plain folder holding no link and no file but these (or none): what a new skill's install wrote, whole or in
+    part. Blocking."""
+    if not os.path.isdir(base) or os.path.islink(base):
+        return False
+    for current, dirs, files in os.walk(base):
+        if any(os.path.islink(os.path.join(current, name)) for name in [*dirs, *files]) or any(
+                os.path.relpath(os.path.join(current, name), base) not in names for name in files):
+            return False
+    return True
+
+
+def _drop_new(swap: dict, rowed: set[str]) -> None:
+    """Step 5 put back: each new skill's folder the record names, with no row, to the Trash. Blocking."""
+    from server.services import agent_skills
+    aside = {one["row"]["key"]: one["aside"] for one in swap["held"]}
+    for new in swap.get("new_skills") or []:
+        key = new["key"]
+        if key in rowed or (key in aside and not os.path.lexists(agent_skills.root() / aside[key])):
+            continue                                    # a row's, or the old folder never set aside: not the new one
+        if _only(agent_skills.folder(key), set(new["files"])):
+            capability_install.to_trash(agent_skills.folder(key), prefix="Arslan failed skill import")
+
+
+def _inside_skills(swap: dict) -> bool:
+    """Every key and set-aside name the record holds is one folder right inside the skills folder."""
+    from server.services import agent_skills
+    try:
+        held, new = swap["held"], swap.get("new_skills") or []
+        keys = [one["row"]["key"] for one in held] + [one["key"] for one in new]
+        names = keys + [one["aside"] for one in held]
+        base = os.path.realpath(agent_skills.root())
+        return (all(agent_skills.plain_key(key) for key in keys)
+                and all(one["aside"] == _SWAP + one["row"]["key"] for one in held)
+                and all(os.path.dirname(os.path.realpath(agent_skills.root() / name)) == base for name in names))
+    except (KeyError, TypeError, AttributeError):
+        return False
 
 
 def _trash_aside(held: list[dict]) -> None:
@@ -820,18 +922,23 @@ def _trash_aside(held: list[dict]) -> None:
         capability_install.to_trash(agent_skills.root() / one["aside"], prefix="Arslan replaced skill")
 
 
-async def _set_aside(old_id: str, new_id: str) -> None:
-    """Steps 2-4 of the matrix above. The record and the rows' removal are one commit; the folders and entries after."""
+async def _set_aside(old_id: str, new_id: str, skills: list[dict]) -> None:
+    """Steps 2-4 of the matrix above. The record and the rows' removal are one commit; the folders and entries after.
+    `skills`: the new group's, named in the record before any of their folders is written."""
     from server.services import agent_skills
+    new = [{"key": s["key"], "files": ["SKILL.md", *(f"scripts/{n}" for n in s["scripts"]),
+                                       *(f"references/{n}" for n in s["references"])]} for s in skills]
     async with agent_skills.manifest_lock():
         known, written = agent_skills.entries(), agent_skills._written()
         async with db_session.AsyncSessionLocal() as db:
             old = await db.get(CapabilitySource, old_id)
+            if (old.test or {}).get("swap"):            # one a stop left that a start couldn't settle yet
+                raise Refused("swap_pending", old_id)
             packs = (await db.execute(select(SkillPack).where(SkillPack.source_id == old_id))).scalars().all()
             held = [{"row": {c.name: getattr(p, c.name) for c in SkillPack.__table__.columns},
                      "entry": known.get(p.key), "written": written.get(p.key), "aside": f"{_SWAP}{p.key}"}
                     for p in packs]
-            old.test = {**(old.test or {}), "swap": {"new": new_id, "held": held}}
+            old.test = {**(old.test or {}), "swap": {"new": new_id, "held": held, "new_skills": new}}
             for pack in packs:
                 await db.delete(pack)
             await db.commit()                                                   # step 2
@@ -840,11 +947,19 @@ async def _set_aside(old_id: str, new_id: str) -> None:
             agent_skills.forget(one["row"]["key"])                              # step 4
 
 
-async def _put_back(held: list[dict]) -> None:
-    """Steps 2-4 undone, from the record: each folder, entry and row as it was. Safe to run twice."""
+async def _put_back(swap: dict) -> list[str]:
+    """Steps 2-5 undone, from the record: the new skills' folders with no row out, then each old folder, entry and row
+    as it was. Safe to run twice. Returns the keys whose old folder couldn't go back."""
     from server.services import agent_skills
+    held, new_keys = swap["held"], [one["key"] for one in swap.get("new_skills") or []]
     async with agent_skills.manifest_lock():
-        await asyncio.to_thread(_aside, held, True)
+        async with db_session.AsyncSessionLocal() as db:
+            rowed = set((await db.execute(select(SkillPack.key).where(SkillPack.key.in_(new_keys)))).scalars().all())
+        await asyncio.to_thread(_drop_new, swap, rowed)
+        for key in new_keys:
+            if key not in rowed:
+                agent_skills.forget(key)                # an old one's comes back from the record below
+        stuck = await asyncio.to_thread(_aside, held, True)
         for one in held:
             if one["entry"] is not None:
                 agent_skills.record(one["row"]["key"], by=one["entry"]["by"], files=one["entry"].get("files"),
@@ -854,6 +969,7 @@ async def _put_back(held: list[dict]) -> None:
                 if await db.get(SkillPack, one["row"]["key"]) is None:
                     db.add(SkillPack(**one["row"]))
             await db.commit()
+    return stuck
 
 
 async def _clear_record(old_id: str) -> None:
@@ -864,12 +980,16 @@ async def _clear_record(old_id: str) -> None:
 
 
 async def settle(old_id: str) -> None:
-    """Finish or put back the swap recorded on this group's row, by the record alone; the record is cleared last."""
+    """Finish or put back the swap recorded on this group's row, by the record alone; the record is cleared last, and
+    only once the old group is whole again. A record naming a path outside the skills folder is left as it is."""
     async with db_session.AsyncSessionLocal() as db:
         old = await db.get(CapabilitySource, old_id)
         swap = (old.test or {}).get("swap") if old is not None else None
-        new = await db.get(CapabilitySource, swap["new"]) if swap else None
+        new = await db.get(CapabilitySource, swap["new"]) if isinstance(swap, dict) and swap.get("new") else None
     if not swap:
+        return
+    if not isinstance(swap, dict) or not _inside_skills(swap):
+        logger.warning("a plugin swap's record names a path outside the skills folder; nothing was moved (%s)", old_id)
         return
     if new is not None and new.state == "installed":                          # steps 6-8: finish
         await remove(old_id)
@@ -881,7 +1001,10 @@ async def settle(old_id: str) -> None:
                 row = await db.get(CapabilitySource, new.id)
                 row.state, row.error = "failed", "interrupted"
                 await db.commit()
-        await _put_back(swap["held"])
+        if stuck := await _put_back(swap):
+            logger.warning("a set-aside skill folder could not go back, its key holding another folder; the swap's "
+                           "record stays for the next start (%s)", ", ".join(stuck))
+            return
     await _clear_record(old_id)                                                # step 9
 
 
@@ -890,7 +1013,7 @@ async def replace(old_id: str, candidate: dict, prepared: dict, keys: dict) -> d
     above). An install that doesn't finish (`failed`, `blocked`, a cancel) puts the old group back as it was, off,
     marked, with its card; its connections are never touched until the new group is in."""
     new_id = uuid.uuid4().hex
-    await _set_aside(old_id, new_id)
+    await _set_aside(old_id, new_id, prepared["skills"])
     try:
         return await install(candidate, prepared, keys, source_id=new_id)
     finally:
