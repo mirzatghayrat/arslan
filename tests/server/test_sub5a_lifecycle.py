@@ -66,10 +66,12 @@ async def _fresh(monkeypatch, execution_db):    # torn down before the database 
 
 @pytest.fixture
 async def client(runs, monkeypatch):  # noqa: F811
+    from server.api.companion import router as companion_router
+    from server.api.phone import router as phone_router
     monkeypatch.setattr(auth, "active_token", lambda: "sub5a-token")
     app = FastAPI()
-    app.include_router(conversations_router, prefix="/api/v1")
-    app.include_router(runs_router, prefix="/api/v1")
+    for router in (conversations_router, runs_router, phone_router, companion_router):
+        app.include_router(router, prefix="/api/v1")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
                                  headers={"Authorization": "Bearer sub5a-token"}) as c:
         yield c
@@ -345,6 +347,42 @@ async def test_the_windows_stop_stops_the_commanders_sub_sessions_and_theirs_and
         run_registry.unregister(run_id, ROOT)
 
 
+async def test_the_stops_line_counts_a_finished_sub_session_that_is_still_reporting(runs, client, monkeypatch):  # noqa: F811
+    """The outline's run has finished and it is still posting its result (its report isn't in yet) when the window
+    stops the commander's turn. The stop can't stop a finished job, but its report goes with the stop: the line
+    counts it, and no summary turn follows."""
+    _sink(ROOT)
+    model = _Model({OUTLINE: _steps(final="outline ready")}, summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    posting, gate = asyncio.Event(), asyncio.Event()
+    real = background_jobs._report
+
+    async def slow(job, text):
+        if job.parent_id == ROOT:
+            posting.set()
+            await gate.wait()
+        return await real(job, text)
+    monkeypatch.setattr(background_jobs, "_report", slow)
+    await _start(OUTLINE)
+    [kid] = _children()
+    await asyncio.wait_for(posting.wait(), 10)
+    assert kid.phase == "finished" and not kid.task.done() and ROOT not in sub_sessions._reports
+    run_id, turn = await _live_turn(runs, ROOT)
+    try:
+        assert (await client.post(f"/api/v1/runs/{run_id}/cancel")).status_code == 202
+        await _wait(lambda: turn.done())
+        gate.set()
+        await _wait(lambda: kid.task.done())
+        await asyncio.sleep(0.2)                                # twenty polls
+        assert kid.outcome == "done" and sub_sessions._reports == {} and ROOT not in sub_sessions._summaries
+        assert model.requests["summary"] == []
+        assert await _said(runs, ROOT) == [(_stop_line(1), None)]
+        assert await _states(runs, [kid.conversation_id]) == {kid.conversation_id: None}
+    finally:
+        gate.set()
+        run_registry.unregister(run_id, ROOT)
+
+
 async def _refused(awaitable) -> str | None:
     """The refusal's code, or None when it started. Not pytest.raises: when its "did not raise" (a BaseException)
     ended this test, the run never exited."""
@@ -414,11 +452,13 @@ async def _family(db, **root):
 
 
 async def _left(db, ids) -> dict:
-    """For each conversation: its context row, messages, events and grants still there."""
+    """For each conversation: its context row (False when none, or only its tombstone, is left), messages, events and
+    grants still there."""
     out = {}
     async with db() as session:
         for cid in ids:
-            out[cid] = (await session.get(ConversationContext, cid) is not None,
+            row = await session.get(ConversationContext, cid)
+            out[cid] = (row is not None and row.kind != sub_sessions.DELETED,
                         *[await session.scalar(select(func.count()).select_from(model).where(model.conversation_id == cid))
                           for model in (ArslanMessage, ConversationEvent, PermissionGrant)])
     return out
@@ -637,6 +677,7 @@ async def test_a_job_that_finds_its_conversation_deleted_refuses_to_run(runs, cl
     with pytest.raises(MemoryError, match="conversation_deleted"):
         await task_context.load(PRIVATE, user_message="hello again")
     assert (await _left(runs, [PRIVATE]))[PRIVATE] == (False, 0, 0, 0)
+    await _wait(_settled)                   # the outline's summary turn in ROOT ends before the teardown
 
 
 async def test_an_ordinary_conversation_that_never_had_a_row_still_runs(runs, client, monkeypatch):  # noqa: F811
@@ -663,8 +704,8 @@ async def test_a_deleted_commanders_live_turn_cannot_start_a_sub_session(runs, c
     assert (await client.delete(f"/api/v1/conversations/{ROOT}")).status_code == 200
     assert await _refused(sub_sessions.start(ROOT, OUTLINE, outside_seen=False)) == "conversation_deleted"
     assert background_jobs._jobs == {}
+    assert await _row(runs, ROOT) == TOMBSTONE
     async with runs() as db:
-        assert await db.get(ConversationContext, ROOT) is None
         assert await sub_sessions.children(db, ROOT) == []
 
 
@@ -704,11 +745,148 @@ async def test_a_delete_during_a_sub_sessions_start_waits_for_it_and_then_finds_
     await _wait(_settled)
 
 
+async def test_a_sub_session_asked_for_while_the_delete_waits_for_the_conversations_job_is_refused(
+        runs, client, monkeypatch):  # noqa: F811
+    """Why the process's mark stays beside the tombstone. The delete has passed its checks and waits for PRIVATE's own
+    job to end, so its tombstone isn't written yet. PRIVATE's live turn asks for a sub-session meanwhile: refused, so
+    none lands under a conversation being deleted, outside the ids the delete takes."""
+    model = _Model({PRIVATE_GOAL: _steps(final="tidied"), OUTLINE: _steps(final="outline ready")},
+                   summary=_steps(final="summed up"))
+    model.hold[PRIVATE_GOAL] = asyncio.Event()
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _private(runs)
+    job = await background_jobs.start(PRIVATE, PRIVATE_GOAL, [], outside_seen=False)
+    await _wait(lambda: model.requests[PRIVATE_GOAL])
+    asked = asyncio.Event()
+
+    def slow_stop(conversation_id, job_id):            # a stop that takes the whole wait
+        asked.set()
+        return False
+    monkeypatch.setattr(background_jobs, "stop", slow_stop)
+    monkeypatch.setattr(sub_sessions, "STOP_WAIT_S", 0.5)
+    deleting = asyncio.ensure_future(client.delete(f"/api/v1/conversations/{PRIVATE}"))
+    await asyncio.wait_for(asked.wait(), 10)
+    assert not deleting.done()
+    assert await _refused(sub_sessions.start(PRIVATE, OUTLINE, outside_seen=False)) == "conversation_deleted"
+    assert (await deleting).status_code == 200
+    async with runs() as db:
+        assert await sub_sessions.children(db, PRIVATE) == []
+    assert [j.conversation_id for j in background_jobs._jobs.values()] == [PRIVATE] and model.requests[OUTLINE] == []
+    model.hold[PRIVATE_GOAL].set()
+    await _wait(lambda: job.task.done())
+
+
 async def test_a_deleted_sub_sessions_job_that_outlives_the_wait_is_refused_its_next_model_request(runs):  # noqa: F811
     """Its row is gone, so its tree can't be read: it would read as a tree of one that spent nothing, with no shared
     limit. Its next model request is refused instead."""
     sub_sessions._deleted.add("sub-gone")
     assert await _refused(sub_sessions.check_tree_spend("sub-gone")) == "conversation_deleted"
+
+
+# -- a delete survives a restart --------------------------------------------------------------------------------------
+#
+# There is no conversations table: a conversation is its messages and, once a setting changes, its context row. A first
+# message to an id nothing has seen makes one (the window's `thread-<uuid>`, the phone's `phone-<uuid>`, and a scheduled
+# task's `scheduled-<id>` on each fire), so a missing row can't say "deleted". The delete leaves the row as a tombstone
+# instead: kind "deleted", the strictest values, nothing else.
+
+TOMBSTONE = {"kind": "deleted", "project_id": None, "parent_id": None, "no_memory": True, "no_learning": True,
+             "temporary": False, "cloud_memory_allowed": False, "allow_sensitive": False, "pinned": False,
+             "sub_state": None, "learns_after_message_id": None}
+
+
+async def _row(db, cid) -> dict | None:
+    async with db() as session:
+        row = await session.get(ConversationContext, cid)
+    return None if row is None else {name: getattr(row, name) for name in TOMBSTONE}
+
+
+async def test_after_a_restart_a_deleted_conversation_is_still_refused_and_nothing_runs_on_the_defaults(
+        runs, client, restart, monkeypatch):  # noqa: F811
+    """PRIVATE had memory and learning off; PLAIN never had a row. Both are deleted, and the process restarts, which
+    forgets its deleted marks. A stale window's turn to either, a job there, and a sub-session under either are
+    refused; nothing loads a context, asks the model or writes a message there, and neither comes back in the list."""
+    seen = _loads(monkeypatch)
+    model = _Model({PRIVATE_GOAL: _steps(final="tidied"), PLAIN_GOAL: _steps(final="planned"),
+                    OUTLINE: _steps(final="outline ready")}, summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _private(runs)
+    async with runs() as db:
+        db.add(ArslanMessage(conversation_id=PLAIN, role="user", content="hello"))
+        await db.commit()
+    for cid in (PRIVATE, PLAIN):
+        assert (await client.delete(f"/api/v1/conversations/{cid}")).status_code == 200
+    db = await restart()
+    assert sub_sessions._deleted == set()                       # what the next process knows of this one: nothing
+    ran = []
+
+    @task_context.scoped_turn                                   # what the window's typed turn goes through
+    async def turn(conversation_id, user_message, emit):
+        ran.append(conversation_id)
+    from arslan.companion.memory import MemoryError
+    for cid, goal in ((PRIVATE, PRIVATE_GOAL), (PLAIN, PLAIN_GOAL)):
+        with pytest.raises(MemoryError, match="conversation_deleted"):
+            await turn(cid, "hello again", lambda event: None)
+        job = await background_jobs.start(cid, goal, [], outside_seen=False)
+        await _wait(lambda: job.task.done())
+        assert job.outcome == "blocked"
+        assert await _refused(sub_sessions.start(cid, OUTLINE, outside_seen=False)) == "conversation_deleted"
+        assert await _said(db, cid) == [] and await _row(db, cid) == TOMBSTONE
+        async with db() as session:
+            assert await sub_sessions.children(session, cid) == []
+    assert ran == [] and background_jobs.active() == []
+    assert {side: requests for side, requests in model.requests.items() if requests} == {}
+    assert seen == [(cid, "refused", "conversation_deleted") for cid in (PRIVATE, PRIVATE, PLAIN, PLAIN)]
+    assert (await client.get("/api/v1/conversations")).json() == []
+
+
+async def test_after_a_restart_the_phone_and_the_settings_cannot_bring_a_deleted_conversation_back(
+        runs, client, restart):  # noqa: F811
+    """The phone's new-chat and new-quick-question calls take an id with no messages, which is what a deleted one has:
+    they find the tombstone and refuse, as they do any other kind. So do turning it into a chat, the pin and the
+    settings, so the tombstone stays what it is."""
+    from uuid import uuid4
+    phone = f"phone-{uuid4()}"
+    assert (await client.post(f"/api/v1/phone/conversations/{phone}/chat")).status_code == 200
+    await memory_mod.add_message(phone, "user", "from the phone")
+    assert (await client.delete(f"/api/v1/conversations/{phone}")).status_code == 200
+    db = await restart()
+    for kind in ("chat", "quick"):
+        got = await client.post(f"/api/v1/phone/conversations/{phone}/{kind}")
+        assert got.status_code == 409 and got.json()["detail"] == "conversation_exists"
+    got = await client.post(f"/api/v1/phone/conversations/{phone}/update", json={"kind": "chat"})
+    assert got.status_code == 404 and got.json()["detail"] == "not_found"
+    got = await client.put(f"/api/v1/conversations/{phone}/pin", json={"pinned": True})
+    assert got.status_code == 404 and got.json()["detail"] == {"code": "conversation_not_found"}
+    async with db() as session:
+        version = (await session.get(ConversationContext, phone)).version
+    got = await client.put(f"/api/v1/conversations/{phone}/context",
+                           json={"schema_version": 1, "expected_version": version})
+    assert got.status_code == 404 and got.json()["detail"] == {"code": "conversation_not_found"}
+    assert await _row(db, phone) == TOMBSTONE
+    async with db() as session:
+        assert (await session.get(ConversationContext, phone)).version == version
+    # A fresh id is a new conversation, as before.
+    fresh = f"phone-{uuid4()}"
+    assert (await client.post(f"/api/v1/phone/conversations/{fresh}/chat")).status_code == 200
+
+
+async def test_every_conversation_of_a_deleted_tree_is_left_a_tombstone_outside_any_tree(runs, client):  # noqa: F811
+    """And a sub-session whose parent is a tombstone (none should be: it would have been deleted or kept with it) reads
+    its chain as broken, so it fails closed."""
+    child, grandchild = await _family(runs, cloud_memory_allowed=True, allow_sensitive=True)
+    assert (await client.delete(f"/api/v1/conversations/{ROOT}?sub_sessions=delete")).status_code == 200
+    for cid in (ROOT, child, grandchild):
+        assert await _row(runs, cid) == TOMBSTONE
+    sub_sessions._deleted.clear()                               # as a restart does: the tombstones alone refuse
+    assert await _refused(sub_sessions.check_tree_spend(child)) == "conversation_deleted"
+    async with runs() as db:
+        assert await sub_sessions.tree(db, ROOT) == [ROOT] and await sub_sessions.children(db, child) == []
+        db.add(ConversationContext(id="sub-stray", kind="sub", parent_id=ROOT, no_learning=True,
+                                   cloud_memory_allowed=True, allow_sensitive=True))
+        await db.commit()
+        stray = await sub_sessions.effective_settings(db, await db.get(ConversationContext, "sub-stray"))
+    assert (stray.no_memory, stray.cloud_memory_allowed, stray.allow_sensitive) == (True, False, False)
 
 
 # -- undo -------------------------------------------------------------------------------------------------------------

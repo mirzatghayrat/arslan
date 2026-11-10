@@ -181,9 +181,10 @@ async def delete_conversation(
     only ever for this conversation.
     Auth-gated (inherited from the router-level require_auth dependency).
 
-    SUB5a: its context row goes too, in the same commit (a child read its settings through it). Before that, its own
-    jobs are stopped and it is marked deleted, so nothing of it runs on the defaults a missing row reads as
-    (`sub_sessions.before_delete`, `sub_sessions.deleted`). A conversation
+    SUB5a: its context row is left a tombstone in the same commit, with nothing of its settings (a child read them
+    through it), and the id is refused from then on, also after a restart (`sub_sessions.tombstone`, `is_deleted`).
+    Before that, its own jobs are stopped and it is marked deleted in this process (`sub_sessions.before_delete`,
+    `sub_sessions.deleted`). A conversation
     with sub-sessions needs `sub_sessions`: "delete" takes its whole tree, "keep" makes its own sub-sessions
     top-level chats (`sub_sessions.before_delete`); 409 while one is at work. A sub-session is deleted only when
     named as one (`sub_session=true`): the phone's `conversation.delete` names none, and gets its not-found."""
@@ -215,8 +216,8 @@ async def delete_conversation(
         res = await db.execute(
             delete(model).where(model.conversation_id.in_(ids)))
         deleted[model.__tablename__] = res.rowcount or 0
-    res = await db.execute(delete(ConversationContext).where(ConversationContext.id.in_(ids)))
-    deleted[ConversationContext.__tablename__] = res.rowcount or 0
+    # Not removed: left a tombstone, which refuses the id from then on, also after a restart (`subs.tombstone`).
+    deleted[ConversationContext.__tablename__] = await subs.tombstone(db, ids)
     await db.commit()
     return {"ok": True, "deleted": deleted, **({"kept": kept} if kept else {})}
 

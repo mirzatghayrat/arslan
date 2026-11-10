@@ -21,7 +21,8 @@ outside content (`_summarise`).
 SUB5a: what a restart, a stop and a delete do to them. Each sub-session's row says what it still owes its parent
 (`sub_state`, migration 0091), written when that changes and only read at boot (`report_restart`). The window's stop
 of a conversation's run stops everything under it, and a sub-session that turn would start afterwards
-(`stopping`, `stop_tree`). Deleting a conversation goes through `before_delete`.
+(`stopping`, `stop_tree`). Deleting a conversation goes through `before_delete`, and leaves its row a tombstone that
+refuses it from then on (`tombstone`, `is_deleted`).
 """
 from __future__ import annotations
 
@@ -45,6 +46,8 @@ logger = logging.getLogger(__name__)
 #: A conversation, a sub-session, and the one layer below it.
 MAX_DEPTH = 3
 SUB = "sub"
+#: SUB5a: the kind a deleted conversation's row is left with (`tombstone`).
+DELETED = "deleted"
 #: SUB3 (card, rule 10): how many sub-sessions one conversation may start, by its layer (a commander, a sub-session),
 #: and how many may be alive at once in one tree. The bench may move these numbers.
 MAX_CHILDREN = {1: 4, 2: 2}
@@ -157,9 +160,9 @@ async def create_child(db, parent_id: str, child_id: str | None = None) -> Conve
     A parent with no row yet gets one (an ordinary conversation has none until a setting changes), so that a chain with
     a row missing can fail closed. SUB5a: a parent deleted in this process (`deleted`) has no row either, and is
     refused (`conversation_deleted`): its turn may go on after the delete, and a fresh row would carry the defaults."""
-    if deleted(parent_id):
-        raise SubSessionError("conversation_deleted")
     parent = await db.get(ConversationContext, parent_id)
+    if is_deleted(parent_id, parent):
+        raise SubSessionError("conversation_deleted")
     if parent is None:
         parent = ConversationContext(id=parent_id)
         db.add(parent)
@@ -290,10 +293,11 @@ async def check_tree_spend(conversation_id: str) -> None:
     from arslan.execution_budget import current
     from server.db import session as db_session
     from server.services import settings_service
-    if deleted(conversation_id):     # SUB5a: its row is gone, so its tree reads as one that spent nothing
-        raise SubSessionError("conversation_deleted")
     budget = current()
     async with db_session.AsyncSessionLocal() as db:
+        # SUB5a: a deleted one is out of its tree, so its tree would read as one that spent nothing.
+        if is_deleted(conversation_id, await db.get(ConversationContext, conversation_id)):
+            raise SubSessionError("conversation_deleted")
         usd_cap = await settings_service.task_usd_cap(db)
         if usd_cap is None:
             if budget is not None:
@@ -484,16 +488,52 @@ STOP_WAIT_S = 10.0
 
 
 def deleted(conversation_id: str) -> bool:
-    """Whether this conversation was deleted in this process. A missing context row means two things: an ordinary
-    conversation that never had one (none until a setting changes) reads the defaults, as it always did; a deleted
-    one must not, since what it had chosen went with its row. This tells them apart: one rule with SUB2's, where a
-    chain that can't be read fails closed, except that nothing of a deleted conversation runs at all. Its context
-    load (`task_context.load`, which every job and turn goes through), a sub-session under it (`create_child`) and
-    its tree's limit (`check_tree_spend`) are refused with `conversation_deleted`.
-
-    Marked before the delete stops its jobs, and never cleared. In memory only: jobs and turns live in this process,
-    and none survives a restart (`background_jobs.report_interrupted`), so after one nothing of it runs by itself."""
+    """Whether a delete of this conversation began in this process (`before_delete`). It covers what the tombstone
+    can't yet: from the delete's checks until its commit writes the tombstone, the delete waits up to STOP_WAIT_S for
+    the conversation's jobs, and a sub-session its live turn starts meanwhile would land under it outside the ids
+    being deleted. Also after a failed commit: refused, never looser. Never cleared; a restart forgets it, and the
+    tombstone holds from then on (`is_deleted`)."""
     return conversation_id in _deleted
+
+
+def is_deleted(conversation_id: str, row: ConversationContext | None) -> bool:
+    """Whether this conversation was deleted: its row is a tombstone (`tombstone`), or a delete of it began in this
+    process (`deleted`). Nothing of a deleted conversation runs: its context load (`task_context.load`, which every
+    turn and job goes through), a sub-session under it (`create_child`) and its tree's limit (`check_tree_spend`) are
+    refused with `conversation_deleted`, and the phone's and the settings' routes leave the tombstone as it is.
+
+    Why a tombstone: there is no conversations table. A conversation is its messages and, once a setting changes,
+    its context row, and a first message to an id nothing has seen is what makes one (the window's `thread-<uuid>`,
+    the phone's `phone-<uuid>`, a scheduled task's `scheduled-<id>` on each fire). So a missing row means a new
+    conversation and reads the defaults, as it always did; only a row can say "deleted", also after a restart."""
+    return conversation_id in _deleted or (row is not None and row.kind == DELETED)
+
+
+async def tombstone(db, ids) -> int:
+    """DELETE /conversations/{id}, in its transaction: each of these conversations' context rows becomes a tombstone
+    (kind DELETED, the strictest values, no project, pin, parent, state or learning mark), one written where none
+    was. Its settings are never read again (`is_deleted` refuses first); they are strict in case something does.
+    Returns how many rows held a conversation's settings before (the delete's `conversation_contexts` count).
+
+    `temporary` stays off: the window's socket sends a temporary conversation's frames down a path of their own
+    (`server/ws/arslan.py`); off, each of its turns takes the ordinary one, through the refusing load."""
+    from sqlalchemy import func
+    from sqlalchemy.dialects.sqlite import insert
+    ids = list(dict.fromkeys(ids))
+    if not ids:
+        return 0
+    held = await db.scalar(select(func.count()).select_from(ConversationContext).where(
+        ConversationContext.id.in_(ids), ConversationContext.kind.is_distinct_from(DELETED)))
+    now = datetime.utcnow()
+    values = dict(kind=DELETED, project_id=None, parent_id=None, no_memory=True, no_learning=True, temporary=False,
+                  cloud_memory_allowed=False, allow_sensitive=False, pinned=False, sub_state=None,
+                  learns_after_message_id=None, updated_at=now)
+    for cid in ids:
+        statement = insert(ConversationContext).values(id=cid, version=1, created_at=now, **values)
+        await db.execute(statement.on_conflict_do_update(
+            index_elements=[ConversationContext.id],
+            set_={**values, "version": ConversationContext.version + 1}))
+    return int(held or 0)
 
 
 async def _set_state(ids, state: str | None, db=None) -> None:
@@ -615,10 +655,10 @@ async def before_delete(db, conversation_id: str, *, choice: str | None,
 
     Fail closed, both halves: what goes is marked deleted first (`deleted`: from then on nothing of it loads a
     context or starts a sub-session), and its own jobs, queued, running or reporting, a summary turn too, are stopped
-    and waited for before its rows go (`_stop_for_delete`). A queued job reads its settings only when it gets a slot,
-    and would find no row. The checks and the mark are made under the lock `start` holds, so a sub-session being
-    started either has its job by then (`sub_sessions_running`) or is refused (`create_child`). A failure after
-    the mark leaves it marked: refused, never looser."""
+    and waited for before its rows go (`_stop_for_delete`). The caller then leaves each a tombstone (`tombstone`),
+    which refuses it after a restart too. The checks and the mark are made under the lock `start` holds, so a
+    sub-session being started either has its job by then (`sub_sessions_running`) or is refused (`create_child`). A
+    failure after the mark leaves it marked: refused, never looser."""
     from server.services import background_jobs
     global _starting
     if _starting is None:
