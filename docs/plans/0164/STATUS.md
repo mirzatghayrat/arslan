@@ -52,6 +52,37 @@ This list supersedes every "what's left" count below and is now the one source f
 
 **Total:** 6 in review and 48 to build, 54 in all. ④参谋's independent count is about 45 that block the tag plus about 17 that don't. The two are being reconciled into must and not-must in the next docs batch.
 
+**Should items added by the user on 2026-11-11 (10):** these join the list, bringing it to 64.
+- S6, with the S4a follow-ups (README:112).
+- S4b (README:112).
+- IMG1-B: a CSP on the main window (README:211).
+- NET: a site allowlist for the proxy (README:99). Card first.
+- MCPF1 (MCPF1 card:5).
+- C5a (README:108).
+- K6 (README:111).
+- L6: background processes (README:100). Card first, after the sandbox chain.
+- L7: goal mode (README:100). Card first; it merges only if the M64 bench doesn't regress.
+
+**Order (the user, 2026-11-11):** do everything, in three tiers. Lanes work in parallel; a tier only sets priority, and nothing waits for a whole tier. ⓪Plan reports each finished tier to ④参谋.
+- **Tier 1, security (23):**
+  - HR-1, HR-1b, HR-2a, HR-2b and HR-3.
+  - The 4 command-policy items.
+  - #816 and the CAP8-2 hard-link refusal.
+  - SBX-5b, the SBX settings UI (mock first) and the SBX-2 adapter deletion.
+  - ASK1-a and ASK1-b.
+  - CLS, S5a and S5b.
+  - #298b.
+- **Tier 2, features and cleanup (31):**
+  - SUB: 5b, 5c, 5d, 5e, 5f, #799's follow-up, the commander stop, SUB6, SUB7 and the search.
+  - LOOP1: d1, c3c, d2 and z (2 PRs).
+  - CAP: the 6a export, the 8-2 plugin rows, CAP11 and HOOK-1 to HOOK-4.
+  - INB7-d/e/f and INB9.
+  - C7c (4 PRs).
+  - ACM.
+  - SIDE (2 PRs).
+  - The SUB3 markers.
+- **Tier 3:** the 10 should items above. S6, S4b, IMG1-B and NET may run alongside tier 1, since they are security.
+
 **Not PRs:**
 - The SBX-8 sitting: the user runs it; the runbook is in SBX-measurement.md.
 - The real-Mac checks listed below.
