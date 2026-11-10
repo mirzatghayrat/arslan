@@ -16,6 +16,9 @@ from tests.server import test_quoted_command_word as words
 from tests.server import quoted_args_file_run_evidence as evidence
 from tests.server.test_s2a3_folder_tracking import A, B, DEL, FIND
 
+# Whole-corpus comparisons: over pytest-timeout's 120 s default on CI runners and under load.
+pytestmark = pytest.mark.timeout(600)
+
 # Includes implicit targets, expansions, stack operations, wrappers, loops,
 # options, patterns and quote/escape/case spellings accepted by main's reader.
 CD_FORMS = (
