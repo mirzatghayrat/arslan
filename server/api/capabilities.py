@@ -53,10 +53,10 @@ async def approve_skill_folder(key: str, body: Approve) -> dict:
 
 @router.get("/skill-export-notice")
 async def skill_export_notice() -> dict:
-    """CAP6a part 2: how many imported skills the one-time export moved to ~/.agents/skills, until the Capabilities
-    page has shown its one line about it (then 0)."""
+    """CAP6a part 2: how many imported skills the one-time export moved to ~/.agents/skills (`count`) and how many it
+    left in Arslan's own folder (`kept`), until the Capabilities page has shown its one line about it (then zeros)."""
     from server.services import agent_skills
-    return {"count": agent_skills.export_notice()}
+    return agent_skills.export_notice()
 
 
 @router.post("/skill-export-notice/seen")

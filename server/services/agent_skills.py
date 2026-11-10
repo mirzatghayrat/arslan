@@ -602,6 +602,7 @@ def skill_md(name: str, description: str, body: str) -> str:
 # closed (run_python finds nothing), as a skill installed since #795 does.
 
 EXPORT_BACKUP = "cap6a-skill-export"
+CHANGED_SINCE_EXPORT = "changed since its export"
 _STAGE = ".arslan-export-"
 _SCRIPT_NAME = re.compile(r"[A-Za-z0-9._-]+\.py")
 _REFERENCE_NAME = re.compile(r"[A-Za-z0-9._-]+\.(md|txt)")
@@ -626,7 +627,10 @@ def _old_files(key: str) -> dict[str, str]:
     """What today's readers take of a skill not yet exported, from <data>/skill_scripts/<key>/: its `.py` scripts
     (run_python) and its `.md`/`.txt` references (read_skill, the sandbox's read-only copies), by the names the import
     stores them under, as `scripts/<name>` and `references/<name>`. Raises _Kept for a link anywhere in it or a file
-    that is not UTF-8 text (today's readers refuse both)."""
+    that is not UTF-8 text (today's readers refuse both). Each file is read by the data folder's own reader, with
+    #816's identity checks (no link on the way, no second name on disk, the file opened the one looked at): one that
+    isn't the skill's own is never moved, and the skill stays as it is (where run_python refuses it too)."""
+    from server.registry import executors
     base = _data_folder(key)
     try:
         if not stat.S_ISDIR(os.lstat(base).st_mode):
@@ -645,10 +649,16 @@ def _old_files(key: str) -> dict[str, str]:
             if entry.is_symlink():
                 raise _Kept("its files hold a link")
             if entry.is_file(follow_symlinks=False) and pattern.fullmatch(entry.name):
+                rel = entry.name if prefix == "scripts/" else f"references/{entry.name}"
                 try:
-                    found[prefix + entry.name] = _read_file(Path(entry.path)).decode("utf-8")
+                    text = executors._own_skill_text(key, rel)
+                except executors._NotOwnFile as exc:
+                    raise _Kept(str(exc).split(", so Arslan")[0]) from None
                 except UnicodeDecodeError:
                     raise _Kept("a file is not UTF-8 text") from None
+                if text is None:                    # gone, or no longer a regular file, since the listing
+                    raise _Kept("a file can't be read")
+                found[prefix + entry.name] = text
     return found
 
 
@@ -688,9 +698,10 @@ def _backup(packs: list[dict], olds: dict[str, dict[str, str]]) -> str:
         _write_rows(partial / "skills.json", rows)
         # Read back: every file the export copies is in the backup byte for byte, and so is every row.
         for key, files in olds.items():
-            for rel, text in files.items():
-                copy = partial / "skill_scripts" / key / rel.removeprefix("scripts/")
-                if _read_file(copy) != text.encode("utf-8"):
+            for rel in files:
+                inside = rel.removeprefix("scripts/")
+                copy = partial / "skill_scripts" / key / inside
+                if _read_file(copy) != _read_file(_data_folder(key) / inside):
                     raise OSError(f"the backup of {key}/{rel} does not match")
         if json.loads((partial / "skills.json").read_text(encoding="utf-8")) != rows:
             raise OSError("the backup of the rows does not match")
@@ -822,7 +833,7 @@ def _export(packs: list[dict], running: set[str]) -> dict:
             # Recorded by a start cut short, its data-folder copy (part or all) already removed, and its folder
             # changed since (#808 review): nothing to go back to. Its entry stays, so it reads as changed: switched
             # off by the next read or sync, and its card shows the changed files. The backups keep the original.
-            kept[key] = "changed since its export"
+            kept[key] = CHANGED_SINCE_EXPORT
             continue
         forget(key)                                  # back to the data folder, which is still whole
         kept[key] = "check failed"
@@ -863,13 +874,17 @@ async def export_imported() -> dict | None:
     return report
 
 
-def export_notice() -> int:
-    """How many skills the export moved, while the one line that tells the user (on the Capabilities page) has not
-    been shown yet; 0 otherwise. The folder is shared, so other tools can now read and use them."""
+def export_notice() -> dict[str, int]:
+    """What the one line on the Capabilities page says, while it has not been shown yet (then zeros): `count`, how
+    many skills the export moved (the folder is shared, so other tools can now read and use them), and `kept`, how
+    many it did not move and that stay in Arslan's own folder as they were (a folder another tool has under the key,
+    a failure, a file that isn't the skill's own). A skill reported "changed since its export" is in neither: it was
+    moved, and is off until its card."""
     state = export_state()
     if not state or state.get("state") != "done" or state.get("notice_shown"):
-        return 0
-    return len(state.get("exported") or [])
+        return {"count": 0, "kept": 0}
+    kept = [k for k, why in (state.get("kept") or {}).items() if why != CHANGED_SINCE_EXPORT]
+    return {"count": len(state.get("exported") or []), "kept": len(kept)}
 
 
 def export_notice_shown() -> None:

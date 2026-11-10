@@ -76,12 +76,12 @@ export default function CapabilitySwitches() {
   useEffect(() => { void load(); }, [load]);
   // CAP6a part 2: told once, in one line, that the imported skills moved to the folder other tools share. "Seen" is
   // written as soon as it shows, so it never shows again, whether or not the page stays open.
-  const [exported, setExported] = useState(0);
+  const [exported, setExported] = useState({ count: 0, kept: 0 });
   useEffect(() => {
     let live = true;
-    capabilitiesApi.exportNotice().then(({ count }) => {
-      if (!live || !count) return;
-      setExported(count);
+    capabilitiesApi.exportNotice().then(({ count, kept }) => {
+      if (!live || !(count || kept)) return;
+      setExported({ count: count || 0, kept: kept || 0 });
       void capabilitiesApi.exportNoticeSeen().catch(() => { /* at worst it shows once more next time */ });
     }).catch(() => { /* no line: nothing else depends on it */ });
     return () => { live = false; };
@@ -217,7 +217,10 @@ export default function CapabilitySwitches() {
         {rows && <div className="min-w-[200px] flex-1"><CapabilityFilter testId="cap-search" value={query} onChange={setQuery}
           shown={shown.length} total={inFilter.length} /></div>}
       </div>
-      {exported > 0 && <Notice testId="cap-export-notice">{t("capabilityList.exportedNotice", { count: exported })}</Notice>}
+      {(exported.count > 0 || exported.kept > 0) && <Notice testId="cap-export-notice">
+        {[exported.count > 0 && t("capabilityList.exportedNotice", { count: exported.count }),
+          exported.kept > 0 && t("capabilityList.exportedKept", { count: exported.kept })].filter(Boolean).join(" ")}
+      </Notice>}
       {failed && <Notice tone="error" role="alert">{t("capabilityList.loadFailed")}</Notice>}
       {error && <Notice tone="error" role="alert">{error}</Notice>}
       {rows && searching && shown.length === 0 &&

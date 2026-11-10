@@ -593,22 +593,62 @@ async def test_finders_ds_store_is_not_a_change(api, home):
 async def test_the_user_is_told_once(api, home, tmp_path):
     """One line on the Capabilities page after the export: how many imported skills moved to the shared folder.
     Shown once: the page says it showed it, and that is recorded in the data folder."""
-    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 0}     # before the export
+    none = {"count": 0, "kept": 0}
+    assert (await api.get("/api/v1/skill-export-notice")).json() == none     # before the export
     for key in ("aa-first", "bb-second"):
         await _imported(key, scripts={"run.py": RUN})
     await _imported("cc-off", enabled=False)
     await agent_skills.export_imported()
-    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 2}
+    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 2, "kept": 0}
     assert (await api.post("/api/v1/skill-export-notice/seen")).status_code == 200
-    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 0}
+    assert (await api.get("/api/v1/skill-export-notice")).json() == none
     assert json.loads((tmp_path / "data" / "agent_skills.json").read_text())["export"]["notice_shown"] is True
     agent_skills.record("zz-later", by="arslan", files={})          # later manifest writes keep the record
-    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 0}
+    assert (await api.get("/api/v1/skill-export-notice")).json() == none
 
 
 async def test_nothing_exported_is_never_told(api, home):
     await agent_skills.export_imported()
-    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 0}
+    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 0, "kept": 0}
+
+
+async def test_a_data_folder_file_with_another_name_on_disk_is_never_moved(api, home, tmp_path, monkeypatch):
+    """#816's identity check, in the export too: a hard-linked file (here, to a file outside every skill) keeps that
+    skill where it is, nothing is recorded as approved, and the line tells the user it wasn't moved."""
+    data = await _imported(scripts={"run.py": RUN})
+    await _imported("bb-plain", scripts={"run.py": RUN})
+    (tmp_path / "outside.py").write_text("print('not the skill')\n")
+    os.link(tmp_path / "outside.py", data / "helper.py")
+    report = await agent_skills.export_imported()
+    assert report["exported"] == ["bb-plain"], report
+    assert "another name on disk" in report["kept"]["weekly-report"], report
+    assert "weekly-report" not in agent_skills.entries() and "weekly-report" not in agent_skills._written()
+    assert _in_root(home) == ["bb-plain"] and (data / "run.py").read_text() == RUN
+    assert (await api.get("/api/v1/skill-export-notice")).json() == {"count": 1, "kept": 1}
+    handed = _sandbox(monkeypatch)                  # and run_python refuses it, as on main
+    out = await RunPythonExecutor().execute({"skill_script": "weekly-report/run.py"})
+    assert out["ok"] is False and handed == [] and "hard link" in out["error"], out
+
+
+async def test_the_dossier_removal_waits_for_an_install_of_the_key(home, execution_db, monkeypatch):
+    """A source whose skill row is gone, removed while an install of the same key holds the lock (its folder and hashes
+    written, its row not yet committed): asked again under the lock, the folder is not taken for a leftover."""
+    from server.services import capability_dossier
+    async with execution_db() as db:
+        db.add(CapabilitySource(id="src-1", kind="skill", name="Weekly report", candidate_id="github:acme/skills:w",
+                                runtime="skill", needs={}, grants={}, state="installed", skill_key="weekly-report"))
+        await db.commit()
+    reached, release = _pause_commit(monkeypatch, after=False)
+    install = asyncio.create_task(skill_import.install_prepared(_prepared()))
+    await asyncio.wait_for(reached.wait(), 5)
+    removal = asyncio.create_task(capability_dossier.remove("src-1"))
+    await asyncio.sleep(0.2)
+    release.set()
+    await asyncio.wait_for(install, 5)
+    await asyncio.wait_for(removal, 5)
+    assert agent_skills.entries()["weekly-report"]["by"] == "arslan" and not (home / ".Trash").exists()
+    assert agent_skills.still_arslans("weekly-report") and (await _pack()).enabled is True
+    assert (await ReadSkillExecutor().execute({"key": "weekly-report"}))["ok"]
 
 
 async def test_at_start_a_cut_short_plugin_install_goes_before_the_export(monkeypatch):
@@ -705,8 +745,8 @@ async def test_deleting_an_exported_skill_takes_a_data_copy_the_export_left(api,
     assert out["ok"] is False and handed == [], out
 
 
-@pytest.mark.parametrize("copy", ["gone", "whole"])
-async def test_a_folder_changed_after_a_start_cut_short_past_the_check(home, monkeypatch, copy):
+@pytest.mark.parametrize("copy", ["gone", "whole", "there, but a file no longer its own"])
+async def test_a_folder_changed_after_a_start_cut_short_past_the_check(home, tmp_path, monkeypatch, copy):
     """Stopped after the check (its data-folder copy removed, or not yet), then the folder changes before the next
     start. With the copy whole, the skill goes back to it; with it gone, its entry stays, so it reads as changed and is
     off until its card: never a row that runs with nothing checked."""
@@ -727,11 +767,13 @@ async def test_a_folder_changed_after_a_start_cut_short_past_the_check(home, mon
         await agent_skills.export_imported()
     monkeypatch.setattr(agent_skills, "_save", real_save)
     monkeypatch.setattr(agent_skills, "_clear", real_clear)
-    assert data.exists() is (copy == "whole")
+    assert data.exists() is (copy != "gone")
+    if copy.startswith("there"):                     # the copy can't be read as the skill's own any more
+        os.link(data / "run.py", tmp_path / "second-name.py")
     skill_md = agent_skills.folder("weekly-report") / "SKILL.md"
     skill_md.write_text(skill_md.read_text() + "\nA line added since.\n")
     report = await agent_skills.export_imported()
-    if copy == "gone":
+    if copy != "whole":
         assert report["kept"] == {"weekly-report": "changed since its export"}, report
         assert agent_skills.entries()["weekly-report"]["by"] == "arslan"
         assert await agent_skills.sync() == {"weekly-report": "changed"}
