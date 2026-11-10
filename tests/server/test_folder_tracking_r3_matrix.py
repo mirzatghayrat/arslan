@@ -3,6 +3,8 @@ from collections import Counter
 from itertools import product
 import json
 
+import pytest
+
 from server.services import terminal_policy as tp
 from tests.server.folder_revision_data import load_revision as load_frozen_revision
 from tests.server import test_folder_tracking_matrix as matrix
@@ -51,6 +53,7 @@ def transitions(texts, baseline, cwd):
     return dict(sorted(counts.items()))
 
 
+@pytest.mark.timeout(600)  # whole-corpus comparison; over 120 s on CI runners
 def test_revision_comparisons(tmp_path, monkeypatch):
     corpora = {"repository": repository_corpus(), "structural": structural_corpus()}
     assert len(corpora["structural"]) == 11816

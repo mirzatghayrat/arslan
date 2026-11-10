@@ -74,6 +74,7 @@ def named_family():
         yield form + separator + seed
 
 
+@pytest.mark.timeout(600)  # whole-corpus comparison; over 120 s on CI runners
 @pytest.mark.parametrize("corpus", ('named', 'policy', *evidence.GENERATORS))
 def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
     baseline = load_revision(MAIN, monkeypatch)
