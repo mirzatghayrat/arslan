@@ -1178,6 +1178,9 @@
       "paused": "一時停止",
       "skipped": "スキップ"
     },
+    "reason": {
+      "conversation_deleted": "一時停止中：書き込み先の会話が削除されました。このタスクを削除するか、作り直してください。"
+    },
     "action": {
       "pause": "一時停止",
       "resume": "再開",

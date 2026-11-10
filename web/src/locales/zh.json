@@ -1178,6 +1178,9 @@
       "paused": "已暂停",
       "skipped": "已跳过"
     },
+    "reason": {
+      "conversation_deleted": "已暂停：它写入的对话已被删除。请删除这个任务，或重新创建。"
+    },
     "action": {
       "pause": "暂停",
       "resume": "恢复",

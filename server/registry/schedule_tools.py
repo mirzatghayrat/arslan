@@ -97,7 +97,7 @@ class ScheduleTaskExecutor:
                                  f"(the limit is {scheduler.MAX_ENABLED}) — cancel one first"}
             task = ScheduledTask(
                 name=name, prompt=prompt, spawn_id=None, target="arslan",
-                conversation_id=args.get("conversation_id"),
+                conversation_id=args.get("conversation_id") or scheduler.own_conversation(),   # SUB5a
                 schedule_kind=kind, interval_s=interval_s, cron=cron,
                 enabled=True, consecutive_failures=0)
             try:

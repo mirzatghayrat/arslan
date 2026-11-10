@@ -1178,6 +1178,9 @@
       "paused": "en pause",
       "skipped": "ignorée"
     },
+    "reason": {
+      "conversation_deleted": "En pause : la conversation dans laquelle elle écrit a été supprimée. Supprimez cette tâche ou recréez-la."
+    },
     "action": {
       "pause": "Mettre en pause",
       "resume": "Reprendre",

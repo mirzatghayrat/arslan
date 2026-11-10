@@ -68,9 +68,12 @@ async def _fresh(monkeypatch, execution_db):    # torn down before the database 
 async def client(runs, monkeypatch):  # noqa: F811
     from server.api.companion import router as companion_router
     from server.api.phone import router as phone_router
+    from server.api.proactive import router as proactive_router
+    from server.api.scheduled_tasks import router as scheduled_router
     monkeypatch.setattr(auth, "active_token", lambda: "sub5a-token")
     app = FastAPI()
-    for router in (conversations_router, runs_router, phone_router, companion_router):
+    for router in (conversations_router, runs_router, phone_router, companion_router, proactive_router,
+                   scheduled_router):
         app.include_router(router, prefix="/api/v1")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
                                  headers={"Authorization": "Bearer sub5a-token"}) as c:
@@ -887,6 +890,159 @@ async def test_every_conversation_of_a_deleted_tree_is_left_a_tombstone_outside_
         await db.commit()
         stray = await sub_sessions.effective_settings(db, await db.get(ConversationContext, "sub-stray"))
     assert (stray.no_memory, stray.cloud_memory_allowed, stray.allow_sensitive) == (True, False, False)
+
+
+# -- what writes into a deleted conversation is told so ---------------------------------------------------------------
+
+def _scheduled_turns(monkeypatch) -> list[str]:
+    """The conversations a scheduled fire's turn ran in (the turn itself is a stub)."""
+    from server.orchestrator import arslan as arslan_mod
+    ran = []
+
+    async def answer(conversation_id, prompt, emit):
+        ran.append(conversation_id)
+    monkeypatch.setattr(arslan_mod, "_handle_answer", answer)
+    return ran
+
+
+async def _fired() -> None:
+    """Every fire the scheduler started has ended, and none of them crashed."""
+    from server.services import scheduler
+    for _ in range(50):
+        pending = [task for task in scheduler._tasks if not task.done()]
+        if not pending:
+            break
+        done = await asyncio.gather(*pending, return_exceptions=True)
+        assert [result for result in done if isinstance(result, BaseException)] == []
+
+
+async def _runs_of(db, task_id) -> list[tuple]:
+    from server.db.models import ScheduledTaskRun
+    async with db() as session:
+        return [(row.outcome, row.reason) for row in (await session.scalars(
+            select(ScheduledTaskRun).where(ScheduledTaskRun.task_id == task_id).order_by(ScheduledTaskRun.id))).all()]
+
+
+async def test_a_scheduled_task_whose_conversation_was_deleted_pauses_once_and_says_why(
+        runs, client, monkeypatch, caplog):  # noqa: F811
+    """A task made before v0.1.64 writes into `scheduled-<id>`. That conversation is deleted, and the process restarts.
+    The next tick's fire is refused before it runs, so the task pauses with a reason the Scheduled page shows, one
+    run row says why, and the next ticks leave it alone: no retry, no crash in the log, nothing written there."""
+    from datetime import datetime, timedelta
+
+    from server.db.models import ScheduledTask
+    from server.services import scheduler
+    ran = _scheduled_turns(monkeypatch)
+    async with runs() as db:
+        task = ScheduledTask(name="daily", prompt="Sum up the day", schedule_kind="interval", interval_s=3600,
+                             enabled=True, consecutive_failures=0, next_due_at=datetime.utcnow() - timedelta(minutes=1))
+        db.add(task)
+        await db.commit()
+        cid = f"scheduled-{task.id}"
+        db.add(ConversationContext(id=cid, no_memory=True, no_learning=True))
+        db.add(ArslanMessage(conversation_id=cid, role="arslan", content="yesterday's summary"))
+        await db.commit()
+    assert (await client.delete(f"/api/v1/conversations/{cid}")).status_code == 200
+    sub_sessions._deleted.clear()                               # as a restart does: the tombstone alone refuses
+    try:
+        for _ in range(3):
+            await scheduler.tick()
+            await _fired()
+    finally:
+        scheduler._tasks.clear()
+    assert ran == [] and await _said(runs, cid) == []
+    assert await _runs_of(runs, task.id) == [("error", "conversation_deleted")]
+    [shown] = (await client.get("/api/v1/scheduled-tasks")).json()
+    assert (shown["enabled"], shown["paused_reason"], shown["next_due_at"], shown["last_outcome"]) == (
+        False, "conversation_deleted", None, "error")
+    assert "scheduler task crashed" not in caplog.text
+
+
+async def test_a_new_task_never_lands_on_a_deleted_tasks_conversation(runs, client, monkeypatch):  # noqa: F811
+    """SQLite gives a new task the id of the newest deleted one. A task's own conversation is no longer named after
+    that id, so the new one never writes into, or is refused by, what the old one left. Fire now on the old one,
+    after its conversation was deleted, pauses it as a tick does. Saving a task with no conversation keeps its own."""
+    ran = _scheduled_turns(monkeypatch)
+    body = {"name": "daily", "prompt": "Sum up the day", "schedule_kind": "interval", "interval_s": 3600}
+    first = (await client.post("/api/v1/scheduled-tasks", json=body)).json()
+    old = first["conversation_id"]
+    assert old.startswith("scheduled-") and old != f"scheduled-{first['id']}"
+    edited = await client.put(f"/api/v1/scheduled-tasks/{first['id']}", json={"conversation_id": None})
+    assert edited.status_code == 200 and edited.json()["conversation_id"] == old
+    await memory_mod.add_message(old, "arslan", "yesterday's summary")
+    assert (await client.delete(f"/api/v1/conversations/{old}")).status_code == 200
+    sub_sessions._deleted.clear()
+    from server.services import scheduler
+    try:
+        assert (await client.post(f"/api/v1/scheduled-tasks/{first['id']}/fire-now")).status_code == 202
+        await _fired()
+        assert await _runs_of(runs, first["id"]) == [("error", "conversation_deleted")]
+        assert (await client.get("/api/v1/scheduled-tasks")).json()[0]["paused_reason"] == "conversation_deleted"
+        assert (await client.delete(f"/api/v1/scheduled-tasks/{first['id']}")).status_code == 200
+        again = (await client.post("/api/v1/scheduled-tasks", json=body)).json()
+        assert again["id"] == first["id"]                       # the reuse this guards against
+        assert again["conversation_id"] not in (old, f"scheduled-{again['id']}")
+        assert (await client.post(f"/api/v1/scheduled-tasks/{again['id']}/fire-now")).status_code == 202
+        await _fired()
+    finally:
+        scheduler._tasks.clear()
+    assert ran == [again["conversation_id"]] and await _runs_of(runs, again["id"]) == [("ok", "")]
+    assert await _said(runs, old) == []
+
+
+async def test_accepting_an_inbox_item_for_a_deleted_conversation_is_refused_and_leaves_it_there(
+        runs, client, monkeypatch):  # noqa: F811
+    """Its job would be refused when it gets its slot, with the item already marked accepted: gone from the Inbox, and
+    nothing said. The accept is refused instead, before the item is claimed."""
+    from server.db.models import ProactiveItem
+    from server.services import proactive_service
+
+    async def configured():
+        return True
+    monkeypatch.setattr(proactive_service, "model_configured", configured)
+    await _private(runs)
+    async with runs() as db:
+        item = ProactiveItem(kind="job_followup", fingerprint="fp:deleted", source_key="job:deleted",
+                             title_key="title.job_followup", evidence=[{"key": "x", "params": {}}],
+                             goal=PRIVATE_GOAL, conversation_id=PRIVATE)
+        db.add(item)
+        await db.commit()
+    assert (await client.delete(f"/api/v1/conversations/{PRIVATE}")).status_code == 200
+    sub_sessions._deleted.clear()
+    got = await client.post(f"/api/v1/proactive/items/{item.id}/accept", json={})
+    assert got.status_code == 422 and got.json()["detail"] == {"code": "conversation_deleted"}
+    async with runs() as db:
+        assert (await db.get(ProactiveItem, item.id)).status == "new"
+    assert background_jobs._jobs == {}
+
+
+async def test_a_delete_waits_for_its_job_that_has_finished_and_is_still_posting_its_result(
+        runs, client, monkeypatch):  # noqa: F811
+    """The job reads finished, and its result is on its way into the conversation. The delete waits for it, so the
+    result goes with the rest and the conversation is not listed again."""
+    model = _Model({PRIVATE_GOAL: _steps(final="the private result")})
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _private(runs)
+    posting, gate = asyncio.Event(), asyncio.Event()
+    real = memory_mod.add_message
+
+    async def add_message(conversation_id, role, content, *args, **kwargs):
+        if conversation_id == PRIVATE and role == "arslan" and not posting.is_set():
+            posting.set()
+            await gate.wait()
+        return await real(conversation_id, role, content, *args, **kwargs)
+    monkeypatch.setattr(memory_mod, "add_message", add_message)
+    job = await background_jobs.start(PRIVATE, PRIVATE_GOAL, [], outside_seen=False)
+    await asyncio.wait_for(posting.wait(), 10)
+    assert job.phase == "finished"
+    deleting = asyncio.ensure_future(client.delete(f"/api/v1/conversations/{PRIVATE}"))
+    await asyncio.sleep(0.3)
+    waited = not deleting.done()
+    gate.set()
+    assert (await deleting).status_code == 200 and waited
+    await _wait(lambda: job.task.done())
+    assert await _said(runs, PRIVATE) == []
+    assert (await client.get("/api/v1/conversations")).json() == []
 
 
 # -- undo -------------------------------------------------------------------------------------------------------------

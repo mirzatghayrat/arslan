@@ -493,7 +493,12 @@ async def test_what_a_summary_turn_spends_counts_in_its_tree(runs, monkeypatch):
                     third: _steps(final="voice-over ready")}, summary=_steps(plan, final="summed up"),
                    price={OUTLINE: 1.5, COVER: 1.5, third: 1.5, "summary": 0.9})
     monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
-    await _start(OUTLINE, COVER, third)
+    from server.ws import arslan as ws_arslan
+    # As in the product, a commander's turn starts them: its summary waits for that turn, so it sums up all three at
+    # once. Started with no turn, one that ended before the next started got a summary of its own, and the second
+    # summary was stopped at the tree's limit (SUB5a review: a test artifact, not a race in the product).
+    async with ws_arslan._turn_lock(ROOT):
+        await _start(OUTLINE, COVER, third)
     await _wait(_settled)
     assert [s.outcome for s in _summaries()] == ["done"] and len(model.requests["summary"]) == 2
     async with runs() as db:

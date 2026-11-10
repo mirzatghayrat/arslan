@@ -96,7 +96,10 @@ async def waiting_on_user(db: AsyncSession) -> Waiting:
     out = Waiting()
     asking = await waiting_conversations(db)
     tasks = list((await db.execute(select(ScheduledTask))).scalars())
-    own = {f"scheduled-{task.id}": task.id for task in tasks}
+    from server.services import scheduler
+    # SUB5a: a task's own conversation, also one stored on its row (scheduler.own_conversation).
+    own = {task.conversation_id or f"scheduled-{task.id}": task.id for task in tasks
+           if scheduler.is_own_conversation(task)}
     out.scheduled |= {own[cid] for cid in asking if cid in own}
     asking = {cid for cid in asking if cid not in own}
 

@@ -226,6 +226,41 @@ describe("ScheduledTasksCard — history expand", () => {
   });
 });
 
+describe("ScheduledTasksCard — a task whose conversation was deleted (SUB5a)", () => {
+  const DELETED = {
+    ...TASKS[0], id: 4, name: "Lost task", conversation_id: "scheduled-0f3a9c", enabled: false, next_due_at: null,
+    paused_reason: "conversation_deleted", last_outcome: "error",
+  };
+
+  it("words the reason in the badge and the history, and leaves its own conversation's field empty", async () => {
+    vi.mocked(api.listScheduledTasks).mockResolvedValue([DELETED] as never);
+    vi.mocked(api.getScheduledTaskRuns).mockResolvedValue([
+      { id: 12, started_at: "2026-11-10T05:00:00", finished_at: "2026-11-10T05:00:00", outcome: "error", run_id: null,
+        reason: "conversation_deleted" },
+    ] as never);
+    vi.mocked(api.updateScheduledTask).mockResolvedValue(DELETED as never);
+    render(<ScheduledTasksCard />);
+    await screen.findByText("Lost task");
+    expect(screen.getByTestId("sched-badge").getAttribute("title")).toBe("scheduled.reason.conversation_deleted");
+    fireEvent.click(screen.getByTestId("sched-expand-4"));
+    const history = await screen.findByTestId("sched-history");
+    expect(history.textContent).toContain("scheduled.reason.conversation_deleted");
+    expect([...history.querySelectorAll("td")].map((cell) => cell.textContent)).not.toContain("conversation_deleted");
+    fireEvent.click(screen.getByTestId("sched-edit-4"));
+    expect((screen.getByTestId("sched-form-conversation") as HTMLInputElement).value).toBe("");
+    fireEvent.click(screen.getByTestId("sched-form-submit"));
+    await waitFor(() => expect(api.updateScheduledTask).toHaveBeenCalledWith(4,
+      expect.objectContaining({ conversation_id: null })));
+  });
+
+  it("has the reason's words in every locale", async () => {
+    for (const lang of ["en", "zh", "ja", "es", "de", "fr"]) {
+      const loc = (await import(`../locales/${lang}.json`)).default as Record<string, any>;
+      expect(loc.scheduled.reason.conversation_deleted, lang).toBeTruthy();
+    }
+  });
+});
+
 describe("cronLooksValid — loose client mirror of server parse_cron", () => {
   it("accepts server-grammar expressions", () => {
     for (const ok of ["* * * * *", "0 8 * * *", "*/15 * * * *", "0,30 9,18 * * 1,5", "5 4 1 1 0"]) {
