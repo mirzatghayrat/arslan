@@ -275,6 +275,7 @@ SMART-1 to SMART-4 are all on main, and so are the SMART-5 fixes. The gate rerun
 - **Recounting a Codex or count-touching PR after main moves is gone since #716.** The macOS job's counts are pinned per file in `tests/macos_expected.toml` (`markers`, `cases`, `xfail`), so a PR changes only the tables of the files it touches; see `docs/sessions.md` §3. Take the numbers from the macOS job on the PR, which prints what it saw. The ci.yml `EXPECTED` / `EXPECTED_XFAIL` and the mirror's `EXPECTED_TOTAL` / `PARAMETERIZED_EXTRA_CASES` no longer exist.
 - **Re-OK after a merge of main:** compare the PR's own +/- lines against its base before and after, excluding only the resolved files.
 - **Reviewer subagents:** Opus, at effort=max on the security surface and high otherwise. Resume the same reviewer for deltas.
+- **Model for security work (the user, 2026-11-10):** security reviews and security code run on Claude Opus 5.5 or a stronger model, such as Fable 5.2. A review states which model it ran on.
 - **When a Claude safety check stops adversarial probing:** don't route around it. The user decides; Codex Astra covers it via ⑦Codex.
 - **Arm while CI is pending:** a CLEAN PR can't be armed.
 

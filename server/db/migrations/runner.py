@@ -109,6 +109,7 @@ from .versions._0085_judgment_run import upgrade_sync as _m0085
 from .versions._0086_route1_remove_routing import upgrade_sync as _m0086
 from .versions._0089_capability_sources_plugin_kind import upgrade_sync as _m0089
 from .versions._0090_mcp_sign_in_cleanup import upgrade_sync as _m0090
+from .versions._0091_sub_session_state import upgrade_sync as _m0091
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -195,6 +196,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0086", _m0086),
     ("0089", _m0089),
     ("0090", _m0090),
+    ("0091", _m0091),
 ]
 
 

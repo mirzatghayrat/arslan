@@ -35,6 +35,9 @@ class ConversationContext(Base):
     # 0079 (SB1-2): pinned to the top of the sidebar. Set only by PUT /conversations/{id}/pin, never by the
     # context PUT, and never bumps `version`.
     pinned = Column(Boolean, nullable=False, default=False, server_default="0")
+    # 0091 (SUB5a): what a sub-session owes its parent, kept for a restart (`sub_sessions.WORKING` and its siblings).
+    # NULL: nothing owed (summed up, dropped, or not a sub-session).
+    sub_state = Column(String(20), nullable=True)
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

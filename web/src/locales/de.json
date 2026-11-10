@@ -1182,6 +1182,9 @@
       "paused": "pausiert",
       "skipped": "übersprungen"
     },
+    "reason": {
+      "conversation_deleted": "Pausiert: Die Unterhaltung, in die sie schreibt, wurde gelöscht. Lösche diese Aufgabe oder lege sie neu an."
+    },
     "action": {
       "pause": "Pausieren",
       "resume": "Fortsetzen",

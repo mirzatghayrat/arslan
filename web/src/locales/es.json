@@ -1182,6 +1182,9 @@
       "paused": "pausada",
       "skipped": "omitida"
     },
+    "reason": {
+      "conversation_deleted": "En pausa: se eliminó la conversación en la que escribe. Elimina esta tarea o créala de nuevo."
+    },
     "action": {
       "pause": "Pausar",
       "resume": "Reanudar",
