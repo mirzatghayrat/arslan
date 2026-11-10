@@ -158,7 +158,7 @@ async def create_scheduled_task(body: ScheduledTaskCreateIn) -> ScheduledTaskOut
         task = ScheduledTask(
             name=body.name, prompt=body.prompt, spawn_id=body.spawn_id,
             target="spawn" if spawn is not None else "arslan",
-            conversation_id=body.conversation_id, schedule_kind=body.schedule_kind,
+            conversation_id=body.conversation_id or scheduler.own_conversation(), schedule_kind=body.schedule_kind,
             interval_s=body.interval_s, cron=body.cron,
             enabled=True, consecutive_failures=0)
         _recompute_next_due(task, datetime.utcnow())
@@ -189,6 +189,11 @@ async def update_scheduled_task(task_id: int,
                                                task.cron)
         if changed:
             _validate_schedule(kind, interval_s, cron)
+        if "conversation_id" in data and not data["conversation_id"]:
+            # SUB5a: none chosen means the task's own conversation. One it has stays; a task that wrote into one the
+            # user chose gets a new one of its own, never `scheduled-<id>` (scheduler.own_conversation).
+            data["conversation_id"] = (task.conversation_id if scheduler.is_own_conversation(task)
+                                       else scheduler.own_conversation())
         for key, value in data.items():
             setattr(task, key, value)
         if changed:

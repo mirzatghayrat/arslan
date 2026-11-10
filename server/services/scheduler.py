@@ -69,6 +69,23 @@ MIN_INTERVAL_S = 900        # D1: interval tasks fire at most every 15 minutes
 MAX_ENABLED = 10            # D1: at most 10 enabled tasks
 PAUSE_AFTER_FAILURES = 3    # D1: auto-pause after 3 consecutive failures
 DEFAULT_INTERVAL = 60.0     # tick cadence; injectable (short in tests)
+# SUB5a: the paused_reason of a task whose conversation was deleted. A code: the Scheduled page words it.
+CONVERSATION_DELETED = "conversation_deleted"
+
+
+def own_conversation() -> str:
+    """SUB5a: the conversation a new task writes into when none is chosen, stored on its row. Not `scheduled-<id>`:
+    SQLite gives a new task the id of the newest deleted one, and that id's conversation is the old task's, or its
+    tombstone, which would refuse every fire of the new one. A row stored without one (made before v0.1.64) keeps
+    writing into `scheduled-<id>`, so its conversation goes on."""
+    from uuid import uuid4
+    return f"scheduled-{uuid4().hex}"
+
+
+def is_own_conversation(task: ScheduledTask) -> bool:
+    """Whether the task writes into a conversation of its own (`own_conversation`, or `scheduled-<id>` on a row made
+    before v0.1.64), not one the user chose."""
+    return task.conversation_id is None or task.conversation_id.startswith("scheduled-")
 
 # (lo, hi) per cron field: 分 时 日 月 周 (dow 0=Sunday..6=Saturday)
 _FIELD_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 6))
@@ -417,6 +434,7 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 
 
 async def _fire(task: ScheduledTask) -> None:
+    from arslan.companion.memory import MemoryError
     from server.orchestrator import untrusted
     from server.services import presence, task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
@@ -431,8 +449,34 @@ async def _fire(task: ScheduledTask) -> None:
     # INB2: nobody is there when a stored prompt fires, also when "fire now" ran from a present turn.
     with desktop_status.working(cid, title=task.name, kind="scheduled"), presence.not_present():   # keeps the Mac awake (0.1.41)
         with untrusted.carried(True):
-            return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
-                                                    headless=True)
+            try:
+                return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
+                                                        headless=True)
+            except MemoryError as exc:
+                if exc.code != CONVERSATION_DELETED:
+                    raise
+    await _pause_deleted_conversation(task.id, cid)
+
+
+async def _pause_deleted_conversation(task_id: int, conversation_id: str) -> None:
+    """SUB5a: the task's conversation was deleted, so its fire was refused before it ran (`task_context.load`). It
+    pauses, as a task that keeps failing does, with a reason the Scheduled page words and one run row that says why;
+    a tick never fires it again, and nothing is written into the deleted conversation. Resume fires it once more, and
+    it pauses again: its conversation stays deleted."""
+    from server.services import desktop_status
+    now = datetime.utcnow()
+    async with db_session.AsyncSessionLocal() as db:
+        task = await db.get(ScheduledTask, task_id)
+        if task is None:
+            return
+        db.add(ScheduledTaskRun(task_id=task_id, started_at=now, finished_at=now, outcome="error",
+                                reason=CONVERSATION_DELETED))
+        task.enabled = False
+        task.paused_reason = CONVERSATION_DELETED
+        task.next_due_at = None
+        await db.commit()
+    logger.info("scheduled task %s paused: its conversation was deleted", task_id)
+    desktop_status.push("scheduled_paused", conversation_id=conversation_id, task_id=task_id)
 
 
 async def _fire_body(task: ScheduledTask) -> None:

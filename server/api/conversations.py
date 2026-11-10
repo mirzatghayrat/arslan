@@ -1,7 +1,9 @@
 """Conversation-scoped recap — runs + growth events merged into one timeline."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, select
 
@@ -167,6 +169,8 @@ async def conversation_recap(conversation_id: str) -> RecapOut:
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: str,
+    sub_sessions: Literal["delete", "keep"] | None = None,
+    sub_session: bool = False,
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
@@ -175,7 +179,24 @@ async def delete_conversation(
     rows survive spawn deletion; so does the permission ledger, `approval_events`, which
     keeps its own 90 days). The conversation's permission grants go with it: they were
     only ever for this conversation.
-    Auth-gated (inherited from the router-level require_auth dependency)."""
+    Auth-gated (inherited from the router-level require_auth dependency).
+
+    SUB5a: its context row is left a tombstone in the same commit, with nothing of its settings (a child read them
+    through it), and the id is refused from then on, also after a restart (`sub_sessions.tombstone`, `is_deleted`).
+    Before that, its own jobs are stopped and it is marked deleted in this process (`sub_sessions.before_delete`,
+    `sub_sessions.deleted`). A conversation
+    with sub-sessions needs `sub_sessions`: "delete" takes its whole tree, "keep" makes its own sub-sessions
+    top-level chats (`sub_sessions.before_delete`); 409 while one is at work. A sub-session is deleted only when
+    named as one (`sub_session=true`): the phone's `conversation.delete` names none, and gets its not-found."""
+    from server.db.companion_models import ConversationContext
+    from server.services import sub_sessions as subs
+    try:
+        ids, kept = await subs.before_delete(db, conversation_id, choice=sub_sessions, as_sub_session=sub_session)
+    except subs.SubSessionError as exc:
+        if exc.code == "not_found":
+            raise HTTPException(404, detail="not_found") from None
+        raise HTTPException(409 if exc.code == "sub_sessions_running" else 422,
+                            detail={"code": exc.code, **exc.extra}) from None
     deleted: dict[str, int] = {}
     # Injected session — see list_conversations for why. With this endpoint on
     # the module global and the listing on the injection, the two talked to
@@ -193,17 +214,18 @@ async def delete_conversation(
         PermissionGrant,
     ):
         res = await db.execute(
-            delete(model).where(model.conversation_id == conversation_id))
+            delete(model).where(model.conversation_id.in_(ids)))
         deleted[model.__tablename__] = res.rowcount or 0
+    # Not removed: left a tombstone, which refuses the id from then on, also after a restart (`subs.tombstone`).
+    deleted[ConversationContext.__tablename__] = await subs.tombstone(db, ids)
     await db.commit()
-    return {"ok": True, "deleted": deleted}
+    return {"ok": True, "deleted": deleted, **({"kept": kept} if kept else {})}
 
 
 # ── 0.1.58 §6: the model one conversation runs on ─────────────────────────────
 
 from datetime import datetime as _dt  # noqa: E402
 
-from fastapi import HTTPException  # noqa: E402
 from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
 
 
