@@ -34,13 +34,17 @@ function isPlaceholderTitle(title: string): boolean {
  * the rename we cannot tell a truncation from a name the user typed, and
  * overwriting someone's own name for a thread is a worse failure than leaving a
  * plain one.
+ *
+ * A thread the user renamed (`userTitled`) is seeded whatever its title, even
+ * one that reads like a placeholder.
  */
 export function seedTitledThreadIds(
-  threads: { id: string; title?: string }[],
+  threads: { id: string; title?: string; userTitled?: boolean }[],
 ): Set<string> {
   return new Set(
     threads
       .filter((t) => {
+        if (t.userTitled === true) return true;
         const title = (t.title ?? "").trim();
         return title.length > 0 && !isPlaceholderTitle(title);
       })
