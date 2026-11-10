@@ -369,6 +369,13 @@ SCENARIOS: dict[str, dict] = {
         expect="already in your tool list"),
     "unshown_tool_called_with_bad_arguments": dict(replies=[_call("attach_file", {}), Reply("Done.")],
                                                    tools=FINDERS, callable=REACHABLE, expect="send use_tool again"),
+    # A tool a card's refresh shows mid-batch is a shown tool for the rest of that batch: called by its name, it runs
+    # directly, and is not unwrapped (and refused as "already in your tool list").
+    "a_tool_shown_mid_batch_runs_directly": dict(replies=[
+        _batch(("create_skill", {"key": "weekly", "name": "Weekly", "description": "d", "body": "## Trigger\nx"}, "c1"),
+               ("attach_file", {"path": "a.md"}, "c2")), Reply("Attached.")],
+        tools=[*FINDERS, *_table("create_skill")], later_tools=[*FINDERS, *_table("create_skill", "attach_file")],
+        callable=[*REACHABLE, *_table("create_skill")], setup="skill_saved", expect='["ran", "attach_file"'),
     "plan_change_on_demand": dict(replies=[
         _call("use_tool", {"name": "propose_plan_change", "arguments": {
             "levels": [{"name": "one", "band": "doing"}], "reason": "changed"}}), Reply("No project here.")],
