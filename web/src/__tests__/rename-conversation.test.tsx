@@ -5,6 +5,7 @@
  * The header's chips give way by its own width (Tailwind container variants); jsdom applies no CSS, so the
  * steps are pinned by their classes and the ⋯ menu by what it lists. */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-i18next", () => ({
@@ -18,7 +19,7 @@ import ConversationHeader, { HDR_LABEL, HDR_RUN, HDR_SECONDARY } from "../compon
 import ConversationControls from "../components/companion/ConversationControls";
 import { companionApi, type ConversationContext } from "../api/companion";
 import { seedTitledThreadIds, shouldAutoTitle } from "../lib/autoTitle";
-import { applyGeneratedTitle, renameThread } from "../lib/threadTitles";
+import { applyGeneratedTitle, firstMessageMayRetitle, renameThread } from "../lib/threadTitles";
 import { persistThreads, restoreThreads } from "../lib/sessionPersistence";
 import type { Message } from "../types";
 
@@ -104,6 +105,27 @@ describe("rename from the sidebar", () => {
     expect(onRenameThread).not.toHaveBeenCalled();
   });
 
+  it("a name is at most 120 characters", () => {
+    renderSidebar();
+    fireEvent.doubleClick(screen.getByText("Weekly report"));
+    expect(input().maxLength).toBe(120);
+  });
+
+  it("Enter that confirms an IME candidate does not save; Enter after composition ends does", () => {
+    const { onRenameThread } = renderSidebar();
+    fireEvent.doubleClick(screen.getByText("Weekly report"));
+    fireEvent.compositionStart(input());
+    fireEvent.change(input(), { target: { value: "Composed name" } });
+    fireEvent.keyDown(input(), { key: "Enter", isComposing: true });       // Chrome, Firefox: picks the candidate
+    fireEvent.keyDown(input(), { key: "Enter", keyCode: 229 });            // WebKit: the same Enter, after compositionend
+    expect(onRenameThread).not.toHaveBeenCalled();
+    expect(input().value).toBe("Composed name");                           // still editing
+    fireEvent.compositionEnd(input());
+    fireEvent.keyDown(input(), { key: "Enter", keyCode: 13 });
+    expect(onRenameThread).toHaveBeenCalledWith("b", "Composed name");
+    expect(onRenameThread).toHaveBeenCalledTimes(1);
+  });
+
   it("typing in the field does not open or drag the row", () => {
     const { onSelectThread, row } = renderSidebar();
     fireEvent.doubleClick(screen.getByText("Weekly report"));
@@ -134,6 +156,16 @@ describe("rename from the header", () => {
   it("a conversation that cannot be renamed shows its title as text", () => {
     render(<ConversationHeader title="Temporary"><span /></ConversationHeader>);
     expect(screen.getByTestId("header-title").tagName).toBe("SPAN");
+  });
+
+  it("the green status dot sits before the title, as it did before the header was reworked", () => {
+    for (const onRename of [vi.fn(), undefined]) {
+      render(<ConversationHeader title="Release checklist" onRename={onRename}><span /></ConversationHeader>);
+      const dot = screen.getByTestId("conversation-status-dot");
+      expect(dot.className).toBe("w-2 h-2 rounded-full bg-success shrink-0");
+      expect(dot.nextElementSibling).toBe(screen.getByTestId("header-title"));
+      cleanup();
+    }
   });
 });
 
@@ -186,6 +218,59 @@ describe("the header by its own width", () => {
     expect(onRun).toHaveBeenCalledTimes(1);
   });
 
+  it("⋯ by keyboard: focus into the menu, arrows wrap, Home and End, Esc closes, focus back on ⋯", () => {
+    render(<ConversationHeader title="T" onRename={vi.fn()}>{chips()}</ConversationHeader>);
+    const more = screen.getByTestId("header-more");
+    fireEvent.click(more);
+    const items = within(screen.getByRole("menu")).getAllByRole("menuitem");
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(items[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(items[1], { key: "ArrowDown" });
+    fireEvent.keyDown(items[2], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[0]);                    // wraps forward
+    fireEvent.keyDown(items[0], { key: "ArrowUp" });
+    expect(document.activeElement).toBe(items[2]);                    // wraps back
+    fireEvent.keyDown(items[2], { key: "Home" });
+    expect(document.activeElement).toBe(items[0]);
+    fireEvent.keyDown(items[0], { key: "End" });
+    expect(document.activeElement).toBe(items[2]);
+    fireEvent.keyDown(items[2], { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("⋯ gives focus back on every close: an item, ⋯ itself, a click outside", () => {
+    render(<ConversationHeader title="T" onRename={vi.fn()}>{chips()}</ConversationHeader>);
+    const more = screen.getByTestId("header-more");
+    const reopen = () => { fireEvent.click(more); expect(document.activeElement?.getAttribute("role")).toBe("menuitem"); };
+    reopen();
+    fireEvent.click(within(screen.getByRole("menu")).getAllByRole("menuitem")[0]);
+    expect(document.activeElement).toBe(more);
+    reopen();
+    fireEvent.click(more);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(more);
+    reopen();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("an open ⋯ shows each chip as it is now, not as it was when it opened", async () => {
+    let setStatus: (status: string) => void = () => {};
+    function RunChip() {
+      const [status, set] = useState("Running");
+      setStatus = set;
+      return <button type="button"><span data-hdr-chip="run" title={status} /></button>;
+    }
+    render(<ConversationHeader title="T" onRename={vi.fn()}><RunChip /></ConversationHeader>);
+    fireEvent.click(screen.getByTestId("header-more"));
+    expect(within(screen.getByRole("menu")).getByRole("menuitem").textContent).toBe("Running");
+    act(() => setStatus("Stopped with an error"));                   // the chip re-renders; the header does not
+    await waitFor(() => expect(within(screen.getByRole("menu")).getByRole("menuitem").textContent).toBe("Stopped with an error"));
+  });
+
   it("the project chip: icon + label that hides at 560, the full text as its tooltip and accessible name", async () => {
     const context: ConversationContext = { conversation_id: "c", version: 0, project_id: "p1", no_memory: true,
       no_learning: false, temporary: false, cloud_memory_allowed: false, allow_sensitive: false };
@@ -230,5 +315,13 @@ describe("autoTitle never renames what the user named", () => {
     expect(shouldAutoTitle({ title: "New Session", history })).toBe(true);   // the exchange alone would title it
     expect(seedTitledThreadIds(restored).has("t")).toBe(true);
     expect(seedTitledThreadIds([{ id: "t", title: "New Session" }]).has("t")).toBe(false);
+  });
+
+  it("the first-message retitle never touches a name the user typed, even one that reads like a placeholder", () => {
+    expect(firstMessageMayRetitle({ title: "New Session" })).toBe(true);
+    expect(firstMessageMayRetitle({ title: "Orchestration thread 3" })).toBe(true);
+    expect(firstMessageMayRetitle({ title: "New Session", userTitled: true })).toBe(false);
+    expect(firstMessageMayRetitle({ title: "New Session", temporary: true })).toBe(false);
+    expect(firstMessageMayRetitle({ title: "Weekly report" })).toBe(false);
   });
 });
