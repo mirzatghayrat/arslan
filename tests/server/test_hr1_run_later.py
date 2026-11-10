@@ -191,6 +191,18 @@ def test_the_kernel_text_has_no_exemption_for_a_root_inside_a_dependency_folder(
     assert RUN_LATER_REGEXES.splitlines()[0] in mcp.splitlines() and DEPENDENCY_TEXT not in mcp
 
 
+def test_the_mcp_preset_decides_the_exemption_by_its_own_folder_and_its_cache_too(home):
+    """#813 review 4: `roots=` in the MCP preset. A server whose own folder, or whose cache, lies inside node_modules
+    (with no grant there) gets the bare regexes; with neither, the exempting ones."""
+    inside, outside = home / "node_modules" / STAND_IN / "mcp", home / "mcp"
+    first_bare, first_wrapped = RUN_LATER_REGEXES.splitlines()[0], RUN_LATER_TEXT.splitlines()[0]
+    for root, cache, bare in [(inside, home / "cache", True), (outside, inside / "cache", True),
+                              (outside, home / "cache", False)]:
+        root.mkdir(parents=True, exist_ok=True)
+        lines = capability_sandbox.profile(root=root, folders=[], network=False, read=[], cache=cache).splitlines()
+        assert (first_bare in lines, first_wrapped in lines) == (bare, not bare), (root, cache)
+
+
 def test_a_relative_path_is_matched_by_its_names():
     assert run_later.matches(".envrc") and run_later.matches("a/.git/hooks/x") and not run_later.matches("AGENTS.md")
 
@@ -472,52 +484,144 @@ def test_the_note_names_them_and_points_to_write_file(tmp_path):
     assert "git hooks and config, editor tasks, agent and package settings" in sentence and "CI" not in sentence
     assert "write_file" in sentence and "outside_sandbox" not in sentence
     assert "Commands also can't change" not in command_sandbox.note(tmp_path, proxy=True)
-    assert "partly updated" not in note and "partly updated" in command_sandbox.note(tmp_path, git=True)
+    assert "partly updated" not in note
 
 
-# ── git's refusal line: the note even at exit 0 (#813 review 1) ──────────────
+def test_the_git_note_ends_with_the_user_not_with_outside_sandbox():
+    note = command_sandbox.git_note()
+    assert "partly updated" in note and "git status" in note and "tell the user" in note and "upstream" in note
+    assert "outside_sandbox" not in note and "Find a way" not in note and note.endswith("undo that change).")
+
+
+# ── git naming a held file: the note at any exit code, in any language (#813 reviews 1 and 4) ──
 
 GIT_REFUSED = "error: unable to unlink old '.vscode/settings.json': Operation not permitted\n"
+CONFIG_REFUSED = "error: could not write config file .git/config: Operation not permitted\n"
+CHECKOUT = f"git checkout -q {STAND_IN}"
+WIDE_COLON = chr(0xFF1A)                 # git's Chinese messages put it right after a path, with no space
 
 
-def _explained(tmp_path, *, exit_code: int, stderr: str, sandbox: str = "workspace"):
+def _explained(tmp_path, monkeypatch, *, exit_code: int, stderr: str, sandbox: str = "workspace",
+               command: str = CHECKOUT, hold: bool = False, cwd=None):
+    """terminal_exec.explain on a fake result: the result, the denial on the run trace, and how many times a denial
+    was noted (SBX-7: exactly one per run)."""
     from server.orchestrator import run_trace
+    noted: list[str] = []
+    real_note = run_trace.note_denial
+
+    def counting(code):
+        noted.append(code)
+        real_note(code)
+    monkeypatch.setattr(run_trace, "note_denial", counting)
     result = {"ok": exit_code == 0, "exit_code": exit_code, "stdout": "", "stderr": stderr, "cwd": str(tmp_path),
               "sandbox": sandbox}
     if exit_code:
         result["error"] = f"exit code {exit_code}"
     with run_trace.collecting() as trace:
-        terminal_exec.explain(result, cwd=tmp_path, closed=[], mode=sandbox, timed_out=False)
+        terminal_exec.explain(result, cwd=cwd or tmp_path, closed=[], mode=sandbox, timed_out=False, command=command,
+                              hold=hold)
         run_trace.record(tool="run_command", args={}, result=result, ok=result["ok"], error=None, ms=1)
-    return result, trace[0].get("denial")
+    return result, trace[0].get("denial"), noted
 
 
-def test_git_refusing_a_held_file_at_exit_0_shows_the_note_and_one_denial(tmp_path):
-    """git checkout moved HEAD and exited 0, leaving the held file as it was: not a failed step, but the model reads
-    the note, and SBX-7 counts one EPERM denial."""
-    result, denial = _explained(tmp_path, exit_code=0, stderr=GIT_REFUSED)
-    assert "partly updated" in result["note"] and "git status" in result["note"] and denial == "eperm"
-    assert "sandbox_denied" not in result and "error" not in result and result["ok"] is True
-    # A removal is a warning in git's words, a new file (exit 0 too) an error, and a new folder a fatal one: all count.
-    for line in (f"warning: unable to unlink '.husky/{STAND_IN}': Operation not permitted\n",
-                 f"error: unable to create file .husky/{STAND_IN}: Operation not permitted\n",
-                 "fatal: cannot create directory at '.husky': Operation not permitted\n"):
-        assert "partly updated" in _explained(tmp_path, exit_code=0, stderr=line)[0]["note"]
+def _git_noted(explained) -> bool:
+    """Whether the git note was given; when it was, with exactly one `eperm` denial noted (never two)."""
+    result, denial, noted = explained
+    if result.get("note") != command_sandbox.git_note():
+        return False
+    assert denial == "eperm" and noted == ["eperm"], noted
+    return True
 
 
-def test_git_refusing_a_held_file_at_exit_1_adds_the_same_sentence_to_the_stop(tmp_path):
-    result, denial = _explained(tmp_path, exit_code=1, stderr=GIT_REFUSED)
-    assert result["sandbox_denied"] is True and "partly updated" in result["note"] and denial == "eperm"
-    assert result["error"] == "the sandbox stopped this command (exit code 1)"
+def _nothing(explained) -> bool:
+    result, denial, noted = explained
+    return "note" not in result and denial is None and noted == []
 
 
-def test_only_gits_work_tree_lines_in_the_workspace_sandbox_count(tmp_path):
-    # A config write is a stop, but the work tree is untouched: no sentence about it.
-    config, denial = _explained(tmp_path, exit_code=4,
-                                stderr="error: could not write config file .git/config: Operation not permitted\n")
-    assert config["sandbox_denied"] is True and "partly updated" not in config["note"] and denial == "eperm"
-    # Any other tool's EPERM at exit 0, and git's line outside the workspace sandbox: nothing.
-    for stderr, sandbox in [(f"{STAND_IN}: Operation not permitted\n", "workspace"), (GIT_REFUSED, "outside"),
-                            (GIT_REFUSED, "off")]:
-        result, denial = _explained(tmp_path, exit_code=0, stderr=stderr, sandbox=sandbox)
-        assert "note" not in result and denial is None
+#: A translated line with no EPERM text at all (stand-in German words around the path).
+GERMAN = "Fehler: Konnte alte Datei '.vscode/settings.json' nicht entfernen: Vorgang nicht zulaessig\n"
+#: git's lines naming a held file, in its English words and others (git translates the words, never the path).
+HELD_LINES = [
+    GIT_REFUSED, CONFIG_REFUSED, CONFIG_REFUSED * 2,
+    f"warning: unable to unlink '.husky/{STAND_IN}': Operation not permitted\n",
+    f"error: unable to create file .husky/{STAND_IN}: Operation not permitted\n",
+    "error: unable to create symlink .vscode/settings.json: Operation not permitted\n",
+    "error: unable to write file .npmrc mode 100644: Operation not permitted\n",
+    "fatal: cannot create directory at '.husky': Operation not permitted\n",
+    f"error: cannot copy '/{STAND_IN}/templates/hooks/pre-push.sample' to '/w/.git/hooks/pre-push.sample'\n",
+    GERMAN,
+    "Fehler: Konnte Konfigurationsdatei '.git/config' nicht sperren.: Operation not permitted\n",
+    f"{STAND_IN}{WIDE_COLON}{STAND_IN} .git/config{WIDE_COLON}{STAND_IN}\n",
+    f"{STAND_IN}{WIDE_COLON}unable to unlink old '.envrc'{WIDE_COLON}{STAND_IN}\n",
+    f"{STAND_IN} .git/config.worktree.\n",
+]
+
+
+@pytest.mark.parametrize("line", HELD_LINES)
+def test_a_git_line_naming_a_held_file_gets_the_note_at_exit_0_with_one_denial(tmp_path, monkeypatch, line):
+    """checkout and switch move HEAD and exit 0 leaving a held tracked file as it was; a tracking checkout, push -u and
+    --set-upstream-to exit 0 with no upstream saved. Not a failed step, but the model reads the note, and SBX-7
+    counts one EPERM denial."""
+    explained = _explained(tmp_path, monkeypatch, exit_code=0, stderr=line)
+    assert _git_noted(explained)
+    assert "sandbox_denied" not in explained[0] and "error" not in explained[0] and explained[0]["ok"] is True
+
+
+def test_a_git_line_naming_a_held_file_at_exit_1_is_a_stop_with_the_git_note(tmp_path, monkeypatch):
+    for line in (GIT_REFUSED, CONFIG_REFUSED):
+        explained = _explained(tmp_path, monkeypatch, exit_code=1, stderr=line)
+        assert _git_noted(explained) and explained[0]["sandbox_denied"] is True
+        assert explained[0]["error"] == "the sandbox stopped this command (exit code 1)"
+    # A translated line with no EPERM text at all, at exit 1: still the note, one denial, but not read as a stop.
+    explained = _explained(tmp_path, monkeypatch, exit_code=1, stderr=GERMAN)
+    assert _git_noted(explained) and "sandbox_denied" not in explained[0]
+
+
+def test_the_hooks_path_target_counts_from_the_work_folder_and_below_it(tmp_path, monkeypatch):
+    ws = _repo(tmp_path / "ws", f"[core]\n\thooksPath = {STAND_IN}-hooks\n")
+    (ws / "sub").mkdir()
+    line = f"error: unable to unlink old '{STAND_IN}-hooks/pre-commit': Operation not permitted\n"
+    for cwd in (ws, ws / "sub"):
+        assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=0, stderr=line, cwd=cwd))
+    assert _nothing(_explained(tmp_path, monkeypatch, exit_code=0, stderr=line))             # no such setting here
+
+
+def test_the_outside_floor_gets_the_git_note_only_when_it_holds_them(tmp_path, monkeypatch):
+    for line, exit_code in [(GIT_REFUSED, 0), (CONFIG_REFUSED, 0), (GIT_REFUSED, 1)]:
+        assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=exit_code, stderr=line, sandbox="outside",
+                                     hold=True))
+        for sandbox, hold in [("outside", False), ("off", True), ("off", False)]:
+            result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=exit_code, stderr=line,
+                                               sandbox=sandbox, hold=hold)
+            assert result.get("note") != command_sandbox.git_note() and denial is None and noted == []
+    # Another command refused under the floor: its note names the run-later files only when the floor holds them.
+    refused = f"{STAND_IN}: .envrc: Operation not permitted\n"
+    held, _, noted = _explained(tmp_path, monkeypatch, exit_code=1, stderr=refused, sandbox="outside", hold=True,
+                                command=f"cp {STAND_IN} .envrc")
+    free, _, _ = _explained(tmp_path, monkeypatch, exit_code=1, stderr=refused, sandbox="outside",
+                            command=f"cp {STAND_IN} .envrc")
+    assert "run later" in held["note"] and "run later" not in free["note"] and "Arslan's own data" in free["note"]
+    assert noted == []                                                   # the floor's own note records no denial
+
+
+def test_only_a_git_command_naming_a_held_file_gets_the_git_note(tmp_path, monkeypatch):
+    # Another program printing a held path: no git note (at exit 1 the ordinary stop note, as before).
+    for command in (f"python3 {STAND_IN}.py", f"{STAND_IN}-git checkout x", f"cat {STAND_IN}.gitx"):
+        assert _nothing(_explained(tmp_path, monkeypatch, exit_code=0, stderr=GIT_REFUSED, command=command))
+        result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=1, stderr=GIT_REFUSED, command=command)
+        assert result["note"] == command_sandbox.note(tmp_path) and denial == "eperm" and noted == ["eperm"]
+    # git naming an ordinary file, or a held name inside a node_modules below the work folder (written there).
+    for line in (f"error: unable to unlink old '{STAND_IN}.txt': Operation not permitted\n",
+                 f"error: unable to unlink old 'node_modules/{STAND_IN}/.npmrc': Operation not permitted\n",
+                 "error: unable to unlink old 'src/config': Operation not permitted\n",
+                 f"{STAND_IN}: Operation not permitted\n", "Switched to branch 'main'\n"):
+        assert _nothing(_explained(tmp_path, monkeypatch, exit_code=0, stderr=line))
+    # git's line on stdout only (git writes its errors to stderr): nothing.
+    result = {"ok": True, "exit_code": 0, "stdout": GIT_REFUSED, "stderr": "", "sandbox": "workspace"}
+    assert not command_sandbox.git_refused(result, command=CHECKOUT, cwd=tmp_path)
+
+
+@pytest.mark.parametrize("command", [CHECKOUT, f"cd sub && /usr/bin/git switch {STAND_IN}", "g'i't checkout x",
+                                     f"env GIT_TRACE=0 git push -u origin {STAND_IN}", "git -C .. checkout x"])
+def test_git_is_read_from_the_command_text_or_the_reader(tmp_path, monkeypatch, command):
+    assert _git_noted(_explained(tmp_path, monkeypatch, exit_code=0, stderr=CONFIG_REFUSED, command=command))

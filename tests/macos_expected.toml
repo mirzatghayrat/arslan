@@ -24,10 +24,12 @@ xfail = 0
 # names elsewhere stay refused (1 case, #813 review). checkout and a fast-forward merge that must change a tracked held
 # file leave it as it was, and git's real output carries the note (2 cases); a work folder inside node_modules keeps
 # every name held (1 case, #813 review 2). CI files are written like any other, and the everyday git flow is measured
-# step by step (2 cases, #813 review 3).
+# step by step (2 cases, #813 review 3). The four config-only refusals at exit 0, the held-file checkout under the
+# outside floor that holds them, and that checkout in German and Chinese carry the git note; an MCP server's own
+# folder inside node_modules keeps every name held (8 cases, #813 review 4).
 ["server/sbx/test_hr1_run_later_kernel.py"]
-markers = 8
-cases = 14
+markers = 11
+cases = 22
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

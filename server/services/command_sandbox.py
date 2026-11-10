@@ -545,19 +545,70 @@ def trust_check_failed(result: dict) -> bool:
     return bool(_TRUST_FAILED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-#: HR-1 (#813 review): git's own lines for a work-tree file it couldn't replace, remove, create or make a folder for
-#: (a held file the repository tracks). checkout and switch print them and still exit 0: HEAD moves and the held file
-#: keeps its old content. A config write (`could not write config file`) is not one: the work tree is untouched.
-_GIT_REFUSED = re.compile(r"^(?:error|warning|fatal): (?:unable to (?:unlink|create file|create symlink|write file)|"
-                          r"cannot create directory at)\b[^\n]*: Operation not permitted$", re.M)
+#: HR-1 (#813 review 4): what may be a path in a line of git's, in any language. git translates its words (LANG,
+#: LC_ALL) but never a path, so a run of characters that are none of white space, quotes, brackets, colons, commas and
+#: semicolons, ASCII or full width (git's Chinese messages put a full-width colon right after a path), is a candidate.
+_WIDE = "".join(map(chr, (0x2018, 0x2019, 0x201A, 0x201C, 0x201D, 0x201E, 0x00AB, 0x00BB, 0x2039, 0x203A, 0x300C,
+                          0x300D, 0x300E, 0x300F, 0xFF08, 0xFF09, 0xFF1A, 0xFF0C, 0xFF1B, 0x3001, 0x3002)))
+_PATH_RUN = re.compile("[^\\s'\"`()\\[\\]<>{}:,;" + _WIDE + "]+")
+_GIT_WORD = re.compile(r"(?<![\w.-])git(?![\w.-])")
 
 
-def git_refused(result: dict) -> bool:
-    """A command in the workspace sandbox whose output has git's line for a work-tree file the sandbox refused,
-    whatever the exit code."""
-    if result.get("sandbox") != "workspace":
+def _is_git(command: str) -> bool:
+    """The command runs git, by its text or by the reader's words (quotes removed). Generous on purpose: a word `git`
+    anywhere counts, since a false positive only adds a note."""
+    if _GIT_WORD.search(command):
+        return True
+    from server.services import shell_grammar
+    reading = shell_grammar.read(command)
+    return reading.understood and any(os.path.basename(word) == "git" for words in reading.commands for word in words)
+
+
+def _held_for_git(token: str, folder: Path, root: Path, target: Path | None) -> bool:
+    """`token`, a path git printed (relative to the work folder or the repository's top, or absolute), names a file
+    the kernel holds: a run-later name by the work folder's root rule (`.git/config`, `.git/hooks/...` and the work-tree
+    names among them), or the work folder's `core.hooksPath` target or a file in it."""
+    if run_later.matches(Path(os.path.normpath(os.path.join(folder, token))), root):
+        return True
+    if target is None:
         return False
-    return bool(_GIT_REFUSED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
+    held = os.path.normpath(target)
+    return any((path := os.path.normpath(os.path.join(base, token))) == held or path.startswith(held + os.sep)
+               for base in (folder, *folder.parents))
+
+
+def git_refused(result: dict, *, command: str, cwd: Path, hold: bool = False) -> bool:
+    """HR-1 (#813 review 4): a git command whose stderr names a file the kernel holds from it, whatever the words
+    around that path and whatever the exit code. checkout and switch exit 0 with a held tracked file left as it was;
+    a tracking checkout, `push -u` and `--set-upstream-to` exit 0 with the upstream unsaved (`.git/config`). Keyed on
+    the path, not on git's words, which LANG and LC_ALL translate. In the workspace sandbox, and under the outside
+    floor when it holds them (`hold`: let out under this conversation's grant with no click on its own card).
+    Heuristic on purpose: a false positive only adds a note."""
+    where = result.get("sandbox")
+    if not (where == "workspace" or (where == "outside" and hold)):
+        return False
+    stderr = result.get("stderr") or ""
+    tokens =[t for t in (run.rstrip(".") for run in _PATH_RUN.findall(stderr)) if t.strip(".")]
+    if not tokens or not _is_git(command):
+        return False
+    folder = Path(os.path.abspath(cwd))
+    try:
+        target = run_later.hooks_path(folder)
+    except OSError:
+        target = None           # only a note: the profile itself failed closed on this already
+    root = _real(folder)
+    return any(_held_for_git(token, folder, root, target) for token in tokens)
+
+
+def git_note() -> str:
+    """HR-1 (#813 review 4): what the model reads when `git_refused` holds, in the sandbox or under the outside floor,
+    at any exit code. Not the stop note: running it again outside the sandbox doesn't help (the floor holds these files
+    too, and only the user's click on that command's own card lifts it), so it ends with the user, not outside_sandbox."""
+    return ("Commands can't change files that make something run later (git config or hooks, editor or agent "
+            "settings), and git needed to change some of them here, so it didn't update them, even if it exited 0: "
+            "an upstream, remote or setting may not have been saved, and a tracked file may have kept its old "
+            "content, leaving the work tree partly updated. Check `git status`, tell the user which files or settings "
+            "weren't updated, and don't commit over them (a `commit -a` now would undo that change).")
 
 
 def refused_outside(result: dict) -> bool:
@@ -565,8 +616,7 @@ def refused_outside(result: dict) -> bool:
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False,
-         git: bool = False) -> str:
+def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False) -> str:
     shut = ""
     if closed:
         names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
@@ -582,12 +632,6 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 + " Commands also can't change files that make something run later (git hooks and config, "
                 "editor tasks, agent and package settings), even in the working folder: if that is what it "
                 "changed, use write_file, which asks the user, or tell the user what to change.")
-    if git:
-        # HR-1 (#813 review): git's own refusal line (`git_refused`), shown even when git exited 0.
-        head += (" git couldn't change some files in the work tree, so it may be only partly updated, even if git "
-                 "exited 0: files that run later (git hooks and config, editor tasks, agent and package settings) "
-                 "kept their old content. Check `git status` and tell the user which ones; don't commit over them "
-                 "(a `commit -a` now would undo that change).")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")

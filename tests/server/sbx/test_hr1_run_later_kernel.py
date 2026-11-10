@@ -7,7 +7,10 @@ held file differs; a `git config` write fails there, the compatibility cost, and
 fast-forward merge that must change a held file git tracks, where the model reads the note. A work folder inside a
 node_modules folder has no exemption. CI files are written like any other (#813 review 3: their guard is HR-2b's push
 card), and the everyday git flow is measured step by step (the count of steps refused only on `.git/config` decides
-HR-1b). In the MCP preset: the same in a granted folder and the server's own folder.
+HR-1b). The steps refused only on `.git/config` that exit 0, the held-file checkout under the outside floor that holds
+them, and that checkout with git's messages in German and Chinese all carry the git note, with one denial (#813
+review 4). In the MCP preset: the same in a granted folder and the server's own folder, and an own folder inside
+node_modules keeps every name held.
 
 Plain writes with stand-in names only. The bypass corpus (letter case, Unicode forms, renames into place, hard links,
 a `.git` that is a link or a file, submodules, bare repositories, a hooksPath pointing outside) is Codex's.
@@ -144,50 +147,145 @@ HELD_TRACKED = ".vscode/settings.json"
 WHO = ["-c", f"user.name={STAND_IN}", "-c", "user.email=zz@example.invalid", "-c", "commit.gpgsign=false"]
 
 
+def _held_branch(work) -> str:
+    """Outside the sandbox: a repository whose `main` has the held file's old content and whose branch the new, beside
+    an ordinary file. Checked out on main; returns its HEAD."""
+    def commit(content: str, *args: str) -> None:
+        (work / HELD_TRACKED).parent.mkdir(parents=True, exist_ok=True)
+        for name in (HELD_TRACKED, f"{STAND_IN}.txt"):
+            (work / name).write_text(content)
+        for step in (args, ["add", "-A"], ["commit", "-qm", content]):
+            assert _git(work, *WHO, *step).returncode == 0
+    commit("old\n", "init", "-q", "-b", "main")
+    commit("new\n", "checkout", "-qb", STAND_IN)
+    assert _git(work, "checkout", "-q", "main").returncode == 0
+    return _git(work, "rev-parse", "HEAD").stdout
+
+
+def _explained(monkeypatch, ran, *, cwd, command: str, mode: str = "workspace", hold: bool = False):
+    """git's real output through terminal_exec's own result path: the result, the denial on the run trace, and every
+    denial noted (SBX-7: exactly one per run)."""
+    from server.orchestrator import run_trace
+    from server.services import terminal_exec
+    noted: list[str] = []
+    real_note = run_trace.note_denial
+
+    def counting(code):
+        noted.append(code)
+        real_note(code)
+    monkeypatch.setattr(run_trace, "note_denial", counting)
+    result = {"ok": ran.returncode == 0, "exit_code": ran.returncode, "stdout": ran.stdout, "stderr": ran.stderr,
+              "cwd": str(cwd), "sandbox": mode}
+    if ran.returncode:
+        result["error"] = f"exit code {ran.returncode}"
+    with run_trace.collecting() as trace:
+        terminal_exec.explain(result, cwd=cwd, closed=[], mode=mode, timed_out=False, command=command, hold=hold)
+        run_trace.record(tool="run_command", args={}, result=result, ok=result["ok"], error=None, ms=1)
+    return result, trace[0].get("denial"), noted
+
+
+def _noted_once(explained) -> None:
+    result, denial, noted = explained
+    assert result.get("note") == command_sandbox.git_note() and denial == "eperm" and noted == ["eperm"]
+
+
 @pytest.mark.macos
 @macos
 @pytest.mark.parametrize("sbx", ["commands"], indirect=True)
 @pytest.mark.parametrize("command, exit_code, head_moves", [("checkout -q", 0, True), ("merge -q --ff-only", 1, False)])
-def test_git_that_must_change_a_tracked_held_file_leaves_it_and_the_model_reads_the_note(sbx, command, exit_code,
-                                                                                         head_moves):
+def test_git_that_must_change_a_tracked_held_file_leaves_it_and_the_model_reads_the_note(sbx, monkeypatch, command,
+                                                                                         exit_code, head_moves):
     """#813 review 1: a branch that changes a tracked held file (editor settings). checkout exits 0 with HEAD moved and
     the held file as it was (a later `commit -a` would undo the branch's change); merge --ff-only exits 1. git's real
     output, through terminal_exec's own result path, carries the note at either exit code, with one EPERM denial."""
-    from server.orchestrator import run_trace
-    from server.services import terminal_exec
-    # The repository is made outside the sandbox, as above: main has the old content, the branch the new.
-    def commit(content: str, *args: str) -> None:
-        (sbx.work / HELD_TRACKED).parent.mkdir(parents=True, exist_ok=True)
-        for name in (HELD_TRACKED, f"{STAND_IN}.txt"):
-            (sbx.work / name).write_text(content)
-        for step in (args, ["add", "-A"], ["commit", "-qm", content]):
-            assert _git(sbx.work, *WHO, *step).returncode == 0
-    commit("old\n", "init", "-q", "-b", "main")
-    commit("new\n", "checkout", "-qb", STAND_IN)
-    assert _git(sbx.work, "checkout", "-q", "main").returncode == 0
-    head = _git(sbx.work, "rev-parse", "HEAD").stdout
-    ran = sbx.run(["/bin/bash", "-p", "-c", f"git {command} {STAND_IN}"], probe="hr1-git-held-tracked")
+    head = _held_branch(sbx.work)
+    script = f"git {command} {STAND_IN}"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-held-tracked")
     assert ran.returncode == exit_code
     assert (sbx.work / HELD_TRACKED).read_text() == "old\n"                   # the held file kept its old content
     assert (_git(sbx.work, "rev-parse", "HEAD").stdout != head) is head_moves
     assert (sbx.work / f"{STAND_IN}.txt").read_text() == "new\n"          # the ordinary file was updated
-    result = {"ok": ran.returncode == 0, "exit_code": ran.returncode, "stdout": ran.stdout, "stderr": ran.stderr,
-              "cwd": str(sbx.work), "sandbox": "workspace"}
-    if ran.returncode:
-        result["error"] = f"exit code {ran.returncode}"
-    with run_trace.collecting() as trace:
-        terminal_exec.explain(result, cwd=sbx.work, closed=[], mode="workspace", timed_out=False)
-        run_trace.record(tool="run_command", args={}, result=result, ok=result["ok"], error=None, ms=1)
-    assert "partly updated" in result["note"] and "git status" in result["note"]
-    assert trace[0].get("denial") == "eperm"
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script))
+
+
+#: #813 review 4: the steps refused only on `.git/config` that still exit 0, from the work folder, on `_seed`'s clone.
+CONFIG_ONLY = {
+    "checkout -b x origin/x": "cd repo && git checkout -q -b x origin/x",
+    "checkout of a remote-only branch": "cd repo && git checkout -q x",
+    "push -u": f"cd repo && git push -q -u origin {STAND_IN}",
+    "branch --set-upstream-to": "cd repo && git branch -q --set-upstream-to=origin/x",
+}
 
 
 @pytest.mark.macos
 @macos
 @pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("step", sorted(CONFIG_ONLY))
+def test_a_config_only_refusal_at_exit_0_gets_the_note_and_one_denial(sbx, monkeypatch, step):
+    """#813 review 4: git exits 0, prints its config-write line naming `.git/config` and leaves the upstream unset.
+    The config is unchanged, and the model reads the git note, with one EPERM denial."""
+    _seed(sbx.work)
+    repo = sbx.work / "repo"
+    assert _git(repo, "branch", STAND_IN).returncode == 0                     # for push -u, made outside
+    config = (repo / ".git" / "config").read_bytes()
+    ran = sbx.run(["/bin/bash", "-p", "-c", CONFIG_ONLY[step]], probe="hr1-git-config-only")
+    assert ran.returncode == 0
+    assert (repo / ".git" / "config").read_bytes() == config
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=CONFIG_ONLY[step]))
+
+
+def _floor_profile(sbx) -> str:
+    """The outside floor that holds them (`run_later_in`: let out under this conversation's grant, no click on its own
+    card), built under the harness's scratch HOME and temp, as the harness builds its presets."""
+    import tempfile
+    with pytest.MonkeyPatch.context() as environment:
+        for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
+            environment.setenv(name, sbx.env[name])
+        environment.setattr(tempfile, "tempdir", str(sbx.temp))
+        return command_sandbox.minimal_profile(offline=True, run_later_in=sbx.work)
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["outside-floor"], indirect=True)
+def test_under_the_outside_floor_a_checkout_that_must_change_a_held_file_gets_the_note(sbx, monkeypatch):
+    """#813 review 4: under the floor that holds them, checkout to a branch whose tracked held file differs exits 0,
+    moves HEAD and keeps the old file. The model reads the same git note, with one EPERM denial."""
+    head = _held_branch(sbx.work)
+    script = f"git checkout -q {STAND_IN}"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-floor-git-held-tracked", profile=_floor_profile(sbx))
+    assert ran.returncode == 0
+    assert (sbx.work / HELD_TRACKED).read_text() == "old\n" and (sbx.work / f"{STAND_IN}.txt").read_text() == "new\n"
+    assert _git(sbx.work, "rev-parse", "HEAD").stdout != head
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script, mode="outside", hold=True))
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("language", ["de_DE.UTF-8", "zh_CN.UTF-8"])
+def test_in_another_language_the_held_file_checkout_still_gets_the_note(sbx, monkeypatch, language):
+    """#813 review 4: commands inherit LANG and LC_ALL. git translates its words (here at least the prefix), never
+    the path, so the note is keyed on the path. Skipped when this git has no translation for the language."""
+    import re
+    head = _held_branch(sbx.work)
+    sbx.env.update(LANG=language, LC_ALL=language)
+    script = f"git checkout -q {STAND_IN}"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-held-tracked-language")
+    assert ran.returncode == 0 and _git(sbx.work, "rev-parse", "HEAD").stdout != head
+    assert (sbx.work / HELD_TRACKED).read_text() == "old\n"
+    if not ran.stderr.strip() or re.search(r"^(?:error|warning|fatal): ", ran.stderr, re.M):
+        pytest.skip(f"this git printed no translated line for {language}")
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script))
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands", "mcp"], indirect=True)
 def test_a_work_folder_inside_a_dependency_folder_keeps_every_name_held(sbx):
     """#813 review 2: the exemption is for node_modules below the work folder only. A work folder whose real path
-    already passes through one holds every name, a nested node_modules below it included."""
+    already passes through one holds every name, a nested node_modules below it included. In the MCP preset the work
+    folder is the server's own folder, with no grant: only its `roots=` decides it (#813 review 4)."""
     sbx.work = sbx.root / "node_modules" / STAND_IN / "work"
     sbx.work.mkdir(parents=True)
     names = [".vscode/tasks.json", ".vscode/settings.json", f"node_modules/{STAND_IN}/.npmrc"]

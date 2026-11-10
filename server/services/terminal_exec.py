@@ -268,14 +268,18 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:
         result["truncated"] = True
-    return explain(result, cwd=cwd, closed=closed, mode=mode, timed_out=timed_out)
+    return explain(result, cwd=cwd, closed=closed, mode=mode, timed_out=timed_out, command=command,
+                   hold=hold_run_later)
 
 
-def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out: bool) -> dict:
+def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out: bool, command: str,
+            hold: bool = False) -> dict:
     """What the model reads beside a finished command's output: why the sandbox stopped it, if it did. Records the
-    SBX-7 denial code through run_trace, never on the result."""
+    SBX-7 denial code through run_trace, never on the result, once per run. `hold`: the outside floor held the files
+    that make something run later (HR-1)."""
     from server.services import command_sandbox
-    git = command_sandbox.git_refused(result)       # HR-1: git's own refusal line for a held file it tracks
+    # HR-1 (#813 review 4): git named a held file in its errors (in the sandbox, or under a floor that holds them).
+    git = command_sandbox.git_refused(result, command=command, cwd=cwd, hold=hold)
     if command_sandbox.stopped_by_sandbox(result) and _reads_a_saved_output(result):
         # S2a-1 piece 5: a saved tool output this conversation was not given. read_file reads it;
         # running the command outside the sandbox would open far more than one copy, so no card.
@@ -291,11 +295,13 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
         # the run step's `ref` through run_trace, never onto this result: the model and every other payload read the
         # result. A failed certificate check is neither, so it alone records no code.
         trust = command_sandbox.trust_check_failed(result)
-        proxy = command_sandbox.proxy_refused(result) and not command_sandbox.refused_outside(result)   # EPERM text
-        if proxy or not trust:
+        proxy = (not git and command_sandbox.proxy_refused(result)
+                 and not command_sandbox.refused_outside(result))                                     # EPERM text
+        if git or proxy or not trust:
             from server.orchestrator import run_trace
             run_trace.note_denial("proxy" if proxy else "eperm")
-        result["note"] = command_sandbox.note(cwd, closed, trust=trust, proxy=proxy, git=git)
+        result["note"] = (command_sandbox.git_note() if git
+                          else command_sandbox.note(cwd, closed, trust=trust, proxy=proxy))
     elif result["ok"] and command_sandbox.proxy_refused(result):
         # A client that printed the proxy's refusal and exited 0 (curl without -f on plain http): still a denial,
         # but not a failed step.
@@ -303,15 +309,19 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
         run_trace.note_denial("proxy")
         result["note"] = command_sandbox.note(cwd, closed, proxy=True)
     elif git:
-        # HR-1 (#813 review): git checkout and switch exit 0 when the sandbox refused a held file they had to change,
-        # with HEAD moved and that file left as it was. Not a failed step, but a denial (one code, as above), and the
-        # model is told the work tree may be only partly updated.
+        # HR-1 (#813 review 4): git exits 0 when the kernel refused a held file it had to change (checkout and switch:
+        # HEAD moved, that file left as it was) or its config (a tracking checkout, push -u, --set-upstream-to: no
+        # upstream saved); under the outside floor at any exit code, and in the sandbox when git's line carries no
+        # EPERM text. Not a failed step, but one denial, and the same note as in the stop above.
         from server.orchestrator import run_trace
         run_trace.note_denial("eperm")
-        result["note"] = command_sandbox.note(cwd, closed, git=True)
+        result["note"] = command_sandbox.git_note()
     elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
         result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "
-                          "Arslan Hands' folder. Tell the user what you needed.")
+                          "Arslan Hands' folder"
+                          + (", nor, without the user's click on its own card, change files that make something run "
+                             "later (git hooks and config, editor tasks, agent and package settings)" if hold else "")
+                          + ". Tell the user what you needed.")
     elif mode == "unavailable":
         result["sandbox_note"] = "ran without the sandbox: it is not available on this system"
     return result
