@@ -559,3 +559,55 @@ implement that product change. An eventual refusal is recorded as `refused` by
 the same measurement. As built, the row is base-keyed pending MCP, just like the
 other MCP cases; registering the adapter must execute the row and retain its
 outcome in the evidence.
+
+## SBX-8: the two numbers on the merged stack (runbook; results pending)
+
+What SBX-8 measures ([card](SBX-sandbox.md), "After measuring" and "The two numbers"), with no product, report or
+runner change: on the merged SBX stack and S2a-3's wire, the same tasks under "ask for every command" and "ask only
+when risky", with Arslan's own sandbox on.
+
+- **Cards per task, per policy.** The bench report's last table (`render_cards_per_task`) already prints entrant ×
+  model × policy × task: runs, `run_command` calls, cards, and cards to leave the sandbox with their share. The
+  `ask_risky` cards per run are the classifier's baseline (CLS must save cards against that alone).
+- **Commands the sandbox stopped.** Each fresh instance keeps its data folder after the run
+  (`$BENCH_ROOT/data/fresh-<label>/`, cleared only when the same label runs again). `scripts/usage_report.py --db`
+  on that folder's `arslan.db` gives `rc_sandbox_denied` and the cards to leave, read-only. This is the one place
+  the card allows the denial count to appear.
+- **No "before" round.** SBX-3 merged before a bench round recorded the cards-to-leave share, and no earlier written
+  report has it. So this sitting is the baseline. The card's acceptance already says v0.1.64 only records the
+  re-run share and sets a ceiling after SBX-8.
+
+### Running it (on the user's Mac)
+
+It needs real model calls, the metering proxy and a fresh Arslan per run, so it runs outside any agent's sandbox.
+Spend stays under the proxy's caps (`BENCH_CAP_USD`, `BENCH_RUN_CAP_USD`).
+
+1. Pick a `BENCH_ROOT` that survives a reboot (the default under `/tmp` doesn't), and export it in every shell below.
+   Nothing may answer on Arslan's API port.
+2. Start the metering proxy: `scripts/kernel_bench/start_proxy.sh`, plus `start_proxy.sh anthropic` for a Claude
+   model.
+3. Run the two rounds on the same tasks and repeats. The round names end in `-sbx8`, so one `--round sbx8` reads both:
+
+       BENCH_SANDBOX=none BENCH_FRESH_INSTANCE=1 BENCH_SHELL_POLICY=ask_all BENCH_ROUND=all-sbx8 \
+         .venv/bin/python -m scripts.kernel_bench.runner --tasks <tasks> --entrants arslan --repeats 3
+       BENCH_SANDBOX=none BENCH_FRESH_INSTANCE=1 BENCH_SHELL_POLICY=ask_risky BENCH_ROUND=risky-sbx8 \
+         .venv/bin/python -m scripts.kernel_bench.runner --tasks <tasks> --entrants arslan --repeats 3
+
+   Add `--models arslan=<model>` to pin a model. `BENCH_SANDBOX=none` makes Arslan's own sandbox the one that runs.
+   A later sitting takes new round names, because the meter's caps count a label over the proxy's life.
+4. Report: `.venv/bin/python -m scripts.kernel_bench.report --round sbx8`.
+5. Stops: for each `$BENCH_ROOT/data/fresh-*-sbx8/`, run `.venv/bin/python -m scripts.usage_report --db <folder>/arslan.db`
+   and take `rc_sandbox_denied` and the cards to leave.
+
+### Results
+
+Filled in after the sitting: date, macOS build, model, tasks, repeats and spend.
+
+| Policy | Task | Runs | `run_command` calls | Cards | Cards to leave | Stopped by the sandbox |
+| --- | --- | --- | --- | --- | --- | --- |
+| ask_all | (pending) | | | | | |
+| ask_risky | (pending) | | | | | |
+
+What asking only when risky saves per task (ask_all cards minus ask_risky cards), and the stop share, are written
+here with the run ids. Limits: the stop count is an estimate, like the weekly report's. It counts EPERM text and the
+proxy's named refusal only, so a stop that prints neither is missed.
