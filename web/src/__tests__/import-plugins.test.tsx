@@ -9,9 +9,11 @@ vi.mock("../api/mcp", () => ({
   listMcpServers: vi.fn().mockResolvedValue([]), listMcpTools: vi.fn().mockResolvedValue([]),
 }));
 
-import { capabilitiesApi } from "../api/capabilities";
-import type { ImportPluginCard, ImportPluginRow, ImportResult, ImportScan, ImportSkillRow } from "../api/client.types";
+import { capabilitiesApi, type SkillFolderCard as SkillFolderCardData } from "../api/capabilities";
+import type { CapabilityCard, ImportPluginCard, ImportPluginRow, ImportResult, ImportScan, ImportSkillRow } from "../api/client.types";
 import CapabilitySwitches from "../components/CapabilitySwitches";
+import CapabilityProposeCard from "../components/capabilities/CapabilityProposeCard";
+import SkillFolderCard from "../components/capabilities/SkillFolderCard";
 import { capabilityListMessages } from "../locales/capabilityList";
 
 const en = capabilityListMessages.en;
@@ -142,11 +144,38 @@ describe("Add, then the card", () => {
   });
 });
 
+describe("a skill's hooks, on every skill card", () => {
+  const SKILL_CARD: CapabilityCard = { kind: "skill", name: "notes", summary: "Notes.", source_url: null, repo: null,
+    version: null, license: { spdx: "MIT", read_from: null }, stars: null, pushed_days: null, runtime: "skill",
+    runtime_download: null, remote_host: null, network: false, folders: [], keys: [], why: "", retry: "",
+    hooks: ["SessionStart", "SessionStart"] };
+  const line = "2 hooks, won't run: SessionStart, when a conversation starts."
+    + "Arslan doesn't run hooks. Anything in this skill that depends on them may not work.";
+
+  it("CAP4's install card says how many won't run, and when each fires", () => {
+    render(<CapabilityProposeCard card={SKILL_CARD} callId="c" onConfirm={() => {}} onCancel={() => {}} />);
+    expect(screen.getByTestId("import-card-hooks").textContent).toBe(line);
+  });
+
+  it("CAP6a's folder card says it too, and nothing when there are none", () => {
+    const folder: SkillFolderCardData = { kind: "skill_folder", key: "notes", name: "notes", description: "Notes.",
+      origin: "installed", changed: false, folder: "~/.agents/skills/notes", skill_md: "---\n---\nx",
+      hidden: { count: 0, runs: [], more: 0 }, files: ["SKILL.md"], unscanned: [], digest: "d", shared_folder: true,
+      scan: { level: "clean", findings: [] }, hooks: ["SessionStart", "SessionStart"] };
+    const { unmount } = render(<SkillFolderCard card={folder} onClose={() => {}} onApproved={() => {}} />);
+    expect(screen.getByTestId("import-card-hooks").textContent).toBe(line);
+    unmount();
+    render(<SkillFolderCard card={{ ...folder, hooks: [] }} onClose={() => {}} onApproved={() => {}} />);
+    expect(screen.queryByTestId("import-card-hooks")).toBeNull();
+  });
+});
+
 describe("the words", () => {
   it.each(["zh", "ja", "es", "de", "fr"] as const)("%s has the plugin keys in its own words", (language) => {
     const there = capabilityListMessages[language] as Record<string, string>;
     const keys = Object.keys(en).filter(key => key.startsWith("import_card") || key.startsWith("import_plugin")
-      || key.startsWith("hookWhen_") || key.startsWith("import_refused_hooks") || key === "plugin_hooks");
+      || key.startsWith("hookWhen_") || key.startsWith("import_refused_hooks") || key === "plugin_hooks"
+      || key === "hooksWarnSkill");
     expect(keys.length).toBeGreaterThan(20);
     for (const key of keys) {
       expect(there[key], key).toBeTruthy();

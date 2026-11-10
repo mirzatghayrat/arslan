@@ -31,7 +31,9 @@ as they are.
   name and description only). Any other event, or one not recognised, refuses it before anything is prepared. The
   card names each hook's event. After an update in the other tool, the sheet's scan judges it again: a blocking hook
   added since switches the installed plugin off, its switch stays off, and only its card brings it back (`add`
-  removes the old group as it installs the new one).
+  installs the new group, then removes the old one). This is the only time it can be judged again: Arslan's copy
+  never changes without a re-import, and only the user's click reads the other tool's folders. The same rule holds
+  for a skill's frontmatter hooks wherever a skill comes in (`skill_import.frontmatter_hooks`).
 - Neither is held to the one-click list or the license gate, as CAP8-1's connections aren't: this click is the
   deliberate one, and it's the user's own copy, not a redistribution.
 - **Skipped or unticked:** one already here (a skill of that key, a folder of that key in `~/.agents/skills`, a plugin
@@ -57,7 +59,6 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
 from sqlalchemy import select
 
 from server.db import session as db_session
@@ -188,14 +189,6 @@ def _listed() -> tuple[list[dict], list[tuple]]:
 
 # ── one skill, prepared as `skill_import.prepare_skill` prepares one ─────────────────────────────────────────────
 
-def _frontmatter_hooks(raw: str) -> list[str]:
-    """A SKILL.md's own hooks (Claude Code reads `hooks` in a skill's frontmatter), by the hook rule. Only called on
-    one `parse_skill_md` took, so its frontmatter is capped and has no aliases. Raises Refused."""
-    meta = yaml.load(skill_import._FRONTMATTER_RE.match(raw).group(1), Loader=skill_import._NoAliases) or {}
-    hooks = meta.get("hooks") if isinstance(meta, dict) else None
-    return [] if hooks is None else plugin_package.hook_events(hooks, "SKILL.md hooks")
-
-
 async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
     """The same parse, the same bundled scripts and references with their caps, every kept file hashed, from files
     already read. `left`: what else the folder holds, which stays behind. `hooks`: its frontmatter's, judged; they
@@ -210,7 +203,10 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
     info = skill_import.parse_skill_md(raw, path)
     if info is None:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
-    hooks = _frontmatter_hooks(raw)
+    try:
+        hooks = skill_import.frontmatter_hooks(raw)          # the same rule as every other way a skill comes in
+    except skill_import.HookRefused as exc:
+        raise Refused(exc.code, exc.part) from None
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
     files: dict[str, str] = {path: hashlib.sha256(raw.encode("utf-8")).hexdigest()}
@@ -459,15 +455,14 @@ async def _add_plugin(item: Item | None, tick: dict) -> dict:
                                                      imported=_plugin_skill(frozenset({old} - {None})))
         about = prepared["manifest"].get("description")
         card = {**plugin_package.card_fields(prepared), "name": item.name, "from": item.marketplace,
-                "summary": untrusted.clean_name(about, 300) if isinstance(about, str) else "",
-                "hooks": prepared["hooks"]}
+                "summary": untrusted.clean_name(about, 300) if isinstance(about, str) else ""}
         shown = _keyed("card", card, prepared["files"])
         if tick.get("card") != shown:       # CAP7b's order: the card, then a yes to exactly it
             return {"state": "card", "card": card, "card_digest": shown}
         candidate.update(summary=card["summary"], hooks=card["hooks"])     # kept on its row: what the card showed
-        if old is not None and not await plugin_package.remove(old):
-            return {"state": "failed", "stage": "replace"}
-        out = await plugin_package.install(candidate, prepared, tick.get("keys") or {})
+        keys = tick.get("keys") or {}
+        out = await (plugin_package.replace(old, candidate, prepared, keys) if old is not None
+                     else plugin_package.install(candidate, prepared, keys))
     except Refused as exc:
         return {"state": "refused", "code": exc.code}
     except Exception as exc:  # noqa: BLE001 — its text could quote a key
@@ -486,8 +481,8 @@ async def add(skills: list[dict], plugins: list[dict]) -> list[dict]:
     """Each ticked one, from the folders as they read now, with its own result: `added` (a skill, off until its card),
     `card` then `on`, `needs_sign_in`, `failed`, `blocked` or `stopped` (a plugin, as CAP7b's install), or `refused`,
     `here`, and `gone` or `changed` when the folder no longer holds what the sheet showed. A plugin switched off for a
-    hook is removed only after its card's yes, just before the new one goes in; if that install fails, it stays
-    removed (it was off), and the other tool's copy is untouched."""
+    hook is replaced by its card's yes: install, then swap (`plugin_package.replace`); if the install fails, the old
+    group stays as it was, off, with its card. The other tool's copy is never touched."""
     if not skills and not plugins:
         return []
     async with _ONE_AT_A_TIME:

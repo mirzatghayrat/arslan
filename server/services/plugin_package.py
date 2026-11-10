@@ -22,6 +22,7 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import tarfile
 import uuid
@@ -567,7 +568,9 @@ def card_fields(prepared: dict) -> dict:
               for s in prepared["skills"]]
     return {"commit": prepared["commit"], "license": {"spdx": spdx, "read_from": read_from}, "skills": skills,
             "connections": connections, "keys": list(keys.values())[:12], "folders": [],
-            "publisher": capability_search.publisher_of({"repo": prepared["repo"]})}
+            "publisher": capability_search.publisher_of({"repo": prepared["repo"]}),
+            # CAP8-2's hook rule: one event per hook that won't run (its skills' frontmatter hooks too).
+            "hooks": prepared.get("hooks") or []}
 
 
 def parent_of(candidate_id: str | None) -> str | None:
@@ -758,7 +761,7 @@ async def finish_interrupted() -> None:
 async def hooks_added(source_id: str, event: str) -> None:
     """CAP8-2's hook rule after an update: the other tool's copy of this imported plugin now has a hook on a blocking
     or unknown event. Every part goes off, and `switch` keeps it off; only its card on the import sheet brings it back
-    (CAP8-2's add removes this group as it installs the new one). Marked once."""
+    (`replace`: the new group goes in, then this one goes). Marked once."""
     row = await _plugin(source_id)
     if row is None or row.state != "installed" or (row.test or {}).get("hooks_added"):
         return
@@ -767,6 +770,69 @@ async def hooks_added(source_id: str, event: str) -> None:
         stored = await db.get(CapabilitySource, source_id)
         stored.test = {**(stored.test or {}), "hooks_added": {"event": event, "at": datetime.utcnow().isoformat() + "Z"}}
         await db.commit()
+
+
+_SWAP = ".arslan-swap-"       # not a plain key: no reader of ~/.agents/skills takes it
+
+
+async def _hold(source_id: str) -> list[dict]:
+    """The group's skills set aside, so the new group's (which share their keys) can go in: each row's values, its
+    manifest entry and what Arslan wrote, kept here, and its folder moved beside it under a name nothing reads."""
+    from server.services import agent_skills
+    held: list[dict] = []
+    async with agent_skills.manifest_lock():
+        async with db_session.AsyncSessionLocal() as db:
+            for pack in (await db.execute(select(SkillPack).where(SkillPack.source_id == source_id))).scalars().all():
+                key, folder = pack.key, agent_skills.folder(pack.key)
+                one = {"row": {c.name: getattr(pack, c.name) for c in SkillPack.__table__.columns},
+                       "entry": agent_skills.entries().get(key), "written": agent_skills._written().get(key),
+                       "folder": folder, "aside": agent_skills.root() / f"{_SWAP}{key}"}
+                held.append(one)
+                if os.path.lexists(folder):
+                    capability_install.to_trash(one["aside"], prefix="Arslan stale skill swap")
+                    os.rename(folder, one["aside"])
+                agent_skills.forget(key)
+                await db.delete(pack)
+            await db.commit()
+    return held
+
+
+async def _unhold(held: list[dict]) -> None:
+    """`_hold` undone: each folder, entry and row back as it was."""
+    from server.services import agent_skills
+    async with agent_skills.manifest_lock():
+        async with db_session.AsyncSessionLocal() as db:
+            for one in held:
+                if os.path.lexists(one["aside"]) and not os.path.lexists(one["folder"]):
+                    os.rename(one["aside"], one["folder"])
+                if one["entry"] is not None:
+                    agent_skills.record(one["row"]["key"], by=one["entry"]["by"], files=one["entry"].get("files"),
+                                        written=one["written"], hooks=one["entry"].get("hooks") or [])
+                db.add(SkillPack(**one["row"]))
+            await db.commit()
+
+
+async def replace(old_id: str, candidate: dict, prepared: dict, keys: dict) -> dict:
+    """CAP8-2: an imported group switched off for a hook (`hooks_added`), replaced by its card's yes. Install, then
+    swap: the old group's skills are set aside (`_hold`), the new group goes in whole, and only then does the old one
+    go. An install that doesn't finish (`failed`, `blocked`, or stopped by a cancel) puts them back: the old group
+    stays as it was, off, marked, with its card. Its connections are never touched until the new group is in."""
+    held = await _hold(old_id)
+    try:
+        out = await install(candidate, prepared, keys)
+    except BaseException:
+        await asyncio.shield(_unhold(held))
+        raise
+    if out["state"] not in ("on", "stopped"):         # `install` has taken its own parts out already
+        await _unhold(held)
+        return out
+    try:
+        await remove(old_id)
+        for one in held:
+            capability_install.to_trash(one["aside"], prefix="Arslan replaced skill")
+    except Exception:  # noqa: BLE001 — the new group is in; what is left of the old one is off and can be deleted
+        logger.warning("an imported plugin's old group was not all removed after its update", exc_info=True)
+    return out
 
 
 async def stop_for(child: CapabilitySource, server_id: int) -> None:

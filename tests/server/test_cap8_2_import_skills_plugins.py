@@ -12,6 +12,7 @@ import os
 import pathlib
 import re
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -70,7 +71,8 @@ def offline(execution_db, monkeypatch, fake_capability_prepare):
                                state="off", host_allowed=False)
             db.add(server)
             await db.flush()
-            row = CapabilitySource(id=f"src-{c['name']}", kind="mcp", name=c["name"], candidate_id=c["id"],
+            # One per install, as the real one's: an update installs its connection beside the old group's.
+            row = CapabilitySource(id=f"src-{c['name']}-{uuid.uuid4().hex[:8]}", kind="mcp", name=c["name"], candidate_id=c["id"],
                                    runtime=c["runtime"], needs={}, grants={}, candidate=c, state="installed",
                                    mcp_server_id=server.id, created_at=datetime.utcnow(),
                                    installed_at=datetime.utcnow())

@@ -618,6 +618,8 @@ export interface CapabilityCard {
   commit?: string;
   skills?: PluginSkill[];
   connections?: PluginConnection[];
+  /** CAP8-2's hook rule: one event per hook that won't run (a skill's frontmatter hooks, a plugin's skills' too). */
+  hooks?: string[];
 }
 /** A skill inside a plugin, as its card shows it. */
 export interface PluginSkill {

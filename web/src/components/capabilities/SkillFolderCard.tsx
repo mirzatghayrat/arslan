@@ -5,6 +5,7 @@ import { capabilitiesApi, type CapabilityRow, type SkillFolderCard as Card } fro
 import { Escaped, isolate } from "../../lib/outsideText";
 import { Button, Dialog, Notice } from "../kit";
 import { Row } from "./CapabilityProposeCard";
+import { HooksRow } from "./HooksRow";
 
 /**
  * v0.1.64 CAP6a: the card before a skill from ~/.agents/skills is first used (another tool put it there), or after
@@ -47,6 +48,8 @@ export default function SkillFolderCard({ card, onClose, onApproved }: {
           <span className="block font-mono text-[11.5px] text-muted-foreground">{card.folder}</span>
         </Row>
         <Row label={t("discover.save_purpose")}><Escaped text={card.description} /></Row>
+        {/* CAP8-2's hook rule: its frontmatter hooks (or those stripped from Arslan's copy), never run. */}
+        <HooksRow hooks={card.hooks} kind="skill" />
         <Row label={t("capabilityList.folderCard_files")} testId="skill-folder-files">
           <span className="flex flex-wrap gap-1">{card.files.map(f => <span key={f}
             className="rounded-md bg-fill px-1.5 py-0.5 font-mono text-[11.5px]">{f}</span>)}</span>

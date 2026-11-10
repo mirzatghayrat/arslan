@@ -4,14 +4,9 @@ import type { CapabilityCard, ImportPluginCard as Card } from "../../api/client.
 import { Escaped, isolate } from "../../lib/outsideText";
 import { Button } from "../kit";
 import { Row } from "./CapabilityProposeCard";
+import { HooksRow } from "./HooksRow";
 import { PluginContains } from "./PluginContains";
 import { SecurityRow } from "./SecurityRow";
-
-/** The events a hook may fire on and still come in (server/services/plugin_package.py, QUIET_HOOK_EVENTS). A key is
- *  built only from this list, never from what the server sent. */
-const QUIET = new Set(["SessionStart", "Setup", "PermissionDenied", "PostToolUse", "PostToolUseFailure", "Notification",
-  "MessageDisplay", "SubagentStart", "StopFailure", "InstructionsLoaded", "CwdChanged", "DirectoryAdded", "FileChanged",
-  "PostCompact", "PostModelSwitch", "SessionEnd"]);
 
 /** CAP7b's parts take the install card's shape; an imported plugin has no repository, stars or license to show. */
 const asCapabilityCard = (card: Card): CapabilityCard => ({
@@ -34,9 +29,6 @@ export default function ImportPluginCard({ card, n, total, others, busy, onAdd, 
   const [keys, setKeys] = useState<Record<string, string>>({});
   const shaped = asCapabilityCard(card);
   const missing = card.keys.filter(k => k.required && !(keys[k.name] ?? "").trim());
-  const events = [...new Set(card.hooks)].map(event => QUIET.has(event)
-    ? t("capabilityList.hookEvent", { event, when: t(`capabilityList.hookWhen_${event}`) }) : event)
-    .join(t("capabilityList.hookJoin"));
   return <div data-testid="import-plugin-card" className="flex flex-col gap-2.5">
     <span className="text-[12px] text-muted-foreground">{t("capabilityList.import_cardOf", { n, total })}</span>
     <h2 className="text-[16px] font-semibold">{t("capabilityList.import_cardTitle", { name: isolate(card.name) })}</h2>
@@ -48,12 +40,7 @@ export default function ImportPluginCard({ card, n, total, others, busy, onAdd, 
         {card.from ? t("capabilityList.import_cardSource", { from: isolate(card.from) }) : t("capabilityList.import_cardSourceSkills")}
       </Row>
       <Row label={t("discover.card_contains")} testId="capability-card-contains"><PluginContains card={shaped} /></Row>
-      {card.hooks.length > 0 && <Row label={t("capabilityList.hooksRow")}>
-        <span data-testid="import-card-hooks" className="flex flex-col gap-0.5">
-          <span>{t("capabilityList.import_cardHooks", { count: card.hooks.length, events })}</span>
-          <span className="text-[12px] text-warning">{t("capabilityList.import_cardHooksWarn")}</span>
-        </span>
-      </Row>}
+      <HooksRow hooks={card.hooks} kind="plugin" />
       <SecurityRow card={shaped} />
       <Row label={t("discover.card_checks")}>{t("capabilityList.import_cardChecks")}</Row>
       {card.keys.length > 0 && <Row label={t("discover.card_needs")}>

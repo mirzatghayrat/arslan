@@ -41,6 +41,8 @@ export interface SkillFolderCard {
   kind: "skill_folder"; key: string; name: string; description: string; origin: "installed" | "other_tool";
   changed: boolean; folder: string; skill_md: string; hidden: { count: number; runs: string[]; more: number };
   files: string[]; unscanned: string[]; digest: string; shared_folder: boolean;
+  /** CAP8-2: one event per frontmatter hook that won't run (its own, or those stripped from Arslan's copy). */
+  hooks?: string[];
   scan: { level: "clean" | "notes" | "blocked"; findings: { rule: string; level: string; file: string; line: number; excerpt: string }[] };
 }
 
