@@ -52,6 +52,15 @@ _KEY_CODES = {"hooks": "hooks", "commands": "commands", "agents": "agents", "lsp
 _PARTS = (("hooks/", "hooks"), ("commands/", "commands"), ("agents/", "agents"), (".lsp.json", "lsp"),
           ("output-styles/", "other"), ("themes/", "other"), ("workflows/", "other"), ("monitors/", "other"),
           ("bin/", "other"), ("settings.json", "other"), (".app.json", "other"))
+#: CAP8-2's hook rule (the user's, 2026-11-10), for a plugin imported from Claude Code only: a hook is judged by its
+#: event's name, never by what it runs. On these 16 a hook can't block or stop anything, so a plugin whose hooks all
+#: fire on them comes in with its hooks never registered or run. Any other event, or one not recognised (names are
+#: matched exactly), refuses the whole plugin. Events: https://code.claude.com/docs/en/hooks
+QUIET_HOOK_EVENTS = frozenset({
+    "SessionStart", "Setup", "PermissionDenied", "PostToolUse", "PostToolUseFailure", "Notification", "MessageDisplay",
+    "SubagentStart", "StopFailure", "InstructionsLoaded", "CwdChanged", "DirectoryAdded", "FileChanged", "PostCompact",
+    "PostModelSwitch", "SessionEnd"})
+HOOKS_FILE = "hooks/hooks.json"
 _FOLDER_VARS = re.compile(r"\$\{?(?:CLAUDE_PLUGIN_ROOT|CLAUDE_PLUGIN_DATA|CLAUDE_SKILL_DIR|PLUGIN_ROOT|PLUGIN_DATA)\b")
 _ANY_VAR = re.compile(r"\$\{")
 _WHOLE_VAR = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
@@ -186,8 +195,11 @@ def _manifest(snap: Snapshot, root: str) -> dict:
     raise Refused("not_a_plugin", snap.repo)
 
 
-def _only_skills_and_connections(manifest: dict, snap: Snapshot, root: str) -> None:
+def _only_skills_and_connections(manifest: dict, snap: Snapshot, root: str, hooks: bool = False) -> None:
+    """`hooks` (an import): the hook rule judges them instead (`quiet_hooks`)."""
     for key in manifest:
+        if key == "hooks" and hooks:
+            continue
         if key in _KEY_CODES:
             raise Refused(_KEY_CODES[key], key)
         if key not in _ABOUT and key not in ("skills", "mcpServers"):
@@ -199,8 +211,46 @@ def _only_skills_and_connections(manifest: dict, snap: Snapshot, root: str) -> N
             continue
         rel = path[len(prefix):]
         for part, code in _PARTS:
-            if rel == part or (part.endswith("/") and rel.startswith(part)):
+            if (rel == part or (part.endswith("/") and rel.startswith(part))) and not (hooks and part == "hooks/"):
                 raise Refused(code, rel)
+
+
+def hook_events(events, where: str) -> list[str]:
+    """One event name per hook in an event map (`{event: [{"matcher": ..., "hooks": [hook, ...]}]}`), each event judged
+    by its name only: what a hook runs is never read. Raises Refused: "hooks" naming the first event not on the quiet
+    list (an empty one included), "unreadable" for a shape Claude Code wouldn't load."""
+    if not isinstance(events, dict):
+        raise Refused("unreadable", where)
+    out: list[str] = []
+    for event, groups in events.items():
+        if not isinstance(groups, list) or not all(isinstance(g, dict) and isinstance(g.get("hooks"), list)
+                                                   for g in groups):
+            raise Refused("unreadable", where)
+        if event not in QUIET_HOOK_EVENTS:
+            raise Refused("hooks", untrusted.clean_name(str(event), 80))
+        out += [event] * sum(len(g["hooks"]) for g in groups)
+    return out
+
+
+def quiet_hooks(manifest: dict, snap: Snapshot, root: str = "") -> list[str]:
+    """Every hook of an imported plugin, by event, from where Claude Code reads them: `hooks/hooks.json` and the
+    manifest's `hooks` (a path, the event map itself, or a list of either; a file wraps the map in `hooks`). A skill's
+    frontmatter hooks are judged as it is prepared (by CAP8-2's import). Raises Refused, as `hook_events`."""
+    def of_file(rel: str) -> list[str]:
+        path = _join(root, rel)
+        if not rel.endswith(".json") or path not in snap.files:
+            raise Refused("unreadable", rel)
+        try:
+            data = json.loads(snap.text(path))
+        except (ValueError, RecursionError) as exc:
+            raise Refused("unreadable", rel) from exc
+        return hook_events(data.get("hooks") if isinstance(data, dict) else None, rel)
+
+    events = of_file(HOOKS_FILE) if _join(root, HOOKS_FILE) in snap.files else []
+    declared = manifest.get("hooks")
+    for value in declared if isinstance(declared, list) else [declared] if declared is not None else []:
+        events += hook_events(value, "hooks") if isinstance(value, dict) else of_file(_inside(value))
+    return events
 
 
 def _skill_files(manifest: dict, snap: Snapshot, root: str) -> list[str]:
@@ -429,11 +479,12 @@ async def prepare(candidate: dict) -> dict:
     return await prepare_read(candidate, snap, candidate.get("path") or "")
 
 
-def parts(snap: Snapshot, root: str = "") -> tuple[dict, list[str], dict[str, dict]]:
+def parts(snap: Snapshot, root: str = "", *, hooks: bool = False) -> tuple[dict, list[str], dict[str, dict]]:
     """The manifest, its skills' SKILL.md paths and its MCP servers, or Refused: hooks, commands, agents or anything
-    not recognised refuse the whole plugin, before anything is prepared."""
+    not recognised refuse the whole plugin, before anything is prepared. `hooks` (an import, CAP8-2): hooks are left to
+    the hook rule, which the caller applies (`quiet_hooks`); every other part refuses it as before."""
     manifest = _manifest(snap, root)
-    _only_skills_and_connections(manifest, snap, root)
+    _only_skills_and_connections(manifest, snap, root, hooks)
     paths = _skill_files(manifest, snap, root)
     servers = _servers(manifest, snap, root)
     for name, spec in servers.items():
@@ -447,14 +498,18 @@ def parts(snap: Snapshot, root: str = "") -> tuple[dict, list[str], dict[str, di
 async def prepare_read(candidate: dict, snap: Snapshot, root: str, *, imported=None) -> dict:
     """`prepare` on a plugin already read. `imported` (CAP8-2): a plugin copied in from the user's other tool by the
     user's click, and how each of its skills is prepared. Its connections then aren't held to the one-click list or
-    the license gate, as CAP8-1's aren't; everything else is as above."""
-    manifest, paths, servers = parts(snap, root)
+    the license gate, as CAP8-1's aren't, and its hooks go by the hook rule (`hooks`: one event per hook, its skills'
+    frontmatter hooks included, which `imported` judges and Arslan's own SKILL.md leaves out); everything else is as
+    above. A refused hook refuses before anything is prepared or locked."""
+    manifest, paths, servers = parts(snap, root, hooks=imported is not None)
+    hooks = quiet_hooks(manifest, snap, root) if imported else []
     license_ = _license(snap, root)
     skills = await _skills(snap, paths, license_, imported)
     allow = None if imported else await capability_allowlist.current()
     prefix = f"{root}/" if root else ""
     prepared = {"repo": snap.repo, "commit": snap.sha, "license": license_, "skills": skills, "connections": [],
-                "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix)}
+                "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix),
+                "hooks": hooks + [event for skill in skills for event in skill.get("hooks") or []]}
     try:
         for name, spec in servers.items():
             connection = (_remote(candidate, name, spec, allow) if spec.get("url") or spec.get("type")
@@ -644,9 +699,10 @@ async def _switch_parts(source_id: str, on: bool, *, except_server: int | None =
 
 async def switch(source_id: str, on: bool) -> bool:
     """The group's one switch. False when there is no such plugin. Switching on ends a stop: the rest come back, and
-    the part whose tool list changed stays parked by its own pin (`discovery.held`) until the user reviews it."""
+    the part whose tool list changed stays parked by its own pin (`discovery.held`) until the user reviews it. A plugin
+    whose update added a blocking hook (`hooks_added`, CAP8-2) never goes on here: only its card brings it back."""
     row = await _plugin(source_id)
-    if row is None or row.state != "installed":
+    if row is None or row.state != "installed" or (on and (row.test or {}).get("hooks_added")):
         return False
     await _switch_parts(source_id, on)
     if on:
@@ -697,6 +753,20 @@ async def finish_interrupted() -> None:
                 await db.commit()
         except Exception as exc:  # noqa: BLE001 — never a reason to stop the boot, or the next one
             logger.warning("a plugin install cut short was not undone at boot (%s): %s", source_id, exc)
+
+
+async def hooks_added(source_id: str, event: str) -> None:
+    """CAP8-2's hook rule after an update: the other tool's copy of this imported plugin now has a hook on a blocking
+    or unknown event. Every part goes off, and `switch` keeps it off; only its card on the import sheet brings it back
+    (CAP8-2's add removes this group as it installs the new one). Marked once."""
+    row = await _plugin(source_id)
+    if row is None or row.state != "installed" or (row.test or {}).get("hooks_added"):
+        return
+    await _switch_parts(source_id, False)
+    async with db_session.AsyncSessionLocal() as db:
+        stored = await db.get(CapabilitySource, source_id)
+        stored.test = {**(stored.test or {}), "hooks_added": {"event": event, "at": datetime.utcnow().isoformat() + "Z"}}
+        await db.commit()
 
 
 async def stop_for(child: CapabilitySource, server_id: int) -> None:

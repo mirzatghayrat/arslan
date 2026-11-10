@@ -19,10 +19,19 @@ as they are.
 - **A skill** goes through CAP6a's install (`skill_import.install_prepared`): into `~/.agents/skills/<key>/`, every
   file hashed in Arslan's data folder, scanned first (blocked is refused). It lands off and unapproved, so its first
   switch-on shows CAP6a's card.
-- **A plugin** goes through CAP7b (`plugin_package.prepare_read`, `install`): hooks, commands, agents or a part not
-  recognised refuse it, each connection is locked, its skills are scanned. Its card comes before the install: the
-  first `add` answers `card`, and one sent back with that card's digest installs exactly it. Its marketplace entry may
-  only describe it (CAP7b's phonebook rule): an entry can add parts, hooks among them, the cached folder doesn't show.
+- **A plugin** goes through CAP7b (`plugin_package.prepare_read`, `install`): commands, agents, language servers or a
+  part not recognised refuse it, each connection is locked, its skills are scanned. Its card comes before the install:
+  the first `add` answers `card`, and one sent back with that card's digest installs exactly it. Its marketplace entry
+  may only describe it (CAP7b's phonebook rule): an entry can add parts, hooks among them, the cached folder doesn't
+  show. A plugin starts unticked on the sheet.
+- **Hooks, by the user's rule (2026-11-10):** judged by the event's name only, never by what a hook runs
+  (`plugin_package.QUIET_HOOK_EVENTS`). A plugin or skill whose hooks all fire on one of the 16 quiet events comes in,
+  and its hooks are never registered or run: nothing in Arslan runs a hook, and none is copied anywhere (a plugin's
+  folder isn't kept, and a skill's frontmatter hooks are stripped, since Arslan writes a SKILL.md of its own with the
+  name and description only). Any other event, or one not recognised, refuses it before anything is prepared. The
+  card names each hook's event. After an update in the other tool, the sheet's scan judges it again: a blocking hook
+  added since switches the installed plugin off, its switch stays off, and only its card brings it back (`add`
+  removes the old group as it installs the new one).
 - Neither is held to the one-click list or the license gate, as CAP8-1's connections aren't: this click is the
   deliberate one, and it's the user's own copy, not a redistribution.
 - **Skipped or unticked:** one already here (a skill of that key, a folder of that key in `~/.agents/skills`, a plugin
@@ -33,7 +42,7 @@ A SKILL.md with no `name` or `description` is refused (the open standard needs b
 brings `scripts/*.py` and `references/*.md|txt`, as from GitHub; `left` says how many other files stay behind.
 `CLAUDE_CODE_PLUGIN_CACHE_DIR` isn't read. A marketplace added from a local folder has no copy under `marketplaces/`,
 so its plugins are refused. `node_modules`, `__pycache__`, `.git` and `.mcpb-cache` are what running a plugin makes,
-and aren't read.
+and aren't read. A file over 5 MB refuses its folder (never cut), and no more than MAX_ITEMS folders are read.
 """
 from __future__ import annotations
 
@@ -48,6 +57,7 @@ import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
 from sqlalchemy import select
 
 from server.db import session as db_session
@@ -102,7 +112,10 @@ def _read_local(base: Path) -> dict[str, bytes]:
                     raise Refused("unreadable", "holds a link or an odd name")
                 if len(files) >= MAX_FILES:
                     raise Refused("too_large", "files")
-                files[rel] = agent_skills._read_file(path)
+                try:
+                    files[rel] = agent_skills._read_file(path)
+                except agent_skills.TooLarge as exc:
+                    raise Refused("too_large", rel) from exc
                 total += len(files[rel])
                 if total > MAX_BYTES:
                     raise Refused("too_large", "bytes")
@@ -141,7 +154,8 @@ def _entry(marketplace: str, plugin: str) -> None:
 
 
 def _listed() -> tuple[list[dict], list[tuple]]:
-    """(each folder's state, (kind, where, name, files or the Refused)). Blocking: run in a thread."""
+    """(each folder's state, (kind, where, name, files or the Refused)), MAX_ITEMS of them at most: none is read past
+    that (#809 review). Blocking: run in a thread."""
     out: list[tuple] = []
 
     def read(base: Path, check=None):
@@ -154,28 +168,39 @@ def _listed() -> tuple[list[dict], list[tuple]]:
 
     skills = _claude() / "skills"
     skills_state, names = _folders(skills)
-    for name in names:
+    for name in names:                                  # `_folders` lists MAX_ITEMS at most
         files = read(skills / name)
         plugin = isinstance(files, dict) and _PLUGIN_MANIFEST in files
         out.append(("plugin" if plugin else "skill", f"skills/{name}", name, files))
     cache = _claude() / "plugins" / "cache"
     cache_state, marketplaces = _folders(cache)
-    for marketplace in marketplaces:
-        for plugin in _folders(cache / marketplace)[1]:
-            for version in _folders(cache / marketplace / plugin)[1]:
-                base = cache / marketplace / plugin / version
-                if os.path.lexists(base / ".orphaned_at"):
-                    continue
-                files = read(base, lambda m=marketplace, p=plugin: _entry(m, p))
-                out.append(("plugin", f"plugins/{marketplace}/{plugin}/{version}", plugin, files))
-    return [{"what": "skills", "state": skills_state}, {"what": "plugins", "state": cache_state}], out[:MAX_ITEMS]
+    versions = ((m, p, v) for m in marketplaces for p in _folders(cache / m)[1] for v in _folders(cache / m / p)[1])
+    for marketplace, plugin, version in versions:
+        if len(out) >= MAX_ITEMS:
+            break
+        base = cache / marketplace / plugin / version
+        if os.path.lexists(base / ".orphaned_at"):
+            continue
+        files = read(base, lambda m=marketplace, p=plugin: _entry(m, p))
+        out.append(("plugin", f"plugins/{marketplace}/{plugin}/{version}", plugin, files))
+    return [{"what": "skills", "state": skills_state}, {"what": "plugins", "state": cache_state}], out
 
 
 # ── one skill, prepared as `skill_import.prepare_skill` prepares one ─────────────────────────────────────────────
 
+def _frontmatter_hooks(raw: str) -> list[str]:
+    """A SKILL.md's own hooks (Claude Code reads `hooks` in a skill's frontmatter), by the hook rule. Only called on
+    one `parse_skill_md` took, so its frontmatter is capped and has no aliases. Raises Refused."""
+    meta = yaml.load(skill_import._FRONTMATTER_RE.match(raw).group(1), Loader=skill_import._NoAliases) or {}
+    hooks = meta.get("hooks") if isinstance(meta, dict) else None
+    return [] if hooks is None else plugin_package.hook_events(hooks, "SKILL.md hooks")
+
+
 async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
     """The same parse, the same bundled scripts and references with their caps, every kept file hashed, from files
-    already read. `left`: what else the folder holds, which stays behind. Raises ValueError."""
+    already read. `left`: what else the folder holds, which stays behind. `hooks`: its frontmatter's, judged; they
+    never go further, since the SKILL.md Arslan writes holds the name and description only. Raises ValueError, or
+    Refused for a hook."""
     prefix = f"{folder}/" if folder else ""
     path = f"{prefix}SKILL.md"
     try:
@@ -185,6 +210,7 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
     info = skill_import.parse_skill_md(raw, path)
     if info is None:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
+    hooks = _frontmatter_hooks(raw)
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
     files: dict[str, str] = {path: hashlib.sha256(raw.encode("utf-8")).hexdigest()}
@@ -203,23 +229,32 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
                 if p.startswith(prefix) and p not in files and p not in named]
     return {"key": info["key"], "info": info, "full_name": snap.repo, "commit": snap.sha, "license": None,
             "license_source": "none", "skill_md": raw, "scripts": scripts, "references": references, "files": files,
-            "sizes": sizes, "skipped": skipped, "imported_from": FROM}
+            "sizes": sizes, "skipped": skipped, "imported_from": FROM, "hooks": hooks}
 
 
-async def _skill_here(key: str) -> bool:
-    """A skill of that key, or a folder of that key in the shared folder (another tool's, or Arslan's)."""
+async def _skill_here(key: str, besides: frozenset[str] = frozenset()) -> bool:
+    """A skill of that key, or a folder of that key in the shared folder (another tool's, or Arslan's). `besides`:
+    plugins whose skills don't count, being replaced by their card (`_marked`); such a skill's folder is its own."""
     async with db_session.AsyncSessionLocal() as db:
-        if await db.get(SkillPack, key) is not None:
-            return True
+        pack = await db.get(SkillPack, key)
+    if pack is not None:
+        return pack.source_id not in besides
     return os.path.lexists(agent_skills.folder(key))
 
 
-async def _plugin_skill(ref: str, path: str, *, snapshot: Snapshot, repo_license=None) -> dict:
-    """`plugin_package._skills`'s `prepare_one` for an imported plugin. A skill already here refuses the plugin."""
-    skill = await _prepared_skill(snapshot, path.rsplit("/", 1)[0] if "/" in path else "")
-    if await _skill_here(skill["key"]):
-        raise ValueError(f"skill '{skill['key']}' already exists in the library")
-    return skill
+async def _offline_skill(ref: str, path: str, *, snapshot: Snapshot, repo_license=None) -> dict:
+    """`plugin_package._skills`'s `prepare_one` for an imported plugin, from what was read, in the worker thread."""
+    return await _prepared_skill(snapshot, path.rsplit("/", 1)[0] if "/" in path else "")
+
+
+def _plugin_skill(besides: frozenset[str]):
+    """The same, at the add, on the loop: a skill already here refuses the plugin."""
+    async def prepare(ref: str, path: str, *, snapshot: Snapshot, repo_license=None) -> dict:
+        skill = await _offline_skill(ref, path, snapshot=snapshot)
+        if await _skill_here(skill["key"], besides):
+            raise ValueError(f"skill '{skill['key']}' already exists in the library")
+        return skill
+    return prepare
 
 
 # ── the sheet ────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -238,18 +273,28 @@ class Item:
     refused: str | None = None
     refused_part: str | None = None
     scan: str | None = None
+    hooks: list[str] = field(default_factory=list)
+
+    @property
+    def marketplace(self) -> str | None:
+        """Where Claude Code installed a cached plugin from; None for one in its skills folder."""
+        parts = self.id.split("/")
+        return untrusted.clean_name(parts[1], 120) if parts[0] == "plugin:plugins" and len(parts) > 2 else None
 
     def view(self, *, here: bool, same_as: str | None) -> dict:
+        # A plugin starts unticked (board 7): its card comes before it is added, so it is ticked only by hand.
         row = {"id": self.id, "tool": TOOL, "kind": self.kind, "name": self.name, "digest": self.digest, "here": here,
                "same_as": same_as, "refused": self.refused, "refused_part": self.refused_part,
-               "tick": not (self.refused or here or same_as)}
+               "tick": self.kind == "skill" and not (self.refused or here or same_as), "hooks": list(self.hooks)}
         if self.kind == "skill":
             s = self.skill or {}
             info = s.get("info") or {}
             row.update(key=s.get("key"), description=info.get("description"), scripts=sorted(s.get("scripts") or {}),
                        references=sorted(s.get("references") or {}), left=len(s.get("skipped") or []), scan=self.scan)
         else:
-            row.update(skills=sorted(self.plugin.get("skills") or []), connections=sorted(self.plugin.get("connections") or []))
+            row.update(skills=sorted(self.plugin.get("skills") or []),
+                       connections=sorted(self.plugin.get("connections") or []))
+            row["from"] = self.marketplace
         return row
 
 
@@ -261,6 +306,7 @@ def _snapshot(name: str, files: dict[str, bytes], prefix: str = "") -> Snapshot:
 
 
 async def _item(kind: str, where: str, name: str, files) -> Item:
+    """One folder judged from what was read: no database, so it runs in the worker thread (`_judged`)."""
     item = Item(id=f"{kind}:{where}", kind=kind, name=untrusted.clean_name(name, 120), digest="", identity=name)
     if isinstance(files, Refused):
         item.digest = _keyed(TOOL, where, "unread")
@@ -274,18 +320,20 @@ async def _item(kind: str, where: str, name: str, files) -> Item:
                 item.skill = await _prepared_skill(item.snap, name)
             except ValueError as exc:
                 raise Refused("unreadable", str(exc)[:200]) from exc
-            item.identity = item.skill["key"]
+            item.identity, item.hooks = item.skill["key"], item.skill["hooks"]
             scan = skill_import.scan_prepared(item.skill)
             item.scan = scan["level"]
             if scan["level"] == "blocked":
                 raise Refused("blocked", ", ".join(sorted({f["rule"] for f in scan["findings"] if f["level"] == "high"})))
         else:
             item.snap = _snapshot(name, files)
-            manifest, paths, servers = plugin_package.parts(item.snap)
+            manifest, paths, servers = plugin_package.parts(item.snap, hooks=True)
             item.identity = str(manifest.get("name") or name)
             item.name = untrusted.clean_name(item.identity, 120)
+            item.hooks = plugin_package.quiet_hooks(manifest, item.snap)
             # Every skill prepared and scanned now, as the add does: refusals show on the sheet, not after a tick.
-            skills = await plugin_package._skills(item.snap, paths, (None, None), _plugin_skill)
+            skills = await plugin_package._skills(item.snap, paths, (None, None), _offline_skill)
+            item.hooks += [event for s in skills for event in s["hooks"]]
             item.plugin = {"skills": [s["key"] for s in skills], "connections": [untrusted.clean_name(n, 120)
                                                                                  for n in servers]}
     except Refused as exc:
@@ -296,16 +344,50 @@ async def _item(kind: str, where: str, name: str, files) -> Item:
     return item
 
 
-async def _plugins_here() -> set[str]:
+async def _plugin_rows() -> list[CapabilitySource]:
     async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.execute(select(CapabilitySource).where(
-            CapabilitySource.kind == "plugin", CapabilitySource.state.in_(("installed", "proposed"))))).scalars().all()
+        return list((await db.execute(select(CapabilitySource).where(
+            CapabilitySource.kind == "plugin", CapabilitySource.state.in_(("installed", "proposed"))))).scalars().all())
+
+
+def _hooked(row: CapabilitySource) -> bool:
+    """An imported plugin an update switched off for a blocking hook (`plugin_package.hooks_added`)."""
+    return bool((row.test or {}).get("hooks_added"))
+
+
+async def _marked() -> dict[str, str]:
+    """{name: source id} of the imported plugins switched off for a hook: not here, so their card can bring them
+    back, and their own skills don't count as already here."""
+    return {row.name: row.id for row in await _plugin_rows() if _hooked(row)}
+
+
+async def _plugins_here() -> set[str]:
+    rows = [row for row in await _plugin_rows() if not _hooked(row)]
     return {row.name for row in rows} | {str(row.candidate_id) for row in rows}
 
 
+def _judged() -> tuple[list[dict], list[Item]]:
+    """The read, then the parse, the scan and the hook rule, all in the worker thread (#809 review: they held the
+    event loop). `_item` touches no database and no lock of the server's loop, so it runs on a loop of its own here."""
+    folders, listed = _listed()
+
+    async def judge() -> list[Item]:
+        return [await _item(*entry) for entry in listed]
+    return folders, asyncio.run(judge())
+
+
 async def _read() -> tuple[list[dict], list[Item]]:
-    folders, listed = await asyncio.to_thread(_listed)
-    return folders, [await _item(*entry) for entry in listed]
+    folders, items = await asyncio.to_thread(_judged)
+    # Then, on the loop, the one check that needs the database: a plugin's skill already here refuses the plugin.
+    besides = frozenset((await _marked()).values())
+    for item in items:
+        if item.kind != "plugin" or item.refused:
+            continue
+        for key in item.plugin.get("skills") or []:
+            if await _skill_here(key, besides):
+                item.refused, item.refused_part = "skill", f"skill '{key}' already exists in the library"
+                break
+    return folders, items
 
 
 async def _is_here(item: Item, plugins: set[str]) -> bool:
@@ -314,8 +396,19 @@ async def _is_here(item: Item, plugins: set[str]) -> bool:
     return item.identity in plugins or f"{SOURCE}:{item.id}" in plugins
 
 
+async def _judged_again(items: list[Item]) -> None:
+    """The hook rule after an update (the user's rule 4): an installed import whose other-tool copy now has a hook
+    on a blocking or unknown event is switched off until its card. Only at this scan: the page's load reads nothing."""
+    imported = {row.name: row for row in await _plugin_rows()
+                if row.state == "installed" and str(row.candidate_id).startswith(f"{SOURCE}:")}
+    for item in items:
+        if item.kind == "plugin" and item.refused == "hooks" and item.identity in imported:
+            await plugin_package.hooks_added(imported[item.identity].id, item.refused_part or "")
+
+
 async def scan() -> dict:
     folders, items = await _read()
+    await _judged_again(items)
     plugins = await _plugins_here()
     first: dict[tuple, str] = {}
     out: dict[str, list] = {"skills": [], "plugins": []}
@@ -359,13 +452,21 @@ async def _add_plugin(item: Item | None, tick: dict) -> dict:
         return stop
     candidate = {"id": f"{SOURCE}:{item.id}", "kind": "plugin", "name": item.identity[:120], "source": SOURCE,
                  "source_url": None, "repo": None}
+    old = (await _marked()).get(item.identity[:120])          # switched off for a hook: this card replaces it
     prepared = None
     try:
-        prepared = await plugin_package.prepare_read(candidate, item.snap, "", imported=_plugin_skill)
-        card = plugin_package.card_fields(prepared)
+        prepared = await plugin_package.prepare_read(candidate, item.snap, "",
+                                                     imported=_plugin_skill(frozenset({old} - {None})))
+        about = prepared["manifest"].get("description")
+        card = {**plugin_package.card_fields(prepared), "name": item.name, "from": item.marketplace,
+                "summary": untrusted.clean_name(about, 300) if isinstance(about, str) else "",
+                "hooks": prepared["hooks"]}
         shown = _keyed("card", card, prepared["files"])
         if tick.get("card") != shown:       # CAP7b's order: the card, then a yes to exactly it
             return {"state": "card", "card": card, "card_digest": shown}
+        candidate.update(summary=card["summary"], hooks=card["hooks"])     # kept on its row: what the card showed
+        if old is not None and not await plugin_package.remove(old):
+            return {"state": "failed", "stage": "replace"}
         out = await plugin_package.install(candidate, prepared, tick.get("keys") or {})
     except Refused as exc:
         return {"state": "refused", "code": exc.code}
@@ -384,7 +485,9 @@ async def _add_plugin(item: Item | None, tick: dict) -> dict:
 async def add(skills: list[dict], plugins: list[dict]) -> list[dict]:
     """Each ticked one, from the folders as they read now, with its own result: `added` (a skill, off until its card),
     `card` then `on`, `needs_sign_in`, `failed`, `blocked` or `stopped` (a plugin, as CAP7b's install), or `refused`,
-    `here`, and `gone` or `changed` when the folder no longer holds what the sheet showed."""
+    `here`, and `gone` or `changed` when the folder no longer holds what the sheet showed. A plugin switched off for a
+    hook is removed only after its card's yes, just before the new one goes in; if that install fails, it stays
+    removed (it was off), and the other tool's copy is untouched."""
     if not skills and not plugins:
         return []
     async with _ONE_AT_A_TIME:

@@ -204,12 +204,20 @@ def references_dir(key: str) -> Path:
 def _read_file(path: Path) -> bytes:
     """A regular file's bytes, never through a link. Opened without blocking and checked as opened (#808 review): a
     FIFO swapped in after the caller's lstat would otherwise hold the open until something writes to it. Raises
-    OSError for anything that is not a regular file."""
+    OSError for anything that is not a regular file, and TooLarge for one over MAX_BYTES, which is refused, never cut
+    (#809 review: a cut file's hash covers only its start)."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as handle:
         if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
             raise OSError(f"not a regular file: {path.name}")
-        return handle.read(MAX_BYTES + 1)
+        data = handle.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        raise TooLarge(f"larger than {MAX_BYTES} bytes: {path.name}")
+    return data
+
+
+class TooLarge(OSError):
+    """A file `_read_file` refuses for its size."""
 
 
 def read_folder(key: str) -> dict:

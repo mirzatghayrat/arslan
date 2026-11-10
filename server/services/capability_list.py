@@ -413,11 +413,15 @@ async def _with_plugins(rows: list[dict]) -> list[dict]:
     for plugin in plugins:
         held = sorted(parts[plugin.id], key=lambda part: (part["kind"], part["name"] or ""))
         stopped = (plugin.test or {}).get("stopped")
-        state = "setup" if stopped else "off" if held and all(p["state"] in ("off", "na") for p in held) else "on"
+        hooked = (plugin.test or {}).get("hooks_added")       # CAP8-2: an update added a blocking hook
+        state = "setup" if stopped or hooked else "off" if held and all(p["state"] in ("off", "na") for p in held) \
+            else "on"
         row = _row(f"plugin:{plugin.id}", state, switch="plugin", name=plugin.name, section="plugins",
-                   origin="installed", source_id=plugin.id, reason="plugin_stopped" if stopped else None,
-                   fix="open_tab:mcps" if stopped else None,
-                   detail=stopped["connection"] if stopped else (plugin.candidate or {}).get("summary") or None)
+                   origin="installed", source_id=plugin.id,
+                   reason="plugin_hooks" if hooked else "plugin_stopped" if stopped else None,
+                   fix="open_tab:mcps" if stopped and not hooked else None,
+                   detail=hooked["event"] if hooked else stopped["connection"] if stopped
+                   else (plugin.candidate or {}).get("summary") or None)
         row["parts"] = held
         row["last_used"] = max((p["last_used"] for p in held if p["last_used"]), default=None)
         kept.append(row)

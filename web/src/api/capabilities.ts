@@ -132,9 +132,10 @@ export const capabilitiesApi = {
   deleteRow: (key: string) => request<{ ok: boolean }>(`/capabilities/${rowPath(key)}`, { method: "DELETE" }),
   /** CAP8-1: read what Claude Code and Codex have configured, on the user's click. */
   importScan: () => request<ImportScan>("/capability-import"),
-  /** CAP8-2: `skills` are Claude Code's, copied in switched off. */
-  importAdd: (servers: ImportTick[], skills: ImportTick[] = []) =>
-    request<{ results: ImportResult[] }>("/capability-import", json("POST", { servers, skills })),
+  /** CAP8-2: `skills` are Claude Code's, copied in switched off. A plugin's first add answers `card`; it goes in only
+   *  when sent again with that card's digest (`card`). */
+  importAdd: (servers: ImportTick[], skills: ImportTick[] = [], plugins: ImportTick[] = []) =>
+    request<{ results: ImportResult[] }>("/capability-import", json("POST", { servers, skills, plugins })),
 };
 
 function rowPath(key: string): string {
