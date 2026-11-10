@@ -96,6 +96,25 @@ def _default_workspace_in_tmp(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _agent_skills_folder_per_test(tmp_path_factory):
+    """v0.1.64 CAP6a: skills install into ~/.agents/skills, and HOME is the run's one throwaway dir, shared by every
+    xdist worker, so a skill one test installs would be another tool's skill in the next (or another worker's). A
+    test that did not give itself a HOME gets a skills folder of its own; one that did (`Path.home` patched, or
+    HOME set) keeps the folder under it. The hashes kept for it go with it (the data folder is the worker's own).
+    Its own MonkeyPatch, for the reason given in `_default_workspace_in_tmp`."""
+    from server.services import agent_skills
+    own = tmp_path_factory.mktemp("agents-home")
+    real = agent_skills.root
+
+    def root():
+        return own / ".agents" / "skills" if Path.home() == _SUITE_HOME else real()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(agent_skills, "root", root)
+        yield
+    (_SUITE_DATA_DIR / "agent_skills.json").unlink(missing_ok=True)
+
+
+@pytest.fixture(autouse=True)
 def _no_judge_model_calls():
     """0.1.52: shadow judgments fire at every confirmation card. In tests the judge
     model is never reached (no network, no spend); a test of the judgment layer

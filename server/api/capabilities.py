@@ -25,8 +25,30 @@ async def switch_capability(key: str, body: Switch) -> dict:
         await capability_list.switch(key, body.on)
     except capability_list.NotSwitchable as exc:
         raise HTTPException(status_code=409, detail={"code": "not_switchable"}) from exc
+    except capability_list.NeedsCard as exc:
+        # CAP6a: a skill in ~/.agents/skills goes on only through its card (POST /skill-folder/{key}/approve).
+        raise HTTPException(status_code=409, detail={"code": "needs_card", "card": exc.card}) from exc
     row = next((r for r in await capability_list.capabilities() if r["key"] == key), None)
     return row or {"key": key}
+
+
+class Approve(BaseModel):
+    digest: str
+
+
+@router.post("/skill-folder/{key}/approve")
+async def approve_skill_folder(key: str, body: Approve) -> dict:
+    """CAP6a: the card's yes for a skill in ~/.agents/skills. It approves the files the card showed (by their digest)
+    and nothing else: changed since, or blocked by the scan, is refused."""
+    from server.services import agent_skills
+    if not agent_skills.plain_key(key):
+        raise HTTPException(status_code=404, detail={"code": "not_found"})
+    try:
+        await agent_skills.approve(key, body.digest)
+    except agent_skills.NotApproved as exc:
+        raise HTTPException(status_code=404 if exc.code == "not_found" else 409, detail={"code": exc.code}) from exc
+    row = next((r for r in await capability_list.capabilities() if r["key"] == f"skill:{key}"), None)
+    return row or {"key": f"skill:{key}"}
 
 
 @router.delete("/capabilities/{key:path}")

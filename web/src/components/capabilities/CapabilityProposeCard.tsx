@@ -76,6 +76,9 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
           runs: [card.hidden!.runs.join(", "), card.hidden!.more ? t("capabilities.import.hiddenMore", { count: card.hidden!.more }) : ""]
             .filter(Boolean).join(" ") })}</span>
       </Row>}
+      {/* CAP6a: a skill installs into ~/.agents/skills, which other tools may read and use too. */}
+      {card.shared_folder && <Row label={t("capabilityList.folderCard_where")} testId="capability-card-shared">
+        {t("capabilityList.sharedFolder")}</Row>}
       {/* A skill gets the scan, never a test run: under the user's D2 this card is the check (#519 recheck). */}
       <Row label={t("discover.card_checks")}>{t(card.kind === "skill" ? "discover.card_checksSkill"
         : plugin ? "discover.card_checksPlugin" : "discover.card_checksText")}</Row>

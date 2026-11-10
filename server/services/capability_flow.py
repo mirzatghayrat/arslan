@@ -79,6 +79,8 @@ def card_for(c: dict, *, why: str, retry: str, folders: list[str]) -> dict:
         # CAP4a-1: who published it, as a fact (a domain the Registry verified, or a GitHub account), never
         # "official"; the card shows it in CAP4b.
         "publisher": capability_search.publisher_of(c),
+        # CAP6a: a skill (a plugin's too) installs into ~/.agents/skills, which several tools share.
+        "shared_folder": c["kind"] in ("skill", "plugin"),
     }
 
 
