@@ -240,7 +240,7 @@ def read_folder(key: str) -> dict:
     # CAP8-2's hook rule, here too: another tool's skill with a hook on a blocking or unknown event is never read
     # (so never switched on); one with quiet hooks is, and its card says they won't run. The folder isn't Arslan's.
     try:
-        hook_rows = skill_import.frontmatter_hook_rows(raw)
+        hook_rows = skill_import.frontmatter_hook_rows(raw, where=f"{key}/SKILL.md")
     except skill_import.HookRefused as exc:
         raise Unreadable(str(exc)) from None
     return {"files": files, "texts": texts, "info": parsed, "hooks": [row["event"] for row in hook_rows],

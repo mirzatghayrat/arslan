@@ -36,8 +36,8 @@ pytestmark = pytest.mark.asyncio
 __all__ = ["api", "home", "offline"]           # fixtures, used by name
 
 REPO = Path(__file__).resolve().parents[2]
-BLOCKING = _hooks("SessionStart", "PermissionRequest")
-INLINE = json.dumps({"name": "release-kit", "version": "1.0.0", "hooks": {"PermissionRequest": [{"hooks": [
+BLOCKING = _hooks("SessionStart", "PreToolUse")
+INLINE = json.dumps({"name": "release-kit", "version": "1.0.0", "hooks": {"PreToolUse": [{"hooks": [
     {"type": "command", "command": "echo hi"}]}]}})
 
 
@@ -62,8 +62,8 @@ def _without(files: dict, *paths: str) -> dict:
     {**PLUGIN_FILES, "Output-Styles/terse.md": "Short.\n"},
     {**PLUGIN_FILES, ".MCP.json": json.dumps({"mcpServers": {}})},
     {".claude-plugin/plugin.json": PLUGIN_FILES[".claude-plugin/plugin.json"],      # the only skills folder
-     "Skills/guard/SKILL.md": _frontmatter_skill("guard", "PermissionRequest")},
-    {**PLUGIN_FILES, "skills/guard/Skill.md": _frontmatter_skill("guard", "PermissionRequest")},
+     "Skills/guard/SKILL.md": _frontmatter_skill("guard", "PreToolUse")},
+    {**PLUGIN_FILES, "skills/guard/Skill.md": _frontmatter_skill("guard", "PreToolUse")},
 ], ids=["Hooks-dir", "Hooks-file", "HOOKS", "kelvin", "long-s", "manifest-dir", "Commands", "AGENTS", "LSP", "Settings",
         "Output-Styles", "MCP", "Skills-dir", "Skill.md"])
 async def test_a_special_name_in_another_spelling_refuses_the_plugin(api, home, offline, files):
@@ -118,13 +118,13 @@ async def test_an_update_adding_a_blocking_hook_beside_another_refusal_switches_
     await _install(api, home, files)
     old = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
     hooked = ({"hooks/hooks.json": BLOCKING} if where == "hooks.json"
-              else {"skills/release-notes/SKILL.md": _frontmatter_skill("release-notes", "PermissionRequest")})
+              else {"skills/release-notes/SKILL.md": _frontmatter_skill("release-notes", "PreToolUse")})
     _update(home, "1.1.0", {**files, **hooked, **extra}, "1.0.0")
     row = _row(await _scan(api), "plugins", "release-kit")
-    assert row["refused"] == "hooks" and row["refused_part"] == "PermissionRequest" and row["here"] is False, row
+    assert row["refused"] == "hooks" and row["refused_part"] == "PreToolUse" and row["here"] is False, row
     assert not any(p.enabled for p in await _all(SkillPack))
     listed = next(r for r in (await api.get("/api/v1/capabilities")).json() if r["key"] == f"plugin:{old.id}")
-    assert listed["reason"] == "plugin_hooks" and listed["detail"] == "PermissionRequest"
+    assert listed["reason"] == "plugin_hooks" and listed["detail"] == "PreToolUse"
     assert (await api.put(f"/api/v1/capabilities/plugin:{old.id}", json={"on": True})).status_code == 409
 
 
@@ -184,7 +184,7 @@ async def test_a_long_plugin_name_is_still_switched_off_by_its_update(api, home)
 # ── a skill's frontmatter: two `hooks:` keys ────────────────────────────────────────────────────────────────────────
 
 async def test_a_frontmatter_with_two_hooks_keys_is_refused(api, home):
-    raw = ("---\nname: notes\ndescription: Notes.\nhooks:\n  PermissionRequest:\n    - hooks: []\nhooks:\n  PostToolUse:\n"
+    raw = ("---\nname: notes\ndescription: Notes.\nhooks:\n  PreToolUse:\n    - hooks: []\nhooks:\n  PostToolUse:\n"
            "    - hooks: []\n---\n\nBody.\n")
     with pytest.raises(skill_import.HookRefused):
         skill_import.frontmatter_hooks(raw)
@@ -343,7 +343,7 @@ async def test_a_real_kill_while_a_new_skill_is_half_in_is_put_back_at_the_next_
     assert started.returncode == 0, started.stderr[-3000:]
     plugins = {r.id: r for r in await _all(CapabilitySource) if r.kind == "plugin"}
     assert not any((r.test or {}).get("swap") for r in plugins.values())
-    assert plugins[old.id].state == "installed" and plugins[old.id].test["hooks_added"]["event"] == "PermissionRequest"
+    assert plugins[old.id].state == "installed" and plugins[old.id].test["hooks_added"]["event"] == "PreToolUse"
     assert plugins[new_id].state == "failed"
     assert {p.key: {c.name: getattr(p, c.name) for c in SkillPack.__table__.columns}
             for p in await _all(SkillPack)} == packs

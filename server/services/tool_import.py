@@ -206,9 +206,10 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
     if info is None:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
     try:
-        hook_rows = skill_import.frontmatter_hook_rows(raw)  # the same rule as every other way a skill comes in
+        # The same rule and reader as every other way a skill comes in.
+        hook_rows = skill_import.frontmatter_hook_rows(raw, where=path)
     except skill_import.HookRefused as exc:
-        raise Refused(exc.code, exc.part) from None
+        raise Refused(exc.code, exc.part, rows=exc.rows) from None
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
     files: dict[str, str] = {path: hashlib.sha256(raw.encode("utf-8")).hexdigest()}
@@ -274,6 +275,7 @@ class Item:
     scan: str | None = None
     hooks: list[str] = field(default_factory=list)
     hook_rows: list[dict] | None = None     # HOOK-1: a plugin's hooks as they'd be stored, once judged
+    refused_rows: list[dict] | None = None  # HOOK-1: the hooks of one a protection refused, for the sheet to show
     taken: bool = False             # refused only because a skill of its key is here (`_read`), not for its files
 
     @property
@@ -287,6 +289,10 @@ class Item:
         row = {"id": self.id, "tool": TOOL, "kind": self.kind, "name": self.name, "digest": self.digest, "here": here,
                "same_as": same_as, "refused": self.refused, "refused_part": self.refused_part,
                "tick": self.kind == "skill" and not (self.refused or here or same_as), "hooks": list(self.hooks)}
+        if self.refused_rows is not None:
+            # HOOK-1: a protection refused it; its hooks are shown, so the user sees why. Nothing of it is kept.
+            row.update(refused_note=plugin_hooks.PROTECTIONS[self.kind],
+                       hook_rows=plugin_hooks.card_rows(self.refused_rows))
         if self.kind == "skill":
             s = self.skill or {}
             info = s.get("info") or {}
@@ -339,6 +345,7 @@ async def _item(kind: str, where: str, name: str, files) -> Item:
                                                                                  for n in servers]}
     except Refused as exc:
         item.refused, item.refused_part = exc.code, untrusted.clean_name(exc.part, 200)
+        item.refused_rows = exc.rows
     except Exception as exc:  # noqa: BLE001 — one folder no reader can read: the others stay
         logger.warning("an import candidate could not be read (%s)", type(exc).__name__)
         item.refused, item.refused_part = "unreadable", item.name

@@ -323,7 +323,7 @@ async def test_a_cached_plugin_is_listed(api, home):
 
 @pytest.mark.parametrize(("extra", "code"), [
     # Hooks by the user's rule (test_cap8_2_plugin_hooks.py): a blocking event, or a hooks path that isn't there.
-    ({"hooks/hooks.json": json.dumps({"hooks": {"PermissionRequest": [{"hooks": []}]}})}, "hooks"),
+    ({"hooks/hooks.json": json.dumps({"hooks": {"PreToolUse": [{"hooks": []}]}})}, "hooks"),
     ({".claude-plugin/plugin.json": json.dumps({"name": "release-kit", "hooks": "./h.json"})}, "unreadable"),
     ({"commands/status.md": "Status.\n"}, "commands"),
     ({"agents/reviewer.md": "Review.\n"}, "agents"),
