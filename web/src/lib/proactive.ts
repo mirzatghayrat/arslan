@@ -8,7 +8,7 @@ import { isolate } from "./outsideText";
 /** Q7 (the user, "as recommended"; ⓪Plan's reading, 2026-11-01): how many days a handled reminder keeps its row, by kind: the
  *  server's FRESH_DAYS (arslan/proactive_policy.py; kept-days-agrees-with-backend.test.ts ties the two), counted from when it was
  *  handled (PR 615 review F2), or from when it was made on an older server, which does not say. */
-export const KEPT_DAYS: Record<string, number> = { job_followup: 7, scheduled_problem: 14, web_change: 14, folder_change: 14, brief: 2 };
+export const KEPT_DAYS: Record<string, number> = { job_followup: 7, scheduled_problem: 14, web_change: 14, folder_change: 14 };
 const OPEN_STATUSES = new Set(["new", "seen"]);
 /** Open: new or seen. Only an open reminder carries a dot. */
 export const isOpen = (item: Pick<ProactiveItem, "status">) => OPEN_STATUSES.has(item.status);
