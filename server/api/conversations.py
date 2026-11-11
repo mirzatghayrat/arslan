@@ -118,10 +118,13 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool 
             ConversationContext.project_id.isnot(None)))).all())
     pinned = set((await db.execute(select(ConversationContext.id).where(       # SB1-2
         ConversationContext.id.in_([c.conversation_id for c in out]), ConversationContext.pinned.is_(True)))).scalars())
-    parents = dict((await db.execute(select(ConversationContext.id, ConversationContext.parent_id).where(
-        ConversationContext.id.in_([c.conversation_id for c in out if kinds.get(c.conversation_id) == "sub"]))))
-        .all()) if sub else {}
+    sub_rows = (await db.execute(select(ConversationContext.id, ConversationContext.parent_id,
+                                        ConversationContext.sub_state).where(ConversationContext.id.in_(
+        [c.conversation_id for c in out if kinds.get(c.conversation_id) == "sub"])))).all() if sub else []
+    parents = {cid: parent for cid, parent, _ in sub_rows}
     from server.services import background_jobs, sub_sessions
+    # SUB5c (#819's list): one a restart found queued has no job of its own to say so; its row says interrupted.
+    cut_short = {cid for cid, _, state in sub_rows if state == sub_sessions.INTERRUPTED}
     # SUB5d: a sub-session whose job has finished but whose report isn't delivered yet still counts as at work (the
     # delete refuses it with 409 `sub_sessions_running`), so its row reads working, marked `reporting`.
     reporting = {job.conversation_id for job in background_jobs.unreported()} if sub else set()
@@ -139,6 +142,8 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool 
             item.state, item.waiting_on = "waiting", "card"
         elif item.parent_id and item.state not in ("working", "waiting") and item.conversation_id in reporting:
             item.state, item.reporting = "working", True
+        elif item.conversation_id in cut_short and item.state == "idle" and item.outcome is None:
+            item.state, item.outcome = "unfinished", "interrupted"     # as phone_reads.describe reads a restart's cut
     return out
 
 

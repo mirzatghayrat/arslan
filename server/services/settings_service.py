@@ -378,6 +378,35 @@ async def workspace_dir(session: AsyncSession):
         return None
 
 
+def run_sub_folder() -> tuple[str, ...] | None:
+    """SUB5c: the short names of this run's sub-session folder (`personal_context.sub_folder`), () when this run is
+    not a sub-session's job. None, fail closed, for a sub-session's job whose context doesn't name one: it gets no
+    folder at all, rather than the whole workspace."""
+    from server.services import background_jobs, personal_context
+    context = personal_context.current()
+    if context is not None and context.sub_folder:
+        return context.sub_folder
+    job = background_jobs._jobs.get(background_jobs._inside_job.get() or "")
+    return None if job is not None and job.parent_id else ()
+
+
+async def workspace_dir_for_run(session: AsyncSession):
+    """SUB5c: the folder this run writes in. A sub-session's job: its own `<workspace>/sub/<short name>/`
+    (`run_sub_folder`), made by the server, never the model, and checked on every call
+    (`workspace_paths.sub_folder`). Any other run: the workspace (`workspace_dir`). None when there is no workspace,
+    and when a sub-session's folder can't be made or isn't a plain folder inside the workspace: then nothing is
+    written. Reads keep the whole workspace (`workspace_dir`)."""
+    from server.services import workspace_paths
+    root, names = await workspace_dir(session), run_sub_folder()
+    if root is None or names == ():
+        return root
+    try:
+        return workspace_paths.sub_folder(root, names) if names else None
+    except (workspace_paths.PathEscape, workspace_paths.SecretFile, OSError) as exc:
+        logger.warning("sub-session folder refused: %s", type(exc).__name__)
+        return None
+
+
 async def workspace_is_default(session: AsyncSession) -> bool:
     """True when Arslan is working in its own folder rather than one the user chose."""
     raw = await _get_raw(session, "workspace_dir")

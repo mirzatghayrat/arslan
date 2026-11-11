@@ -61,6 +61,9 @@ class TaskMemoryContext:
     lease: ContextLease | None = None
     # SUB3: a sub-session's turn: its tree's spending limit is read before each model request (task_service).
     sub_session: bool = False
+    # SUB5c: a sub-session's job writes only in its own folder: these short names, top first, make it
+    # `<workspace>/sub/<name>` (a grandchild's `…/sub/<parent's>/sub/<its>`). Empty for every other run.
+    sub_folder: tuple[str, ...] = ()
 
     @property
     def cloud_memory_effective(self) -> bool:

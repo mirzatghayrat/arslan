@@ -390,7 +390,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         usd_cap = await settings_service.task_usd_cap(db)
     ctx = await task_context.load(job.conversation_id, user_message=job.goal)
     ctx = replace(ctx, task_id=job.job_id, run_id=f"job-{job.job_id}", explicit_save_digest=None,
-                  explicit_save_ref=None, allow_global_save=False)
+                  explicit_save_ref=None, allow_global_save=False,
+                  # SUB5c: a sub-session's job writes only in its own folder (`settings_service.workspace_dir_for_run`).
+                  sub_folder=await sub_sessions.folder_names(job.conversation_id) if job.parent_id else ())
     # SUB3: a sub-session's cards are asked in its parent's conversation, and answered for the sub-session.
     confirmations = approvals.JobConfirmations(job.conversation_id, job_id=job.job_id,
                                                **({"ask_in": job.parent_id} if job.parent_id else {}))
