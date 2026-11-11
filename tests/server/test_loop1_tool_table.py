@@ -71,7 +71,7 @@ def _mac(monkeypatch, case):
     monkeypatch.setattr(hands_tools, "desktop_available", lambda: case["hands"])
     monkeypatch.setattr(agent_browser, "available", lambda: case["browser"])
     monkeypatch.setattr(personal_context, "current", lambda: types.SimpleNamespace(
-        project_id=7 if case["project"] else None, conversation_id="c1", query=""))
+        project_id=7 if case["project"] else None, conversation_id="c1", query="", sub_folder=()))
     monkeypatch.setattr(settings_service, "workspace_dir", setting(WORKSPACE if case["workspace"] else None))
     monkeypatch.setattr(settings_service, "workspace_is_default", setting(case["own_folder"]))
     monkeypatch.setattr(settings_service, "default_read_enabled", setting(case["default_read"]))

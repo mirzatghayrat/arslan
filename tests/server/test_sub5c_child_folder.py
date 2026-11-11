@@ -176,6 +176,7 @@ async def test_a_childs_outside_grant_or_the_sandbox_switch_doesnt_let_its_comma
     assert "can't run outside it" in json.dumps(model.requests[OUTLINE][-1], ensure_ascii=False)
 
 
+@pytest.mark.macos
 @_MAC_ONLY
 async def test_under_the_real_seatbelt_a_childs_command_writes_only_in_its_folder_even_with_a_grant(ws, monkeypatch):
     if not _SEATBELT():
