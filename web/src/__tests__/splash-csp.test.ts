@@ -101,4 +101,14 @@ describe("the splash's policy", () => {
     expect(conf.app.security.devCsp ?? null).toBeNull();
     expect(conf.app.security.headers ?? null).toBeNull();
   });
+
+  it("comes before anything that loads or applies: a <meta> policy covers only what follows it", () => {
+    // The charset meta may come first (it has to sit in the first 1024 bytes); comments are inert.
+    const at = html.search(/<meta\b[^>]*http-equiv=["']?content-security-policy/i);
+    expect(at).toBeGreaterThan(-1);
+    const before = html.slice(0, at).replace(/<!--[\s\S]*?-->/g, "");
+    const tags = [...before.matchAll(/<([a-z][a-z0-9-]*)\b[^>]*>/gi)].map((m) => m[0].toLowerCase());
+    const allowed = (tag: string) => /^<(html|head)\b/.test(tag) || /^<meta\b[^>]*\bcharset=/.test(tag);
+    expect(tags.filter((tag) => !allowed(tag))).toEqual([]);
+  });
 });

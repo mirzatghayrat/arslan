@@ -189,16 +189,26 @@ async def test_the_island_page_carries_exactly_its_own_policy(app):
 
 
 async def test_the_island_gets_its_policy_under_any_name_that_reaches_it(app, tmp_path):
-    # As with index.html: a Mac's disk ignores case, and a hard link pins the check on CI's case-sensitive Linux. The
-    # spelling match went out with neither the policy nor no-store.
-    os.link(tmp_path / "web" / "island.html", tmp_path / "web" / "notch.html")
+    # Whatever file a name reaches gets that file's policy. On a Mac's disk, which ignores case, /ISLAND.HTML is the
+    # island itself, and a spelling match sent it out with neither the policy nor no-store. On CI's case-sensitive
+    # Linux the same name reaches no file and is the main page under the main policy, which is right there. A hard link
+    # is the island under another name on either disk, so it pins the island's case everywhere.
+    web = tmp_path / "web"
+    os.link(web / "island.html", web / "notch.html")
+    reached_island = 0
     async with client(app) as c:
         for path in ("/ISLAND.HTML", "/Island.html", "/notch.html"):
             resp = await c.get(path)
-
-            assert "<title>Arslan Island</title>" in resp.text, path
-            assert parse(resp.headers.get("content-security-policy", "")) == ISLAND_EXPECTED, path
+            target = web / path.lstrip("/")
+            if target.exists() and os.path.samefile(target, web / "island.html"):
+                reached_island += 1
+                assert "<title>Arslan Island</title>" in resp.text, path
+                assert parse(resp.headers.get("content-security-policy", "")) == ISLAND_EXPECTED, path
+            else:
+                assert "<title>Arslan</title>" in resp.text, path
+                assert parse(resp.headers.get("content-security-policy", "")) == expected(PORT), path
             assert "no-store" in resp.headers.get("cache-control", ""), path
+    assert reached_island >= 1      # the hard link reaches the island on any disk
 
 
 async def test_the_island_policy_ignores_forwarded_headers_too(app):
