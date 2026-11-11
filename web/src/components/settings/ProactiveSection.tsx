@@ -25,7 +25,6 @@ function Toggle({ id, label, desc, checked, onChange }: { id: string; label: str
  * spenders). Changes save as they are made: a toggle that waited for a Save button would leave
  * "look out for things" looking on while the loop still saw the old value.
  */
-// The morning brief has no block since the user's Q9 (#605 review F2): nothing shows a brief, and the scan makes none.
 export type ProactiveBlock = 'looking' | 'notify' | 'watches';
 
 export default function ProactiveSection({ only, bare = false }: { only?: ProactiveBlock[]; bare?: boolean } = {}) {

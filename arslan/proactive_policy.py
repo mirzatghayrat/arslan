@@ -27,7 +27,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from arslan.companion.content_policy import contains_credential
 
-KINDS = ("job_followup", "scheduled_problem", "web_change", "folder_change", "brief")
+#: The morning brief was a kind until INB7-e (the user's Q9, #605 review F2); rows of it stored before are read past
+#: (proactive_service), and expire by the default days in `is_stale`.
+KINDS = ("job_followup", "scheduled_problem", "web_change", "folder_change")
 PRIORITIES = ("high", "normal", "low")
 #: Why a background job stopped short, as detectors name it ("other" = none of these).
 JOB_REASONS = ("task_budget_exhausted", "task_validation_failed", "task_checks_not_run",
@@ -40,10 +42,9 @@ JOB_REASONS = ("task_budget_exhausted", "task_validation_failed", "task_checks_n
 TITLE_KEYS = frozenset(f"title.{kind}" for kind in KINDS)
 EVIDENCE_KEYS = frozenset({
     "job.goal", *(f"job.reason.{reason}" for reason in JOB_REASONS),
-    "sched.state", "sched.run", "web.changed", "web.added", "web.removed", "folder.new", "folder.file",
-    "brief.open", "brief.running", "brief.schedules"})
+    "sched.state", "sched.run", "web.changed", "web.added", "web.removed", "folder.new", "folder.file"})
 #: Days an open item stays worth showing; afterwards it expires (never deleted by expiry).
-FRESH_DAYS = {"job_followup": 7, "scheduled_problem": 14, "web_change": 14, "folder_change": 14, "brief": 2}
+FRESH_DAYS = {"job_followup": 7, "scheduled_problem": 14, "web_change": 14, "folder_change": 14}
 MAX_GOAL_CHARS = 1500
 WATCH_COOLDOWN = timedelta(hours=24)
 
@@ -67,11 +68,9 @@ class ProactiveConfig(BaseModel):
     job_followups: bool = True
     scheduled_problems: bool = True
     watches: bool = True
-    brief_enabled: bool = False
-    brief_time: str = "08:30"
     diagnosis_daily_usd: float = Field(default=0.0, ge=0.0, le=5.0)   # 0 = off
 
-    _times = field_validator("quiet_start", "quiet_end", "brief_time")(lambda cls, v: _hhmm(v))
+    _times = field_validator("quiet_start", "quiet_end")(lambda cls, v: _hhmm(v))
 
 
 @dataclass(frozen=True)
@@ -116,7 +115,7 @@ def gate(candidate: Candidate, *, existing: set[str], muted: set[str]) -> Verdic
         return Verdict(False, "bad_priority")
     if candidate.title_key not in TITLE_KEYS or any(e.key not in EVIDENCE_KEYS for e in candidate.evidence):
         return Verdict(False, "unknown_key")
-    if candidate.kind != "brief" and not candidate.goal.strip():
+    if not candidate.goal.strip():
         return Verdict(False, "no_goal")
     if len(candidate.goal) > MAX_GOAL_CHARS:
         return Verdict(False, "goal_too_long")
@@ -153,12 +152,6 @@ def cooldown_over(last_item_at: datetime | None, now: datetime) -> bool:
 
 def is_stale(kind: str, created_at: datetime, now: datetime) -> bool:
     return now - created_at > timedelta(days=FRESH_DAYS.get(kind, 7))
-
-
-def brief_due(now: datetime, config: ProactiveConfig, last_brief_day: str | None) -> bool:
-    """One brief a day, at or after the chosen time, only if switched on."""
-    return (config.brief_enabled and now.strftime("%Y-%m-%d") != last_brief_day
-            and now.time() >= parse_clock(config.brief_time))
 
 
 def diagnosis_allowed(*, cap_usd: float, spent_micro: int, worst_case_micro: int) -> bool:
