@@ -53,18 +53,22 @@ _SNIPPET_CHARS = 240
 
 
 async def _workspace_root() -> Path | None:
+    """Where write_file and edit_file may write: the workspace, or a sub-session's own folder (SUB5c)."""
     async with db_session.AsyncSessionLocal() as db:
-        return await settings_service.workspace_dir(db)
+        return await settings_service.workspace_dir_for_run(db)
 
 
 async def _read_ctx() -> tuple[list[Path], Path | None]:
     """(read roots, workspace) — reads span the green ring; the workspace is the
     base for backward-compatible relative paths. Reads and writes keep DIFFERENT
-    boundaries: a widened read surface must never silently widen writes."""
+    boundaries: a widened read surface must never silently widen writes. SUB5c: a
+    sub-session still reads the whole workspace; its relative paths start in its own
+    folder, as its writes and commands do."""
     async with db_session.AsyncSessionLocal() as db:
         ws = await settings_service.workspace_dir(db)
         default_read = await settings_service.default_read_enabled(db)
-    return read_roots(ws, default_read=default_read), (ws.resolve() if ws else None)
+        base = await settings_service.workspace_dir_for_run(db) if settings_service.run_sub_folder() != () else ws
+    return read_roots(ws, default_read=default_read), (base.resolve() if base else None)
 
 
 def _home_rel(path: Path) -> str:
@@ -110,14 +114,17 @@ async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool =
                     run_later_ok: Path | None = None) -> tuple[Path | None, Path | None, dict | None]:
     """(root, path, error) — the shared prologue every tool needs."""
     root = await _workspace_root()
+    own = settings_service.run_sub_folder() != ()      # SUB5c: a sub-session's job, in its own folder
     if root is None:
-        return None, None, {"ok": False,
-                            "error": "no workspace is configured — set one in Settings first"}
+        return None, None, {"ok": False, "error": "this sub-session's own folder can't be used, so nothing is written"
+                            if own else "no workspace is configured — set one in Settings first"}
     try:
         return root, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
                                           make_parents=make_parents, run_later_ok=run_later_ok), None
     except (PathEscape, SecretFile) as exc:
-        return root, None, _refusal(exc)
+        refused = _refusal(exc)
+        return root, None, ({**refused, "note": f"A sub-session writes only in its own folder ({root}); the "
+                             "commander merges the work."} if own and isinstance(exc, PathEscape) else refused)
 
 
 # macOS 11+: no segment of the path may be a link at the moment of the open. Where it is

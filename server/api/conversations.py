@@ -118,10 +118,13 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool 
             ConversationContext.project_id.isnot(None)))).all())
     pinned = set((await db.execute(select(ConversationContext.id).where(       # SB1-2
         ConversationContext.id.in_([c.conversation_id for c in out]), ConversationContext.pinned.is_(True)))).scalars())
-    parents = dict((await db.execute(select(ConversationContext.id, ConversationContext.parent_id).where(
-        ConversationContext.id.in_([c.conversation_id for c in out if kinds.get(c.conversation_id) == "sub"]))))
-        .all()) if sub else {}
+    sub_rows = (await db.execute(select(ConversationContext.id, ConversationContext.parent_id,
+                                        ConversationContext.sub_state).where(ConversationContext.id.in_(
+        [c.conversation_id for c in out if kinds.get(c.conversation_id) == "sub"])))).all() if sub else []
+    parents = {cid: parent for cid, parent, _ in sub_rows}
     from server.services import background_jobs, sub_sessions
+    # SUB5c (#819's list): one a restart found queued has no job of its own to say so; its row says interrupted.
+    cut_short = {cid for cid, _, state in sub_rows if state == sub_sessions.INTERRUPTED}
     # SUB5d: a sub-session whose job has finished but whose report isn't delivered yet still counts as at work (the
     # delete refuses it with 409 `sub_sessions_running`), so its row reads working, marked `reporting`.
     reporting = {job.conversation_id for job in background_jobs.unreported()} if sub else set()
@@ -139,15 +142,21 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool 
             item.state, item.waiting_on = "waiting", "card"
         elif item.parent_id and item.state not in ("working", "waiting") and item.conversation_id in reporting:
             item.state, item.reporting = "working", True
+        elif item.conversation_id in cut_short and item.state == "idle" and item.outcome is None:
+            item.state, item.outcome = "unfinished", "interrupted"     # as phone_reads.describe reads a restart's cut
     return out
 
 
-#: The longest query the search takes; `conversation_search.search` cuts there too.
+#: The longest query the search takes, counted after its whitespace is collapsed; `conversation_search.search` cuts
+#: there too.
 SEARCH_QUERY_CHARS = 200
+#: The longest raw `q` read at all, padding included (#831 review: the limit above is counted after the trim, so 200
+#: characters with spaces around them still fit; this only bounds the input).
+SEARCH_QUERY_RAW_CHARS = 2000
 
 
 @router.get("/conversations/search")
-async def search_conversations(q: str = Query(min_length=1, max_length=SEARCH_QUERY_CHARS),
+async def search_conversations(q: str = Query(min_length=1, max_length=SEARCH_QUERY_RAW_CHARS),
                                db: AsyncSession = Depends(get_session)) -> list[dict]:
     """The sidebar's search, its "In messages" part: the words around each match, newest first, at most
     `conversation_search.MAX_LIMIT`. Auth-gated by the router dependency, like GET /conversations.
@@ -161,6 +170,8 @@ async def search_conversations(q: str = Query(min_length=1, max_length=SEARCH_QU
     query = " ".join(q.split())
     if not query:
         raise HTTPException(422, detail={"code": "empty_query"})
+    if len(query) > SEARCH_QUERY_CHARS:
+        raise HTTPException(422, detail={"code": "query_too_long"})
     found = await conversation_search.search(query, limit=conversation_search.MAX_LIMIT)
     ids = {r["conversation_id"] for r in found}
     kinds = dict((await db.execute(select(ConversationContext.id, ConversationContext.kind).where(

@@ -18,6 +18,14 @@ markers = 3
 cases = 171
 xfail = 0
 
+# 0.1.64 HOOK-2, `commands_profile(plugin_read=...)`: a hook's own plugin folder readable and not writable, a sibling
+# plugin, a link to it and the plugin root closed, with the work folder open and inside a closed folder (2 cases); with
+# no parameter, the folder closed (1 case).
+["server/sbx/test_hook2_plugin_read.py"]
+markers = 2
+cases = 3
+xfail = 0
+
 # 0.1.64 HR-1 review delta 12, the profile folder (`sandbox-profiles/` in Arslan's data folder) closed, in the commands
 # preset, an MCP server's and the outside floor, from a profile delivered by `-f`: its own profile read, rewritten or
 # removed, another rewritten or renamed, a new one added and the folder listed are each refused and the files
@@ -280,6 +288,16 @@ markers = 1
 cases = 1
 xfail = 0
 
+# 0.1.64 HOOK-2: plugin hooks run under real seatbelt: a deny from a script in the plugin's own folder (shell and exec
+# forms), the input on stdin with the work folder readable, the time limit asking and killing the process group, a crash
+# or bad output asking (4 cases, deep JSON among them), no network, no write outside the hook's temp folder, and the
+# output cap. #848 review: a child left running after a normal exit killed, an unreadable parse asking, the commands
+# cache unwritable, a work folder inside a closed folder readable, and a dash-led exec form passing no options.
+["server/test_hook2_runner.py"]
+markers = 13
+cases = 16
+xfail = 0
+
 # 2026-09-25: native manual-backup maintenance subprocess at the macOS
 # profile path (0.1.40). It already skipped off darwin; CI run 35973558629
 # showed test_every_darwin_only_file_is_marked flagging it unmarked, so
@@ -367,6 +385,14 @@ xfail = 0
 ["server/test_ssh_exec.py"]
 markers = 3
 cases = 3
+xfail = 0
+
+# 0.1.64 SUB5c: a sub-session's command, run by the job runner under the real seatbelt with an outside grant on
+# the sub-session, writes only in its own folder and still reads the workspace. Counted on this Mac; take the
+# runner's numbers if they differ.
+["server/test_sub5c_child_folder.py"]
+markers = 1
+cases = 1
 xfail = 0
 
 # 2026-09-15: fixed artifact parser actually runs inside Seatbelt. The new

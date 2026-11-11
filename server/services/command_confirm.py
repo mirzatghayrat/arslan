@@ -52,7 +52,7 @@ class Confirmations:
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service
         async with db_session.AsyncSessionLocal() as db:
-            root = await settings_service.workspace_dir(db)
+            root = await settings_service.workspace_dir_for_run(db)     # SUB5c: a sub-session's card names its folder
         if root is None:
             permissions.LAST_DECISION.set(None)    # no card: the refusal is not an earlier answer
             approvals.LAST_OUTCOME.set(None)

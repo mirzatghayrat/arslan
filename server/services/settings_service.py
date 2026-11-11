@@ -47,11 +47,12 @@ _PLAIN_KEYS = (
                # K10-1: a folder's rules in each turn ("true" | "false"; default on). The UI comes with L11-0.
                "folder_rules_enabled",
                # SBX-6a (the user's decision, 2026-11-02: off by default, as Anthropic's, with a switch): sandboxed commands may ask
-               # macOS's certificate trust service ("true" | "false"; default off). The Settings toggle comes after
-               # its mock is OKed.
+               # macOS's certificate trust service ("true" | "false"; default off). Its switch is in Settings › What
+               # Arslan can do › Terminal (SBX settings), written by PUT /settings only.
                "sandbox_system_certificates",
                # SBX-6a (the user's decision, 2026-11-02): the LAN devices sandboxed commands may reach through the proxy,
-               # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused).
+               # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused). Read here; written
+               # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
                "sandbox_trusted_devices",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
@@ -375,6 +376,36 @@ async def workspace_dir(session: AsyncSession):
         path = Path(str(raw).strip()).expanduser().resolve()
         return path if path.is_dir() else None
     except (OSError, RuntimeError):
+        return None
+
+
+def run_sub_folder() -> tuple[str, ...] | None:
+    """SUB5c: the short names of this run's sub-session folder (`personal_context.sub_folder`, set by
+    `task_context.load`), () when this run is not in a sub-session. None, fail closed, for a sub-session whose folder
+    can't be named, and for a sub-session's job whose context doesn't name one: it gets no folder at all, rather
+    than the whole workspace."""
+    from server.services import background_jobs, personal_context
+    context = personal_context.current()
+    if context is not None and context.sub_folder != ():
+        return context.sub_folder or None
+    job = background_jobs._jobs.get(background_jobs._inside_job.get() or "")
+    return None if job is not None and job.parent_id else ()
+
+
+async def workspace_dir_for_run(session: AsyncSession):
+    """SUB5c: the folder this run writes in. A sub-session's job: its own `<workspace>/sub/<short name>/`
+    (`run_sub_folder`), made by the server, never the model, and checked on every call
+    (`workspace_paths.sub_folder`). Any other run: the workspace (`workspace_dir`). None when there is no workspace,
+    and when a sub-session's folder can't be made or isn't a plain folder inside the workspace: then nothing is
+    written. Reads keep the whole workspace (`workspace_dir`)."""
+    from server.services import workspace_paths
+    root, names = await workspace_dir(session), run_sub_folder()
+    if root is None or names == ():
+        return root
+    try:
+        return workspace_paths.sub_folder(root, names) if names else None
+    except (workspace_paths.PathEscape, workspace_paths.SecretFile, OSError) as exc:
+        logger.warning("sub-session folder refused: %s", type(exc).__name__)
         return None
 
 

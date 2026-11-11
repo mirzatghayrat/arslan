@@ -110,6 +110,8 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     desktopNotificationsEnabled: backend.desktop_notifications_enabled ?? true,
     islandEnabled: backend.island_enabled ?? true,
     terminalSandboxEnabled: backend.terminal_sandbox_enabled ?? true,
+    // Mirrors settings_service.sandbox_system_certificates: only an explicit "true" is on.
+    sandboxSystemCertificates: backend.sandbox_system_certificates === "true",
     memoryInConversations: backend.memory_in_conversations ?? true,
     learnedPracticesTakeEffect: backend.learned_practices_take_effect ?? true,
     phoneBridgeEnabled: backend.phone_bridge_enabled ?? false,
@@ -163,6 +165,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   desktopNotificationsEnabled: { key: "desktop_notifications_enabled", to: (v) => (v as boolean) ?? true },
   islandEnabled: { key: "island_enabled", to: (v) => (v as boolean) ?? true },
   terminalSandboxEnabled: { key: "terminal_sandbox_enabled", to: (v) => (v as boolean) ?? true },
+  sandboxSystemCertificates: { key: "sandbox_system_certificates", to: (v) => (v ? "true" : "false") },
   memoryInConversations: { key: "memory_in_conversations", to: (v) => (v as boolean) ?? true },
   learnedPracticesTakeEffect: { key: "learned_practices_take_effect", to: (v) => (v as boolean) ?? true },
   phoneBridgeEnabled: { key: "phone_bridge_enabled", to: (v) => (v as boolean) ?? false },
@@ -308,6 +311,10 @@ export function toUiMessages(items: ArslanThreadItem[]): Message[] {
         text: item.content,
         timestamp,
       };
+    }
+
+    if (item.kind === "sandbox" && item.sandboxCard) {
+      return { id, sender: "arslan", senderName: "Arslan", senderAvatar: "🦁", text: "", timestamp, sandboxCard: item.sandboxCard };
     }
 
     if (item.kind === "capability" && item.capabilityResult) {

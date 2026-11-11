@@ -253,6 +253,52 @@ def _link_hops(candidate: Path, root: Path) -> list[tuple[Path, Path]]:
     return hops
 
 
+#: SUB5c: the folder under the workspace (or a parent sub-session's folder) that holds the sub-sessions' own folders.
+SUB_DIR = "sub"
+
+
+def sub_folder(ws_root: Path, names) -> Path:
+    """SUB5c: a sub-session's own folder, `<ws_root>/sub/<name>`, a grandchild's `…/sub/<parent's name>/sub/<its
+    name>`, made here (by the server, never the model) and checked each time it is asked for. Every folder on the way
+    must be a plain folder spelled as named: an existing link, file or other spelling of the name (APFS ignores case)
+    is refused, never followed or reused. The result then goes through `resolve_in_workspace`'s checks for a write
+    (real path inside the workspace, links, Arslan's own folders). Raises PathEscape (or OSError when a folder can't
+    be made). `names` come from `sub_sessions.folder_name`: plain names, refused here otherwise."""
+    root = Path(ws_root).resolve()
+    parts = [part for name in names for part in (SUB_DIR, name)]
+    if not parts or any(not part or part in (".", "..") or "/" in part or part != part.strip() for part in parts):
+        raise PathEscape(f"not a sub-session folder name: {list(names)}")
+    path = root
+    for part in parts:
+        path = path / part
+        try:
+            os.mkdir(path, 0o755)                # never follows a link: an existing one is EEXIST, judged below
+        except FileExistsError:
+            pass
+        st = os.lstat(path)
+        if not stat.S_ISDIR(st.st_mode):
+            raise PathEscape(f"refusing a sub-session folder that isn't a plain folder: {path}")
+    _same_spelling(path, parts)
+    if resolve_in_workspace(str(path), root, for_write=True) != path:
+        raise PathEscape(f"refusing a sub-session folder that resolves elsewhere: {path}")
+    return path
+
+
+def _same_spelling(path: Path, parts: list[str]) -> None:
+    """The folder's own name on disk, from its open descriptor (macOS's F_GETPATH; O_NOFOLLOW refuses a link in its
+    last place), must end with `parts` as spelled: `Sub/AB` found for `sub/ab` is another folder's name on a
+    case-insensitive disk. Elsewhere (Linux CI) names are case-sensitive, and the open's link check stays."""
+    import fcntl
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        if hasattr(fcntl, "F_GETPATH"):
+            real = Path(os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, bytes(1024)).split(b"\0", 1)[0]))
+            if list(real.parts[-len(parts):]) != parts:
+                raise PathEscape(f"refusing a sub-session folder spelled differently on disk: {real}")
+    finally:
+        os.close(fd)
+
+
 def _refuse_cap6b(path: Path, root: Path, user_path) -> None:
     """SBX-5 CAP6b: write_file and edit_file never write the skill or plugin folders, nor Arslan's data folder
     (it holds the MCP config, runtimes, capabilities' code), even when the working folder contains them or is
