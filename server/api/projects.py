@@ -220,12 +220,14 @@ async def events(project_id: str, limit: int = Query(20, ge=1, le=100),
 
 @router.get("/projects/{project_id}/conversations")
 async def conversations(project_id: str, repo=Depends(_repository, scope="function")) -> list[dict]:
-    """Every conversation set to this project, most recently active first."""
+    """Every conversation set to this project, most recently active first. SUB5d: a sub-session is listed with its
+    `parent_id` (it takes its commander's project), and the window shows it under the conversation that started it."""
     project = await _project(repo, project_id)
-    ids = (await repo.db.execute(select(ConversationContext.id).where(
-        ConversationContext.project_id == project.id, ConversationContext.owner_id == USER.owner_id,
-        ConversationContext.kind.is_distinct_from("sub"),          # SUB2: reached through what started it
-    ))).scalars().all()
+    rows = (await repo.db.execute(select(ConversationContext.id, ConversationContext.kind, ConversationContext.parent_id)
+                                  .where(ConversationContext.project_id == project.id,
+                                         ConversationContext.owner_id == USER.owner_id))).all()
+    parents = {cid: parent if kind == "sub" else None for cid, kind, parent in rows}
+    ids = list(parents)
     if not ids:
         return []
     agg = {cid: (count, last) for cid, count, last in (await repo.db.execute(
@@ -242,7 +244,8 @@ async def conversations(project_id: str, repo=Depends(_repository, scope="functi
         count, last = agg.get(cid, (0, None))
         text = " ".join(str(openings.get(first.get(cid), "") or "").split())
         out.append({"conversation_id": cid, "messages": count,
-                    "last_at": last.isoformat() + "Z" if last else None, "opening": text[:60] or None})
+                    "last_at": last.isoformat() + "Z" if last else None, "opening": text[:60] or None,
+                    "parent_id": parents.get(cid)})
     return sorted(out, key=lambda r: r["last_at"] or "", reverse=True)
 
 

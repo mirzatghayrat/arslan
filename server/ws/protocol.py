@@ -102,11 +102,17 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     answers it (an extra key the web and the phone ignore).
     `rules` (SMART-8, #688 review 1): every terminal rule the command matched, on every command card (the outside
     and remote ones too), so the card's risk row names each; `unreadable`, why it could not be read
-    (`command_confirm.UNREADABLE`). Extra keys: the phone reads `rule` and `reason` as before."""
+    (`command_confirm.UNREADABLE`). Extra keys: the phone reads `rule` and `reason` as before.
+    `summary` (LOOP1 d1): what the command is for and what it touches, read from `pretty`
+    (`card_purpose.summarize`), which the Mac card shows; the Bridge's FrameMapper does not read it. A caller that
+    titles the card from the same text passes it on as `card_purpose.phrase(reading=…)`, so the line is read once."""
+    from server.services import card_purpose
     if network:
         reason = f"{reason}; uses the network" if reason else "uses the network"
+    pretty = " ".join([command, *argv])
     frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
-             "argv": argv, "pretty": " ".join([command, *argv]), "reason": reason}
+             "argv": argv, "pretty": pretty, "reason": reason,
+             "summary": card_purpose.summarize(pretty)}
     if network:
         frame["network"] = True
     if sandbox == "outside":

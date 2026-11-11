@@ -157,6 +157,14 @@ async def test_import_refuses_existing_key(maker, monkeypatch):
 
 # ── bundled scripts: storage + sandbox execution + traversal guard ─────────────
 
+async def _installed(maker, key: str = "handoff") -> None:
+    """The skill's row, switched on: a folder of scripts with no row is not an installed skill and never runs."""
+    async with maker() as db:
+        db.add(SkillPack(key=key, name=key, category="imported", description="d", tier="safe",
+                         status="registered", body="## Trigger\nx"))
+        await db.commit()
+
+
 async def test_import_stores_scripts_and_notes_them(maker, monkeypatch, tmp_path):
     md = VALID_MD
     tree = ["skills/handoff/SKILL.md", "skills/handoff/scripts/helper.py",
@@ -189,6 +197,7 @@ async def test_skill_script_runs_with_siblings(maker, monkeypatch, tmp_path):
     from server.registry.executors import RunPythonExecutor
     from server.services import code_sandbox
     monkeypatch.setattr(code_sandbox, "_env_cache", (sys.executable, "test-env"))
+    await _installed(maker)
     d = tmp_path / "skill_scripts" / "handoff"
     d.mkdir(parents=True)
     (d / "helper.py").write_text("VALUE = 21\n")
@@ -199,6 +208,7 @@ async def test_skill_script_runs_with_siblings(maker, monkeypatch, tmp_path):
 
 async def test_skill_script_traversal_rejected(maker, tmp_path):
     from server.registry.executors import RunPythonExecutor
+    await _installed(maker)          # so the refs under its key reach the format check, past the record check
     for ref in ("../secrets.py", "handoff/../../x.py", "handoff/", "absolute//etc.py"):
         out = await RunPythonExecutor().execute({"skill_script": ref})
         assert out["ok"] is False, ref

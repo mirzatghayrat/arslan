@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
@@ -12,15 +11,12 @@ from arslan.llm import tool_names, trajectory, usage_sink
 from arslan.runtime_policy import ProgressPolicy, bounded_history
 
 from server.orchestrator import run_trace
-from server.orchestrator.answer_guards import _embeds_protocol, _is_deferral_stub, _unverified_claim
-from server.orchestrator.answer_salvage import (
-    _CHAT_TIMEOUT_S, _chat_miss_message, _fallback_with_digest, _salvage_plain, _synthesize_from_findings)
-from server.orchestrator import command_gate, on_demand, tool_execute, tool_gates, turn_context
+from server.orchestrator.answer_salvage import _CHAT_TIMEOUT_S
+from server.orchestrator import command_gate, on_demand, tool_execute, tool_gates, turn_answer, turn_context
 from server.orchestrator.command_gate import _nobody_to_ask, _scheduled_command_refused
 from server.orchestrator.model_step import (
     _SENT_IS_FINAL, _SchemaDrops, _context_parts, _hiding, _model_call, _rendered_size, _server_trims)
-from server.orchestrator.turn_stream import (
-    _UNVERIFIED_BOUNCES, TextShown, _StepStream, _TurnText, _correct, _kept_note, _not_verified, _streams_answer)
+from server.orchestrator.turn_stream import TextShown, _StepStream, _TurnText, _streams_answer
 from server.orchestrator.turn_state import (  # noqa: F401
     TOOL_TIMEOUT_S, ResolveTools, StepMode, StepReply, ToolTurn, TurnRequest, TurnState)
 from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
@@ -30,11 +26,14 @@ from server.services.llm_factory import build_adapter
 from server.services.replay_safety import _check_fetch_budget
 # Tests read these here. DELETE-BY: v0.1.64, with LOOP1's slice z.
 from server.orchestrator.answer_guards import (  # noqa: F401
-    _CLAIMS_SEARCH_RE, _DEFERRAL_MAX, _PROMISES_ACTION_RE, _claims_search, _draws_chart_fence, _promises_action)
-from server.orchestrator.answer_salvage import _chat_retry, _clean_findings  # noqa: F401
+    _CLAIMS_SEARCH_RE, _DEFERRAL_MAX, _PROMISES_ACTION_RE, _claims_search, _draws_chart_fence, _embeds_protocol,
+    _promises_action, _unverified_claim)
+from server.orchestrator.answer_salvage import (  # noqa: F401
+    _chat_retry, _clean_findings, _salvage_plain, _synthesize_from_findings)
 from server.orchestrator.model_step import (  # noqa: F401
     _BAD_TOOLS, _REFUSES_IMAGES, CONTINUE_PROMPT, _recover_truncation, _refused_tool, _render_request)
-from server.orchestrator.turn_stream import _JSON_HOLD, _STREAM_HOLD, _label_locale, _progress_updates  # noqa: F401
+from server.orchestrator.turn_stream import (  # noqa: F401
+    _JSON_HOLD, _STREAM_HOLD, _UNVERIFIED_BOUNCES, _label_locale, _progress_updates)
 from server.services.replay_safety import (  # noqa: F401
     HERMETIC_FETCH_BUDGET, _hermetic_fetches, begin_hermetic_attempt, end_hermetic_attempt, hermetic_fetches_used,
     reset_hermetic_fetch_budget)
@@ -1300,21 +1299,18 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
     max_tool_calls is an optional explicit compatibility ceiling, never a default.
 
     LOOP1 c3: the turn opens (`_open_turn`, `_presearch`), then each step runs its phases (`_step_mode`,
-    `_step_notes`, `_fit_history`, `_request`) and either its tool batch (`tool_batch.run_batch`) or its answer, below.
+    `_step_notes`, `_fit_history`, `_request`) and either its tool batch (`tool_batch.run_batch`) or its answer
+    (`turn_answer.finish`).
     """
-    # The request's fields by name, for the answer below (LOOP1 c3c takes it to its phases).
-    user_content, on_chunk = request.user_content, request.on_chunk
     opened = await _open_turn(request, state)
     if opened is not None:
         return opened
     await _presearch(request, state)
-    from server.orchestrator import agent_status, tool_batch      # tool_batch imports this module
+    from server.orchestrator import tool_batch      # tool_batch imports this module
     state.offline_note = _OFFLINE_NOTE if "run_command" in state.wired_keys else ""
     state.can_save = bool(WRAP_UP_TOOLS & state.wired_keys)
-    # Set once when the turn opened and never rebound, so the answer below reads them by name, as before.
-    a, budget, runtime, acceptance_runtime, system, turn_state, tool_trace, turn_text = (
-        state.adapter, state.budget, state.runtime, state.acceptance_runtime, state.system, state.recovery,
-        state.tool_trace, state.turn_text)
+    # Set once when the turn opened and never rebound, so the end below reads them by name, as before.
+    budget, runtime = state.budget, state.runtime
     for step in range(state.request_ceiling):
         mode = _step_mode(request, state, step)
         notes, wrap_up = await _step_notes(request, state, mode)
@@ -1322,132 +1318,18 @@ async def _run_native(request: TurnRequest, state: TurnState) -> dict:
         reply = await _request(request, state, mode, notes)
         if isinstance(reply, dict):
             return reply
-        forced = mode.forced
-        resp, stream, tool_calls = reply.resp, reply.stream, reply.tool_calls
-        convo = state.convo                 # rebound only when the history is fitted, above
 
-        if not forced and tool_calls:
+        if not mode.forced and reply.tool_calls:
             # Each call through its stages: arguments, host tools, the unwrap, the gates, execute and after.
             ended = await tool_batch.run_batch(request, state, step, mode, reply, wrap_up)
             if ended is not None:
                 return ended
             continue
-
-        # No tool calls (or forced) → resp.content should be the FINAL answer. GUARD: the model
-        # (esp. on the forced step) may ignore "answer now" and instead narrate or write a TEXT
-        # tool-call in its content. Never surface that. Salvage once with a hard no-tools prompt,
-        # then synthesize from the accumulated TOOL RESULTs so we NEVER end empty or with a fake
-        # tool-call. Native content separation alone does not prevent malformed output.
-        # Even a provider ignoring tools=None still marks narration with tool_calls.
-        # Never turn that narration into a final answer on a forced synthesis step.
-        final_text = "" if tool_calls else agent_status.strip_echo((resp.content or "").strip())
-        # The reply's continuation replays its own text verbatim (Claude: byte for byte); once the host
-        # changed that text (an echo stripped, tool-call text replaced) it goes, as at the repair below.
-        own_continuation = getattr(resp, "continuation", None) if final_text == (resp.content or "").strip() else None
-        streamed = stream is not None and stream.released          # K8a: this step's text already went out
-        claimed = _unverified_claim(final_text, tool_trace, state.wired_keys)
-        deferred = _is_deferral_stub(final_text)
-        protocol_text = _embeds_protocol(final_text) or (stream is not None and stream.stopped)
-        # 0.1.50: an answer that denies a capability this turn had (bench: "no file
-        # write ability" with write_file offered) gets one correction.
-        from server.orchestrator import capability_truth
-        denied = (None if forced or turn_state.capability_bounced or claimed or deferred or protocol_text
-                  else capability_truth.denied_capability(final_text, state.wired_keys, tool_trace))
-        if denied:
-            turn_state.capability_bounced = True
-            await _correct(turn_text, streamed)
-            convo.extend([trajectory.assistant(final_text, continuation=own_continuation),
-                          {"role": "user", "content": capability_truth.correction(denied, state.wired_keys)}])
-            continue
-        if not forced and (claimed or ((deferred or protocol_text) and state.wired_keys)) \
-                and turn_state.unverified_bounces < _UNVERIFIED_BOUNCES:
-            turn_state.unverified_bounces += 1
-            await _correct(turn_text, streamed)
-            # Never execute rescued JSON, nor echo a malformed invocation back
-            # as an example to imitate. Permit a new structured call only through
-            # the normal tool resolver, permission gate and existing budgets.
-            convo.extend([trajectory.assistant(
-                "Non-executable tool-call text omitted." if protocol_text else final_text,
-                continuation=None if protocol_text else own_continuation), {"role": "user", "content":
-                ("The proposed answer was tool-call text, not a native tool request; it executed no action. " if protocol_text else
-                 f"The proposed answer lacks a successful {claimed} receipt. " if claimed else
-                 "The proposed answer only promises future action. ") +
-                "Use an available native tool if needed, or give an honest answer stating the limitation. "
-                "Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text."}])
-            continue
-        # A clean answer is prose. Reject content that is / embeds a tool-call or escalate object
-        # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or a
-        # SHORT deferral stub that promises action without delivering. A long, substantive answer is
-        # KEPT even if it mentions action verbs — describing capabilities ("我能搜索、画图表") is not a
-        # deferral (live bug: capability answers were bounced to the digest/继续 floor). When rejected,
-        # repair — but HOW depends on whether any tool actually ran this turn:
-        #   • tool_trace non-empty  → a real research round: synthesize the answer from the gathered
-        #     findings (may honestly fall to a findings-digest + 继续 nudge — work WAS done).
-        #   • tool_trace EMPTY      → a chat/meta turn (or a first-step narration stub). There are NO
-        #     findings and NOTHING is unfinished, so the "还没做完，回复继续" research nudge would be a
-        #     lie. Salvage a direct plain-text answer instead.
-        replaced = (not final_text) or protocol_text or deferred or claimed
-        if replaced:
-            from server.services import runtime_messages
-            notice_locale = await runtime_messages.selected_locale()
-            await _correct(turn_text, streamed)
-            replacement = (await _synthesize_from_findings(a, system, user_content, tool_trace, or_none=True)
-                           if tool_trace else await _salvage_plain(a, system, user_content))
-            if replacement and _unverified_claim(replacement, tool_trace, state.wired_keys):
-                replacement = None
-            if replacement:
-                final_text = replacement
-            elif turn_text is not None and turn_text.pending is not None:
-                # K8a (#694 review): nothing usable replaces what the user saw, so it stays, with one note.
-                turn_text.keep_shown()
-                final_text = await _kept_note(turn_text)
-            else:
-                final_text = (_fallback_with_digest(user_content, tool_trace, locale=notice_locale)
-                              if tool_trace else _chat_miss_message(user_content, locale=notice_locale))
-        # K8a: what is still to be shown at the end (nothing when this step's text already went out), and
-        # the whole answer as the user will have read it.
-        to_show = final_text if replaced or not streamed else ""
-        answer = final_text if turn_text is None else turn_text.after(to_show)
-        if acceptance_runtime is not None:
-            from server.services import task_validation
-            report = await task_validation.validate_output(acceptance_runtime, answer, tool_trace, model_adapter=a)
-            validation_failures = task_validation.failures(report)
-            if validation_failures:
-                repair_fingerprint = hashlib.sha256(json.dumps(report, sort_keys=True).encode()).hexdigest()
-                prior_repairs = acceptance_runtime.progress.validation_repairs
-                links = task_validation.unverified_links(answer, report)
-                if not forced and len(prior_repairs) < 2 and repair_fingerprint not in prior_repairs:
-                    acceptance_runtime.progress = acceptance_runtime.progress.model_copy(update={
-                        "validation_repairs": (*prior_repairs, repair_fingerprint)})
-                    await acceptance_runtime.checkpoint("validation_repair")
-                    if streamed and links:      # K8a Q1: what went out is never rewritten; the repair follows
-                        await _not_verified(turn_text, links)
-                    # The reply's continuation belongs to its own text only; a
-                    # synthesized/salvaged answer came from another request.
-                    own = final_text == (resp.content or "").strip()
-                    convo.extend([trajectory.assistant(
-                        final_text, continuation=getattr(resp, "continuation", None) if own else None),
-                                  {"role": "user", "content":
-                        "Deterministic validation failed: " + "; ".join(validation_failures)[:3000] +
-                        ". Repair only within the existing task scope, permissions and remaining budget. "
-                        "Do not repeat successful or uncertain external writes. If repair is unavailable, "
-                        "state the failed checks and remaining work; do not claim acceptance."}])
-                    continue
-                acceptance_runtime.pause_reason = "task_validation_failed"
-                if turn_text is not None and (streamed or turn_text.parts):
-                    turn_text.append(to_show)           # K8a Q1: appended to, never rewritten
-                    to_show = ""
-                    await _not_verified(turn_text, links)
-                else:
-                    final_text = task_validation.failure_output(final_text, report, acceptance_runtime.spec.locale)
-        if turn_text is not None and (streamed or turn_text.parts):
-            turn_text.append(to_show)
-            return {"final": turn_text.text, "escalation": None, "tool_trace": tool_trace,
-                    "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
-        if final_text:
-            on_chunk(final_text)
-        return {"final": final_text, "escalation": None, "tool_trace": tool_trace,
-                "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
+        # No tool calls (or forced): the step's answer, through its guards. None: a correction or a repair went back
+        # to the model, and the next step answers it.
+        answered = await turn_answer.finish(request, state, mode, reply)
+        if answered is not None:
+            return answered
 
     if runtime:
         runtime.pause_reason = "task_budget_exhausted"

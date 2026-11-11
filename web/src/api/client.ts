@@ -649,8 +649,19 @@ export const fetchProviderModels = (id: number, refresh = false) =>
 // ── Conversation actions: delete ──────────────
 
 /** Permanently delete a conversation + its rows. Returns per-table delete counts. */
-export const deleteConversation = (id: string) =>
-  request<DeleteResult>(`/conversations/${id}`, { method: "DELETE" });
+export const deleteConversation = (id: string, opts: { subSessions?: "delete" | "keep"; subSession?: boolean } = {}) => {
+  // SUB5a: a conversation with sub-sessions names what happens to them (422 `sub_sessions_choice_required` without it, 409
+  // `sub_sessions_running` while one works), and a sub-session is deleted only when named as one.
+  const q = new URLSearchParams();
+  if (opts.subSessions) q.set("sub_sessions", opts.subSessions);
+  if (opts.subSession) q.set("sub_session", "true");
+  const qs = q.toString();
+  return request<DeleteResult>(`/conversations/${id}${qs ? `?${qs}` : ""}`, { method: "DELETE" });
+};
+
+/** SUB5d: what the tree this conversation is in has spent, as its limit counts it. */
+export const subSessionSpend = (id: string) =>
+  request<{ spent_usd: number }>(`/conversations/${encodeURIComponent(id)}/sub-sessions/spend`);
 
 // ── LLM connection test endpoints (UX1) ───────────────────────────────────────
 

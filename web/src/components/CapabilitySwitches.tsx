@@ -74,6 +74,18 @@ export default function CapabilitySwitches() {
     catch { setFailed(true); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // CAP6a part 2: told once, in one line, that the imported skills moved to the folder other tools share. "Seen" is
+  // written as soon as it shows, so it never shows again, whether or not the page stays open.
+  const [exported, setExported] = useState({ count: 0, kept: 0 });
+  useEffect(() => {
+    let live = true;
+    capabilitiesApi.exportNotice().then(({ count, kept }) => {
+      if (!live || !(count || kept)) return;
+      setExported({ count: count || 0, kept: kept || 0 });
+      void capabilitiesApi.exportNoticeSeen().catch(() => { /* at worst it shows once more next time */ });
+    }).catch(() => { /* no line: nothing else depends on it */ });
+    return () => { live = false; };
+  }, []);
 
   const merge = (next: CapabilityRow) => setRows(old => old?.map(r => (r.key === next.key ? { ...r, ...next } : r)) ?? old);
   async function flip(row: CapabilityRow, on: boolean) {
@@ -125,6 +137,10 @@ export default function CapabilitySwitches() {
   const what = (row: CapabilityRow) => row.section === "builtin" ? t(`capabilityList.${row.key}_what`)
     : isMethod(row) ? t("capabilityList.methodWhat")
     : row.section === "plugins" && stopped(row) ? t("capabilityList.plugin_stopped", { name: row.detail ?? "" })
+    // CAP8-2: an update in Claude Code added a blocking hook; only its card on the Import sheet brings it back.
+    : row.section === "plugins" && row.reason === "plugin_hooks" ? t("capabilityList.plugin_hooks", { name: row.detail ?? "" })
+    // Or its copy is refused for anything else, which could hide such a hook.
+    : row.section === "plugins" && row.reason === "plugin_refused" ? t("capabilityList.plugin_refused", { name: row.detail ?? "" })
     : row.section === "skills" || row.section === "plugins" ? row.detail ?? "" : "";
   const usedAt = (iso: string | null) => usedLabel(t, iso, i18n?.resolvedLanguage);
   const used = (row: CapabilityRow) => usedAt(row.last_used);
@@ -205,6 +221,10 @@ export default function CapabilitySwitches() {
         {rows && <div className="min-w-[200px] flex-1"><CapabilityFilter testId="cap-search" value={query} onChange={setQuery}
           shown={shown.length} total={inFilter.length} /></div>}
       </div>
+      {(exported.count > 0 || exported.kept > 0) && <Notice testId="cap-export-notice">
+        {[exported.count > 0 && t("capabilityList.exportedNotice", { count: exported.count }),
+          exported.kept > 0 && t("capabilityList.exportedKept", { count: exported.kept })].filter(Boolean).join(" ")}
+      </Notice>}
       {failed && <Notice tone="error" role="alert">{t("capabilityList.loadFailed")}</Notice>}
       {error && <Notice tone="error" role="alert">{error}</Notice>}
       {rows && searching && shown.length === 0 &&

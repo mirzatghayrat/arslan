@@ -413,11 +413,18 @@ async def _with_plugins(rows: list[dict]) -> list[dict]:
     for plugin in plugins:
         held = sorted(parts[plugin.id], key=lambda part: (part["kind"], part["name"] or ""))
         stopped = (plugin.test or {}).get("stopped")
-        state = "setup" if stopped else "off" if held and all(p["state"] in ("off", "na") for p in held) else "on"
+        hooked = (plugin.test or {}).get("hooks_added")       # CAP8-2: an update added a blocking hook
+        # Or (HOOK-1) changed any hook, which reads as a hook too; or is refused for anything else.
+        refused = hooked and hooked.get("code", "hooks") not in ("hooks", "hooks_changed")
+        state = "setup" if stopped or hooked else "off" if held and all(p["state"] in ("off", "na") for p in held) \
+            else "on"
         row = _row(f"plugin:{plugin.id}", state, switch="plugin", name=plugin.name, section="plugins",
-                   origin="installed", source_id=plugin.id, reason="plugin_stopped" if stopped else None,
-                   fix="open_tab:mcps" if stopped else None,
-                   detail=stopped["connection"] if stopped else (plugin.candidate or {}).get("summary") or None)
+                   origin="installed", source_id=plugin.id,
+                   reason="plugin_refused" if refused else "plugin_hooks" if hooked else "plugin_stopped" if stopped
+                   else None,
+                   fix="open_tab:mcps" if stopped and not hooked else None,
+                   detail=hooked["code"] if refused else hooked["event"] if hooked else stopped["connection"] if stopped
+                   else (plugin.candidate or {}).get("summary") or None)
         row["parts"] = held
         row["last_used"] = max((p["last_used"] for p in held if p["last_used"]), default=None)
         kept.append(row)
@@ -553,8 +560,15 @@ def skill_to_trash(pack) -> None:
         folder = agent_skills.folder(pack.key)
         if folder.is_symlink():
             raise NotRemovable(pack.key)
-        capability_install.to_trash(folder, prefix="Arslan skill")
+        # Only while the folder is still exactly what Arslan wrote (#795's rule, as for the dossier's leftovers and an
+        # install's): one another tool replaced or the user edited since is theirs now, and stays. Its entry goes
+        # either way, so the next sync lists what is left as another tool's, off until its card.
+        if agent_skills.still_arslans(pack.key):
+            capability_install.to_trash(folder, prefix="Arslan skill")
         agent_skills.forget(pack.key)
+        # CAP6a part 2: a data-folder copy the export could not remove, which run_python would otherwise still load
+        # under the key once the row is gone. to_trash moves a link itself.
+        capability_install.to_trash(config.data_dir() / "skill_scripts" / pack.key, prefix="Arslan skill files")
         return
     folder = config.data_dir() / "skill_scripts" / pack.key
     if folder.is_symlink():

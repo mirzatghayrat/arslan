@@ -1500,5 +1500,33 @@
   },
   "waiting": {
     "count": "Esperando por ti: {{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "En curso",
+      "reporting": "Informando",
+      "waiting": "Esperando por ti",
+      "done": "Hecha",
+      "stopped": "Detenida",
+      "failed": "Fallida",
+      "interrupted": "Interrumpida",
+      "ended": "Terminó sin acabar"
+    },
+    "toggle": "Mostrar u ocultar sus subsesiones ({{count}})",
+    "header": "Esta es una subsesión de «{{name}}»; le informa cuando termina.",
+    "back": "Volver a «{{name}}»",
+    "panel": "Subsesiones",
+    "open": "Abrir",
+    "spend": "Gastado {{spent}}, límite {{limit}} ({{each}} por tarea × {{times}})",
+    "spendNoLimit": "Gastado {{spent}}, sin límite en dólares",
+    "delete": {
+      "title": "¿Eliminar «{{name}}»?",
+      "also_one": "Eliminar también su subsesión",
+      "also_other": "Eliminar también sus {{count}} subsesiones",
+      "keepNote": "Sus subsesiones quedan como conversaciones normales, con sus ajustes sin cambios.",
+      "stopFirst": "Una subsesión debajo sigue trabajando o informando. Detenla o espera su informe, y luego elimina.",
+      "choiceRequired": "Ahora tiene {{count}} subsesiones. Elige de nuevo qué pasa con ellas.",
+      "failed": "No se pudo eliminar. Inténtalo de nuevo."
+    }
   }
 }

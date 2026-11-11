@@ -710,7 +710,8 @@ async def before_delete(db, conversation_id: str, *, choice: str | None,
     SubSessionError:
     - `not_found` for a sub-session not named as one (`as_sub_session`): what a phone's `conversation.delete` gets;
     - `sub_sessions_running` while anything under it is at work;
-    - `sub_sessions_choice_required` when it has sub-sessions and `choice` is neither "delete" nor "keep".
+    - `sub_sessions_choice_required` when it has sub-sessions and `choice` is neither "delete" nor "keep", with how
+      many there are at every level (`sub_sessions`).
     A sub-session deleted while its parent waits on it reports `stopped`; the others report as usual. With "keep"
     its direct sub-sessions are promoted (`_promote`). Changes go into `db`'s transaction; the caller deletes the
     rows and commits.
@@ -735,7 +736,8 @@ async def before_delete(db, conversation_id: str, *, choice: str | None,
             raise SubSessionError("sub_sessions_running")
         direct = await children(db, conversation_id)
         if direct and choice not in ("delete", "keep"):
-            raise SubSessionError("sub_sessions_choice_required", sub_sessions=len(direct))
+            # SUB5d: every level, as the window's dialog counts them ("also delete its N sub-sessions").
+            raise SubSessionError("sub_sessions_choice_required", sub_sessions=len(below))
         kept = direct if choice == "keep" else []
         gone = [conversation_id] if kept else [conversation_id, *below]
         _deleted.update(gone)

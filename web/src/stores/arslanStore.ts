@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { request } from "../api/client";
 import { announceProactiveChange } from "../api/proactive";
+import { summaryOf, type CommandSummary } from "../lib/commandRisk";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
 import type { ActionKind, ArslanServerMessage, ArslanThreadItem, EarlierDraft, JobCard, JobOutcome, ModelCall, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
@@ -14,7 +15,7 @@ const _arrived = () => ({ receivedAt: Date.now(), seq: ++_cardSeq });
 /** A card waiting on the user in this window, by kind (0.1.61 §A4). Each kind is a list, oldest first, keyed by `callId`: a
  *  second card of a kind (a window's own run-command card and a job's) waits behind the first and never replaces it. */
 export type PendingCommand = { callId: string; pretty: string; reason: string; remoteHost: string; fingerprints: string[]; background?: boolean;
-  sandbox?: "outside"; why?: string; rule?: string; rules?: string[]; unreadable?: string; deleteMode?: string; deleteTargets?: string[]; network?: boolean; unsandboxed?: boolean; receivedAt?: number;
+  sandbox?: "outside"; why?: string; rule?: string; rules?: string[]; summary?: CommandSummary; unreadable?: string; deleteMode?: string; deleteTargets?: string[]; network?: boolean; unsandboxed?: boolean; receivedAt?: number;
   seq?: number } & CardV2;
 export type PendingEnrollNode = { callId: string; name: string; host: string; user: string; fingerprints: string[]; receivedAt?: number; seq?: number };
 export type PendingWorkspaceWrite = { callId: string; workspace: string; action: string; path: string; background?: boolean; receivedAt?: number; seq?: number } & CardV2;
@@ -852,6 +853,8 @@ function makeActions(set: SetState, get: GetState) {
                                   // about it (the 「风险」 row): the rule it matched, the network, no sandbox around it.
                                   why: frame.why || "", rule: frame.rule || undefined,
                                   rules: Array.isArray(frame.rules) ? frame.rules.filter((r): r is string => typeof r === "string") : undefined,
+                                  // LOOP1 d1: what it is for and touches, read by the server (card_purpose.summarize).
+                                  summary: summaryOf(frame.summary),
                                   unreadable: typeof frame.unreadable === "string" ? frame.unreadable : undefined,
                                   deleteMode: typeof frame.delete_mode === "string" ? frame.delete_mode : undefined,
                                   deleteTargets: Array.isArray(frame.delete_targets)

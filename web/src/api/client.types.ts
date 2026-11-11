@@ -618,6 +618,8 @@ export interface CapabilityCard {
   commit?: string;
   skills?: PluginSkill[];
   connections?: PluginConnection[];
+  /** CAP8-2's hook rule: one event per hook that won't run (a skill's frontmatter hooks, a plugin's skills' too). */
+  hooks?: string[];
 }
 /** A skill inside a plugin, as its card shows it. */
 export interface PluginSkill {
@@ -688,8 +690,7 @@ export interface ImportRow {
   tick: boolean;
 }
 /** CAP8-2: one of Claude Code's skills on the import sheet (server/services/tool_import.py, `Item.view`). `id` and
- *  `same_as` are opaque, as a server row's are. A plugin row comes back too (`plugins`), and the sheet doesn't draw it
- *  yet: its card before the install needs a board of its own first. */
+ *  `same_as` are opaque, as a server row's are. `hooks`: the events of its frontmatter hooks, which never run. */
 export interface ImportSkillRow {
   id: string; tool: "claude_code"; kind: "skill"; name: string; digest: string; key: string | null;
   description: string | null; scripts: string[]; references: string[];
@@ -697,18 +698,37 @@ export interface ImportSkillRow {
   left: number;
   scan: "clean" | "warn" | "blocked" | null;
   here: boolean; same_as: string | null; refused: string | null; refused_part: string | null; tick: boolean;
+  hooks?: string[];
+}
+/** CAP8-2's plugin follow-up: one of Claude Code's plugins. `hooks`: one event per hook, none of which Arslan runs;
+ *  `from`: the marketplace it was installed from (null: Claude Code's skills folder). Its card comes before it is added. */
+export interface ImportPluginRow {
+  id: string; tool: "claude_code"; kind: "plugin"; name: string; digest: string; skills: string[]; connections: string[];
+  hooks: string[]; from: string | null;
+  here: boolean; same_as: string | null; refused: string | null; refused_part: string | null; tick: boolean;
+}
+/** The card a plugin's first add answers with: CAP7b's parts (`plugin_package.card_fields`), what it says it does, where
+ *  Claude Code got it, and its hooks' events. */
+export interface ImportPluginCard {
+  name: string; summary: string; from: string | null; hooks: string[]; commit: string;
+  license: { spdx: string | null; read_from: string | null }; skills: PluginSkill[]; connections: PluginConnection[];
+  keys: CapabilityCard["keys"]; folders: string[]; publisher: CapabilityCard["publisher"];
 }
 export interface ImportScan {
   tools: { tool: ImportRow["tool"]; state: "read" | "missing" | "malformed"; count: number }[];
   servers: ImportRow[];
   skills?: ImportSkillRow[];
+  plugins?: ImportPluginRow[];
 }
-export interface ImportTick { id: string; digest: string; keys: Record<string, string> }
+/** `card`: a plugin's yes to exactly the card it was shown. */
+export interface ImportTick { id: string; digest: string; keys: Record<string, string>; card?: string }
 export interface ImportResult {
   id: string;
-  state: "on" | "added" | "needs_sign_in" | "failed" | "blocked" | "refused" | "here" | "needs_keys" | "gone" | "changed";
+  /** `card`: a plugin's card, shown before it is added; `skipped`: the sheet's own, for a card the user skipped. */
+  state: "on" | "added" | "needs_sign_in" | "failed" | "blocked" | "refused" | "here" | "needs_keys" | "gone" | "changed"
+    | "stopped" | "card" | "skipped";
   code?: string; stage?: string; detail?: string; keys?: string[]; tools?: number; source_id?: string; server_id?: number;
-  key?: string;
+  key?: string; card?: ImportPluginCard; card_digest?: string;
 }
 
 /** K8a: text a reply showed and then replaced, with the server's label for it. */
@@ -835,7 +855,7 @@ export type ArslanServerMessage =
     }
   | { type: "suggest_create"; draft: SuggestDraft; task_brief?: string | null; overlaps?: OverlapInfo | null }
   | { type: "propose_invite"; spawn_id: number; reason: string }
-  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside"; why?: string; rule?: string; rules?: string[]; unreadable?: string; delete_mode?: string; delete_targets?: string[]; network?: boolean; unsandboxed?: boolean } & CardV2Fields)
+  | ({ type: "propose_run_command"; call_id: string; command?: string; argv?: string[]; pretty: string; reason?: string; remote_host?: string; fingerprints?: string[]; background?: boolean; sandbox?: "outside"; why?: string; rule?: string; rules?: string[]; summary?: unknown; unreadable?: string; delete_mode?: string; delete_targets?: string[]; network?: boolean; unsandboxed?: boolean } & CardV2Fields)
   | { type: "propose_enroll_node"; call_id: string; name: string; host: string; user: string; fingerprints: string[] }
   | ({ type: "propose_workspace_write"; call_id: string; workspace: string; action: string; path: string; background?: boolean } & CardV2Fields)
   | ({ type: "propose_schedule"; call_id: string; name: string; when: string; prompt?: string; background?: boolean } & CardV2Fields)

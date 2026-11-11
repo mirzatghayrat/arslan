@@ -47,6 +47,13 @@ ALLOWED_LICENSES = {"MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC",
                     "Unlicense", "CC0-1.0", "0BSD"}
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
+#: The most a SKILL.md frontmatter, and its name and description as YAML reads them, may hold before they are parsed
+#: and cleaned (#795 review: a 5 MB plain scalar took seconds to parse and clean, on the event loop in the dossier
+#: and at start). The open standard allows 64 characters for a name and 1,024 for a description, and the cleaner
+#: keeps 100 and 300; these leave room for marks and escapes, never for megabytes. Past them: not a valid SKILL.md.
+_MAX_FRONTMATTER = 20_000
+_MAX_NAME = 1_000
+_MAX_DESCRIPTION = 5_000
 
 
 def _data_dir() -> Path:
@@ -72,7 +79,7 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
     name's ASCII letters and digits; a name with none (Chinese, for example) takes its folder's, else a short
     hash of `path`, never "" (#539 review 9: "" put the files at skill_scripts/'s root)."""
     m = _FRONTMATTER_RE.match(raw or "")
-    if not m:
+    if not m or len(m.group(1)) > _MAX_FRONTMATTER:
         return None
     try:
         meta = yaml.load(m.group(1), Loader=_NoAliases) or {}
@@ -83,6 +90,8 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
     # And a name or description is a plain value, never a list or a mapping (only those are turned into text).
     if isinstance(meta["name"], (list, dict)) or isinstance(meta["description"], (list, dict)):
         return None
+    if len(str(meta["name"])) > _MAX_NAME or len(str(meta["description"])) > _MAX_DESCRIPTION:
+        return None                                  # before the cleaner, which walks every character
     # UNI1: the name and description through the one name cleaner; the body keeps ordinary text, and loses
     # only Tag and control characters (`cleaned` says whether it lost any).
     from server.orchestrator import untrusted
@@ -99,6 +108,49 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
     # character the cleaner drops is still the sign of a skill that tried to hide one (#526 merged with #539).
     return {"key": key, "name": name, "description": description, "body": body, "cleaned": body != plain,
             "frontmatter": f"{meta['name']}\n{meta['description']}"}
+
+
+class HookRefused(ValueError):
+    """A SKILL.md whose frontmatter has a hook the user's hook rule refuses (`frontmatter_hooks`): `code` "hooks" (an
+    event not on the quiet list, named in `part`) or "unreadable" (a `hooks` value of a shape Claude Code wouldn't
+    load). The whole skill is refused. `rows` (HOOK-1): a protection refused it, and these are its hooks as read, for
+    the refusal to show."""
+
+    def __init__(self, code: str, part: str, rows: list[dict] | None = None):
+        super().__init__(f"it has a hook that can block or stop actions ({part}), which Arslan doesn't run"
+                         if code == "hooks" else "its hooks can't be read")
+        self.code, self.part, self.rows = code, part, rows
+
+
+def frontmatter_hooks(raw: str) -> list[str]:
+    """The events of `frontmatter_hook_rows`, one per hook."""
+    return [row["event"] for row in frontmatter_hook_rows(raw)]
+
+
+def frontmatter_hook_rows(raw: str, connections: dict[str, str] | None = None, *, where: str = "SKILL.md hooks",
+                          read=None) -> list[dict]:
+    """The hooks a SKILL.md's frontmatter declares (Claude Code runs `hooks` there), one row each, by the user's hook
+    rule (CAP8-2, 2026-11-10; `plugin_hooks.rows`). The one reader of a skill's hooks: the GitHub listing and import
+    (CAP4's card, CAP7b's plugins), the import sheet's skills and plugins, and another tool's skill read in place all
+    come through here. None is ever run here, and none is written on: every install writes Arslan's own SKILL.md,
+    name and description only, and keeps these rows in its record in the data folder (a plugin's skill's, on the
+    plugin's row). A protection, an event not on the quiet list or an unknown one raises HookRefused, so the skill is
+    refused whole: dropping a guard silently is what the rule forbids. `where`: the SKILL.md's path, in each row's
+    digest, so a moved hook is a change. Only called on one `parse_skill_md` took, so the frontmatter is capped and
+    holds no alias."""
+    from server.services import plugin_hooks, plugin_package
+    text = _FRONTMATTER_RE.match(raw).group(1)
+    node = yaml.compose(text, Loader=_NoAliases)
+    if isinstance(node, yaml.MappingNode) and [getattr(key, "value", None) for key, _ in node.value].count("hooks") > 1:
+        raise HookRefused("unreadable", "hooks")       # read by the last here, maybe by another or refused elsewhere
+    meta = yaml.load(text, Loader=_NoAliases) or {}
+    hooks = meta.get("hooks") if isinstance(meta, dict) else None
+    if hooks is None:
+        return []
+    try:
+        return plugin_hooks.numbered(plugin_hooks.rows(hooks, where, connections, read))
+    except plugin_package.Refused as exc:
+        raise HookRefused(exc.code, exc.part, rows=exc.rows) from None
 
 
 def _slug(text: str) -> str:
@@ -291,8 +343,18 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
             # unauthenticated listing of a large library would pass GitHub's hourly limit); the import scans them
             # and blocks there.
             scanned = scan_prepared({"skill_md": raw, "info": info, "scripts": {}, "references": {}})
+            try:
+                hooks = frontmatter_hooks(raw)
+                entry.update(hooks=hooks)
+            except HookRefused as exc:
+                hooks = exc
+                if exc.rows is not None:            # HOOK-1: a protection, shown with the refusal
+                    from server.services import plugin_hooks
+                    entry.update(hook_rows=plugin_hooks.card_rows(exc.rows))
             if block:
                 entry.update(importable=False, reason=block)
+            elif isinstance(hooks, HookRefused):
+                entry.update(importable=False, reason=str(hooks))
             elif scanned["level"] == "blocked":
                 rules = ", ".join(sorted({f["rule"] for f in scanned["findings"] if f["level"] == "high"}))
                 entry.update(importable=False, reason=f"blocked by the safety check: {rules}")
@@ -420,6 +482,7 @@ async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
+    hook_rows = frontmatter_hook_rows(raw, where=path)      # HookRefused (a ValueError): the whole skill is refused
     async with db_session.AsyncSessionLocal() as db:
         if await db.get(SkillPack, info["key"]) is not None:
             raise ValueError(f"skill '{info['key']}' already exists in the library")
@@ -427,7 +490,8 @@ async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str
     scripts, references = await _bundles(owner, repo, sha, path, paths, skipped, _keep, fetch)
     return {"key": info["key"], "info": info, "full_name": meta["full_name"], "commit": sha, "license": spdx,
             "license_source": source, "skill_md": raw, "scripts": scripts, "references": references,
-            "files": files, "sizes": sizes, "skipped": skipped}
+            "files": files, "sizes": sizes, "skipped": skipped, "hooks": [row["event"] for row in hook_rows],
+            "hook_rows": hook_rows}
 
 
 async def install_prepared(prepared: dict, *, source_id: str | None = None, approved: bool = True) -> dict:
@@ -452,31 +516,43 @@ async def install_prepared(prepared: dict, *, source_id: str | None = None, appr
         if await db.get(SkillPack, key) is not None:
             raise ValueError(f"skill '{key}' already exists in the library")
     stored, stored_refs = list(prepared["scripts"]), list(prepared["references"])
-    leftover = _data_dir() / "skill_scripts" / key
-    if os.path.lexists(leftover):
-        capability_install.to_trash(leftover, prefix="Arslan leftover skill files")
     folder = agent_skills.folder(key)
-    if agent_skills.still_arslans(key):
-        # Arslan's own folder with no row (a removal cut short), exactly as it installed it: a leftover too, never
-        # joined to the new skill. One that differs from its hashes may be someone else's now: refused below.
-        capability_install.to_trash(folder, prefix="Arslan leftover skill files")
-        agent_skills.forget(key)
     body = _body(prepared, key, info, sha, stored, stored_refs)
-    head = yaml.safe_dump({"name": info["name"], "description": info["description"]}, allow_unicode=True,
-                          sort_keys=False)
-    folder.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        folder.mkdir()
-    except FileExistsError:
-        raise ValueError(f"a skill folder named '{key}' is already in ~/.agents/skills (another tool's)") from None
-    try:
-        files = agent_skills.write_new(folder, _expected(prepared, f"---\n{head}---\n\n{body}\n"))
-        agent_skills.record(key, by=agent_skills.ARSLAN, files=files if approved else None)
-        return await _install_row(prepared, key, info, body, stored, stored_refs, source_id, enabled=approved)
-    except BaseException:
-        agent_skills.forget(key)
-        capability_install.to_trash(folder, prefix="Arslan failed skill import")
-        raise
+    # Under the manifest's lock from the folder to the row's commit: a reload in between (agent_skills.sync) would
+    # find the folder and its hashes with no row yet, and take it for another tool's skill (#795 review).
+    async with agent_skills.manifest_lock():
+        # Asked again under the lock (#808 review): another install of the key may have taken the lock first and
+        # committed its row meanwhile. Its folder is not a leftover; this one is refused before anything is touched.
+        async with db_session.AsyncSessionLocal() as db:
+            if await db.get(SkillPack, key) is not None:
+                raise ValueError(f"skill '{key}' already exists in the library")
+        leftover = _data_dir() / "skill_scripts" / key
+        if os.path.lexists(leftover):
+            capability_install.to_trash(leftover, prefix="Arslan leftover skill files")
+        if agent_skills.still_arslans(key):
+            # Arslan's own folder with no row (a removal cut short), exactly as it installed it: a leftover too,
+            # never joined to the new skill. One that differs from its hashes may be someone else's now: refused.
+            capability_install.to_trash(folder, prefix="Arslan leftover skill files")
+            agent_skills.forget(key)
+        folder.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            raise ValueError(f"a skill folder named '{key}' is already in ~/.agents/skills (another tool's)") from None
+        try:
+            skill_md = agent_skills.skill_md(info["name"], info["description"], body)
+            files = agent_skills.write_new(folder, _expected(prepared, skill_md))
+            # The hooks its frontmatter had, stripped from this copy: kept for its card (CAP6a's), never run. HOOK-1:
+            # their rows too, switches included, in this record in the data folder; a plugin's skill's are its
+            # plugin's (on the plugin's row), so they aren't kept twice.
+            agent_skills.record(key, by=agent_skills.ARSLAN, files=files if approved else None, written=files,
+                                hooks=prepared.get("hooks") or [],
+                                hook_rows=[] if source_id else prepared.get("hook_rows") or [])
+            return await _install_row(prepared, key, info, body, stored, stored_refs, source_id, enabled=approved)
+        except BaseException:
+            agent_skills.forget(key)
+            capability_install.to_trash(folder, prefix="Arslan failed skill import")
+            raise
 
 
 def _expected(prepared: dict, skill_md: str | None = None) -> dict[str, str]:

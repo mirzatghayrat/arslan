@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Globe2, ShieldAlert, Terminal } from "lucide-react";
 import { AskCard, CodeBox } from "./kit";
 import { DeclineNote, Fingerprints, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend } from "./kit/askParts";
-import { TOUCHES_MAX, commandRisk, deletePurpose, purposeText, summarize } from "../lib/commandSummary";
+import { TOUCHES_MAX, commandRisk, deletePurpose, purposeText, unread, type CommandSummary } from "../lib/commandRisk";
 import { Escaped } from "../lib/outsideText";
 
 interface Props {
@@ -30,6 +30,9 @@ interface Props {
   /** Every terminal rule the server matched (#688 review 1, 3): on every command card, the outside and remote
    *  ones too. An older frame has only `rule`. */
   rules?: string[];
+  /** What the command is for and what it touches, read by the server from `pretty` (the frame's `summary`,
+   *  card_purpose.summarize). Absent, the card names the first word and shows the whole command. */
+  summary?: CommandSummary;
   /** Why the server could not read it (fetched-code, script-reach, quoting, complex), when one of its rules is
    *  `unreadable` (#688 review 5). */
   unreadable?: string;
@@ -70,7 +73,7 @@ interface Props {
  * and takes a note on No. (S4a deleted the old "remember" tick: every command card carries choices.)
  */
 export default function RunCommandCard({ callId, pretty, remoteHost, fingerprints, background,
-                                         sandbox, why, rule, rules, unreadable, deleteMode, deleteTargets, network, unsandboxed, expiresAt, options, alwaysLabel,
+                                         sandbox, why, rule, rules, summary: read, unreadable, deleteMode, deleteTargets, network, unsandboxed, expiresAt, options, alwaysLabel,
                                          permKind, subSession, busy, queue, onOpenContext, onConfirm, onCancel }: Props) {
   const { t } = useTranslation();
   // 0.1.61 §A4: a card with options offers them (a job's too: the same choices as the window).
@@ -79,10 +82,11 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
   // Starts on the narrowest choice the card shows: Always is never the default, whatever its place.
   const [scope, setScope] = useState(() => scopeToSend(offered, undefined, alwaysLabel) ?? "");
   const isRemote = Boolean(remoteHost);
-  // SMART-8 (the card mock the user OK'd): the purpose first, Arslan's own reason when it gave one, else read from
-  // the command; then what it touches and the risk, read by code; the command itself folded, whole when opened.
+  // SMART-8 (the card mock the user OK'd): the purpose first, Arslan's own reason when it gave one, else the server's
+  // reading of the command; then what it touches and the risk, read by code; the command itself folded, whole when opened.
   const matched = rules?.length ? rules : rule ? [rule] : [];
-  const summary = summarize(pretty, matched);
+  const summary = read ?? unread(pretty);
+  const unfolded = summary.unsure || !read;
   const said = (why ?? "").trim();
   const reading = purposeText(t, deletePurpose(summary.purpose, deleteMode)) + (summary.more ? t("runcmd.purpose.more", { count: summary.more }) : "");
   const purpose = said || reading;
@@ -113,10 +117,10 @@ export default function RunCommandCard({ callId, pretty, remoteHost, fingerprint
       // #688 review 7: opened, the command is whole (the box scrolls), so no line waits behind a second click. SMART-8
       // (Astra, simplified): a card that uses the network shows the whole command unfolded, since its reading cannot
       // say what it sends.
-      folded={summary.unsure ? undefined
+      folded={unfolded ? undefined
         : { testId: "runcmd-show-command", body: <CodeBox code={pretty} numbered={false} fold={Infinity} /> }}
-      detail={(summary.unsure || isRemote) ? <span className="flex flex-col gap-2">
-        {summary.unsure ? <span data-testid="runcmd-command"><CodeBox code={pretty} numbered={false} fold={Infinity} /></span> : null}
+      detail={(unfolded || isRemote) ? <span className="flex flex-col gap-2">
+        {unfolded ? <span data-testid="runcmd-command"><CodeBox code={pretty} numbered={false} fold={Infinity} /></span> : null}
         {isRemote ? <Fingerprints label={t("runcmd.fingerprint")} list={fingerprints ?? []} testId="runcmd-fingerprints" /> : null}
       </span> : null}
       context={context}

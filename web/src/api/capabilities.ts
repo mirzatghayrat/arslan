@@ -41,6 +41,8 @@ export interface SkillFolderCard {
   kind: "skill_folder"; key: string; name: string; description: string; origin: "installed" | "other_tool";
   changed: boolean; folder: string; skill_md: string; hidden: { count: number; runs: string[]; more: number };
   files: string[]; unscanned: string[]; digest: string; shared_folder: boolean;
+  /** CAP8-2: one event per frontmatter hook that won't run (its own, or those stripped from Arslan's copy). */
+  hooks?: string[];
   scan: { level: "clean" | "notes" | "blocked"; findings: { rule: string; level: string; file: string; line: number; excerpt: string }[] };
 }
 
@@ -123,13 +125,19 @@ export const capabilitiesApi = {
   /** CAP6a: the card's yes for a skill in ~/.agents/skills: exactly the files the card showed (409 when they changed). */
   approveSkillFolder: (key: string, digest: string) =>
     request<CapabilityRow>(`/skill-folder/${encodeURIComponent(key)}/approve`, json("POST", { digest })),
+  /** CAP6a part 2: how many imported skills the one-time export moved to ~/.agents/skills (`count`) and how many stay
+   *  in Arslan's own folder (`kept`), until the line saying so was shown once (then zeros); `exportNoticeSeen`
+   *  records that it was. */
+  exportNotice: () => request<{ count: number; kept: number }>("/skill-export-notice"),
+  exportNoticeSeen: () => request<{ ok: boolean }>("/skill-export-notice/seen", { method: "POST" }),
   /** v0.1.64 CAP3a: delete one row (only a `deletable` one; the server refuses the rest). */
   deleteRow: (key: string) => request<{ ok: boolean }>(`/capabilities/${rowPath(key)}`, { method: "DELETE" }),
   /** CAP8-1: read what Claude Code and Codex have configured, on the user's click. */
   importScan: () => request<ImportScan>("/capability-import"),
-  /** CAP8-2: `skills` are Claude Code's, copied in switched off. */
-  importAdd: (servers: ImportTick[], skills: ImportTick[] = []) =>
-    request<{ results: ImportResult[] }>("/capability-import", json("POST", { servers, skills })),
+  /** CAP8-2: `skills` are Claude Code's, copied in switched off. A plugin's first add answers `card`; it goes in only
+   *  when sent again with that card's digest (`card`). */
+  importAdd: (servers: ImportTick[], skills: ImportTick[] = [], plugins: ImportTick[] = []) =>
+    request<{ results: ImportResult[] }>("/capability-import", json("POST", { servers, skills, plugins })),
 };
 
 function rowPath(key: string): string {
