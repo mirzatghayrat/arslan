@@ -375,12 +375,12 @@ def _detection_texts(text: str) -> tuple[str, ...]:
 def _parsed(text: str) -> tuple[str, tuple[tuple[str, ...], ...]]:
     """The reader's one pass over `text` (LOOP1 d2): why it does not understand the text, or "", and the commands the
     named rules read. Every reader here reads this one pass, and nothing reads the text through the grammar again.
-    `shell_grammar.read` refuses exactly where this pass does: the folders it follows as well never change what is
-    read (its docstring), so `refused` is its "not understood" with the same why, and an understood command's
-    commands are its own. One it does not understand keeps the path it had: its named rules read the commands
-    before the refusal (additive only, never a grant), beside the rules on the raw text."""
+    An unreadable operation keeps later argv only for additive forbids; its reason takes precedence over named
+    ask rules. Otherwise `refused` is the complete reader's "not understood" with the same why. Commands before
+    a grammar refusal remain available for additive rules, beside the rules on the raw text."""
     prefix = shell_grammar.read_prefix(text)
-    return (prefix.why or "Arslan does not understand all of it") if prefix.refused else "", prefix.commands
+    why = prefix.named_unreadable or ((prefix.why or "Arslan does not understand all of it") if prefix.refused else "")
+    return why, prefix.commands
 
 
 def _command_words(text: str) -> tuple[tuple[str, ...], ...]:
@@ -841,12 +841,9 @@ def _unparseable(text: str) -> str:
         return "too complex to read before running"
     if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"
-    # Prefix words retain spelling for additive forbids, not literalness. The
-    # complete reader also refuses unresolved words that can select stdin mode.
-    if any(words[0].lower() == "security" and (
-            shell_grammar.security_operation(words[1:])[1]
-            or _not_understood(text) == "its security reads operations from stdin")
-           for words in _command_words(text)):
+    # The shared pass keeps literalness when selecting the operation, while
+    # retaining later argv for the forbid floor that has already run.
+    if _not_understood(text) == "its security reads operations from stdin":
         return "its security reads operations from stdin"
     return ""
 

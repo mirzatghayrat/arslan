@@ -136,7 +136,7 @@ class Reading:
 
 class _Out:
     __slots__ = ("commands", "folders", "writes", "fold_partial", "fold_guard", "effects", "effect_scopes", "backgrounds",
-                 "track_folders", "folders_known")
+                 "track_folders", "folders_known", "named_unreadable")
 
     def __init__(self, fold_partial: bool = True, fold_guard=None, *, track_folders=False):
         self.track_folders = track_folders
@@ -147,6 +147,7 @@ class _Out:
         self.effect_scopes = []
         self.backgrounds = []
         self.commands: list[tuple[str, ...]] = []
+        self.named_unreadable = ""
         self.folders: list[tuple[str, ...]] = []
         self.writes: list[tuple[str, tuple[str, ...]]] = []
 
@@ -156,12 +157,15 @@ class PrefixReading:
     """Commands parsed before a refusal, for additive policy checks only.
 
     This is never evidence that the whole input is understood. In particular,
-    nothing after the first unread form is scanned or treated as a command.
+    nothing after the first grammar refusal is scanned or treated as a command.
+    An unreadable operation can still retain later argv for the forbid floor;
+    named_unreadable records why named ask rules cannot describe the whole input.
     """
     commands: tuple[tuple[str, ...], ...] = ()
     refused: bool = False
     why: str = ""
     capped: bool = False
+    named_unreadable: str = ""  # Keep reading later argv for additive forbids.
 
 
 class _NotUnderstood(Exception):
@@ -727,9 +731,10 @@ class _Reader:
 
     def _program(self, base: str, args: list[_Word]) -> None:
         # Prefix mode keeps later argv visible to the independent forbid floor.
-        if (base == "security" and self.out.track_folders
-                and security_operation(tuple(w.literal for w in args))[1]):
-            raise _NotUnderstood("its security reads operations from stdin")
+        if base == "security" and security_operation(tuple(w.literal for w in args))[1]:
+            self.out.named_unreadable = "its security reads operations from stdin"
+            if self.out.track_folders:
+                raise _NotUnderstood(self.out.named_unreadable)
         if base == "find":
             for w in args:
                 if w.literal is None or w.text in _FIND_RUNS:
@@ -897,11 +902,13 @@ def _read_commands(text: str, out: _Out) -> PrefixReading:
     try:
         _Reader(text, 0, out).read_all()
     except _NotUnderstood as exc:
-        return PrefixReading(commands=tuple(out.commands), refused=True, why=exc.why, capped=exc.capped)
+        return PrefixReading(commands=tuple(out.commands), refused=True, why=exc.why, capped=exc.capped,
+                             named_unreadable=out.named_unreadable)
     except RecursionError:
         return PrefixReading(commands=tuple(out.commands), refused=True,
-                             why="it nests commands deeper than Arslan reads", capped=True)
-    return PrefixReading(commands=tuple(out.commands))
+                             why="it nests commands deeper than Arslan reads", capped=True,
+                             named_unreadable=out.named_unreadable)
+    return PrefixReading(commands=tuple(out.commands), named_unreadable=out.named_unreadable)
 
 
 def _read_prefix(text: str) -> PrefixReading:
