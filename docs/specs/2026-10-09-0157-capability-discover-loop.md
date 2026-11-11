@@ -4,9 +4,8 @@ Status: approved 2026-10-09 — all six decisions as recommended (§13). Boards:
 "Capability-Dossier" (design canvas, approved direction 2026-10-08). Hands v2 (cua-driver) also rides
 0.1.57 on its own spec (`2026-10-08-0157-hands-v2.md`); no file of this spec overlaps it.
 
-The user's request (2026-10-08, in summary): keep the GitHub search; Arslan should *itself* find GitHub projects,
-skills and MCP servers and use them in the user's projects or the capability library; Arslan must reach the best solution,
-and the user experience matters a great deal. The boards: when a step fails for want of a capability, Arslan finds one, checks
+The goal: keep the GitHub search, and have Arslan itself find GitHub projects, skills and MCP servers and use them
+in a project or the capability library. The boards: when a step fails for want of a capability, Arslan finds one, checks
 it, asks with a card ("装上并重试"), installs it pinned and sandboxed, tests it once, and retries the
 step; a rail "Arslan 找到的" keeps what it found for later; each capability has a dossier.
 
