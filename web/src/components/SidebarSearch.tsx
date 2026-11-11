@@ -6,9 +6,10 @@ import { Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, type ConversationHit } from "../api/client";
 
-/** ⌘K. Not ⌘F: that stays the page's own find. */
+/** ⌘K. Not ⌘F: that stays the page's own find. Not Ctrl+K either: on the Mac that deletes to the end of the line in
+ *  any text field, the composer included, and the search listens window-wide (#831 review). */
 export function isSearchKey(event: KeyboardEvent): boolean {
-  return (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && (event.code === "KeyK" || event.key.toLowerCase() === "k");
+  return event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && (event.code === "KeyK" || event.key.toLowerCase() === "k");
 }
 
 /** Messages are searched from this many characters on, as the mock does (the server uses its index from three). */
