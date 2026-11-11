@@ -290,11 +290,14 @@ def conversations_in_view(feed: dict) -> set[str]:
 def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | None = None) -> dict:
     """SUB5b: an island feed or a status snapshot with each sub-session's work counted as its commander's (`tops`: a
     sub-session -> the top of its chain, the conversation the Mac lists it under). Its events and cards name the
-    commander; its work in flight is one entry for the commander, named by it (`names`) and with no Stop of its own
-    (stopping the commander stops it), and none when the commander has work of its own; `working` counts it so too.
-    A sub-session's own job ends are no event at all (background_jobs._report): the commander's summary reports once."""
+    commander; its work in flight is one entry for the commander, named by it (`names`), and none when the commander
+    has work of its own; `working` counts it so too. SUB5: that entry's Stop stops every sub-session under the
+    commander, at any depth, also while the commander is idle: its `job_id` names them all (`sub_sessions.STOP_ALL`),
+    which POST /background-jobs/{id}/stop reads. A sub-session's own job ends are no event at all
+    (background_jobs._report): the commander's summary reports once."""
     if not tops:
         return feed
+    from server.services.sub_sessions import STOP_ALL
     out = {**feed, "events": [{**e, "conversation_id": tops.get(e.get("conversation_id"), e.get("conversation_id"))}
                               for e in feed.get("events", ())]}
     if "awaiting_conversations" in feed:
@@ -309,7 +312,7 @@ def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | N
             elif top not in own and top not in folded:
                 folded.add(top)
                 active.append({**activity, "conversation_id": top, "title": _clip((names or {}).get(top), TITLE_CHARS),
-                               "job_id": None})
+                               "job_id": f"{STOP_ALL}{top}"})
         out["active"] = active
     if "working" in feed:
         with _lock:
