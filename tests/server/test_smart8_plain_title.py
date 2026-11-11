@@ -234,7 +234,7 @@ async def test_a_card_reads_its_command_once(execution_db, monkeypatch, cmd, kw,
     """#817 review: the title takes the frame's reading of the same text, so a long command is read once per card,
     and the title is the one it was."""
     real, texts = card_purpose.summarize, []
-    monkeypatch.setattr(card_purpose, "summarize", lambda text: texts.append(text) or real(text))
+    monkeypatch.setattr(card_purpose, "summarize", lambda text, **kw: texts.append(text) or real(text, **kw))
     asker = _Asker()
     with permissions.asking_with(asker):
         await command_confirm.Confirmations("c1").command(*cmd, **kw)

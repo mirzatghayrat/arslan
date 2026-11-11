@@ -48,9 +48,20 @@ inside and outside the sandbox) do not. The frame's `summary` keeps its keys and
 4. **The full command text** stays on the card exactly as today. The title is a summary, never a replacement.
 5. **In the differential report,** title moves where a once-only rule is present are listed separately and first.
 
+## After the max review (#828)
+- **A here-document is data only to a data reader.** A here-document or here-string is read as data only when every
+  program in the line is on an allowlist of programs that read input as data (`cat`, `tee`, `grep`, `wc`, `head`,
+  `tail`, `cut`, `tr`, `jq`, `pbcopy`, `base64`, a few builtins, `git commit -F -`), and no step writes a held file.
+  Any other line keeps `card_purpose`'s own reading, as on main. That covers an interpreter started by `-m` or behind
+  a runner, a scheduler, a REPL, and a file written and then run.
+- **A step that only reaches outside never outranks a named rule.** `asks_once` is a level: a named once-only rule or
+  a held-file write ranks above a step that reaches outside. A reach step counts only where the text's policy asks
+  `outside-reach` under the `outside` value the gate used, so inside the sandbox it never leads.
+
 ## Known limits
-- A rule that matched text the grammar reads as data (a here-document's body, a comment) has no step to lead the
-  title. The title then reads the command that runs (often "Run cat"), and the rules line under it names the rule.
+- A rule that matched text the grammar reads as data (a comment, or a here-document only a data reader gets) has no
+  step to lead the title. The title then reads the command that runs (often "Run cat"), and the rules line under it
+  names the rule.
 - Folders: only a command with `cd`, `pushd` or `popd` is read a second time, by `shell_grammar.read`, for where each
   step runs; the policy's pass leaves folders out by design (`test_folder_tracking_r6`).
 - HR-1b's `git_config` and HR-1c's `git_include` cards have fixed titles of their own, not from `card_purpose`.

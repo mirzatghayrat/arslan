@@ -394,13 +394,17 @@ def _command_words(text: str) -> tuple[tuple[str, ...], ...]:
     return _parsed(text).commands
 
 
-def asks_once(words: tuple[str, ...], writes: tuple[str, ...] = ()) -> bool:
-    """Whether one command of an understood text, on its own words and the files its redirections write, matches a
-    rule its card answers this time only (a named rule in ONCE_ONLY_RULES, `delete-outside`, a write to a protected
-    file) or reaches outside (`outside-reach`). card_purpose leads the title with that step, so the title never hides
-    what asked (LOOP1 d2b, ③Hands' condition 1). For the title only: no verdict reads it."""
-    return (bool(words) and (bool(_named_rules(words) & ONCE_ONLY_RULES) or _reaches_outside((words,)))
-            or any(_PROTECTED_PATH_C.match(w) for w in writes))
+def asks_once(words: tuple[str, ...], writes: tuple[str, ...] = (), *, reach: bool = False) -> int:
+    """How strongly one command of an understood text, on its own words and the files its redirections write, is what
+    its card asks about: 2 when it matches a rule the card answers this time only (a named rule in ONCE_ONLY_RULES,
+    `delete-outside`, a write to a protected file); 1 when `reach` (the text's policy asks `outside-reach` itself,
+    under the `outside` the gate used) and it is a step that reaches outside; else 0. card_purpose leads the title
+    with the highest, so the title never hides what asked (LOOP1 d2b, ③Hands' condition 1; #828 review: a step that
+    only reaches outside never takes the lead from a named rule's step, and only leads where outside-reach is asked).
+    For the title only: no verdict reads it."""
+    if (words and _named_rules(words) & ONCE_ONLY_RULES) or any(_PROTECTED_PATH_C.match(w) for w in writes):
+        return 2
+    return int(bool(reach and words and _reaches_outside((words,))))
 
 
 def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:

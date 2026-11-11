@@ -87,7 +87,7 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
                         rule: str | None = None,
                         sandbox: str | None = None, why: str = "",
                         network: bool = False, rules: list[str] | None = None,
-                        unreadable: str = "") -> dict[str, Any]:
+                        unreadable: str = "", outside: bool = False) -> dict[str, Any]:
     """Arslan proposes running ONE command. Emitting this frame runs NOTHING — the
     frontend renders a confirm card showing the full command; only the user's
     `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
@@ -105,14 +105,16 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     (`command_confirm.UNREADABLE`). Extra keys: the phone reads `rule` and `reason` as before.
     `summary` (LOOP1 d1): what the command is for and what it touches, read from `pretty`
     (`card_purpose.summarize`), which the Mac card shows; the Bridge's FrameMapper does not read it. A caller that
-    titles the card from the same text passes it on as `card_purpose.phrase(reading=…)`, so the line is read once."""
+    titles the card from the same text passes it on as `card_purpose.phrase(reading=…)`, so the line is read once.
+    `outside` (LOOP1 d2b): the gate runs it outside the sandbox, so the summary reads it that way (as `sandbox`
+    "outside" does); no key of its own."""
     from server.services import card_purpose
     if network:
         reason = f"{reason}; uses the network" if reason else "uses the network"
     pretty = " ".join([command, *argv])
     frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
              "argv": argv, "pretty": pretty, "reason": reason,
-             "summary": card_purpose.summarize(pretty)}
+             "summary": card_purpose.summarize(pretty, outside=outside or sandbox == "outside")}
     if network:
         frame["network"] = True
     if sandbox == "outside":

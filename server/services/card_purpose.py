@@ -545,7 +545,24 @@ def _code_readers(nodes: list[dict]):
     return reader
 
 
-def _read_understood(text: str) -> dict | None:
+#: Programs that read a here-document's body as data, never as code (#828 review). An allowlist: with any other program
+#: in the line, the body may be run, so the line keeps this module's own reading. `git commit -F -` reads a message.
+_DATA_SINKS = frozenset({"cat", "tee", "grep", "egrep", "fgrep", "wc", "head", "tail", "cut", "tr", "jq", "pbcopy",
+                         "base64", "ls", "pwd", "date", "echo", "printf", "true", "false", ":", "test", "[", "read",
+                         "cd", "pushd", "popd"})
+
+
+def _reads_as_data(words: tuple[str, ...]) -> bool:
+    """A step that reads its input only as data (`_DATA_SINKS`), or a write with no program."""
+    name = words[0].lower() if words else ""
+    if not words or name in _DATA_SINKS:
+        return True
+    rest = list(words[1:])
+    return name == "git" and rest[:1] == ["commit"] and any(
+        a == "--file=-" or (a in ("-F", "--file") and b == "-") for a, b in zip(rest, rest[1:] + [""]))
+
+
+def _read_understood(text: str, outside: bool = False) -> dict | None:
     """LOOP1 d2b: a line shell_grammar understands, read from the policy's one pass over it (`terminal_policy.reading`),
     so the card's steps are the commands the rules read: a comment, a here-document's body, a compound command's
     keywords and a `!` are not steps. Each command is a step with the files its own redirections write (one on a
@@ -556,10 +573,13 @@ def _read_understood(text: str) -> dict | None:
     Where each step runs after a `cd`, `pushd` or `popd` is the grammar's too: only then is the line read again, by
     `shell_grammar.read`, whose folders follow the shell a change is made in (a `$( … )`, a ( … ), a pipe's part, a
     bash -c); the policy's pass leaves folders out. A step whose folders the grammar can't follow (`cd "$X"`) is read
-    from the folders the `cd`s before it name, in order, as this module's own reader does."""
+    from the folders the `cd`s before it name, in order, as this module's own reader does.
+    `outside`: the command runs outside the sandbox, as the gate read it; only then may a step that reaches outside
+    lead, and only where the policy asks `outside-reach` for the text."""
     reading = terminal_policy.reading(text)
     if reading.refused:
         return None
+    reach = outside and terminal_policy.OUTSIDE_REACH[0] in terminal_policy.ask_rules(text, outside=True)
     commands, carriers = reading.commands, reading.carriers
     folders: tuple = ()
     if any(words[0].lower() in ("cd", "pushd", "popd") for words in commands):
@@ -580,8 +600,14 @@ def _read_understood(text: str) -> dict | None:
     steps = [(words, owned.get(i, []), folders[0][i] if folders else ())
              for i, words in enumerate(commands) if i not in carriers]
     steps += [((), [target], folders[1][k] if folders else ()) for target, k in alone]
-    nodes, once = [], set()
-    for words, writes, where in steps:
+    levels = [terminal_policy.asks_once(words, tuple(writes), reach=reach) for words, writes, _ in steps]
+    # #828 review: a here-document's body (or a here-string) is data only when every program in the line reads its
+    # input as data. Any other program may run it (an interpreter by `-m` or a runner, a scheduler, a REPL), or run a
+    # file it was written into, so that line keeps this module's own reading, as on main.
+    if "<<" in text and not all(_reads_as_data(words) and level < 2 for (words, _, _), level in zip(steps, levels)):
+        return None
+    nodes, once = [], {}
+    for (words, writes, where), level in zip(steps, levels):
         name = words[0] if words else ""
         # A wrapper with no command after it (`sudo`, `timeout 5`) took its program, as `_words` reads it.
         took = name in WRAPPERS and not (name == "command" and words[1:2] in (("-v",), ("-V",)))
@@ -589,8 +615,7 @@ def _read_understood(text: str) -> dict | None:
                       "writes": [f for f in writes if f not in _NOT_A_FILE], "assigns": []},
                 "from": None, "container": None, "merged": False, "run": False, "ctx": ctx, "where": list(where)}
         nodes.append(node)
-        if terminal_policy.asks_once(words, tuple(writes)):
-            once.add(id(node))
+        once[id(node)] = level
     # With no real step, the program of the first step, or of a bash -c with an empty script (`bash -c ''`).
     first = next((n["w"]["program"] for n in nodes if n["w"]["program"]), commands[0][0] if commands else "")
     return _summed(nodes, 0, {"left": READ_WORK * len(text)}, once, first)
@@ -623,10 +648,12 @@ def _read(text: str, depth: int = 0, work: dict | None = None) -> dict | None:
     return _summed(nodes, depth, work)
 
 
-def _summed(nodes: list[dict], depth: int, work: dict, once: set[int] = frozenset(), first: str | None = None) -> dict:
-    """The steps' reading: each real step's purpose, the lead the step a once-only rule asks for (`once`, ids of
-    nodes; only an understood line has them), then the one with the most at stake, ties the first. `first`: the
-    program a line with no real step runs, when not the first node's."""
+def _summed(nodes: list[dict], depth: int, work: dict, once: dict[int, int] | None = None,
+            first: str | None = None) -> dict:
+    """The steps' reading: each real step's purpose; the lead the step that asks most (`once`: node id to
+    `terminal_policy.asks_once`'s level; only an understood line has them), then the one with the most at stake, ties
+    the first. `first`: the program a line with no real step runs, when not the first node's."""
+    once = once or {}
     dirs: dict[int, str | None] = {}
 
     def dir_of(ctx):
@@ -658,7 +685,7 @@ def _summed(nodes: list[dict], depth: int, work: dict, once: set[int] = frozense
             r["purpose"] = {"key": "write",
                             "params": {"target": _rebase(where[-1], str(r["purpose"]["params"]["target"]))}}
         r["local"] = local
-        r["once"] = id(node) in once
+        r["once"] = once.get(id(node), 0)
         real.append(r)
     if not real:
         if first is None:
@@ -674,7 +701,7 @@ def _summed(nodes: list[dict], depth: int, work: dict, once: set[int] = frozense
             "unsure": any(r["unsure"] for r in real)}
 
 
-def summarize(text: str) -> dict:
+def summarize(text: str, *, outside: bool = False) -> dict:
     """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...], "more": n,
     "unsure": bool}`, the frame's `summary` the Mac card shows (held to tests/fixtures/card_purpose_vectors.json).
     `unsure`: a transfer in it was not fully read, so it may send local data. Read from the line alone: the rules a
@@ -682,10 +709,11 @@ def summarize(text: str) -> dict:
     one pass over it (`_read_understood`, LOOP1 d2b); any other keeps this module's own reader. A line that reader
     cannot read (a quote never closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says
     Arslan could not read all of it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part
-    not read may send local data, so its card keeps that warning."""
+    not read may send local data, so its card keeps that warning. `outside`: it runs outside the sandbox, as the gate
+    read it (`_read_understood`)."""
     program = _base((text.strip().split() or [""])[0])
     try:
-        r = _read_understood(text)
+        r = _read_understood(text, outside)
         if r is None:
             r = _read(text)
     except _TooDeep:
@@ -742,7 +770,7 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     text), so a long command is read once per card (#817 review); it is not changed. `rules` is not read: the reading
     does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument."""
     facts = []
-    s = dict(reading) if reading is not None else summarize(shell)
+    s = dict(reading) if reading is not None else summarize(shell, outside=outside or unsandboxed)
     # SMART-8: a delete card says how allow deletes (`delete_to_trash.card_mode`), so the phone's heading never
     # reads the same for a move to the Trash and a permanent delete. Word for word with web `deleteMode`.
     if delete_mode in ("trash", "protected") and s["purpose"]["key"] == "delete":

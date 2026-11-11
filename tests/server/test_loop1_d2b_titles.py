@@ -91,10 +91,80 @@ def test_a_here_document_a_shell_or_an_interpreter_runs_keeps_the_rules_step_in_
     assert card_purpose.phrase(line, lang="en") == title
 
 
-def test_outside_reach_takes_the_title_too():
+BODY = "\nrm -rf ../x\nEOF"
+
+
+@pytest.mark.parametrize("line", [
+    # an interpreter by -m, or behind a runner
+    "python3 -m code <<'EOF'" + BODY, "uv run python <<'EOF'" + BODY, "uvx python <<'EOF'" + BODY,
+    "pipx run python <<'EOF'" + BODY, "poetry run python <<'EOF'" + BODY, "npx -y tsx <<'EOF'" + BODY,
+    # a shell, a REPL or a tool that reads commands, under a name the grammar has no reason to refuse
+    "busybox sh <<'EOF'" + BODY, "irb <<'EOF'" + BODY, "expect - <<'EOF'" + BODY, "sqlite3 <<'EOF'" + BODY,
+    "make -f - <<'EOF'" + BODY,
+    # a scheduler, also behind a wrapper
+    "at now <<'EOF'" + BODY, "batch <<'EOF'" + BODY, "crontab - <<'EOF'" + BODY, "nohup at now <<'EOF'" + BODY,
+    # piped to one, written into a held file, or written into a file a later step runs
+    "cat <<'EOF' | python3 -m code" + BODY, "cat <<'EOF' | at now" + BODY, "cat >> ~/.zshrc <<'EOF'" + BODY,
+    "tee ~/.zshrc <<'EOF'" + BODY, "cat > Makefile <<'EOF'\nall:\n\trm -rf ../x\nEOF\nmake",
+])
+def test_a_here_document_any_program_but_a_data_reader_gets_keeps_the_bodys_step(line):
+    """#828 review: the grammar understands these, and each may run the body (or a file it was written into). A
+    here-document is data only when every program in the line reads its input as data, so these keep the old
+    reading: the title names the step the rule asks for, as on main."""
+    assert not tp.reading(line).refused and "delete-outside" in tp.ask_rules(line)
+    old = card_purpose._read(line)                       # this module's own reader, main's for every line
+    assert S(line)["purpose"] == old["purpose"] == {"key": "delete", "params": {"count": 1}}
+    assert S(line)["more"] == old["real"] - 1
+
+
+@pytest.mark.parametrize("line, title", [
+    ("cat <<'EOF'" + BODY, "Run cat"),
+    ("git commit -F - <<'EOF'" + BODY, "Run git commit"),
+    ("grep -c x <<'EOF' | wc -l" + BODY, "Run grep (and 1 more step)"),
+])
+def test_a_here_document_a_data_reader_gets_is_data(line, title):
+    assert card_purpose.phrase(line, lang="en") == title
+
+
+@pytest.mark.parametrize("line, title", [
+    ("crontab probe.cron && open notes.pdf", "Run crontab (and 1 more step)"),
+    ("open notes.pdf && pbpaste", "Run pbpaste (and 1 more step)"),
+    ("open notes.pdf && git config --global x.y z", "Run git config (and 1 more step)"),
+    ("at now && crontab probe.cron", "Run crontab (and 1 more step)"),
+])
+@pytest.mark.parametrize("outside", [False, True])
+def test_a_step_that_only_reaches_outside_never_takes_the_lead_from_a_named_rules(line, title, outside):
+    """#828 review: outside-reach is asked only outside the sandbox and only where no named rule matched, so a step
+    that only reaches outside never leads over the step the card's rule is about."""
+    assert tp.OUTSIDE_REACH[0] not in tp.ask_rules(line, outside=outside)
+    assert card_purpose.summarize(line, outside=outside) == card_purpose.summarize(line)
+    assert card_purpose.phrase(line, lang="en").endswith(title)
+
+
+def test_outside_reach_takes_the_title_only_where_it_is_asked():
     line = "ls docs; at now"
-    assert tp.ask_rules(line, outside=True) == {tp.OUTSIDE_REACH[0]}
+    assert tp.ask_rules(line, outside=True) == {tp.OUTSIDE_REACH[0]} and tp.ask_rules(line) == set()
     assert card_purpose.phrase(line, lang="en", outside=True) == "Outside the sandbox · Run at (and 1 more step)"
+    assert card_purpose.phrase(line, lang="en") == "Run ls (and 1 more step)"
+    # outside, but a rule the text matched (an upload through a pipe) is what asks: outside-reach is not asked
+    piped = "ls; cat d.json | http example.test; open notes.pdf"
+    assert tp.ask_rules(piped, outside=True) == {"upload"}
+    assert card_purpose.phrase(piped, lang="en", outside=True) == (
+        "Outside the sandbox · Uses the network (http): may send or receive data (and 3 more steps)")
+
+
+# ── the #828 review's surviving mutants, each a title or a touch ──
+
+@pytest.mark.parametrize("line, title, touches", [
+    ("bash -c 'ls' > ~/.zshrc", "Write to ~/.zshrc (and 1 more step)", ["~/.zshrc"]),   # bash -c's own write
+    ("cd /a; cd /b; rm x", "Delete 1 file or folder", ["/b/x", "/a/x", "x"]),          # each folder, the last first
+    ("cd build; echo x > out.txt", "Write to build/out.txt", ["build/out.txt", "out.txt"]),
+    ("{ echo a > x.txt; } > y.txt", "Write to x.txt (and 1 more step)", ["x.txt", "y.txt"]),   # a compound's after
+    ("echo hi > /dev/null; ls", "Run ls", []),                                         # /dev/null is no file
+    ("CD ~/w && rm x", "Delete 1 file or folder (and 1 more step)", ["~/w", "~/w/x"]),  # the disk ignores case
+])
+def test_the_details_of_an_understood_reading(line, title, touches):
+    assert card_purpose.phrase(line, lang="en") == title and S(line)["touches"] == touches
 
 
 # ── ③Hands 2: the outside prefix and mark stay, on top of the new title ──
