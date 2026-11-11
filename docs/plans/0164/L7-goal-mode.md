@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Decided | The user, 2026-10-28: L7 stays in v0.1.64 as "should", and it merges only if the M64 bench doesn't regress ([README](README.md) §1.1, §3 row "other execution-first rows"; [lead roadmap](../2026-10-17-0162-lead-roadmap.md) L7). ⓪Plan's ruling (2026-11-11): the bench gates the merge itself. It runs on the build branch, with the flag both off and on, before any L7 code PR merges. It doesn't only decide the flag default. |
+| Decided | The user, 2026-10-28: L7 stays in v0.1.64 as "should", and it merges only if the M64 bench doesn't regress ([README](README.md) §1.1, §3 row "other execution-first rows"; [lead roadmap](../2026-10-17-0162-lead-roadmap.md) L7). ⓪Plan's ruling (2026-11-11): the bench gates the merge itself. It runs on the build branch, with the flag both off and on, before any L7 code PR merges. It doesn't only decide the flag default. The user decided on 2026-11-11: every open question, Q0 to Q8, goes as this card recommends (Decisions, at the end); the mock is approved, so L7-m is done; and goals must actually get completed, so the bench also has a completion bar (Bench plan), stopping too early is treated as the main risk (No progress), and checks Arslan can't verify are flagged before Start (Checks Arslan can't verify). |
 | Version | v0.1.64, should |
 | Lane | ②Main writes the card and the code. ⓪Plan runs the bench rounds. |
 | Rule | One loop. A goal is a task whose acceptance checks are the goal, run by today's `_run_native`. Goal mode adds no tool, no permission and no second loop. Every call goes through the same gates in the same order. With no goal set, the turn behaves as today, and z3's permanent tests are the guard (Fit with LOOP1). |
@@ -34,6 +34,7 @@ Pinned links. Claude Code is closed source, so its docs are cited.
 - **Jobs are almost goals.**
   - `background_jobs.Job:39` has a goal, criteria and the outcomes done, partial, blocked and stopped. `criteria_to_acceptance:84` turns criteria into checks.
   - The `job_update` frame already sends the objective as the string `goal` (`:72`). The web reads it as the title (`arslanStore.ts:557`, `:570`). So does the Bridge, for the phone's `job.event` (`FrameMapper.swift:334`).
+  - The Bridge builds `job.event` from a fixed list of keys and drops every other key of the frame (`FrameMapper.swift:167-170`, `jobEvent` at `:322-344`). Its other reader of `job_update` reads only `phase` and `run_id` (`ConversationLinks.swift:162-166`).
   - `_job_sink` writes each tool step into `step`.
   - `start_background_work` already takes a required `goal` string, the job's objective (`registry/tool_defs/tasks.py:85`).
   - `_goal_not_reached:353` asks the `job.accomplished` judge (`judgment.py:97`) only when a job has no checks of its own. `turn.completion` is registered and off (`:113`).
@@ -44,18 +45,18 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - K9b steering keeps one box per conversation (`steering.py:59-80`). `tool_batch.py:147` skips calls that haven't started when a message waits.
   - Jobs aren't steerable: `background_body` has no `steerable`.
 - **Entry points.** `handle_user_message` (`arslan.py:266`) is called only from the socket (`ws/arslan.py:577`, `:643`). `_handle_answer` is also reached by the scheduler (`scheduler.py:433`) and by `resume_turn` with the saved instruction (`task_service.py:1121`).
-- **Tests.** z2 (#837) deletes the 154 L0 pins, the gate-order pin matrix and the 51-case tool-table dump. z3 (#841) replaces them with permanent tests.
+- **Tests.** z2 (#837) deletes the 154 L0 pins, the gate-order pin matrix and the 51-case tool-table dump. z3 (#841) replaces them with permanent tests. #841 is still open. Its first commit (`2ea3f34e`) has no tool-table test; its second (`2ef08212`) adds `test_tool_offer_table.py`, the offered tool table as a permanent test. Neither is on main yet.
 
 ## Design
 - **What a goal is.** An objective (up to 4,000 characters) and up to 5 criteria, in the kinds `criteria_to_acceptance` already knows: file saved, sources read, mentions, judgement.
   - **User checks.** Only the user's own `check: <command>` lines become deterministic, critical `code_test` checks. Criteria drafting never produces `check:` lines. A matching `run_command` by the worker also satisfies a check: it's the same command and argv, through the same gate.
-  - **The record.** It's a task row with driver `{"kind": "background", "goal": true}`. `checked_driver` widens by exactly that one dict. Its state maps onto existing phases: active is running; complete is succeeded; blocked, paused, budget-limited and interrupted are `waiting_user` with `goal_blocked`, `goal_paused`, `task_budget_exhausted` and `process_interrupted`; cleared is cancelled. No new table and no migration.
+  - **The record.** It's a task row with driver `{"kind": "background", "goal": true}`. `checked_driver` widens by exactly that one dict. Its state maps onto existing phases: active is running; complete is succeeded; not started, blocked, paused, budget-limited and interrupted are `waiting_user` with `goal_not_started`, `goal_blocked`, `goal_paused`, `task_budget_exhausted` and `process_interrupted`; waiting for the user's own checks is `waiting_user` with `acceptance_review_required`; cleared is cancelled. No new table and no migration.
 - **How it's set: one entry point.**
   - `/goal` is parsed in `handle_user_message` and nowhere else, before any model call, and the reply is one host line. It works from the Mac, from the phone (`chat.send` arrives there) and from a voice transcript.
-  - Verbs: `/goal <objective>`, `status`, `edit`, `note`, `pause`, `resume`, `clear`.
-  - From a job: the card's "Keep going until met" button starts a goal with that job's criteria (`criteria_from_acceptance`).
+  - Verbs: `/goal <objective>`, `start`, `status`, `edit`, `note`, `pause`, `resume`, `clear`.
+  - From a job: the card's "Keep going until met" button sets a goal with that job's criteria (`criteria_from_acceptance`), and it waits for Start like any other goal.
   - `start_background_work`'s `goal` string stays the job's objective and never sets goal mode. No tool schema changes, and the model never starts goal mode on its own (Q2).
-  - At start, one request with no tools drafts the criteria. The user can edit them on the card, and work starts at once.
+  - **Nothing runs until the user presses Start goal (Q0).** Setting a goal runs one request with no tools that drafts the checks. The goal row waits as "not started", and no job, round or tool call runs. The user edits the checks on the card (the mock's edit step) and presses Start goal, or sends `/goal start` from the phone or by voice. Start queues the background job. Editing a running goal shows the same form.
 - **Where it runs.** As a background job (Q1), so the conversation stays free and the user can keep talking by voice. It goes through `task_service.run_turn`, then the same `run_native`, with `JobConfirmations` for its cards. The job's acceptance is the goal.
 - **How it continues.** A round is one answer, judged in `turn_answer.finish` at the point where today's repair goes, after the guards and the acceptance checks.
   - If every check passes, with receipts, the goal is met.
@@ -66,12 +67,28 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - A model check may say "met" only by citing a receipt from this run's trace: a successful call that fits the criterion. A file criterion needs a write or read of its path, with bytes and sha256. A sources criterion needs a read. A command criterion needs its exit code.
   - A "met" with no receipt, with a receipt from a failed call, or with one that doesn't fit counts as not met.
   - Receipts and outside text reach the judge framed as data (`untrusted.wrap_external`). A page that says "goal achieved" proves nothing.
-  - Human criteria end the goal at `acceptance_review_required`, and the user confirms on the card as today.
+  - Checks the user confirms themselves end the goal at `acceptance_review_required`, and the user confirms on the card as today (Checks Arslan can't verify).
   - The worker's own claim is never enough, as with STY2's "done without evidence".
-- **No progress.**
+- **Checks Arslan can't verify.** Some checks have no receipt that could ever show them met, such as "looks nice" or "the user is happy". The host flags them, not the model:
+  - **The rule.** A check is verifiable when its kind is deterministic (file saved, sources read, mentions, a `check:` command), or when it is a judgement check that names a path, a source or a command, so the judge has a receipt kind to cite. Any other judgement check is flagged as one Arslan can't verify. The drafting request can't clear a flag.
+  - **At the edit step, before Start.** Each flagged check is marked on the form. Start goal stays disabled until each one is rewritten into a verifiable check, removed, or marked "I'll confirm this myself". From text, `/goal start` with a flagged check doesn't start: the host line lists the flagged checks, and `/goal start confirm` marks them all as user-confirmed and starts.
+  - **User-confirmed checks** are never judged by the model and never count as met by Arslan. They don't count toward progress or toward "blocked".
+  - **When only user-confirmed checks are unmet,** the goal stops at once at `acceptance_review_required`, with no further round. The card says what Arslan met, with receipts, and asks the user to look over the rest. The goal is complete only when the user presses Accept result. Otherwise the user edits the goal or resumes it with a note.
+  - **A goal of only user-confirmed checks** is refused at Start: there is nothing for rounds to work toward, so the host line suggests a plain job instead.
+  - **So a goal never silently runs forever.** A check the judge can never meet with a receipt either can't start, or is the user's, or (if a flag is somehow missed) leaves the goal without progress, so it is blocked at round 3. The budget still ends every goal.
+- **No progress. Stopping too early is the main risk,** so "no progress" counts only real progress, never activity.
   - In-turn: `ProgressPolicy` stays as it is. Its stop wraps up and delivers as today, and the goal ends blocked.
-  - Across rounds: a round makes progress when the set of unmet checks shrinks, or a new receipt fits an unmet check. A rewrite of an unrelated file, or the same receipt again, doesn't count. After 3 rounds in a row with no progress and the same unmet set, the goal is `blocked` (Codex's audit).
-  - The reply says what is done, the blocker, and one step for the user (SMART's guidance rule). Resume starts a fresh audit.
+  - **A receipt's identity.** A successful call's receipt is keyed by kind:
+    - a file write or read: (path, sha256 of the content);
+    - a command, a `check:` or the worker's matching `run_command`: (argv, exit code, sha256 of its stdout and stderr together).
+  - **The seen set.** The host keeps the identities of every receipt this goal has produced, in `Progress.goal`. Resume doesn't clear it, so repeating an old receipt after a block or a budget stop is never new. `/goal edit` is a spec revision, and `prepare_resume` keeps only evidence, artifacts and `continuation_ref` across one, so an edit starts a fresh seen set along with the fresh audit: the checks themselves may have changed.
+  - **A round makes progress when either holds:**
+    1. a check that was unmet at the start of the round is met at its end, and it has never been met before in this goal (since its last edit); or
+    2. the round produced a receipt whose identity isn't in the seen set (a new path, a new sha256, or a new exit code or output) and that fits a check unmet at the start of the round, by the fit rule above (its path, its sources, or its command's argv).
+  - **Not progress:** tool calls, text, tokens or time; a failed call; a receipt already in the seen set; a receipt that fits no unmet check (an unrelated file, a command that is no check's argv); a check going from met to unmet, or back to met with a receipt seen before; anything said in the answer.
+  - **The streak.** It is 0 at Start, Resume and Edit. After each round's verdict, a round with progress sets it to 0, and a round without progress adds 1. When it reaches 3, the goal is `blocked` (Codex's audit). So a goal that makes progress at least once in every 3 rounds is never blocked, and only the budget ends it. A goal with no progress in rounds 1, 2 and 3 is blocked right after round 3's verdict.
+  - Because a command's receipt includes its output, a check that keeps failing with a different first error (the next failing test) is progress, and the same failure again is not. A command whose output changes on every run (a clock in it) can look like progress each round. Then the budget ends the goal as budget-limited, never complete.
+  - **The blocked reply** says what is met, with receipts, and the blocker: the unmet check and its last receipt, such as the exit code and the first error line. It ends with exactly **one step for the user** (SMART's guidance rule), the one thing that would unblock it: a note with a missing fact, a file to add, a check to rewrite, or an approval. The last round's verdict request writes it. If it gives none, or more than one, the host uses a fixed line that names the unmet check and offers Edit and Note. Resume starts a fresh streak.
 - **Budgets: wrap up and deliver.** A goal runs on the job's tier and dollar cap and never raises them itself (Q3). At the soft limit, today's finish mode saves and answers. The goal becomes budget-limited, never complete, and the message lists what was done, what isn't met, and Resume.
 - **Resume re-queues the job.** It never uses `resume_turn` or the chat socket. Resume comes from `/goal resume` or the card. It runs `prepare_resume` on the goal row, so a changed goal is refused, grants are dropped, completed writes stay fenced in the journal, and `Progress` is carried. Then the same row runs again as a background job: `JobConfirmations`, `steer_key`, and a fresh budget of the same tier and cap. `resume_turn` refuses a goal row. This covers resuming after a block, a budget stop, a pause and a restart.
 - **Interruption and steering.**
@@ -79,7 +96,7 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - `/goal edit` raises the spec revision. `prepare_resume` already keeps only evidence, artifacts and `continuation_ref` across a revision, so the blocked audit restarts. A running goal reads the new objective at its next round.
   - `/goal note <text>`, or the card's note field, steers the running goal through K9b. The goal job's turn is steerable under its own key, `TurnRequest.steer_key = job id`, so chat messages never land in it. Calls that haven't started are skipped, the next request carries the note, and anything unread goes back.
 - **Restart and app quit.**
-  - Each round's verdict and counters (round, unmet ids, no-progress streak, last receipt index) are written as `Progress.goal` in the same checkpoint as the verdict (`checkpoint("goal_round")`), before the continuation message goes out.
+  - Each round's verdict and counters (round, unmet ids, ids ever met, no-progress streak, the seen set of receipt identities, last receipt index) are written as `Progress.goal` in the same checkpoint as the verdict (`checkpoint("goal_round")`), before the continuation message goes out.
   - The boot pass skips goal rows. They stay `waiting_user` with `process_interrupted`, and nothing cancels them. The card reads "interrupted at round n" from the last checkpoint, never from the transcript, and offers Resume (Q5).
   - Restart matrix, one test per row:
     - quit during a model call or a tool call: the row is interrupted; Resume re-runs that round, and the journal fences writes;
@@ -96,7 +113,8 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - `test_gate_order.py`;
   - `test_turn_refusal_stops.py`, `test_turn_steering.py`, `test_turn_branches.py`, `test_turn_answer_guards.py` and `test_turn_executor_calls.py`;
   - `test_command_gate_refusals.py`.
-  - For "no tool schema change", the guard is z3's permanent behavioural tool-table test: each case offers the same tools with the same schemas. It is also run once with the flag on and a goal set. Until it lands on main, L7-1 doesn't open.
+  - For "no tool schema change", the guard is a permanent tool-table test. Main doesn't have one yet. z3 planned it, and #841's second commit (`2ef08212`) adds it as `test_tool_offer_table.py`, but #841 isn't merged. Each case must offer the same tools with the same schemas, and it is also run once with the flag on and a goal set.
+  - **The gate stays explicit: L7-1 doesn't open until #841, with `test_tool_offer_table.py`, is on main.** If that test leaves #841, L7-1 waits for whichever PR lands it.
 
 ## Bench plan
 - **When.** The L7 code PRs (L7-1 to L7-6) are reviewed one by one from main and wait, approved and unmerged. ⓪Plan merges their heads into a build branch and benches it. Only if the bench passes do they merge, in order. A PR rebased after the bench must leave the build branch's L7 files unchanged, or the bench reruns. Flag-off code that changes the loop counts: the flag-off arm is benched too.
@@ -104,11 +122,28 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - `base`: main before L7;
   - `off`: the build branch with the flag off;
   - `on`: the build branch with the flag on and every prompt sent as a goal.
-- **Tasks:** T1, T2, T3, T5, T7–T11 (STY2's 9 tasks), T13–T15 and T17 (M64), and T18. That's 14 tasks and 126 runs, on STY2's model (deepseek-v4-pro), off-peak.
-- **L7-0 adds** T18, a goal task: 20 synthetic invoices, sort them and reconcile the totals. Its checker recomputes the totals. It also adds `BENCH_GOAL=1`: the driver turns the setting on in the fresh instance and sends `/goal ` before the prompt, so the criteria are Arslan's own.
+- **Tasks:** T1, T2, T3, T5, T7–T11 (STY2's 9 tasks), T13–T15 and T17 (M64), T18, and the three multi-round tasks T19–T21. That's 17 tasks and 153 runs (17 × k=3 × 3 arms), on STY2's model (deepseek-v4-pro), off-peak.
+- **L7-0 adds** T18, a goal task: 20 synthetic invoices, sort them and reconcile the totals. Its checker recomputes the totals. It also adds `BENCH_GOAL=1`: the driver turns the setting on in the fresh instance, sends `/goal ` before the prompt, so the criteria are Arslan's own, and then sends `/goal start` without editing them (Q0).
+- **L7-0 also adds three tasks that need several rounds,** so the bench exercises goal mode and not only "doesn't break single turns". Each has a fixture (`fixture_t19.py` to `fixture_t21.py`) and a checker (`check_t19.py` to `check_t21.py`) that recomputes the result from disk. The prompt carries a `check:` line, so the goal has a deterministic check with receipts in both arms (in `off` the line is plain text the worker may run itself). Each is sized to stay under the standard tier's 80 tool calls (`execution_budget.py:49`).
+  - **T19, staged test failures (code).**
+    - Inputs: a small Python package `ledger/` with 5 modules and one planted bug in each, and `tests/run_checks.py`, which runs the modules' tests in a fixed order and stops at the first failing module, printing only that failure.
+    - Prompt: make `python3 tests/run_checks.py` exit 0 without editing `tests/`; `check: python3 tests/run_checks.py`.
+    - Checks with receipts: the `check:` command's exit code 0 (a command receipt); the checker also runs a hidden full suite that doesn't stop early (all 5 fixed) and confirms `tests/` is byte-identical by sha256.
+    - Why one round isn't enough: each run shows one failure, and five separate fixes are needed. A worker that fixes the failure it sees and answers ends the round with 1 of 5 fixed. Only a worker that re-runs the check on its own until it passes finishes in one round. The command's output changes as each bug is fixed, so each round's fix is progress by the definition above.
+  - **T20, a long list (files).**
+    - Inputs: 24 synthetic notes `notes/n01.md` to `n24.md`, each with a unique code word and a date.
+    - Prompt: for every note, write `summaries/<same name>.md` with two sentences that include its code word and date, then `summaries/index.md` listing all 24.
+    - Checks with receipts: 25 files saved (write receipts with sha256), each summary contains its note's code word and date (mentions), and all 24 notes read (read receipts, sources read). The checker recomputes all of it from disk.
+    - Why one round isn't enough: it needs about 50 calls in a row (24 reads, 25 writes). Runs on long lists tend to answer early, with a sample or "the rest follow the same pattern", which is the stopping-early failure this card targets. Each further round's new summaries are new write receipts for an unmet check.
+  - **T21, rules revealed by the validator (data).**
+    - Inputs: `data/orders.csv`, 300 synthetic rows with 4 planted kinds of fault (non-ISO dates, lower-case currency codes, duplicate order ids, amounts without two decimals), and `validate.py`, which checks `clean/orders.csv` against the 4 rules and prints only the first rule that fails, with its count.
+    - Prompt: clean the file into `clean/orders.csv` so that `python3 validate.py clean/orders.csv` exits 0, without editing `validate.py`; `check: python3 validate.py clean/orders.csv`.
+    - Checks with receipts: the command exits 0 (a command receipt), `clean/orders.csv` is saved (a write receipt), and the checker re-validates all 4 rules, confirms `validate.py` is unchanged by sha256, and that no valid row was dropped.
+    - Why one round isn't enough: the validator reveals one rule at a time, so a worker that fixes what it was shown and answers has met 1 of 4 rules. Each new rule fixed changes the command's output, which is progress.
   ```
-  scripts/kernel_bench/start_proxy.sh   # BENCH_CAP_USD=12, BENCH_RUN_CAP_USD=2.5
-  T=T1,T2,T3,T5,T7,T8,T9,T10,T11,T13,T14,T15,T17,T18
+  # one proxy per arm, restarted between arms, so each arm has its own cap
+  scripts/kernel_bench/start_proxy.sh   # base, off: BENCH_CAP_USD=8; on: BENCH_CAP_USD=13; BENCH_RUN_CAP_USD=2.5 for all
+  T=T1,T2,T3,T5,T7,T8,T9,T10,T11,T13,T14,T15,T17,T18,T19,T20,T21
   # on main before L7, then twice on the build branch (the second time with BENCH_GOAL=1)
   BENCH_ROUND=r64-l7-base BENCH_FRESH_INSTANCE=1 BENCH_SANDBOX=none .venv/bin/python -m scripts.kernel_bench.runner --tasks $T --entrants arslan --repeats 3
   BENCH_ROUND=r64-l7-off  BENCH_FRESH_INSTANCE=1 BENCH_SANDBOX=none .venv/bin/python -m scripts.kernel_bench.runner --tasks $T --entrants arslan --repeats 3
@@ -120,15 +155,29 @@ Pinned links. Claude Code is closed source, so its docs are cited.
 - **Written floors.** Each arm must also meet these on its own tasks:
   - STY2 (#658, rounds `sty2c-before-ds` and `sty2d-after-ds`): 20 of 27 passed, and done-without-evidence 4, on the same 9 tasks.
   - M64 (#453, `r64-m64-base`): T13 2/3, T14 3/3, T15 3/3, T17 3/3.
-- **Cost:** about $9 at DeepSeek peak prices. `r64-m64-base` cost about $1.71 for 48 runs; T1–T3 cost more; the `on` arm is assumed to cost up to 1.5 times as much. A 402 stops the round, and it's reported.
+- **Cost: about $21 at DeepSeek peak prices, about $5.6 each for `base` and `off` and about $9.5 for `on`.**
+  - STY2's 27 runs cost $2.32-2.61 at peak (#658), about $0.10 a run, so its 9 tasks are about $2.6 an arm. `r64-m64-base` cost about $1.71 for 48 runs (#453), so T13–T17's 12 runs are about $0.45. T18 is taken as about $0.3.
+  - T19–T21 are new and unmeasured. They are taken as about $0.25 a run in `base` and `off` (one long turn) and $0.5 a run in `on` (several rounds), so $2.25 and $4.5 an arm.
+  - The `on` arm's other 14 tasks are assumed to cost up to 1.5 times as much.
+  - The proxy's cap is one in-process total (`meter.py`), so it is restarted for each arm with its own `BENCH_CAP_USD`: 8, 8 and 13, so $29 at most in all, and `BENCH_RUN_CAP_USD=2.5` per run. A 402 stops that arm's round, and it's reported.
+- **The completion bar (the user's priority: goals must actually get completed).** This is a gate in addition to "doesn't regress", and it compares `on` with `off` on the same build branch.
+  - **Complete means checked, never claimed.** A run is complete when its task's checker (`check_tN.py`) passes. The checker recomputes the result from the files on disk and the trace's receipts (paths and sha256, exit codes). It never reads the reply's claim or the goal's own status. A run whose reply says "done" while its checker fails is incomplete. A task is complete in an arm when at least 2 of its 3 runs are complete.
+  - **The bar, all of these on the 17 tasks × k=3 = 51 runs per arm:**
+    1. `on` completes at least `off` + 3 of 51 runs;
+    2. `on` completes strictly more tasks than `off` (at least `off` + 1 task, by the 2-of-3 rule);
+    3. no task goes from complete to incomplete: no task complete in `off` (2 or 3 of 3) is incomplete in `on` (0 or 1 of 3);
+    4. on the 14 tasks other than T19–T21, `on` completes at least as many runs as `off`, so the gain can't come only from the new tasks while goal mode loses elsewhere.
+  - **Why these numbers, with k=3.** One flaky run moves an arm's count by 1, so "+1 run" could be noise. +3 runs is one whole task's worth. The 2-of-3 rule means a single flaky run can neither make nor break a task, so (2) and (3) compare tasks rather than single runs. A real gain on the three multi-round tasks should clear all of these by itself: if `on` completes them and `off` stops early, that alone is up to +9 runs and +3 tasks.
+  - **Reported, not gated:** the runs where the goal said complete but the checker failed (drafted checks too weak), and, per task, the round at which each `on` run was met, blocked or budget-limited.
+  - On a miss, the tasks behind it rerun once at k=3 in both `off` and `on`, and the bar is judged again with the reruns in place of the first runs. A second miss blocks the merge, as a regression does.
 - **"Doesn't regress" means all of these,** for `off` and for `on`, each against `base`:
-  - **Pass^3:** here, the number of tasks passing 3 of 3 in that arm (one entrant, the same 14 tasks) is not lower;
+  - **Pass^3:** here, the number of tasks passing 3 of 3 in that arm (one entrant, the same 17 tasks) is not lower;
   - total passing runs are at least `base` minus 1, and no task loses 2 or more runs;
   - the done-without-evidence count is not higher (the two stricter counts are reported, not gated);
   - the written floors hold;
   - median cost and wall time per passing run are at most 1.5 times (`on` only; `off` must match within noise).
   - #453's rule applies: every T13–T15 verdict that changes the result is checked by hand.
-  - A task that misses gets one more k=3 rerun, and a miss on the rerun blocks the merge. T18 is expected to improve under `on`. It's reported, not gated.
+  - A task that misses gets one more k=3 rerun, and a miss on the rerun blocks the merge. T18–T21 are expected to improve under `on`, and the completion bar gates that.
 - **SMART-5** runs once on `off`, single-turn chat with no goal, against its last passing round.
 - **Flag.** The `goal_mode` setting (Settings → Advanced) is read in one place, `/goal` parsing in `handle_user_message`. With the flag off, `/goal` is plain text. Its default at the tag goes to the user after the bench (Q6). `DELETE-BY: v0.1.65` once the default is decided.
 
@@ -136,8 +185,20 @@ Pinned links. Claude Code is closed source, so its docs are cited.
 Red tests first:
 - the goal is met in round 1;
 - a check is unmet, then met;
-- blocked after 3 rounds with the same unmet set;
+- blocked after 3 rounds with no progress;
 - a rewrite of an unrelated file isn't progress;
+- **a long but steady goal isn't stopped:** a scripted goal with 12 rounds that makes progress every 2nd round (a new fitting receipt in rounds 2, 4, 6 and so on, nothing in between) is never blocked and is met at round 12;
+- **a busy goal with no progress is stopped at round 3:** each round makes 5 tool calls (reads, a write to an unrelated file, the same failing `check:` with the same output) and a long answer. It is blocked right after round 3's verdict, not at round 2 and not at round 4;
+- a command check that fails with new output (the next failing test) is progress; the same exit code and output again is not;
+- a check met, then unmet, then met again with a receipt seen before is not progress the second time;
+- Resume after a block starts the streak at 0 and keeps the seen set, so repeating an old receipt after Resume isn't progress;
+- the blocked reply has exactly one step for the user, and the host's fixed line replaces a verdict that gives none or two;
+- nothing runs before Start: setting a goal makes one drafting request with no tools, no job and no tool call, and `/goal start` or Start goal queues the job;
+- the edit step flags "looks nice" and "the user is happy" as checks Arslan can't verify, and Start stays disabled until each is rewritten, removed or marked user-confirmed;
+- `/goal start` with a flagged check doesn't start and lists it; `/goal start confirm` marks it user-confirmed and starts;
+- when only user-confirmed checks are unmet, the goal stops at `acceptance_review_required` with no further round, and it is complete only after Accept result;
+- a goal of only user-confirmed checks is refused at Start;
+- a judgement check with no path, source or command that gets past the flag is never met without a receipt, and the goal is blocked at round 3;
 - budget-limited: it wraps up, delivers, and is never complete;
 - no goal round on a forced step;
 - a "met" without a receipt, with a failed receipt or with an unfitting one is not met;
@@ -152,7 +213,13 @@ Red tests first:
 - the restart matrix.
 
 Mutations, each turning a named test red:
-- the blocked threshold set to 2;
+- the blocked threshold set to 2, or to 4;
+- tool calls or answer text counted as progress;
+- the seen set cleared on Resume;
+- the output digest dropped from a command receipt's identity (the steady T19-style test goes red);
+- the flag for checks Arslan can't verify removed;
+- a user-confirmed check judged by the model;
+- a goal job queued when the goal is set, before Start;
 - the receipt rule or the fit rule dropped;
 - a goal round allowed on a forced step;
 - a goal that raises its own budget;
@@ -164,38 +231,42 @@ Mutations, each turning a named test red:
 
 | PR | What | Lines | Review |
 |---|---|---|---|
-| L7-0 | Bench: T18, `BENCH_GOAL` | bench only | high |
-| L7-m | Mock: the five UI items below | docs | the user OKs |
+| L7-0 | Bench: T18, the multi-round tasks T19–T21 (fixtures and checkers), `BENCH_GOAL` with `/goal start`, and the completion bar in `report` | bench only | high |
+| L7-m | Mock: the five UI items below. **Done: the user approved it on 2026-11-11** | docs | the user OKs |
 | L7-1 | Types and red tests: `GoalSpec`, the `TurnRequest` and `TurnState` fields, `Progress.goal`, the setting, the `checked_driver` dict. Nothing reads them yet | ~150 | high |
-| L7-2 | The goal round in `turn_answer.finish`: verdict, receipts and fit, continuation, the blocked audit, the per-round checkpoint | ~400 | high |
-| L7-3 | `/goal` in `handle_user_message`, criteria drafting, goal jobs with `steer_key`, status mapping | ~350 | high |
+| L7-2 | The goal round in `turn_answer.finish`: verdict, receipts and fit, the progress rule and the seen set, continuation, the blocked audit with its one user step, stopping at `acceptance_review_required` when only user-confirmed checks are left, the per-round checkpoint | ~400 | high |
+| L7-3 | `/goal` in `handle_user_message`, criteria drafting, the flag for checks Arslan can't verify, the not-started state and Start, goal jobs with `steer_key`, status mapping | ~350 | high |
 | L7-4 | Resume as a re-queued job, the boot pass skipping goal rows, `resume_turn` refusing them | ~200 | high |
 | L7-5 | `check:` commands as host calls through `_run_tool` | ~120 | max (command policy) |
 | L7-6 | Web: the goal card and the chip, after the mock, plus the `goal_state` key on `job_update`. **A Bridge frame change, so the user merges it** | ~350 | high |
 | L7-7 | The three bench rounds, the report here, then the merges in order; the flag default goes to the user | docs | — |
 
-## UI (a mock first, L7-m)
+## UI (a mock first, L7-m: approved)
+- **The user approved the mock on 2026-11-11.** L7-6 builds from it. Its edit step (1C) is where Start goal and the flags for checks Arslan can't verify go. The mock's own wording on the phone ("passes it through unread") is superseded by the frame line below.
 - **The mock covers five items:**
   1. the goal card: the existing `JobCard` with the round, spend against the cap, the blocker, and Pause, Resume, Edit, Note and Stop;
   2. the composer chip, with the objective and n of m;
-  3. the step where the user edits the drafted criteria at start;
+  3. the step where the user edits the drafted criteria, with Start goal (nothing runs before it);
   4. "Keep going until met" on a job card;
   5. "interrupted at round n" with Resume, which re-queues the job.
 - **Plus** a Settings toggle, which is small. The island keeps the job's title (`desktop_status.working`).
-- **The frame.** The goal's state rides on the backend `job_update` frame under a new key, `goal_state`: status, round, met and total, spend and cap, and the blocker. The existing `goal` string stays the objective and the title. The Bridge reads `job_update`, so adding the key is a Bridge frame change, and the user merges L7-6. In v0.1.64 the Bridge passes `goal_state` through unread.
-- **Phone.** The phone shows the job card it has today: title, the current step, n of m and the checklist. The round and blocker don't show there, because `_job_sink` overwrites `step` with each tool step. Pause, resume and note are `/goal` text sent through `chat.send`. Mapping `goal_state` into `job.event` is Q8.
+- **The frame.** The goal's state rides on the backend `job_update` frame under a new key, `goal_state`: status, round, met and total, spend and cap, and the blocker. The existing `goal` string stays the objective and the title. The Bridge reads `job_update`, so adding the key is a Bridge frame change, and the user merges L7-6. That is the cautious reading.
+- **The Bridge drops `goal_state`; it doesn't pass it through.** It builds `job.event` from a fixed list of keys (`id`, `conversation_id`, `state`, `title` from `goal`, `current_step` from `step`, `completed`, `total`, `criteria`, and a few more) and drops every other key of the frame (`FrameMapper.swift:167-170`, `jobEvent` at `:322-344`). `ConversationLinks.swift:162-166` reads only `phase` and `run_id`. So no Swift change is needed in v0.1.64, and the effect is that the phone shows today's job card.
+- **Phone.** The phone shows the job card it has today: title, the current step, n of m and the checklist. The round and blocker don't show there, because `_job_sink` overwrites `step` with each tool step. Start, pause, resume and note are `/goal` text sent through `chat.send`. Mapping `goal_state` into `job.event` is Q8.
 
 ## External evidence
 - For each PR: the CI run id on all five checks, z3's tests green and unchanged, and the mutations.
-- For the merge: the three bench rounds against `base` and the written floors, with run ids and spend.
+- For the merge: the three bench rounds against `base` and the written floors, the completion bar (`on` against `off`), with run ids and spend.
 - A real-Mac check with the user: a `/goal` on T18-style work, a quit mid-round, then Resume.
 
-## Open questions (recommended answer first)
-1. **Where a goal runs:** as a background job, so the user can talk while it works. The alternative is the chat turn.
-2. **Who sets one:** only the user, with `/goal` or the job card's button. The model never starts one itself.
-3. **Budget:** the job tier and dollar cap, plus an optional per-goal `$N` up to the Settings maximum. Never raised automatically.
-4. **At the limit:** wrap up, deliver, and offer a one-tap Resume. Don't auto-extend.
-5. **After a restart:** Resume with one tap. Don't auto-resume, since a quit may have been a stop.
-6. **Flag default at the tag:** on, if the bench passes. With no goal set, turns are unchanged.
-7. **Judge model:** the turn's own model, with no tools. A cheaper fixed model would save money but could disagree with the worker's model.
-8. **The phone's goal fields** (round, blocker, status in `job.event`): in v0.1.65 with ①iOS. In v0.1.64 the phone shows the plain job card.
+## Decisions (the user decided on 2026-11-11)
+Every question went as this card recommended. Each is decided; the answer is the one written.
+0. **Starting: decided.** Nothing runs until the user presses Start goal. Arslan drafts the checks, the user can edit them, and Start begins the work. From the phone or by voice, `/goal start` does the same.
+1. **Where a goal runs: decided.** As a background job, so the user can talk while it works, not as the chat turn.
+2. **Who sets one: decided.** Only the user, with `/goal` or the job card's button. The model never starts one itself.
+3. **Budget: decided.** The job tier and dollar cap, plus an optional per-goal `$N` up to the Settings maximum. Never raised automatically.
+4. **At the limit: decided.** Wrap up, deliver, and offer a one-tap Resume. No auto-extend.
+5. **After a restart: decided.** Resume with one tap. No auto-resume, since a quit may have been a stop.
+6. **Flag default at the tag: decided.** On, if the bench passes, including the completion bar. With no goal set, turns are unchanged.
+7. **Judge model: decided.** The turn's own model, with no tools, not a cheaper fixed model.
+8. **The phone's goal fields** (round, blocker, status in `job.event`): **decided.** In v0.1.65 with ①iOS. In v0.1.64 the phone shows the plain job card.
