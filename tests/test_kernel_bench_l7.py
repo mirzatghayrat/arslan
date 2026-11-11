@@ -704,6 +704,27 @@ def test_a_host_line_without_stream_end_still_ends_the_goal_setting_turn(tmp_pat
     assert out["end"] == "done" and out["goal"]["status"] == "complete"
 
 
+def test_start_waits_for_the_goals_job_even_after_its_host_line_ended():
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0, goal_quiet_s=60)
+    t.start_turn(0.0, goal_turn=True, expect_job=True)
+    t.on_frame({"type": "stream_end"}, 1.0)
+    assert not t.finished(30.0, 0.0) and not t.goal_turn_over(30.0)        # no job yet: keep waiting
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "running"}, 31.0)
+    assert not t.finished(200.0, 0.0) and not t.goal_turn_over(200.0)      # the job is still at work
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"}, 201.0)
+    assert t.finished(202.0, 0.0) and t.end_reason == "done"
+    # no job ever comes (Start refused): the turn ends after the quiet, not at the run's timeout
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0, goal_quiet_s=60)
+    t.start_turn(0.0, goal_turn=True, expect_job=True)
+    t.on_frame({"type": "message", "content": "Nothing to start."}, 1.0)
+    assert not t.goal_turn_over(50.0) and t.goal_turn_over(62.0)
+    # a plain turn never ends by quiet alone
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0, goal_quiet_s=60)
+    t.start_turn(0.0)
+    t.on_frame({"type": "message", "content": "x"}, 1.0)
+    assert not t.goal_turn_over(500.0) and not t.finished(500.0, 0.0)
+
+
 def test_each_turn_of_a_multi_turn_task_is_sent_as_its_own_goal_and_snapshotted_after_it(tmp_path):
     run_dir = tmp_path / "arslan-T8-r1"
     run_dir.mkdir()

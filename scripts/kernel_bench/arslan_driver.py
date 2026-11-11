@@ -94,6 +94,7 @@ IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it do
 GOAL_START = "/goal start confirm"
 # A goal's host line may come without a stream_end; after this much quiet, a goal message's turn is over.
 GOAL_QUIET_S = 60.0
+GOAL_PENDING = "goal-start-pending"     # in jobs_open from Start until the goal's job shows up
 
 
 def goal_messages(prompt: str) -> list[str]:
@@ -153,18 +154,18 @@ class TurnTracker:
     first_chunk_at: float | None = None
     stream_end_at: float | None = None
     # L7-0: a goal message (`/goal ...`). Its host line may have no stream_end, so its turn is also over after
-    # `goal_quiet_s` of quiet once anything came; `expect_job` (Start, on an instance with goal mode) waits for the
-    # goal's job to open and finish, which ends the turn.
+    # `goal_quiet_s` of quiet once anything came (goal_turn_over). Start, on an instance with goal mode, waits for
+    # the goal's job: a pending-job marker in `jobs_open` holds the turn until the job's first frame (or that quiet).
     goal_turn: bool = False
-    expect_job: bool = False
     goal_quiet_s: float = GOAL_QUIET_S
     heard: bool = False
-    jobs_seen: int = 0
     goal_found: dict = field(default_factory=lambda: {"seen": False, "flagged": set(), "round": None, "status": None})
 
     def start_turn(self, now: float, *, goal_turn: bool = False, expect_job: bool = False) -> None:
         self.turn_started, self.first_chunk_at, self.stream_end_at = now, None, None
-        self.goal_turn, self.expect_job, self.heard, self.jobs_seen = goal_turn, expect_job, False, 0
+        self.goal_turn, self.heard = goal_turn, False
+        if expect_job:
+            self.jobs_open.add(GOAL_PENDING)
 
     def inside(self, path: str) -> bool:
         return bool(path) and (path.startswith(self.run_dir) or not path.startswith("/"))
@@ -177,6 +178,9 @@ class TurnTracker:
         self.last_activity, self.heard = now, True
         if self.goal_turn:
             _goal_bits(frame, self.goal_found)
+            if t == "job_update":            # the goal's work is its job: the turn is over when the job is
+                self.turn_done = True        # (the job_update branch below keeps it open until it finishes)
+                self.jobs_open.discard(GOAL_PENDING)
         if t == "stream_chunk":
             self.final_text.append(frame.get("content") or "")
             if self.first_chunk_at is None and frame.get("content"):     # an empty chunk shows nothing yet
@@ -200,8 +204,6 @@ class TurnTracker:
                 if frame.get("outcome") not in (None, "done"):
                     self.end_reason = f"job_{frame.get('outcome')}"
             else:
-                if job not in self.jobs_open:
-                    self.jobs_seen += 1
                 self.jobs_open.add(job)
         elif t == "tool_call" and frame.get("tool") == "run_command":
             self.run_commands += 1
@@ -267,18 +269,21 @@ class TurnTracker:
         if now - started >= RUN_TIMEOUT_S:
             self.end_reason = self.end_reason or "timeout"
             return True
-        quiet = now - self.last_activity
-        if self.task_open or self.jobs_open or quiet < self.idle_after_s:
-            return False
-        ended = self.turn_done
-        if self.goal_turn:
-            long_quiet = self.heard and quiet >= self.goal_quiet_s
-            ended = (ended or (self.expect_job and self.jobs_seen > 0) or long_quiet) and (
-                not self.expect_job or self.jobs_seen > 0 or long_quiet)
-        if ended:
+        if self.turn_done and not self.task_open and not self.jobs_open and now - self.last_activity >= self.idle_after_s:
             self.end_reason = self.end_reason or "done"
             return True
         return False
+
+    def goal_turn_over(self, now: float) -> bool:
+        """L7-0: a goal message's turn is also over after `goal_quiet_s` of quiet once anything came (a host line with
+        no stream_end); the pending-job marker of Start goes then too. The driver asks this after `finished`."""
+        if not self.goal_turn or not self.heard or now - self.last_activity < self.goal_quiet_s:
+            return False
+        self.jobs_open.discard(GOAL_PENDING)
+        if self.task_open or self.jobs_open:
+            return False
+        self.end_reason = self.end_reason or "done"
+        return True
 
     def goal_summary(self, setting: str) -> dict:
         found = self.goal_found
@@ -344,7 +349,8 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
                     tracker.start_turn(turn_started, goal_turn=goal is not None,
                                        expect_job=goal == "on" and message == GOAL_START)
                     await ws.send(json.dumps({"type": "user_message", "content": message}))
-                    while not tracker.finished(time.monotonic(), turn_started):
+                    while not (tracker.finished(time.monotonic(), turn_started)
+                               or tracker.goal_turn_over(time.monotonic())):
                         try:
                             frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
                         except asyncio.TimeoutError:
