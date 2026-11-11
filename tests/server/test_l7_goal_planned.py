@@ -5,7 +5,8 @@ slice is to add, named here (`goal_mode.after_verdict`, `unverifiable`, `record_
 `raises=` limits the xfail to that function being absent. So once the slice lands the test either passes (strict:
 XPASS is a failure, and the slice removes the marker) or fails on its assertions; it can't stay quietly expected.
 A slice that names a function otherwise renames it here. The behavioural ones (`/goal` in `handle_user_message`,
-`resume_turn` refusing a goal row) run today's code and fail on their assertions until the slice lands.
+`resume_turn` refusing a goal row) run today's code and fail on their assertions (`raises=AssertionError`) until the
+slice lands.
 DELETE-BY: v0.1.64, each marker by its slice (L7-2 to L7-5).
 """
 from __future__ import annotations
@@ -123,7 +124,7 @@ async def test_with_goal_mode_off_slash_goal_is_plain_text(execution_db, monkeyp
     assert answered == ["/goal status"]
 
 
-@pytest.mark.xfail(strict=True, reason="L7-3 parses /goal in handle_user_message")
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="L7-3 parses /goal in handle_user_message")
 async def test_l7_3_slash_goal_is_parsed_in_handle_user_message_before_any_model_call(execution_db, monkeypatch):
     answered, events = await _message_reaches_the_turn(execution_db, monkeypatch, on=True)
     assert answered == [] and events
@@ -131,7 +132,8 @@ async def test_l7_3_slash_goal_is_parsed_in_handle_user_message_before_any_model
 
 # -- L7-4: resume -------------------------------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="L7-4 makes resume_turn refuse a goal row (Resume re-queues the job)")
+@pytest.mark.xfail(strict=True, raises=AssertionError,
+                   reason="L7-4 makes resume_turn refuse a goal row (Resume re-queues the job)")
 async def test_l7_4_resume_turn_refuses_a_goal_row(execution_db, monkeypatch):
     async def load(cid, **kwargs):
         return pc.TaskMemoryContext(task_id="goal-task", run_id="initial", conversation_id=cid, no_learning=True)
@@ -153,9 +155,12 @@ async def test_l7_4_resume_turn_refuses_a_goal_row(execution_db, monkeypatch):
         answered.append(user_message)
         return "Resumed."
     monkeypatch.setattr(arslan, "_handle_answer", answer)
-    with pytest.raises(TaskError):
+    try:
         await task_service.resume_turn("goal-task", row.version, "goal-chat", lambda event: None)
-    assert answered == []
+        refused = False
+    except TaskError:
+        refused = True
+    assert refused and answered == []
 
 
 # -- L7-5: the protected set ---------------------------------------------------------------------------------------
