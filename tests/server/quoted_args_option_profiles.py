@@ -209,6 +209,8 @@ def unknowns():
 GLOBAL_DISPATCH_PROGRAMS = frozenset("gsutil gcloud aws az azcopy rclone s3cmd gh xurl npm pnpm yarn cargo twine docker terraform kubectl vercel himalaya"
                                      " netlify fly flyctl heroku railway wrangler firebase helm".split())
 IMPLICIT_OPERATIONS = {"vercel": ("--prod", "publish")}
+# #821: the deploy CLIs whose verb, when it cannot be placed (an unknown option before it), asks as `publish`.
+DEPLOY_PROGRAMS = frozenset("vercel netlify fly flyctl heroku railway wrangler firebase helm".split())
 
 
 def vercel_directories():

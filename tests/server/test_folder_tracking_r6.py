@@ -14,6 +14,7 @@ from tests.server import test_folder_tracking_r4 as r4
 from tests.server import test_quoted_args_file_run as quoted
 from tests.server import test_quoted_command_word as words
 from tests.server import quoted_args_file_run_evidence as evidence
+from tests.server import quoted_args_option_profiles as profiles
 from tests.server.test_s2a3_folder_tracking import A, B, DEL, FIND
 
 # Whole-corpus comparisons: over pytest-timeout's 120 s default on CI runners and under load.
@@ -82,9 +83,14 @@ def named_family():
 
 
 # A rule added after MAIN on purpose: the deploy CLIs' deploy and write verbs ask as `publish`, and a shell on a
-# deployed machine as `remote-shell`. The option profiles' controls and unknown-option rows name these programs, so
-# exactly those rows may move from run to that one rule; every other row, and the reader on every row, stays main's.
-DEPLOY_PROGRAMS = frozenset("netlify fly flyctl heroku railway wrangler firebase helm".split())
+# deployed machine as `remote-shell`; on these CLIs and vercel, a verb the reader cannot place (an unknown option before
+# it) asks as `publish` too. The option profiles' controls and unknown-option rows name these programs, so exactly those
+# rows may move from run to that one rule, and only as many as counted here; every other row, and the reader on every
+# row, stays main's.
+DEPLOY_PROGRAMS = profiles.DEPLOY_PROGRAMS
+# The rows that move, the same with or without FOLDER_TRACKING_EVIDENCE_FULL: 64 controls (8 per deploy CLI); 100
+# unknown-option rows (4 spellings x 3 positions on each of the 8 deploy CLIs, and the 4 before vercel's verb).
+LATER_DEPLOY_ROWS = {"controls": 64, "unknown": 100}
 
 
 def later_deploy_rule(text, before, after):
@@ -122,6 +128,7 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
         if anchored.level == before.level:
             assert anchored.rule == before.rule, text
         counts[before.level + '->' + anchored.level] += 1
+    assert later == LATER_DEPLOY_ROWS.get(corpus, 0), (corpus, later)
     print('R6_IDENTITY ' + json.dumps({'corpus': corpus, 'cases': sum(counts.values()),
                                      'differences': 0, 'later_deploy_rule': later, 'with_cwd': counts}, sort_keys=True))
 

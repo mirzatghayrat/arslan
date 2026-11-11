@@ -14,6 +14,7 @@ from tests.server.quoted_args_baseline_data import levels
 from tests.server.quoted_args_option_profiles import (
     CORRECTIONS, SEEDS, program_controls, unknowns, render,
     vercel_directories, implicit_controls, implicit_negative_controls, cluster_controls, GLOBAL_DISPATCH_PROGRAMS, IMPLICIT_OPERATIONS,
+    DEPLOY_PROGRAMS,
 )
 
 
@@ -334,7 +335,9 @@ def test_unknown_options_use_original_verdict(case, words):
     command = render(words, "single", "plain")
     sg.read(command)
     assert not tp._fully_accounted(words[0], words[1:]), case
-    assert tp._named_rules(words) == tp._legacy_named_rules(words), case
+    # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as `publish`
+    unplaceable = {"publish"} if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set()
+    assert tp._named_rules(words) == tp._legacy_named_rules(words) | unplaceable, case
     main, original = levels("unknown", case, command)
     assert RANK[tp.assess(command).level] >= max(RANK[main], RANK[original]), case
 

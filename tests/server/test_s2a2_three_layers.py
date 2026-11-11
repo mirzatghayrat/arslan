@@ -63,8 +63,21 @@ _DEPLOY_ASKS = [
         "helm install x ./c", "helm upgrade x ./c", "helm upgrade --install x ./c", "helm uninstall x",
         "helm rollback x 1", "helm push c.tgz oci://r", "helm -n ns install x ./c", "helm --kube-context c uninstall x",
     )],
+    # A verb the reader cannot place asks as `publish`, whatever the verb: a word before it that is not one of the
+    # program's known options or such an option's value, or an option between the two words of a two-word verb.
+    *[(command, "publish") for command in (
+        "netlify --weird deploy", "fly --weird deploy", "flyctl --weird deploy", "heroku --weird config:set K=V",
+        "railway --weird up", "wrangler --weird deploy", "firebase --foo deploy", "helm --weird install x ./c",
+        "vercel --foo deploy", "helm -x ns install x ./c", "fly --region iad deploy", "vercel --foo",
+        "fly secrets -a x set K=V", "flyctl apps -a x destroy x", "fly scale --app x count 2", "fly ssh -a x console",
+        "wrangler pages --env prod deploy dist", "wrangler secret -e prod put K", "wrangler versions --env x deploy",
+        "netlify --weird status", "fly --weird status", "flyctl --weird logs", "heroku --weird apps",
+        "railway --weird status", "wrangler --weird whoami", "firebase --weird projects:list", "helm --weird list",
+        "vercel --weird ls", "netlify -help deploy", "vercel -h deploy", "helm --version install x ./c",
+    )],
     *[(command, "remote-shell") for command in (
         "fly ssh console", "flyctl ssh console", "fly -a x ssh console", "heroku run bash", "heroku -a x run bash",
+        "heroku run:detached x", "heroku run:inside web bash", "heroku -a x run:detached x",
     )],
 ]
 DEPLOY_ASKS = [(wrap(command), rule) for command, rule in _DEPLOY_ASKS for wrap in _WRAPPERS]
@@ -85,6 +98,11 @@ DEPLOY_RUNS = [wrap(command) for command in (
     "firebase hosting:channel:list", "firebase emulators:start", "firebase --help", "firebase login --help",
     "helm", "helm list", "helm status x", "helm history x", "helm get values x", "helm show values ./c",
     "helm template x ./c", "helm lint ./c", "helm version", "helm --help", "helm login --help", "helm -n ns list",
+    # read-only verbs placed exactly: known options (and their values) before the verb, or after it
+    "firebase --project p projects:list", "netlify --auth t status", "flyctl -t tok logs", "fly -a x secrets list",
+    "fly secrets list -a x", "heroku -a x logs", "railway -s svc status", "wrangler --env prod whoami",
+    "wrangler -e prod versions list", "helm --kube-context c status x", "vercel --token t ls", "vercel --help",
+    "heroku runs", "vercel -h", "helm --version",
 ) for wrap in _WRAPPERS]
 
 

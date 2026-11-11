@@ -214,7 +214,7 @@ _ASK = [
      + r"|" + _CMD
      + r"rsync\b[^\n]*\S:"
      # a shell or a command on a deployed machine (a fly.io machine, a Heroku dyno)
-     + r"|" + _CMD + r"(?:fly(?:ctl)?\s+ssh\s+console|heroku\s+run)" + _END, "connects to another machine"),
+     + r"|" + _CMD + r"(?:fly(?:ctl)?\s+ssh\s+console|heroku\s+run(?::[\w:-]*)?)" + _END, "connects to another machine"),
     # bash opens the connection itself, with no program named (zsh has no such path).
     ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
@@ -600,6 +600,47 @@ def _fully_accounted(program: str, args: tuple[str, ...]) -> bool:
     return True
 
 
+# Deploy and hosting CLIs (#821): the verbs that publish or change something online, and those that open a shell on a
+# deployed machine (heroku's `run` with any `run:*` suffix). vercel's own reading stays in `_named_rules`: its bare
+# program deploys.
+_DEPLOY_PUBLISH = {
+    "netlify": {("deploy",)},
+    "fly": {("deploy",), ("secrets", "set"), ("apps", "destroy"), ("scale", "count")},
+    "heroku": {("releases:rollback",), ("config:set",), ("apps:destroy",), ("container:release",)},
+    "railway": {("up",)},
+    "wrangler": {("deploy",), ("publish",), ("rollback",), ("versions", "deploy"), ("pages", "deploy"),
+                 ("pages", "publish"), ("secret", "put")},
+    "firebase": {("deploy",), ("hosting:channel:deploy",), ("functions:delete",), ("database:set",)},
+    "helm": {("install",), ("upgrade",), ("uninstall",), ("rollback",), ("push",)},
+}
+_DEPLOY_PUBLISH["flyctl"] = _DEPLOY_PUBLISH["fly"]
+_DEPLOY_SHELL = {"fly": {("ssh", "console")}, "flyctl": {("ssh", "console")}, "heroku": {("run",)}}
+_DEPLOY_PROGRAMS = frozenset(_DEPLOY_PUBLISH) | {"vercel"}
+_TWO_WORD_HEADS = {program: frozenset(verb[0] for verb in _DEPLOY_PUBLISH.get(program, set())
+                                      | _DEPLOY_SHELL.get(program, set()) if len(verb) == 2)
+                   for program in _DEPLOY_PROGRAMS}
+_HELP_WORDS = frozenset({"-h", "--help", "-help", "--version", "-version"})
+
+
+def _deploy_verb(table: set[tuple[str, ...]], lower: tuple[str, ...]) -> bool:
+    return lower[:1] in table or lower[:2] in table
+
+
+def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
+    """A deploy CLI whose verb this reader cannot place (#821): a word before the verb that is neither one of the
+    program's global options nor such an option's value (`firebase --foo deploy`, `netlify --weird status`), or an
+    option between the two words of a two-word verb (`fly secrets -a x set`). Then the reader cannot tell a deploy
+    from a read, so `_named_rules` asks as `publish`. Known means the program's own `_GLOBAL_OPTIONS` row: a help or
+    version spelling that row does not list is unknown before a verb (`netlify -help deploy`, `vercel -h deploy`).
+    Only a command of help and version words alone (`vercel --help`) has nothing to place; it keeps main's reading."""
+    if all(word in _HELP_WORDS for word in args):
+        return False
+    verb = _verb(args, _OPTION_VALUES.get(program, frozenset()))
+    head = args[:len(args) - len(verb) + 1]
+    split = len(verb) > 2 and verb[0].lower() in _TWO_WORD_HEADS[program] and verb[1].startswith("-")
+    return split or not _fully_accounted(program, head)
+
+
 def _legacy_named_rules(words: tuple[str, ...]) -> set[str]:
     """The original bounded flattened-tuple matcher, used only on coverage gaps."""
     command = " ".join(words)
@@ -681,6 +722,8 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     The old text rules remain an independent conservative floor.
     """
     program, args = words[0].lower(), words[1:]
+    if program in _DEPLOY_PROGRAMS and _verb_unplaceable(program, args):
+        return _legacy_named_rules(words) | {"publish"}
     if not _fully_accounted(program, args):
         return _legacy_named_rules(words)
     operations = frozenset()
@@ -736,8 +779,7 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     add("remote-shell", program in {"ssh", "ssh-copy-id", "sshpass", "autossh", "mosh", "scp", "sftp", "ftp", "telnet", "socat"}
         or program in {"nc", "ncat", "netcat"} and not any(w.startswith("-") and "z" in w for w in args)
         or program == "rsync" and any(":" in w for w in _operands(args))
-        or program in {"fly", "flyctl"} and lower[:2] == ("ssh", "console")
-        or program == "heroku" and first == "run")
+        or program in _DEPLOY_SHELL and _deploy_verb(_DEPLOY_SHELL[program], (first.partition(":")[0], *lower[1:])))
     if program == "git":
         verb = _verb(args, _GIT_VALUES)
         add("git-push", bool(verb) and verb[0].lower() == "push")
@@ -753,15 +795,7 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         or program == "terraform" and first in {"apply", "destroy"}
         or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
         or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations)
-        or program == "netlify" and first == "deploy"
-        or program in {"fly", "flyctl"} and (first == "deploy" or lower[:2] in {
-            ("secrets", "set"), ("apps", "destroy"), ("scale", "count")})
-        or program == "heroku" and first in {"releases:rollback", "config:set", "apps:destroy", "container:release"}
-        or program == "railway" and first == "up"
-        or program == "wrangler" and (first in {"deploy", "publish", "rollback"} or lower[:2] in {
-            ("versions", "deploy"), ("pages", "deploy"), ("pages", "publish"), ("secret", "put")})
-        or program == "firebase" and first in {"deploy", "hosting:channel:deploy", "functions:delete", "database:set"}
-        or program == "helm" and first in {"install", "upgrade", "uninstall", "rollback", "push"})
+        or program in _DEPLOY_PUBLISH and _deploy_verb(_DEPLOY_PUBLISH[program], lower))
     add("force-kill", program in {"killall", "pkill"})
     add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
         or program == "defaults" and first == "write" or program == "crontab" and first != "-l")
