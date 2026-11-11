@@ -4,6 +4,7 @@ them. A stop itself shows no card: it goes back to the model."""
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import command_sandbox, terminal_exec
 from server.orchestrator import command_gate
 
@@ -59,9 +60,9 @@ async def _resolve():
 
 async def _dispatch(monkeypatch, args, *, executor, cards=None, cid="c1"):
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", executor)
-    return await tool_loop._dispatch_tool(
-        "run_command", args, "{}", resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=[], convo=[], confirm_command=cards, conversation_id=cid)
+    return await tool_loop._run_tool(
+        "run_command", args, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+        tool_trace=[], convo=[], confirm_command=cards, conversation_id=cid))
 
 
 async def test_a_stopped_command_goes_back_to_the_model_with_no_card(monkeypatch):
@@ -109,9 +110,9 @@ async def _turn_of(monkeypatch, *steps, cards):
     token = untrusted.track_turn()
     convo: list = []
     try:
-        results = [await tool_loop._dispatch_tool(
-            "run_command", args, "{}", resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-            tool_trace=[], convo=convo, confirm_command=cards, conversation_id="c1") for args in steps]
+        results = [await tool_loop._run_tool(
+            "run_command", args, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+            tool_trace=[], convo=convo, confirm_command=cards, conversation_id="c1")) for args in steps]
         return results, convo, untrusted.external_seen()
     finally:
         untrusted.end_turn(token)

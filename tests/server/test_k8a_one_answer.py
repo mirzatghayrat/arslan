@@ -19,7 +19,7 @@ import httpx
 import pytest
 
 from arslan.llm.adapter import LLMAdapter
-from server.orchestrator import tool_loop
+from server.orchestrator import answer_guards, tool_loop, turn_stream
 from server.services import host_run, run_recorder, runtime_messages, turn_journal
 from tests.llm.test_stream_assembly_s7 import BASE, provider
 from tests.server.test_k8a_streaming import PROSE, _reply
@@ -100,7 +100,7 @@ async def test_run_492_saying_how_a_conclusion_was_found_is_not_sent_back(turn):
                                   "我在网络设置里查到代理是 127.0.0.1", "网络日志里查到三次断线", "神经网络查到",
                                   "我在本地网络中查到了三台设备", "局域网络中查到 3 台 Mac", "家庭网络中查到打印机"])
 def test_no_web_search_claimed(text):
-    assert not tool_loop._claims_search(text)
+    assert not answer_guards._claims_search(text)
 
 
 @pytest.mark.parametrize("text", ["我搜索了三个网站", "刚才搜索了一下", "I searched the web", "我已搜过",
@@ -112,7 +112,7 @@ def test_no_web_search_claimed(text):
                                   "联网功能查到了三条",
                                   "可能在网上查到的是旧数据", "过去在网上查到的数据"])
 def test_a_web_search_claimed(text):
-    assert tool_loop._claims_search(text)
+    assert answer_guards._claims_search(text)
 
 
 async def test_a_correction_replaces_what_went_out(turn):
@@ -130,7 +130,7 @@ async def test_a_correction_replaces_what_went_out(turn):
 async def test_three_bounces_leave_one_answer_labelled_in_its_own_language(turn):
     claim = _reply("我搜索了网页，结论如下。" + ZH)
     result, log, bodies = await turn([claim, claim, claim, "最后的回答。"], tools=("web_search",))
-    assert len(restarts(log)) == tool_loop._UNVERIFIED_BOUNCES + 1
+    assert len(restarts(log)) == turn_stream._UNVERIFIED_BOUNCES + 1
     label = runtime_messages.render("stream_correction", "zh")
     assert all(r["label"] == label for r in restarts(log))               # the thread's language, not the UI's
     assert result["final"] == shown(log) == "最后的回答。"
@@ -143,7 +143,7 @@ async def test_a_restart_before_anything_went_out_says_nothing(turn):
 
 
 def test_the_label_language():
-    t = tool_loop._label_locale
+    t = turn_stream._label_locale
     assert (t(ZH), t("ただいま確認しました。結果です。"), t("The river rises in the hills and runs north.")) == \
         ("zh", "ja", "en")
     assert t("Der Fluss ist lang und die Stadt ist alt.") == "de" and t("12345") is None
@@ -216,7 +216,7 @@ async def test_with_no_real_replacement_what_was_shown_stays_with_one_note(turn,
     assert result["final"] == shown(log)
     assert result["final"].count(note) == 1 and result["final"].rstrip().endswith(note)
     assert PROSE.strip()[:100] in result["final"] and miss not in result["final"]
-    assert len(restarts(log)) == tool_loop._UNVERIFIED_BOUNCES       # the last bounce replaced nothing
+    assert len(restarts(log)) == turn_stream._UNVERIFIED_BOUNCES       # the last bounce replaced nothing
 
 
 async def test_the_note_is_in_the_language_of_what_stays(turn):

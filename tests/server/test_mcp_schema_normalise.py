@@ -304,7 +304,7 @@ def test_openai_compatible_reads_a_function_name_or_a_position():
 import httpx  # noqa: E402
 
 from server.orchestrator import model_call as mc  # noqa: E402
-from server.orchestrator import tool_loop  # noqa: E402
+from server.orchestrator import model_step, tool_loop  # noqa: E402
 from tests.server import test_trajectory_golden as golden  # noqa: E402
 
 ANTHROPIC_REFUSAL = ("tools.{n}.custom.input_schema: input_schema does not support oneOf, allOf, "
@@ -349,7 +349,7 @@ async def _tools():
 
 @pytest.fixture
 def events(monkeypatch):
-    tool_loop._BAD_TOOLS.clear()
+    model_step._BAD_TOOLS.clear()
     seen: list[tuple] = []
 
     async def log_event(conversation_id, kind, ref, summary):
@@ -362,7 +362,7 @@ def events(monkeypatch):
     from server.mcp import executor
     monkeypatch.setattr(executor, "not_ready_for_key", no_state)
     yield seen
-    tool_loop._BAD_TOOLS.clear()
+    model_step._BAD_TOOLS.clear()
 
 
 async def _turn(adapter, cid="c1"):

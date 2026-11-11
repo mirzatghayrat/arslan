@@ -2,7 +2,7 @@
 import pytest
 
 from arslan.models import LLMResponse
-from server.orchestrator import tool_loop
+from server.orchestrator import answer_guards, tool_loop
 
 
 @pytest.mark.parametrize("text", [
@@ -11,12 +11,12 @@ from server.orchestrator import tool_loop
     '```json\n{"functionCall": {"name": "write_file",',
 ])
 def test_malformed_protocol_is_still_not_a_final_answer(text):
-    assert tool_loop._embeds_protocol(text)
+    assert answer_guards._embeds_protocol(text)
 
 
 @pytest.mark.parametrize("text", ['{"name":"tool","value":12}', 'The tool failed; no file was saved.'])
 def test_ordinary_json_and_prose_remain_valid(text):
-    assert not tool_loop._embeds_protocol(text)
+    assert not answer_guards._embeds_protocol(text)
 
 
 async def test_malformed_write_is_not_dispatched_or_streamed(monkeypatch):

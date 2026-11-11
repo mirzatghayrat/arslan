@@ -10,7 +10,7 @@ The four lines are what was done, how it was checked, what was not checked, and 
 """
 import pytest
 
-from server.orchestrator import agent_status, tool_loop
+from server.orchestrator import agent_status, answer_guards
 from server.orchestrator.tool_caller import ToolCaller
 from tests.server import test_trajectory_golden as golden
 from tests.server.test_agent_status_requests import PLAN, Resp, _research_turn, _run
@@ -62,5 +62,5 @@ async def test_a_delegated_worker_never_gets_it(monkeypatch):
 
 
 def test_neither_unverified_nor_not_found_is_read_as_a_search_claim():
-    assert not tool_loop._CLAIMS_SEARCH_RE.search("未核对：价格")
-    assert not tool_loop._CLAIMS_SEARCH_RE.search("没查到价格")   # K8a fixed it: nothing found is no claim
+    assert not answer_guards._CLAIMS_SEARCH_RE.search("未核对：价格")
+    assert not answer_guards._CLAIMS_SEARCH_RE.search("没查到价格")   # K8a fixed it: nothing found is no claim

@@ -414,6 +414,7 @@ class _Cards:
 
 async def _dispatch(monkeypatch, command, executor, cards, **args):
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
 
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
@@ -426,9 +427,9 @@ async def _dispatch(monkeypatch, command, executor, cards, **args):
     monkeypatch.setattr(command_gate, "_sandbox_enabled", yes)
     monkeypatch.setattr(command_gate, "_asks_for_everything", no)
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", executor)
-    return await tool_loop._dispatch_tool(
-        "run_command", {"command": command, **args}, "{}", resolve_tools=resolve, emit=lambda e: None,
-        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=cards, conversation_id="c1")
+    return await tool_loop._run_tool(
+        "run_command", {"command": command, **args}, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None,
+        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=cards, conversation_id="c1"))
 
 
 PLAIN_OSA = "osascript -e 'tell application \"Reminders\" to count lists'"

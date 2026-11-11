@@ -17,6 +17,7 @@ from server.db import session as db_session
 from server.db.models import Setting
 from server.orchestrator import arslan as arslan_mod
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import permission_store, permissions, terminal_exec
 from server.orchestrator import command_gate
 
@@ -69,9 +70,9 @@ async def _stand(answer: str, command: str) -> None:
 async def _dispatch(command: str, **kw):
     async def tools():
         return [{"key": "run_command", "description": "run_command"}]
-    return await tool_loop._dispatch_tool("run_command", {"command": command, **kw}, "", resolve_tools=tools,
-                                          emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
-                                          conversation_id=CID, **({"confirm_command": _yes} if kw.pop("_yes", False) else {}))
+    return await tool_loop._run_tool("run_command", {"command": command, **kw}, "", ToolTurn(resolve_tools=tools,
+                                     emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                                     conversation_id=CID, **({"confirm_command": _yes} if kw.pop("_yes", False) else {})))
 
 
 async def _rows():

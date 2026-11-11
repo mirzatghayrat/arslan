@@ -111,6 +111,7 @@ def test_fail_closed_seed_stub_executor_refuses_when_caller_none():
 @pytest.mark.asyncio
 async def test_dispatch_tool_threads_caller_to_executor_and_resets_after():
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
     from server.registry import executors
 
     seen = {}
@@ -130,10 +131,10 @@ async def test_dispatch_tool_threads_caller_to_executor_and_resets_after():
         caller = ToolCaller(actor="spawn", spawn_id=7, conversation_id="c9")
         assert tool_caller.current_caller() is None  # sanity: nothing leaked in from another test
 
-        result = await tool_loop._dispatch_tool(
+        result = await tool_loop._run_tool(
             monkey_key, {"query": "x"}, "assistant content",
-            resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5.0,
-            tool_trace=[], convo=[], caller=caller)
+            ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5.0,
+                     tool_trace=[], convo=[], caller=caller))
 
         assert result["ok"] is True
         assert seen["during"] == caller
@@ -151,6 +152,7 @@ async def test_dispatch_tool_no_caller_passed_is_a_noop_context():
     """caller=None (default) must not set anything — current_caller() stays None throughout,
     matching today's behavior for any call site that hasn't been updated yet."""
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
     from server.registry import executors
 
     seen = {}
@@ -167,10 +169,10 @@ async def test_dispatch_tool_no_caller_passed_is_a_noop_context():
         async def _resolve():
             return [{"key": monkey_key, "description": "d"}]
 
-        result = await tool_loop._dispatch_tool(
+        result = await tool_loop._run_tool(
             monkey_key, {"query": "x"}, "assistant content",
-            resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5.0,
-            tool_trace=[], convo=[])  # no caller kwarg at all
+            ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5.0,
+                     tool_trace=[], convo=[]))  # no caller kwarg at all
 
         assert result["ok"] is True
         assert seen["during"] is None
@@ -185,6 +187,7 @@ async def test_dispatch_tool_no_caller_passed_is_a_noop_context():
 @pytest.mark.asyncio
 async def test_dispatch_tool_resets_even_when_executor_raises():
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
     from server.registry import executors
 
     class _Boom:
@@ -200,10 +203,10 @@ async def test_dispatch_tool_resets_even_when_executor_raises():
             return [{"key": monkey_key, "description": "d"}]
 
         caller = ToolCaller(actor="host", spawn_id=None, conversation_id="c1")
-        result = await tool_loop._dispatch_tool(
+        result = await tool_loop._run_tool(
             monkey_key, {"query": "x"}, "assistant content",
-            resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5.0,
-            tool_trace=[], convo=[], caller=caller)
+            ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5.0,
+                     tool_trace=[], convo=[], caller=caller))
 
         # _dispatch_tool swallows the exception into an {ok: False} result (existing behavior)
         assert result["ok"] is False

@@ -59,6 +59,7 @@ from server.db import session as db_session
 from server.db.models import Base
 from server.services import replay_safety
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 
 # The replay sentinel replay_safety still seals (replay_run, which defined it, went in C7b-2).
 REPLAY_CONVERSATION_ID = "evolution-replay"
@@ -166,12 +167,12 @@ async def test_throat_refuses_nonsafe_tool_in_hermetic_context_even_if_resolver_
     tl.resolve_executor = fake_resolve_executor
     try:
         emitted = []
-        out = await tool_loop._dispatch_tool(
+        out = await tool_loop._run_tool(
             "mcp_1__send_message", {"to": "x"},
             json.dumps({"tool": "mcp_1__send_message", "args": {}}),
-            resolve_tools=leaky_resolve, emit=lambda e: emitted.append(e),
-            tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
-            conversation_id="evolution-eval")
+            ToolTurn(resolve_tools=leaky_resolve, emit=lambda e: emitted.append(e),
+                     tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
+                     conversation_id="evolution-eval"))
     finally:
         tl.resolve_executor = orig
 
@@ -197,12 +198,12 @@ async def test_throat_allows_safe_tool_in_hermetic_context():
     orig = tl.resolve_executor
     tl.resolve_executor = fake_resolve_executor
     try:
-        out = await tool_loop._dispatch_tool(
+        out = await tool_loop._run_tool(
             "web_search", {"query": "x"},
             json.dumps({"tool": "web_search", "args": {"query": "x"}}),
-            resolve_tools=resolve, emit=lambda e: None,
-            tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
-            conversation_id="evolution-eval")
+            ToolTurn(resolve_tools=resolve, emit=lambda e: None,
+                     tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
+                     conversation_id="evolution-eval"))
     finally:
         tl.resolve_executor = orig
     assert out.get("ok") is True
@@ -251,12 +252,12 @@ async def test_throat_refuses_run_python_when_unsandboxed_escape_valve_set(monke
 
     tool_loop.resolve_executor = fake_resolve_executor
     try:
-        out = await tool_loop._dispatch_tool(
+        out = await tool_loop._run_tool(
             "run_python", {"code": "print(1)"},
             json.dumps({"tool": "run_python", "args": {"code": "print(1)"}}),
-            resolve_tools=resolve, emit=lambda e: None,
-            tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
-            conversation_id="evolution-eval")
+            ToolTurn(resolve_tools=resolve, emit=lambda e: None,
+                     tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
+                     conversation_id="evolution-eval"))
     finally:
         tool_loop.resolve_executor = orig
 

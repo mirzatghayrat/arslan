@@ -77,12 +77,12 @@ def test_sonnet_5_5s_between_tools_switch_never_gets_updates():
 
 def test_notes_come_only_from_a_reply_whose_request_carried_updates():
     from types import SimpleNamespace
-    from server.orchestrator import tool_loop
+    from server.orchestrator import turn_stream
     blocks = [{"type": "thinking", "thinking": "a summary of reasoning", "signature": "s"}]
     asked = SimpleNamespace(continuation={"protocol": "anthropic", "content": blocks, "updates": True})
     not_asked = SimpleNamespace(continuation={"protocol": "anthropic", "content": blocks})
-    assert tool_loop._progress_updates(None, asked) == ["a summary of reasoning"]
-    assert tool_loop._progress_updates(None, not_asked) == []
+    assert turn_stream._progress_updates(None, asked) == ["a summary of reasoning"]
+    assert turn_stream._progress_updates(None, not_asked) == []
 
 
 async def test_a_reply_to_a_request_that_lost_updates_on_the_way_gives_no_notes():
@@ -101,8 +101,8 @@ async def test_a_reply_to_a_request_that_lost_updates_on_the_way_gives_no_notes(
     provider = AnthropicProvider("claude-opus-5-5", api_key="k", base_url=BASE, transport=httpx.MockTransport(handler))
     response = await provider.chat(NATIVE)
     assert "updates" not in response.continuation
-    from server.orchestrator import tool_loop
-    assert tool_loop._progress_updates(None, response) == []
+    from server.orchestrator import turn_stream
+    assert turn_stream._progress_updates(None, response) == []
     param_heal.forget()
 
 
