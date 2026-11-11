@@ -186,11 +186,29 @@ async def start(conversation_id: str, goal: str, criteria: list[dict], *,
     summary turn (`sub_sessions`), its id marked so its spend counts in its tree after a restart too. SUB5b: any job
     in a sub-session is the sub-session's, whoever starts it (an accepted Inbox follow-up): its parent is read from
     the stored kind (`sub_sessions.placement`)."""
+    _goal(goal)                     # refused before the placement read writes anything
+    from server.services import sub_sessions
+    placed = await sub_sessions.placement(conversation_id)
+    return start_placed(conversation_id, goal, criteria, placed, outside_seen=outside_seen, origin=origin,
+                        parent_id=parent_id, reports=reports)
+
+
+def _goal(goal: str) -> str:
     goal = " ".join(goal.split())[:4000]
     if not goal:
         raise ValueError("background_goal_required")
+    return goal
+
+
+def start_placed(conversation_id: str, goal: str, criteria: list[dict], placed: tuple[str | None, str | None], *,
+                 outside_seen: bool | Callable[[], bool], origin: str = "mac", parent_id: str | None = None,
+                 reports: str | None = None) -> Job:
+    """`start` once its `sub_sessions.placement` is read. Not async, so nothing can come between a caller's last
+    check and the job's registration: SUB5a's `sub_sessions.start` reads the placement, checks the stop, then calls
+    this, so a stop either refuses it or finds its job (`stop_tree`)."""
     from server.services import sub_sessions
-    stored_parent, commander = await sub_sessions.placement(conversation_id)
+    goal = _goal(goal)
+    stored_parent, commander = placed
     job = Job(job_id=f"{sub_sessions.SUMMARY_JOB if reports is not None else 'job-'}{uuid.uuid4()}",
               conversation_id=conversation_id, goal=goal, acceptance=criteria_to_acceptance(criteria),
               origin="phone" if origin == "phone" else "mac",

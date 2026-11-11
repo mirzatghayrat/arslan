@@ -224,7 +224,9 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
     is not the user's words: the job drops what the user asked to save (`background_jobs._execute`).
 
     SUB5a: refused (`sub_session_stopped`) once the window stopped the turn that starts it (`stopping`), checked
-    again right before its job starts, with no await between, so a stop either refuses it or finds its job."""
+    again right before its job starts, with no await between, so a stop either refuses it or finds its job. SUB5b: its
+    `placement` is read before that check, and the job starts through `background_jobs.start_placed`, which is not
+    async."""
     from server.db import session as db_session
     from server.orchestrator import memory, untrusted
     from server.services import background_jobs, execution_context
@@ -252,11 +254,13 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
         # SUB5b: under a line of its own, so a later turn the user types there starts as having read outside content too.
         framed = untrusted.sub_session_brief(brief) if outside_seen else None
         await memory.add_message(child, "user", framed or brief, display_content=brief if framed else None)
+        placed = await placement(child)  # SUB5b: its last await, read before the check below
         if turn in _stopped_runs:        # stopped while this one was being made: it never runs, and owes nothing
+            _parents.pop(child, None)
             await _set_state([child], None)
             raise SubSessionError("sub_session_stopped")
         _parents[child] = parent_id
-        await background_jobs.start(child, brief, [], outside_seen=outside_seen, parent_id=parent_id)
+        background_jobs.start_placed(child, brief, [], placed, outside_seen=outside_seen, parent_id=parent_id)
     return child
 
 

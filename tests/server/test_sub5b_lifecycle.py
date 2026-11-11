@@ -8,6 +8,8 @@ accept, the conversation delete) and main.py's boot passes on a copy of the data
    writes it), so a restart while it runs gives the commander its one line.
 2. A deleted tree's open Inbox reminders stay where they are, and accepting one is refused (`conversation_deleted`),
    also after a restart: every row of the tree is a tombstone.
+3. A stop that lands while a sub-session's placement is read (`sub_sessions.placement`, a database read) is still
+   honoured: SUB5a's second stop check comes after that read, with no await between it and the job's start.
 """
 import asyncio
 from datetime import datetime
@@ -15,12 +17,12 @@ from datetime import datetime
 import pytest
 
 from server.db.models import ProactiveItem
-from server.services import background_jobs, proactive_service, sub_sessions
+from server.services import background_jobs, execution_context, proactive_service, run_registry, sub_sessions
 from tests.server.test_s64_0_outside_content_gaps import memory  # noqa: F401  (the fixture)
 from tests.server.test_sub4_report import (  # noqa: F401  (the fixture)
-    OUTLINE, ROOT, _children, _Model, _settled, _sink, _start, _steps, _wait, runs)
+    COVER, OUTLINE, ROOT, _children, _Model, _settled, _sink, _start, _steps, _wait, runs)
 from tests.server.test_sub5a_lifecycle import (  # noqa: F401  (the fixtures)
-    _family, _fresh, _line, _nothing_runs_again, _said, _states, client, restart)
+    _family, _fresh, _line, _live_turn, _nothing_runs_again, _refused, _said, _states, client, restart)
 
 GOAL = "Continue the outline the sub-session left unfinished"
 
@@ -83,3 +85,42 @@ async def test_a_deleted_trees_open_reminders_are_refused_at_accept_and_left_in_
     async with runs() as db:
         assert {(await db.get(ProactiveItem, item_id)).status for item_id in items.values()} == {"new"}
     assert background_jobs._jobs == {}
+
+
+async def test_a_stop_while_a_new_sub_sessions_placement_is_read_refuses_it(runs, client, monkeypatch):  # noqa: F811
+    """SUB5a's case (`test_a_sub_session_the_stopped_turn_starts_afterwards_never_runs`) with the pause in
+    `placement`'s read: the stop lands there, and the start goes on past it. It is refused, no job is made, the model
+    is never asked for its brief, and its row doesn't end `working`. Another turn's still starts."""
+    model = _Model({OUTLINE: _steps(final="outline ready"), COVER: _steps(final="cover ready")},
+                   summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    run_id, turn = await _live_turn(runs, ROOT)
+    entered, gate = asyncio.Event(), asyncio.Event()
+    real = sub_sessions.placement
+
+    async def slow(cid):
+        if cid.startswith(sub_sessions.CHILD_PREFIX) and not gate.is_set():
+            entered.set()
+            await gate.wait()
+        return await real(cid)
+    monkeypatch.setattr(sub_sessions, "placement", slow)
+    with execution_context.bind_run(run_id):
+        starting = asyncio.ensure_future(sub_sessions.start(ROOT, OUTLINE, outside_seen=False))
+    try:
+        await entered.wait()
+        assert (await client.post(f"/api/v1/runs/{run_id}/cancel")).status_code == 202
+        gate.set()
+        assert await _refused(starting) == "sub_session_stopped"
+        assert background_jobs._jobs == {}
+        async with runs() as db:
+            [child] = await sub_sessions.children(db, ROOT)
+        assert await _states(runs, [child]) == {child: None}
+        with execution_context.bind_run(run_id + 1):
+            await sub_sessions.start(ROOT, COVER, outside_seen=False)
+        assert [job.goal for job in _children()] == [COVER]
+        run_registry.unregister(run_id, ROOT)
+        await _wait(_settled)
+        assert model.requests[OUTLINE] == [] and await _states(runs, [child]) == {child: None}
+    finally:
+        run_registry.unregister(run_id, ROOT)
+        turn.cancel()
