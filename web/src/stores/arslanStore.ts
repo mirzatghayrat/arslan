@@ -4,7 +4,7 @@ import { announceProactiveChange } from "../api/proactive";
 import { summaryOf, type CommandSummary } from "../lib/commandRisk";
 import { runtimeErrorTranslations, type RuntimeErrorTranslations } from "../lib/runtimeErrorText";
 import { createSpeaker } from "../lib/speech";
-import type { ActionKind, ArslanServerMessage, ArslanThreadItem, EarlierDraft, JobCard, JobOutcome, ModelCall, ProcessSummary, StoredArtifact, ToolStep } from "../api/client.types";
+import type { ActionKind, ArslanServerMessage, ArslanThreadItem, EarlierDraft, JobCard, JobOutcome, ModelCall, ProcessSummary, SandboxCardItem, StoredArtifact, ToolStep } from "../api/client.types";
 import type { MessageAttachment } from "../types";
 
 let _cardSeq = 0;
@@ -116,6 +116,8 @@ interface ArslanState {
   // PA-3: flip a clarify card to its answered (disabled) state once the user picked
   // an option — a stale re-click can never send a second user_message.
   markClarifyAnswered: (itemId: number) => void;
+  /** SBX settings: how the sandbox card `cardId` stands in this window (trusted, put away). */
+  setSandboxCardState: (cardId: string, state: SandboxCardItem["state"]) => void;
   clearPendingCommand: (callId: string) => void;
   setVoice: (v: { enabled: boolean; lang: string }) => void;
   /** Say one line aloud (a background job finished, or is waiting on a card).
@@ -387,6 +389,11 @@ function makeActions(set: SetState, get: GetState) {
           it.id === itemId && it.clarifyOptions && !it.clarifyOptions.answered
             ? { ...it, clarifyOptions: { ...it.clarifyOptions, answered: true } }
             : it),
+      }),
+    setSandboxCardState: (cardId: string, state: SandboxCardItem["state"]) =>
+      set({
+        items: get().items.map((it) =>
+          it.sandboxCard?.cardId === cardId ? { ...it, sandboxCard: { ...it.sandboxCard, state } } : it),
       }),
     clearPendingCommand: (callId: string) => set({ pendingCommands: get().pendingCommands.filter((c) => c.callId !== callId) }),
     setVoice: ({ enabled, lang }) => {
@@ -839,6 +846,22 @@ function makeActions(set: SetState, get: GetState) {
             ],
           });
           break;
+        case "sandbox_card": {
+          // SBX settings: a card in the chat for a command the sandbox stopped. One per card id (a replayed frame
+          // adds none), and one certificate card open at a time. 🔒 From the backend frame only.
+          const id = typeof frame.card_id === "string" ? frame.card_id : "";
+          const lan = frame.kind === "lan_device";
+          const addresses = Array.isArray(frame.addresses) ? frame.addresses.filter((a): a is string => typeof a === "string") : [];
+          const open = (c?: SandboxCardItem) => c?.state === "open" && c.kind === "certificates";
+          if (!id || (!lan && frame.kind !== "certificates") || (lan && !addresses.length)
+              || state.items.some((it) => it.sandboxCard?.cardId === id)
+              || (!lan && state.items.some((it) => open(it.sandboxCard)))) break;
+          const card: SandboxCardItem = lan
+            ? { cardId: id, kind: "lan_device", addresses, ...(typeof frame.host === "string" && frame.host ? { host: frame.host } : {}), state: "open" }
+            : { cardId: id, kind: "certificates", state: "open" };
+          set({ items: [...state.items, { id: nextClientId(), kind: "sandbox", role: "arslan", content: "", sandboxCard: card }] });
+          break;
+        }
         case "propose_run_command":
           set({ pendingCommands: _added(state.pendingCommands, { callId: frame.call_id, pretty: frame.pretty,
                                   reason: frame.reason || "",

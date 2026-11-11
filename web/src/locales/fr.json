@@ -1578,5 +1578,34 @@
       "choiceRequired": "Elle a maintenant {{count}} sous-sessions. Choisis à nouveau ce qu'elles deviennent.",
       "failed": "La suppression a échoué. Réessaie."
     }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "Autoriser les vérifications de certificats du système dans le bac à sable",
+    "certificatesDesc": "Certains outils (certains gestionnaires de paquets, les services HTTPS internes d'une entreprise) utilisent les vérifications de certificats de macOS pour se connecter. Le bac à sable ne les autorise pas par défaut, et ces outils signalent alors une erreur de certificat. Activées, elles ne sont permises que pendant qu'une commande est en ligne, et le trousseau reste hors de portée. Désactivé par défaut.",
+    "devicesTitle": "Appareils locaux de confiance",
+    "devicesDesc": "Les commandes du bac à sable n'atteignent pas ton réseau local par défaut (routeur, NAS, imprimante, autres ordinateurs). Un appareil ajouté ici est joignable, sur tous ses ports. Un appareil ajouté par son nom garde l'adresse qu'il a maintenant, vérifiée de nouveau à chaque connexion. Les adresses de ce Mac ne peuvent pas être ajoutées.",
+    "devicesEmpty": "Aucun appareil de confiance pour l'instant.",
+    "placeholder": "Un nom ou une IP du réseau local, par exemple nas.local ou 192.168.1.20",
+    "inputLabel": "Nom ou IP du réseau local",
+    "add": "Faire confiance",
+    "remove": "Ne plus faire confiance",
+    "notFound": "« {{value}} » est introuvable. Utilise un nom de ton réseau local (par exemple nas.local) ou une IP.",
+    "notLan": "{{value}} n'est pas une adresse du réseau local. Seuls les appareils de ton réseau local peuvent être ajoutés ici.",
+    "ownAddress": "C'est une adresse de ce Mac. Elle ne peut pas être ajoutée.",
+    "listed": "Il est déjà dans la liste.",
+    "failed": "Ça n'a pas marché. Réessaie.",
+    "trustedToast": "{{name}} est maintenant de confiance",
+    "untrustedToast": "Plus de confiance",
+    "certificatesCardTitle": "La vérification du certificat a échoué",
+    "certificatesCardBody": "Cette commande utilise les vérifications de certificats de macOS pour se connecter, ce que le bac à sable n'autorise pas par défaut. Active « Autoriser les vérifications de certificats du système dans le bac à sable », puis réessaie.",
+    "openSettings": "L'activer dans les Paramètres",
+    "notNow": "Pas maintenant",
+    "notNowToast": "D'accord, pas cette fois",
+    "lanTitle": "La commande veut joindre un appareil de ton réseau local : {{device}}",
+    "lanBody": "Les commandes du bac à sable n'atteignent pas ton réseau local par défaut. Si tu fais confiance à cet appareil, tous ses ports seront joignables. Tu peux le retirer dans les Paramètres à tout moment.",
+    "lanTrusted": "Cet appareil est maintenant de confiance. Réessaie et il se connectera.",
+    "trustDevice": "Faire confiance à cet appareil",
+    "namedDevice": "{{name}} ({{addresses}})",
+    "cardGone": "Cette carte n'est plus valable. Tu peux ajouter l'appareil dans les Paramètres."
   }
 }
