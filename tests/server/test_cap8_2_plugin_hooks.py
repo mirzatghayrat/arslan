@@ -78,7 +78,8 @@ async def test_a_hook_on_each_of_the_16_quiet_events_may_come_in(api, home, even
 
 
 @pytest.mark.parametrize("where", ["hooks.json", "manifest path", "manifest inline", "a skill's frontmatter"])
-@pytest.mark.parametrize("event", ["PreToolUse", "Stop", "UserPromptSubmit", "PermissionRequest", "SubagentStop"])
+@pytest.mark.parametrize("event", ["PreToolUse", "Stop", "UserPromptSubmit", "PermissionRequest", "SubagentStop",
+                                   "PreCompact", "UserPromptExpansion", "TaskCreated"])
 async def test_a_blocking_hook_is_refused_and_leaves_no_files(api, home, offline, tmp_path, event, where):
     files = {**PLUGIN_FILES, **CONNECTION}
     manifest = {"name": "release-kit", "version": "1.0.0", "description": "Release notes"}
@@ -187,22 +188,24 @@ async def test_an_allowed_hook_is_installed_and_never_registered_or_run(api, hom
     assert row["hooks"] == ["SessionStart", "PostToolUse", "SessionEnd"]
     card = (await _post(api, plugins=[_tick(row)]))[row["id"]]
     assert card["state"] == "card" and card["card"]["hooks"] == ["SessionStart", "PostToolUse", "SessionEnd"]
-    assert command not in json.dumps(card)                                       # the event, never what it runs
+    # HOOK-1: the card shows each hook's exact command, and the plugin's row stores it; still nothing runs it.
+    assert [h["command"] for h in card["card"]["hook_rows"]] == [command] * 3
     done = (await _post(api, plugins=[_tick(row, card=card["card_digest"])]))[row["id"]]
     assert done["state"] == "on", done
     await agent_skills.sync()
     assert (await api.get("/api/v1/capabilities")).status_code == 200
     # Never run: no process was started with it, and what it would have made isn't there.
     assert not ran.exists() and not [call for call in spawns if str(ran) in call]
-    # Never registered: no file Arslan wrote and no row holds it, and no hooks file came along.
+    # Never registered: no file Arslan wrote and no row but the plugin's holds it, and no hooks file came along.
     written = _files_under(home / ".agents", tmp_path / "data")
     assert written and not [path for path, data in written.items() if str(ran).encode() in data]
     assert not [path for path in written if Path(path).name in ("hooks.json", "format.sh")]
-    rows = [*(await _all(CapabilitySource)), *(await _all(SkillPack))]
+    rows = [*(r for r in await _all(CapabilitySource) if r.kind != "plugin"), *(await _all(SkillPack))]
     assert not [r for r in rows if str(ran) in json.dumps({c.name: getattr(r, c.name) for c in r.__table__.columns},
                                                           default=str)]
     plugin = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
     assert plugin.candidate["hooks"] == ["SessionStart", "PostToolUse", "SessionEnd"]
+    assert [h["command"] for h in plugin.candidate["hook_rows"]] == [command] * 3
     # The skill's frontmatter hooks are stripped: Arslan's SKILL.md has its name and description only.
     head = (agent_skills.folder("release-notes") / "SKILL.md").read_text().split("---")[1]
     assert set(yaml.safe_load(head)) == {"name", "description"}
@@ -269,7 +272,7 @@ def github(monkeypatch):
     return repo
 
 
-@pytest.mark.parametrize("event", ["PreToolUse", "FutureEvent"])
+@pytest.mark.parametrize("event", ["PreToolUse", "PermissionRequest", "FutureEvent"])
 async def test_a_github_skill_with_a_blocking_or_unknown_hook_is_refused_and_leaves_no_files(home, github, tmp_path,
                                                                                            event):
     github["guard/SKILL.md"] = _frontmatter_skill("guard", event)
@@ -302,12 +305,14 @@ async def test_capability_flows_skill_card_names_the_hooks(home, github, monkeyp
     cand = {"kind": "skill", "repo": "acme/kit", "path": "notes/SKILL.md", "version": SHA, "source": "library"}
     prepared, _ = await capability_flow.prepare_skill(cand)
     assert prepared["hooks"] == ["PostToolUse"]
-    github["guard/SKILL.md"] = _frontmatter_skill("guard", "Stop")
-    with pytest.raises(ValueError, match="Stop"):
-        await capability_flow.prepare_skill({**cand, "path": "guard/SKILL.md"})
+    for event in ("Stop", "SubagentStop"):
+        github["guard/SKILL.md"] = _frontmatter_skill("guard", event)
+        with pytest.raises(ValueError, match=event):
+            await capability_flow.prepare_skill({**cand, "path": "guard/SKILL.md"})
 
 
-@pytest.mark.parametrize(("event", "readable"), [("SessionEnd", True), ("PreToolUse", False), ("FutureEvent", False)])
+@pytest.mark.parametrize(("event", "readable"), [("SessionEnd", True), ("PreToolUse", False),
+                                                  ("PermissionRequest", False), ("FutureEvent", False)])
 async def test_a_skill_another_tool_put_in_the_shared_folder_goes_by_the_same_rule(api, home, event, readable):
     _write(home / ".agents" / "skills" / "theirs", {"SKILL.md": _frontmatter_skill("theirs", event)})
     await agent_skills.sync()
@@ -349,8 +354,10 @@ def _update(home: Path, version: str, files: dict, old: str) -> None:
 async def test_an_update_adding_a_blocking_hook_switches_it_off_until_its_card(api, home, offline):
     await _install(api, home, {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart")})
     old = next(r for r in await _all(CapabilitySource) if r.kind == "plugin")
-    # An update with only quiet hooks changes nothing here: Arslan's copy is as the card showed it.
-    _update(home, "1.1.0", {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart", "SessionEnd")}, "1.0.0")
+    # An update that changes no hook changes nothing here: Arslan's copy is as the card showed it. (HOOK-1: one that
+    # changes any hook, a quiet one included, switches it off: test_hook1_hooks_stored.py.)
+    _update(home, "1.1.0", {**PLUGIN_FILES, "hooks/hooks.json": _hooks("SessionStart"),
+                            "skills/release-notes/scripts/fmt.py": "print('v2')\n"}, "1.0.0")
     row = _row(await _scan(api), "plugins", "release-kit")
     assert row["here"] is True and all(p.enabled for p in await _all(SkillPack))
     # One adding a blocking hook: the group goes off, its switch won't turn it on, and the sheet shows why.

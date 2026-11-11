@@ -10,7 +10,7 @@ import pytest
 import sqlalchemy as sa
 
 from server.db import session as db_session
-from server.services import permission_store, terminal_policy
+from server.services import permission_store
 
 
 @pytest.fixture(autouse=True)
@@ -64,20 +64,6 @@ async def test_the_ledger_keeps_90_days_and_lists_policy_refusals():
         assert "x" not in targets and {"y", "*"} <= set(targets)
         refused = await _refused(db, datetime.utcnow() - timedelta(hours=24))
         assert [(e.kind, e.decided_by) for e in refused] == [("schedule", "policy")]
-
-
-async def test_legacy_dont_ask_again_rules_live_in_the_store():
-    # S2a-2: nothing writes these any more (no command card offers "Always"); the rows from before
-    # are listed in Settings and can be forgotten there until S6.
-    async with db_session.AsyncSessionLocal() as db:
-        await permission_store.add_rule(db, "legacy_rule", "delete", created_from="migration")
-        await permission_store.add_rule(db, "legacy_rule", "hermes:recursive delete", created_from="card")
-        await db.commit()
-        assert await terminal_policy.always_allowed(db) == {"delete", "hermes:recursive delete"}
-        rows = await permission_store.list_rules(db, "legacy_rule")
-        assert {r.target for r in rows} == {"delete", "hermes:recursive delete"}
-        await terminal_policy.forget(db, "delete")
-        assert await terminal_policy.always_allowed(db) == {"hermes:recursive delete"}
 
 
 def test_migration_0067_copies_the_old_list_once(tmp_path):
@@ -322,16 +308,21 @@ def test_migration_0067_and_create_all_build_the_same_indexes(tmp_path):
         assert _index_names(conn) == built                      # and alone it builds the same
 
 
-async def test_an_old_dont_ask_again_list_is_honoured_after_the_migration():
-    """The upgrade, end to end: a list 0.1.60 saved in settings, the migration, then the
-    reader every caller uses. Before the migration the old row alone grants nothing."""
-    from server.db.migrations.versions import _0067_permissions as m
+async def test_an_old_dont_ask_again_list_is_gone_after_the_upgrade():
+    """The upgrade, end to end: a list 0.1.60 saved in settings, 0067 copies it as `legacy_rule` rows, and S6's
+    0092 deletes them and the list (the user's choice of 2026-11-11: deleted, not listed)."""
+    from server.db.migrations.versions import _0067_permissions as m0067
+    from server.db.migrations.versions import _0092_remove_legacy_command_rules as m0092
     from server.services import settings_service
     async with db_session.AsyncSessionLocal() as db:
         await settings_service._set_raw(db, "terminal_always_allow",
                                         '["install", "hermes:recursive delete"]')
         await db.commit()
-        assert await terminal_policy.always_allowed(db) == set()
-        await (await db.connection()).run_sync(m.upgrade_sync)
+        await (await db.connection()).run_sync(m0067.upgrade_sync)
         await db.commit()
-        assert await terminal_policy.always_allowed(db) == {"install", "hermes:recursive delete"}
+        assert {r.target for r in await permission_store.list_rules(db, "legacy_rule")} == {
+            "install", "hermes:recursive delete"}
+        await (await db.connection()).run_sync(m0092.upgrade_sync)
+        await db.commit()
+        assert await permission_store.list_rules(db) == []
+        assert await settings_service._get_raw(db, "terminal_always_allow") is None

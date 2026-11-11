@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from server.services import capability_sandbox, code_sandbox, command_sandbox, ssh_exec
+from tests.server.test_hr1_run_later import RUN_LATER_TEXT     # HR-1's denies, written out once there
 
 
 @pytest.fixture
@@ -293,7 +294,7 @@ def test_installed_mcp_server(T, A, monkeypatch):
 (allow file-read* file-write* file-map-executable (subpath "<T>/mcp"))
 (deny file-write* (subpath "<T>/home/.agents/skills"))
 (deny file-write* (subpath "<T>/home/Library/Caches") (subpath "<T>/home/.cache") (subpath "<T>/home/.npm"))
-"""
+""" + RUN_LATER_TEXT
     assert _shown(capability_sandbox.profile(root=A / "mcp", folders=[], network=False, read=[]), T) == """\
 (version 1)
 (deny default)
@@ -326,7 +327,7 @@ def test_installed_mcp_server(T, A, monkeypatch):
 (allow file-read* file-write* file-map-executable (subpath "<T>/mcp"))
 (deny file-write* (subpath "<T>/home/.agents/skills"))
 (deny file-write* (subpath "<T>/home/Library/Caches") (subpath "<T>/home/.cache") (subpath "<T>/home/.npm"))
-"""
+""" + RUN_LATER_TEXT
 
 
 def test_ssh():

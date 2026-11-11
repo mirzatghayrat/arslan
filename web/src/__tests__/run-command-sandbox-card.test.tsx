@@ -8,7 +8,6 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("../components/settings/TerminalRulesPanel", () => ({ default: () => null }));
 vi.mock("../components/BrowserPanel", () => ({ default: () => null }));
 
 import RunCommandCard from "../components/RunCommandCard";

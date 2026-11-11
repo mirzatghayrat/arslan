@@ -56,6 +56,9 @@ async def list_tasks(conversation_id: str | None = None, limit: int = Query(20, 
         query = query.where(CompanionTask.privacy["driver"]["kind"].as_string() == driver)
     if conversation_id is not None:
         query = query.where(CompanionTask.conversation_id == conversation_id)
+    else:       # SUB5b: across the whole app, a sub-session's tasks are left out; its own conversation lists them
+        from server.services import sub_sessions
+        query = query.where(sub_sessions.not_sub(CompanionTask.conversation_id))
     if active_only:
         query = query.where(CompanionTask.phase.in_(("queued", "running", "waiting_user", "verifying")))
     rows = (await repo.db.execute(query.order_by(CompanionTask.created_at.desc(), CompanionTask.id)

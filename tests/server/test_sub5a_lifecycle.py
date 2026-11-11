@@ -297,7 +297,8 @@ def test_0091_adds_the_state_once_and_touches_nothing_else(tmp_path):
     finally:
         engine.dispose()
     assert columns == ["id", "version", "sub_state"] and tuple(row) == ("c-1", 3, None)
-    assert [version for version, _ in runner.MIGRATIONS][-1] == "0091"
+    versions = [version for version, _ in runner.MIGRATIONS]
+    assert versions.index("0091") == versions.index("0090") + 1       # S6's 0092 comes after it
 
 
 # -- the window's stop ------------------------------------------------------------------------------------------------
@@ -495,8 +496,9 @@ async def test_a_commander_is_not_deleted_while_a_sub_session_under_it_works(run
 async def test_a_commander_with_sub_sessions_needs_an_explicit_choice(runs, client):  # noqa: F811
     child, grandchild = await _family(runs)
     got = await client.delete(f"/api/v1/conversations/{ROOT}")
+    # SUB5d: every level counts (child and grandchild), as the window's dialog says "its N sub-sessions".
     assert got.status_code == 422 and got.json()["detail"] == {"code": "sub_sessions_choice_required",
-                                                                "sub_sessions": 1}
+                                                                "sub_sessions": 2}
     assert (await client.delete(f"/api/v1/conversations/{ROOT}?sub_sessions=maybe")).status_code == 422
     assert set((await _left(runs, [ROOT, child, grandchild])).values()) == {(True, 1, 1, 1)}
 
@@ -548,8 +550,10 @@ async def test_kept_sub_sessions_become_chats_no_looser_than_they_were(runs, cli
         assert await sub_sessions.effective_settings(db, grand) == grand_before
     assert (await _left(runs, [ROOT]))[ROOT] == (False, 0, 0, 0)
     assert (await _left(runs, [child, grandchild])) == {child: (True, 1, 1, 1), grandchild: (True, 1, 1, 1)}
-    listed = [c["conversation_id"] for c in (await client.get("/api/v1/conversations")).json()]
-    assert listed == [child]
+    # SUB5d: the Mac's list shows sub-sessions under their parent, so the kept child is top-level and its own
+    # sub-session stays under it.
+    listed = {c["conversation_id"]: c.get("parent_id") for c in (await client.get("/api/v1/conversations")).json()}
+    assert listed == {child: None, grandchild: child}
 
 
 async def test_a_phones_delete_naming_a_sub_session_gets_not_found_and_changes_nothing(runs, client):  # noqa: F811
@@ -830,16 +834,15 @@ async def test_after_a_restart_a_deleted_conversation_is_still_refused_and_nothi
     for cid, goal in ((PRIVATE, PRIVATE_GOAL), (PLAIN, PLAIN_GOAL)):
         with pytest.raises(MemoryError, match="conversation_deleted"):
             await turn(cid, "hello again", lambda event: None)
-        job = await background_jobs.start(cid, goal, [], outside_seen=False)
-        await _wait(lambda: job.task.done())
-        assert job.outcome == "blocked"
+        # SUB5b: a job there is refused before it starts (`sub_sessions.placement`), not at its context load.
+        assert await _refused(background_jobs.start(cid, goal, [], outside_seen=False)) == "conversation_deleted"
         assert await _refused(sub_sessions.start(cid, OUTLINE, outside_seen=False)) == "conversation_deleted"
         assert await _said(db, cid) == [] and await _row(db, cid) == TOMBSTONE
         async with db() as session:
             assert await sub_sessions.children(session, cid) == []
-    assert ran == [] and background_jobs.active() == []
+    assert ran == [] and background_jobs._jobs == {}
     assert {side: requests for side, requests in model.requests.items() if requests} == {}
-    assert seen == [(cid, "refused", "conversation_deleted") for cid in (PRIVATE, PRIVATE, PLAIN, PLAIN)]
+    assert seen == [(cid, "refused", "conversation_deleted") for cid in (PRIVATE, PLAIN)]
     assert (await client.get("/api/v1/conversations")).json() == []
 
 

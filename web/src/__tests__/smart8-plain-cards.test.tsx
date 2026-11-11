@@ -128,8 +128,9 @@ describe("what it touches", () => {
   });
 
   it("a second step is counted in the purpose", () => {
+    // LOOP1 d2b: the server leads with the step its once-only rule asks for (git-push), not the delete before it.
     render(<Card callId="c5" pretty="rm old.zip && git push" />);
-    expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent("Delete 1 file or folder (and 1 more step)");
+    expect(screen.getByTestId("runcmd-purpose")).toHaveTextContent("Publish your commits to origin (and 1 more step)");
   });
 });
 

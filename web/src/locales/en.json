@@ -649,13 +649,6 @@
     "voiceModeConversation": "Conversation",
     "labelVoiceEndpointSilence": "End of sentence (ms)",
     "voiceEndpointSilenceDesc": "How long you have to pause before what you said is sent. 900 ms is a normal breath; shorter cuts you off, longer feels slow.",
-    "terminalRulesTitle": "Never ask again for",
-    "terminalRulesEmpty": "Nothing yet. Choose “Always” on a command card to add a kind of command here.",
-    "terminalRulesForget": "Ask again",
-    "sandboxGrantsTitle": "Conversations whose commands may run outside the sandbox, background tasks included",
-    "sandboxGrantsEmpty": "None. Choosing “In this conversation” on a card to run a command outside the sandbox adds that conversation here.",
-    "sandboxGrantsTakeBack": "Take back",
-    "sandboxGrantsUntitled": "Untitled conversation",
     "navGeneral": "General",
     "navAbilities": "What Arslan may do",
     "navBackground": "Background",
@@ -770,7 +763,7 @@
     "glyph": {
       "waiting": "Waiting for your approval",
       "waiting_reminder": "A stopped job left you a reminder",
-      "waiting_away": "Couldn't ask you while you were away",
+      "waiting_away": "A card expired",
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
       "done": "Done",
@@ -788,7 +781,15 @@
     "moveBack": "Back",
     "movedTo": "Moved to “{{name}}”",
     "movedOut": "Removed from the project",
-    "moveFailed": "Couldn't move it — it may be working right now."
+    "moveFailed": "Couldn't move it — it may be working right now.",
+    "search": {
+      "placeholder": "Search conversations",
+      "clear": "Clear",
+      "titles": "Titles",
+      "messages": "In messages",
+      "none": "Nothing found for \"{{query}}\"",
+      "noneHint": "Not in any title or message. Temporary and \"Don't use memory\" conversations aren't searched."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Good morning",
@@ -1435,7 +1436,9 @@
   },
   "inbox": {
     "addWatch": "Watch another page or folder",
-    "refusedTitle": "Not done while you were away",
+    "refusedTitle": "Expired, not done",
+    "expiredShown": "Nobody answered in 30 minutes, so it expired",
+    "expiredUnopened": "An earlier card went unanswered, so this one expired without showing",
     "alwaysAllow": "Always allow",
     "alwaysStores": "This will always allow: {{what}}",
     "asksEachTime": "Asks each time",
@@ -1488,17 +1491,92 @@
   "scheduledPage": {
     "intro": "Tasks that run on a schedule, and the pages and folders Arslan watches for you. A dot marks a row that needs a look.",
     "watches": "Watched pages and folders",
-    "awayTitle": "Not done while you were away (this task only)",
-    "seenNote": "Opening a task marks what its runs could not do as seen. In the task's own conversation, what was not done while you were away clears when you open that conversation, and a card there clears only once it is answered.",
+    "awayTitle": "Expired or couldn’t ask, not done (this task only)",
+    "seenNote": "Opening a task marks what its runs could not do as seen. In the task's own conversation, what expired undone clears when you open that conversation, and a card there clears only once it is answered.",
     "attention": "Needs a look",
     "changed": "Changed",
     "failing": "Failed or paused itself"
   },
+  "remembered": {
+    "title": "Remembered answers",
+    "desc": "Everything you answered “In this conversation” or “Always” on a card is here. Take one back and the same thing asks you again next time.",
+    "never": "Paying, sending, submitting and deleting (outside the working folder) are asked every time and never remembered, so they are not here. A “Once” or “For this task” answer ends with its task, so it is not here either.",
+    "always": "Always",
+    "conversation": "In this conversation",
+    "none": "None",
+    "empty": "No remembered answers yet. Choose “In this conversation” or “Always” on a card and it shows up here, to take back whenever you like.",
+    "unavailable": "Can’t list these right now",
+    "allConversations": "All conversations",
+    "subOnly": "Only in this sub-session",
+    "given": "Given {{when}}",
+    "lastUsed_one": "Last used {{when}} · {{count}} time",
+    "lastUsed_other": "Last used {{when}} · {{count}} times",
+    "neverUsed": "Not used yet",
+    "revoke": "Take back",
+    "revokeFailed": "Couldn’t take it back. Try again",
+    "open": "Open conversation",
+    "revokeAll": "Take back all of this conversation’s",
+    "untitled": "Untitled conversation",
+    "subSession": "Sub-session: {{title}}",
+    "pointer": "Commands allowed in a conversation → Remembered answers",
+    "rule": {
+      "app": "May look at and act in “{{name}}” without asking again. Deleting, sending and paying are still asked every time.",
+      "other": "Always: {{name}}"
+    },
+    "grant": {
+      "outside": "Commands in this conversation (background tasks included) may run outside the sandbox",
+      "unsandboxed": "Commands in this conversation may run without the sandbox, without asking",
+      "command": "In this conversation, this command runs again without asking: {{name}}",
+      "network": "In this conversation, after reading web pages, commands in the sandbox may use the network too",
+      "workspace_write": "In this conversation, Arslan may write in the “{{name}}” folder without asking",
+      "schedule": "In this conversation, Arslan may create scheduled tasks without asking",
+      "mcp_tool": "In this conversation, Arslan may use {{server}}’s “{{name}}”, with any arguments",
+      "app": "In this conversation, Arslan may look at and act in “{{name}}”",
+      "site": "In this conversation, Arslan may click and type on {{name}}",
+      "shortcut": "In this conversation, Arslan may run the Shortcut “{{name}}”",
+      "other": "Allowed in this conversation: {{name}}"
+    },
+    "note": {
+      "unsandboxed": "Only matters while the sandbox is off or can’t start",
+      "command": "Only matters under “Ask before every command”",
+      "network": "Commands outside the sandbox still ask every time",
+      "serverGone": "This server has been removed"
+    }
+  },
   "whileAway": {
-    "title": "Not done while you were away, in this conversation",
+    "title": "Expired, not done, in this conversation",
     "stopped": "A job that stopped here"
   },
   "waiting": {
     "count": "Waiting on you: {{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "Running",
+      "reporting": "Reporting",
+      "waiting": "Waiting on you",
+      "done": "Done",
+      "stopped": "Stopped",
+      "failed": "Failed",
+      "interrupted": "Interrupted",
+      "ended": "Ended without finishing"
+    },
+    "toggle": "Show or hide its sub-sessions ({{count}})",
+    "under": "Under \"{{title}}\"",
+    "header": "This is a sub-session of «{{name}}»; it reports to it when done.",
+    "back": "Back to «{{name}}»",
+    "panel": "Sub-sessions",
+    "open": "Open",
+    "spend": "Spent {{spent}}, limit {{limit}} (each task's {{each}} × {{times}})",
+    "spendNoLimit": "Spent {{spent}}, no dollar limit",
+    "delete": {
+      "title": "Delete «{{name}}»?",
+      "also_one": "Also delete its sub-session",
+      "also_other": "Also delete its {{count}} sub-sessions",
+      "keepNote": "Its sub-sessions stay as ordinary conversations, with their settings unchanged.",
+      "stopFirst": "A sub-session under it is still working or reporting. Stop it, or wait for its report, then delete.",
+      "choiceRequired": "It has {{count}} sub-sessions now. Choose again what happens to them.",
+      "failed": "Couldn't delete it. Try again."
+    }
   }
 }

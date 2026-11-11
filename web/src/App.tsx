@@ -17,7 +17,10 @@ import { firstLiveThread } from './lib/threadLifecycle';
 import { normalizeLanguage } from './lib/languages';
 import { toUiSettings, toUiMessages } from './api/adapters';
 import type { ArslanServerMessage, ProviderOption, ProviderConfig } from './api/client.types';
-import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, deleteConversation } from './api/client';
+import { listProviderConfigs, testProviderConfig, setPrimaryProviderConfig, deleteConversation, ApiError } from './api/client';
+import SubDeleteDialog, { type SubDeleteTarget } from './components/SubDeleteDialog';
+import SubSessionBar from './components/SubSessionBar';
+import { buildForest, busyBelow, descendants } from './lib/subTree';
 import { useStreamingText } from './hooks/useStreamingText';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useBackendStatus } from './hooks/useBackendStatus';
@@ -89,7 +92,7 @@ export default function App() {
   }, []);
 
   const [activeSection, setActiveSection] = useState<Section>('arslan');
-  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | undefined>();
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | string | undefined>();
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
@@ -130,7 +133,8 @@ export default function App() {
     const onOpen = (event: Event) => {
       const asked = readOpenSection((event as CustomEvent<unknown>).detail);
       if (!asked) return;
-      if (asked.section === 'settings') setSettingsInitialSection(resolveSection(asked.sub));
+      // S6: as asked, so a part of a section (SECTION_ANCHORS: 'remembered') still opens there; Settings resolves it.
+      if (asked.section === 'settings') setSettingsInitialSection(asked.sub);
       setActiveSection(asked.section); setPanelView('default');
     };
     window.addEventListener(OPEN_SECTION_EVENT, onOpen);
@@ -516,15 +520,44 @@ export default function App() {
   // best-effort like other calls). If it was the active thread, select the first
   // remaining non-archived thread; if none remain, mint a fresh session. The
   // persisted active-thread key is rewritten by the persistThreads effect.
+  // SUB5d: a conversation with sub-sessions asks first in its own dialog (what happens to them, SubDeleteDialog), and a
+  // sub-session is deleted as one (`?sub_session=true`); both wait for the server, which refuses while one runs.
+  const [subDelete, setSubDelete] = useState<SubDeleteTarget | null>(null);
   const handleDeleteThread = (id: string) => {
-    discardComposerDraft(id);
-    const remaining = threads.filter((th) => th.id !== id);
-    const wasActive = id === activeThreadId;
-    deleteConversation(id).catch((err) => {
-      // Best-effort — the row is already gone from the UI, but a failed server-side
-      // purge must be observable rather than silently swallowed.
+    const forest = buildForest(threads.map((th) => th.id), conversationIndex.meta);
+    const below = descendants(id, forest);
+    const thread = threads.find((th) => th.id === id);
+    const title = thread ? threadDisplayTitle(thread, t) : id;
+    // A sub-session is named as one, at any level (the PR review: one with sub-sessions of its own got 404).
+    const subSession = Boolean(conversationIndex.meta[id]?.parentId);
+    if (below.length) {
+      setSubDelete({ id, title, count: below.length, running: busyBelow(id, forest, conversationIndex.meta), subSession });
+      return;
+    }
+    if (subSession) {
+      deleteConversation(id, { subSession: true }).then(() => removeThreads([id]),
+        (err) => showToast(err instanceof ApiError && err.status === 409 ? t('subTree.delete.stopFirst') : t('subTree.delete.failed')));
+      return;
+    }
+    // Waited for, so a conversation whose sub-sessions the window doesn't know yet (before the first poll) gets the
+    // dialog, with the server's count, instead of vanishing until the next poll.
+    deleteConversation(id).then(() => removeThreads([id]), (err) => {
+      const detail = err instanceof ApiError ? err.detail as { code?: string; sub_sessions?: number } | undefined : undefined;
+      if (err instanceof ApiError && err.status === 422 && detail?.code === 'sub_sessions_choice_required') {
+        setSubDelete({ id, title, count: detail.sub_sessions ?? 0, running: false });
+        return;
+      }
+      if (err instanceof ApiError && err.status === 409) { showToast(t('subTree.delete.stopFirst')); return; }
+      // Best-effort, as before: a failed server-side purge must be observable rather than silently swallowed.
       console.error(`[deleteConversation] backend purge failed for ${id}`, err);
+      removeThreads([id]);
     });
+  };
+  const removeThreads = (ids: string[]) => {
+    ids.forEach(discardComposerDraft);
+    const remaining = threads.filter((th) => !ids.includes(th.id));
+    const wasActive = ids.includes(activeThreadId);
+    const id = ids[0];
     if (wasActive) {
       useArslanStore.getState().resetForNewConversation();
       const next = firstLiveThread(remaining, id);
@@ -544,7 +577,7 @@ export default function App() {
       setActiveSection('arslan');
       setPanelView('default');
     } else {
-      setThreads(remaining);
+      setThreads((prev) => prev.filter((th) => !ids.includes(th.id)));   // after an awaited delete, from the latest list
     }
   };
 
@@ -756,7 +789,9 @@ export default function App() {
                   setPanelView('default');
                 }}
                 conversationId={activeThreadId}
-                header={header}
+                header={<><SubSessionBar conversationId={activeThreadId} threads={threads} meta={conversationIndex.meta}
+                  usdCap={settings.taskUsdCap} usdCapEnabled={settings.taskUsdCapEnabled !== false}
+                  onOpen={(id) => openCardConversation(id, false)} />{header}</>}
                 footer={footer}
                 shellEnabled={settings.orchestratorShellEnabled}
                 shellPolicy={settings.shellConfirmPolicy}
@@ -799,6 +834,9 @@ export default function App() {
                 providerConfigs={providerConfigs}
                 onProviderConfigsChange={setProviderConfigs}
                 onBack={() => setActiveSection('arslan')}
+                conversationTitles={Object.fromEntries(threads.filter(thread => thread.title && !thread.defaultTitle)
+                  .map(thread => [thread.id, thread.title]))}
+                onOpenConversation={conversationId => openCardConversation(conversationId, false)}
               />
             )}
           </div>
@@ -841,6 +879,10 @@ export default function App() {
       {/* 0.1.55 surface kit: the one toast stack and the one confirm sheet. */}
       <ToastHost />
       <ConfirmHost />
+      <SubDeleteDialog target={subDelete} onClose={() => setSubDelete(null)} onDeleted={(id, choice) => {
+        setSubDelete(null);
+        removeThreads(choice === 'delete' ? [id, ...descendants(id, buildForest(threads.map((th) => th.id), conversationIndex.meta))] : [id]);
+      }} />
       <ShellPolicySwitchNotice />
 
     </div>
