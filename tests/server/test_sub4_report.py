@@ -43,6 +43,7 @@ _SINKS: list = []
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     monkeypatch.setattr(sub_sessions, "POLL_SECONDS", 0.01)
+    assert not run_registry._sinks.get(ROOT), f"an earlier test left a window sink on {ROOT}"   # it would answer cards
     for module in (background_jobs, approvals, sub_sessions):
         module._reset_for_tests()
     yield

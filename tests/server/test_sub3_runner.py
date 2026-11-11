@@ -47,6 +47,7 @@ _SINKS: list = []
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     monkeypatch.setattr(sub_sessions, "ended", lambda job, text: None)   # SUB4's summary turn: test_sub4_report
+    assert not run_registry._sinks.get(ROOT), f"an earlier test left a window sink on {ROOT}"   # it would answer cards
     background_jobs._reset_for_tests()
     approvals._reset_for_tests()
     sub_sessions._reset_for_tests()
