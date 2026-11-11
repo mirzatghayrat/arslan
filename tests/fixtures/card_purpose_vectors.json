@@ -1672,9 +1672,9 @@
   {
    "line": "cd ~/work && rm old.zip && git push",
    "purpose": {
-    "key": "delete",
+    "key": "gitPush",
     "params": {
-     "count": 1
+     "remote": "origin"
     }
    },
    "touches": [
@@ -2095,7 +2095,7 @@
     }
    },
    "touches": [],
-   "more": 1,
+   "more": 0,
    "unsure": true
   },
   {
@@ -2107,7 +2107,7 @@
     }
    },
    "touches": [],
-   "more": 2,
+   "more": 0,
    "unsure": true
   },
   {
@@ -2444,9 +2444,9 @@
   {
    "line": "rm old.zip && git push",
    "purpose": {
-    "key": "delete",
+    "key": "gitPush",
     "params": {
-     "count": 1
+     "remote": "origin"
     }
    },
    "touches": [

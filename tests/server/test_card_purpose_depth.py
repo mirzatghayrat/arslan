@@ -125,7 +125,10 @@ def test_finds_inside_finds_are_read_in_bounded_time(depth):
 
 
 #: Downloads piped one into the next, `count` of them: as a line, and as one word that holds the pipe in a `$( … )`.
-PIPES = {"line": lambda count: "curl a | " * count + "grep x", "one word": lambda count: "ls $(" + "curl a|" * count + "grep x)"}
+#: Each ends in backquotes, which shell_grammar does not read, so this module's own reader reads it (LOOP1 d2b: an
+#: understood line's steps are the grammar's, which never runs its input as code).
+PIPES = {"line": lambda count: "curl a | " * count + "grep x; echo `x`",
+         "one word": lambda count: "ls $(" + "curl a|" * count + "grep x) `x`"}
 
 
 @pytest.mark.parametrize("shape", PIPES)

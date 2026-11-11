@@ -102,13 +102,13 @@ def test_a_stop_shows_no_card_and_asking_to_leave_shows_one_with_the_models_reas
     assert app_client.portal.call(_grants, app_client) == [("main", "", "outside", "*")]
     assert fake.calls == []
 
-    # Never saved as a standing terminal rule.
-    from server.services import terminal_policy
+    # Never saved as a standing rule (S6: of any kind).
+    from server.services import permission_store
 
     async def rules():
         async with app_client.db_maker() as db:
-            return await terminal_policy.always_allowed(db)
-    assert app_client.portal.call(rules) == set()
+            return await permission_store.list_rules(db)
+    assert app_client.portal.call(rules) == []
 
 
 def test_the_window_that_was_given_the_grant_runs_outside_from_the_start(app_client, monkeypatch):

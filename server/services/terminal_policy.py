@@ -212,7 +212,9 @@ _ASK = [
     ("remote-shell", _CMD + r"(?:ssh|ssh-copy-id|sshpass|autossh|mosh|scp|sftp|ftp|telnet|socat|(?:nc|ncat|netcat)(?!\s+-[a-zA-Z]*z))"
      + _END
      + r"|" + _CMD
-     + r"rsync\b[^\n]*\S:", "connects to another machine"),
+     + r"rsync\b[^\n]*\S:"
+     # a shell or a command on a deployed machine (a fly.io machine, a Heroku dyno)
+     + r"|" + _CMD + r"(?:fly(?:ctl)?\s+ssh\s+console|heroku\s+run(?::[\w:-]*)?)" + _END, "connects to another machine"),
     # bash opens the connection itself, with no program named (zsh has no such path).
     ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
@@ -222,7 +224,20 @@ _ASK = [
                        r"|\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$|\S))"
                        r"|docker\s+(?:image\s+)?push|terraform\s+(?:apply|destroy)"
                        r"|kubectl\s+(?:apply|create|delete|replace|patch|scale|rollout)"
-                       r"|vercel(?:\s+(?:deploy|--prod)|\s*$|\s*[;&|]))",
+                       r"|(?:vercel|vc)(?:\s+(?:deploy|--prod)|\s*$|\s*[;&|])"
+                       # Deploy and hosting CLIs: their deploy and write verbs only, with each CLI's own aliases for
+                       # them (`_DEPLOY_PUBLISH`). Unlike vercel, the bare program prints help, so it runs; read-only
+                       # verbs (status, logs, list) run too.
+                       r"|(?:netlify|ntl)\s+deploy" + _END
+                       + r"|fly(?:ctl)?\s+(?:deploy|destroy|secrets\s+set|apps?\s+(?:destroy|delete|remove|rm)"
+                       r"|scale\s+count)" + _END
+                       + r"|heroku\s+(?:releases:rollback|rollback|config:set|config:add|apps:destroy|apps:delete"
+                       r"|destroy|container:release)" + _END
+                       + r"|railway\s+up" + _END
+                       + r"|wrangler\s+(?:deploy|publish|rollback|versions\s+deploy|pages\s+(?:deploy|publish)"
+                       r"|secret\s+put)" + _END
+                       + r"|firebase\s+(?:deploy|hosting:channel:deploy|functions:delete|database:set)" + _END
+                       + r"|helm\s+(?:install|upgrade|uninstall|delete|del|un|rollback|push)" + _END + r")",
      "publishes or changes something online"),
     # deletes or stops things
     ("force-kill", _CMD + r"(?:kill" + _H + r"+(?:-[^\s]+" + _H + r"+)*-(?:9|KILL|SIGKILL)\b|killall|pkill)" + _END,
@@ -371,21 +386,40 @@ def _detection_texts(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(out))
 
 
-@functools.lru_cache(maxsize=64)        # assess and ask_rules both ask, several times a call
-def _parsed(text: str) -> tuple[str, tuple[tuple[str, ...], ...]]:
-    """The reader's one pass over `text` (LOOP1 d2): why it does not understand the text, or "", and the commands the
-    named rules read. Every reader here reads this one pass, and nothing reads the text through the grammar again.
+@functools.lru_cache(maxsize=64)        # assess, ask_rules and the card all ask, several times a call
+def _parsed(text: str) -> shell_grammar.PrefixReading:
+    """The reader's one pass over `text` (LOOP1 d2), the whole text as given: whether it understands the text and
+    why not, and the commands the named rules read. Every reader here reads this one pass, and nothing reads the text
+    through the grammar again; the card's steps read it too (`reading`, d2b).
     `shell_grammar.read` refuses exactly where this pass does: the folders it follows as well never change what is
     read (its docstring), so `refused` is its "not understood" with the same why, and an understood command's
     commands are its own. One it does not understand keeps the path it had: its named rules read the commands
     before the refusal (additive only, never a grant), beside the rules on the raw text."""
-    prefix = shell_grammar.read_prefix(text)
-    return (prefix.why or "Arslan does not understand all of it") if prefix.refused else "", prefix.commands
+    return shell_grammar.read_prefix(text)
+
+
+def reading(text: str) -> shell_grammar.PrefixReading:
+    """The one pass, for card_purpose (LOOP1 d2b): an understood command's card reads its steps from the commands and
+    redirections the rules read, so the title never reads the text another way."""
+    return _parsed(text)
 
 
 def _command_words(text: str) -> tuple[tuple[str, ...], ...]:
     """Only additive checks may use a parsed prefix; it never grants permission."""
-    return _parsed(text)[1]
+    return _parsed(text).commands
+
+
+def asks_once(words: tuple[str, ...], writes: tuple[str, ...] = (), *, reach: bool = False) -> int:
+    """How strongly one command of an understood text, on its own words and the files its redirections write, is what
+    its card asks about: 2 when it matches a rule the card answers this time only (a named rule in ONCE_ONLY_RULES,
+    `delete-outside`, a write to a protected file); 1 when `reach` (the text's policy asks `outside-reach` itself,
+    under the `outside` the gate used) and it is a step that reaches outside; else 0. card_purpose leads the title
+    with the highest, so the title never hides what asked (LOOP1 d2b, ③Hands' condition 1; #828 review: a step that
+    only reaches outside never takes the lead from a named rule's step, and only leads where outside-reach is asked).
+    For the title only: no verdict reads it."""
+    if (words and _named_rules(words) & ONCE_ONLY_RULES) or any(_PROTECTED_PATH_C.match(w) for w in writes):
+        return 2
+    return int(bool(reach and words and _reaches_outside((words,))))
 
 
 def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
@@ -403,6 +437,13 @@ def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tu
         else:
             out.append(word)
     return tuple(out)
+
+
+def _expands(word: str) -> bool:
+    """A word the shell may still change before the program sees it: a parameter or command substitution (`$X`,
+    `${X}`, `"$@"`, `$(…)`, a backquote) or a glob (`*`, `?`, `[…]`). The reader's words keep these as written and
+    cannot tell a quoted one from one that word-splits, so neither its value nor its word count is known here."""
+    return any(char in word for char in "$`*?[")
 
 
 def _verb(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
@@ -471,6 +512,14 @@ _OPTION_VALUES.update({
     "terraform": frozenset({"-chdir"}),
     "kubectl": frozenset({"--context", "--namespace", "-n", "--kubeconfig"}),
     "vercel": frozenset({"--cwd", "--token", "-t", "--scope"}),
+    "netlify": frozenset({"--auth", "--filter"}),
+    "fly": frozenset({"-a", "--app", "-c", "--config", "-t", "--access-token"}),
+    "flyctl": frozenset({"-a", "--app", "-c", "--config", "-t", "--access-token"}),
+    "heroku": frozenset({"-a", "--app", "-r", "--remote"}),
+    "railway": frozenset({"-s", "--service", "-e", "--environment"}),
+    "wrangler": frozenset({"-c", "--config", "-e", "--env", "--cwd"}),
+    "firebase": frozenset({"-P", "--project", "--config", "--account", "--token", "--only", "-m", "--message"}),
+    "helm": frozenset({"-n", "--namespace", "--kube-context", "--kubeconfig"}),
     "osascript": frozenset({"-e", "-l", "-s"}),
     "open": frozenset({"-a", "-b"}),
     "himalaya": frozenset({"--account", "-a", "--config", "-c"}),
@@ -511,7 +560,12 @@ _OPTION_FLAGS = {
     "npm": "--dry-run --silent", "pnpm": "--dry-run --silent", "yarn": "--silent",
     "cargo": "-q -v --quiet --verbose --dry-run", "twine": "--verbose --non-interactive",
     "docker": "-D --debug", "terraform": "-help -version", "kubectl": "--help",
-    "vercel": "--prod --yes -y --debug -d", "killall": "-9 -v -q", "pkill": "-9 -f -x",
+    "vercel": "--prod --yes -y --debug -d",
+    "netlify": "-h --help --version --debug", "fly": "-h --help --version --debug --verbose",
+    "flyctl": "-h --help --version --debug --verbose", "heroku": "-h --help --version",
+    "railway": "-h -V --help --version --json", "wrangler": "-h -v --help --version",
+    "firebase": "-h -V --help --version --debug --json --non-interactive", "helm": "-h --help --debug",
+    "killall": "-9 -v -q", "pkill": "-9 -f -x",
     "launchctl": "", "defaults": "", "crontab": "-l -r", "tccutil": "",
     "networksetup": "-setairportpower", "systemsetup": "-settimezone",
     "pmset": "-g -a -b -c", "spctl": "--status --master-disable --master-enable",
@@ -529,7 +583,8 @@ _GLOBAL_OPTIONS = {
     program: _OPTION_VALUES.get(program, frozenset()) | _OPTION_FLAGS[program]
     for program in ("gsutil", "gcloud", "aws", "az", "azcopy", "rclone", "s3cmd", "gh",
                     "git", "security", "xurl", "npm", "pnpm", "yarn", "cargo", "twine",
-                    "docker", "terraform", "kubectl", "vercel", "himalaya")
+                    "docker", "terraform", "kubectl", "vercel", "himalaya", "netlify", "fly", "flyctl",
+                    "heroku", "railway", "wrangler", "firebase", "helm")
 }
 # Security's subcommand options are not global flags; git's commit options are
 # likewise not meaningful ahead of its command word.
@@ -583,6 +638,59 @@ def _fully_accounted(program: str, args: tuple[str, ...]) -> bool:
                 return False
             i += 1
     return True
+
+
+# Deploy and hosting CLIs (#821): the verbs that publish or change something online, and those that open a shell on a
+# deployed machine (heroku's `run` with any `run:*` suffix). vercel's own reading stays in `_named_rules`: its bare
+# program deploys. Each CLI's own aliases for a listed verb are listed with it, from its source: flyctl's `app` for
+# `apps`, `delete`/`remove`/`rm` for `apps destroy` and its hidden top-level `destroy`; heroku's hidden aliases
+# `rollback`, `config:add`, `destroy` and `apps:delete`; helm's `delete`, `del` and `un` for `uninstall`.
+_DEPLOY_PUBLISH = {
+    "netlify": {("deploy",)},
+    "fly": {("deploy",), ("secrets", "set"), ("scale", "count"), ("destroy",),
+            *((group, verb) for group in ("apps", "app") for verb in ("destroy", "delete", "remove", "rm"))},
+    "heroku": {("releases:rollback",), ("rollback",), ("config:set",), ("config:add",), ("apps:destroy",),
+               ("apps:delete",), ("destroy",), ("container:release",)},
+    "railway": {("up",)},
+    "wrangler": {("deploy",), ("publish",), ("rollback",), ("versions", "deploy"), ("pages", "deploy"),
+                 ("pages", "publish"), ("secret", "put")},
+    "firebase": {("deploy",), ("hosting:channel:deploy",), ("functions:delete",), ("database:set",)},
+    "helm": {("install",), ("upgrade",), ("uninstall",), ("delete",), ("del",), ("un",), ("rollback",), ("push",)},
+}
+_DEPLOY_PUBLISH["flyctl"] = _DEPLOY_PUBLISH["fly"]
+# A second program name the same package installs: netlify-cli's `ntl`, the vercel package's `vc`. `_named_rules`
+# reads it as the first name, with that name's options and verbs.
+_PROGRAM_ALIASES = {"ntl": "netlify", "vc": "vercel"}
+_DEPLOY_SHELL = {"fly": {("ssh", "console")}, "flyctl": {("ssh", "console")}, "heroku": {("run",)}}
+_DEPLOY_PROGRAMS = frozenset(_DEPLOY_PUBLISH) | {"vercel"}
+_TWO_WORD_HEADS = {program: frozenset(verb[0] for verb in _DEPLOY_PUBLISH.get(program, set())
+                                      | _DEPLOY_SHELL.get(program, set()) if len(verb) == 2)
+                   for program in _DEPLOY_PROGRAMS}
+_HELP_WORDS = frozenset({"-h", "--help", "-help", "--version", "-version"})
+
+
+def _deploy_verb(table: set[tuple[str, ...]], lower: tuple[str, ...]) -> bool:
+    return lower[:1] in table or lower[:2] in table
+
+
+def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
+    """A deploy CLI whose verb this reader cannot place (#821): a word before the verb that is neither one of the
+    program's global options nor such an option's value (`firebase --foo deploy`, `netlify --weird status`), or an
+    option between the two words of a two-word verb (`fly secrets -a x set`). Then the reader cannot tell a deploy
+    from a read, so `_named_rules` asks as `publish`. Known means the program's own `_GLOBAL_OPTIONS` row: a help or
+    version spelling that row does not list is unknown before a verb (`netlify -help deploy`, `vercel -h deploy`).
+    Only a command of help and version words alone (`vercel --help`) has nothing to place; it keeps main's reading.
+    A word the shell may still expand (`_expands`) at or before the verb is unplaceable too: as the verb or its second
+    word (`fly $X`, `fly secrets $Y K=V`, `fly deplo*`), before it (`fly $OPTS deploy`), or as an option's value,
+    which can split into a verb (`fly -a $X`). After a placed verb it is only that verb's data (`fly status -a "$APP"`)."""
+    if all(word in _HELP_WORDS for word in args):
+        return False
+    verb = _verb(args, _OPTION_VALUES.get(program, frozenset()))
+    head = args[:len(args) - len(verb) + 1]
+    two_word = bool(verb) and verb[0].lower() in _TWO_WORD_HEADS[program]
+    split = two_word and len(verb) > 2 and verb[1].startswith("-")
+    placed = head + verb[1:2] if two_word else head
+    return split or any(_expands(word) for word in placed) or not _fully_accounted(program, head)
 
 
 def _legacy_named_rules(words: tuple[str, ...]) -> set[str]:
@@ -666,6 +774,9 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     The old text rules remain an independent conservative floor.
     """
     program, args = words[0].lower(), words[1:]
+    program = _PROGRAM_ALIASES.get(program, program)
+    if program in _DEPLOY_PROGRAMS and _verb_unplaceable(program, args):
+        return _legacy_named_rules(words) | {"publish"}
     if not _fully_accounted(program, args):
         return _legacy_named_rules(words)
     operations = frozenset()
@@ -720,7 +831,8 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     add("upload", _uploads(program, args))
     add("remote-shell", program in {"ssh", "ssh-copy-id", "sshpass", "autossh", "mosh", "scp", "sftp", "ftp", "telnet", "socat"}
         or program in {"nc", "ncat", "netcat"} and not any(w.startswith("-") and "z" in w for w in args)
-        or program == "rsync" and any(":" in w for w in _operands(args)))
+        or program == "rsync" and any(":" in w for w in _operands(args))
+        or program in _DEPLOY_SHELL and _deploy_verb(_DEPLOY_SHELL[program], (first.partition(":")[0], *lower[1:])))
     if program == "git":
         verb = _verb(args, _GIT_VALUES)
         add("git-push", bool(verb) and verb[0].lower() == "push")
@@ -735,7 +847,8 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         or program == "docker" and (first == "push" or lower[:2] == ("image", "push"))
         or program == "terraform" and first in {"apply", "destroy"}
         or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
-        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations))
+        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations)
+        or program in _DEPLOY_PUBLISH and _deploy_verb(_DEPLOY_PUBLISH[program], lower))
     add("force-kill", program in {"killall", "pkill"})
     add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
         or program == "defaults" and first == "write" or program == "crontab" and first != "-l")
@@ -1017,7 +1130,7 @@ def _fold_effect_safe(words: tuple[str, ...] | None) -> bool:
     operands = False
     for arg in args:
         # Expansion can supply an option; even quoted expansion has no known value here.
-        if any(char in arg for char in "$`*?["):
+        if _expands(arg):
             return False
         if arg == "--":
             operands = True
@@ -1211,7 +1324,8 @@ def _not_understood(text: str) -> str:
     """S2a-3 step 3 (design point 4): why shell_grammar's reader does not understand the command, or "". With no named
     rule, such a command is `unreadable`, so its card, the approvals, the Island and the risk grade all read one table.
     Named layer ② rules still read the raw text, so they come first. The same parse as the named rules' (`_parsed`)."""
-    return _parsed(text)[0]
+    prefix = _parsed(text)
+    return (prefix.why or "Arslan does not understand all of it") if prefix.refused else ""
 
 
 def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None, outside: bool = False) -> set[str]:
@@ -1255,31 +1369,8 @@ def risk_grade(command: str, *, outside: bool = False) -> str:
     return {"run": "LOW", "ask": "MEDIUM", "forbid": "HIGH"}[assess(command, outside=outside).level]
 
 
-# ── "don't ask again", remembered by rule (0.1.48–0.1.62) ────────────────────
-# Since S2a-2 no command card offers "Always", and the stored `legacy_rule` rows are not read by
-# any decision (layer ② is this-time-only; layer ③ needs no card in the sandbox). Settings still
-# lists them; S6 deletes this and the old panel when it lands (v0.1.64 if S6 moves).
-
-async def always_allowed(db) -> set[str]:
-    """Rules the user said not to ask about again (0.1.61: `legacy_rule` rows in the permission
-    store), for Settings' list only. Unreadable means none."""
-    from server.services import permission_store
-    try:
-        return {r.target for r in await permission_store.list_rules(db, "legacy_rule")}
-    except Exception:  # noqa: BLE001 — a standing permission is never inferred from an error
-        return set()
-
-
-async def forget(db, rule: str) -> None:
-    from server.services import permission_store
-    await permission_store.delete_rule_by(db, "legacy_rule", rule)
-    await db.commit()
-
-
-# Rules S2a-2 retired (in the sandbox they run with no card): stored `legacy_rule` rows still carry
-# them, and Settings lists those in the words their cards used. Goes with `always_allowed` (S6).
-_RETIRED = {"delete": "deletes files", "install": "installs software"}
-
+# S6 (v0.1.64): the "don't ask again" rules of 0.1.48–0.1.62 (`legacy_rule` rows) are gone: migration 0092
+# deleted them, nothing writes one, and their Settings list and `/settings/terminal-rules` went with them.
 
 def describe(rule: str) -> str:
     """What a rule is about, in the words its card used when it asked."""
@@ -1290,6 +1381,4 @@ def describe(rule: str) -> str:
         return _DELETE_OUTSIDE[1]
     if rule == OUTSIDE_REACH[0]:
         return OUTSIDE_REACH[1]
-    if rule in _RETIRED:
-        return _RETIRED[rule]
     return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule

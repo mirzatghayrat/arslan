@@ -92,7 +92,7 @@ export default function App() {
   }, []);
 
   const [activeSection, setActiveSection] = useState<Section>('arslan');
-  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | undefined>();
+  const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | string | undefined>();
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
 
   // Custom states for style variations (specifically asked in prompt)
@@ -133,7 +133,8 @@ export default function App() {
     const onOpen = (event: Event) => {
       const asked = readOpenSection((event as CustomEvent<unknown>).detail);
       if (!asked) return;
-      if (asked.section === 'settings') setSettingsInitialSection(resolveSection(asked.sub));
+      // S6: as asked, so a part of a section (SECTION_ANCHORS: 'remembered') still opens there; Settings resolves it.
+      if (asked.section === 'settings') setSettingsInitialSection(asked.sub);
       setActiveSection(asked.section); setPanelView('default');
     };
     window.addEventListener(OPEN_SECTION_EVENT, onOpen);
@@ -833,6 +834,9 @@ export default function App() {
                 providerConfigs={providerConfigs}
                 onProviderConfigsChange={setProviderConfigs}
                 onBack={() => setActiveSection('arslan')}
+                conversationTitles={Object.fromEntries(threads.filter(thread => thread.title && !thread.defaultTitle)
+                  .map(thread => [thread.id, thread.title]))}
+                onOpenConversation={conversationId => openCardConversation(conversationId, false)}
               />
             )}
           </div>

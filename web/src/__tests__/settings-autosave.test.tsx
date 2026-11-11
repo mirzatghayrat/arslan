@@ -35,7 +35,7 @@ vi.mock("../api/client", () => ({
     resetAccessToken: vi.fn().mockResolvedValue({ token: "new-token" }),
   },
   API_BASE: "",
-  // TerminalRulesPanel (Advanced) lists the remembered terminal rules.
+  // S6: RememberedAnswers (What Arslan may do) lists the rules and grants; an object, not a list, reads as unlisted.
   request: vi.fn().mockResolvedValue({ rules: [] }),
   addProviderConfig: vi.fn().mockResolvedValue({}),
   updateProviderConfig: vi.fn().mockResolvedValue({}),

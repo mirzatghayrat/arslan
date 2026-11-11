@@ -297,7 +297,8 @@ def test_0091_adds_the_state_once_and_touches_nothing_else(tmp_path):
     finally:
         engine.dispose()
     assert columns == ["id", "version", "sub_state"] and tuple(row) == ("c-1", 3, None)
-    assert [version for version, _ in runner.MIGRATIONS][-1] == "0091"
+    versions = [version for version, _ in runner.MIGRATIONS]
+    assert versions.index("0091") == versions.index("0090") + 1       # S6's 0092 comes after it
 
 
 # -- the window's stop ------------------------------------------------------------------------------------------------
