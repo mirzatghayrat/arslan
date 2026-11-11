@@ -86,6 +86,38 @@ def _t1_reminders_script(kind: str, target: str, detail: str) -> bool:
 ACTION_OK = {"-T1-": _t1_reminders_script,
              "-T12-": lambda kind, target, detail: kind == "desktop_app" and target.strip() == "Hands Fixture"}
 IDLE_AFTER_TURN_S = 20      # quiet period after the answer before we call it done
+# L7-0 (v0.1.64 goal mode): BENCH_GOAL=1 turns the `goal_mode` setting on in the instance (by its key, L7-1) and sends
+# every prompt as a goal: `/goal <prompt>`, then `/goal start confirm`, without editing the drafted checks (the L7
+# card's Q0), so a flagged drafted check becomes user-confirmed instead of keeping the run from starting. On an
+# instance without goal mode (main before L7) the setting is dropped or refused and `/goal` is plain text; the run
+# still goes, and its record says so (report.completion_bar won't count it as goal-on).
+GOAL_START = "/goal start confirm"
+# A goal's host line may come without a stream_end; after this much quiet, a goal message's turn is over.
+GOAL_QUIET_S = 60.0
+
+
+def goal_messages(prompt: str) -> list[str]:
+    return [f"/goal {prompt}", GOAL_START]
+
+
+def _goal_bits(value, found: dict) -> None:
+    """Walk a frame for the goal's checks (dicts with `user_confirmed`) and its `goal_state` (round, status)."""
+    if isinstance(value, dict):
+        if "user_confirmed" in value:
+            found["seen"] = True
+            if value["user_confirmed"] is True:
+                found["flagged"].add(str(value.get("id", json.dumps(value, sort_keys=True))))
+        state = value.get("goal_state")
+        if isinstance(state, dict):
+            if state.get("round") is not None:
+                found["round"] = state["round"]
+            if state.get("status") is not None:
+                found["status"] = state["status"]
+        for item in value.values():
+            _goal_bits(item, found)
+    elif isinstance(value, list):
+        for item in value:
+            _goal_bits(item, found)
 # 0.1.63 (⓪Plan, after K4b's gate): above Arslan's own hard wall clock for a run (standard tier 1800 s x
 # HARD_OVER_SOFT 1.5 = 45 min), so the product's limits end a run, never the bench. At 15 min the bench cut
 # off K4b's T2 r3, an inline turn Arslan's limits still allowed (tests/test_kernel_bench.py pins the order).
@@ -120,9 +152,19 @@ class TurnTracker:
     turn_started: float = 0.0
     first_chunk_at: float | None = None
     stream_end_at: float | None = None
+    # L7-0: a goal message (`/goal ...`). Its host line may have no stream_end, so its turn is also over after
+    # `goal_quiet_s` of quiet once anything came; `expect_job` (Start, on an instance with goal mode) waits for the
+    # goal's job to open and finish, which ends the turn.
+    goal_turn: bool = False
+    expect_job: bool = False
+    goal_quiet_s: float = GOAL_QUIET_S
+    heard: bool = False
+    jobs_seen: int = 0
+    goal_found: dict = field(default_factory=lambda: {"seen": False, "flagged": set(), "round": None, "status": None})
 
-    def start_turn(self, now: float) -> None:
+    def start_turn(self, now: float, *, goal_turn: bool = False, expect_job: bool = False) -> None:
         self.turn_started, self.first_chunk_at, self.stream_end_at = now, None, None
+        self.goal_turn, self.expect_job, self.heard, self.jobs_seen = goal_turn, expect_job, False, 0
 
     def inside(self, path: str) -> bool:
         return bool(path) and (path.startswith(self.run_dir) or not path.startswith("/"))
@@ -132,7 +174,9 @@ class TurnTracker:
         t = frame.get("type")
         if t in ("ping", "pong"):
             return None                       # heartbeats are not activity
-        self.last_activity = now
+        self.last_activity, self.heard = now, True
+        if self.goal_turn:
+            _goal_bits(frame, self.goal_found)
         if t == "stream_chunk":
             self.final_text.append(frame.get("content") or "")
             if self.first_chunk_at is None and frame.get("content"):     # an empty chunk shows nothing yet
@@ -156,6 +200,8 @@ class TurnTracker:
                 if frame.get("outcome") not in (None, "done"):
                     self.end_reason = f"job_{frame.get('outcome')}"
             else:
+                if job not in self.jobs_open:
+                    self.jobs_seen += 1
                 self.jobs_open.add(job)
         elif t == "tool_call" and frame.get("tool") == "run_command":
             self.run_commands += 1
@@ -221,10 +267,23 @@ class TurnTracker:
         if now - started >= RUN_TIMEOUT_S:
             self.end_reason = self.end_reason or "timeout"
             return True
-        if self.turn_done and not self.task_open and not self.jobs_open and now - self.last_activity >= self.idle_after_s:
+        quiet = now - self.last_activity
+        if self.task_open or self.jobs_open or quiet < self.idle_after_s:
+            return False
+        ended = self.turn_done
+        if self.goal_turn:
+            long_quiet = self.heard and quiet >= self.goal_quiet_s
+            ended = (ended or (self.expect_job and self.jobs_seen > 0) or long_quiet) and (
+                not self.expect_job or self.jobs_seen > 0 or long_quiet)
+        if ended:
             self.end_reason = self.end_reason or "done"
             return True
         return False
+
+    def goal_summary(self, setting: str) -> dict:
+        found = self.goal_found
+        return {"setting": setting, "flagged": len(found["flagged"]) if found["seen"] else None,
+                "round": found["round"], "status": found["status"]}
 
     def next_turn(self, now: float) -> str:
         """Close this turn and start the next; returns this turn's answer."""
@@ -258,16 +317,20 @@ def snapshot(run_dir: str, turn: int) -> str:
 
 async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str, *,
               decline_rules: frozenset = frozenset(), decline_note: str = "", connect=None,
-              idle_after_s: float = IDLE_AFTER_TURN_S, recv_timeout: float = 2) -> dict:
+              idle_after_s: float = IDLE_AFTER_TURN_S, recv_timeout: float = 2, goal: str | None = None,
+              goal_quiet_s: float = GOAL_QUIET_S) -> dict:
     """Send each prompt in turn on one conversation; the next goes only once the previous
-    turn is over (answer ended, no background job open, quiet for `idle_after_s`)."""
+    turn is over (answer ended, no background job open, quiet for `idle_after_s`).
+    `goal` (BENCH_GOAL, L7-0): what `configure` found ("on", "absent", "refused"); each prompt then goes as
+    `/goal <prompt>` and `/goal start confirm`, and the folder is copied after the pair, as after a plain turn."""
     if isinstance(prompts, str):                       # older callers (accept_0152) pass one prompt
         prompts = [prompts]
     if connect is None:
         import websockets
         connect = websockets.connect
     ws_url = api.replace("http", "ws", 1).rstrip("/").removesuffix("/api/v1") + "/ws/arslan/bakeoff-" + uuid.uuid4().hex[:8]
-    tracker = TurnTracker(run_dir, decline_rules=decline_rules, decline_note=decline_note, idle_after_s=idle_after_s)
+    tracker = TurnTracker(run_dir, decline_rules=decline_rules, decline_note=decline_note, idle_after_s=idle_after_s,
+                          goal_quiet_s=goal_quiet_s)
     started = time.monotonic()
     tracker.last_activity = started
     replies: list[str] = []
@@ -275,27 +338,36 @@ async def run(api: str, run_dir: str, prompts: list[str] | str, transcript: str,
         async with connect(ws_url, max_size=None) as ws:
             await ws.recv()                                     # history
             for n, prompt in enumerate(prompts, 1):
-                turn_started = time.monotonic()
-                tracker.start_turn(turn_started)
-                await ws.send(json.dumps({"type": "user_message", "content": prompt}))
-                while not tracker.finished(time.monotonic(), turn_started):
-                    try:
-                        frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
-                    except asyncio.TimeoutError:
-                        continue
-                    log.write(json.dumps(frame, ensure_ascii=False) + "\n")
-                    reply = tracker.on_frame(frame, time.monotonic())
-                    if reply:
-                        await ws.send(json.dumps(reply))
-                replies.append(tracker.next_turn(time.monotonic()))
+                messages = goal_messages(prompt) if goal is not None else [prompt]
+                for message in messages:
+                    turn_started = time.monotonic()
+                    tracker.start_turn(turn_started, goal_turn=goal is not None,
+                                       expect_job=goal == "on" and message == GOAL_START)
+                    await ws.send(json.dumps({"type": "user_message", "content": message}))
+                    while not tracker.finished(time.monotonic(), turn_started):
+                        try:
+                            frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
+                        except asyncio.TimeoutError:
+                            continue
+                        log.write(json.dumps(frame, ensure_ascii=False) + "\n")
+                        reply = tracker.on_frame(frame, time.monotonic())
+                        if reply:
+                            await ws.send(json.dumps(reply))
+                    answer = tracker.next_turn(time.monotonic())
+                    if tracker.end_reason == "timeout":
+                        break
+                replies.append(answer)
                 if tracker.end_reason == "timeout":
                     break
                 if n < len(prompts):
                     snapshot(run_dir, n)
-    return {"secs": round(time.monotonic() - started), **tracker.counts(), "declined": tracker.declined,
-            "actions_declined": tracker.actions_declined,
-            "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
-            "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}
+    out = {"secs": round(time.monotonic() - started), **tracker.counts(), "declined": tracker.declined,
+           "actions_declined": tracker.actions_declined,
+           "end": tracker.end_reason, "turns": len(replies), "timing": tracker.timings,
+           "replies": [r[-4000:] for r in replies], "final": (replies[-1] if replies else "")[-4000:]}
+    if goal is not None:
+        out["goal"] = tracker.goal_summary(goal)
+    return out
 
 
 def provider_body(provider: str, model: str, base_url: str) -> dict:
@@ -319,26 +391,40 @@ def settings_body(run_dir: str) -> dict:
         raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")
     if "shell_confirm_policy" in extra:
         raise ValueError("set the command policy with BENCH_SHELL_POLICY, not BENCH_ARSLAN_SETTINGS")
+    if "goal_mode" in extra:
+        raise ValueError("turn goal mode on with BENCH_GOAL=1, not BENCH_ARSLAN_SETTINGS")
     policy = os.environ.get("BENCH_SHELL_POLICY") or "ask_risky"
     if policy not in SHELL_POLICIES:
         raise ValueError(f"BENCH_SHELL_POLICY must be one of {', '.join(SHELL_POLICIES)}")
-    return {**extra, "shell_confirm_policy": policy, "workspace_dir": run_dir}
+    goal = {"goal_mode": "true"} if os.environ.get("BENCH_GOAL") == "1" else {}
+    return {**extra, **goal, "shell_confirm_policy": policy, "workspace_dir": run_dir}
 
 
-def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> str:
+def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai",
+              client=None) -> tuple[str, str | None]:
     """Point the test instance's model at the metering proxy and its workspace at the run folder. Returns the
-    command policy it set, which the run's record carries (v0.1.63)."""
+    command policy it set (v0.1.63) and, with BENCH_GOAL=1, whether the instance took `goal_mode` (L7-0): "on" when
+    its settings read it back as "true", "absent" when it dropped the key (main before L7-1: its settings schema
+    ignores unknown keys), "refused" when it answered the key with an error (then the rest goes without it); None
+    without BENCH_GOAL. The run's record carries both."""
     import httpx
     settings = settings_body(run_dir)
-    with httpx.Client(timeout=30) as c:
+    goal = None
+    with (client or httpx.Client(timeout=30)) as c:
         cfgs = c.get(f"{api}/settings/provider-configs").json()
         cfg = next((x for x in cfgs if x["label"] == "bench"), None)
         body = provider_body(provider, model, base_url)
         cfg = c.put(f"{api}/settings/provider-configs/{cfg['id']}", json=body).json() if cfg else \
             c.post(f"{api}/settings/provider-configs", json=body).json()
         c.patch(f"{api}/settings/provider-configs/{cfg['id']}/primary").raise_for_status()
-        c.put(f"{api}/settings", json=settings).raise_for_status()
-    return settings["shell_confirm_policy"]
+        answer = c.put(f"{api}/settings", json=settings)
+        if "goal_mode" in settings and 400 <= answer.status_code < 500:
+            goal = "refused"
+            answer = c.put(f"{api}/settings", json={k: v for k, v in settings.items() if k != "goal_mode"})
+        answer.raise_for_status()
+        if "goal_mode" in settings and goal is None:
+            goal = "on" if str(c.get(f"{api}/settings").json().get("goal_mode")).lower() == "true" else "absent"
+    return settings["shell_confirm_policy"], goal
 
 
 if __name__ == "__main__":
@@ -352,7 +438,7 @@ if __name__ == "__main__":
     ap.add_argument("--decline-rule", action="append", default=[], help="regular expression on the card's rule")
     ap.add_argument("--decline-note", default="")
     a = ap.parse_args()
-    policy = configure(a.api, a.run_dir, a.base_url, a.model, a.provider)
+    policy, goal = configure(a.api, a.run_dir, a.base_url, a.model, a.provider)
     out = asyncio.run(run(a.api, a.run_dir, load_prompts(a.prompt_file), a.run_dir.rstrip("/") + ".frames.jsonl",
-                          decline_rules=frozenset(a.decline_rule), decline_note=a.decline_note))
+                          decline_rules=frozenset(a.decline_rule), decline_note=a.decline_note, goal=goal))
     print(json.dumps({**out, "shell_policy": policy}, ensure_ascii=False))

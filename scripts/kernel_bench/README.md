@@ -127,6 +127,37 @@ this one). `--round NAME` keeps one round's runs. Recomputed from R63's raw resu
 Arslan 6/9 and 5/7, Hermes 6/9 and 6/7 (one task short on the same tasks); Claude Arslan and
 Claude Code 5/9 and 5/8 each.
 
+## T18–T21 and the completion bar (v0.1.64, L7-0: goal mode)
+
+The plan is the L7 card's "Bench plan" (`docs/plans/0164/L7-goal-mode.md`). Each checker recomputes the result
+from the files on disk and never reads the reply or the goal's own status; T19–T21 also run their own check in a
+throwaway copy of the folder and confirm by sha256 that the check's files are the fixture's (an edit scores 0).
+
+| Task | Fixture | Checker (3 = complete) |
+| --- | --- | --- |
+| T18 sort and reconcile 20 invoices | `check_t18.fixture`: 20 invoices under shuffled names, two date styles, 4 wrong stated totals. No `check:` line: in goal mode the checks are Arslan's drafted ones | `ledger.csv` rows in date order with the recomputed totals, statuses and a last `TOTAL` row |
+| T19 staged test failures | `fixture_t19.py`: `ledger/` with a planted bug in each of 5 modules; `tests/run_checks.py` reveals the next step's tests from `tests/stages.dat` only when the steps so far pass | `check_t19.py`: the check exits 0 and a hidden suite of all 5 modules passes |
+| T20 notes in batches | `fixture_t20.py`: batch 1 of 4 (6 notes each); `inbox_check.py` drops the next batch from `batches.dat` only when the summaries so far pass | `check_t20.py`: 24 summaries of two sentences with each note's code word and date, an index of all 24, the check exits 0 |
+| T21 rules revealed by the validator | `fixture_t21.py`: 300 orders with 4 kinds of fault; `validate.py` prints only the first failing rule, read from `rules.dat` | `check_t21.py`: exactly the expected clean rows (first row of a repeated id kept), the check exits 0 |
+
+None of T19–T21 can be finished from what is on disk at the start: at least 3 (T20, T21) or 4 (T19) check runs
+after the first are needed. A worker that reruns the check itself can still finish in one round; goal mode's gain is
+that the host runs it at each answer. The data files are encoded, not secret; each checker reports whether a worker
+call read one (`data_file_read`, not scored).
+
+- **Repeats:** `--repeats per-task` runs the goal tasks at k=6 and every other task at k=3 (`goal_tasks.py`).
+- **`BENCH_GOAL=1`:** the driver puts `goal_mode: "true"` in the instance's settings, sends each prompt as
+  `/goal <prompt>` and then `/goal start confirm` (the drafted checks unedited, flagged ones user-confirmed), and waits
+  for the goal's job. The record's `goal` says whether the instance took the setting (`on`, or `absent`/`refused` on
+  an instance without goal mode, where `/goal` is plain text), how many flagged checks the frames showed (`None` when
+  no frame carried the checks), and the last round and status.
+- **The bar:** `python -m scripts.kernel_bench.report results.jsonl --bar --off-round r64-l7-off --on-round r64-l7-on`
+  (two comma-separated rounds per arm for the one pooled rerun). Complete means the checker gave 3. It passes when, per
+  look, `on` completes at least `off` + 8 of the 24 goal-task runs and at least `off` − 3 of the 39 other runs; it is
+  not judged unless both arms have exactly those runs, every `on` run went as a goal on an instance that took goal
+  mode, and no `off` run did. It also prints the flagged runs, the runs called complete whose checker failed, and the
+  card's false-pass figures.
+
 ## STY read test (v0.1.64)
 
 `sty_read.py` runs the 20 prompts of `sty_prompts.json` (10 chat, 10 task reports on the `fixture_sty.py`

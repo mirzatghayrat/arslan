@@ -38,8 +38,9 @@ from pathlib import Path
 
 from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_t5, check_t6, check_t7,
                                   check_t8, check_t9, check_t10, check_t11, check_t12, check_t13, check_t14,
-                                  check_t15, check_t16, check_t17, fixture_t13, fixture_t14, fixture_t15,
-                                  tool_record)
+                                  check_t15, check_t16, check_t17, check_t18, check_t19, check_t20, check_t21,
+                                  fixture_t13, fixture_t14, fixture_t15, fixture_t19, fixture_t20, fixture_t21,
+                                  goal_tasks, tool_record)
 from scripts.kernel_bench.arslan_driver import snapshot
 
 HERE = Path(__file__).resolve().parent
@@ -85,11 +86,17 @@ CHECKS = {
                                                    ctx["who"]),
     "T17": lambda run, reply, ctx: check_t17.check(run, ctx["fixture"], tool_record.calls(ctx["who"], run, ctx),
                                                    ctx["who"]),
+    # v0.1.64 L7-0, goal mode's tasks: each checker recomputes the result from disk and never reads the reply.
+    "T18": lambda run, reply, ctx: check_t18.check(run, ctx["fixture"]),
+    "T19": lambda run, reply, ctx: check_t19.check(run, ctx["fixture"]),
+    "T20": lambda run, reply, ctx: check_t20.check(run, ctx["fixture"]),
+    "T21": lambda run, reply, ctx: check_t21.check(run, ctx["fixture"]),
 }
 FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixture,
             "T10": check_t10.fixture, "T11": check_t11.fixture, "T13": fixture_t13.fixture,
             "T14": fixture_t14.fixture, "T15": fixture_t15.fixture, "T16": check_t16.fixture,
-            "T17": check_t17.fixture}
+            "T17": check_t17.fixture, "T18": check_t18.fixture, "T19": fixture_t19.fixture,
+            "T20": fixture_t20.fixture, "T21": fixture_t21.fixture}
 # Recorded without running (no spend): capabilities an entrant does not have.
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
@@ -583,6 +590,9 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
               # ask_all), so the final M1's ask_all reference run is labelled; None for other entrants.
               "shell_policy": driver_out(who, run).get("shell_policy"),
               "sandbox_cards": sandbox_cards(driver_out(who, run)),
+              # L7-0 (BENCH_GOAL=1): whether the instance took goal mode, the flagged drafted checks the frames showed
+              # (None: not visible), the last round and status; None for a run not sent as a goal.
+              "goal": driver_out(who, run).get("goal"),
               "artifacts": {"stdout": f"{run}.stdout", "stderr": f"{run}.stderr", "folder": str(run)},
               "reply_tail": reply[-1500:]}
     record["passed"] = judge(verdict, end, who)
@@ -596,15 +606,18 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tasks", required=True)
     ap.add_argument("--entrants", required=True)
-    ap.add_argument("--repeats", type=int, default=1)
+    ap.add_argument("--repeats", default="1",
+                    help="a number for every task, or per-task: 6 for the goal tasks T18-T21, 3 for the others (L7)")
     ap.add_argument("--manual-login", action="store_true", help="T4: a person logs in once per entrant")
     ap.add_argument("--models", default="", help="per entrant, e.g. arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5")
     args = ap.parse_args()
     (ROOT / "tmp").mkdir(parents=True, exist_ok=True)
     prompts = json.loads((HERE / "prompts.json").read_text())
     sb = sandbox_profile()
-    for n in range(1, args.repeats + 1):            # interleave entrants within each repeat
-        for task in args.tasks.split(","):
+    tasks = args.tasks.split(",")
+    k = {task: goal_tasks.repeats_for(task, args.repeats) for task in tasks}
+    for n in range(1, max(k.values()) + 1):         # interleave entrants within each repeat; a task stops at its k
+        for task in (t for t in tasks if n <= k[t]):
             for who in args.entrants.split(","):
                 rec = run_one(task, who, n, prompts, sb, args.manual_login, parse_models(args.models))
                 print(json.dumps({k: rec[k] for k in ("run", "model", "passed", "rc")} | {"score": rec["check"].get("score"),
