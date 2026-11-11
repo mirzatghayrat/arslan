@@ -122,6 +122,12 @@ async def test_a_chat_turn_finds_it_on_demand_and_starts_a_sub_session_offered_i
     assert model.shown["child"] and all(shown <= sub_sessions.TOOLS for shown in model.shown["child"])
 
 
+def test_find_tools_tells_the_model_sub_sessions_are_there_to_find():
+    """It's on demand, so the only place a chat turn learns sub-sessions exist is find_tools' description."""
+    description = on_demand.FIND_TOOLS["description"]
+    assert "sub-session" in description and "parallel" in description
+
+
 async def test_a_sub_sessions_own_job_cannot_start_one_directly_or_through_use_tool(real, monkeypatch):
     deeper = {"brief": "Go one layer further down"}
     model = _Seeing(host=_steps(USE), child=_steps(("start_sub_session", deeper),

@@ -26,7 +26,8 @@ _used: OrderedDict[str, list[str]] = OrderedDict()
 FIND_TOOLS = {"key": "find_tools", "description":
     "Find a tool not in your list: sending a file to the user, the browser, a background job's status "
     "or stop, schedules, charts, memory notes, Mac automation, the rest of Hands, SSH, the user's MCP "
-    "servers. Search in English keywords; call a result with use_tool."}
+    "servers, sub-sessions (independent parts of a task split off to run in parallel). Search in English "
+    "keywords; call a result with use_tool."}
 USE_TOOL = {"key": "use_tool", "description":
     "Call a tool find_tools returned, with the same approvals as a direct call. From the next turn it is "
     "in your list."}
