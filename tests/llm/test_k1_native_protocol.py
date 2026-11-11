@@ -15,7 +15,7 @@ from arslan.llm.adapter import LLMAdapter
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
 from server.orchestrator import model_call as mc
-from server.orchestrator import tool_loop
+from server.orchestrator import model_step, tool_loop
 from tests.llm.test_k3_cache_breakpoints import unmarked
 from server.registry import executors
 
@@ -332,7 +332,7 @@ async def test_a_refused_mcp_tool_named_like_a_protocol_word_is_left_out(monkeyp
         return None
     monkeypatch.setattr(executor, "not_ready_for_key", quiet)
     monkeypatch.setattr(recap_service, "log_event", quiet)
-    tool_loop._BAD_TOOLS.clear()
+    model_step._BAD_TOOLS.clear()
     sent = []
 
     def handler(request):
@@ -355,7 +355,7 @@ async def test_a_refused_mcp_tool_named_like_a_protocol_word_is_left_out(monkeyp
                                             on_chunk=lambda c: None, resolve_tools=resolve,
                                             adapter_override=adapter, conversation_id="c1")
     finally:
-        tool_loop._BAD_TOOLS.clear()
+        model_step._BAD_TOOLS.clear()
     assert result["final"] == "Done." and len(sent) == 2
     assert name not in json.dumps(sent[1]["tools"]) and "web_search" in json.dumps(sent[1]["tools"])
 

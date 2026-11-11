@@ -7,7 +7,7 @@ K3: those steps keep the whole tool table (Claude's cache); other calls are refu
 And the synthesis fallback keeps each finding's link."""
 import pytest
 
-from server.orchestrator import tool_loop
+from server.orchestrator import answer_salvage, tool_loop
 from tests.server import test_trajectory_golden as golden
 from server.orchestrator import tool_gates
 
@@ -98,7 +98,7 @@ def test_findings_keep_their_links():
                  {"title": "PM at Acme", "url": "https://jobs.example/acme", "snippet": "Shanghai, posted 1 Oct"}]}},
              {"tool": "web_extract", "args": {"url": "https://jobs.example/beta"},
               "result": {"ok": True, "text": "Beta Corp — Product Manager, Shanghai"}}]
-    findings = tool_loop._clean_findings(trace)
+    findings = answer_salvage._clean_findings(trace)
     assert "PM at Acme <https://jobs.example/acme>: Shanghai, posted 1 Oct" in findings
     assert "[https://jobs.example/beta] Beta Corp" in findings
 

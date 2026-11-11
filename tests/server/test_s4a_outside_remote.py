@@ -14,6 +14,7 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.models import PermissionGrant
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import (approvals, command_confirm, command_sandbox, permission_store, permissions,
                              terminal_exec)
 from server.orchestrator import command_gate
@@ -74,9 +75,9 @@ async def _resolve():
 
 async def _dispatch(monkeypatch, args, *, executor, cards, cid):
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", executor)
-    return await tool_loop._dispatch_tool(
-        "run_command", args, "{}", resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=[], convo=[], confirm_command=cards, conversation_id=cid)
+    return await tool_loop._run_tool(
+        "run_command", args, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+        tool_trace=[], convo=[], confirm_command=cards, conversation_id=cid))
 
 
 async def _rows():
@@ -363,9 +364,9 @@ async def test_a_declined_remote_card_is_a_deny_row(execution_db):
 async def test_a_scheduled_runs_remote_refusal_has_the_same_target(execution_db, monkeypatch):
     async def tools():
         return [{"key": "ssh_run", "description": "ssh"}]
-    r = await tool_loop._dispatch_tool(
-        "ssh_run", {"host": "10.0.0.2", "command": "uptime"}, "{}", resolve_tools=tools, emit=lambda e: None,
-        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=None, conversation_id="c1")
+    r = await tool_loop._run_tool(
+        "ssh_run", {"host": "10.0.0.2", "command": "uptime"}, "{}", ToolTurn(resolve_tools=tools, emit=lambda e: None,
+        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=None, conversation_id="c1"))
     assert r["ok"] is False
     assert [(x.kind, x.target, x.decided_by) for x in await _rows()] == [("remote", "remote:10.0.0.2", "policy")]
 

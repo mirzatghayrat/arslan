@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from server.orchestrator import command_gate, tool_loop, untrusted
+from server.orchestrator.turn_state import ToolTurn
 from server.services import (capability_sandbox, command_sandbox, permissions, run_later, settings_service,
                              terminal_exec)
 
@@ -925,9 +926,9 @@ async def _run(monkeypatch, args, *, grant, by: str | None):
     trace: list = []
     turn = untrusted.track_turn()
     try:
-        await tool_loop._dispatch_tool("run_command", args, "{}", resolve_tools=resolve, emit=lambda e: None,
-                                       tool_timeout_s=5, tool_trace=trace, convo=[], confirm_command=card,
-                                       conversation_id="c1")
+        await tool_loop._run_tool("run_command", args, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None,
+                                  tool_timeout_s=5, tool_trace=trace, convo=[], confirm_command=card,
+                                  conversation_id="c1"))
     finally:
         untrusted.end_turn(turn)
     return ex.seen, asked

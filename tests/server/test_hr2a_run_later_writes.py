@@ -21,6 +21,7 @@ import pytest
 from server.db import session as db_session
 from server.db.models import Setting
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.registry import file_tools
 from server.services import (approvals, command_confirm, hard_rules, permission_store, permissions,
                              run_later, workspace_paths)
@@ -377,9 +378,9 @@ def db(execution_db, monkeypatch, tmp_path):
 async def _dispatch(key, args, *, confirm_workspace_write=None):
     async def tools():
         return [{"key": key, "description": key}]
-    return await tool_loop._dispatch_tool(key, args, "", resolve_tools=tools, emit=lambda e: None,
-                                          tool_timeout_s=5, tool_trace=[], convo=[], conversation_id=CONV,
-                                          confirm_workspace_write=confirm_workspace_write)
+    return await tool_loop._run_tool(key, args, "", ToolTurn(resolve_tools=tools, emit=lambda e: None,
+                                     tool_timeout_s=5, tool_trace=[], convo=[], conversation_id=CONV,
+                                     confirm_workspace_write=confirm_workspace_write))
 
 
 async def _own_folder() -> Path:

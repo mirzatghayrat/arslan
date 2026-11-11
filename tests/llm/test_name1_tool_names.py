@@ -15,7 +15,7 @@ import pytest
 from arslan.llm import tool_names
 from arslan.llm.adapter import LLMAdapter
 from server.mcp.discovery import mcp_tool_key
-from server.orchestrator import tool_loop
+from server.orchestrator import model_step, tool_loop
 from server.registry import executors
 from tests.llm.test_name1_provider_safe_names import DOTTED, RULES, SPACED
 
@@ -107,7 +107,7 @@ def test_f3_finds_the_refused_tool_by_the_index_of_the_list_it_sent(monkeypatch)
     monkeypatch.setattr(tool_names, "_digest", lambda key: "00000000")
     sent = schemas("mcp_7__x.y", "mcp_7__x y", "mcp_7__z.w", "web_search")
     adapter = LLMAdapter("anthropic", "claude-sonnet-5", api_key="k")
-    assert tool_loop._refused_tool(adapter, sent, "tools.0.custom.input_schema: JSON schema is invalid") == "mcp_7__z.w"
+    assert model_step._refused_tool(adapter, sent, "tools.0.custom.input_schema: JSON schema is invalid") == "mcp_7__z.w"
 
 
 def test_f3_finds_a_tool_the_error_names_by_its_wire_name():
@@ -115,7 +115,7 @@ def test_f3_finds_a_tool_the_error_names_by_its_wire_name():
     sent = schemas(DOTTED, "mcp_7__list_files", "web_search")
     adapter = LLMAdapter("openai", "x", api_key="k", base_url="https://llm.example/v1")
     text = f"{tool_names.wire(DOTTED)}: parameters schema is invalid"
-    assert tool_loop._refused_tool(adapter, sent, text) == DOTTED
+    assert model_step._refused_tool(adapter, sent, text) == DOTTED
 
 
 async def test_a_stream_gets_the_same_names():

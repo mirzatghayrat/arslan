@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from server.orchestrator import tool_loop, untrusted
+from server.orchestrator.turn_state import ToolTurn
 from server.services import (approvals, command_sandbox, permission_store, permissions, sandbox_profile,
                              settings_service, terminal_exec)
 from tests.server import hard_rules_cases as hr
@@ -65,9 +66,9 @@ async def _run(monkeypatch, command, *, approve_card=False, surface=None, **args
     monkeypatch.setattr(terminal_exec.asyncio, "create_subprocess_exec", fake_exec)
     trace: list = []
     with permissions.asking_with(surface or _Surface()):
-        await tool_loop._dispatch_tool("run_command", {"command": command, **args}, "{}", resolve_tools=resolve,
-                                       emit=lambda e: None, tool_timeout_s=5, tool_trace=trace, convo=[],
-                                       confirm_command=card, conversation_id=CONV)
+        await tool_loop._run_tool("run_command", {"command": command, **args}, "{}", ToolTurn(resolve_tools=resolve,
+                                  emit=lambda e: None, tool_timeout_s=5, tool_trace=trace, convo=[],
+                                  confirm_command=card, conversation_id=CONV))
     return cards, started, trace
 
 

@@ -9,6 +9,7 @@ failure.
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 
 
 async def _resolve():
@@ -28,10 +29,10 @@ class _Stub:
 
 async def _dispatch(key, args, *, grant=None, log=None):
     trace, convo = [], []
-    return await tool_loop._dispatch_tool(
-        key, args, "{}", resolve_tools=_resolve, emit=lambda e: None,
+    return await tool_loop._run_tool(
+        key, args, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None,
         tool_timeout_s=5, tool_trace=trace, convo=convo,
-        confirm_schedule=grant)
+        confirm_schedule=grant))
 
 
 async def test_creating_without_a_grant_callback_is_refused(monkeypatch):
@@ -88,9 +89,9 @@ async def test_the_three_gates_stay_independent(monkeypatch):
         return True
 
     trace, convo = [], []
-    r = await tool_loop._dispatch_tool(
+    r = await tool_loop._run_tool(
         "write_file", {"path": "a.txt", "content": "x"}, "{}",
-        resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=trace, convo=convo,
-        confirm_workspace_write=None, confirm_schedule=allow_schedule)
+        ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+                 tool_trace=trace, convo=convo,
+                 confirm_workspace_write=None, confirm_schedule=allow_schedule))
     assert r["ok"] is False and log == []

@@ -9,6 +9,7 @@ from arslan.execution_budget import current as budget
 from arslan.models import LLMResponse
 from server.db.models import CompanionTask, ProfessionalMethodVersion, Run, Spawn, TaskWorker
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import personal_context as pc, professional_methods, task_service, task_workers
 from server.services.task_repository import TaskError, repository
 
@@ -105,8 +106,9 @@ async def test_worker_cannot_bypass_tool_subset_or_delegate_recursively(executio
                 await task_workers.delegate(batch("recursive"), tools)
             async def malicious_resolver():
                 return [{"key": "write_file", "description": "Injected wider tool list"}]
-            outcome = await tool_loop._dispatch_tool("write_file", {"path": "same-file", "content": "overwrite"}, "",
-                resolve_tools=malicious_resolver, emit=lambda event: None, tool_timeout_s=1, tool_trace=[], convo=[])
+            outcome = await tool_loop._run_tool("write_file", {"path": "same-file", "content": "overwrite"}, "",
+                ToolTurn(resolve_tools=malicious_resolver, emit=lambda event: None, tool_timeout_s=1, tool_trace=[],
+                         convo=[]))
             denials.append(outcome["code"])
             return LLMResponse(usage={}, content='{"result":"write denied","remaining_work":[]}')
     monkeypatch.setattr(tool_loop, "_get_adapter", Adapter)

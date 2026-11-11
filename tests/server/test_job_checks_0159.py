@@ -347,6 +347,7 @@ async def test_a_hands_action_that_never_ran_does_not_ask_the_user_to_check(exec
 async def test_a_declined_command_card_does_not_ask_the_user_to_check(execution_db, disk):
     # Regression guard: a refused card returns before the task runtime records anything.
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
 
     async def no(command, argv, **kw):
         return False
@@ -355,9 +356,9 @@ async def test_a_declined_command_card_does_not_ask_the_user_to_check(execution_
         return [{"key": "run_command", "description": "run"}]
 
     async def body(emit):
-        await tool_loop._dispatch_tool("run_command", {"command": "git push"}, "{}", resolve_tools=tools,
-                                       emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
-                                       confirm_command=no, conversation_id="f2")
+        await tool_loop._run_tool("run_command", {"command": "git push"}, "{}", ToolTurn(resolve_tools=tools,
+                                  emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                                  confirm_command=no, conversation_id="f2"))
         return "Done"
     task = await run_contract([check("text", contains=["Done"])], body)
     assert task.pause_reason != "task_reconciliation_required"
