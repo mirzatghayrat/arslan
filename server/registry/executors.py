@@ -894,16 +894,26 @@ class RunCommandExecutor:
                 return {"ok": False, "code": "time_limit", "executed": False,
                         "error": f"not started: {int(left)} s are left in this run, too little "
                                  "for a command and the reply after it"}
+        # SUB5c: a sub-session's command works in its own folder, the one place it may write, and always in the
+        # sandbox: no switch, grant or card lets it out (the gate refuses those first; this is the second line).
+        in_sub = settings_service.run_sub_folder() != ()
         async with db_session.AsyncSessionLocal() as db:
-            cwd = await settings_service.workspace_dir(db)
+            cwd = await settings_service.workspace_dir_for_run(db)
+            workspace = await settings_service.workspace_dir(db)
             sandboxed = await settings_service.terminal_sandbox_enabled(db)
             default_read = await settings_service.default_read_enabled(db)
+        from server.services import command_sandbox
+        if in_sub and (cwd is None or not command_sandbox.available()):
+            return {"ok": False, "executed": False,
+                    "error": "a sub-session's commands run only in the sandbox, in its own folder, and "
+                             + ("that folder can't be used" if cwd is None else "the sandbox can't start here")
+                             + "; nothing ran"}
         # S1 (U14 b): a run with nobody to ask (a scheduled run) works in Arslan's own folder, whatever
         # folder the user chose. Its commands always run in the sandbox (#308), so they write only there
         # and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7). Since v0.1.63 the
         # tool loop refuses every command in such a run before it gets here; this stays as the second line.
         from server.services import permissions
-        if permissions.current_asker() is None:
+        if permissions.current_asker() is None and not in_sub:
             own = settings_service.default_workspace()
             try:
                 own.mkdir(parents=True, exist_ok=True)
@@ -919,7 +929,7 @@ class RunCommandExecutor:
         if not default_read:
             from server.services import workspace_paths
             closed = workspace_paths.green_roots()
-            readable = await _project_folders()
+            readable = await _project_folders() + ([workspace] if in_sub and workspace is not None else [])
         # 0.1.51 P3: inside the workspace sandbox unless the user turned it off or
         # the loop says they clicked to let THIS command out (never the model's args).
         # 0.1.63 S3: the run's first change saves the working folder first (only that folder: a
@@ -929,7 +939,7 @@ class RunCommandExecutor:
         # SMART-8: an allowed delete outside the working folder that runs outside the sandbox and reads with
         # certainty moves its targets to the Trash; the command itself never runs (the tool loop sets this).
         from server.services import delete_to_trash
-        if delete_to_trash.TRASH.get():
+        if delete_to_trash.TRASH.get() and not in_sub:
             import asyncio
             result = await asyncio.to_thread(delete_to_trash.move, command, cwd)
             result["summary"] = f"moved {len(result.get('trashed') or [])} item(s) to the Trash"
@@ -938,10 +948,10 @@ class RunCommandExecutor:
         from server.services import tool_outputs
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
-                                         sandbox=sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get(),
+                                         sandbox=in_sub or (sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get()),
                                          closed=closed, readable=readable,
                                          copies=tool_outputs.given(tool_outputs.conversation.get()),
-                                         unwrapped=terminal_exec.UNWRAPPED.get(),
+                                         unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub,
                                          hold_run_later=terminal_exec.HOLD_RUN_LATER.get(),
                                          git_config=terminal_exec.GIT_CONFIG.get())
         head = command if len(command) <= 80 else command[:77] + "…"
@@ -965,7 +975,7 @@ class VerifyExecutor:
         from server.db import session as db_session
         from server.services import background_jobs, personal_context, project_verify, terminal_exec, workspace_paths
         async with db_session.AsyncSessionLocal() as db:
-            root = await settings_service.workspace_dir(db)
+            root = await settings_service.workspace_dir_for_run(db)     # SUB5c: a sub-session's own folder
             default_read = await settings_service.default_read_enabled(db)
         if root is None:
             return {"ok": False, "executed": False, "error": "no workspace is configured — set one in Settings first"}

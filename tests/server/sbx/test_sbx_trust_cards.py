@@ -127,6 +127,28 @@ async def test_a_name_is_pinned_to_the_address_it_resolves_to_now(client, lan):
     assert await _devices(client) == pinned
 
 
+@pytest.mark.parametrize(("answers", "expected"), [
+    (["192.168.1.20", "fe80::20"], "192.168.1.20"),        # its link-local answer isn't counted: only the pinned one
+    (["2606:2800:220:1::1", "192.168.1.20"], "192.168.1.20"),   # nor a public one
+    (["192.168.1.10", "192.168.1.20"], "192.168.1.20"),    # two listed: the pinned one, not the lower-sorting one
+    (["192.168.1.10", "fe80::10"], "192.168.1.10"),        # moved to another listed device: that listed address
+    (["192.168.1.20", "10.0.0.5"], None),                  # a private answer neither pinned nor listed refuses it
+    (["10.0.0.5", "fe80::5"], None),
+])
+def test_a_trusted_name_with_two_answers_connects_only_to_a_pinned_or_listed_one(answers, expected):
+    # #847 review: a trusted name that resolves to two addresses. Only private answers count, each must be pinned or
+    # listed, and the one connected to is the pinned one when it answers, else a listed one; never another answer.
+    trusted = sandbox_proxy.parse_trusted(json.dumps([{"host": "nas.local", "address": "192.168.1.20"},
+                                                      {"address": "192.168.1.10"}]))
+    assert len(trusted) == 2
+
+    def resolve(host, port):
+        assert host == "nas.local"
+        return [(socket.AF_INET6 if ":" in a else socket.AF_INET, socket.SOCK_STREAM, 6, "", (a, 0)) for a in answers]
+
+    assert sandbox_proxy.trusted_address("NAS.local", trusted, resolve=resolve) == expected
+
+
 async def test_an_ip_is_added_once_and_removed_from_the_list(client):
     r = await client.post(DEVICES, json={"device": "192.168.1.42"})
     assert r.status_code == 200 and r.json()["devices"] == [{"address": "192.168.1.42"}]

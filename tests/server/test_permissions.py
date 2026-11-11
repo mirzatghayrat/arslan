@@ -219,7 +219,8 @@ async def test_the_context_is_filled_from_the_running_turn(monkeypatch):
     from types import SimpleNamespace
     from server.services import personal_context
     monkeypatch.setattr(personal_context, "current",
-                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="tidy my notes"))
+                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="tidy my notes",
+                                                sub_folder=()))
     asker = Asker(yes("task"))
     with permissions.asking_with(asker):
         await permissions.decide(app(), Context(conversation_id="conv-1"))
@@ -473,7 +474,7 @@ async def test_the_ledger_row_carries_the_ids_of_the_turn_that_asked(monkeypatch
     from types import SimpleNamespace
     from server.services import personal_context
     monkeypatch.setattr(personal_context, "current",
-                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query=""))
+                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="", sub_folder=()))
     with permissions.asking_with(Asker(yes("task"))):
         await permissions.decide(app(), Context(conversation_id="conv-1"))
     async with db_session.AsyncSessionLocal() as db:
@@ -610,7 +611,7 @@ async def test_a_task_id_the_caller_gave_wins_over_the_running_turns(monkeypatch
     from types import SimpleNamespace
     from server.services import personal_context
     monkeypatch.setattr(personal_context, "current",
-                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query=""))
+                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="", sub_folder=()))
     with permissions.asking_with(Asker(yes("task"))):
         await permissions.decide(app(), Context(conversation_id="conv-1", task_id="turn-given"))
     async with db_session.AsyncSessionLocal() as db:

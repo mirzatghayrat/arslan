@@ -450,7 +450,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
                      ipc_prefix: str | None = None, bound_ports: list[int] | None = None,
                      system_proxies: list[str] | None = None, trust_service: bool = False,
                      cache: Path | None = None, peer_cache: Path | None = None,
-                     plugin_folder: Path | None = None, git_config_ok: bool = False) -> str:
+                     plugin_folder: Path | None = None, plugin_read: Path | None = None,
+                     git_config_ok: bool = False) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -472,13 +473,26 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     one cache written is `cache` (Arslan's commands cache by default), and `peer_cache` is closed when given. An
     MCP server's cache is under its folder, in Arslan's data folder, which is protected here already.
 
-    HR-1b: `git_config_ok`, under this conversation's git_config grant only, leaves the repository config names out
-    of the run-later denies (`run_later.GIT_CONFIG`); terminal_exec reverts what changed there past the allowlist
-    (git_config_guard). Nothing else changes; the outside floor never gets it."""
+    HOOK-2 (rule 1): `plugin_read`, one plugin's own folder, read-only for that plugin's hook. It must be an existing
+    folder, a resolved real path strictly inside the CAP6b plugin root (the root itself is refused), holding no
+    closed or protected path (the allow comes after their denies, so it would reopen them), or no profile is built
+    (ValueError). Writes there stay denied, and every other plugin folder stays closed. Seatbelt matches real paths,
+    so a symlink in this folder to another plugin's file is judged by where it points; a hard link is not: it is that
+    file, inside this folder, and readable. The install (CAP7 / HOOK-3) must refuse hard links in plugin folders.
+
+    HR-1b: `git_config_ok`, under this conversation's git_config grant only, lifts the repository config names
+    (`run_later.GIT_CONFIG`) where git_config_guard's walk looks, keeping links, flags and ACLs on them denied;
+    terminal_exec reverts what changed there past the allowlist. Nothing else changes; the outside floor never gets it."""
+    root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
+    if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
+                                    or _real(root) not in plugin_read.parents):
+        raise ValueError(f"not a plugin's own folder inside the plugin root: {plugin_read}")
     roots = writable_roots(workspace, temp, cache)
     writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
     protected = [*default_protected(), *cap6b_folders(plugin_folder)]
     shut = _resolved([*closed, *app_data(), *([peer_cache] if peer_cache is not None else [])])
+    if plugin_read is not None and any(p == plugin_read or plugin_read in p.parents for p in [*protected, *shut]):
+        raise ValueError(f"a plugin's folder holding a closed or protected path: {plugin_read}")
     if network is None:
         network = NetworkMode.NONE if offline or proxy_port is None else NetworkMode.PROXY
     network = NetworkMode(network)
@@ -506,6 +520,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     after.allow_paths("file-read* file-map-executable", open_r, file_or_folder)
     if open_rw or open_r:
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
+    if plugin_read is not None:             # HOOK-2: after every CAP6b deny, reads only
+        after.allow("file-read*", subpath(plugin_read))
     # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
     after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.

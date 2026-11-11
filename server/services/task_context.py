@@ -68,6 +68,10 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
             if local_history:
                 from arslan.companion.memory import MemoryError
                 raise MemoryError("conversation_local_history")
+    try:    # SUB5c: the one place a turn learns its sub-session folder, for a job and a typed turn alike
+        sub_folder = await sub_sessions.folder_names(conversation_id) if row and row.kind == sub_sessions.SUB else ()
+    except sub_sessions.SubSessionError:
+        sub_folder = None                   # its chain can't be read: no folder, never the whole workspace
     identity = str(uuid4())
     digest = explicit_save_digest(user_message)
     return pc.TaskMemoryContext(
@@ -89,7 +93,7 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
         allow_sensitive=settings.allow_sensitive if settings else False,
         explicit_save_digest=digest, explicit_save_ref=f"turn:{identity}" if digest else None,
         allow_global_save=bool(digest) and not (settings and settings.project_id),
-        sub_session=bool(row and row.kind == sub_sessions.SUB),
+        sub_session=bool(row and row.kind == sub_sessions.SUB), sub_folder=sub_folder,
     )
 
 
