@@ -23,6 +23,7 @@ import io
 import json
 import logging
 import os
+import posixpath
 import re
 import tarfile
 import unicodedata
@@ -38,7 +39,7 @@ from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
 from server.services import (capability_allowlist, capability_install, capability_runtime, connection_secrets, mcp_pin,
-                             osv_check, skill_import)
+                             osv_check, plugin_hooks, skill_import)
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,10 @@ _PARTS = (("hooks/", "hooks"), ("commands/", "commands"), ("agents/", "agents"),
           ("bin/", "other"), ("settings.json", "other"), (".app.json", "other"))
 #: CAP8-2's hook rule (the user's, 2026-11-10), for a plugin imported from Claude Code only: a hook is judged by its
 #: event's name, never by what it runs. On these 16 a hook can't block or stop anything, so a plugin whose hooks all
-#: fire on them comes in with its hooks never registered or run. Any other event, or one not recognised (names are
-#: matched exactly), refuses the whole plugin. Events: https://code.claude.com/docs/en/hooks
+#: fire on them comes in with its hooks never registered or run (HOOK-1 stores them, still "won't run"). Any other
+#: event, or one not recognised (names are matched exactly), refuses the whole plugin; PreToolUse, UserPromptSubmit
+#: and Stop are read for the refusal's display first (`plugin_hooks.GUARD_EVENTS`), until HOOK-3 runs them.
+#: Events: https://code.claude.com/docs/en/hooks
 QUIET_HOOK_EVENTS = frozenset({
     "SessionStart", "Setup", "PermissionDenied", "PostToolUse", "PostToolUseFailure", "Notification", "MessageDisplay",
     "SubagentStart", "StopFailure", "InstructionsLoaded", "CwdChanged", "DirectoryAdded", "FileChanged", "PostCompact",
@@ -102,11 +105,12 @@ MAX_VALUE_CHARS = 500         # an argument's limit too (`capability_install.sta
 
 class Refused(Exception):
     """This plugin can't be added: `code` says why, `part` names which part. `by_hand`: why the one-click list doesn't
-    cover that part, when the code is "add_by_hand"."""
+    cover that part, when the code is "add_by_hand". `rows` (HOOK-1): a protection refused it, and these are its
+    hooks as read, for the refusal to show (`plugin_hooks.rows`)."""
 
-    def __init__(self, code: str, part: str = "", by_hand: str | None = None):
+    def __init__(self, code: str, part: str = "", by_hand: str | None = None, rows: list[dict] | None = None):
         super().__init__(f"{code}: {part}" if part else code)
-        self.code, self.part, self.by_hand = code, part, by_hand
+        self.code, self.part, self.by_hand, self.rows = code, part, by_hand, rows
 
 
 @dataclass
@@ -246,28 +250,25 @@ def _only_skills_and_connections(manifest: dict, snap: Snapshot, root: str, hook
                 raise Refused(code, rel)
 
 
-def hook_events(events, where: str) -> list[str]:
-    """One event name per hook in an event map (`{event: [{"matcher": ..., "hooks": [hook, ...]}]}`), each event judged
-    by its name only: what a hook runs is never read. Raises Refused: "hooks" naming the first event not on the quiet
-    list (an empty one included), "unreadable" for a shape Claude Code wouldn't load."""
-    if not isinstance(events, dict):
-        raise Refused("unreadable", where)
-    out: list[str] = []
-    for event, groups in events.items():
-        if not isinstance(groups, list) or not all(isinstance(g, dict) and isinstance(g.get("hooks"), list)
-                                                   for g in groups):
-            raise Refused("unreadable", where)
-        if event not in QUIET_HOOK_EVENTS:
-            raise Refused("hooks", untrusted.clean_name(str(event), 80))
-        out += [event] * sum(len(g["hooks"]) for g in groups)
-    return out
+def _reader(snap: Snapshot, root: str, skill_dir: str = "") -> plugin_hooks.Reader:
+    """A hook's `${CLAUDE_PLUGIN_ROOT}/…` (or, in a skill's frontmatter, `${CLAUDE_SKILL_DIR}/…`) file of this plugin,
+    for its digest (`plugin_hooks._scripts`)."""
+    def read(var: str, rel: str) -> tuple[str, bytes] | None:
+        inside = rel if var == "CLAUDE_PLUGIN_ROOT" else _join(skill_dir, rel)
+        data = snap.files.get(_join(root, inside))
+        return (inside, data) if data is not None else None
+    return read
 
 
-def quiet_hooks(manifest: dict, snap: Snapshot, root: str = "") -> list[str]:
-    """Every hook of an imported plugin, by event, from where Claude Code reads them: `hooks/hooks.json` and the
-    manifest's `hooks` (a path, the event map itself, or a list of either; a file wraps the map in `hooks`). A skill's
-    frontmatter hooks are judged as it is prepared (by CAP8-2's import). Raises Refused, as `hook_events`."""
-    def of_file(rel: str) -> list[str]:
+def quiet_hooks(manifest: dict, snap: Snapshot, root: str, connections: dict[str, str],
+                gathered: plugin_hooks.Gathered) -> None:
+    """Every hook of an imported plugin, one row each (`plugin_hooks.rows`), into `gathered`, from where Claude Code
+    reads them: `hooks/hooks.json` and the manifest's `hooks` (a path, the event map itself, or a list of either; a
+    file wraps the map in `hooks`). Raises Refused; a protection's refusal is held in `gathered` until every place is
+    read, and raised by its `done` (`judged_hooks`)."""
+    read = _reader(snap, root)
+
+    def of_file(rel: str) -> list[dict]:
         path = _join(root, rel)
         if not rel.endswith(".json") or path not in snap.files:
             raise Refused("unreadable", rel)
@@ -275,30 +276,60 @@ def quiet_hooks(manifest: dict, snap: Snapshot, root: str = "") -> list[str]:
             data = json.loads(snap.text(path))
         except (ValueError, RecursionError) as exc:
             raise Refused("unreadable", rel) from exc
-        return hook_events(data.get("hooks") if isinstance(data, dict) else None, rel)
+        return plugin_hooks.rows(data.get("hooks") if isinstance(data, dict) else None, rel, connections, read)
 
-    events = of_file(HOOKS_FILE) if _join(root, HOOKS_FILE) in snap.files else []
+    if _join(root, HOOKS_FILE) in snap.files:
+        gathered.add(lambda: of_file(HOOKS_FILE))
     declared = manifest.get("hooks")
     for value in declared if isinstance(declared, list) else [declared] if declared is not None else []:
-        events += hook_events(value, "hooks") if isinstance(value, dict) else of_file(_inside(value))
-    return events
+        gathered.add(lambda value=value: plugin_hooks.rows(value, "hooks", connections, read) if isinstance(value, dict)
+                     else of_file(_inside(value)))
 
 
-def judged_hooks(snap: Snapshot, root: str = "") -> list[str]:
-    """Every hook of an imported plugin (CAP8-2), judged before any other part can refuse it, so no other refusal hides
-    a blocking one (an update is judged again by this verdict): `quiet_hooks`, then each skill's frontmatter hooks.
-    Raises Refused, as `hook_events`."""
-    _one_spelling(snap, root)
-    manifest = _manifest(snap, root)
-    events = quiet_hooks(manifest, snap, root)
+def skill_hooks(manifest: dict, snap: Snapshot, root: str, connections: dict[str, str],
+                gathered: plugin_hooks.Gathered) -> None:
+    """Each of this plugin's skills' frontmatter hooks, through the one reader every skill's goes through
+    (`skill_import.frontmatter_hook_rows`), into `gathered`. A SKILL.md that doesn't parse is refused later."""
+    prefix = f"{root}/" if root else ""
     for path in _skill_files(manifest, snap, root):
         raw = snap.text(path)
-        if skill_import.parse_skill_md(raw, path) is not None:          # one that doesn't parse is refused later
+        if skill_import.parse_skill_md(raw, path) is None:
+            continue
+        rel = path[len(prefix):]
+
+        def read(raw=raw, rel=rel) -> list[dict]:
             try:
-                events += skill_import.frontmatter_hooks(raw)
+                return skill_import.frontmatter_hook_rows(raw, connections, where=rel,
+                                                          read=_reader(snap, root, posixpath.dirname(rel)))
             except skill_import.HookRefused as exc:
-                raise Refused(exc.code, exc.part) from None
-    return events
+                raise Refused(exc.code, exc.part, rows=exc.rows) from None
+        gathered.add(read)
+
+
+def _connection_names(manifest: dict, snap: Snapshot, root: str) -> dict[str, str]:
+    """{each name Claude Code gives a connection of this plugin in `mcp__<name>__<tool>`: its name}: its own, and
+    `plugin_<plugin>_<server>`. None when they can't be read: `parts` refuses that plugin afterwards."""
+    try:
+        servers = _servers(manifest, snap, root)
+    except Refused:
+        return {}
+    plugin = manifest.get("name")
+    return {**{name: name for name in servers},
+            **({f"plugin_{plugin}_{name}": name for name in servers} if isinstance(plugin, str) and plugin else {})}
+
+
+def judged_hooks(snap: Snapshot, root: str = "") -> list[dict]:
+    """Every hook of an imported plugin (CAP8-2, HOOK-1), one row each with its id, judged before any other part can
+    refuse it, so no other refusal hides a blocking one (an update is judged again by this verdict): `quiet_hooks`,
+    then each skill's frontmatter hooks (`skill_hooks`). Raises Refused, as `plugin_hooks.rows`: a protection's
+    refusal carries every hook read (`Refused.rows`)."""
+    _one_spelling(snap, root)
+    manifest = _manifest(snap, root)
+    connections = _connection_names(manifest, snap, root)
+    gathered = plugin_hooks.Gathered()
+    quiet_hooks(manifest, snap, root, connections, gathered)
+    skill_hooks(manifest, snap, root, connections, gathered)
+    return gathered.done()
 
 
 def _skill_files(manifest: dict, snap: Snapshot, root: str) -> list[str]:
@@ -493,6 +524,8 @@ async def _skills(snap: Snapshot, paths: list[str], spdx_and_path: tuple, prepar
         try:
             skill = await (prepare_one or skill_import.prepare_skill)(f"{snap.repo}@{snap.sha}", path, snapshot=snap,
                                                                       repo_license=spdx_and_path[0])
+        except skill_import.HookRefused as exc:
+            raise Refused("skill", str(exc)[:200], rows=exc.rows) from exc
         except ValueError as exc:
             raise Refused("skill", str(exc)[:200]) from exc
         key = skill["key"]
@@ -553,15 +586,24 @@ async def prepare_read(candidate: dict, snap: Snapshot, root: str, *, imported=N
     user's click, and how each of its skills is prepared. Its connections then aren't held to the one-click list or
     the license gate, as CAP8-1's aren't, and its hooks go by the hook rule (`hooks`: one event per hook, its skills'
     frontmatter hooks included, which `imported` judges and Arslan's own SKILL.md leaves out); everything else is as
-    above. A refused hook refuses before anything is prepared or locked, and before any other part refuses it."""
+    above. A refused hook refuses before anything is prepared or locked, and before any other part refuses it.
+    Either way `hook_rows` is every hook as stored (HOOK-1; CAP7b's from its skills' frontmatter only)."""
     hooks = judged_hooks(snap, root) if imported else []
     manifest, paths, servers = parts(snap, root, hooks=imported is not None)
     license_ = _license(snap, root)
     skills = await _skills(snap, paths, license_, imported)
+    if not imported:
+        # CAP7b: `parts` refused hooks.json and the manifest's hooks above; its skills' frontmatter hooks go by the
+        # hook rule (a protection refused it in `_skills`), through the same reader, and are stored with the plugin.
+        gathered = plugin_hooks.Gathered()
+        skill_hooks(manifest, snap, root, _connection_names(manifest, snap, root), gathered)
+        hooks = gathered.done()
     allow = None if imported else await capability_allowlist.current()
     prefix = f"{root}/" if root else ""
+    # HOOK-1: `hook_rows` is every hook as stored (none runs here); `hooks` its events, as CAP8-2's card had them.
     prepared = {"repo": snap.repo, "commit": snap.sha, "license": license_, "skills": skills, "connections": [],
-                "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix), "hooks": hooks}
+                "manifest": manifest, "files": await asyncio.to_thread(_file_hashes, snap, prefix),
+                "hooks": [row["event"] for row in hooks], "hook_rows": hooks}
     try:
         for name, spec in servers.items():
             connection = (_remote(candidate, name, spec, allow) if spec.get("url") or spec.get("type")
@@ -620,8 +662,10 @@ def card_fields(prepared: dict) -> dict:
     return {"commit": prepared["commit"], "license": {"spdx": spdx, "read_from": read_from}, "skills": skills,
             "connections": connections, "keys": list(keys.values())[:12], "folders": [],
             "publisher": capability_search.publisher_of({"repo": prepared["repo"]}),
-            # CAP8-2's hook rule: one event per hook that won't run (its skills' frontmatter hooks too).
-            "hooks": prepared.get("hooks") or []}
+            # CAP8-2's hook rule: one event per hook (its skills' frontmatter hooks too). None runs in this version.
+            "hooks": prepared.get("hooks") or [],
+            # HOOK-1: each hook's row (when it fires, what it matches, its command, what Arslan will do with it).
+            "hook_rows": plugin_hooks.card_rows(prepared.get("hook_rows") or [])}
 
 
 def parent_of(candidate_id: str | None) -> str | None:
@@ -674,6 +718,8 @@ async def install(candidate: dict, prepared: dict, keys: dict, owner_id: str = "
     now = datetime.utcnow()
     worst = "blocked" if any(s["scan"]["level"] == "blocked" for s in prepared["skills"]) else (
         "warn" if any(s["scan"]["level"] != "clean" for s in prepared["skills"]) else "clean")
+    if prepared.get("hook_rows"):       # HOOK-1: every hook as its card showed it, kept on its row (none runs)
+        candidate = {**candidate, "hooks": prepared["hooks"], "hook_rows": prepared["hook_rows"]}
     async with db_session.AsyncSessionLocal() as db:
         db.add(CapabilitySource(
             id=source_id, owner_id=owner_id, kind="plugin", name=str(candidate.get("name"))[:120],
@@ -813,7 +859,8 @@ async def finish_interrupted() -> None:
 
 async def hooks_added(source_id: str, event: str, code: str = "hooks") -> None:
     """CAP8-2's hook rule after an update: the other tool's copy of this imported plugin now has a hook on a blocking
-    or unknown event, or is refused for anything else (`code`, which may hide one). Every part goes off, and `switch`
+    or unknown event, or is refused for anything else (`code`, which may hide one), or (HOOK-1, code `hooks_changed`)
+    added, removed or changed any hook since its card. Every part goes off, and `switch`
     keeps it off; only its card on the import sheet brings it back (`replace`: the new group goes in, then this one
     goes). Marked once."""
     row = await _plugin(source_id)

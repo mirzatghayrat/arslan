@@ -4,6 +4,7 @@
 changes the system, reaches another app or the screen, or cannot be read (`unreadable`); no stored answer
 stands and the island cannot approve it. ③ everything else — runs in the sandbox without a card when the
 sandbox can start (R4), and asks (`unsandboxed:*`) when it cannot or is switched off."""
+import shlex
 from unittest.mock import AsyncMock
 
 import pytest
@@ -44,6 +45,120 @@ def test_quoted_text_and_plain_paths_are_not_the_floor(command):
 
 # ── ② this time only ─────────────────────────────────────────────────────────
 
+# Deploy CLIs: their deploy and write verbs ask like vercel's (`publish`), and a shell on a deployed machine asks as
+# `remote-shell`, in each wrapper that was measured; read-only verbs, help and the bare program (it prints help) run.
+_WRAPPERS = (lambda c: c, lambda c: "sh -c " + shlex.quote(c), lambda c: "cd x && " + c, lambda c: "npx " + c)
+_DEPLOY_ASKS = [
+    *[(command, "publish") for command in (
+        "netlify deploy", "netlify deploy --prod", "netlify --auth t deploy",
+        "fly deploy", "fly secrets set K=V", "fly apps destroy x", "fly scale count 2", "fly -a x deploy",
+        "fly --app=x deploy", "fly deploy --remote-only", "flyctl deploy", "flyctl secrets set K=V",
+        "flyctl apps destroy x", "flyctl scale count 2", "flyctl -t tok deploy",
+        "heroku releases:rollback", "heroku config:set K=V", "heroku apps:destroy x", "heroku container:release web",
+        "heroku releases:rollback -a x", "heroku -a x config:set K=V",
+        "railway up", "railway up --detach", "railway -s svc up",
+        "wrangler deploy", "wrangler publish", "wrangler versions deploy", "wrangler pages deploy dist",
+        "wrangler pages publish dist", "wrangler secret put K", "wrangler rollback", "wrangler --env prod deploy",
+        "firebase deploy", "firebase deploy --only hosting", "firebase hosting:channel:deploy x",
+        "firebase functions:delete f", "firebase database:set /x f", "firebase --project prod deploy --only hosting",
+        "helm install x ./c", "helm upgrade x ./c", "helm upgrade --install x ./c", "helm uninstall x",
+        "helm rollback x 1", "helm push c.tgz oci://r", "helm -n ns install x ./c", "helm --kube-context c uninstall x",
+    )],
+    # A verb the reader cannot place asks as `publish`, whatever the verb: a word before it that is not one of the
+    # program's known options or such an option's value, or an option between the two words of a two-word verb.
+    *[(command, "publish") for command in (
+        "netlify --weird deploy", "fly --weird deploy", "flyctl --weird deploy", "heroku --weird config:set K=V",
+        "railway --weird up", "wrangler --weird deploy", "firebase --foo deploy", "helm --weird install x ./c",
+        "vercel --foo deploy", "helm -x ns install x ./c", "fly --region iad deploy", "vercel --foo",
+        "fly secrets -a x set K=V", "flyctl apps -a x destroy x", "fly scale --app x count 2", "fly ssh -a x console",
+        "wrangler pages --env prod deploy dist", "wrangler secret -e prod put K", "wrangler versions --env x deploy",
+        "netlify --weird status", "fly --weird status", "flyctl --weird logs", "heroku --weird apps",
+        "railway --weird status", "wrangler --weird whoami", "firebase --weird projects:list", "helm --weird list",
+        "vercel --weird ls", "netlify -help deploy", "vercel -h deploy", "helm --version install x ./c",
+    )],
+    # Each CLI's own aliases for a listed verb, and the second program name its package installs (`ntl`, `vc`).
+    *[(command, "publish") for command in (
+        "helm delete rel", "helm del rel", "helm un rel", "helm -n ns delete rel", "helm delete -n ns rel",
+        "heroku rollback", "heroku rollback v1 -a x", "heroku config:add K=V", "heroku -a x config:add K=V",
+        "heroku destroy x", "heroku apps:delete x",
+        "fly apps delete x", "fly apps remove x", "fly apps rm x", "flyctl apps delete x", "fly -a x apps delete x",
+        "fly app destroy x", "fly app delete x", "flyctl app rm x", "fly destroy x", "flyctl destroy x",
+        "ntl deploy", "ntl --auth t deploy", "ntl deploy --prod", "NTL deploy", "ntl --weird status",
+        "vc", "vc deploy", "vc --prod", "vc --yes", "vc --foo", "vc -t t deploy",
+        # with a known option first, which only the parsed layer reads
+        "helm -n ns del rel", "helm -n ns un rel", "heroku -a x rollback", "heroku -a x destroy x",
+        "heroku -a x apps:delete x", "fly -a x app destroy x", "fly -a x apps remove x", "fly -a x destroy x",
+    )],
+    # A word the shell may still expand, at or before the verb: a variable, `"$@"`, a command substitution or a glob,
+    # as the verb, before it, or as an option value that can split into a verb.
+    *[(command, "publish") for command in (
+        "fly $OPTS deploy", "fly $OPTS secrets set K=V", "helm $ARGS uninstall rel", "netlify $FLAGS deploy",
+        "wrangler $W deploy", "firebase $F deploy", "heroku $H config:set K=V", "railway $R up", "vercel $V deploy",
+        'fly "$@" deploy', "fly $(cat flags) deploy", "flyctl ${O} deploy", "ntl $F deploy",
+        "netlify $X", "fly $X", 'fly "$1"', "netlify $(echo deploy)", "fly secrets $S K=V", "wrangler pages $P dist",
+        "fly ssh $C", "fly -a x $CMD", "helm -n ns $VERB rel", "heroku -a x $V", "vercel $V", "vercel ${V}", "vc $V",
+        "railway ${CMD}", "firebase $(echo deploy)",
+        "netlify deplo*", "fly deplo*", "fly deplo?", "fly [d]eploy", "fly secret* set K=V", "helm uninst* rel",
+        "heroku config:s?t K=V", "wrangler [d]eploy",
+        "fly -a $X", "fly -a $X status", "helm -n $X", "netlify --auth $X", "vercel $A", "fly --app=$X status",
+        "heroku -a $APP config", "wrangler --env $E whoami",
+    )],
+    *[(command, "remote-shell") for command in (
+        "fly ssh console", "flyctl ssh console", "fly -a x ssh console", "heroku run bash", "heroku -a x run bash",
+        "heroku run:detached x", "heroku run:inside web bash", "heroku -a x run:detached x",
+    )],
+]
+DEPLOY_ASKS = [(wrap(command), rule) for command, rule in _DEPLOY_ASKS for wrap in _WRAPPERS]
+# The same with the word's value set earlier in the command; `npx` goes before the program, not the assignment.
+_SET_FIRST = (
+    ("X=deploy; ", "netlify $X"), ("export X=deploy; ", "fly $X"), ("for X in deploy; do ", "fly $X; done"),
+    ("set -- deploy; ", 'fly "$1"'), ("X=secrets; ", "fly $X set K=V"), ("Y=set; ", "fly secrets $Y K=V"),
+    ('X="myapp secrets set K=V"; ', "fly -a $X"), ('X="x deploy"; ', "fly -a $X status"),
+    ('X="ns uninstall rel"; ', "helm -n $X"), ('X="t deploy"; ', "netlify --auth $X"), ('A="--prod"; ', "vercel $A"),
+    ("touch deploy && ", "netlify deplo*"), ("X=deploy; ", "ntl $X"), ("X=deploy; ", "vc $X"),
+)
+# The aliases by a path, which the reader leaves to the text pattern (`npx` takes a package name, not a path).
+DEPLOY_ASKS += [(wrap("/usr/local/bin/" + command), "publish") for command in (
+    "helm delete rel", "helm del rel", "helm un rel", "heroku rollback", "heroku config:add K=V", "heroku destroy x",
+    "heroku apps:delete x", "fly apps delete x", "fly apps rm x", "fly app destroy x", "fly destroy x",
+    "flyctl apps remove x", "ntl deploy", "vc deploy", "vc",
+) for wrap in _WRAPPERS[:3]]
+DEPLOY_ASKS += [(text, "publish") for first, command in _SET_FIRST
+                for text in (first + command, "sh -c " + shlex.quote(first + command), "cd x && " + first + command,
+                             first + "npx " + command)]
+DEPLOY_RUNS = [wrap(command) for command in (
+    "netlify", "netlify status", "netlify sites:list", "netlify env:list", "netlify logs", "netlify build",
+    "netlify dev", "netlify --help", "netlify login --help", "netlify deployx",
+    "fly", "fly status", "fly logs", "fly apps list", "fly releases", "fly version", "fly --help", "fly login --help",
+    "fly scale show", "fly secrets list", "fly ssh issue", "fly -a x status", "flyctl", "flyctl logs", "flyctl status",
+    "flyctl --help", "flyctl login --help",
+    "heroku", "heroku apps", "heroku logs", "heroku ps", "heroku releases", "heroku config", "heroku config:get K",
+    "heroku info", "heroku status", "heroku --help", "heroku login --help",
+    "railway", "railway status", "railway logs", "railway whoami", "railway list", "railway --help",
+    "railway login --help",
+    "wrangler", "wrangler whoami", "wrangler tail", "wrangler dev", "wrangler deployments list",
+    "wrangler versions list", "wrangler secret list", "wrangler kv namespace list", "wrangler --help",
+    "wrangler login --help",
+    "firebase", "firebase projects:list", "firebase apps:list", "firebase functions:log",
+    "firebase hosting:channel:list", "firebase emulators:start", "firebase --help", "firebase login --help",
+    "helm", "helm list", "helm status x", "helm history x", "helm get values x", "helm show values ./c",
+    "helm template x ./c", "helm lint ./c", "helm version", "helm --help", "helm login --help", "helm -n ns list",
+    # read-only verbs placed exactly: known options (and their values) before the verb, or after it
+    "firebase --project p projects:list", "netlify --auth t status", "flyctl -t tok logs", "fly -a x secrets list",
+    "fly secrets list -a x", "heroku -a x logs", "railway -s svc status", "wrangler --env prod whoami",
+    "wrangler -e prod versions list", "helm --kube-context c status x", "vercel --token t ls", "vercel --help",
+    "heroku runs", "vercel -h", "helm --version",
+    # the second program names' read-only verbs and help, and words near the aliases that are not aliases
+    "ntl", "ntl status", "ntl --help", "vc ls", "vc --help", "helm deletes", "heroku rollbacks", "fly app list",
+    "heroku apps:info",
+    # a read-only verb placed exactly, with a word the shell expands only after it
+    'fly status -a "$APP"', "fly status -a $APP", 'fly logs --app "$APP"', 'fly secrets list -a "$APP"',
+    'heroku logs -a "$APP"', 'helm status "$REL"', 'helm list -n "$NS"', 'netlify status --auth "$T"',
+    'wrangler whoami --env "$E"', 'firebase projects:list --project "$P"', 'railway status -s "$S"',
+    'vercel ls --token "$T"', "fly logs *.log", "helm status rel-?",
+) for wrap in _WRAPPERS]
+
+
 @pytest.mark.parametrize("command,rule", [
     # sends something out, with F2's spellings
     ("mail -s hi a@example.com", "send-mail"), ("imsg send x", "send-message"),
@@ -82,11 +197,21 @@ def test_quoted_text_and_plain_paths_are_not_the_floor(command):
     ("env -i osascript", "apple-events"), ("nice osascript", "apple-events"), ("timeout 5 osascript", "apple-events"),
     ("caffeinate osascript", "apple-events"), ("xcrun osascript", "apple-events"), ("arch -arm64 osascript", "apple-events"),
     ("exec -a NAME osascript", "apple-events"), ("builtin command osascript", "apple-events"), ("shortcuts run X", "shortcuts"),
+    *DEPLOY_ASKS,
 ])
 def test_layer_two_asks_this_time_only(command, rule):
     verdict = tp.assess(command)
     assert (verdict.level, verdict.rule) == ("ask", rule) and verdict.reason
     assert rule in tp.ONCE_ONLY_RULES and rule in tp.ask_rules(command)
+
+
+@pytest.mark.parametrize("words", [
+    ("fly", "`echo deploy`"), ("fly", "-a", "`cat app`", "status"), ("fly", "secrets", "`echo set`", "K=V"),
+    ("ntl", "$X"), ("vc", "deplo*"),
+])
+def test_deploy_word_with_backquote_or_alias_name_is_unplaceable(words):
+    """The reader refuses a top-level backquote before argv is built, so the parsed layer is pinned on its own."""
+    assert "publish" in tp._named_rules(words)
 
 
 @pytest.mark.parametrize("command", [
@@ -107,6 +232,7 @@ def test_what_cannot_be_read_asks_this_time_only(command):
     "pbcopy < x", "python3 x.py", "python3 -c 'print(1)'", "swift build", "say hi", "make && make test",
     "git commit -m \"fix: don't crash\"", "cat <<EOF\nit's here\nEOF", "python3 - <<'PY'\nprint(\"don't\")\nPY",
     "crontab -l", "nc -z localhost 8080", "nc -zv localhost 5432", "ls ~/.ncrc", "sync",
+    *DEPLOY_RUNS,
 ])
 def test_layer_three_runs(command):
     _runs_or_is_only_unreadable(command)

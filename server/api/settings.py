@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import asyncio
 
-from pydantic import ValidationError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, ValidationError
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from arslan.llm.presets import provider_options
@@ -18,7 +18,7 @@ from server.schemas import AccessTokenOut, McpTokenOut, ModelListOut, ModelPrevi
 # model_catalog + provider_health are Settings-only: this module is their ONLY
 # allowed import site outside their own tests (Provider-round iron rule —
 # never from the chat path).
-from server.services import model_catalog, provider_config_service, searxng_probe, settings_service
+from server.services import model_catalog, provider_config_service, searxng_probe, settings_service, trusted_devices
 from server.services.llm_test import test_connection
 from server.services.settings_service import _looks_masked
 from arslan.aio import within
@@ -189,23 +189,6 @@ async def delete_ssh_identity(db: AsyncSession = Depends(get_session)) -> dict:
     from server.services import ssh_keys
     await ssh_keys.forget(db)
     return {"public_key": "", "enabled": await settings_service.ssh_enabled(db)}
-
-
-@router.get("/settings/terminal-rules", response_model=dict)
-async def terminal_rules(db: AsyncSession = Depends(get_session)) -> dict:
-    """The kinds of command the user said not to ask about again (0.1.48)."""
-    from server.services import terminal_policy
-    rules = sorted(await terminal_policy.always_allowed(db))
-    return {"rules": [{"rule": r, "description": terminal_policy.describe(r)} for r in rules]}
-
-
-@router.delete("/settings/terminal-rules", response_model=dict)
-async def forget_terminal_rule(rule: str, db: AsyncSession = Depends(get_session)) -> dict:
-    """Ask again for this kind of command. A query parameter, not a path segment:
-    Hermes rule names contain spaces and slashes."""
-    from server.services import terminal_policy
-    await terminal_policy.forget(db, rule)
-    return await terminal_rules(db)
 
 
 @router.get("/settings/providers", response_model=list[ProviderOption])
@@ -490,5 +473,60 @@ async def test_saved_provider_config(
         row, ok=bool(result["ok"]), detail=result.get("error"))
     await session.commit()
     return TestLLMOut(**result)
+
+
+# ── SBX settings: trusted local devices, and the card that offers one ─────────
+# The only two ways a device becomes trusted (trusted_devices' docstring): the user's Settings action here, and the
+# user's click on a card this server showed. Both are behind require_auth, as every route on this router.
+
+class TrustedDeviceIn(BaseModel):
+    device: str = Field(min_length=1, max_length=255)       # a name or a LAN IP, as typed
+
+
+class SandboxCardAnswer(BaseModel):
+    trust: bool
+    host: str | None = Field(default=None, max_length=255)  # the device the card showed, repeated
+    addresses: list[str] = Field(default_factory=list, max_length=16)
+
+
+def _refused(exc: trusted_devices.Refused) -> HTTPException:
+    return HTTPException(status_code=422, detail={"code": exc.code, "value": exc.value})
+
+
+@router.get("/settings/sandbox/trusted-devices", response_model=dict)
+async def list_trusted_devices(db: AsyncSession = Depends(get_session)) -> dict:
+    return {"devices": await trusted_devices.listed(db)}
+
+
+@router.post("/settings/sandbox/trusted-devices", response_model=dict)
+async def add_trusted_device(body: TrustedDeviceIn, db: AsyncSession = Depends(get_session)) -> dict:
+    """The server decides: a name is resolved now and pinned to what it answers; a public address, this Mac's own and
+    a name that doesn't resolve are refused, each with its code (`trusted_devices.Refused`)."""
+    try:
+        return {"devices": await trusted_devices.add(db, body.device)}
+    except trusted_devices.Refused as exc:
+        raise _refused(exc) from None
+
+
+@router.delete("/settings/sandbox/trusted-devices", response_model=dict)
+async def remove_trusted_device(address: str | None = Query(None, max_length=255),
+                                host: str | None = Query(None, max_length=255),
+                                db: AsyncSession = Depends(get_session)) -> dict:
+    return {"devices": await trusted_devices.remove(db, address=address, host=host)}
+
+
+@router.post("/sandbox/cards/{card_id}", response_model=dict)
+async def answer_sandbox_card(card_id: str, body: SandboxCardAnswer, db: AsyncSession = Depends(get_session)) -> dict:
+    """The user's click on a device card, bound to that card: 404 when no such card waits, 409 for a device it didn't
+    show."""
+    try:
+        devices = await trusted_devices.answer(db, card_id, trust=body.trust, host=body.host, addresses=body.addresses)
+    except trusted_devices.NotPending:
+        raise HTTPException(status_code=404, detail={"code": "not_pending"}) from None
+    except trusted_devices.NotShown:
+        raise HTTPException(status_code=409, detail={"code": "not_shown"}) from None
+    except trusted_devices.Refused as exc:
+        raise _refused(exc) from None
+    return {"devices": devices}
 
 

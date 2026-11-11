@@ -649,13 +649,6 @@
     "voiceModeConversation": "Conversation",
     "labelVoiceEndpointSilence": "Fin de phrase (ms)",
     "voiceEndpointSilenceDesc": "Durée de la pause avant l'envoi de ce que vous avez dit. 900 ms correspondent à une respiration normale ; moins vous coupe, plus paraît lent.",
-    "terminalRulesTitle": "Ne plus demander pour",
-    "terminalRulesEmpty": "Rien pour l’instant. Choisissez « Toujours » sur une carte de commande pour ajouter ce type ici.",
-    "terminalRulesForget": "Redemander",
-    "sandboxGrantsTitle": "Conversations dont les commandes peuvent s’exécuter hors du bac à sable, tâches en arrière-plan comprises",
-    "sandboxGrantsEmpty": "Aucune. Choisir « Dans cette conversation » sur une carte d’exécution hors du bac à sable ajoute la conversation ici.",
-    "sandboxGrantsTakeBack": "Retirer",
-    "sandboxGrantsUntitled": "Conversation sans titre",
     "navGeneral": "Général",
     "navAbilities": "Ce qu’Arslan peut faire",
     "navBackground": "Arrière-plan",
@@ -770,7 +763,7 @@
     "glyph": {
       "waiting": "Attend ton accord",
       "waiting_reminder": "Un travail arrêté t’a laissé un rappel",
-      "waiting_away": "N’a pas pu te demander pendant ton absence",
+      "waiting_away": "Une carte a expiré",
       "working": "En cours",
       "progress": "En cours : {{done}} sur {{total}}",
       "done": "Terminé",
@@ -788,7 +781,15 @@
     "moveBack": "Retour",
     "movedTo": "Déplacée vers « {{name}} »",
     "movedOut": "Retirée du projet",
-    "moveFailed": "Impossible de la déplacer ; elle travaille peut-être en ce moment."
+    "moveFailed": "Impossible de la déplacer ; elle travaille peut-être en ce moment.",
+    "search": {
+      "placeholder": "Rechercher des conversations",
+      "clear": "Effacer",
+      "titles": "Titres",
+      "messages": "Dans les messages",
+      "none": "Aucun résultat pour « {{query}} »",
+      "noneHint": "Ni dans les titres ni dans les messages. Les conversations temporaires et celles en « Ne pas utiliser la mémoire » ne sont pas recherchées."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Bonjour",
@@ -1435,7 +1436,9 @@
   },
   "inbox": {
     "addWatch": "Surveiller une autre page ou un dossier",
-    "refusedTitle": "Pas fait pendant votre absence",
+    "refusedTitle": "Expiré, pas fait",
+    "expiredShown": "Personne n’a répondu en 30 minutes, donc elle a expiré",
+    "expiredUnopened": "Une carte précédente est restée sans réponse, donc celle-ci a expiré sans s’afficher",
     "alwaysAllow": "Toujours autoriser",
     "alwaysStores": "Cela autorisera toujours : {{what}}",
     "asksEachTime": "Demande à chaque fois",
@@ -1488,17 +1491,121 @@
   "scheduledPage": {
     "intro": "Les tâches qui s'exécutent selon un horaire, et les pages et dossiers qu'Arslan surveille pour vous. Un point signale une ligne à regarder.",
     "watches": "Pages et dossiers surveillés",
-    "awayTitle": "Pas fait pendant votre absence (cette tâche uniquement)",
-    "seenNote": "Ouvrir une tâche marque comme vu ce que ses exécutions n’ont pas pu faire. Ce qui n’a pas été fait dans sa propre conversation pendant votre absence disparaît quand vous ouvrez cette conversation ; une carte s’y efface seulement une fois que vous y avez répondu.",
+    "awayTitle": "Expiré ou impossible de demander, pas fait (cette tâche uniquement)",
+    "seenNote": "Ouvrir une tâche marque comme vu ce que ses exécutions n’ont pas pu faire. Ce qui a expiré sans être fait dans sa propre conversation disparaît quand vous ouvrez cette conversation ; une carte s’y efface seulement une fois que vous y avez répondu.",
     "attention": "À regarder",
     "changed": "Modifié",
     "failing": "Échouée ou mise en pause d'elle-même"
   },
+  "remembered": {
+    "title": "Réponses mémorisées",
+    "desc": "Tout ce que vous avez répondu « Dans cette conversation » ou « Toujours » sur une carte est ici. Retirez-le, et la même chose vous sera redemandée la prochaine fois.",
+    "never": "Payer, envoyer, soumettre et supprimer (hors du dossier de travail) sont demandés à chaque fois et jamais mémorisés : ils ne sont donc pas ici. Un « Cette fois seulement » ou « Pour cette tâche » prend fin avec sa tâche : il n’est pas ici non plus.",
+    "always": "Toujours",
+    "conversation": "Dans cette conversation",
+    "none": "Aucune",
+    "empty": "Aucune réponse mémorisée pour l’instant. Choisissez « Dans cette conversation » ou « Toujours » sur une carte : elle apparaîtra ici, à retirer quand vous voulez.",
+    "unavailable": "Impossible de les lister pour l’instant",
+    "allConversations": "Toutes les conversations",
+    "subOnly": "Seulement dans cette sous-session",
+    "given": "Donnée {{when}}",
+    "lastUsed_one": "Dernière utilisation {{when}} · {{count}} fois",
+    "lastUsed_other": "Dernière utilisation {{when}} · {{count}} fois",
+    "neverUsed": "Pas encore utilisée",
+    "revoke": "Retirer",
+    "revokeFailed": "Le retrait n’a pas abouti. Réessayez",
+    "open": "Ouvrir la conversation",
+    "revokeAll": "Tout retirer pour cette conversation",
+    "untitled": "Conversation sans titre",
+    "subSession": "Sous-session : {{title}}",
+    "pointer": "Commandes autorisées dans une conversation → Réponses mémorisées",
+    "rule": {
+      "app": "Peut voir et utiliser « {{name}} » sans redemander. Supprimer, envoyer et payer sont toujours demandés à chaque fois.",
+      "other": "Toujours : {{name}}"
+    },
+    "grant": {
+      "outside": "Les commandes de cette conversation (tâches en arrière-plan comprises) peuvent s’exécuter hors du bac à sable",
+      "unsandboxed": "Les commandes de cette conversation peuvent s’exécuter sans bac à sable et sans demander",
+      "command": "Dans cette conversation, cette commande s’exécute à nouveau sans demander : {{name}}",
+      "network": "Dans cette conversation, après la lecture de pages web, les commandes du bac à sable peuvent aussi utiliser le réseau",
+      "workspace_write": "Dans cette conversation, Arslan peut écrire dans le dossier « {{name}} » sans demander",
+      "schedule": "Dans cette conversation, Arslan peut créer des tâches planifiées sans demander",
+      "mcp_tool": "Dans cette conversation, Arslan peut utiliser « {{name}} » de {{server}}, avec n’importe quels arguments",
+      "app": "Dans cette conversation, Arslan peut voir et utiliser « {{name}} »",
+      "site": "Dans cette conversation, Arslan peut cliquer et saisir sur {{name}}",
+      "shortcut": "Dans cette conversation, Arslan peut lancer le raccourci « {{name}} »",
+      "other": "Autorisé dans cette conversation : {{name}}"
+    },
+    "note": {
+      "unsandboxed": "Ne compte que si le bac à sable est désactivé ou ne peut pas démarrer",
+      "command": "Ne compte qu’avec « Demander avant chaque commande »",
+      "network": "Les commandes hors du bac à sable demandent toujours à chaque fois",
+      "serverGone": "Ce serveur a été supprimé"
+    }
+  },
   "whileAway": {
-    "title": "Pas fait pendant votre absence (cette conversation)",
+    "title": "Expiré, pas fait (cette conversation)",
     "stopped": "Une tâche arrêtée ici"
   },
   "waiting": {
     "count": "En attente de toi : {{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "En cours",
+      "reporting": "Rend compte",
+      "waiting": "En attente de toi",
+      "done": "Terminée",
+      "stopped": "Arrêtée",
+      "failed": "Échouée",
+      "interrupted": "Interrompue",
+      "ended": "Finie sans aboutir"
+    },
+    "toggle": "Afficher ou masquer ses sous-sessions ({{count}})",
+    "under": "Sous « {{title}} »",
+    "header": "Ceci est une sous-session de « {{name}} » ; elle lui rend compte une fois terminée.",
+    "back": "Revenir à « {{name}} »",
+    "panel": "Sous-sessions",
+    "open": "Ouvrir",
+    "spend": "Dépensé {{spent}}, limite {{limit}} ({{each}} par tâche × {{times}})",
+    "spendNoLimit": "Dépensé {{spent}}, pas de limite en dollars",
+    "delete": {
+      "title": "Supprimer « {{name}} » ?",
+      "also_one": "Supprimer aussi sa sous-session",
+      "also_other": "Supprimer aussi ses {{count}} sous-sessions",
+      "keepNote": "Ses sous-sessions restent des conversations ordinaires, avec leurs réglages inchangés.",
+      "stopFirst": "Une sous-session en dessous travaille ou rend compte encore. Arrête-la ou attends son compte rendu, puis supprime.",
+      "choiceRequired": "Elle a maintenant {{count}} sous-sessions. Choisis à nouveau ce qu'elles deviennent.",
+      "failed": "La suppression a échoué. Réessaie."
+    }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "Autoriser les vérifications de certificats du système dans le bac à sable",
+    "certificatesDesc": "Certains outils (certains gestionnaires de paquets, les services HTTPS internes d'une entreprise) utilisent les vérifications de certificats de macOS pour se connecter. Le bac à sable ne les autorise pas par défaut, et ces outils signalent alors une erreur de certificat. Activées, elles ne sont permises que pendant qu'une commande est en ligne, et le trousseau reste hors de portée. Désactivé par défaut.",
+    "devicesTitle": "Appareils locaux de confiance",
+    "devicesDesc": "Les commandes du bac à sable n'atteignent pas ton réseau local par défaut (routeur, NAS, imprimante, autres ordinateurs). Un appareil ajouté ici est joignable, sur tous ses ports. Un appareil ajouté par son nom garde l'adresse qu'il a maintenant, vérifiée de nouveau à chaque connexion. Les adresses de ce Mac ne peuvent pas être ajoutées.",
+    "devicesEmpty": "Aucun appareil de confiance pour l'instant.",
+    "placeholder": "Un nom ou une IP du réseau local, par exemple nas.local ou 192.168.1.20",
+    "inputLabel": "Nom ou IP du réseau local",
+    "add": "Faire confiance",
+    "remove": "Ne plus faire confiance",
+    "notFound": "« {{value}} » est introuvable. Utilise un nom de ton réseau local (par exemple nas.local) ou une IP.",
+    "notLan": "{{value}} n'est pas une adresse du réseau local. Seuls les appareils de ton réseau local peuvent être ajoutés ici.",
+    "ownAddress": "C'est une adresse de ce Mac. Elle ne peut pas être ajoutée.",
+    "listed": "Il est déjà dans la liste.",
+    "failed": "Ça n'a pas marché. Réessaie.",
+    "trustedToast": "{{name}} est maintenant de confiance",
+    "untrustedToast": "Plus de confiance",
+    "certificatesCardTitle": "La vérification du certificat a échoué",
+    "certificatesCardBody": "Cette commande utilise les vérifications de certificats de macOS pour se connecter, ce que le bac à sable n'autorise pas par défaut. Active « Autoriser les vérifications de certificats du système dans le bac à sable », puis réessaie.",
+    "openSettings": "L'activer dans les Paramètres",
+    "notNow": "Pas maintenant",
+    "notNowToast": "D'accord, pas cette fois",
+    "lanTitle": "La commande veut joindre un appareil de ton réseau local : {{device}}",
+    "lanBody": "Les commandes du bac à sable n'atteignent pas ton réseau local par défaut. Si tu fais confiance à cet appareil, tous ses ports seront joignables. Tu peux le retirer dans les Paramètres à tout moment.",
+    "lanTrusted": "Cet appareil est maintenant de confiance. Réessaie et il se connectera.",
+    "trustDevice": "Faire confiance à cet appareil",
+    "namedDevice": "{{name}} ({{addresses}})",
+    "cardGone": "Cette carte n'est plus valable. Tu peux ajouter l'appareil dans les Paramètres."
   }
 }

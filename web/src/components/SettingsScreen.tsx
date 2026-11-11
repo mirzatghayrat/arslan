@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 import type { CryptoHealth } from '../lib/cryptoHealth';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +18,8 @@ import ModelRolesSection from './settings/ModelRolesSection';
 import AppearanceSection from './settings/AppearanceSection';
 import MemoryDataSection from './settings/MemoryDataSection';
 import AdvancedSection from './settings/AdvancedSection';
-import { SETTINGS_SECTIONS, resolveSection, type SettingsSectionId } from './settings/sectionRegistry';
+import { SECTION_ANCHORS, SETTINGS_SECTIONS, resolveSection, type SettingsSectionId } from './settings/sectionRegistry';
+import RememberedAnswers from './settings/RememberedAnswers';
 import { SettingsGroup, SectionIntro } from './settings/SettingsGroup';
 import AboutSection from './settings/AboutSection';
 import type { AdvancedBlock } from './settings/AdvancedSection';
@@ -48,12 +49,42 @@ interface SettingsScreenProps {
    *  placeholder nav entries it replaced did the same, but as dead tabs. */
   onOpenActivity?: () => void;
   onBack?: () => void;
+  /** S6: the sidebar's titles by conversation id, and opening one ("Remembered answers"). */
+  conversationTitles?: Record<string, string>;
+  onOpenConversation?: (conversationId: string) => void;
 }
 
-export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenActivity, onBack }: SettingsScreenProps) {
+/** S6: how long the group a deep link opened at stays highlighted. */
+const HIGHLIGHT_MS = 1600;
+
+export default function SettingsScreen({ settings, setSettings, llmProviders, searchProviders, backendStatus, providerConfigs = [], onProviderConfigsChange, initialSection, onOpenActivity, onBack, conversationTitles, onOpenConversation }: SettingsScreenProps) {
   const { t, i18n } = useTranslation();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(resolveSection(initialSection) ?? 'general');
+  // S6: a deep link to a part of a section (SECTION_ANCHORS) scrolls it to the top and highlights it for a moment;
+  // so does the Terminal group's pointer to "Remembered answers". Each ask is a new `focus`.
+  const [focus, setFocus] = useState<{ anchor: string; n: number } | null>(
+    initialSection && SECTION_ANCHORS[initialSection] ? { anchor: initialSection, n: 1 } : null);
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+  // The group is the page's last: until its lists have loaded the page may be too short to bring it to the top, so
+  // a deep link that opens the page scrolls once more when they have (`onLoaded`).
+  const unsettled = useRef<string | null>(null);
+  useEffect(() => {
+    const anchor = focus && SECTION_ANCHORS[focus.anchor];
+    if (!anchor || activeSection !== anchor.section) return;
+    document.getElementById(anchor.elementId)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+    unsettled.current = anchor.elementId;
+    setHighlighted(anchor.elementId);
+    const timer = setTimeout(() => { setHighlighted(null); unsettled.current = null; }, HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [focus, activeSection]);
+  const rememberedLoaded = () => {
+    if (unsettled.current) document.getElementById(unsettled.current)?.scrollIntoView?.({ block: 'start' });
+  };
+  const openAnchor = (anchor: string) => {
+    setActiveSection(SECTION_ANCHORS[anchor].section);
+    setFocus((f) => ({ anchor, n: (f?.n ?? 0) + 1 }));
+  };
   // A failed save rolls localSettings back. Keep the visible language aligned
   // with that rollback rather than caching an unsaved language until reload.
   useEffect(() => {
@@ -130,6 +161,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
         terminalSandboxEnabled={localSettings.terminalSandboxEnabled ?? true}
         onTerminalSandboxChange={(v) => saveField({ terminalSandboxEnabled: v })}
+        sandboxSystemCertificates={localSettings.sandboxSystemCertificates ?? false}
+        onSandboxSystemCertificatesChange={(v) => saveField({ sandboxSystemCertificates: v })}
         backgroundJobBudget={localSettings.backgroundJobBudget ?? 'standard'}
         onBackgroundJobBudgetChange={(v) => saveField({ backgroundJobBudget: v })}
         taskUsdCap={localSettings.taskUsdCap ?? 2}
@@ -250,12 +283,26 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
       <div className="space-y-6" data-testid="settings-abilities">
         {intro('abilities')}
         <SettingsGroup title={t('settings.grpFiles')}>{advanced(['defaultRead', 'folderRules', 'workspace'])}</SettingsGroup>
-        <SettingsGroup title={t('settings.grpTerminal')}>{advanced(['terminal'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpTerminal')} note={
+          <button type="button" data-testid="settings-remembered-pointer" onClick={() => openAnchor('remembered')}
+            className="text-left hover:text-foreground hover:underline">{t('remembered.pointer')}</button>}>
+          {advanced(['terminal'])}
+        </SettingsGroup>
         <SettingsGroup title={t('settings.grpApps')}>
           <HandsSection />
           <div className="mt-5">{advanced(['browser'])}</div>
         </SettingsGroup>
         <SettingsGroup title={t('settings.grpOtherComputers')}>{advanced(['lan', 'ssh'])}</SettingsGroup>
+        {/* S6: the last group (the mock the user approved on 2026-11-11), with its deep link (SECTION_ANCHORS). */}
+        <div id={SECTION_ANCHORS.remembered.elementId} data-testid="settings-remembered"
+          data-highlighted={highlighted === SECTION_ANCHORS.remembered.elementId || undefined}
+          className={`scroll-mt-4 rounded-xl transition-shadow duration-500 ${
+            highlighted === SECTION_ANCHORS.remembered.elementId ? 'ring-2 ring-primary/50 ring-offset-2 ring-offset-background' : ''}`}>
+          <SettingsGroup title={t('remembered.title')}>
+            <RememberedAnswers titles={conversationTitles} onOpenConversation={onOpenConversation}
+              onLoaded={rememberedLoaded} />
+          </SettingsGroup>
+        </div>
       </div>
     ),
     background: (

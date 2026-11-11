@@ -22,6 +22,7 @@ import textwrap
 import pytest
 
 from server.services import capability_sandbox, command_sandbox, sandbox_proxy, terminal_exec
+from tests.server.sbx.profile_files import read_profile
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
@@ -80,7 +81,11 @@ def test_the_trust_service_comes_only_with_the_setting_and_the_proxy(tmp_path, p
 # ── its environment ──────────────────────────────────────────────────────────
 
 def _wrap(tmp_path, env, **sandbox):
-    return capability_sandbox.wrap("/bin/echo", [], env, {"root": str(tmp_path / "srv"), "folders": [], **sandbox})
+    """(command, [profile text, *the rest of args], env, cwd): #813 review 11's `-f` file read back, so the checks
+    below read the profile where `args[1]` was its text."""
+    command, args, env, cwd = capability_sandbox.wrap("/bin/echo", [], env,
+                                                      {"root": str(tmp_path / "srv"), "folders": [], **sandbox})
+    return command, [args[0], read_profile(args), *args[2:]], env, cwd
 
 
 def test_a_declared_server_is_told_only_arslans_proxy(tmp_path, ports):

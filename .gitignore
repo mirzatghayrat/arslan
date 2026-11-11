@@ -45,9 +45,12 @@ credentials*.json
 *.sqlite
 *.sqlite3
 
-# internal research records — design specs, plans, evidence, architecture notes.
-# Not published with the open-source release; ignored so a local copy never lands
-# in a commit. No trailing slash, per the .venv lesson above: a trailing slash
+# local tool folders (.superpowers, .omm, docs/superpowers): scratch output of
+# planning tools, ignored so a local copy never lands in a commit. This is not
+# where specs and plans live: the current round's plan is in docs/plans and is
+# committed, as are the specs that code or tests cite (docs/specs). Older
+# process docs are on the branch archive/process-docs-2026-10.
+# No trailing slash, per the .venv lesson above: a trailing slash
 # matches DIRECTORIES ONLY, so a symlink of the same name slips past.
 .superpowers
 .omm

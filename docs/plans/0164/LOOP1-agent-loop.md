@@ -51,6 +51,7 @@ Each PR: the CI run id on all five checks, the `--color-moved` result (moved lin
 | f | A stopped reply closes its open step in the window: on `run_cancelled` a step still `running` becomes `error` | high | no spinner on a stopped reply |
 | d1 | After #686. The server sends the card's summary and `web/src/lib/commandSummary.ts` goes; the vectors stay as a server test. No Bridge frame changes; if one must, ⓪Plan hears first, because that is the user's merge | max | about 500 lines of TypeScript gone |
 | d2 | After S2a-3 merges, agreed with ③Hands. Readers stop re-reading a command `shell_grammar` understood. A command it doesn't understand keeps its named rules on the raw text, and `card_purpose` keeps its own step reading: the grammar gives no steps for those and drops redirect targets | max | one parse of an understood command |
+| d2b | After d2 (#826). An understood command's card steps and title come from the grammar's one reading; titles move, verdicts don't. The user approved the title change on 2026-11-11. Card: [LOOP1-d2b-titles.md](LOOP1-d2b-titles.md) | max, ③Hands first | no second parser for an understood command |
 | z | Last, after the other lanes' open PRs have landed, split by test group so it isn't rebased across everyone (2 PRs). Tests call the new modules; adapters and pins deleted. Checked by AST: the test-name set and every assertion unchanged | high | no LOOP1 `DELETE-BY:` left |
 
 **The gate for SUB, S5a and SIDE:** b, a1, and any family they extend, moved next after a1. a3–a6 don't block them.

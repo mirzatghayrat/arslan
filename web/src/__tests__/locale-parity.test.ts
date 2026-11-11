@@ -44,8 +44,9 @@ describe("locale parity", () => {
   describe("the card words", () => {
     type CardWords = {
       runcmd: { remember: string; sandboxOutsideLabel: string; sandboxOutsideNote: string };
-      settings: { navAbilities: string; terminalRulesEmpty: string };
-      kit: { scope: { always: string } };
+      settings: { navAbilities: string };
+      remembered: { empty: string; conversation: string };
+      kit: { scope: { always: string; conversation: string } };
       schedgrant: { unattended: string };
     };
     /** The app's own word for the sandbox and for Arslan's working folder (runcmd.sandboxOutside*). */
@@ -62,9 +63,12 @@ describe("locale parity", () => {
         });
       }
 
-      it(`${lang}: terminalRulesEmpty names the card's own "Always" word (kit.scope.always)`, () => {
+      // S6: the old terminal-rules list's empty text was checked here; "Remembered answers" replaced that list.
+      it(`${lang}: remembered.empty names the card's own "Always" and "In this conversation" words (kit.scope)`, () => {
         const word = d.kit.scope.always.split(/[:：]/)[0].trim();
-        expect(d.settings.terminalRulesEmpty).toContain(word);
+        expect(d.remembered.empty).toContain(word);
+        expect(d.remembered.empty).toContain(d.kit.scope.conversation);
+        expect(d.remembered.conversation).toBe(d.kit.scope.conversation);
       });
 
       it(`${lang}: schedgrant.unattended also says what still runs, in the app's own words: writes in the working folder, and no commands`, () => {

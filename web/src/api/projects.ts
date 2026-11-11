@@ -142,7 +142,7 @@ export const projectsApi = {
     request<Plan>(`/projects/${id(projectId)}/stage`, json("PUT", body)),
   events: (projectId: string, limit = 20) => request<ProjectEvent[]>(`/projects/${id(projectId)}/events?limit=${limit}`),
   conversations: (projectId: string) =>
-    request<{ conversation_id: string; messages: number; last_at: string | null; opening: string | null }[]>(`/projects/${id(projectId)}/conversations`),
+    request<{ conversation_id: string; messages: number; last_at: string | null; opening: string | null; parent_id?: string | null }[]>(`/projects/${id(projectId)}/conversations`),
   files: (projectId: string) =>
     request<{ folder: string | null; exists: boolean; entries: { name: string; dir: boolean }[]; truncated: boolean }>(`/projects/${id(projectId)}/files`),
 };

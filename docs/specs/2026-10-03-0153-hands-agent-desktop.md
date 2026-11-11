@@ -1,6 +1,6 @@
 # 0.1.53 — Hands: Arslan uses Mac apps through agent-desktop (2026-10-03)
 
-Task book: `~/Documents/arslan-strategy-2026-09-14/Arslan-越用越好+手脚+判断层-任务书-2026-10-03.md`, task B
+Task book: the 2026-10-03 task book (a private planning document, not in this repository), task B
 (B0–B5). User decisions 2026-10-03: D1–D5 as recommended; **D3: the user clicks "Allow" on the macOS
 Accessibility prompt for "Arslan Hands" the first time it is used.** Ships as 0.1.53, in parallel with 0.1.52
 (P4a memory + judgment layer). This work does not touch memory, personal_context, learning or the judgment

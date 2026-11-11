@@ -196,6 +196,12 @@ export interface ServerConversation {
   pinned?: boolean;
   /** INB5b-3: what a "waiting" row waits on, "card" or "reminder" (the window's list only). */
   waiting_on?: string | null;
+  /** SUB5d: the conversation that started this sub-session (the window's list only). */
+  parent_id?: string | null;
+  /** SUB5d: how its latest job ended (done, stopped, interrupted, partial…) when nothing runs or waits there. */
+  outcome?: string | null;
+  /** SUB5d: a sub-session whose job finished but whose report isn't delivered yet (its state reads working). */
+  reporting?: boolean;
 }
 
 /**

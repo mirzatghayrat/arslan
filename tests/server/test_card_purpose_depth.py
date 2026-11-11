@@ -125,6 +125,41 @@ def test_finds_inside_finds_are_read_in_bounded_time(depth):
     assert time.process_time() - start < 5
 
 
+#: Downloads piped one into the next, `count` of them: as a line, and as one word that holds the pipe in a `$( … )`.
+#: Each ends in backquotes, which shell_grammar does not read, so this module's own reader reads it (LOOP1 d2b: an
+#: understood line's steps are the grammar's, which never runs its input as code).
+PIPES = {"line": lambda count: "curl a | " * count + "grep x; echo `x`",
+         "one word": lambda count: "ls $(" + "curl a|" * count + "grep x) `x`"}
+
+
+@pytest.mark.parametrize("shape", PIPES)
+def test_a_pipe_of_downloads_is_read_in_linear_time(monkeypatch, shape):
+    """Each step down a download's pipe is asked once whether it runs its input as code, not once per download before
+    it (LOOP1 d2: the scan was cubic, 0.9 s for 600 downloads)."""
+    asked = []
+    real = card_purpose._reads_code
+    monkeypatch.setattr(card_purpose, "_reads_code", lambda w: asked.append(w["program"]) or real(w))
+    for count in (100, 400):
+        asked.clear()
+        assert card_purpose.summarize(PIPES[shape](count))["purpose"]["key"] == "overNetwork"
+        assert len(asked) == count
+
+
+@pytest.mark.parametrize("line, steps", [
+    ("curl -s https://a.example | tee log | sh", 2), ("curl -s https://a.example | tee log | grep x", 3),
+    ("curl a | curl b | bash", 2), ("ls $(curl a | tee b | sh)", 3),
+])
+def test_a_download_a_program_runs_down_its_pipe_is_one_step_with_it(line, steps):
+    """The program that runs the download as code is found past the steps between them, and joins the download's step."""
+    reading = card_purpose.summarize(line)
+    assert (reading["purpose"]["key"], reading["more"] + 1, reading["unsure"]) == ("overNetwork", steps, True)
+
+
+def test_a_program_that_runs_its_input_after_no_download_is_its_own_step():
+    assert card_purpose.summarize("echo x | sh") == {"purpose": {"key": "run", "params": {"program": "sh"}},
+                                                     "touches": [], "more": 0, "unsure": False}
+
+
 # ── Every card path gets its title ──
 
 DEEP = {"eval": "eval " * FAR + "rm x", "find -exec": "find . -exec " * (FAR // 2) + "rm x"}

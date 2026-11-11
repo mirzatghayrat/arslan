@@ -1,5 +1,5 @@
 import BrandMark from './BrandMark';
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { Section } from "../lib/sections";
 import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Activity, PanelLeft, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,9 @@ import { useRecency } from "../stores/recencyStore";
 import { useSidebar } from "../stores/sidebarStore";
 export { COLLAPSED_KEY } from "../stores/sidebarStore";
 import { Smartphone } from "lucide-react";
+import SubStatusIcon from "./SubStatusIcon";
+import { ancestors, buildForest, descendants, startsOpen, subStatus } from "../lib/subTree";
+import { isSearchKey, SearchField, SearchResults } from "./SidebarSearch";
 
 interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean; projectId?: string }
 /** A project the sidebar can group under (0.1.58 §4). */
@@ -76,8 +79,17 @@ export default function Sidebar(props: SidebarProps) {
   const touched = useRecency((s) => s.touched);
   const pins = useSidebar((s) => s.pins);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [searchAsked, setSearchAsked] = useState(0);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (isSearchKey(event)) {          // the search field, shown first if the sidebar is hidden
+        event.preventDefault();
+        if (useSidebar.getState().collapsed) useSidebar.getState().setCollapsed(false);
+        setSearchAsked(n => n + 1);
+        return;
+      }
       if (!isToggleSidebarKey(event)) return;
       event.preventDefault();
       const state = useSidebar.getState();
@@ -86,6 +98,11 @@ export default function Sidebar(props: SidebarProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  useEffect(() => {
+    if (!searchAsked || collapsed) return;
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [searchAsked, collapsed]);
   // SB1: last activity, the later of this window's (a message sent, a reply, a new conversation) and
   // the server's. null = no time yet (a new conversation before its first message): newest.
   const at = (thread: ArslanThread): number | null => {
@@ -94,7 +111,11 @@ export default function Sidebar(props: SidebarProps) {
     if (local == null && Number.isNaN(server)) return null;
     return Math.max(local ?? -Infinity, Number.isNaN(server) ? -Infinity : server);
   };
-  const live = newestFirst(threads.filter(thread => !thread.archived), at);
+  // SUB5d: a sub-session sits under the conversation that started it, never in a list of its own; it moves with it.
+  const forest = buildForest(threads.map(thread => thread.id), meta);
+  const byId = new Map(threads.map(thread => [thread.id, thread]));
+  const activeTop = ancestors(activeThreadId, forest).at(-1) ?? activeThreadId;
+  const live = newestFirst(threads.filter(thread => !thread.archived && !(thread.id in forest.parentOf)), at);
   const projectOf = (thread: ArslanThread) => meta[thread.id]?.projectId ?? thread.projectId ?? null;
   // 0.1.58 §4: projects ranked by their latest conversation (`live` is newest first, SB1),
   // then the ones without any by when they changed; the top few form the group.
@@ -116,12 +137,17 @@ export default function Sidebar(props: SidebarProps) {
   const sections = groupByDay(activeThreads, at, new Date(), i18n?.resolvedLanguage || i18n?.language);
   // The month holding the open conversation opens with it, once per conversation (⓪Plan's review of
   // PR 543): the open row is never hidden in a fold; the user can still fold it again.
-  const activeMonth = sections.months.find(month => month.rows.some(thread => thread.id === activeThreadId))?.id ?? null;
-  if (activeMonth && openedFor !== activeThreadId) {
+  // SUB5d: and a sub-session's tree opens down to it, so opening one shows where it sits.
+  const activeMonth = sections.months.find(month => month.rows.some(thread => thread.id === activeTop))?.id ?? null;
+  const [trees, setTrees] = useState<Record<string, boolean>>({});
+  const treeOpen = (id: string) => trees[id] ?? startsOpen(id, forest, meta);
+  if (openedFor !== activeThreadId && (activeMonth || activeTop !== activeThreadId)) {
     setOpenedFor(activeThreadId);
-    if (!openMonths.includes(activeMonth)) setOpenMonths([...openMonths, activeMonth]);
+    if (activeMonth && !openMonths.includes(activeMonth)) setOpenMonths([...openMonths, activeMonth]);
+    const closed = ancestors(activeThreadId, forest).filter(id => !treeOpen(id));
+    if (closed.length) setTrees({ ...trees, ...Object.fromEntries(closed.map(id => [id, true])) });
   }
-  const activeProject = projectOf(threads.find(thread => thread.id === activeThreadId) ?? { id: "", title: "" });
+  const activeProject = projectOf(byId.get(activeTop) ?? { id: "", title: "" });
   const [openProjects, setOpenProjects] = useState<string[]>(() => {
     const saved = loadOpen();
     return activeProject && !saved.includes(activeProject) ? [...saved, activeProject] : saved;
@@ -133,7 +159,7 @@ export default function Sidebar(props: SidebarProps) {
       return next;
     });
   }
-  const archivedThreads = threads.filter(thread => thread.archived);
+  const archivedThreads = threads.filter(thread => thread.archived && !(thread.id in forest.parentOf));
   // INB5b-2's review (F5): a card in an archived conversation has no other way in (a notice and the Island refuse an archived one),
   // so the fold says something in it waits on you.
   const archivedWaiting = archivedThreads.filter(thread => meta[thread.id]?.state === "waiting").length;
@@ -145,15 +171,28 @@ export default function Sidebar(props: SidebarProps) {
     ? "bg-gradient-to-r from-primary/15 to-transparent text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]"}`;
   const marker = <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />;
   function openThread(id: string) { onSelectThread(id); onChangeSection("arslan"); }
-  function renderThread(thread: ArslanThread, archived: boolean) {
+  // Search: a result opens like a row does, and a sub-session's tree opens down to it, as for the open conversation.
+  const searched = query.trim().replace(/\s+/g, " ");
+  function openResult(id: string) {
+    const above = ancestors(id, forest);
+    if (above.length) setTrees(prev => ({ ...prev, ...Object.fromEntries(above.map(up => [up, true])) }));
+    setQuery("");
+    openThread(id);
+  }
+  function renderThread(thread: ArslanThread, archived: boolean, depth = 0): React.ReactNode {
     const active = activeSection === "arslan" && activeThreadId === thread.id;
+    // SUB5d: a sub-session (depth > 0) shows its status, can't be dragged out on its own, and has no pin, move or archive;
+    // a commander shows how many it started, and dragging it moves its whole tree (they read its project).
+    const below = (forest.children[thread.id] ?? []).map(id => byId.get(id)).filter((child): child is ArslanThread => Boolean(child));
+    const open = below.length > 0 && treeOpen(thread.id);
     // SB1-2: a conversation row drags onto a project (the same move as "Move to project…").
     const editing = renaming === thread.id;
-    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary && !editing;
+    const draggable = Boolean(onMoveToProject) && !archived && !thread.temporary && !editing && depth === 0;
     // A temporary conversation is never stored, so it has nothing to rename (and no row menu).
     const renameable = Boolean(onRenameThread) && !thread.temporary;
     const title = threadDisplayTitle(thread, t);
-    return <div key={thread.id} id={`active-thread-btn-${thread.id}`} role="button" tabIndex={0}
+    const row = <div key={thread.id} id={`active-thread-btn-${thread.id}`} role="button" tabIndex={0}
+      data-depth={depth || undefined} style={depth ? { paddingLeft: 12 + depth * 14 } : undefined}
       draggable={draggable || undefined}
       onDragStart={draggable ? event => { event.dataTransfer.setData(DRAG_TYPE, thread.id); event.dataTransfer.effectAllowed = "move"; } : undefined}
       onClick={() => { if (!editing) openThread(thread.id); }} onKeyDown={event => {
@@ -163,22 +202,34 @@ export default function Sidebar(props: SidebarProps) {
       }}
       onContextMenu={renameable ? event => { event.preventDefault(); setMenuFor(thread.id); } : undefined}
       className={rowClass(active)}>
-      {active && marker}<ConversationGlyph meta={meta[thread.id]} />
+      {active && marker}{depth === 0 && <ConversationGlyph meta={meta[thread.id]} />}
       {editing && onRenameThread
         ? <RenameInput value={title} testId={`thread-rename-input-${thread.id}`}
             onRename={next => onRenameThread(thread.id, next)}
             onClose={byKey => { setRenaming(null); if (byKey) document.getElementById(`active-thread-btn-${thread.id}`)?.focus(); }} />
         : <span className="min-w-0 flex-1 truncate" title={title}
             onDoubleClick={renameable ? () => setRenaming(thread.id) : undefined}>{title}</span>}
+      {depth > 0 && <SubStatusIcon status={subStatus(meta[thread.id])} />}
+      {below.length > 0 && !editing && <button type="button" aria-expanded={open} data-testid={`sub-toggle-${thread.id}`}
+        aria-label={t("subTree.toggle", { count: descendants(thread.id, forest).length })}
+        onClick={event => { event.stopPropagation(); setTrees(prev => ({ ...prev, [thread.id]: !open })); }}
+        className="flex shrink-0 items-center gap-0.5 rounded px-0.5 text-[10px] tabular-nums text-subtle-foreground hover:text-foreground">
+        <ChevronRight size={11} aria-hidden className={`transition-transform ${open ? "rotate-90" : ""}`} />{below.length}</button>}
       {meta[thread.id]?.origin === "phone" &&
         <Smartphone size={11} className="shrink-0 text-subtle-foreground" role="img" aria-label={t("sidebar.fromPhone")} />}
       {!thread.temporary && !editing && <ThreadRowMenu threadId={thread.id} archived={archived}
-        onArchive={onArchiveThread} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
-        projects={projects} projectId={projectOf(thread)} onMove={onMoveToProject}
-        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) ? onPinThread : undefined}
+        onArchive={depth === 0 ? onArchiveThread : undefined} onUnarchive={onUnarchiveThread} onDelete={onDeleteThread}
+        confirmDelete={below.length === 0}
+        projects={projects} projectId={projectOf(thread)} onMove={depth === 0 ? onMoveToProject : undefined}
+        pinned={isPinned(thread)} onPin={onPinThread && !archived && !projectOf(thread) && depth === 0 ? onPinThread : undefined}
         onRename={renameable ? id => setRenaming(id) : undefined}
         open={menuFor === thread.id} onOpenChange={open => setMenuFor(open ? thread.id : null)} />}
     </div>;
+    if (!below.length) return row;
+    return <React.Fragment key={thread.id}>{row}
+      {open && <div role="group" data-testid={`sub-tree-${thread.id}`}>
+        {newestFirst(below, at).map(child => renderThread(child, archived, depth + 1))}</div>}
+    </React.Fragment>;
   }
   function toggleMonth(id: string) {
     setOpenMonths(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -270,7 +321,10 @@ export default function Sidebar(props: SidebarProps) {
         {/* 0.1.47: no "Conversations" nav entry and no second "+" here. The rows below ARE the way
             back to a conversation (the open one is highlighted), and "New conversation" at the top
             is the one way to start one. */}
+        <SearchField ref={searchRef} value={query} onChange={setQuery} />
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {searched ? <SearchResults query={searched} parentOf={forest.parentOf} onOpen={openResult}
+            threads={threads.map(thread => ({ id: thread.id, title: threadDisplayTitle(thread, t) }))} /> : <>
           {pinnedThreads.length > 0 && <div data-testid="sidebar-pinned" className="mb-2 space-y-0.5">
             {heading("pinned")}
             {pinnedThreads.map(thread => renderThread(thread, false))}
@@ -307,7 +361,7 @@ export default function Sidebar(props: SidebarProps) {
               {archivedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {archivedOpen && archivedThreads.map(thread => renderThread(thread, true))}
-          </div>}
+          </div>}</>}
         </div>
       </section>
       {/* 0.1.42: only real background work shows here; experts live in the capability library. */}

@@ -649,13 +649,6 @@
     "voiceModeConversation": "Conversación",
     "labelVoiceEndpointSilence": "Fin de frase (ms)",
     "voiceEndpointSilenceDesc": "Cuánto debes pausar antes de que se envíe lo dicho. 900 ms es una respiración normal; menos te corta, más parece lento.",
-    "terminalRulesTitle": "No volver a preguntar por",
-    "terminalRulesEmpty": "Nada todavía. Elige «Siempre» en una tarjeta de comando para añadir ese tipo aquí.",
-    "terminalRulesForget": "Volver a preguntar",
-    "sandboxGrantsTitle": "Conversaciones cuyos comandos pueden ejecutarse fuera del entorno aislado, también en tareas en segundo plano",
-    "sandboxGrantsEmpty": "Ninguna. Elegir «En esta conversación» en una tarjeta para ejecutar fuera del entorno aislado añade esa conversación aquí.",
-    "sandboxGrantsTakeBack": "Retirar",
-    "sandboxGrantsUntitled": "Conversación sin título",
     "navGeneral": "General",
     "navAbilities": "Lo que Arslan puede hacer",
     "navBackground": "En segundo plano",
@@ -770,7 +763,7 @@
     "glyph": {
       "waiting": "Espera tu aprobación",
       "waiting_reminder": "Un trabajo detenido te dejó un recordatorio",
-      "waiting_away": "No pudo preguntarte mientras no estabas",
+      "waiting_away": "Una tarjeta caducó",
       "working": "En curso",
       "progress": "En curso: {{done}} de {{total}}",
       "done": "Hecho",
@@ -788,7 +781,15 @@
     "moveBack": "Atrás",
     "movedTo": "Movida a «{{name}}»",
     "movedOut": "Quitada del proyecto",
-    "moveFailed": "No se pudo mover; quizá esté trabajando ahora."
+    "moveFailed": "No se pudo mover; quizá esté trabajando ahora.",
+    "search": {
+      "placeholder": "Buscar conversaciones",
+      "clear": "Borrar",
+      "titles": "Títulos",
+      "messages": "En mensajes",
+      "none": "No se encontró «{{query}}»",
+      "noneHint": "Ni en títulos ni en mensajes. Las conversaciones temporales y las de «No usar memoria» no se buscan."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Buenos días",
@@ -1435,7 +1436,9 @@
   },
   "inbox": {
     "addWatch": "Vigilar otra página o carpeta",
-    "refusedTitle": "Lo que no se hizo mientras no estabas",
+    "refusedTitle": "Caducado, sin hacer",
+    "expiredShown": "Nadie respondió en 30 minutos, así que caducó",
+    "expiredUnopened": "Una tarjeta anterior quedó sin respuesta, así que esta caducó sin mostrarse",
     "alwaysAllow": "Permitir siempre",
     "alwaysStores": "Esto permitirá siempre: {{what}}",
     "asksEachTime": "Pregunta cada vez",
@@ -1488,17 +1491,121 @@
   "scheduledPage": {
     "intro": "Tareas que se ejecutan según un horario, y las páginas y carpetas que Arslan vigila por ti. Un punto marca una fila que necesita tu atención.",
     "watches": "Páginas y carpetas vigiladas",
-    "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
-    "seenNote": "Abrir una tarea marca como visto lo que sus ejecuciones no pudieron hacer. Lo que no se hizo en su propia conversación mientras no estabas se borra al abrir esa conversación; una tarjeta allí, solo cuando la respondes.",
+    "awayTitle": "Caducado o sin poder preguntar, sin hacer (solo esta tarea)",
+    "seenNote": "Abrir una tarea marca como visto lo que sus ejecuciones no pudieron hacer. Lo que caducó sin hacerse en su propia conversación se borra al abrir esa conversación; una tarjeta allí, solo cuando la respondes.",
     "attention": "Necesita tu atención",
     "changed": "Ha cambiado",
     "failing": "Falló o se pausó sola"
   },
+  "remembered": {
+    "title": "Respuestas recordadas",
+    "desc": "Aquí está todo lo que respondiste con «En esta conversación» o «Siempre» en una tarjeta. Si lo retiras, la próxima vez se te vuelve a preguntar lo mismo.",
+    "never": "Pagar, enviar, entregar y borrar (fuera de la carpeta de trabajo) se pregunta cada vez y nunca se recuerda, así que no está aquí. Un «Solo esta vez» o «Durante esta tarea» termina con su tarea, así que tampoco está aquí.",
+    "always": "Siempre",
+    "conversation": "En esta conversación",
+    "none": "Ninguna",
+    "empty": "Aún no hay respuestas recordadas. Elige «En esta conversación» o «Siempre» en una tarjeta y aparecerá aquí, para retirarla cuando quieras.",
+    "unavailable": "No se puede mostrar ahora",
+    "allConversations": "Todas las conversaciones",
+    "subOnly": "Solo en esta subsesión",
+    "given": "Dada {{when}}",
+    "lastUsed_one": "Último uso {{when}} · {{count}} vez",
+    "lastUsed_other": "Último uso {{when}} · {{count}} veces",
+    "neverUsed": "Aún no se ha usado",
+    "revoke": "Retirar",
+    "revokeFailed": "No se pudo retirar. Inténtalo de nuevo",
+    "open": "Abrir conversación",
+    "revokeAll": "Retirar todo lo de esta conversación",
+    "untitled": "Conversación sin título",
+    "subSession": "Subsesión: {{title}}",
+    "pointer": "Comandos permitidos en una conversación → Respuestas recordadas",
+    "rule": {
+      "app": "Puede ver y usar «{{name}}» sin volver a preguntar. Borrar, enviar y pagar se siguen preguntando cada vez.",
+      "other": "Siempre: {{name}}"
+    },
+    "grant": {
+      "outside": "Los comandos de esta conversación (también en tareas en segundo plano) pueden ejecutarse fuera del entorno aislado",
+      "unsandboxed": "Los comandos de esta conversación pueden ejecutarse sin entorno aislado y sin preguntar",
+      "command": "En esta conversación, este comando vuelve a ejecutarse sin preguntar: {{name}}",
+      "network": "En esta conversación, tras leer páginas web, los comandos del entorno aislado también pueden usar la red",
+      "workspace_write": "En esta conversación, Arslan puede escribir en la carpeta «{{name}}» sin preguntar",
+      "schedule": "En esta conversación, Arslan puede crear tareas programadas sin preguntar",
+      "mcp_tool": "En esta conversación, Arslan puede usar «{{name}}» de {{server}}, con cualquier argumento",
+      "app": "En esta conversación, Arslan puede ver y usar «{{name}}»",
+      "site": "En esta conversación, Arslan puede hacer clic y escribir en {{name}}",
+      "shortcut": "En esta conversación, Arslan puede ejecutar el atajo «{{name}}»",
+      "other": "Permitido en esta conversación: {{name}}"
+    },
+    "note": {
+      "unsandboxed": "Solo cuenta mientras el entorno aislado está apagado o no puede iniciarse",
+      "command": "Solo cuenta con «Preguntar antes de cada comando»",
+      "network": "Los comandos fuera del entorno aislado siguen preguntando cada vez",
+      "serverGone": "Este servidor se ha eliminado"
+    }
+  },
   "whileAway": {
-    "title": "Lo que no se hizo mientras no estabas (esta conversación)",
+    "title": "Caducado, sin hacer (esta conversación)",
     "stopped": "Una tarea que se detuvo aquí"
   },
   "waiting": {
     "count": "Esperando por ti: {{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "En curso",
+      "reporting": "Informando",
+      "waiting": "Esperando por ti",
+      "done": "Hecha",
+      "stopped": "Detenida",
+      "failed": "Fallida",
+      "interrupted": "Interrumpida",
+      "ended": "Terminó sin acabar"
+    },
+    "toggle": "Mostrar u ocultar sus subsesiones ({{count}})",
+    "under": "Dentro de «{{title}}»",
+    "header": "Esta es una subsesión de «{{name}}»; le informa cuando termina.",
+    "back": "Volver a «{{name}}»",
+    "panel": "Subsesiones",
+    "open": "Abrir",
+    "spend": "Gastado {{spent}}, límite {{limit}} ({{each}} por tarea × {{times}})",
+    "spendNoLimit": "Gastado {{spent}}, sin límite en dólares",
+    "delete": {
+      "title": "¿Eliminar «{{name}}»?",
+      "also_one": "Eliminar también su subsesión",
+      "also_other": "Eliminar también sus {{count}} subsesiones",
+      "keepNote": "Sus subsesiones quedan como conversaciones normales, con sus ajustes sin cambios.",
+      "stopFirst": "Una subsesión debajo sigue trabajando o informando. Detenla o espera su informe, y luego elimina.",
+      "choiceRequired": "Ahora tiene {{count}} subsesiones. Elige de nuevo qué pasa con ellas.",
+      "failed": "No se pudo eliminar. Inténtalo de nuevo."
+    }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "Permitir comprobaciones de certificados del sistema en el entorno aislado",
+    "certificatesDesc": "Algunas herramientas (ciertos gestores de paquetes, los servicios HTTPS internos de una empresa) usan las comprobaciones de certificados de macOS al conectarse. El entorno aislado no las permite por defecto, así que esas herramientas muestran un error de certificado. Si lo activas, solo se permiten mientras un comando está conectado, y el llavero sigue fuera de su alcance. Desactivado por defecto.",
+    "devicesTitle": "Dispositivos locales de confianza",
+    "devicesDesc": "Los comandos del entorno aislado no pueden conectarse a tu red local por defecto (el router, un NAS, una impresora, otros ordenadores). Un dispositivo que añadas aquí sí, en todos sus puertos. Uno añadido por nombre guarda la dirección que tiene ahora, que se comprueba de nuevo en cada conexión. Las direcciones de este Mac no se pueden añadir.",
+    "devicesEmpty": "Aún no hay dispositivos de confianza.",
+    "placeholder": "Un nombre o una IP de la red local, como nas.local o 192.168.1.20",
+    "inputLabel": "Nombre o IP de la red local",
+    "add": "Confiar",
+    "remove": "Dejar de confiar",
+    "notFound": "No se encuentra «{{value}}». Usa un nombre de tu red local (como nas.local) o una IP.",
+    "notLan": "{{value}} no es una dirección de la red local. Aquí solo se pueden añadir dispositivos de tu red local.",
+    "ownAddress": "Esa es una dirección de este Mac. No se puede añadir.",
+    "listed": "Ya está en la lista.",
+    "failed": "No se pudo. Inténtalo de nuevo.",
+    "trustedToast": "{{name}} es de confianza",
+    "untrustedToast": "Ya no es de confianza",
+    "certificatesCardTitle": "La comprobación del certificado no pasó",
+    "certificatesCardBody": "Este comando usa las comprobaciones de certificados de macOS para conectarse, y el entorno aislado no las permite por defecto. Activa «Permitir comprobaciones de certificados del sistema en el entorno aislado» y vuelve a intentarlo.",
+    "openSettings": "Activarlo en Ajustes",
+    "notNow": "Ahora no",
+    "notNowToast": "De acuerdo, esta vez no",
+    "lanTitle": "El comando quiere conectarse a un dispositivo de tu red local: {{device}}",
+    "lanBody": "Los comandos del entorno aislado no pueden conectarse a tu red local por defecto. Si confías en este dispositivo, se podrá llegar a todos sus puertos. Puedes quitarlo en Ajustes cuando quieras.",
+    "lanTrusted": "Este dispositivo ya es de confianza. Vuelve a intentarlo y se conectará.",
+    "trustDevice": "Confiar en este dispositivo",
+    "namedDevice": "{{name}} ({{addresses}})",
+    "cardGone": "Esta tarjeta ya no es válida. Puedes añadir el dispositivo en Ajustes."
   }
 }

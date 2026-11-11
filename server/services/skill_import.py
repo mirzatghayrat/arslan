@@ -113,21 +113,32 @@ def parse_skill_md(raw: str, path: str = "") -> dict | None:
 class HookRefused(ValueError):
     """A SKILL.md whose frontmatter has a hook the user's hook rule refuses (`frontmatter_hooks`): `code` "hooks" (an
     event not on the quiet list, named in `part`) or "unreadable" (a `hooks` value of a shape Claude Code wouldn't
-    load). The whole skill is refused."""
+    load). The whole skill is refused. `rows` (HOOK-1): a protection refused it, and these are its hooks as read, for
+    the refusal to show."""
 
-    def __init__(self, code: str, part: str):
+    def __init__(self, code: str, part: str, rows: list[dict] | None = None):
         super().__init__(f"it has a hook that can block or stop actions ({part}), which Arslan doesn't run"
                          if code == "hooks" else "its hooks can't be read")
-        self.code, self.part = code, part
+        self.code, self.part, self.rows = code, part, rows
 
 
 def frontmatter_hooks(raw: str) -> list[str]:
-    """The hooks a SKILL.md's frontmatter declares (Claude Code runs `hooks` there), one event per hook, by the user's
-    hook rule (CAP8-2, 2026-11-10): judged by the event's name only (`plugin_package.hook_events`). Hooks on the quiet
-    events are never run, and never written on: every install writes Arslan's own SKILL.md, name and description only.
-    Any other or unknown event raises HookRefused, so the skill is refused whole: dropping a guard silently is what the
-    rule forbids. Only called on one `parse_skill_md` took, so the frontmatter is capped and holds no alias."""
-    from server.services import plugin_package
+    """The events of `frontmatter_hook_rows`, one per hook."""
+    return [row["event"] for row in frontmatter_hook_rows(raw)]
+
+
+def frontmatter_hook_rows(raw: str, connections: dict[str, str] | None = None, *, where: str = "SKILL.md hooks",
+                          read=None) -> list[dict]:
+    """The hooks a SKILL.md's frontmatter declares (Claude Code runs `hooks` there), one row each, by the user's hook
+    rule (CAP8-2, 2026-11-10; `plugin_hooks.rows`). The one reader of a skill's hooks: the GitHub listing and import
+    (CAP4's card, CAP7b's plugins), the import sheet's skills and plugins, and another tool's skill read in place all
+    come through here. None is ever run here, and none is written on: every install writes Arslan's own SKILL.md,
+    name and description only, and keeps these rows in its record in the data folder (a plugin's skill's, on the
+    plugin's row). A protection, an event not on the quiet list or an unknown one raises HookRefused, so the skill is
+    refused whole: dropping a guard silently is what the rule forbids. `where`: the SKILL.md's path, in each row's
+    digest, so a moved hook is a change. Only called on one `parse_skill_md` took, so the frontmatter is capped and
+    holds no alias."""
+    from server.services import plugin_hooks, plugin_package
     text = _FRONTMATTER_RE.match(raw).group(1)
     node = yaml.compose(text, Loader=_NoAliases)
     if isinstance(node, yaml.MappingNode) and [getattr(key, "value", None) for key, _ in node.value].count("hooks") > 1:
@@ -137,9 +148,9 @@ def frontmatter_hooks(raw: str) -> list[str]:
     if hooks is None:
         return []
     try:
-        return plugin_package.hook_events(hooks, "SKILL.md hooks")
+        return plugin_hooks.numbered(plugin_hooks.rows(hooks, where, connections, read))
     except plugin_package.Refused as exc:
-        raise HookRefused(exc.code, exc.part) from None
+        raise HookRefused(exc.code, exc.part, rows=exc.rows) from None
 
 
 def _slug(text: str) -> str:
@@ -337,6 +348,9 @@ async def scan_skills(ref: str, subpath: str = "") -> dict:
                 entry.update(hooks=hooks)
             except HookRefused as exc:
                 hooks = exc
+                if exc.rows is not None:            # HOOK-1: a protection, shown with the refusal
+                    from server.services import plugin_hooks
+                    entry.update(hook_rows=plugin_hooks.card_rows(exc.rows))
             if block:
                 entry.update(importable=False, reason=block)
             elif isinstance(hooks, HookRefused):
@@ -468,7 +482,7 @@ async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
-    hooks = frontmatter_hooks(raw)                          # HookRefused (a ValueError): the whole skill is refused
+    hook_rows = frontmatter_hook_rows(raw, where=path)      # HookRefused (a ValueError): the whole skill is refused
     async with db_session.AsyncSessionLocal() as db:
         if await db.get(SkillPack, info["key"]) is not None:
             raise ValueError(f"skill '{info['key']}' already exists in the library")
@@ -476,7 +490,8 @@ async def prepare_skill(ref: str, path: str, *, snapshot=None, repo_license: str
     scripts, references = await _bundles(owner, repo, sha, path, paths, skipped, _keep, fetch)
     return {"key": info["key"], "info": info, "full_name": meta["full_name"], "commit": sha, "license": spdx,
             "license_source": source, "skill_md": raw, "scripts": scripts, "references": references,
-            "files": files, "sizes": sizes, "skipped": skipped, "hooks": hooks}
+            "files": files, "sizes": sizes, "skipped": skipped, "hooks": [row["event"] for row in hook_rows],
+            "hook_rows": hook_rows}
 
 
 async def install_prepared(prepared: dict, *, source_id: str | None = None, approved: bool = True) -> dict:
@@ -527,9 +542,12 @@ async def install_prepared(prepared: dict, *, source_id: str | None = None, appr
         try:
             skill_md = agent_skills.skill_md(info["name"], info["description"], body)
             files = agent_skills.write_new(folder, _expected(prepared, skill_md))
-            # The hooks its frontmatter had, stripped from this copy: kept for its card (CAP6a's), never run.
+            # The hooks its frontmatter had, stripped from this copy: kept for its card (CAP6a's), never run. HOOK-1:
+            # their rows too, switches included, in this record in the data folder; a plugin's skill's are its
+            # plugin's (on the plugin's row), so they aren't kept twice.
             agent_skills.record(key, by=agent_skills.ARSLAN, files=files if approved else None, written=files,
-                                hooks=prepared.get("hooks") or [])
+                                hooks=prepared.get("hooks") or [],
+                                hook_rows=[] if source_id else prepared.get("hook_rows") or [])
             return await _install_row(prepared, key, info, body, stored, stored_refs, source_id, enabled=approved)
         except BaseException:
             agent_skills.forget(key)

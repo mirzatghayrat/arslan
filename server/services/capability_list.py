@@ -414,7 +414,8 @@ async def _with_plugins(rows: list[dict]) -> list[dict]:
         held = sorted(parts[plugin.id], key=lambda part: (part["kind"], part["name"] or ""))
         stopped = (plugin.test or {}).get("stopped")
         hooked = (plugin.test or {}).get("hooks_added")       # CAP8-2: an update added a blocking hook
-        refused = hooked and hooked.get("code", "hooks") != "hooks"     # or is refused for anything else
+        # Or (HOOK-1) changed any hook, which reads as a hook too; or is refused for anything else.
+        refused = hooked and hooked.get("code", "hooks") not in ("hooks", "hooks_changed")
         state = "setup" if stopped or hooked else "off" if held and all(p["state"] in ("off", "na") for p in held) \
             else "on"
         row = _row(f"plugin:{plugin.id}", state, switch="plugin", name=plugin.name, section="plugins",

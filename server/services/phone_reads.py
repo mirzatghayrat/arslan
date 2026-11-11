@@ -297,7 +297,9 @@ async def describe(db: AsyncSession, ids: list[str]) -> dict[str, dict]:
         # card wins, as a card does in waiting_reasons.
         waiting_on = ("card" if cid in waiting else asking.get(cid)) if state == "waiting" else None
         files = sum(per_run.get(run_id, 0) for run_id in set(runs.get(cid, [])))
-        item = {"kind": kind, "state": state, "phone_state": phone_state, "waiting_on": waiting_on,
+        # SUB5d: how an ended job ended (`done`, `stopped`, `interrupted`, `partial`…), for the window's sub-session icons:
+        # "unfinished" alone can't tell a restart from a job that didn't get there. The window's list only, as waiting_on.
+        item = {"kind": kind, "state": state, "phone_state": phone_state, "waiting_on": waiting_on, "outcome": outcome,
                 "origin": "phone" if (first is not None and first.source == "phone") else "mac",
                 "preview": one_line(last.display_content or last.content) if last is not None else "", "files": files}
         if running_job is not None:
