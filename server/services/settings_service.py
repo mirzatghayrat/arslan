@@ -47,11 +47,12 @@ _PLAIN_KEYS = (
                # K10-1: a folder's rules in each turn ("true" | "false"; default on). The UI comes with L11-0.
                "folder_rules_enabled",
                # SBX-6a (the user's decision, 2026-11-02: off by default, as Anthropic's, with a switch): sandboxed commands may ask
-               # macOS's certificate trust service ("true" | "false"; default off). The Settings toggle comes after
-               # its mock is OKed.
+               # macOS's certificate trust service ("true" | "false"; default off). Its switch is in Settings › What
+               # Arslan can do › Terminal (SBX settings), written by PUT /settings only.
                "sandbox_system_certificates",
                # SBX-6a (the user's decision, 2026-11-02): the LAN devices sandboxed commands may reach through the proxy,
-               # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused).
+               # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused). Read here; written
+               # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
                "sandbox_trusted_devices",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.

@@ -99,6 +99,8 @@ export interface Message {
   /** PA-3 structured clarification card: question + 2-4 one-click options.
    *  🔒 Backend clarify_options frames only — never parsed from LLM message text. */
   clarifyOptions?: { question: string; options: { label: string; hint?: string }[]; answered?: boolean };
+  /** SBX settings: a card for a command the sandbox stopped. 🔒 Backend sandbox_card frames only. */
+  sandboxCard?: import('./api/client.types').SandboxCardItem;
 }
 
 export interface Spawn {
@@ -245,6 +247,8 @@ export interface AppSettings {
   desktopNotificationsEnabled?: boolean;
   islandEnabled?: boolean;
   terminalSandboxEnabled?: boolean;
+  /** SBX settings: sandboxed commands may use macOS's certificate checks (default off). */
+  sandboxSystemCertificates?: boolean;
   memoryInConversations?: boolean;
   /** 0.1.52 S5: a learned practice is used at once (D2 tiers); off = every one waits for your OK. */
   learnedPracticesTakeEffect?: boolean;
