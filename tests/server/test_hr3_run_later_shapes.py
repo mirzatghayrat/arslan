@@ -417,14 +417,14 @@ GATE_IDS = (
     "folders-0-popd", "folders-1-expansion",
 ) + tuple(sorted(FIXED_WRITES))
 GATE_SHAPES = [s for key in GATE_IDS for s in SHAPES if s.id == key]
-GATE_BYPASSES = {
+# The forms the reader refuses, whose answer is unknown: the gate once cleared that unknown before checking for the
+# user's click, so a yes recorded as a grant reached the executor (⓪Plan's review, blocker 2). Fixed: they are in the
+# matrix below with no mark, and in the outside card's test after it.
+GATE_UNKNOWN_UNREAD = (
     "variables-0-assigned", "interpreters-0-eval", "definitions-0-function",
     "prefixes-0-env-s", "writers-0-find-exec",
-}
-GATE_PARAMS = [pytest.param(s, id=s.id, marks=(pytest.mark.xfail(
-    strict=True, raises=AssertionError,
-    reason="HR-3 bypass: unreadable unknown hit is cleared before checking for a user click")
-    if s.id in GATE_BYPASSES else ())) for s in GATE_SHAPES]
+)
+GATE_PARAMS = params(GATE_SHAPES)
 
 
 async def remembered(command, argv, **kwargs):
@@ -457,6 +457,18 @@ async def test_click_lift_matrix(execution_db, gate, monkeypatch, shape, mode, r
     runs, _, result = await _dispatch(monkeypatch, {"command": shape.command}, confirm=remembered)
     record_property("grant_callback_runs", json.dumps(runs))
     assert runs == [], (shape.id, result)
+
+
+@pytest.mark.parametrize("shape", params([s for key in GATE_UNKNOWN_UNREAD for s in SHAPES if s.id == key]))
+async def test_an_unread_unknown_on_the_outside_card_needs_the_users_click(execution_db, gate, monkeypatch, shape):
+    # Blocker 2 on the outside card's path: the model asks to leave the sandbox; a yes that is not the user's click on
+    # that card (here, one recorded as a grant) runs nothing, as for a known hit. The user's click runs it.
+    assert tp.run_later_targets(shape.command) == [tp.RUN_LATER_UNKNOWN], shape.id
+    args = {"command": shape.command, "outside_sandbox": True, "why": WORD}
+    runs, _, result = await _dispatch(monkeypatch, args, confirm=remembered)
+    assert runs == [] and result.get("executed") is False, (shape.id, result)
+    runs, frames, _ = await _dispatch(monkeypatch, args)
+    assert len(frames) == 1 and len(runs) == 1 and runs[0][0] is True, (shape.id, runs, frames)
 
 
 @pytest.mark.parametrize("shape", params([s for s in SHAPES if s.id in FIXED_WRITES]))

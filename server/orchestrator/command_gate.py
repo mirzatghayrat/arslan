@@ -276,6 +276,7 @@ class _Draft:
     outside: bool = False              # S2a-3 step 5: it runs outside the sandbox, so `outside-reach` asks
     out_kw: dict = field(default_factory=dict)
     later: tuple = ()                  # HR-3 part 1: what `run_later_targets` found (a hit, or unknown)
+    later_line: tuple = ()             # what the card names: `later`, except for text the reader refused (a rules card)
     lift: bool = False                 # HR-3 part 1: a hit where it runs outside; only its own card's click lets it run
     net_due: bool = False
     net_kw: dict = field(default_factory=dict)
@@ -370,13 +371,13 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
     # form or one `run_later_targets` can't read, is let through only by the user's click on this command's own card:
     # never by the conversation's grant, a stored grant or rule, or the mode. Its card is this time only and names the
     # file (`run_later`, the confirm callback's), and so is the outside card when the model asks to leave.
-    # Text the reader doesn't understand is unknown there, so a hit too; its card is a rules card already (`unreadable`
-    # or a named layer ② rule), once-only, which no grant or stored answer answers, so it takes nothing more here.
-    later = tuple(terminal_policy.run_later_targets(command))
-    if later == (terminal_policy.RUN_LATER_UNKNOWN,) and terminal_policy.reading(command).refused:
-        later = ()
-    d.later = later
-    d.lift = bool(later) and d.outside          # the command's own click is the only thing that lets it run
+    # Text the reader doesn't understand is unknown there, so a hit too, all the way to the lift (⓪Plan's review,
+    # blocker 2): only the user's click on its own card lets it run, never a yes recorded as a grant. Its card is a
+    # rules card already (`unreadable` or a named layer ② rule), once-only, so the card itself takes no file line.
+    d.later = tuple(terminal_policy.run_later_targets(command))
+    unread = d.later == (terminal_policy.RUN_LATER_UNKNOWN,) and terminal_policy.reading(command).refused
+    d.later_line = () if unread else d.later
+    d.lift = bool(d.later) and d.outside        # the command's own click is the only thing that lets it run
     d.net_due = _network_card_due(command, args)
     d.net_kw = {"network": True} if d.net_due else {}
     return None
@@ -435,7 +436,7 @@ async def _outside_card(d: _Draft, args: dict, confirm_command, conversation_id:
     _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
     _approvals.LAST_ANSWERED_BY.set(None)
     if not await confirm_command(command, argv, sandbox="outside", why=why, **d.net_kw, **_delete_kw(d, True),
-                                 **({"run_later": d.later} if d.later else {})):
+                                 **({"run_later": d.later_line} if d.later_line else {})):
         result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
         return result
     d.run_outside = True
@@ -472,7 +473,7 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
             _approvals._command_request(command, sorted(terminal_policy.ask_rules(command, outside=d.outside)), None,
                                         ask_all=ask_all, unsandboxed=bool(d.out_kw), lang=await card_purpose.language(),
                                         why=str(args.get("why") or "").strip()[:300],
-                                        run_later=d.later if d.lift else ()),
+                                        run_later=d.later_line if d.lift else ()),
             conversation_id)}
         return result
     from server.services import permissions
@@ -481,7 +482,7 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
     said = str(args.get("why") or "").strip()[:300]
     approved = await confirm_command(command, argv, **({"why": said} if said else {}), **d.net_kw,
                                      **_delete_kw(d, d.run_outside), **d.out_kw,
-                                     **({"run_later": d.later} if d.lift else {}))
+                                     **({"run_later": d.later_line} if d.lift and d.later_line else {}))
     if not approved:
         result = {"ok": False, "error": _declined("user declined this command", "this command")}
         return result
