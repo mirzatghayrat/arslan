@@ -49,7 +49,7 @@ Pinned links. Claude Code is closed source, so its docs are cited.
 
 ## Design
 - **What a goal is.** An objective (up to 4,000 characters) and up to 5 criteria, in the kinds `criteria_to_acceptance` knows: file saved, sources read, mentions, judgement. In a goal, a mentions criterion must name a file, and a judgement criterion is judged over a named file's content (The reply never counts).
-  - **User checks.** Only the user's own `check: <command>` lines become deterministic, critical `code_test` checks. Criteria drafting never produces `check:` lines. In a goal, only the host's own run of the check, from the snapshot taken at Start, satisfies it (Check scripts are fixed at Start). The worker's matching `run_command` is ordinary work and is never the check's receipt.
+  - **User checks.** Only the user's own `check: <command>` lines become deterministic, critical `code_test` checks. Criteria drafting never produces `check:` lines. In a goal, only the host's own run of the check, in place and after its protected files verify, satisfies it (Check files are protected from Start). The worker's matching `run_command` is ordinary work and is never the check's receipt.
   - **The record.** It's a task row with driver `{"kind": "background", "goal": true}`. `checked_driver` widens by exactly that one dict. Its state maps onto existing phases: active is running; complete is succeeded; not started, blocked, paused, budget-limited and interrupted are `waiting_user` with `goal_not_started`, `goal_blocked`, `goal_paused`, `task_budget_exhausted` and `process_interrupted`; waiting for the user's own checks is `waiting_user` with `acceptance_review_required`; cleared is cancelled. No new table and no migration.
 - **How it's set: one entry point.**
   - `/goal` is parsed in `handle_user_message` and nowhere else, before any model call, and the reply is one host line. It works from the Mac, from the phone (`chat.send` arrives there) and from a voice transcript.
@@ -69,7 +69,7 @@ Pinned links. Claude Code is closed source, so its docs are cited.
     - the model judge's only input is the answer (`task_validation.py:313-331`);
     - `answer-delivered` (`task_service.py:957`), the first check of every job (`background_jobs.py:91-92`), passes on any non-empty answer.
   - **What L7-2 changes, for goal tasks only:**
-    - `criteria_to_acceptance` (`background_jobs.py:109-110`) turns a mentions criterion that names a file into a new rule, `file_contains` (path and phrases). `evaluate` reads that file on disk through `file_reader.resolve`, as `_file_saved_on_disk` does (`task_validation.py:106-135`), and finds every phrase. A mentions criterion with no file is flagged as one Arslan can't verify. A goal's checks never contain a `text` rule, and L7-2 asserts this in `evaluate` (`:176`).
+    - `criteria_to_acceptance` (`background_jobs.py:109-110`) turns a mentions criterion that names a file into a new rule, `file_contains` (path and phrases). `evaluate` reads that file on disk through `file_reader.resolve`, as `_file_saved_on_disk` does (`task_validation.py:106-135`), and finds every phrase. A mentions criterion with no file is flagged as one Arslan can't verify. A goal's checks never contain a `text` rule, except `answer-delivered` (itself a `text` rule, `task_service.py:957`), and L7-2 asserts this in `evaluate` (`:176`) with that one exception.
     - The judge call in `validate_output` (`task_validation.py:313-331`) gets the check's text and the named file's current content, read by the host, at most 20,000 characters, framed as data (`untrusted.wrap_external`). It never gets the answer. With no readable file, the check isn't met.
     - `code_test` (`task_validation.py:239-253`) takes the host's own run of the check, never the worker's last `run_command` with the same argv.
     - `answer-delivered` stays a check of the job, but it never counts as progress, and it can't make a goal met by itself.
@@ -77,17 +77,22 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - file saved: the file on disk is non-empty and changed since Start (today's `_file_saved_on_disk`);
   - file contains: the host reads the file and finds every phrase;
   - sources read: the trace's successful reads cover the sources;
-  - `check:`: the host's run from the snapshot exits 0 (and its output contains what the check asks, if anything);
+  - `check:`: the host's run, in place after the protected files verify, exits 0 (and its output contains what the check asks, if anything);
   - judgement: the judge, given the host-read content of the named file, returns met.
   - A write to a named path, a read, or a command run with the check's argv meets nothing by itself. A "met" from a failed call, or from content the host couldn't read, counts as not met.
   - Receipts and file content reach the judge framed as data (`untrusted.wrap_external`). A page or a file that says "goal achieved" proves nothing.
   - Checks the user confirms themselves end the goal at `acceptance_review_required`, and the user confirms on the card as today (Checks Arslan can't verify).
   - The worker's own claim is never enough, as with STY2's "done without evidence".
-- **Check scripts are fixed at Start.** A `check:` passes only if the work is done, not because the worker changed what the check runs.
-  - At Start the host resolves every file the check's argv names, plus the other files directly in a named script's folder, not its subfolders (at most 200 files and 5 MB, or Start refuses the check), copies them to a snapshot folder under Arslan's data folder, and records each file's sha256. The worker's file tools and the commands profile can't write there.
-  - The host runs the check with the argv's script paths pointing at the snapshot copies, in the same working folder, through `_run_tool` and its gates.
-  - At each verdict the host re-hashes the working copies of the snapshotted files (files created after Start aren't in the snapshot and don't stop the goal). If any differs from the snapshot, the goal doesn't continue: it stops at `acceptance_review_required`, names the changed files, and is never complete. To change a check, the user edits the goal, which takes a new snapshot.
-  - **Residual, disclosed:** a check runs code the worker may edit, such as the modules a test imports, or files in the script's subfolders. Code that detects the check and short-circuits isn't caught by the snapshot. The completed card lists every file the goal wrote, so the user can see what changed, and the bench's checkers run hidden suites (T19).
+- **Check files are protected from Start: verify, then run in place.** A `check:` passes only if the work is done, not because the worker changed the check, its tests or its runner's config. Nothing is copied, and the check always runs on the working copies, so it tests the current code. (Running from copies was dropped: a script run from a copy imports stale sibling code, so an honest check could never pass, and runner checks such as `pytest` or `npm test` name no file in their argv and got no protection at all.)
+  - **The protected set.** It is fixed at Start and shown on the form, where the user can add or remove entries:
+    - every workspace file the check's argv names, except one the goal's own criteria name as a file to save (the check's input is the work, such as T21's `clean/orders.csv`) or one that doesn't exist at Start;
+    - by default, the runner's conventional test and config files anywhere in the working folder (skipping `.git`, `node_modules` and virtual environments): everything under `tests/`, `test/` and `__tests__/`; files named `test_*`, `*_test.*`, `*.test.*` or `*.spec.*`; `conftest.py`, `pytest.ini`, `tox.ini`, `setup.cfg` and `Makefile`; the test sections of `pyproject.toml` (`[tool.pytest.*]`, `[tool.tox]`, `[tool.coverage.*]`); the `scripts` and `jest` keys of `package.json`; and `jest.config.*` and `vitest.config.*`;
+    - any file the user marks on the form.
+  - A file **added later** in one of those places, or matching one of those patterns, counts as a change too. So a new `conftest.py` or a new test file stops the goal.
+  - **The record.** At Start the host records each protected file's sha256, or the section's sha256 for the `pyproject.toml` sections and `package.json` keys, under Arslan's data folder, where the worker's file tools and the commands profile can't write. At most 2,000 files or 50 MB; beyond that, Start refuses the check and asks the user to narrow the set.
+  - **Before each verdict** the host re-hashes the protected set and looks for new matching files. Only if nothing changed does it run the check in place, in the working folder, through `_run_tool` and its gates. A changed or new protected file means the goal doesn't continue: it stops at `acceptance_review_required`, names the files, and is never complete. To change a check or its tests, the user edits the goal, which records a new set.
+  - **Files the check itself writes.** Right after each host run, the host re-records the protected set, so files the check's own run writes are adopted (T19's revealed tests under `tests/`). A change between one host run and the next verdict can only be the worker's.
+  - **Residual, accepted and disclosed:** the check has to import the work, so code it imports beyond the protected tests and config is unprotected. T19's `ledger/` is both what the tests import and what the worker must change. A worker that makes that code detect the check and short-circuit isn't caught. The completed card lists every file the goal wrote, so the user can see what changed, and the bench's checkers run hidden suites (T19).
 - **Checks Arslan can't verify.** Some checks have no receipt that could ever show them met, such as "looks nice" or "the user is happy". The host flags them, not the model:
   - **The rule.** A check is verifiable when it is file saved with a path, sources read, mentions with a file (file contains), or a `check:` command, or when it is a judgement check over a file the user named: in the objective, or in a check the user wrote or confirmed on the form. A path that drafting added doesn't make a judgement check verifiable, so drafting can't route around the flag by attaching a file to "looks nice". Any other check is flagged as one Arslan can't verify. The drafting request can't clear a flag.
   - **At the edit step, before Start.** Each flagged check is marked on the form. Start goal stays disabled until each one is rewritten into a verifiable check, removed, or marked "I'll confirm this myself". From text, `/goal start` with a flagged check doesn't start: the host line lists the flagged checks, and `/goal start confirm` marks them all as user-confirmed and starts.
@@ -98,10 +103,10 @@ Pinned links. Claude Code is closed source, so its docs are cited.
 - **No progress. Stopping too early is the main risk,** so "no progress" counts only real progress, never activity.
   - In-turn: `ProgressPolicy` stays as it is. Its stop wraps up and delivers as today, and the goal ends blocked.
   - **Each check's measure.** Progress is read from each check's own condition, evaluated by the host at the verdict, never from the receipts' paths alone and never from the answer:
-    - `check:`: the host's run from the snapshot, as (exit code, sha256 of its stdout and stderr together);
+    - `check:`: the host's run in place, as (exit code, sha256 of its stdout and stderr together);
     - file contains: the set of its phrases found in the file;
     - file saved on a folder with a minimum: the number of qualifying files;
-    - sources read: the set of distinct sources read;
+    - sources read: the set of distinct sources read; when the check names a target, only the sources that match it, so reading unrelated files doesn't grow the measure;
     - file saved on one file, and judgement: no partial measure; only becoming met counts.
   - **The seen set.** The host keeps every (check, measure) value this goal has produced, in `Progress.goal`. Resume doesn't clear it, so returning to an old value after a block or a budget stop is never new. `/goal edit` is a spec revision, and `prepare_resume` keeps only evidence, artifacts and `continuation_ref` across one, so an edit starts a fresh seen set along with the fresh audit: the checks themselves may have changed.
   - **A round makes progress when either holds:**
@@ -118,7 +123,7 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - `/goal edit` raises the spec revision. `prepare_resume` already keeps only evidence, artifacts and `continuation_ref` across a revision, so the blocked audit restarts. A running goal reads the new objective at its next round.
   - `/goal note <text>`, or the card's note field, steers the running goal through K9b. The goal job's turn is steerable under its own key, `TurnRequest.steer_key = job id`, so chat messages never land in it. Calls that haven't started are skipped, the next request carries the note, and anything unread goes back.
 - **Restart and app quit.**
-  - Each round's verdict and counters (round, unmet ids, ids ever met, no-progress streak, the seen set of measures, the snapshot's sha256 list, last receipt index) are written as `Progress.goal` in the same checkpoint as the verdict (`checkpoint("goal_round")`), before the continuation message goes out.
+  - Each round's verdict and counters (round, unmet ids, ids ever met, no-progress streak, the seen set of measures, the protected set's sha256 list, last receipt index) are written as `Progress.goal` in the same checkpoint as the verdict (`checkpoint("goal_round")`), before the continuation message goes out.
   - The boot pass skips goal rows. They stay `waiting_user` with `process_interrupted`, and nothing cancels them. The card reads "interrupted at round n" from the last checkpoint, never from the transcript, and offers Resume (Q5).
   - Restart matrix, one test per row:
     - quit during a model call or a tool call: the row is interrupted; Resume re-runs that round, and the journal fences writes;
@@ -156,13 +161,13 @@ Pinned links. Claude Code is closed source, so its docs are cited.
     - Checks with receipts: the host's run of the check exits 0; the checker runs a hidden full suite of all 5 modules, and confirms by sha256 that `tests/run_checks.py` and its data file are unchanged.
     - Feedback not visible up front: the expected behaviour of module k is only in its tests, which appear after module k−1 passes. At least 4 check runs after the first are needed.
   - **T20, a list that arrives in batches (files).**
-    - Inputs: 4 batches of 6 synthetic notes, each note with a unique code word and a date. Only batch 1 (`notes/n01.md` to `n06.md`) is on disk at the start. `inbox_check.py` checks the summaries for the notes present. When they pass, it drops the next batch into `notes/` and exits 1. After batch 4 passes, it exits 0.
-    - Prompt: for every note in `notes/`, write `summaries/<same name>.md` with exactly two sentences that include its code word and date, and keep `summaries/index.md` listing every note; `check: python3 inbox_check.py`.
+    - Inputs: 4 batches of 6 synthetic notes, each note with a unique code word and a date. Only batch 1 (`notes/n01.md` to `n06.md`) is on disk at the start. `inbox_check.py` checks the summaries for the notes present. When they pass, it drops the next batch (from its encoded data file `batches.dat`) into `notes/` and exits 1. After batch 4 passes, it exits 0.
+    - Prompt: for every note in `notes/`, write `summaries/<same name>.md` with exactly two sentences that include its code word and date, and keep `summaries/index.md` listing every note; `check: python3 inbox_check.py --batches batches.dat`. The argv names both files, so both are protected.
     - Checks with receipts: the host's run of the check exits 0, and the checker recomputes from disk that 24 summaries and the index exist, each summary has exactly two sentences (split on `.`, `!` and `?`) with its note's code word and date, and the index lists all 24.
     - Feedback not visible up front: notes 7 to 24 don't exist until the check has passed on the batch before. At least 3 check runs after the first are needed.
   - **T21, rules revealed by the validator (data).**
-    - Inputs: `data/orders.csv`, 300 synthetic rows with 4 planted kinds of fault (non-ISO dates, lower-case currency codes, duplicate order ids, amounts without two decimals), and `validate.py`. It holds the 4 rules in an encoded data file and checks `clean/orders.csv` against the rules revealed so far. When those pass, it prints the next rule and exits 1. After the fourth, it exits 0.
-    - Prompt: clean the file into `clean/orders.csv` so that `python3 validate.py clean/orders.csv` exits 0, without editing `validate.py` or its data file; `check: python3 validate.py clean/orders.csv`.
+    - Inputs: `data/orders.csv`, 300 synthetic rows with 4 planted kinds of fault (non-ISO dates, lower-case currency codes, duplicate order ids, amounts without two decimals), and `validate.py`. It reads the 4 rules from an encoded data file, `rules.dat`, and checks `clean/orders.csv` against the rules revealed so far. When those pass, it prints the next rule and exits 1. After the fourth, it exits 0.
+    - Prompt: clean the file into `clean/orders.csv` so that the check exits 0, without editing `validate.py` or `rules.dat`; `check: python3 validate.py --rules rules.dat clean/orders.csv`. The argv names `validate.py` and `rules.dat`, so both are protected. `clean/orders.csv` is named too, but it is the work and doesn't exist at Start, so it isn't protected (the protected set's first rule).
     - Checks with receipts: the host's run exits 0, and the checker re-validates all 4 rules, confirms by sha256 that `validate.py` and its data file are unchanged, and checks the rows. For a duplicate order id, the first row in file order is the one kept; every other row must survive with its values normalized.
     - Feedback not visible up front: rules 2 to 4 are printed only after the rules before them pass. At least 3 check runs after the first are needed.
   - **Residual, disclosed:** T19's and T21's data files are encoded, not secret. A worker that decodes one could see ahead. Each checker reports whether any worker call read its data file.
@@ -200,9 +205,10 @@ Pinned links. Claude Code is closed source, so its docs are cited.
   - Together they mean `on` completes at least 5 more of its 63 runs than `off`, so goal-on always completes strictly more than goal-off when the bar passes.
   - **False-pass rate: at most 1.5%.** This is the chance that a goal mode with no real effect passes the bar.
     - How it was computed: exactly, not by sampling. Each goal task's runs in each arm are binomial with the same rate in `off` and `on` (no effect). The four per-task differences were convolved, and the chance of a total of +8 or more was read off. This was done for every combination of the four tasks' rates over 0.1, 0.3, 0.5, 0.7 and 0.9.
-    - The worst case is 1.47%, with every rate at 0.5. Gate (2) can only lower it.
-    - With the one full rerun allowed below, the worst case is 1.49%.
-  - **Power, the same way:** if goal mode lifts each goal task from 0.3 to 0.8, gate (1) passes 93% of the time (99% with the rerun). From 0.5 to 0.8 it passes 47% (56%). Gate (2) passes 87% of the time when goal mode changes nothing on the other tasks. That figure assumes per-task rates matching STY2's 20/27 and M64's (#453), spread as 1, 1, 1, 0.9, 0.8, 0.67, 0.5, 0.4, 0.4 and 0.67, 0.95, 0.95, 0.95.
+    - At one look, the worst case is **1.47%**, with every rate at 0.5. That is gate (1) alone, and gate (2) can only lower it.
+    - With the one full pooled rerun allowed below, the whole bar (gate (1) and gate (2) at the assumed rates below) passes a no-effect goal mode at most **1.31%** of the time. Gate (1) alone with that rerun reaches 1.49%.
+    - The review recomputed these figures independently, the same way, and they matched.
+  - **Power, the whole bar, the same way:** if goal mode lifts each goal task from 0.3 to 0.8, the bar passes about **81%** of the time at one look (about 94% with the rerun). From 0.5 to 0.8, it passes about **41%** (about 52%). Gate (1) alone passes 93% and 47%. Gate (2) passes 87% when goal mode changes nothing on the other tasks. That figure assumes per-task rates matching STY2's 20/27 and M64's (#453), spread as 1, 1, 1, 0.9, 0.8, 0.67, 0.5, 0.4, 0.4 and 0.67, 0.95, 0.95, 0.95.
   - **Why not the per-task rules of the first draft.** At k=3, "no task goes from complete to incomplete" fails a real gain through noise alone: one task at a 0.5 rate loses 2 of its 3 runs about 11% of the time. And rerunning only the tasks behind a miss re-rolls the unlucky draws and keeps the lucky ones, which the review's simulation put at a false-pass rate of roughly 30–40%.
   - **No selective reruns.** On a miss, the only rerun allowed is one full rerun of all 17 tasks in both `off` and `on`, at the same k. The bar is then judged on the pooled runs with doubled thresholds: +16 of 48 on the goal tasks, and −6 of 78 elsewhere. A miss on the pooled runs blocks the merge, as a regression does.
   - **Reported, not gated:** the runs where the goal said complete but the checker failed (drafted checks too weak); the runs with a flagged drafted check; the pilot; and, per task, the round at which each `on` run was met, blocked or budget-limited.
@@ -234,7 +240,16 @@ Red tests first:
 - `answer-delivered` passing is not progress, and a goal whose other checks are unmet isn't met;
 - the judge gets the named file's host-read content and never the answer text; a one-line write to a judgement check's path with a reply describing rich content is not met;
 - a judgement check whose path was added by drafting is flagged until the user confirms the path on the form;
-- **check scripts fixed at Start:** the worker editing the check's script (T19's `tests/run_checks.py`) or a file in its folder stops the goal at `acceptance_review_required`, never complete, and names the file; the worker running a modified copy with the same argv meets nothing; the host runs the check from the snapshot; a file created after Start doesn't stop the goal;
+- **check files protected from Start** (each stops the goal at `acceptance_review_required`, never complete, and names the file):
+  - an edited test file (a file under `tests/`, or a `test_*` file the argv doesn't name);
+  - a new test file added after Start (a new `tests/test_extra.py`, or a new `conftest.py`);
+  - an edited config (`pytest.ini`, the `[tool.pytest.ini_options]` section of `pyproject.toml`, or the `scripts` key of `package.json`);
+  - an edited file the argv names (T19's `tests/run_checks.py`, or T21's `rules.dat`);
+- **an untouched check still passes in place:** a flat layout with `test_app.py` beside `app.py`, where the worker fixes `app.py` after Start, makes the host's check exit 0 in the working folder, so the work itself is never protected and the code tested is current;
+- a runner check with no file in its argv (`pytest -q`, `npm test`) still protects the conventional tests and config;
+- a file the check's own host run writes under `tests/` (T19's revealed tests) is adopted, and doesn't stop the goal;
+- an edit to `pyproject.toml` outside its test sections, or to `package.json` outside `scripts` and `jest`, doesn't stop the goal;
+- the worker running a modified check with the same argv meets nothing;
 - the blocked reply has exactly one step for the user, and the host's fixed line replaces a verdict that gives none or two;
 - nothing runs before Start: setting a goal makes one drafting request with no tools, no job and no tool call, and `/goal start` or Start goal queues the job;
 - the edit step flags "looks nice" and "the user is happy" as checks Arslan can't verify, and Start stays disabled until each is rewritten, removed or marked user-confirmed;
@@ -264,7 +279,10 @@ Mutations, each turning a named test red:
 - the answer text passed to the judge, or a `text` rule allowed in a goal's checks;
 - `answer-delivered` counted as progress;
 - the worker's `run_command` accepted as a `check:` receipt;
-- the snapshot's re-hash removed, or the check run from the working copy;
+- the protected set's re-hash removed, or new files matching a protected pattern ignored;
+- the conventional test and config patterns dropped from the default set (the runner-check test goes red);
+- the check run from copies instead of in place (the untouched-check test goes red);
+- the re-record after the host's own run removed (the T19 revealed-tests test goes red);
 - a drafted path accepted as making a judgement check verifiable;
 - the flag for checks Arslan can't verify removed;
 - a user-confirmed check judged by the model;
@@ -286,7 +304,7 @@ Mutations, each turning a named test red:
 | L7-2 | The goal round in `turn_answer.finish`: verdict by each check's own condition, `file_contains`, the judge over host-read content and never the answer (`background_jobs.py:109-110`, `task_validation.py:176-182`, `:239-253`, `:313-331`), the measures, the progress rule and the seen set, continuation, the blocked audit with its one user step, stopping at `acceptance_review_required` when only user-confirmed checks are left, the per-round checkpoint | ~400 | high |
 | L7-3 | `/goal` in `handle_user_message`, criteria drafting, the flag for checks Arslan can't verify, the not-started state and Start, goal jobs with `steer_key`, status mapping | ~350 | high |
 | L7-4 | Resume as a re-queued job, the boot pass skipping goal rows, `resume_turn` refusing them | ~200 | high |
-| L7-5 | `check:` commands as host calls through `_run_tool`, run from the snapshot taken at Start, with the re-hash at each verdict | ~250 | max (command policy) |
+| L7-5 | `check:` commands as host calls through `_run_tool`, run in place; the protected set (argv files, conventional test and config files, the user's marks) recorded at Start and verified before each verdict | ~250 | max (command policy) |
 | L7-6 | Web: the goal card and the chip, after the mock, plus the `goal_state` key on `job_update`. **A Bridge frame change, so the user merges it** | ~350 | high |
 | L7-7 | The three bench rounds, the report here, then the merges in order; the flag default goes to the user | docs | — |
 
