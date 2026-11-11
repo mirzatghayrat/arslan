@@ -4,7 +4,7 @@ the command's own card, then the network after outside content. Since S2a-3 step
 refusal the model reads, or with what it settled for the execute stage."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from server.orchestrator.tool_gates import _declined, _unattended
 from server.orchestrator.turn_state import ToolTurn
@@ -195,6 +195,48 @@ async def _runs_offline_unread(command: str, args: dict, verdict, *, confined: b
             and not await _asks_for_everything() and not await _work_folder_holds_home())
 
 
+def _git_config_request(why: str = ""):
+    """HR-1b: what letting git update the repository config in the working folder asks: one card, for this
+    conversation only (`permissions._CONVERSATION_ONLY`). Stored under `*`, as `outside` is: the lift is the working
+    folder's, whichever it is when the command runs, so no folder is read here (S2a-3 reads it once per call)."""
+    from server.services import permissions
+    return permissions.Request(
+        kind="git_config", target="*", title="Let git update this repository's settings?",
+        detail=("For the rest of this conversation, in the working folder: upstreams, remotes, user.name and "
+                "user.email. Settings that name programs (hooks, editors, filters, aliases) are put back after each "
+                "command."),
+        model_title="Let git update this repository's settings (git_config) in this conversation?", why=why)
+
+
+async def _git_config(args: dict, conversation_id: str | None) -> bool | dict:
+    """HR-1b: whether this command runs under the git_config grant, or the refusal the model reads. With the grant
+    stored for this conversation, every command in the sandbox gets it with no card and no flag; a lookup that fails
+    counts as no grant (the configs stay held). Otherwise only `git_config: true` asks, with a why: one card (the
+    island never answers it; with nobody to ask it is refused and listed in the Inbox, `permissions._ask`)."""
+    from server.orchestrator import untrusted as _untrusted
+    from server.services import background_jobs, permissions
+    context = permissions.Context(conversation_id, job_id=background_jobs._inside_job.get())
+    request = _git_config_request()
+    try:
+        found = await permissions.standing(request, context)
+    except Exception:  # noqa: BLE001 — fails closed: no grant read means the configs stay held
+        found = None
+    if found is not None:
+        await permissions.note_standing(request, context, found)
+        return True
+    if args.get("git_config") is not True:
+        return False
+    why = _untrusted.clean_name(args.get("why"), 300)
+    if not why:
+        return {"ok": False, "external": False, "executed": False,
+                "error": "git_config needs a why: one short sentence on why git has to update this repository's "
+                         "settings. The user reads it on the card."}
+    decision = await permissions.decide(replace(request, why=why), context)
+    if decision.allowed:
+        return True
+    return {"ok": False, "error": decision.model_text or "the user did not let git update this repository's settings"}
+
+
 @dataclass(frozen=True, slots=True)
 class CommandPlan:
     """What the command gate settled, for the execute stage. Any other tool runs with `NOT_A_COMMAND`."""
@@ -211,6 +253,9 @@ class CommandPlan:
     # HR-1 (ruling 2): out under the grant with no click on its own card, so the outside floor keeps the run-later
     # files unwritable. Only the user's click on this command's own card lifts that.
     holds_run_later: bool = False
+    # HR-1b: in the sandbox under this conversation's git_config grant: git may update the repository config, and
+    # what is off the allowlist is put back after the command. Never outside the sandbox.
+    git_config: bool = False
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -377,6 +422,11 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         by_grant = by_grant and not unwrapped     # a bare run is the user's click on its card, not the grant
         net_clicked = net_due and decided is not None and decided.by == "user"
         clicked = decided is not None and decided.by == "user"
+    # HR-1b: only in the sandbox (the outside floor never lifts the config); after the command's own card, so a click
+    # there is read above before this decision replaces LAST_DECISION.
+    git_config = await _git_config(args, conversation_id) if confined and not run_outside else False
+    if isinstance(git_config, dict):
+        return git_config
     if not offline_reason:     # an unread command already runs offline: nothing after outside content can add to it
         network = {} if net_clicked else await _network_after_outside_content(
             command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
@@ -387,4 +437,4 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     return CommandPlan(command=command, run_outside=run_outside, by_grant=by_grant, sandbox_on=sandbox_on,
                        unwrapped=unwrapped, kept_wrapped=kept_wrapped, network=network,
                        deletes_outside=deletes_outside, confined=confined, offline_reason=offline_reason,
-                       holds_run_later=run_outside and by_grant and not clicked)
+                       holds_run_later=run_outside and by_grant and not clicked, git_config=git_config)

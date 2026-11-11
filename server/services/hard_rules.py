@@ -31,7 +31,8 @@ NEVER_AUTO_RULES = terminal_policy.ONCE_ONLY_RULES
 #: Full access still asks these (S5's table), so nothing automatic answers them either (CLS: never what full access
 #: would still ask).
 FULL_ACCESS_ASKS = frozenset({"send", "site", "shortcut"})
-NEVER_AUTO_KINDS = permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
+NEVER_AUTO_KINDS = (permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
+                    | permissions._CONVERSATION_ONLY)       # HR-1b: git_config, the user's own click only
 #: Kinds whose request decides (a command by its rules; HR-2 adds a write by its path). Written out, not derived: a
 #: kind added to permissions.KINDS is never answered automatically until it is placed here or in NEVER_AUTO_KINDS
 #: (the meta-test fails meanwhile).
@@ -137,6 +138,9 @@ NEVER_AUTO: tuple[HardRule, ...] = (
     HardRule("outside", "always-asks", "permissions", f"{_PERMS}:decide",
              _T + "test_s4a_outside_remote.py::test_review_3_the_outside_card_is_shown_even_with_a_grant_and_writes_no_grant_row",
              kinds=permissions._ALWAYS_ASKS),
+    HardRule("git-config", "user-only", "permissions", f"{_PERMS}:options_for",
+             _T + "test_hr1b_git_config.py::test_the_card_asks_once_per_conversation_and_never_leaks_to_another",
+             kinds=permissions._CONVERSATION_ONLY),
     HardRule("full-access-still-asks", "user-only", "permissions", "server.services.hard_rules:never_auto",
              _T + "test_hard_rules.py::test_what_full_access_still_asks_is_never_auto", kinds=FULL_ACCESS_ASKS),
     HardRule("unknown-kind", "fails-closed", "permissions", f"{_PERMS}:_check",

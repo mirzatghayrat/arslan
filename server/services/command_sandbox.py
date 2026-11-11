@@ -240,7 +240,7 @@ class RunLaterHold:
     kept: list[Path]                # for `held_ancestors(kept=...)`
     by_name: tuple[str, ...]        # filters to deny `file-write*` over
     complete: bool                  # the walk was complete
-    aliases: tuple[Path, ...]       # #813 review 9: held names that link out of their folder
+    aliases: tuple[Path, ...]       # #813 review 9: held names that link out of their folder (HR-1b: or at a hook name)
     #: #813 review 10: filters to deny `file-write*` over, the held names at the real path of each held name and held
     #: folder name the walk found as a link (`run_later.link_filters`)
     at_targets: tuple[str, ...] = ()
@@ -450,7 +450,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
                      ipc_prefix: str | None = None, bound_ports: list[int] | None = None,
                      system_proxies: list[str] | None = None, trust_service: bool = False,
                      cache: Path | None = None, peer_cache: Path | None = None,
-                     plugin_folder: Path | None = None) -> str:
+                     plugin_folder: Path | None = None, git_config_ok: bool = False) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -470,7 +470,11 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     SBX-5: the CAP6b folders (`cap6b_folders`, with `plugin_folder`) close like a protected path, so a work folder
     inside them is not reopened; the user's caches are never written, even inside a writable work folder; the
     one cache written is `cache` (Arslan's commands cache by default), and `peer_cache` is closed when given. An
-    MCP server's cache is under its folder, in Arslan's data folder, which is protected here already."""
+    MCP server's cache is under its folder, in Arslan's data folder, which is protected here already.
+
+    HR-1b: `git_config_ok`, under this conversation's git_config grant only, leaves the repository config names out
+    of the run-later denies (`run_later.GIT_CONFIG`); terminal_exec reverts what changed there past the allowlist
+    (git_config_guard). Nothing else changes; the outside floor never gets it."""
     roots = writable_roots(workspace, temp, cache)
     writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
     protected = [*default_protected(), *cap6b_folders(plugin_folder)]
@@ -519,7 +523,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # #813 review 9: with no dependency exemption when the walk found an alias (or couldn't finish), and no new link
     # at a held name or held folder name.
     after.deny("file-write-create", *run_later.symlink_filters())
-    for filters in run_later.kernel_filters([workspace], aliased=hold.aliased):
+    # HR-1b: under the git_config grant the repository config names are left out; at a link's target they stay held.
+    for filters in run_later.kernel_filters([workspace], aliased=hold.aliased, git_config_ok=git_config_ok):
         after.deny("file-write*", *filters)
     if hold.at_targets:                     # #813 review 10: the held names at a link's real path
         after.deny("file-write*", *hold.at_targets)
@@ -614,7 +619,7 @@ async def in_thread(build, *args, profile_of=None, **kwargs):
 
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
             readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
-            trust_service: bool = False) -> list[str] | None:
+            trust_service: bool = False, git_config_ok: bool = False) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so). #813 review 11: `-f` and a profile file
     (`write_profile`) the caller removes (`remove_profile(profile_path(prefix))`) once the process has exited.
@@ -623,7 +628,7 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
         return None
     return [_SANDBOX_EXEC, "-f", str(write_profile(commands_profile(
         workspace, temp=temp, offline=offline, closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
-        trust_service=trust_service)))]
+        trust_service=trust_service, git_config_ok=git_config_ok)))]
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None,
@@ -813,18 +818,37 @@ def git_setup_failed(result: dict, held: list[str]) -> bool:
     init, `remote add`, a `git config` write): a non-zero exit, and every held path git named is inside a `.git` folder.
     Nothing in the work tree moved, so the ordinary stop note (or, under the floor, the floor's) fits it, not the git
     note's partly updated tree."""
-    return bool(held) and not result.get("ok") and all(".git" in Path(token).parts for token in held)
+    # HR-1b: `.git` as a whole path component, case folded as APFS folds it; never a substring (`.gitmodules`).
+    return bool(held) and not result.get("ok") and all(
+        any(part.casefold() == ".git" for part in Path(token).parts) for token in held)
 
 
-def git_note() -> str:
+def git_config_only(held: list[str], cwd: Path) -> bool:
+    """HR-1b: every held path git named is a repository config file (`run_later.GIT_CONFIG`), which this
+    conversation's git_config grant would let git update."""
+    folder = os.path.abspath(cwd)
+    return bool(held) and all(run_later.is_git_config(os.path.normpath(os.path.join(folder, token))) for token in held)
+
+
+#: HR-1b: what a refusal on the repository's config only adds, in the sandbox without the grant.
+GIT_CONFIG_HINT = (" If git needed to update this repository's settings (.git/config: an upstream, a remote, "
+                   "user.name), call run_command again with git_config: true and a short why: the user is asked once "
+                   "for this conversation, and settings that name programs (hooks, editors, filters, aliases) are put "
+                   "back after each command.")
+
+
+def git_note(*, git_config: bool = False) -> str:
     """HR-1 (#813 review 4): what the model reads when `git_refused` holds, in the sandbox or under the outside floor,
     at any exit code, except for a setup step that failed outright (`git_setup_failed`). Not the stop note: running it again outside the sandbox doesn't help (the floor holds these files
-    too, and only the user's click on that command's own card lifts it), so it ends with the user, not outside_sandbox."""
+    too, and only the user's click on that command's own card lifts it), so it ends with the user, not outside_sandbox.
+    `git_config` (HR-1b): the refusal was on the repository's config only, in the sandbox with no grant yet, so the
+    note offers the grant (GIT_CONFIG_HINT)."""
     return ("Commands can't change files that make something run later (git config or hooks, editor or agent "
             "settings), and git needed to change some of them here, so it didn't update them, even if it exited 0: "
             "an upstream, remote or setting may not have been saved, and a tracked file may have kept its old "
             "content, leaving the work tree partly updated. Check `git status`, tell the user which files or settings "
-            "weren't updated, and don't commit over them (a `commit -a` now would undo that change).")
+            "weren't updated, and don't commit over them (a `commit -a` now would undo that change)."
+            + (GIT_CONFIG_HINT if git_config else ""))
 
 
 def links_note(workspace: Path) -> str:
@@ -842,7 +866,9 @@ def refused_outside(result: dict) -> bool:
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False) -> str:
+def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False,
+         git_config: bool = False) -> str:
+    """`git_config` (HR-1b): git was refused on the repository's config only, so the note offers the grant."""
     shut = ""
     if closed:
         names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
@@ -857,7 +883,8 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 # HR-1: for these, not outside_sandbox.
                 + " Commands also can't change files that make something run later (git hooks and config, "
                 "editor tasks, agent and package settings), even in the working folder: if that is what it "
-                "changed, use write_file, which asks the user, or tell the user what to change.")
+                "changed, use write_file, which asks the user, or tell the user what to change."
+                + (GIT_CONFIG_HINT if git_config else ""))
         if too_large_to_map(workspace):
             # #813 review 7: true under HR-1 alone (git init and clone fail in every sandboxed folder); HR-1b revisits.
             head += (" This working folder is too large to map, so Arslan holds the folders those files live in "

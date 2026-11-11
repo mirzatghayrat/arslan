@@ -820,7 +820,8 @@ async def test_a_decision_that_raises_leaves_no_stale_outcome(monkeypatch, call)
 SPEC_KINDS = ["command", "folder", "outside", "send", "destructive", "system", "screen", "opaque",
               "app", "app_risky", "money", "takeover", "shortcut", "site", "mcp_tool", "other_agent",
               "capability", "schedule", "remote", "workspace_write",
-              "network"]                    # S2a-1: a command reaching the network after outside content
+              "network",                    # S2a-1: a command reaching the network after outside content
+              "git_config"]                 # HR-1b: git updating the working folder's repository config
 #: Kinds a caller could mistype (final review probe P1).
 TYPOS = ["payment", "app-risky", "Money"]
 

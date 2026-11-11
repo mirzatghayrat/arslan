@@ -57,6 +57,20 @@ FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hooks", (".pre-commit-config.yaml", ".husky/**")),
 )
 
+#: HR-1b (ruling 1): git's sample hooks, exempt from the hooks names above. git copies them from its templates on
+#: clone and init and never runs a file ending in `.sample`; an exact hook name stays held, a rename into one too
+#: (the rename writes the new name). Each is the exempt shape below one hooks pattern, matched as the whole last
+#: component, in both forms: a `require-not` in the kernel's filter, and `family` skipping that pattern.
+SAMPLE_HOOKS: dict[str, str] = {".git/hooks/**": ".git/hooks/*.sample",
+                                ".git/modules/*/hooks/**": ".git/modules/*/hooks/*.sample"}
+
+#: HR-1b (ruling 2): the repository config names, which this conversation's git_config grant lifts from the
+#: commands profile's denies (`kernel_filters(git_config_ok=True)`); git_config_guard reverts what changed under them
+#: past its allowlist. Never the hooks, `.gitmodules`, a hooksPath target or any other family; never the outside
+#: floor nor an MCP server; never the file tools (`matches` keeps them).
+GIT_CONFIG: tuple[str, ...] = (".git/config", ".git/config.worktree", ".git/worktrees/*/config.worktree",
+                               ".git/modules/*/config")
+
 #: CI files: recognised, not denied (the user's list decision, #813 review 3). A CI job runs only after a push, on
 #: the CI service and not on this Mac, so their guard moves to the push card (HR-2b), which uses `is_ci_file` to name
 #: a pushed change to one. The same pattern form as FAMILIES; not in the kernel's profiles nor in `matches`.
@@ -143,10 +157,26 @@ def family(path, root=None) -> str | None:
         return None
     for name, patterns in FAMILIES:
         for pattern in patterns:
-            names = tuple(pattern.split("/"))
-            if any(_fits(parts[i:], names) for i in range(len(parts))):
+            if _anywhere(parts, pattern) and not (pattern in SAMPLE_HOOKS and _anywhere(parts, SAMPLE_HOOKS[pattern])):
                 return name
     return None
+
+
+def _anywhere(parts: tuple[str, ...], pattern: str) -> bool:
+    names = tuple(pattern.split("/"))
+    return any(_fits(parts[i:], names) for i in range(len(parts)))
+
+
+def _at_hook_name(parts: tuple[str, ...]) -> bool:
+    """HR-1b: the path is a hooks folder or a name in one (SAMPLE_HOOKS' folders), at any depth, case folded."""
+    return any(_anywhere(parts, pattern) for pattern in SAMPLE_HOOKS)
+
+
+def is_git_config(path) -> bool:
+    """Whether `path` names one of the repository config files (GIT_CONFIG) at any depth, letter case folded: what
+    the git_config grant lifts, and what git's refusal note offers it for (HR-1b)."""
+    parts = _parts(path)
+    return any(_anywhere(parts, pattern) for pattern in GIT_CONFIG)
 
 
 def matches(path, root=None) -> bool:
@@ -273,17 +303,27 @@ def hooks_path(folder: Path) -> Path | None:
 
 
 def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
-                   aliased: bool = False) -> list[tuple[str, ...]]:
+                   aliased: bool = False, git_config_ok: bool = False) -> list[tuple[str, ...]]:
     """The SBPL filters a profile denies `file-write*` over, one tuple per family in FAMILIES' order, then one for
     the `core.hooksPath` targets of `folders` (the work folder, or an MCP server's granted folders) when any is
     set: the folder by its real path and by its name in its real parent, so a link there can't be swapped.
     Each name is wrapped to exempt dependency folders only when `exempts` holds for the real paths of `folders`
     and `roots` (an MCP server's own folder) and not `aliased` (#813 review 9: the walk found a held name that links
-    out of its folder, or couldn't finish); otherwise it is the bare regex. The regexes stay built from constants."""
-    from server.services.sandbox_profile import real, subpath
+    out of its folder, or couldn't finish); otherwise it is the bare regex. A hooks name also exempts git's sample
+    hooks (SAMPLE_HOOKS, HR-1b), unless `aliased` (HR-1b, ⓪Plan: a link at a hook name, `pre-commit ->
+    pre-commit.sample` among them, is an alias, `held_folders`). `git_config_ok` (HR-1b, the commands profile under
+    this conversation's git_config grant only) leaves the GIT_CONFIG names out; nothing else changes (a config reached
+    through a link stays held at its target, `link_filters`). The regexes stay built from constants."""
+    from server.services.sandbox_profile import real, regex, subpath
     folders = list(folders)
-    exempt = _exempt(folders, roots) and not aliased
-    out =[tuple(_filter(pattern_regex(p), exempt) for p in patterns) for _, patterns in FAMILIES]
+    unless = [f"(require-not {regex(dependency_regex())})"] if _exempt(folders, roots) and not aliased else []
+
+    def name(pattern: str) -> str:
+        sample = ([f"(require-not {regex(pattern_regex(SAMPLE_HOOKS[pattern]))})"]
+                  if pattern in SAMPLE_HOOKS and not aliased else [])
+        parts = [regex(pattern_regex(pattern)), *sample, *unless]
+        return parts[0] if len(parts) == 1 else f"(require-all {' '.join(parts)})"
+    out = [tuple(name(p) for p in patterns if not (git_config_ok and p in GIT_CONFIG)) for _, patterns in FAMILIES]
     targets: list[str] = []
     for folder in folders:
         target = hooks_path(folder)
@@ -557,7 +597,9 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
         target = Path(os.path.realpath(path))
         targets.append(target)
         filters.extend(link_filters(target, below))
-        if target.parent != folder:
+        # HR-1b (⓪Plan): a link at a hook name (`pre-commit -> pre-commit.sample`, or the hooks folder itself) is an
+        # alias wherever it points: the profile drops the sample exemption, as the dependency one.
+        if target.parent != folder or _at_hook_name(_parts(seen_as)):
             aliases.append(path)
         try:
             listed = _is_folder(target)
@@ -599,6 +641,10 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
             if sub is not None and _is_folder_entry(entry):
                 keep(folder / entry.name)
                 inside_held(folder / entry.name, sub)       # an empty `sub` too (.git/hooks): for its links
+            elif sub is None and _is_folder_entry(entry) and _below(_parts(folder / entry.name)):
+                # HR-1b: a folder behind a `*` component (`.git/modules/<name>`), listed for links at held names on
+                # the way to them (its `hooks`), as `through` lists a link's target: the sample exemption needs them.
+                through(folder / entry.name, folder / entry.name)
 
     stack = [(start, 0) for start in reversed(starts)]
     try:

@@ -189,10 +189,11 @@ def _explained(monkeypatch, ran, *, cwd, command: str, mode: str = "workspace", 
     return result, trace[0].get("denial"), noted
 
 
-def _noted_once(explained, *, floor: bool = False) -> None:
-    """The git note, with one EPERM denial in the sandbox and none under the floor (#813 review 5)."""
+def _noted_once(explained, *, floor: bool = False, offer: bool = False) -> None:
+    """The git note, with one EPERM denial in the sandbox and none under the floor (#813 review 5). `offer` (HR-1b): a
+    refusal on the repository config only, in the sandbox, offers the git_config grant."""
     result, denial, noted = explained
-    assert result.get("note") == command_sandbox.git_note()
+    assert result.get("note") == command_sandbox.git_note(git_config=offer)
     assert (denial, noted) == ((None, []) if floor else ("eperm", ["eperm"]))
 
 
@@ -238,7 +239,7 @@ def test_a_config_only_refusal_at_exit_0_gets_the_note_and_one_denial(sbx, monke
     ran = sbx.run(["/bin/bash", "-p", "-c", CONFIG_ONLY[step]], probe="hr1-git-config-only")
     assert ran.returncode == 0
     assert (repo / ".git" / "config").read_bytes() == config
-    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=CONFIG_ONLY[step]))
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=CONFIG_ONLY[step]), offer=True)
 
 
 def _floor_profile(sbx) -> str:
@@ -444,7 +445,8 @@ def _effect(work, step: str, before: dict) -> str:
 CONFIG, HOOKS, HUSKY = (".git/config",), (".git/hooks",), (".husky",)
 #: What was measured on macOS 26.6 (Apple git, 2026-11-10): step -> (exit code, held writes refused, effect). Three
 #: config refusals exit 0: a tracking checkout and `push -u` do the rest and leave no upstream, `--set-upstream-to`
-#: does nothing. clone and init are refused copying git's sample hooks first, and the config beneath them.
+#: does nothing. clone and init are refused making git's hooks folder first (it stays held; HR-1b exempts only the
+#: sample files in it), and the config beneath them. Under the grant: tests/server/sbx/test_hr1b_git_config_kernel.py.
 FLOW_MEASURED = {
     "clone": (1, HOOKS, "no"),
     "init": (1, HOOKS, "no"),
