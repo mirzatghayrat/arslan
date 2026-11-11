@@ -216,6 +216,8 @@ def held_ancestors(writable, protected, *, planted=(), kept=()) -> list[Path]:
 #: set or cleared only by `commands_profile` (#813 review 7): an MCP server's walk covers its own folder as well, so
 #: its outcome says nothing about the work folder's.
 _TOO_LARGE: set[Path] = set()
+#: #813 review 9: the aliases the last commands-profile walk of a work folder found, for `note`; set the same way.
+_ALIASED: dict[Path, tuple[Path, ...]] = {}
 
 
 def too_large_to_map(workspace: Path) -> bool:
@@ -225,27 +227,54 @@ def too_large_to_map(workspace: Path) -> bool:
         return False
 
 
-def run_later_folders(folders, *, roots=(), closed=()) -> tuple[list[Path], tuple[str, ...], bool]:
+def aliases_in(workspace: Path) -> tuple[Path, ...]:
+    try:
+        return _ALIASED.get(_real(workspace), ())
+    except OSError:
+        return ()
+
+
+@dataclass(frozen=True)
+class RunLaterHold:
+    """What `run_later_folders` found, for a profile."""
+    kept: list[Path]                # for `held_ancestors(kept=...)`
+    by_name: tuple[str, ...]        # filters to deny `file-write*` over
+    complete: bool                  # the walk was complete
+    aliases: tuple[Path, ...]       # #813 review 9: held names that link out of their folder
+
+    @property
+    def aliased(self) -> bool:
+        """#813 review 9: the profile drops the dependency exemption (`run_later.kernel_filters(aliased=...)`): an
+        alias was found, or the walk couldn't finish, so one may be where it didn't look."""
+        return bool(self.aliases) or not self.complete
+
+
+def run_later_folders(folders, *, roots=(), closed=()) -> RunLaterHold:
     """HR-1's ancestor hold (#813 review 6): the held run-later folders that exist under `folders` and `roots` (the
     walk's) and each of `folders`' `core.hooksPath` target, as `run_later.kernel_filters` takes them, for
     `held_ancestors(kept=...)`; and the name filters to deny: inside each private folder the walk didn't list
     (#813 review 8: `closed` and the TCC home folders, `run_later.private_filters`), and everywhere when the walk was
     incomplete (`run_later.folder_filters`). A skipped private folder is kept too, so it and the folders above it
-    stay in place and its by-name hold can't be renamed away. The third value is whether the walk was complete.
+    stay in place and its by-name hold can't be renamed away. #813 review 9: the real paths of the aliases the walk
+    found are kept too (a dependency's file a held name links to, and the folders above it, stay in place).
     A hooksPath that can't be read raises, as in `kernel_filters`."""
     folders, roots = list(folders), list(roots)
     walk = run_later.held_folders([*folders, *roots], roots=roots, closed=closed)
-    kept = [*walk.skipped, *walk.folders]
+    kept = [*walk.skipped, *walk.folders, *walk.targets]
     for folder in folders:
         target = run_later.hooks_path(folder)
         if target is not None and run_later._is_folder(target):
             kept.append(_real(target))
-    by_name = run_later.private_filters(walk.skipped, folders, roots=roots)
-    if walk.complete:
-        return kept, by_name, True
-    _log.warning("HR-1: the held-folder walk stopped at a cap or an unlistable folder; held folders are held by "
-                 "name in this run, so a new one (a .git, a first .vscode) can't be made")
-    return kept, (*by_name, *run_later.folder_filters(folders, roots=roots)), False
+    by_name = run_later.private_filters(walk.skipped)
+    if walk.aliases:
+        _log.warning("HR-1: %d run-later name(s) link out of their folder (%s); dependency folders get no exemption "
+                     "in this run", len(walk.aliases), ", ".join(map(str, walk.aliases[:5])))
+    if not walk.complete:
+        _log.warning("HR-1: the held-folder walk stopped at a cap or an unlistable folder; held folders are held by "
+                     "name in this run, so a new one (a .git, a first .vscode) can't be made, and dependency folders "
+                     "get no exemption")
+        by_name = (*by_name, *run_later.folder_filters(folders, roots=roots, aliased=True))
+    return RunLaterHold(kept, by_name, walk.complete, walk.aliases)
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
@@ -470,22 +499,29 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
     # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
     after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
-    # HR-1: nor the files that make something run later (git hooks and config, editor tasks, agent and package
-    # settings, the work folder's core.hooksPath), after every grant and reopen. Raises when hooksPath can't be read.
-    for filters in run_later.kernel_filters([workspace]):
-        after.deny("file-write*", *filters)
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
     # HR-1 (#813 review 6): nor the held run-later folders in the work folder and every folder above them.
     # #813 review 8: the walk never lists the user's closed folders nor the TCC home folders (`closed` is the user's
     # list, before Arslan's own data is added); it holds the held folders inside them by name.
-    kept, by_name, complete = run_later_folders([workspace], closed=closed)
-    (_TOO_LARGE.discard if complete else _TOO_LARGE.add)(_real(workspace))      # this walk's root only (review 7)
+    hold = run_later_folders([workspace], closed=closed)
+    (_TOO_LARGE.discard if hold.complete else _TOO_LARGE.add)(_real(workspace))  # this walk's root only (review 7)
+    if hold.aliases:                                                             # #813 review 9, for `note`
+        _ALIASED[_real(workspace)] = hold.aliases
+    else:
+        _ALIASED.pop(_real(workspace), None)
+    # HR-1: nor the files that make something run later (git hooks and config, editor tasks, agent and package
+    # settings, the work folder's core.hooksPath), after every grant and reopen. Raises when hooksPath can't be read.
+    # #813 review 9: with no dependency exemption when the walk found an alias (or couldn't finish), and no new link
+    # at a held name or held folder name.
+    after.deny("file-write-create", *run_later.symlink_filters())
+    for filters in run_later.kernel_filters([workspace], aliased=hold.aliased):
+        after.deny("file-write*", *filters)
     held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),
-                          kept=kept)
+                          kept=hold.kept)
     if held:
         after.deny("file-write*", *map(literal, held))
-    if by_name:
-        after.deny("file-write*", *by_name)
+    if hold.by_name:
+        after.deny("file-write*", *hold.by_name)
     if trust_service and network == NetworkMode.PROXY:
         after.allow("mach-lookup", _TRUST_SERVICE)
     after.allow_paths("file-read*", map(_real, copies), literal)
@@ -526,20 +562,23 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
     rules.deny("network-outbound", *ours)
     # SBX-5 CAP6b: the skill and plugin folders are closed outside too (CAP6a); the user's secrets stay open.
     rules.deny("file-read* file-write*", *(file_or_folder(p) for p in cap6b_folders(plugin_folder)))
-    for filters in run_later.kernel_filters([run_later_in]) if run_later_in is not None else ():
-        rules.deny("file-write*", *filters)
     # SBX-5a (#772 review): everything is writable out here, so every folder above those is held. HR-1 (#813 review
     # 6): with `run_later_in`, so are the held run-later folders in the work folder and every folder above them.
     # Only those (#813 review 7): the walk covers the work folder, so a held folder elsewhere on disk keeps its files
-    # held by name (`kernel_filters` above matches at any depth) but is not held in place. #813 review 8: the walk
+    # held by name (`kernel_filters` below matches at any depth) but is not held in place. #813 review 8: the walk
     # never lists the closed and TCC home folders; the held folders inside them are held by name.
-    kept, by_name, _ = (run_later_folders([run_later_in], closed=closed) if run_later_in is not None
-                        else ([], (), True))
-    held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder), kept=kept)
+    hold = run_later_folders([run_later_in], closed=closed) if run_later_in is not None else None
+    if hold is not None:
+        # #813 review 9: no dependency exemption when the walk found an alias, and no new link at a held name.
+        rules.deny("file-write-create", *run_later.symlink_filters())
+        for filters in run_later.kernel_filters([run_later_in], aliased=hold.aliased):
+            rules.deny("file-write*", *filters)
+    held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder),
+                          kept=hold.kept if hold is not None else ())
     if held:
         rules.deny("file-write*", *map(literal, held))
-    if by_name:
-        rules.deny("file-write*", *by_name)
+    if hold is not None and hold.by_name:
+        rules.deny("file-write*", *hold.by_name)
     rules.allow_paths("file-read*", map(_real, copies), literal)
     return rules.text()
 
@@ -720,6 +759,11 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
             # #813 review 7: true under HR-1 alone (git init and clone fail in every sandboxed folder); HR-1b revisits.
             head += (" This working folder is too large to map, so Arslan holds the folders those files live in "
                      "(such as .git and .vscode) by name everywhere in it.")
+        if aliased := aliases_in(workspace):
+            # #813 review 9: why a dependency's own editor or hook files are refused in this run.
+            names = ", ".join(os.path.relpath(p, _real(workspace)) for p in aliased[:5])
+            head += (f" Here some of them link out of their folder ({names}), so they are held inside dependency "
+                     "folders (node_modules) too in this run.")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")

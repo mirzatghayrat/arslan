@@ -18,6 +18,17 @@ markers = 3
 cases = 171
 xfail = 0
 
+# 0.1.64 HR-1 review delta 9, consumer aliases, in the commands preset, an MCP server's granted folder and the outside
+# floor: a held name of each family, or a held folder, linked into node_modules is refused through the link and held
+# in place, and a held name in another dependency is refused too (21 cases); a held name linked into an ordinary
+# sibling folder is refused and turns the exemption off (3 cases); no new link at a held name or held folder name, by
+# symlink or by rename, while an ordinary link and folder are made and a dependency stays writable (3 cases); and the
+# measurement the link rule rests on (1 case).
+["server/sbx/test_hr1_run_later_aliases.py"]
+markers = 4
+cases = 28
+xfail = 0
+
 # 0.1.64 HR-1: real seatbelt refuses a plain write to one name of each run-later family in the commands preset
 # (6 cases) and in an MCP server's granted and own folders, and git still commits, branches, checks out and stashes
 # inside the sandbox while a config write fails. A dependency folder (node_modules) may hold those names, and the same

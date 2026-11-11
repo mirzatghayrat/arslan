@@ -664,7 +664,8 @@ def test_two_thousand_repositories_build_fast_fall_back_by_name_and_a_command_st
     took = time.perf_counter() - started
     print(f"\nHR-1 review 7: 2,000 repositories, walk + build {took:.3f} s, profile {len(text.encode())} bytes")
     assert took < 1.0
-    assert f"(deny file-write* {' '.join(run_later.folder_filters([sbx.work]))})" in text.splitlines()
+    # #813 review 9: an incomplete walk can't vouch for no alias, so the by-name hold has no dependency exemption.
+    assert f"(deny file-write* {' '.join(run_later.folder_filters([sbx.work], aliased=True))})" in text.splitlines()
     assert command_sandbox.too_large_to_map(sbx.work)
     hook, beside = f"fixtures/r1999/.git/hooks/{STAND_IN}", f"fixtures/r1999/{STAND_IN}.txt"
     assert _write(sbx, sbx.work, (hook, beside)) == {hook: "refused", beside: "written"}

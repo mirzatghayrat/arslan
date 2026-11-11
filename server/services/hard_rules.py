@@ -94,6 +94,7 @@ DIRECT: tuple[HardRule, ...] = (
 
 _HR1 = _T + "test_hr1_run_later.py::"
 _HR1_KERNEL = _T + "sbx/test_hr1_run_later_kernel.py::"
+_HR1_ALIASES = _T + "sbx/test_hr1_run_later_aliases.py::"
 
 
 def _later(family: str) -> HardRule:
@@ -113,6 +114,11 @@ RUN_LATER: tuple[HardRule, ...] = (
              _HR1_KERNEL + "test_the_held_folders_and_the_folders_above_them_stay_in_place_and_an_ordinary_one_moves"),
     HardRule("run-later/outside-under-a-grant", "run-later", "kernel", f"{_SANDBOX}:minimal_profile",
              _HR1 + "test_only_a_click_on_its_own_card_lifts_the_hold_outside"),
+    # #813 review 9: a held name that links out of its folder turns the dependency exemption off; no new link at one.
+    HardRule("run-later/aliases", "run-later", "kernel", "server.services.run_later:held_folders",
+             _HR1_ALIASES + "test_a_held_name_linked_into_a_dependency_is_refused_and_so_is_the_dependencys"),
+    HardRule("run-later/new-links", "run-later", "kernel", "server.services.run_later:symlink_filters",
+             _HR1_ALIASES + "test_no_link_is_made_at_a_held_name_during_the_run_and_ordinary_ones_are"),
 )
 
 NEVER_AUTO: tuple[HardRule, ...] = (

@@ -65,7 +65,9 @@ CI_FILES: tuple[str, ...] = (".github/workflows/**", ".gitlab-ci.yml", ".circlec
 #: Matched as a path component on the real path the kernel sees, so a link named so elsewhere gains nothing. Only
 #: below the root (the work folder, or an MCP server's own and granted folders): when a root's real path already
 #: passes through one (a repository kept inside node_modules), its profile has no exemption and every name stays
-#: held (`exempts`, #813 review 2). The tool caches (.venv, uv and pip unpack folders) wait for Codex's measurement.
+#: held (`exempts`, #813 review 2). Nor when a held name or held folder below a root is a link out of its folder (the
+#: consumer reads the dependency's file through it), or the walk couldn't look everywhere (`held_folders`, #813 review
+#: 9). The tool caches (.venv, uv and pip unpack folders) wait for Codex's measurement.
 DEPENDENCY_FOLDERS = ("node_modules",)
 
 _ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_*")
@@ -88,13 +90,17 @@ def _component(glob: str) -> str:
     return "".join(out)
 
 
-def pattern_regex(pattern: str) -> str:
-    """`pattern` at any depth of an absolute path."""
+def _pattern_body(pattern: str) -> str:
     parts = pattern.split("/")
     below = parts[-1] == "**"
     if below:
         parts = parts[:-1]
-    return "^.*/" + "/".join(map(_component, parts)) + ("(/.*)?" if below else "") + "$"
+    return "/".join(map(_component, parts)) + ("(/.*)?" if below else "")
+
+
+def pattern_regex(pattern: str) -> str:
+    """`pattern` at any depth of an absolute path."""
+    return "^.*/" + _pattern_body(pattern) + "$"
 
 
 def _fits(parts: tuple[str, ...], names: tuple[str, ...]) -> bool:
@@ -263,16 +269,18 @@ def hooks_path(folder: Path) -> Path | None:
     return None
 
 
-def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> list[tuple[str, ...]]:
+def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
+                   aliased: bool = False) -> list[tuple[str, ...]]:
     """The SBPL filters a profile denies `file-write*` over, one tuple per family in FAMILIES' order, then one for
     the `core.hooksPath` targets of `folders` (the work folder, or an MCP server's granted folders) when any is
     set: the folder by its real path and by its name in its real parent, so a link there can't be swapped.
     Each name is wrapped to exempt dependency folders only when `exempts` holds for the real paths of `folders`
-    and `roots` (an MCP server's own folder); otherwise it is the bare regex. The regexes stay built from constants."""
+    and `roots` (an MCP server's own folder) and not `aliased` (#813 review 9: the walk found a held name that links
+    out of its folder, or couldn't finish); otherwise it is the bare regex. The regexes stay built from constants."""
     from server.services.sandbox_profile import real, subpath
     folders = list(folders)
-    exempt = _exempt(folders, roots)
-    out = [tuple(_filter(pattern_regex(p), exempt) for p in patterns) for _, patterns in FAMILIES]
+    exempt = _exempt(folders, roots) and not aliased
+    out =[tuple(_filter(pattern_regex(p), exempt) for p in patterns) for _, patterns in FAMILIES]
     targets: list[str] = []
     for folder in folders:
         target = hooks_path(folder)
@@ -388,6 +396,10 @@ class HeldWalk:
     #: #813 review 8: the private folders (`private_folders`) the walk met inside a walked folder and didn't list,
     #: by real path; the profiles hold the held folders inside them by name (`private_filters`).
     skipped: tuple[Path, ...] = ()
+    #: #813 review 9: the held names and held folder names the walk listed that are links whose real path leaves the
+    #: folder the link is in (`aliases`, by their own path), and those real paths (`targets`), each once.
+    aliases: tuple[Path, ...] = ()
+    targets: tuple[Path, ...] = ()
 
 
 class _Incomplete(Exception):
@@ -436,7 +448,12 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     #813 review 8: a private folder (`private_folders(closed)`: the closed ones and the TCC home folders) met below
     a walked folder is never listed, nor anything under it; it is returned in `skipped`. It is recognised by its
     `(st_dev, st_ino)`, so a spelling in another case or Unicode form is the same folder. A walked folder that is one
-    of them or lies inside one (a work folder in ~/Documents) is walked: Arslan works there already."""
+    of them or lies inside one (a work folder in ~/Documents) is walked: Arslan works there already.
+
+    #813 review 9: a held name or held folder name the walk lists as a link (from the listing's type: one call more,
+    `realpath`, only for those) is an alias when its real path leaves the folder it is in; it is returned in
+    `aliases` and its real path in `targets`, which count against the caps as held folders do. A held folder with no
+    held folders of its own (`.git/hooks`) is listed for its links too."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
@@ -452,13 +469,15 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     starts = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
     budget = [max_entries]
     found: list[Path] = []
+    aliases: list[Path] = []
+    targets: list[Path] = []
     counted: set[Path] = set(starts)          # the folders whose literal is counted (the starts: by the caller)
     held_bytes = [0]
 
-    def keep(path: Path) -> None:
+    def keep(path: Path, into: list[Path] = found) -> None:
         """`path` is held: count it and the folders above it in the walk (each once) against the caps, which end the
         walk before it is kept when it would pass either."""
-        if len(found) >= max_held:
+        if len(found) + len(targets) >= max_held:
             raise _Incomplete
         for folder in (path, *path.parents):
             if folder in counted:
@@ -467,21 +486,38 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
             held_bytes[0] += len(os.fsencode(folder)) + _LITERAL_BYTES
         if held_bytes[0] > max_held_bytes:
             raise _Incomplete
-        found.append(path)
+        into.append(path)
+
+    def alias(entry: os.DirEntry, folder: Path, tree: dict) -> None:
+        """#813 review 9: `entry` is a link. When it is a held name or a held folder name (`tree`'s, here) and its
+        real path leaves `folder`, it is an alias: the profile drops the dependency exemption and holds the real path
+        and the folders above it in place, as a held folder's (`targets`, for `held_ancestors(kept=...)`)."""
+        path = folder / entry.name
+        if entry.name.casefold() not in tree and not _held_name(path):
+            return
+        target = Path(os.path.realpath(path))
+        if target.parent != folder:
+            aliases.append(path)
+            keep(target, targets)
 
     def inside_held(folder: Path, tree: dict) -> None:
         for entry in _listing(folder, budget):
+            if _is_link_entry(entry):
+                alias(entry, folder, tree)
+                continue
             sub = tree.get(entry.name.casefold())
             if sub is not None and _is_folder_entry(entry):
                 keep(folder / entry.name)
-                if sub:
-                    inside_held(folder / entry.name, sub)
+                inside_held(folder / entry.name, sub)       # an empty `sub` too (.git/hooks): for its links
 
     stack = [(start, 0) for start in reversed(starts)]
     try:
         while stack:
             folder, depth = stack.pop()
             for entry in _listing(folder, budget):
+                if _is_link_entry(entry):
+                    alias(entry, folder, HELD_FOLDERS)
+                    continue
                 if not _is_folder_entry(entry):
                     continue
                 name = entry.name.casefold()
@@ -501,8 +537,26 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                     raise _Incomplete
                 stack.append((path, depth + 1))
     except _Incomplete:
-        return HeldWalk(tuple(dict.fromkeys(found)), False, tuple(dict.fromkeys(skipped)))
-    return HeldWalk(tuple(dict.fromkeys(found)), True, tuple(dict.fromkeys(skipped)))
+        complete = False
+    else:
+        complete = True
+    return HeldWalk(tuple(dict.fromkeys(found)), complete, tuple(dict.fromkeys(skipped)),
+                    tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)))
+
+
+def _is_link_entry(entry: os.DirEntry) -> bool:
+    """A link, from the listing's own type (no further call where the file system reports it)."""
+    try:
+        return entry.is_symlink()
+    except OSError:
+        raise _Incomplete from None
+
+
+def _held_name(path: Path) -> bool:
+    """`path` matches a held name (FAMILIES) at any depth, dependency folders not exempted."""
+    parts = _parts(path)
+    return any(_fits(parts[i:], tuple(pattern.split("/")))
+               for _, patterns in FAMILIES for pattern in patterns for i in range(len(parts)))
 
 
 def _is_private(entry: os.DirEntry, path: Path, private: set[tuple[int, int]], inodes: set[int],
@@ -528,10 +582,11 @@ def _chains(tree: dict, above: tuple[str, ...] = ()) -> list[tuple[str, ...]]:
     return out
 
 
-def folder_filters(folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> tuple[str, ...]:
+def folder_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (), aliased: bool = False) -> tuple[str, ...]:
     """The fallback when the walk is incomplete: every held folder held by its name at any depth (the folder itself,
-    not what's inside), with the same dependency exemption as `kernel_filters`. Making one is then refused too."""
-    exempt = _exempt(list(folders), roots)
+    not what's inside), with the same dependency exemption as `kernel_filters` (none when `aliased`). Making one is
+    then refused too."""
+    exempt = _exempt(list(folders), roots) and not aliased
     return tuple(_filter("^.*/" + "/".join(map(_component, chain)) + "$", exempt) for chain in _chains(HELD_FOLDERS))
 
 
@@ -540,11 +595,34 @@ def held_name_regex() -> str:
     return "^.*/(" + "|".join("/".join(map(_component, chain)) for chain in _chains(HELD_FOLDERS)) + ")$"
 
 
-def private_filters(skipped: Iterable[Path], folders: Iterable[Path], *, roots: Iterable[Path] = ()) -> tuple[str, ...]:
-    """#813 review 8: the by-name hold inside the private folders the walk didn't list (`HeldWalk.skipped`), one
-    filter each: `(require-all (subpath <folder>) <held_name_regex>)`, with the same dependency exemption as
-    `kernel_filters`. The path goes into a `subpath` string literal, never into the regex. Making a held folder in
-    there is refused too; elsewhere in the walked folders it is not."""
-    from server.services.sandbox_profile import subpath
-    names = _filter(held_name_regex(), _exempt(list(folders), roots))
-    return tuple(f"(require-all {subpath(folder)} {names})" for folder in dict.fromkeys(skipped))
+#: sandbox-exec refuses a string past about 1,000 bytes ("Error reading string", measured on macOS 26.6.2: 1,005
+#: read, 1,032 not), so a regex here stays under this.
+MAX_REGEX = 960
+
+
+def held_path_regexes() -> tuple[str, ...]:
+    """Every held folder by its name (`held_name_regex`) and every held name (FAMILIES, one regex per family) at any
+    depth: the regexes that, together, match a held path."""
+    out = (held_name_regex(),
+           *("^.*/(" + "|".join(map(_pattern_body, patterns)) + ")$" for _, patterns in FAMILIES))
+    if max(map(len, out)) > MAX_REGEX:
+        raise ValueError("a held-path regex is past what sandbox-exec reads")
+    return out
+
+
+def symlink_filters() -> tuple[str, ...]:
+    """#813 review 9, part 2: a link made at a held name or a held folder name, anywhere (a dependency folder too), by
+    `symlink` or by renaming a link made elsewhere onto it, which profiles deny `file-write-create` over. An ordinary
+    file or folder of those names is another vnode type and stays as it was (measured on macOS 26.6.2)."""
+    from server.services.sandbox_profile import regex
+    return tuple(f"(require-all (vnode-type SYMLINK) {regex(r)})" for r in held_path_regexes())
+
+
+def private_filters(skipped: Iterable[Path]) -> tuple[str, ...]:
+    """#813 review 8: the by-name hold inside the private folders the walk didn't list (`HeldWalk.skipped`):
+    `(require-all (subpath <folder>) <regex>)` for each of `held_path_regexes`. The path goes into a `subpath` string
+    literal, never into the regex. Making a held folder in there is refused too; elsewhere in the walked folders it is
+    not. #813 review 9: with no dependency exemption, the held names in there too: the walk can't see an alias there."""
+    from server.services.sandbox_profile import regex, subpath
+    return tuple(f"(require-all {subpath(folder)} {regex(r)})"
+                 for folder in dict.fromkeys(skipped) for r in held_path_regexes())

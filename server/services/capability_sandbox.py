@@ -86,20 +86,23 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], p
     # HR-1 (ruling 5): nor the files that make something run later, in its own folder or a granted one, nor a
     # granted folder's core.hooksPath target. Raises when that can't be read: the server doesn't start. No
     # node_modules exemption when its own folder or a granted one already lies inside such a folder (#813 review).
-    from server.services import run_later
-    for filters in run_later.kernel_filters(granted, roots=[real(root), own]):
-        rules.deny("file-write*", *filters)
     # SBX-5a (#772 review): nor are the folders above the protected ones moved or replaced through a grant. HR-1
     # (#813 review 6): nor the held run-later folders in a granted folder or its own, and every folder above them.
     # #813 review 8: the walk never lists the TCC home folders (a granted ~); it holds what's inside them by name.
-    kept, by_name, _ = command_sandbox.run_later_folders(granted, roots=[real(root), own])
+    from server.services import run_later
+    hold = command_sandbox.run_later_folders(granted, roots=[real(root), own])
+    # #813 review 9: no dependency exemption when the walk found an alias (or couldn't finish), no new link at a
+    # held name or held folder name.
+    rules.deny("file-write-create", *run_later.symlink_filters())
+    for filters in run_later.kernel_filters(granted, roots=[real(root), own], aliased=hold.aliased):
+        rules.deny("file-write*", *filters)
     held = command_sandbox.held_ancestors(
         [*granted, own, real(root)], [*command_sandbox.default_protected(), *command_sandbox.shared_caches(), peer],
-        planted=command_sandbox.cap6b_spellings(plugin_folder), kept=kept)
+        planted=command_sandbox.cap6b_spellings(plugin_folder), kept=hold.kept)
     if held:
         rules.deny("file-write*", *map(literal, held))
-    if by_name:
-        rules.deny("file-write*", *by_name)
+    if hold.by_name:
+        rules.deny("file-write*", *hold.by_name)
     return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 

@@ -82,9 +82,22 @@ def _regexes() -> list[str]:
 
 #: Every name's regex is written as `(require-all <regex> <this>)`: never inside a dependency folder (#813 review).
 DEPENDENCY_TEXT = '(require-not (regex #"^.*/([Nn][Oo][Dd][Ee]_[Mm][Oo][Dd][Uu][Ll][Ee][Ss])/.*$"))'
+#: The names' denies, exactly as `kernel_filters` writes them with the exemption.
+KERNEL_TEXT = re.sub(r'(\(regex #"[^"]*"\))', lambda m: f"(require-all {m.group(1)} {DEPENDENCY_TEXT})",
+                     RUN_LATER_REGEXES)
+#: The held folders' names, at any depth, as one alternation (the by-name hold's).
+HELD_NAMES_REGEX = ('^.*/([.][Gg][Ii][Tt]|[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss]|'
+                    '[.][Gg][Ii][Tt]/[Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee][Ss]|[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]|'
+                    '[.][Vv][Ss][Cc][Oo][Dd][Ee]|[.][Cc][Ll][Aa][Uu][Dd][Ee]|[.][Cc][Oo][Dd][Ee][Xx]|'
+                    '[.][Gg][Ee][Mm][Ii][Nn][Ii]|[.][Cc][Uu][Rr][Ss][Oo][Rr]|[.][Hh][Uu][Ss][Kk][Yy])$')
+#: #813 review 9: the held paths as regexes (the held folders' names, then each family's names as one alternation).
+HELD_PATH_REGEXES = [HELD_NAMES_REGEX, *("^.*/(" + "|".join(re.findall(r'\(regex #"\^\.\*/(.*?)\$"\)', line)) + ")$"
+                                         for line in RUN_LATER_REGEXES.splitlines())]
+#: #813 review 9: no new link at a held name or held folder name, before the names' denies.
+SYMLINK_TEXT = ("(deny file-write-create "
+                + " ".join(f'(require-all (vnode-type SYMLINK) (regex #"{r}"))' for r in HELD_PATH_REGEXES) + ")\n")
 #: The run-later denies, exactly as every profile writes them.
-RUN_LATER_TEXT = re.sub(r'(\(regex #"[^"]*"\))', lambda m: f"(require-all {m.group(1)} {DEPENDENCY_TEXT})",
-                        RUN_LATER_REGEXES)
+RUN_LATER_TEXT = SYMLINK_TEXT + KERNEL_TEXT
 
 
 def _by_regex(path: str) -> bool:
@@ -97,7 +110,9 @@ def _by_regex(path: str) -> bool:
 
 def test_the_kernel_text_is_these_rules(tmp_path):
     lines = "".join("(deny file-write* " + " ".join(f) + ")\n" for f in run_later.kernel_filters([tmp_path]))
-    assert lines == RUN_LATER_TEXT and RUN_LATER_TEXT.count("(require-all ") == RUN_LATER_REGEXES.count("(regex ")
+    assert lines == KERNEL_TEXT and KERNEL_TEXT.count("(require-all ") == RUN_LATER_REGEXES.count("(regex ")
+    assert "(deny file-write-create " + " ".join(run_later.symlink_filters()) + ")\n" == SYMLINK_TEXT
+    assert all(len(r) <= run_later.MAX_REGEX for r in run_later.held_path_regexes())   # sandbox-exec reads them
     assert [name for name, _ in run_later.FAMILIES] == ["git", "envrc", "editor", "agent", "package", "hooks"]
 
 
@@ -195,7 +210,7 @@ def test_the_mcp_preset_decides_the_exemption_by_its_own_folder_and_its_cache_to
     """#813 review 4: `roots=` in the MCP preset. A server whose own folder, or whose cache, lies inside node_modules
     (with no grant there) gets the bare regexes; with neither, the exempting ones."""
     inside, outside = home / "node_modules" / STAND_IN / "mcp", home / "mcp"
-    first_bare, first_wrapped = RUN_LATER_REGEXES.splitlines()[0], RUN_LATER_TEXT.splitlines()[0]
+    first_bare, first_wrapped = RUN_LATER_REGEXES.splitlines()[0], KERNEL_TEXT.splitlines()[0]
     for root, cache, bare in [(inside, home / "cache", True), (outside, inside / "cache", True),
                               (outside, home / "cache", False)]:
         root.mkdir(parents=True, exist_ok=True)
@@ -263,12 +278,13 @@ def test_the_outside_floor_holds_them_only_when_given_the_work_folder(home):
 
 def _tree(ws: Path) -> Path:
     """Held folders at the top and below, git's own folders (searched for its held ones only), a nested repository
-    under `.claude`, a dependency's repository, an ordinary folder, and a link named like a held folder."""
+    under `.claude`, a dependency's repository, an ordinary folder, and a link named like a held folder (to a folder
+    beside it: not an alias, #813 review 9)."""
     for folder in (".git/hooks", f".git/modules/{STAND_IN}/hooks", ".git/worktrees", ".git/objects/.vscode",
-                   "sub/.vscode", "sub/.husky", f".claude/worktrees/{STAND_IN}/.git/hooks",
+                   "sub/.vscode", "sub/.husky", f"sub/{STAND_IN}-beside", f".claude/worktrees/{STAND_IN}/.git/hooks",
                    f"node_modules/{STAND_IN}/.git/hooks", f"node_modules/{STAND_IN}/.vscode", f"{STAND_IN}-plain"):
         (ws / folder).mkdir(parents=True, exist_ok=True)
-    (ws / "sub" / ".cursor").symlink_to(ws / f"{STAND_IN}-plain")
+    (ws / "sub" / ".cursor").symlink_to(ws / "sub" / f"{STAND_IN}-beside")
     return ws
 
 
@@ -307,6 +323,60 @@ def test_the_walk_stops_at_its_caps_incomplete(tmp_path, caps):
     assert not walk.complete
     assert len(walk.folders) <= caps.get("max_held", 9)
     assert run_later.held_folders([ws], max_entries=1000, max_depth=8, max_held=9).complete
+
+
+def _aliased(ws: Path) -> Path:
+    """#813 review 9: held names and held folders that link out of their folder (into a dependency, a sibling folder,
+    from inside `.git/hooks` and `.claude`), and links that don't count (beside it, or of an ordinary name)."""
+    for name in (f"node_modules/{STAND_IN}/.envrc", f"node_modules/{STAND_IN}/.vscode/tasks.json",
+                 f"{STAND_IN}-sib/hook", f"{STAND_IN}-sib/settings.json", ".npmrc.base", ".git/hooks/x"):
+        (ws / name).parent.mkdir(parents=True, exist_ok=True)
+        (ws / name).write_text("old")
+    (ws / ".claude").mkdir()
+    (ws / "sub").mkdir()
+    for name, target in ((".envrc", f"node_modules/{STAND_IN}/.envrc"), (".vscode", f"node_modules/{STAND_IN}/.vscode"),
+                         (".git/hooks/pre-commit", f"{STAND_IN}-sib/hook"),
+                         (".claude/settings.json", f"{STAND_IN}-sib/settings.json"),
+                         (".npmrc", ".npmrc.base"), (f"sub/{STAND_IN}-link", f"node_modules/{STAND_IN}")):
+        (ws / name).symlink_to(os.path.relpath(ws / target, (ws / name).parent))
+    return ws
+
+
+def test_the_walk_finds_the_held_names_that_link_out_of_their_folder(tmp_path):
+    ws = _aliased(tmp_path / "ws")
+    walk = run_later.held_folders([ws])
+    assert walk.complete
+    assert sorted(walk.aliases) == sorted(_found(ws, ".envrc", ".vscode", ".git/hooks/pre-commit",
+                                                 ".claude/settings.json"))
+    assert sorted(walk.targets) == sorted(_found(ws, f"node_modules/{STAND_IN}/.envrc", f"node_modules/{STAND_IN}/.vscode",
+                                                 f"{STAND_IN}-sib/hook", f"{STAND_IN}-sib/settings.json"))
+    assert run_later.held_folders([ws / "sub"]).aliases == ()                 # an ordinary name links where it likes
+
+
+def test_an_alias_turns_the_exemption_off_holds_its_target_and_says_so(home, caplog):
+    """#813 review 9: every profile writes the names' regexes bare, holds the alias's real path and the folders above
+    it in place, and denies new links at the held names; the log names the alias, and so does the stop note."""
+    ws = _aliased(home / "ws")
+    real = Path(os.path.realpath(ws))
+    with caplog.at_level("WARNING", logger="server.services.command_sandbox"):
+        texts = {"commands": command_sandbox.commands_profile(ws),
+                 "mcp": capability_sandbox.profile(root=home / "mcp", folders=[str(ws)], network=False, read=[]),
+                 "floor": command_sandbox.minimal_profile(run_later_in=ws)}
+    for name, text in texts.items():
+        lines = text.splitlines()
+        assert lines[lines.index(SYMLINK_TEXT.rstrip("\n")) + 1:][:6] == RUN_LATER_REGEXES.splitlines(), name
+        assert DEPENDENCY_TEXT not in text, name
+        held = _held_line(text)
+        for target in (f"node_modules/{STAND_IN}/.vscode", f"node_modules/{STAND_IN}", f"{STAND_IN}-sib/hook"):
+            assert f'(literal "{real / target}")' in held, (name, target)
+    assert "link out of their folder" in caplog.text and ".vscode" in caplog.text
+    note = command_sandbox.note(ws)
+    assert "Here some of them link out of their folder (" in note and ".envrc" in note and "node_modules" in note
+    plain = home / "plain"
+    plain.mkdir()
+    command_sandbox.commands_profile(plain)
+    assert "link out of their folder" not in command_sandbox.note(plain)
+    assert KERNEL_TEXT.splitlines()[0] in command_sandbox.commands_profile(plain).splitlines()   # exempt again
 
 
 def _repositories(ws: Path, count: int) -> Path:
@@ -401,10 +471,13 @@ def test_past_the_cap_the_profiles_hold_them_by_name_and_otherwise_do_not(home, 
     build = {"commands": lambda: command_sandbox.commands_profile(ws),
              "mcp": lambda: capability_sandbox.profile(root=home / "mcp", folders=[str(ws)], network=False, read=[]),
              "floor": lambda: command_sandbox.minimal_profile(run_later_in=ws)}
-    line = f"(deny file-write* {' '.join(by_name)})"
-    assert all(line not in make() for make in build.values())
+    # #813 review 9: an incomplete walk can't vouch for no alias, so past the cap the hold has no exemption either.
+    bare = run_later.folder_filters([ws], aliased=True)
+    assert bare[0] == '(regex #"^.*/[.][Gg][Ii][Tt]$")'
+    lines = [f"(deny file-write* {' '.join(f)})" for f in (by_name, bare)]
+    assert all(line not in make() for make in build.values() for line in lines)
     monkeypatch.setattr(run_later, "WALK_ENTRIES", 3)
-    assert all(line in make().splitlines() for make in build.values())
+    assert all(lines[1] in make().splitlines() and lines[0] not in make() for make in build.values())
 
 
 _WHY = "too large to map, so Arslan holds the folders those files live in (such as .git and .vscode) by name"
@@ -529,27 +602,21 @@ def test_a_work_folder_inside_one_is_walked_as_before(home):
         assert walk.complete and walk.skipped == () and start / ".git" / "hooks" in walk.folders
 
 
-def _held_names_text() -> str:
-    """The by-name hold's regex, written out (one alternation of the held folders' names), dependency folders out."""
-    return ('(require-all (regex #"^.*/([.][Gg][Ii][Tt]|[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss]|'
-            '[.][Gg][Ii][Tt]/[Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee][Ss]|[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]|'
-            '[.][Vv][Ss][Cc][Oo][Dd][Ee]|[.][Cc][Ll][Aa][Uu][Dd][Ee]|[.][Cc][Oo][Dd][Ee][Xx]|[.][Gg][Ee][Mm][Ii][Nn][Ii]|'
-            '[.][Cc][Uu][Rr][Ss][Oo][Rr]|[.][Hh][Uu][Ss][Kk][Yy])$") '
-            f'(require-not (regex #"{run_later.dependency_regex()}")))')
-
-
 @pytest.mark.parametrize("which", ["commands", "floor", "mcp"])
 def test_the_profiles_hold_the_held_folders_in_them_by_name_and_not_by_literal(home, which):
     """Inside a skipped folder every held folder is held by name, `(require-all (subpath <folder>) <names>)`, the path
     in a string literal; the skipped folder itself is held in place (so the by-name hold can't be renamed away), and
-    nothing inside it is a literal. The ordinary folder beside them keeps its literals and no by-name hold."""
+    nothing inside it is a literal. The ordinary folder beside them keeps its literals and no by-name hold. #813
+    review 9: in there with no dependency exemption, the held names too (the walk can't see an alias there)."""
     tcc, closed = _private_home(home)
     make, skipped = _builders(home, closed)[which]
     text = make()
     by_name = [line for line in text.splitlines() if "(require-all (subpath" in line]
     assert len(by_name) == 1, which
     for folder in skipped:
-        assert f'(require-all (subpath "{folder}") {_held_names_text()})' in by_name[0], (which, folder)
+        for regex in HELD_PATH_REGEXES:
+            assert f'(require-all (subpath "{folder}") (regex #"{regex}"))' in by_name[0], (which, folder)
+    assert DEPENDENCY_TEXT not in by_name[0]
     held = _held_line(text)
     plain = Path(os.path.realpath(home)) / f"{STAND_IN}-plain"
     for folder in skipped:
