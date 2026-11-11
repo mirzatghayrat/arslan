@@ -191,12 +191,12 @@ Pinned links. Claude Code is closed source, so its docs are cited.
 - **Written floors.** Each arm must also meet these on its own tasks:
   - STY2 (#658, rounds `sty2c-before-ds` and `sty2d-after-ds`): 20 of 27 passed, and done-without-evidence 4, on the same 9 tasks.
   - M64 (#453, `r64-m64-base`): T13 2/3, T14 3/3, T15 3/3, T17 3/3.
-- **Cost: about $31 at DeepSeek peak prices. That is about $10 over the $21 this card estimated before.** The extra runs on the goal tasks, which the completion bar needs (below), and the pilot account for the difference. The arms come to about $5.6 for `base`, $8.2 for `off`, $14.5 for `on` and $2.3 for the pilot.
+- **Cost: about $31 at DeepSeek peak prices, and up to about $54 with the one pooled rerun, on DeepSeek. Decided by the user on 2026-11-11 (option A), with the per-arm caps below kept.** That is about $10 over the $21 this card estimated before. The extra runs on the goal tasks, which the completion bar needs (below), and the pilot account for the difference. The arms come to about $5.6 for `base`, $8.2 for `off`, $14.5 for `on` and $2.3 for the pilot.
   - STY2's 27 runs cost $2.32-2.61 at peak (#658), about $0.10 a run, so its 9 tasks are about $2.6 per k=3. `r64-m64-base` cost about $1.71 for 48 runs (#453), so T13–T17's 12 runs are about $0.45. T18 is taken as about $0.10 a run, or $0.15 in `on`.
   - T19–T21 are new and unmeasured. They are taken as about $0.25 a run in `base`, `off` and the pilot, and $0.5 a run in `on` (several rounds). The pilot measures the `off` figure before the bench.
   - The `on` arm's 13 other tasks are assumed to cost up to 1.5 times as much.
   - The proxy's cap is one in-process total (`meter.py`), so it is restarted for each arm with its own `BENCH_CAP_USD`: 8 for `base`, 11 for `off`, 19 for `on` and 3 for the pilot, so $41 at most in all, and `BENCH_RUN_CAP_USD=2.5` per run. A 402 stops that arm's round, and it's reported.
-  - The one full rerun the bar allows on a miss (below) would add about $23.
+  - The one full rerun the bar allows on a miss (below) would add about $23, for about $54 in all. Its arms are capped the same way (11 for `off`, 19 for `on`).
 - **The completion bar (the user's priority: goals must actually get completed).** This is a gate in addition to "doesn't regress", and it compares `on` with `off` on the same build branch.
   - **Complete means checked, never claimed.** A run is complete when its task's checker (`check_tN.py`) passes. The checker recomputes the result from the files on disk and the trace's receipts (paths and sha256, exit codes). It never reads the reply's claim or the goal's own status. A run whose reply says "done" while its checker fails is incomplete.
   - **The bar, both of these:**
