@@ -5,6 +5,7 @@ are read by code on the card, never from this text."""
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import command_confirm, command_sandbox, permissions
 from server.ws import protocol
 
@@ -56,9 +57,9 @@ async def _resolve():
 
 async def _dispatch(monkeypatch, args, cards):
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", _Exec())
-    return await tool_loop._dispatch_tool(
-        "run_command", args, "{}", resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=[], convo=[], confirm_command=cards, conversation_id="c1")
+    return await tool_loop._run_tool(
+        "run_command", args, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+        tool_trace=[], convo=[], confirm_command=cards, conversation_id="c1"))
 
 
 async def test_the_tool_loop_passes_arslans_reason_to_an_ordinary_command_card(monkeypatch):

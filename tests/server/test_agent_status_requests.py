@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from arslan.llm import trajectory as tj
-from server.orchestrator import agent_status, tool_loop
+from server.orchestrator import agent_status, model_step, tool_loop
 from tests.server import test_trajectory_golden as golden
 from server.orchestrator import tool_gates
 
@@ -132,7 +132,7 @@ async def test_a_continued_answer_keeps_the_original_request_as_its_exact_prefix
     assert original[-1]["content"].endswith(agent_status.CLOSE)
     assert continued[:len(original)] == original
     assert continued[len(original)]["role"] == "assistant"
-    assert continued[-1]["content"] == tool_loop.CONTINUE_PROMPT
+    assert continued[-1]["content"] == model_step.CONTINUE_PROMPT
     assert sum(str(m.get("content")).count(agent_status.OPEN) for m in continued) == 1
 
 

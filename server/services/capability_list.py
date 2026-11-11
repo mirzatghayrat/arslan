@@ -388,9 +388,9 @@ async def _with_plugins(rows: list[dict]) -> list[dict]:
     """CAP7b: a plugin is one row in its own section, holding its parts, which leave the skills and connections
     sections: they switch and go as a group (the user's rule, 2026-10-28)."""
     from server.db.models import CapabilitySource
-    from server.services import plugin_package
+    from server.services import plugin_hooks, plugin_package
     async with db_session.AsyncSessionLocal() as db:
-        plugins = (await db.execute(select(CapabilitySource).where(
+        plugins =(await db.execute(select(CapabilitySource).where(
             CapabilitySource.kind == "plugin", CapabilitySource.state == "installed"))).scalars().all()
         children = (await db.execute(select(CapabilitySource.id, CapabilitySource.candidate_id).where(
             CapabilitySource.kind == "mcp", CapabilitySource.state != "removed",
@@ -426,6 +426,8 @@ async def _with_plugins(rows: list[dict]) -> list[dict]:
                    detail=hooked["code"] if refused else hooked["event"] if hooked else stopped["connection"] if stopped
                    else (plugin.candidate or {}).get("summary") or None)
         row["parts"] = held
+        # HOOK-4: its hooks as stored, each with its own switch (PUT /capability-hooks), under "Show what's inside".
+        row["hooks"] = plugin_hooks.card_rows((plugin.candidate or {}).get("hook_rows") or [])
         row["last_used"] = max((p["last_used"] for p in held if p["last_used"]), default=None)
         kept.append(row)
     return kept

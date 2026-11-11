@@ -314,8 +314,9 @@ async def test_the_island_and_the_status_count_a_sub_sessions_work_once_as_its_c
         desktop_status.push("turn_finished", conversation_id=KID2, outcome="ok", title="typed there", work="turn")
         feed = (await api.get("/api/v1/island/feed")).json()
         status = (await api.get("/api/v1/desktop/status")).json()
+        # SUB5 (commander stop): the entry's Stop names every sub-session under the commander.
         assert [(a["conversation_id"], a["title"], a["job_id"]) for a in feed["active"]] == [
-            (ROOT, "Make the launch video", None)]
+            (ROOT, "Make the launch video", f"{sub_sessions.STOP_ALL}{ROOT}")]
         assert feed["awaiting_conversations"] == [ROOT]
         assert {(e["kind"], e["conversation_id"]) for e in feed["events"]} == {
             ("approval_needed", ROOT), ("turn_finished", ROOT)}

@@ -4,7 +4,7 @@ instead of returning native tool_calls. Seen in the 0.1.49 paired bench
 protocol text: never shown as an answer, never executed."""
 import pytest
 
-from server.orchestrator import tool_loop
+from server.orchestrator import answer_guards, tool_loop
 from tests.server import test_trajectory_golden as golden
 
 LEAK = ("<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"web_extract\">\n"
@@ -17,7 +17,7 @@ LEAK = ("<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"web_extrac
     "<|DSML|tool_calls>",
 ])
 def test_deepseek_template_markup_is_protocol_text(text):
-    assert tool_loop._embeds_protocol(text)
+    assert answer_guards._embeds_protocol(text)
 
 
 @pytest.mark.parametrize("text", [
@@ -25,7 +25,7 @@ def test_deepseek_template_markup_is_protocol_text(text):
     "营收 | 净利润 | 来源",
 ])
 def test_ordinary_prose_is_not(text):
-    assert not tool_loop._embeds_protocol(text)
+    assert not answer_guards._embeds_protocol(text)
 
 
 async def test_leaked_markup_is_bounced_not_shown(monkeypatch):

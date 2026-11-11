@@ -1,5 +1,5 @@
 from arslan.models import LLMResponse
-from server.orchestrator import tool_loop
+from server.orchestrator import answer_guards, tool_loop, turn_stream
 from server.orchestrator.json_protocol import parse_json_object
 
 
@@ -275,15 +275,15 @@ async def test_repeated_xml_protocol_fails_closed_without_execution(monkeypatch)
     result = await tool_loop.run_native(
         system="S", user_content="A brief", history=[], emit=events.append,
         on_chunk=chunks.append, resolve_tools=_tools())
-    assert result["final"] and not tool_loop._embeds_protocol(result["final"])
+    assert result["final"] and not answer_guards._embeds_protocol(result["final"])
     assert "tool_call" not in "".join(chunks).lower()
     assert not any(event["type"] == "tool_call" for event in events)
     assert len(adapter.calls) == 2
 
 
 def test_ordinary_markup_is_not_a_tool_protocol():
-    assert not tool_loop._embeds_protocol('<span style="color:green">Brief</span>')
-    assert not tool_loop._embeds_protocol('<tool_callback>ordinary data</tool_callback>')
+    assert not answer_guards._embeds_protocol('<span style="color:green">Brief</span>')
+    assert not answer_guards._embeds_protocol('<tool_callback>ordinary data</tool_callback>')
 
 
 async def test_forced_step_protocol_json_salvaged_not_leaked(monkeypatch):
@@ -430,7 +430,7 @@ async def test_unverified_claim_repair_is_bounded_and_never_accepts_the_lie(monk
     assert "我搜索了" not in out["final"]
     # K8a (⓪Plan Q4): guard bounces no longer count toward "no progress"; the answer is sent back at most
     # _UNVERIFIED_BOUNCES times, then written without it (the repair path): the steps plus one salvage call.
-    assert len(adapter.calls) == tool_loop._UNVERIFIED_BOUNCES + 2
+    assert len(adapter.calls) == turn_stream._UNVERIFIED_BOUNCES + 2
 
 
 async def test_forward_promise_retry_triggers_action(monkeypatch):
@@ -476,7 +476,7 @@ async def test_forward_promise_repair_is_bounded(monkeypatch):
     assert "马上为您搜索" not in out["final"]
     # K8a (⓪Plan Q4): guard bounces no longer count toward "no progress"; the answer is sent back at most
     # _UNVERIFIED_BOUNCES times, then written without it (the repair path): the steps plus one salvage call.
-    assert len(adapter.calls) == tool_loop._UNVERIFIED_BOUNCES + 2
+    assert len(adapter.calls) == turn_stream._UNVERIFIED_BOUNCES + 2
 
 
 def test_promises_action_matches_real_world_phrasings():
@@ -493,7 +493,7 @@ def test_promises_action_matches_real_world_phrasings():
         "以上是完整结构。现在调用 render_deck 生成 .pptx。",
         "我这就为您制作演示 deck",
     ]:
-        assert tool_loop._promises_action(s), s
+        assert answer_guards._promises_action(s), s
 
 
 def test_promises_action_ignores_complete_answers():
@@ -505,7 +505,7 @@ def test_promises_action_ignores_complete_answers():
         "Here's a summary of what I found.",
         "总共有三个要点需要你考虑。",
     ]:
-        assert not tool_loop._promises_action(s), s
+        assert not answer_guards._promises_action(s), s
 
 
 async def test_forward_promise_no_false_positive_on_complete_answer(monkeypatch):
@@ -633,7 +633,7 @@ async def test_tool_loop_unresolvable_tool_errors(monkeypatch):
 # --- chart-as-code-fence guard: model draws a chart in Markdown instead of calling render_chart ---
 
 def test_draws_chart_fence_matches_data_charts_only():
-    d = tool_loop._draws_chart_fence
+    d = answer_guards._draws_chart_fence
     assert d("```mermaid\nxychart-beta\n  title \"x\"\n```")          # mermaid xychart
     assert d("```mermaid\npie title EV share\n  \"A\" : 40\n```")      # mermaid pie
     assert d("```chart\n{type: bar}\n```")                             # generic chart fence

@@ -7,6 +7,7 @@ import pytest
 
 from server.db import session as db_session
 from server.orchestrator import command_gate, tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import (approvals, card_purpose, command_confirm, command_sandbox, hard_rules, permission_store,
                              permissions, settings_service, terminal_exec, terminal_policy as tp)
 from server.services.permissions import Request
@@ -276,9 +277,9 @@ async def _dispatch(monkeypatch, args, *, confirm=None):
     ex, asker = _Exec(), _Asker()
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", ex)
     with permissions.asking_with(asker):
-        result = await tool_loop._dispatch_tool(
-            "run_command", args, "{}", resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5, tool_trace=[],
-            convo=[], confirm_command=confirm or command_confirm.Confirmations("c1").command, conversation_id="c1")
+        result = await tool_loop._run_tool("run_command", args, "{}", ToolTurn(
+            resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5, tool_trace=[],
+            convo=[], confirm_command=confirm or command_confirm.Confirmations("c1").command, conversation_id="c1"))
     return ex.runs, asker.frames, result
 
 

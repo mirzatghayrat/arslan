@@ -10,6 +10,7 @@ the loop asks, refuses safely without a callback, and never gates T0.
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.orchestrator import tool_gates
 
 
@@ -39,10 +40,10 @@ class _Stub:
 
 async def _dispatch(key, args, *, grant=None):
     trace, convo = [], []
-    return await tool_loop._dispatch_tool(
-        key, args, "{}", resolve_tools=_resolve, emit=lambda e: None,
+    return await tool_loop._run_tool(
+        key, args, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None,
         tool_timeout_s=5, tool_trace=trace, convo=convo,
-        confirm_workspace_write=grant)
+        confirm_workspace_write=grant))
 
 
 @pytest.mark.parametrize("key,args", [
@@ -109,11 +110,11 @@ async def test_run_command_gate_is_untouched(monkeypatch):
         return True
 
     trace, convo = [], []
-    r = await tool_loop._dispatch_tool(
+    r = await tool_loop._run_tool(
         "run_command", {"command": "git", "argv": ["status"]}, "{}",
-        resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=trace, convo=convo,
-        confirm_command=None, confirm_workspace_write=_allow_write)
+        ToolTurn(resolve_tools=_resolve, emit=lambda e: None, tool_timeout_s=5,
+                 tool_trace=trace, convo=convo,
+                 confirm_command=None, confirm_workspace_write=_allow_write))
     assert r["ok"] is False                 # still refused: no command callback
     assert log == []
 
