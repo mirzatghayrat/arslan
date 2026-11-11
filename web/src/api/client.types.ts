@@ -400,6 +400,7 @@ export interface AppSettings {
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
   folder_rules_enabled?: string; // K10-1: "true" | "false" (default-ON: absent = on)
+  sandbox_system_certificates?: string; // SBX settings: "true" | "false" (default off)
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")
@@ -739,7 +740,9 @@ export interface EarlierDraft {
 
 export interface ArslanThreadItem {
   id: number;
-  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability";
+  kind: "message" | "fact" | "system" | "job" | "lesson" | "plan" | "capability" | "sandbox";
+  /** kind === "sandbox" (SBX settings): a card for a command the sandbox stopped. Live only, like a clarify card. */
+  sandboxCard?: SandboxCardItem;
   /** kind === "capability" (0.1.57): how an install the user approved ended. */
   capabilityResult?: CapabilityResult;
   /** kind === "plan" (0.1.56 §7): Arslan's proposed new plan for this conversation's project. */
@@ -896,8 +899,21 @@ export type ArslanServerMessage =
   | { type: "error"; code: string; message: string; recoverable?: boolean; message_i18n?: Record<string, string>; call?: ModelCall }
   | { type: "propose_staffing"; candidates: StaffingCandidate[]; create_draft: SuggestDraft | null }
   | { type: "clarify_options"; question: string; options: ClarifyOption[] }
+  // SBX settings: the sandbox stopped a command (protocol.sandbox_card). 🔒 Backend only; a device card's answer goes
+  // over REST by its card_id, with the device it showed.
+  | { type: "sandbox_card"; card_id: string; kind: "certificates" | "lan_device"; host?: string; addresses?: string[] }
   | { type: "suggest_update"; spawn_id: number; spawn_name: string;
       current: SpawnUpdateCurrent; changes: SpawnUpdateChanges; reason?: string };
+
+/** SBX settings: a card in the chat for a command the sandbox stopped. `state` is this window's: open, the device
+ *  trusted, or put away ("Not now"). */
+export interface SandboxCardItem {
+  cardId: string;
+  kind: "certificates" | "lan_device";
+  host?: string;
+  addresses?: string[];
+  state: "open" | "trusted" | "dismissed";
+}
 
 export interface RunStepDto {
   seq: number;

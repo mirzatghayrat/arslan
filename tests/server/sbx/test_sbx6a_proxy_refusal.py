@@ -182,7 +182,7 @@ def _shows_the_proxy_note(result: dict) -> None:
     assert "Arslan's proxy" in note and "local or non-public destination" in note
     assert "outside_sandbox: true" in note
     assert "may write only inside the working folder" not in note       # a network stop, not the file rules
-    assert "device" not in note           # trusting a device has no Settings control, card or tool yet (#774 review)
+    assert "device" not in note           # the model is never offered a device: the window's card is (SBX settings)
 
 
 @pytest.mark.parametrize("printed", [_PYTHON, _URLLIB, _CURL, _OLD_CURL, _GIT])

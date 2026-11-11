@@ -1578,5 +1578,34 @@
       "choiceRequired": "Ahora tiene {{count}} subsesiones. Elige de nuevo qué pasa con ellas.",
       "failed": "No se pudo eliminar. Inténtalo de nuevo."
     }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "Permitir comprobaciones de certificados del sistema en el entorno aislado",
+    "certificatesDesc": "Algunas herramientas (ciertos gestores de paquetes, los servicios HTTPS internos de una empresa) usan las comprobaciones de certificados de macOS al conectarse. El entorno aislado no las permite por defecto, así que esas herramientas muestran un error de certificado. Si lo activas, solo se permiten mientras un comando está conectado, y el llavero sigue fuera de su alcance. Desactivado por defecto.",
+    "devicesTitle": "Dispositivos locales de confianza",
+    "devicesDesc": "Los comandos del entorno aislado no pueden conectarse a tu red local por defecto (el router, un NAS, una impresora, otros ordenadores). Un dispositivo que añadas aquí sí, en todos sus puertos. Uno añadido por nombre guarda la dirección que tiene ahora, que se comprueba de nuevo en cada conexión. Las direcciones de este Mac no se pueden añadir.",
+    "devicesEmpty": "Aún no hay dispositivos de confianza.",
+    "placeholder": "Un nombre o una IP de la red local, como nas.local o 192.168.1.20",
+    "inputLabel": "Nombre o IP de la red local",
+    "add": "Confiar",
+    "remove": "Dejar de confiar",
+    "notFound": "No se encuentra «{{value}}». Usa un nombre de tu red local (como nas.local) o una IP.",
+    "notLan": "{{value}} no es una dirección de la red local. Aquí solo se pueden añadir dispositivos de tu red local.",
+    "ownAddress": "Esa es una dirección de este Mac. No se puede añadir.",
+    "listed": "Ya está en la lista.",
+    "failed": "No se pudo. Inténtalo de nuevo.",
+    "trustedToast": "{{name}} es de confianza",
+    "untrustedToast": "Ya no es de confianza",
+    "certificatesCardTitle": "La comprobación del certificado no pasó",
+    "certificatesCardBody": "Este comando usa las comprobaciones de certificados de macOS para conectarse, y el entorno aislado no las permite por defecto. Activa «Permitir comprobaciones de certificados del sistema en el entorno aislado» y vuelve a intentarlo.",
+    "openSettings": "Activarlo en Ajustes",
+    "notNow": "Ahora no",
+    "notNowToast": "De acuerdo, esta vez no",
+    "lanTitle": "El comando quiere conectarse a un dispositivo de tu red local: {{device}}",
+    "lanBody": "Los comandos del entorno aislado no pueden conectarse a tu red local por defecto. Si confías en este dispositivo, se podrá llegar a todos sus puertos. Puedes quitarlo en Ajustes cuando quieras.",
+    "lanTrusted": "Este dispositivo ya es de confianza. Vuelve a intentarlo y se conectará.",
+    "trustDevice": "Confiar en este dispositivo",
+    "namedDevice": "{{name}} ({{addresses}})",
+    "cardGone": "Esta tarjeta ya no es válida. Puedes añadir el dispositivo en Ajustes."
   }
 }
