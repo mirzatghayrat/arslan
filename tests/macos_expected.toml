@@ -369,6 +369,14 @@ markers = 3
 cases = 3
 xfail = 0
 
+# 0.1.64 SUB5c: a sub-session's command, run by the job runner under the real seatbelt with an outside grant on
+# the sub-session, writes only in its own folder and still reads the workspace. Counted on this Mac; take the
+# runner's numbers if they differ.
+["server/test_sub5c_child_folder.py"]
+markers = 1
+cases = 1
+xfail = 0
+
 # 2026-09-15: fixed artifact parser actually runs inside Seatbelt. The new
 # case passed on macOS and explicitly skips when sys.platform != darwin.
 # This is an appended boundary case, not a new full Linux measurement.

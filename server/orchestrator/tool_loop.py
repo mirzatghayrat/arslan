@@ -423,7 +423,7 @@ async def _status_workspace(wired_keys) -> tuple:
     from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            return (await settings_service.workspace_dir(db),
+            return (await settings_service.workspace_dir_for_run(db),       # SUB5c: a sub-session's own folder
                     await settings_service.workspace_is_default(db))
     except Exception:  # noqa: BLE001
         return None, False
@@ -455,7 +455,7 @@ async def _read_saved(rel: str) -> str | None:
     from server.services.workspace_paths import resolve_in_workspace
     try:
         async with db_session.AsyncSessionLocal() as db:
-            root = await settings_service.workspace_dir(db)
+            root = await settings_service.workspace_dir_for_run(db)       # SUB5c: where `rel` was written
         return resolve_in_workspace(rel, root).read_text(encoding="utf-8", errors="replace")[:200_000]
     except Exception:  # noqa: BLE001 — a check that cannot read simply does not run
         return None

@@ -84,9 +84,42 @@ async def test_a_finished_sub_session_still_reporting_reads_at_work(client, monk
     assert all("reporting" not in r for r in phone)
 
 
+async def test_a_sub_session_a_restart_found_queued_reads_interrupted(client, monkeypatch):
+    """#819's list: queued at the restart, it has no job and no message of its own; SUB5a's row says interrupted
+    (`report_restart`), and so does the list. One the restart never touched reads as before."""
+    await _family(client, monkeypatch)
+    async with client.db_maker() as session:
+        (await session.get(ConversationContext, CHILD)).sub_state = sub_sessions.INTERRUPTED
+        (await session.get(ConversationContext, GRANDCHILD)).sub_state = None
+        await session.commit()
+    rows = {r["conversation_id"]: r for r in (await client.get("/api/v1/conversations")).json()}
+    assert (rows[CHILD]["state"], rows[CHILD]["outcome"]) == ("unfinished", "interrupted")
+    assert (rows[GRANDCHILD]["state"], rows[GRANDCHILD]["outcome"]) == ("idle", None)
+
+
+async def test_a_running_sub_session_reads_working_not_reporting(client, monkeypatch):
+    """#819's list: `unreported()` holds running jobs too, so only a row that isn't already at work is relabelled."""
+    from server.services import run_registry
+    await _family(client, monkeypatch)
+    monkeypatch.setattr(background_jobs, "unreported", lambda: [SimpleNamespace(conversation_id=CHILD)])
+    monkeypatch.setattr(run_registry, "active_for", lambda cid: cid == CHILD)
+    rows = {r["conversation_id"]: r for r in (await client.get("/api/v1/conversations")).json()}
+    assert (rows[CHILD]["state"], rows[CHILD]["reporting"]) == ("working", False)
+
+
 async def test_the_spend_of_an_unknown_conversation_is_not_found(client, monkeypatch):
     await _family(client, monkeypatch)
     assert (await client.get("/api/v1/conversations/c-nobody/sub-sessions/spend")).status_code == 404
+
+
+async def test_the_spend_of_a_deleted_conversation_is_not_found(client, monkeypatch):
+    """#819's list: SUB5a's tombstone reads as no conversation, not as one that spent nothing."""
+    await _family(client, monkeypatch)
+    async with client.db_maker() as session:
+        await sub_sessions.tombstone(session, [CHILD])
+        await session.commit()
+    assert (await client.get(f"/api/v1/conversations/{CHILD}/sub-sessions/spend")).status_code == 404
+    assert (await client.get(f"/api/v1/conversations/{ROOT}/sub-sessions/spend")).status_code == 200
 
 
 async def test_every_phone_route_still_hides_sub_sessions(client, monkeypatch):

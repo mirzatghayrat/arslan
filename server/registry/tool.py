@@ -51,7 +51,7 @@ async def read_offer(skill_index: Callable[[], Awaitable[str]]) -> Offer:
     skills = await skill_index()
     context = personal_context.current()
     async with db_session.AsyncSessionLocal() as db:
-        workspace = await settings_service.workspace_dir(db)
+        workspace = await settings_service.workspace_dir_for_run(db)       # SUB5c: a sub-session's own folder
         default_read = await settings_service.default_read_enabled(db)
         own_folder = await settings_service.workspace_is_default(db)
     async with db_session.AsyncSessionLocal() as db:
