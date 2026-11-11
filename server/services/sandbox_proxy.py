@@ -36,9 +36,10 @@ import re
 import socket
 import subprocess
 from urllib.parse import urlsplit
+import weakref
 
 from arslan.aio import close_connection, within
-from server.registry.net_pin import _BlockedHost, _InvalidHost, _resolve_pinned, _Unresolvable
+from server.registry.net_pin import _BlockedHost, _FakeIpOnlyHttps, _InvalidHost, _resolve_pinned, _Unresolvable
 from server.services import browser_proxy
 
 logger = logging.getLogger(__name__)
@@ -204,7 +205,10 @@ def parse_trusted(raw: str | None) -> list[dict]:
 
 def trusted_address(host: str, trusted: list[dict], resolve=None) -> str | None:
     """The one address to connect to when `host` is a listed device, else None (the destination stays refused).
-    A literal must be listed. A name must be listed and every answer must be its recorded address or a listed IP."""
+    A literal must be listed. A name must be listed and every answer must be its recorded address or a listed IP.
+    SBX settings: an answer no entry could ever hold (public, loopback, link-local) isn't counted, since an mDNS name
+    such as nas.local answers its IPv6 link-local address too; any other answer still refuses the name, and the
+    connection still goes only to a pinned or listed address."""
     name = host.strip("[]").lower()
     resolve = resolve or socket.getaddrinfo
     listed = {e["address"] for e in trusted}
@@ -219,6 +223,7 @@ def trusted_address(host: str, trusted: list[dict], resolve=None) -> str | None:
         return None
     try:
         answers = {str(_ip(info[4][0])) for info in resolve(name, None)}
+        answers = {a for a in answers if _private(a)}
     except (OSError, ValueError):
         return None
     if not answers or not answers <= (pinned | listed):
@@ -239,6 +244,45 @@ async def _trusted() -> list[dict]:
             return parse_trusted(await settings_service.sandbox_trusted_devices(db))
     except Exception:  # noqa: BLE001 — a setting that can't be read trusts nothing
         return []
+
+
+# ── what the proxy refused while a command ran (SBX settings: the LAN card) ──
+# The tool loop watches the proxy while one run_command call runs, and trusted_devices.offer turns a LAN device it
+# refused meanwhile into a card. The proxy can't tell which command a connection came from (it takes no credentials),
+# so a refusal reaches every watch open at that moment: a command running beside another may see the other's, which is
+# why a card is offered only when a single device was refused. A watch only collects names; it trusts nothing.
+
+class _Watch:
+    __slots__ = ("hosts", "__weakref__")
+
+    def __init__(self):
+        self.hosts: list[str] = []
+
+
+_watches: weakref.WeakSet[_Watch] = weakref.WeakSet()
+_WATCHED = 8         # hosts kept per watch
+
+
+def watch() -> _Watch:
+    w = _Watch()
+    _watches.add(w)
+    return w
+
+
+def unwatch(w: _Watch | None) -> list[str]:
+    """The hosts the proxy refused while `w` was open, and `w` closed. A watch its command dropped (a stop) goes with
+    it: the set holds it weakly."""
+    if w is None:
+        return []
+    _watches.discard(w)
+    return list(w.hosts)
+
+
+def _note_refused(host: str) -> None:
+    name = host.strip("[]").lower()
+    for w in list(_watches):
+        if name not in w.hosts and len(w.hosts) < _WATCHED:
+            w.hosts.append(name)
 
 
 # ── the proxy ────────────────────────────────────────────────────────────────
@@ -386,6 +430,7 @@ class LocalProxy:
         upstream = None
         relays = []
         established = False
+        host = None
         try:
             if len(self.tasks) > _CONNECTIONS:
                 raise _Refused("too many connections", BUSY)
@@ -425,8 +470,11 @@ class LocalProxy:
         except (_Refused, _BlockedHost, ValueError, UnicodeError, OSError, TimeoutError,
                 asyncio.IncompleteReadError, asyncio.LimitOverrunError) as exc:
             if not established:
+                answer = _answer(exc)
+                if answer is DENIED and host and not isinstance(exc, _FakeIpOnlyHttps):    # a public name behind a
+                    _note_refused(host)                                                    # fake-IP TUN is no device
                 with suppress(OSError):
-                    writer.write(_refusal(_answer(exc)))
+                    writer.write(_refusal(answer))
                     await writer.drain()
         finally:
             for relay in relays:

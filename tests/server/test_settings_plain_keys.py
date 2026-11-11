@@ -23,9 +23,13 @@ AUTH: dict[str, str] = {}
 # accepting it from a client would be actively harmful — "it is internal" is not enough
 # on its own, because the next reader will use that as licence to add anything.
 #
-# Empty since C8-3 (v0.1.63): its one entry, `curation_backfill_from`, went with the
-# curation loop that wrote it.
-PLAIN_KEYS_NOT_USER_SETTABLE: dict[str, str] = {}
+# Its one entry before, `curation_backfill_from`, went with the curation loop that wrote it (C8-3, v0.1.63).
+PLAIN_KEYS_NOT_USER_SETTABLE: dict[str, str] = {
+    "sandbox_trusted_devices": (
+        "SBX settings: a device is trusted only through POST /settings/sandbox/trusted-devices, where the server "
+        "resolves a name and refuses a public address, this Mac's own and a name that doesn't resolve, or by the "
+        "answer to a card the server showed for that device. Raw JSON through PUT /settings would skip all of it."),
+}
 
 
 def test_every_plain_key_is_declared_or_explicitly_exempt():
