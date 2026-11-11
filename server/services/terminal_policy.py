@@ -371,21 +371,40 @@ def _detection_texts(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(out))
 
 
-@functools.lru_cache(maxsize=64)        # assess and ask_rules both ask, several times a call
-def _parsed(text: str) -> tuple[str, tuple[tuple[str, ...], ...]]:
-    """The reader's one pass over `text` (LOOP1 d2): why it does not understand the text, or "", and the commands the
-    named rules read. Every reader here reads this one pass, and nothing reads the text through the grammar again.
+@functools.lru_cache(maxsize=64)        # assess, ask_rules and the card all ask, several times a call
+def _parsed(text: str) -> shell_grammar.PrefixReading:
+    """The reader's one pass over `text` (LOOP1 d2), the whole text as given: whether it understands the text and
+    why not, and the commands the named rules read. Every reader here reads this one pass, and nothing reads the text
+    through the grammar again; the card's steps read it too (`reading`, d2b).
     `shell_grammar.read` refuses exactly where this pass does: the folders it follows as well never change what is
     read (its docstring), so `refused` is its "not understood" with the same why, and an understood command's
     commands are its own. One it does not understand keeps the path it had: its named rules read the commands
     before the refusal (additive only, never a grant), beside the rules on the raw text."""
-    prefix = shell_grammar.read_prefix(text)
-    return (prefix.why or "Arslan does not understand all of it") if prefix.refused else "", prefix.commands
+    return shell_grammar.read_prefix(text)
+
+
+def reading(text: str) -> shell_grammar.PrefixReading:
+    """The one pass, for card_purpose (LOOP1 d2b): an understood command's card reads its steps from the commands and
+    redirections the rules read, so the title never reads the text another way."""
+    return _parsed(text)
 
 
 def _command_words(text: str) -> tuple[tuple[str, ...], ...]:
     """Only additive checks may use a parsed prefix; it never grants permission."""
-    return _parsed(text)[1]
+    return _parsed(text).commands
+
+
+def asks_once(words: tuple[str, ...], writes: tuple[str, ...] = (), *, reach: bool = False) -> int:
+    """How strongly one command of an understood text, on its own words and the files its redirections write, is what
+    its card asks about: 2 when it matches a rule the card answers this time only (a named rule in ONCE_ONLY_RULES,
+    `delete-outside`, a write to a protected file); 1 when `reach` (the text's policy asks `outside-reach` itself,
+    under the `outside` the gate used) and it is a step that reaches outside; else 0. card_purpose leads the title
+    with the highest, so the title never hides what asked (LOOP1 d2b, ③Hands' condition 1; #828 review: a step that
+    only reaches outside never takes the lead from a named rule's step, and only leads where outside-reach is asked).
+    For the title only: no verdict reads it."""
+    if (words and _named_rules(words) & ONCE_ONLY_RULES) or any(_PROTECTED_PATH_C.match(w) for w in writes):
+        return 2
+    return int(bool(reach and words and _reaches_outside((words,))))
 
 
 def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
@@ -1211,7 +1230,8 @@ def _not_understood(text: str) -> str:
     """S2a-3 step 3 (design point 4): why shell_grammar's reader does not understand the command, or "". With no named
     rule, such a command is `unreadable`, so its card, the approvals, the Island and the risk grade all read one table.
     Named layer ② rules still read the raw text, so they come first. The same parse as the named rules' (`_parsed`)."""
-    return _parsed(text)[0]
+    prefix = _parsed(text)
+    return (prefix.why or "Arslan does not understand all of it") if prefix.refused else ""
 
 
 def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None, outside: bool = False) -> set[str]:
