@@ -26,6 +26,11 @@ pub const MENU_STATUS: &str = "tray-status";
 pub const MENU_STOP_HANDS: &str = "tray-stop-hands";
 /// Emitted to the main webview when a notification is clicked.
 pub const OPEN_CONVERSATION_EVENT: &str = "open-conversation";
+/// SUB5a: emitted with a task id when the notification of a task paused because
+/// its conversation was deleted is clicked: the Scheduled page shows the task.
+pub const OPEN_SCHEDULED_TASK_EVENT: &str = "open-scheduled-task";
+/// The reason of a scheduled_paused whose task's conversation was deleted.
+const CONVERSATION_DELETED: &str = "conversation_deleted";
 const POLL_EVERY: Duration = Duration::from_secs(2);
 /// Consecutive failed polls after which a held sleep assertion is dropped:
 /// a backend that cannot be reached cannot be doing work worth staying up for.
@@ -101,6 +106,18 @@ pub struct Event {
     pub outcome: Option<String>,
     #[serde(default)]
     pub task_name: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<u64>,
+    /// A code, only on a scheduled_paused that is not the failures in a row.
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+impl Event {
+    /// SUB5a: a task paused because its conversation was deleted.
+    fn paused_on_a_deleted_conversation(&self) -> bool {
+        self.kind == "scheduled_paused" && self.reason.as_deref() == Some(CONVERSATION_DELETED)
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
@@ -190,6 +207,10 @@ pub fn notification(locale: &str, event: &Event) -> Option<(String, String)> {
         ("approval_needed", _) => "notify_approval",
         ("scheduled_finished", Some("ok")) => "notify_scheduled_done",
         ("scheduled_finished", Some("error")) => "notify_scheduled_failed",
+        // SUB5a: the Scheduled page's words for this pause, not "failed several times in a row".
+        ("scheduled_paused", _) if event.paused_on_a_deleted_conversation() => {
+            "notify_scheduled_paused_deleted"
+        }
         ("scheduled_paused", _) => "notify_scheduled_paused",
         _ => return None,
     };
@@ -209,13 +230,28 @@ pub fn parse_response(raw: &str) -> Option<Status> {
     serde_json::from_str(body).ok()
 }
 
-/// A notification's identifier carries the conversation to open on click.
+/// A notification's identifier carries the conversation to open on click; for a
+/// task paused because its conversation was deleted, the task instead (SUB5a):
+/// the click shows it on the Scheduled page and never opens that conversation.
 pub fn notification_id(event: &Event) -> String {
+    if let (true, Some(task)) = (event.paused_on_a_deleted_conversation(), event.task_id) {
+        return format!("arslan-task|{}|{}", event.id, task);
+    }
     format!(
         "arslan|{}|{}",
         event.id,
         event.conversation_id.as_deref().unwrap_or("")
     )
+}
+
+/// The scheduled task a clicked notification shows, if its identifier names one.
+pub fn task_from_id(identifier: &str) -> Option<u64> {
+    let mut parts = identifier.splitn(3, '|');
+    if parts.next()? != "arslan-task" {
+        return None;
+    }
+    parts.next()?.parse::<u64>().ok()?;
+    parts.next()?.parse::<u64>().ok().filter(|task| *task > 0)
 }
 
 pub fn conversation_from_id(identifier: &str) -> Option<String> {
@@ -654,6 +690,8 @@ pub mod notify {
                     super::show_main(app);
                     if let Some(cid) = super::conversation_from_id(&identifier) {
                         let _ = app.emit_to(crate::MAIN_LABEL, super::OPEN_CONVERSATION_EVENT, cid);
+                    } else if let Some(task) = super::task_from_id(&identifier) {
+                        let _ = app.emit_to(crate::MAIN_LABEL, super::OPEN_SCHEDULED_TASK_EVENT, task);
                     }
                 }
                 handler.call(());
@@ -787,7 +825,61 @@ mod tests {
             conversation_id: Some("c1".into()),
             outcome: outcome.map(Into::into),
             task_name: Some("Morning brief".into()),
+            ..Event::default()
         }
+    }
+
+    /// SUB5a: what the backend sends when a task's conversation was deleted.
+    fn paused_deleted(id: u64) -> Event {
+        Event {
+            conversation_id: None,
+            task_id: Some(7),
+            reason: Some("conversation_deleted".into()),
+            ..event(id, "scheduled_paused", None)
+        }
+    }
+
+    #[test]
+    fn a_task_paused_on_a_deleted_conversation_says_so_and_opens_the_task() {
+        let (_, failed) = notification("en", &event(1, "scheduled_paused", None)).unwrap();
+        let (title, body) = notification("en", &paused_deleted(2)).unwrap();
+        assert_eq!(
+            title,
+            native_locale::text("en", "notify_scheduled_paused_title")
+        );
+        assert_eq!(
+            body,
+            native_locale::text("en", "notify_scheduled_paused_deleted_body")
+                .replace("{name}", "Morning brief")
+        );
+        assert!(body.contains("Morning brief") && body.contains("deleted") && body != failed);
+        assert!(!body.contains("several times"));
+        // A click shows the task, never a conversation.
+        let id = notification_id(&paused_deleted(2));
+        assert_eq!(
+            (task_from_id(&id), conversation_from_id(&id)),
+            (Some(7), None)
+        );
+        // Any other event keeps its conversation, and names no task.
+        let other = notification_id(&event(3, "scheduled_paused", None));
+        assert_eq!(
+            (
+                task_from_id(&other),
+                conversation_from_id(&other).as_deref()
+            ),
+            (None, Some("c1"))
+        );
+        assert_eq!(task_from_id("arslan-task|x|7"), None);
+        assert_eq!(task_from_id("arslan-task|2|"), None);
+        assert_eq!(task_from_id("arslan-task|2|0"), None);
+        assert_eq!(task_from_id("arslan|2|7"), None);
+    }
+
+    #[test]
+    fn the_status_endpoints_reason_and_task_are_read() {
+        let raw = "HTTP/1.1 200 OK\r\n\r\n{\"cursor\":2,\"events\":[{\"id\":2,\"kind\":\"scheduled_paused\",\"conversation_id\":null,\"outcome\":null,\"task_id\":7,\"at\":1,\"reason\":\"conversation_deleted\",\"task_name\":\"Morning brief\"}]}";
+        let status = parse_response(raw).unwrap();
+        assert_eq!(status.events, vec![paused_deleted(2)]);
     }
 
     #[test]
@@ -933,6 +1025,8 @@ mod tests {
             "notify_scheduled_failed_body",
             "notify_scheduled_paused_title",
             "notify_scheduled_paused_body",
+            "notify_scheduled_paused_deleted_title",
+            "notify_scheduled_paused_deleted_body",
         ];
         for locale in ["en", "zh", "ja", "es", "de", "fr"] {
             for key in keys {

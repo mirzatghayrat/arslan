@@ -629,7 +629,8 @@ def is_deleted(conversation_id: str, row: ConversationContext | None) -> bool:
 
     Why a tombstone: there is no conversations table. A conversation is its messages and, once a setting changes,
     its context row, and a first message to an id nothing has seen is what makes one (the window's `thread-<uuid>`,
-    the phone's `phone-<uuid>`, a scheduled task's `scheduled-<id>` on each fire). So a missing row means a new
+    the phone's `phone-<uuid>`, a scheduled task's own conversation on each fire: the `scheduled-<uuid>` stored on its
+    row, or `scheduled-<id>` on a row made before v0.1.64). So a missing row means a new
     conversation and reads the defaults, as it always did; only a row can say "deleted", also after a restart."""
     return conversation_id in _deleted or (row is not None and row.kind == DELETED)
 

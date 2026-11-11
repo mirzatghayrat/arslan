@@ -87,6 +87,20 @@ def is_own_conversation(task: ScheduledTask) -> bool:
     before v0.1.64), not one the user chose."""
     return task.conversation_id is None or task.conversation_id.startswith("scheduled-")
 
+
+async def forget_reused_id(db, task_id: int) -> None:
+    """A new task's id, in its creating transaction (the API, the schedule tool, the heartbeat): SQLite gives it the id
+    of the newest deleted task, so what the Inbox kept under `sched:<id>` is that task's. Its reminders go, open or
+    handled: an open one would show under the new task and count it as waiting (progress), and a handled one's
+    fingerprint would hold back the new task's same problem (`ingest`). A "stop this source" mute goes too, as
+    `delete_watch` drops its watch's: it would silence the new task. Nothing else outlives a task: its runs cascade."""
+    from sqlalchemy import delete
+
+    from server.db.models import ProactiveItem, ProactiveMute
+    key = f"sched:{task_id}"
+    await db.execute(delete(ProactiveItem).where(ProactiveItem.source_key == key))
+    await db.execute(delete(ProactiveMute).where(ProactiveMute.key == key))
+
 # (lo, hi) per cron field: 分 时 日 月 周 (dow 0=Sunday..6=Saturday)
 _FIELD_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 6))
 _FIELD_NAMES = ("minute", "hour", "day-of-month", "month", "day-of-week")
@@ -455,10 +469,10 @@ async def _fire(task: ScheduledTask) -> None:
             except MemoryError as exc:
                 if exc.code != CONVERSATION_DELETED:
                     raise
-    await _pause_deleted_conversation(task.id, cid)
+    await _pause_deleted_conversation(task.id)
 
 
-async def _pause_deleted_conversation(task_id: int, conversation_id: str) -> None:
+async def _pause_deleted_conversation(task_id: int) -> None:
     """SUB5a: the task's conversation was deleted, so its fire was refused before it ran (`task_context.load`). It
     pauses, as a task that keeps failing does, with a reason the Scheduled page words and one run row that says why;
     a tick never fires it again, and nothing is written into the deleted conversation. Resume fires it once more, and
@@ -476,7 +490,9 @@ async def _pause_deleted_conversation(task_id: int, conversation_id: str) -> Non
         task.next_due_at = None
         await db.commit()
     logger.info("scheduled task %s paused: its conversation was deleted", task_id)
-    desktop_status.push("scheduled_paused", conversation_id=conversation_id, task_id=task_id)
+    # The Mac words this pause as the Scheduled page does and opens the task there (`reason`): no conversation, so
+    # nothing opens the deleted one.
+    desktop_status.push("scheduled_paused", task_id=task_id, reason=CONVERSATION_DELETED)
 
 
 async def _fire_body(task: ScheduledTask) -> None:

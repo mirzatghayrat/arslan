@@ -42,11 +42,17 @@ export function evidencePath(evidence: Pick<ProactiveEvidence, "key" | "params">
   return evidence.key;
 }
 
+/** SUB5a: a task paused because its conversation was deleted did not fail in a row. Its line is the Scheduled page's own words
+ *  for that pause (ScheduledTasksCard's reasonText), not "failed 0 times". */
+const PAUSE_REASONS = new Set(["conversation_deleted"]);
+
 export function evidenceLines(t: TFunction, language: string, evidence: ProactiveEvidence[]): EvidenceLine[] {
   return evidence.map((line) => {
     const params: Record<string, unknown> = { ...isolated(line.params), ...countOf(line.params) };
     if (typeof line.params.at === "string") params.at = formatUiDateTime(line.params.at, language);
-    return { key: line.key, text: t(`proactive.evidence.${evidencePath(line)}`, params) as string, ...(line.quote ? { quote: line.quote } : {}) };
+    const reason = line.key === "sched.state" ? line.params.reason : undefined;
+    const key = typeof reason === "string" && PAUSE_REASONS.has(reason) ? `scheduled.reason.${reason}` : `proactive.evidence.${evidencePath(line)}`;
+    return { key: line.key, text: t(key, params) as string, ...(line.quote ? { quote: line.quote } : {}) };
   });
 }
 

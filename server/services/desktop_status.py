@@ -30,6 +30,9 @@ from urllib.parse import urlsplit
 KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused",
                    "lesson_learned"})
 OUTCOMES = frozenset({"ok", "error", "needs_review", "cancelled"})
+# Why a scheduled_paused happened, when it is not the failures in a row: a code, never text (SUB5a: the task's
+# conversation was deleted; the Mac words it as the Scheduled page does and opens the task there).
+REASONS = frozenset({"conversation_deleted"})
 MAX_EVENTS = 100
 
 logger = logging.getLogger(__name__)
@@ -84,20 +87,25 @@ def _clip(text, limit: int) -> str | None:
 
 def push(kind: str, *, conversation_id: str | None = None, outcome: str | None = None,
          task_id: int | None = None, title: str | None = None, summary: str | None = None,
-         work: str | None = None) -> dict:
+         work: str | None = None, reason: str | None = None) -> dict:
     """`title`/`summary`/`work` reach the island feed only, never the status
     endpoint. `work` says which kind of run finished (KINDS_OF_WORK) where the
     event kind alone cannot: a chat turn and a background job both end in
-    turn_finished, and the island treats them differently."""
+    turn_finished, and the island treats them differently. `reason` (REASONS) is
+    in the event only when given."""
     if kind not in KINDS:
         raise ValueError(f"unknown desktop event kind: {kind}")
     if outcome is not None and outcome not in OUTCOMES:
         raise ValueError(f"unknown desktop event outcome: {outcome}")
     if work is not None and work not in KINDS_OF_WORK:
         raise ValueError(f"unknown kind of work: {work}")
+    if reason is not None and reason not in REASONS:
+        raise ValueError(f"unknown desktop event reason: {reason}")
     with _lock:
         event = {"id": next(_event_ids), "kind": kind, "conversation_id": conversation_id,
                  "outcome": outcome, "task_id": task_id, "at": int(time.time())}
+        if reason is not None:
+            event["reason"] = reason
         _events.append(event)
         if title or summary or work:
             _details[event["id"]] = {"title": _clip(title, TITLE_CHARS), "summary": _clip(summary, SUMMARY_CHARS),

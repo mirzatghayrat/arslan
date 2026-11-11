@@ -11,7 +11,8 @@ never a count of their own. A unit is a conversation, a project or a scheduled t
   that has something waiting, so a counted project always has a row even below its top few;
 - a scheduled task waits when its last run failed or it paused itself, it has an open problem reminder, or one of its runs could not
   ask something newer than your last look at the task (`scheduled_tasks.seen_at`, migration 0084, set when you open the task).
-  The task's own conversation (`scheduled-<id>`) counts as the task: one thing, counted once (#590 review F4).
+  The task's own conversation counts as the task: one thing, counted once (#590 review F4). That is the one stored on its
+  row (`scheduler.own_conversation`, `scheduled-<uuid>`), or `scheduled-<id>` on a row made before v0.1.64.
 
 The window's conversation list reads `waiting_conversations` too (phone_reads.describe marks those rows "waiting"), so every
 conversation the badge counts has a marked row (#590 review F3a). INB5b moves the Scheduled page's dot onto `waiting.scheduled`,
