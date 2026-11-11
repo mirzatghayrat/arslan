@@ -339,20 +339,17 @@ def test_only_a_refusal_for_want_of_someone_to_ask_can_be_allowed(client, decide
     assert _rules(client) == set()
 
 
-def test_a_rules_label_is_its_own_and_only_a_migrated_one_falls_back_to_words(client):
-    """Rules carried over from 0.1.60 have no label: they are listed as the card said them. Any
-    other rule keeps its own label, an empty one included."""
+def test_a_rules_label_is_its_own(client):
+    """Every rule is listed under its own label, an empty one included. (S6: the fallback for the 0.1.60
+    command rules went with them, migration 0092.)"""
     async def seed():
         async with client.db_maker() as db:
-            await permission_store.add_rule(db, "legacy_rule", "delete", created_from="migration")
-            await permission_store.add_rule(db, "legacy_rule", "upload", label="uploads, my words")
+            await permission_store.add_rule(db, "app", "com.apple.Notes", label="Notes", created_from="card")
             await permission_store.add_rule(db, "app", "com.example.tool", created_from="card")
             await db.commit()
     client.portal.call(seed)
     labels = {r["target"]: r["label"] for r in client.get("/api/v1/permissions/rules").json()}
-    assert labels == {"delete": terminal_policy.describe("delete"), "upload": "uploads, my words",
-                      "com.example.tool": ""}
-    assert labels["delete"] and labels["delete"] != "delete"
+    assert labels == {"com.apple.Notes": "Notes", "com.example.tool": ""}
 
 
 def test_a_stray_rule_for_a_kind_never_remembered_is_not_honoured(client):

@@ -196,7 +196,7 @@ def test_when_the_bridge_drops_mid_card_the_mac_card_closes(app_client, shell):
 def test_a_phone_yes_never_leaves_a_standing_answer(app_client, monkeypatch):
     """0.1.61 §A4 (ruling 2026-10-12): the phone answers a card this once only. Its "remember"
     used to reach the window's "don't ask again" and store an Always rule from the phone."""
-    from server.services import terminal_policy
+    from server.services import permission_store
     _enable_shell(app_client, policy="ask_risky")
     _stub_tool_loop_adapter(monkeypatch, "rm", ["~/old.txt"])       # S2a-2: outside the folder, a card
     shell = _stub_run_command_executor(monkeypatch)
@@ -211,8 +211,8 @@ def test_a_phone_yes_never_leaves_a_standing_answer(app_client, monkeypatch):
 
     async def standing():
         async with app_client.db_maker() as db:
-            return await terminal_policy.always_allowed(db)
-    assert app_client.portal.call(standing) == set()
+            return await permission_store.list_rules(db)           # S6: no rule of any kind
+    assert app_client.portal.call(standing) == []
 
 
 async def test_the_first_answer_wins_even_when_both_arrive_before_the_turn_wakes():

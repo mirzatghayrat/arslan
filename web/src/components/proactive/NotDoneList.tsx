@@ -34,6 +34,9 @@ export interface Refusal {
   always: { kind: string; target: string; label: string }[];
   /** S1: refused by a scheduled run, which never takes a step that needs an OK: no "Always" answers it. */
   unattended?: boolean;
+  /** S6 (S4a follow-up 1): an expiry, said one of two ways: the card never opened because an earlier one went
+   *  unanswered (true), or it was shown and nobody answered it in time (false). Absent from an older server. */
+  unopened?: boolean;
 }
 
 /** What a row says, a line to a thing: the command, the file, the cadence, each app of a many-app entry (their detail is newline-joined; their target
@@ -199,6 +202,9 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
                     ? t("inbox.refusedTimes", { count: row.count, since: formatUiDateTime(row.first_at, i18n?.language) })
                     : formatUiDateTime(row.created_at, i18n?.language)}
                 </span>
+                {/* S6: a card nobody answered expired; it was never refused, and the person may have been right there. */}
+                {!row.unattended && typeof row.unopened === "boolean" && <span data-testid="inbox-refused-expired"
+                  className="text-[12px] text-muted-foreground">{t(row.unopened ? "inbox.expiredUnopened" : "inbox.expiredShown")}</span>}
                 {offered && !done && <div data-testid="inbox-refused-stores" className="flex flex-col gap-0.5">
                   {row.always.map((rule, i) => {
                     const label = rule.label || rule.target;

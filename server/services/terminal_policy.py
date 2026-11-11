@@ -1275,31 +1275,8 @@ def risk_grade(command: str, *, outside: bool = False) -> str:
     return {"run": "LOW", "ask": "MEDIUM", "forbid": "HIGH"}[assess(command, outside=outside).level]
 
 
-# ── "don't ask again", remembered by rule (0.1.48–0.1.62) ────────────────────
-# Since S2a-2 no command card offers "Always", and the stored `legacy_rule` rows are not read by
-# any decision (layer ② is this-time-only; layer ③ needs no card in the sandbox). Settings still
-# lists them; S6 deletes this and the old panel when it lands (v0.1.64 if S6 moves).
-
-async def always_allowed(db) -> set[str]:
-    """Rules the user said not to ask about again (0.1.61: `legacy_rule` rows in the permission
-    store), for Settings' list only. Unreadable means none."""
-    from server.services import permission_store
-    try:
-        return {r.target for r in await permission_store.list_rules(db, "legacy_rule")}
-    except Exception:  # noqa: BLE001 — a standing permission is never inferred from an error
-        return set()
-
-
-async def forget(db, rule: str) -> None:
-    from server.services import permission_store
-    await permission_store.delete_rule_by(db, "legacy_rule", rule)
-    await db.commit()
-
-
-# Rules S2a-2 retired (in the sandbox they run with no card): stored `legacy_rule` rows still carry
-# them, and Settings lists those in the words their cards used. Goes with `always_allowed` (S6).
-_RETIRED = {"delete": "deletes files", "install": "installs software"}
-
+# S6 (v0.1.64): the "don't ask again" rules of 0.1.48–0.1.62 (`legacy_rule` rows) are gone: migration 0092
+# deleted them, nothing writes one, and their Settings list and `/settings/terminal-rules` went with them.
 
 def describe(rule: str) -> str:
     """What a rule is about, in the words its card used when it asked."""
@@ -1310,6 +1287,4 @@ def describe(rule: str) -> str:
         return _DELETE_OUTSIDE[1]
     if rule == OUTSIDE_REACH[0]:
         return OUTSIDE_REACH[1]
-    if rule in _RETIRED:
-        return _RETIRED[rule]
     return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule
