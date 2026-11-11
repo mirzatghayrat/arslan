@@ -1,6 +1,19 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Mkh2UzoO1QsY2c1iB8DXAPjfRCZrkzWBp5CtdOLN2OA='; style-src 'sha256-LY4OOEx6KMJIpvX+HP+QRquPZg2gMcxgr3v08yIKnmk='; connect-src 'self'; media-src blob:; base-uri 'none'; form-action 'none'" />
+<!--
+  IMG1-B (v0.1.64): this page's only policy. It loads on Tauri's own protocol,
+  where tauri.conf.json's security.csp would apply, but that is null and stays
+  so: a policy there would cover recovery.html too, and Tauri would rewrite both
+  pages' inline scripts. The page loads its clip by fetch from its own origin
+  and plays it from a blob: URL; everything else is the inline script and style
+  below, allowed by hash. Native code reaches it through an init script and
+  WebviewWindow::eval, which a page policy doesn't gate.
+  🔴 CHANGE THE INLINE SCRIPT OR STYLE AND ITS HASH MUST CHANGE TOO, or WebKit
+  refuses it and the splash loses its fade-out and its error text. The test
+  web/src/__tests__/splash-csp.test.ts fails with the new hash.
+-->
 <title>Arslan</title>
 <!--
   The launch screen. Shown in its own frameless window from the instant the

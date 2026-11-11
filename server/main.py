@@ -817,7 +817,7 @@ def create_app() -> FastAPI:
         # Entry pages: the app, and the island's own page (0.1.51) that the
         # shell's notch window loads. Both name hashed bundles, so neither may
         # be cached — the same stale-frontend bug as below, in a second window.
-        entry_pages = {index_page, (static_dir / "island.html").resolve()}
+        island_page = (static_dir / "island.html").resolve()
 
         # 🔴 The entry point must never be cached, and this was found on a real
         # upgrade rather than here. Installing over an existing copy left the UI
@@ -839,9 +839,9 @@ def create_app() -> FastAPI:
         # reaches it and this header is its only policy. A remote image, font,
         # frame or fetch that gets past IMG1-A's Markdown chips (an SVG's
         # <image href>, say) is refused before any request leaves the Mac
-        # (docs/plans/0164/IMG1-remote-images.md). Only the main window: the
-        # island renders no Markdown, HTML or outside URL, and the splash and
-        # recovery.html are Tauri's own pages.
+        # (docs/plans/0164/IMG1-remote-images.md). The island's page gets its
+        # own, narrower policy below; the splash and recovery.html are Tauri's
+        # own pages and carry theirs as a <meta> (desktop/splash/).
         _MAIN_WINDOW_CSP = "; ".join((
             "default-src 'self'",
             # The bundle and public/boot-veil.js. No inline script, no eval.
@@ -868,6 +868,29 @@ def create_app() -> FastAPI:
             "frame-ancestors 'self'",
         ))
 
+        # The notch island's page (island.html, desktop/src-tauri/src/island.rs),
+        # from the same sidecar as the main window, so this header is its only
+        # policy too. It renders model text only as React text nodes and one
+        # data: thumbnail, so this is defence in depth, narrowed to what the
+        # built page loads: nothing that isn't listed.
+        _ISLAND_CSP = "; ".join((
+            "default-src 'none'",
+            # Its bundle, its chunks (one lazy) and its stylesheet. island.html
+            # has no inline script or style.
+            "script-src 'self'",
+            "style-src 'self'",
+            # The Hands thumbnail, data:image/jpeg (IslandApp.tsx).
+            "img-src data:",
+            # fetch to /api/v1 on this origin, and Tauri's IPC (island_shape,
+            # island_open_conversation, event listen). No WebSocket, so unlike
+            # the main window's this names no port.
+            "connect-src 'self' ipc: http://ipc.localhost",
+            "base-uri 'none'",
+            "form-action 'none'",
+            "frame-ancestors 'none'",
+        ))
+        _ISLAND_HEADERS = {**_INDEX_HEADERS, "Content-Security-Policy": _ISLAND_CSP}
+
         def _main_window_headers(request: Request) -> dict[str, str]:
             # The port of the socket the request came in on: uvicorn fills
             # scope["server"] from getsockname(), never from a header. The app
@@ -891,8 +914,10 @@ def create_app() -> FastAPI:
                     # went out with no policy and no no-store when compared by path.
                     if index_page.is_file() and candidate.samefile(index_page):
                         return FileResponse(str(candidate), headers=_main_window_headers(request))
-                    if candidate in entry_pages:  # the island's page: no main-window policy
-                        return FileResponse(str(candidate), headers=_INDEX_HEADERS)
+                    # The island's page, matched the same way: /ISLAND.HTML went
+                    # out with neither its policy nor no-store.
+                    if island_page.is_file() and candidate.samefile(island_page):
+                        return FileResponse(str(candidate), headers=_ISLAND_HEADERS)
                     # Everything else here is a hashed build artefact: leave it
                     # cacheable. Blanket no-store would re-fetch a 2.5 MB bundle on
                     # every launch and call that a fix.
