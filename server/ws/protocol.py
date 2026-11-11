@@ -212,6 +212,22 @@ def propose_enroll_node(*, call_id: str, name: str, host: str, user: str,
             "host": host, "user": user, "fingerprints": list(fingerprints)}
 
 
+def sandbox_card(card_id: str, kind: str, *, host: str | None = None,
+                 addresses: list[str] | None = None) -> dict[str, Any]:
+    """SBX settings (the mock the user OK'd with A): the sandbox stopped a command, and the chat says why. Emitting this
+    changes NOTHING. `kind` "certificates": its certificate check failed with "Allow system certificate checks in the
+    sandbox" off, and the card's button opens Settings at that switch. "lan_device": the proxy refused a device on the
+    LAN; the card shows `host` (when it was asked for by name) and `addresses` exactly as "Trust this device" pins them,
+    and the click is answered over REST by `card_id` (trusted_devices.answer). The Mac window's frame only: the
+    Bridge's FrameMapper drops a type it doesn't know, and the socket answers no frame for it."""
+    frame: dict[str, Any] = {"type": "sandbox_card", "card_id": card_id, "kind": kind}
+    if kind == "lan_device":
+        frame["addresses"] = list(addresses or [])
+        if host:
+            frame["host"] = host
+    return frame
+
+
 def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, Any]:
     """Arslan needs the user to pick a direction (PA-3): a structured choice card.
 

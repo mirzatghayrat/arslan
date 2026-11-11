@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import replay_safety
 
 
@@ -43,11 +44,11 @@ async def _throat_refuses(tool_key: str, args: dict) -> None:
     orig = tool_loop.resolve_executor
     tool_loop.resolve_executor = fake_resolve_executor
     try:
-        out = await tool_loop._dispatch_tool(
+        out = await tool_loop._run_tool(
             tool_key, args, json.dumps({"tool": tool_key, "args": args}),
-            resolve_tools=leaky_resolve, emit=lambda e: None,
-            tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
-            conversation_id="evolution-eval")
+            ToolTurn(resolve_tools=leaky_resolve, emit=lambda e: None,
+                     tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
+                     conversation_id="evolution-eval"))
     finally:
         tool_loop.resolve_executor = orig
 
@@ -84,12 +85,12 @@ async def test_throat_refuses_remember_even_under_evolution_replay_sentinel():
     orig = tool_loop.resolve_executor
     tool_loop.resolve_executor = fake_resolve_executor
     try:
-        out = await tool_loop._dispatch_tool(
+        out = await tool_loop._run_tool(
             "remember", {"kind": "fact", "action": "append", "content": "x"},
             json.dumps({"tool": "remember", "args": {}}),
-            resolve_tools=leaky_resolve, emit=lambda e: None,
-            tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
-            conversation_id="evolution-replay")
+            ToolTurn(resolve_tools=leaky_resolve, emit=lambda e: None,
+                     tool_timeout_s=5, tool_trace=[], convo=[{"role": "user", "content": "hi"}],
+                     conversation_id="evolution-replay"))
     finally:
         tool_loop.resolve_executor = orig
 

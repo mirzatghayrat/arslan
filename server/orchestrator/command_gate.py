@@ -167,7 +167,7 @@ async def _work_folder_holds_home() -> bool:
     from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            folder = await settings_service.workspace_dir(db)
+            folder = await settings_service.workspace_dir_for_run(db)     # SUB5c: where this run's commands write
         if folder is None:
             return True
         home = [part.casefold() for part in Path.home().resolve().parts]
@@ -234,13 +234,16 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     refused = _never_runs(draft)
     if refused is not None:
         return refused
-    await _where_it_runs(draft, args, turn.conversation_id)
+    refused = await _where_it_runs(draft, args, turn.conversation_id)
+    if refused is not None:
+        return refused
     refused = await _card(draft, args, turn.confirm_command, turn.conversation_id)
     if refused is not None:
         return refused
     refused = await _network(draft, args, turn.conversation_id)
     if refused is not None:
         return refused
+    _own_folder_holds(draft)
     return draft.plan()
 
 
@@ -251,6 +254,7 @@ class _Draft:
     command: str
     verdict: object                    # terminal_policy's verdict, read again as outside where it runs outside
     argv: list = field(default_factory=list)
+    own: bool = False                  # SUB5c: a sub-session's command, which writes only in its own folder
     sandbox_on: bool = False
     deletes_outside: bool = False      # SMART-8: an allowed delete outside the working folder; the sandbox holds it
     confined: bool = False
@@ -310,11 +314,23 @@ def _never_runs(d: _Draft) -> dict | None:
     return None
 
 
-async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> None:
-    """The second stage: the sandbox, a stored grant to leave it, and how the command reads where it runs."""
+async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> dict | None:
+    """The second stage: the sandbox, a stored grant to leave it, and how the command reads where it runs. The refusal
+    to record (a sub-session's command that can't stay in the sandbox), or None."""
     from server.services import command_sandbox, terminal_policy
     command = d.command
-    d.sandbox_on = await _sandbox_enabled()
+    # SUB5c: a sub-session's command runs in the sandbox, writing only in its own folder, whatever the switch, a grant
+    # or a card says. Asked to leave it, or with no sandbox that can start, it doesn't run (the executor holds too).
+    from server.services import settings_service
+    d.own = settings_service.run_sub_folder() != ()
+    if d.own and (args.get("outside_sandbox") is True or not command_sandbox.available()):
+        result = {"ok": False, "executed": False,
+                  "error": "a sub-session's commands run only in the sandbox, where they write only in its own folder; "
+                           + ("they can't run outside it" if args.get("outside_sandbox") is True
+                              else "the sandbox can't start here") + ". Nothing ran.",
+                  "note": "Run it without outside_sandbox, or say in your report what the commander should run."}
+        return result
+    d.sandbox_on = d.own or await _sandbox_enabled()
     d.deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
     d.confined = d.sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
     from server.services import task_service as _task_service
@@ -326,7 +342,7 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
     # answered "In this conversation"), found as decide finds one: in a chat turn and a background job
     # alike. With nobody to ask (a scheduled run) nothing stands, and the command starts inside the
     # sandbox. Its ledger row is written below, once the command is cleared to run.
-    d.outside_grant = await _outside_grant(conversation_id, command)
+    d.outside_grant = None if d.own else await _outside_grant(conversation_id, command)   # SUB5c: its grant never lets it out
     d.run_outside = d.sandbox_on and d.outside_grant is not None
     d.by_grant = d.run_outside        # the grant is what lets this command run outside the sandbox
     # S2a-3 step 5: with a grant, or no sandbox to run in, it runs outside, and `outside-reach` asks. Its card reads it
@@ -338,6 +354,7 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
     d.out_kw = {"outside": True} if d.verdict.rule == terminal_policy.OUTSIDE_REACH[0] else {}
     d.net_due = _network_card_due(command, args)
     d.net_kw = {"network": True} if d.net_due else {}
+    return None
 
 
 async def _card(d: _Draft, args: dict, confirm_command, conversation_id: str | None) -> dict | None:
@@ -461,3 +478,9 @@ async def _network(d: _Draft, args: dict, conversation_id: str | None) -> dict |
         result = {"ok": False, "error": d.network["refused"]}
         return result
     return None
+
+
+def _own_folder_holds(d: _Draft) -> None:
+    """After every stage has passed: a sub-session's command stays in the sandbox (SUB5c)."""
+    if d.own:          # SUB5c: an approved bare call stays in the sandbox too (its Apple Events stay blocked there)
+        d.run_outside, d.by_grant, d.unwrapped, d.kept_wrapped = False, False, False, d.kept_wrapped or d.unwrapped

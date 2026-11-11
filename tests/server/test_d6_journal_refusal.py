@@ -73,6 +73,7 @@ async def test_an_unjournalable_step_is_refused_as_a_tool_result_and_the_turn_go
     """The task record's refusal used to propagate and stop the whole job (`job_blocked`). A secret
     never reaches it: the loop's own screen refuses that call first, on the same raw values."""
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
 
     class Executor:
         calls = 0
@@ -92,9 +93,9 @@ async def test_an_unjournalable_step_is_refused_as_a_tool_result_and_the_turn_go
     async def function(conversation, message, emit):
         async def body(sink):
             for new in ("x" * 262_145, COOKIE, "plain text"):
-                results.append(await tool_loop._dispatch_tool(
-                    "edit_file", _edit(new), "", resolve_tools=tools, emit=emit,
-                    tool_timeout_s=2, tool_trace=[], convo=[], conversation_id=conversation))
+                results.append(await tool_loop._run_tool(
+                    "edit_file", _edit(new), "", ToolTurn(resolve_tools=tools, emit=emit,
+                    tool_timeout_s=2, tool_trace=[], convo=[], conversation_id=conversation)))
             return "Answer delivered"
         return await host_run.execute(conversation, message, emit, body)
     assert await run(function) == "Answer delivered", "the task goes on after the refused steps"

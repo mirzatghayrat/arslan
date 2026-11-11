@@ -23,6 +23,7 @@ from server.db.models import MCPServer, Tool, Toolset
 from server.mcp import executor, session
 from server.mcp import supervisor as sm
 from server.orchestrator import arslan, tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import mcp_service
 from server.services.task_service import known_local_failure
 
@@ -89,9 +90,9 @@ async def _row(maker, sid):
 
 
 async def _dispatch(tool_key):
-    return await tool_loop._dispatch_tool(
-        tool_key, {}, "{}", resolve_tools=arslan._callable_tools, emit=lambda e: None,
-        tool_timeout_s=5, tool_trace=[], convo=[])
+    return await tool_loop._run_tool(
+        tool_key, {}, "{}", ToolTurn(resolve_tools=arslan._callable_tools, emit=lambda e: None,
+        tool_timeout_s=5, tool_trace=[], convo=[]))
 
 
 async def _offered() -> set:
@@ -564,9 +565,9 @@ async def test_a_slow_close_never_costs_the_answer_or_last_error(db, own_supervi
     _live_session(monkeypatch, 1, _Stuck(), aclose=stuck_close)
     plans = _record_plans(monkeypatch, own_supervisor)
     try:
-        result = await tool_loop._dispatch_tool(
-            "mcp_1__t", {}, "{}", resolve_tools=arslan._callable_tools, emit=lambda e: None,
-            tool_timeout_s=0.1, tool_trace=[], convo=[])
+        result = await tool_loop._run_tool(
+            "mcp_1__t", {}, "{}", ToolTurn(resolve_tools=arslan._callable_tools, emit=lambda e: None,
+            tool_timeout_s=0.1, tool_trace=[], convo=[]))
         assert "timed out after 0.2 s" in str(result.get("error"))
         assert "timed out after 0.2 s" in ((await _row(db, 1)).last_error or "")
         assert plans == [(1, "refresh")] and session.manager.cached(1) is None

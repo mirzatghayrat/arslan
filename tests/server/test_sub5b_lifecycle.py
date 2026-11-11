@@ -90,15 +90,20 @@ async def test_a_deleted_trees_open_reminders_are_refused_at_accept_and_left_in_
 async def test_a_stop_while_a_new_sub_sessions_placement_is_read_refuses_it(runs, client, monkeypatch):  # noqa: F811
     """SUB5a's case (`test_a_sub_session_the_stopped_turn_starts_afterwards_never_runs`) with the pause in
     `placement`'s read: the stop lands there, and the start goes on past it. It is refused, no job is made, the model
-    is never asked for its brief, and its row doesn't end `working`. Another turn's still starts."""
+    is never asked for its brief, and its row doesn't end `working`. Another turn's still starts, reading its placement
+    once (SUB5c, #805's mutant N2: a second read, through `background_jobs.start` after the check, is an await the
+    check no longer covers). A start this lets through by mistake is stopped and awaited before the test ends, so a
+    regression fails here instead of leaving a job running past the test (#805's hang)."""
     model = _Model({OUTLINE: _steps(final="outline ready"), COVER: _steps(final="cover ready")},
                    summary=_steps(final="summed up"))
     monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
     run_id, turn = await _live_turn(runs, ROOT)
     entered, gate = asyncio.Event(), asyncio.Event()
     real = sub_sessions.placement
+    reads: dict[str, int] = {}
 
     async def slow(cid):
+        reads[cid] = reads.get(cid, 0) + 1
         if cid.startswith(sub_sessions.CHILD_PREFIX) and not gate.is_set():
             entered.set()
             await gate.wait()
@@ -116,11 +121,17 @@ async def test_a_stop_while_a_new_sub_sessions_placement_is_read_refuses_it(runs
             [child] = await sub_sessions.children(db, ROOT)
         assert await _states(runs, [child]) == {child: None}
         with execution_context.bind_run(run_id + 1):
-            await sub_sessions.start(ROOT, COVER, outside_seen=False)
-        assert [job.goal for job in _children()] == [COVER]
+            other = await sub_sessions.start(ROOT, COVER, outside_seen=False)
+        assert [job.goal for job in _children()] == [COVER] and reads[other] == 1
         run_registry.unregister(run_id, ROOT)
         await _wait(_settled)
         assert model.requests[OUTLINE] == [] and await _states(runs, [child]) == {child: None}
     finally:
         run_registry.unregister(run_id, ROOT)
         turn.cancel()
+        if not starting.done():
+            starting.cancel()
+        jobs = [job.task for job in background_jobs._jobs.values() if job.task is not None and not job.task.done()]
+        for task in (*jobs, *sub_sessions._summaries.values()):
+            task.cancel()
+        await asyncio.wait({starting, turn, *jobs, *sub_sessions._summaries.values()}, timeout=10)

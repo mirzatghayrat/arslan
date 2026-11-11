@@ -11,6 +11,7 @@ import subprocess
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import terminal_exec, terminal_policy as tp
 
 BASH = terminal_exec.SHELL[0]
@@ -110,9 +111,9 @@ async def test_that_shape_is_refused_before_it_runs_and_says_what_to_do(monkeypa
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", Never())
-    r = await tool_loop._dispatch_tool("run_command", {"command": command}, "{}", resolve_tools=resolve,
-                                       emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
-                                       confirm_command=no_card, conversation_id="c1")
+    r = await tool_loop._run_tool("run_command", {"command": command}, "{}", ToolTurn(resolve_tools=resolve,
+                                  emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                                  confirm_command=no_card, conversation_id="c1"))
     assert ran == [] and r["ok"] is False
     assert "write_file" in r["note"] and "git commit -F" in r["note"]
 

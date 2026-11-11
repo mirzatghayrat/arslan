@@ -165,6 +165,7 @@ async def test_an_unreadable_setting_means_a_card_even_for_a_harmless_command(ex
     """The tool loop's own reading (tool_loop._asks_for_everything): unknown counts as "ask for every command",
     so a harmless command in the sandbox still shows its card (#398 review, F4)."""
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
     from server.services import command_sandbox, terminal_exec
 
     async def unreadable(_session):
@@ -185,9 +186,9 @@ async def test_an_unreadable_setting_means_a_card_even_for_a_harmless_command(ex
 
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
-    await tool_loop._dispatch_tool("run_command", {"command": "ls"}, "{}", resolve_tools=resolve,
-                                   emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
-                                   confirm_command=card, conversation_id="c-unreadable")
+    await tool_loop._run_tool("run_command", {"command": "ls"}, "{}", ToolTurn(resolve_tools=resolve,
+                              emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                              confirm_command=card, conversation_id="c-unreadable"))
     assert asked == ["ls"] and ran == []
 
 

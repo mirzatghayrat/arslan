@@ -10,6 +10,7 @@ import pytest
 from arslan import execution_budget
 from arslan.execution_budget import Budget, Limits
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.registry.executors import EXECUTORS
 from server.services import terminal_exec
 from server.orchestrator import command_gate
@@ -61,10 +62,10 @@ def captured(monkeypatch):
 
 async def test_a_long_command_outlives_the_tool_loops_default(own_folder, no_cards):
     # The loop's per-tool default (here 1 s, 20 s in the app) no longer cuts run_command.
-    r = await tool_loop._dispatch_tool(
-        "run_command", {"command": "sleep 2; echo done"}, "{}", resolve_tools=_resolve,
+    r = await tool_loop._run_tool(
+        "run_command", {"command": "sleep 2; echo done"}, "{}", ToolTurn(resolve_tools=_resolve,
         emit=lambda e: None, tool_timeout_s=1, tool_trace=[], convo=[], confirm_command=_yes,
-        conversation_id="c1")
+        conversation_id="c1"))
     assert r["ok"] is True, r
     assert "done" in r["stdout"]
 
@@ -133,8 +134,8 @@ async def test_the_loops_backstop_says_it_was_the_time_limit(own_folder, no_card
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", Stuck())
     # 10.5 s left: the backstop is what is left minus 10 s, so it fires after ~0.5 s.
     with execution_budget.scope(_budget_with(10.5)):
-        r = await tool_loop._dispatch_tool(
-            "run_command", {"command": "ls"}, "{}", resolve_tools=_resolve, emit=lambda e: None,
-            tool_timeout_s=20, tool_trace=[], convo=[], confirm_command=_yes, conversation_id="c1")
+        r = await tool_loop._run_tool(
+            "run_command", {"command": "ls"}, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None,
+            tool_timeout_s=20, tool_trace=[], convo=[], confirm_command=_yes, conversation_id="c1"))
     assert r["ok"] is False and r["code"] == "time_limit"
     assert r["error"] == "stopped by the time limit; no output was captured"

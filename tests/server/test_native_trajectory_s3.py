@@ -17,7 +17,7 @@ from tests.server import test_trajectory_golden as golden
 @pytest.mark.parametrize("name", sorted(golden.SCENARIOS))
 async def test_trajectory_is_valid_at_every_model_request(monkeypatch, name):
     seen = []
-    real = tool_loop._render_request
+    real = model_step._render_request
 
     def spy(convo, current_request, status=""):
         snapshot = [dict(m) for m in convo]
@@ -39,7 +39,7 @@ async def test_trajectory_is_valid_at_every_model_request(monkeypatch, name):
 @pytest.mark.asyncio
 async def test_presearch_stays_host_run_and_model_calls_are_bound(monkeypatch):
     seen = []
-    real = tool_loop._render_request
+    real = model_step._render_request
 
     def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
@@ -56,7 +56,7 @@ async def test_presearch_stays_host_run_and_model_calls_are_bound(monkeypatch):
 @pytest.mark.asyncio
 async def test_continuation_and_finish_are_kept_on_the_assistant_message(monkeypatch):
     seen = []
-    real = tool_loop._render_request
+    real = model_step._render_request
 
     def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])
@@ -129,7 +129,7 @@ async def _repair_assistant(monkeypatch, replies):
     from tests.server.test_task_validation import check, run_contract
     queue = [LLMResponse(usage={}, **r) for r in replies]
     seen = []
-    real = tool_loop._render_request
+    real = model_step._render_request
 
     def spy(convo, current_request, status=""):
         seen.append([dict(m) for m in convo])

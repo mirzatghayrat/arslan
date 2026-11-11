@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from server.orchestrator import command_gate, run_trace, tool_loop, untrusted
+from server.orchestrator.turn_state import ToolTurn
 from server.services import (approvals, command_sandbox, permissions, run_recorder, shell_grammar, terminal_exec,
                              terminal_policy as tp)
 
@@ -116,9 +117,9 @@ async def _gate(monkeypatch, args, cards, *, sandbox_on=True, available=True, as
     try:
         with run_trace.collecting() as steps, (permissions.asking_with(asker) if asker is not None
                                                else contextlib.nullcontext()):
-            await tool_loop._dispatch_tool("run_command", args, "{}", resolve_tools=resolve, emit=lambda e: None,
-                                           tool_timeout_s=5, tool_trace=trace, convo=[], confirm_command=cards,
-                                           conversation_id="c1")
+            await tool_loop._run_tool("run_command", args, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None,
+                                      tool_timeout_s=5, tool_trace=trace, convo=[], confirm_command=cards,
+                                      conversation_id="c1"))
     finally:
         untrusted.end_turn(turn)
     return ex, trace[-1]["result"], steps

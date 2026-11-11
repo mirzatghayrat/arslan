@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import Base
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.ws import arslan as ws_arslan
 from server.ws import protocol
 from server.registry import ssh_tools
@@ -40,9 +41,9 @@ class _Stub:
 
 
 async def _dispatch(args, *, confirm=None):
-    return await tool_loop._dispatch_tool(
-        "ssh_run", args, "{}", resolve_tools=_resolve, emit=lambda e: None,
-        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=confirm)
+    return await tool_loop._run_tool(
+        "ssh_run", args, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None,
+        tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=confirm))
 
 
 @pytest.fixture(autouse=True)

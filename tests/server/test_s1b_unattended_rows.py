@@ -14,6 +14,7 @@ import pytest
 from server.db import session as db_session
 from server.db.models import Setting
 from server.orchestrator import tool_loop, untrusted
+from server.orchestrator.turn_state import ToolTurn
 from server.services import permission_store, permissions, task_service
 from server.orchestrator import command_gate
 
@@ -32,8 +33,8 @@ async def _rows():
 async def _dispatch(key, args):
     async def tools():
         return [{"key": key, "description": key}]
-    return await tool_loop._dispatch_tool(key, args, "", resolve_tools=tools, emit=lambda e: None,
-                                          tool_timeout_s=5, tool_trace=[], convo=[], conversation_id="conv-u")
+    return await tool_loop._run_tool(key, args, "", ToolTurn(resolve_tools=tools, emit=lambda e: None,
+                                     tool_timeout_s=5, tool_trace=[], convo=[], conversation_id="conv-u"))
 
 
 def _policy(row, kind):

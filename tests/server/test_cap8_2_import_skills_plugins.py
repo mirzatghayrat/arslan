@@ -335,6 +335,48 @@ async def test_a_file_swapped_after_its_check_is_refused(api, home, tmp_path, mo
     assert done and row["refused"] == "unreadable"
 
 
+# The swap above trips both of `_read_file`'s checks at once (another file, and one with two names). Each of the two
+# below trips only one, so dropping either half of the check is caught (#829 review).
+
+async def test_a_fresh_file_swapped_in_after_its_check_is_refused(api, home, monkeypatch):
+    """The lstat saw the skill's own file; a new plain file with one name takes its place before the open: only the
+    identity differs."""
+    folder = _skill(home, "racy", references__notes_md="# notes\n")
+    target = folder / "references" / "notes.md"
+    real_open, seen = os.open, []
+
+    def racing_open(path, flags, *args, **kwargs):
+        if not seen and os.fspath(path) == os.fspath(target):
+            target.with_name(".swap").write_text("not the skill's\n")
+            os.replace(target.with_name(".swap"), target)
+            seen.append(os.lstat(target).st_nlink)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", racing_open)
+    row = _row(await _scan(api), "skills", "racy")
+    assert seen == [1] and row["refused"] == "unreadable"
+
+
+async def test_a_second_name_added_after_its_check_is_refused(api, home, tmp_path, monkeypatch):
+    """The lstat saw the skill's own file with one name; a second name for that same file is added before the open:
+    only the name count differs."""
+    folder = _skill(home, "racy", references__notes_md="# notes\n")
+    target = folder / "references" / "notes.md"
+    before = os.lstat(target)
+    real_open, seen = os.open, []
+
+    def racing_open(path, flags, *args, **kwargs):
+        if not seen and os.fspath(path) == os.fspath(target):
+            os.link(target, tmp_path / "second-name.md")
+            now = os.lstat(target)
+            seen.append(((now.st_dev, now.st_ino) == (before.st_dev, before.st_ino), now.st_nlink))
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", racing_open)
+    row = _row(await _scan(api), "skills", "racy")
+    assert seen == [(True, 2)] and row["refused"] == "unreadable"
+
+
 async def test_a_change_after_the_scan_adds_nothing(api, home):
     folder = _skill(home)
     row = _row(await _scan(api), "skills", "release-notes")
