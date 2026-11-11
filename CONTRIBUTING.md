@@ -154,7 +154,7 @@ Schema changes are **not** run via `alembic upgrade` (alembic is gone). They are
 
 ### Where specs and plans live
 
-Larger changes are designed before they're coded: a written **spec** (what/why, constraints, invariants touched, acceptance criteria), then an ordered implementation **plan**, then the code. The specs and plans behind the existing subsystems are internal research records and are **not published with the open-source release**; `docs/ARCHITECTURE.md` is the public account of how the system fits together, and the invariants it lists are the ones to preserve.
+Larger changes are designed before they're coded: a written **spec** (what/why, constraints, invariants touched, acceptance criteria), then an ordered implementation **plan**, then the code. The current round's plan and task cards are committed under `docs/plans`, and specs that code or tests cite stay under `docs/specs`; older process docs were moved to the branch `archive/process-docs-2026-10`. `docs/ARCHITECTURE.md` is the public account of how the system fits together, and the invariants it lists are the ones to preserve.
 
 ## Version
 

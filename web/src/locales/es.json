@@ -788,7 +788,15 @@
     "moveBack": "Atrás",
     "movedTo": "Movida a «{{name}}»",
     "movedOut": "Quitada del proyecto",
-    "moveFailed": "No se pudo mover; quizá esté trabajando ahora."
+    "moveFailed": "No se pudo mover; quizá esté trabajando ahora.",
+    "search": {
+      "placeholder": "Buscar conversaciones",
+      "clear": "Borrar",
+      "titles": "Títulos",
+      "messages": "En mensajes",
+      "none": "No se encontró «{{query}}»",
+      "noneHint": "Ni en títulos ni en mensajes. Las conversaciones temporales y las de «No usar memoria» no se buscan."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Buenos días",
@@ -1500,5 +1508,34 @@
   },
   "waiting": {
     "count": "Esperando por ti: {{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "En curso",
+      "reporting": "Informando",
+      "waiting": "Esperando por ti",
+      "done": "Hecha",
+      "stopped": "Detenida",
+      "failed": "Fallida",
+      "interrupted": "Interrumpida",
+      "ended": "Terminó sin acabar"
+    },
+    "toggle": "Mostrar u ocultar sus subsesiones ({{count}})",
+    "under": "Dentro de «{{title}}»",
+    "header": "Esta es una subsesión de «{{name}}»; le informa cuando termina.",
+    "back": "Volver a «{{name}}»",
+    "panel": "Subsesiones",
+    "open": "Abrir",
+    "spend": "Gastado {{spent}}, límite {{limit}} ({{each}} por tarea × {{times}})",
+    "spendNoLimit": "Gastado {{spent}}, sin límite en dólares",
+    "delete": {
+      "title": "¿Eliminar «{{name}}»?",
+      "also_one": "Eliminar también su subsesión",
+      "also_other": "Eliminar también sus {{count}} subsesiones",
+      "keepNote": "Sus subsesiones quedan como conversaciones normales, con sus ajustes sin cambios.",
+      "stopFirst": "Una subsesión debajo sigue trabajando o informando. Detenla o espera su informe, y luego elimina.",
+      "choiceRequired": "Ahora tiene {{count}} subsesiones. Elige de nuevo qué pasa con ellas.",
+      "failed": "No se pudo eliminar. Inténtalo de nuevo."
+    }
   }
 }

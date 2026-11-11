@@ -1,7 +1,8 @@
 # Personal companion implementation
 
-Current delivery policy: [staged delivery amendment](staged-delivery.md).
-Next approved bounded milestone: [Stage 2 research assistant](stage-2-research-assistant.md).
+Current delivery policy: the staged delivery amendment (`staged-delivery.md`).
+Next approved bounded milestone: the Stage 2 research assistant (`stage-2-research-assistant.md`).
+Both documents moved to the branch `archive/process-docs-2026-10`.
 The user has authorized an intermediate releasable version and phased work to
 control usage; the original all-packages-before-release order below is retained
 as historical full-v1.2 scope, not a bar on a clearly limited preview candidate.

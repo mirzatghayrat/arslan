@@ -20,9 +20,12 @@ interface ThreadRowMenuProps {
   threadId: string;
   /** When true, the menu offers "Unarchive" instead of "Archive". */
   archived?: boolean;
-  onArchive: (id: string) => void;
+  /** Unset: no Archive (SUB5d: a sub-session goes with its tree). */
+  onArchive?: (id: string) => void;
   onUnarchive?: (id: string) => void;
   onDelete: (id: string) => void;
+  /** false: Delete calls onDelete at once, and the caller asks (SUB5d: a commander's own dialog). */
+  confirmDelete?: boolean;
   /** 0.1.58 §4: move this conversation into a project, or out of one (null). */
   projects?: { id: string; name: string }[];
   projectId?: string | null;
@@ -43,6 +46,7 @@ export default function ThreadRowMenu({
   onArchive,
   onUnarchive,
   onDelete,
+  confirmDelete = true,
   projects,
   projectId = null,
   onMove,
@@ -159,7 +163,7 @@ export default function ThreadRowMenu({
                     <ArchiveRestore className="w-3.5 h-3.5 text-subtle-foreground shrink-0" />
                     <span>{t("sidebar.unarchive")}</span>
                   </button>
-                ) : (
+                ) : onArchive ? (
                   <button
                     type="button"
                     role="menuitem"
@@ -172,7 +176,7 @@ export default function ThreadRowMenu({
                     <Archive className="w-3.5 h-3.5 text-subtle-foreground shrink-0" />
                     <span>{t("sidebar.archive")}</span>
                   </button>
-                )}
+                ) : null}
 
                 <button
                   type="button"
@@ -181,6 +185,7 @@ export default function ThreadRowMenu({
                   onClick={() => {
                     // 0.1.55: the one confirm sheet (it was an inline box inside this menu).
                     close();
+                    if (!confirmDelete) { onDelete(threadId); return; }
                     void confirmSheet({ title: t("confirm.conversationTitle"), body: t("confirm.conversationBody"),
                       action: t("confirm.delete") }).then((ok) => { if (ok) onDelete(threadId); });
                   }}

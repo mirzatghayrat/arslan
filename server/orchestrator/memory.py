@@ -253,7 +253,9 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
                 new_summary = clip_context(new_summary, summary_cap)
         # S64-0b (②Main's N3): a summary folding in a job's result from outside content stays marked.
         from server.orchestrator import untrusted
-        if untrusted.folds_outside([prior, *(m.content for m in to_fold if m.role == "arslan")]):
+        # SUB5b: and a sub-session's framed brief, its first message in the user's role.
+        if untrusted.folds_outside([prior, *(m.content for m in to_fold if m.role == "arslan" or (
+                m.role == "user" and str(m.content or "").startswith(untrusted.BRIEF_FROM_OUTSIDE)))]):
             new_summary = f"{untrusted.SUMMARY_FROM_OUTSIDE}\n{new_summary}"
 
         newer = select(ArslanSummary.id).where(ArslanSummary.conversation_id == conversation_id)

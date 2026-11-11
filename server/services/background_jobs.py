@@ -55,6 +55,8 @@ class Job:
     outside_seen: bool | Callable[[], bool] = field(default=True, repr=False)
     # SUB3: a sub-session's job: the conversation that started it, where its cards are asked.
     parent_id: str | None = None
+    # SUB5b: for a job in a sub-session, the top of its chain: whole-app summaries count it as that conversation's.
+    commander: str | None = None
     # SUB4: once it ended, whether any of its turns read outside content; None until then, or when it did not end on
     # its own (stopped, failed outside a turn): not known, so it counts as yes. And the files it wrote.
     external_seen: bool | None = None
@@ -167,6 +169,12 @@ def unreported() -> list[Job]:
     return [job for job in _jobs.values() if job.task is not None and not job.task.done()]
 
 
+def sub_session_turns(conversation_id: str) -> set[asyncio.Task]:
+    """SUB5b (card, rule 3): a sub-session's background turns not over yet. A message typed in its window waits for
+    them (`ws.arslan`), as one typed during a chat turn does; an ordinary conversation's jobs never hold it up."""
+    return {job.task for job in unreported() if job.conversation_id == conversation_id and job.parent_id}
+
+
 async def start(conversation_id: str, goal: str, criteria: list[dict], *,
                 outside_seen: bool | Callable[[], bool], origin: str = "mac", parent_id: str | None = None,
                 reports: str | None = None) -> Job:
@@ -175,15 +183,37 @@ async def start(conversation_id: str, goal: str, criteria: list[dict], *,
     when the job gets its slot: a queued job reads the history after that turn may have read more.
     The phone passes False (the user's own words), an accepted Inbox proposal True (text Arslan
     put together). SUB3: `parent_id` makes it a sub-session's job (`sub_sessions.start`). SUB4: `reports` makes it a
-    summary turn (`sub_sessions`), its id marked so its spend counts in its tree after a restart too."""
+    summary turn (`sub_sessions`), its id marked so its spend counts in its tree after a restart too. SUB5b: any job
+    in a sub-session is the sub-session's, whoever starts it (an accepted Inbox follow-up): its parent is read from
+    the stored kind (`sub_sessions.placement`)."""
+    _goal(goal)                     # refused before the placement read writes anything
+    from server.services import sub_sessions
+    placed = await sub_sessions.placement(conversation_id)
+    return start_placed(conversation_id, goal, criteria, placed, outside_seen=outside_seen, origin=origin,
+                        parent_id=parent_id, reports=reports)
+
+
+def _goal(goal: str) -> str:
     goal = " ".join(goal.split())[:4000]
     if not goal:
         raise ValueError("background_goal_required")
-    from server.services.sub_sessions import SUMMARY_JOB
-    job = Job(job_id=f"{SUMMARY_JOB if reports is not None else 'job-'}{uuid.uuid4()}", conversation_id=conversation_id,
-              goal=goal, acceptance=criteria_to_acceptance(criteria), origin="phone" if origin == "phone" else "mac",
+    return goal
+
+
+def start_placed(conversation_id: str, goal: str, criteria: list[dict], placed: tuple[str | None, str | None], *,
+                 outside_seen: bool | Callable[[], bool], origin: str = "mac", parent_id: str | None = None,
+                 reports: str | None = None) -> Job:
+    """`start` once its `sub_sessions.placement` is read. Not async, so nothing can come between a caller's last
+    check and the job's registration: SUB5a's `sub_sessions.start` reads the placement, checks the stop, then calls
+    this, so a stop either refuses it or finds its job (`stop_tree`)."""
+    from server.services import sub_sessions
+    goal = _goal(goal)
+    stored_parent, commander = placed
+    job = Job(job_id=f"{sub_sessions.SUMMARY_JOB if reports is not None else 'job-'}{uuid.uuid4()}",
+              conversation_id=conversation_id, goal=goal, acceptance=criteria_to_acceptance(criteria),
+              origin="phone" if origin == "phone" else "mac",
               outside_seen=True if outside_seen is None else outside_seen,   # None: nobody knows
-              parent_id=parent_id, reports=reports)
+              parent_id=parent_id or stored_parent, commander=commander, reports=reports)
     _forget_old_finished()
     _jobs[job.job_id] = job
     # A clean context: the job must not inherit the starting turn's task,
@@ -453,9 +483,10 @@ async def _report(job: Job, text: str) -> str:
                 "job_id": job.job_id, "outcome": job.outcome, "run_id": job.run_id})
     except Exception as exc:  # noqa: BLE001
         logger.warning("background job %s result not posted: %s", job.job_id, type(exc).__name__)
-    desktop_status.push("turn_finished", conversation_id=job.conversation_id,
-                        outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"),
-                        title=job.goal, summary=body or None, work="job")
+    if not job.parent_id:     # SUB5b: a sub-session's end is told once, by its commander's summary turn
+        desktop_status.push("turn_finished", conversation_id=job.conversation_id,
+                            outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"),
+                            title=job.goal, summary=body or None, work="job")
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
     return body

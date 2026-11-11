@@ -532,6 +532,31 @@ def _flatten(steps: list[dict], container: dict | None, out: list[dict], ctx: di
         prev = node
 
 
+def _code_readers(nodes: list[dict]):
+    """For a node, the first step down its pipe that runs its input as code (`| sh`), or None. Each step's next one is
+    looked up once, and each answer is kept for every step on the way, so a pipe of many downloads is read in linear
+    time (LOOP1 d2; the scan before it searched every node for each step of each download's pipe, cubic)."""
+    after: dict[int, dict] = {}
+    for m in nodes:
+        if m["from"] is not None:
+            after.setdefault(id(m["from"]), m)                             # the first, as the scan's next() found
+    found: dict[int, dict | None] = {}
+
+    def reader(n: dict) -> dict | None:
+        path = []
+        while id(n) not in found:
+            path.append(n)
+            nxt = after.get(id(n))
+            if nxt is None or _reads_code(nxt["w"]):
+                found[id(n)] = nxt
+                break
+            n = nxt
+        for p in path:
+            found[id(p)] = found[id(n)]
+        return found[id(n)]
+    return reader
+
+
 def _read(text: str, depth: int = 0, work: dict | None = None) -> dict | None:
     """The line read: its purpose, what it touches, how many real steps it has, and whether a transfer in it was not
     fully read (`unsure`). `depth`, `work`: as `_flatten`'s; a line read on its own may read READ_WORK times its
@@ -544,18 +569,13 @@ def _read(text: str, depth: int = 0, work: dict | None = None) -> dict | None:
     nodes: list[dict] = []
     _flatten(steps, None, nodes, {"parent": None}, depth, work)
     # #688 review 6e: a download whose output a program runs as code is one step.
+    reader = _code_readers(nodes)
     for node in nodes:
         if node["w"]["program"] not in _FETCHERS:
             continue
-        n = node
-        while n is not None:
-            nxt = next((m for m in nodes if m["from"] is n), None)
-            if nxt is None:
-                break
-            if _reads_code(nxt["w"]):
-                node["run"], nxt["merged"] = True, True
-                break
-            n = nxt
+        nxt = reader(node)
+        if nxt is not None:
+            node["run"], nxt["merged"] = True, True
         host = node["container"]
         if host is not None and (host["w"]["program"] in _RUNS_CODE or re.match(r"^[$`]", host["w"]["program"])
                                  or host["w"]["program"] == ""):
