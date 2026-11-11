@@ -609,15 +609,19 @@ class MyStatusExecutor:
 class ProgressReportExecutor:
     """INB7-f (v0.1.64): "how is it going" in any conversation. The brief Progress reads (progress.brief): done today, running,
     stuck and waiting on you, counted as conversations, projects and scheduled tasks, from the records only. It never counts on
-    its own, so it can't say other numbers than the page and the badge."""
+    its own. It reads other conversations, so it follows conversation_search's permissions (#862 review): refused where
+    conversation_search is, and without the conversations conversation_search never reads, or quick questions."""
 
     key = "progress_report"
 
     async def execute(self, args: dict) -> dict:
         from server.db import session as db_session
-        from server.services import progress
+        from server.services import conversation_search, personal_context, progress
+        refused = conversation_search.refusal(personal_context.current())
+        if refused is not None:
+            return refused
         async with db_session.AsyncSessionLocal() as db:
-            return {"ok": True, **await progress.brief(db)}
+            return {"ok": True, **await progress.brief(db, hide_private=True)}
 
 
 _CHART_MAX_POINTS = 50

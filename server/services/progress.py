@@ -141,8 +141,12 @@ async def _group(db: AsyncSession, cids: set[str], tasks: list[ScheduledTask],
     return out
 
 
-async def waiting_on_user(db: AsyncSession) -> Waiting:
+async def waiting_on_user(db: AsyncSession, *, hide_private: bool = False) -> Waiting:
+    """`hide_private` (INB7-f, #862 review): leave out the conversations another conversation's model may not be shown
+    (`private`). The badge, the user's own view, counts them all."""
     asking = await waiting_conversations(db)
+    if hide_private:
+        asking -= await private(db, asking)
     tasks = list((await db.execute(select(ScheduledTask))).scalars())
     out = await _group(db, asking, tasks)
 
@@ -216,7 +220,23 @@ async def _tasks(db: AsyncSession) -> list[ScheduledTask]:
     return list((await db.execute(select(ScheduledTask))).scalars())
 
 
-async def done_today(db: AsyncSession, now: datetime | None = None) -> Waiting:
+async def private(db: AsyncSession, cids: set[str]) -> set[str]:
+    """Which of these conversations another conversation's model may not be shown (#862 review): those conversation_search
+    never reads (`conversation_search.hidden`: temporary, "don't use memory") and quick questions, which no list shows
+    (`phone_ids.kind_of`, the sidebar's rule). Left out of the counts too: a count without a title still tells."""
+    from server.services import conversation_search, phone_ids
+    if not cids:
+        return set()
+    kinds = dict((await db.execute(select(ConversationContext.id, ConversationContext.kind)
+                                   .where(ConversationContext.id.in_(list(cids))))).all())
+    return await conversation_search.hidden(db, cids) | {cid for cid in cids if phone_ids.kind_of(cid, kinds.get(cid)) == "quick"}
+
+
+async def _shown(db: AsyncSession, cids: set[str], hide_private: bool) -> set[str]:
+    return cids - await private(db, cids) if hide_private else cids
+
+
+async def done_today(db: AsyncSession, now: datetime | None = None, *, hide_private: bool = False) -> Waiting:
     """「做完」: what got done since local midnight. A conversation with a reply that came without an error or a job that succeeded; a
     scheduled task with a run that went well."""
     since = today_start(now)
@@ -224,21 +244,22 @@ async def done_today(db: AsyncSession, now: datetime | None = None) -> Waiting:
         Run.kind.in_(USER_RUN_KINDS), Run.status.in_(DONE_RUNS), Run.error_kind.is_(None), Run.ended_at >= since))).scalars())
     succeeded = set((await db.execute(select(CompanionTask.conversation_id).distinct().where(
         CompanionTask.phase == "succeeded", CompanionTask.updated_at >= since))).scalars())
-    out = await _group(db, await _existing(db, await _tops(db, replied | succeeded)), await _tasks(db))
+    cids = await _shown(db, await _existing(db, await _tops(db, replied | succeeded)), hide_private)
+    out = await _group(db, cids, await _tasks(db))
     out.scheduled |= set((await db.execute(select(ScheduledTaskRun.task_id).distinct().where(
         ScheduledTaskRun.outcome == "ok", func.coalesce(ScheduledTaskRun.finished_at, ScheduledTaskRun.started_at) >= since)))
         .scalars())
     return out
 
 
-async def running_now(db: AsyncSession) -> Waiting:
+async def running_now(db: AsyncSession, *, hide_private: bool = False) -> Waiting:
     """「在做」: a companion task queued, running or checking its result, and a turn still running (its run is `recording`; a restart
     marks every such run interrupted at boot, run_reaper.mark_interrupted_runs)."""
     jobs = set((await db.execute(select(CompanionTask.conversation_id).distinct()
                                  .where(CompanionTask.phase.in_(ACTIVE_PHASES)))).scalars())
     turns = set((await db.execute(select(Run.conversation_id).distinct()
                                   .where(Run.kind.in_(USER_RUN_KINDS), Run.status == "recording"))).scalars())
-    return await _group(db, await _tops(db, jobs | turns), await _tasks(db))
+    return await _group(db, await _shown(db, await _tops(db, jobs | turns), hide_private), await _tasks(db))
 
 
 def _job_stuck(row: CompanionTask) -> str | None:
@@ -264,7 +285,7 @@ def _turn_stuck(run: Run) -> str | None:
     return "stopped" if run.status == "cancelled" else None
 
 
-async def stuck(db: AsyncSession, now: datetime | None = None) -> Waiting:
+async def stuck(db: AsyncSession, now: datetime | None = None, *, hide_private: bool = False) -> Waiting:
     """「卡住」: a conversation whose latest background job or latest turn of the last week stopped short (failed, stopped, cut by a
     restart, or waiting for something other than your answer), and a scheduled task that paused itself. Something newer of the same
     kind in that conversation (a job that got done, a turn that answered) clears it. Each unit's reason is in `why`."""
@@ -293,7 +314,7 @@ async def stuck(db: AsyncSession, now: datetime | None = None) -> Waiting:
         if top not in merged or _STUCK_FIRST.index(reasons[cid]) < _STUCK_FIRST.index(merged[top]):
             merged[top] = reasons[cid]
     tasks = await _tasks(db)
-    out = await _group(db, set(merged), tasks, merged)
+    out = await _group(db, await _shown(db, set(merged), hide_private), tasks, merged)
     for task in tasks:
         if task.paused_reason is not None:            # paused itself after failing; one switched off by hand isn't stuck
             out.scheduled.add(task.id)
@@ -332,15 +353,18 @@ def _line(units: Waiting, titles: dict, *, why: bool = False) -> dict:
     return {"count": units.count, "items": items, "more": max(0, units.count - LIST_CAP)}
 
 
-async def brief(db: AsyncSession) -> dict:
+async def brief(db: AsyncSession, *, hide_private: bool = False) -> dict:
     """The four lines of Progress's brief, from the records only: each count, the units to open (at most LIST_CAP, the rest in
-    `more`) and a template sentence per line that says its count and no other number (v0.1.64: no model writes it)."""
-    lines = {"done_today": await done_today(db), "running": await running_now(db), "stuck": await stuck(db),
-             "waiting_on_you": await waiting_on_user(db)}
+    `more`) and a template sentence per line that says its count and no other number (v0.1.64: no model writes it).
+    `hide_private` (the model's tool): without the conversations another conversation's model may not be shown (`private`)."""
+    hide = {"hide_private": hide_private}
+    lines = {"done_today": await done_today(db, **hide), "running": await running_now(db, **hide),
+             "stuck": await stuck(db, **hide), "waiting_on_you": await waiting_on_user(db, **hide)}
     titles = await _titles(db, list(lines.values()))
     out = {key: _line(units, titles, why=key == "stuck") for key, units in lines.items()}
     out["lines"] = [f"Done today: {lines['done_today'].count}.", f"Running now: {lines['running'].count}.",
                     f"Stuck: {lines['stuck'].count}.", f"Waiting on you: {lines['waiting_on_you'].count}."]
     out["note"] = ("Counts are conversations, projects and scheduled tasks, not messages or runs. Today starts at local "
-                   "midnight. Say the counts as given; an item opens by its kind and id.")
+                   "midnight. Say the counts as given; an item opens by its kind and id."
+                   + (" Temporary, no-memory and quick conversations are left out." if hide_private else ""))
     return out

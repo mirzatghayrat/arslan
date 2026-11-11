@@ -215,6 +215,58 @@ async def test_it_is_a_read_the_model_finds_on_demand(client):
     assert len(re.findall(r"[.!?](?:\s|$)", description)) <= 2
 
 
+async def test_temporary_no_memory_and_quick_conversations_never_reach_another_conversations_model(client, monkeypatch):
+    """#862 review: what other conversations may read follows conversation_search's rule (temporary and "don't use memory"
+    conversations are never read), and the sidebar's (a quick question is in no list). Left out of the counts too: a count
+    with no title would still tell another conversation's model they exist and what state they are in."""
+    monkeypatch.setattr(approvals, "all_pending", lambda: [{"call_id": "c1", "conversation_id": "chat-tmp"},
+                                                           {"call_id": "c2", "conversation_id": "chat-open"}])
+    await _add(client, ConversationContext(id="chat-tmp", temporary=True, no_memory=True),
+               ConversationContext(id="chat-off", no_memory=True), ConversationContext(id="chat-quick", kind="quick"))
+    rows = []
+    for cid in ("chat-tmp", "chat-off", "chat-quick", "chat-open"):
+        rows += [*_chat(cid, f"SECRET opening of {cid}"), _run(cid, "recorded"), _job(f"j-{cid}", cid, "failed"),
+                 _run(cid, "recording")]
+    await _add(client, *rows)
+    brief = await _tool()
+    for key in ("done_today", "running", "stuck", "waiting_on_you"):
+        assert _ids(brief[key]) == [("conversation", "chat-open")], key
+        assert brief[key]["count"] == 1, key
+    assert "SECRET opening of chat-open" in str(brief)
+    assert "chat-tmp" not in str(brief) and "chat-off" not in str(brief) and "chat-quick" not in str(brief)
+    # The badge is the user's own view, on the user's own screen: it still counts the temporary conversation's card.
+    assert (await client.get("/api/v1/proactive/summary")).json()["waiting"]["count"] == 2
+
+
+@pytest.mark.parametrize("own", [dict(temporary=True), dict(no_memory=True)])
+async def test_inside_a_temporary_or_no_memory_conversation_it_refuses_as_conversation_search_does(client, own):
+    from server.registry.executors import EXECUTORS
+    from server.services import personal_context as pc
+    await _add(client, *_chat("chat-open"), _run("chat-open", "recording"))
+    ctx = pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="chat-here", model_is_local=True, **own)
+    with pc.bind(ctx):
+        got = await _tool()
+        searched = await EXECUTORS["conversation_search"].execute({"query": "hello"})
+    assert got == searched == {"ok": False, "external": False, "error": "memory is off for this conversation"}
+
+
+async def test_a_cloud_model_with_memory_off_for_conversations_is_refused_as_conversation_search_is(client):
+    from server.registry.executors import EXECUTORS
+    from server.services import personal_context as pc
+    await _add(client, *_chat("chat-open", "plan the trip"), _run("chat-open", "recording"))
+
+    def ctx(**over):
+        return pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id="chat-here", **over)
+    with pc.bind(ctx(model_is_local=False)):
+        got = await _tool()
+        searched = await EXECUTORS["conversation_search"].execute({"query": "plan"})
+    assert got == searched and got["ok"] is False and "Settings" in got["error"]
+    for allowed in (dict(model_is_local=True), dict(model_is_local=False, cloud_memory_default=True),
+                    dict(model_is_local=False, cloud_memory_allowed=True)):
+        with pc.bind(ctx(**allowed)):
+            assert _ids((await _tool())["running"]) == [("conversation", "chat-open")], allowed
+
+
 @pytest.mark.parametrize("key", ["done_today", "running", "stuck", "waiting_on_you"])
 async def test_an_empty_install_has_nothing_in_any_line(client, monkeypatch, key):
     monkeypatch.setattr(approvals, "all_pending", lambda: [])
