@@ -41,7 +41,7 @@ SCHEMAS = {
                  "properties": {"name": {"type": "string", "maxLength": 120,
                                          "description": "As find_tools returned it."},
                                 "arguments": {"type": "object",
-                                              "description": "Its arguments, as its parameters say."}},
+                                              "description": "As its parameters say."}},
                  "required": ["name"], "additionalProperties": False},
 }
 
