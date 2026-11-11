@@ -75,6 +75,8 @@ class Job:
     # as the goal (the card and the task show the goal).
     reports: str | None = field(default=None, repr=False)
     results: dict = field(default_factory=dict)   # check_id -> status
+    # INB9-a: its last validation report (codes, the file a check found), for the acceptance sheet.
+    report: dict | None = field(default=None, repr=False)
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
 
@@ -96,10 +98,14 @@ def criteria_to_acceptance(criteria: list[dict]) -> list[dict]:
 
     Checkable kinds become deterministic rules; anything else is a non-critical
     model check. `answer-delivered` is always first, so every job has at least
-    one non-model check and an empty result can never pass.
+    one non-model check and an empty result can never pass. INB9-a: a `glance` is a
+    non-critical human check (👀 on the job's acceptance sheet), at most two; a third and
+    later stay model checks the sheet marks as "more than two to look at".
     """
+    from server.services.acceptance_sheet import GLANCE, MAX_GLANCES
     from server.services.task_service import ANSWER_DELIVERED
     checks = [dict(ANSWER_DELIVERED)]
+    glances = 0
     for index, item in enumerate(criteria[:MAX_CRITERIA], start=1):
         description = " ".join(str(item.get("description") or "").split())[:300]
         if not description:
@@ -118,6 +124,9 @@ def criteria_to_acceptance(criteria: list[dict]) -> list[dict]:
                                                           **({"target": target} if target else {})})
         elif kind == "mentions" and isinstance(target, str) and target.strip():
             check.update(evaluator="deterministic", rule={"kind": "text", "contains": [target.strip()[:200]]})
+        elif kind == "glance":
+            glances += 1
+            check.update(id=f"{GLANCE}{index}", **({"evaluator": "human"} if glances <= MAX_GLANCES else {}))
         checks.append(check)
     return checks
 
@@ -142,23 +151,38 @@ def criteria_from_acceptance(acceptance: list[dict]) -> list[dict]:
                 entry["target"] = rule["target"]
         elif rule.get("kind") == "text" and rule.get("contains"):
             entry.update(kind="mentions", target=rule["contains"][0])
+        elif str(check.get("id") or "").startswith("glance-"):     # INB9-a: a glance, also one past the cap
+            entry["kind"] = "glance"
         if entry["description"]:
             out.append(entry)
     return out[:MAX_CRITERIA]
 
 
-def outcome_of(phase: str, results: dict, reason: str | None) -> str:
-    """The one word the user sees. Only a task the validator marked succeeded is done."""
+def outcome_of(phase: str, results: dict, reason: str | None, *, glances: set | frozenset = frozenset()) -> str:
+    """The one word the user sees. Only a task the validator marked succeeded is done, or (INB9-a) one whose only gap
+    is a 👀: the task is waiting for nothing but the user's review, its answer was delivered, and the model's own
+    criteria hold at least one check that is not a glance, every one of them passed. `answer-delivered` is not one of
+    them: a job whose criteria are all glances (the model turned every check into "look at it yourself") stays partial.
+    Its row stays `waiting_user`, so accepting the review (`task_repository.accept_review`) still closes it."""
     if phase == "succeeded":
         return "done"
     if phase == "cancelled":
         return "stopped"
     if reason == "task_budget_exhausted":
         return "out_of_budget"
+    if (phase == "waiting_user" and reason == "acceptance_review_required" and glances & results.keys()
+            and results.get("answer-delivered") == "passed"):
+        own = [status for check_id, status in results.items() if check_id != "answer-delivered" and check_id not in glances]
+        return "done" if own and all(status == "passed" for status in own) else "partial"
     user_checks = {k: v for k, v in results.items() if k != "answer-delivered"}
     if any(v == "passed" for v in user_checks.values()) and results.get("answer-delivered") == "passed":
         return "partial"
     return "blocked"
+
+
+def glances_of(acceptance) -> set[str]:
+    """The ids of a job's 👀 checks: its human ones."""
+    return {check.get("id") for check in acceptance or () if isinstance(check, dict) and check.get("evaluator") == "human"}
 
 
 def jobs_for(conversation_id: str) -> list[Job]:
@@ -304,7 +328,7 @@ async def _run(job: Job) -> None:
         _inside_job.reset(token)
         from server.registry import hands_tools
         hands_tools.forget_job(job.job_id)      # approvals never outlive their job
-        outcome = outcome_of(phase, job.results, reason)
+        outcome = outcome_of(phase, job.results, reason, glances=glances_of(job.acceptance))
         # Judged before the job reads as finished, so nothing shows "done" in between.
         if outcome == "done" and await _goal_not_reached(job, final_text):
             outcome, reason = "blocked", "goal_not_reached"
@@ -446,6 +470,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         row = await repo.get(job.job_id)
         for result in row.results or ():
             job.results[result.get("check_id")] = result.get("status")
+        if row.results:
+            from server.services import task_validation
+            job.report = await task_validation.latest_report(repo, row)
         job.budget_stop = tree_stop or budget_stop_of(row.budget or {}, pause_reason=row.pause_reason,
                                                       tier=tier) or job.budget_stop
         text = output if isinstance(output, str) else (output or {}).get("final") if isinstance(output, dict) else ""
@@ -481,28 +508,43 @@ async def _report(job: Job, text: str) -> str:
     from server.orchestrator import memory, untrusted
     from server.ws import protocol
     body = text.strip()
+    glances = 0
     try:
         if not body and job.outcome == "out_of_budget":
             body = await _budget_note(job)
             if job.closing:             # never empty of what the run did: the host's closing from its records
                 body = f"{body}\n\n{job.closing}"
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
+            # INB9-a: the acceptance sheet ends the same one message; a summary turn's has none (its commander's
+            # sub-sessions each posted their own). What the commander hears of a sub-session stays its answer.
+            shown, glances = (body, 0) if job.reports is not None else await _with_sheet(job, body)
             # S64-0b: what may carry outside content (the result, or the budget note naming the goal)
             # reaches later turns framed; the user sees it as written. Only a job known clean is not.
-            framed = untrusted.job_result(body) if job.outside_seen is not False else None
-            message_id = await memory.add_message(job.conversation_id, "arslan", framed or body,
-                                                  display_content=body if framed else None, job_outcome=job.outcome)
-            run_registry.make_emit(job.conversation_id)(protocol.message(message_id, body, "arslan") | {
+            framed = untrusted.job_result(shown) if job.outside_seen is not False else None
+            message_id = await memory.add_message(job.conversation_id, "arslan", framed or shown,
+                                                  display_content=shown if framed else None, job_outcome=job.outcome)
+            run_registry.make_emit(job.conversation_id)(protocol.message(message_id, shown, "arslan") | {
                 "job_id": job.job_id, "outcome": job.outcome, "run_id": job.run_id})
     except Exception as exc:  # noqa: BLE001
         logger.warning("background job %s result not posted: %s", job.job_id, type(exc).__name__)
     if not job.parent_id:     # SUB5b: a sub-session's end is told once, by its commander's summary turn
         desktop_status.push("turn_finished", conversation_id=job.conversation_id,
                             outcome={"done": "ok", "stopped": "cancelled"}.get(job.outcome, "needs_review"),
-                            title=job.goal, summary=body or None, work="job")
+                            title=job.goal, summary=body or None, work="job", glance=glances or None)
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
     return body
+
+
+async def _with_sheet(job: Job, body: str) -> tuple[str, int]:
+    """The result with its acceptance sheet after it, and how many 👀 it holds. A sub-session's job has no criteria
+    of its own: its sheet is its answer and the files it wrote."""
+    from server.services import acceptance_sheet, runtime_messages
+    files = job.files if job.parent_id else ()
+    sheet = acceptance_sheet.render(job.acceptance, job.results, job.report, await runtime_messages.selected_locale(),
+                                    files=files)
+    glances = len(acceptance_sheet.columns(job.acceptance, job.results, job.report)[1])
+    return (f"{body}\n\n{sheet}" if sheet else body), glances
 
 
 async def _budget_note(job: Job) -> str:

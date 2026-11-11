@@ -108,7 +108,8 @@ async def test_a_job_runs_as_its_own_task_and_posts_one_result(execution_db, act
         task = await db.get(CompanionTask, job.job_id)
         assert task.privacy["driver"] == {"kind": "background"} and task.phase == "succeeded"
         messages = (await db.scalars(select(ArslanMessage).where(ArslanMessage.conversation_id == CID))).all()
-    assert [m.content for m in messages] == [f"Done: {PHRASE}"]
+    # INB9-a: one message, the result and its acceptance sheet (tests/server/test_inb9_acceptance_sheet.py).
+    assert [m.content.split("\n\n**✅")[0] for m in messages] == [f"Done: {PHRASE}"]
     updates = [f for f in frames if f["type"] == "job_update" and f["job_id"] == job.job_id]
     assert [u["phase"] for u in updates][0] == "queued" and updates[-1]["outcome"] == "done"
     assert updates[-1]["criteria"] == [{"id": "criterion-1", "description": f"The result says {PHRASE}",

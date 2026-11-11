@@ -761,6 +761,7 @@
       "waiting": "Attend ton accord",
       "waiting_reminder": "Un travail arrêté t’a laissé un rappel",
       "waiting_away": "Une carte a expiré",
+      "waiting_glance": "Un travail terminé vous a laissé quelque chose à regarder",
       "working": "En cours",
       "progress": "En cours : {{done}} sur {{total}}",
       "done": "Terminé",

@@ -761,6 +761,7 @@
       "waiting": "Waiting for your approval",
       "waiting_reminder": "A stopped job left you a reminder",
       "waiting_away": "A card expired",
+      "waiting_glance": "A finished job left something for you to look at",
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
       "done": "Done",

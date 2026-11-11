@@ -761,6 +761,7 @@
       "waiting": "Wartet auf deine Freigabe",
       "waiting_reminder": "Ein angehaltener Auftrag hat dir eine Erinnerung hinterlassen",
       "waiting_away": "Eine Karte ist abgelaufen",
+      "waiting_glance": "Ein fertiger Auftrag hat dir etwas zum Ansehen hinterlassen",
       "working": "Läuft",
       "progress": "Läuft: {{done}} von {{total}}",
       "done": "Fertig",
