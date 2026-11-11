@@ -350,7 +350,7 @@ def test_a_put_back_that_raises_is_held_too(monkeypatch):
     def broken(saved):
         raise OSError(5, "Input/output error")
     monkeypatch.setattr(git_config_guard, "restore", broken)
-    assert terminal_exec._put_back(lambda: git_config_guard.restore(None)) == (git_config_guard.HELD_NOTE, True)
+    assert terminal_exec._put_back(None) == (git_config_guard.HELD_NOTE, True)
 
 
 @pytest.mark.macos
@@ -854,21 +854,58 @@ async def test_a_pre_command_put_back_that_cant_be_written_refuses_the_command(t
     assert seen == [(True, ORIGINAL)] and "c1" in git_config_guard.ENDED
 
 
-async def test_a_conversation_that_never_had_the_grant_pays_no_check(tmp_path, monkeypatch):
-    """Control: no walk and no read before its commands, even while another conversation is watched."""
+async def test_a_repo_never_granted_pays_nothing(tmp_path, monkeypatch):
+    """Control: while no folder has had the grant, a command does no walk and no read, in any conversation."""
     ws = tmp_path / "ws"
     config = _repo(ws, text=ORIGINAL)
     seen = _recording(monkeypatch, config)
     walked = []
     real = git_config_guard.config_files
     monkeypatch.setattr(git_config_guard, "config_files", lambda *a, **k: walked.append(a) or real(*a, **k))
-    await _in("c2", terminal_exec.run("true", cwd=ws, sandbox=True))
-    assert walked == [] and git_config_guard.recheck("c2") is None
+    for conversation in ("c1", "c2"):
+        await _in(conversation, terminal_exec.run("true", cwd=ws, sandbox=True))
+    assert walked == [] and git_config_guard.WATCHED == {} and seen == [(False, ORIGINAL)] * 2
+
+
+@pytest.mark.parametrize("reader", ["another conversation", "a sub-session"])
+async def test_a_key_written_late_is_put_back_before_another_conversations_command(tmp_path, monkeypatch, reader):
+    """Review delta 4 (Astra): the check is the repository's, not the conversation's. The grant in c1; the late key;
+    then a command of another conversation (or of a sub-session, which has none) in another folder: put back first."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    seen = _recording(monkeypatch, config)
     await _in("c1", terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True))
-    walked.clear()
     _git_set(config, "core.fsmonitor", VALUE)
-    assert "git_config_note" not in await _in("c2", terminal_exec.run("true", cwd=ws, sandbox=True))
-    assert walked == [] and len(seen) == 3
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    command = terminal_exec.run(f"git -C {ws / 'r'} status", cwd=elsewhere, sandbox=True)
+    result = await (_in("c2", command) if reader == "another conversation" else command)
+    assert seen == [(True, ORIGINAL), (False, ORIGINAL)] and config.read_text() == ORIGINAL
+    assert "core.fsmonitor" in result["git_config_note"] and VALUE not in result["git_config_note"]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a folder with no permissions")
+async def test_a_watched_folder_that_cant_be_walked_refuses_the_next_command(tmp_path, monkeypatch):
+    """Review delta 4 (Astra), fail closed: a folder in a granted repository's path that can't be read (here holding a
+    repository made after the put-back, with a program key) means the check can't be complete, so the next command,
+    of any conversation, doesn't start, and the note says why."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    seen = _recording(monkeypatch, config)
+    await _in("c1", terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True))
+    locked = ws / f"{STAND_IN}-locked"
+    _repo(locked, text=f"[core]\n\tfsmonitor = {VALUE}\n")
+    locked.chmod(0)
+    try:
+        for conversation in ("c1", "c2"):
+            result = await _in(conversation, terminal_exec.run("cat x", cwd=ws, sandbox=True))
+            assert not result["ok"] and result["git_config_note"] == git_config_guard.UNWALKED
+    finally:
+        locked.chmod(0o755)
+    assert seen == [(True, ORIGINAL)] and VALUE not in str(result)
+    # Readable again: the new repository is a new one's, its program key goes, and commands run.
+    assert (await _in("c2", terminal_exec.run("true", cwd=ws, sandbox=True)))["ok"]
+    assert _keys(locked / "r" / ".git" / "config") == {}
 
 
 def test_a_config_removed_alone_is_written_back_from_the_baseline(tmp_path):

@@ -402,12 +402,14 @@ _FSMONITOR_LATER = _LATER["own session"].replace("core.hooksPath", "core.fsmonit
 @pytest.mark.macos
 @macos
 @pytest.mark.parametrize("sbx", ["commands"], indirect=True)
-@pytest.mark.parametrize("writable", [True, False])
-async def test_a_key_written_after_the_put_back_never_reaches_an_ungranted_command(sbx, monkeypatch, writable):
+@pytest.mark.parametrize("writable,reader", [(True, ""), (True, f"{STAND_IN}-other"), (False, "")])
+async def test_a_key_written_after_the_put_back_never_reaches_an_ungranted_command(sbx, monkeypatch, writable, reader):
     """The race, on the product path: the granted command ends and is put back; its own-session child writes
-    core.fsmonitor after that. The next command, without the grant, finds it put back before it starts (git reads no
-    key), and the step names the key, never its value. When the put-back can't be written (the `.git` folder made
-    read-only from outside the sandbox) that command is refused, does nothing, and the grant ends."""
+    core.fsmonitor after that. The next command, without the grant, in this conversation or (review delta 4) another,
+    finds it put back before it starts (git reads no key), and the step names the key, never its value. When the
+    put-back can't be written (the `.git` folder made read-only from outside the sandbox) that command is refused,
+    does nothing, and the grant ends."""
+    from server.services import tool_outputs
     _product_env(sbx, monkeypatch)
     assert _git(sbx.work, "init", "-q", "repo").returncode == 0
     git = sbx.work / "repo" / ".git"
@@ -418,10 +420,12 @@ async def test_a_key_written_after_the_put_back_never_reaches_an_ungranted_comma
     mode = git.stat().st_mode
     if not writable:
         git.chmod(0o555)
+    token = tool_outputs.conversation.set(reader)
     try:
         ran = await terminal_exec.run(f"git -C repo config --get core.fsmonitor; echo got=$?; touch {STAND_IN}-ran",
                                       cwd=sbx.work, sandbox=True, offline=True)
     finally:
+        tool_outputs.conversation.reset(token)
         git.chmod(mode)
     assert VALUE not in ran["git_config_note"] and VALUE not in ran["stdout"]
     if writable:

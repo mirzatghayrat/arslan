@@ -104,10 +104,11 @@ xfail = 0
 # config under node_modules stays held under the grant (1 case); a hook hard-linked to its sample isn't written
 # through it, with and without the grant (2 cases). Review delta 3: a key an own-session child writes after the
 # put-back is put back before the next command without the grant, which is refused when that can't be written (2
-# cases); a config removed by `ln -f` under the grant is written back from the baseline (1 case).
+# cases); a config removed by `ln -f` under the grant is written back from the baseline (1 case). Review delta 4: the
+# command after the late write in another conversation is checked the same way (1 case).
 ["server/sbx/test_hr1b_git_config_kernel.py"]
 markers = 15
-cases = 23
+cases = 24
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

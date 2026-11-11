@@ -84,8 +84,7 @@ _ALWAYS_ASKS = frozenset({"outside"})
 # S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
 # card, as before S4a. One click must not run the same remote command for two jobs.
 _NEVER_JOINED = frozenset({"outside", "remote"})
-# HR-1b: kinds a card offers for this conversation only (and no; a later command needs it again: an upstream, then a
-# push). The island never answers it (approvals.island_may_answer: not one of its kinds).
+# HR-1b: kinds a card offers for this conversation only (and no). The island never answers it (not one of its kinds).
 _CONVERSATION_ONLY = frozenset({"git_config"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
 _SCOPE_SETS = (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED

@@ -8,11 +8,11 @@ environment; a key off ALLOWED added, changed or removed is put back (the pre-ru
 replayed, or a new repository's file minus every key off the list), read back and compared, written atomically; any
 step failing restores the pre-run bytes whole. Review delta 2: the group ends first; a snapshot starts from the last
 put-back (`_BASELINES`); a config with a second name drops the lift (`Linked`); a put-back still refused once flags
-and ACL are cleared is `held` and ends the grant. Review delta 3: a process in its own session can write after the
-put-back, so every command of a conversation that had the grant, granted or not, is preceded by `recheck`, refused
-if it can't put back; a config removed alone is written back. Not covered: git outside Arslan or in its other
-runners (plugin hooks, MCP servers) before that next command; the file tools run no git. The model reads key names,
-never a value. Codex's corpus owns the adversarial shapes: see the PR body.
+and ACL are cleared is `held` and ends the grant. Review deltas 3 and 4: a process in its own session can write after
+the put-back, so once any folder had the grant every command, of any conversation, is preceded by `recheck`, refused
+if a walk or a put-back fails; a config removed alone is written back. Not covered (residuals): a writer after that
+check, git outside Arslan or in its other runners (plugin hooks, MCP servers); the file tools run no git. The model
+reads key names, never a value. Codex's corpus owns the adversarial shapes: see the PR body.
 """
 from __future__ import annotations
 
@@ -261,14 +261,12 @@ class Outcome:
         if self.reverted:
             shown = [_clean(n) for n in self.reverted[:_NAMES_SHOWN]]
             more = len(self.reverted) - len(shown)
-            parts.append("Arslan put back git settings that this conversation's git_config permission doesn't cover "
-                         "(they can name programs that run later): " + ", ".join(shown)
-                         + (f" and {more} more" if more > 0 else "") + ". Upstreams, remotes and user.name/email "
-                         "it changed were kept.")
+            parts.append("Arslan put back git settings the git_config permission doesn't cover (they can name programs "
+                         "that run later): " + ", ".join(shown) + (f" and {more} more" if more > 0 else "")
+                         + ". Upstreams, remotes and user.name/email it changed were kept.")
         if self.restored:
-            parts.append(f"Arslan couldn't check the git settings this command changed in {len(self.restored)} "
-                         "config file(s), so it restored them as they were before the command (a new repository's "
-                         "config was removed); nothing the command changed there was kept.")
+            parts.append(f"Arslan couldn't check the git settings changed in {len(self.restored)} config file(s), so "
+                         "it restored them as they were (a new repository's config was removed), keeping none of it.")
         if self.unchecked:
             parts.append("Arslan couldn't look through the working folder after this command, so it restored the git "
                          "settings it had saved; a repository this command created may not have been checked.")
@@ -283,8 +281,7 @@ class Outcome:
 #: Review delta 2: conversations whose put-back couldn't be written; `command_gate._git_config` ends their grant.
 ENDED: set[str] = set()
 HELD_NOTE = ("Arslan couldn't put this repository's git settings back after this command, so it ended this "
-             "conversation's git_config permission: git can't update them again in this conversation. Tell the user "
-             "to check the repository's git settings (.git/config) before running git outside Arslan.")
+             "conversation's git_config permission. Tell the user to check .git/config before running git outside Arslan.")
 
 
 def _clean(name: str) -> str:
@@ -440,33 +437,36 @@ def _folder_left(path: Path, folder: Path) -> bool:
         return False
 
 
-#: Review delta 3: per conversation, each folder a granted command ran in, with its closed folders. Before every
-#: command of that conversation, wherever it runs (`git -C` reaches them), terminal_exec calls `recheck`. Kept while
-#: the server runs: nothing here signals a conversation's end.
-WATCHED: dict[str, dict[Path, tuple[Path, ...]]] = {}
-RECHECKED = ("Before this command Arslan checked the git settings again, since something an earlier command under the "
-             "git_config permission left running may have changed them: ")
-REFUSED = ("Arslan found git settings changed since its last check in a folder this conversation's git_config "
-           "permission covered, and couldn't put them back, so it didn't run this command and ended that "
-           "permission. Tell the user to check the repository's git settings (.git/config) before running git.")
+#: Review deltas 3/4: each folder a granted command ran in (any conversation's) and its closed folders, checked before
+#: every command of any conversation or sub-session, wherever it runs (`git -C` reaches them). Kept while the server runs.
+WATCHED: dict[Path, tuple[Path, ...]] = {}
+RECHECKED = "Before this command Arslan checked the git settings again (an earlier command may have left a writer): "
+REFUSED = ("Arslan couldn't put back git settings changed since its last check, so it didn't run this command. Tell the "
+           "user to check the repository's git settings (.git/config) before running git.")
+UNWALKED = ("Arslan couldn't look through a folder a git_config permission covered (one it can't read, or too many), "
+            "so it couldn't check its git settings and didn't run this command. Tell the user.")
 
 
-def watch(conversation: str, folder: Path, closed=()) -> None:
-    WATCHED.setdefault(conversation, {})[Path(os.path.abspath(folder))] = tuple(closed)
+class Refused(GuardError):
+    """`recheck`: the command must not start; the text is the note."""
 
 
-def recheck(conversation: str) -> Outcome | None:
+def watch(folder: Path, closed=()) -> None:
+    WATCHED[Path(os.path.abspath(folder))] = tuple(closed)
+
+
+def recheck() -> str:
     """Each watched folder as `restore` checks it after a command, against the baselines (a config with none is a
-    new repository's), never the file. None when `conversation` watches none."""
-    if not WATCHED.get(conversation):
-        return None
+    new repository's), never the file: the step's note. Refused when a walk or a put-back fails (fail closed)."""
     outcome = Outcome()
-    for folder, closed in sorted(WATCHED[conversation].items()):
+    for folder, closed in sorted(list(WATCHED.items())):
         if os.path.isdir(folder):
             kept = {path: value for path, value in list(_BASELINES.items()) if value and folder in path.parents}
             restore(Snapshot(folder, {p: v[0] for p, v in kept.items()}, closed,
                              {p: v[1] for p, v in kept.items()}), outcome)
-    return outcome
+    if outcome.unchecked or outcome.held:
+        raise Refused(UNWALKED if outcome.unchecked else REFUSED)
+    return RECHECKED + outcome.message() if outcome.message() else ""
 
 
 def _relative(path: Path, folder: Path) -> str:
