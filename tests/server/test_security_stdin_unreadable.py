@@ -244,3 +244,52 @@ def test_literal_service_operation_controls(operation, outside):
     assert result.level == ("ask" if outside else "run")
     assert tp.ask_rules(text, outside=outside) == ({"outside-reach"} if outside else set())
     assert tp.risk_grade(text, outside=outside) == ("MEDIUM" if outside else "LOW")
+
+
+@pytest.mark.parametrize("case,text", B1_CASES, ids=[case for case, _ in B1_CASES])
+def test_shared_reading_keeps_literalness_in_one_pass(case, text, monkeypatch):
+    passes = []
+    original = sg._read_commands
+
+    def counted(command, out):
+        result = original(command, out)
+        passes.append((command, result))
+        return result
+
+    monkeypatch.setattr(sg, "_read_commands", counted)
+    tp._parsed.cache_clear()
+    for outside in (False, True):
+        result = tp.assess(text, outside=outside)
+        assert (result.level, result.rule, result.reason) == (
+            "ask", tp.UNREADABLE, "its security reads operations from stdin")
+        assert tp.ask_rules(text, outside=outside) == {tp.UNREADABLE}
+        assert tp.risk_grade(text, outside=outside) == "MEDIUM"
+    assert len(passes) == 1
+    command, prefix = passes[0]
+    assert command == text
+    assert not prefix.refused
+    assert prefix.named_unreadable == "its security reads operations from stdin"
+
+
+@pytest.mark.parametrize("tail", ("; 'rm' '-rf' '/'", "; echo `date`", "; 'rm' '-rf' '/'; echo `date`"))
+def test_shared_marker_survives_later_argv_and_grammar_refusal(tail):
+    text = "security $MODE" + tail
+    prefix = sg.read_prefix(text)
+    assert prefix.named_unreadable == "its security reads operations from stdin"
+    assert prefix.refused == ("`" in tail)
+    if "'rm'" in tail:
+        assert ("rm", "-rf", "/") in prefix.commands
+    for outside in (False, True):
+        result = tp.assess(text, outside=outside)
+        assert result.level == ("forbid" if "'rm'" in tail else "ask")
+        assert result.rule == ("wipe-root" if "'rm'" in tail else tp.UNREADABLE)
+
+
+@pytest.mark.parametrize("case,text", list(stdin_cases()))
+def test_shared_prefix_marks_every_stdin_form(case, text):
+    prefix = sg.read_prefix(text)
+    if case.startswith("absolute/"):
+        assert prefix.refused and "path" in prefix.why
+    else:
+        assert not prefix.refused
+        assert prefix.named_unreadable == "its security reads operations from stdin"

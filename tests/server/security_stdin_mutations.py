@@ -4,7 +4,7 @@ import inspect
 import pytest
 
 MODES = ("IGNORE-I", "ALLOW-STDIN", "SKIP-FLOOR", "IGNORE-OUTSIDE", "DROP-RAW-TRANSPORT", "REFUSE-ARGV",
-         "DROP-LITERALNESS")
+         "DROP-LITERALNESS", "DROP-SHARED-CHECK")
 
 
 def pytest_addoption(parser):
@@ -18,14 +18,18 @@ def pytest_configure(config):
         raise pytest.UsageError("choose --security-stdin-mutation when loading this plugin")
     patch = pytest.MonkeyPatch()
     config.add_cleanup(patch.undo)
-    if mode == "DROP-LITERALNESS":
+    if mode in {"DROP-LITERALNESS", "DROP-SHARED-CHECK"}:
         source = inspect.getsource(sg._Reader._program)
-        before = "security_operation(tuple(w.literal for w in args))"
+        if mode == "DROP-LITERALNESS":
+            before = "security_operation(tuple(w.literal for w in args))"
+            after = "security_operation(tuple(w.text for w in args))"
+        else:
+            before = 'if base == "security" and security_operation'
+            after = 'if base == "security" and self.out.track_folders and security_operation'
         assert source.count(before) == 1
         import textwrap
         namespace = dict(vars(sg))
-        exec(compile(textwrap.dedent(source.replace(before, "security_operation(tuple(w.text for w in args))")),
-                     "<DROP-LITERALNESS>", "exec"), namespace)
+        exec(compile(textwrap.dedent(source.replace(before, after)), "<" + mode + ">", "exec"), namespace)
         patch.setattr(sg._Reader, "_program", namespace["_program"])
     elif mode == "IGNORE-I":
         source = inspect.getsource(sg.security_operation)
