@@ -472,18 +472,22 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     one cache written is `cache` (Arslan's commands cache by default), and `peer_cache` is closed when given. An
     MCP server's cache is under its folder, in Arslan's data folder, which is protected here already.
 
-    HOOK-2 (rule 1): `plugin_read`, one plugin's own folder, read-only for that plugin's hook. It must be a resolved
-    real path strictly inside the CAP6b plugin root (the root itself is refused), or no profile is built
-    (ValueError). Writes there stay denied, and every other plugin folder stays closed: seatbelt matches real paths,
-    so a link in this folder to another plugin's file is judged by where it points."""
+    HOOK-2 (rule 1): `plugin_read`, one plugin's own folder, read-only for that plugin's hook. It must be an existing
+    folder, a resolved real path strictly inside the CAP6b plugin root (the root itself is refused), holding no
+    closed or protected path (the allow comes after their denies, so it would reopen them), or no profile is built
+    (ValueError). Writes there stay denied, and every other plugin folder stays closed. Seatbelt matches real paths,
+    so a symlink in this folder to another plugin's file is judged by where it points; a hard link is not: it is that
+    file, inside this folder, and readable. The install (CAP7 / HOOK-3) must refuse hard links in plugin folders."""
     root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
-    if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read
+    if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
                                     or _real(root) not in plugin_read.parents):
         raise ValueError(f"not a plugin's own folder inside the plugin root: {plugin_read}")
     roots = writable_roots(workspace, temp, cache)
     writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
     protected = [*default_protected(), *cap6b_folders(plugin_folder)]
     shut = _resolved([*closed, *app_data(), *([peer_cache] if peer_cache is not None else [])])
+    if plugin_read is not None and any(p == plugin_read or plugin_read in p.parents for p in [*protected, *shut]):
+        raise ValueError(f"a plugin's folder holding a closed or protected path: {plugin_read}")
     if network is None:
         network = NetworkMode.NONE if offline or proxy_port is None else NetworkMode.PROXY
     network = NetworkMode(network)

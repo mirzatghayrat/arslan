@@ -85,6 +85,29 @@ def test_a_path_outside_the_plugin_root_or_the_root_itself_is_refused(plugins, t
         command_sandbox.commands_profile(work, offline=True, plugin_read=plugins / "a")
 
 
+def test_a_path_that_isnt_an_existing_folder_is_refused(plugins, tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    for path in (plugins / "a" / "sentinel", plugins / "missing"):           # a file; nothing there
+        with pytest.raises(ValueError, match="plugin"):
+            command_sandbox.commands_profile(work, offline=True, plugin_read=path)
+
+
+def test_a_folder_holding_a_closed_or_protected_path_is_refused(plugins, tmp_path, monkeypatch):
+    """The allow comes after every deny, so it would reopen a closed or protected path at or under it."""
+    from server import config
+    work = tmp_path / "work"
+    work.mkdir()
+    (plugins / "a" / "inner").mkdir()
+    for closed in ([plugins / "a"], [plugins / "a" / "inner"]):
+        with pytest.raises(ValueError, match="closed or protected"):
+            command_sandbox.commands_profile(work, offline=True, closed=closed, plugin_read=plugins / "a")
+    command_sandbox.commands_profile(work, offline=True, closed=[plugins / "b"], plugin_read=plugins / "a")
+    monkeypatch.setattr(config, "data_dir", lambda: plugins / "a" / "inner")   # Arslan's data, protected
+    with pytest.raises(ValueError, match="closed or protected"):
+        command_sandbox.commands_profile(work, offline=True, plugin_read=plugins / "a")
+
+
 def test_one_read_only_rule_after_the_cap6b_deny_and_before_the_held_block(plugins, tmp_path):
     work = tmp_path / "work"
     work.mkdir()
