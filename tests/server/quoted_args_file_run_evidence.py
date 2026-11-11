@@ -44,6 +44,7 @@ from tests.server.shell_differential_support import FILE_SEEDS
 from tests.server.quoted_args_baseline_data import levels
 from tests.server.quoted_args_option_profiles import (
     sweep, program_controls, unknowns, render, vercel_directories, implicit_controls, implicit_negative_controls, cluster_controls,
+    DEPLOY_PROGRAMS,
 )
 
 
@@ -226,7 +227,9 @@ def assert_accounting(kind):
         expected = kind == "controls"
         assert tp._fully_accounted(words[0], words[1:]) == expected, case
         if not expected:
-            assert tp._named_rules(words) == tp._legacy_named_rules(words), case
+            # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as `publish`
+            unplaceable = {"publish"} if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set()
+            assert tp._named_rules(words) == tp._legacy_named_rules(words) | unplaceable, case
 
 
 @pytest.mark.parametrize("kind", [kind for kind in GENERATORS if kind not in {"standalone", "vercel", "cluster"}])
