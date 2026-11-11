@@ -19,6 +19,11 @@ from tests.server.sbx.test_sbx2_kernel import PROBE
 pytestmark = [pytest.mark.sbx_mac, pytest.mark.parametrize("sbx", ["commands"], indirect=True)]
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="macOS seatbelt")
 
+
+class UnmeasurableControl(RuntimeError):
+    """Only a probe-confirmed unavailable control may satisfy the strict xfail."""
+
+
 SPOOL_ROWS = {
     "at": ("/usr/bin/at", "/private/var/at/jobs"),
     "batch": ("/usr/bin/batch", "/private/var/at/jobs"),
@@ -41,6 +46,8 @@ print(json.dumps({op: lib.sandbox_check(os.getpid(), op.encode(), 1 | no_report,
 
 @pytest.mark.macos
 @macos
+@pytest.mark.xfail(strict=True, raises=UnmeasurableControl,
+                   reason="allow-default spool write control is refused; a measurable pass must XPASS")
 @pytest.mark.parametrize("row", SPOOL_ROWS)
 def test_commands_spool_followup(sbx, row, record_property):
     record_property("row", row + "-spool")
@@ -54,7 +61,7 @@ def test_commands_spool_followup(sbx, row, record_property):
     record_property("control_spool_policy", json.dumps(ambient, sort_keys=True))
     if any(ambient.values()):
         record_property("outcome", "not measured here: ambient spool policy already refuses the control")
-        pytest.skip("not measured here: ambient spool policy already refuses the control")
+        raise UnmeasurableControl(f"allow-default spool write control refused: {ambient}")
     policy = sbx.python(PATH_POLICY, target, probe=row + "-spool-policy")
     assert policy.returncode == 0, policy.stderr
     observed = json.loads(policy.stdout)
@@ -117,35 +124,56 @@ def test_commands_networksetup_followup(sbx, record_property):
 
 
 SIGNAL_PROBE = """
-import json, subprocess, sys
+import json, subprocess, sys, time
 profile, kind, target_path = sys.argv[1:]
 # The target and the sender are children of this bounded harness process. The
 # target is outside the nested commands sandbox, never an ambient application.
-with subprocess.Popen([target_path, '20'], stdin=subprocess.DEVNULL,
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as target:
+def measure():
     try:
-        assert target.poll() is None
-        argv = ['/bin/kill', '-TERM', str(target.pid)] if kind == 'kill' else [
-            '/usr/bin/killall', '-TERM', target_path.rsplit('/', 1)[-1]]
-        sent = subprocess.run(['/usr/bin/sandbox-exec', '-p', profile, *argv],
-                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
-        alive = target.poll() is None
-        # A direct signal to our own target proves the observation is sensitive.
-        if alive:
-            target.terminate()
-        code = target.wait(timeout=5)
-        print(json.dumps({'sender_returncode': sent.returncode, 'target_survived': alive,
-                          'sender_exec_failed': 'posix_spawn' in sent.stderr or sent.returncode == 71,
-                          'control_returncode': code}))
-    finally:
-        if target.poll() is None:
-            target.kill()
-        target.wait(timeout=5)
+        target = subprocess.Popen([target_path, '20'], stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as error:
+        return {'target_exec_errno': error.errno, 'unmeasurable': 'owned target cannot start'}
+    with target:
+        try:
+            # Popen can return before macOS kills a copied executable at startup.
+            time.sleep(0.1)
+            startup = target.poll()
+            if startup is not None:
+                return {'target_start_returncode': startup,
+                        'unmeasurable': 'owned target exited before the sender'}
+            argv = ['/bin/kill', '-TERM', str(target.pid)] if kind == 'kill' else [
+                '/usr/bin/killall', '-TERM', target_path.rsplit('/', 1)[-1]]
+            try:
+                sent = subprocess.run(['/usr/bin/sandbox-exec', '-p', profile, *argv],
+                                      stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
+            except OSError as error:
+                return {'sender_exec_errno': error.errno, 'unmeasurable': 'sender cannot start'}
+            alive = target.poll() is None
+            # A direct signal to our own target proves the observation is sensitive.
+            if alive:
+                target.terminate()
+            code = target.wait(timeout=5)
+            answer = {'sender_returncode': sent.returncode, 'target_survived': alive,
+                      'sender_exec_failed': 'posix_spawn' in sent.stderr or sent.returncode == 71,
+                      'control_returncode': code}
+            if answer['sender_exec_failed']:
+                answer['unmeasurable'] = 'sender execution failed'
+            elif code == -9:
+                answer['unmeasurable'] = 'owned target received SIGKILL instead of control SIGTERM'
+            return answer
+        finally:
+            if target.poll() is None:
+                target.kill()
+            target.wait(timeout=5)
+print(json.dumps(measure()))
 """
 
 
 @pytest.mark.macos
 @macos
+@pytest.mark.xfail(strict=True, raises=UnmeasurableControl,
+                   reason="owned target or nested sender cannot run; a measurable pass must XPASS")
 @pytest.mark.parametrize("kind", ["kill", "killall"])
 def test_commands_external_signal_followup(sbx, kind, record_property):
     record_property("row", kind + "-external-target")
@@ -159,9 +187,9 @@ def test_commands_external_signal_followup(sbx, kind, record_property):
     assert result.returncode == 0, result.stderr
     answer = json.loads(result.stdout)
     record_property("signal_measurement", json.dumps(answer, sort_keys=True))
-    if answer["sender_exec_failed"] or answer["control_returncode"] == -9:
-        record_property("outcome", "not measured here: sender execution or owned-target control unavailable")
-        pytest.skip("not measured here: sender execution or owned-target control unavailable")
+    if "unmeasurable" in answer:
+        record_property("outcome", "not measured here: " + answer["unmeasurable"])
+        raise UnmeasurableControl(json.dumps(answer, sort_keys=True))
     assert answer["sender_returncode"] != 0
     assert answer["target_survived"] is True
     assert answer["control_returncode"] == -15

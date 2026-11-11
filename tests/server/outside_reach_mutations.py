@@ -5,12 +5,14 @@ Select the shapes file, except commands-policy-relaxed selects only the new SBX
 spool and networksetup rows. Use --runxfail to expose an existing gap as a failure;
 gap-closed instead leaves strict xfails enabled so the expected XPASS is red.
 """
+import inspect
+
 import pytest
 
 
 MODES = ("outside-ignored", "reach-omitted", "unreadable-accepted", "readonly-rejected",
          "inside-rules-corrupted", "forbid-relaxed", "gap-closed", "observation-disabled",
-         "commands-policy-relaxed")
+         "commands-policy-relaxed", "networksetup-leading-operand", "list-flag-anywhere")
 
 
 def pytest_addoption(parser):
@@ -28,6 +30,20 @@ def pytest_configure(config):
         tp.ask_rules = lambda text, **kw: original_rules(text, **{**kw, "outside": False})
     elif mode == "reach-omitted":
         tp._reaches_outside = lambda commands: False
+    elif mode in {"networksetup-leading-operand", "list-flag-anywhere"}:
+        # Mutate the real function in this process only; never edit product source
+        # or execute any command input. Fail if the expected source form drifts.
+        source = inspect.getsource(tp._reaches_outside)
+        if mode == "networksetup-leading-operand":
+            old = 'not args[0].startswith("-") or '
+            new = ""
+        else:
+            old = '        verb = args[0].lower() if args else ""'
+            new = old + '\n        if program in _REACH_PROGRAMS and "-l" in args:\n            continue'
+        assert source.count(old) == 1, "outside-reach mutation source form changed"
+        namespace = {}
+        exec(compile(source.replace(old, new), "<outside-reach-mutation>", "exec"), tp.__dict__, namespace)
+        tp._reaches_outside = namespace["_reaches_outside"]
     elif mode == "unreadable-accepted":
         def changed(text, **kw):
             verdict = original_assess(text, **kw)

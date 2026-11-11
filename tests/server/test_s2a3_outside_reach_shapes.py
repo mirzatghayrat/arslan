@@ -16,7 +16,7 @@ import tempfile
 import pytest
 
 from server.services import terminal_policy as tp
-from tests.server.outside_reach_cases import CASES
+from tests.server.outside_reach_cases import CASES, Case
 
 
 def parameter(case):
@@ -43,6 +43,24 @@ def assert_policy(case):
 @pytest.mark.parametrize("case", [parameter(c) for c in CASES])
 def test_outside_shape(case):
     assert_policy(case)
+
+
+@pytest.mark.parametrize("text", [
+    pytest.param("networksetup example", id="network-bare-operand"),
+    pytest.param("networksetup example -getinfo", id="network-operand-before-query"),
+    pytest.param("at now -l", id="at-late-list-flag"),
+    pytest.param("launchctl kickstart example -l", id="launchctl-late-list-flag"),
+])
+@pytest.mark.parametrize("outside", [False, True], ids=["inside", "outside"])
+def test_readonly_exceptions_do_not_hide_reach(text, outside):
+    # Inert policy inputs only; never add these witnesses to the Bash observation.
+    if outside:
+        assert_policy(Case("readonly-exceptions", "operand", text))
+        assert tp.assess(text, outside=True) == tp.Assessment("ask", *tp.OUTSIDE_REACH)
+        assert tp.ask_rules(text, outside=True) == {tp.OUTSIDE_REACH[0]}
+    else:
+        assert tp.assess(text, outside=False) == tp.Assessment("run")
+        assert tp.ask_rules(text, outside=False) == set()
 
 
 BASELINE = json.loads(Path(__file__).with_name("outside_reach_main.json").read_text())
