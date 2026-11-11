@@ -1500,5 +1500,33 @@
   },
   "waiting": {
     "count": "Waiting on you: {{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "Running",
+      "reporting": "Reporting",
+      "waiting": "Waiting on you",
+      "done": "Done",
+      "stopped": "Stopped",
+      "failed": "Failed",
+      "interrupted": "Interrupted",
+      "ended": "Ended without finishing"
+    },
+    "toggle": "Show or hide its sub-sessions ({{count}})",
+    "header": "This is a sub-session of «{{name}}»; it reports to it when done.",
+    "back": "Back to «{{name}}»",
+    "panel": "Sub-sessions",
+    "open": "Open",
+    "spend": "Spent {{spent}}, limit {{limit}} (each task's {{each}} × {{times}})",
+    "spendNoLimit": "Spent {{spent}}, no dollar limit",
+    "delete": {
+      "title": "Delete «{{name}}»?",
+      "also_one": "Also delete its sub-session",
+      "also_other": "Also delete its {{count}} sub-sessions",
+      "keepNote": "Its sub-sessions stay as ordinary conversations, with their settings unchanged.",
+      "stopFirst": "A sub-session under it is still working or reporting. Stop it, or wait for its report, then delete.",
+      "choiceRequired": "It has {{count}} sub-sessions now. Choose again what happens to them.",
+      "failed": "Couldn't delete it. Try again."
+    }
   }
 }

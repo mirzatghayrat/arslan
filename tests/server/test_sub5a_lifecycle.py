@@ -495,8 +495,9 @@ async def test_a_commander_is_not_deleted_while_a_sub_session_under_it_works(run
 async def test_a_commander_with_sub_sessions_needs_an_explicit_choice(runs, client):  # noqa: F811
     child, grandchild = await _family(runs)
     got = await client.delete(f"/api/v1/conversations/{ROOT}")
+    # SUB5d: every level counts (child and grandchild), as the window's dialog says "its N sub-sessions".
     assert got.status_code == 422 and got.json()["detail"] == {"code": "sub_sessions_choice_required",
-                                                                "sub_sessions": 1}
+                                                                "sub_sessions": 2}
     assert (await client.delete(f"/api/v1/conversations/{ROOT}?sub_sessions=maybe")).status_code == 422
     assert set((await _left(runs, [ROOT, child, grandchild])).values()) == {(True, 1, 1, 1)}
 
@@ -548,8 +549,10 @@ async def test_kept_sub_sessions_become_chats_no_looser_than_they_were(runs, cli
         assert await sub_sessions.effective_settings(db, grand) == grand_before
     assert (await _left(runs, [ROOT]))[ROOT] == (False, 0, 0, 0)
     assert (await _left(runs, [child, grandchild])) == {child: (True, 1, 1, 1), grandchild: (True, 1, 1, 1)}
-    listed = [c["conversation_id"] for c in (await client.get("/api/v1/conversations")).json()]
-    assert listed == [child]
+    # SUB5d: the Mac's list shows sub-sessions under their parent, so the kept child is top-level and its own
+    # sub-session stays under it.
+    listed = {c["conversation_id"]: c.get("parent_id") for c in (await client.get("/api/v1/conversations")).json()}
+    assert listed == {child: None, grandchild: child}
 
 
 async def test_a_phones_delete_naming_a_sub_session_gets_not_found_and_changes_nothing(runs, client):  # noqa: F811
