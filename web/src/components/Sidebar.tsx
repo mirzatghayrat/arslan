@@ -1,5 +1,5 @@
 import BrandMark from './BrandMark';
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { Section } from "../lib/sections";
 import { MessageSquare, Settings2, Plus, ChevronDown, ChevronUp, ChevronRight, Boxes, Network, Archive, Folder, FolderOpen, Activity, PanelLeft, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +17,7 @@ export { COLLAPSED_KEY } from "../stores/sidebarStore";
 import { Smartphone } from "lucide-react";
 import SubStatusIcon from "./SubStatusIcon";
 import { ancestors, buildForest, descendants, startsOpen, subStatus } from "../lib/subTree";
+import { isSearchKey, SearchField, SearchResults } from "./SidebarSearch";
 
 interface ArslanThread { id: string; title: string; archived?: boolean; temporary?: boolean; defaultTitle?: boolean; projectId?: string }
 /** A project the sidebar can group under (0.1.58 §4). */
@@ -78,8 +79,17 @@ export default function Sidebar(props: SidebarProps) {
   const touched = useRecency((s) => s.touched);
   const pins = useSidebar((s) => s.pins);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [searchAsked, setSearchAsked] = useState(0);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (isSearchKey(event)) {          // the search field, shown first if the sidebar is hidden
+        event.preventDefault();
+        if (useSidebar.getState().collapsed) useSidebar.getState().setCollapsed(false);
+        setSearchAsked(n => n + 1);
+        return;
+      }
       if (!isToggleSidebarKey(event)) return;
       event.preventDefault();
       const state = useSidebar.getState();
@@ -88,6 +98,11 @@ export default function Sidebar(props: SidebarProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+  useEffect(() => {
+    if (!searchAsked || collapsed) return;
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [searchAsked, collapsed]);
   // SB1: last activity, the later of this window's (a message sent, a reply, a new conversation) and
   // the server's. null = no time yet (a new conversation before its first message): newest.
   const at = (thread: ArslanThread): number | null => {
@@ -156,6 +171,14 @@ export default function Sidebar(props: SidebarProps) {
     ? "bg-gradient-to-r from-primary/15 to-transparent text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.02]"}`;
   const marker = <span aria-hidden className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-[2px] bg-primary" />;
   function openThread(id: string) { onSelectThread(id); onChangeSection("arslan"); }
+  // Search: a result opens like a row does, and a sub-session's tree opens down to it, as for the open conversation.
+  const searched = query.trim().replace(/\s+/g, " ");
+  function openResult(id: string) {
+    const above = ancestors(id, forest);
+    if (above.length) setTrees(prev => ({ ...prev, ...Object.fromEntries(above.map(up => [up, true])) }));
+    setQuery("");
+    openThread(id);
+  }
   function renderThread(thread: ArslanThread, archived: boolean, depth = 0): React.ReactNode {
     const active = activeSection === "arslan" && activeThreadId === thread.id;
     // SUB5d: a sub-session (depth > 0) shows its status, can't be dragged out on its own, and has no pin, move or archive;
@@ -298,7 +321,10 @@ export default function Sidebar(props: SidebarProps) {
         {/* 0.1.47: no "Conversations" nav entry and no second "+" here. The rows below ARE the way
             back to a conversation (the open one is highlighted), and "New conversation" at the top
             is the one way to start one. */}
+        <SearchField ref={searchRef} value={query} onChange={setQuery} />
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+          {searched ? <SearchResults query={searched} parentOf={forest.parentOf} onOpen={openResult}
+            threads={threads.map(thread => ({ id: thread.id, title: threadDisplayTitle(thread, t) }))} /> : <>
           {pinnedThreads.length > 0 && <div data-testid="sidebar-pinned" className="mb-2 space-y-0.5">
             {heading("pinned")}
             {pinnedThreads.map(thread => renderThread(thread, false))}
@@ -335,7 +361,7 @@ export default function Sidebar(props: SidebarProps) {
               {archivedOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {archivedOpen && archivedThreads.map(thread => renderThread(thread, true))}
-          </div>}
+          </div>}</>}
         </div>
       </section>
       {/* 0.1.42: only real background work shows here; experts live in the capability library. */}
