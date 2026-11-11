@@ -382,3 +382,68 @@ def test_without_the_grant_a_plain_write_to_the_sample_beside_the_config_is_as_i
     assert _git(sbx.work, "init", "-q").returncode == 0
     names = [f".git/hooks/{STAND_IN}.sample", ".git/config"]
     assert _write(sbx, sbx.work, names) == {names[0]: "written", names[1]: "refused"}
+
+
+# ── review delta 3 (Codex's re-run: a process in its own session writes after the put-back) ─────────────────────
+
+@pytest.fixture(autouse=True)
+def _fresh_guard():
+    for each in (git_config_guard._BASELINES, git_config_guard.ENDED, git_config_guard.WATCHED):
+        each.clear()
+    yield
+    for each in (git_config_guard._BASELINES, git_config_guard.ENDED, git_config_guard.WATCHED):
+        each.clear()
+
+
+#: A child that leaves the command's group (`setsid`) and writes a stand-in program key 0.5 s later.
+_FSMONITOR_LATER = _LATER["own session"].replace("core.hooksPath", "core.fsmonitor")
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("writable", [True, False])
+async def test_a_key_written_after_the_put_back_never_reaches_an_ungranted_command(sbx, monkeypatch, writable):
+    """The race, on the product path: the granted command ends and is put back; its own-session child writes
+    core.fsmonitor after that. The next command, without the grant, finds it put back before it starts (git reads no
+    key), and the step names the key, never its value. When the put-back can't be written (the `.git` folder made
+    read-only from outside the sandbox) that command is refused, does nothing, and the grant ends."""
+    _product_env(sbx, monkeypatch)
+    assert _git(sbx.work, "init", "-q", "repo").returncode == 0
+    git = sbx.work / "repo" / ".git"
+    granted = await terminal_exec.run(_FSMONITOR_LATER, cwd=sbx.work, sandbox=True, offline=True, git_config=True)
+    assert granted["ok"], granted
+    await asyncio.sleep(1.5)
+    assert _out(sbx.work / "repo", "config", "core.fsmonitor") == VALUE        # written after the put-back
+    mode = git.stat().st_mode
+    if not writable:
+        git.chmod(0o555)
+    try:
+        ran = await terminal_exec.run(f"git -C repo config --get core.fsmonitor; echo got=$?; touch {STAND_IN}-ran",
+                                      cwd=sbx.work, sandbox=True, offline=True)
+    finally:
+        git.chmod(mode)
+    assert VALUE not in ran["git_config_note"] and VALUE not in ran["stdout"]
+    if writable:
+        assert ran["ok"] and ran["stdout"].split() == ["got=1"] and "core.fsmonitor" in ran["git_config_note"]
+        assert _out(sbx.work / "repo", "config", "core.fsmonitor") is None and (sbx.work / f"{STAND_IN}-ran").exists()
+    else:
+        assert not ran["ok"] and ran["git_config_note"] == git_config_guard.REFUSED and "" in git_config_guard.ENDED
+        assert not (sbx.work / f"{STAND_IN}-ran").exists()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_a_config_removed_by_ln_f_under_the_grant_is_written_back(sbx):
+    """Codex's side finding: `cp` the config, then `ln -f` the copy onto it. The unlink is allowed under the grant, the
+    link is refused, so the config is gone; the put-back writes it back from the baseline and says so."""
+    assert _git(sbx.work, "init", "-q", "repo").returncode == 0
+    config = sbx.work / "repo" / ".git" / "config"
+    before = config.read_bytes()
+    script = (f"cp repo/.git/config {STAND_IN}-copy && ln -f {STAND_IN}-copy repo/.git/config; echo ln=$?; "
+              "test -e repo/.git/config; echo gone=$?")
+    ran, outcome = _granted(sbx, script, "hr1b-config-removed")
+    assert _codes(ran) == {"ln": True, "gone": True}
+    assert outcome.replaced == [os.path.join("repo", ".git", "config")] and "was removed" in outcome.message()
+    assert config.read_bytes() == before and config.stat().st_nlink == 1

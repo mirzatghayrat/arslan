@@ -196,9 +196,8 @@ async def _runs_offline_unread(command: str, args: dict, verdict, *, confined: b
 
 
 def _git_config_request(why: str = ""):
-    """HR-1b: what letting git update the repository config in the working folder asks: one card, for this
-    conversation only (`permissions._CONVERSATION_ONLY`). Stored under `*`, as `outside` is: the lift is the working
-    folder's, whichever it is when the command runs, so no folder is read here (S2a-3 reads it once per call)."""
+    """HR-1b: one card, for this conversation only, stored under `*` as `outside` is (the lift is the working
+    folder's, whichever it is when the command runs)."""
     from server.services import permissions
     return permissions.Request(
         kind="git_config", target="*", title="Let git update this repository's settings?",
@@ -209,10 +208,8 @@ def _git_config_request(why: str = ""):
 
 
 async def _git_config(args: dict, conversation_id: str | None) -> bool | dict:
-    """HR-1b: whether this command runs under the git_config grant, or the refusal the model reads. With the grant
-    stored for this conversation, every command in the sandbox gets it with no card and no flag; a lookup that fails
-    counts as no grant (the configs stay held). Otherwise only `git_config: true` asks, with a why: one card (the
-    island never answers it; with nobody to ask it is refused and listed in the Inbox, `permissions._ask`)."""
+    """HR-1b: whether this command runs under the git_config grant (stored: every sandboxed command, no card; a failed
+    lookup is none), or the refusal the model reads. Otherwise only `git_config: true` with a why asks: one card."""
     from server.orchestrator import untrusted as _untrusted
     from server.services import background_jobs, git_config_guard, permissions
     if (conversation_id or "") in git_config_guard.ENDED:      # review delta 2: a put-back failed here
@@ -243,8 +240,7 @@ async def _git_config(args: dict, conversation_id: str | None) -> bool | dict:
 
 
 async def end_git_config(conversation_id: str | None) -> None:
-    """HR-1b review delta 2: a put-back couldn't be written. No lift again here (ENDED), nor after a restart (the
-    stored grant is deleted; a failed delete is logged, ENDED still holds)."""
+    """HR-1b review delta 2: a put-back failed. No lift again here (ENDED) nor after a restart (the grant deleted)."""
     import logging
     from server.db import session as db_session
     from server.services import git_config_guard, permission_store
@@ -274,9 +270,7 @@ class CommandPlan:
     # HR-1 (ruling 2): out under the grant with no click on its own card, so the outside floor keeps the run-later
     # files unwritable. Only the user's click on this command's own card lifts that.
     holds_run_later: bool = False
-    # HR-1b: in the sandbox under this conversation's git_config grant: git may update the repository config, and
-    # what is off the allowlist is put back after the command. Never outside the sandbox.
-    git_config: bool = False
+    git_config: bool = False        # HR-1b: in the sandbox under this conversation's git_config grant
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -306,8 +300,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     refused = await _card(draft, args, turn.confirm_command, turn.conversation_id)
     if refused is not None:
         return refused
-    # HR-1b: after the card, whichever branch answered (its click is read before this replaces LAST_DECISION), and
-    # only in the sandbox: the outside floor never lifts the config.
+    # HR-1b: after the card (its click is read before this replaces LAST_DECISION), in the sandbox only.
     git_config = await _git_config(args, turn.conversation_id) if draft.confined and not draft.run_outside else False
     if isinstance(git_config, dict):
         return git_config

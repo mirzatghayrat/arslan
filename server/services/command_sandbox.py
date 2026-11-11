@@ -480,9 +480,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     so a symlink in this folder to another plugin's file is judged by where it points; a hard link is not: it is that
     file, inside this folder, and readable. The install (CAP7 / HOOK-3) must refuse hard links in plugin folders.
 
-    HR-1b: `git_config_ok`, under this conversation's git_config grant only, lifts the repository config names
-    (`run_later.GIT_CONFIG`) where git_config_guard's walk looks, keeping links, flags and ACLs on them denied;
-    terminal_exec reverts what changed there past the allowlist. Nothing else changes; the outside floor never gets it."""
+    HR-1b: `git_config_ok`, the git_config grant, lifts the config names (`run_later.GIT_CONFIG`) where
+    git_config_guard's walk looks, links, flags and ACLs still denied. Nothing else changes; never the outside floor."""
     root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
     if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
                                     or _real(root) not in plugin_read.parents):
@@ -543,8 +542,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     for filters in run_later.kernel_filters([workspace], aliased=hold.aliased, git_config_ok=git_config_ok):
         after.deny("file-write*", *filters)
     if git_config_ok:
-        # HR-1b (review delta 2): even lifted, no hard link to or from a config (`file-link`, measured: it refuses
-        # both directions; one would outlive the grant), and no file flags or ACL on one (they'd block the put-back).
+        # HR-1b delta 2: no hard link to or from a config (`file-link` refuses both, measured), no flags or ACL on one.
         after.deny("file-link file-write-flags file-write-acl", *run_later.git_config_filters())
     if hold.at_targets:                     # #813 review 10: the held names at a link's real path
         after.deny("file-write*", *hold.at_targets)

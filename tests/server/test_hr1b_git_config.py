@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -305,11 +306,11 @@ def test_the_environment_under_the_grant_has_no_template_folder():
 
 @pytest.fixture(autouse=True)
 def _fresh_guard():
-    git_config_guard._BASELINES.clear()
-    git_config_guard.ENDED.clear()
+    for each in (git_config_guard._BASELINES, git_config_guard.ENDED, git_config_guard.WATCHED):
+        each.clear()
     yield
-    git_config_guard._BASELINES.clear()
-    git_config_guard.ENDED.clear()
+    for each in (git_config_guard._BASELINES, git_config_guard.ENDED, git_config_guard.WATCHED):
+        each.clear()
 
 
 def test_the_next_snapshot_starts_from_the_last_put_back_not_the_file(tmp_path):
@@ -349,10 +350,11 @@ def test_a_put_back_that_raises_is_held_too(monkeypatch):
     def broken(saved):
         raise OSError(5, "Input/output error")
     monkeypatch.setattr(git_config_guard, "restore", broken)
-    assert terminal_exec._put_back(None) == (git_config_guard.HELD_NOTE, True)
+    assert terminal_exec._put_back(lambda: git_config_guard.restore(None)) == (git_config_guard.HELD_NOTE, True)
 
 
-@pytest.mark.skipif(not hasattr(os, "lchflags"), reason="file flags are BSD's")
+@pytest.mark.macos
+@pytest.mark.skipif(sys.platform != "darwin", reason="file flags and ACLs are macOS's")
 @pytest.mark.parametrize("lock", ["uchg", "acl", "folder uchg"])
 def test_a_flag_or_acl_on_the_config_or_its_folder_is_cleared_before_the_put_back(tmp_path, lock):
     """Blocker 2: the put-back's own write isn't blocked by a flag or ACL set after the key was added; the pre-run
@@ -788,3 +790,100 @@ def test_a_gitmodules_refusal_at_a_non_zero_exit_gets_the_git_note_not_the_stop_
     assert command_sandbox.git_setup_failed({"ok": False}, [".git/config", "x/.GIT/hooks/y"])
     assert not command_sandbox.git_setup_failed({"ok": False}, [".gitmodules"])
     assert not command_sandbox.git_setup_failed({"ok": False}, [f"{STAND_IN}.git/config"])
+
+
+# ── review delta 3 (Codex's re-run: a process in its own session writes after the put-back) ─────────────────────
+
+async def _in(conversation: str, command):
+    from server.services import tool_outputs
+    token = tool_outputs.conversation.set(conversation)
+    try:
+        return await command
+    finally:
+        tool_outputs.conversation.reset(token)
+
+
+def _recording(monkeypatch, config: Path) -> list:
+    """terminal_exec._run replaced: each call's lift and the config as the command would have found it."""
+    seen: list = []
+
+    async def run(**kw):
+        seen.append((kw.get("git_config_ok", False), config.read_text() if config.exists() else None))
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "sandbox": "workspace"}
+    monkeypatch.setattr(terminal_exec, "_run", run)
+    return seen
+
+
+@pytest.mark.parametrize("sandbox", [True, False])
+async def test_a_key_written_after_the_put_back_is_put_back_before_an_ungranted_command(tmp_path, monkeypatch,
+                                                                                        sandbox):
+    """The fix: before every command of a conversation that had the grant, granted or not, in or out of the sandbox,
+    the configs are checked against the last put-back (never the file), so the command never starts with the key."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    seen = _recording(monkeypatch, config)
+    await _in("c1", terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True))
+    _git_set(config, "core.fsmonitor", VALUE)                    # the process that left the group, after the check
+    result = await _in("c1", terminal_exec.run("cat x", cwd=tmp_path, sandbox=sandbox))      # any folder: `git -C`
+    assert seen == [(True, ORIGINAL), (False, ORIGINAL)] and config.read_text() == ORIGINAL
+    note = result["git_config_note"]
+    assert note.startswith(git_config_guard.RECHECKED) and "core.fsmonitor" in note and VALUE not in note
+    # A new repository made after the put-back is a new repository's: every key off the list goes.
+    new = _repo(ws, "new", text=f"[core]\n\tbare = false\n\tfsmonitor = {VALUE}\n")
+    await _in("c1", terminal_exec.run("true", cwd=ws, sandbox=sandbox))
+    assert _keys(new) == {("core", None, "bare"): ["false"]}
+    # Nothing changed since: no note.
+    assert "git_config_note" not in await _in("c1", terminal_exec.run("true", cwd=ws, sandbox=sandbox))
+
+
+async def test_a_pre_command_put_back_that_cant_be_written_refuses_the_command(tmp_path, monkeypatch):
+    """Fail closed: the command doesn't start, the step says why, the grant ends; the next one is refused too."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    seen = _recording(monkeypatch, config)
+    await _in("c1", terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True))
+    _git_set(config, "core.fsmonitor", VALUE)
+
+    def refused(*a, **k):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(git_config_guard, "_replace", refused)
+    for _ in range(2):
+        result = await _in("c1", terminal_exec.run("cat x", cwd=ws, sandbox=True))
+        assert not result["ok"] and result["git_config_note"] == git_config_guard.REFUSED
+        assert result["git_config_held"] is True and VALUE not in str(result)
+    assert seen == [(True, ORIGINAL)] and "c1" in git_config_guard.ENDED
+
+
+async def test_a_conversation_that_never_had_the_grant_pays_no_check(tmp_path, monkeypatch):
+    """Control: no walk and no read before its commands, even while another conversation is watched."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    seen = _recording(monkeypatch, config)
+    walked = []
+    real = git_config_guard.config_files
+    monkeypatch.setattr(git_config_guard, "config_files", lambda *a, **k: walked.append(a) or real(*a, **k))
+    await _in("c2", terminal_exec.run("true", cwd=ws, sandbox=True))
+    assert walked == [] and git_config_guard.recheck("c2") is None
+    await _in("c1", terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True))
+    walked.clear()
+    _git_set(config, "core.fsmonitor", VALUE)
+    assert "git_config_note" not in await _in("c2", terminal_exec.run("true", cwd=ws, sandbox=True))
+    assert walked == [] and len(seen) == 3
+
+
+def test_a_config_removed_alone_is_written_back_from_the_baseline(tmp_path):
+    """Codex's side finding (`cp`, then `ln -f` onto it, whose link is refused): the config is gone, its folder left;
+    the put-back writes it back from the baseline and says so. Gone with its repository, nothing is written."""
+    import shutil
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    saved = git_config_guard.snapshot(ws)
+    config.unlink()
+    outcome = git_config_guard.restore(saved)
+    assert outcome.replaced == [os.path.join("r", ".git", "config")] and config.read_text() == ORIGINAL
+    assert "was removed" in outcome.message()
+    saved = git_config_guard.snapshot(ws)
+    shutil.rmtree(ws / "r")
+    outcome = git_config_guard.restore(saved)
+    assert (outcome.replaced, outcome.message()) == ([], "") and config not in git_config_guard._BASELINES
+    assert not (ws / "r").exists()

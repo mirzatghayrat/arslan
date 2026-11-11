@@ -57,17 +57,13 @@ FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hooks", (".pre-commit-config.yaml", ".husky/**")),
 )
 
-#: HR-1b (ruling 1): git's sample hooks, exempt from the hooks names above. git copies them from its templates on
-#: clone and init and never runs a file ending in `.sample`; an exact hook name stays held, a rename into one too
-#: (the rename writes the new name). Each is the exempt shape below one hooks pattern, matched as the whole last
-#: component, in both forms: a `require-not` in the kernel's filter, and `family` skipping that pattern.
+#: HR-1b (ruling 1): git's sample hooks (git never runs a `.sample` file), exempt below each hooks pattern as the whole
+#: last component, in the kernel's filter and in `family`; an exact hook name stays held, a rename into one too.
 SAMPLE_HOOKS: dict[str, str] = {".git/hooks/**": ".git/hooks/*.sample",
                                 ".git/modules/*/hooks/**": ".git/modules/*/hooks/*.sample"}
 
-#: HR-1b (ruling 2): the repository config names, which this conversation's git_config grant lifts from the
-#: commands profile's denies (`kernel_filters(git_config_ok=True)`); git_config_guard reverts what changed under them
-#: past its allowlist. Never the hooks, `.gitmodules`, a hooksPath target or any other family; never the outside
-#: floor nor an MCP server; never the file tools (`matches` keeps them).
+#: HR-1b (ruling 2): the config names the git_config grant lifts in the commands profile only (`kernel_filters`), and
+#: nothing else; git_config_guard puts back what changed past its allowlist. The file tools keep them (`matches`).
 GIT_CONFIG: tuple[str, ...] = (".git/config", ".git/config.worktree", ".git/worktrees/*/config.worktree",
                                ".git/modules/*/config")
 
@@ -319,12 +315,9 @@ def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
     set: the folder by its real path and by its name in its real parent, so a link there can't be swapped.
     Each name is wrapped to exempt dependency folders only when `exempts` holds for the real paths of `folders`
     and `roots` (an MCP server's own folder) and not `aliased` (#813 review 9: the walk found a held name that links
-    out of its folder, or couldn't finish); otherwise it is the bare regex. A hooks name also exempts git's sample
-    hooks (SAMPLE_HOOKS, HR-1b), unless `aliased` (HR-1b, ⓪Plan: a link at a hook name, `pre-commit ->
-    pre-commit.sample` among them, is an alias, `held_folders`). `git_config_ok` (HR-1b, the commands profile under
-    this conversation's git_config grant only) lifts the GIT_CONFIG names only where git_config_guard's walk looks
-    (review delta 2): in `folders`, not in a held dependency folder nor below a `.git`. Nothing else changes (a
-    config reached through a link stays held at its target, `link_filters`). The regexes stay built from constants."""
+    out of its folder, or couldn't finish); otherwise it is the bare regex. HR-1b: a hooks name exempts SAMPLE_HOOKS
+    unless `aliased`; `git_config_ok` lifts GIT_CONFIG only where git_config_guard's walk looks (in `folders`, not in
+    a held dependency folder nor below a nested `.git`; at a link's target it stays held). Built from constants."""
     from server.services.sandbox_profile import real, regex, subpath
     folders = list(folders)
     unless = [f"(require-not {regex(dependency_regex())})"] if _exempt(folders, roots) and not aliased else []
@@ -611,8 +604,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
         target = Path(os.path.realpath(path))
         targets.append(target)
         filters.extend(link_filters(target, below))
-        # HR-1b (⓪Plan): a link at a hook name (`pre-commit -> pre-commit.sample`, or the hooks folder itself) is an
-        # alias wherever it points: the profile drops the sample exemption, as the dependency one.
+        # HR-1b (⓪Plan): a link at a hook name (or the hooks folder) is an alias wherever it points (no sample exemption).
         if target.parent != folder or _at_hook_name(_parts(seen_as)):
             aliases.append(path)
         try:
@@ -640,8 +632,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                 hard_linked(entry, seen_as / entry.name)
 
     def hard_linked(entry: os.DirEntry, seen_as: Path) -> None:
-        """HR-1b review delta 2 (blocker 5): a file at a hook name with another name (a hook enabled by hard-linking
-        its sample) is an alias, as a link there is. One `lstat` per file in a hooks folder only."""
+        """HR-1b review delta 2: a file at a hook name with another name (a hard-linked sample) is an alias too."""
         if not _at_hook_name(_parts(seen_as)):
             return
         try:
@@ -672,8 +663,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                 keep(folder / entry.name)
                 inside_held(folder / entry.name, sub)       # an empty `sub` too (.git/hooks): for its links
             elif sub is None and _is_folder_entry(entry) and _below(_parts(folder / entry.name)):
-                # HR-1b: a folder behind a `*` component (`.git/modules/<name>`), listed for links at held names on
-                # the way to them (its `hooks`), as `through` lists a link's target: the sample exemption needs them.
+                # HR-1b: a folder behind a `*` (`.git/modules/<name>`), listed for links at its hook names, as `through`.
                 through(folder / entry.name, folder / entry.name)
             else:
                 hard_linked(entry, folder / entry.name)

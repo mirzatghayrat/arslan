@@ -39,8 +39,7 @@ UNWRAPPED: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_unwra
 # its own card: the outside floor keeps the files that make something run later unwritable (ruling 2).
 HOLD_RUN_LATER: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_hold_run_later", default=False)
 
-# HR-1b: set by the tool loop only, for one call in the sandbox under this conversation's git_config grant: git may
-# update the repository config there, and git_config_guard puts back what is off its allowlist afterwards.
+# HR-1b: set by the tool loop only, for one call in the sandbox under this conversation's git_config grant.
 GIT_CONFIG: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_git_config", default=False)
 #: HR-1b: what a command under that grant gets in its environment (`_run`): no template folder for clone and init.
 GIT_CONFIG_ENV = {"GIT_TEMPLATE_DIR": ""}
@@ -169,8 +168,7 @@ def _group_alive(pgid: int) -> bool:
 
 
 async def _end_group(proc) -> bool:
-    """HR-1b review delta 2 (blocker 1): kills what is left of the command's group and waits, at most
-    DRAIN_AFTER_KILL_S (the cancel's reap, #813), until none of it can run. Whether one was left."""
+    """HR-1b: kills what is left of the group, waits until none can run (at most DRAIN_AFTER_KILL_S); was one left?"""
     left = _group_alive(proc.pid)
     _kill_group(proc)
     deadline = asyncio.get_running_loop().time() + DRAIN_AFTER_KILL_S
@@ -201,22 +199,29 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     SBX-3 §1a: TMPDIR is the run's own folder (`run_temp`), shared by the run's commands; a command
     outside any run gets one of its own that goes with it.
 
-    HR-1b: `git_config` (this conversation's grant, in the sandbox only): the profile leaves the repository config
-    writable, and git_config_guard checks it before and after (`_guarded`)."""
-    from server.services import execution_context, run_temp
+    HR-1b: `git_config`, the grant, lifts the configs in the sandbox (`_guarded`). Review delta 3: every command of a
+    conversation that had it is checked first (`git_config_guard.recheck`), and not started if that can't put back."""
+    from server.services import execution_context, git_config_guard, run_temp, tool_outputs
+    conversation, note = tool_outputs.conversation.get() or "", ""
+    if git_config_guard.WATCHED.get(conversation):
+        note, held = await asyncio.to_thread(_put_back, lambda: git_config_guard.recheck(conversation))
+        if held:
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
+                    "sandbox": "workspace" if sandbox else "outside", "git_config_held": True,
+                    "error": "not started: git settings couldn't be put back", "git_config_note": git_config_guard.REFUSED}
+        note = git_config_guard.RECHECKED + note if note else ""
     with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
         kw = dict(command=command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
                   readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
                   hold_run_later=hold_run_later)
-        if git_config and sandbox:
-            return await _guarded(cwd, kw)
-        return await _run(**kw)
+        result = await (_guarded(cwd, kw, conversation) if git_config and sandbox else _run(**kw))
+    if note:
+        result["git_config_note"] = f"{note} {result.get('git_config_note', '')}".strip()
+    return result
 
 
-async def _guarded(cwd: Path, kw: dict) -> dict:
-    """HR-1b: a command under the git_config grant. The configs are saved first; when that fails (too many folders,
-    an unreadable one) it runs with them held, as without the grant, and says so. After it ends, or is stopped,
-    what changed off the allowlist is put back (git_config_guard.restore); the result names the keys, never a value."""
+async def _guarded(cwd: Path, kw: dict, conversation: str) -> dict:
+    """HR-1b: under the grant, the configs saved (else it runs held, and says so), then put back however it ended."""
     from server.services import git_config_guard
     try:
         saved = await asyncio.to_thread(git_config_guard.snapshot, cwd, kw["closed"])
@@ -228,12 +233,13 @@ async def _guarded(cwd: Path, kw: dict) -> dict:
             "settings before this command (too many folders, or one it can't read)")
             + ", so git couldn't update them this time, as without the git_config permission.")
         return result
+    git_config_guard.watch(conversation, cwd, kw["closed"])          # review delta 3: checked before every command
     try:
         result = await _run(**kw, git_config_ok=True)
     except BaseException:
-        _put_back(saved)                 # stopped or failed: still checked, here on the loop (it is quick)
+        _put_back(lambda: git_config_guard.restore(saved))    # stopped or failed: still checked, here on the loop
         raise
-    message, held = await asyncio.to_thread(_put_back, saved)
+    message, held = await asyncio.to_thread(_put_back, lambda: git_config_guard.restore(saved))
     if result.pop("git_config_stopped", False):
         message = ("Arslan stopped what this command left running: under the git_config permission nothing may run on "
                    "past the check of the git settings. " + message).strip()
@@ -244,12 +250,11 @@ async def _guarded(cwd: Path, kw: dict) -> dict:
     return result
 
 
-def _put_back(saved) -> tuple[str, bool]:
-    """git_config_guard.restore, never raising: what the step says, and whether a config couldn't be written back
-    (fail closed, review delta 2: then the grant ends here at once, `ENDED`)."""
+def _put_back(check) -> tuple[str, bool]:
+    """`check` (restore or recheck), never raising: the step's note, and whether a put-back failed (the grant ends)."""
     from server.services import git_config_guard, tool_outputs
     try:
-        outcome = git_config_guard.restore(saved)
+        outcome = check()
         message, held = outcome.message(), bool(outcome.held)
     except Exception:  # noqa: BLE001 — reported to the model and on the step instead
         import logging
@@ -282,10 +287,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
     from server.services import command_sandbox, run_later, run_temp, sandbox_proxy
-    if git_config_ok:
-        # HR-1b: clone and init copy git's template folder, whose first step makes `.git/hooks`, which stays held (only
-        # the sample files in it are exempt, not the folder: a folder renamed into its place would carry hooks). With
-        # no template they make no hooks folder, and the grant lets them write the config: they work.
+    if git_config_ok:       # HR-1b: no template, so clone and init make no `.git/hooks` folder (it stays held)
         env.update(GIT_CONFIG_ENV)
     prefix: list[str] = []
     mode = "off"

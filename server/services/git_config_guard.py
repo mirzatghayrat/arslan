@@ -1,32 +1,18 @@
 """HR-1b (v0.1.64): git may update a repository's config under this conversation's git_config grant; what it may change
 there is an allowlist, and everything else is put back after the command.
 
-Under the grant the commands profile leaves the repository config names (`run_later.GIT_CONFIG`) writable. Around
-each such command terminal_exec calls:
-
-  `snapshot(folder)`  before: every `.git/config`, `config.worktree`, `.git/worktrees/*/config.worktree` and
-                      `.git/modules/*/config` under the work folder, path and bytes, found by walking for `.git`
-                      folders (bounded, node_modules and private folders skipped, as HR-1's walk skips them, any
-                      error fails closed: then the command runs with them held, as without the grant);
-  `restore(snapshot)` after: each config that changed (or is new: a clone or init, whose baseline is empty) is read
-                      by git's own reader (`git config --file <path> --list --null --no-includes`, a fixed safe
-                      environment, no system or global config). A key off ALLOWED that was added, changed or
-                      removed is put back: the pre-run bytes with only the allowlisted changes replayed onto them
-                      (`git config --file`), or, for a new repository, git's own file with every key off the
-                      allowlist removed. The result is read back and compared before it is written, atomically. A
-                      parse, a replay or that comparison failing restores the pre-run bytes whole (a new
-                      repository's config is removed), and says so.
-
-Review delta 2: terminal_exec ends the command's group before `restore`; a snapshot starts from the last restore
-(`_BASELINES`); a config that isn't one regular file drops the lift (`Linked`), or afterwards is restored whole; the
-put-back writes the pre-run mode, clears flags and ACL when refused (`_unlock`), and is `held` if still refused (the
-grant ends). The profile lifts only the configs this walk finds (`run_later.kernel_filters`).
-
-What the model reads names the reverted keys only, never a value (`message`). Codex's corpus owns the adversarial
-shapes (spelling and case, subsection quoting, includes, multi-valued keys, raw writes, links, races, worktrees and
-submodules): see the PR body. Not covered here: a process that leaves the command's group (its own session) and
-writes a config after the check is reverted by the next granted command only, and git outside Arslan may read it
-before then.
+Under the grant the commands profile leaves the config names (`run_later.GIT_CONFIG`) writable where this walk looks.
+terminal_exec calls `snapshot` before (every such config under the work folder, by a bounded walk; an error fails
+closed: the command runs held) and `restore` after: a changed or new config is read by git's own reader in a fixed
+environment; a key off ALLOWED added, changed or removed is put back (the pre-run bytes with only the allowed changes
+replayed, or a new repository's file minus every key off the list), read back and compared, written atomically; any
+step failing restores the pre-run bytes whole. Review delta 2: the group ends first; a snapshot starts from the last
+put-back (`_BASELINES`); a config with a second name drops the lift (`Linked`); a put-back still refused once flags
+and ACL are cleared is `held` and ends the grant. Review delta 3: a process in its own session can write after the
+put-back, so every command of a conversation that had the grant, granted or not, is preceded by `recheck`, refused
+if it can't put back; a config removed alone is written back. Not covered: git outside Arslan or in its other
+runners (plugin hooks, MCP servers) before that next command; the file tools run no git. The model reads key names,
+never a value. Codex's corpus owns the adversarial shapes: see the PR body.
 """
 from __future__ import annotations
 
@@ -80,8 +66,6 @@ def allowed(key: Key | str) -> bool:
     return (section, subsection is not None, variable) in ALLOWED
 
 
-# ── finding the configs ──────────────────────────────────────────────────────
-
 def _entries(folder: Path) -> list[os.DirEntry]:
     with os.scandir(folder) as found:
         return list(found)
@@ -104,9 +88,8 @@ def _git_dir_configs(git: Path) -> list[Path]:
 
 
 def _private(folder: Path, closed) -> set[tuple[int, int]]:
-    """The private folders (`run_later.private_folders`: the user's closed ones and the TCC home folders) the walk
-    doesn't open, as HR-1's walk doesn't (#813 review 8), except one `folder` lies at or inside. The profile holds
-    the configs inside them by name under the grant too (`run_later.private_filters`), so nothing there is lifted."""
+    """The private folders the walk doesn't open, as HR-1's doesn't (#813 review 8), except one `folder` is in; the
+    profile holds their configs under the grant too (`run_later.private_filters`)."""
     from server.services import run_later
     from server.services.sandbox_profile import real
     inside = real(Path(os.path.abspath(folder)))
@@ -114,10 +97,8 @@ def _private(folder: Path, closed) -> set[tuple[int, int]]:
 
 
 def config_files(folder: Path, closed=()) -> list[Path]:
-    """Every config the grant lifts under `folder`, sorted: the profile lifts these names only where this walk looks
-    (`run_later.kernel_filters`). Links are not followed; node_modules isn't opened (the profile holds the configs in
-    it whenever it holds that folder's files), nor a private folder (`_private`), nor a `.git` folder's own folders
-    past the configs. More than MAX_FOLDERS folders, or any error opening one, raises: fail closed."""
+    """Every config the grant lifts under `folder`, sorted (the profile lifts only where this walk looks). No link,
+    node_modules, private folder or `.git` folder past its configs is opened. Too many folders, or an error, raises."""
     found: list[Path] = []
     private = _private(folder, closed)
     stack, opened = [Path(folder)], 0
@@ -185,9 +166,8 @@ def _single(path: Path) -> os.stat_result | None:
     return st
 
 
-#: Review delta 2 (blocker 1): each config as the last restore left it (bytes, mode; None: a new repository's it couldn't
-#: write), which the next snapshot takes instead of the file, so a write between two granted commands is reverted by the
-#: next. Oldest out past the caps (then the file is read). Cost: a key the user set outside Arslan meanwhile goes too.
+#: Review delta 2: each config as the last put-back left it (bytes, mode; None: a new repository's it couldn't write),
+#: taken instead of the file. Oldest out past the caps. Cost: a key the user set outside Arslan meanwhile goes too.
 _BASELINES: dict[Path, tuple[bytes, int] | None] = {}
 _MAX_BASELINES, _MAX_BASELINE_BYTES = 4096, 32 << 20
 
@@ -208,9 +188,8 @@ class Snapshot:
 
 
 def snapshot(folder: Path, closed=()) -> Snapshot:
-    """Before the command: each config's path, bytes and mode (`closed`: the user's closed folders, which the walk
-    doesn't open), from the last restore's baseline when there is one (`_BASELINES`). Raises GuardError (fail closed:
-    no grant this run), Linked when a config isn't a regular file with one name."""
+    """Before the command: each config's path, bytes and mode, its baseline when there is one. Raises GuardError (no
+    grant this run), Linked when a config isn't a regular file with one name."""
     folder = Path(os.path.abspath(folder))
     closed = tuple(closed)
     files, modes = {}, {}
@@ -221,8 +200,6 @@ def snapshot(folder: Path, closed=()) -> Snapshot:
         files[path], modes[path] = _BASELINES.get(path) or (data, stat.S_IMODE(st.st_mode))
     return Snapshot(folder, files, closed, modes)
 
-
-# ── git's own reader and writer ──────────────────────────────────────────────
 
 def _git_binary() -> str:
     for path in _GITS:
@@ -270,14 +247,13 @@ def _set(path: Path, scratch: Path, *args: str) -> None:
         raise GuardError("git could not update a config")
 
 
-# ── after the command ────────────────────────────────────────────────────────
-
 @dataclass
 class Outcome:
     reverted: list[str] = field(default_factory=list)    # key names put back, as git prints them
     restored: list[str] = field(default_factory=list)    # configs restored whole (a check failed), relative paths
     unchecked: bool = False                               # the walk after the command failed
     held: list[str] = field(default_factory=list)         # configs that couldn't be written back, relative paths
+    replaced: list[str] = field(default_factory=list)     # review delta 3: configs removed, written back
 
     def message(self) -> str:
         """What the model reads and the step shows: key names only, never a value. "" when nothing was done."""
@@ -296,13 +272,15 @@ class Outcome:
         if self.unchecked:
             parts.append("Arslan couldn't look through the working folder after this command, so it restored the git "
                          "settings it had saved; a repository this command created may not have been checked.")
+        if self.replaced:
+            parts.append(f"A git config file was removed ({', '.join(map(_clean, self.replaced[:_NAMES_SHOWN]))}); "
+                         "Arslan wrote it back as it was at its last check.")
         if self.held:
             parts.append(HELD_NOTE)
         return " ".join(parts)
 
 
-#: Review delta 2 (blocker 2): conversations whose put-back couldn't be written; `command_gate._git_config` never lifts
-#: for them again and deletes their stored grant. HELD_NOTE is what the step says.
+#: Review delta 2: conversations whose put-back couldn't be written; `command_gate._git_config` ends their grant.
 ENDED: set[str] = set()
 HELD_NOTE = ("Arslan couldn't put this repository's git settings back after this command, so it ended this "
              "conversation's git_config permission: git can't update them again in this conversation. Tell the user "
@@ -316,8 +294,7 @@ def _clean(name: str) -> str:
 
 
 def _write(path: Path, data: bytes | None, mode: int | None = None) -> None:
-    """`_replace`; when that is refused, the file flags and ACL of `path` and its folder are cleared and it is tried
-    once more (review delta 2: a flag or ACL set in the run would otherwise keep a key). OSError when it still fails."""
+    """`_replace`; when refused, once more with the flags and ACL of `path` and its folder cleared (review delta 2)."""
     try:
         _replace(path, data, mode)
     except OSError:
@@ -328,36 +305,32 @@ def _write(path: Path, data: bytes | None, mode: int | None = None) -> None:
 
 def _unlock(path: Path) -> None:
     """No file flags (`uchg` and the rest) and no ACL on `path` itself (a link is not followed). Best effort."""
-    with contextlib.suppress(OSError):
-        os.lchflags(path, 0)
+    if hasattr(os, "lchflags"):             # BSD file flags: macOS only (Linux CI has none to clear)
+        with contextlib.suppress(OSError):
+            os.lchflags(path, 0)
     with contextlib.suppress(OSError, subprocess.TimeoutExpired):
         subprocess.run(["/bin/chmod", "-h", "-N", str(path)], capture_output=True, timeout=_TIMEOUT_S,
                        stdin=subprocess.DEVNULL, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
 
 
 def _replace(path: Path, data: bytes | None, mode: int | None) -> None:
-    """Atomically: a new file beside `path`, with `mode` (the pre-run one; else 0644), then renamed over it (a link
-    at `path` is replaced, not followed). None removes it."""
+    """Atomically: a new file beside `path` in `mode` (else 0644), renamed over it (a link there is replaced). None
+    removes it."""
     if data is None:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(path)
-        except FileNotFoundError:
-            pass
         return
-    mode = 0o644 if mode is None else mode
     fd, temp = tempfile.mkstemp(prefix=".arslan-config-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temp, mode)
+        os.chmod(temp, 0o644 if mode is None else mode)
         os.replace(temp, path)
     except BaseException:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(temp)
-        except FileNotFoundError:
-            pass
         raise
 
 
@@ -398,16 +371,16 @@ def _revised(path: Path, before: bytes | None, after: bytes, scratch: Path) -> t
     return work.read_bytes(), [names[key] for key in reverted]
 
 
-def restore(saved: Snapshot) -> Outcome:
+def restore(saved: Snapshot, outcome: Outcome | None = None) -> Outcome:
     """After the command (see the module's text). A put-back that can't be written is `held`, not raised; what each
     config is left as becomes its baseline (`_BASELINES`)."""
-    outcome = Outcome()
+    outcome, unchecked = Outcome() if outcome is None else outcome, False
     try:
         now = config_files(saved.folder, saved.closed)
     except GuardError:
-        outcome.unchecked = True
+        outcome.unchecked = unchecked = True
         now = []
-    paths = sorted(set(now) | (set(saved.files) if outcome.unchecked else set()))
+    paths = sorted(set(now) | set(saved.files))
     with tempfile.TemporaryDirectory(prefix="arslan-git-config-") as scratch_name:
         scratch = Path(scratch_name) / "home"
         scratch.mkdir()
@@ -417,10 +390,14 @@ def restore(saved: Snapshot) -> Outcome:
                 after, unreadable = (_read(path) if _single(path) is not None else None), False
             except GuardError:
                 after, unreadable = None, True
+            if after is None and before is not None and not unreadable and _folder_left(path, saved.folder):
+                if _put(outcome, saved, path, before, mode):       # review delta 3: removed alone (`ln -f` onto it)
+                    outcome.replaced.append(_relative(path, saved.folder))
+                continue
             if not unreadable and (after is None or after == before):     # removed with its repository, or untouched
                 _BASELINES.pop(path, None) if after is None else _keep_baseline(path, (after, mode))
                 continue
-            if outcome.unchecked:
+            if unchecked:
                 _put(outcome, saved, path, before, mode)
                 continue
             try:
@@ -448,6 +425,48 @@ def _put(outcome: Outcome, saved: Snapshot, path: Path, data: bytes | None, mode
         return False
     _BASELINES.pop(path, None) if data is None else _keep_baseline(path, (data, 0o644 if mode is None else mode))
     return True
+
+
+def _folder_left(path: Path, folder: Path) -> bool:
+    """`path` is gone but its folder is left, a folder at each step from `folder` (no link followed)."""
+    try:
+        here = folder
+        for part in path.parent.relative_to(folder).parts:
+            here = here / part
+            if not stat.S_ISDIR(os.lstat(here).st_mode):
+                return False
+        return not os.path.lexists(path)
+    except (ValueError, OSError):
+        return False
+
+
+#: Review delta 3: per conversation, each folder a granted command ran in, with its closed folders. Before every
+#: command of that conversation, wherever it runs (`git -C` reaches them), terminal_exec calls `recheck`. Kept while
+#: the server runs: nothing here signals a conversation's end.
+WATCHED: dict[str, dict[Path, tuple[Path, ...]]] = {}
+RECHECKED = ("Before this command Arslan checked the git settings again, since something an earlier command under the "
+             "git_config permission left running may have changed them: ")
+REFUSED = ("Arslan found git settings changed since its last check in a folder this conversation's git_config "
+           "permission covered, and couldn't put them back, so it didn't run this command and ended that "
+           "permission. Tell the user to check the repository's git settings (.git/config) before running git.")
+
+
+def watch(conversation: str, folder: Path, closed=()) -> None:
+    WATCHED.setdefault(conversation, {})[Path(os.path.abspath(folder))] = tuple(closed)
+
+
+def recheck(conversation: str) -> Outcome | None:
+    """Each watched folder as `restore` checks it after a command, against the baselines (a config with none is a
+    new repository's), never the file. None when `conversation` watches none."""
+    if not WATCHED.get(conversation):
+        return None
+    outcome = Outcome()
+    for folder, closed in sorted(WATCHED[conversation].items()):
+        if os.path.isdir(folder):
+            kept = {path: value for path, value in list(_BASELINES.items()) if value and folder in path.parents}
+            restore(Snapshot(folder, {p: v[0] for p, v in kept.items()}, closed,
+                             {p: v[1] for p, v in kept.items()}), outcome)
+    return outcome
 
 
 def _relative(path: Path, folder: Path) -> str:
