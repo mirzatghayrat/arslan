@@ -51,6 +51,12 @@ MESSAGES = {
         "budget_wall_seconds": "time (seconds)",
         "budget_artifact_bytes": "file storage",
         "budget_usd": "dollar limit",
+        # L7-2: how a goal round ends, when it doesn't go on to the next round.
+        "goal_blocked": "Goal blocked at round {round}: no progress. Met: {met}. Not met: {unmet}. One step for you: {step}",
+        "goal_step": "Rewrite the check {check}, or add a note with what it needs (Edit or Note on the goal).",
+        "goal_review": "Goal: Arslan met {met}. Left for you to confirm: {rest}. Look them over, then Accept result or Edit the goal.",
+        "goal_budget": "Goal stopped at its budget, not complete. Met: {met}. Not met: {unmet}. Resume continues it with a fresh budget.",
+        "goal_none": "none",
     },
     "zh": {
         "budget_closing_saved": "先停在这里：这一轮的工作量到上限了（{reason}）。已保存：{files}。读了 {sources} 个网页。回复「继续」，我从保存的文件接着做。",
@@ -93,6 +99,11 @@ MESSAGES = {
         "budget_wall_seconds": "时间（秒）",
         "budget_artifact_bytes": "文件存储",
         "budget_usd": "美元上限",
+        "goal_blocked": "目标在第 {round} 轮卡住了：没有进展。已达成：{met}。未达成：{unmet}。请你做一步：{step}",
+        "goal_step": "改写检查 {check}，或者补一条说明，写明它还缺什么（在目标上点「编辑」或「说明」）。",
+        "goal_review": "目标：Arslan 已达成 {met}。留给你确认的：{rest}。看过之后点「接受结果」，或者编辑目标。",
+        "goal_budget": "目标在预算用完时停下，尚未完成。已达成：{met}。未达成：{unmet}。点「继续」会用新的预算接着做。",
+        "goal_none": "无",
     },
     "ja": {
         "budget_closing_saved": "ここで止めました：このターンの作業上限（{reason}）に達しました。保存済み：{files}。{sources} ページを読みました。「続けて」と送れば保存したファイルから再開します。",
@@ -135,6 +146,11 @@ MESSAGES = {
         "budget_wall_seconds": "時間（秒）",
         "budget_artifact_bytes": "ファイル保存容量",
         "budget_usd": "ドル上限",
+        "goal_blocked": "目標がラウンド {round} で行き詰まりました：進展がありません。達成：{met}。未達成：{unmet}。あなたにお願いする一つの手順：{step}",
+        "goal_step": "チェック {check} を書き直すか、足りないものをメモで伝えてください（目標の「編集」または「メモ」）。",
+        "goal_review": "目標：Arslan が達成したもの {met}。あなたが確認するもの：{rest}。確認してから「結果を承認」するか、目標を編集してください。",
+        "goal_budget": "目標は予算の上限で止まりました。未完了です。達成：{met}。未達成：{unmet}。「再開」で新しい予算で続けます。",
+        "goal_none": "なし",
     },
     "es": {
         "budget_closing_saved": "Me detengo aquí: este turno llegó a su límite de trabajo ({reason}). Guardado: {files}. Leí {sources} páginas. Di \"continúa\" y sigo desde el archivo guardado.",
@@ -177,6 +193,11 @@ MESSAGES = {
         "budget_wall_seconds": "tiempo (segundos)",
         "budget_artifact_bytes": "almacenamiento de archivos",
         "budget_usd": "límite en dólares",
+        "goal_blocked": "Objetivo bloqueado en la ronda {round}: sin avances. Cumplido: {met}. Sin cumplir: {unmet}. Un paso para ti: {step}",
+        "goal_step": "Reescribe la comprobación {check} o añade una nota con lo que necesita (Editar o Nota en el objetivo).",
+        "goal_review": "Objetivo: Arslan cumplió {met}. Queda para que lo confirmes tú: {rest}. Revísalo y luego Acepta el resultado o Edita el objetivo.",
+        "goal_budget": "El objetivo se detuvo en su presupuesto, sin completar. Cumplido: {met}. Sin cumplir: {unmet}. Reanudar lo continúa con un presupuesto nuevo.",
+        "goal_none": "nada",
     },
     "de": {
         "budget_closing_saved": "Ich höre hier auf: Dieser Durchgang hat sein Arbeitslimit erreicht ({reason}). Gespeichert: {files}. Ich habe {sources} Seiten gelesen. Sag „weiter“, dann mache ich mit der gespeicherten Datei weiter.",
@@ -219,6 +240,11 @@ MESSAGES = {
         "budget_wall_seconds": "Zeit (Sekunden)",
         "budget_artifact_bytes": "Dateispeicher",
         "budget_usd": "Dollar-Limit",
+        "goal_blocked": "Ziel blockiert in Runde {round}: kein Fortschritt. Erfüllt: {met}. Nicht erfüllt: {unmet}. Ein Schritt für dich: {step}",
+        "goal_step": "Schreib die Prüfung {check} neu oder füge eine Notiz hinzu, was ihr fehlt (Bearbeiten oder Notiz am Ziel).",
+        "goal_review": "Ziel: Arslan hat {met} erfüllt. Für dich zu bestätigen: {rest}. Sieh es dir an, dann Ergebnis annehmen oder das Ziel bearbeiten.",
+        "goal_budget": "Das Ziel hat an seinem Budget angehalten, nicht erledigt. Erfüllt: {met}. Nicht erfüllt: {unmet}. Fortsetzen macht mit einem neuen Budget weiter.",
+        "goal_none": "nichts",
     },
     "fr": {
         "budget_closing_saved": "Je m’arrête ici : ce tour a atteint sa limite de travail ({reason}). Enregistré : {files}. J’ai lu {sources} pages. Dis « continue » et je reprends à partir du fichier enregistré.",
@@ -261,6 +287,11 @@ MESSAGES = {
         "budget_wall_seconds": "temps (secondes)",
         "budget_artifact_bytes": "stockage de fichiers",
         "budget_usd": "plafond en dollars",
+        "goal_blocked": "Objectif bloqué au tour {round} : aucun progrès. Atteint : {met}. Non atteint : {unmet}. Une étape pour vous : {step}",
+        "goal_step": "Réécrivez la vérification {check}, ou ajoutez une note avec ce qui lui manque (Modifier ou Note sur l’objectif).",
+        "goal_review": "Objectif : Arslan a atteint {met}. À confirmer par vous : {rest}. Vérifiez-les, puis Accepter le résultat ou Modifier l’objectif.",
+        "goal_budget": "L’objectif s’est arrêté à son budget, sans être atteint. Atteint : {met}. Non atteint : {unmet}. Reprendre le poursuit avec un nouveau budget.",
+        "goal_none": "rien",
     },
 }
 

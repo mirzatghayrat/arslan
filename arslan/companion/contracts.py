@@ -70,8 +70,8 @@ class ValidationRule(Contract):
     name a path: it is only looked at read-only, inside the folders Arslan may already read (0.1.59)."""
     kind: Literal["text", "json", "artifact", "image_dimensions", "research_sources", "research_evidence",
                   "code_build", "code_test", "language", "layout", "remote_readback",
-                  "file_saved", "sources_read"]
-    target: Annotated[str, Field(max_length=240)] | None = None
+                  "file_saved", "sources_read", "file_contains"]   # file_contains: L7 goals only
+    target:Annotated[str, Field(max_length=240)] | None = None
     equals: Annotated[str, Field(max_length=20_000)] | None = None
     contains: tuple[Annotated[str, Field(min_length=1, max_length=2000)], ...] = Field(default=(), max_length=32)
     minimum: Annotated[int, Field(ge=0, le=1_000_000, strict=True)] | None = None
@@ -96,6 +96,7 @@ class ValidationRule(Contract):
             "research_sources": {"target", "minimum", "maximum"},
             "file_saved": {"target", "minimum"},
             "sources_read": {"target", "minimum", "maximum"},
+            "file_contains": {"target", "contains"},
             "research_evidence": set(),
             "code_build": {"target", "argv", "equals", "contains"},
             "code_test": {"target", "argv", "equals", "contains"},
@@ -120,7 +121,7 @@ class AcceptanceCheck(Contract):
             raise ValueError("critical acceptance needs deterministic or human verification")
         if self.evaluator == "model" and self.rule is not None and self.rule.kind in {
             "artifact", "image_dimensions", "research_sources", "research_evidence", "code_build", "code_test", "remote_readback",
-            "file_saved", "sources_read"}:
+            "file_saved", "sources_read", "file_contains"}:
             raise ValueError("factual checks need deterministic or human verification")
         return self
 
