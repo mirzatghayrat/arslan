@@ -130,6 +130,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
         terminalSandboxEnabled={localSettings.terminalSandboxEnabled ?? true}
         onTerminalSandboxChange={(v) => saveField({ terminalSandboxEnabled: v })}
+        sandboxSystemCertificates={localSettings.sandboxSystemCertificates ?? false}
+        onSandboxSystemCertificatesChange={(v) => saveField({ sandboxSystemCertificates: v })}
         backgroundJobBudget={localSettings.backgroundJobBudget ?? 'standard'}
         onBackgroundJobBudgetChange={(v) => saveField({ backgroundJobBudget: v })}
         taskUsdCap={localSettings.taskUsdCap ?? 2}

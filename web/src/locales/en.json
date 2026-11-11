@@ -1537,5 +1537,34 @@
       "choiceRequired": "It has {{count}} sub-sessions now. Choose again what happens to them.",
       "failed": "Couldn't delete it. Try again."
     }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "Allow system certificate checks in the sandbox",
+    "certificatesDesc": "Some tools (some package managers, a company's internal HTTPS services) use macOS's certificate checks when they go online. The sandbox doesn't allow them by default, so these tools report a certificate error. Turned on, they're allowed only while a command is online, and the keychain stays out of reach. Off by default.",
+    "devicesTitle": "Trusted local devices",
+    "devicesDesc": "Commands in the sandbox can't reach your local network by default (your router, a NAS, a printer, other computers). A device added here can be reached, on every port. One added by name keeps the address it has now, checked again on every connection. This Mac's own addresses can't be added.",
+    "devicesEmpty": "No trusted devices yet.",
+    "placeholder": "A name or LAN IP, such as nas.local or 192.168.1.20",
+    "inputLabel": "Name or LAN IP",
+    "add": "Trust",
+    "remove": "Stop trusting",
+    "notFound": "Can't find “{{value}}”. Use a name on your local network (such as nas.local) or an IP.",
+    "notLan": "{{value}} isn't a local network address. Only devices on your local network can be added here.",
+    "ownAddress": "That's this Mac's own address. It can't be added.",
+    "listed": "It's already in the list.",
+    "failed": "That didn't work. Try again.",
+    "trustedToast": "Trusted {{name}}",
+    "untrustedToast": "No longer trusted",
+    "certificatesCardTitle": "The certificate check didn't pass",
+    "certificatesCardBody": "This command uses macOS's certificate checks to go online, which the sandbox doesn't allow by default. Turn on “Allow system certificate checks in the sandbox”, then try again.",
+    "openSettings": "Turn it on in Settings",
+    "notNow": "Not now",
+    "notNowToast": "OK, not this time",
+    "lanTitle": "The command wants to reach a device on your local network: {{device}}",
+    "lanBody": "Commands in the sandbox can't reach your local network by default. Once you trust this device, every port on it can be reached. You can remove it in Settings at any time.",
+    "lanTrusted": "This device is trusted now. Try again and it will connect.",
+    "trustDevice": "Trust this device",
+    "namedDevice": "{{name}} ({{addresses}})",
+    "cardGone": "This card is no longer valid. You can add the device in Settings."
   }
 }

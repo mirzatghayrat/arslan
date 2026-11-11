@@ -80,7 +80,8 @@ class SettingsIn(BaseModel):
     default_read_enabled: str | None = None
     folder_rules_enabled: str | None = None
     sandbox_system_certificates: str | None = None   # SBX-6a, default off
-    sandbox_trusted_devices: str | None = None   # SBX-6a, JSON list, default empty
+    # Not `sandbox_trusted_devices` (SBX settings): a device is added through POST /settings/sandbox/trusted-devices,
+    # where the server resolves and checks it, or a card's answer, never as raw JSON here (trusted_devices).
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None

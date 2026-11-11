@@ -31,6 +31,22 @@ export function openSection(section: Section, sub?: string): void {
   window.dispatchEvent(new CustomEvent(OPEN_SECTION_EVENT, { detail: sub ? { section, sub } : section }));
 }
 
+/** SBX settings: the control Settings should land on when it opens next (its element id), taken once by that control. */
+let _settingFocus: string | null = null;
+
+/** Open Settings at the section `sub`, at the control `controlId` (a card's "Turn it on in Settings"). */
+export function openSetting(sub: string, controlId: string): void {
+  _settingFocus = controlId;
+  openSection("settings", sub);
+}
+
+/** Whether Settings was opened for `controlId`; true once only. */
+export function takeSettingFocus(controlId: string): boolean {
+  if (_settingFocus !== controlId) return false;
+  _settingFocus = null;
+  return true;
+}
+
 /** What an OPEN_SECTION_EVENT asks for: a known page, and optionally a part of it. */
 export function readOpenSection(detail: unknown): { section: Section; sub?: string } | null {
   const section = typeof detail === "string" ? detail

@@ -114,6 +114,8 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'abilities.default_read': 'abilities',
   'abilities.workspace_dir': 'abilities',
   'abilities.sandbox': 'abilities',
+  'abilities.sandbox_certificates': 'abilities',
+  'abilities.trusted_devices': 'abilities',
   'abilities.lan_discovery': 'abilities',
   'abilities.ssh': 'abilities',
   'abilities.hands': 'abilities',

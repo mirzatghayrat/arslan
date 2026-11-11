@@ -186,22 +186,24 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     env = child_environment({}, {"PATH": await asyncio.to_thread(merged_path), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
-    from server.services import command_sandbox, run_temp, sandbox_proxy
+    from server.services import command_sandbox, run_temp, sandbox_proxy, trusted_devices
     prefix: list[str] = []
     mode = "off"
+    trust_on, watching = False, None
     if sandbox:
         env.update(command_sandbox.cache_environment(run_temp.cache("commands")))   # SBX-5 §1c: its own cache
         # SBX-6: online, the sandbox lets TCP out only to Arslan's local proxy, and the child is told to use
         # it; dev servers on loopback are reached directly. No proxy means the profile is offline.
         proxy_port = None if offline else await sandbox_proxy.port()
-        trust = proxy_port is not None and await trust_service_allowed()
+        trust_on = proxy_port is not None and await trust_service_allowed()
         if proxy_port is not None:
             via = f"http://127.0.0.1:{proxy_port}"
             env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
                                                "http_proxy", "https_proxy", "all_proxy")})
             env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
+            watching = sandbox_proxy.watch()           # SBX settings: what the proxy refuses while it runs (the card)
         prefix = command_sandbox.wrapper(cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
-                                         copies=copies, proxy_port=proxy_port, trust_service=trust) or []
+                                         copies=copies, proxy_port=proxy_port, trust_service=trust_on) or []
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
         prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies) or []
@@ -234,6 +236,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         _kill_group(proc)
         _, pending = await asyncio.wait(pending, timeout=DRAIN_AFTER_KILL_S)
         await _cancel(pending)
+    refused = sandbox_proxy.unwatch(watching)
     full_out = out_buf.data().decode("utf-8", errors="replace")
     full_err = err_buf.data().decode("utf-8", errors="replace")
     stdout, cut_out = clip(fold_repeats(full_out))
@@ -280,12 +283,15 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
             from server.orchestrator import run_trace
             run_trace.note_denial("proxy" if proxy else "eperm")
         result["note"] = command_sandbox.note(cwd, closed, trust=trust, proxy=proxy)
+        # SBX settings: what the window's card shows (tool_execute offers it), never on the result.
+        trusted_devices.note_stop(certificates=trust and not trust_on, hosts=refused if proxy else ())
     elif result["ok"] and command_sandbox.proxy_refused(result):
         # A client that printed the proxy's refusal and exited 0 (curl without -f on plain http): still a denial,
         # but not a failed step.
         from server.orchestrator import run_trace
         run_trace.note_denial("proxy")
         result["note"] = command_sandbox.note(cwd, closed, proxy=True)
+        trusted_devices.note_stop(hosts=refused)
     elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
         result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "
                           "Arslan Hands' folder. Tell the user what you needed.")

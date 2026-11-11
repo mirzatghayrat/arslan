@@ -42,6 +42,8 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
     # 0.1.63 D5: the model THIS turn runs on, for web_search's choice of the provider's own search. Always set
     # (None included) so a value from an outer context can't stand in for this turn's.
     _mt = turn_model.set_model(turn_adapter)
+    from server.services import trusted_devices
+    stopped: dict = {}             # SBX settings: what a sandbox stop of this call notes, for the window's card
     try:
         from server.services.task_service import current as current_task
         from server.services.task_repository import TaskError
@@ -100,7 +102,8 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
         if result is None:
             try:
                 async with parallel_reads.executing():      # K9a: the next read's gates may start now
-                    result = await run_once(ran_outside)
+                    with trusted_devices.collecting() as stopped:
+                        result = await run_once(ran_outside)
             except asyncio.CancelledError:
                 grant_use["found"] = None          # a stop: no row written while the task is being cancelled
                 raise
@@ -144,4 +147,9 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
         turn_model.reset_model(_mt)
         if _ct is not None:
             tool_caller.reset_caller(_ct)
+    # The cards come from the server's own record of the stop (the proxy's refusal, the switch), never from the result:
+    # a card trusts nothing, and only the user's answer to it does (trusted_devices.answer).
+    if stopped:
+        for frame in await trusted_devices.offer(conversation_id, stopped):
+            turn.emit(frame)
     return result

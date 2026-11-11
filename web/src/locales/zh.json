@@ -1537,5 +1537,34 @@
       "choiceRequired": "它现在有 {{count}} 个子会话。请重新选择怎么处理它们。",
       "failed": "没删成，再试一次。"
     }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "允许沙盒里的命令检查系统证书",
+    "certificatesDesc": "有些工具（比如某些包管理器、公司内部的 HTTPS 服务）联网时要用 macOS 的证书检查，沙盒里默认不让用，它们会报证书错误。打开后只在命令联网时允许，读不到你的钥匙串。默认关。",
+    "devicesTitle": "信任的本地设备",
+    "devicesDesc": "沙盒里的命令默认连不了局域网（路由器、NAS、打印机、别的电脑）。加进这里的设备可以连，它的所有端口都能连。用名字加的，会记下现在的地址，每次连都再核对一次。这台 Mac 自己的地址不能加。",
+    "devicesEmpty": "还没有信任的设备。",
+    "placeholder": "名称或局域网 IP，比如 nas.local 或 192.168.1.20",
+    "inputLabel": "名称或局域网 IP",
+    "add": "信任",
+    "remove": "不再信任",
+    "notFound": "找不到「{{value}}」。用局域网里的名字（比如 nas.local）或 IP。",
+    "notLan": "{{value}} 不是局域网地址。这里只能加局域网里的设备。",
+    "ownAddress": "这是这台 Mac 自己的地址，不能加。",
+    "listed": "已经在列表里了。",
+    "failed": "没成功，再试一次。",
+    "trustedToast": "已信任 {{name}}",
+    "untrustedToast": "已不再信任",
+    "certificatesCardTitle": "证书检查没通过",
+    "certificatesCardBody": "这条命令联网时要用 macOS 的证书检查，沙盒里默认不让用。打开「允许沙盒里的命令检查系统证书」后再试一次。",
+    "openSettings": "去设置打开",
+    "notNow": "不用",
+    "notNowToast": "好的，这次不连",
+    "lanTitle": "命令想连局域网里的设备 {{device}}",
+    "lanBody": "沙盒里的命令默认连不了局域网。信任这台设备后，它的所有端口都能连，随时能在设置里删掉。",
+    "lanTrusted": "这台设备现在已经被信任，再试一次就能连。",
+    "trustDevice": "信任这台设备",
+    "namedDevice": "{{name}}（{{addresses}}）",
+    "cardGone": "这张卡已经失效了，可以在设置里加这台设备。"
   }
 }

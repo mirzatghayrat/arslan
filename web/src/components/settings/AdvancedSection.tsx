@@ -21,6 +21,7 @@ import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
 import SandboxGrantsPanel from './SandboxGrantsPanel';
+import SandboxNetworkPanel from './SandboxNetworkPanel';
 import TerminalRulesPanel from './TerminalRulesPanel';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
@@ -51,6 +52,9 @@ export interface AdvancedSectionProps {
   /** 0.1.51 P3: commands run in the workspace sandbox (on by default). Optional so older hosts still render. */
   terminalSandboxEnabled?: boolean;
   onTerminalSandboxChange?: (value: boolean) => void;
+  /** SBX settings: sandboxed commands may use macOS's certificate checks (default off). */
+  sandboxSystemCertificates?: boolean;
+  onSandboxSystemCertificatesChange?: (value: boolean) => void;
   /** 0.1.43: where a background job wraps up. Optional so older hosts still render. */
   backgroundJobBudget?: BackgroundJobBudget;
   onBackgroundJobBudgetChange?: (value: BackgroundJobBudget) => void;
@@ -104,6 +108,8 @@ export default function AdvancedSection({
   onShellConfirmPolicyChange,
   terminalSandboxEnabled = true,
   onTerminalSandboxChange,
+  sandboxSystemCertificates = false,
+  onSandboxSystemCertificatesChange,
   backgroundJobBudget = 'standard',
   onBackgroundJobBudgetChange,
   taskUsdCap = 2,
@@ -396,6 +402,7 @@ export default function AdvancedSection({
             />
           </div>
         )}
+        {orchestratorShellEnabled && <TerminalRulesPanel />}
         {orchestratorShellEnabled && (
           <div className="flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
             <div>
@@ -414,7 +421,12 @@ export default function AdvancedSection({
             />
           </div>
         )}
-        {orchestratorShellEnabled && <TerminalRulesPanel />}
+        {/* SBX settings (the mock the user OK'd): under the sandbox, as its mock has them: the certificate switch, the
+            trusted local devices, then the conversations that may run outside it. */}
+        {orchestratorShellEnabled && (
+          <SandboxNetworkPanel systemCertificates={sandboxSystemCertificates}
+            onSystemCertificatesChange={onSandboxSystemCertificatesChange} />
+        )}
         {orchestratorShellEnabled && <SandboxGrantsPanel />}
     </>)],
     ['budget', (<>

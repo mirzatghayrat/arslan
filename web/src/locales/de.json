@@ -1537,5 +1537,34 @@
       "choiceRequired": "Es hat jetzt {{count}} Teilgespräche. Wähle noch einmal, was mit ihnen geschieht.",
       "failed": "Löschen hat nicht geklappt. Versuche es noch einmal."
     }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "Systemzertifikatsprüfungen in der Sandbox erlauben",
+    "certificatesDesc": "Manche Werkzeuge (manche Paketmanager, interne HTTPS-Dienste einer Firma) nutzen beim Verbinden die Zertifikatsprüfung von macOS. Die Sandbox erlaubt sie standardmäßig nicht, deshalb melden diese Werkzeuge einen Zertifikatsfehler. Eingeschaltet ist sie nur erlaubt, während ein Befehl online ist, und der Schlüsselbund bleibt unerreichbar. Standardmäßig aus.",
+    "devicesTitle": "Vertrauenswürdige lokale Geräte",
+    "devicesDesc": "Befehle in der Sandbox erreichen dein lokales Netzwerk standardmäßig nicht (Router, NAS, Drucker, andere Computer). Ein hier hinzugefügtes Gerät ist erreichbar, auf allen Ports. Ein per Name hinzugefügtes Gerät behält seine jetzige Adresse, die bei jeder Verbindung erneut geprüft wird. Die eigenen Adressen dieses Macs können nicht hinzugefügt werden.",
+    "devicesEmpty": "Noch keine vertrauenswürdigen Geräte.",
+    "placeholder": "Ein Name oder eine LAN-IP, z. B. nas.local oder 192.168.1.20",
+    "inputLabel": "Name oder LAN-IP",
+    "add": "Vertrauen",
+    "remove": "Nicht mehr vertrauen",
+    "notFound": "„{{value}}“ wurde nicht gefunden. Nimm einen Namen aus deinem lokalen Netzwerk (z. B. nas.local) oder eine IP.",
+    "notLan": "{{value}} ist keine Adresse im lokalen Netzwerk. Hier können nur Geräte aus deinem lokalen Netzwerk hinzugefügt werden.",
+    "ownAddress": "Das ist eine eigene Adresse dieses Macs. Sie kann nicht hinzugefügt werden.",
+    "listed": "Es steht schon in der Liste.",
+    "failed": "Das hat nicht geklappt. Versuche es noch einmal.",
+    "trustedToast": "{{name}} ist jetzt vertrauenswürdig",
+    "untrustedToast": "Nicht mehr vertrauenswürdig",
+    "certificatesCardTitle": "Die Zertifikatsprüfung ist fehlgeschlagen",
+    "certificatesCardBody": "Dieser Befehl nutzt beim Verbinden die Zertifikatsprüfung von macOS, die die Sandbox standardmäßig nicht erlaubt. Schalte „Systemzertifikatsprüfungen in der Sandbox erlauben“ ein und versuche es dann noch einmal.",
+    "openSettings": "In den Einstellungen einschalten",
+    "notNow": "Jetzt nicht",
+    "notNowToast": "Gut, diesmal nicht",
+    "lanTitle": "Der Befehl will ein Gerät in deinem lokalen Netzwerk erreichen: {{device}}",
+    "lanBody": "Befehle in der Sandbox erreichen dein lokales Netzwerk standardmäßig nicht. Wenn du diesem Gerät vertraust, sind alle seine Ports erreichbar. Du kannst es jederzeit in den Einstellungen entfernen.",
+    "lanTrusted": "Diesem Gerät wird jetzt vertraut. Versuche es noch einmal, dann verbindet es sich.",
+    "trustDevice": "Diesem Gerät vertrauen",
+    "namedDevice": "{{name}} ({{addresses}})",
+    "cardGone": "Diese Karte gilt nicht mehr. Du kannst das Gerät in den Einstellungen hinzufügen."
   }
 }
