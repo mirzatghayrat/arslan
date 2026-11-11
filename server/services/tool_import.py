@@ -117,7 +117,7 @@ def _read_local(base: Path) -> dict[str, bytes]:
                 if len(files) >= MAX_FILES:
                     raise Refused("too_large", "files")
                 try:
-                    files[rel] = agent_skills._read_file(path)
+                    files[rel] = agent_skills._read_file(path, expect=info)
                 except agent_skills.TooLarge as exc:
                     raise Refused("too_large", rel) from exc
                 total += len(files[rel])

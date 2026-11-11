@@ -298,6 +298,43 @@ async def test_a_hard_link_is_refused(api, home, tmp_path):
                                                                                   "plain": None}
 
 
+async def test_a_hard_link_in_a_plugin_is_refused(api, home, tmp_path):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("x\n")
+    base = _plugin(home)
+    os.link(outside, base / "skills" / "release-notes" / "scripts" / "y.py")
+    assert _row(await _scan(api), "plugins", "release-kit")["refused"] == "unreadable"
+
+
+async def test_a_hard_linked_skill_md_is_refused(api, home, tmp_path):
+    outside = tmp_path / "SKILL.md"
+    outside.write_text(SKILL_MD.format(name="top"))
+    (home / ".claude" / "skills" / "top").mkdir(parents=True)
+    os.link(outside, home / ".claude" / "skills" / "top" / "SKILL.md")
+    row = next(r for r in (await _scan(api))["skills"] if r["id"].endswith("/top"))
+    assert row["refused"] == "unreadable"
+
+
+async def test_a_file_swapped_after_its_check_is_refused(api, home, tmp_path, monkeypatch):
+    """The lstat saw the skill's own file; a second name of an outside file is put in its place before the open."""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not the skill's\n")
+    folder = _skill(home, "racy", references__notes_md="# notes\n")
+    target = folder / "references" / "notes.md"
+    real_open, done = os.open, []
+
+    def racing_open(path, flags, *args, **kwargs):
+        if not done and os.fspath(path) == os.fspath(target):
+            done.append(path)
+            os.link(outside, target.with_name(".swap"))
+            os.replace(target.with_name(".swap"), target)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", racing_open)
+    row = _row(await _scan(api), "skills", "racy")
+    assert done and row["refused"] == "unreadable"
+
+
 async def test_a_change_after_the_scan_adds_nothing(api, home):
     folder = _skill(home)
     row = _row(await _scan(api), "skills", "release-notes")
