@@ -1512,15 +1512,92 @@ def _copier_targets(args: tuple[str, ...], folders: tuple[str, ...], program: st
     return found
 
 
+def _sed_script_targets(script: str, folders: tuple[str, ...]) -> list[str]:
+    """Read command boundaries and substitution fields before interpreting a `w` as a write."""
+    def field_end(start: int, delimiter: str) -> int:
+        while start < len(script):
+            if script[start] == "\\":
+                start += 2
+            elif script[start] == delimiter:
+                return start + 1
+            else:
+                start += 1
+        return len(script) + 1
+
+    found, i = [], 0
+    while i < len(script):
+        ch = script[i]
+        # Addresses, ranges, negation, and groups precede a command. Regex addresses
+        # consume their delimiter too, so a `w` in an address is never a command.
+        if ch in " \t\r\n;{},!$+~" or ch.isdigit():
+            i += 1
+            continue
+        if ch == "/" or (ch == "\\" and i + 1 < len(script)):
+            start = i + (ch == "\\")
+            i = field_end(start + 1, script[start])
+            continue
+        i += 1
+        if ch in ("s", "y") and i < len(script):
+            delimiter = script[i]
+            i = field_end(i + 1, delimiter)
+            i = field_end(i, delimiter)
+            if ch == "s":
+                while i < len(script) and (script[i] in "gpIiMme \t" or script[i].isdigit()):
+                    i += 1
+                if i < len(script) and script[i] == "w":
+                    ch, i = "w", i + 1
+        if ch in ("w", "W"):
+            end = script.find("\n", i)
+            end = len(script) if end < 0 else end
+            filename = script[i:end].lstrip(" \t")
+            if filename:
+                found += _at(filename, folders, strict=True)
+            i = end
+        elif ch in ("a", "i", "c", "#", "r", "R"):
+            # Text and file operands run to the newline, including any semicolons.
+            end = script.find("\n", i)
+            i = len(script) if end < 0 else end
+        else:
+            while i < len(script) and script[i] not in ";\n{}":
+                i += 1
+    return found
+
+
 def _sed_targets(args: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
-    """In place (`-i`, `-I`, `--in-place`, in any cluster), its file operands; and always a `w` file in its script,
-    read as the pieces of a word written with blanks or `;` in it (`s/a/b/w .git/hooks/x`)."""
+    """In-place operands and inline `w`/`W` or substitution writes; file scripts are unknown.
+    Keep the older whitespace/semicolon path scan as an additive conservative check."""
     in_place = any(w.startswith("--in-place") or (w.startswith("-") and not w.startswith("--") and
                                                    ("i" in w[1:] or "I" in w[1:])) for w in args)
     found = [hit for w in _non_options(args) for hit in _at(w, folders, strict=True)] if in_place else []
     for word in args:
         if any(ch in word for ch in " \t\n;"):
             found += [hit for piece in re.split(r"[\s;]+", word) if piece for hit in _at(piece, folders, strict=True)]
+    scripts, operands, explicit, ended = [], [], False, False
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        option, equals, value = word.partition("=")
+        if ended or not word.startswith("-") or word == "-":
+            operands.append(word)
+        elif word == "--":
+            ended = True
+        elif option in ("-f", "--file") or (word.startswith("-f") and not word.startswith("--")):
+            return [RUN_LATER_UNKNOWN]
+        elif option in ("-e", "--expression"):
+            explicit = True
+            if not equals:
+                if i >= len(args):
+                    return [RUN_LATER_UNKNOWN]
+                value, i = args[i], i + 1
+            scripts.append(value)
+        elif word.startswith("-e") and not word.startswith("--"):
+            explicit = True
+            scripts.append(word[2:])
+    if not explicit and operands:
+        scripts.append(operands[0])
+    for script in scripts:
+        found += _sed_script_targets(script, folders)
     return found
 
 
@@ -1628,6 +1705,46 @@ def _git_targets(args: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
 def _tool_targets(program: str, args: tuple[str, ...]) -> list[str]:
     """A package manager's or hook tool's own form that writes its settings or hooks (`_TOOL_WRITES`); husky, any
     form but help (it sets core.hooksPath and writes .husky). A verb that comes from an expansion is unknown."""
+    if program in ("npm", "pnpm", "yarn", "pip"):
+        values = {
+            "npm": {"--prefix", "--location", "--userconfig", "--globalconfig", "--workspace", "-w",
+                    "--registry", "--cache", "--loglevel", "--otp"},
+            "pnpm": {"--cwd", "-C", "--dir", "--filter", "-F", "--prefix"},
+            "yarn": {"--cwd", "-C", "--dir", "--filter", "-F", "--prefix"},
+            "pip": {"--python", "--cache-dir", "--log"},
+        }[program]
+        flags = {"--isolated", "--require-virtualenv", "-v"} if program == "pip" else set()
+        verbs, optional, ended, i = [], False, False, 0
+        while i < len(args):
+            word = args[i]
+            i += 1
+            if ended or not word.startswith("-") or word == "-":
+                verbs.append((word.lower(), optional))
+                optional = False
+            elif word == "--":
+                ended, optional = True, False
+            else:
+                option, equals, _ = word.partition("=")
+                optional = not equals and option not in values | flags
+                if option in values and not equals:
+                    i += 1
+        # An unknown option's following word may be a value or a verb. Keep both
+        # readings without constructing exponentially many complete word lists.
+        previous, required, found = set(), 0, []
+        for word, maybe_value in verbs:
+            if _expands(word) and (required < 2 or "config" in previous or "c" in previous):
+                return [RUN_LATER_UNKNOWN]
+            word = "config" if program == "npm" and word == "c" else word
+            for (name, pair), file in _TOOL_WRITES.items():
+                if name == program and ((len(pair) == 2 and pair[0] in previous and pair[1] == word)
+                                        or (len(pair) == 1 and required == 0 and pair[0] == word)):
+                    found.append(file)
+            previous = previous | {word} if maybe_value else {word}
+            required += not maybe_value
+        if found:
+            return found[:1]
+        # Keep existing prefix hits as conservative holds, even for ambiguous
+        # option/value spellings. The new verb scan must not remove a hold.
     verbs = tuple(w for w in args if not w.startswith("-"))
     if any(_expands(w) for w in verbs[:2]):
         return [RUN_LATER_UNKNOWN]
@@ -1640,6 +1757,10 @@ def _tool_targets(program: str, args: tuple[str, ...]) -> list[str]:
 
 def _command_targets(words: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
     program, args = words[0].lower(), words[1:]             # by name, in any case: the default disk ignores case
+    if re.fullmatch(r"python(?:3(?:\.\d+)?)?", program) and args[:2] == ("-m", "pip"):
+        program, args = "pip", args[2:]
+    elif re.fullmatch(r"pip3(?:\.\d+)?", program):
+        program = "pip"
     if program == "git":
         return _git_targets(args, folders)
     if program == "find":
