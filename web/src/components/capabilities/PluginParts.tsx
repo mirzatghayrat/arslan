@@ -1,11 +1,12 @@
 import { useTranslation } from "react-i18next";
 import type { CapabilityRow, PluginPart } from "../../api/capabilities";
 import { Button } from "../kit";
+import { PluginHooks } from "./PluginHooks";
 
 /**
  * What a plugin holds (CAP7b, board Group): each skill and connection, with its state or when it was last used. None
  * has a switch or a delete of its own: the plugin's row is the one. A connection waiting for its sign-in opens its own
- * card, where Authorize is.
+ * card, where Authorize is. Then its hooks, each with its own switch (HOOK-4, `PluginHooks`).
  */
 export function PluginParts({ row, used, onOpenPart }: {
   row: CapabilityRow; used: (iso: string | null) => string; onOpenPart: (part: PluginPart) => void;
@@ -22,6 +23,7 @@ export function PluginParts({ row, used, onOpenPart }: {
       {p.reason === "needs_sign_in" && <Button size="sm" data-testid={`plugin-part-open-${p.key}`} onClick={() => onOpenPart(p)}>
         {t("capabilityList.plugin_signIn")}</Button>}
     </div>)}
+    <PluginHooks row={row} />
   </div>;
 }
 

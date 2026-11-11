@@ -85,6 +85,7 @@ async def test_an_unknown_outcome_blocks_only_its_repeat_and_the_turn_still_answ
 async def test_repeating_the_unknown_action_is_refused_as_a_tool_result_not_a_crash(playwright, execution_db,
                                                                                      monkeypatch):
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
 
     class Executor:
         calls = 0
@@ -104,9 +105,9 @@ async def test_repeating_the_unknown_action_is_refused_as_a_tool_result_not_a_cr
     async def function(conversation, message, emit):
         async def body(sink):
             for _ in range(2):
-                results.append(await tool_loop._dispatch_tool(
-                    "mcp_4__browser_click", {"ref": "e1"}, "", resolve_tools=tools, emit=emit,
-                    tool_timeout_s=2, tool_trace=[], convo=[], conversation_id=conversation))
+                results.append(await tool_loop._run_tool(
+                    "mcp_4__browser_click", {"ref": "e1"}, "", ToolTurn(resolve_tools=tools, emit=emit,
+                    tool_timeout_s=2, tool_trace=[], convo=[], conversation_id=conversation)))
             return "Answer delivered"
         return await host_run.execute(conversation, message, emit, body)
     assert await run(function) == "Answer delivered"

@@ -621,7 +621,21 @@ export interface CapabilityCard {
   connections?: PluginConnection[];
   /** CAP8-2's hook rule: one event per hook that won't run (a skill's frontmatter hooks, a plugin's skills' too). */
   hooks?: string[];
+  /** HOOK-1: each hook as stored (server/services/plugin_hooks.card_rows). */
+  hook_rows?: HookRow[];
 }
+/** One hook as its card and its plugin's row show it (server/services/plugin_hooks.card_rows). `matches`: Arslan's tool
+ *  keys, "mcp:<server>:<tool>", "startup" or "*"; `matches_note` set: the matcher can't be told, so every tool. Only a
+ *  `supported` hook runs, and only one can be switched on (HOOK-3 makes hooks supported). */
+export interface HookRow {
+  id: string; event: string; when: string | null; matcher: string | null; matches: string[]; matches_note: string | null;
+  command: string | null; args: string[] | null; if: string | null; timeout: number;
+  kind: "supported" | "wont_run" | "matches_nothing" | "not_yet"; on: boolean; note: string | null;
+  /** HOOK-3's slot: what the hook did lately. Nothing records it yet, so no server sends it. */
+  last?: HookActivity | null;
+}
+/** HOOK-3's slot: today's runs and stops, and a write or connection the sandbox refused it (rule 1). */
+export interface HookActivity { ran_today: number; stopped_today: number; blocked: "network" | "write" | null }
 /** A skill inside a plugin, as its card shows it. */
 export interface PluginSkill {
   key: string; name: string; summary: string; scripts: string[]; references: string[];
@@ -713,7 +727,7 @@ export interface ImportPluginRow {
 export interface ImportPluginCard {
   name: string; summary: string; from: string | null; hooks: string[]; commit: string;
   license: { spdx: string | null; read_from: string | null }; skills: PluginSkill[]; connections: PluginConnection[];
-  keys: CapabilityCard["keys"]; folders: string[]; publisher: CapabilityCard["publisher"];
+  keys: CapabilityCard["keys"]; folders: string[]; publisher: CapabilityCard["publisher"]; hook_rows?: HookRow[];
 }
 export interface ImportScan {
   tools: { tool: ImportRow["tool"]; state: "read" | "missing" | "malformed"; count: number }[];

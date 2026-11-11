@@ -20,6 +20,7 @@ from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, MCPServer, PermissionRule
 from server.mcp.discovery import mcp_tool_key
 from server.orchestrator import command_gate, tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import (approvals, command_confirm, command_sandbox, permission_store, permissions,
                              settings_service, sub_sessions, terminal_exec, terminal_policy)
 from tests.server.test_proactive_api import client  # noqa: F401 — the whole app, for the removed route
@@ -86,10 +87,10 @@ async def _resolve():
 async def _run(monkeypatch, command: str, asker: _Asker, cid: str = "c1"):
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", _Exec())
     with permissions.asking_with(asker):
-        return await tool_loop._dispatch_tool(
-            "run_command", {"command": command}, "{}", resolve_tools=_resolve, emit=lambda e: None,
+        return await tool_loop._run_tool(
+            "run_command", {"command": command}, "{}", ToolTurn(resolve_tools=_resolve, emit=lambda e: None,
             tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=command_confirm.Confirmations(cid).command,
-            conversation_id=cid)
+            conversation_id=cid))
 
 
 def _toggles(monkeypatch, *, sandbox: bool, ask_all: bool):

@@ -2,7 +2,7 @@
 import pytest
 
 from arslan.models import LLMResponse
-from server.orchestrator import arslan, tool_loop
+from server.orchestrator import answer_salvage, arslan, tool_loop
 from server.services import knowledge
 
 
@@ -46,7 +46,7 @@ async def test_forced_synthesis_preserves_scope_and_untrusted_notes(monkeypatch)
             captured.append((system, user))
             return LLMResponse(content="The inspected excerpt leaves the comparison unknown.", usage={})
 
-    await tool_loop._synthesize_from_findings(Adapter(), "Original system", "Compare briefly", [
+    await answer_salvage._synthesize_from_findings(Adapter(), "Original system", "Compare briefly", [
         {"tool": "web_search", "result": {"ok": True, "results": [
             {"title": "Synthetic snippet", "snippet": "An excerpt, not complete documentation."}]}}])
     assert len(captured) == 1

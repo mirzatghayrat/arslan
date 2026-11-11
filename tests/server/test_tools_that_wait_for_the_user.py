@@ -8,6 +8,7 @@ import asyncio
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.registry import hands_tools
 from server.services import approvals
 
@@ -28,9 +29,9 @@ async def _dispatch(monkeypatch, executor, *, loop_limit: float):
 
     async def resolve():
         return [{"key": "desktop_look", "description": "look"}]
-    return await tool_loop._dispatch_tool(
-        "desktop_look", {}, "{}", resolve_tools=resolve, emit=lambda e: None, tool_timeout_s=loop_limit,
-        tool_trace=[], convo=[], conversation_id="c1")
+    return await tool_loop._run_tool(
+        "desktop_look", {}, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None, tool_timeout_s=loop_limit,
+        tool_trace=[], convo=[], conversation_id="c1"))
 
 
 async def test_the_loop_limit_still_stops_a_tool_that_declares_none(monkeypatch):

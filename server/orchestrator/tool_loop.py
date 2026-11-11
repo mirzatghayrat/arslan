@@ -24,19 +24,6 @@ from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services.llm_factory import build_adapter
 from server.services.replay_safety import _check_fetch_budget
-# Tests read these here. DELETE-BY: v0.1.64, with LOOP1's slice z.
-from server.orchestrator.answer_guards import (  # noqa: F401
-    _CLAIMS_SEARCH_RE, _DEFERRAL_MAX, _PROMISES_ACTION_RE, _claims_search, _draws_chart_fence, _embeds_protocol,
-    _promises_action, _unverified_claim)
-from server.orchestrator.answer_salvage import (  # noqa: F401
-    _chat_retry, _clean_findings, _salvage_plain, _synthesize_from_findings)
-from server.orchestrator.model_step import (  # noqa: F401
-    _BAD_TOOLS, _REFUSES_IMAGES, CONTINUE_PROMPT, _recover_truncation, _refused_tool, _render_request)
-from server.orchestrator.turn_stream import (  # noqa: F401
-    _JSON_HOLD, _STREAM_HOLD, _UNVERIFIED_BOUNCES, _label_locale, _progress_updates)
-from server.services.replay_safety import (  # noqa: F401
-    HERMETIC_FETCH_BUDGET, _hermetic_fetches, begin_hermetic_attempt, end_hermetic_attempt, hermetic_fetches_used,
-    reset_hermetic_fetch_budget)
 
 logger = logging.getLogger(__name__)
 
@@ -483,11 +470,6 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
         untrusted.mark_external()
         del result["external"]
     return result
-
-
-async def _dispatch_tool(tool_key, args, assistant_content, **turn) -> dict:
-    """`_run_tool` by keyword, the way tests call it. DELETE-BY: v0.1.64, with LOOP1's slice z."""
-    return await _run_tool(tool_key, args, assistant_content, ToolTurn(**turn))
 
 
 async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> dict | set[str]:

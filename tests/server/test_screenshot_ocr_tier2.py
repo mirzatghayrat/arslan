@@ -10,7 +10,7 @@ import pytest
 
 from arslan.llm import trajectory as tj
 from server.orchestrator import model_call as mc
-from server.orchestrator import tool_loop
+from server.orchestrator import model_step, tool_loop
 from server.services import ocr_fallback
 
 REFUSAL = "400 Bad Request: this model does not support image input"
@@ -31,7 +31,7 @@ class Adapter:
 
 @pytest.fixture(autouse=True)
 def faked(monkeypatch):
-    tool_loop._REFUSES_IMAGES.clear()
+    model_step._REFUSES_IMAGES.clear()
     read = []
 
     def read_locally(data, *, ui_language, chosen_languages=None):
@@ -54,7 +54,7 @@ def faked(monkeypatch):
     monkeypatch.setattr(ocr_fallback, "current_ocr_languages", none)
     monkeypatch.setattr(mc, "call_with_recovery", passthrough)
     yield read
-    tool_loop._REFUSES_IMAGES.clear()
+    model_step._REFUSES_IMAGES.clear()
 
 
 def turn():
@@ -100,7 +100,7 @@ async def test_a_failure_that_is_not_about_images_never_reads_them(faked):
     adapter = Adapter([RuntimeError("429 rate limit exceeded")])
     with pytest.raises(mc.ModelCallError):
         await call(adapter, turn())
-    assert faked == [] and not tool_loop._REFUSES_IMAGES
+    assert faked == [] and not model_step._REFUSES_IMAGES
 
 
 async def test_only_one_local_reading_per_turn(faked):

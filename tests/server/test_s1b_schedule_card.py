@@ -12,6 +12,7 @@ so a yes covered a prompt nobody saw. Now:
   in v0.1.63; only MCP tools the server marks read-only; steps that need an OK are refused and listed).
 """
 from server.orchestrator import arslan, tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import approvals, permissions
 from server.ws import protocol
 
@@ -21,9 +22,9 @@ BRIDGE_READS = ("type", "call_id", "perm_kind", "title", "expires_at", "name", "
 async def _schedule(args, confirm):
     async def tools():
         return [{"key": "schedule_task", "description": "x"}]
-    return await tool_loop._dispatch_tool("schedule_task", args, "", resolve_tools=tools, emit=lambda e: None,
-                                          tool_timeout_s=5, tool_trace=[], convo=[], conversation_id="conv-s",
-                                          confirm_schedule=confirm)
+    return await tool_loop._run_tool("schedule_task", args, "", ToolTurn(resolve_tools=tools, emit=lambda e: None,
+                                     tool_timeout_s=5, tool_trace=[], convo=[], conversation_id="conv-s",
+                                     confirm_schedule=confirm))
 
 
 async def test_the_card_is_given_the_prompt(execution_db):

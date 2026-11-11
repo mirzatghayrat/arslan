@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import command_sandbox, delete_to_trash as dt, task_service, terminal_exec, terminal_policy as tp
 from server.orchestrator import command_gate
 
@@ -225,9 +226,9 @@ async def _run(monkeypatch, args, *, sandbox_on, available=True, exec_=None):
 
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
-    await tool_loop._dispatch_tool("run_command", args, "{}", resolve_tools=resolve, emit=lambda e: None,
-                                   tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=cards,
-                                   conversation_id="c1")
+    await tool_loop._run_tool("run_command", args, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None,
+                              tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=cards,
+                              conversation_id="c1"))
     return ex, asked
 
 

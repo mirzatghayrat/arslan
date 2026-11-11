@@ -27,6 +27,7 @@ import pytest
 
 from server.db import session as db_session
 from server.orchestrator import command_gate, tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import (approvals, capability_sandbox, command_confirm, command_sandbox, git_config_guard,
                              hard_rules, permission_store, permissions, run_later, terminal_exec)
 from tests.server.test_hr1_run_later import DEPENDENCY_TEXT, KERNEL_TEXT, _by_regex, _explained, _git_noted
@@ -443,10 +444,10 @@ async def test_a_held_put_back_ends_the_grant_in_this_process_and_in_the_store(e
 
         async def resolve():
             return [{"key": "run_command", "description": "run"}]
-        await tool_loop._dispatch_tool(
-            "run_command", {"command": "git status"}, "{}", resolve_tools=resolve, emit=lambda e: None,
+        await tool_loop._run_tool(
+            "run_command", {"command": "git status"}, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None,
             tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=command_confirm.Confirmations("c1").command,
-            conversation_id="c1")
+            conversation_id="c1"))
         assert held.seen == [True] and "c1" in git_config_guard.ENDED
         async with db_session.AsyncSessionLocal() as db:
             assert await permission_store.find_grant(db, "c1", None, "git_config", "*") is None
@@ -654,9 +655,9 @@ async def _dispatch(monkeypatch, args, cid, *, cards=True):
 
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
-    result = await tool_loop._dispatch_tool(
-        "run_command", args, "{}", resolve_tools=resolve, emit=lambda e: None, tool_timeout_s=5, tool_trace=[],
-        convo=[], confirm_command=command_confirm.Confirmations(cid).command if cards else None, conversation_id=cid)
+    result = await tool_loop._run_tool(
+        "run_command", args, "{}", ToolTurn(resolve_tools=resolve, emit=lambda e: None, tool_timeout_s=5, tool_trace=[],
+        convo=[], confirm_command=command_confirm.Confirmations(cid).command if cards else None, conversation_id=cid))
     return ex.seen, result
 
 

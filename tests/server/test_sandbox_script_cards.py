@@ -5,6 +5,7 @@ sandbox is off or cannot start (R4) or under "ask for all"."""
 import pytest
 
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import command_sandbox, shell_grammar, terminal_exec, terminal_policy
 from server.orchestrator import command_gate
 
@@ -84,9 +85,9 @@ async def _dispatch(monkeypatch, command, cards, cid="c1"):
 
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
-    await tool_loop._dispatch_tool("run_command", {"command": command}, "{}", resolve_tools=resolve,
-                                   emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
-                                   confirm_command=cards, conversation_id=cid)
+    await tool_loop._run_tool("run_command", {"command": command}, "{}", ToolTurn(resolve_tools=resolve,
+                              emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                              confirm_command=cards, conversation_id=cid))
     return ex
 
 

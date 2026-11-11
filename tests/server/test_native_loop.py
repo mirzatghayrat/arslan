@@ -6,7 +6,7 @@ for the final answer. Native tool-calling returns `content` (narration) and `too
 """
 import pytest
 
-from server.orchestrator import tool_loop
+from server.orchestrator import answer_guards, answer_salvage, tool_loop
 
 
 class _LLMResp:
@@ -197,7 +197,7 @@ def test_clean_findings_renders_non_web_tool():
               "result": {"ok": True,
                          "builtin": [{"key": "web_search"}],
                          "mcp": [{"label": "github-mcp-server", "status": "registered"}]}}]
-    findings = tool_loop._clean_findings(trace)
+    findings = answer_salvage._clean_findings(trace)
     assert findings.strip(), "non-web tool result must yield non-empty findings"
     assert "github-mcp-server" in findings
 
@@ -224,8 +224,8 @@ async def test_substantive_answer_kept_despite_action_words(monkeypatch):
         "- render_chart:把结构化数据画成图表,用户直接可见\n\n"
         "### 已连接的 MCP 服务器\n- GitHub MCP:已连接\n- Memory:已连接\n\n"
         "简单说,我能搜索、抓取网页、画图表,还能操作 GitHub。有什么想让我试试的吗?")
-    assert len(long_answer) >= tool_loop._DEFERRAL_MAX  # it's substantive, not a stub
-    assert tool_loop._promises_action(long_answer)      # it DOES mention action verbs
+    assert len(long_answer) >= answer_guards._DEFERRAL_MAX  # it's substantive, not a stub
+    assert answer_guards._promises_action(long_answer)      # it DOES mention action verbs
     adapter = _NativeAdapter([
         _LLMResp(content="", tool_calls=[_tc("list_my_capabilities", {})]),
         _LLMResp(content=long_answer, tool_calls=[]),   # only 2 replies: a 3rd (synth) would IndexError
