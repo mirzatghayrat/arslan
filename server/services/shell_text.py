@@ -873,6 +873,9 @@ def _command_detection_variants(command: str):
             yield win_variant
     # Program-bearing options are parsed in their owning command's context; surfacing only the payload lets the
     # hardline floor inspect what will actually run without promoting similar flags or quoted prose.
+    # Decode transport from the original quoting too. Normalizing first strips
+    # escaped quotes and can hide a nested shell's program-bearing argument.
+    yield from _payload_variants(command, fresh)
     yield from _payload_variants(normalized, fresh)
     # `(cmd)` and `{ cmd; }` put cmd at a command position the flat patterns cannot see: mark the starts the
     # quote-aware scan found instead (adding `(` to _CMDPOS would match quoted prose).

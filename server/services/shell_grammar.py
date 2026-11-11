@@ -136,7 +136,7 @@ class Reading:
 
 class _Out:
     __slots__ = ("commands", "folders", "writes", "fold_partial", "fold_guard", "effects", "effect_scopes", "backgrounds",
-                 "track_folders", "folders_known", "owners", "carriers")
+                 "track_folders", "folders_known", "owners", "carriers", "named_unreadable")
 
     def __init__(self, fold_partial: bool = True, fold_guard=None, *, track_folders=False):
         self.track_folders = track_folders
@@ -147,6 +147,7 @@ class _Out:
         self.effect_scopes = []
         self.backgrounds = []
         self.commands: list[tuple[str, ...]] = []
+        self.named_unreadable = ""
         self.folders: list[tuple[str, ...]] = []
         self.writes: list[tuple[str, tuple[str, ...]]] = []
         self.owners: list[int] = []          # one per write: the index in `commands` it is on, or -1
@@ -158,7 +159,9 @@ class PrefixReading:
     """Commands parsed before a refusal, for additive policy checks only.
 
     This is never evidence that the whole input is understood. In particular,
-    nothing after the first unread form is scanned or treated as a command.
+    nothing after the first grammar refusal is scanned or treated as a command.
+    An unreadable operation can still retain later argv for the forbid floor;
+    named_unreadable records why named ask rules cannot describe the whole input.
 
     For the card's steps (card_purpose, LOOP1 d2b), read only when not `refused`: `writes` is each file a redirection
     writes, with the index in `commands` of the simple command it is on (-1: on a compound command, or with no
@@ -171,6 +174,7 @@ class PrefixReading:
     capped: bool = False
     writes: tuple[tuple[str, int], ...] = ()
     carriers: frozenset[int] = frozenset()
+    named_unreadable: str = ""  # Keep reading later argv for additive forbids.
 
 
 class _NotUnderstood(Exception):
@@ -742,6 +746,11 @@ class _Reader:
         self.failed, self.here = self.failed | self.here, moved
 
     def _program(self, base: str, args: list[_Word]) -> None:
+        # Prefix mode keeps later argv visible to the independent forbid floor.
+        if base == "security" and security_operation(tuple(w.literal for w in args))[1]:
+            self.out.named_unreadable = "its security reads operations from stdin"
+            if self.out.track_folders:
+                raise _NotUnderstood(self.out.named_unreadable)
         if base == "find":
             for w in args:
                 if w.literal is None or w.text in _FIND_RUNS:
@@ -794,6 +803,42 @@ def _fold_prefix(folder: str) -> str:
         else:
             stack.append(part)
     return "/".join(stack[:kept])
+
+
+def security_operation(args: tuple[str | None, ...]) -> tuple[tuple[str | None, ...], bool]:
+    """The argv operation and whether security instead accepts operations on stdin.
+
+    Shared with named policy rules so prompt values and option clusters have one
+    interpretation. With no operation, even inherited stdin can supply commands.
+    None preserves an unresolved word: before the operation is selected it can
+    supply an option or disappear, including when consumed as a prompt value.
+    """
+    # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
+    interactive = False
+    i = 0
+    while i < len(args):
+        word = args[i]
+        if word is None:
+            return (), True
+        if not word.startswith("-"):
+            break
+        if word == "--":
+            return args[i + 1:], interactive or i + 1 == len(args) or args[i + 1] is None
+        if word == "--help":
+            return (), False
+        i += 1
+        if not word.startswith("--"):
+            for offset, letter in enumerate(word[1:], 2):
+                if letter == "i":
+                    interactive = True
+                if letter == "h":
+                    return (), False
+                if letter == "p":
+                    if offset == len(word) and i < len(args) and args[i] is None:
+                        return (), True
+                    i += offset == len(word)
+                    break
+    return args[i:], interactive or i >= len(args)
 
 
 def _names_something(args: list[_Word]) -> bool:
@@ -874,12 +919,14 @@ def _read_commands(text: str, out: _Out) -> PrefixReading:
     try:
         _Reader(text, 0, out).read_all()
     except _NotUnderstood as exc:
-        return PrefixReading(commands=tuple(out.commands), refused=True, why=exc.why, capped=exc.capped)
+        return PrefixReading(commands=tuple(out.commands), refused=True, why=exc.why, capped=exc.capped,
+                             named_unreadable=out.named_unreadable)
     except RecursionError:
         return PrefixReading(commands=tuple(out.commands), refused=True,
-                             why="it nests commands deeper than Arslan reads", capped=True)
+                             why="it nests commands deeper than Arslan reads", capped=True,
+                             named_unreadable=out.named_unreadable)
     return PrefixReading(commands=tuple(out.commands), writes=tuple(zip((f for f, _ in out.writes), out.owners)),
-                         carriers=frozenset(out.carriers))
+                         carriers=frozenset(out.carriers), named_unreadable=out.named_unreadable)
 
 
 def _read_prefix(text: str) -> PrefixReading:
