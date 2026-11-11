@@ -165,6 +165,14 @@ CAPABILITY = (
          "user asks about you or your setup; answer from it, never from memory. args: {}.",
          {"type": "object", "properties": {}, "additionalProperties": False},
          traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
+    # v0.1.64 INB7-f: the brief of Progress (progress.brief), found on demand (K7), never resident. Not replay-safe, as
+    # my_status: it reads this Mac's live records, which a hermetic replay must not see (replay_safety's allow-list rule).
+    Tool("progress_report",
+         "Overall progress across all conversations, projects and scheduled tasks: done today, running, stuck and "
+         "waiting on the user, each with ids to open. Call it when the user asks how things are going overall and "
+         "answer from it, never from memory.",
+         {"type": "object", "properties": {}, "additionalProperties": False},
+         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
     Tool("list_my_capabilities",
          "List your OWN usable capabilities (built-in tools + installed "
          "MCP servers). Call this ONCE when the user asks what you can do / "

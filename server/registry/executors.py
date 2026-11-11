@@ -606,6 +606,20 @@ class MyStatusExecutor:
         return {"ok": True, **await self_status.snapshot(ctx.conversation_id if ctx else None)}
 
 
+class ProgressReportExecutor:
+    """INB7-f (v0.1.64): "how is it going" in any conversation. The brief Progress reads (progress.brief): done today, running,
+    stuck and waiting on you, counted as conversations, projects and scheduled tasks, from the records only. It never counts on
+    its own, so it can't say other numbers than the page and the badge."""
+
+    key = "progress_report"
+
+    async def execute(self, args: dict) -> dict:
+        from server.db import session as db_session
+        from server.services import progress
+        async with db_session.AsyncSessionLocal() as db:
+            return {"ok": True, **await progress.brief(db)}
+
+
 _CHART_MAX_POINTS = 50
 _CHART_MAX_SERIES = 8
 
@@ -1138,6 +1152,7 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
     RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(), MyStatusExecutor(),
+    ProgressReportExecutor(),
     FindCapabilityExecutor(), VerifyExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
     TaskProgressExecutor(), DelegateWorkExecutor(),
