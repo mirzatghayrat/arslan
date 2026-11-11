@@ -227,7 +227,8 @@ def test_a_link_at_the_eval_marker_exempts_nothing(home, target):
     pointed = (data / target).resolve()
     sentinel = _sentinel(pointed)
     (data / "workspace").symlink_to(pointed, target_is_directory=True)
-    with pytest.raises(workspace_paths.PathEscape, match="skills, plugins or data"):
+    # SBX-9: a working folder that is a link is refused before the CAP6b check (`pin_root`); either refusal holds.
+    with pytest.raises(workspace_paths.PathEscape, match="skills, plugins or data|isn't the folder it was"):
         workspace_paths.resolve_in_workspace("sentinel", data / "workspace", for_write=True)
     assert sentinel.read_text() == "original"
 

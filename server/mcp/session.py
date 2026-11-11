@@ -383,7 +383,12 @@ class MCPSessionManager:
                 errlog.write(f"\n{START_MARK}{_utc_iso()} ---\n")
                 errlog.flush()
                 self._log_marks[sid] = time.monotonic()
+                if profile is not None:
+                    from server.services import command_sandbox
+                    command_sandbox.check_pins(profile)     # SBX-9: its folders are still the ones the profile names
                 read, write = await stack.enter_async_context(stdio_client(params, errlog=errlog))
+                if profile is not None:
+                    command_sandbox.release_pins(profile)
             client = await stack.enter_async_context(
                 ClientSession(read, write, message_handler=self._handler(sid)))
             await client.initialize()

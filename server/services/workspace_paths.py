@@ -66,7 +66,7 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
     if not isinstance(user_path, str) or not user_path.strip():
         raise PathEscape("path is required")
 
-    root = Path(ws_root).resolve()
+    root, _ = pin_root(ws_root)
     raw = Path(user_path.strip())
     candidate = raw if raw.is_absolute() else (root / raw)
     if for_write and candidate.name in ("", ".", ".."):
@@ -106,6 +106,30 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
     if for_write:
         _refuse_cap6b(resolved, root, user_path)
     return resolved
+
+
+def pin_root(ws_root) -> tuple[Path, tuple[int, int]]:
+    """SBX-9: the working folder resolved once per call, and its identity: `ws_root` was checked as a real folder
+    (`settings_service.workspace_dir`), so it must still be that folder, not a link to another one now. Every check
+    in the call is against this real path; nothing resolves the root again. PathEscape when it isn't."""
+    from server.services import root_pin
+    try:
+        pinned = root_pin.pin(ws_root)
+    except root_pin.Swapped as exc:
+        raise PathEscape(f"the working folder isn't the folder it was: {exc}") from None
+    except OSError as exc:
+        raise PathEscape(f"the working folder can't be checked ({exc.strerror or exc})") from None
+    root_pin.release([pinned])
+    return pinned.path, pinned.identity
+
+
+def check_root(root: Path, identity: tuple[int, int]) -> None:
+    """SBX-9: right before a write, the working folder is still the folder `pin_root` found. PathEscape when not."""
+    from server.services import root_pin
+    try:
+        root_pin.check([root_pin.Pin(Path(root), identity)])
+    except root_pin.Swapped as exc:
+        raise PathEscape(f"the working folder isn't the folder it was: {exc}") from None
 
 
 def _refuse_cap6b(path: Path, root: Path, user_path) -> None:

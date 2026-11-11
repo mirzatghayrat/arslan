@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 
 from server.db import session as db_session
-from server.services import checkpoints, execution_context, settings_service
+from server.services import checkpoints, execution_context, settings_service, workspace_paths
 from server.services.workspace_paths import (
     PathEscape,
     SecretFile,
@@ -62,7 +62,7 @@ async def _read_ctx() -> tuple[list[Path], Path | None]:
     async with db_session.AsyncSessionLocal() as db:
         ws = await settings_service.workspace_dir(db)
         default_read = await settings_service.default_read_enabled(db)
-    return read_roots(ws, default_read=default_read), (ws.resolve() if ws else None)
+    return read_roots(ws, default_read=default_read), ws    # resolved by workspace_dir; SBX-9: not again
 
 
 def _home_rel(path: Path) -> str:
@@ -108,7 +108,11 @@ def _write_inside(root: Path, path: Path, text: str) -> None:
     where there is one, else O_NOFOLLOW), and os.replace swaps the directory entry: a link
     there is replaced, not followed, and a hard link's other name keeps its old content. A new
     file is 0o666 under the umask (never executable); an overwritten one keeps its mode.
-    Raises PathEscape, SecretFile or OSError; on failure the old file is untouched."""
+    Raises PathEscape, SecretFile or OSError; on failure the old file is untouched.
+
+    SBX-9: the working folder is pinned once (`pin_root`) and its identity checked again right before the new file is
+    opened and before it replaces the old one (`check_root`)."""
+    root, identity = workspace_paths.pin_root(root)
     resolve_in_workspace(str(path), root, for_write=True)
     try:
         st = os.stat(path, follow_symlinks=False)
@@ -119,6 +123,7 @@ def _write_inside(root: Path, path: Path, text: str) -> None:
     # 200 bytes of it (cut on a character boundary).
     stem = path.name.encode("utf-8")[:200].decode("utf-8", errors="ignore")
     tmp = path.with_name(f".{stem}.{secrets.token_hex(4)}.tmp")
+    workspace_paths.check_root(root, identity)
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o666)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -127,6 +132,7 @@ def _write_inside(root: Path, path: Path, text: str) -> None:
             if keep is not None:
                 os.fchmod(f.fileno(), keep)
             os.fsync(f.fileno())
+        workspace_paths.check_root(root, identity)
         os.replace(tmp, path)
     except BaseException:
         try:

@@ -176,13 +176,27 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     bound = sandbox_proxy.listening_ports() if network and proxy_port is not None else None
     if bound is None:
         proxy_port = None                                        # no proxy, or Arslan's ports unknown: offline
-    text = profile(root=root, folders=list(sandbox.get("folders") or []), network=network,
-                   read=list(sandbox.get("read") or []), proxy_port=proxy_port, bound_ports=bound,
-                   system_proxies=None if bound is None else sandbox_proxy.system_proxies(),
-                   trust_service=bool(sandbox.get("trust_service")))
-    from server.services import command_sandbox
+    from server.services import command_sandbox, root_pin
     env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp"),
            **command_sandbox.cache_environment(root / "cache")}     # SBX-5 §1c: this server's own cache
+    # SBX-9: its own folder and cache pinned (Arslan made them), and each granted folder that exists, resolved once
+    # here (the user may have granted a link); the profile is built from those real paths only, and the caller checks
+    # them right before the start (`command_sandbox.check_pins`). Raises `root_pin.Swapped`: it doesn't start.
+    granted = [str(g) for g in sandbox.get("folders") or []]
+    pins = command_sandbox._pin_all([root, root / "cache"])
+    try:
+        there = [g for g in granted if os.path.isdir(g)]
+        pins += command_sandbox._pin_all(there, follow=True)
+        real_of = {g: str(p.path) for g, p in zip(there, pins[2:])}
+        folders = [real_of.get(g, g) for g in granted]
+        with root_pin.pinned(pins):
+            text = profile(root=pins[0].path, folders=folders, network=network, read=list(sandbox.get("read") or []),
+                           proxy_port=proxy_port, bound_ports=bound, cache=pins[1].path,
+                           system_proxies=None if bound is None else sandbox_proxy.system_proxies(),
+                           trust_service=bool(sandbox.get("trust_service")))
+    except BaseException:
+        root_pin.release(pins)
+        raise
     if proxy_port is not None:
         # Told only Arslan's proxy: a proxy the server's config or this Mac set (a sign-in in its address
         # included) is replaced, since the kernel refuses it and Arslan's proxy goes upstream itself.
@@ -196,5 +210,5 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     # this server's own folders (it writes those): in Arslan's data folder, closed to it (`command_sandbox.
     # write_profile`). The caller removes it (`remove_profile(profile_path(args))`) once the server has answered, or
     # when the start fails or the session closes.
-    path = command_sandbox.write_profile(text)
+    path = command_sandbox.write_pinned(text, pins)
     return SANDBOX_EXEC, ["-f", str(path), command, *args], env, str(root / "home")

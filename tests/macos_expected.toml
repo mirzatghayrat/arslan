@@ -214,6 +214,14 @@ markers = 1
 cases = 2
 xfail = 0
 
+# 0.1.64 SBX-9, writable roots pinned once: through the real executor and seatbelt, a root swapped for a link before
+# the start (the run's temp, the work folder) or between the profile and the spawn is refused with the note, the floor
+# too, and run_python; a swap after the spawn grants nothing; under an active flipper (temp, work) nothing escapes.
+["server/sbx/test_sbx9_root_pin.py"]
+markers = 6
+cases = 8
+xfail = 0
+
 # Stock Pool semaphore refusal and a same-policy run-prefixed control.
 ["server/sbx/test_sbx_multiprocessing.py"]
 markers = 1

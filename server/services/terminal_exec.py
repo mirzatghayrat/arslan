@@ -202,7 +202,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     env = child_environment({}, {"PATH": await asyncio.to_thread(merged_path), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
-    from server.services import command_sandbox, run_later, run_temp, sandbox_proxy
+    from server.services import command_sandbox, root_pin, run_later, run_temp, sandbox_proxy
     prefix: list[str] = []
     mode = "off"
     if sandbox:
@@ -224,6 +224,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                 copies=copies, proxy_port=proxy_port, trust_service=trust) or []
         except run_later.TooManyLinks:
             return _not_started(cwd, "workspace", command_sandbox.links_note(cwd))
+        except root_pin.Swapped as exc:                 # SBX-9: a root swapped while it was pinned
+            return _swapped(cwd, "workspace", exc)
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
         try:
@@ -232,6 +234,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                 run_later_in=cwd if hold_run_later else None, closed=closed) or []
         except run_later.TooManyLinks:
             return _not_started(cwd, "outside", command_sandbox.links_note(cwd))
+        except root_pin.Swapped as exc:
+            return _swapped(cwd, "outside", exc)
         mode = "outside" if prefix else "off"
     # #813 review 11: sandbox-exec has read its profile file once the command is running; it goes when the process has
     # exited, on every path (success, failure, a time limit, a cancel, a start that failed).
@@ -249,17 +253,30 @@ def _not_started(cwd: Path, mode: str, note: str) -> dict:
             "code": "too_many_links", "error": "not started: too many links at protected names", "note": note}
 
 
+def _swapped(cwd: Path, mode: str, exc) -> dict:
+    """SBX-9: a command not started because a root it writes was swapped while the sandbox was starting."""
+    from server.services import root_pin
+    return {**_not_started(cwd, mode, root_pin.note(exc)), "code": "root_swapped",
+            "error": "not started: a folder it may write was replaced while the sandbox was starting"}
+
+
 async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, temp_key: int, timeout_s: int,
                    offline: bool, closed: list[Path], mode: str, hold_run_later: bool) -> dict:
-    from server.services import run_temp
+    from server.services import command_sandbox, root_pin, run_temp
     if offline and not prefix:
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
                 "error": "commands run without network now, and this run cannot isolate the network — "
                          "save the deliverable with write_file instead"}
+    profile = command_sandbox.profile_path(prefix)
+    try:
+        command_sandbox.check_pins(profile)        # SBX-9: the roots are still the folders the profile names
+    except root_pin.Swapped as exc:
+        return _swapped(cwd, mode, exc)
     proc = await asyncio.create_subprocess_exec(
         *prefix, *SHELL, "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
+    command_sandbox.release_pins(profile)
     run_temp.started(temp_key, proc.pid)  # §1a: the run's folder stays while this group has a process left
     # 0.1.62 F1: output is read while the command runs (it used to be read in one go at the
     # end), so a time limit keeps what was already printed instead of losing it with the read.
