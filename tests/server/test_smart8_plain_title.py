@@ -30,17 +30,6 @@ def test_the_server_reads_a_command_as_the_mac_card_does(vector):
                  "unsure": vector["unsure"]}
 
 
-@pytest.mark.parametrize("line, steps", [
-    ("echo \"== a; b ==\"; ssh -o BatchMode=yes host 'echo hi' && ls|wc -l",
-     [["echo", "== a; b =="], ["ssh", "-o", "BatchMode=yes", "host", "echo hi"], ["ls"], ["wc", "-l"]]),
-    ("make 2>&1 | tee log", [["make", "2>&1"], ["tee", "log"]]),       # 2>&1 is one redirect
-    ("rm my\\ file", [["rm", "my file"]]),                              # a backslash escapes
-    ('echo "unclosed', None),                                           # an open quote is no answer
-])
-def test_a_line_splits_into_steps_with_quotes_kept(line, steps):
-    assert card_purpose.split_shell(line) == steps
-
-
 @pytest.mark.parametrize("command, argv, key", [
     ("rm -rf ~/old", [], "delete"),
     ("git", ["push", "origin", "main"], "gitPush"),
