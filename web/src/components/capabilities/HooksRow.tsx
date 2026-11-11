@@ -1,5 +1,7 @@
+import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import type { HookRow } from "../../api/client.types";
+import { commandParts } from "../../lib/commandText";
 import { Escaped } from "../../lib/outsideText";
 import { Row } from "./CapabilityProposeCard";
 import { Tag } from "./PluginContains";
@@ -9,10 +11,9 @@ import { Tag } from "./PluginContains";
 const QUIET = new Set(["SessionStart", "Setup", "PermissionDenied", "PostToolUse", "PostToolUseFailure", "Notification",
   "MessageDisplay", "SubagentStart", "StopFailure", "InstructionsLoaded", "CwdChanged", "DirectoryAdded", "FileChanged",
   "PostCompact", "PostModelSwitch", "SessionEnd"]);
-/** The five events Arslan runs (docs/plans/0164/HOOK-plugin-hooks.md); their keys are built only from this list. The
- *  first three guard (stop, or ask you first); the other two add text for the model. */
+/** The five events Arslan runs (docs/plans/0164/HOOK-plugin-hooks.md); their keys are built only from this list. Each
+ *  has its own capability line (`hookCan_<event>`), as the card's table says what it can do. */
 const RUN = new Set(["PreToolUse", "UserPromptSubmit", "Stop", "PostToolUse", "SessionStart"]);
-const GUARD = new Set(["PreToolUse", "UserPromptSubmit", "Stop"]);
 const ON_A_TOOL = new Set(["PreToolUse", "PostToolUse"]);
 /** Stands for the tools in "on {{tools}}", so each language keeps its own word order around them. */
 const MARK = "\u0001";
@@ -25,6 +26,18 @@ export const runs = (hook: HookRow) => hook.kind === "supported" && RUN.has(hook
 export const hookWhen = (t: T, event: string) => RUN.has(event) ? t(`capabilityList.hookChip_${event}`) : event;
 /** The exact command line: its command, then its arguments. */
 export const commandLine = (hook: HookRow) => [hook.command ?? "", ...(hook.args ?? [])].join(" ").trim();
+
+/** A command line as the shell reads it (`commandParts`): kept on its lines (pre-wrap), each line break a muted `⏎`
+ *  before the real one, every other control character an escape, and what shows nothing `Escaped`'s marker. */
+export function CommandText({ text }: { text: string }) {
+  return <bdi data-testid="command-text" className="whitespace-pre-wrap">
+    {commandParts(text).map((part, i) => part.kind === "text" ? <Escaped key={i} text={part.text} block />
+      : part.kind === "break" ? <Fragment key={i}><span data-testid="command-break" className="text-muted-foreground">
+        {"⏎"}</span>{"\n"}</Fragment>
+      : <span key={i} data-testid="command-escape"
+        className="mx-px rounded bg-fill px-1 font-mono text-[10px] text-muted-foreground">{part.text}</span>)}
+  </bdi>;
+}
 
 /** What a tool hook matches, in Arslan's tool names; null for an event that isn't about a tool. */
 function tools(t: T, hook: HookRow): { text: string; unsure: boolean } | null {
@@ -49,9 +62,9 @@ function HookEntry({ hook }: { hook: HookRow }) {
     <span><Tag>{hookWhen(t, hook.event)}</Tag>{on && <> {before}
       <bdi data-testid="hook-entry-on" className={on.unsure ? "text-ask" : undefined}>{on.text}</bdi>{after}</>}</span>
     <code className="rounded-md bg-fill px-1.5 py-1 font-mono text-[12px] [overflow-wrap:anywhere]">
-      <Escaped text={commandLine(hook)} /></code>
-    <span className="text-[12px] text-muted-foreground">
-      {t(GUARD.has(hook.event) ? "capabilityList.hookCanGuard" : "capabilityList.hookCanContext")}</span>
+      <CommandText text={commandLine(hook)} /></code>
+    <span data-testid="hook-entry-can" className="text-[12px] text-muted-foreground">
+      {t(`capabilityList.hookCan_${hook.event}`)}</span>
   </span>;
 }
 

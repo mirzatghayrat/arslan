@@ -11,7 +11,8 @@ import pytest
 from server.db import session as db_session
 from server.db.models import CapabilitySource
 from server.services import plugin_hooks
-from tests.server.test_cap8_2_import_skills_plugins import PLUGIN_FILES, _all, api, home, offline
+from tests.server.test_cap8_2_import_skills_plugins import PLUGIN_FILES, _all, _row, _scan, _tick, api, home, offline
+from tests.server.test_cap8_2_plugin_hooks import _post, _update
 from tests.server.test_hook1_hooks_stored import _cmd, _install, _map
 
 pytestmark = pytest.mark.asyncio
@@ -49,6 +50,33 @@ async def test_a_switch_flipped_is_what_the_list_shows_next(api, home, offline):
     assert (await _plugin_row(api))["hooks"][0]["on"] is False
     assert (await api.put(f"/api/v1/capability-hooks/plugin:{plugin.id}/0", json={"on": True})).status_code == 200
     assert (await _plugin_row(api))["hooks"][0]["on"] is True
+
+
+async def test_an_update_keeps_each_unchanged_hooks_switch_and_a_changed_one_takes_the_default(api, home, offline,
+                                                                                              monkeypatch):
+    """#853 review: the card's yes after an update (CAP8-2's swap) carries the user's switches over by HOOK-1's
+    identity (the digest `changed` compares). Unchanged and off: still off. Changed: a new hook, on as its card
+    showed. Removed: gone. Quiet hooks stand for supported ones (`WONT_RUN` read as `SUPPORTED`), as HOOK-3 will
+    store them, so their default is on."""
+    monkeypatch.setattr(plugin_hooks, "WONT_RUN", plugin_hooks.SUPPORTED)
+    await _install(api, home, {**PLUGIN_FILES, "hooks/hooks.json": _map(SessionStart=[
+        ("startup", _cmd("./keep.sh"), _cmd("./edit.sh"), _cmd("./gone.sh"), _cmd("./on.sh"))])})
+    (old,) = [r for r in await _all(CapabilitySource) if r.kind == "plugin"]
+    assert [h["on"] for h in old.candidate["hook_rows"]] == [True, True, True, True]
+    for hook_id in ("0", "1", "2"):
+        assert (await api.put(f"/api/v1/capability-hooks/plugin:{old.id}/{hook_id}", json={"on": False})).status_code == 200
+    _update(home, "1.1.0", {**PLUGIN_FILES, "hooks/hooks.json": _map(SessionStart=[
+        ("startup", _cmd("./keep.sh"), _cmd("./edit.sh --v2"), _cmd("./on.sh"), _cmd("./new.sh"))])}, "1.0.0")
+    row = _row(await _scan(api), "plugins", "release-kit")
+    card = (await _post(api, plugins=[_tick(row)]))[row["id"]]
+    assert card["state"] == "card"
+    done = (await _post(api, plugins=[_tick(row, card=card["card_digest"])]))[row["id"]]
+    assert done["state"] == "on", done
+    (new,) = [r for r in await _all(CapabilitySource) if r.kind == "plugin" and r.id != old.id]
+    assert [(h["command"], h["on"]) for h in new.candidate["hook_rows"]] == [
+        ("./keep.sh", False), ("./edit.sh --v2", True), ("./on.sh", True), ("./new.sh", True)]
+    assert [(h["command"], h["on"]) for h in (await _plugin_row(api))["hooks"]] == [
+        ("./keep.sh", False), ("./edit.sh --v2", True), ("./on.sh", True), ("./new.sh", True)]
 
 
 def test_a_hook_arslan_runs_comes_in_on_and_one_it_doesnt_off(monkeypatch):

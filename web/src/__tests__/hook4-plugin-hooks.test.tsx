@@ -20,8 +20,16 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const RUNS = "Each hook runs in the sandbox with no network, can't change your files, and has 10 seconds. If one fails or "
   + "runs out of time, Arslan asks you instead of going ahead. Scheduled tasks don't run hooks.";
-const GUARD = "Can stop a command or ask you first. It can never approve anything for you.";
-const CONTEXT = "Adds text for the model, marked as not from you.";
+/** Each event's own capability line (the card's table: what each can do in Arslan). */
+const CAN = {
+  PreToolUse: "Can stop a tool call or ask you first. It can never approve anything for you.",
+  UserPromptSubmit: "Can stop your message before the model sees it, or add text for the model marked as not from you.",
+  Stop: "Can ask the model to keep going, at most 3 times a turn. Every action still needs its usual OK.",
+  PostToolUse: "Adds a note for the model after the tool finishes, marked as not from you. It can't change the tool's result.",
+  SessionStart: "Adds text for the model, marked as not from you.",
+} as const;
+const GUARD = CAN.PreToolUse;
+const CONTEXT = CAN.SessionStart;
 
 const hook = (id: string, event: string, command: string, over: Partial<HookRow> = {}): HookRow => ({
   id, event, when: null, matcher: null, matches: ["*"], matches_note: null, command, args: null, if: null, timeout: 10,
@@ -63,7 +71,29 @@ describe("A: the install card's Hooks row", () => {
     const entry = screen.getByTestId("hook-entry");
     expect(entry).toHaveTextContent("After a tool runs on edit_file, write_file");
     expect(entry.querySelector("code")?.textContent).toBe("fmt --check aU+200Bb");
-    expect(entry).toHaveTextContent(CONTEXT);
+    expect(within(entry).getByTestId("hook-entry-can").textContent).toBe(CAN.PostToolUse);
+  });
+
+  it("a command on two lines shows both, with the line-break marker, on a box that keeps its lines", () => {
+    card([hook("0", "PreToolUse", "true\nrm -rf ~/x", { matcher: "Bash", matches: ["run_command"] })]);
+    const shown = within(screen.getByTestId("hook-entry")).getByTestId("command-text");
+    expect(shown.closest("code")).not.toBeNull();
+    expect(shown).toHaveClass("whitespace-pre-wrap");
+    expect(shown.textContent).toBe("true⏎\nrm -rf ~/x");
+    expect(within(shown).getByTestId("command-break")).toHaveClass("text-muted-foreground");
+  });
+
+  it.each(Object.entries(CAN))("a %s hook says what it can do in Arslan, and only that", (event, line) => {
+    card([hook("0", event, "./hooks/h.sh")]);
+    expect(within(screen.getByTestId("hook-entry")).getByTestId("hook-entry-can").textContent).toBe(line);
+  });
+
+  it("no event but PreToolUse says it can ask you first", () => {
+    card(Object.keys(CAN).map((event, n) => hook(String(n), event, "./hooks/h.sh")));
+    const lines = screen.getAllByTestId("hook-entry").map(e => [e.dataset.event,
+      within(e).getByTestId("hook-entry-can").textContent]);
+    expect(lines.filter(([, line]) => line?.includes("ask you first")).map(([event]) => event)).toEqual(["PreToolUse"]);
+    expect(new Set(lines.map(([, line]) => line)).size).toBe(5);
   });
 
   it("hooks that don't run keep today's words, beside the ones that do", () => {
@@ -126,6 +156,14 @@ describe("B: each hook's own switch, under Show what's inside", () => {
     cleanup();
     const again = await inside([{ ...GUARDED, on: false }, RULES]);
     expect(within(within(again).getByTestId("plugin-hook-0")).getByRole("switch")).not.toBeChecked();
+  });
+
+  it("a command on two lines shows both, with the line-break marker, as on the card", async () => {
+    const box = await inside([hook("0", "PreToolUse", "true\n${CLAUDE_PLUGIN_ROOT}/x.sh", { matches: ["run_command"] })]);
+    const shown = within(within(box).getByTestId("plugin-hook-0")).getByTestId("command-text");
+    expect(shown).toHaveClass("whitespace-pre-wrap");
+    expect(shown.textContent).toBe("true⏎\n…/x.sh");
+    expect(within(shown).getByTestId("command-break")).toHaveClass("text-muted-foreground");
   });
 
   it("a switch the server refuses stays as it was, and says so", async () => {
@@ -193,7 +231,7 @@ describe("the words", () => {
     const there = capabilityListMessages[language] as Record<string, string>;
     const keys = Object.keys(en).filter(key => /^hook(Chip_|On$|Unsure|EveryTool|Can|Runs|MatchUnsure|Every_|Switch|Change|Last_|Ledger_)/
       .test(key));
-    expect(keys.length).toBe(28);
+    expect(keys.length).toBe(31);
     for (const key of keys) {
       expect(there[key], key).toBeTruthy();
       expect(there[key], key).not.toBe(en[key]);

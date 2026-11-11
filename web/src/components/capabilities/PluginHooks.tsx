@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { capabilitiesApi, type CapabilityRow } from "../../api/capabilities";
 import type { HookActivity, HookRow } from "../../api/client.types";
-import { Escaped } from "../../lib/outsideText";
-import { commandLine, hookMatch, hookWhen, runs } from "./HooksRow";
+import { CommandText, commandLine, hookMatch, hookWhen, runs } from "./HooksRow";
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 
@@ -57,7 +56,7 @@ export function PluginHooks({ row }: { row: CapabilityRow }) {
         className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border py-1.5 text-[12.5px]">
         <span className="flex min-w-0 flex-col gap-px">
           <span><span className="font-semibold">{when}</span><span className="text-muted-foreground"> · <bdi>{match}</bdi></span></span>
-          <span className="text-[12px] text-muted-foreground [overflow-wrap:anywhere]"><Escaped text={short(hook)} /></span>
+          <span className="text-[12px] text-muted-foreground [overflow-wrap:anywhere]"><CommandText text={short(hook)} /></span>
           {last && <span data-testid="plugin-hook-last" className={`text-[12px] ${last.tone}`}>{last.text}</span>}
         </span>
         <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-[12px] text-muted-foreground">
