@@ -162,3 +162,85 @@ def test_missing_operation(args):
     assert not sg.read(text).understood
     assert tp.assess(text).rule == tp.UNREADABLE
     assert tp.ask_rules(text, outside=True) == {tp.UNREADABLE}
+
+
+B1_CASES = (
+    ("B1/assigned-interactive-here-string", "REVIEW_MODE=-i; security $REVIEW_MODE <<< 'list-keychains'"),
+    ("B1/assigned-empty-file", "REVIEW_MODE=; security $REVIEW_MODE < review.ops"),
+    ("B1/assigned-interactive-quoted", 'REVIEW_MODE=-i; security "$REVIEW_MODE" <<< \'list-keychains\''),
+    ("B1/assigned-interactive-pipe", "REVIEW_MODE=-i; printf '%s\\n' 'list-keychains' | command security $REVIEW_MODE"),
+    ("B1/assigned-interactive-heredoc", "REVIEW_MODE=-i; security $REVIEW_MODE <<REVIEW_STOP\nlist-keychains\nREVIEW_STOP"),
+    ("B1/assigned-create-outside", "REVIEW_MODE=-i; security $REVIEW_MODE create-keychain review.keychain <<< 'list-keychains'"),
+    ("B1/assigned-unlock-outside", "REVIEW_MODE=-i; security $REVIEW_MODE unlock-keychain review.keychain <<< 'list-keychains'"),
+    ("B1/prompt-expansion", "unset REVIEW_PROMPT; security -p $REVIEW_PROMPT list-keychains < review.ops"),
+)
+
+
+def assert_unreadable(text, outside):
+    reading = sg.read(text)
+    assert not reading.understood
+    assert reading.why == "its security reads operations from stdin"
+    assert not sg.read_prefix(text).refused
+    result = tp.assess(text, outside=outside)
+    assert (result.level, result.rule, result.reason) == ("ask", tp.UNREADABLE, reading.why)
+    assert tp.ask_rules(text, outside=outside) == {tp.UNREADABLE}
+    assert tp.risk_grade(text, outside=outside) == "MEDIUM"
+
+
+@pytest.mark.parametrize("outside", (False, True), ids=("inside", "outside"))
+@pytest.mark.parametrize("case,text", B1_CASES, ids=[case for case, _ in B1_CASES])
+def test_b1_leading_expansion_is_unreadable(case, text, outside):
+    assert_unreadable(text, outside)
+
+
+@pytest.mark.parametrize("outside", (False, True))
+@pytest.mark.parametrize("args", (
+    "-$MODE", "${MODE}", '"$(printf list-keychains)"', "-- $MODE",
+    "-q $MODE", "-qp $PROMPT list-keychains", "-p$PROMPT list-keychains",
+))
+def test_ambiguous_operation_selection(args, outside):
+    assert_unreadable("security " + args, outside)
+
+
+@pytest.mark.parametrize("outside", (False, True))
+def test_ambiguous_operation_precedes_named_ask(outside):
+    assert_unreadable("git push; security $MODE", outside)
+
+
+@pytest.mark.parametrize("outside", (False, True))
+@pytest.mark.parametrize("tail", ("; 'security' 'dump-keychain'", "; 'rm' '-rf' '/'"))
+def test_ambiguous_operation_keeps_forbid_floor(tail, outside):
+    text = "security $MODE" + tail
+    assert not sg.read(text).understood
+    assert not sg.read_prefix(text).refused
+    assert tp.assess(text, outside=outside).level == "forbid"
+    assert tp.ask_rules(text, outside=outside) == set()
+    assert tp.risk_grade(text, outside=outside) == "HIGH"
+
+
+@pytest.mark.parametrize("outside", (False, True))
+@pytest.mark.parametrize("text", (
+    "security list-keychains", "security 'list-keychains'", 'security "list-keychains"',
+    "security -- list-keychains", "security -p sample list-keychains",
+    "security -psample list-keychains", "security -qv list-keychains", "security --help",
+    "security '$MODE'", r"security \$MODE", "security -p '$PROMPT' list-keychains",
+    "security list-keychains $OPERAND", 'security list-keychains "$(printf sample)"',
+    "printf '%s' $MODE", "git status $OPERAND",
+))
+def test_literal_selection_and_operand_controls(text, outside):
+    assert sg.read(text).understood
+    assert not sg.read_prefix(text).refused
+    assert tp.assess(text, outside=outside).level == "run"
+    assert tp.ask_rules(text, outside=outside) == set()
+    assert tp.risk_grade(text, outside=outside) == "LOW"
+
+
+@pytest.mark.parametrize("outside", (False, True))
+@pytest.mark.parametrize("operation", ("create-keychain", "unlock-keychain"))
+def test_literal_service_operation_controls(operation, outside):
+    text = "security " + operation + " review.keychain"
+    assert sg.read(text).understood
+    result = tp.assess(text, outside=outside)
+    assert result.level == ("ask" if outside else "run")
+    assert tp.ask_rules(text, outside=outside) == ({"outside-reach"} if outside else set())
+    assert tp.risk_grade(text, outside=outside) == ("MEDIUM" if outside else "LOW")

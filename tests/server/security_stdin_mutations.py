@@ -3,7 +3,8 @@ import inspect
 
 import pytest
 
-MODES = ("IGNORE-I", "ALLOW-STDIN", "SKIP-FLOOR", "IGNORE-OUTSIDE", "DROP-RAW-TRANSPORT", "REFUSE-ARGV")
+MODES = ("IGNORE-I", "ALLOW-STDIN", "SKIP-FLOOR", "IGNORE-OUTSIDE", "DROP-RAW-TRANSPORT", "REFUSE-ARGV",
+         "DROP-LITERALNESS")
 
 
 def pytest_addoption(parser):
@@ -17,7 +18,16 @@ def pytest_configure(config):
         raise pytest.UsageError("choose --security-stdin-mutation when loading this plugin")
     patch = pytest.MonkeyPatch()
     config.add_cleanup(patch.undo)
-    if mode == "IGNORE-I":
+    if mode == "DROP-LITERALNESS":
+        source = inspect.getsource(sg._Reader._program)
+        before = "security_operation(tuple(w.literal for w in args))"
+        assert source.count(before) == 1
+        import textwrap
+        namespace = dict(vars(sg))
+        exec(compile(textwrap.dedent(source.replace(before, "security_operation(tuple(w.text for w in args))")),
+                     "<DROP-LITERALNESS>", "exec"), namespace)
+        patch.setattr(sg._Reader, "_program", namespace["_program"])
+    elif mode == "IGNORE-I":
         source = inspect.getsource(sg.security_operation)
         assert source.count("interactive = True") == 1
         namespace = {}
