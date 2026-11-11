@@ -65,3 +65,18 @@ The card's external evidence (`docs/plans/0164/SB1-sidebar.md`, Four lines §4) 
    - **Expected, after the first two corrections:** Memory's learned practices show the practice with a tag naming that folder, and a hint under the list says tagged practices apply only there. In a new chat in that folder the practice applies; in a chat in another folder it doesn't.
    - **Expected, after the third correction elsewhere:** the practice is for everywhere for good: the tag is gone, and it applies in both folders, even back in the first.
    - **Also check:** a practice that is switched off names its folder in the sheet that turns it on; the folder name reads as plain text (try a folder with `<b>` in its name); and `AGENTS.md` is still byte for byte unchanged.
+
+## IMG1-B: the main window's CSP (`docs/plans/0164/IMG1-remote-images.md`, option B)
+
+The policy ran in a WKWebView harness on macOS 26.6.2, served by the real server (the PR lists what it covered). That harness is not the Tauri shell, so Tauri's IPC, the packaged window and macOS 11 were not run.
+
+1. **IPC:** in the packaged app, drag the window by the top of the sidebar; click a web link in a reply; use push-to-talk once; if an update is waiting, the update pill appears.
+   - **Expected:** each works as before. All four go through Tauri's IPC, which the policy allows as `ipc:` and `http://ipc.localhost`.
+2. **Replies:** ask for the quadratic formula in LaTeX with a `\Bigg(` bracket, a bar chart of 3, 5 and 2, and a short code block.
+   - **Expected:** the formula is typeset, not raw TeX, and the big bracket draws; the chart has its labels; the code has colours (the highlighter's worker).
+3. **Reader:** open a PDF, an HTML file and an image in the reader.
+   - **Expected:** the PDF shows in its frame, not blank; the HTML preview shows its text and styles; the image shows.
+4. **Streaming:** a reply streams in as it's written. That is the WebSocket on 127.0.0.1.
+5. **macOS 11, the minimum, if one is at hand:** steps 1 to 4 again.
+   - **Expected:** the same. A reply that never streams, or code without colours, would point at that WebKit's `ws:` or `worker-src` support; note which. If no Mac on 11 is at hand, record "not run".
+6. **On a build with Web Inspector:** after steps 1 to 4, the Console shows no "Refused to …" Content Security Policy error.

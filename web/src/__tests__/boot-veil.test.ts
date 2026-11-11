@@ -9,9 +9,15 @@
  * ignores clicks. None of them log anything, and a source-level assertion would
  * stay green through all three.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BOOT_VEIL_FADE_MS, BOOT_VEIL_ID, dismissBootVeil } from "../lib/bootVeil";
+
+const WEB = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 function mountVeil(): HTMLElement {
   document.body.innerHTML = `<div id="${BOOT_VEIL_ID}"></div><div id="root">app</div>`;
@@ -90,5 +96,52 @@ describe("dismissBootVeil", () => {
     vi.advanceTimersByTime(BOOT_VEIL_FADE_MS);
 
     expect(document.getElementById(BOOT_VEIL_ID)).toBeNull();
+  });
+});
+
+/**
+ * The other half: index.html removes the veil during parse unless the shell asked for a fade. Since IMG1-B the main
+ * window's CSP is `script-src 'self'` with no hash, so that code is a file under web/public, loaded with a classic
+ * `<script src>` at the same place in the page.
+ */
+describe("index.html's boot script", () => {
+  const page = new DOMParser().parseFromString(readFileSync(resolve(WEB, "index.html"), "utf8"), "text/html");
+  const scripts = [...page.querySelectorAll("script")];
+  const boot = scripts.find((s) => s.getAttribute("type") !== "module");
+  const file = resolve(WEB, "public", (boot?.getAttribute("src") ?? "").split("?")[0].replace(/^\//, ""));
+  const shell = window as unknown as { __ARSLAN_SHELL_FADE_IN__?: boolean };
+
+  afterEach(() => {
+    delete shell.__ARSLAN_SHELL_FADE_IN__;
+    document.body.innerHTML = "";
+  });
+
+  it("has no inline script left for the policy to refuse", () => {
+    const inline = scripts.filter((s) => !s.hasAttribute("src"));
+    expect(inline.map((s) => s.textContent?.trim().slice(0, 60))).toEqual([]);
+  });
+
+  it("loads a file from web/public, parser-blocking, between the veil and the app", () => {
+    expect(boot?.getAttribute("src")).toMatch(/^\/[\w.-]+\.js(\?v=\w+)?$/);
+    expect(existsSync(file)).toBe(true);
+    // Not async, defer or a module: each of those runs after the veil may have painted.
+    expect(boot?.hasAttribute("async") || boot?.hasAttribute("defer")).toBe(false);
+    const veil = page.getElementById(BOOT_VEIL_ID) as HTMLElement;
+    const root = page.getElementById("root") as HTMLElement;
+    expect(veil.compareDocumentPosition(boot as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect((boot as Node).compareDocumentPosition(root) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("removes the veil when the shell has not asked for a fade", () => {
+    mountVeil();
+    new Function(readFileSync(file, "utf8"))();
+    expect(document.getElementById(BOOT_VEIL_ID)).toBeNull();
+  });
+
+  it("leaves the veil for bootVeil.ts when the shell has asked for a fade", () => {
+    mountVeil();
+    shell.__ARSLAN_SHELL_FADE_IN__ = true;
+    new Function(readFileSync(file, "utf8"))();
+    expect(document.getElementById(BOOT_VEIL_ID)).not.toBeNull();
   });
 });
