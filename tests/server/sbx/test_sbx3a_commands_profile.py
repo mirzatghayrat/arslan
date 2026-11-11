@@ -26,6 +26,7 @@ import pytest
 
 from server.services import command_sandbox, sandbox_profile, terminal_exec
 from server.services.sandbox_profile import NetworkMode
+from tests.server.sbx.profile_files import read_profile
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
@@ -47,21 +48,30 @@ def test_available_starts_the_real_commands_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(command_sandbox, "_SANDBOX_EXEC", str(exe))
     monkeypatch.setattr(command_sandbox.sys, "platform", "darwin")
     monkeypatch.setattr(command_sandbox, "commands_profile", recorded)
-    monkeypatch.setattr(command_sandbox.subprocess, "run",
-                        lambda argv, **kw: calls.append(argv) or SimpleNamespace(returncode=0))
+    started = []                    # #813 review 11: the profile file's text while sandbox-exec runs
+
+    def run(argv, **kw):
+        calls.append(argv)
+        started.append(Path(argv[2]).read_text())
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(command_sandbox.subprocess, "run", run)
     command_sandbox._reset_for_tests()
     try:
         assert command_sandbox.available() is True
     finally:
         command_sandbox._reset_for_tests()
-    assert calls == [[str(exe), "-p", texts[0], "/usr/bin/true"]]
+    assert len(calls) == 1 and calls[0][:2] == [str(exe), "-f"] and calls[0][3:] == ["/usr/bin/true"]
+    assert started == [texts[0]] and not os.path.lexists(calls[0][2])     # read as written, gone after
     assert texts[0].startswith("(version 1)\n(deny default)\n")     # the commands profile, on the base
 
 
 def test_a_command_starts_under_the_same_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    assert command_sandbox.wrapper(tmp_path) == [command_sandbox._SANDBOX_EXEC, "-p",
-                                                 command_sandbox.commands_profile(tmp_path)]
+    prefix = command_sandbox.wrapper(tmp_path)
+    assert prefix[:2] == [command_sandbox._SANDBOX_EXEC, "-f"] and len(prefix) == 3
+    assert read_profile(prefix) == command_sandbox.commands_profile(tmp_path)
+    command_sandbox.remove_profile(command_sandbox.profile_path(prefix))
 
 
 # ── §1b: tagged roots and the classifier's scope ─────────────────────────────

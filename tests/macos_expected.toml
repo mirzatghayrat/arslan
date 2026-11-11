@@ -51,6 +51,16 @@ markers = 22
 cases = 37
 xfail = 0
 
+# 0.1.64 HR-1 review delta 11, links past the held-folder cap, in the commands preset, an MCP server's granted folder
+# and the outside floor, with more held folders than the cap: 200 and 256 links at held names have every target's
+# held names refused and the target held in place, the profile delivered as a file (6 cases); past 256 (257, 1,000 and
+# 4,097 links) no profile is built (9 cases); from the product path the command doesn't start, with the note, and no
+# profile file is left (1 case).
+["server/sbx/test_hr1_run_later_link_cap.py"]
+markers = 3
+cases = 16
+xfail = 0
+
 # 0.1.64 HR-1 review delta 10, link targets, in the commands preset, an MCP server's granted folder and the outside
 # floor: a held name or held folder that is a link (as a checkout leaves it) has the held names at its real path held,
 # mapped through the link and only those: .vscode, .husky, .envrc, .claude, deeper siblings, .cursor and a file link

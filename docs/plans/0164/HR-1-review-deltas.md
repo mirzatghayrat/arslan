@@ -416,3 +416,61 @@ The unit tests cover the mapping, filters, caps and the private guard.
 **Not done here**
 - An ordinary-named link opened as its own workspace root (⓪Plan's point 2), such as `pkg -> node_modules/x`, keeps the dependency exemption.
 - No link is mapped past the caps or in unwalked folders.
+
+## Review delta 11: links past the held-folder cap, and the profile as a file
+
+**The hole (Codex, at `c3524821`).** With 200 or 1,000 links at held names, the held-folder cap (`WALK_HELD = 256`, `WALK_HELD_BYTES = 128 KiB`) tripped and ended the walk. The by-name fallback can't name a target with an ordinary name, so those targets stayed writable (6 strict xfails). With 50 links, all held.
+
+**The fix (⓪Plan's ruling, one number changed: see below).**
+1. Links are outside the held-folder cap. Past it the walk goes on: it keeps no further held folder (those are held by name, as before), but every link it sees at a held name or held folder name keeps its target's filters (`link_filters`, `at_targets`) and its place in `kept` (the target and the folders above it held in place). Only the entry and depth caps, or a folder it can't list, end the walk.
+2. Links have their own cap, `WALK_LINKS`. Past it, `run_later.TooManyLinks`: no profile is built. A command in the sandbox, or under the floor that holds them, doesn't start (`terminal_exec._not_started`, code `too_many_links`, `command_sandbox.links_note`: the working folder has too many links at protected names). An MCP server doesn't start (the session's open fails with that message). Only links at held names count; a pnpm-style `node_modules` full of ordinary links doesn't.
+3. **`WALK_LINKS` is 256, not 4,096.** Measured on macOS 26.6.2, `.vscode -> vsc` links in a tmp folder, commands profile. Python builds the profile in about 0.2 s for 200 links, 0.3 s for 256 and 0.9 s for 1,000, but sandbox-exec's own compile, at every start, grows with the square of it:
+
+   | links | profile | sandbox-exec start |
+   |---|---|---|
+   | 0 | 28 KB | 0.02 s |
+   | 50 | 94 KB | 0.09 s |
+   | 200 | 291 KB | 1.0 s |
+   | 400 | 554 KB | 4.8 s |
+   | 600 | 817 KB | 10 s |
+   | 800 | 1.08 MB | refused: "data object length 65588 exceeds maximum (65535)" |
+   | 4,096 | 5.4 MB | aborted after 4 min (`INSTR_JUMP_NE_MAX_LENGTH` assertion) |
+
+   So 4,096 can't start, and 1,000 can't either. 256 keeps a start near 1.5 s. A denser form (one `(require-all (subpath <target>) (regex <depth-counted names>))` per link instead of a literal per name) compiles 1,000 links in 4 s and 4,096 in 152 s: not enough to restore 4,096. **For ⓪Plan to confirm the number**; it's one constant.
+4. The profile goes to sandbox-exec as a file (`-f`), in the commands wrapper, the floor's wrapper, the MCP preset and the `available()` probe (`code_sandbox`'s computation preset and `ssh_exec` keep `-p`: not in this delta). `command_sandbox.write_profile` makes it new with `O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW`, mode 0600, so a file or a link already at the path fails the start and is never followed. **Where: Arslan's data folder (`sandbox-profiles/`, a 0700 folder of ours), not the run's TMPDIR.** The run's TMPDIR is writable by the run's other commands (a background one could rewrite a later command's profile between its writing and sandbox-exec's read), and an MCP server's own folders by that server. The data folder is closed to all three presets, with the folders above it held. argv is otherwise unchanged: `[sandbox-exec, "-f", <file>, ...]`.
+5. Cleanup. A command's file goes when the process has exited, in a `finally`: success, failure, a time limit, a cancel, and a failed start (exec error). sandbox-exec reads it at its start, and the command's own start isn't confirmed separately. Cancelled while the wrapper still builds (it runs in a thread now, off the event loop), the file goes when the thread ends (`command_sandbox.in_thread`). An MCP server's file goes once it has answered `initialize` (so sandbox-exec read it), or with the session's stack (a failed start, a closed session).
+6. Build speed, so thousands of ordinary links cost little: `_below` answers a path with no held component by one regex per component and compares compiled components; `listable` compares strings; `link_filters` resolves below a real target by `lstat` per component; `sbpl_string` returns a plain string without its per-character loop (same output).
+
+**Measured** (warm, three runs each, the commands profile's build only):
+- 50 / 200 / 256 links: 0.02–0.06 s / 0.17–0.25 s / 0.19–0.32 s; 257: `TooManyLinks` in 0.12–0.27 s.
+- pnpm-like, 5,000 ordinary links in `node_modules`: 0.007–0.010 s, against 0.007–0.009 s with no links.
+- The same 5,000 links in a folder the walk lists: 0.62–0.77 s, against 0.55–0.65 s without them (the walk's listing, not the links).
+
+**Tests.**
+- Seatbelt (`test_hr1_run_later_link_cap.py`, 3 markers, 16 cases), each in commands, MCP and floor, each layout with more held folders than `WALK_HELD`, delivered by `-f`. With 200 and 256 links, every target's held name is refused and unchanged, a target is held in place, and an ordinary file beside them is written (6). With 257, 1,000 and 4,097 links no profile is built (9). From the product path, in the sandbox and under the floor, the command doesn't start, the note says why, and no file is left (1).
+- `test_hr1_profile_file.py` (15, portable, sandbox-exec stood in for):
+  - the file is 0600, opened with O_CREAT, O_EXCL, O_NOFOLLOW and O_WRONLY, in a 0700 folder;
+  - it's gone after success, failure, the floor's run, a time limit, a cancel, a cancel during the build, and a failed start;
+  - a file, a link or a dangling link already at the path fails the start (commands and MCP), nothing runs, and the link isn't followed;
+  - the MCP file lives outside the server's folders, and the session removes it once the server answers, or on a failed start;
+  - the link cap's note comes back from the product path.
+- Unit (`test_hr1_run_later.py`): targets outside the held caps, and their own cap; ordinary links don't count (4,000 pnpm-like links under a cap of 1).
+- Updated for `-f`: `test_sbx3a_commands_profile.py`, `test_sbx6_mcp_proxy.py`, `test_sbx5a_cap6b.py` (its `args[1]` check would have passed vacuously), `test_capability_sandbox.py`, `test_hard_rules_absolute.py`, `test_s2a1_sandbox.py`, through `tests/server/sbx/profile_files.py`. The SBX harness keeps `-p` for its own small profiles.
+
+**Mutations** (each red):
+- targets back under the held cap: 2 unit and 3 seatbelt red;
+- the link cap failing open: unit and seatbelt red;
+- O_EXCL dropped (O_NOFOLLOW kept): 4 red;
+- cleanup skipped on a failed start: 6 red;
+- the count including ordinary links: 2 unit red.
+
+**Checks** (local):
+- Suite: 30543 passed, 62 skipped and 6 failed. Five were `-f` consumers (`test_hard_rules_absolute.py`, `test_s2a1_sandbox.py`) that read argv after the file was gone; fixed, and those files plus the sixth (`test_smart1_interactive_path.py`, the known loop-wait flake) then passed alone (231).
+- ruff, the language check and gitleaks are clean.
+- `-m macos` on the touched seatbelt files: 165 of them passed, and no pin differed. `test_sbx3_commands.py` errored at setup only when collected with the others (a fixture not found); alone it passed (32).
+
+**Not done here**
+- `WALK_LINKS` is 256 by measurement, against the ruled 4,096 (above).
+- A start of 1.5 s near the cap is paid at every command. A work folder that sits near it all the time is slow, not open.
+- A profile file left by a crash stays in the data folder (closed to every preset, random names); no sweep at start.
+- `code_sandbox` (run_python, artifact checks) and `ssh_exec` still pass `-p`; their profiles are small and hold no links.

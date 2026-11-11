@@ -321,8 +321,11 @@ def test_the_walk_stops_at_its_caps_incomplete(tmp_path, caps):
     ws = _tree(tmp_path / "ws")                    # 9 held folders and a link's target (sub/.cursor, review 10)
     walk = run_later.held_folders([ws], **caps)
     assert not walk.complete
-    assert len(walk.folders) + len(walk.targets) <= caps.get("max_held", 10)
-    assert run_later.held_folders([ws], max_entries=1000, max_depth=8, max_held=10).complete
+    assert len(walk.folders) <= caps.get("max_held", 10)
+    if "max_held" in caps or "max_held_bytes" in caps:
+        # #813 review 11: past a held-folder cap the walk goes on, and the link's target is still held.
+        assert walk.targets == run_later.held_folders([ws]).targets != ()
+    assert run_later.held_folders([ws], max_entries=1000, max_depth=8, max_held=9).complete
 
 
 def _aliased(ws: Path) -> Path:
@@ -445,20 +448,43 @@ def test_a_link_whose_target_links_on_is_held_at_both(tmp_path):
     assert f'(literal "{ws}/elsewhere.json")' in filters and f'(literal "{ws}/vsc/settings.json")' in filters
 
 
-def test_the_link_targets_count_toward_the_walks_caps(tmp_path):
-    """Each held name that is a link counts as a held folder, and its filters' bytes count too."""
+def test_the_link_targets_are_outside_the_held_folder_caps_and_have_their_own(tmp_path):
+    """#813 review 11: links at held names don't count toward the held-folder caps (review 10 counted them, and past
+    the caps the targets of the rest stayed writable). Past a held-folder cap the walk keeps every link's target and
+    filters; only links at held names count toward `max_links`, past which `TooManyLinks` is raised (no profile)."""
     ws = tmp_path / "ws"
     for i in range(6):
         (ws / f"r{i}" / "vsc").mkdir(parents=True)
         (ws / f"r{i}" / ".vscode").symlink_to("vsc")
+        (ws / f"r{i}" / ".git" / "hooks").mkdir(parents=True)           # two held folders each
+        (ws / f"r{i}" / f"{STAND_IN}-plain").symlink_to("vsc")           # an ordinary name: never counted
     walk = run_later.held_folders([ws])
-    assert walk.complete and walk.folders == () and len(walk.targets) == 6 and len(walk.link_filters) == 24
-    assert not run_later.held_folders([ws], max_held=5).complete
-    folders_only = sum(len(os.fsencode(p)) + 20 for p in (*walk.targets, *(t.parent for t in walk.targets)))
-    assert not run_later.held_folders([ws], max_held_bytes=folders_only).complete
-    assert run_later.held_folders([ws], max_held_bytes=folders_only * 4).complete
+    assert walk.complete and len(walk.folders) == 12 and len(walk.targets) == 6 and len(walk.link_filters) == 24
+    for caps in ({"max_held": 1}, {"max_held_bytes": 1}):
+        capped = run_later.held_folders([ws], **caps)
+        assert not capped.complete and len(capped.folders) <= 1
+        assert capped.targets == walk.targets and capped.link_filters == walk.link_filters
+    assert run_later.held_folders([ws], max_links=6).targets == walk.targets          # 6 links, 6 allowed
+    with pytest.raises(run_later.TooManyLinks):
+        run_later.held_folders([ws], max_links=5)
+    with pytest.raises(run_later.TooManyLinks):
+        run_later.held_folders([ws], max_links=5, max_held=1)                        # a held cap doesn't hide them
     hold = command_sandbox.run_later_folders([ws])
     assert hold.at_targets == walk.link_filters and hold.by_name == ()
+    assert set(walk.targets) <= set(hold.kept)
+
+
+def test_ordinary_links_dont_count_toward_the_link_cap(tmp_path):
+    """#813 review 11, condition 1's measurement as a unit: a pnpm-like tree, thousands of ordinary links (in
+    node_modules, and the same in a folder the walk lists) and none at a held name, is under a cap of one link."""
+    ws = tmp_path / "ws"
+    for top in ("node_modules", f"{STAND_IN}-store"):
+        for i in range(2000):
+            pkg = ws / top / ".pnpm" / f"p{i}@1.0.0" / "node_modules" / f"p{i}"
+            pkg.mkdir(parents=True)
+            (ws / top / f"p{i}").symlink_to(os.path.relpath(pkg, ws / top))
+    walk = run_later.held_folders([ws], max_links=1)
+    assert walk.complete and walk.targets == () and walk.link_filters == ()
 
 
 def _repositories(ws: Path, count: int) -> Path:

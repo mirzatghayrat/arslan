@@ -193,7 +193,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     env = child_environment({}, {"PATH": await asyncio.to_thread(merged_path), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
-    from server.services import command_sandbox, run_temp, sandbox_proxy
+    from server.services import command_sandbox, run_later, run_temp, sandbox_proxy
     prefix: list[str] = []
     mode = "off"
     if sandbox:
@@ -207,13 +207,42 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
             env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
                                                "http_proxy", "https_proxy", "all_proxy")})
             env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
-        prefix = command_sandbox.wrapper(cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
-                                         copies=copies, proxy_port=proxy_port, trust_service=trust) or []
+        # Off the event loop: a large work folder's walk takes a while (#813 review 11: about a second for 1,000 links
+        # at held names). Past the link cap no profile is built and the command doesn't start.
+        try:
+            prefix = await command_sandbox.in_thread(
+                command_sandbox.wrapper, cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
+                copies=copies, proxy_port=proxy_port, trust_service=trust) or []
+        except run_later.TooManyLinks:
+            return _not_started(cwd, "workspace", command_sandbox.links_note(cwd))
         mode = "workspace" if prefix else "unavailable"
     elif not unwrapped:
-        prefix = command_sandbox.outside_wrapper(offline=offline, copies=copies,
-                                                 run_later_in=cwd if hold_run_later else None, closed=closed) or []
+        try:
+            prefix = await command_sandbox.in_thread(
+                command_sandbox.outside_wrapper, offline=offline, copies=copies,
+                run_later_in=cwd if hold_run_later else None, closed=closed) or []
+        except run_later.TooManyLinks:
+            return _not_started(cwd, "outside", command_sandbox.links_note(cwd))
         mode = "outside" if prefix else "off"
+    # #813 review 11: sandbox-exec has read its profile file once the command is running; it goes when the process has
+    # exited, on every path (success, failure, a time limit, a cancel, a start that failed).
+    profile = command_sandbox.profile_path(prefix)
+    try:
+        return await _execute(command, prefix=prefix, cwd=cwd, env=env, temp_key=temp_key, timeout_s=timeout_s,
+                              offline=offline, closed=closed, mode=mode, hold_run_later=hold_run_later)
+    finally:
+        command_sandbox.remove_profile(profile)
+
+
+def _not_started(cwd: Path, mode: str, note: str) -> dict:
+    """#813 review 11: a command the sandbox didn't start (past the link cap), with the note that says why."""
+    return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd), "sandbox": mode,
+            "code": "too_many_links", "error": "not started: too many links at protected names", "note": note}
+
+
+async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, temp_key: int, timeout_s: int,
+                   offline: bool, closed: list[Path], mode: str, hold_run_later: bool) -> dict:
+    from server.services import run_temp
     if offline and not prefix:
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
                 "error": "commands run without network now, and this run cannot isolate the network — "

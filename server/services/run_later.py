@@ -33,6 +33,7 @@ from __future__ import annotations
 import fnmatch
 import itertools
 import os
+import re
 import stat
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -349,9 +350,9 @@ HELD_FOLDERS = _held_folder_tree()
 #: about 110 ms.
 WALK_ENTRIES = 50_000
 WALK_DEPTH = 32
-#: #813 review 7: every held folder found, and every folder above it, becomes a literal in the profile, which goes to
-#: `sandbox-exec -p` on the command line (ARG_MAX is 1 MiB on macOS, the environment included) and is built on the
-#: event loop for every command. Uncapped, 2,000 small repositories took 23 s to build and the command couldn't
+#: #813 review 7: every held folder found, and every folder above it, becomes a literal in the profile, which went to
+#: `sandbox-exec -p` on the command line (ARG_MAX is 1 MiB on macOS, the environment included; a file since review 11)
+#: and is built for every command. Uncapped, 2,000 small repositories took 23 s to build and the command couldn't
 #: start at all (E2BIG, a 1.2 MB profile). So the walk also stops after `WALK_HELD` held folders, and after
 #: `WALK_HELD_BYTES` of literals for them and the folders above them inside the walk (the count alone doesn't bound
 #: that: 256 folders each 32 deep under long names could still pass ARG_MAX). Either keeps the profile well under the
@@ -359,6 +360,27 @@ WALK_DEPTH = 32
 #: (19 KB with none) and builds in about 0.03 s; the byte cap bounds the held literals to 128 KiB whatever the layout.
 WALK_HELD = 256
 WALK_HELD_BYTES = 128 * 1024
+#: #813 review 11: links at held names and held folder names have their own cap, outside the two above: every one the
+#: walk sees has its target held (`link_filters`, and the target and the folders above it in place) whatever the
+#: held-folder cap did, since the by-name fallback can't name a target with an ordinary name. Only links at held names
+#: count (a pnpm node_modules full of ordinary links doesn't). Past this cap no profile is built (`TooManyLinks`): the
+#: command or the server doesn't start in the sandbox. The profile goes to sandbox-exec as a file (`-f`), so ARG_MAX
+#: no longer bounds it; what bounds it is sandbox-exec's own compiler, which this cap stays inside. Measured on macOS
+#: 26.6.2 (2026-11-11, `.vscode -> vsc` links in a pytest tmp folder, the commands profile): Python builds the profile
+#: in ~0.2 s for 200 links and ~0.9 s for 1,000, but sandbox-exec's start (its compile) grows with the square of it:
+#: 0.02 s with none, 0.09 s for 50, 1.0 s for 200, 4.8 s for 400, 10 s for 600, and at 800 it refuses the profile
+#: ("data object length 65588 exceeds maximum (65535)"); at 4,096 it ran 4 min and aborted. ⓪Plan ruled 4,096 on the
+#: build alone; 256 keeps the start near 1.5 s (#813 review 11, for ⓪Plan to confirm).
+WALK_LINKS = 256
+
+
+class TooManyLinks(RuntimeError):
+    """#813 review 11: the walk saw more than `WALK_LINKS` links at held names: fail closed, no profile."""
+
+    def __init__(self, limit: int):
+        super().__init__(f"the folder has more than {limit:,} links at names of files that make something run later; "
+                         "too many to hold, so nothing starts in the sandbox there")
+        self.limit = limit
 
 
 #: #813 review 8: the home folders macOS's privacy controls (TCC) protect. Listing one can raise a privacy prompt, so
@@ -443,7 +465,7 @@ _LITERAL_BYTES = len('(literal "")') + 1
 
 def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed: Iterable[Path] = (),
                  max_entries: int | None = None, max_depth: int | None = None, max_held: int | None = None,
-                 max_held_bytes: int | None = None) -> HeldWalk:
+                 max_held_bytes: int | None = None, max_links: int | None = None) -> HeldWalk:
     """The existing held folders under `folders` (the work folder, or an MCP server's granted folders and its own),
     found by a bounded walk of real paths (caps `WALK_ENTRIES`, `WALK_DEPTH`, `WALK_HELD` and `WALK_HELD_BYTES`
     unless given). Links aren't followed. Dependency folders are skipped when `exempts` holds for `folders` and
@@ -461,14 +483,19 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
 
     #813 review 10: every such link, alias or not (`.vscode -> vsc`, `.envrc -> envrc.real`, a repository can check
     one out), has its real path in `targets` and the held names at that path in `link_filters` (`link_filters`); a
-    target and the bytes of its filters count against the caps as a held folder and its literals do. A target that is a
-    folder is listed for links at held names as the consumer sees them through it (`through`), its entries counted as
-    the walk's, except inside a private folder no walked folder lies in."""
+    target that is a folder is listed for links at held names as the consumer sees them through it (`through`), its
+    entries counted as the walk's, except inside a private folder no walked folder lies in.
+
+    #813 review 11: links are outside the held-folder caps (`WALK_HELD`, `WALK_HELD_BYTES`). Past those the walk goes
+    on, keeping no further held folder (they are held by name: `complete` is False) but every link it sees at a held
+    name, with its target and filters; only the entry and depth caps, or a folder it can't list, end it. Those links
+    have their own cap, `max_links` (`WALK_LINKS`), past which `TooManyLinks` is raised: no profile, closed."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
     max_held = WALK_HELD if max_held is None else max_held
     max_held_bytes = WALK_HELD_BYTES if max_held_bytes is None else max_held_bytes
+    max_links = WALK_LINKS if max_links is None else max_links
     folders = [real(Path(os.path.abspath(p))) for p in folders]
     skip = _exempt(folders, roots)
     private_list = private_folders(closed)
@@ -485,21 +512,29 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     through_seen: set[Path] = set()
     counted: set[Path] = set(starts)          # the folders whose literal is counted (the starts: by the caller)
     held_bytes = [0]
+    full = [False]                            # #813 review 11: a held-folder cap was reached; the walk goes on
+    links = [0]
 
-    def keep(path: Path, into: list[Path] = found, extra: int = 0) -> None:
-        """`path` is held: count it and the folders above it in the walk (each once), and `extra` bytes of filters,
-        against the caps, which end the walk before it is kept when it would pass either."""
-        if len(found) + len(targets) >= max_held:
-            raise _Incomplete
+    def keep(path: Path) -> None:
+        """`path` is a held folder: count it and the folders above it in the walk (each once) against the held-folder
+        caps. Past either it isn't kept, nor is any later one (`full`), and the walk goes on for links."""
+        if full[0] or len(found) >= max_held:
+            full[0] = True
+            return
+        added = 0
         for folder in (path, *path.parents):
             if folder in counted:
                 break                         # it, and every folder above it, is counted already
+            added += len(os.fsencode(folder)) + _LITERAL_BYTES
+        if held_bytes[0] + added > max_held_bytes:
+            full[0] = True
+            return
+        for folder in (path, *path.parents):
+            if folder in counted:
+                break
             counted.add(folder)
-            held_bytes[0] += len(os.fsencode(folder)) + _LITERAL_BYTES
-        held_bytes[0] += extra
-        if held_bytes[0] > max_held_bytes:
-            raise _Incomplete
-        into.append(path)
+        held_bytes[0] += added
+        found.append(path)
 
     def alias(entry: os.DirEntry, folder: Path, seen_as: Path | None = None) -> None:
         """`entry` is a link. When a held name lies at it or below it (`_below`: it is a held name or a held folder
@@ -507,16 +542,21 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
         reached `folder` through a link), #813 review 10: its real path is held in place, as a held folder
         (`targets`, for `held_ancestors(kept=...)`), the held names at that path are denied (`link_filters`), and a
         folder there is listed for further links (`through`). #813 review 9: when that real path leaves `folder`,
-        it is an alias too: the profile drops the dependency exemption."""
+        it is an alias too: the profile drops the dependency exemption. #813 review 11: counted against `max_links`
+        only, never the held-folder caps; past it, `TooManyLinks`."""
         path = folder / entry.name
         seen_as = seen_as or path
         below = _below(_parts(seen_as))
         if not below:
             return
+        links[0] += 1
+        if links[0] > max_links:
+            raise TooManyLinks(max_links)
+        if links[0] > max_links:
+            raise TooManyLinks(max_links)
         target = Path(os.path.realpath(path))
-        held = link_filters(target, below)
-        keep(target, targets, sum(len(f.encode()) + 1 for f in held))
-        filters.extend(held)
+        targets.append(target)
+        filters.extend(link_filters(target, below))
         if target.parent != folder:
             aliases.append(path)
         try:
@@ -541,10 +581,14 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
             elif further and _is_folder_entry(entry) and _below(_parts(seen_as / entry.name)):
                 through(folder / entry.name, seen_as / entry.name)
 
+    #: The private folders no walked folder lies at or inside (Arslan works in those), as strings: `listable`'s test,
+    #: by prefix (#813 review 11: `Path.parents` per link was most of a large walk's time).
+    unlisted = [str(p) for p in private_list if not any(s == p or p in s.parents for s in starts)]
+
     def listable(folder: Path) -> bool:
         """Not inside a private folder, unless a walked folder lies at or inside that one (Arslan works there)."""
-        return not any((p == folder or p in folder.parents) and not any(s == p or p in s.parents for s in starts)
-                       for p in private_list)
+        text = str(folder)
+        return not any(text == p or text.startswith(p.rstrip("/") + "/") for p in unlisted)
 
     def inside_held(folder: Path, tree: dict) -> None:
         for entry in _listing(folder, budget):
@@ -585,7 +629,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     except _Incomplete:
         complete = False
     else:
-        complete = True
+        complete = not full[0]
     return HeldWalk(tuple(dict.fromkeys(found)), complete, tuple(dict.fromkeys(skipped)),
                     tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)), tuple(dict.fromkeys(filters)))
 
@@ -603,21 +647,42 @@ _SPLIT: tuple[tuple[tuple[str, ...], bool], ...] = tuple(
     (tuple(p.split("/")[:-1]), True) if p.endswith("/**") else (tuple(p.split("/")), False)
     for _, patterns in FAMILIES for p in patterns)
 
+#: Each pattern's first component, case-folded, as one regex (`_below`'s quick test).
+_FIRST_COMPONENT = re.compile("|".join(sorted({fnmatch.translate(fixed[0].casefold()) for fixed, _ in _SPLIT})))
+
+
+def _matcher(name: str):
+    """A test of one case-folded component against a pattern component: equality for a plain name, else its glob."""
+    name = name.casefold()
+    if not any(ch in name for ch in "*?["):
+        return name.__eq__
+    return lambda part, pattern=re.compile(fnmatch.translate(name)): pattern.match(part) is not None
+
+
+_SPLIT_MATCHERS = tuple(tuple(map(_matcher, fixed)) for fixed, _ in _SPLIT)
+
 
 def _below(parts: tuple[str, ...]) -> tuple[tuple[tuple[str, ...], bool], ...]:
     """#813 review 10: the held names at and below a path with components `parts`, by the patterns' own components,
     relative to it: `((), False)` is the path itself (a held file), `((), True)` the path and everything below it,
     `(("tasks.json",), False)` that name in it, `(("hooks",), True)` that folder and everything below it,
     `(("modules", "*", "config"), False)` a `*` component on the way. Empty: no held name at or below it.
-    For `.vscode` that is its four files; for `.git` its hooks, configs, worktrees' and modules' ones."""
+    For `.vscode` that is its four files; for `.git` its hooks, configs, worktrees' and modules' ones.
+    #813 review 11: every match needs a component of `parts` to match some pattern's first component, so a path with
+    none (a pnpm node_modules' links) is answered by one regex per component; the rest compares case-folded components
+    with each pattern's compiled ones (`_SPLIT_MATCHERS`), the same test as `fnmatchcase` on folded names."""
+    folded = tuple(part.casefold() for part in parts)
+    if not any(_FIRST_COMPONENT.match(part) for part in folded):
+        return ()
     out: list[tuple[tuple[str, ...], bool]] = []
-    for fixed, below in _SPLIT:
-        if below and any(_fits(parts[i:], (*fixed, "**")) for i in range(len(parts))):
+    n = len(folded)
+    for (fixed, below), matchers in zip(_SPLIT, _SPLIT_MATCHERS):
+        width = len(matchers)
+        if below and any(all(m(folded[i + j]) for j, m in enumerate(matchers)) for i in range(n - width + 1)):
             out.append(((), True))             # at or below a `**` folder: everything below the path is held
             continue
-        for k in range(1, min(len(fixed), len(parts)) + 1):     # the path is the pattern's k-th component
-            if all(fnmatch.fnmatchcase(part.casefold(), name.casefold())
-                   for part, name in zip(parts[-k:], fixed[:k])):
+        for k in range(1, min(width, n) + 1):     # the path is the pattern's k-th component
+            if all(m(part) for part, m in zip(folded[n - k:], matchers)):
                 out.append((fixed[k:], below))
     return tuple(dict.fromkeys(out))
 
@@ -644,7 +709,7 @@ def link_filters(target: Path, below: Iterable[tuple[tuple[str, ...], bool]]) ->
         fixed = tuple(itertools.takewhile(lambda part: "*" not in part, rest))
         wild = rest[len(fixed):]
         lexical = target.joinpath(*fixed)
-        anchor = Path(os.path.realpath(lexical))
+        anchor = _real_below(target, fixed)
         spellings = tuple(dict.fromkeys((anchor, lexical)))
         if not wild:
             out += [subpath(s) if everything else literal(s) for s in spellings]
@@ -657,6 +722,22 @@ def link_filters(target: Path, below: Iterable[tuple[tuple[str, ...], bool]]) ->
         if missing is not None:
             out.append(literal(missing))
     return tuple(dict.fromkeys(out))
+
+
+def _real_below(target: Path, fixed: tuple[str, ...]) -> Path:
+    """`realpath(target/fixed...)` for `target`, a real path already (#813 review 11: one `lstat` per component
+    instead of `realpath`'s walk from the root, which was much of a large walk's time). Only when a component is a link
+    does it take `realpath`; a missing one ends it, as `realpath` keeps the rest as written."""
+    path = target
+    for name in fixed:
+        path = path / name
+        try:
+            info = os.lstat(path)
+        except (FileNotFoundError, NotADirectoryError):
+            return target.joinpath(*fixed)
+        if stat.S_ISLNK(info.st_mode):
+            return Path(os.path.realpath(target.joinpath(*fixed)))
+    return path
 
 
 def _first_missing(path: Path) -> Path | None:

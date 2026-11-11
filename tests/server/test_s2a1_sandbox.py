@@ -14,6 +14,7 @@ import pytest
 from server.services import command_sandbox, task_service, terminal_exec
 from server.orchestrator.recovery_hints import SANDBOX_APPLE_EVENTS_HINT, hint_for
 from server.orchestrator import command_gate
+from tests.server.sbx.profile_files import with_profile_text
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt (sandbox-exec) is macOS-only")
@@ -344,7 +345,7 @@ async def test_an_outside_run_gets_the_minimal_profile_and_an_exempt_one_none(tm
         stdout = stderr = None
 
     async def fake_exec(*argv, **kwargs):
-        seen.append(argv)
+        seen.append(with_profile_text(argv))             # #813 review 11: the `-f` file, read while it exists
         raise RuntimeError("stop here")                  # the prefix is all this test needs
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(terminal_exec.asyncio, "create_subprocess_exec", fake_exec)

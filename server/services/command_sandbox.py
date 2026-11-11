@@ -535,16 +535,95 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     return text + "".join(after.text().splitlines(True)[2:])        # its rules, without a second header
 
 
+# ── the profile as a file (#813 review 11) ───────────────────────────────────
+#
+# sandbox-exec takes the profile as a file (`-f`), not as an argument (`-p`): a profile holding thousands of link
+# targets is past ARG_MAX (1 MiB with the environment). sandbox-exec reads the file when it starts, before anything
+# of the command runs. The file is made new (O_CREAT | O_EXCL | O_NOFOLLOW, 0600: a file or a link already at its
+# path fails the start, and is never followed) in `PROFILE_FOLDER` inside Arslan's data folder, which every preset
+# closes (commands, the outside floor, MCP servers; the folders above it held), so no sandboxed command, floored
+# command or MCP server can change it between its writing and its reading. The run's own temp, ⓪Plan's first
+# choice, is written by the run's other commands (a background one could rewrite a later command's profile before
+# sandbox-exec reads it), and an MCP server's own folders by that server. The caller removes the file when the
+# process has exited (or, for an MCP server, once it has answered), on every path (`remove_profile`).
+
+PROFILE_FOLDER = "sandbox-profiles"
+
+
+def profile_folder() -> Path:
+    """Where the profile files are written: a 0700 folder of ours in Arslan's data folder (`_private_folder`)."""
+    from server import config
+    folder = _real(config.data_dir()) / PROFILE_FOLDER
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    _private_folder(folder)
+    return folder
+
+
+def _profile_name() -> str:
+    import secrets
+    return f"{os.getpid()}-{secrets.token_hex(12)}.sb"
+
+
+def write_profile(text: str) -> Path:
+    """A new file holding `text`, for `sandbox-exec -f`. Raises (FileExistsError for anything already at its path, a
+    link included) without following it; on a failed write the file is removed."""
+    path = profile_folder() / _profile_name()
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(text.encode())
+    except BaseException:
+        remove_profile(path)
+        raise
+    return path
+
+
+def remove_profile(path) -> None:
+    """Remove a profile file; one already gone is fine."""
+    if path is not None:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+
+
+def profile_path(argv) -> Path | None:
+    """The profile file a sandbox-exec argv (a prefix, or an MCP server's args) carries with `-f`, or None."""
+    argv = list(argv or ())
+    if argv[:1] == [_SANDBOX_EXEC]:
+        argv = argv[1:]
+    return Path(argv[1]) if len(argv) >= 2 and argv[0] == "-f" else None
+
+
+async def in_thread(build, *args, profile_of=None, **kwargs):
+    """`build(*args, **kwargs)` (a wrapper, or `capability_sandbox.wrap`) in a thread, off the event loop. When the
+    caller is cancelled while it runs, the thread still finishes, and the profile file it wrote is removed then (the
+    cancel path). `profile_of` finds that file in the result (default: `profile_path`, for a prefix)."""
+    import asyncio
+    profile_of = profile_path if profile_of is None else profile_of
+    future = asyncio.ensure_future(asyncio.to_thread(build, *args, **kwargs))
+    try:
+        return await asyncio.shield(future)
+    except asyncio.CancelledError:
+        def drop(done) -> None:
+            if not done.cancelled() and done.exception() is None:
+                remove_profile(profile_of(done.result()))
+        future.add_done_callback(drop)
+        raise
+
+
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
             readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
             trust_service: bool = False) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
-    is missing or cannot start (then the caller runs as before and says so)."""
+    is missing or cannot start (then the caller runs as before and says so). #813 review 11: `-f` and a profile file
+    (`write_profile`) the caller removes (`remove_profile(profile_path(prefix))`) once the process has exited.
+    Raises `run_later.TooManyLinks` past the link cap: the command doesn't start."""
     if not available():
         return None
-    return [_SANDBOX_EXEC, "-p", commands_profile(workspace, temp=temp, offline=offline, closed=closed,
-                                                  readable=readable, copies=copies, proxy_port=proxy_port,
-                                                  trust_service=trust_service)]
+    return [_SANDBOX_EXEC, "-f", str(write_profile(commands_profile(
+        workspace, temp=temp, offline=offline, closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
+        trust_service=trust_service)))]
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None,
@@ -595,11 +674,12 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
 def outside_wrapper(*, offline: bool = False, copies: list[Path] = (),
                     run_later_in: Path | None = None, closed: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
-    command outside the sandbox runs as before)."""
+    command outside the sandbox runs as before). As `wrapper`: `-f` and a file the caller removes; `TooManyLinks`
+    past the link cap when it holds the run-later files."""
     if not available():
         return None
-    return ["/usr/bin/sandbox-exec", "-p", minimal_profile(offline=offline, copies=copies,
-                                                           run_later_in=run_later_in, closed=closed)]
+    return [_SANDBOX_EXEC, "-f", str(write_profile(minimal_profile(offline=offline, copies=copies,
+                                                                   run_later_in=run_later_in, closed=closed)))]
 
 
 def available() -> bool:
@@ -612,12 +692,16 @@ def available() -> bool:
     if _available is None:
         ok = False
         if sys.platform == "darwin" and Path(_SANDBOX_EXEC).exists():
+            path = None
             try:
                 with tempfile.TemporaryDirectory(prefix="arslan-sandbox-probe-") as scratch:
-                    ok = subprocess.run([_SANDBOX_EXEC, "-p", commands_profile(Path(scratch)), "/usr/bin/true"],
+                    path = write_profile(commands_profile(Path(scratch)))     # as commands start (`-f`, review 11)
+                    ok = subprocess.run([_SANDBOX_EXEC, "-f", str(path), "/usr/bin/true"],
                                         capture_output=True, timeout=10).returncode == 0
             except (OSError, subprocess.SubprocessError):
                 ok = False
+            finally:
+                remove_profile(path)
         _available = ok
     return _available
 
@@ -741,6 +825,16 @@ def git_note() -> str:
             "an upstream, remote or setting may not have been saved, and a tracked file may have kept its old "
             "content, leaving the work tree partly updated. Check `git status`, tell the user which files or settings "
             "weren't updated, and don't commit over them (a `commit -a` now would undo that change).")
+
+
+def links_note(workspace: Path) -> str:
+    """#813 review 11: the stop note when the walk saw more links at held names than `run_later.WALK_LINKS`: no
+    profile was built, so the command didn't start."""
+    return (f"The sandbox didn't start this command: the working folder ({workspace}) has more than "
+            f"{run_later.WALK_LINKS:,} links at the names of files that make something run later (git hooks and "
+            "config, editor tasks, agent and package settings), too many for Arslan to protect, so no command starts "
+            "in the sandbox there. Nothing ran. Tell the user: removing those links, or working in a smaller folder, "
+            "lets commands run again.")
 
 
 def refused_outside(result: dict) -> bool:

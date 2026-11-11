@@ -158,7 +158,8 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     """(command, args, env, cwd) to start `command args` inside the profile, in its own home
     (a cwd outside the profile makes the shell complain it cannot read where it starts).
     Raises OutsideLink (SBX-5) when its folder holds a hard link to a file outside it, or can't be scanned all
-    through (SBX-5a); the caller doesn't start it."""
+    through (SBX-5a), and `run_later.TooManyLinks` past the link cap (#813 review 11); the caller doesn't start it.
+    The args start with `-f <profile file>`, which the caller removes."""
     root = Path(sandbox["root"])
     for sub in ("home", "tmp"):
         (root / sub).mkdir(parents=True, exist_ok=True)
@@ -191,4 +192,9 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
                                            "http_proxy", "https_proxy", "all_proxy")})
         env.update({"NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
                     "NODE_USE_ENV_PROXY": "1"})
-    return SANDBOX_EXEC, ["-p", text, command, *args], env, str(root / "home")
+    # #813 review 11: the profile as a file (`-f`), written last, so nothing above can fail after it exists. Not in
+    # this server's own folders (it writes those): in Arslan's data folder, closed to it (`command_sandbox.
+    # write_profile`). The caller removes it (`remove_profile(profile_path(args))`) once the server has answered, or
+    # when the start fails or the session closes.
+    path = command_sandbox.write_profile(text)
+    return SANDBOX_EXEC, ["-f", str(path), command, *args], env, str(root / "home")
