@@ -18,6 +18,8 @@ import secrets
 import stat
 
 import logging
+from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 from server.db import session as db_session
@@ -79,9 +81,33 @@ def _refusal(exc: Exception) -> dict:
     return {"ok": False, "error": str(exc)}
 
 
+@dataclass
+class _RunLaterToken:
+    path: Path | None
+
+
+#: HR-2a: the path the user's click on this call's run-later card named, set by the gate
+#: (`tool_gates.workspace_write`) for the executor of the same call. One object per call, taken once:
+#: a task the executor runs in copies the context, so taking it clears it for every copy.
+_RUN_LATER: ContextVar[_RunLaterToken | None] = ContextVar("run_later_token", default=None)
+
+
+def approve_run_later(path: Path | None) -> None:
+    """The gate: this call's run-later card was clicked for `path` (None: no click for this call)."""
+    _RUN_LATER.set(_RunLaterToken(path))
+
+
+def _take_run_later() -> Path | None:
+    token = _RUN_LATER.get()
+    if token is None:
+        return None
+    path, token.path = token.path, None
+    return path
+
+
 async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool = False,
-                    key: str = "path",
-                    default: str = ".") -> tuple[Path | None, Path | None, dict | None]:
+                    key: str = "path", default: str = ".",
+                    run_later_ok: Path | None = None) -> tuple[Path | None, Path | None, dict | None]:
     """(root, path, error) — the shared prologue every tool needs."""
     root = await _workspace_root()
     if root is None:
@@ -89,7 +115,7 @@ async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool =
                             "error": "no workspace is configured — set one in Settings first"}
     try:
         return root, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
-                                          make_parents=make_parents), None
+                                          make_parents=make_parents, run_later_ok=run_later_ok), None
     except (PathEscape, SecretFile) as exc:
         return root, None, _refusal(exc)
 
@@ -100,7 +126,7 @@ async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool =
 _NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
 
 
-def _write_inside(root: Path, path: Path, text: str) -> None:
+def _write_inside(root: Path, path: Path, text: str, run_later_ok: Path | None = None) -> None:
     """0.1.62 F4b (R1): write `text` to `path` without following a link out of the workspace.
 
     The path is resolved again now that its folders exist (a segment swapped for a link since
@@ -108,8 +134,10 @@ def _write_inside(root: Path, path: Path, text: str) -> None:
     where there is one, else O_NOFOLLOW), and os.replace swaps the directory entry: a link
     there is replaced, not followed, and a hard link's other name keeps its old content. A new
     file is 0o666 under the umask (never executable); an overwritten one keeps its mode.
+    HR-2a: a file that runs later is written only if it still resolves to `run_later_ok`, the path
+    this call's card named: a link swapped since the click fails closed.
     Raises PathEscape, SecretFile or OSError; on failure the old file is untouched."""
-    resolve_in_workspace(str(path), root, for_write=True)
+    resolve_in_workspace(str(path), root, for_write=True, run_later_ok=run_later_ok)
     try:
         st = os.stat(path, follow_symlinks=False)
         keep = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
@@ -302,7 +330,8 @@ class WriteFileExecutor:
         content = args.get("content")
         if not isinstance(content, str):
             return {"ok": False, "error": "content must be a string"}
-        root, path, err = await _resolved(args, for_write=True, make_parents=True)
+        approved = _take_run_later()
+        root, path, err = await _resolved(args, for_write=True, make_parents=True, run_later_ok=approved)
         if err:
             return err
         # 0.1.63 S3: the run's first change saves the folder first, before any folder is made.
@@ -314,7 +343,7 @@ class WriteFileExecutor:
             return {"ok": False, "error": f"cannot create folder {_rel(path.parent, root)}: {exc}"}
         artifact = _snapshot_write(root, path, content)
         try:
-            _write_inside(root, path, content)
+            _write_inside(root, path, content, approved)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:
@@ -339,6 +368,7 @@ class EditFileExecutor:
             return {"ok": False, "error": "'old_string' must be a non-empty string"}
         if not isinstance(new, str):
             return {"ok": False, "error": "'new_string' must be a string"}
+        approved = _take_run_later()
         root, path, err = await _resolved(args)
         if err:
             return err
@@ -360,7 +390,7 @@ class EditFileExecutor:
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         artifact = _snapshot_write(root, path, updated)
         try:
-            _write_inside(root, path, updated)
+            _write_inside(root, path, updated, approved)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:

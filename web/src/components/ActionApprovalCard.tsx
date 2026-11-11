@@ -5,7 +5,9 @@ import { AskCard, CodeBox, type AskQueuePosition } from "./kit";
 import { CONVERSATION_FIRST_KINDS, DeclineNote, RED_KINDS, ScopeChoice, lineIcon, offeredScopes, scopeToSend, scriptRiskLine, visibleScopes } from "./kit/askParts";
 
 const ICONS: Record<string, typeof Globe> = { browser_site: Globe, mac_shortcut: Zap, mac_script: Terminal,
-  desktop_app: AppWindow, desktop_risky: TriangleAlert };
+  desktop_app: AppWindow, desktop_risky: TriangleAlert,
+  // HR-2a: a file tool's write into a file another program runs or loads later (once only; the path is the detail).
+  run_later: TriangleAlert };
 /** The Hands kinds whose card line says what is granted apart from for how long (`hands.grant.<kind>`,
  *  cut from `hands.scope.<kind>`). A Shortcut's line is only its scope, so it has none. */
 const GRANTS = new Set(["browser_site", "mac_script", "desktop_app", "desktop_risky"]);

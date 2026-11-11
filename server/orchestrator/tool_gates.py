@@ -6,6 +6,7 @@ gate answers with the refusal to record (enrolling, with its card's answer), or 
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from server.orchestrator.turn_state import ToolTurn
 
@@ -71,9 +72,47 @@ async def file_arguments(tool_key, args, turn: ToolTurn) -> dict | None:
     return None
 
 
+async def _held_for_later(args) -> Path | None:
+    """HR-2a: the resolved path when this write is into a file that runs later, else None (an ordinary write, or
+    one the executor refuses on its own)."""
+    from server.services import workspace_paths
+    root = await _workspace_root_or_none()
+    if root is None:
+        return None
+    try:
+        workspace_paths.resolve_in_workspace(args.get("path"), root, for_write=True, make_parents=True)
+    except workspace_paths.RunLater as held:
+        return held.path
+    except (workspace_paths.PathEscape, workspace_paths.SecretFile):
+        return None
+    return None
+
+
+async def _run_later_card(path: Path, conversation_id: str | None) -> dict | None:
+    """HR-2a: a once-only `run_later` card for this one write, in every folder (Arslan's own too) and whatever grant
+    exists: no grant or rule answers the kind. A yes gives this call's executor the path (`approve_run_later`), which
+    it checks again as it writes. With nobody to ask, `decide` refuses and lists it in the Inbox."""
+    from server.registry import file_tools
+    from server.services import background_jobs, permissions
+    decision = await permissions.decide(permissions.Request(
+        kind="run_later", target=str(path), detail=str(path), once_only=True,
+        title=f"Write {path.name}? Another program runs it or loads it as settings later."),
+        permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
+    if not decision.allowed:
+        return {"ok": False, "error": _declined(f"the user declined writing {path.name}", f"writing {path.name}")}
+    file_tools.approve_run_later(path)
+    return None
+
+
 async def workspace_write(tool_key, args, turn: ToolTurn) -> dict | None:
-    """write_file and edit_file: the write card, unless the workspace is Arslan's own folder."""
+    """write_file and edit_file: the run-later card for a file that runs later (HR-2a), which stands in for the
+    folder's card on this call; otherwise the write card, unless the workspace is Arslan's own folder."""
+    from server.registry import file_tools
+    file_tools.approve_run_later(None)
     confirm_workspace_write, conversation_id = turn.confirm_workspace_write, turn.conversation_id
+    held = await _held_for_later(args)
+    if held is not None:
+        return await _run_later_card(held, conversation_id)
     # T1 workspace writes (P1b): ONE grant per session, not per file. The unit
     # differs from run_command deliberately — a user approving "Arslan may write
     # in my workspace" is answering a question about a capability, not about a

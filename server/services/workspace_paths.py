@@ -39,6 +39,16 @@ class SecretFile(Exception):
     """The path names a credential-shaped file; refused by policy."""
 
 
+class RunLater(PathEscape):
+    """HR-2a: the path is a file that makes something run later (`run_later`): a write needs the user's click on
+    this call's own card (`tool_gates.workspace_write`). A PathEscape, so every caller that refuses one refuses
+    this too. `path` is the resolved path the card names."""
+
+    def __init__(self, user_path, path: Path):
+        super().__init__(f"refusing to write a file that runs later without your OK on its own card: {user_path}")
+        self.path = path
+
+
 # Names that carry credentials often enough that reading one by accident is
 # worse than the friction of refusing. Matched on the FILENAME, case-folded.
 _SECRET_GLOBS = (
@@ -53,13 +63,15 @@ def is_secret_name(name: str) -> bool:
 
 
 def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False,
-                         make_parents: bool = False) -> Path:
+                         make_parents: bool = False, run_later_ok: Path | None = None) -> Path:
     """Absolute, symlink-resolved path inside `ws_root`, or raise.
 
     `for_write=True` judges by the parent directory so a not-yet-existing file
     is allowed; the parent must itself exist and resolve inside — unless
     `make_parents`, where missing folders are allowed (the caller creates them)
     and the deepest existing ancestor must resolve inside (rule 3).
+    A write into a file that runs later raises RunLater unless it resolves to `run_later_ok`, the path this
+    call's card was clicked for (HR-2a).
     """
     if ws_root is None:
         raise PathEscape("no workspace is configured")
@@ -105,7 +117,27 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
     if for_write:
         _refuse_cap6b(resolved, root, user_path)
+        _refuse_run_later(resolved, root, user_path, run_later_ok)
     return resolved
+
+
+def _refuse_run_later(path: Path, root: Path, user_path, approved: Path | None) -> None:
+    """HR-2a: a write into a file that makes something run later (HR-1's list, `run_later.matches`, and the
+    repository's `core.hooksPath` folder) needs the user's click on this call's own card: refused unless `path`
+    is the one that card named (`approved`). Judged as `_refuse_cap6b` judges, on the resolved path: names folded
+    (NFC here; `matches` folds case), and the hooks folder by identity (`_within`), whatever its spelling. The work
+    folder's real path is `root`, so a dependency folder is exempt only below it (`run_later.exempts`). A config
+    that can't be read is refused, as the kernel's profile is never built then."""
+    from server.services import run_later
+    try:
+        hooks = run_later.hooks_path(path.parent)
+    except OSError as exc:
+        raise PathEscape(f"refusing to write: can't read this repository's git config ({exc.strerror or exc})") \
+            from None
+    held = (run_later.matches(Path(unicodedata.normalize("NFC", str(path))), root=root)
+            or (hooks is not None and _within(path, hooks)))
+    if held and path != approved:
+        raise RunLater(user_path, path)
 
 
 def _refuse_cap6b(path: Path, root: Path, user_path) -> None:

@@ -57,7 +57,8 @@ def test_ids_are_unique_and_every_row_names_a_layer():
     from server.services import run_later
     later = {row.id for row in hard_rules.RUN_LATER}
     assert {"run-later/" + name for name, _ in run_later.FAMILIES} <= later
-    assert {row.layer for row in hard_rules.RUN_LATER} == {"kernel"}
+    assert {row.layer for row in hard_rules.RUN_LATER if not row.id.startswith("run-later/file-tools")
+            and row.id != "run-later/write-token"} == {"kernel"}         # HR-2a's file-tool rows hold in-process
 
 
 def _row_files() -> tuple[str, ...]:

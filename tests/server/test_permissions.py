@@ -258,7 +258,7 @@ class _OpenSessions:
 
 # The plan's scope table (§A4): which choices a card offers for which kind. Task 5's API refuses to
 # create a rule for any kind that never offers "Always".
-ONCE_ONLY = ["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover"]
+ONCE_ONLY = ["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover", "run_later"]
 
 
 @pytest.mark.parametrize("kind", ONCE_ONLY)
@@ -820,7 +820,8 @@ async def test_a_decision_that_raises_leaves_no_stale_outcome(monkeypatch, call)
 SPEC_KINDS = ["command", "folder", "outside", "send", "destructive", "system", "screen", "opaque",
               "app", "app_risky", "money", "takeover", "shortcut", "site", "mcp_tool", "other_agent",
               "capability", "schedule", "remote", "workspace_write",
-              "network"]                    # S2a-1: a command reaching the network after outside content
+              "network",                    # S2a-1: a command reaching the network after outside content
+              "run_later"]                  # HR-2a: a file tool's write into a file that runs later
 #: Kinds a caller could mistype (final review probe P1).
 TYPOS = ["payment", "app-risky", "Money"]
 
