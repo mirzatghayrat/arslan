@@ -222,7 +222,7 @@ def _writes_run_later(request) -> bool:
     try:
         held = (isinstance(target, str) and Path(target).is_absolute()
                 and workspace_paths.held_for_later(detail, Path(target)) is not None)
-    except (workspace_paths.RunLaterUnknown, OSError, RuntimeError):
+    except (workspace_paths.RunLaterUnknown, OSError, RuntimeError, ValueError):     # ValueError: a NUL in the path
         return True
     return held or run_later.matches(detail)
 

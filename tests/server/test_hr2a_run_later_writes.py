@@ -23,8 +23,8 @@ from server.db.models import Setting
 from server.orchestrator import tool_loop
 from server.registry import file_tools
 from server.services import (approvals, command_confirm, hard_rules, permission_store, permissions,
-                             run_later)
-from server.services.workspace_paths import PathEscape, RunLater, resolve_in_workspace
+                             run_later, workspace_paths)
+from server.services.workspace_paths import PathEscape, RunLater, RunLaterUnknown, resolve_in_workspace
 from tests.server.sbx.test_hr1_run_later_link_targets import LAYOUTS as HR1_LAYOUTS
 from tests.server.sbx.test_hr1_run_later_link_targets import _lay_out as hr1_lay_out
 from tests.server.test_s64_0_outside_content_gaps import memory  # noqa: F401  (the fixture)
@@ -256,6 +256,74 @@ def test_the_work_folders_hooks_path_inside_a_nested_repository_is_held(ws):
     with pytest.raises(RunLater):
         resolve_in_workspace("tools/githooks/pre-commit", ws, for_write=True)
     assert resolve_in_workspace("tools/build.sh", ws, for_write=True) == ws / "tools" / "build.sh"
+
+
+def test_the_nearest_repositorys_own_hooks_path_is_held_when_the_work_folder_has_none(ws):
+    """The other half: the work folder is no repository (`hooks_path(root)` is None), and a repository inside it sets
+    its own `core.hooksPath = hk`. git in that repository runs `inner/hk/pre-commit`: held, by the nearest
+    repository above the file."""
+    (ws / "inner" / ".git").mkdir(parents=True)
+    (ws / "inner" / ".git" / "config").write_text("[core]\n\thooksPath = hk\n")
+    (ws / "inner" / "hk").mkdir()
+    assert run_later.hooks_path(ws) is None and run_later.hooks_path(ws / "inner" / "hk") == ws / "inner" / "hk"
+    with pytest.raises(RunLater) as held:
+        resolve_in_workspace("inner/hk/pre-commit", ws, for_write=True)
+    assert held.value.path == ws / "inner" / "hk" / "pre-commit"
+    assert resolve_in_workspace("inner/build.sh", ws, for_write=True) == ws / "inner" / "build.sh"
+
+
+def test_a_walk_that_couldnt_finish_takes_the_dependency_exemption_away(ws, monkeypatch):
+    """HR-1's walk stopped at its entry cap (`complete` False), with no alias, link or skipped folder: the kernel's
+    profile then exempts no dependency folder, so a dependency's copy is held as well."""
+    (ws / "node_modules" / "pkg" / ".vscode").mkdir(parents=True)
+    where = "node_modules/pkg/.vscode/tasks.json"
+    assert resolve_in_workspace(where, ws, for_write=True) == ws / where
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", 0)
+    walk = run_later.held_folders([ws])
+    assert (walk.complete, walk.aliases, walk.skipped, walk.links) == (False, (), (), ())
+    with pytest.raises(RunLater):
+        resolve_in_workspace(where, ws, for_write=True)
+
+
+def test_a_write_at_a_held_links_target_that_isnt_there_yet_is_held_by_name(ws):
+    """`.vscode -> vsc` with no `vsc` yet: the target has no identity, so the write's path is mapped back through the
+    link by name (`_rest_below`'s by-name branch). `vsc/tasks.json` is `.vscode/tasks.json` to the editor: held. No
+    link is on the write's own way, so only that mapping holds it."""
+    (ws / ".vscode").symlink_to(ws / "vsc")
+    assert not (ws / "vsc").exists()
+    assert run_later.held_folders([ws]).links == ((ws / ".vscode", ws / "vsc"),)
+    with pytest.raises(RunLater) as held:
+        resolve_in_workspace("vsc/tasks.json", ws, for_write=True, make_parents=True)
+    assert held.value.path == ws / "vsc" / "tasks.json"
+    assert resolve_in_workspace("vscx/tasks.json", ws, for_write=True, make_parents=True) == ws / "vscx" / "tasks.json"
+
+
+def test_too_many_links_at_held_names_refuses_every_write_as_unknown(ws, monkeypatch):
+    """Past `WALK_LINKS` HR-1's walk raises TooManyLinks and no profile is built: the file tools refuse every write
+    there as RunLaterUnknown (a PathEscape the gate refuses before any card), an ordinary file's too."""
+    _folder_link(ws, ".vscode", "vsc")
+    assert resolve_in_workspace("notes.md", ws, for_write=True) == ws / "notes.md"
+    monkeypatch.setattr(run_later, "WALK_LINKS", 0)
+    with pytest.raises(RunLaterUnknown, match="links at names"):
+        resolve_in_workspace("notes.md", ws, for_write=True)
+    with pytest.raises(RunLaterUnknown):
+        workspace_paths.held_for_later("notes.md", ws)
+
+
+def test_a_write_in_a_private_folder_the_walk_skipped_has_no_dependency_exemption(ws, monkeypatch):
+    """HR-1's walk never lists a private folder (a closed one, a TCC home folder) and holds what is in it by name,
+    with no dependency exemption: a dependency's copy inside it is held. Outside it the same copy is exempt (the walk
+    still finished)."""
+    for top in ("private", "open"):
+        (ws / top / "node_modules" / "pkg" / ".vscode").mkdir(parents=True)
+    real_private = run_later.private_folders
+    monkeypatch.setattr(run_later, "private_folders", lambda closed=(): [*real_private(closed), ws / "private"])
+    walk = run_later.held_folders([ws])
+    assert walk.skipped == (ws / "private",) and walk.complete and walk.aliases == ()
+    with pytest.raises(RunLater):
+        resolve_in_workspace("private/node_modules/pkg/.vscode/tasks.json", ws, for_write=True)
+    assert resolve_in_workspace("open/node_modules/pkg/.vscode/tasks.json", ws, for_write=True) \
+        == ws / "open" / "node_modules" / "pkg" / ".vscode" / "tasks.json"
 
 
 def test_ordinary_links_instruction_files_through_links_and_a_real_dependency_copy_are_not_held(ws):
@@ -506,6 +574,25 @@ async def test_a_folder_the_check_cant_read_is_a_tool_error_not_an_exception(db)
     finally:
         os.chmod(ws / "locked", 0o755)
     assert out["ok"] is False and "x.txt" in out["error"] and not (ws / "locked" / "sub" / "x.txt").exists()
+
+
+async def test_a_nul_byte_in_the_path_is_a_tool_error_not_an_exception(db):
+    """The #851 delta review's P2: a NUL in the path raised ValueError out of the gate's check. Now a tool error,
+    with no card and nothing written; hard_rules takes such a request as the user's to answer. The NUL is built in
+    code, never written into this file."""
+    ws = await _own_folder()
+    before = sorted(os.listdir(ws))
+    nul = chr(0)
+
+    async def no_card(frame):
+        raise AssertionError(f"no card: {frame}")
+    for where in (f"notes{nul}.md", f".vscode/tasks{nul}.json", f"d{nul}/x.md"):
+        with permissions.asking_with(no_card):
+            out = await _dispatch("write_file", {"path": where, "content": "x"})
+        assert out["ok"] is False and "cannot check" in out["error"] and "null byte" in out["error"], out
+        assert hard_rules.never_auto(permissions.Request(kind="workspace_write", target=str(ws), title="t",
+                                                         detail=where))
+    assert sorted(os.listdir(ws)) == before
 
 
 async def test_two_identical_run_later_asks_at_once_are_two_cards(db):

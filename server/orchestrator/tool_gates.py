@@ -111,9 +111,10 @@ async def workspace_write(tool_key, args, turn: ToolTurn) -> dict | None:
     except workspace_paths.RunLaterUnknown as exc:
         # HR-2a review 4: refused here, before the folder's card, which would ask for a write that is refused anyway.
         return {"ok": False, "error": str(exc)}
-    except (OSError, RuntimeError) as exc:
-        # HR-2a review (⓪Plan 4): a path the check can't read (a folder at mode 000, a link loop) is a tool error, as
-        # the executor reported it on main, never an exception out of the tool call; closed: no card, no write.
+    except (OSError, RuntimeError, ValueError) as exc:
+        # HR-2a review (⓪Plan 4): a path the check can't read (a folder at mode 000, a link loop, a NUL byte in the
+        # path: ValueError) is a tool error, as the executor reported it on main, never an exception out of the tool
+        # call; closed: no card, no write.
         return {"ok": False, "error": f"cannot check {args.get('path')}: {exc}"}
     if held is not None:
         return await _run_later_card(held, conversation_id)
