@@ -29,6 +29,8 @@ _REAL = {key: executors.EXECUTORS[key] for key in ("write_file", "edit_file", "r
 _SEATBELT = command_sandbox.available
 _MAC_ONLY = pytest.mark.skipif(sys.platform != "darwin", reason="seatbelt is macOS's")
 _LOG: list = []
+#: Seconds a whole job may take: several steps, each with its card, on a loaded machine (the full suite, -n auto).
+_SLOW = 60.0
 
 
 class _Recorded:
@@ -73,7 +75,7 @@ async def _held(model, brief=OUTLINE):
     """Start a sub-session whose first model request waits; its id once that request is in."""
     model.hold[brief] = asyncio.Event()
     await _start(brief)
-    await _wait(lambda: model.requests[brief])
+    await _wait(lambda: model.requests[brief], _SLOW)
     [job] = _children()
     return job.conversation_id
 
@@ -91,7 +93,7 @@ async def test_a_childs_file_tools_write_only_in_its_own_folder_and_its_card_nam
         final="outline ready")}, summary=_steps(final="summed up"))
     monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
     await _start(OUTLINE)
-    await _wait(_settled)
+    await _wait(_settled, _SLOW)
     [job] = _children()
     folder = await _folder(ws, job.conversation_id)
     assert (folder / "outline.md").read_text() == "# Outline v2"
@@ -123,7 +125,7 @@ async def test_the_commander_still_writes_anywhere_also_in_a_childs_folder(ws, m
                                   final="summed up"))
     monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
     await _start(OUTLINE)
-    await _wait(_settled)
+    await _wait(_settled, _SLOW)
     [job] = _children()
     folder = await _folder(ws, job.conversation_id)
     assert (folder / "outline.md").read_text() == "# Outline"
@@ -166,7 +168,7 @@ async def test_a_childs_outside_grant_or_the_sandbox_switch_doesnt_let_its_comma
     if lever == "outside grant":
         await _grant_outside(kid, ROOT)
     model.hold[OUTLINE].set()
-    await _wait(_settled)
+    await _wait(_settled, _SLOW)
     folder = await _folder(ws, kid)
     child, commander = ran
     assert (child["cwd"], child["sandbox"], child["unwrapped"]) == (folder, True, False)
@@ -189,7 +191,7 @@ async def test_under_the_real_seatbelt_a_childs_command_writes_only_in_its_folde
     kid = await _held(model)
     await _grant_outside(kid)
     model.hold[OUTLINE].set()
-    await _wait(_settled)
+    await _wait(_settled, _SLOW)
     folder = await _folder(ws, kid)
     [result] = _results("run_command")
     assert result["sandbox"] == "workspace" and result["cwd"] == str(folder)
@@ -216,7 +218,7 @@ async def test_a_childs_folder_swapped_for_a_link_out_is_refused_and_nothing_lan
     os.rmdir(folder)
     os.symlink(out, folder)
     model.hold[OUTLINE].set()
-    await _wait(_settled)
+    await _wait(_settled, _SLOW)
     assert os.listdir(out) == []
     # With no folder to write in, the step's tools no longer offer write_file (`tool.read_offer`), and the command is
     # refused by its executor.
