@@ -653,19 +653,45 @@ def test_past_the_walks_cap_the_held_folders_are_held_by_name(sbx, monkeypatch):
 @pytest.mark.parametrize("sbx", ["commands"], indirect=True)
 def test_two_thousand_repositories_build_fast_fall_back_by_name_and_a_command_still_starts(sbx):
     """#813 review 7: uncapped, 2,000 small repositories took 23 s to build and the profile was past ARG_MAX, so no
-    command could start. With the held-folder cap the walk and build stay fast, the profile holds them by name, a
-    command starts, a hook write is refused, and a repository past the cap keeps its `.git` held by name."""
+    command could start. The build is linear in the held folders (timed against 200 repositories in the same test, a
+    ratio rather than a wall-clock bound, which a loaded machine broke: ⓪Plan, HR-1b review delta 2), the held-folder
+    cap bounds the profile, the profile holds them by name, a command starts, a hook write is refused, and a repository
+    past the cap keeps its `.git` held by name."""
     import time
     from server.services import run_later
     fixtures = sbx.work / "fixtures"
-    for i in range(2000):
-        for sub in (".git/hooks", ".vscode"):
-            (fixtures / f"r{i:04}" / sub).mkdir(parents=True)
-    started = time.perf_counter()
+
+    def make(upto: int, start: int = 0) -> None:
+        for i in range(start, upto):
+            for sub in (".git/hooks", ".vscode"):
+                (fixtures / f"r{i:04}" / sub).mkdir(parents=True)
+
+    def build_time(**caps) -> float:
+        """The best of three walks and builds (the least disturbed by the machine's load), with `caps` applied."""
+        with pytest.MonkeyPatch.context() as patched:
+            for name, value in caps.items():
+                patched.setattr(run_later, name, value)
+            best = float("inf")
+            for _ in range(3):
+                started = time.perf_counter()
+                sbx.profile()
+                best = min(best, time.perf_counter() - started)
+        return best
+
+    # Linear, with the cap lifted so every held folder is built: ten times the repositories, at most 15 times the
+    # time (a quadratic build, as before review 7, is about a hundred times).
+    uncapped = dict(WALK_HELD=10**6, WALK_HELD_BYTES=1 << 40)
+    make(200)
+    small = build_time(**uncapped)
+    make(2000, start=200)
+    large = build_time(**uncapped)
+    print(f"\nHR-1 review 7: uncapped walk + build, 200 repositories {small:.3f} s, 2,000 {large:.3f} s "
+          f"({large / small:.1f}x)")
+    assert large / small < 15
     text = sbx.profile()
-    took = time.perf_counter() - started
-    print(f"\nHR-1 review 7: 2,000 repositories, walk + build {took:.3f} s, profile {len(text.encode())} bytes")
-    assert took < 1.0
+    print(f"HR-1 review 7: capped profile for 2,000 repositories, {len(text.encode())} bytes")
+    # The cap bounds the profile whatever the count: the held literals stay within WALK_HELD_BYTES over the base.
+    assert len(text.encode()) < run_later.WALK_HELD_BYTES + 64 * 1024
     # #813 review 9: an incomplete walk can't vouch for no alias, so the by-name hold has no dependency exemption.
     assert f"(deny file-write* {' '.join(run_later.folder_filters([sbx.work], aliased=True))})" in text.splitlines()
     assert command_sandbox.too_large_to_map(sbx.work)

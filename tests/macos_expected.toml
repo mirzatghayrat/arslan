@@ -89,10 +89,15 @@ xfail = 0
 # pre-commit.sample`) is refused through, and turns the sample exemption off for the run; with no link the samples are
 # written, with and without the grant (4 cases); making such a link, or renaming one onto the name, is refused (1
 # case). The product path (the profile file, the snapshot and the put-back): init and user.name under the grant,
-# hooksPath put back, init refused without it, no profile file left (2 cases).
+# hooksPath put back, init refused without it, no profile file left (2 cases). Review delta 2: a child left running
+# in the command's group never writes, and one in its own session is put back by the next granted command (2 cases);
+# no flag, ACL or hard link in either direction on a config under the grant (1 case); a flag on a submodule's folder
+# doesn't keep the key (1 case); a config with a second name runs held with a note (1 case); on an aliased profile a
+# config under node_modules stays held under the grant (1 case); a hook hard-linked to its sample isn't written
+# through it, with and without the grant (2 cases).
 ["server/sbx/test_hr1b_git_config_kernel.py"]
-markers = 7
-cases = 12
+markers = 13
+cases = 20
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a

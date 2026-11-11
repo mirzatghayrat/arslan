@@ -231,14 +231,23 @@ def test_migration_0092_deletes_every_dead_grant(tmp_path):
         assert _grant_rows(conn) == []
 
 
+#: Kinds added to `permissions.KINDS` after 0092, each named here when it is added: 0092 runs once, before any row of
+#: them can exist, so its frozen copy (unchanged) reads them as dead, whatever today's rule says.
+LATER_KINDS = frozenset({"git_config"})        # HR-1b (v0.1.64)
+
+
 def test_the_migrations_frozen_rule_agrees_with_todays_grant_is_live():
     """0092 carries a frozen copy of today's rule (it must not change history when the app's rule changes). A change
-    to `permissions.grant_is_live` fails here, loudly: then decide whether 0092's copy is what history was."""
+    to `permissions.grant_is_live` fails here, loudly: then decide whether 0092's copy is what history was. A kind added
+    later is named in LATER_KINDS instead, and the frozen copy keeps calling it dead."""
     from server.db.migrations.versions import _0092_remove_legacy_command_rules as m0092
-    kinds = sorted(permissions.KINDS | {"legacy_rule", "nonsense", ""})
+    assert LATER_KINDS <= permissions.KINDS
+    kinds = sorted((permissions.KINDS - LATER_KINDS) | {"legacy_rule", "nonsense", ""})
     for kind in kinds:
         for target in TARGET_FORMS:
             assert m0092._grant_is_live(kind, target) == permissions.grant_is_live(kind, target), (kind, target)
+    for kind in sorted(LATER_KINDS):
+        assert not any(m0092._grant_is_live(kind, target) for target in TARGET_FORMS), kind
     for _, _, kind, target in LIVE_GRANTS:
         assert permissions.grant_is_live(kind, target), (kind, target)
     for _, _, kind, target in DEAD_GRANTS:

@@ -526,6 +526,10 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # HR-1b: under the git_config grant the repository config names are left out; at a link's target they stay held.
     for filters in run_later.kernel_filters([workspace], aliased=hold.aliased, git_config_ok=git_config_ok):
         after.deny("file-write*", *filters)
+    if git_config_ok:
+        # HR-1b (review delta 2): even lifted, no hard link to or from a config (`file-link`, measured: it refuses
+        # both directions; one would outlive the grant), and no file flags or ACL on one (they'd block the put-back).
+        after.deny("file-link file-write-flags file-write-acl", *run_later.git_config_filters())
     if hold.at_targets:                     # #813 review 10: the held names at a link's real path
         after.deny("file-write*", *hold.at_targets)
     held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),

@@ -214,7 +214,12 @@ async def _git_config(args: dict, conversation_id: str | None) -> bool | dict:
     counts as no grant (the configs stay held). Otherwise only `git_config: true` asks, with a why: one card (the
     island never answers it; with nobody to ask it is refused and listed in the Inbox, `permissions._ask`)."""
     from server.orchestrator import untrusted as _untrusted
-    from server.services import background_jobs, permissions
+    from server.services import background_jobs, git_config_guard, permissions
+    if (conversation_id or "") in git_config_guard.ENDED:      # review delta 2: a put-back failed here
+        await end_git_config(conversation_id)
+        return False if args.get("git_config") is not True else {
+            "ok": False, "external": False, "executed": False, "error": "git_config ended in this conversation (a "
+            "put-back failed after an earlier command). Tell the user which settings to change instead."}
     context = permissions.Context(conversation_id, job_id=background_jobs._inside_job.get())
     request = _git_config_request()
     try:
@@ -235,6 +240,22 @@ async def _git_config(args: dict, conversation_id: str | None) -> bool | dict:
     if decision.allowed:
         return True
     return {"ok": False, "error": decision.model_text or "the user did not let git update this repository's settings"}
+
+
+async def end_git_config(conversation_id: str | None) -> None:
+    """HR-1b review delta 2: a put-back couldn't be written. No lift again here (ENDED), nor after a restart (the
+    stored grant is deleted; a failed delete is logged, ENDED still holds)."""
+    import logging
+    from server.db import session as db_session
+    from server.services import git_config_guard, permission_store
+    git_config_guard.ENDED.add(conversation_id or "")
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            grant = await permission_store.find_grant(db, conversation_id, None, "git_config", "*")
+            if grant is not None and await permission_store.delete_conversation_grant(db, grant.id):
+                await db.commit()
+    except Exception:  # noqa: BLE001 — ENDED holds the configs in this process either way
+        logging.getLogger(__name__).warning("ending the git_config grant failed", exc_info=True)
 
 
 @dataclass(frozen=True, slots=True)

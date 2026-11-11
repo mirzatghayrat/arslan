@@ -159,6 +159,26 @@ async def _reap_then_cancel(tasks) -> None:
     await _cancel(tasks)
 
 
+def _group_alive(pgid: int) -> bool:
+    """A process of the group is left that can still run (EPERM on macOS: only zombies are left)."""
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
+async def _end_group(proc) -> bool:
+    """HR-1b review delta 2 (blocker 1): kills what is left of the command's group and waits, at most
+    DRAIN_AFTER_KILL_S (the cancel's reap, #813), until none of it can run. Whether one was left."""
+    left = _group_alive(proc.pid)
+    _kill_group(proc)
+    deadline = asyncio.get_running_loop().time() + DRAIN_AFTER_KILL_S
+    while _group_alive(proc.pid) and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.01)
+    return left
+
+
 def _reads_a_saved_output(result: dict) -> bool:
     from server.services import tool_outputs
     folder = str(tool_outputs.outputs_dir())
@@ -200,33 +220,44 @@ async def _guarded(cwd: Path, kw: dict) -> dict:
     from server.services import git_config_guard
     try:
         saved = await asyncio.to_thread(git_config_guard.snapshot, cwd, kw["closed"])
-    except (git_config_guard.GuardError, OSError):
+    except (git_config_guard.GuardError, OSError) as exc:
         result = await _run(**kw)
-        result["git_config_note"] = ("Arslan couldn't look through the working folder's git settings before this "
-                                     "command (too many folders, or one it can't read), so git couldn't update them "
-                                     "this time, as without the git_config permission.")
+        result["git_config_note"] = ((
+            "A git config file in the working folder has a second name (a hard link) or is a link"
+            if isinstance(exc, git_config_guard.Linked) else "Arslan couldn't look through the working folder's git "
+            "settings before this command (too many folders, or one it can't read)")
+            + ", so git couldn't update them this time, as without the git_config permission.")
         return result
     try:
         result = await _run(**kw, git_config_ok=True)
     except BaseException:
         _put_back(saved)                 # stopped or failed: still checked, here on the loop (it is quick)
         raise
-    message = await asyncio.to_thread(_put_back, saved)
+    message, held = await asyncio.to_thread(_put_back, saved)
+    if result.pop("git_config_stopped", False):
+        message = ("Arslan stopped what this command left running: under the git_config permission nothing may run on "
+                   "past the check of the git settings. " + message).strip()
     if message:
         result["git_config_note"] = message
+    if held:
+        result["git_config_held"] = True    # the tool loop deletes the stored grant (command_gate.end_git_config)
     return result
 
 
-def _put_back(saved) -> str:
-    """git_config_guard.restore, never raising: a failure to write the saved bytes back is said, not hidden."""
-    from server.services import git_config_guard
+def _put_back(saved) -> tuple[str, bool]:
+    """git_config_guard.restore, never raising: what the step says, and whether a config couldn't be written back
+    (fail closed, review delta 2: then the grant ends here at once, `ENDED`)."""
+    from server.services import git_config_guard, tool_outputs
     try:
-        return git_config_guard.restore(saved).message()
+        outcome = git_config_guard.restore(saved)
+        message, held = outcome.message(), bool(outcome.held)
     except Exception:  # noqa: BLE001 — reported to the model and on the step instead
         import logging
         logging.getLogger(__name__).warning("git config restore failed", exc_info=True)
-        return ("Arslan couldn't put this repository's git settings back after this command: tell the user to check "
-                "the repository's git settings (.git/config) before running git outside Arslan.")
+        message, held = git_config_guard.HELD_NOTE, True
+    if held:
+        git_config_guard.ENDED.add(tool_outputs.conversation.get() or "")
+    return message, held
 
 
 async def trust_service_allowed() -> bool:
@@ -329,12 +360,15 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
         # children included, instead of running on where nobody sees it.
         _kill_group(proc)
         await asyncio.shield(_reap_then_cancel(tasks))
+        if git_config_ok:
+            await asyncio.shield(_end_group(proc))       # HR-1b: before the put-back (`_guarded`)
         raise
     if pending:
         timed_out = True
         _kill_group(proc)
         _, pending = await asyncio.wait(pending, timeout=DRAIN_AFTER_KILL_S)
         await _cancel(pending)
+    left_running = await _end_group(proc) if git_config_ok else False      # HR-1b: before the put-back
     full_out = out_buf.data().decode("utf-8", errors="replace")
     full_err = err_buf.data().decode("utf-8", errors="replace")
     stdout, cut_out = clip(fold_repeats(full_out))
@@ -361,6 +395,8 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:
         result["truncated"] = True
+    if left_running and not timed_out:
+        result["git_config_stopped"] = True
     return explain(result, cwd=cwd, closed=closed, mode=mode, timed_out=timed_out, command=command,
                    hold=hold_run_later, git_config=git_config_ok)
 

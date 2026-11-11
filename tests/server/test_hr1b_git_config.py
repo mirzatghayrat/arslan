@@ -300,6 +300,176 @@ def test_the_environment_under_the_grant_has_no_template_folder():
     assert terminal_exec.GIT_CONFIG_ENV == {"GIT_TEMPLATE_DIR": ""}
 
 
+# ── review delta 2 (⓪Plan's max review) ──────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _fresh_guard():
+    git_config_guard._BASELINES.clear()
+    git_config_guard.ENDED.clear()
+    yield
+    git_config_guard._BASELINES.clear()
+    git_config_guard.ENDED.clear()
+
+
+def test_the_next_snapshot_starts_from_the_last_put_back_not_the_file(tmp_path):
+    """Blocker 1: a key written between two granted commands (a process the first left running) never becomes the
+    next one's baseline; that command puts it back."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    saved = git_config_guard.snapshot(ws)
+    _git_set(config, "user.name", STAND_IN)
+    assert git_config_guard.restore(saved).reverted == []
+    left = config.read_bytes()
+    _git_set(config, "core.hooksPath", VALUE)                    # after the put-back
+    again = git_config_guard.snapshot(ws)
+    assert again.files == {config: left} and again.modes == {config: 0o644}
+    assert git_config_guard.restore(again).reverted == ["core.hookspath"]
+    assert config.read_bytes() == left
+
+
+def test_a_put_back_that_cant_be_written_is_held_and_keeps_the_pre_run_baseline(tmp_path, monkeypatch):
+    """Blocker 2, fail closed: still refused after the flags and ACL are cleared, the config is `held`, the message
+    says the grant ended, and the next snapshot takes the pre-run bytes, not what survived."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    saved = git_config_guard.snapshot(ws)
+    _git_set(config, "core.hooksPath", VALUE)
+
+    def refused(*a, **k):
+        raise PermissionError(1, "Operation not permitted")
+    monkeypatch.setattr(git_config_guard, "_replace", refused)
+    outcome = git_config_guard.restore(saved)
+    assert outcome.held == [os.path.join("r", ".git", "config")] and outcome.reverted == []
+    assert git_config_guard.HELD_NOTE in outcome.message() and VALUE not in outcome.message()
+    assert git_config_guard.snapshot(ws).files == {config: ORIGINAL.encode()}
+
+
+def test_a_put_back_that_raises_is_held_too(monkeypatch):
+    def broken(saved):
+        raise OSError(5, "Input/output error")
+    monkeypatch.setattr(git_config_guard, "restore", broken)
+    assert terminal_exec._put_back(None) == (git_config_guard.HELD_NOTE, True)
+
+
+@pytest.mark.skipif(not hasattr(os, "lchflags"), reason="file flags are BSD's")
+@pytest.mark.parametrize("lock", ["uchg", "acl", "folder uchg"])
+def test_a_flag_or_acl_on_the_config_or_its_folder_is_cleared_before_the_put_back(tmp_path, lock):
+    """Blocker 2: the put-back's own write isn't blocked by a flag or ACL set after the key was added; the pre-run
+    mode is written too."""
+    import stat as st
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    saved = git_config_guard.snapshot(ws)
+    _git_set(config, "core.hooksPath", VALUE)
+    config.chmod(0o600)
+    target = config.parent if lock == "folder uchg" else config
+    if lock == "acl":
+        assert subprocess.run(["/bin/chmod", "+a", "everyone deny delete", str(config)]).returncode == 0
+    else:
+        os.chflags(target, st.UF_IMMUTABLE)
+    try:
+        outcome = git_config_guard.restore(saved)
+    finally:
+        os.lchflags(target, 0)
+    assert (outcome.reverted, outcome.held) == (["core.hookspath"], [])
+    assert config.read_text() == ORIGINAL and st.S_IMODE(config.stat().st_mode) == 0o644
+    assert config.stat().st_flags == 0
+
+
+def test_a_hard_linked_config_drops_the_lift_and_one_linked_after_is_restored_fresh(tmp_path):
+    """Blocker 3 (b): a config with a second name before the command raises Linked (no lift this run); one linked
+    during it is restored whole as a new file, so the other name no longer reaches it."""
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    other = tmp_path / f"{STAND_IN}-other"
+    os.link(config, other)
+    with pytest.raises(git_config_guard.Linked):
+        git_config_guard.snapshot(ws)
+    other.unlink()
+    saved = git_config_guard.snapshot(ws)
+    _git_set(config, "user.name", STAND_IN)
+    os.link(config, other)
+    outcome = git_config_guard.restore(saved)
+    assert outcome.restored == [os.path.join("r", ".git", "config")] and config.read_text() == ORIGINAL
+    assert config.stat().st_nlink == 1 and not os.path.samefile(config, other)
+
+
+async def test_a_linked_config_runs_held_with_its_note(tmp_path, monkeypatch):
+    ws = tmp_path / "ws"
+    config = _repo(ws, text=ORIGINAL)
+    os.link(config, tmp_path / f"{STAND_IN}-other")
+    seen = []
+
+    async def run(**kw):
+        seen.append(kw.get("git_config_ok", False))
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "sandbox": "workspace"}
+    monkeypatch.setattr(terminal_exec, "_run", run)
+    result = await terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True)
+    assert seen == [False] and "a hard link" in result["git_config_note"]
+
+
+async def test_a_held_put_back_ends_the_grant_in_this_process_and_in_the_store(execution_db, gate, monkeypatch,
+                                                                                 tmp_path):
+    """Blocker 2, fail closed: terminal_exec marks the conversation ended; the tool loop deletes its stored grant;
+    from then on its commands run held, and the flag is refused."""
+    from server.services import tool_outputs
+    ws = tmp_path
+
+    async def run(**kw):
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "sandbox": "workspace"}
+    monkeypatch.setattr(terminal_exec, "_run", run)
+    monkeypatch.setattr(git_config_guard, "snapshot", lambda folder, closed=(): git_config_guard.Snapshot(ws, {}))
+    monkeypatch.setattr(git_config_guard, "restore",
+                        lambda saved: git_config_guard.Outcome(held=[os.path.join("r", ".git", "config")]))
+    asker = _Asker()
+    with permissions.asking_with(asker):
+        assert (await _dispatch(monkeypatch, ASK, "c1"))[0] == [True]
+        token = tool_outputs.conversation.set("c1")
+        try:
+            result = await terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True)
+        finally:
+            tool_outputs.conversation.reset(token)
+        assert result["git_config_held"] is True and "c1" in git_config_guard.ENDED
+        git_config_guard.ENDED.clear()
+        # The tool loop, given that result: the stored grant goes, and the conversation is ended here too.
+        held = _Exec()
+
+        async def execute(args):
+            held.seen.append(terminal_exec.GIT_CONFIG.get())
+            return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "sandbox": "workspace",
+                    "git_config_held": True}
+        held.execute = execute
+        monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", held)
+
+        async def resolve():
+            return [{"key": "run_command", "description": "run"}]
+        await tool_loop._dispatch_tool(
+            "run_command", {"command": "git status"}, "{}", resolve_tools=resolve, emit=lambda e: None,
+            tool_timeout_s=5, tool_trace=[], convo=[], confirm_command=command_confirm.Confirmations("c1").command,
+            conversation_id="c1")
+        assert held.seen == [True] and "c1" in git_config_guard.ENDED
+        async with db_session.AsyncSessionLocal() as db:
+            assert await permission_store.find_grant(db, "c1", None, "git_config", "*") is None
+        assert (await _dispatch(monkeypatch, {"command": "git status"}, "c1"))[0] == [False]
+        seen, refused = await _dispatch(monkeypatch, ASK, "c1")
+        assert seen == [] and "git_config ended" in refused["error"] and len(asker.frames) == 1
+
+
+@pytest.mark.parametrize("hooks", [".git/hooks", f".git/modules/{STAND_IN}/hooks"])
+def test_a_hard_linked_file_at_a_hook_name_is_an_alias(tmp_path, hooks):
+    """Blocker 5: a hook enabled by hard-linking its sample makes both names aliases, as a link there is; the sample
+    exemption is off. A sample with one name isn't one."""
+    ws = tmp_path / "ws"
+    folder = ws / hooks
+    folder.mkdir(parents=True)
+    (folder / "pre-commit.sample").write_text("#!/bin/sh\n")
+    assert run_later.held_folders([ws]).aliases == ()
+    os.link(folder / "pre-commit.sample", folder / "pre-commit")
+    aliases = run_later.held_folders([ws]).aliases
+    assert sorted(p.name for p in aliases) == ["pre-commit", "pre-commit.sample"]
+    assert command_sandbox.run_later_folders([ws]).aliased
+
+
 # ── the profile ──────────────────────────────────────────────────────────────
 
 CONFIG_REGEXES = [run_later.pattern_regex(p) for p in run_later.GIT_CONFIG]
@@ -309,34 +479,75 @@ def _lines(text: str) -> list[str]:
     return [line for line in text.splitlines() if "[Gg][Ii][Tt]" in line or "[Hh][Uu][Ss][Kk][Yy]" in line]
 
 
-def test_the_grant_leaves_out_the_four_config_names_and_nothing_else(tmp_path):
-    held = "".join("(deny file-write* " + " ".join(f) + ")\n" for f in run_later.kernel_filters([tmp_path]))
-    lifted = "".join("(deny file-write* " + " ".join(f) + ")\n"
-                     for f in run_later.kernel_filters([tmp_path], git_config_ok=True))
+def _kernel_text(folder: Path, **kw) -> str:
+    return "".join("(deny file-write* " + " ".join(f) + ")\n" for f in run_later.kernel_filters([folder], **kw))
+
+
+def _unwalked(folder: Path, *, dependency: bool) -> str:
+    """Review delta 2 (blocker 4): where git_config_guard's walk doesn't look, so the grant leaves a config held."""
+    from server.services.sandbox_profile import real, regex, subpath
+    terms = [f"(require-all (require-not {subpath(real(folder))}))", regex(run_later._NESTED_GIT)]
+    return f"(require-any {' '.join(terms + ([regex(run_later.dependency_regex())] if dependency else []))})"
+
+
+def test_the_grant_lifts_the_four_config_names_only_where_the_walk_looks_and_nothing_else(tmp_path):
+    """Inside the work folder, not under a `.git` folder's own folders, and, on a profile that holds dependency
+    folders (an alias was found), not under one either: exactly where git_config_guard's walk finds a config."""
+    held, lifted = _kernel_text(tmp_path), _kernel_text(tmp_path, git_config_ok=True)
     assert held == KERNEL_TEXT
-    for regex in CONFIG_REGEXES:
-        assert f'(regex #"{regex}")' in held and f'(regex #"{regex}")' not in lifted
     expected = held
     for regex in CONFIG_REGEXES:
-        expected = expected.replace(f' (require-all (regex #"{regex}") {DEPENDENCY_TEXT})', "")
+        assert f'(require-all (regex #"{regex}") {DEPENDENCY_TEXT})' in held
+        expected = expected.replace(f'(require-all (regex #"{regex}") {DEPENDENCY_TEXT})',
+                                    f'(require-all (regex #"{regex}") {_unwalked(tmp_path, dependency=False)} '
+                                    f'{DEPENDENCY_TEXT})')
     assert lifted == expected and expected != held
+    aliased, aliased_lifted = _kernel_text(tmp_path, aliased=True), _kernel_text(tmp_path, aliased=True,
+                                                                                 git_config_ok=True)
+    expected = aliased
+    for regex in CONFIG_REGEXES:
+        assert aliased.count(f'(regex #"{regex}")') == 1
+        expected = expected.replace(f'(regex #"{regex}")',
+                                    f'(require-all (regex #"{regex}") {_unwalked(tmp_path, dependency=True)})')
+    assert aliased_lifted == expected and expected != aliased
     # The hooks, .gitmodules and every other family stay.
     for pattern in (".git/hooks/**", ".git/modules/*/hooks/**", ".gitmodules", ".envrc", ".husky/**",
                     ".vscode/settings.json", ".npmrc", ".claude/settings*.json"):
         assert run_later.pattern_regex(pattern) in lifted
 
 
+@pytest.mark.parametrize(("path", "walked"), [
+    (".git/config", True), (f"{STAND_IN}/.git/modules/{STAND_IN}/config", True),
+    (f".git/{STAND_IN}/.git/config", False), (f".git/modules/{STAND_IN}/.git/config", False),
+    (f"node_modules/{STAND_IN}/.git/config", False)])
+def test_the_lift_and_the_walk_agree(tmp_path, path, walked):
+    """The nested-`.git` and dependency terms are the walk's own skips: a config there is held and never walked."""
+    import re
+    ws = tmp_path / "ws"
+    target = ws / path
+    target.parent.mkdir(parents=True)
+    target.write_text("")
+    real_path = os.path.realpath(target)
+    held_by_a_term = bool(re.fullmatch(run_later._NESTED_GIT, real_path)
+                          or re.fullmatch(run_later.dependency_regex(), real_path))
+    assert (target in git_config_guard.config_files(ws), held_by_a_term) == (walked, not walked)
+
+
 def test_only_the_commands_profile_takes_it(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
     (tmp_path / "home" / "ws").mkdir(parents=True)
     ws = tmp_path / "home" / "ws"
-    granted = command_sandbox.commands_profile(ws, git_config_ok=True)
-    assert all(f'(regex #"{r}")' not in granted for r in CONFIG_REGEXES)
-    assert all(f'(regex #"{r}")' in command_sandbox.commands_profile(ws) for r in CONFIG_REGEXES)
+    granted, held = command_sandbox.commands_profile(ws, git_config_ok=True), command_sandbox.commands_profile(ws)
+    assert all(f'(require-all (regex #"{r}") (require-any ' in granted for r in CONFIG_REGEXES)
+    assert all(f'(require-all (regex #"{r}") (require-any ' not in held for r in CONFIG_REGEXES)
+    # Review delta 2 (blockers 2 and 3): even lifted, no hard link, file flag or ACL on a config.
+    links = "(deny file-link file-write-flags file-write-acl " + " ".join(run_later.git_config_filters()) + ")"
+    assert links in granted and "file-link" not in held
     # The outside floor and the MCP preset have no such parameter: they always hold them.
     floor = command_sandbox.minimal_profile(run_later_in=ws)
     mcp = capability_sandbox.profile(root=tmp_path / "home" / "mcp", folders=[str(ws)], network=False, read=[])
     assert all(f'(regex #"{r}")' in floor and f'(regex #"{r}")' in mcp for r in CONFIG_REGEXES)
+    assert "(require-any (require-all (require-not" not in floor + mcp
     import inspect
     assert "git_config_ok" not in inspect.signature(command_sandbox.minimal_profile).parameters
     assert "git_config_ok" not in inspect.signature(capability_sandbox.profile).parameters

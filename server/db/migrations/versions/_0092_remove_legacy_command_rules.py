@@ -26,7 +26,6 @@ _LIVE_GRANT_TARGETS: dict[str, tuple[tuple[str, str], ...]] = {
     "command": (("exact", "unsandboxed:*"), ("prefix", "text:")),
     "outside": (("exact", "*"),),
     "network": (("exact", "network:*"),),
-    "git_config": (("exact", "*"),),       # HR-1b (v0.1.64): no such row exists before it, so 0092 deletes none
     "schedule": (("exact", "*"),),
     "workspace_write": (("any", ""),),
     "mcp_tool": (("prefix", "mcp_"),),

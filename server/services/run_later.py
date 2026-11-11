@@ -135,6 +135,16 @@ def dependency_regex() -> str:
     return "^.*/(" + "|".join(map(_component, DEPENDENCY_FOLDERS)) + ")/.*$"
 
 
+#: HR-1b (review delta 2): a path below a `.git` folder's own `.git` folder, which git_config_guard's walk doesn't open.
+_NESTED_GIT = "^.*/" + _component(".git") + "/(.*/)?" + _component(".git") + "/.*$"
+
+
+def git_config_filters() -> tuple[str, ...]:
+    """HR-1b review delta 2: the GIT_CONFIG names as bare filters (the grant's link, flag and ACL denies)."""
+    from server.services.sandbox_profile import regex
+    return tuple(regex(pattern_regex(p)) for p in GIT_CONFIG)
+
+
 def _parts(path) -> tuple[str, ...]:
     return tuple(p for p in PurePath(os.fspath(path)).parts if p not in ("/", ""))
 
@@ -312,18 +322,22 @@ def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
     out of its folder, or couldn't finish); otherwise it is the bare regex. A hooks name also exempts git's sample
     hooks (SAMPLE_HOOKS, HR-1b), unless `aliased` (HR-1b, ⓪Plan: a link at a hook name, `pre-commit ->
     pre-commit.sample` among them, is an alias, `held_folders`). `git_config_ok` (HR-1b, the commands profile under
-    this conversation's git_config grant only) leaves the GIT_CONFIG names out; nothing else changes (a config reached
-    through a link stays held at its target, `link_filters`). The regexes stay built from constants."""
+    this conversation's git_config grant only) lifts the GIT_CONFIG names only where git_config_guard's walk looks
+    (review delta 2): in `folders`, not in a held dependency folder nor below a `.git`. Nothing else changes (a
+    config reached through a link stays held at its target, `link_filters`). The regexes stay built from constants."""
     from server.services.sandbox_profile import real, regex, subpath
     folders = list(folders)
     unless = [f"(require-not {regex(dependency_regex())})"] if _exempt(folders, roots) and not aliased else []
+    outside = " ".join(f"(require-not {subpath(real(Path(os.path.abspath(f))))})" for f in folders)
+    unwalked = [f"(require-all {outside})", regex(_NESTED_GIT)] + ([] if unless else [regex(dependency_regex())])
 
     def name(pattern: str) -> str:
         sample = ([f"(require-not {regex(pattern_regex(SAMPLE_HOOKS[pattern]))})"]
                   if pattern in SAMPLE_HOOKS and not aliased else [])
-        parts = [regex(pattern_regex(pattern)), *sample, *unless]
+        lifted = [f"(require-any {' '.join(unwalked)})"] if git_config_ok and pattern in GIT_CONFIG and folders else []
+        parts = [regex(pattern_regex(pattern)), *sample, *lifted, *unless]
         return parts[0] if len(parts) == 1 else f"(require-all {' '.join(parts)})"
-    out = [tuple(name(p) for p in patterns if not (git_config_ok and p in GIT_CONFIG)) for _, patterns in FAMILIES]
+    out = [tuple(name(p) for p in patterns) for _, patterns in FAMILIES]
     targets: list[str] = []
     for folder in folders:
         target = hooks_path(folder)
@@ -622,6 +636,22 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                 alias(entry, folder, seen_as / entry.name)
             elif further and _is_folder_entry(entry) and _below(_parts(seen_as / entry.name)):
                 through(folder / entry.name, seen_as / entry.name)
+            else:
+                hard_linked(entry, seen_as / entry.name)
+
+    def hard_linked(entry: os.DirEntry, seen_as: Path) -> None:
+        """HR-1b review delta 2 (blocker 5): a file at a hook name with another name (a hook enabled by hard-linking
+        its sample) is an alias, as a link there is. One `lstat` per file in a hooks folder only."""
+        if not _at_hook_name(_parts(seen_as)):
+            return
+        try:
+            st = entry.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        except OSError:
+            raise _Incomplete from None
+        if stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
+            aliases.append(Path(entry.path))
 
     #: The private folders no walked folder lies at or inside (Arslan works in those), as strings: `listable`'s test,
     #: by prefix (#813 review 11: `Path.parents` per link was most of a large walk's time).
@@ -645,6 +675,8 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                 # HR-1b: a folder behind a `*` component (`.git/modules/<name>`), listed for links at held names on
                 # the way to them (its `hooks`), as `through` lists a link's target: the sample exemption needs them.
                 through(folder / entry.name, folder / entry.name)
+            else:
+                hard_linked(entry, folder / entry.name)
 
     stack = [(start, 0) for start in reversed(starts)]
     try:

@@ -117,6 +117,8 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
             if by_grant and not ran_outside and isinstance(result, dict):
                 result["grant_note"] = ("this conversation's permission to run commands outside the sandbox was "
                                         "taken back; it ran in the sandbox")
+            if plan.git_config and isinstance(result, dict) and result.pop("git_config_held", False):
+                await command_gate.end_git_config(conversation_id)     # HR-1b review delta 2: fail closed
         # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
         if tool_key == "run_command" and ran_outside and isinstance(result, dict):
             result["ran_outside_sandbox"] = True
