@@ -379,13 +379,14 @@ async def workspace_dir(session: AsyncSession):
 
 
 def run_sub_folder() -> tuple[str, ...] | None:
-    """SUB5c: the short names of this run's sub-session folder (`personal_context.sub_folder`), () when this run is
-    not a sub-session's job. None, fail closed, for a sub-session's job whose context doesn't name one: it gets no
-    folder at all, rather than the whole workspace."""
+    """SUB5c: the short names of this run's sub-session folder (`personal_context.sub_folder`, set by
+    `task_context.load`), () when this run is not in a sub-session. None, fail closed, for a sub-session whose folder
+    can't be named, and for a sub-session's job whose context doesn't name one: it gets no folder at all, rather
+    than the whole workspace."""
     from server.services import background_jobs, personal_context
     context = personal_context.current()
-    if context is not None and context.sub_folder:
-        return context.sub_folder
+    if context is not None and context.sub_folder != ():
+        return context.sub_folder or None
     job = background_jobs._jobs.get(background_jobs._inside_job.get() or "")
     return None if job is not None and job.parent_id else ()
 

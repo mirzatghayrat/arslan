@@ -18,6 +18,7 @@ from server.db.models import Setting
 from server.orchestrator import arslan as arslan_mod, command_gate
 from server.registry import executors
 from server.services import command_sandbox, settings_service, sub_sessions, terminal_exec, workspace_paths
+from tests.server.test_run_command_confirm_flow import _collect_until, app_client  # noqa: F401  (the fixture)
 from tests.server.test_s2a1_sandbox import PLAIN_OSA
 from tests.server.test_s2a3_wire import STAND_IN, unread  # noqa: F401  (the fixture)
 from tests.server.test_s64_0_outside_content_gaps import memory  # noqa: F401  (the fixture)
@@ -228,6 +229,66 @@ async def test_a_childs_folder_swapped_for_a_link_out_is_refused_and_nothing_lan
     assert command["ok"] is False and "that folder can't be used" in command["error"]
 
 
+# -- a turn typed in the sub-session's own window -----------------------------------------------------------------
+
+class _Typed:
+    """The window's turn: each tool call in turn, then an answer. A request with no tools (a title, a judge) is
+    answered plainly."""
+
+    def __init__(self, steps):
+        self.steps = list(steps)
+
+    async def chat(self, system, user, history=None, tools=None, temperature=0.7):
+        from arslan.models import LLMResponse
+        if tools and self.steps:
+            name, args = self.steps.pop(0)
+            return LLMResponse(content=None, usage={}, tool_calls=[
+                {"id": f"call-{len(self.steps)}", "function": {"name": name, "arguments": args}}])
+        return LLMResponse(content="done", tool_calls=[], usage={})
+
+
+def test_a_turn_typed_in_a_sub_sessions_window_writes_only_in_its_folder(app_client, monkeypatch, tmp_path):  # noqa: F811
+    """The real window path (`/ws/arslan/<sub-session>`, its context from `task_context.load`): a write outside its
+    folder is refused, a relative one lands in it, and a command runs there, in the sandbox."""
+    from server.services import settings_service as settings
+    work = tmp_path / "work"
+    work.mkdir()
+    work = work.resolve()
+    ran = []
+
+    async def run(command, **kw):
+        ran.append(kw)
+        return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "cwd": str(kw["cwd"]), "sandbox": "workspace"}
+
+    async def own_folder(db):
+        return True                                 # no write card: the writes reach the file tool
+    monkeypatch.setattr(terminal_exec, "run", run)
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    monkeypatch.setattr(settings, "workspace_is_default", own_folder)
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: _Typed([
+        ("write_file", {"path": str(work / "escape.md"), "content": "x"}),
+        ("write_file", {"path": "notes.md", "content": "typed"}),
+        ("run_command", {"command": "pwd"})]))
+
+    async def seed():
+        async with app_client.db_maker() as db:
+            db.add(Setting(key="workspace_dir", value=str(work)))
+            await settings.update_settings(db, {"orchestrator_shell_enabled": "true",
+                                                "shell_confirm_policy": "ask_risky"})
+            await sub_sessions.create_child(db, ROOT, "sub-kid")
+            await db.commit()
+    app_client.portal.call(seed)
+    with app_client.websocket_connect("/ws/arslan/sub-kid") as sock:
+        sock.receive_json()
+        sock.send_json({"type": "user_message", "content": "save my notes"})
+        frames = _collect_until(sock, "stream_end", max_frames=400)
+    folder = work / "sub" / "kid"
+    assert [f["ok"] for f in frames if f.get("type") == "tool_result"] == [False, True, True]
+    assert (folder / "notes.md").read_text() == "typed" and sorted(os.listdir(work)) == ["sub"]
+    [command] = ran
+    assert (command["cwd"], command["sandbox"], command["unwrapped"]) == (folder, True, False)
+
+
 # -- each layer on its own: the gate, the executor, the fallback --------------------------------------------------
 
 def _ctx(names):
@@ -342,6 +403,11 @@ async def test_a_sub_sessions_job_whose_context_names_no_folder_gets_none_not_th
     finally:
         background_jobs._inside_job.reset(token)
         background_jobs._jobs.pop(job.job_id)
+    from server.services import personal_context as pc
+    with pc.bind(_ctx(None)):                    # a sub-session whose chain can't be read (`task_context.load`)
+        async with db_session.AsyncSessionLocal() as db:
+            assert settings_service.run_sub_folder() is None
+            assert await settings_service.workspace_dir_for_run(db) is None
 
 
 # -- the folder ---------------------------------------------------------------------------------------------------
@@ -371,6 +437,19 @@ async def test_names_are_unique_among_siblings_by_age_and_a_grandchilds_folder_i
     for cid in (ROOT, "c-nobody"):
         with pytest.raises(sub_sessions.SubSessionError):
             await sub_sessions.folder_names(cid)        # not a sub-session: no folder
+
+
+async def test_the_context_load_names_the_folder_once_for_every_path_into_a_sub_session(runs):  # noqa: F811
+    """`task_context.load`, which a job and a typed turn both go through: a sub-session's names, () for any other
+    conversation, None for a sub-session whose chain can't be read."""
+    from server.db.companion_models import ConversationContext
+    from server.services import task_context
+    async with runs() as db:
+        await sub_sessions.create_child(db, ROOT, "sub-kid")
+        db.add(ConversationContext(id="sub-orphan", kind=sub_sessions.SUB, parent_id="c-gone"))
+        await db.commit()
+    assert [(await task_context.load(cid)).sub_folder for cid in ("sub-kid", ROOT, "c-nobody", "sub-orphan")] == [
+        ("kid",), (), (), None]
 
 
 def _planted(ws, out, how):
