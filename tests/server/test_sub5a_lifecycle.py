@@ -833,16 +833,15 @@ async def test_after_a_restart_a_deleted_conversation_is_still_refused_and_nothi
     for cid, goal in ((PRIVATE, PRIVATE_GOAL), (PLAIN, PLAIN_GOAL)):
         with pytest.raises(MemoryError, match="conversation_deleted"):
             await turn(cid, "hello again", lambda event: None)
-        job = await background_jobs.start(cid, goal, [], outside_seen=False)
-        await _wait(lambda: job.task.done())
-        assert job.outcome == "blocked"
+        # SUB5b: a job there is refused before it starts (`sub_sessions.placement`), not at its context load.
+        assert await _refused(background_jobs.start(cid, goal, [], outside_seen=False)) == "conversation_deleted"
         assert await _refused(sub_sessions.start(cid, OUTLINE, outside_seen=False)) == "conversation_deleted"
         assert await _said(db, cid) == [] and await _row(db, cid) == TOMBSTONE
         async with db() as session:
             assert await sub_sessions.children(session, cid) == []
-    assert ran == [] and background_jobs.active() == []
+    assert ran == [] and background_jobs._jobs == {}
     assert {side: requests for side, requests in model.requests.items() if requests} == {}
-    assert seen == [(cid, "refused", "conversation_deleted") for cid in (PRIVATE, PRIVATE, PLAIN, PLAIN)]
+    assert seen == [(cid, "refused", "conversation_deleted") for cid in (PRIVATE, PLAIN)]
     assert (await client.get("/api/v1/conversations")).json() == []
 
 

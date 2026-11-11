@@ -225,12 +225,17 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     @contextlib.asynccontextmanager
     async def _turn(data: dict):
         """Hold the conversation's turn lock; a message that had to wait is told when it starts."""
+        from server.services import background_jobs
         lock = _turn_lock(conversation_id)
         told = bool(data.get("_queued"))
-        if lock.locked() and not told:
+        if (lock.locked() or background_jobs.sub_session_turns(conversation_id)) and not told:
             await _send_or_gone({"type": "queued"})
             told = True
         async with lock:
+            # SUB5b: in a sub-session, after its own background turn too (one turn at a time per conversation). Held
+            # meanwhile, so no summary turn starts in it before this one (`sub_sessions._idle`).
+            while running := background_jobs.sub_session_turns(conversation_id):
+                await asyncio.wait(running)
             if told:
                 await _send_or_gone({"type": "dequeued"})
             # K9b: while this turn runs, a message sent meanwhile reaches it at its next tool boundary;
