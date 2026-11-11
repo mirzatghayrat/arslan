@@ -31,7 +31,7 @@ from server.registry.hands_tools import (
     DesktopAccessExecutor, DesktopBatchExecutor, DesktopMenuExecutor, DesktopOpenExecutor, DesktopTakeoverExecutor, DesktopPressExecutor, DesktopScrollExecutor, DesktopSelectExecutor, DesktopTypeExecutor,
     MacAppleScriptExecutor, MacListShortcutsExecutor, MacRunShortcutExecutor)
 from server.registry.task_tools import (
-    BackgroundStatusExecutor, DelegateWorkExecutor, StartBackgroundWorkExecutor,
+    BackgroundStatusExecutor, DelegateWorkExecutor, StartBackgroundWorkExecutor, StartSubSessionExecutor,
     StopBackgroundWorkExecutor, TaskProgressExecutor)
 # Module-qualified on purpose. `from net_pin import net_pin._fetch_text` binds the name HERE at
 # import time, so a test patching net_pin._fetch_text would never reach this caller —
@@ -1159,7 +1159,7 @@ EXECUTORS = {e.key: e for e in (
     ProgressReportExecutor(),
     FindCapabilityExecutor(), VerifyExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
-    TaskProgressExecutor(), DelegateWorkExecutor(),
+    TaskProgressExecutor(), DelegateWorkExecutor(), StartSubSessionExecutor(),   # SUB5e: sub_sessions.start
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),
     # 0.1.45 hands: Arslan's browser and Mac automation (acting only inside background jobs).
     BrowserOpenExecutor(), BrowserLookExecutor(), BrowserBackExecutor(), BrowserClickExecutor(),

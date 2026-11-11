@@ -100,6 +100,14 @@ class TurnTracker:
     # post-turn review runs first): until then the run is not over (③Hands' review of #190).
     task_open: bool = False
     jobs_open: set = field(default_factory=set)
+    # SUB5e (T16): a sub-session's own frames go to its own conversation, never to this window, so
+    # the run is not over while one is at work. Its commander's summary turn is a job of this
+    # conversation: once a start_sub_session succeeded, the run waits for a job that is first seen
+    # after it to finish (that is the summary turn; the commander's own background work started
+    # meanwhile would count too). A summary turn that never comes ends at RUN_TIMEOUT_S.
+    awaiting_summary: bool = False
+    summary_jobs: set = field(default_factory=set)
+    sub_sessions_started: int = 0
     final_text: list = field(default_factory=list)
     approvals: int = 0
     leave_cards: int = 0           # SBX-7: cards to run a command outside the sandbox, whatever the answer
@@ -147,10 +155,18 @@ class TurnTracker:
                 self.end_reason = f"task_{frame.get('phase')}"
         elif t == "task_state":
             self.task_open = True
+        elif t == "tool_result" and frame.get("tool") == "start_sub_session" and frame.get("ok"):
+            self.sub_sessions_started += 1
+            self.awaiting_summary = True
         elif t == "job_update":
             job = frame.get("job_id")
+            if self.awaiting_summary and job not in self.jobs_open:
+                self.summary_jobs.add(job)
             if frame.get("phase") == "finished":
                 self.jobs_open.discard(job)
+                if job in self.summary_jobs:
+                    self.awaiting_summary = False
+                    self.summary_jobs.clear()
                 # A background job never sends task_state to the chat; how it ended is only
                 # its outcome (server/services/background_jobs.py outcome_of).
                 if frame.get("outcome") not in (None, "done"):
@@ -221,7 +237,8 @@ class TurnTracker:
         if now - started >= RUN_TIMEOUT_S:
             self.end_reason = self.end_reason or "timeout"
             return True
-        if self.turn_done and not self.task_open and not self.jobs_open and now - self.last_activity >= self.idle_after_s:
+        if (self.turn_done and not self.task_open and not self.jobs_open and not self.awaiting_summary
+                and now - self.last_activity >= self.idle_after_s):
             self.end_reason = self.end_reason or "done"
             return True
         return False

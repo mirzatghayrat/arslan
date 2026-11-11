@@ -251,6 +251,9 @@
   "criteria[].target: string",
   "goal: string required"
  ],
+ "start_sub_session": [
+  "brief: string required"
+ ],
  "stop_background_work": [
   "job_id: string required"
  ],
