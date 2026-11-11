@@ -144,7 +144,7 @@ describe("the not-done list in real English (#605 re-check, N3)", () => {
     render(<AnswerGuardScope value={makeAnswerGuard()}><NotDoneList conversationId="c" /></AnswerGuardScope>);
     await settle();
     const list = screen.getByTestId("inbox-refused");
-    expect(list).toHaveTextContent("Not done while you were away");
+    expect(list).toHaveTextContent("Expired, not done");          // S6 (S4a follow-up 1): an unanswered card expired
     expect(list).toHaveTextContent("mail -s hi me@x.com");
     expect(list.textContent).not.toMatch(/\b(inbox|proactive|whileAway)\.[a-zA-Z_]+/);
   });
