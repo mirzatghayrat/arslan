@@ -1,0 +1,284 @@
+{
+ "ask_user_choice": [
+  "options: array of object required",
+  "options[].hint: string",
+  "options[].label: string required",
+  "question: string required"
+ ],
+ "attach_file": [
+  "path: string required",
+  "title: string"
+ ],
+ "background_status": [],
+ "browser_back": [],
+ "browser_click": [
+  "element: string required",
+  "ref: string required"
+ ],
+ "browser_look": [],
+ "browser_open": [
+  "url: string required"
+ ],
+ "browser_press": [
+  "key: string required"
+ ],
+ "browser_select": [
+  "element: string required",
+  "ref: string required",
+  "values: array of string required"
+ ],
+ "browser_type": [
+  "element: string required",
+  "ref: string required",
+  "submit: boolean",
+  "text: string required"
+ ],
+ "cancel_task": [
+  "task_id: any required"
+ ],
+ "conversation_search": [
+  "limit: integer",
+  "query: string required",
+  "since: string",
+  "until: string"
+ ],
+ "create_skill": [
+  "body: string required",
+  "description: string required",
+  "key: string required",
+  "name: string required",
+  "why: string"
+ ],
+ "delegate_work": [
+  "jobs: array of object required",
+  "jobs[].context: string",
+  "jobs[].method: string required enum=research|apple-growth|product-design",
+  "jobs[].objective: string required",
+  "jobs[].tools: array of string items enum=web_search|web_extract"
+ ],
+ "desktop_access": [
+  "apps: array of string required",
+  "why: string required"
+ ],
+ "desktop_apps": [],
+ "desktop_batch": [
+  "app: string required",
+  "steps: array of object required",
+  "steps[].action: string required enum=click|type|select|scroll|press|menu",
+  "steps[].amount: integer",
+  "steps[].direction: string enum=up|down|left|right",
+  "steps[].element: string",
+  "steps[].keys: string",
+  "steps[].mode: string enum=replace|append",
+  "steps[].path: array of string",
+  "steps[].ref: string",
+  "steps[].submit: boolean",
+  "steps[].text: string",
+  "steps[].value: string"
+ ],
+ "desktop_click": [
+  "app: string required",
+  "element: string required",
+  "front: boolean",
+  "ref: string required"
+ ],
+ "desktop_look": [
+  "app: string required",
+  "ref: string",
+  "role: string",
+  "text: string",
+  "wait_for_text: string",
+  "window: string"
+ ],
+ "desktop_menu": [
+  "app: string required",
+  "path: array of string required"
+ ],
+ "desktop_open": [
+  "app: string required",
+  "path: string"
+ ],
+ "desktop_press": [
+  "app: string required",
+  "front: boolean",
+  "keys: string required"
+ ],
+ "desktop_scroll": [
+  "amount: integer",
+  "app: string required",
+  "direction: string enum=up|down|left|right",
+  "element: string required",
+  "ref: string required"
+ ],
+ "desktop_select": [
+  "app: string required",
+  "element: string required",
+  "ref: string required",
+  "value: string required"
+ ],
+ "desktop_takeover": [
+  "minutes: integer required",
+  "why: string required"
+ ],
+ "desktop_type": [
+  "app: string required",
+  "element: string required",
+  "mode: string enum=replace|append",
+  "ref: string required",
+  "submit: boolean",
+  "text: string required"
+ ],
+ "edit_file": [
+  "new_string: string required",
+  "old_string: string required",
+  "path: string required"
+ ],
+ "enroll_node": [
+  "host: string required",
+  "name: string required",
+  "user: string required"
+ ],
+ "escalate": [
+  "context: string",
+  "kind: string enum=data|capability",
+  "need: string required"
+ ],
+ "find_capability": [
+  "keywords: array of string required",
+  "kinds: array of string items enum=mcp|skill|plugin|project",
+  "need: string required"
+ ],
+ "import_memories": [
+  "why: string"
+ ],
+ "list_dir": [
+  "path: string"
+ ],
+ "list_my_capabilities": [],
+ "list_my_tasks": [],
+ "list_nodes": [],
+ "mac_applescript": [
+  "script: string required"
+ ],
+ "mac_list_shortcuts": [],
+ "mac_run_shortcut": [
+  "input: string",
+  "name: string required"
+ ],
+ "mcp_1__lookup": [
+  "id: string"
+ ],
+ "memory_note": [
+  "action: string required enum=add|replace|remove",
+  "id: string",
+  "sensitive: boolean",
+  "set: string required enum=about_you|notes",
+  "text: string"
+ ],
+ "my_status": [],
+ "propose_capability": [
+  "candidate_id: string required",
+  "folders: array of string",
+  "retry: string",
+  "why: string required"
+ ],
+ "propose_plan_change": [
+  "levels: array of object required",
+  "levels[].band: string required enum=shaping|doing|done",
+  "levels[].checkpoints: array of object",
+  "levels[].checkpoints[].text: string required",
+  "levels[].clear_condition: string",
+  "levels[].name: string required",
+  "reason: string required"
+ ],
+ "read_file": [
+  "limit: integer",
+  "offset: integer",
+  "path: string required"
+ ],
+ "read_skill": [
+  "key: string required",
+  "section: string"
+ ],
+ "recall": [
+  "kind: string enum=fact|material|learning|note",
+  "query: string required"
+ ],
+ "remember": [
+  "action: string required enum=append|supersede|mark_stale|delete",
+  "content: string required",
+  "kind: string required enum=fact|learning|note|preference",
+  "sensitive: boolean",
+  "target_id: integer"
+ ],
+ "render_chart": [
+  "series: array",
+  "title: string",
+  "type: string",
+  "x: array"
+ ],
+ "run_command": [
+  "command: string required",
+  "network: boolean",
+  "outside_sandbox: boolean",
+  "timeout_s: integer",
+  "why: string"
+ ],
+ "scan_local_network": [],
+ "schedule_task": [
+  "name: string required",
+  "prompt: string required",
+  "when: string required"
+ ],
+ "search_files": [
+  "query: string required"
+ ],
+ "ssh_probe": [
+  "host: string required"
+ ],
+ "ssh_run": [
+  "argv: array of string",
+  "command: string required",
+  "host: string required",
+  "user: string required"
+ ],
+ "start_background_work": [
+  "criteria: array of object required",
+  "criteria[].description: string required",
+  "criteria[].kind: string enum=file_saved|sources_read|mentions|judgement",
+  "criteria[].minimum: integer",
+  "criteria[].target: string",
+  "goal: string required"
+ ],
+ "stop_background_work": [
+  "job_id: string required"
+ ],
+ "task_progress": [
+  "run_id: integer"
+ ],
+ "update_plan": [
+  "items: array of object required",
+  "items[].status: string required enum=pending|in_progress|done",
+  "items[].text: string required"
+ ],
+ "verify": [
+  "folder: string required",
+  "network: boolean",
+  "timeout_s: integer",
+  "why: string"
+ ],
+ "web_extract": [
+  "max_chars: integer",
+  "url: string required"
+ ],
+ "web_search": [
+  "query: string required"
+ ],
+ "whats_new": [
+  "count: integer"
+ ],
+ "write_file": [
+  "content: string required",
+  "path: string required"
+ ]
+}

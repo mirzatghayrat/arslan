@@ -4,8 +4,7 @@ The pieces join, in this file's order, into `ANSWER_STABLE_PREFIX`: the byte-sta
 cache depends on (`arslan._build_answer_system`). Every piece is a plain string. A piece starts with the separator
 that comes before it ("\\n- " for a bullet, "\\n\\n" for a new block), so the joined text is byte for byte what the
 nine constants it replaces gave. The older constant names (`_ARSLAN_SYSTEM` … `_VERSION_LINE`, `_ANSWER_STABLE_PREFIX`)
-are rebuilt below and still imported into `arslan.py`, where tests read them. `tests/server/test_loop1_tool_table.py`
-hashes the prefix.
+are rebuilt below and still imported into `arslan.py`, where tests read them.
 """
 from __future__ import annotations
 

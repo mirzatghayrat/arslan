@@ -55,7 +55,7 @@ _SANDBOX, _PERMS = "server.services.command_sandbox", "server.services.permissio
 _T = "tests/server/"
 _FORBID_TEST = _T + "test_s2a2_three_layers.py::test_every_forbid_rule_refuses"
 _ASK_TEST = _T + "test_s2a2_three_layers.py::test_layer_two_asks_this_time_only"
-_GATE_TEST = _T + "test_loop1_gate_order.py::test_each_gate_answers_on_its_own[run_command: {}]"
+_GATE_TEST = _T + "test_command_gate_refusals.py::test_refused_before_any_card[{}]"
 _LOOSEST = _T + "test_hard_rules_absolute.py::"
 _S2A1 = _T + "test_s2a1_sandbox.py::"
 
