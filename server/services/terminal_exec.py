@@ -144,6 +144,15 @@ async def _cancel(tasks) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
+async def _reap_then_cancel(tasks) -> None:
+    """After the kill on a cancel: wait for the process to be reaped (`tasks[0]` is `proc.wait()`), at most
+    DRAIN_AFTER_KILL_S as after a time limit, then stop the reads. Until the kernel has reaped it a killed process
+    still counts as alive, so `run_temp.finish` would keep the run's temp folder (SBX-3 §1a), and a command outside
+    any run has no later finish: its folder stayed until the next start's sweep (#813 review 12)."""
+    await asyncio.wait(tasks[:1], timeout=DRAIN_AFTER_KILL_S)
+    await _cancel(tasks)
+
+
 def _reads_a_saved_output(result: dict) -> bool:
     from server.services import tool_outputs
     folder = str(tool_outputs.outputs_dir())
@@ -264,7 +273,7 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
         # The job or turn was stopped (from the phone or the window): the command stops with it,
         # children included, instead of running on where nobody sees it.
         _kill_group(proc)
-        await asyncio.shield(_cancel(tasks))
+        await asyncio.shield(_reap_then_cancel(tasks))
         raise
     if pending:
         timed_out = True

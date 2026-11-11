@@ -18,6 +18,15 @@ markers = 3
 cases = 171
 xfail = 0
 
+# 0.1.64 HR-1 review delta 12, the profile folder (`sandbox-profiles/` in Arslan's data folder) closed, in the commands
+# preset, an MCP server's and the outside floor, from a profile delivered by `-f`: its own profile read, rewritten or
+# removed, another rewritten or renamed, a new one added and the folder listed are each refused and the files
+# unchanged, while the preset's writable folder is written (3 cases).
+["server/sbx/test_hr1_profile_folder_closed.py"]
+markers = 1
+cases = 3
+xfail = 0
+
 # 0.1.64 HR-1 review delta 9, consumer aliases, in the commands preset, an MCP server's granted folder and the outside
 # floor: a held name of each family, or a held folder, linked into node_modules is refused through the link and held
 # in place, and a held name in another dependency is refused too (21 cases); a held name linked into an ordinary

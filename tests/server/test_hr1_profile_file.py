@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from server.services import capability_sandbox, command_sandbox, run_later, terminal_exec
+from server.services import capability_sandbox, command_sandbox, run_later, run_temp, terminal_exec
 
 STAND_IN = "zz-stand-in-word"
 
@@ -91,14 +91,40 @@ async def test_the_floors_profile_file_is_gone_once_it_exits(fake_exec, tmp_path
     assert mode == 0o600 and not os.path.lexists(path)
 
 
-async def test_the_file_is_gone_after_a_time_limit(fake_exec, tmp_path):
+@pytest.fixture
+def late_reap(monkeypatch):
+    """asyncio reaps a child 0.3 s late (its watcher thread waits before `waitpid`), as on a loaded runner: a killed
+    process stays a zombie, still alive to `killpg(0)`, for that long. Returns the run temp folders there now."""
+    import threading
+    import time
+    real = os.waitpid
+
+    def late(pid, options):
+        if threading.current_thread() is not threading.main_thread():
+            time.sleep(0.3)
+        return real(pid, options)
+    monkeypatch.setattr(os, "waitpid", late)
+    return _run_temps()
+
+
+def _run_temps() -> set[str]:
+    base = run_temp.root()
+    return set(os.listdir(base)) if base.is_dir() else set()
+
+
+async def test_the_file_is_gone_after_a_time_limit(fake_exec, late_reap, tmp_path):
+    """The killed process is reaped before the command returns, so the run's temp folder went with it (SBX-3 §1a,
+    #813 review 12: a folder left here was swept by a later test)."""
     result = await _run(_work(tmp_path), "sleep 30", timeout_s=0.5)
     assert result["code"] == "time_limit"
     (path, _, _), = fake_exec
     assert not os.path.lexists(path)
+    assert _run_temps() == late_reap
 
 
-async def test_the_file_is_gone_after_a_cancel(fake_exec, tmp_path):
+async def test_the_file_is_gone_after_a_cancel(fake_exec, late_reap, tmp_path):
+    """The same after a cancel: the cancel waits for the reap (`terminal_exec._reap_then_cancel`), and then the run's
+    temp folder goes."""
     task = asyncio.ensure_future(_run(_work(tmp_path), "sleep 30"))
     for _ in range(200):
         if fake_exec:
@@ -110,6 +136,7 @@ async def test_the_file_is_gone_after_a_cancel(fake_exec, tmp_path):
         await task
     (path, _, _), = fake_exec
     assert not os.path.lexists(path)
+    assert _run_temps() == late_reap
 
 
 async def test_the_file_is_gone_after_a_failed_start(fake_exec, tmp_path):

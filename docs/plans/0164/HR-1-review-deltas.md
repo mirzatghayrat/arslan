@@ -474,3 +474,42 @@ The unit tests cover the mapping, filters, caps and the private guard.
 - A start of 1.5 s near the cap is paid at every command. A work folder that sits near it all the time is slow, not open.
 - A profile file left by a crash stays in the data folder (closed to every preset, random names); no sweep at start.
 - `code_sandbox` (run_python, artifact checks) and `ssh_exec` still pass `-p`; their profiles are small and hold no links.
+
+## Review delta 12: CI fix
+
+**The failure.** CI run 42975172751 (backend, at `64a28242`): `test_sbx3_run_temp.py::test_a_process_left_running_keeps_the_folder_until_the_sweep_after_it` got `sweep() == 1`, not 0. With `--dist loadfile`, the same worker had run `test_hr1_profile_file.py` first, and its cancel case left a run temp folder behind.
+
+**The cause: the product.** On a cancel, `terminal_exec._execute` killed the process group and then cancelled its `proc.wait()` without waiting for it. Until the kernel has reaped a killed process, `killpg(group, 0)` still finds it (a zombie), so `run_temp.finish` kept the folder, as it should. A command outside any run has no later finish, so its folder stayed until the next start's sweep. That contradicts SBX-3 §1a: the folder goes when the run ends, a cancel included, and stays only while a process the command left running lives. The time-limit path already waited for the reap (up to `DRAIN_AFTER_KILL_S`). This Mac reaps fast enough to hide it; a loaded Linux runner doesn't.
+
+**The fix.**
+- `terminal_exec._reap_then_cancel`: after the kill on a cancel, wait for `proc.wait()` (at most `DRAIN_AFTER_KILL_S`, shielded), then stop the reads. A grandchild that the kill reached is reaped by launchd, not by us; if it outlives the wait, the folder stays until the next sweep, as before.
+- `test_hr1_profile_file.py`: the time-limit and cancel cases run with asyncio's reaper made 0.3 s late (`late_reap`, its watcher thread waits before `waitpid`). They check that, once the command returns, the run temp folders are as they were before it.
+
+**Repro.**
+- Before: `test_hr1_profile_file.py` then `test_sbx3_run_temp.py` in one process, with the reaper 0.3 s late (a scratch plugin): CI's failure, `sweep() == 1`. Without the delay it passes here (29), with or without load.
+- After: the same order passes with the plugin and without it (29 each), and with `-n auto` three times (29 each).
+
+**New test: the profile folder is closed** (`tests/server/sbx/test_hr1_profile_folder_closed.py`, ⓪Plan's cheap pin for the mutant that survived delta 11). It covers the commands preset, an MCP server's (with the product's protected paths: the harness's MCP adapter stands one folder in for them) and the outside floor.
+- Anywhere (3): the profile text lists `sandbox-profiles/`, or a folder above it, among the paths it closes to reads and writes.
+- Real seatbelt (3, `-m macos`, pinned), from a profile delivered by `-f`: each of these is refused, and the files are unchanged:
+  - reading, rewriting or removing its own profile;
+  - rewriting or renaming another one;
+  - adding a new one;
+  - listing the folder.
+
+  The preset's writable folder is written.
+
+**Mutations** (each red, then restored):
+- the cancel path back to `_cancel` (no reap): the cancel case red, and in the same process CI's sbx3 failure too (2 red);
+- the data folder dropped from the closed paths (`arslan_protected`): 5 of 6 red (the 3 text cases, and commands and floor on seatbelt; the MCP preset's default-deny base still refuses there);
+- the profile folder moved out of the data folder (beside it): 5 of 6 red, the same 5.
+
+**Checks** (local):
+- Suite (`-n auto`): 30554 passed, 62 skipped, and 1 failed. The failure was `test_shell_grammar_differential.py`, a known flake; rerun alone, it passed.
+- ruff is clean.
+- The language check and gitleaks results are in the PR.
+- `-m macos` on the touched files: 4 passed, and `check_macos_counts.py` found no pin that differed for the new file or `test_sbx3_run_temp.py`.
+- The marker-coverage test passes (6).
+
+**Not done here**
+- A process that the kill reached but that isn't the group leader is reaped by launchd. If its reap takes longer than `DRAIN_AFTER_KILL_S`, the folder still waits for the next start's sweep. The same holds after a time limit.
