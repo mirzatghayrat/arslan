@@ -788,7 +788,15 @@
     "moveBack": "Retour",
     "movedTo": "Déplacée vers « {{name}} »",
     "movedOut": "Retirée du projet",
-    "moveFailed": "Impossible de la déplacer ; elle travaille peut-être en ce moment."
+    "moveFailed": "Impossible de la déplacer ; elle travaille peut-être en ce moment.",
+    "search": {
+      "placeholder": "Rechercher des conversations",
+      "clear": "Effacer",
+      "titles": "Titres",
+      "messages": "Dans les messages",
+      "none": "Aucun résultat pour « {{query}} »",
+      "noneHint": "Ni dans les titres ni dans les messages. Les conversations temporaires et celles en « Ne pas utiliser la mémoire » ne sont pas recherchées."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Bonjour",
@@ -1500,5 +1508,34 @@
   },
   "waiting": {
     "count": "En attente de toi : {{count}}"
+  },
+  "subTree": {
+    "status": {
+      "running": "En cours",
+      "reporting": "Rend compte",
+      "waiting": "En attente de toi",
+      "done": "Terminée",
+      "stopped": "Arrêtée",
+      "failed": "Échouée",
+      "interrupted": "Interrompue",
+      "ended": "Finie sans aboutir"
+    },
+    "toggle": "Afficher ou masquer ses sous-sessions ({{count}})",
+    "under": "Sous « {{title}} »",
+    "header": "Ceci est une sous-session de « {{name}} » ; elle lui rend compte une fois terminée.",
+    "back": "Revenir à « {{name}} »",
+    "panel": "Sous-sessions",
+    "open": "Ouvrir",
+    "spend": "Dépensé {{spent}}, limite {{limit}} ({{each}} par tâche × {{times}})",
+    "spendNoLimit": "Dépensé {{spent}}, pas de limite en dollars",
+    "delete": {
+      "title": "Supprimer « {{name}} » ?",
+      "also_one": "Supprimer aussi sa sous-session",
+      "also_other": "Supprimer aussi ses {{count}} sous-sessions",
+      "keepNote": "Ses sous-sessions restent des conversations ordinaires, avec leurs réglages inchangés.",
+      "stopFirst": "Une sous-session en dessous travaille ou rend compte encore. Arrête-la ou attends son compte rendu, puis supprime.",
+      "choiceRequired": "Elle a maintenant {{count}} sous-sessions. Choisis à nouveau ce qu'elles deviennent.",
+      "failed": "La suppression a échoué. Réessaie."
+    }
   }
 }

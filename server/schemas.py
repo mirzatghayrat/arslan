@@ -791,6 +791,14 @@ class ConversationListItem(BaseModel):
     #: INB5b-3: what a "waiting" row waits on, "card", "away" (a card went unanswered while you were away) or "reminder"; None
     #: when it does not wait. The window's list only: phones build theirs field by field (api/phone.py) and are not sent it.
     waiting_on: str | None = None
+    #: SUB5d: the conversation that started this sub-session; None for any other. The window's list only (phones list
+    #: no sub-sessions, and build theirs field by field).
+    parent_id: str | None = None
+    #: SUB5d: how its latest job ended (done, stopped, interrupted, partial, blocked, out_of_budget) when nothing runs or waits
+    #: there; None otherwise. The window's list only (phones build theirs field by field).
+    outcome: str | None = None
+    #: SUB5d: a sub-session whose job has finished but whose report isn't delivered yet (read as working). The window's list only.
+    reporting: bool = False
     #: "phone" when the paired iPhone started it (mobile bridge): the Remote trace.
     origin: str = "mac"
     #: The last message, one line.

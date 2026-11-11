@@ -32,6 +32,19 @@ async def switch_capability(key: str, body: Switch) -> dict:
     return row or {"key": key}
 
 
+@router.put("/capability-hooks/{owner}/{hook_id}")
+async def switch_hook(owner: str, hook_id: str, body: Switch) -> dict:
+    """HOOK-1: one hook's own switch, stored (`plugin:<id>` or `skill:<key>`). Nothing runs a hook in this version.
+    404: no such hook. 409: one that never runs (won't run, or matches nothing in Arslan) can't go on."""
+    from server.services import plugin_hooks
+    done = await plugin_hooks.switch(owner, hook_id, body.on)
+    if done is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found"})
+    if done is False:
+        raise HTTPException(status_code=409, detail={"code": "never_runs"})
+    return {"owner": owner, "id": hook_id, "on": body.on}
+
+
 class Approve(BaseModel):
     digest: str
 
@@ -140,15 +153,13 @@ class ImportIn(BaseModel):
 @router.post("/capability-import")
 async def capability_import_add(body: ImportIn) -> dict:
     """Add the ticked ones, each with its own result: one that fails doesn't stop the others. A server's id starts
-    with its tool, a skill's or plugin's with `skill:` or `plugin:`, so one list holds every result.
-
-    A plugin is refused here for now: its card comes before its install, on the sheet, and that card has no board
-    yet, so no user has seen one. DELETE-BY: CAP8-2's plugin follow-up (the card's board approved), which passes
-    `body.plugins` to `tool_import.add` instead."""
+    with its tool, a skill's or plugin's with `skill:` or `plugin:`, so one list holds every result. A plugin's first
+    add answers `card` (its board, 2026-11-10: the sheet adds the other picks, then shows it), and only one sent back
+    with that card's digest goes in."""
     from server.services import connection_import, tool_import
     return {"results": [*await connection_import.add([tick.model_dump() for tick in body.servers]),
-                        *await tool_import.add([tick.model_dump() for tick in body.skills], []),
-                        *[{"id": tick.id, "state": "refused", "code": "plugins_later"} for tick in body.plugins]]}
+                        *await tool_import.add([tick.model_dump() for tick in body.skills],
+                                               [tick.model_dump() for tick in body.plugins])]}
 
 
 @router.get("/capability-sources")

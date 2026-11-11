@@ -8,11 +8,11 @@ user message, so only a scheduled task's user-chosen name is included.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
-from server.db.models import ScheduledTask
+from server.db.models import ArslanMessage, ScheduledTask
 from server.db.session import get_session
 from server.services import desktop_status, proactive_service, settings_service
 
@@ -22,8 +22,8 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 @router.get("/desktop/status")
 async def get_desktop_status(after: int = Query(0, ge=0),
                              db: AsyncSession = Depends(get_session)) -> dict:
-    snapshot = desktop_status.snapshot(after)
-    task_ids = {e["task_id"] for e in snapshot["events"] if e.get("task_id") is not None}
+    snapshot = await _under_commanders(db, desktop_status.snapshot(after), named=False)
+    task_ids ={e["task_id"] for e in snapshot["events"] if e.get("task_id") is not None}
     names: dict[int, str] = {}
     if task_ids:
         rows = await db.execute(select(ScheduledTask.id, ScheduledTask.name)
@@ -46,8 +46,8 @@ async def get_island_feed(after: int = Query(0, ge=0),
     plan, cards waiting, recent events with a title and summary. Unlike the status
     endpoint (read for notifications that can show on a locked screen), this one is
     read only by the island, which macOS keeps out of screenshots and shares."""
-    feed = desktop_status.island_feed(after)
-    task_ids = {e["task_id"] for e in feed["events"] if e.get("task_id") is not None}
+    feed = await _under_commanders(db, desktop_status.island_feed(after), named=True)
+    task_ids ={e["task_id"] for e in feed["events"] if e.get("task_id") is not None}
     if task_ids:
         rows = await db.execute(select(ScheduledTask.id, ScheduledTask.name)
                                 .where(ScheduledTask.id.in_(task_ids)))
@@ -58,6 +58,23 @@ async def get_island_feed(after: int = Query(0, ge=0),
     feed["enabled"] = await settings_service.island_enabled(db)
     feed["hands"] = await _hands_activity()
     return feed
+
+
+async def _under_commanders(db: AsyncSession, feed: dict, *, named: bool) -> dict:
+    """SUB5b: these sum up the whole app, and on the Mac a sub-session is listed under its commander, so its work
+    counts as the commander's (`desktop_status.under_commanders`). The island names the commander as the window's list
+    does, by its first message from the user; the status endpoint carries no text."""
+    from server.services import sub_sessions
+    tops = await sub_sessions.commanders(db, desktop_status.conversations_in_view(feed))
+    names: dict[str, str] = {}
+    if tops and named:
+        first = select(ArslanMessage.conversation_id, func.min(ArslanMessage.id).label("mid")).where(
+            ArslanMessage.role == "user", ArslanMessage.conversation_id.in_(set(tops.values()))
+        ).group_by(ArslanMessage.conversation_id).subquery()
+        rows = await db.execute(select(first.c.conversation_id, ArslanMessage.display_content, ArslanMessage.content)
+                                .join(ArslanMessage, ArslanMessage.id == first.c.mid))
+        names = {cid: shown or content or "" for cid, shown, content in rows.all()}
+    return desktop_status.under_commanders(feed, tops, names)
 
 
 async def _hands_activity() -> dict | None:

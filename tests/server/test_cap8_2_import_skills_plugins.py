@@ -12,6 +12,7 @@ import os
 import pathlib
 import re
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -70,7 +71,8 @@ def offline(execution_db, monkeypatch, fake_capability_prepare):
                                state="off", host_allowed=False)
             db.add(server)
             await db.flush()
-            row = CapabilitySource(id=f"src-{c['name']}", kind="mcp", name=c["name"], candidate_id=c["id"],
+            # One per install, as the real one's: an update installs its connection beside the old group's.
+            row = CapabilitySource(id=f"src-{c['name']}-{uuid.uuid4().hex[:8]}", kind="mcp", name=c["name"], candidate_id=c["id"],
                                    runtime=c["runtime"], needs={}, grants={}, candidate=c, state="installed",
                                    mcp_server_id=server.id, created_at=datetime.utcnow(),
                                    installed_at=datetime.utcnow())
@@ -144,16 +146,10 @@ def _row(scan: dict, kind: str, name: str) -> dict:
 
 
 async def _add(api, *, skills=(), plugins=()) -> dict:
-    """Skills through the route. Plugins through the module: the route refuses them until the plugin card has its
-    board (test_the_route_refuses_a_plugin_even_with_its_cards_digest)."""
-    results = {}
-    if skills:
-        response = await api.post(URL, json={"servers": [], "skills": list(skills)})
-        assert response.status_code == 200, response.text
-        results.update({result["id"]: result for result in response.json()["results"]})
-    if plugins:
-        results.update({result["id"]: result for result in await tool_import.add([], list(plugins))})
-    return results
+    """Through the sheet's route, which takes plugins since the card's board (CAP8-2's plugin follow-up)."""
+    response = await api.post(URL, json={"servers": [], "skills": list(skills), "plugins": list(plugins)})
+    assert response.status_code == 200, response.text
+    return {result["id"]: result for result in response.json()["results"]}
 
 
 def _tick(row: dict, **more) -> dict:
@@ -289,6 +285,56 @@ async def test_a_link_is_refused(api, home, tmp_path):
     assert all(r["tick"] is False for r in scan["skills"])
 
 
+async def test_a_hard_link_is_refused(api, home, tmp_path):
+    """#816's rule for the import too: a file with another name on disk could be read in as the skill's own."""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not the skill's\n")
+    folder = _skill(home, "hard-link")
+    (folder / "scripts").mkdir()
+    os.link(outside, folder / "scripts" / "x.py")
+    _skill(home, "plain")
+    scan = await _scan(api)
+    assert {r["id"].rsplit("/", 1)[-1]: r["refused"] for r in scan["skills"]} == {"hard-link": "unreadable",
+                                                                                  "plain": None}
+
+
+async def test_a_hard_link_in_a_plugin_is_refused(api, home, tmp_path):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("x\n")
+    base = _plugin(home)
+    os.link(outside, base / "skills" / "release-notes" / "scripts" / "y.py")
+    assert _row(await _scan(api), "plugins", "release-kit")["refused"] == "unreadable"
+
+
+async def test_a_hard_linked_skill_md_is_refused(api, home, tmp_path):
+    outside = tmp_path / "SKILL.md"
+    outside.write_text(SKILL_MD.format(name="top"))
+    (home / ".claude" / "skills" / "top").mkdir(parents=True)
+    os.link(outside, home / ".claude" / "skills" / "top" / "SKILL.md")
+    row = next(r for r in (await _scan(api))["skills"] if r["id"].endswith("/top"))
+    assert row["refused"] == "unreadable"
+
+
+async def test_a_file_swapped_after_its_check_is_refused(api, home, tmp_path, monkeypatch):
+    """The lstat saw the skill's own file; a second name of an outside file is put in its place before the open."""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not the skill's\n")
+    folder = _skill(home, "racy", references__notes_md="# notes\n")
+    target = folder / "references" / "notes.md"
+    real_open, done = os.open, []
+
+    def racing_open(path, flags, *args, **kwargs):
+        if not done and os.fspath(path) == os.fspath(target):
+            done.append(path)
+            os.link(outside, target.with_name(".swap"))
+            os.replace(target.with_name(".swap"), target)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", racing_open)
+    row = _row(await _scan(api), "skills", "racy")
+    assert done and row["refused"] == "unreadable"
+
+
 async def test_a_change_after_the_scan_adds_nothing(api, home):
     folder = _skill(home)
     row = _row(await _scan(api), "skills", "release-notes")
@@ -321,13 +367,14 @@ async def test_a_cached_plugin_is_listed(api, home):
     scan = await _scan(api)
     assert [r["name"] for r in scan["plugins"]] == ["release-kit"]
     row = scan["plugins"][0]
-    assert row["kind"] == "plugin" and row["tick"] is True and row["refused"] is None
+    assert row["kind"] == "plugin" and row["tick"] is False and row["refused"] is None     # plugins start unticked
     assert row["skills"] == ["changelog-style", "release-notes"] and row["connections"] == []
 
 
 @pytest.mark.parametrize(("extra", "code"), [
-    ({"hooks/hooks.json": json.dumps({"hooks": {}})}, "hooks"),
-    ({".claude-plugin/plugin.json": json.dumps({"name": "release-kit", "hooks": "./h.json"})}, "hooks"),
+    # Hooks by the user's rule (test_cap8_2_plugin_hooks.py): a blocking event, or a hooks path that isn't there.
+    ({"hooks/hooks.json": json.dumps({"hooks": {"PreToolUse": [{"hooks": []}]}})}, "hooks"),
+    ({".claude-plugin/plugin.json": json.dumps({"name": "release-kit", "hooks": "./h.json"})}, "unreadable"),
     ({"commands/status.md": "Status.\n"}, "commands"),
     ({"agents/reviewer.md": "Review.\n"}, "agents"),
 ])
@@ -394,19 +441,6 @@ async def test_the_card_comes_first_then_exactly_it_goes_in(api, home, offline):
     assert (await _add(api, plugins=[_tick(row, card=first["card_digest"])]))[row["id"]]["state"] == "here"
     rescan = _row(await _scan(api), "plugins", "release-kit")
     assert rescan["here"] is True and rescan["tick"] is False
-
-
-async def test_the_route_refuses_a_plugin_even_with_its_cards_digest(api, home, offline):
-    """No user sees a plugin's card yet (its board comes first), so nothing from the sheet's route adds one."""
-    _plugin(home)
-    row = _row(await _scan(api), "plugins", "release-kit")
-    card = (await tool_import.add([], [_tick(row)]))[0]
-    assert card["state"] == "card"
-    for tick in (_tick(row), _tick(row, card=card["card_digest"])):
-        response = await api.post(URL, json={"servers": [], "plugins": [tick]})
-        assert response.status_code == 200, response.text
-        assert response.json()["results"] == [{"id": row["id"], "state": "refused", "code": "plugins_later"}]
-    assert await _all(CapabilitySource) == [] and await _all(SkillPack) == []
 
 
 async def test_a_plugin_changed_after_its_card_goes_back_to_the_card(api, home, offline):

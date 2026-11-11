@@ -140,7 +140,8 @@ dependencies = [
 # "yield no text" and that the fix was the vision round rather than tesseract.
 # Both halves are now out of date: the vision round covered images fed to the
 # second brain, and this round covers chat attachments and the model-cannot-see
-# case. See docs/specs/2026-07-28-ocr-fallback-round.md and the platform matrix
+# case. See docs/specs/2026-07-28-ocr-fallback-round.md (on the branch
+# archive/process-docs-2026-10) and the platform matrix
 # in README.md, which is the one place that states per-platform capability.
 ocr = [
     # pypdfium2 moved to the runtime dependencies in the vision round (scanned

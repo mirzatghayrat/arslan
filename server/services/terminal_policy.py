@@ -371,10 +371,21 @@ def _detection_texts(text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(out))
 
 
-@functools.lru_cache(maxsize=64)
+@functools.lru_cache(maxsize=64)        # assess and ask_rules both ask, several times a call
+def _parsed(text: str) -> tuple[str, tuple[tuple[str, ...], ...]]:
+    """The reader's one pass over `text` (LOOP1 d2): why it does not understand the text, or "", and the commands the
+    named rules read. Every reader here reads this one pass, and nothing reads the text through the grammar again.
+    `shell_grammar.read` refuses exactly where this pass does: the folders it follows as well never change what is
+    read (its docstring), so `refused` is its "not understood" with the same why, and an understood command's
+    commands are its own. One it does not understand keeps the path it had: its named rules read the commands
+    before the refusal (additive only, never a grant), beside the rules on the raw text."""
+    prefix = shell_grammar.read_prefix(text)
+    return (prefix.why or "Arslan does not understand all of it") if prefix.refused else "", prefix.commands
+
+
 def _command_words(text: str) -> tuple[tuple[str, ...], ...]:
     """Only additive checks may use a parsed prefix; it never grants permission."""
-    return shell_grammar.read_prefix(text).commands
+    return _parsed(text)[1]
 
 
 def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
@@ -1187,13 +1198,11 @@ def assess(command: str, *, cwd: str | os.PathLike[str] | None = None, outside: 
     return Assessment("run")
 
 
-@functools.lru_cache(maxsize=64)        # assess and ask_rules both ask, several times a call
 def _not_understood(text: str) -> str:
     """S2a-3 step 3 (design point 4): why shell_grammar's reader does not understand the command, or "". With no named
     rule, such a command is `unreadable`, so its card, the approvals, the Island and the risk grade all read one table.
-    Named layer ② rules still read the raw text, so they come first."""
-    reading = shell_grammar.read(text)
-    return "" if reading.understood else (reading.why or "Arslan does not understand all of it")
+    Named layer ② rules still read the raw text, so they come first. The same parse as the named rules' (`_parsed`)."""
+    return _parsed(text)[0]
 
 
 def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None, outside: bool = False) -> set[str]:
