@@ -99,6 +99,25 @@ def test_not_held_a_dependency_folders_copy_and_a_ci_file(ws):
         assert resolve_in_workspace(where, ws, for_write=True, make_parents=True) == ws / where
 
 
+def test_a_work_folder_inside_a_dependency_folder_has_no_exemption(tmp_path):
+    """As HR-1's `exempts`: a root whose real path passes through node_modules exempts nothing below it."""
+    root = tmp_path / "node_modules" / "proj"
+    root.mkdir(parents=True)
+    root = root.resolve()
+    for where in (".vscode/tasks.json", str(root / ".vscode" / "tasks.json")):
+        with pytest.raises(RunLater):
+            resolve_in_workspace(where, root, for_write=True, make_parents=True)
+
+
+def test_a_link_named_node_modules_to_an_ordinary_folder_is_no_exemption(ws):
+    """The exemption is judged on the real path, as the kernel sees it: a link named node_modules gains nothing."""
+    (ws / "plain").mkdir()
+    (ws / "node_modules").symlink_to(ws / "plain")
+    with pytest.raises(RunLater) as held:
+        resolve_in_workspace("node_modules/.vscode/tasks.json", ws, for_write=True, make_parents=True)
+    assert held.value.path == ws / "plain" / ".vscode" / "tasks.json"
+
+
 def test_the_approved_path_passes_and_only_that_one(ws):
     tasks = ws / ".vscode" / "tasks.json"
     ok = resolve_in_workspace(".vscode/tasks.json", ws, for_write=True, make_parents=True, run_later_ok=tasks)
