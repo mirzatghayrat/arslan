@@ -970,10 +970,13 @@ class RunCommandExecutor:
                                          closed=closed, readable=readable,
                                          copies=tool_outputs.given(tool_outputs.conversation.get()),
                                          unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub,
-                                         hold_run_later=terminal_exec.HOLD_RUN_LATER.get())
+                                         hold_run_later=terminal_exec.HOLD_RUN_LATER.get(),
+                                         git_config=terminal_exec.GIT_CONFIG.get())
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")
+        if result.get("git_config_note"):
+            result["summary"] += f" · {result['git_config_note']}"    # HR-1b: the user sees it on the step
         return result
 
 

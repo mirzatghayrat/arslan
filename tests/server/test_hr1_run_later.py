@@ -83,9 +83,29 @@ def _regexes() -> list[str]:
 
 #: Every name's regex is written as `(require-all <regex> <this>)`: never inside a dependency folder (#813 review).
 DEPENDENCY_TEXT = '(require-not (regex #"^.*/([Nn][Oo][Dd][Ee]_[Mm][Oo][Dd][Uu][Ll][Ee][Ss])/.*$"))'
-#: The names' denies, exactly as `kernel_filters` writes them with the exemption.
-KERNEL_TEXT = re.sub(r'(\(regex #"[^"]*"\))', lambda m: f"(require-all {m.group(1)} {DEPENDENCY_TEXT})",
-                     RUN_LATER_REGEXES)
+#: HR-1b (ruling 1): each hooks name's regex, and the sample hooks it exempts (the whole last component, `*.sample`).
+SAMPLE_REGEXES = {
+    "^.*/[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss](/.*)?$":
+        "^.*/[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss]/[^/]*[.][Ss][Aa][Mm][Pp][Ll][Ee]$",
+    "^.*/[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]/[^/]*/[Hh][Oo][Oo][Kk][Ss](/.*)?$":
+        "^.*/[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]/[^/]*/[Hh][Oo][Oo][Kk][Ss]/[^/]*[.][Ss][Aa][Mm][Pp][Ll][Ee]$",
+}
+
+
+def _wrapped(match: re.Match, *, dependency: bool) -> str:
+    parts = [match.group(0)]
+    if match.group(1) in SAMPLE_REGEXES:
+        parts.append(f'(require-not (regex #"{SAMPLE_REGEXES[match.group(1)]}"))')
+    if dependency:
+        parts.append(DEPENDENCY_TEXT)
+    return parts[0] if len(parts) == 1 else f"(require-all {' '.join(parts)})"
+
+
+#: The names' denies, exactly as `kernel_filters` writes them with both exemptions (dependency folders, sample hooks).
+KERNEL_TEXT = re.sub(r'\(regex #"([^"]*)"\)', lambda m: _wrapped(m, dependency=True), RUN_LATER_REGEXES)
+#: The same for a root inside a dependency folder: no dependency exemption, the sample one kept. With an alias
+#: (`aliased`, HR-1b too) neither: RUN_LATER_REGEXES as written.
+RUN_LATER_BARE = re.sub(r'\(regex #"([^"]*)"\)', lambda m: _wrapped(m, dependency=False), RUN_LATER_REGEXES)
 #: The held folders' names, at any depth, as one alternation (the by-name hold's).
 HELD_NAMES_REGEX = ('^.*/([.][Gg][Ii][Tt]|[.][Gg][Ii][Tt]/[Hh][Oo][Oo][Kk][Ss]|'
                     '[.][Gg][Ii][Tt]/[Ww][Oo][Rr][Kk][Tt][Rr][Ee][Ee][Ss]|[.][Gg][Ii][Tt]/[Mm][Oo][Dd][Uu][Ll][Ee][Ss]|'
@@ -103,7 +123,8 @@ RUN_LATER_TEXT = SYMLINK_TEXT + KERNEL_TEXT
 
 def _by_regex(path: str) -> bool:
     # The SBPL text is POSIX extended syntax that Python's re reads the same way (classes, groups, ?, *, anchors).
-    return (any(re.fullmatch(r, path) for r in _regexes())
+    return (any(re.fullmatch(r, path) and not (r in SAMPLE_REGEXES and re.fullmatch(SAMPLE_REGEXES[r], path))
+                for r in _regexes())
             and not re.fullmatch(run_later.dependency_regex(), path))
 
 
@@ -200,18 +221,18 @@ def test_the_kernel_text_has_no_exemption_for_a_root_inside_a_dependency_folder(
                            ([tmp_path], [inside])]:
         lines = "".join("(deny file-write* " + " ".join(f) + ")\n" for f in run_later.kernel_filters(folders,
                                                                                                     roots=roots))
-        assert lines == RUN_LATER_REGEXES and "require-not" not in lines
+        assert lines == RUN_LATER_BARE and DEPENDENCY_TEXT not in lines
     # And in the profiles: the commands preset for that work folder, the MCP preset for a grant there.
-    assert RUN_LATER_REGEXES.splitlines()[0] in command_sandbox.commands_profile(inside).splitlines()
+    assert RUN_LATER_BARE.splitlines()[0] in command_sandbox.commands_profile(inside).splitlines()
     mcp = capability_sandbox.profile(root=home / "mcp", folders=[str(inside)], network=False, read=[])
-    assert RUN_LATER_REGEXES.splitlines()[0] in mcp.splitlines() and DEPENDENCY_TEXT not in mcp
+    assert RUN_LATER_BARE.splitlines()[0] in mcp.splitlines() and DEPENDENCY_TEXT not in mcp
 
 
 def test_the_mcp_preset_decides_the_exemption_by_its_own_folder_and_its_cache_too(home):
     """#813 review 4: `roots=` in the MCP preset. A server whose own folder, or whose cache, lies inside node_modules
     (with no grant there) gets the bare regexes; with neither, the exempting ones."""
     inside, outside = home / "node_modules" / STAND_IN / "mcp", home / "mcp"
-    first_bare, first_wrapped = RUN_LATER_REGEXES.splitlines()[0], KERNEL_TEXT.splitlines()[0]
+    first_bare, first_wrapped = RUN_LATER_BARE.splitlines()[0], KERNEL_TEXT.splitlines()[0]
     for root, cache, bare in [(inside, home / "cache", True), (outside, inside / "cache", True),
                               (outside, home / "cache", False)]:
         root.mkdir(parents=True, exist_ok=True)
@@ -1035,7 +1056,8 @@ def _git_noted(explained, *, floor: bool = False) -> bool:
     """Whether the git note was given; when it was, with exactly one `eperm` denial noted (never two), or, under the
     outside floor, none (#813 review 5: SBX-7 counts the workspace sandbox's denials)."""
     result, denial, noted = explained
-    if result.get("note") != command_sandbox.git_note():
+    # HR-1b: a refusal on the repository config only, in the sandbox, also offers the grant (test_hr1b_git_config).
+    if result.get("note") not in (command_sandbox.git_note(), command_sandbox.git_note(git_config=True)):
         return False
     if floor:
         assert denial is None and noted == [], noted
@@ -1060,7 +1082,7 @@ HELD_LINES = [
     "error: unable to create symlink .vscode/settings.json: Operation not permitted\n",
     "error: unable to write file .npmrc mode 100644: Operation not permitted\n",
     "fatal: cannot create directory at '.husky': Operation not permitted\n",
-    f"error: cannot copy '/{STAND_IN}/templates/hooks/pre-push.sample' to '/w/.git/hooks/pre-push.sample': "
+    f"error: cannot copy '/{STAND_IN}/templates/hooks/{STAND_IN}' to '/w/.git/hooks/{STAND_IN}': "
     "Operation not permitted\n",
     GERMAN,
     "Fehler: Konnte Konfigurationsdatei '.git/config' nicht sperren.: Operation not permitted\n",
@@ -1090,8 +1112,8 @@ def test_a_git_line_naming_a_held_file_at_exit_1_is_a_stop_with_the_git_note(tmp
 
 
 SETUP_REFUSED = [CONFIG_REFUSED,
-                 f"fatal: cannot copy '/{STAND_IN}/templates/hooks/pre-push.sample' to "
-                 f"'/w/{STAND_IN}/.git/hooks/pre-push.sample': Operation not permitted\n",
+                 f"fatal: cannot copy '/{STAND_IN}/templates/hooks/{STAND_IN}' to "
+                 f"'/w/{STAND_IN}/.git/hooks/{STAND_IN}': Operation not permitted\n",
                  f"error: could not lock config file {STAND_IN}/.git/config: Operation not permitted\n"]
 
 
@@ -1102,7 +1124,9 @@ def test_a_setup_step_that_failed_on_the_repositorys_own_config_or_hooks_gets_th
     the work tree moved, so the ordinary stop note (one denial) in the sandbox, and the floor's own note, which says
     only a click on its own card lifts the hold, under the floor (no denial). At exit 0 the git note, as before."""
     result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=128, stderr=line, command=f"git clone {STAND_IN}")
-    assert result["note"] == command_sandbox.note(tmp_path) and result["sandbox_denied"] is True
+    # HR-1b: a refusal on the repository config only offers the git_config grant in the stop note.
+    assert result["note"] == command_sandbox.note(tmp_path, git_config="hooks" not in line)
+    assert result["sandbox_denied"] is True
     assert denial == "eperm" and noted == ["eperm"]
     result, denial, noted = _explained(tmp_path, monkeypatch, exit_code=128, stderr=line, sandbox="outside", hold=True,
                                        command=f"git clone {STAND_IN}")

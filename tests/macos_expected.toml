@@ -89,6 +89,28 @@ markers = 5
 cases = 36
 xfail = 0
 
+# 0.1.64 HR-1b: under this conversation's git_config grant, git's flow (clone, init, a tracking checkout, push -u,
+# --set-upstream-to, remote add, config user.name) works and a core.hooksPath set in the sandbox is put back (1 case);
+# the hooks, the hooks folder and .gitmodules stay refused under the grant (1 case); a sample hook is written and
+# renaming it to a hook name is refused, with and without the grant (2 cases); without the grant the config stays
+# refused beside a written sample (1 case). A link at a hook name made before the command (`pre-commit ->
+# pre-commit.sample`) is refused through, and turns the sample exemption off for the run; with no link the samples are
+# written, with and without the grant (4 cases); making such a link, or renaming one onto the name, is refused (1
+# case). The product path (the profile file, the snapshot and the put-back): init and user.name under the grant,
+# hooksPath put back, init refused without it, no profile file left (2 cases). Review delta 2: a child left running
+# in the command's group never writes, and one in its own session is put back by the next granted command (2 cases);
+# no flag, ACL or hard link in either direction on a config under the grant (1 case); a flag on a submodule's folder
+# doesn't keep the key (1 case); a config with a second name runs held with a note (1 case); on an aliased profile a
+# config under node_modules stays held under the grant (1 case); a hook hard-linked to its sample isn't written
+# through it, with and without the grant (2 cases). Review delta 3: a key an own-session child writes after the
+# put-back is put back before the next command without the grant, which is refused when that can't be written (2
+# cases); a config removed by `ln -f` under the grant is written back from the baseline (1 case). Review delta 4: the
+# command after the late write in another conversation is checked the same way (1 case).
+["server/sbx/test_hr1b_git_config_kernel.py"]
+markers = 15
+cases = 24
+xfail = 0
+
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
 # protected folder named in ASCII, CJK, accents, emoji or with a control character is closed; a
 # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
@@ -296,6 +318,14 @@ xfail = 0
 ["server/test_hook2_runner.py"]
 markers = 13
 cases = 16
+xfail = 0
+
+# 0.1.64 HR-1b review delta 3: the put-back clears a file flag (`uchg`) or an ACL on the config, or a flag on its
+# folder, before writing (BSD flags and ACLs exist on macOS only; the plain unwritable-file case stays portable) (3
+# cases).
+["server/test_hr1b_git_config.py"]
+markers = 1
+cases = 3
 xfail = 0
 
 # 2026-09-25: native manual-backup maintenance subprocess at the macOS

@@ -39,6 +39,11 @@ UNWRAPPED: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_unwra
 # its own card: the outside floor keeps the files that make something run later unwritable (ruling 2).
 HOLD_RUN_LATER: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_hold_run_later", default=False)
 
+# HR-1b: set by the tool loop only, for one call in the sandbox under this conversation's git_config grant.
+GIT_CONFIG: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_git_config", default=False)
+#: HR-1b: what a command under that grant gets in its environment (`_run`): no template folder for clone and init.
+GIT_CONFIG_ENV = {"GIT_TEMPLATE_DIR": ""}
+
 SHELL = ("/bin/bash", "-p")
 DEFAULT_TIMEOUT_S = 120
 MIN_TIMEOUT_S = 5
@@ -153,6 +158,25 @@ async def _reap_then_cancel(tasks) -> None:
     await _cancel(tasks)
 
 
+def _group_alive(pgid: int) -> bool:
+    """A process of the group is left that can still run (EPERM on macOS: only zombies are left)."""
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    return True
+
+
+async def _end_group(proc) -> bool:
+    """HR-1b: kills what is left of the group, waits until none can run (at most DRAIN_AFTER_KILL_S); was one left?"""
+    left = _group_alive(proc.pid)
+    _kill_group(proc)
+    deadline = asyncio.get_running_loop().time() + DRAIN_AFTER_KILL_S
+    while _group_alive(proc.pid) and asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.01)
+    return left
+
+
 def _reads_a_saved_output(result: dict) -> bool:
     from server.services import tool_outputs
     folder = str(tool_outputs.outputs_dir())
@@ -162,7 +186,7 @@ def _reads_a_saved_output(result: dict) -> bool:
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
               offline: bool = False, sandbox: bool = False, closed: list[Path] = (),
               readable: list[Path] = (), copies: list[Path] = (), unwrapped: bool = False,
-              hold_run_later: bool = False) -> dict:
+              hold_run_later: bool = False, git_config: bool = False) -> dict:
     """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
     cannot start, the command runs as before and the result says
     sandbox="unavailable" (offline mode still refuses without isolation).
@@ -173,12 +197,74 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     command where seatbelt cannot start.
 
     SBX-3 §1a: TMPDIR is the run's own folder (`run_temp`), shared by the run's commands; a command
-    outside any run gets one of its own that goes with it."""
-    from server.services import execution_context, run_temp
+    outside any run gets one of its own that goes with it.
+
+    HR-1b: `git_config`, the grant, lifts the configs in the sandbox (`_guarded`). Review deltas 3 and 4: once any
+    folder had it, every command is checked first (`git_config_guard.recheck`), and not started if that fails."""
+    from server.services import execution_context, git_config_guard, run_temp, tool_outputs
+    note = ""
+    if git_config_guard.WATCHED:
+        try:
+            note = await asyncio.to_thread(git_config_guard.recheck)
+        except Exception as exc:  # noqa: BLE001 — fails closed: the command doesn't start, and the grant ends
+            git_config_guard.ENDED.add(tool_outputs.conversation.get() or "")
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
+                    "sandbox": "workspace" if sandbox else "outside", "git_config_held": True,
+                    "error": "not started: git settings couldn't be checked", "git_config_note": str(exc)
+                    if isinstance(exc, git_config_guard.Refused) else git_config_guard.REFUSED}
     with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
-        return await _run(command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
-                          readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
-                          hold_run_later=hold_run_later)
+        kw = dict(command=command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
+                  readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
+                  hold_run_later=hold_run_later)
+        result = await (_guarded(cwd, kw) if git_config and sandbox else _run(**kw))
+    if note:
+        result["git_config_note"] = f"{note} {result.get('git_config_note', '')}".strip()
+    return result
+
+
+async def _guarded(cwd: Path, kw: dict) -> dict:
+    """HR-1b: under the grant, the configs saved (else it runs held, and says so), then put back however it ended."""
+    from server.services import git_config_guard
+    try:
+        saved = await asyncio.to_thread(git_config_guard.snapshot, cwd, kw["closed"])
+    except (git_config_guard.GuardError, OSError) as exc:
+        result = await _run(**kw)
+        result["git_config_note"] = ((
+            "A git config file in the working folder has a second name (a hard link) or is a link"
+            if isinstance(exc, git_config_guard.Linked) else "Arslan couldn't look through the working folder's git "
+            "settings before this command (too many folders, or one it can't read)")
+            + ", so git couldn't update them this time, as without the git_config permission.")
+        return result
+    git_config_guard.watch(cwd, kw["closed"])          # review delta 3: checked before every later command
+    try:
+        result = await _run(**kw, git_config_ok=True)
+    except BaseException:
+        _put_back(saved)                 # stopped or failed: still checked, here on the loop (it is quick)
+        raise
+    message, held = await asyncio.to_thread(_put_back, saved)
+    if result.pop("git_config_stopped", False):
+        message = ("Arslan stopped what this command left running: under the git_config permission nothing may run on "
+                   "past the check of the git settings. " + message).strip()
+    if message:
+        result["git_config_note"] = message
+    if held:
+        result["git_config_held"] = True    # the tool loop deletes the stored grant (command_gate.end_git_config)
+    return result
+
+
+def _put_back(saved) -> tuple[str, bool]:
+    """git_config_guard.restore, never raising: the step's note, and whether a put-back failed (the grant ends)."""
+    from server.services import git_config_guard, tool_outputs
+    try:
+        outcome = git_config_guard.restore(saved)
+        message, held = outcome.message(), bool(outcome.held)
+    except Exception:  # noqa: BLE001 — reported to the model and on the step instead
+        import logging
+        logging.getLogger(__name__).warning("git config restore failed", exc_info=True)
+        message, held = git_config_guard.HELD_NOTE, True
+    if held:
+        git_config_guard.ENDED.add(tool_outputs.conversation.get() or "")
+    return message, held
 
 
 async def trust_service_allowed() -> bool:
@@ -195,7 +281,7 @@ async def trust_service_allowed() -> bool:
 
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
                readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int,
-               hold_run_later: bool = False) -> dict:
+               hold_run_later: bool = False, git_config_ok: bool = False) -> dict:
     # bash writes here-document temp files under TMPDIR and a nested zsh (`zsh -c`, a `#!/bin/zsh` script) under
     # TMPPREFIX: where /tmp is not writable a `python3 - <<'PY'` save would fail (0.1.49 bench). Both stay in the run's folder.
     # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
@@ -203,6 +289,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
     from server.services import command_sandbox, run_later, run_temp, sandbox_proxy
+    if git_config_ok:       # HR-1b: no template, so clone and init make no `.git/hooks` folder (it stays held)
+        env.update(GIT_CONFIG_ENV)
     prefix: list[str] = []
     mode = "off"
     if sandbox:
@@ -221,7 +309,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         try:
             prefix = await command_sandbox.in_thread(
                 command_sandbox.wrapper, cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
-                copies=copies, proxy_port=proxy_port, trust_service=trust) or []
+                copies=copies, proxy_port=proxy_port, trust_service=trust, git_config_ok=git_config_ok) or []
         except run_later.TooManyLinks:
             return _not_started(cwd, "workspace", command_sandbox.links_note(cwd))
         mode = "workspace" if prefix else "unavailable"
@@ -238,7 +326,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     profile = command_sandbox.profile_path(prefix)
     try:
         return await _execute(command, prefix=prefix, cwd=cwd, env=env, temp_key=temp_key, timeout_s=timeout_s,
-                              offline=offline, closed=closed, mode=mode, hold_run_later=hold_run_later)
+                              offline=offline, closed=closed, mode=mode, hold_run_later=hold_run_later,
+                              git_config_ok=git_config_ok)
     finally:
         command_sandbox.remove_profile(profile)
 
@@ -250,7 +339,8 @@ def _not_started(cwd: Path, mode: str, note: str) -> dict:
 
 
 async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, temp_key: int, timeout_s: int,
-                   offline: bool, closed: list[Path], mode: str, hold_run_later: bool) -> dict:
+                   offline: bool, closed: list[Path], mode: str, hold_run_later: bool,
+                   git_config_ok: bool = False) -> dict:
     from server.services import run_temp
     if offline and not prefix:
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
@@ -274,12 +364,15 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
         # children included, instead of running on where nobody sees it.
         _kill_group(proc)
         await asyncio.shield(_reap_then_cancel(tasks))
+        if git_config_ok:
+            await asyncio.shield(_end_group(proc))       # HR-1b: before the put-back (`_guarded`)
         raise
     if pending:
         timed_out = True
         _kill_group(proc)
         _, pending = await asyncio.wait(pending, timeout=DRAIN_AFTER_KILL_S)
         await _cancel(pending)
+    left_running = await _end_group(proc) if git_config_ok else False      # HR-1b: before the put-back
     full_out = out_buf.data().decode("utf-8", errors="replace")
     full_err = err_buf.data().decode("utf-8", errors="replace")
     stdout, cut_out = clip(fold_repeats(full_out))
@@ -306,15 +399,18 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
         result["error"] = f"exit code {proc.returncode}"
     if cut_out or cut_err:
         result["truncated"] = True
+    if left_running and not timed_out:
+        result["git_config_stopped"] = True
     return explain(result, cwd=cwd, closed=closed, mode=mode, timed_out=timed_out, command=command,
-                   hold=hold_run_later)
+                   hold=hold_run_later, git_config=git_config_ok)
 
 
 def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out: bool, command: str,
-            hold: bool = False) -> dict:
+            hold: bool = False, git_config: bool = False) -> dict:
     """What the model reads beside a finished command's output: why the sandbox stopped it, if it did. Records the
     SBX-7 denial code through run_trace, never on the result, once per run. `hold`: the outside floor held the files
-    that make something run later (HR-1)."""
+    that make something run later (HR-1). `git_config`: it ran under the git_config grant (HR-1b), so a refusal on the
+    repository's config doesn't offer the grant again."""
     from server.services import command_sandbox
     # HR-1 (#813 reviews 4 and 5): git's refusal lines name a held file (in the sandbox, or under a floor that holds
     # them). A step that failed outright on the repository's own config or hooks (clone, init, remote add, a config
@@ -322,6 +418,9 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
     # step that exited 0 with its upstream or setting unsaved.
     held = command_sandbox.git_refused_paths(result, command=command, cwd=cwd, hold=hold)
     git = bool(held) and not command_sandbox.git_setup_failed(result, held)
+    # HR-1b: refused on the repository's config only, in the sandbox, without the grant: the note offers it.
+    offer = (result.get("sandbox") == "workspace" and not git_config
+             and command_sandbox.git_config_only(held, cwd))
     if command_sandbox.stopped_by_sandbox(result) and _reads_a_saved_output(result):
         # S2a-1 piece 5: a saved tool output this conversation was not given. read_file reads it;
         # running the command outside the sandbox would open far more than one copy, so no card.
@@ -342,8 +441,8 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
         if git or proxy or not trust:
             from server.orchestrator import run_trace
             run_trace.note_denial("proxy" if proxy else "eperm")
-        result["note"] = (command_sandbox.git_note() if git
-                          else command_sandbox.note(cwd, closed, trust=trust, proxy=proxy))
+        result["note"] = (command_sandbox.git_note(git_config=offer) if git
+                          else command_sandbox.note(cwd, closed, trust=trust, proxy=proxy, git_config=offer))
     elif result["ok"] and command_sandbox.proxy_refused(result):
         # A client that printed the proxy's refusal and exited 0 (curl without -f on plain http): still a denial,
         # but not a failed step.
@@ -359,7 +458,7 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
         if result.get("sandbox") == "workspace":
             from server.orchestrator import run_trace
             run_trace.note_denial("eperm")
-        result["note"] = command_sandbox.git_note()
+        result["note"] = command_sandbox.git_note(git_config=offer)
     elif mode == "outside" and not result["ok"] and command_sandbox.refused_outside(result):
         result["note"] = ("Even outside the sandbox a command cannot read or write Arslan's own data, keys or "
                           "Arslan Hands' folder"

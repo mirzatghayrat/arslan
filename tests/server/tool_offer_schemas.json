@@ -220,6 +220,7 @@
  ],
  "run_command": [
   "command: string required",
+  "git_config: boolean",
   "network: boolean",
   "outside_sandbox: boolean",
   "timeout_s: integer",
