@@ -401,25 +401,53 @@ def test_the_new_prompts_name_their_folders():
         prompts[task].format(dir="/r")  # no stray braces
 
 
-def test_t16_is_unsupported_for_arslan_until_sub_and_both_for_entrants_without_a_tool_record(
-    tmp_path, monkeypatch
-):
+def test_t16_and_t17_are_unsupported_only_for_entrants_without_a_tool_record(tmp_path, monkeypatch):
+    """SUB5e: Arslan has start_sub_session, so T16 runs for it; who has no tool record cannot."""
     monkeypatch.setattr(runner, "ROOT", tmp_path)
     monkeypatch.setattr(
         runner, "command", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run"))
     )
     prompts = json.loads((runner.HERE / "prompts.json").read_text())
-    for task, who in [("T16", w) for w in ("arslan", "arslan-legacy", "hermes", "goose")] + [
-        ("T17", "hermes"),
-        ("T17", "goose"),
-    ]:
+    for task, who in [(t, w) for t in ("T16", "T17") for w in ("hermes", "goose")]:
         rec = runner.run_one(task, who, 1, prompts, "sb")
         assert (
             rec["check"]["unsupported"] and not rec["passed"] and rec["usage"]["usd_peak"] == 0
         ), (task, who)
-    assert "SUB" in runner.run_one("T16", "arslan", 2, prompts, "sb")["check"]["note"]
     assert "tool-call record" in runner.run_one("T16", "hermes", 2, prompts, "sb")["check"]["note"]
-    assert all("T17" not in runner.UNSUPPORTED[w] for w in ("arslan", "arslan-legacy"))
+    assert all(
+        not {"T16", "T17"} & runner.UNSUPPORTED[w] for w in ("arslan", "arslan-legacy", "claude-code")
+    )
+
+
+@pytest.mark.parametrize("subs,score", [(3, 3), (0, 2)], ids=["three-sub-sessions", "did-it-alone"])
+def test_t16_runs_for_arslan_and_counts_its_sub_sessions_from_the_frames(
+    tmp_path, monkeypatch, subs, score
+):
+    """Through run_one with a stub driver: the fixture, the frames transcript and the checker are
+    wired for Arslan, and the record keeps the sub-sessions opened, the regions the summary covers,
+    the spend and the 429s."""
+    monkeypatch.setattr(runner, "ROOT", tmp_path)
+    answers: dict = {}
+    real = check_t16.fixture
+
+    def fixture(run, *a, **k):
+        answers.update(real(run, *a, **k)["answers"])
+        return {"answers": answers}
+
+    monkeypatch.setitem(runner.FIXTURES, "T16", fixture)
+
+    def driver(*a, **k):
+        run = Path(a[2]) if len(a) > 2 else Path(k["run"])
+        _t16_done(run, answers)
+        _frames(run, "read_file", *["start_sub_session"] * subs)
+        return [sys.executable, "-c", "import json; print(json.dumps({'end': 'done', 'final': 'ok'}))"], {}
+
+    monkeypatch.setattr(runner, "command", driver)
+    rec = runner.run_one("T16", "arslan", 1, {"T16": "split {dir}"}, "sb")
+    assert rec["check"]["score"] == score and rec["passed"] is (score == 3), rec["check"]
+    assert rec["check"]["sub_sessions"] == subs
+    assert rec["check"]["summary_covers"] == ["north", "south", "west"]
+    assert rec["rate_limited_429"] == 0 and "usd_peak" in rec["usage"]
 
 
 def test_t17_runs_for_arslan_and_delegate_work_is_a_hand_off(tmp_path, monkeypatch):

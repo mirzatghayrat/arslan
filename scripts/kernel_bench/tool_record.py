@@ -10,7 +10,8 @@
   as unsupported for them (runner.TOOL_RECORD).
 
 Not yet checked against a real run (M64 made no model calls): the Claude Code transcript's place
-and shape (Claude Code 2.1.300, the pinned version), and the name Arslan's sub-session tool will have.
+and shape (Claude Code 2.1.300, the pinned version). Arslan's tool is `start_sub_session` (SUB3);
+reached on demand, its `tool_call` frame still carries that name (use_tool calls it by its own).
 """
 
 from __future__ import annotations
@@ -18,9 +19,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-# The sub-session tool: `start_sub_session` is the name the SUB card proposes (SUB3 fixes it);
+# The sub-session tool: Arslan's `start_sub_session` (SUB3, in the tool tables from SUB5e);
 # Claude Code's subagent tool is `Task` (renamed `Agent` in later versions).
-# DELETE-BY: v0.1.64 when SUB3 merges: put the tool's real name here if it is not start_sub_session.
 SUB_SESSION = {
     "arslan": frozenset({"start_sub_session"}),
     "arslan-legacy": frozenset({"start_sub_session"}),
