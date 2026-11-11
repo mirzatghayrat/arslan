@@ -90,7 +90,7 @@ base main = `2f76f7c`（v0.1.10）。落地路径：`docs/specs/2026-07-28-ocr-f
 - **C**：用户在 Settings 里选。
 
 ### ② Vision 结果怎么标出处？
-**🟢 定：A（用户 2026-07-28 裁决）。** The user's characterization is worth keeping in the spec: the former is **verbatim extraction with no understanding**, the latter is **understanding but not verbatim**, 可信度语义相反，**合并就是撒谎**。
+**🟢 定：A（用户 2026-07-28 裁决）。**
 视觉轮拍板④的附加条款要求"模型描述"必须带 provenance 标记，防止被当 verbatim 引用。**但 Vision 的输出恰恰是 verbatim 原文**（不是描述）。
 - **A（推荐）**：**新增一个不同的标记**（如 `[OCR:文件名]` 对应 `[图片描述:文件名]`），因为二者的可信度语义**相反**：一个是"图上原文"，一个是"模型的转述"。混用同一个标记会把刚建立的诚实性搞坏。
 - **B**：复用现有标记。
