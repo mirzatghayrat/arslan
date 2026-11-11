@@ -45,6 +45,7 @@ Settled by the reviewer:
 | A sub-session's grants (SUB3) | the same table, under the sub-session's id | nested under its commander's block |
 | Task grants | `task_id != ""`, ended with their task | not listed, by design |
 | Old command rules | `legacy_rule` | deleted by 0092 |
+| Grants no request reads | e.g. a 0.1.61–0.1.62 rule card's `command` / `rules:<rules>`; `permissions.grant_is_live` | deleted by 0092 (the user's decision after #836's review), never listed |
 
 A deleted conversation's grants are deleted with it (#799); one left over, or one under a deleted commander, is not
 listed (`sub_sessions.is_deleted` on each link of the chain).

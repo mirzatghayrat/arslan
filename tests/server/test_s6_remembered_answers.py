@@ -18,6 +18,7 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, MCPServer, PermissionRule
+from server.mcp.discovery import mcp_tool_key
 from server.orchestrator import command_gate, tool_loop
 from server.services import (approvals, command_confirm, command_sandbox, permission_store, permissions,
                              settings_service, sub_sessions, terminal_exec, terminal_policy)
@@ -155,6 +156,93 @@ def test_migration_0092_is_in_the_runner():
     from server.db.migrations import runner
     from server.db.migrations.versions import _0092_remove_legacy_command_rules as m0092
     assert ("0092", m0092.upgrade_sync) in runner.MIGRATIONS
+
+
+# ── 0092 also deletes the grants no request reads (the user's decision, after #836's review) ──
+
+#: One live grant of every live kind and target form (`permissions.grant_is_live`), as rows: these must survive whole.
+LIVE_GRANTS = [
+    ("c1", "", "command", "text:git status"), ("c1", "", "command", "unsandboxed:*"), ("c1", "", "outside", "*"),
+    ("c1", "", "network", "network:*"), ("c1", "", "schedule", "*"), ("c1", "", "workspace_write", "/Users/x/Projects"),
+    ("c1", "", "workspace_write", "*"), ("c1", "", "mcp_tool", "mcp_7__create_issue"),
+    ("c1", "", "app", "com.apple.Notes"), ("c1", "", "site", "https://example.com"), ("c1", "", "shortcut", "Daily log"),
+    ("sub-1", "", "outside", "*"), ("c2", "turn-1", "app", "com.apple.Notes"),          # a sub-session's; a task's
+    # #836 max review: four live shapes pinned. A long MCP tool name is kept hashed (discovery.mcp_tool_key); an app
+    # with no bundle id is kept by its name (hands_tools._target); a site may be plain http (a local server).
+    ("c1", "", "mcp_tool", mcp_tool_key(7, "create_issue_with_labels_assignees_and_a_long_milestone")),
+    ("c1", "", "app", "Notes"), ("c1", "", "site", "http://localhost:8080"),
+]
+#: One dead grant of each class: an old command target, every once-only kind, the kinds never granted, kinds outside
+#: KINDS, and a live kind under a target no request uses.
+DEAD_GRANTS = [
+    ("c1", "", "command", "rules:git-push"), ("c1", "", "command", "delete|hermes:recursive delete"),
+    ("c1", "", "command", ""),
+    *[("c1", "", kind, "*") for kind in ("money", "app_risky", "capability", "other_agent", "system", "opaque",
+                                         "remote", "takeover")],
+    ("c1", "", "remote", "remote:10.0.0.2"),
+    *[("c1", "", kind, "*") for kind in ("destructive", "folder", "send", "screen")],
+    ("c1", "", "legacy_rule", "git-push"), ("c1", "", "nonsense", "*"),
+    ("c1", "", "outside", "/"), ("c1", "", "network", "*"), ("c1", "", "schedule", "daily"),
+    ("c1", "", "mcp_tool", "x"), ("c1", "", "app", ""),
+]
+#: Target forms the frozen copy is checked against, for every kind.
+TARGET_FORMS = ["", "*", "/", "daily", "network:*", "network:x", "unsandboxed:*", "unsandboxed:x", "text:", "text:ls",
+                "rules:git-push", "delete|hermes:x", "mcp_7__x", "mcp_", "x", "/Users/x/Projects", "com.apple.Notes",
+                "https://example.com", "Daily log", "remote:10.0.0.2", "capability:x"]
+
+
+def _grant_rows(conn):
+    return conn.exec_driver_sql("SELECT id, conversation_id, task_id, kind, target, call_id, created_at "
+                                "FROM permission_grants ORDER BY id").fetchall()
+
+
+def _with_grants(path, rows):
+    engine = _old_database(path)
+    with engine.begin() as conn:
+        conn.exec_driver_sql("DELETE FROM permission_grants")
+        for n, (cid, task, kind, target) in enumerate(rows):
+            conn.exec_driver_sql("INSERT INTO permission_grants (conversation_id, task_id, kind, target, call_id, "
+                                 "created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                                 (cid, task, kind, target, f"card-{n}", f"2026-10-{n % 28 + 1:02d} 10:00:00"))
+    return engine
+
+
+def test_migration_0092_keeps_every_live_grant_untouched(tmp_path):
+    """The failure that matters most: a grant a request still reads must survive whole, field by field."""
+    from server.db.migrations.versions import _0092_remove_legacy_command_rules as m0092
+    engine = _with_grants(tmp_path / "live.db", LIVE_GRANTS + DEAD_GRANTS)
+    with engine.begin() as conn:
+        before = _grant_rows(conn)
+        m0092.upgrade_sync(conn)
+        after = _grant_rows(conn)
+        m0092.upgrade_sync(conn)                      # a re-run finds nothing more to do
+        assert _grant_rows(conn) == after
+    live = [row for row in before if (row[1], row[2], row[3], row[4]) in LIVE_GRANTS]
+    assert len(live) == len(LIVE_GRANTS)
+    assert after == live
+
+
+def test_migration_0092_deletes_every_dead_grant(tmp_path):
+    from server.db.migrations.versions import _0092_remove_legacy_command_rules as m0092
+    engine = _with_grants(tmp_path / "dead.db", DEAD_GRANTS)
+    with engine.begin() as conn:
+        assert len(_grant_rows(conn)) == len(DEAD_GRANTS)
+        m0092.upgrade_sync(conn)
+        assert _grant_rows(conn) == []
+
+
+def test_the_migrations_frozen_rule_agrees_with_todays_grant_is_live():
+    """0092 carries a frozen copy of today's rule (it must not change history when the app's rule changes). A change
+    to `permissions.grant_is_live` fails here, loudly: then decide whether 0092's copy is what history was."""
+    from server.db.migrations.versions import _0092_remove_legacy_command_rules as m0092
+    kinds = sorted(permissions.KINDS | {"legacy_rule", "nonsense", ""})
+    for kind in kinds:
+        for target in TARGET_FORMS:
+            assert m0092._grant_is_live(kind, target) == permissions.grant_is_live(kind, target), (kind, target)
+    for _, _, kind, target in LIVE_GRANTS:
+        assert permissions.grant_is_live(kind, target), (kind, target)
+    for _, _, kind, target in DEAD_GRANTS:
+        assert not permissions.grant_is_live(kind, target), (kind, target)
 
 
 # ── nothing writes a command rule again ──────────────────────────────────────

@@ -112,8 +112,9 @@ if set(_LIVE_GRANT_TARGETS) | _ONCE_ONLY | _NEVER_GRANTED != KINDS or set(_LIVE_
 
 
 def grant_is_live(kind: str, target: str) -> bool:
-    """Whether a stored conversation grant can answer a request today (see `_LIVE_GRANT_TARGETS`). A dead one is kept
-    (whether migration 0092 deletes them is the user's call) but never listed as standing."""
+    """Whether a stored conversation grant can answer a request today (see `_LIVE_GRANT_TARGETS`). Migration 0092
+    deleted the dead ones (the user's choice), with a frozen copy of this rule; one written since is never listed as
+    standing. Changing this rule fails a test until 0092's copy is checked against it."""
     live = _LIVE_GRANT_TARGETS.get(kind)
     return bool(live and live(target or ""))
 

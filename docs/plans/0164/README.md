@@ -348,7 +348,7 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0089 | CAP7a | Rebuilds `capability_sources` so the `kind` CHECK also allows `plugin` (CAP7b stores a plugin as one source); copy-rename like 0069, schema otherwise unchanged, rows preserved, no-op downgrade | ⑤CAP |
 | 0090 | ⑤CAP | Data only: removes stored MCP sign-ins from `settings` whose server no longer exists | ⑤CAP |
 | 0091 | SUB5a | `conversation_contexts.sub_state`: what a sub-session still owes its parent (`working`, `summing`, `interrupted`), written when it changes and only read at boot, so a restart can tell its parent; add-only, nullable, no-op downgrade | ②Main |
-| 0092 | S6 | Data only: deletes the old command rules (`permission_rules` of kind `legacy_rule`) and the `terminal_always_allow` settings list they were copied from (the user's decision of 2026-11-11: deleted, not listed); nothing else touched, no-op downgrade | ②Main |
+| 0092 | S6 | Data only: deletes the old command rules (`permission_rules` of kind `legacy_rule`) and the `terminal_always_allow` settings list they were copied from (the user's decision of 2026-11-11: deleted, not listed), and every `permission_grants` row no request reads (a frozen copy of `permissions.grant_is_live`; the user's decision after #836's review); live grants and everything else untouched, no-op downgrade | ②Main |
 
 The next free number is 0093. Ask ②Main before taking it.
 
