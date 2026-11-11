@@ -88,6 +88,36 @@ _NEVER_JOINED = frozenset({"outside", "remote"})
 _SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
 if not _SCOPE_SETS <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: {sorted(_SCOPE_SETS - KINDS)}")
+
+# S6 (#836 review): which stored "in this conversation" grants a current request can still match. A grant answers
+# only through `_find_standing` (decide, standing) or `approvals.runs_unsandboxed`, both keyed on a request's
+# (kind, target); so a grant whose (kind, target) no request builds today answers nothing, and the "Remembered
+# answers" page never lists it as one that does (`grant_is_live`). An allowlist, by kind, of the targets read:
+_LIVE_GRANT_TARGETS = {
+    "command": lambda t: t == "unsandboxed:*" or t.startswith("text:"),   # approvals._command_request; `rules:…` is once only since S2a-2
+    "outside": lambda t: t == "*",                                         # command_gate._outside_request
+    "network": lambda t: t == "network:*",                                 # command_gate, inside the sandbox
+    "schedule": lambda t: t == "*",
+    "workspace_write": bool,                                               # the working folder's path (or "*")
+    "mcp_tool": lambda t: t.startswith("mcp_"),                            # discovery.mcp_tool_key
+    "app": bool, "site": bool, "shortcut": bool,                           # a bundle id, an origin, a name
+}
+#: Kinds no current request is granted for, besides `_ONCE_ONLY`: `destructive` is asked once only (the MCP card), and
+#: nothing builds a `folder`, `send` or `screen` request. A grant of one of these, of a kind outside KINDS, or of a
+#: target not above (a 0.1.61–0.1.62 rule card's `command` / `rules:<rules>`) is dead.
+_NEVER_GRANTED = frozenset({"destructive", "folder", "send", "screen"})
+# Every kind is classified, so a kind added later must say whether its grants are read before the page can hide them.
+if set(_LIVE_GRANT_TARGETS) | _ONCE_ONLY | _NEVER_GRANTED != KINDS or set(_LIVE_GRANT_TARGETS) & (_ONCE_ONLY | _NEVER_GRANTED):
+    raise AssertionError("every kind is exactly one of: live grant targets, once only, never granted")
+
+
+def grant_is_live(kind: str, target: str) -> bool:
+    """Whether a stored conversation grant can answer a request today (see `_LIVE_GRANT_TARGETS`). A dead one is kept
+    (whether migration 0092 deletes them is the user's call) but never listed as standing."""
+    live = _LIVE_GRANT_TARGETS.get(kind)
+    return bool(live and live(target or ""))
+
+
 _EXTRA_MAX = 1024
 #: A ledger row's target is kept whole up to this: a bound, not a trim (a many-app card's target
 #: is every bundle id joined, and cutting it would cut an app in two).

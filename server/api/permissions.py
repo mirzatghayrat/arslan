@@ -98,7 +98,9 @@ async def list_grants(kind: str | None = None, db: AsyncSession = Depends(get_se
     listed (#799's tombstone, or a delete begun in this process), nor those of a sub-session under one."""
     grants = await permission_store.list_conversation_grants(db, kind)
     blocks = await _blocks(db, {g.conversation_id for g in grants})
-    grants = [g for g in grants if g.conversation_id in blocks]
+    # #836 review: a grant no request reads today (a 0.1.61–0.1.62 rule card's `command` / `rules:<rules>`, among
+    # others: `permissions.grant_is_live`) answers nothing, so it is never listed as one that does.
+    grants = [g for g in grants if g.conversation_id in blocks and permissions.grant_is_live(g.kind, g.target)]
     titles = await _titles(db, set(blocks) | set(blocks.values()))
     names = await _names(db, grants)
     return [{"id": g.id, "conversation_id": g.conversation_id, "title": titles.get(g.conversation_id, ""),

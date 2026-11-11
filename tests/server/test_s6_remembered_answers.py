@@ -20,7 +20,7 @@ from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, MCPServer, PermissionRule
 from server.orchestrator import command_gate, tool_loop
 from server.services import (approvals, command_confirm, command_sandbox, permission_store, permissions,
-                             settings_service, sub_sessions, terminal_exec)
+                             settings_service, sub_sessions, terminal_exec, terminal_policy)
 from tests.server.test_proactive_api import client  # noqa: F401 — the whole app, for the removed route
 
 
@@ -336,6 +336,46 @@ async def test_a_conversation_whose_delete_began_in_this_process_is_not_listed(a
     await _seed_conversations()
     monkeypatch.setattr(sub_sessions, "_deleted", {"c-sub"})
     assert {g["conversation_id"] for g in await _grants(api)} == {"c-top"}
+
+
+async def test_a_rules_grant_from_0162_is_not_listed_as_a_live_one(api, monkeypatch):
+    """#836 review: 0.1.61/0.1.62's rule card offered "In this conversation" (`command` / `rules:<rules>`). Since S2a-2
+    that card is this time only, so such a grant answers nothing, and nothing deletes or prunes it: never listed."""
+    _toggles(monkeypatch, sandbox=True, ask_all=False)
+    command = "git push origin main"
+    target = "rules:" + "|".join(sorted(terminal_policy.ask_rules(command)))
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_grant(db, "c1", "", "command", target, call_id="card-0162")
+        await db.commit()
+    asker = _Asker("once")
+    await _run(monkeypatch, command, asker)
+    assert len(asker.frames) == 1                    # still asked: the grant answers nothing
+    assert await _grants(api) == []
+
+
+@pytest.mark.parametrize("kind,target", [
+    ("command", "rules:git-push"), ("command", "delete|hermes:recursive delete"), ("command", ""),
+    ("remote", "remote:10.0.0.2"), ("money", "*"), ("app_risky", "com.apple.Terminal"), ("capability", "skill:x"),
+    ("destructive", "mcp_7__drop_table"), ("folder", "/tmp"), ("send", "*"), ("screen", "*"),
+    ("legacy_rule", "git-push"), ("outside", "/"), ("network", "*"), ("schedule", "daily"), ("mcp_tool", "x"),
+])
+async def test_a_grant_no_request_reads_is_never_listed(api, kind, target):
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_grant(db, "c1", "", kind, target, call_id="old")
+        await permission_store.add_grant(db, "c1", "", "outside", "*", call_id="live")
+        await db.commit()
+    assert [(g["kind"], g["target"]) for g in await _grants(api)] == [("outside", "*")]
+
+
+def test_the_grants_todays_cards_store_are_live_and_a_rule_cards_is_not():
+    """The allowlist against the real builders: what each command card would grant."""
+    shell = "git push origin main"
+    rules = sorted(terminal_policy.ask_rules(shell))
+    once = approvals._command_request(shell, rules, None)
+    assert once.once_only and not permissions.grant_is_live(once.kind, once.target)
+    for req in (approvals._command_request("ls", [], None, ask_all=True), approvals._command_request("ls", [], None),
+                command_gate._outside_request("mv a ~/b")):
+        assert not req.once_only and permissions.grant_is_live(req.kind, req.target), req.target
 
 
 async def test_the_filter_by_kind_still_works(api):
