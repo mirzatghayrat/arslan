@@ -649,13 +649,6 @@
     "voiceModeConversation": "Gespräch",
     "labelVoiceEndpointSilence": "Satzende (ms)",
     "voiceEndpointSilenceDesc": "Wie lange du pausierst, bevor das Gesagte gesendet wird. 900 ms sind ein normaler Atemzug; kürzer schneidet dich ab, länger wirkt träge.",
-    "terminalRulesTitle": "Nie mehr fragen bei",
-    "terminalRulesEmpty": "Noch nichts. Wähle auf einer Befehlskarte „Immer“, um die Art Befehl hier hinzuzufügen.",
-    "terminalRulesForget": "Wieder fragen",
-    "sandboxGrantsTitle": "Unterhaltungen, deren Befehle außerhalb der Sandbox laufen dürfen, auch in Hintergrundaufgaben",
-    "sandboxGrantsEmpty": "Keine. Wer auf einer Karte zum Ausführen außerhalb der Sandbox „In diesem Gespräch“ wählt, fügt das Gespräch hier hinzu.",
-    "sandboxGrantsTakeBack": "Zurücknehmen",
-    "sandboxGrantsUntitled": "Unbenannte Unterhaltung",
     "navGeneral": "Allgemein",
     "navAbilities": "Was Arslan darf",
     "navBackground": "Hintergrund",
@@ -770,7 +763,7 @@
     "glyph": {
       "waiting": "Wartet auf deine Freigabe",
       "waiting_reminder": "Ein angehaltener Auftrag hat dir eine Erinnerung hinterlassen",
-      "waiting_away": "Konnte dich nicht fragen, während du weg warst",
+      "waiting_away": "Eine Karte ist abgelaufen",
       "working": "Läuft",
       "progress": "Läuft: {{done}} von {{total}}",
       "done": "Fertig",
@@ -1443,7 +1436,9 @@
   },
   "inbox": {
     "addWatch": "Weitere Seite oder Ordner beobachten",
-    "refusedTitle": "Nicht erledigt, während du weg warst",
+    "refusedTitle": "Abgelaufen, nicht erledigt",
+    "expiredShown": "30 Minuten keine Antwort, darum abgelaufen",
+    "expiredUnopened": "Eine frühere Karte blieb unbeantwortet, darum ist diese abgelaufen, ohne zu erscheinen",
     "alwaysAllow": "Immer erlauben",
     "alwaysStores": "Das erlaubt künftig immer: {{what}}",
     "asksEachTime": "Fragt jedes Mal",
@@ -1496,14 +1491,60 @@
   "scheduledPage": {
     "intro": "Aufgaben, die nach Zeitplan laufen, und die Seiten und Ordner, die Arslan für dich beobachtet. Ein Punkt markiert eine Zeile, die du dir ansehen solltest.",
     "watches": "Beobachtete Seiten und Ordner",
-    "awayTitle": "Nicht erledigt, während du weg warst (nur diese Aufgabe)",
-    "seenNote": "Wenn du eine Aufgabe öffnest, gilt, was ihre Läufe nicht tun konnten, als gesehen. Was in ihrer eigenen Unterhaltung liegen blieb, während du weg warst, verschwindet, wenn du diese Unterhaltung öffnest; eine Karte dort erst, wenn du sie beantwortest.",
+    "awayTitle": "Abgelaufen oder nicht fragbar, nicht erledigt (nur diese Aufgabe)",
+    "seenNote": "Wenn du eine Aufgabe öffnest, gilt, was ihre Läufe nicht tun konnten, als gesehen. Was in ihrer eigenen Unterhaltung abgelaufen und liegen geblieben ist, verschwindet, wenn du diese Unterhaltung öffnest; eine Karte dort erst, wenn du sie beantwortest.",
     "attention": "Bitte ansehen",
     "changed": "Geändert",
     "failing": "Fehlgeschlagen oder selbst pausiert"
   },
+  "remembered": {
+    "title": "Gemerkte Antworten",
+    "desc": "Alles, was du auf einer Karte mit „In diesem Gespräch“ oder „Immer“ beantwortet hast, steht hier. Nimmst du es zurück, fragt dich dasselbe beim nächsten Mal wieder.",
+    "never": "Bezahlen, Senden, Absenden und Löschen (außerhalb des Arbeitsordners) wird jedes Mal gefragt und nie gemerkt, darum steht es nicht hier. Ein „Nur dieses Mal“ oder „Für diese Aufgabe“ endet mit seiner Aufgabe und steht darum auch nicht hier.",
+    "always": "Immer",
+    "conversation": "In diesem Gespräch",
+    "none": "Keine",
+    "empty": "Noch keine gemerkten Antworten. Wähle auf einer Karte „In diesem Gespräch“ oder „Immer“, dann steht es hier und lässt sich jederzeit zurücknehmen.",
+    "unavailable": "Kann das gerade nicht auflisten",
+    "allConversations": "Alle Gespräche",
+    "subOnly": "Nur in diesem Teilgespräch",
+    "given": "Gegeben {{when}}",
+    "lastUsed_one": "Zuletzt genutzt {{when}} · {{count}} Mal",
+    "lastUsed_other": "Zuletzt genutzt {{when}} · {{count}} Mal",
+    "neverUsed": "Noch nicht genutzt",
+    "revoke": "Zurücknehmen",
+    "revokeFailed": "Zurücknehmen hat nicht geklappt. Versuch es noch einmal",
+    "open": "Gespräch öffnen",
+    "revokeAll": "Alles aus diesem Gespräch zurücknehmen",
+    "untitled": "Unbenannte Unterhaltung",
+    "subSession": "Teilgespräch: {{title}}",
+    "pointer": "In einem Gespräch erlaubte Befehle → Gemerkte Antworten",
+    "rule": {
+      "app": "Darf „{{name}}“ ansehen und bedienen, ohne erneut zu fragen. Löschen, Senden und Bezahlen werden weiterhin jedes Mal gefragt.",
+      "other": "Immer: {{name}}"
+    },
+    "grant": {
+      "outside": "Befehle in diesem Gespräch (auch in Hintergrundaufgaben) dürfen außerhalb der Sandbox laufen",
+      "unsandboxed": "Befehle in diesem Gespräch dürfen ohne Sandbox und ohne Nachfrage laufen",
+      "command": "In diesem Gespräch läuft dieser Befehl wieder ohne Nachfrage: {{name}}",
+      "network": "In diesem Gespräch dürfen Befehle in der Sandbox nach dem Lesen von Webseiten auch ins Netz",
+      "workspace_write": "In diesem Gespräch darf Arslan ohne Nachfrage in den Ordner „{{name}}“ schreiben",
+      "schedule": "In diesem Gespräch darf Arslan ohne Nachfrage geplante Aufgaben anlegen",
+      "mcp_tool": "In diesem Gespräch darf Arslan „{{name}}“ von {{server}} nutzen, mit beliebigen Argumenten",
+      "app": "In diesem Gespräch darf Arslan „{{name}}“ ansehen und bedienen",
+      "site": "In diesem Gespräch darf Arslan auf {{name}} klicken und tippen",
+      "shortcut": "In diesem Gespräch darf Arslan den Kurzbefehl „{{name}}“ ausführen",
+      "other": "In diesem Gespräch erlaubt: {{name}}"
+    },
+    "note": {
+      "unsandboxed": "Wirkt nur, solange die Sandbox aus ist oder nicht starten kann",
+      "command": "Wirkt nur bei „Vor jedem Befehl fragen“",
+      "network": "Befehle außerhalb der Sandbox fragen weiterhin jedes Mal",
+      "serverGone": "Dieser Server wurde entfernt"
+    }
+  },
   "whileAway": {
-    "title": "Nicht erledigt, während du weg warst (dieses Gespräch)",
+    "title": "Abgelaufen, nicht erledigt (dieses Gespräch)",
     "stopped": "Eine Aufgabe, die hier angehalten hat"
   },
   "waiting": {

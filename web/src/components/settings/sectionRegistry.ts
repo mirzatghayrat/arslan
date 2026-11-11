@@ -52,10 +52,18 @@ export const LEGACY_SECTION: Record<string, SettingsSectionId> = {
   proactive: 'background', desktop: 'general', phone: 'connections', access: 'connections', advanced: 'abilities',
 };
 
+/**
+ * S6: a part of a section a deep link opens at (`openSection('settings', 'remembered')`): its section, and the element
+ * scrolled to the top and briefly highlighted there. Not a nav entry: the nav stays seven.
+ */
+export const SECTION_ANCHORS: Record<string, { section: SettingsSectionId; elementId: string }> = {
+  remembered: { section: 'abilities', elementId: 'settings-remembered-answers' },
+};
+
 export function resolveSection(id: string | undefined): SettingsSectionId | undefined {
   if (!id) return undefined;
   if (SETTINGS_SECTIONS.some((s) => s.id === id)) return id as SettingsSectionId;
-  return LEGACY_SECTION[id];
+  return SECTION_ANCHORS[id]?.section ?? LEGACY_SECTION[id];
 }
 
 /**
@@ -107,7 +115,8 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'advanced.shell_confirm_policy': 'abilities',
   'advanced.background_job_budget': 'background',
   'advanced.task_usd_cap': 'background',
-  'advanced.terminal_rules': 'abilities',
+  // S6: the old terminal-rules list (`advanced.terminal_rules`) and the outside-the-sandbox list fold into this one.
+  'abilities.remembered_answers': 'abilities',
   'general.voice_mode': 'general',
   'general.voice_input_locale': 'general',
   'general.voice_silence': 'general',

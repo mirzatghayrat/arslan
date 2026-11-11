@@ -80,3 +80,13 @@ The policy ran in a WKWebView harness on macOS 26.6.2, served by the real server
 5. **macOS 11, the minimum, if one is at hand:** steps 1 to 4 again.
    - **Expected:** the same. A reply that never streams, or code without colours, would point at that WebKit's `ws:` or `worker-src` support; note which. If no Mac on 11 is at hand, record "not run".
 6. **On a build with Web Inspector:** after steps 1 to 4, the Console shows no "Refused to …" Content Security Policy error.
+
+The island and the splash have their own policies (the follow-up PR). Both ran in the same kind of harness, the splash on a `tauri:` scheme handler standing in for Tauri's protocol, but not in the shell.
+
+7. **Splash:** quit Arslan fully and start it.
+   - **Expected:** the launch clip plays, then fades into the main window with no flash and no "Starting Arslan…" text showing through. With the app's language set to another language, the waiting text is in that language.
+8. **Splash, failure:** start once with the sidecar unable to come up (for example, rename `Contents/Resources/sidecar` in a copy of the app).
+   - **Expected:** the splash shows the "could not start" text with the reason, not a blank or frozen clip.
+9. **Island:** with the island on, start a task that runs for a while, then one that asks for approval.
+   - **Expected:** the island grows out of the notch with the mascot and the state colour; only its own shape takes clicks; the approval card answers; clicking a job opens its conversation in the main window. During a Hands run the screenshot thumbnail shows.
+10. **On a build with Web Inspector:** after steps 7 to 9, the splash's and the island's Consoles show no "Refused to …" error.

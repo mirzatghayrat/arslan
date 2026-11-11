@@ -47,10 +47,13 @@ KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "syste
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
                    "workspace_write", "network"})
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
-#: of a stored rule or grant that are never a request's own. A command's "Always" is a
-#: `legacy_rule` per rule it matched (§A9). (§A5 also names the rule kinds `command_prefix` and
-#: `mcp_server`: the PR that first stores one adds it here.)
-_STORED_ONLY = frozenset({"legacy_rule"})
+#: of a stored rule or grant that are never a request's own. None today. (§A5 also names the rule
+#: kinds `command_prefix` and `mcp_server`: the PR that first stores one adds it here.)
+#: S6: `legacy_rule` (a command's "Always", one per rule it matched, §A9) was here. No command card
+#: has offered "Always" since S2a-2, migration 0092 deleted the rows, and the user chose (2026-11-11)
+#: that they are not kept: so no card may store one again (`_check` raises), and the Inbox's "Always
+#: allow" refuses a recorded set that names one (`always_from`).
+_STORED_ONLY: frozenset[str] = frozenset()
 
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
@@ -58,11 +61,11 @@ _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "syst
 #: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
 #: the island and the phone answer only the first choice (§A4).
 _TASK_FIRST = frozenset({"app", "shortcut", "site"})
-#: Kinds that never offer "Always". A site's and a Shortcut's are here for 0.1.61 only: the Settings
-#: page that lists and removes such rules is a later PR, and until it exists an "Always" for either
-#: could be taken back only with the Inbox's 10-second Undo. Take them out of this set, and out of
-#: nowhere else, when that page ships: the card, the Inbox's "Always allow" (`always_from`) and the
-#: rule lookup (`_standing`) all follow it.
+#: Kinds that never offer "Always". A site's and a Shortcut's were here until a Settings page listed
+#: such rules; S6's "Remembered answers" page (v0.1.64) does, and the user chose (2026-11-11) that no
+#: "Always" comes back for a site, a Shortcut or an MCP tool even so. A later change that offers one
+#: takes the kind out of this set, and out of nowhere else: the card, the Inbox's "Always allow"
+#: (`always_from`) and the rule lookup (`_standing`) all follow it.
 # S2a-1: "network" (a command reaching the network after the turn read outside content) is asked this
 # time or for this conversation, never "Always": outside content can steer what it sends.
 # S4a: "outside" (every command of a conversation out of the sandbox) is this time or this conversation,
@@ -85,6 +88,37 @@ _NEVER_JOINED = frozenset({"outside", "remote"})
 _SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
 if not _SCOPE_SETS <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: {sorted(_SCOPE_SETS - KINDS)}")
+
+# S6 (#836 review): which stored "in this conversation" grants a current request can still match. A grant answers
+# only through `_find_standing` (decide, standing) or `approvals.runs_unsandboxed`, both keyed on a request's
+# (kind, target); so a grant whose (kind, target) no request builds today answers nothing, and the "Remembered
+# answers" page never lists it as one that does (`grant_is_live`). An allowlist, by kind, of the targets read:
+_LIVE_GRANT_TARGETS = {
+    "command": lambda t: t == "unsandboxed:*" or t.startswith("text:"),   # approvals._command_request; `rules:…` is once only since S2a-2
+    "outside": lambda t: t == "*",                                         # command_gate._outside_request
+    "network": lambda t: t == "network:*",                                 # command_gate, inside the sandbox
+    "schedule": lambda t: t == "*",
+    "workspace_write": bool,                                               # the working folder's path (or "*")
+    "mcp_tool": lambda t: t.startswith("mcp_"),                            # discovery.mcp_tool_key
+    "app": bool, "site": bool, "shortcut": bool,                           # a bundle id, an origin, a name
+}
+#: Kinds no current request is granted for, besides `_ONCE_ONLY`: `destructive` is asked once only (the MCP card), and
+#: nothing builds a `folder`, `send` or `screen` request. A grant of one of these, of a kind outside KINDS, or of a
+#: target not above (a 0.1.61–0.1.62 rule card's `command` / `rules:<rules>`) is dead.
+_NEVER_GRANTED = frozenset({"destructive", "folder", "send", "screen"})
+# Every kind is classified, so a kind added later must say whether its grants are read before the page can hide them.
+if set(_LIVE_GRANT_TARGETS) | _ONCE_ONLY | _NEVER_GRANTED != KINDS or set(_LIVE_GRANT_TARGETS) & (_ONCE_ONLY | _NEVER_GRANTED):
+    raise AssertionError("every kind is exactly one of: live grant targets, once only, never granted")
+
+
+def grant_is_live(kind: str, target: str) -> bool:
+    """Whether a stored conversation grant can answer a request today (see `_LIVE_GRANT_TARGETS`). Migration 0092
+    deleted the dead ones (the user's choice), with a frozen copy of this rule; one written since is never listed as
+    standing. Changing this rule fails a test until 0092's copy is checked against it."""
+    live = _LIVE_GRANT_TARGETS.get(kind)
+    return bool(live and live(target or ""))
+
+
 _EXTRA_MAX = 1024
 #: A ledger row's target is kept whole up to this: a bound, not a trim (a many-app card's target
 #: is every bundle id joined, and cutting it would cut an app in two).
@@ -525,7 +559,9 @@ def _always_set(req: Request) -> list[list[str]]:
 def always_from(extra) -> list[tuple[str, str, str]]:
     """The "Always" set a row of what could not be asked recorded (`ALWAYS_KEY`), or [] when there
     is none or it is not well formed — then nothing may be allowed from that row. A kind never
-    remembered is never in it (fail closed: the whole set is refused)."""
+    remembered is never in it (fail closed: the whole set is refused). S6: nor is a kind that is not a
+    request's own: a ledger row from before S2a-2 (kept 90 days) recorded a command's `legacy_rule`
+    set, and storing it would bring back the rules migration 0092 deleted."""
     entries = extra.get(ALWAYS_KEY) if isinstance(extra, dict) else None
     if not isinstance(entries, list) or not entries:
         return []
@@ -533,7 +569,7 @@ def always_from(extra) -> list[tuple[str, str, str]]:
     for entry in entries:
         if (not isinstance(entry, list) or len(entry) != 3
                 or not all(isinstance(x, str) for x in entry)
-                or not entry[0] or not entry[1] or entry[0] in _NEVER_ALWAYS):
+                or not entry[0] or not entry[1] or entry[0] not in KINDS or entry[0] in _NEVER_ALWAYS):
             return []
         out.setdefault((entry[0], entry[1]), entry[2])
     return [(kind, target, label) for (kind, target), label in out.items()]

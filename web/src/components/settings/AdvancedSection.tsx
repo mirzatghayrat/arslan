@@ -20,9 +20,7 @@ import { confirmSheet } from '../kit';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
-import SandboxGrantsPanel from './SandboxGrantsPanel';
 import SandboxNetworkPanel from './SandboxNetworkPanel';
-import TerminalRulesPanel from './TerminalRulesPanel';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
 
@@ -402,7 +400,6 @@ export default function AdvancedSection({
             />
           </div>
         )}
-        {orchestratorShellEnabled && <TerminalRulesPanel />}
         {orchestratorShellEnabled && (
           <div className="flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
             <div>
@@ -421,13 +418,13 @@ export default function AdvancedSection({
             />
           </div>
         )}
-        {/* SBX settings (the mock the user OK'd): under the sandbox, as its mock has them: the certificate switch, the
-            trusted local devices, then the conversations that may run outside it. */}
+        {/* SBX settings (the mock the user OK'd): under the sandbox, the certificate switch and the trusted local devices. */}
         {orchestratorShellEnabled && (
           <SandboxNetworkPanel systemCertificates={sandboxSystemCertificates}
             onSystemCertificatesChange={onSandboxSystemCertificatesChange} />
         )}
-        {orchestratorShellEnabled && <SandboxGrantsPanel />}
+        {/* S6: the remembered command rules and the conversations let out of the sandbox are listed with every other
+            remembered answer, the last group of this page (RememberedAnswers). */}
     </>)],
     ['budget', (<>
         {/* 0.1.43: where a background job stops gathering and writes up its result. */}
