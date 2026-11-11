@@ -7,8 +7,8 @@ while its sub-sessions work on. Server only.
 
 No tool table offers `start_sub_session` yet, so these start sub-sessions with `sub_sessions.start` and run the rest
 for real, in SUB4's harness: their jobs and the summary turn through the background job runner with a scripted model,
-and the HTTP routes. Every wait here is short, and the SUB5a fixture stops whatever is still running when a test
-ends, so a failing test fails quickly.
+and the HTTP routes. Every wait here is bounded (WAIT_S), and the SUB5a fixture stops whatever is still running when
+a test ends, so a failing test fails, never hangs.
 """
 import asyncio
 from datetime import datetime
@@ -29,7 +29,8 @@ from tests.server.test_sub4_report import (  # noqa: F401  (the fixture)
 from tests.server.test_sub5a_lifecycle import (  # noqa: F401  (the autouse fixture)
     THIRD, _by_goal, _fresh, _said, _states, _stop_line)
 
-WAIT_S = 3.0
+#: Each wait's bound (SUB4's harness default). 3 s was too short for the full suite's load on one worker.
+WAIT_S = 10.0
 
 
 @pytest.fixture
