@@ -79,6 +79,8 @@ describe("A: the install card's Hooks row", () => {
     const shown = within(screen.getByTestId("hook-entry")).getByTestId("command-text");
     expect(shown.closest("code")).not.toBeNull();
     expect(shown).toHaveClass("whitespace-pre-wrap");
+    expect(shown.tagName).toBe("BDO");
+    expect(shown.getAttribute("dir")).toBe("ltr");
     expect(shown.textContent).toBe("true⏎\nrm -rf ~/x");
     expect(within(shown).getByTestId("command-break")).toHaveClass("text-muted-foreground");
   });
@@ -162,6 +164,8 @@ describe("B: each hook's own switch, under Show what's inside", () => {
     const box = await inside([hook("0", "PreToolUse", "true\n${CLAUDE_PLUGIN_ROOT}/x.sh", { matches: ["run_command"] })]);
     const shown = within(within(box).getByTestId("plugin-hook-0")).getByTestId("command-text");
     expect(shown).toHaveClass("whitespace-pre-wrap");
+    expect(shown.tagName).toBe("BDO");
+    expect(shown.getAttribute("dir")).toBe("ltr");
     expect(shown.textContent).toBe("true⏎\n…/x.sh");
     expect(within(shown).getByTestId("command-break")).toHaveClass("text-muted-foreground");
   });

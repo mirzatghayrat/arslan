@@ -14,6 +14,8 @@ const LF = ch(0x0a), TAB = ch(0x09), CR = ch(0x0d), ESC = ch(0x1b), NEL = ch(0x8
 const RLO = ch(0x202e), RLI = ch(0x2067), LSEP = ch(0x2028);
 const MARKER = String.fromCodePoint(0x23ce);
 const BACKSLASH = String.fromCodePoint(0x5c);
+const ALEF = ch(0x05d0), BET = ch(0x05d1), HEB = ch(0x05e9) + ch(0x05dc) + ch(0x05d5) + ch(0x05dd), ARABIC = ch(0x0645);
+const LRM = ch(0x200e), RLM = ch(0x200f), ALM = ch(0x061c), ZWNJ = ch(0x200c), ZWJ = ch(0x200d);
 
 describe("commandParts", () => {
   it("leaves an ordinary command as one plain part", () => {
@@ -84,4 +86,56 @@ describe("CommandText", () => {
     render(<CommandText text={`a${ch(0x200b)}b`} />);
     expect(screen.getByTestId("command-text").textContent).toBe("aU+200Bb");
   });
+
+  it.each([0x200b, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0xfeff])(
+    "code point %i beside right-to-left letters still shows, as Escaped's marker", (cp) => {
+      render(<CommandText text={`${ALEF}${ch(cp)}${BET} > out`} />);
+      const box = screen.getByTestId("command-text");
+      expect(box.textContent).toBe(`${ALEF}U+${cp.toString(16).toUpperCase()}${BET} > out`);
+      expect(box.textContent).not.toContain(ch(cp));
+    });
+});
+
+// #853 r2: the box is laid out left to right whatever its letters, and every direction mark and joiner is an escape.
+// In a <bdi> (direction from the first strong letter) a right-to-left word turned the line around, swapped the
+// operands beside it, and mirrored a redirection; Escaped leaves a direction mark or joiner beside such letters
+// unmarked, as prose uses them.
+
+describe("CommandText's direction", () => {
+  const box = (text: string) => { render(<CommandText text={text} />); return screen.getByTestId("command-text"); };
+
+  it.each([
+    ["a command led by a right-to-left word", `${HEB} > out.txt`],
+    ["a quoted right-to-left word, then a redirection", `'${HEB}'; cat > out`],
+    ["right-to-left operands around a redirection", `echo ${ALEF} > ${BET}`],
+    ["an Arabic-led command", `${ARABIC} | tee log`],
+  ])("%s is laid out left to right, in the order the shell reads it", (_, text) => {
+    const el = box(text);
+    expect(el.tagName).toBe("BDO");
+    expect(el.getAttribute("dir")).toBe("ltr");
+    expect(el.textContent).toBe(text);
+  });
+
+  it("the box is no bdi and has no dir=auto, itself or inside", () => {
+    const el = box(`${HEB} > out.txt${LF}cat out.txt`);
+    expect(el.tagName).not.toBe("BDI");
+    expect(el.getAttribute("dir")).not.toBe("auto");
+    expect(el.querySelector("bdi, [dir=auto]")).toBeNull();
+    expect(el.closest("bdi, [dir=auto]")).toBeNull();
+  });
+
+  it("an RLM pair around a redirection shows as two escapes, never applied", () => {
+    const el = box(`cat ${RLM}>${RLM} out # ${HEB}`);
+    expect(el.textContent).toBe(`cat ${BACKSLASH}u200F>${BACKSLASH}u200F out # ${HEB}`);
+    expect(el.textContent).not.toContain(RLM);
+  });
+
+  it.each([[LRM, "u200E"], [RLM, "u200F"], [ALM, "u061C"], [ZWNJ, "u200C"], [ZWJ, "u200D"]])(
+    "%j beside right-to-left letters shows as the escape %s", (mark, tail) => {
+      expect(commandParts(`${ARABIC}${mark}${ARABIC}`)).toEqual([
+        { kind: "text", text: ARABIC }, { kind: "escape", text: BACKSLASH + tail }, { kind: "text", text: ARABIC }]);
+      const el = box(`${ALEF}${mark}${BET}`);
+      expect(el.textContent).toBe(`${ALEF}${BACKSLASH}${tail}${BET}`);
+      expect(el.textContent).not.toContain(mark);
+    });
 });

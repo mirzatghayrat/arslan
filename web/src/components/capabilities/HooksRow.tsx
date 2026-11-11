@@ -28,15 +28,17 @@ export const hookWhen = (t: T, event: string) => RUN.has(event) ? t(`capabilityL
 export const commandLine = (hook: HookRow) => [hook.command ?? "", ...(hook.args ?? [])].join(" ").trim();
 
 /** A command line as the shell reads it (`commandParts`): kept on its lines (pre-wrap), each line break a muted `⏎`
- *  before the real one, every other control character an escape, and what shows nothing `Escaped`'s marker. */
+ *  before the real one, every other control character an escape, and what shows nothing `Escaped`'s marker. Laid out
+ *  left to right whatever its letters (#853 r2): in a `<bdi>` a right-to-left word would turn the line around, swap
+ *  the operands beside it, and mirror a redirection. */
 export function CommandText({ text }: { text: string }) {
-  return <bdi data-testid="command-text" className="whitespace-pre-wrap">
+  return <bdo dir="ltr" data-testid="command-text" className="whitespace-pre-wrap">
     {commandParts(text).map((part, i) => part.kind === "text" ? <Escaped key={i} text={part.text} block />
       : part.kind === "break" ? <Fragment key={i}><span data-testid="command-break" className="text-muted-foreground">
         {"⏎"}</span>{"\n"}</Fragment>
       : <span key={i} data-testid="command-escape"
         className="mx-px rounded bg-fill px-1 font-mono text-[10px] text-muted-foreground">{part.text}</span>)}
-  </bdi>;
+  </bdo>;
 }
 
 /** What a tool hook matches, in Arslan's tool names; null for an event that isn't about a tool. */
