@@ -728,7 +728,7 @@ class _Reader:
     def _program(self, base: str, args: list[_Word]) -> None:
         # Prefix mode keeps later argv visible to the independent forbid floor.
         if (base == "security" and self.out.track_folders
-                and security_operation(tuple(w.text for w in args))[1]):
+                and security_operation(tuple(w.literal for w in args))[1]):
             raise _NotUnderstood("its security reads operations from stdin")
         if base == "find":
             for w in args:
@@ -783,19 +783,25 @@ def _fold_prefix(folder: str) -> str:
     return "/".join(stack[:kept])
 
 
-def security_operation(args: tuple[str, ...]) -> tuple[tuple[str, ...], bool]:
+def security_operation(args: tuple[str | None, ...]) -> tuple[tuple[str | None, ...], bool]:
     """The argv operation and whether security instead accepts operations on stdin.
 
     Shared with named policy rules so prompt values and option clusters have one
     interpretation. With no operation, even inherited stdin can supply commands.
+    None preserves an unresolved word: before the operation is selected it can
+    supply an option or disappear, including when consumed as a prompt value.
     """
     # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
     interactive = False
     i = 0
-    while i < len(args) and args[i].startswith("-"):
+    while i < len(args):
         word = args[i]
+        if word is None:
+            return (), True
+        if not word.startswith("-"):
+            break
         if word == "--":
-            return args[i + 1:], interactive or i + 1 == len(args)
+            return args[i + 1:], interactive or i + 1 == len(args) or args[i + 1] is None
         if word == "--help":
             return (), False
         i += 1
@@ -806,6 +812,8 @@ def security_operation(args: tuple[str, ...]) -> tuple[tuple[str, ...], bool]:
                 if letter == "h":
                     return (), False
                 if letter == "p":
+                    if offset == len(word) and i < len(args) and args[i] is None:
+                        return (), True
                     i += offset == len(word)
                     break
     return args[i:], interactive or i >= len(args)

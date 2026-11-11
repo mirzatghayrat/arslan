@@ -830,7 +830,11 @@ def _unparseable(text: str) -> str:
         return "too complex to read before running"
     if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"
-    if any(words[0].lower() == "security" and shell_grammar.security_operation(words[1:])[1]
+    # Prefix words retain spelling for additive forbids, not literalness. The
+    # complete reader also refuses unresolved words that can select stdin mode.
+    if any(words[0].lower() == "security" and (
+            shell_grammar.security_operation(words[1:])[1]
+            or _not_understood(text) == "its security reads operations from stdin")
            for words in _command_words(text)):
         return "its security reads operations from stdin"
     return ""
