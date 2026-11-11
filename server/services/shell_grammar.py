@@ -136,7 +136,7 @@ class Reading:
 
 class _Out:
     __slots__ = ("commands", "folders", "writes", "fold_partial", "fold_guard", "effects", "effect_scopes", "backgrounds",
-                 "track_folders", "folders_known")
+                 "track_folders", "folders_known", "owners", "carriers")
 
     def __init__(self, fold_partial: bool = True, fold_guard=None, *, track_folders=False):
         self.track_folders = track_folders
@@ -149,6 +149,8 @@ class _Out:
         self.commands: list[tuple[str, ...]] = []
         self.folders: list[tuple[str, ...]] = []
         self.writes: list[tuple[str, tuple[str, ...]]] = []
+        self.owners: list[int] = []          # one per write: the index in `commands` it is on, or -1
+        self.carriers: set[int] = set()      # indexes in `commands` that only start the ones after them
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -157,11 +159,18 @@ class PrefixReading:
 
     This is never evidence that the whole input is understood. In particular,
     nothing after the first unread form is scanned or treated as a command.
+
+    For the card's steps (card_purpose, LOOP1 d2b), read only when not `refused`: `writes` is each file a redirection
+    writes, with the index in `commands` of the simple command it is on (-1: on a compound command, or with no
+    command), and `carriers` the indexes of entries that only start the entries after them (a wrapper read through to
+    its command, or bash -c with its script). Neither changes what is read or refused.
     """
     commands: tuple[tuple[str, ...], ...] = ()
     refused: bool = False
     why: str = ""
     capped: bool = False
+    writes: tuple[tuple[str, int], ...] = ()
+    carriers: frozenset[int] = frozenset()
 
 
 class _NotUnderstood(Exception):
@@ -636,14 +645,18 @@ class _Reader:
                 raise _NotUnderstood("its redirection has text after the -, which bash reads as a program")
             if op != "<" and not (op in ("<&", ">&") and (word.text.isdigit() or word.text == "-")):
                 self.out.writes.append((word.text, tuple(sorted(self.here)) if self.out.folders_known else ()))
+                self.out.owners.append(-1)           # a simple command's own: `_simple` says which
                 self.out.effects.append(None)
 
     def _simple(self) -> None:
         words: list[_Word] = []
+        own: list[int] = []                          # this command's writes, not a $( … )'s inside its words
         while True:
             token = self.peek()
             if token[0] == "redir":
+                before = len(self.out.writes)
                 self._redirection()
+                own.extend(range(before, len(self.out.writes)))
                 continue
             if token[0] != "word":
                 break
@@ -656,6 +669,8 @@ class _Reader:
             if self.peek() == ("op", "("):
                 raise _NotUnderstood("it defines a function or an array")
         if words:
+            for k in own:                            # the entry `_started` adds first: every $( … ) in it is in
+                self.out.owners[k] = len(self.commands)
             self._started(words)
 
     # ── what runs ───────────────────────────────────────────────────────────
@@ -695,6 +710,7 @@ class _Reader:
                 return
             if not wrapped:
                 return
+            self.out.carriers.add(len(self.commands) - 1)
             words = wrapped
             layers += 1
             if layers > MAX_DEPTH:
@@ -737,6 +753,7 @@ class _Reader:
             if base in ("bash", "sh") and first in ("-c", "-lc"):
                 if not _names_something(args[1:]):
                     raise _NotUnderstood("it runs a shell script that is not written out")
+                self.out.carriers.add(len(self.commands) - 1)
                 _Reader(args[1].text, self.depth + 1, self.out, here=self.here).read_all()
             elif not (first == "-m" and base.startswith(_PYTHONS) and _names_something(args[1:])):
                 raise _NotUnderstood(f"it runs a {base} script whose code the text does not say")
@@ -861,7 +878,8 @@ def _read_commands(text: str, out: _Out) -> PrefixReading:
     except RecursionError:
         return PrefixReading(commands=tuple(out.commands), refused=True,
                              why="it nests commands deeper than Arslan reads", capped=True)
-    return PrefixReading(commands=tuple(out.commands))
+    return PrefixReading(commands=tuple(out.commands), writes=tuple(zip((f for f, _ in out.writes), out.owners)),
+                         carriers=frozenset(out.carriers))
 
 
 def _read_prefix(text: str) -> PrefixReading:

@@ -5,7 +5,7 @@ understand keeps its named rules on the commands before the refusal, beside the 
 Its own file, not test_terminal_policy.py: the folder-tracking matrices read that file's parameters as a frozen corpus."""
 import pytest
 
-from server.services import shell_grammar, terminal_policy as tp
+from server.services import card_purpose, shell_grammar, terminal_policy as tp
 
 
 def _counted_reads(monkeypatch) -> list[str]:
@@ -25,12 +25,13 @@ def _counted_reads(monkeypatch) -> list[str]:
                                      "python3 report.py", "ls; 'git' push; echo `x`"])
 def test_a_command_is_parsed_once_for_every_reader(monkeypatch, command):
     """Inside and outside the sandbox. Before d2 an understood command was read twice: once for the named rules and
-    once to say it was understood."""
+    once to say it was understood. Since d2b the card's reading reads the same pass."""
     passes = _counted_reads(monkeypatch)
     for outside in (False, True):
         tp.assess(command, outside=outside)
         tp.ask_rules(command, outside=outside)
         tp.risk_grade(command, outside=outside)
+        card_purpose.summarize(command)
     assert passes == [command]
 
 
