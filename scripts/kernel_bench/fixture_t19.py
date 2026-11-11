@@ -1,7 +1,8 @@
 """T19 (v0.1.64 L7-0), staged test failures: a small package `ledger/` with one planted bug in each of its modules.
 
 The right behaviour is stated only in the tests (a rounding mode, a date convention, an ordering, a fiscal year, a
-number format). At the start only the first step's tests are on disk, as `tests/revealed/test_step_1.py`.
+number format, how a bill splits, an account code's form). The card's first draft had 5 modules; the L7-0 pilot's
+`off` arm completed it in every run, so it has 7 (the card: more stages). At the start only the first step's tests are on disk, as `tests/revealed/test_step_1.py`.
 `tests/run_checks.py` runs the tests revealed so far. When they all pass it writes the next step's tests, from its
 encoded data file `tests/stages.dat`, as `tests/revealed/test_step_<k>.py`, says new tests were added, and exits 1;
 once the last step passes it exits 0. So even a worker that fixed everything up front needs one check run per step.
@@ -53,6 +54,20 @@ def fiscal_quarter(day):
 def format_amount(cents):
     """Show an amount in cents for the printed statement."""
     return "%.2f" % (cents / 100)
+''',
+    "shares.py": '''"""Splitting a bill."""
+
+
+def split_evenly(cents, parts):
+    """Split an amount in cents into `parts` shares."""
+    return [cents // parts] * parts
+''',
+    "accounts.py": '''"""Account codes."""
+
+
+def normalise_account(code):
+    """The account code as the ledger stores it."""
+    return code.strip()
 ''',
 }
 
@@ -119,6 +134,20 @@ def test_thousands_are_grouped():
 
 def test_negative_amounts_are_shown_in_parentheses():
     assert format_amount(-5000) == "(50.00)"
+'''),
+    ("shares", '''from ledger.shares import split_evenly
+
+
+def test_the_shares_add_up_and_the_first_ones_take_the_extra_cents():
+    assert split_evenly(100, 3) == [34, 33, 33]
+    assert split_evenly(9, 3) == [3, 3, 3]
+'''),
+    ("accounts", '''from ledger.accounts import normalise_account
+
+
+def test_codes_are_upper_case_letters_then_four_digits():
+    assert normalise_account(" ac-12 ") == "AC0012"
+    assert normalise_account("AC 7") == "AC0007"
 '''),
 ]
 

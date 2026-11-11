@@ -1,10 +1,12 @@
-"""T20 (v0.1.64 L7-0), a list that arrives in batches: 4 batches of 6 synthetic notes.
+"""T20 (v0.1.64 L7-0), a list that arrives in batches: 6 batches of 4 synthetic notes.
 
-Each note has a unique code word and a date. Only batch 1 (`notes/n01.md` to `n06.md`) is on disk at the start.
+The card's first draft had 4 batches of 6; the L7-0 pilot's `off` arm completed that in every run, so the same 24
+notes come in 6 batches (more stages, the card's remedy, at the same tool-call cost: about 60 of the standard tier's
+80). Each note has a unique code word and a date. Only batch 1 (`notes/n01.md` to `n04.md`) is on disk at the start.
 `inbox_check.py --batches batches.dat` checks the summaries of the notes present: `summaries/<same name>.md` has
 exactly two sentences (split on `.`, `!` and `?`) holding the note's code word and date, and `summaries/index.md`
 names every note. When they pass, it drops the next batch (from the encoded `batches.dat`) into `notes/` and exits 1;
-once batch 4 passes, it exits 0. The check is stateless: the batches present are the notes on disk.
+once batch 6 passes, it exits 0. The check is stateless: the batches present are the notes on disk.
 """
 from __future__ import annotations
 
@@ -14,8 +16,8 @@ from pathlib import Path
 
 from scripts.kernel_bench import goal_tasks
 
-BATCHES = 4
-PER_BATCH = 6
+BATCHES = 6
+PER_BATCH = 4
 WORDS_A = ("AMBER", "COBALT", "SILVER", "CEDAR", "ONYX", "SAFFRON", "HAZEL", "INDIGO", "COPPER", "IVORY", "JADE",
            "RUSSET", "SLATE", "TEAL", "OCHRE", "PEWTER")
 WORDS_B = ("FALCON", "HERON", "LYNX", "OTTER", "MARTEN", "BADGER", "PLOVER", "WREN", "IBEX", "ORCA", "TAPIR", "VIPER")

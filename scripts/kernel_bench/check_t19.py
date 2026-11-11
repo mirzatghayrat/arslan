@@ -57,6 +57,17 @@ assert format_amount(5) == "0.05"
 assert format_amount(-1) == "(0.01)"
 assert format_amount(100000000) == "1,000,000.00"
 ''',
+    "shares": '''from ledger.shares import split_evenly
+assert split_evenly(5, 3) == [2, 2, 1]
+assert split_evenly(0, 2) == [0, 0]
+assert split_evenly(1001, 4) == [251, 250, 250, 250]
+assert split_evenly(7, 1) == [7]
+''',
+    "accounts": '''from ledger.accounts import normalise_account
+assert normalise_account("xy-1234") == "XY1234"
+assert normalise_account("b 5") == "B0005"
+assert normalise_account("Qr--0042") == "QR0042"
+''',
 }
 
 SUITE = '''import json, sys, traceback

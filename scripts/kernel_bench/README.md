@@ -136,12 +136,13 @@ throwaway copy of the folder and confirm by sha256 that the check's files are th
 | Task | Fixture | Checker (3 = complete) |
 | --- | --- | --- |
 | T18 sort and reconcile 20 invoices | `check_t18.fixture`: 20 invoices under shuffled names, two date styles, 4 wrong stated totals. No `check:` line: in goal mode the checks are Arslan's drafted ones | `ledger.csv` rows in date order with the recomputed totals, statuses and a last `TOTAL` row |
-| T19 staged test failures | `fixture_t19.py`: `ledger/` with a planted bug in each of 5 modules; `tests/run_checks.py` reveals the next step's tests from `tests/stages.dat` only when the steps so far pass | `check_t19.py`: the check exits 0 and a hidden suite of all 5 modules passes |
-| T20 notes in batches | `fixture_t20.py`: batch 1 of 4 (6 notes each); `inbox_check.py` drops the next batch from `batches.dat` only when the summaries so far pass | `check_t20.py`: 24 summaries of two sentences with each note's code word and date, an index of all 24, the check exits 0 |
-| T21 rules revealed by the validator | `fixture_t21.py`: 300 orders with 4 kinds of fault; `validate.py` prints only the first failing rule, read from `rules.dat` | `check_t21.py`: exactly the expected clean rows (first row of a repeated id kept), the check exits 0 |
+| T19 staged test failures | `fixture_t19.py`: `ledger/` with a planted bug in each of 7 modules; `tests/run_checks.py` reveals the next step's tests from `tests/stages.dat` only when the steps so far pass | `check_t19.py`: the check exits 0 and a hidden suite of all 7 modules passes |
+| T20 notes in batches | `fixture_t20.py`: batch 1 of 6 (4 notes each); `inbox_check.py` drops the next batch from `batches.dat` only when the summaries so far pass | `check_t20.py`: 24 summaries of two sentences with each note's code word and date, an index of all 24, the check exits 0 |
+| T21 rules revealed by the validator | `fixture_t21.py`: 300 orders with 6 rules to meet; `validate.py` prints only the first failing rule, read from `rules.dat` | `check_t21.py`: exactly the expected clean rows in the expected order (first row of a repeated id kept), the check exits 0 |
 
-None of T19–T21 can be finished from what is on disk at the start: at least 3 (T20, T21) or 4 (T19) check runs
-after the first are needed. A worker that reruns the check itself can still finish in one round; goal mode's gain is
+None of T19–T21 can be finished from what is on disk at the start: at least 5 (T20, T21) or 6 (T19) check runs
+after the first are needed. The card's first draft had 5 modules, 4 batches and 4 rules; the L7-0 pilot's `off` arm
+completed all three in 3 of 3 runs, so each got more stages, as the card says. A worker that reruns the check itself can still finish in one round; goal mode's gain is
 that the host runs it at each answer. The data files are encoded, not secret; each checker reports whether a worker
 call read one (`data_file_read`, not scored).
 

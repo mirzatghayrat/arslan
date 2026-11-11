@@ -181,10 +181,22 @@ T19_FIXED = {
         "    text = '{:,}.{:02d}'.format(abs(cents) // 100, abs(cents) % 100)\n"
         "    return '(%s)' % text if cents < 0 else text\n"
     ),
+    "shares.py": (
+        "def split_evenly(cents, parts):\n"
+        "    base, extra = divmod(cents, parts)\n"
+        "    return [base + 1] * extra + [base] * (parts - extra)\n"
+    ),
+    "accounts.py": (
+        "import re\n\n\n"
+        "def normalise_account(code):\n"
+        "    letters, digits = re.fullmatch(r'\\s*([A-Za-z]+)[\\s-]*(\\d+)\\s*', code).groups()\n"
+        "    return letters.upper() + digits.zfill(4)\n"
+    ),
 }
+STEPS = len(T19_FIXED)
 
 
-def test_t19_starts_with_five_buggy_modules_and_only_the_first_steps_tests(tmp_path):
+def test_t19_starts_with_seven_buggy_modules_and_only_the_first_steps_tests(tmp_path):
     params = fixture_t19.fixture(str(tmp_path))
     assert sorted(p.name for p in (tmp_path / "ledger").glob("*.py")) == sorted(
         ["__init__.py", *T19_FIXED]
@@ -214,16 +226,16 @@ def test_t19_each_step_appears_only_after_the_one_before_passes(tmp_path):
             assert (revealed / f"test_step_{step + 1}.py").is_file()
         else:
             assert out.returncode == 0, out.stdout
-    assert _files(tmp_path) >= {f"tests/revealed/test_step_{k}.py" for k in range(1, 6)}
+    assert _files(tmp_path) >= {f"tests/revealed/test_step_{k}.py" for k in range(1, STEPS + 1)}
     assert not list(tmp_path.rglob("__pycache__"))       # the runner writes no bytecode beside the tests
 
 
-def test_t19_fixing_everything_up_front_still_takes_four_check_runs_after_the_first(tmp_path):
+def test_t19_fixing_everything_up_front_still_takes_six_check_runs_after_the_first(tmp_path):
     fixture_t19.fixture(str(tmp_path))
     for name, source in T19_FIXED.items():
         (tmp_path / "ledger" / name).write_text(source)
-    codes = [_run(tmp_path, "tests/run_checks.py").returncode for _ in range(5)]
-    assert codes == [1, 1, 1, 1, 0]
+    codes = [_run(tmp_path, "tests/run_checks.py").returncode for _ in range(STEPS)]
+    assert STEPS == 7 and codes == [1] * 6 + [0]
 
 
 def _t19_done(tmp_path: Path) -> dict:
@@ -239,9 +251,9 @@ def test_t19_all_fixed_and_all_steps_revealed_scores_three(tmp_path):
     params = _t19_done(tmp_path)
     verdict = check_t19.check(str(tmp_path), params)
     assert verdict["score"] == 3 and verdict["check_exit"] == 0, verdict
-    assert all(verdict["hidden"].values()) and len(verdict["hidden"]) == 5
+    assert all(verdict["hidden"].values()) and len(verdict["hidden"]) == STEPS
     assert (tmp_path / "tests" / "revealed").is_dir()          # the checker ran the check in a copy
-    assert len(list((tmp_path / "tests" / "revealed").iterdir())) == 5
+    assert len(list((tmp_path / "tests" / "revealed").iterdir())) == STEPS
 
 
 def test_t19_a_fix_that_only_fits_the_revealed_tests_fails_the_hidden_suite(tmp_path):
@@ -305,7 +317,8 @@ def _t20_summarise(run: Path) -> None:
 
 def test_t20_starts_with_the_first_batch_of_six_notes_only(tmp_path):
     params = fixture_t20.fixture(str(tmp_path))
-    assert _files(tmp_path) == {"inbox_check.py", "batches.dat", *(f"notes/n{i:02d}.md" for i in range(1, 7))}
+    assert (fixture_t20.BATCHES, fixture_t20.PER_BATCH) == (6, 4)
+    assert _files(tmp_path) == {"inbox_check.py", "batches.dat", *(f"notes/n{i:02d}.md" for i in range(1, 5))}
     assert len(params["notes"]) == 24 and len({n["code"] for n in params["notes"].values()}) == 24
     readable = "".join(p.read_text() for p in tmp_path.rglob("*") if p.suffix in (".py", ".md"))
     assert params["notes"]["n07.md"]["code"] not in readable
@@ -316,11 +329,11 @@ def test_t20_each_batch_arrives_only_after_the_last_one_passes(tmp_path):
     codes = []
     out = _run(tmp_path, "inbox_check.py", "--batches", "batches.dat")
     codes.append(out.returncode)
-    assert out.returncode == 1 and len(list((tmp_path / "notes").iterdir())) == 6   # nothing summarised yet
-    for _ in range(4):
+    assert out.returncode == 1 and len(list((tmp_path / "notes").iterdir())) == 4   # nothing summarised yet
+    for _ in range(6):
         _t20_summarise(tmp_path)
         codes.append(_run(tmp_path, "inbox_check.py", "--batches", "batches.dat").returncode)
-    assert codes == [1, 1, 1, 1, 0] and len(list((tmp_path / "notes").iterdir())) == 24
+    assert codes == [1] * 6 + [0] and len(list((tmp_path / "notes").iterdir())) == 24
 
 
 def test_t20_all_twenty_four_right_scores_three(tmp_path):
@@ -336,7 +349,7 @@ def test_t20_all_twenty_four_right_scores_three(tmp_path):
 @pytest.mark.parametrize("damage", ["three_sentences", "no_code_word", "index_short", "first_batch_only"])
 def test_t20_one_wrong_summary_or_a_short_index_is_not_complete(tmp_path, damage):
     params = fixture_t20.fixture(str(tmp_path))
-    rounds = 1 if damage == "first_batch_only" else 4
+    rounds = 1 if damage == "first_batch_only" else fixture_t20.BATCHES
     for _ in range(rounds):
         _t20_summarise(tmp_path)
         _run(tmp_path, "inbox_check.py", "--batches", "batches.dat")
@@ -362,7 +375,8 @@ def test_t20_an_edited_check_or_batch_file_scores_zero(tmp_path):
 # ── T21: rules revealed by the validator ──────────────────────────────────────
 
 
-def _t21_clean(src: Path, *, day_first=True, rmb=True, keep="first", decimals=True) -> list[list[str]]:
+def _t21_clean(src: Path, *, day_first=True, rmb=True, keep="first", decimals=True, spaces=True,
+               order="date") -> list[list[str]]:
     """The stand-in's own cleaner, with each rule's choice as a switch."""
     rows = list(csv.reader(src.open()))
     head, body = rows[0], rows[1:]
@@ -386,7 +400,13 @@ def _t21_clean(src: Path, *, day_first=True, rmb=True, keep="first", decimals=Tr
         cur = "CNY" if (rmb and cur.lower() == "rmb") else cur.upper()
         if decimals:
             amount = f"{Decimal(amount.replace(',', '.')).quantize(Decimal('0.01'), ROUND_HALF_UP)}"
+        if spaces:
+            customer = " ".join(customer.split())
         out.append([oid, day, customer, cur, amount])
+    if order == "date":                                    # stable: the source's order within a date
+        out[1:] = sorted(out[1:], key=lambda r: r[1])
+    elif order == "date_then_id":
+        out[1:] = sorted(out[1:], key=lambda r: (r[1], r[0]))
     return out
 
 
@@ -405,6 +425,10 @@ def test_t21_has_three_hundred_rows_and_four_kinds_of_fault(tmp_path):
     assert len(ids) - len(set(ids)) >= 10
     assert any("," in r[4] for r in body) and any("." not in r[4] and "," not in r[4] for r in body)
     assert len(params["expected"]) == len(set(ids))
+    assert any(r[2] != " ".join(r[2].split()) for r in body)                       # stray spaces in names
+    iso = [_t21_clean(tmp_path / "data" / "orders.csv", order="source")[1:]]
+    days = [r[1] for r in iso[0]]
+    assert days != sorted(days) and len(days) > len(set(days))   # not in date order, and some dates are shared
     text = (tmp_path / "validate.py").read_text()
     assert "rmb" not in text.lower() and "day first" not in text.lower()   # the rules are only in rules.dat
 
@@ -413,17 +437,15 @@ def test_t21_each_rule_is_printed_only_after_the_rules_before_it_pass(tmp_path):
     fixture_t21.fixture(str(tmp_path))
     src, out = tmp_path / "data" / "orders.csv", tmp_path / "clean" / "orders.csv"
     check = ("validate.py", "--rules", "rules.dat", "clean/orders.csv")
-    steps = [
-        dict(day_first=False, rmb=False, keep="all", decimals=False),
-        dict(day_first=True, rmb=False, keep="all", decimals=False),
-        dict(day_first=True, rmb=True, keep="all", decimals=False),
-        dict(day_first=True, rmb=True, keep="first", decimals=False),
-    ]
-    for n, choice in enumerate(steps, 1):
+    wrong = dict(day_first=False, rmb=False, keep="all", decimals=False, spaces=False, order="date_then_id")
+    right = dict(day_first=True, rmb=True, keep="first", decimals=True, spaces=True, order="date")
+    for n, rule in enumerate(wrong, 1):        # rules 1 to n-1 right, rule n and the rest wrong
+        keys = list(wrong)
+        choice = {k: (right if keys.index(k) < n - 1 else wrong)[k] for k in keys}
         _write_csv(out, _t21_clean(src, **choice))
         res = _run(tmp_path, *check)
-        assert res.returncode == 1 and f"Rule {n} of 4" in res.stdout, res.stdout
-        assert f"Rule {n + 1} of 4" not in res.stdout
+        assert res.returncode == 1 and f"Rule {n} of 6" in res.stdout, (rule, res.stdout)
+        assert f"Rule {n + 1} of 6" not in res.stdout
     _write_csv(out, _t21_clean(src))
     res = _run(tmp_path, *check)
     assert res.returncode == 0, res.stdout
@@ -438,6 +460,9 @@ def test_t21_a_clean_file_scores_three_and_keeping_the_last_duplicate_does_not(t
     _write_csv(out, _t21_clean(tmp_path / "data" / "orders.csv", keep="last"))
     verdict = check_t21.check(str(tmp_path), params)
     assert verdict["score"] == 1 and verdict["check_exit"] == 1, verdict
+    _write_csv(out, _t21_clean(tmp_path / "data" / "orders.csv", order="date_then_id"))
+    verdict = check_t21.check(str(tmp_path), params)
+    assert verdict["score"] == 1 and not verdict["in_order"] and verdict["rows_right"] == 288, verdict
     out.unlink()
     assert check_t21.check(str(tmp_path), params)["score"] == 0
 
