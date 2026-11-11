@@ -760,7 +760,7 @@ async def language() -> str:
 
 def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, lang: str = "en",
            outside: bool = False, unsandboxed: bool = False, host: str | None = None, shortcut_as_you: bool = False,
-           network: bool = False, delete_mode: str = "", reading: dict | None = None) -> str:
+           network: bool = False, delete_mode: str = "", reading: dict | None = None, run_later=()) -> str:
     """The card's title in `lang`: first the code's facts, where it runs when that is not this Mac's sandbox and
     whether it uses the network, in a fixed form; then the code's reading of `shell`; then Arslan's reason when it
     gave one. The reason is cut first, then the reading, so the whole title fits the phone's heading (PHONE_MAX) and
@@ -768,7 +768,10 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     nor the command's carry a bidi or zero-width character into the heading.
     `reading`: `summarize(shell)` when the caller already has it (the card's frame `summary`, read from the same
     text), so a long command is read once per card (#817 review); it is not changed. `rules` is not read: the reading
-    does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument."""
+    does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument.
+    `run_later` (HR-3 part 1): what `terminal_policy.run_later_targets` found, on a card the gate asks because the
+    command writes a file that runs later where the kernel's hold doesn't stand; a fact names the first file (or the
+    git setting), or, for a line the reader understood but couldn't pin down, says it may."""
     facts = []
     s = dict(reading) if reading is not None else summarize(shell, outside=outside or unsandboxed)
     # SMART-8: a delete card says how allow deletes (`delete_to_trash.card_mode`), so the phone's heading never
@@ -786,6 +789,8 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
         facts.append(_say(lang, "fact", "noSandbox", {}))
     if host:
         facts.append(_say(lang, "fact", "onHost", {"host": untrusted.clean_name(host, 80)}))
+    if run_later:
+        facts.extend(_run_later_fact(lang, shell, run_later))
     if network and not on_network:
         facts.append(_say(lang, "fact", "network", {}))
     if s["unsure"] and not on_network:                            # a step behind the lead uses the network
@@ -804,6 +809,19 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     else:
         text = _cut(reading, room)
     return f"{lead}{join}{text}" if lead else text
+
+
+def _run_later_fact(lang: str, shell: str, targets) -> list[str]:
+    """HR-3 part 1: the card's one line for a write into a file that runs later: the file, else the git setting, else
+    (a line the reader understood) that it may; none for a line it doesn't understand, whose card says so already."""
+    file = terminal_policy.run_later_file(targets)
+    if file:
+        return [_say(lang, "fact", "runsLater", {"file": untrusted.clean_name(file, 80)})]
+    setting = next((t for t in targets if t.startswith(terminal_policy.RUN_LATER_SETTING)), "")
+    if setting:
+        name = setting.removeprefix(terminal_policy.RUN_LATER_SETTING)
+        return [_say(lang, "fact", "runsLaterGit", {"name": untrusted.clean_name(name, 80)})]
+    return [] if terminal_policy.reading(shell).refused else [_say(lang, "fact", "runsLaterUnsure", {})]
 
 
 def frame_reading(frame: dict | None, shell: str) -> dict | None:

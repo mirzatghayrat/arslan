@@ -5,7 +5,8 @@ test that proves it:
 
   DIRECT      what a command's text alone decides: the parser's forbid rules (layer ①) and this-time-only rules
               (layer ②), and what the gate refuses before any card;
-  RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-2 adds the file tools);
+  RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-3 part 1: a command's
+              direct forms outside the sandbox, lifted only by a click on its own card; HR-2 adds the file tools);
   NEVER_AUTO  what only the user answers, never a grant, a rule, a mode or a classifier (`never_auto`);
   ABSOLUTE    what holds under the least strict settings Arslan has, and the network cut after outside content, by path.
 
@@ -96,6 +97,7 @@ _HR1 = _T + "test_hr1_run_later.py::"
 _HR1_KERNEL = _T + "sbx/test_hr1_run_later_kernel.py::"
 _HR1_ALIASES = _T + "sbx/test_hr1_run_later_aliases.py::"
 _HR1_LINK_TARGETS = _T + "sbx/test_hr1_run_later_link_targets.py::"
+_HR3 = _T + "test_hr3_run_later_text.py::"
 
 
 def _later(family: str) -> HardRule:
@@ -104,7 +106,8 @@ def _later(family: str) -> HardRule:
 
 
 #: HR-1: the names (run_later.FAMILIES), held by the kernel for commands in the sandbox, MCP servers and a command
-#: let out under this conversation's grant. HR-2 adds the file tools' rows, HR-3 the direct forms outside the sandbox.
+#: let out under this conversation's grant. HR-3 part 1: the direct forms outside the sandbox, which only a click on
+#: the command's own card lets through. HR-2 adds the file tools' rows.
 RUN_LATER: tuple[HardRule, ...] = (
     *map(_later, (name for name, _ in run_later.FAMILIES)),
     HardRule("run-later/hooks-path", "run-later", "kernel", "server.services.run_later:hooks_path",
@@ -123,6 +126,13 @@ RUN_LATER: tuple[HardRule, ...] = (
     # #813 review 10: a held name or held folder that is a link has the held names at its real path held.
     HardRule("run-later/link-targets", "run-later", "kernel", "server.services.run_later:link_filters",
              _HR1_LINK_TARGETS + "test_a_held_name_or_folder_that_is_a_link_has_the_held_names_at_its_target_held"),
+    # HR-3 part 1: the direct forms, read from the command, where the kernel's hold doesn't stand (outside the sandbox).
+    HardRule("run-later/direct-forms", "run-later", "parser", f"{_TP}:run_later_targets",
+             _HR3 + "test_run_later_targets"),
+    HardRule("run-later/click-lift", "run-later", "gate", f"{_GATE}:check",
+             _HR3 + "test_under_an_outside_grant_a_run_later_write_gets_a_once_only_card"),
+    HardRule("run-later/never-auto", "run-later", "permissions", "server.services.hard_rules:never_auto",
+             _HR3 + "test_a_command_that_writes_a_file_that_runs_later_is_never_auto"),
 )
 
 NEVER_AUTO: tuple[HardRule, ...] = (
@@ -193,8 +203,11 @@ if not _NAMED <= FORBID_KEYS | ASK_KEYS or not (NEVER_AUTO_KINDS | MAY_AUTO_KIND
 
 
 def _writes_run_later(request) -> bool:
-    """HR-2 fills this: a file tool's write into a file that makes something run later (`run_later.matches`). A
-    command's writes are held by the kernel since HR-1 (RUN_LATER), not read from its request here."""
+    """A write into a file that makes something run later. HR-3 part 1: a command's, by a direct form or one it can't
+    read (`terminal_policy.run_later_targets`, the same reading the gate's click-lift rule asks with). HR-2 adds a
+    file tool's write (`run_later.matches`)."""
+    if getattr(request, "kind", None) == "command":
+        return bool(terminal_policy.run_later_targets(request.detail))
     return False
 
 
