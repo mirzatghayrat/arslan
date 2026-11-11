@@ -16,6 +16,10 @@ export default defineConfig(() => {
       },
     },
     build: {
+      // Fonts stay files (IMG1-B, v0.1.64): the main window's CSP is font-src
+      // 'self' (server/main.py), and Vite would inline any font under 4 KiB as
+      // a data: URL, as it did KaTeX_Size3's woff2. Other assets: the default.
+      assetsInlineLimit: (file: string) => (/\.(woff2?|ttf|otf|eot)$/i.test(file) ? false : undefined),
       // Two pages: the app, and the island (0.1.51) — its own small entry so
       // the notch window loads none of the app bundle or its global CSS.
       rollupOptions: {

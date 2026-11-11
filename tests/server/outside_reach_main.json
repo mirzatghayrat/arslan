@@ -1,0 +1,585 @@
+{
+  "commit": "ed51d4d4",
+  "cases": {
+    "quoting-single-program": {
+      "text": "'open' note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-double-program": {
+      "text": "\"batch\"",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-split-program": {
+      "text": "laun'ch'ctl kickstart example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-escaped-program": {
+      "text": "o\\pen note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-split-verb": {
+      "text": "security un'lock'-keychain example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-escaped-verb": {
+      "text": "security cre\\ate-keychain example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-escaped-newline": {
+      "text": "op\\\nen note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"a line continuation splits a word\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "quoting-at-program": {
+      "text": "a't' now",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-shortcuts-verb": {
+      "text": "shortcuts vi'ew' example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-network-verb": {
+      "text": "networksetup -detect'new'hardware",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-tccutil-verb": {
+      "text": "tccutil ex'ample'",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "case-upper-program": {
+      "text": "OPEN note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "case-mixed-program": {
+      "text": "LaUnChCtL kickstart example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "case-upper-verb": {
+      "text": "security CREATE-keychain example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "case-mixed-verb": {
+      "text": "security UnLoCk-keychain example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "case-upper-both": {
+      "text": "SECURITY CREATE-KEYCHAIN example",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "paths-absolute": {
+      "text": "/usr/bin/open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program word contains a path\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "paths-relative": {
+      "text": "tools/open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program word contains a path\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "paths-dot": {
+      "text": "./open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program word contains a path\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "paths-slashes": {
+      "text": "/usr//bin///batch",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program word contains a path\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "paths-quoted-path": {
+      "text": "'/usr/bin/security' unlock-keychain example",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program word contains a path\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-env-assignment": {
+      "text": "env NOTE=example open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "wrappers-env-options": {
+      "text": "env -i -- NOTE=example open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-env-unset": {
+      "text": "env -u NOTE open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-timeout": {
+      "text": "timeout -s TERM 2 open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its timeout is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-nice": {
+      "text": "nice -n 5 open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-nohup": {
+      "text": "nohup open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "wrappers-caffeinate": {
+      "text": "caffeinate -i open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-xcrun": {
+      "text": "xcrun --sdk macosx open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`xcrun` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-arch": {
+      "text": "arch -arm64 open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`arch` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-command": {
+      "text": "command -- open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-exec": {
+      "text": "exec -- open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-builtin": {
+      "text": "builtin command open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it uses `builtin`, which changes how the shell reads what follows\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-time": {
+      "text": "time -p open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-sudo": {
+      "text": "sudo -n open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"forbid\", \"reason\": \"needs administrator rights; run it yourself\", \"rule\": \"sudo\"}, \"rules\": []}"
+    },
+    "wrappers-npx": {
+      "text": "npx --yes open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "wrappers-bunx": {
+      "text": "bunx --bun open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-pnpm": {
+      "text": "pnpm dlx open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "wrappers-stacked": {
+      "text": "env NOTE=example nice -n 1 nohup open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "carriers-sh-1": {
+      "text": "sh -c 'open note.txt'",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "carriers-sh-2": {
+      "text": "sh -c 'sh -c '\"'\"'open note.txt'\"'\"''",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "carriers-sh-3": {
+      "text": "sh -c 'sh -c '\"'\"'sh -c '\"'\"'\"'\"'\"'\"'\"'\"'open note.txt'\"'\"'\"'\"'\"'\"'\"'\"''\"'\"''",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "carriers-bash-1": {
+      "text": "bash -c 'open note.txt'",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "carriers-bash-2": {
+      "text": "bash -c 'bash -c '\"'\"'open note.txt'\"'\"''",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "carriers-bash-3": {
+      "text": "bash -c 'bash -c '\"'\"'bash -c '\"'\"'\"'\"'\"'\"'\"'\"'open note.txt'\"'\"'\"'\"'\"'\"'\"'\"''\"'\"''",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "carriers-zsh-1": {
+      "text": "zsh -c 'open note.txt'",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs a zsh script whose code the text does not say\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "carriers-zsh-2": {
+      "text": "zsh -c 'zsh -c '\"'\"'open note.txt'\"'\"''",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs a zsh script whose code the text does not say\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "carriers-zsh-3": {
+      "text": "zsh -c 'zsh -c '\"'\"'zsh -c '\"'\"'\"'\"'\"'\"'\"'\"'open note.txt'\"'\"'\"'\"'\"'\"'\"'\"''\"'\"''",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs a zsh script whose code the text does not say\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "find-xargs-find-exec": {
+      "text": "find . -exec open note.txt \\;",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its find runs a command, or may from an expansion\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "find-xargs-find-execdir": {
+      "text": "find . -execdir batch +",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its find runs a command, or may from an expansion\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "find-xargs-xargs": {
+      "text": "xargs open",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`xargs` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "find-xargs-xargs-options": {
+      "text": "xargs -n 1 -I ITEM open ITEM",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`xargs` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "launchers-watch": {
+      "text": "watch -n 2 open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`watch` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "launchers-script": {
+      "text": "script -q transcript open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`script` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "launchers-tmux": {
+      "text": "tmux new-session 'open note.txt'",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`tmux` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "launchers-screen": {
+      "text": "screen -dm open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`screen` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "launchers-parallel": {
+      "text": "parallel open ::: note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`parallel` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "launchers-concurrently": {
+      "text": "concurrently 'open note.txt' 'batch'",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`concurrently` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "heredocs-heredoc": {
+      "text": "bash <<'END'\nopen note.txt\nEND",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs a bash script whose code the text does not say\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "heredocs-heredoc-tabs": {
+      "text": "sh <<-END\n\tbatch\nEND",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs a sh script whose code the text does not say\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "heredocs-herestring": {
+      "text": "bash <<< 'open note.txt'",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs a bash script whose code the text does not say\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "multiline-quoted-then-command": {
+      "text": "printf '%s' 'first\nsecond'\nopen note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "multiline-double-then-command": {
+      "text": "printf \"%s\" \"first\nsecond\"; batch",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "multiline-quoted-carrier": {
+      "text": "bash -c \"true\nopen note.txt\"",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "substitutions-dollar": {
+      "text": "printf \"%s\" \"$(open note.txt)\"",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "substitutions-backtick": {
+      "text": "printf \"%s\" \"`batch`\"",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it uses backquotes\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "substitutions-process-input": {
+      "text": "cat <(open note.txt)",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it uses process substitution\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "substitutions-process-output": {
+      "text": "printf x > >(batch)",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it uses process substitution\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "substitutions-arithmetic-substitution": {
+      "text": "printf '%s' $((1 + $(open note.txt)))",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it uses shell arithmetic\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "substitutions-arithmetic-lookalike": {
+      "text": "printf '%s' $( (open note.txt) )",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-group": {
+      "text": "{ open note.txt; }",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-subshell": {
+      "text": "(batch)",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-if": {
+      "text": "if true; then open note.txt; fi",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-case-branch": {
+      "text": "case x in x) batch;; esac",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-while": {
+      "text": "while false; do true; done; open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-for": {
+      "text": "for item in one; do open note.txt; done",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-function": {
+      "text": "reach() { open note.txt; }; reach",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it defines a function or an array\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "separators-pipe-left": {
+      "text": "open note.txt | cat",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "separators-pipe-right": {
+      "text": "printf x | batch",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "separators-and": {
+      "text": "true && open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "separators-or": {
+      "text": "false || batch",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "separators-background": {
+      "text": "open note.txt & wait",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "separators-semicolon": {
+      "text": "true; batch",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "separators-newline": {
+      "text": "true\nopen note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "indirection-variable": {
+      "text": "p=open; \"$p\" note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"the program it runs comes from a variable, a substitution or a pattern\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "indirection-array": {
+      "text": "p=(open note.txt); \"${p[@]}\"",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it defines a function or an array\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "indirection-alias": {
+      "text": "shopt -s expand_aliases\nalias reach='open note.txt'\nreach",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it uses `shopt`, which changes how the shell reads what follows\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "indirection-eval": {
+      "text": "eval 'open note.txt'",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs code it downloads, decodes or builds\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "lookalikes-cyrillic-o": {
+      "text": "\u043epen note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "lookalikes-zero-width": {
+      "text": "op\u200ben note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it contains control or invisible characters\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "lookalikes-bidi": {
+      "text": "op\u202een note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it contains control or invisible characters\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "lookalikes-fullwidth": {
+      "text": "\uff4fpen note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "limits-command-size": {
+      "text": "open xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "verdict": "{\"assessment\": {\"level\": \"forbid\", \"reason\": \"command is too long to review\", \"rule\": \"too-long\"}, \"rules\": []}"
+    },
+    "limits-reader-commands": {
+      "text": "true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;true;open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it has more commands than Arslan reads before running\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "limits-reader-depth": {
+      "text": "((((((((((batch))))))))))",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it uses shell arithmetic\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "limits-substitution-count": {
+      "text": "printf '%s' $(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true)$(true); open note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"too complex to read before running\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "limits-blank-run": {
+      "text": "open                                                                 note.txt",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"too complex to read before running\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "limits-blank-lines": {
+      "text": "true\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nbatch",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"too complex to read before running\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "readonly-table-at-0": {
+      "text": "at -l",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-0": {
+      "text": "launchctl",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-1": {
+      "text": "launchctl list",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-2": {
+      "text": "launchctl print",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-3": {
+      "text": "launchctl print-cache",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-4": {
+      "text": "launchctl print-disabled",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-5": {
+      "text": "launchctl blame",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-6": {
+      "text": "launchctl error",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-7": {
+      "text": "launchctl help",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-8": {
+      "text": "launchctl version",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-9": {
+      "text": "launchctl getenv",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-10": {
+      "text": "launchctl managerpid",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-11": {
+      "text": "launchctl manageruid",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-launchctl-12": {
+      "text": "launchctl managername",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-shortcuts-0": {
+      "text": "shortcuts",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-shortcuts-1": {
+      "text": "shortcuts list",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-shortcuts-2": {
+      "text": "shortcuts help",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-shortcuts-3": {
+      "text": "shortcuts -h",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-shortcuts-4": {
+      "text": "shortcuts --help",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-tccutil-0": {
+      "text": "tccutil",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-tccutil-1": {
+      "text": "tccutil -h",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-tccutil-2": {
+      "text": "tccutil --help",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-tccutil-3": {
+      "text": "tccutil --version",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-0": {
+      "text": "networksetup",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-1": {
+      "text": "networksetup -getinfo",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-2": {
+      "text": "networksetup -listallnetworkservices",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-3": {
+      "text": "networksetup -printcommands",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-4": {
+      "text": "networksetup -showpppoestatus",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-5": {
+      "text": "networksetup -isairportpoweron",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-6": {
+      "text": "networksetup -help",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-networksetup-7": {
+      "text": "networksetup -version",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "readonly-table-security-0": {
+      "text": "security list-keychains",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "quoting-readonly": {
+      "text": "'launch'ctl 'li'st",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "case-readonly": {
+      "text": "LAUNCHCTL list",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "paths-readonly": {
+      "text": "/bin/launchctl list",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program word contains a path\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "wrappers-readonly": {
+      "text": "env NOTE=example nice -n 1 launchctl list",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"its program name, or a wrapper's option, is not one Arslan reads\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "carriers-readonly": {
+      "text": "bash -c 'launchctl list'",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "find-xargs-readonly": {
+      "text": "xargs launchctl list",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`xargs` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "launchers-readonly": {
+      "text": "watch -n 1 launchctl list",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"`watch` takes a program of its own, which Arslan does not read\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "heredocs-readonly": {
+      "text": "bash <<'END'\nlaunchctl list\nEND",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it runs a bash script whose code the text does not say\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "multiline-readonly": {
+      "text": "printf '%s' 'one\ntwo'\nlaunchctl list",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "substitutions-readonly": {
+      "text": "printf \"%s\" \"$(launchctl list)\"",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "compound-readonly": {
+      "text": "{ launchctl list; }",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "separators-readonly": {
+      "text": "launchctl list; shortcuts list",
+      "verdict": "{\"assessment\": {\"level\": \"run\", \"reason\": \"\", \"rule\": \"\"}, \"rules\": []}"
+    },
+    "indirection-readonly": {
+      "text": "p=launchctl; \"$p\" list",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"the program it runs comes from a variable, a substitution or a pattern\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "lookalikes-readonly": {
+      "text": "launchctl list # \u043e \u200b \u202e",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"it contains control or invisible characters\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    },
+    "limits-readonly": {
+      "text": "launchctl                                                                 list",
+      "verdict": "{\"assessment\": {\"level\": \"ask\", \"reason\": \"too complex to read before running\", \"rule\": \"unreadable\"}, \"rules\": [\"unreadable\"]}"
+    }
+  }
+}

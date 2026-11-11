@@ -5,7 +5,7 @@ import logging
 import re
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, WebSocket
+from fastapi import Depends, FastAPI, Request, WebSocket
 
 from server.api import health, settings as settings_api
 from server.auth import require_auth
@@ -812,11 +812,12 @@ def create_app() -> FastAPI:
             app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
 
         index_file = static_dir / "index.html"
+        index_page = index_file.resolve()
         static_root = static_dir.resolve()
         # Entry pages: the app, and the island's own page (0.1.51) that the
         # shell's notch window loads. Both name hashed bundles, so neither may
         # be cached — the same stale-frontend bug as below, in a second window.
-        entry_pages = {index_file.resolve(), (static_dir / "island.html").resolve()}
+        entry_pages = {index_page, (static_dir / "island.html").resolve()}
 
         # 🔴 The entry point must never be cached, and this was found on a real
         # upgrade rather than here. Installing over an existing copy left the UI
@@ -832,8 +833,52 @@ def create_app() -> FastAPI:
         # same silence spec ⓪ exists to end.
         _INDEX_HEADERS = {"Cache-Control": "no-store, must-revalidate"}
 
+        # IMG1-B (v0.1.64): the main window may load only from Arslan itself. The
+        # window shows this page from http://127.0.0.1:<port> (desktop/src-tauri/
+        # src/lib.rs, WebviewUrl::External), so Tauri's `security.csp` never
+        # reaches it and this header is its only policy. A remote image, font,
+        # frame or fetch that gets past IMG1-A's Markdown chips (an SVG's
+        # <image href>, say) is refused before any request leaves the Mac
+        # (docs/plans/0164/IMG1-remote-images.md). Only the main window: the
+        # island renders no Markdown, HTML or outside URL, and the splash and
+        # recovery.html are Tauri's own pages.
+        _MAIN_WINDOW_CSP = "; ".join((
+            "default-src 'self'",
+            # The bundle and public/boot-veil.js. No inline script, no eval.
+            "script-src 'self'",
+            # index.html's <style>, KaTeX's and echarts' style attributes, and
+            # the srcdoc previews, which inherit this policy.
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob:",
+            "font-src 'self'",
+            # The WebSocket by its full origin, as macOS 11's WebKit may not
+            # match ws: with 'self'; ipc: and http://ipc.localhost are Tauri's
+            # IPC (without them it falls back to postMessage and logs an error).
+            "connect-src 'self' ws://127.0.0.1:{port} ws://localhost:{port}"
+            " ipc: http://ipc.localhost",
+            "media-src blob:",
+            "frame-src blob:",
+            "worker-src 'self'",
+            "object-src 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+            # 'self', not 'none': WebKit hands this policy to the reader's blob:
+            # PDF too, and 'none' forbade its own page to frame it (blank PDF,
+            # measured in WKWebView). Every other origin is still refused.
+            "frame-ancestors 'self'",
+        ))
+
+        def _main_window_headers(request: Request) -> dict[str, str]:
+            # The port of the socket the request came in on: uvicorn fills
+            # scope["server"] from getsockname(), never from a header. The app
+            # has no port setting: packaging/server_entry.py picks one
+            # (ARSLAN_PORT, else 47317, else an ephemeral port) and a dev run
+            # passes --port.
+            csp = _MAIN_WINDOW_CSP.format(port=request.scope["server"][1])
+            return {**_INDEX_HEADERS, "Content-Security-Policy": csp}
+
         @app.get("/{full_path:path}")
-        async def _spa_fallback(full_path: str):  # noqa: ANN202
+        async def _spa_fallback(full_path: str, request: Request):  # noqa: ANN202
             # API and WS routes are matched earlier; anything else serves the SPA.
             # Resolve and confirm containment to prevent path traversal
             # (e.g. percent-encoded "../" escaping the static directory).
@@ -841,14 +886,18 @@ def create_app() -> FastAPI:
                 candidate = (static_dir / full_path).resolve()
                 if candidate.is_file() and candidate.is_relative_to(static_root):
                     # index.html can also be requested by name, and it is still an
-                    # entry point when it is.
-                    if candidate in entry_pages:
+                    # entry point when it is. Matched as a file, not by spelling: a
+                    # Mac's disk ignores case, so /INDEX.HTML is this file too, and
+                    # went out with no policy and no no-store when compared by path.
+                    if index_page.is_file() and candidate.samefile(index_page):
+                        return FileResponse(str(candidate), headers=_main_window_headers(request))
+                    if candidate in entry_pages:  # the island's page: no main-window policy
                         return FileResponse(str(candidate), headers=_INDEX_HEADERS)
                     # Everything else here is a hashed build artefact: leave it
                     # cacheable. Blanket no-store would re-fetch a 2.5 MB bundle on
                     # every launch and call that a fix.
                     return FileResponse(str(candidate))
-            return FileResponse(str(index_file), headers=_INDEX_HEADERS)
+            return FileResponse(str(index_file), headers=_main_window_headers(request))
 
     return app
 

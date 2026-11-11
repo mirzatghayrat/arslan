@@ -42,17 +42,14 @@
   </head>
   <body>
     <div id="boot-veil"></div>
-    <script>
-      // Runs during parse, before the veil has ever painted, so a browser tab
-      // sees no dark frame at all. Only the packaged shell asks for the fade —
-      // it sets this flag from an initialization script (desktop/src-tauri/src/lib.rs)
-      // that runs before any page script. In dev, and in a plain browser, there
-      // is no splash to hand off from, so there is nothing to fade up from.
-      if (!window.__ARSLAN_SHELL_FADE_IN__) {
-        var v = document.getElementById("boot-veil");
-        if (v) v.remove();
-      }
-    </script>
+    <!--
+      Removes the veil during parse unless the packaged shell asked for a fade
+      (public/boot-veil.js says why). A file, not inline: the main window's CSP
+      is script-src 'self' with no hash (IMG1-B, server/main.py). Classic and
+      parser-blocking on purpose; async, defer or a module would run after the
+      veil may have painted.
+    -->
+    <script src="/boot-veil.js?v=20261111"></script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -69,6 +69,18 @@ describe("the field", () => {
     expect(document.activeElement).toBe(field());
   });
 
+  it("leaves Ctrl+K to the text field it's typed in (delete to the end of the line)", () => {
+    render(<Sidebar {...props} />);
+    const composer = document.createElement("textarea");
+    document.body.appendChild(composer);
+    composer.focus();
+    const event = new KeyboardEvent("keydown", { key: "k", code: "KeyK", ctrlKey: true, bubbles: true, cancelable: true });
+    composer.dispatchEvent(event);
+    expect(document.activeElement).toBe(composer);
+    expect(event.defaultPrevented).toBe(false);
+    composer.remove();
+  });
+
   it("⌘K shows a hidden sidebar and focuses the field", async () => {
     useSidebar.setState({ collapsed: true });
     render(<Sidebar {...props} />);
