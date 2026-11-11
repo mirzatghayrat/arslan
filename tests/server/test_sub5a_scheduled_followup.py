@@ -238,6 +238,42 @@ async def test_the_schedule_tool_and_the_heartbeat_start_without_the_old_tasks_r
     assert (await _heartbeat(runs)).id == 2 and await _left_of(runs, 2) == ([], None)
 
 
+async def test_a_reused_id_drops_only_its_own_reminders_not_a_longer_ids(runs, client):  # noqa: F811
+    """`sched:1` is the reused id's; `sched:12` and `sched:10` are other tasks' (deleted too, so SQLite hands out 1 again)
+    and stay, with their mute. The match is exact, never a prefix."""
+    await _old_task_left(runs, 1)
+    async with runs() as session:
+        session.add_all([ProactiveItem(kind="scheduled_problem", fingerprint=f"fp:other:{n}", source_key=f"sched:{n}",
+                                       title_key="title.scheduled_problem", evidence=[]) for n in (12, 10)])
+        session.add(ProactiveMute(key="sched:12"))
+        await session.commit()
+    made = (await client.post("/api/v1/scheduled-tasks", json=BODY)).json()
+    assert made["id"] == 1
+    assert await _left_of(runs, 1) == ([], None)
+    for n in (12, 10):
+        assert len((await _left_of(runs, n))[0]) == 1
+    assert (await _left_of(runs, 12))[1] is not None
+
+
+async def test_a_heartbeat_made_before_its_id_was_kept_carries_on_in_its_conversation(runs, client, monkeypatch):  # noqa: F811
+    """A heartbeat made before v0.1.64 writes into `scheduled-<id>` and has no kept id. Its next sync (a save or a boot)
+    keeps that id, so off and on carries on there."""
+    ran = _scheduled_turns(monkeypatch)
+    async with runs() as session:
+        session.add(ScheduledTask(id=5, name=heartbeat.TASK_NAME, prompt="p", target="arslan", schedule_kind="interval",
+                                  interval_s=heartbeat.DEFAULT_INTERVAL_S, enabled=True, consecutive_failures=0))
+        session.add(ArslanMessage(conversation_id="scheduled-5", role="arslan", content="nothing needs doing"))
+        await session.commit()
+    await _turn_heartbeat(runs, True)                           # the first sync after the upgrade
+    await _turn_heartbeat(runs, False)
+    await _turn_heartbeat(runs, True)
+    again = await _heartbeat(runs)
+    assert again.conversation_id == "scheduled-5"
+    await _due_now(runs, again.id)
+    await _ticks()
+    assert ran == ["scheduled-5"]
+
+
 async def test_the_heartbeats_conversation_is_kept_in_no_setting_the_user_sees(runs):  # noqa: F811
     from server.services import settings_service
     assert heartbeat.CONVERSATION_KEY not in settings_service._PLAIN_KEYS + settings_service._INT_KEYS

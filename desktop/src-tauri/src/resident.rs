@@ -843,7 +843,10 @@ mod tests {
     fn a_task_paused_on_a_deleted_conversation_says_so_and_opens_the_task() {
         let (_, failed) = notification("en", &event(1, "scheduled_paused", None)).unwrap();
         let (title, body) = notification("en", &paused_deleted(2)).unwrap();
-        assert_eq!(title, native_locale::text("en", "notify_scheduled_paused_title"));
+        assert_eq!(
+            title,
+            native_locale::text("en", "notify_scheduled_paused_title")
+        );
         assert_eq!(
             body,
             native_locale::text("en", "notify_scheduled_paused_deleted_body")
@@ -853,10 +856,19 @@ mod tests {
         assert!(!body.contains("several times"));
         // A click shows the task, never a conversation.
         let id = notification_id(&paused_deleted(2));
-        assert_eq!((task_from_id(&id), conversation_from_id(&id)), (Some(7), None));
+        assert_eq!(
+            (task_from_id(&id), conversation_from_id(&id)),
+            (Some(7), None)
+        );
         // Any other event keeps its conversation, and names no task.
         let other = notification_id(&event(3, "scheduled_paused", None));
-        assert_eq!((task_from_id(&other), conversation_from_id(&other).as_deref()), (None, Some("c1")));
+        assert_eq!(
+            (
+                task_from_id(&other),
+                conversation_from_id(&other).as_deref()
+            ),
+            (None, Some("c1"))
+        );
         assert_eq!(task_from_id("arslan-task|x|7"), None);
         assert_eq!(task_from_id("arslan-task|2|"), None);
         assert_eq!(task_from_id("arslan-task|2|0"), None);
