@@ -122,6 +122,17 @@ async def test_a_chat_turn_finds_it_on_demand_and_starts_a_sub_session_offered_i
     assert model.shown["child"] and all(shown <= sub_sessions.TOOLS for shown in model.shown["child"])
 
 
+async def test_a_chain_that_cant_be_read_counts_as_the_bottom_layer(monkeypatch):
+    """`_bottom_layer` fails closed: when the stored chain can't be read, the turn is offered no sub-session."""
+    from server.registry import tool as registry_tool
+
+    async def unreadable(db, conversation_id):
+        raise RuntimeError("chain unreadable")
+    monkeypatch.setattr(sub_sessions, "depth", unreadable)
+    assert await registry_tool._bottom_layer("c-anywhere") is True
+    assert await registry_tool._bottom_layer(None) is False      # no conversation: nothing to read, not the bottom
+
+
 def test_find_tools_tells_the_model_sub_sessions_are_there_to_find():
     """It's on demand, so the only place a chat turn learns sub-sessions exist is find_tools' description."""
     description = on_demand.FIND_TOOLS["description"]
