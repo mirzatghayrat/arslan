@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Status | **Design. Not started.** Card first (STATUS, 2026-11-11 "should" items). No product or UI code in this PR. The open questions are decided: see "Decisions" at the end. |
-| Version, tier | v0.1.64, should (user, 2026-10-28: README §1.1 and the row at README:100). A new safety surface, built only after the SBX chain (README:257). |
+| Status | **Design. Not started.** Card first (STATUS, 2026-11-11 "should" items). No product or UI code in this PR. The open questions are open, awaiting the user; the reviewer's and ⓪Plan's recommendation is at the end. |
+| Version, tier | v0.1.64, should (README §1.1 and the row at README:100). A new safety surface, built only after the SBX chain (README:257). |
 | Lane | ②Main builds (README:299). Each PR from main, not stacked, about 400 product lines. Review effort per PR in "Slices": max for any PR that touches the gate, the sandbox launch, or what kills processes. |
 | Depends on | SBX-3, SBX-6, SBX-7 merged (the commands profile, the run's TMPDIR and its `.groups` record, the proxy, the denial count). The SBX-8 sitting recorded before L6-3. HR-1 (#813) merged first: it edits `command_gate.py`, `tool_execute.py`, `terminal_exec.py`, `command_sandbox.py` and `sandbox_profile.py`, the same files. S2a-3 (#375, #378, #396) and the SBX-2 adapter deletion (`command_sandbox.py:213`) land first too; L6 rebases on them, not they on L6. |
 | Bridge | **No new frame and no new field.** What the phone sees is listed under "Mac and phone". |
@@ -81,7 +81,7 @@ Every `file:line` below was re-read at `c81630750d3b`. Between the first pin (`3
 
 ## Safety model
 
-**Same sandbox, fixed at launch.** A background command runs under exactly the commands profile its foreground twin would get for the same inputs (L6-2 tests the bytes are equal): writes only in the working folder, the run's TMPDIR and caches; Arslan's data, keys and HR-1's run-later files denied by the kernel; network only through the proxy, or none. No listening (`sandbox_profile.py:209`; Q3 is deferred). The profile cannot be tightened on a live process, so anything that would build a different profile now stops it instead (Codex's rule): the fingerprint of the profile's inputs (working folder, folder access, project folders, sandbox on or off, system certificates, trusted devices, shell on or off) is recorded at start and checked on each such settings write and every 10 s as a backstop.
+**Same sandbox, fixed at launch.** A background command runs under exactly the commands profile its foreground twin would get for the same inputs (L6-2 tests the bytes are equal): writes only in the working folder, the run's TMPDIR and caches; Arslan's data, keys and HR-1's run-later files denied by the kernel; network only through the proxy, or none. No listening (`sandbox_profile.py:209`; deferring Q3 is recommended, not decided). The profile cannot be tightened on a live process, so anything that would build a different profile now stops it instead (Codex's rule): the fingerprint of the profile's inputs (working folder, folder access, project folders, sandbox on or off, system certificates, trusted devices, shell on or off) is recorded at start and checked on each such settings write and every 10 s as a backstop.
 
 **The seatbelt profile is the containment boundary, not process-group tracking.** Writes are confined to the profile's roots, bind and inbound are denied, the network goes only through the proxy, and signals reach only the same sandbox (`sandbox_profile.py:173`). Group tracking only decides how long a process lives, and what L6 lists and stops. A child that leaves the process group (it calls `setsid` itself, or double-forks) keeps running sandboxed until it exits by itself: Arslan no longer lists it, stops it or times it. **That is a liveness gap, disclosed, not a containment gap.** It is no worse than today's `cmd &` (`run_temp.py:9-13`).
 
@@ -99,7 +99,7 @@ Every `file:line` below was re-read at `c81630750d3b`. Between the first pin (`3
 **Threat cases.**
 | Case | What holds |
 |---|---|
-| A long-lived listener | The kernel denies bind and inbound in the commands profile; outside the sandbox it needs the this-time outside card that says it keeps running; the life limit ends it. Loopback listening (Q3, L6-7) is deferred |
+| A long-lived listener | The kernel denies bind and inbound in the commands profile; outside the sandbox it needs the this-time outside card that says it keeps running; the life limit ends it. Loopback listening (Q3, L6-7) is open; deferring it is recommended |
 | Exfiltration over time | The network is decided once at start by the same gate (offline after outside content or when unread); no stdin, so a model that later reads outside content cannot steer a running process; online or offline is shown on its row; the proxy's site rules apply all its life; the life limit ends it. Residual: an online process can send through the proxy until stopped (Q7) |
 | Fork bomb | The text form is forbidden (`terminal_policy.py:94`); the group watchdog stops a group above 256; `nice 10`. Residual: a fast bomb can load the Mac for up to 2 s, as a foreground command can today for its whole time limit |
 | Outlives a revoked grant | Outside: no grant ever starts one, and forgetting the grant stops it. Job end stops the job's. Any profile input change stops all affected. Shell switched off stops all |
@@ -120,7 +120,7 @@ On exit the row is updated, then one note is posted in the conversation: the com
 - **Red first, every PR.** L6-0 (tests only) pins today's leak as strict expected failures with `raises=AssertionError` (`xfail(strict=True)`, the SBX convention): a foreground `sleep 600 >/dev/null 2>&1 &` leaves a live group after the call; Stop does not end it; shutdown does not end it. L6-1 and L6-2b flip them.
 - **Tests per PR:** the restart matrix (four moments, a fake server death through the keeper's pipe); the gate table for a background start under each verdict (forbid, ask, run, unreadable, outside with and without a grant, nobody to ask, wrap-up, detaching words, caps); profile bytes equal to the foreground twin with `cmp`; a settings change stops the process within 10 s; read is incremental and bounded; wait returns at `until`; a reused pid with a different start time is never killed.
 - **Mutants (each PR lists which went red):** background skips `command_gate`; an outside start rides the grant; the keeper ignores end of file; the fingerprint check removed; the cap pruned instead of refused; the cursor not advanced; the boot pass kills without the start-time check.
-- **Probes** through `scripts/dev/probe.sh`, on a real Mac: start a 5-minute build in the background, quit from the menu, then `pgrep` finds nothing; kill the server with SIGKILL and the keeper stops the group. Real-seatbelt denial for background starts reuses the existing commands-base p tests by parameter, no new probe kind. If L6-7 (deferred) is taken up, its loopback tests are new probes: Codex writes them, Astra reviews (SBX "Who writes what").
+- **Probes** through `scripts/dev/probe.sh`, on a real Mac: start a 5-minute build in the background, quit from the menu, then `pgrep` finds nothing; kill the server with SIGKILL and the keeper stops the group. Real-seatbelt denial for background starts reuses the existing commands-base p tests by parameter, no new probe kind. If L6-7 is built (Q3 is open), its loopback tests are new probes: Codex writes them, Astra reviews (SBX "Who writes what").
 
 ## External evidence
 
@@ -138,7 +138,7 @@ Each PR: the CI run id with all five checks, the macOS job's counts (0 skipped, 
 | L6-4 | Lifetime rules: the fingerprint, turn stop, job and sub-session end, conversation delete, life limit | max |
 | L6-5 | Exit note, push and the woken turn | max (it starts a turn) |
 | L6-6 | The Running panel (name set by the mock) and its chip, after the mock is approved | high |
-| L6-7 | **Deferred (Q3).** Loopback listening for background processes. If taken up: Codex writes the p tests, Astra reviews, the user merges | max + Astra |
+| L6-7 | **Only if Q3 says so; deferring is recommended.** Loopback listening for background processes. If built: Codex writes the p tests, Astra reviews, the user merges | max + Astra |
 
 No fallback switch is planned, so no `DELETE-BY:`. If L6-2b ships one, it carries `DELETE-BY: v0.1.65`.
 
@@ -147,7 +147,7 @@ No fallback switch is planned, so no `DELETE-BY:`. If L6-2b ships one, it carrie
 - Whether the proxy binds a new port on each start, so an escaped sandboxed process stays offline after a restart (`sandbox_proxy`'s port choice was not read).
 - The keeper's cost on a real Mac (one extra Python process per background command).
 
-## Open questions (decided, below)
+## Open questions for the user
 
 1. **Move a foreground command to the background when it hits its limit** (Claude Code, OpenClaw)? Recommended: **no**. Only `background: true`, so the card the user answered said what really runs.
 2. **Send input to a running process?** Recommended: **no** in v0.1.64; stdin stays empty. If wanted, each send is a this-time-only card showing the text (Codex re-reviews input).
@@ -157,13 +157,13 @@ No fallback switch is planned, so no `DELETE-BY:`. If L6-2b ships one, it carrie
 6. **Process list and Stop on the phone** (a Bridge frame you merge)? Recommended: **not now**; the phone sees steps, cards and exit notes, and can ask Arslan to stop one.
 7. **Per-process network accounting and cut-off at the proxy** (OpenClaw)? Recommended: **not built**; listed for v0.1.65 talk. Limits stay 4 per conversation, 8 in all, 30 min default, 2 h max unless you say otherwise.
 
-## Decisions (relayed by ⓪Plan on #839's review, 2026-11-11)
+## Recommended (reviewer and ⓪Plan); awaiting the user
 
-All seven go as recommended, except that Q3 is deferred:
+None of these is decided. The reviewer and ⓪Plan recommend the card's answers to all seven, except that for Q3 they recommend deferring:
 - Q1: no auto-move at the time limit.
 - Q2: no input; stdin stays empty.
-- Q3: **deferred.** L6-7 is not built now, and a dev server needs the outside card.
+- Q3: **defer.** L6-7 would not be built now, and a dev server would need the outside card.
 - Q4: one woken turn per exit, for chat-started processes (L6-5).
 - Q5: a foreground command's leftover group is stopped when it returns (L6-2b).
 - Q6: no process list or Stop on the phone; no Bridge frame.
-- Q7: no per-process proxy accounting. The limits stand: 4 per conversation, 8 in all, 30 min default, 2 h max.
+- Q7: no per-process proxy accounting. The limits as proposed: 4 per conversation, 8 in all, 30 min default, 2 h max.
