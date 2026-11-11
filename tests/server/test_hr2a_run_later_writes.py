@@ -12,6 +12,7 @@ Instruction files (AGENTS.md, CLAUDE.md, CLAUDE.local.md, GEMINI.md, .cursorrule
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
@@ -26,6 +27,18 @@ from server.services import (approvals, command_confirm, hard_rules, permission_
 from server.services.workspace_paths import PathEscape, RunLater, resolve_in_workspace
 from tests.server.sbx.test_hr1_run_later_link_targets import LAYOUTS as HR1_LAYOUTS
 from tests.server.sbx.test_hr1_run_later_link_targets import _lay_out as hr1_lay_out
+from tests.server.test_s64_0_outside_content_gaps import memory  # noqa: F401  (the fixture)
+from tests.server.test_sub4_report import OUTLINE as _SUB_BRIEF
+from tests.server.test_sub4_report import ROOT as _SUB_ROOT
+from tests.server.test_sub4_report import _Model as _SubModel
+from tests.server.test_sub4_report import _settled as _sub_settled
+from tests.server.test_sub4_report import _steps as _sub_steps
+from tests.server.test_sub4_report import _wait as _sub_wait
+from tests.server.test_sub4_report import runs  # noqa: F401  (the fixture)
+from tests.server.test_sub5c_child_folder import _LOG as _SUB_LOG
+from tests.server.test_sub5c_child_folder import _SLOW as _SUB_SLOW
+from tests.server.test_sub5c_child_folder import _held as _sub_held
+from tests.server.test_sub5c_child_folder import _Recorded as _SubRecorded
 
 CONV = "conv-hr2a"
 
@@ -623,3 +636,91 @@ async def test_a_click_approves_one_call_only(db):
         assert (await _dispatch("write_file", {"path": ".envrc", "content": "one"}))["ok"] is True
     again = await file_tools.WriteFileExecutor().execute({"path": ".envrc", "content": "two"})
     assert again["ok"] is False and (ws / ".envrc").read_text() == "one"
+
+
+# ── a sub-session, in its own folder (SUB5c's write root) ──────────────────────
+
+@pytest.fixture
+async def child_ws(runs, tmp_path, monkeypatch):  # noqa: F811
+    """SUB5c's harness (real jobs, the real tool loop, gates and cards, a scripted model) in a folder the user chose,
+    with the real write_file, recorded. Cleans up as SUB4's `_fresh` does."""
+    from server.registry import executors
+    from server.services import background_jobs, run_registry, sub_sessions
+    monkeypatch.setattr(sub_sessions, "POLL_SECONDS", 0.01)
+    for module in (background_jobs, approvals, sub_sessions):
+        module._reset_for_tests()
+    _SUB_LOG.clear()
+    monkeypatch.setitem(executors.EXECUTORS, "write_file", _SubRecorded("write_file", _SUB_LOG))
+    folder = tmp_path / "work"
+    folder.mkdir()
+    async with runs() as db:
+        db.add(Setting(key="workspace_dir", value=str(folder)))
+        await db.commit()
+    sinks: list = []
+    yield folder.resolve(), sinks
+    monkeypatch.setattr(sub_sessions, "ended", lambda job, text: None)
+    for module in (background_jobs, sub_sessions, approvals):
+        module._reset_for_tests()
+    for cid, sink in sinks:
+        run_registry.detach_sink(cid, sink)
+
+
+async def test_a_sub_sessions_held_write_in_its_own_folder_asks_its_card_and_its_grant_doesnt_answer_it(
+        child_ws, monkeypatch):
+    """SUB5c x HR-2a: a sub-session writes only in its own folder (`workspace_dir_for_run`), and the hold is judged
+    against that write root, as the kernel holds its commands there. Its `.vscode/tasks.json` and
+    `.claude/settings.json` each ask a once-only run_later card, past the sub-session's own write grant (and its
+    commander's): yes writes the first, no leaves the second unwritten. An ordinary file asks no run_later card.
+
+    The dependency exemption is the write root's: the commander's workspace has an alias at a held name outside the
+    sub-session's folder (which takes the exemption away from a walk of the whole workspace), and a copy below the
+    sub-session's own node_modules is still written with no card, as its command's profile, walking only its folder,
+    would let it."""
+    from server.services import run_registry, sub_sessions
+    ws, sinks = child_ws
+    shown: list = []
+
+    def sink(frame):
+        shown.append(frame)
+        kind, call_id = frame.get("type"), frame.get("call_id")
+        if kind == "propose_workspace_write":
+            approvals.answer({"type": "confirm_workspace_write", "call_id": call_id, "scope": "once"})
+        elif kind == "propose_action":
+            yes = frame.get("perm_kind") == "run_later" and str(frame.get("target", "")).endswith("tasks.json")
+            approvals.answer({"type": "confirm_action" if yes else "cancel_action", "call_id": call_id})
+    run_registry.attach_sink(_SUB_ROOT, sink)
+    sinks.append((_SUB_ROOT, sink))
+    model = _SubModel({_SUB_BRIEF: _sub_steps(
+        ("write_file", {"path": ".vscode/tasks.json", "content": "{}"}),
+        ("write_file", {"path": ".claude/settings.json", "content": "{}"}),
+        ("write_file", {"path": "notes.md", "content": "plain"}),
+        ("write_file", {"path": "node_modules/pkg/.vscode/tasks.json", "content": "{}"}),
+        final="written")}, summary=_sub_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    kid = await _sub_held(model, _SUB_BRIEF)
+    folder = ws / "sub" / (await sub_sessions.folder_names(kid))[0]     # made by the server before its first request
+    (ws / "elsewhere").mkdir()
+    (ws / "plain").mkdir()
+    (ws / "elsewhere" / ".vscode").symlink_to(ws / "plain")             # an alias, outside the sub-session's folder
+    async with db_session.AsyncSessionLocal() as s:
+        for cid in (kid, _SUB_ROOT):
+            await permission_store.add_grant(s, cid, "", "workspace_write", str(folder), call_id="card-1")
+            await permission_store.add_grant(s, cid, "", "workspace_write", str(ws), call_id="card-2")
+        await s.commit()
+    model.hold[_SUB_BRIEF].set()
+    await _sub_wait(_sub_settled, _SUB_SLOW)
+
+    run_later_cards = [(f["target"], f["options"]) for f in shown
+                       if f.get("type") == "propose_action" and f.get("perm_kind") == "run_later"]
+    assert run_later_cards == [(str(folder / ".vscode" / "tasks.json"), ["once"]),
+                               (str(folder / ".claude" / "settings.json"), ["once"])]
+    # The no is the gate's: that write never reached the executor, and the model was told the user said no.
+    ran = [(args["path"], result["ok"]) for key, args, result in _SUB_LOG if key == "write_file"]
+    assert ran == [(".vscode/tasks.json", True), ("notes.md", True), ("node_modules/pkg/.vscode/tasks.json", True)]
+    told = json.dumps(model.requests[_SUB_BRIEF][2], ensure_ascii=False)
+    assert "said no" in told and "settings.json" in told
+    assert (folder / ".vscode" / "tasks.json").read_text() == "{}"
+    assert not (folder / ".claude" / "settings.json").exists()
+    assert (folder / "notes.md").read_text() == "plain"                 # the negative control: no run_later card
+    assert (folder / "node_modules" / "pkg" / ".vscode" / "tasks.json").read_text() == "{}"
+    assert not (ws / ".vscode").exists() and not (ws / ".claude").exists() and not (ws / "notes.md").exists()
