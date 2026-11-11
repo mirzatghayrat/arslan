@@ -290,7 +290,8 @@ export interface ScheduledTaskCreateBody {
   schedule_kind: "interval" | "cron";
   interval_s?: number | null;
   cron?: string | null;
-  /** null/empty = dedicated conversation (scheduled-{id}). */
+  /** null/empty = the task's own conversation: on create the server stores a new `scheduled-<uuid>`, and on save a task keeps
+   *  its own (a row made before v0.1.64 writes into `scheduled-{id}`). */
   conversation_id?: string | null;
 }
 

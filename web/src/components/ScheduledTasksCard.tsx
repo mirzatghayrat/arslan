@@ -21,8 +21,10 @@ import { Escaped, isolate } from "../lib/outsideText";
  * Honesty rules mirrored from the backend:
  * - last_outcome == null means "no runs yet" OR "in flight" — render "—",
  *   never a status we don't actually know.
- * - paused_reason is non-null ONLY on the 3-fail auto-pause; the badge tooltip
- *   carries it. A manual pause shows the same badge without a tooltip.
+ * - paused_reason is non-null only when the task paused itself (3 fails in a row, a
+ *   cron with no future match, its conversation deleted: the code
+ *   `conversation_deleted`, which reasonText words); the badge tooltip carries it.
+ *   A manual pause shows the same badge without a tooltip.
  * - cron is interpreted in the user's LOCAL time on the server (review I5) —
  *   the cadence cell says so next to the raw expression.
  */
@@ -302,9 +304,12 @@ interface Props {
   details?: (task: ScheduledTaskDto) => ReactNode;
   /** INB5b-3: a task's row was opened (not closed). */
   onOpen?: (taskId: number) => void;
+  /** SUB5a: open this task's row and bring it into view, once per `n` (a clicked notification). A task the list doesn't
+   *  have is left alone. */
+  focus?: { taskId: number; n: number } | null;
 }
 
-export default function ScheduledTasksCard({ onOpenRun, attention, details, onOpen }: Props) {
+export default function ScheduledTasksCard({ onOpenRun, attention, details, onOpen, focus }: Props) {
   const { t, i18n } = useTranslation();
   const [tasks, setTasks] = useState<ScheduledTaskDto[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -350,6 +355,14 @@ export default function ScheduledTasksCard({ onOpenRun, attention, details, onOp
       .then((rs) => setRuns((prev) => ({ ...prev, [id]: rs })))
       .catch(() => { /* history stays empty */ });
   };
+
+  useEffect(() => {
+    if (!focus || !loaded || !tasks.some((task) => task.id === focus.taskId)) return;
+    if (expanded !== focus.taskId) toggleExpand(focus.taskId);
+    document.querySelector(`[data-testid="sched-expand-${focus.taskId}"]`)?.scrollIntoView?.({ block: "center" });
+    // Only a new focus, or the list arriving, opens the row: closing it afterwards keeps it closed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.taskId, focus?.n, loaded]);
 
   const doPauseResume = async (task: ScheduledTaskDto) => {
     setError(null);
