@@ -257,12 +257,25 @@ export interface MemoryProposalDto {
 
 import type { ServerConversation } from "../lib/sessionPersistence";
 
+/** One message GET /conversations/search found. */
+export interface ConversationHit {
+  conversation_id: string;
+  message_id: number;
+  who: "you" | "Arslan";
+  when: string | null;
+  snippet: string;
+}
+
 export const api = {
   health: () => request<{ status: string; version: string }>("/health"),
   /** Gate item ⑦ — which conversations exist. The SERVER is the source of
    *  truth for this; localStorage cannot be, because the packaged app gets a
    *  fresh origin (and so a fresh, empty store) on every launch. */
   listConversations: () => request<ServerConversation[]>("/conversations"),
+  /** The sidebar's search, "In messages": the words around each match in conversations the sidebar lists (never a
+   *  temporary, no-memory or sub-session one). `snippet` is plain text, shown as text. */
+  searchConversations: (query: string) =>
+    request<ConversationHit[]>(`/conversations/search?q=${encodeURIComponent(query)}`),
   /** INB4: the window shows this conversation; its newest message is seen. */
   markConversationSeen: (id: string) => request<{ seen_message_id: number }>(`/conversations/${encodeURIComponent(id)}/seen`, { method: "POST" }),
   getBrainTree: () => request<{ branches: BrainBranch[] }>("/brain/tree"),

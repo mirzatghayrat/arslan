@@ -788,7 +788,15 @@
     "moveBack": "Zurück",
     "movedTo": "Nach „{{name}}“ verschoben",
     "movedOut": "Aus dem Projekt genommen",
-    "moveFailed": "Konnte nicht verschoben werden – vielleicht arbeitet sie gerade."
+    "moveFailed": "Konnte nicht verschoben werden – vielleicht arbeitet sie gerade.",
+    "search": {
+      "placeholder": "Unterhaltungen durchsuchen",
+      "clear": "Leeren",
+      "titles": "Titel",
+      "messages": "In Nachrichten",
+      "none": "Nichts gefunden für „{{query}}“",
+      "noneHint": "Weder in Titeln noch in Nachrichten. Temporäre Unterhaltungen und solche mit „Gedächtnis nicht verwenden“ werden nicht durchsucht."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Guten Morgen",
@@ -1513,6 +1521,7 @@
       "ended": "Beendet, ohne fertig zu werden"
     },
     "toggle": "Teilgespräche ein- oder ausblenden ({{count}})",
+    "under": "Unter „{{title}}“",
     "header": "Dies ist ein Teilgespräch von „{{name}}“; es meldet sich dort, wenn es fertig ist.",
     "back": "Zurück zu „{{name}}“",
     "panel": "Teilgespräche",
