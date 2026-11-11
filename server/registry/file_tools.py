@@ -327,10 +327,10 @@ class WriteFileExecutor:
     key = "write_file"
 
     async def execute(self, args: dict) -> dict:
+        approved = _take_run_later()          # first: an early return leaves no click for a later call (HR-2a)
         content = args.get("content")
         if not isinstance(content, str):
             return {"ok": False, "error": "content must be a string"}
-        approved = _take_run_later()
         root, path, err = await _resolved(args, for_write=True, make_parents=True, run_later_ok=approved)
         if err:
             return err
@@ -362,13 +362,13 @@ class EditFileExecutor:
     key = "edit_file"
 
     async def execute(self, args: dict) -> dict:
+        approved = _take_run_later()          # first: an early return leaves no click for a later call (HR-2a)
         old = args.get("old_string")
         new = args.get("new_string")
         if not isinstance(old, str) or not old:
             return {"ok": False, "error": "'old_string' must be a non-empty string"}
         if not isinstance(new, str):
             return {"ok": False, "error": "'new_string' must be a string"}
-        approved = _take_run_later()
         root, path, err = await _resolved(args)
         if err:
             return err

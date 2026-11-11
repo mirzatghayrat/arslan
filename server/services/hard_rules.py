@@ -204,14 +204,27 @@ if not _NAMED <= FORBID_KEYS | ASK_KEYS or not (NEVER_AUTO_KINDS | MAY_AUTO_KIND
 
 
 def _writes_run_later(request) -> bool:
-    """HR-2a: a file tool's write request (`workspace_write`) whose file makes something run later
-    (`run_later.matches` on its detail, the path the model gave; not a string: True). The file tools ask such a
-    write as a `run_later` card of its own (tool_gates), so this holds for a request built some other way. A
-    command's writes are held by the kernel since HR-1 (RUN_LATER), not read from its request here."""
+    """HR-2a: a file tool's write request (`workspace_write`) whose file makes something run later: its detail (the
+    path the model gave) in its target (the work folder) judged by `workspace_paths.held_for_later`, the gate's own
+    test (every link on the way, #813 review 9 and 10), and its detail by name as well (a target that isn't a folder
+    on this Mac judges nothing). Not a string, or a write that can't be told (RunLaterUnknown, an OS error): True.
+    The file tools
+    ask such a write as a `run_later` card of its own (tool_gates), so this holds for a request built some other way.
+    A command's writes are held by the kernel since HR-1 (RUN_LATER), not read from its request here."""
+    from pathlib import Path
+
+    from server.services import workspace_paths
     if request.kind != "workspace_write":
         return False
-    detail = getattr(request, "detail", None)
-    return not isinstance(detail, str) or run_later.matches(detail)
+    detail, target = getattr(request, "detail", None), getattr(request, "target", None)
+    if not isinstance(detail, str):
+        return True
+    try:
+        held = (isinstance(target, str) and Path(target).is_absolute()
+                and workspace_paths.held_for_later(detail, Path(target)) is not None)
+    except (workspace_paths.RunLaterUnknown, OSError, RuntimeError):
+        return True
+    return held or run_later.matches(detail)
 
 
 def never_auto(request) -> bool:

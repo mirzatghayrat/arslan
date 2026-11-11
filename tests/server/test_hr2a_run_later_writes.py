@@ -24,6 +24,8 @@ from server.registry import file_tools
 from server.services import (approvals, command_confirm, hard_rules, permission_store, permissions,
                              run_later)
 from server.services.workspace_paths import PathEscape, RunLater, resolve_in_workspace
+from tests.server.sbx.test_hr1_run_later_link_targets import LAYOUTS as HR1_LAYOUTS
+from tests.server.sbx.test_hr1_run_later_link_targets import _lay_out as hr1_lay_out
 
 CONV = "conv-hr2a"
 
@@ -69,23 +71,27 @@ def test_instruction_files_are_ordinary_files(ws, name):
 
 
 def test_a_held_name_is_held_in_any_letter_case_and_through_a_link(ws):
+    """On either disk: a Mac's ignores case, so `.VSCode` is the `.vscode` folder; CI's Linux disk doesn't, so it is
+    a folder `make_parents` would make, held by the folded name. The Kelvin sign folds to `k` (casefold)."""
     (ws / ".vscode").mkdir()
     (ws / "cfg").symlink_to(ws / ".vscode")
     (ws / "t.json").symlink_to(ws / ".vscode" / "tasks.json")
-    for where in (".VSCode/TASKS.json", "cfg/tasks.json", "t.json"):
+    for where in (".VSCode/TASKS.json", "cfg/tasks.json", "t.json", ".vscode/tasKs.json"):
         with pytest.raises(RunLater) as held:
-            resolve_in_workspace(where, ws, for_write=True)
-        assert held.value.path.name.lower() == "tasks.json"
+            resolve_in_workspace(where, ws, for_write=True, make_parents=True)
+        assert held.value.path.name.casefold() == "tasks.json"
 
 
 def test_the_hooks_path_folder_is_held_by_identity_and_an_unreadable_config_refuses(ws):
+    """`TOOLS/Hooks` is the hooks folder on a Mac's disk and a folder `make_parents` would make on CI's (held by the
+    folded name, `_within`): held on either."""
     (ws / ".git").mkdir()
     (ws / ".git" / "config").write_text("[core]\n\thooksPath = tools/hooks\n")
     (ws / "tools" / "hooks").mkdir(parents=True)
     (ws / "alias").symlink_to(ws / "tools")
     for where in ("tools/hooks/pre-commit", "TOOLS/Hooks/pre-push", "alias/hooks/pre-commit"):
         with pytest.raises(RunLater):
-            resolve_in_workspace(where, ws, for_write=True)
+            resolve_in_workspace(where, ws, for_write=True, make_parents=True)
     assert resolve_in_workspace("tools/build.sh", ws, for_write=True) == ws / "tools" / "build.sh"
     (ws / ".git" / "config").unlink()
     (ws / ".git" / "config").mkdir()                     # can't be read as a file: refused, never taken as unset
@@ -116,6 +122,141 @@ def test_a_link_named_node_modules_to_an_ordinary_folder_is_no_exemption(ws):
     with pytest.raises(RunLater) as held:
         resolve_in_workspace("node_modules/.vscode/tasks.json", ws, for_write=True, make_parents=True)
     assert held.value.path == ws / "plain" / ".vscode" / "tasks.json"
+
+
+# ── links at held names (#813 review 9 and 10, as the kernel holds them) ────────
+
+def _folder_link(ws: Path, name: str, target: str) -> None:
+    (ws / target).mkdir(parents=True)
+    (ws / name).parent.mkdir(parents=True, exist_ok=True)
+    (ws / name).symlink_to(ws / target)
+
+
+def _file_link(ws: Path, name: str, target: str) -> None:
+    (ws / target).parent.mkdir(parents=True, exist_ok=True)
+    (ws / target).write_text("")
+    (ws / name).parent.mkdir(parents=True, exist_ok=True)
+    (ws / name).symlink_to(ws / target)
+
+
+#: The review's probes: a held name or held folder that is a link to an ordinary name. Each was written with no
+#: card when only the resolved path was tested. (setup, the path the model gives)
+LINK_PROBES = {
+    "folder .vscode -> vsc": (lambda ws: _folder_link(ws, ".vscode", "vsc"), ".vscode/tasks.json"),
+    "file .envrc -> envrc.real": (lambda ws: _file_link(ws, ".envrc", "envrc.real"), ".envrc"),
+    "folder .git -> gd": (lambda ws: _folder_link(ws, ".git", "gd"), ".git/config"),
+    "file .vscode/settings.json -> x.json": (lambda ws: _file_link(ws, ".vscode/settings.json", "x.json"),
+                                             ".vscode/settings.json"),
+    "folder .claude -> c": (lambda ws: _folder_link(ws, ".claude", "c"), ".claude/settings.json"),
+    "folder .husky -> h": (lambda ws: _folder_link(ws, ".husky", "h"), ".husky/pre-commit"),
+    "file .npmrc -> sib/npmrc": (lambda ws: _file_link(ws, ".npmrc", "sib/npmrc"), ".npmrc"),
+    # The resolved path is inside node_modules, which exempted it: the link at a held name takes the exemption away.
+    "folder .vscode -> node_modules/x/.vscode": (lambda ws: _folder_link(ws, ".vscode", "node_modules/x/.vscode"),
+                                                 ".vscode/tasks.json"),
+}
+
+
+@pytest.mark.parametrize("walk", ["whole", "stopped at once"])
+@pytest.mark.parametrize("probe", list(LINK_PROBES))
+def test_a_held_name_that_is_a_link_to_an_ordinary_name_is_held(ws, probe, walk, monkeypatch):
+    """Held by the path as read at the link, whether or not HR-1's walk of the folder saw the link (`stopped at
+    once`: its entry cap reached at the first entry, as in a folder past `WALK_ENTRIES`)."""
+    setup, where = LINK_PROBES[probe]
+    setup(ws)
+    if walk != "whole":
+        monkeypatch.setattr(run_later, "WALK_ENTRIES", 0)
+    lands = (ws / where).resolve()
+    assert run_later.matches(lands, root=ws) is False        # the resolved path alone: nothing would hold it
+    with pytest.raises(RunLater) as held:
+        resolve_in_workspace(where, ws, for_write=True, make_parents=True)
+    assert held.value.path == lands                           # the card names where the write lands
+    assert resolve_in_workspace(where, ws, for_write=True, make_parents=True, run_later_ok=lands) == lands
+    assert hard_rules.never_auto(permissions.Request(kind="workspace_write", target=str(ws), title="t", detail=where))
+
+
+def test_a_links_target_is_read_with_the_rest_of_the_path(ws):
+    """`p -> .git`, and `.git/hooks` a link to `h2`: neither the path as written (`p/hooks/...`) nor where it lands
+    (`h2/...`) has a held name, but `p`'s target with the rest (`.git/hooks/...`) does, as git reads it."""
+    (ws / ".git").mkdir()
+    (ws / "h2").mkdir()
+    (ws / ".git" / "hooks").symlink_to(ws / "h2")
+    (ws / "p").symlink_to(ws / ".git")
+    with pytest.raises(RunLater) as held:
+        resolve_in_workspace("p/hooks/pre-commit", ws, for_write=True)
+    assert held.value.path == ws / "h2" / "pre-commit"
+    assert hard_rules.never_auto(permissions.Request(kind="workspace_write", target=str(ws), title="t",
+                                                     detail="p/hooks/pre-commit"))
+
+
+def test_a_path_through_a_link_at_a_held_name_has_no_dependency_exemption(ws):
+    """`.vscode -> node_modules/x/.husky`: the path read through the link (`.vscode/pre-commit`) is no held name and
+    the resolved one is a hook inside node_modules; the kernel's profile drops the exemption then, and so does this."""
+    _folder_link(ws, ".vscode", "node_modules/x/.husky")
+    with pytest.raises(RunLater) as held:
+        resolve_in_workspace(".vscode/pre-commit", ws, for_write=True)
+    assert held.value.path == ws / "node_modules" / "x" / ".husky" / "pre-commit"
+
+
+@pytest.mark.parametrize("layout", sorted(HR1_LAYOUTS))
+def test_hr1s_link_target_layouts_hold_what_the_kernel_holds(ws, layout):
+    """HR-1's own layouts (`test_hr1_run_later_link_targets.LAYOUTS`, measured under real seatbelt): what the kernel
+    refuses at the link's target, named otherwise, is held here; what it writes is written. The held name read through
+    the link is held too. The oracle is the kernel's, never a list of this test's own."""
+    (link, target, is_folder), writes = HR1_LAYOUTS[layout]
+    hr1_lay_out(ws, link, target, is_folder, writes)
+    for where, want in writes:
+        if want == "refused":
+            with pytest.raises(RunLater) as held:
+                resolve_in_workspace(where, ws, for_write=True, make_parents=True)
+            assert held.value.path == ws / where, where
+            through = link + where[len(target):]
+            with pytest.raises(RunLater):
+                resolve_in_workspace(through, ws, for_write=True, make_parents=True)
+        else:
+            assert resolve_in_workspace(where, ws, for_write=True, make_parents=True) == ws / where, where
+
+
+def test_an_alias_anywhere_in_the_folder_takes_the_dependency_exemption_away(ws):
+    """#813 review 9: HR-1's walk finds `.vscode -> node_modules/pkg/.vscode`, an alias out of its folder, and the
+    kernel's profile then exempts no dependency folder: a hook inside node_modules is held for this write too, though
+    the write goes through no link. Without the alias the same write is an ordinary one."""
+    (ws / "node_modules" / "other" / ".husky").mkdir(parents=True)
+    assert resolve_in_workspace("node_modules/other/.husky/pre-commit", ws, for_write=True) \
+        == ws / "node_modules" / "other" / ".husky" / "pre-commit"
+    _folder_link(ws, ".vscode", "node_modules/pkg/.vscode")
+    with pytest.raises(RunLater):
+        resolve_in_workspace("node_modules/other/.husky/pre-commit", ws, for_write=True)
+    with pytest.raises(RunLater):                                 # the dependency's file the editor reads
+        resolve_in_workspace("node_modules/pkg/.vscode/settings.json", ws, for_write=True)
+
+
+def test_the_work_folders_hooks_path_inside_a_nested_repository_is_held(ws):
+    """⓪Plan's layout: the work folder's config sets `core.hooksPath = tools/githooks`, and `tools` is a submodule
+    checkout (its own `.git` file, no hooksPath). The nearest repository above the hook is the submodule, but git in
+    the work folder runs the hook: held, as the kernel holds `hooks_path(work folder)`."""
+    (ws / ".git" / "modules" / "tools").mkdir(parents=True)
+    (ws / ".git" / "config").write_text("[core]\n\thooksPath = tools/githooks\n")
+    (ws / ".git" / "modules" / "tools" / "config").write_text("[core]\n\tbare = false\n")
+    (ws / "tools" / "githooks").mkdir(parents=True)
+    (ws / "tools" / ".git").write_text("gitdir: ../.git/modules/tools\n")
+    assert run_later.hooks_path(ws / "tools" / "githooks") is None        # the nearest repository's: none
+    with pytest.raises(RunLater):
+        resolve_in_workspace("tools/githooks/pre-commit", ws, for_write=True)
+    assert resolve_in_workspace("tools/build.sh", ws, for_write=True) == ws / "tools" / "build.sh"
+
+
+def test_ordinary_links_instruction_files_through_links_and_a_real_dependency_copy_are_not_held(ws):
+    _file_link(ws, "notes.md", "n2.md")
+    _file_link(ws, "CLAUDE.md", "docs/rules.md")
+    _folder_link(ws, ".claude", "c")
+    _folder_link(ws, "node_modules/pkg/.vscode", "vsc-of-pkg")    # a package's own link: the kernel's walk skips it
+    (ws / "node_modules" / "dep" / ".vscode").mkdir(parents=True)
+    for where, lands in (("notes.md", "n2.md"), ("CLAUDE.md", "docs/rules.md"), (".claude/CLAUDE.md", "c/CLAUDE.md"),
+                         ("node_modules/dep/.vscode/tasks.json", "node_modules/dep/.vscode/tasks.json"),
+                         ("node_modules/pkg/.vscode/tasks.json", "vsc-of-pkg/tasks.json")):
+        assert resolve_in_workspace(where, ws, for_write=True, make_parents=True) == ws / lands, where
+        assert not hard_rules.never_auto(permissions.Request(kind="workspace_write", target=str(ws), title="t",
+                                                             detail=where)), where
 
 
 def test_the_approved_path_passes_and_only_that_one(ws):
@@ -231,6 +372,148 @@ async def test_in_a_chosen_folder_a_conversation_grant_does_not_answer_it(db, tm
     assert [f["perm_kind"] for f in yes.frames] == ["run_later"]      # the grant answered the plain write only
 
 
+async def test_a_held_folder_that_is_a_link_asks_its_card_in_arslans_own_folder_and_past_a_grant(db, tmp_path):
+    """The review's tool-loop probe: `.claude -> c`. In Arslan's own folder the write asks the run_later card (it
+    went through with no card); in a chosen folder the conversation's write grant doesn't answer it."""
+    ws = await _own_folder()
+    _folder_link(ws, ".claude", "c")
+    yes = _Asker(True)
+    with permissions.asking_with(yes):
+        out = await _dispatch("write_file", {"path": ".claude/settings.json", "content": "{}"})
+    assert out["ok"] is True and (ws / "c" / "settings.json").read_text() == "{}"
+    assert [(f["perm_kind"], f["target"]) for f in yes.frames] == [("run_later", str(ws / "c" / "settings.json"))]
+
+    chosen = (tmp_path / "chosen").resolve()
+    chosen.mkdir()
+    _folder_link(chosen, ".claude", "c")
+    async with db_session.AsyncSessionLocal() as s:
+        await s.merge(Setting(key="workspace_dir", value=str(chosen)))
+        await permission_store.add_grant(s, CONV, "", "workspace_write", str(chosen))
+        await s.commit()
+    ladder = command_confirm.Confirmations(CONV)
+    yes = _Asker(True)
+    with permissions.asking_with(yes):
+        out = await _dispatch("write_file", {"path": ".claude/settings.json", "content": "{}"},
+                              confirm_workspace_write=ladder.workspace_write)
+    assert out["ok"] is True and [f["perm_kind"] for f in yes.frames] == ["run_later"]
+    no = _Asker(False)
+    with permissions.asking_with(no):
+        out = await _dispatch("write_file", {"path": ".claude/settings.local.json", "content": "{}"},
+                              confirm_workspace_write=ladder.workspace_write)
+    assert out["ok"] is False and not (chosen / "c" / "settings.local.json").exists()
+    assert [f["perm_kind"] for f in no.frames] == ["run_later"]
+
+
+async def test_an_unreadable_git_config_is_refused_at_the_gate_before_any_card(db, tmp_path):
+    """Review item 4: the gate refuses it itself, with the reason, before the folder's card would ask for a write
+    the executor refuses anyway."""
+    chosen = tmp_path / "chosen"
+    (chosen / ".git" / "config").mkdir(parents=True)             # can't be read as a file
+    async with db_session.AsyncSessionLocal() as s:
+        s.add(Setting(key="workspace_dir", value=str(chosen)))
+        await s.commit()
+    asked: list[str] = []
+
+    async def folder_card(tool_key, path):
+        asked.append(path)
+        return True
+
+    async def no_card(frame):
+        raise AssertionError(f"no card for a write that can't be judged: {frame}")
+    with permissions.asking_with(no_card):
+        out = await _dispatch("write_file", {"path": "notes.md", "content": "x"}, confirm_workspace_write=folder_card)
+    assert out["ok"] is False and "git config" in out["error"] and asked == []
+    assert not (chosen / "notes.md").exists()
+    assert hard_rules.never_auto(permissions.Request(kind="workspace_write", target=str(chosen.resolve()),
+                                                     title="t", detail="notes.md"))
+
+
+async def test_the_run_later_card_stands_in_for_the_folders_card(db, tmp_path):
+    """One card per write: in a chosen folder with no grant, a held write asks the run_later card and not the
+    folder's write card too, whether the click is yes or no."""
+    chosen = tmp_path / "chosen"
+    chosen.mkdir()
+    async with db_session.AsyncSessionLocal() as s:
+        s.add(Setting(key="workspace_dir", value=str(chosen)))
+        await s.commit()
+    folder_cards: list[str] = []
+
+    async def folder_card(tool_key, path):
+        folder_cards.append(path)
+        return True
+    for approved in (True, False):
+        asker = _Asker(approved)
+        with permissions.asking_with(asker):
+            out = await _dispatch("write_file", {"path": ".envrc", "content": str(approved)},
+                                  confirm_workspace_write=folder_card)
+        assert out["ok"] is approved and [f["perm_kind"] for f in asker.frames] == ["run_later"]
+    assert folder_cards == [] and (chosen / ".envrc").read_text() == "True"
+    with permissions.asking_with(_Asker(True)):                  # an ordinary write still asks the folder's card
+        assert (await _dispatch("write_file", {"path": "notes.md", "content": "x"},
+                                confirm_workspace_write=folder_card))["ok"] is True
+    assert folder_cards == ["notes.md"]
+
+
+async def test_a_click_whose_executor_never_ran_approves_nothing_later(db):
+    """The gate clears any earlier click first: a click left unused (its step refused after it, say) is not taken by
+    the next call's executor, even when that call's own card is declined and the executor runs with no gate."""
+    ws = await _own_folder()
+    file_tools.approve_run_later(ws / ".envrc")                     # a click whose executor never ran
+    with permissions.asking_with(_Asker(False)):
+        declined = await _dispatch("write_file", {"path": ".envrc", "content": "declined"})
+    assert declined["ok"] is False
+    gateless = await file_tools.WriteFileExecutor().execute({"path": ".envrc", "content": "gate-less"})
+    assert gateless["ok"] is False and not (ws / ".envrc").exists()
+
+
+async def test_an_edit_refused_early_leaves_no_click_for_a_later_call(db):
+    """⓪Plan's form: an edit with an empty old_string is clicked and returns before it writes; the click is taken
+    by that call all the same, so a later executor run with no gate writes nothing."""
+    ws = await _own_folder()
+    (ws / ".envrc").write_text("old")
+    with permissions.asking_with(_Asker(True)):
+        out = await _dispatch("edit_file", {"path": ".envrc", "old_string": "", "new_string": "x"})
+    assert out["ok"] is False
+    gateless = await file_tools.WriteFileExecutor().execute({"path": ".envrc", "content": "gate-less"})
+    assert gateless["ok"] is False and (ws / ".envrc").read_text() == "old"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a folder at mode 000")
+async def test_a_folder_the_check_cant_read_is_a_tool_error_not_an_exception(db):
+    """⓪Plan's form: `locked/sub/x.txt` with `locked` at mode 000 raised PermissionError out of the tool call. Now
+    a tool error, with no card and nothing written."""
+    ws = await _own_folder()
+    (ws / "locked" / "sub").mkdir(parents=True)
+    os.chmod(ws / "locked", 0)
+    try:
+        async def no_card(frame):
+            raise AssertionError(f"no card: {frame}")
+        with permissions.asking_with(no_card):
+            out = await _dispatch("write_file", {"path": "locked/sub/x.txt", "content": "x"})
+    finally:
+        os.chmod(ws / "locked", 0o755)
+    assert out["ok"] is False and "x.txt" in out["error"] and not (ws / "locked" / "sub" / "x.txt").exists()
+
+
+async def test_two_identical_run_later_asks_at_once_are_two_cards(db):
+    """`_NEVER_JOINED`: one click is one write, so an identical ask never joins a card on screen."""
+    req = permissions.Request(kind="run_later", target="/ws/.envrc", detail="/ws/.envrc", once_only=True,
+                              title="Write .envrc?")
+    ctx = permissions.Context(CONV)
+    with permissions.asking_with(approvals.BroadcastAsker(CONV)):
+        asks = [asyncio.create_task(permissions.decide(req, ctx)) for _ in range(2)]
+        for _ in range(200):
+            if len([p for p in approvals._pending.values() if not p.future.done()]) == 2:
+                break
+            await asyncio.sleep(0.01)
+        cards = [p.call_id for p in approvals._pending.values() if not p.future.done()]
+        for call_id in cards:
+            approvals.answer({"type": "confirm_action", "call_id": call_id})
+        decisions = await asyncio.wait_for(asyncio.gather(*asks), timeout=5)
+    assert len(set(cards)) == 2, f"the second ask joined the first card: {cards}"
+    assert [d.allowed for d in decisions] == [True, True]
+
+
 async def _answered(run, reply):
     """Run `run` with a job's card surface (every window, the Inbox, the island, the phone) and answer its card
     with `reply(call_id)` from outside; returns (result, frame)."""
@@ -289,6 +572,30 @@ async def test_with_nobody_to_ask_it_is_refused_and_listed_in_the_inbox(db):
 
 
 async def test_a_link_swapped_after_the_click_fails_closed(db, monkeypatch):
+    """Review item 2: the swap lands after the executor's first resolve and before the write, so only the write-time
+    re-check (`_write_inside`) sees it: `.vscode`, made by the executor, becomes a link to `.git/hooks`. Without the
+    re-check, macOS's O_NOFOLLOW_ANY refuses the open with another error, and Linux would write the hook."""
+    ws = await _own_folder()
+    (ws / ".git" / "hooks").mkdir(parents=True)
+    snapshot = file_tools._snapshot_write
+    swapped = []
+
+    def then_swap(root, path, content):
+        os.rmdir(ws / ".vscode")
+        (ws / ".vscode").symlink_to(ws / ".git" / "hooks")
+        swapped.append(path)
+        return snapshot(root, path, content)
+    monkeypatch.setattr(file_tools, "_snapshot_write", then_swap)
+    yes = _Asker(True)
+    with permissions.asking_with(yes):
+        out = await _dispatch("write_file", {"path": ".vscode/tasks.json", "content": "#!/bin/sh\n"})
+    assert swapped == [ws / ".vscode" / "tasks.json"]
+    assert yes.frames[0]["target"] == str(ws / ".vscode" / "tasks.json")
+    assert out["ok"] is False and "runs later" in out["error"], out
+    assert not (ws / ".git" / "hooks" / "tasks.json").exists()
+
+
+async def test_a_link_swapped_between_the_gate_and_the_executor_fails_closed(db, monkeypatch):
     ws = await _own_folder()
     (ws / ".vscode").mkdir()
     (ws / ".git" / "hooks").mkdir(parents=True)
