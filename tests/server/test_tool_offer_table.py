@@ -8,6 +8,7 @@ its words), so a condition that stopped mattering shows too. The traits of every
 whether it has its own gate, so a flipped trait shows as the tool it belongs to.
 """
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -239,6 +240,54 @@ async def test_each_condition_changes_the_table(flip, monkeypatch, _an_mcp_serve
     every, _shown = await _table(monkeypatch, CHAT)
     flipped, _shown = await _table(monkeypatch, CASES[flip][0])
     assert _words(flipped) != _words(every)
+
+
+def _fields(schema, path=""):
+    """A parameter schema as the lines that matter to a call: each parameter's path, type, whether it is required, and
+    its enum. Nested objects and array items are walked, so a change anywhere shows as the line it changed."""
+    lines = []
+    required = set(schema.get("required") or [])
+    for name, prop in (schema.get("properties") or {}).items():
+        where = f"{path}{name}"
+        kind = prop.get("type", "any")
+        line = f"{where}: {'|'.join(kind) if isinstance(kind, list) else kind}"
+        items = prop.get("items") if isinstance(prop.get("items"), dict) else None
+        if items is not None:
+            line += f" of {items.get('type', 'any')}"
+        if name in required:
+            line += " required"
+        for holder, label in ((prop, "enum"), (items or {}, "items enum")):
+            if "enum" in holder:
+                line += f" {label}=" + "|".join(str(value) for value in holder["enum"])
+        lines.append(line)
+        if prop.get("type") == "object":
+            lines += _fields(prop, where + ".")
+        if items is not None and items.get("type") == "object":
+            lines += _fields(items, where + "[].")
+    return lines
+
+
+SCHEMAS = Path(__file__).parent / "tool_offer_schemas.json"
+REGENERATE = "ARSLAN_UPDATE_TOOL_SCHEMAS=1 pytest tests/server/test_tool_offer_table.py -k parameters"
+
+
+async def test_every_tools_parameters_are_as_pinned(monkeypatch, _an_mcp_server):
+    """What each tool sends as its parameters, in every case, is the same and is what `tool_offer_schemas.json` says.
+    A changed type, required field, enum or name fails here, naming the tool and the line."""
+    seen: dict[str, list[str]] = {}
+    for name, (setup, _base, _listed, _shown) in CASES.items():
+        every, _shown_keys = await _table(monkeypatch, setup)
+        for schema in tool_loop._native_tool_schemas(every, allow_escalation=True):
+            tool, fields = schema["function"]["name"], sorted(_fields(schema["function"]["parameters"]))
+            assert seen.setdefault(tool, fields) == fields, f"{tool}'s parameters differ in {name}"
+    if os.environ.get("ARSLAN_UPDATE_TOOL_SCHEMAS") == "1":
+        SCHEMAS.write_text(json.dumps(seen, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    pinned = json.loads(SCHEMAS.read_text(encoding="utf-8"))
+    drift = {tool: {"now": sorted(set(seen.get(tool, [])) - set(pinned.get(tool, []))),
+                    "pinned": sorted(set(pinned.get(tool, [])) - set(seen.get(tool, [])))}
+             for tool in sorted(set(seen) | set(pinned)) if seen.get(tool) != pinned.get(tool)}
+    assert not drift, (f"tool parameters changed: {json.dumps(drift, indent=1)}\nIf you meant it, regenerate and "
+                       f"commit the JSON, so the diff shows the change: {REGENERATE}")
 
 
 def test_every_offered_tool_has_its_traits_stated_here():
