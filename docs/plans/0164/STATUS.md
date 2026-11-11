@@ -8,6 +8,8 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 
 22 PRs merged since 2026-11-10 18:00 UTC: 20 code PRs and 2 cards. Tiers are the ones in the 11-10 evening section below.
 
+Against the 64 items (④参谋's count, 2026-11-11 10:15 UTC): 18 done, counting #808 and #817, which merged after the list was written. By tier: 5 of 20, 9 of 34 (LOOP1 z waits on z1) and 4 of 10. That leaves 46, plus SBX-9, so 47. #833 isn't counted; it isn't one of the 20 unless ⓪Plan maps it to a command-policy item.
+
 **Merged, tier 1 (security, 5):**
 - #813 HR-1: the sandbox refuses writes to files that run later.
 - #821 the deploy-program rule: deploy tools ask before they publish (one of the 4 command-policy items).
@@ -38,7 +40,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 - #535 SBX-5a part 1 (draft), #396, #378 and #375 (S2a-3 d, b and a+c): older PRs with no change since October or 2026-11-01.
 
 **New since the list:**
-- **SBX-9: pin writable roots once.** Tier 1, owner ③Hands, in the order HR-1b, then SBX-9, then HR-1c. #846's review found that a writable root can be swapped for a symlink while a command runs; the same race exists on main. Decided by ⓪Plan.
+- **SBX-9: pin writable roots once.** Tier 1, owner ③Hands, in the order HR-1b, then SBX-9, then HR-1c. Found in #846's review; it applies to main as well. Details stay off this page until the fix lands. Decided by ⓪Plan.
 - **HR-3 is split in two.** Part 1, the parser plus the card rule, goes to ②Main now. Part 2, the `minimal_profile` floor, follows HR-1c.
 
 **Decisions on 2026-11-11 (the user):**
