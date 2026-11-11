@@ -106,11 +106,9 @@ class ConversationSearchExecutor:
 
         from server.services import conversation_search, personal_context
         ctx = personal_context.current()
-        if ctx is not None and (ctx.no_memory or ctx.temporary):
-            return {"ok": False, "external": False, "error": "memory is off for this conversation"}
-        if ctx is not None and not ctx.model_is_local and not ctx.cloud_memory_effective:
-            return {"ok": False, "external": False,
-                    "error": "using past conversations is turned off (Settings › Memory)"}
+        refused = conversation_search.refusal(ctx)          # progress_report answers with the same (INB7-f)
+        if refused is not None:
+            return refused
         query = " ".join(str(args.get("query") or "").split())
         if not query:
             return {"ok": False, "external": False, "error": "missing 'query'"}
