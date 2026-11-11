@@ -173,8 +173,10 @@ async def test_the_brief_counts_what_is_open_running_and_due_soon(execution_db, 
         db.add(ScheduledTask(name=det.HEARTBEAT_NAME, prompt="p", schedule_kind="interval", interval_s=3600, enabled=True,
                              next_due_at=NOON + timedelta(hours=1)))
         await db.commit()
-    monkeypatch.setitem(background_jobs._jobs, "j1", SimpleNamespace(phase="running", goal="Compare two phones"))
-    monkeypatch.setitem(background_jobs._jobs, "j2", SimpleNamespace(phase="finished", goal="old"))
+    monkeypatch.setitem(background_jobs._jobs, "j1", SimpleNamespace(phase="running", goal="Compare two phones",
+                                                                     job_id="j1", conversation_id="c1", commander=None))
+    monkeypatch.setitem(background_jobs._jobs, "j2", SimpleNamespace(phase="finished", goal="old", job_id="j2",
+                                                                     conversation_id="c2", commander=None))
     brief = await svc.build_brief(NOON, NOON, "en")
     c = brief.candidate
     assert (c.kind, c.fingerprint, c.goal) == ("brief", "brief:2026-09-30", "")

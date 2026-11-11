@@ -62,7 +62,8 @@ async def list_refused(hours: int = 24, conversation_id: str | None = Query(None
     """What could not be asked (`permission_store.NOT_ASKED`), the last `hours` (1 to 168): what
     a run with nobody to ask refused (a scheduled run: `decided_by` policy, `unattended` true), and the
     cards of a job or a chat turn that never opened because an earlier one went unanswered (the person
-    is away: `decided_by` away, an expiry). One entry per kind, target and which of the two — its latest row (`id` is what
+    is away: `decided_by` away, an expiry; `unopened` true), and (INB8) a card that was shown and expired (`unopened`
+    false). One entry per kind, target and which of these — its latest row (`id` is what
     "Always allow" sends back), how many times (`count`) and since when (`first_at`) — newest
     first, at most `REFUSED_GROUPS`. `always_ok`: the card would have offered "Always" (its row
     recorded the set). `always` (0.1.61, F2): what "Always allow" will store, exactly the rules
@@ -83,6 +84,9 @@ async def list_refused(hours: int = 24, conversation_id: str | None = Query(None
                     "count": count, "conversation_id": row.conversation_id, "kind": row.kind,
                     "target": row.target, "detail": row.detail, "always_ok": bool(always),
                     "unattended": row.decided_by == "policy",
+                    # S6 (S4a follow-up 1): an expiry either way, said two ways: the card never opened because an
+                    # earlier one went unanswered (`away`), or it was shown and nobody answered in time.
+                    "unopened": row.decided_by == "away",
                     "always": [{"kind": kind, "target": target, "label": label}
                                for kind, target, label in always]})
         if len(out) == REFUSED_GROUPS:

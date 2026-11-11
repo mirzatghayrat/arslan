@@ -66,9 +66,11 @@ def test_a_once_only_ask_never_shares_a_card_with_one_that_is_not():
 
 
 async def test_a_jobs_card_offers_only_this_time(execution_db, monkeypatch):
-    from server.services import settings_service
+    from server.services import permission_store, settings_service
     monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
-    monkeypatch.setattr(tp, "always_allowed", AsyncMock(return_value={"apple-events"}))
+    async with execution_db() as db:          # S6: a stray row such as 0092 deletes (nothing writes one now)
+        await permission_store.add_rule(db, "legacy_rule", "apple-events", created_from="card")
+        await db.commit()
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "options"))
     confirm = approvals.JobConfirmations(CID)

@@ -20,8 +20,6 @@ import { confirmSheet } from '../kit';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
-import SandboxGrantsPanel from './SandboxGrantsPanel';
-import TerminalRulesPanel from './TerminalRulesPanel';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
 
@@ -414,8 +412,8 @@ export default function AdvancedSection({
             />
           </div>
         )}
-        {orchestratorShellEnabled && <TerminalRulesPanel />}
-        {orchestratorShellEnabled && <SandboxGrantsPanel />}
+        {/* S6: the remembered command rules and the conversations let out of the sandbox are listed with every other
+            remembered answer, the last group of this page (RememberedAnswers). */}
     </>)],
     ['budget', (<>
         {/* 0.1.43: where a background job stops gathering and writes up its result. */}

@@ -208,6 +208,9 @@ class CommandPlan:
     deletes_outside: bool = False
     confined: bool = False
     offline_reason: str = ""        # S2a-3 step 3: why it runs offline with no card (`unreadable`), for SBX-8's count
+    # HR-1 (ruling 2): out under the grant with no click on its own card, so the outside floor keeps the run-later
+    # files unwritable. Only the user's click on this command's own card lifts that.
+    holds_run_later: bool = False
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -260,6 +263,7 @@ class _Draft:
     net_due: bool = False
     net_kw: dict = field(default_factory=dict)
     net_clicked: bool = False          # the command's own card, clicked, asked for the network too
+    clicked: bool = False              # HR-1: the user clicked this command's own card
     unwrapped: bool = False            # S2a-1 piece 4 (U11): an approved AE/Shortcut call runs bare
     kept_wrapped: bool = False
     network: dict = field(default_factory=dict)   # S2a-1 piece 2: {"offline", "note"} after outside content
@@ -269,7 +273,8 @@ class _Draft:
         return CommandPlan(command=self.command, run_outside=self.run_outside, by_grant=self.by_grant,
                            sandbox_on=self.sandbox_on, unwrapped=self.unwrapped, kept_wrapped=self.kept_wrapped,
                            network=self.network, deletes_outside=self.deletes_outside, confined=self.confined,
-                           offline_reason=self.offline_reason)
+                           offline_reason=self.offline_reason,
+                           holds_run_later=self.run_outside and self.by_grant and not self.clicked)
 
 
 def _delete_kw(d: _Draft, outside: bool) -> dict:
@@ -442,6 +447,7 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
     d.run_outside = d.run_outside or d.unwrapped
     d.by_grant = d.by_grant and not d.unwrapped     # a bare run is the user's click on its card, not the grant
     d.net_clicked = d.net_due and decided is not None and decided.by == "user"
+    d.clicked = decided is not None and decided.by == "user"
     return None
 
 

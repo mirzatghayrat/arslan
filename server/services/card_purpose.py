@@ -12,6 +12,10 @@ else a summary read from the command by code (`summarize`, held to tests/fixture
 the Mac card shows too: it comes on the `propose_run_command` frame as `summary` (LOOP1 d1). It is in the user's language (the `language`
 setting), from web/src/locales/card-purposes.json, which the packaged app carries in server/resources.
 
+LOOP1 d2b (the user approved the title change on 2026-11-11): a line shell_grammar understands is read from the
+policy's one pass over it, so the steps the card names are the commands the rules read; only a line the grammar does
+not understand is read by this module's own reader (`_parse`), as before.
+
 What the step touches and its risk are not in the title: the Mac card shows them in its own rows, and the phone its
 risk word. Where it runs (outside the sandbox, with no sandbox, on another machine) and whether it uses the network
 are the code's facts, so they lead the title in a fixed form ("Outside the sandbox · Uses the network · …"), and only
@@ -24,6 +28,7 @@ import re
 from pathlib import Path
 
 from server.orchestrator import untrusted
+from server.services import shell_grammar, terminal_policy
 
 _SERVER = Path(__file__).resolve().parent.parent
 _TEXT_PATH = _SERVER / "resources/card-purposes.json"
@@ -114,7 +119,9 @@ def _closing(text: str, open_at: int) -> int:
 def _parse(text: str, depth: int = 0) -> list[dict] | None:
     """The line's steps (`tokens`, `piped`, and `subs`: the steps it runs inside it), or None when a quote or a `$(`
     is never closed. Raises _TooDeep at a `$(…)` nested past READ_DEPTH, where it reads
-    no further."""
+    no further. Only for a line shell_grammar does not understand (LOOP1 d2b): an understood one's steps are the
+    grammar's (`_read_understood`). It has no comments, here-documents, compound commands or `!`; it stays because
+    the grammar gives no steps for a line it refuses, and such a card still says what its steps look like."""
     steps: list[dict] = []
     step = {"tokens": [], "piped": False, "subs": []}
     token, in_token, quote, i = "", False, None, 0
@@ -182,25 +189,6 @@ def _parse(text: str, depth: int = 0) -> list[dict] | None:
         return None
     end_step(False)
     return steps
-
-
-def split_shell(text: str) -> list[list[str]] | None:
-    """The line's steps as words, the steps run inside a step before it; None when a quote is never closed or a
-    `$(…)` is nested past READ_DEPTH."""
-    try:
-        steps = _parse(text)
-    except _TooDeep:
-        return None
-    if steps is None:
-        return None
-    out: list[list[str]] = []
-
-    def walk(items):
-        for s in items:
-            walk(s["subs"])
-            out.append(s["tokens"])
-    walk(steps)
-    return out
 
 
 def _base(word: str) -> str:
@@ -532,8 +520,110 @@ def _flatten(steps: list[dict], container: dict | None, out: list[dict], ctx: di
         prev = node
 
 
+def _code_readers(nodes: list[dict]):
+    """For a node, the first step down its pipe that runs its input as code (`| sh`), or None. Each step's next one is
+    looked up once, and each answer is kept for every step on the way, so a pipe of many downloads is read in linear
+    time (LOOP1 d2; the scan before it searched every node for each step of each download's pipe, cubic)."""
+    after: dict[int, dict] = {}
+    for m in nodes:
+        if m["from"] is not None:
+            after.setdefault(id(m["from"]), m)                             # the first, as the scan's next() found
+    found: dict[int, dict | None] = {}
+
+    def reader(n: dict) -> dict | None:
+        path = []
+        while id(n) not in found:
+            path.append(n)
+            nxt = after.get(id(n))
+            if nxt is None or _reads_code(nxt["w"]):
+                found[id(n)] = nxt
+                break
+            n = nxt
+        for p in path:
+            found[id(p)] = found[id(n)]
+        return found[id(n)]
+    return reader
+
+
+#: Programs that read a here-document's body as data, never as code (#828 review). An allowlist: with any other program
+#: in the line, the body may be run, so the line keeps this module's own reading. `git commit -F -` reads a message.
+_DATA_SINKS = frozenset({"cat", "tee", "grep", "egrep", "fgrep", "wc", "head", "tail", "cut", "tr", "jq", "pbcopy",
+                         "base64", "ls", "pwd", "date", "echo", "printf", "true", "false", ":", "test", "[", "read",
+                         "cd", "pushd", "popd"})
+
+
+def _reads_as_data(words: tuple[str, ...]) -> bool:
+    """A step that reads its input only as data (`_DATA_SINKS`), or a write with no program."""
+    name = words[0].lower() if words else ""
+    if not words or name in _DATA_SINKS:
+        return True
+    rest = list(words[1:])
+    return name == "git" and rest[:1] == ["commit"] and any(
+        a == "--file=-" or (a in ("-F", "--file") and b == "-") for a, b in zip(rest, rest[1:] + [""]))
+
+
+def _read_understood(text: str, outside: bool = False) -> dict | None:
+    """LOOP1 d2b: a line shell_grammar understands, read from the policy's one pass over it (`terminal_policy.reading`),
+    so the card's steps are the commands the rules read: a comment, a here-document's body, a compound command's
+    keywords and a `!` are not steps. Each command is a step with the files its own redirections write (one on a
+    compound command, or with no command, is a write of its own, after the commands); a wrapper the grammar read
+    through, and a bash -c, are not steps: the commands they start are. None when the grammar does not understand the
+    whole line, which `_read` then reads as before. The lead is the step a once-only rule or outside-reach asks for
+    (`terminal_policy.asks_once`), then the most at stake.
+    Where each step runs after a `cd`, `pushd` or `popd` is the grammar's too: only then is the line read again, by
+    `shell_grammar.read`, whose folders follow the shell a change is made in (a `$( … )`, a ( … ), a pipe's part, a
+    bash -c); the policy's pass leaves folders out. A step whose folders the grammar can't follow (`cd "$X"`) is read
+    from the folders the `cd`s before it name, in order, as this module's own reader does.
+    `outside`: the command runs outside the sandbox, as the gate read it; only then may a step that reaches outside
+    lead, and only where the policy asks `outside-reach` for the text."""
+    reading = terminal_policy.reading(text)
+    if reading.refused:
+        return None
+    reach = outside and terminal_policy.OUTSIDE_REACH[0] in terminal_policy.ask_rules(text, outside=True)
+    commands, carriers = reading.commands, reading.carriers
+    folders: tuple = ()
+    if any(words[0].lower() in ("cd", "pushd", "popd") for words in commands):
+        full = shell_grammar.read(text)
+        if full.understood and len(full.folders) == len(commands) and len(full.writes) == len(reading.writes):
+            folders = (full.folders, tuple(where for _, where in full.writes))
+    shells = {i for i in carriers if commands[i][0].lower() in _SHELLS}       # bash -c: its own writes stand alone
+    owned: dict[int, list[str]] = {}
+    alone: list[tuple[str, int]] = []
+    for k, (target, owner) in enumerate(reading.writes):
+        while owner in carriers and owner not in shells:
+            owner += 1                                     # a wrapper's redirection is its command's
+        if owner < 0 or owner in shells:
+            alone.append((target, k))
+        else:
+            owned.setdefault(owner, []).append(target)
+    ctx: dict = {"parent": None}                           # one shell: a `cd` holds for every step after it
+    steps = [(words, owned.get(i, []), folders[0][i] if folders else ())
+             for i, words in enumerate(commands) if i not in carriers]
+    steps += [((), [target], folders[1][k] if folders else ()) for target, k in alone]
+    levels = [terminal_policy.asks_once(words, tuple(writes), reach=reach) for words, writes, _ in steps]
+    # #828 review: a here-document's body (or a here-string) is data only when every program in the line reads its
+    # input as data. Any other program may run it (an interpreter by `-m` or a runner, a scheduler, a REPL), or run a
+    # file it was written into, so that line keeps this module's own reading, as on main.
+    if "<<" in text and not all(_reads_as_data(words) and level < 2 for (words, _, _), level in zip(steps, levels)):
+        return None
+    nodes, once = [], {}
+    for (words, writes, where), level in zip(steps, levels):
+        name = words[0] if words else ""
+        # A wrapper with no command after it (`sudo`, `timeout 5`) took its program, as `_words` reads it.
+        took = name in WRAPPERS and not (name == "command" and words[1:2] in (("-v",), ("-V",)))
+        node = {"w": {"program": "" if took else name, "args": list(words[1:]), "raw": name, "listed": False,
+                      "writes": [f for f in writes if f not in _NOT_A_FILE], "assigns": []},
+                "from": None, "container": None, "merged": False, "run": False, "ctx": ctx, "where": list(where)}
+        nodes.append(node)
+        once[id(node)] = level
+    # With no real step, the program of the first step, or of a bash -c with an empty script (`bash -c ''`).
+    first = next((n["w"]["program"] for n in nodes if n["w"]["program"]), commands[0][0] if commands else "")
+    return _summed(nodes, 0, {"left": READ_WORK * len(text)}, once, first)
+
+
 def _read(text: str, depth: int = 0, work: dict | None = None) -> dict | None:
-    """The line read: its purpose, what it touches, how many real steps it has, and whether a transfer in it was not
+    """The line read by this module's own reader, for a line shell_grammar does not understand (and a find -exec
+    action inside one): its purpose, what it touches, how many real steps it has, and whether a transfer in it was not
     fully read (`unsure`). `depth`, `work`: as `_flatten`'s; a line read on its own may read READ_WORK times its
     length again. Raises _TooDeep past READ_DEPTH or READ_WORK."""
     steps = _parse(text)
@@ -544,22 +634,26 @@ def _read(text: str, depth: int = 0, work: dict | None = None) -> dict | None:
     nodes: list[dict] = []
     _flatten(steps, None, nodes, {"parent": None}, depth, work)
     # #688 review 6e: a download whose output a program runs as code is one step.
+    reader = _code_readers(nodes)
     for node in nodes:
         if node["w"]["program"] not in _FETCHERS:
             continue
-        n = node
-        while n is not None:
-            nxt = next((m for m in nodes if m["from"] is n), None)
-            if nxt is None:
-                break
-            if _reads_code(nxt["w"]):
-                node["run"], nxt["merged"] = True, True
-                break
-            n = nxt
+        nxt = reader(node)
+        if nxt is not None:
+            node["run"], nxt["merged"] = True, True
         host = node["container"]
         if host is not None and (host["w"]["program"] in _RUNS_CODE or re.match(r"^[$`]", host["w"]["program"])
                                  or host["w"]["program"] == ""):
             node["run"], host["merged"] = True, True
+    return _summed(nodes, depth, work)
+
+
+def _summed(nodes: list[dict], depth: int, work: dict, once: dict[int, int] | None = None,
+            first: str | None = None) -> dict:
+    """The steps' reading: each real step's purpose; the lead the step that asks most (`once`: node id to
+    `terminal_policy.asks_once`'s level; only an understood line has them), then the one with the most at stake, ties
+    the first. `first`: the program a line with no real step runs, when not the first node's."""
+    once = once or {}
     dirs: dict[int, str | None] = {}
 
     def dir_of(ctx):
@@ -583,35 +677,45 @@ def _read(text: str, depth: int = 0, work: dict | None = None) -> dict | None:
         if node["merged"] or (quiet and not writes):
             continue
         r = _reading("write", {"target": writes[0]}) if quiet else _step(w, depth, work)
-        local = _unique([_rebase(folder, p) for p in [*r["local"], *writes]])
+        # The grammar's folders when it followed them ("" is the work folder; the last one is where a change led):
+        # each path is shown from each; else the folder the `cd`s before it name.
+        where = [f or None for f in node.get("where") or ()] or [folder]
+        local = _unique([_rebase(f, p) for p in [*r["local"], *writes] for f in reversed(where)])
         if r["purpose"]["key"] == "write":
-            r["purpose"] = {"key": "write", "params": {"target": _rebase(folder, str(r["purpose"]["params"]["target"]))}}
+            r["purpose"] = {"key": "write",
+                            "params": {"target": _rebase(where[-1], str(r["purpose"]["params"]["target"]))}}
         r["local"] = local
+        r["once"] = once.get(id(node), 0)
         real.append(r)
     if not real:
-        first = next((n["w"]["program"] for n in nodes if n["w"]["program"]), "")
+        if first is None:
+            first = next((n["w"]["program"] for n in nodes if n["w"]["program"]), "")
         return {"purpose": {"key": "run", "params": {"program": first}}, "hosts": [], "local": [], "real": 0,
                 "unsure": False}
     lead = real[0]
     for r in real[1:]:
-        if STAKES.get(r["purpose"]["key"], 1) > STAKES.get(lead["purpose"]["key"], 1):
+        if (r["once"], STAKES.get(r["purpose"]["key"], 1)) > (lead["once"], STAKES.get(lead["purpose"]["key"], 1)):
             lead = r
     return {"purpose": lead["purpose"], "hosts": _unique(h for r in real for h in r["hosts"]),
             "local": _unique(p for r in real for p in r["local"]), "real": len(real),
             "unsure": any(r["unsure"] for r in real)}
 
 
-def summarize(text: str) -> dict:
+def summarize(text: str, *, outside: bool = False) -> dict:
     """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...], "more": n,
     "unsure": bool}`, the frame's `summary` the Mac card shows (held to tests/fixtures/card_purpose_vectors.json).
-    `unsure`: a transfer in it was not fully read, so it may send local data. Read from the line alone: the server's
-    terminal rules for it change nothing here (#817 review). A line it cannot read (a quote never closed) reads as
-    "Run <its first word>"; one read past READ_DEPTH or READ_WORK says Arslan could not read all of
-    it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part not read may send local
-    data, so its card keeps that warning."""
+    `unsure`: a transfer in it was not fully read, so it may send local data. Read from the line alone: the rules a
+    card lists for it change nothing here (#817 review). A line shell_grammar understands is read from the policy's
+    one pass over it (`_read_understood`, LOOP1 d2b); any other keeps this module's own reader. A line that reader
+    cannot read (a quote never closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says
+    Arslan could not read all of it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part
+    not read may send local data, so its card keeps that warning. `outside`: it runs outside the sandbox, as the gate
+    read it (`_read_understood`)."""
     program = _base((text.strip().split() or [""])[0])
     try:
-        r = _read(text)
+        r = _read_understood(text, outside)
+        if r is None:
+            r = _read(text)
     except _TooDeep:
         return {"purpose": {"key": "notAllRead", "params": {"program": program}}, "touches": [], "more": 0,
                 "unsure": True}
@@ -666,7 +770,7 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     text), so a long command is read once per card (#817 review); it is not changed. `rules` is not read: the reading
     does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument."""
     facts = []
-    s = dict(reading) if reading is not None else summarize(shell)
+    s = dict(reading) if reading is not None else summarize(shell, outside=outside or unsandboxed)
     # SMART-8: a delete card says how allow deletes (`delete_to_trash.card_mode`), so the phone's heading never
     # reads the same for a move to the Trash and a permanent delete. Word for word with web `deleteMode`.
     if delete_mode in ("trash", "protected") and s["purpose"]["key"] == "delete":

@@ -64,7 +64,7 @@ from sqlalchemy import select
 from server.db import session as db_session
 from server.db.models import CapabilitySource, SkillPack
 from server.orchestrator import untrusted
-from server.services import agent_skills, plugin_package, skill_import
+from server.services import agent_skills, plugin_hooks, plugin_package, skill_import
 from server.services.plugin_package import Refused, Snapshot
 from server.services.skill_forge import MAX_SKILL_BYTES
 
@@ -94,8 +94,8 @@ def _claude() -> Path:
 # ── reading, never writing ───────────────────────────────────────────────────────────────────────────────────────
 
 def _read_local(base: Path) -> dict[str, bytes]:
-    """Every file of one folder by its plain relative path. A link anywhere, the folder itself included, or a special
-    file refuses it, and each file is opened without following one. Raises Refused."""
+    """Every file of one folder by its plain relative path. A link anywhere, the folder itself included, a hard link
+    or a special file refuses it, and each file is opened without following one. Raises Refused."""
     try:
         if not stat.S_ISDIR(os.lstat(base).st_mode):
             raise Refused("unreadable", "a link or not a folder")
@@ -109,12 +109,15 @@ def _read_local(base: Path) -> dict[str, bytes]:
             for name in sorted(names):
                 path = here / name
                 rel = path.relative_to(base).as_posix()
-                if not stat.S_ISREG(os.lstat(path).st_mode) or not skill_import._plain_path(rel):
+                info = os.lstat(path)
+                if not stat.S_ISREG(info.st_mode) or not skill_import._plain_path(rel):
                     raise Refused("unreadable", "holds a link or an odd name")
+                if info.st_nlink > 1:       # #816: another name on disk could bring in a file that isn't the skill's
+                    raise Refused("unreadable", "holds a file with another name on disk (a hard link)")
                 if len(files) >= MAX_FILES:
                     raise Refused("too_large", "files")
                 try:
-                    files[rel] = agent_skills._read_file(path)
+                    files[rel] = agent_skills._read_file(path, expect=info)
                 except agent_skills.TooLarge as exc:
                     raise Refused("too_large", rel) from exc
                 total += len(files[rel])
@@ -206,9 +209,10 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
     if info is None:
         raise ValueError("not a valid SKILL.md (frontmatter name+description required)")
     try:
-        hooks = skill_import.frontmatter_hooks(raw)          # the same rule as every other way a skill comes in
+        # The same rule and reader as every other way a skill comes in.
+        hook_rows = skill_import.frontmatter_hook_rows(raw, where=path)
     except skill_import.HookRefused as exc:
-        raise Refused(exc.code, exc.part) from None
+        raise Refused(exc.code, exc.part, rows=exc.rows) from None
     if len(info["body"].encode("utf-8")) > MAX_SKILL_BYTES:
         raise ValueError(f"body exceeds the {MAX_SKILL_BYTES}B limit")
     files: dict[str, str] = {path: hashlib.sha256(raw.encode("utf-8")).hexdigest()}
@@ -227,7 +231,8 @@ async def _prepared_skill(snap: Snapshot, folder: str) -> dict:
                 if p.startswith(prefix) and p not in files and p not in named]
     return {"key": info["key"], "info": info, "full_name": snap.repo, "commit": snap.sha, "license": None,
             "license_source": "none", "skill_md": raw, "scripts": scripts, "references": references, "files": files,
-            "sizes": sizes, "skipped": skipped, "imported_from": FROM, "hooks": hooks}
+            "sizes": sizes, "skipped": skipped, "imported_from": FROM, "hooks": [row["event"] for row in hook_rows],
+            "hook_rows": hook_rows}
 
 
 async def _skill_here(key: str, besides: frozenset[str] = frozenset()) -> bool:
@@ -272,6 +277,8 @@ class Item:
     refused_part: str | None = None
     scan: str | None = None
     hooks: list[str] = field(default_factory=list)
+    hook_rows: list[dict] | None = None     # HOOK-1: a plugin's hooks as they'd be stored, once judged
+    refused_rows: list[dict] | None = None  # HOOK-1: the hooks of one a protection refused, for the sheet to show
     taken: bool = False             # refused only because a skill of its key is here (`_read`), not for its files
 
     @property
@@ -285,6 +292,10 @@ class Item:
         row = {"id": self.id, "tool": TOOL, "kind": self.kind, "name": self.name, "digest": self.digest, "here": here,
                "same_as": same_as, "refused": self.refused, "refused_part": self.refused_part,
                "tick": self.kind == "skill" and not (self.refused or here or same_as), "hooks": list(self.hooks)}
+        if self.refused_rows is not None:
+            # HOOK-1: a protection refused it; its hooks are shown, so the user sees why. Nothing of it is kept.
+            row.update(refused_note=plugin_hooks.PROTECTIONS[self.kind],
+                       hook_rows=plugin_hooks.card_rows(self.refused_rows))
         if self.kind == "skill":
             s = self.skill or {}
             info = s.get("info") or {}
@@ -326,7 +337,8 @@ async def _item(kind: str, where: str, name: str, files) -> Item:
                 raise Refused("blocked", ", ".join(sorted({f["rule"] for f in scan["findings"] if f["level"] == "high"})))
         else:
             item.snap = _snapshot(name, files)
-            item.hooks = plugin_package.judged_hooks(item.snap)     # first: no other refusal hides a blocking hook
+            item.hook_rows = plugin_package.judged_hooks(item.snap)     # first: no other refusal hides a blocking hook
+            item.hooks = [row["event"] for row in item.hook_rows]
             manifest, paths, servers = plugin_package.parts(item.snap, hooks=True)
             item.identity = str(manifest.get("name") or name)
             item.name = untrusted.clean_name(item.identity, 120)
@@ -336,6 +348,7 @@ async def _item(kind: str, where: str, name: str, files) -> Item:
                                                                                  for n in servers]}
     except Refused as exc:
         item.refused, item.refused_part = exc.code, untrusted.clean_name(exc.part, 200)
+        item.refused_rows = exc.rows
     except Exception as exc:  # noqa: BLE001 — one folder no reader can read: the others stay
         logger.warning("an import candidate could not be read (%s)", type(exc).__name__)
         item.refused, item.refused_part = "unreadable", item.name
@@ -404,16 +417,32 @@ async def _judged_again(items: list[Item]) -> None:
     on a blocking or unknown event is switched off until its card. Hooks are judged first (`judged_hooks`), and a
     copy refused for anything else is switched off too, since that refusal could hide one. Matched by where Claude
     Code keeps it, which a copy too broken to name itself still has. Only at this scan: the page's load reads
-    nothing."""
+    nothing.
+
+    HOOK-1: an update that adds, removes or changes any hook (`plugin_hooks.changed`), a quiet one included, switches
+    it off the same way (code `hooks_changed`), so its card is shown again. Its own skills then no longer count as
+    already here, as for a plugin marked earlier (`_marked`)."""
     imported = [row for row in await _plugin_rows()
                 if row.state == "installed" and str(row.candidate_id).startswith(f"{SOURCE}:")]
+    marked = False
     for item in items:
-        if item.kind != "plugin" or not item.refused or item.taken:
+        if item.kind != "plugin":
             continue
         for row in imported:
-            if _place(str(row.candidate_id)[len(SOURCE) + 1:]) == _place(item.id):
+            if _place(str(row.candidate_id)[len(SOURCE) + 1:]) != _place(item.id):
+                continue
+            if item.refused and not item.taken:
                 event = (item.refused_part or "") if item.refused == "hooks" else ""
                 await plugin_package.hooks_added(row.id, event, item.refused)
+            elif item.hook_rows is not None and (event := plugin_hooks.changed(row.candidate or {}, item.hook_rows)
+                                                 ) is not None:
+                await plugin_package.hooks_added(row.id, untrusted.clean_name(event, 80), "hooks_changed")
+                marked = True
+    besides = frozenset((await _marked()).values()) if marked else frozenset()
+    for item in items if marked else []:
+        if item.taken and not [key for key in item.plugin.get("skills") or [] if await _skill_here(key, besides)]:
+            item.refused = item.refused_part = None
+            item.taken = False
 
 
 async def scan() -> dict:
@@ -473,7 +502,8 @@ async def _add_plugin(item: Item | None, tick: dict) -> dict:
         shown = _keyed("card", card, prepared["files"])
         if tick.get("card") != shown:       # CAP7b's order: the card, then a yes to exactly it
             return {"state": "card", "card": card, "card_digest": shown}
-        candidate.update(summary=card["summary"], hooks=card["hooks"])     # kept on its row: what the card showed
+        # Kept on its row: what the card showed, and (HOOK-1) every hook as stored, each with its switch.
+        candidate.update(summary=card["summary"], hooks=card["hooks"], hook_rows=prepared["hook_rows"])
         keys = tick.get("keys") or {}
         out = await (plugin_package.replace(old, candidate, prepared, keys) if old is not None
                      else plugin_package.install(candidate, prepared, keys))

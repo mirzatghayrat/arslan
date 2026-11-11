@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from server.services import capability_sandbox, code_sandbox, command_sandbox, run_temp, terminal_exec, workspace_paths
+from tests.server.sbx.profile_files import read_profile
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
@@ -128,7 +129,7 @@ def test_each_mcp_server_starts_with_its_own_cache(home, tmp_path):
             assert Path(env[variable]).parent == tmp_path / name / "cache", variable
         envs.append(env)
         other = (tmp_path / ("b" if name == "a" else "a")).resolve()
-        assert f'"{other}' not in args[1]                                  # never the other server's folder
+        assert f'"{other}' not in read_profile(args)                       # never the other server's folder
     assert envs[0]["npm_config_cache"] != envs[1]["npm_config_cache"]
 
 

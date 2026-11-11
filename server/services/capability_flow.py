@@ -27,7 +27,7 @@ from server.db import session as db_session
 from server.db.models import CapabilitySource, MCPServer, SkillPack
 from server.orchestrator import untrusted
 from server.services import (capability_allowlist, capability_install, capability_runtime, capability_scan,
-                             capability_search, osv_check, plugin_package)
+                             capability_search, osv_check, plugin_hooks, plugin_package)
 from arslan.aio import within
 
 logger = logging.getLogger(__name__)
@@ -370,8 +370,9 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
             return {"ok": False, "error": f"the scan found dangerous patterns ({rules}); nothing was added"}
         card.update(commit=prepared["commit"], files=prepared["files"], sizes=prepared["sizes"],
                     skipped=prepared["skipped"], scan=scan,
-                    # CAP8-2's hook rule: the frontmatter hooks that won't run (a blocking one refused it above).
+                    # CAP8-2's hook rule: the frontmatter hooks (a blocking one refused it above). None runs.
                     hooks=prepared.get("hooks") or [],
+                    hook_rows=plugin_hooks.card_rows(prepared.get("hook_rows") or []),      # HOOK-1
                     # UNI1b (#586 review F2, F4): under D2 this card is the guard, so it says how many characters of
                     # the skill's text and its references show nothing, as the import panel does.
                     hidden=untrusted.hidden_summary("\n".join([prepared["info"]["body"],

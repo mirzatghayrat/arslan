@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from server.services import capability_sandbox, command_sandbox
+from tests.server.sbx.profile_files import read_profile
 
 macos = pytest.mark.skipif(sys.platform != "darwin", reason="seatbelt is macOS-only")
 
@@ -51,7 +52,9 @@ def test_a_folder_name_cannot_inject_rules(tmp_path):
 def test_wrap_starts_in_the_servers_own_home(tmp_path):
     command, args, env, cwd = capability_sandbox.wrap("/bin/echo", ["hi"], {"PATH": "/usr/bin"},
                                                       {"root": str(tmp_path / "root"), "folders": [], "network": False})
-    assert command == "/usr/bin/sandbox-exec" and args[0] == "-p" and args[2:] == ["/bin/echo", "hi"]
+    # #813 review 11: the profile is a file (`-f`), the rest of argv as before.
+    assert command == "/usr/bin/sandbox-exec" and args[0] == "-f" and args[2:] == ["/bin/echo", "hi"]
+    assert read_profile(args).startswith("(version 1)\n(deny default)\n")
     assert env["HOME"] == cwd == str(tmp_path / "root" / "home") and env["TMPDIR"].endswith("/root/tmp")
     assert Path(cwd).is_dir() and env["PATH"] == "/usr/bin"
 

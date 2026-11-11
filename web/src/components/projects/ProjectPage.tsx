@@ -14,6 +14,7 @@ import RetroCard from "./RetroCard";
 import { templateOf } from "./NewProject";
 import PlanEditor, { planIsValid } from "./PlanEditor";
 import { daysSince, evidenceText } from "./projectUi";
+import { treeOrder } from "../../lib/subTree";
 
 type Tab = "levels" | "conversations" | "files" | "materials" | "settings";
 
@@ -212,8 +213,11 @@ export default function ProjectPage({ projectId, onBack, onStart, onPlan, onChan
       </>}
 
       {tab === "conversations" && <ul className="overflow-hidden rounded-xl border border-border bg-background" data-testid="project-conversations">
-        {conversations.map(c => <li key={c.conversation_id} className="border-t border-border first:border-t-0">
+        {/* SUB5d: a conversation's sub-sessions are listed under it. */}
+        {treeOrder(conversations).map(({ row: c, depth }) => <li key={c.conversation_id} data-depth={depth || undefined}
+          className={depth ? "" : "border-t border-border first:border-t-0"}>
           <button type="button" className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-fill"
+            style={depth ? { paddingLeft: 16 + depth * 18 } : undefined}
             onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CONVERSATION_EVENT, { detail: c.conversation_id }))}>
             <span className="min-w-0 flex-1 truncate text-[13.5px]">{c.opening ?? t("projectsUI.untitled")}</span>
             <span className="shrink-0 text-[12px] text-subtle-foreground">{c.last_at ? new Date(c.last_at).toLocaleDateString() : ""}</span>

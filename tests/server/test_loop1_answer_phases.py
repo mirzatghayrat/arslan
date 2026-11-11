@@ -20,6 +20,29 @@ async def test_a_resumed_tasks_notes_reach_the_request(maker, monkeypatch):  # n
     assert len(seen) == 1 and "Resume from step three." in str(seen[0])
 
 
+async def test_a_picture_reaches_the_request(maker, monkeypatch):  # noqa: F811
+    seen = []
+
+    async def run_native(**kwargs):
+        seen.append(kwargs["user_content"])
+        return {"final": "Done.", "escalation": None, "tool_trace": []}
+    monkeypatch.setattr(tool_loop, "run_native", run_native)
+    picture = {"name": "shot.png", "mime_type": "image/png", "data": "QUJDRA=="}
+    await arslan._handle_answer("main", "what is on it", lambda _frame: None, images=[picture])
+    assert len(seen) == 1
+    assert [b for b in seen[0] if isinstance(b, dict) and b.get("type") == "image"] == [
+        {"type": "image", "mime_type": "image/png", "data": "QUJDRA=="}]
+
+
+async def test_an_attachments_links_reach_the_sources_footer(maker, monkeypatch):  # noqa: F811
+    async def run_native(**_kwargs):
+        return {"final": "Done.", "escalation": None, "tool_trace": []}
+    monkeypatch.setattr(tool_loop, "run_native", run_native)
+    reply = await arslan._handle_answer("main", "sum it up", lambda _frame: None,
+                                        attached_context="From https://example.com/attached-source")
+    assert reply.startswith("Done.") and "https://example.com/attached-source" in reply
+
+
 async def test_a_choice_card_alone_closes_the_stream_without_a_bubble(maker, monkeypatch):  # noqa: F811
     clarify = {"question": "Which one?", "options": [{"label": "A"}, {"label": "B"}]}
 

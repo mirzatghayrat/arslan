@@ -312,6 +312,7 @@ class MCPSessionManager:
         sid = server["id"]
         stack = AsyncExitStack()
         transport = server.get("transport") or "stdio"
+        profile = None                  # HR-1 #813 review 11: a sandboxed server's profile file
         try:
             if transport == "http":
                 # Tokens stored for this server (a completed Authorize flow) turn into the SDK's
@@ -362,8 +363,16 @@ class MCPSessionManager:
                         sandbox["proxy_port"] = await sandbox_proxy.port()
                         sandbox["trust_service"] = (sandbox["proxy_port"] is not None
                                                     and await terminal_exec.trust_service_allowed())
-                    command, args, env, cwd = await asyncio.to_thread(
-                        capability_sandbox.wrap, command, args, env, sandbox)
+                    from server.services import command_sandbox
+
+                    # HR-1 (#813 review 11): the profile goes to sandbox-exec as a file. It goes once the server
+                    # has answered (sandbox-exec read it before starting the server), or with the stack: a failed
+                    # start or a closed session. Cancelled while it's written, it goes when the writing ends.
+                    command, args, env, cwd = await command_sandbox.in_thread(
+                        capability_sandbox.wrap, command, args, env, sandbox,
+                        profile_of=lambda wrapped: command_sandbox.profile_path(wrapped[1]))
+                    profile = command_sandbox.profile_path(args)
+                    stack.callback(command_sandbox.remove_profile, profile)
                 else:
                     cwd = str(server_dir(sid))
                 params = StdioServerParameters(command=command, args=args, env=env, cwd=cwd)
@@ -378,6 +387,8 @@ class MCPSessionManager:
             client = await stack.enter_async_context(
                 ClientSession(read, write, message_handler=self._handler(sid)))
             await client.initialize()
+            if profile is not None:
+                command_sandbox.remove_profile(profile)         # HR-1 #813 review 11: the server answered
             return client, stack
         except BaseException as exc:
             # Keep the real cause. Closing a half-open stdio/http stack raises its own

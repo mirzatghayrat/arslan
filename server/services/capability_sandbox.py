@@ -83,12 +83,28 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], p
     # SBX-5: after every grant, including its own folder (the last rule wins).
     rules.deny("file-write*", *(subpath(p) for p in command_sandbox.cap6b_folders(plugin_folder)))
     rules.deny("file-write*", *(subpath(p) for p in command_sandbox.shared_caches()))
-    # SBX-5a (#772 review): nor are the folders above the protected ones moved or replaced through a grant.
+    # HR-1 (ruling 5): nor the files that make something run later, in its own folder or a granted one, nor a
+    # granted folder's core.hooksPath target. Raises when that can't be read: the server doesn't start. No
+    # node_modules exemption when its own folder or a granted one already lies inside such a folder (#813 review).
+    # SBX-5a (#772 review): nor are the folders above the protected ones moved or replaced through a grant. HR-1
+    # (#813 review 6): nor the held run-later folders in a granted folder or its own, and every folder above them.
+    # #813 review 8: the walk never lists the TCC home folders (a granted ~); it holds what's inside them by name.
+    from server.services import run_later
+    hold = command_sandbox.run_later_folders(granted, roots=[real(root), own])
+    # #813 review 9: no dependency exemption when the walk found an alias (or couldn't finish), no new link at a
+    # held name or held folder name.
+    rules.deny("file-write-create", *run_later.symlink_filters())
+    for filters in run_later.kernel_filters(granted, roots=[real(root), own], aliased=hold.aliased):
+        rules.deny("file-write*", *filters)
+    if hold.at_targets:                     # #813 review 10: the held names at a link's real path
+        rules.deny("file-write*", *hold.at_targets)
     held = command_sandbox.held_ancestors(
         [*granted, own, real(root)], [*command_sandbox.default_protected(), *command_sandbox.shared_caches(), peer],
-        planted=command_sandbox.cap6b_spellings(plugin_folder))
+        planted=command_sandbox.cap6b_spellings(plugin_folder), kept=hold.kept)
     if held:
         rules.deny("file-write*", *map(literal, held))
+    if hold.by_name:
+        rules.deny("file-write*", *hold.by_name)
     return text + "".join(rules.text().splitlines(True)[2:])         # its rules, without a second header
 
 
@@ -142,7 +158,8 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     """(command, args, env, cwd) to start `command args` inside the profile, in its own home
     (a cwd outside the profile makes the shell complain it cannot read where it starts).
     Raises OutsideLink (SBX-5) when its folder holds a hard link to a file outside it, or can't be scanned all
-    through (SBX-5a); the caller doesn't start it."""
+    through (SBX-5a), and `run_later.TooManyLinks` past the link cap (#813 review 11); the caller doesn't start it.
+    The args start with `-f <profile file>`, which the caller removes."""
     root = Path(sandbox["root"])
     for sub in ("home", "tmp"):
         (root / sub).mkdir(parents=True, exist_ok=True)
@@ -175,4 +192,9 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
                                            "http_proxy", "https_proxy", "all_proxy")})
         env.update({"NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
                     "NODE_USE_ENV_PROXY": "1"})
-    return SANDBOX_EXEC, ["-p", text, command, *args], env, str(root / "home")
+    # #813 review 11: the profile as a file (`-f`), written last, so nothing above can fail after it exists. Not in
+    # this server's own folders (it writes those): in Arslan's data folder, closed to it (`command_sandbox.
+    # write_profile`). The caller removes it (`remove_profile(profile_path(args))`) once the server has answered, or
+    # when the start fails or the session closes.
+    path = command_sandbox.write_profile(text)
+    return SANDBOX_EXEC, ["-f", str(path), command, *args], env, str(root / "home")

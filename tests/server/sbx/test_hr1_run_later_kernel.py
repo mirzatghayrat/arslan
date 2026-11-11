@@ -1,0 +1,737 @@
+"""HR-1 (v0.1.64) under real seatbelt: the files that make something run later are refused to plain writes.
+
+In the commands preset (the product's `commands_profile`, through SBX's harness, under a scratch HOME): a plain write
+to one name of each family in the work folder is refused, and a plain write to an ordinary file beside it succeeds
+(the instruction files among them). git still commits, branches, checks out and stashes inside the sandbox when no
+held file differs; a `git config` write fails there, the compatibility cost, and so do checkout (at exit 0) and a
+fast-forward merge that must change a held file git tracks, where the model reads the note. A work folder inside a
+node_modules folder has no exemption. CI files are written like any other (#813 review 3: their guard is HR-2b's push
+card), and the everyday git flow is measured step by step (the count of steps refused only on `.git/config` decides
+HR-1b). The steps refused only on `.git/config` that exit 0, the held-file checkout under the outside floor that holds
+them, and that checkout with git's messages in German and Chinese all carry the git note, with one denial (none under
+the floor; #813 reviews 4 and 5). That checkout under `2>&1` carries it from stdout, and a commit whose hook prints its
+`.husky` path or the add of an ignored `.envrc`, which name a held file without a refusal, carry none (#813 review 5).
+In the MCP preset: the same in a granted folder and the server's own folder, and an own folder inside
+node_modules keeps every name held. The ancestor hold (#813 review 6): the held folders and the folders above them
+can't be renamed or removed in either preset or under the floor, a rename round trip leaves no held file, an ordinary
+folder and a dependency's folders still move, and past the walk's cap the folders are held by name.
+
+Plain writes with stand-in names only. The bypass corpus (letter case, Unicode forms, renames into place, hard links,
+a `.git` that is a link or a file, submodules, bare repositories, a hooksPath pointing outside) is Codex's.
+"""
+import json
+import os
+import shlex
+import subprocess
+import sys
+
+import pytest
+
+from server.services import command_sandbox
+
+STAND_IN = "zz-stand-in-word"
+macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
+                           reason="seatbelt is macOS-only")
+
+# family: (a held name, an ordinary file beside it). Folders are made before the run: making them is held too.
+FAMILIES = {
+    "git": (f".git/hooks/{STAND_IN}", f".git/{STAND_IN}"),
+    "envrc": (".envrc", f"{STAND_IN}.txt"),
+    "editor": (".vscode/tasks.json", f".vscode/{STAND_IN}.json"),
+    "agent": (".claude/settings.json", "CLAUDE.md"),
+    "package": (".npmrc", "AGENTS.md"),
+    "hooks": (".pre-commit-config.yaml", f"{STAND_IN}.yaml"),
+}
+
+_WRITE = """
+import json, pathlib, sys
+out = {}
+for name in sys.argv[1:]:
+    try:
+        pathlib.Path(name).write_text('zz')
+    except PermissionError:
+        out[name] = 'refused'
+    else:
+        out[name] = 'written'
+print(json.dumps(out))
+"""
+
+
+def _prepare(folder, names) -> None:
+    for name in names:
+        (folder / name).parent.mkdir(parents=True, exist_ok=True)
+
+
+def _write(sbx, folder, names) -> dict:
+    result = sbx.python(_WRITE, *(folder / name for name in names), probe="hr1-plain-write")
+    assert result.returncode == 0, result.stderr
+    return {os.path.relpath(k, folder): v for k, v in json.loads(result.stdout).items()}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("family", sorted(FAMILIES))
+def test_a_plain_write_to_each_family_is_refused_and_one_beside_it_is_not(sbx, family):
+    held, beside = FAMILIES[family]
+    _prepare(sbx.work, (held, beside))
+    assert _write(sbx, sbx.work, (held, beside)) == {held: "refused", beside: "written"}
+    assert not (sbx.work / held).exists() and (sbx.work / beside).read_text() == "zz"
+
+
+#: #813 review 3 (the user's list decision): CI files are ordinary to the sandbox; their guard is HR-2b's push card.
+CI_NAMES = [f".github/workflows/{STAND_IN}.yml", ".gitlab-ci.yml", ".circleci/config.yml", "azure-pipelines.yml",
+            "Jenkinsfile", "bitbucket-pipelines.yml"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_ci_files_are_written_like_any_other_file(sbx):
+    _prepare(sbx.work, CI_NAMES)
+    assert _write(sbx, sbx.work, CI_NAMES) == {n: "written" for n in CI_NAMES}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_a_dependency_folder_may_hold_them_and_the_same_names_elsewhere_stay_refused(sbx):
+    """#813 review: a package under node_modules ships its own editor and hook files, which nothing runs from there.
+    The same names at the work folder's root and in an ordinary nested folder stay refused."""
+    dependency = f"node_modules/{STAND_IN}"
+    names = [".vscode/tasks.json", ".vscode/settings.json"]
+    inside = [f"{dependency}/{n}" for n in names]
+    outside = [*names, *(f"{STAND_IN}-lib/{n}" for n in names), *(f"not-node_modules/{n}" for n in names)]
+    _prepare(sbx.work, (*inside, *outside))
+    assert _write(sbx, sbx.work, (*inside, *outside)) == {**{n: "written" for n in inside},
+                                                          **{n: "refused" for n in outside}}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["mcp"], indirect=True)
+def test_an_mcp_server_cannot_write_them_in_a_granted_folder(sbx):
+    granted = sbx.root / "granted"
+    granted.mkdir()
+    sbx.granted_folders = [granted]
+    names = [n for pair in FAMILIES.values() for n in pair]
+    _prepare(granted, names)
+    _prepare(sbx.work, names)
+    expected = {n: "refused" if n == held else "written" for held, beside in FAMILIES.values() for n in (held, beside)}
+    assert _write(sbx, granted, names) == expected
+    assert _write(sbx, sbx.work, names) == expected                       # its own folder too
+
+
+def _git(folder, *args) -> subprocess.CompletedProcess:
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(folder.parent), "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": os.devnull}
+    return subprocess.run(["git", *args], cwd=folder, env=env, capture_output=True, text=True, timeout=60)
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_git_still_commits_branches_checks_out_and_stashes_in_the_sandbox(sbx):
+    # The repository is made outside the sandbox: `git init` writes .git/config and .git/hooks, which it refuses.
+    assert _git(sbx.work, "init", "-q").returncode == 0
+    (sbx.work / f"{STAND_IN}.txt").write_text("one\n")
+    config = (sbx.work / ".git" / "config").read_bytes()
+    who = f"-c user.name={STAND_IN} -c user.email=zz@example.invalid -c commit.gpgsign=false"
+    script = (f"set -eu\ngit add {STAND_IN}.txt\ngit {who} commit -qm one\ngit branch {STAND_IN}\n"
+              f"git checkout -q {STAND_IN}\necho two >> {STAND_IN}.txt\ngit {who} stash -q\ngit stash pop -q\n"
+              f"git {who} commit -qam two\ngit log --oneline | wc -l\n")
+    result = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-everyday")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["2"]
+    # The compatibility cost: a config write (as remote add, set-upstream and init make) is refused.
+    refused = sbx.run(["/bin/bash", "-p", "-c", f"git config {STAND_IN}.key value"], probe="hr1-git-config")
+    assert refused.returncode != 0 and (sbx.work / ".git" / "config").read_bytes() == config
+
+
+HELD_TRACKED = ".vscode/settings.json"
+WHO = ["-c", f"user.name={STAND_IN}", "-c", "user.email=zz@example.invalid", "-c", "commit.gpgsign=false"]
+
+
+def _held_branch(work) -> str:
+    """Outside the sandbox: a repository whose `main` has the held file's old content and whose branch the new, beside
+    an ordinary file. Checked out on main; returns its HEAD."""
+    def commit(content: str, *args: str) -> None:
+        (work / HELD_TRACKED).parent.mkdir(parents=True, exist_ok=True)
+        for name in (HELD_TRACKED, f"{STAND_IN}.txt"):
+            (work / name).write_text(content)
+        for step in (args, ["add", "-A"], ["commit", "-qm", content]):
+            assert _git(work, *WHO, *step).returncode == 0
+    commit("old\n", "init", "-q", "-b", "main")
+    commit("new\n", "checkout", "-qb", STAND_IN)
+    assert _git(work, "checkout", "-q", "main").returncode == 0
+    return _git(work, "rev-parse", "HEAD").stdout
+
+
+def _explained(monkeypatch, ran, *, cwd, command: str, mode: str = "workspace", hold: bool = False):
+    """git's real output through terminal_exec's own result path: the result, the denial on the run trace, and every
+    denial noted (SBX-7: exactly one per run)."""
+    from server.orchestrator import run_trace
+    from server.services import terminal_exec
+    noted: list[str] = []
+    real_note = run_trace.note_denial
+
+    def counting(code):
+        noted.append(code)
+        real_note(code)
+    monkeypatch.setattr(run_trace, "note_denial", counting)
+    result = {"ok": ran.returncode == 0, "exit_code": ran.returncode, "stdout": ran.stdout, "stderr": ran.stderr,
+              "cwd": str(cwd), "sandbox": mode}
+    if ran.returncode:
+        result["error"] = f"exit code {ran.returncode}"
+    with run_trace.collecting() as trace:
+        terminal_exec.explain(result, cwd=cwd, closed=[], mode=mode, timed_out=False, command=command, hold=hold)
+        run_trace.record(tool="run_command", args={}, result=result, ok=result["ok"], error=None, ms=1)
+    return result, trace[0].get("denial"), noted
+
+
+def _noted_once(explained, *, floor: bool = False) -> None:
+    """The git note, with one EPERM denial in the sandbox and none under the floor (#813 review 5)."""
+    result, denial, noted = explained
+    assert result.get("note") == command_sandbox.git_note()
+    assert (denial, noted) == ((None, []) if floor else ("eperm", ["eperm"]))
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("command, exit_code, head_moves", [("checkout -q", 0, True), ("merge -q --ff-only", 1, False)])
+def test_git_that_must_change_a_tracked_held_file_leaves_it_and_the_model_reads_the_note(sbx, monkeypatch, command,
+                                                                                         exit_code, head_moves):
+    """#813 review 1: a branch that changes a tracked held file (editor settings). checkout exits 0 with HEAD moved and
+    the held file as it was (a later `commit -a` would undo the branch's change); merge --ff-only exits 1. git's real
+    output, through terminal_exec's own result path, carries the note at either exit code, with one EPERM denial."""
+    head = _held_branch(sbx.work)
+    script = f"git {command} {STAND_IN}"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-held-tracked")
+    assert ran.returncode == exit_code
+    assert (sbx.work / HELD_TRACKED).read_text() == "old\n"                   # the held file kept its old content
+    assert (_git(sbx.work, "rev-parse", "HEAD").stdout != head) is head_moves
+    assert (sbx.work / f"{STAND_IN}.txt").read_text() == "new\n"          # the ordinary file was updated
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script))
+
+
+#: #813 review 4: the steps refused only on `.git/config` that still exit 0, from the work folder, on `_seed`'s clone.
+CONFIG_ONLY = {
+    "checkout -b x origin/x": "cd repo && git checkout -q -b x origin/x",
+    "checkout of a remote-only branch": "cd repo && git checkout -q x",
+    "push -u": f"cd repo && git push -q -u origin {STAND_IN}",
+    "branch --set-upstream-to": "cd repo && git branch -q --set-upstream-to=origin/x",
+}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("step", sorted(CONFIG_ONLY))
+def test_a_config_only_refusal_at_exit_0_gets_the_note_and_one_denial(sbx, monkeypatch, step):
+    """#813 review 4: git exits 0, prints its config-write line naming `.git/config` and leaves the upstream unset.
+    The config is unchanged, and the model reads the git note, with one EPERM denial."""
+    _seed(sbx.work)
+    repo = sbx.work / "repo"
+    assert _git(repo, "branch", STAND_IN).returncode == 0                     # for push -u, made outside
+    config = (repo / ".git" / "config").read_bytes()
+    ran = sbx.run(["/bin/bash", "-p", "-c", CONFIG_ONLY[step]], probe="hr1-git-config-only")
+    assert ran.returncode == 0
+    assert (repo / ".git" / "config").read_bytes() == config
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=CONFIG_ONLY[step]))
+
+
+def _floor_profile(sbx) -> str:
+    """The outside floor that holds them (`run_later_in`: let out under this conversation's grant, no click on its own
+    card), built under the harness's scratch HOME and temp, as the harness builds its presets."""
+    import tempfile
+    with pytest.MonkeyPatch.context() as environment:
+        for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
+            environment.setenv(name, sbx.env[name])
+        environment.setattr(tempfile, "tempdir", str(sbx.temp))
+        return command_sandbox.minimal_profile(offline=True, run_later_in=sbx.work)
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["outside-floor"], indirect=True)
+def test_under_the_outside_floor_a_checkout_that_must_change_a_held_file_gets_the_note(sbx, monkeypatch):
+    """#813 review 4: under the floor that holds them, checkout to a branch whose tracked held file differs exits 0,
+    moves HEAD and keeps the old file. The model reads the same git note, with no denial (#813 review 5: SBX-7 counts
+    the workspace sandbox's, and the floor's other refusals record none)."""
+    head = _held_branch(sbx.work)
+    script = f"git checkout -q {STAND_IN}"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-floor-git-held-tracked", profile=_floor_profile(sbx))
+    assert ran.returncode == 0
+    assert (sbx.work / HELD_TRACKED).read_text() == "old\n" and (sbx.work / f"{STAND_IN}.txt").read_text() == "new\n"
+    assert _git(sbx.work, "rev-parse", "HEAD").stdout != head
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script, mode="outside", hold=True), floor=True)
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_under_2_and_1_the_refusal_on_stdout_still_gets_the_note(sbx, monkeypatch):
+    """#813 review 5: with `2>&1` git's refusal line reaches stdout, at exit 0. Both streams are read."""
+    _held_branch(sbx.work)
+    script = f"git checkout -q {STAND_IN} 2>&1"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-held-tracked-2-and-1")
+    assert ran.returncode == 0 and ran.stderr == "" and command_sandbox._DENIED.search(ran.stdout)
+    assert (sbx.work / HELD_TRACKED).read_text() == "old\n"
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script))
+
+
+def _hook_prints_its_path(work) -> str:
+    """Outside the sandbox: a repository whose `core.hooksPath` is `.husky`, with a pre-commit hook that prints a line
+    naming itself to stderr (as hook managers do), and an ordinary file staged in the sandbox."""
+    assert _git(work, "init", "-q", "-b", "main").returncode == 0
+    hook = work / ".husky" / "pre-commit"
+    hook.parent.mkdir()
+    hook.write_text(f"#!/bin/sh\necho '{STAND_IN} .husky/pre-commit' >&2\n")
+    hook.chmod(0o755)
+    assert _git(work, "config", "core.hooksPath", ".husky").returncode == 0
+    (work / f"{STAND_IN}.txt").write_text("one\n")
+    who = " ".join(WHO)
+    return f"git add {STAND_IN}.txt && git {who} commit -qm one"
+
+
+def _ignored_envrc(work) -> str:
+    """Outside the sandbox: a repository that ignores `.envrc`, with one beside it (made outside: it's held)."""
+    assert _git(work, "init", "-q", "-b", "main").returncode == 0
+    (work / ".gitignore").write_text(".envrc\n")
+    (work / ".envrc").write_text(f"export {STAND_IN.upper().replace('-', '_')}=1\n")
+    return "git add .envrc"
+
+
+#: #813 review 5: git names a held file with no refusal on the line. (setup, exit code, the path git's line names)
+NAMED_NOT_REFUSED = {"a commit whose hook prints its path": (_hook_prints_its_path, 0, ".husky/pre-commit"),
+                     "add of an ignored .envrc": (_ignored_envrc, 1, ".envrc")}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("case", sorted(NAMED_NOT_REFUSED))
+def test_git_naming_a_held_file_without_a_refusal_gets_no_note(sbx, monkeypatch, case):
+    """#813 review 5: the commit succeeds with the hook's line naming `.husky/pre-commit` on stderr; the add of an
+    ignored `.envrc` fails with git naming it. Neither was refused: no note and no denial."""
+    setup, exit_code, named = NAMED_NOT_REFUSED[case]
+    script = setup(sbx.work)
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-named-not-refused")
+    assert ran.returncode == exit_code and named in ran.stderr and not command_sandbox._DENIED.search(ran.stderr)
+    result, denial, noted = _explained(monkeypatch, ran, cwd=sbx.work, command=script)
+    assert "note" not in result and denial is None and noted == []
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("language", ["de_DE.UTF-8", "zh_CN.UTF-8"])
+def test_in_another_language_the_held_file_checkout_still_gets_the_note(sbx, monkeypatch, language):
+    """#813 review 4: commands inherit LANG and LC_ALL. git translates its words (here at least the prefix), never
+    the path, so the note is keyed on the path. Skipped when this git has no translation for the language."""
+    import re
+    head = _held_branch(sbx.work)
+    sbx.env.update(LANG=language, LC_ALL=language)
+    script = f"git checkout -q {STAND_IN}"
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-held-tracked-language")
+    assert ran.returncode == 0 and _git(sbx.work, "rev-parse", "HEAD").stdout != head
+    assert (sbx.work / HELD_TRACKED).read_text() == "old\n"
+    if not ran.stderr.strip() or re.search(r"^(?:error|warning|fatal): ", ran.stderr, re.M):
+        pytest.skip(f"this git printed no translated line for {language}")
+    _noted_once(_explained(monkeypatch, ran, cwd=sbx.work, command=script))
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands", "mcp"], indirect=True)
+def test_a_work_folder_inside_a_dependency_folder_keeps_every_name_held(sbx):
+    """#813 review 2: the exemption is for node_modules below the work folder only. A work folder whose real path
+    already passes through one holds every name, a nested node_modules below it included. In the MCP preset the work
+    folder is the server's own folder, with no grant: only its `roots=` decides it (#813 review 4)."""
+    sbx.work = sbx.root / "node_modules" / STAND_IN / "work"
+    sbx.work.mkdir(parents=True)
+    names = [".vscode/tasks.json", ".vscode/settings.json", f"node_modules/{STAND_IN}/.npmrc"]
+    _prepare(sbx.work, (*names, f"{STAND_IN}.txt"))
+    assert _write(sbx, sbx.work, (*names, f"{STAND_IN}.txt")) == {**{n: "refused" for n in names},
+                                                                   f"{STAND_IN}.txt": "written"}
+
+
+# ── the everyday git flow, measured (#813 review 3: decides HR-1b) ──────────
+
+def _refused(stderr: str) -> tuple[str, ...]:
+    """The held names git's EPERM lines name: `.git/config` (config.worktree included), `.git/hooks`, `.husky`."""
+    found = set()
+    for line in stderr.splitlines():
+        if "Operation not permitted" not in line:
+            continue
+        found.add(".git/config" if "/config" in line or "config file" in line else
+                  ".git/hooks" if ".git/hooks" in line else ".husky" if ".husky" in line else "other")
+    return tuple(sorted(found))
+
+
+def _out(folder, *args) -> str | None:
+    if not folder.is_dir():
+        return None
+    ran = _git(folder, *args)
+    return ran.stdout.strip() if ran.returncode == 0 else None
+
+
+def _upstream(repo, branch: str) -> str | None:
+    return _out(repo, "rev-parse", "--abbrev-ref", f"{branch}@{{upstream}}")
+
+
+#: Each step, run in the sandbox from the work folder, in this order on one clone (`repo`) of a bare origin kept in
+#: the work folder (so a push lands inside it), and how to read its effect afterwards, outside the sandbox.
+FLOW = [
+    ("clone", "git clone -q origin.git cloned"),
+    ("init", "git init -q fresh"),
+    # The same two without git's hook templates (sample hooks, which never run): what is refused beneath them.
+    ("clone --template=", "git clone -q --template= origin.git cloned-bare-template"),
+    ("init --template=", "git init -q --template= fresh-bare-template"),
+    ("checkout -b x origin/x", "cd repo && git checkout -q -b x origin/x"),
+    ("switch -c y", "cd repo && git switch -q -c y"),
+    ("push -u origin y", "cd repo && git push -q -u origin y"),
+    ("branch --set-upstream-to", "cd repo && git branch -q --set-upstream-to=origin/x"),
+    ("fetch", "cd repo && git fetch -q"),
+    ("pull --ff-only", "cd repo && git switch -q main && git pull -q --ff-only"),
+    ("commit, switch", f"cd repo && echo z >> {STAND_IN}.txt && git {' '.join(WHO)} commit -qam z "
+                       "&& git switch -q y && git switch -q main"),
+    ("remote add", "cd repo && git remote add other ../origin.git"),
+    ("config core.hooksPath (husky)", "cd repo && git config core.hooksPath .husky/_"),
+    ("write .husky/_ (husky)", f"cd repo && mkdir -p .husky/_ && echo zz > .husky/_/{STAND_IN}"),
+    ("config user.name", f"cd repo && git config user.name {STAND_IN}"),
+]
+
+
+def _effect(work, step: str, before: dict) -> str:
+    repo, origin = work / "repo", work / "origin.git"
+    if step.startswith("clone"):
+        folder = work / ("cloned" if step == "clone" else "cloned-bare-template")
+        return "yes" if _out(folder, "rev-parse", "--verify", "-q", "origin/x") else "no"
+    if step.startswith("init"):
+        folder = work / ("fresh" if step == "init" else "fresh-bare-template")
+        return "yes" if _out(folder, "rev-parse", "--git-dir") else "no"
+    if step == "checkout -b x origin/x":
+        if _out(repo, "branch", "--show-current") != "x":
+            return "no"
+        return "yes" if _upstream(repo, "x") == "origin/x" else "branch made, no upstream"
+    if step == "switch -c y":
+        return "yes" if _out(repo, "branch", "--show-current") == "y" else "no"
+    if step == "push -u origin y":
+        if not _out(origin, "rev-parse", "--verify", "-q", "refs/heads/y"):
+            return "no"
+        return "yes" if _upstream(repo, "y") == "origin/y" else "pushed, no upstream"
+    if step == "branch --set-upstream-to":
+        return "yes" if _upstream(repo, "y") == "origin/x" else "no"
+    if step == "fetch":
+        return "yes" if _out(repo, "rev-parse", "origin/main") == _out(origin, "rev-parse", "main") else "no"
+    if step == "pull --ff-only":
+        return "yes" if _out(repo, "rev-parse", "HEAD") == _out(origin, "rev-parse", "main") else "no"
+    if step == "commit, switch":
+        moved = _out(repo, "rev-parse", "HEAD~1") == before["head"]
+        return "yes" if moved and _out(repo, "branch", "--show-current") == "main" else "no"
+    if step == "remote add":
+        return "yes" if "other" in (_out(repo, "remote") or "").split() else "no"
+    if step == "config core.hooksPath (husky)":
+        return "yes" if _out(repo, "config", "core.hooksPath") == ".husky/_" else "no"
+    if step == "write .husky/_ (husky)":
+        return "yes" if (repo / ".husky" / "_" / STAND_IN).exists() else "no"
+    assert step == "config user.name"
+    return "yes" if _out(repo, "config", "user.name") == STAND_IN else "no"
+
+
+CONFIG, HOOKS, HUSKY = (".git/config",), (".git/hooks",), (".husky",)
+#: What was measured on macOS 26.6 (Apple git, 2026-11-10): step -> (exit code, held writes refused, effect). Three
+#: config refusals exit 0: a tracking checkout and `push -u` do the rest and leave no upstream, `--set-upstream-to`
+#: does nothing. clone and init are refused copying git's sample hooks first, and the config beneath them.
+FLOW_MEASURED = {
+    "clone": (1, HOOKS, "no"),
+    "init": (1, HOOKS, "no"),
+    "clone --template=": (128, CONFIG, "no"),
+    "init --template=": (128, CONFIG, "no"),
+    "checkout -b x origin/x": (0, CONFIG, "branch made, no upstream"),
+    "switch -c y": (0, (), "yes"),
+    "push -u origin y": (0, CONFIG, "pushed, no upstream"),
+    "branch --set-upstream-to": (0, CONFIG, "no"),
+    "fetch": (0, (), "yes"),
+    "pull --ff-only": (0, (), "yes"),
+    "commit, switch": (0, (), "yes"),
+    "remote add": (128, CONFIG, "no"),
+    "config core.hooksPath (husky)": (4, CONFIG, "no"),
+    "write .husky/_ (husky)": (1, HUSKY, "no"),
+    "config user.name": (4, CONFIG, "no"),
+}
+#: Of the everyday steps (the two template-free rows are diagnostics, not steps), the ones that fail only because of
+#: `.git/config`: the tracking checkout, push -u, set-upstream-to, remote add, the husky config line, user.name.
+FLOW_CONFIG_ONLY = 6
+
+
+def _seed(work) -> None:
+    """Outside the sandbox: a bare origin with `main` and `x`, and a clone of it (`repo`)."""
+    assert _git(work, "init", "-q", "--bare", "-b", "main", "origin.git").returncode == 0
+    assert _git(work, "init", "-q", "-b", "main", "seed").returncode == 0
+    seed = work / "seed"
+    for step in (["remote", "add", "origin", "../origin.git"], ["commit", "-q", "--allow-empty", "-m", "one"]):
+        assert _git(seed, *WHO, *step).returncode == 0
+    (seed / f"{STAND_IN}.txt").write_text("one\n")
+    for step in (["add", "-A"], ["commit", "-qm", "two"], ["push", "-q", "origin", "main"],
+                 ["checkout", "-qb", "x"], ["commit", "-q", "--allow-empty", "-m", "x"], ["push", "-q", "origin", "x"],
+                 ["checkout", "-q", "main"]):
+        assert _git(seed, *WHO, *step).returncode == 0, step
+    assert _git(work, "clone", "-q", "origin.git", "repo").returncode == 0
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_the_everyday_git_flow_in_the_sandbox(sbx):
+    """#813 review 3: each everyday git step in the commands preset, its exit code, the held write it was refused
+    (git's own EPERM line), and whether its effect happened. The steps that fail only on `.git/config` decide HR-1b
+    (a one-click grant for git to update this repository's config); the count is asserted below."""
+    _seed(sbx.work)
+    measured = {}
+    for step, script in FLOW:
+        if step == "fetch":                                            # origin moves on, outside the sandbox
+            seed = sbx.work / "seed"
+            for args in (["commit", "-q", "--allow-empty", "-m", "three"], ["push", "-q", "origin", "main"]):
+                assert _git(seed, *WHO, *args).returncode == 0
+        before = {"head": _out(sbx.work / "repo", "rev-parse", "HEAD")}
+        ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-git-flow")
+        measured[step] = (ran.returncode, _refused(ran.stderr), _effect(sbx.work, step, before))
+    assert measured == FLOW_MEASURED, json.dumps(measured)
+    config_only = [s for s, (_, refused, effect) in measured.items()
+                   if effect != "yes" and refused == CONFIG and "--template=" not in s]
+    assert len(config_only) == FLOW_CONFIG_ONLY
+
+
+# ── the ancestor hold (#813 review 6, option B) ─────────────────────────────
+
+_MOVE = """
+import json, os, sys
+out = []
+for pair in sys.argv[1:]:
+    source, target = pair.split('|')
+    try:
+        os.rename(source, target)
+    except PermissionError:
+        out.append('refused')
+    else:
+        out.append('moved')
+print(json.dumps(out))
+"""
+
+
+def _moves(sbx, folder, pairs, *, profile=None) -> list[str]:
+    """Each rename in the sandbox, in order: 'moved' or 'refused'."""
+    args = [f"{folder / a}|{folder / b}" for a, b in pairs]
+    result = sbx.python(_MOVE, *args, probe="hr1-ancestor-rename", profile=profile)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def _hooked_repo(work, name: str = ".") -> None:
+    """Outside the sandbox: a repository (with git's sample hooks), a `.vscode`, a `.husky` and an ordinary folder."""
+    folder = work / name
+    folder.mkdir(parents=True, exist_ok=True)
+    assert _git(folder, "init", "-q").returncode == 0
+    for sub in (".vscode", ".husky", f"{STAND_IN}-plain"):
+        (folder / sub).mkdir()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_the_held_folders_and_the_folders_above_them_stay_in_place_and_an_ordinary_one_moves(sbx):
+    """Renaming `.git`, `.git/hooks`, `.vscode`, `.husky`, or the work folder's subfolder that holds a repository is
+    refused (that last one is a documented cost); an ordinary folder beside them still moves."""
+    _hooked_repo(sbx.work, "sub")
+    pairs = [("sub/.git", f"sub/{STAND_IN}-g"), ("sub/.git/hooks", f"sub/.git/{STAND_IN}-h"),
+             ("sub/.vscode", f"sub/{STAND_IN}-v"), ("sub/.husky", f"sub/{STAND_IN}-k"), ("sub", f"{STAND_IN}-sub"),
+             (f"sub/{STAND_IN}-plain", f"sub/{STAND_IN}-moved")]
+    assert _moves(sbx, sbx.work, pairs) == ["refused"] * 5 + ["moved"]
+    assert (sbx.work / "sub" / ".git" / "hooks").is_dir() and (sbx.work / "sub" / f"{STAND_IN}-moved").is_dir()
+
+
+#: The round trip: rename the folder away, write the held file under the new name, rename it back.
+ROUND_TRIPS = {
+    ".git": (".git", "hooks", f"pre-commit-{STAND_IN}"),
+    ".vscode": (".vscode", None, "tasks.json"),
+    ".husky": (".husky", None, "pre-commit"),
+}
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("case", sorted(ROUND_TRIPS))
+def test_the_rename_round_trip_leaves_no_held_file_on_disk(sbx, case):
+    folder, inner, name = ROUND_TRIPS[case]
+    _hooked_repo(sbx.work)
+    away = f"{STAND_IN}-away"
+    written = "/".join(p for p in (away, inner, name) if p)
+    script = (f"mv {folder} {away}; mkdir -p {away}/{inner or '.'}; printf zz > {written}; mv {away} {folder}; "
+              "exit 0")
+    ran = sbx.run(["/bin/bash", "-p", "-c", script], probe="hr1-ancestor-round-trip")
+    assert ran.returncode == 0
+    held = sbx.work / folder / (inner or "") / name
+    assert not held.exists() and (sbx.work / folder).is_dir()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_removing_a_repository_is_refused_and_committing_still_works(sbx):
+    """`rm -rf .git` fails inside the sandbox (a documented cost: it removes what isn't held before it stops), and
+    after the hold an ordinary write and commit still work."""
+    _hooked_repo(sbx.work)
+    (sbx.work / f"{STAND_IN}.txt").write_text("one\n")
+    who = " ".join(WHO)
+    commit = f"echo two >> {STAND_IN}.txt && git add {STAND_IN}.txt && git {who} commit -qm one && git log --oneline"
+    ran = sbx.run(["/bin/bash", "-p", "-c", commit], probe="hr1-ancestor-commit")
+    assert ran.returncode == 0 and len(ran.stdout.splitlines()) == 1
+    removed = sbx.run(["/bin/bash", "-p", "-c", "rm -rf .git"], probe="hr1-ancestor-rm")
+    assert removed.returncode != 0
+    assert (sbx.work / ".git" / "hooks").is_dir()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["mcp"], indirect=True)
+def test_an_mcp_server_cannot_move_them_in_a_granted_folder_or_its_own(sbx):
+    granted = sbx.root / "granted"
+    sbx.granted_folders = [granted]
+    for folder in (granted, sbx.work):
+        _hooked_repo(folder)
+        assert _moves(sbx, folder, [(".git", f"{STAND_IN}-g"), (".vscode", f"{STAND_IN}-v"),
+                                    (f"{STAND_IN}-plain", f"{STAND_IN}-moved")]) == ["refused", "refused", "moved"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["outside-floor"], indirect=True)
+def test_under_the_outside_floor_that_holds_them_the_folders_stay_in_place(sbx):
+    _hooked_repo(sbx.work)
+    assert _moves(sbx, sbx.work, [(".git", f"{STAND_IN}-g"), (f"{STAND_IN}-plain", f"{STAND_IN}-moved")],
+                  profile=_floor_profile(sbx)) == ["refused", "moved"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_a_dependency_folders_own_repository_still_moves(sbx):
+    """The node_modules exemption: a package's folders are not held, the same ones beside it are."""
+    dependency = f"node_modules/{STAND_IN}"
+    _hooked_repo(sbx.work, dependency)
+    _hooked_repo(sbx.work, f"{STAND_IN}-lib")
+    pairs = [(f"{dependency}/.git", f"{dependency}/g"), (f"{dependency}/.vscode", f"{dependency}/v"),
+             (dependency, f"node_modules/{STAND_IN}-2"), (f"{STAND_IN}-lib/.git", f"{STAND_IN}-lib/g")]
+    assert _moves(sbx, sbx.work, pairs) == ["moved", "moved", "moved", "refused"]
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_past_the_walks_cap_the_held_folders_are_held_by_name(sbx, monkeypatch):
+    """Closed, not open: past the cap every held folder is held by its name wherever it is moved (the folders above
+    it are then free), at the cost of making one (git init) in that run."""
+    from server.services import run_later
+    _hooked_repo(sbx.work, "sub")
+    monkeypatch.setattr(run_later, "WALK_ENTRIES", 1)
+    moved = f"{STAND_IN}-sub"
+    assert _moves(sbx, sbx.work, [("sub", moved), (f"{moved}/.git", f"{moved}/g"), (f"{moved}/.git/hooks", f"{moved}/h"),
+                                  (f"{moved}/.vscode", f"{moved}/v"), (f"{moved}/{STAND_IN}-plain", f"{moved}/p")]) == [
+        "moved", "refused", "refused", "refused", "moved"]
+    made = sbx.run(["/bin/bash", "-p", "-c", f"mkdir -p {STAND_IN}-fresh/.git"], probe="hr1-ancestor-cap-mkdir")
+    assert made.returncode != 0 and not (sbx.work / f"{STAND_IN}-fresh" / ".git").exists()
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+def test_two_thousand_repositories_build_fast_fall_back_by_name_and_a_command_still_starts(sbx):
+    """#813 review 7: uncapped, 2,000 small repositories took 23 s to build and the profile was past ARG_MAX, so no
+    command could start. With the held-folder cap the walk and build stay fast, the profile holds them by name, a
+    command starts, a hook write is refused, and a repository past the cap keeps its `.git` held by name."""
+    import time
+    from server.services import run_later
+    fixtures = sbx.work / "fixtures"
+    for i in range(2000):
+        for sub in (".git/hooks", ".vscode"):
+            (fixtures / f"r{i:04}" / sub).mkdir(parents=True)
+    started = time.perf_counter()
+    text = sbx.profile()
+    took = time.perf_counter() - started
+    print(f"\nHR-1 review 7: 2,000 repositories, walk + build {took:.3f} s, profile {len(text.encode())} bytes")
+    assert took < 1.0
+    # #813 review 9: an incomplete walk can't vouch for no alias, so the by-name hold has no dependency exemption.
+    assert f"(deny file-write* {' '.join(run_later.folder_filters([sbx.work], aliased=True))})" in text.splitlines()
+    assert command_sandbox.too_large_to_map(sbx.work)
+    hook, beside = f"fixtures/r1999/.git/hooks/{STAND_IN}", f"fixtures/r1999/{STAND_IN}.txt"
+    assert _write(sbx, sbx.work, (hook, beside)) == {hook: "refused", beside: "written"}
+    real = os.path.realpath(fixtures)
+    past = next(f"r{i:04}" for i in range(2000) if f'(literal "{real}/r{i:04}")' not in text)
+    moved = f"{STAND_IN}-past"
+    assert _moves(sbx, fixtures, [(past, moved), (f"{moved}/.git", f"{moved}/g"), (f"{moved}/.vscode", f"{moved}/v")]) \
+        == ["moved", "refused", "refused"]
+
+
+# ── the walk skips private folders (#813 review 8) ───────────────────────────
+
+def _home_profile(sbx) -> str:
+    """The commands profile with the harness's scratch HOME as the work folder, built under that HOME and temp."""
+    import tempfile
+    from server.services.sandbox_profile import NetworkMode
+    with pytest.MonkeyPatch.context() as environment:
+        for name in ("HOME", "TMPDIR", "ARSLAN_DATA_DIR"):
+            environment.setenv(name, sbx.env[name])
+        environment.setattr(tempfile, "tempdir", str(sbx.temp))
+        return command_sandbox.commands_profile(sbx.home, temp=sbx.temp, network=NetworkMode.NONE,
+                                                ipc_prefix=sbx.ipc_prefix, bound_ports=[], system_proxies=[])
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("sbx", ["commands"], indirect=True)
+@pytest.mark.parametrize("private", ["Documents", "Library"])
+def test_in_a_skipped_folder_the_held_folders_are_held_by_name_and_elsewhere_not(sbx, private):
+    """⓪Plan (#813 review 8), with the scratch HOME as the work folder: the walk doesn't list ~/Documents or ~/Library,
+    so a repository inside is held by name: a hook write and a rename of its `.git` (and the round trip through one)
+    are refused, and so is making a new `.git` in there. In an ordinary folder of the home a new `.git` is still made
+    (what `git init` does first; git init itself then stops on the hooks folder, under HR-1, in either place)."""
+    repo = f"{private}/{STAND_IN}"
+    _hooked_repo(sbx.home, repo)
+    _hooked_repo(sbx.home, f"{STAND_IN}-plain-repo")
+    text = _home_profile(sbx)
+    assert f'(require-all (subpath "{os.path.realpath(sbx.home / private)}")' in text
+    hook = f"{repo}/.git/hooks/{STAND_IN}"
+    wrote = sbx.python(_WRITE, sbx.home / hook, sbx.home / f"{repo}/{STAND_IN}.txt", probe="hr1-private-write",
+                       profile=text)
+    assert json.loads(wrote.stdout) == {str(sbx.home / hook): "refused",
+                                        str(sbx.home / f"{repo}/{STAND_IN}.txt"): "written"}
+    assert _moves(sbx, sbx.home, [(f"{repo}/.git", f"{repo}/g"), (f"{repo}/.vscode", f"{repo}/v"),
+                                  (f"{repo}/{STAND_IN}-plain", f"{repo}/p")], profile=text) == [
+        "refused", "refused", "moved"]
+    home = shlex.quote(str(sbx.home))                               # the harness runs in its work folder
+    away = f"{repo}/{STAND_IN}-away"
+    trip = sbx.run(["/bin/bash", "-p", "-c", f"cd {home} || exit 9; mv {repo}/.git {away}; mkdir -p {away}/hooks; "
+                    f"printf zz > {away}/hooks/pre-commit; mv {away} {repo}/.git; exit 0"],
+                   probe="hr1-private-round-trip", profile=text)
+    assert trip.returncode == 0 and not (sbx.home / repo / ".git" / "hooks" / "pre-commit").exists()
+    assert not (sbx.home / away).exists() and (sbx.home / repo / ".git" / "hooks").is_dir()
+    made = {}
+    for where in (f"{private}/{STAND_IN}-fresh", f"{STAND_IN}-fresh"):
+        ran = sbx.run(["/bin/bash", "-p", "-c", f"cd {home} && mkdir -p {where} && mkdir {where}/.git"],
+                      probe="hr1-private-mkdir", profile=text)
+        made[where] = (ran.returncode == 0, (sbx.home / where / ".git").is_dir())
+    assert made == {f"{private}/{STAND_IN}-fresh": (False, False), f"{STAND_IN}-fresh": (True, True)}
+    inits = {}
+    for where in (f"{private}/{STAND_IN}-init", f"{STAND_IN}-init"):
+        ran = sbx.run(["/bin/bash", "-p", "-c", f"cd {home} && mkdir -p {where} && cd {where} && git init -q"],
+                      probe="hr1-private-git-init", profile=text)
+        inits[where] = (ran.returncode, (sbx.home / where / ".git").is_dir(), _refused(ran.stderr))
+    print(f"\nHR-1 review 8: git init under the home-as-work-folder profile: {json.dumps(inits)}")
+    # Measured 2026-11-11: both exit 1. The ordinary folder's .git is made and git stops on HR-1's hooks folder, as
+    # in any work folder; in the private folder its .git isn't made at all.
+    assert inits[f"{STAND_IN}-init"][1:] == (True, (".git/hooks",))
+    assert inits[f"{private}/{STAND_IN}-init"][1] is False           # the private folder's is not
