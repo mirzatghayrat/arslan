@@ -17,6 +17,7 @@ protected paths from command_sandbox close last, even inside a granted folder.
 """
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, 
                                              subpath)
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+_log = logging.getLogger(__name__)
 
 #: Read-only system locations a runtime needs to start (dyld, frameworks, certificates, zones).
 SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/private/etc", "/dev",
@@ -179,16 +181,19 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     from server.services import command_sandbox, root_pin
     env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp"),
            **command_sandbox.cache_environment(root / "cache")}     # SBX-5 §1c: this server's own cache
-    # SBX-9: its own folder and cache pinned (Arslan made them), and each granted folder that exists, resolved once
-    # here (the user may have granted a link); the profile is built from those real paths only, and the caller checks
-    # them right before the start (`command_sandbox.check_pins`). Raises `root_pin.Swapped`: it doesn't start.
-    granted = [str(g) for g in sandbox.get("folders") or []]
+    # SBX-9: its own folder and cache pinned (Arslan made them), and each granted folder; the profile is built from
+    # those pinned real paths only, and the caller checks them right before the start (`command_sandbox.check_pins`).
+    # Raises `root_pin.Swapped` when its own folders can't be pinned: it doesn't start. Astra #855 P1: a grant that
+    # can't be pinned (missing, a file, a link, or swapped) is OMITTED from the profile, never passed on by its name to
+    # be resolved later: the server starts without it (logged), and writes there are refused.
     pins = command_sandbox._pin_all([root, root / "cache"])
     try:
-        there = [g for g in granted if os.path.isdir(g)]
-        pins += command_sandbox._pin_all(there, follow=True)
-        real_of = {g: str(p.path) for g, p in zip(there, pins[2:])}
-        folders = [real_of.get(g, g) for g in granted]
+        for grant in sandbox.get("folders") or []:
+            try:
+                pins.append(root_pin.pin(grant))
+            except root_pin.Swapped as exc:
+                _log.warning("SBX-9: an MCP server's granted folder is left out: %s", exc)
+        folders = [str(p.path) for p in pins[2:]]
         with root_pin.pinned(pins):
             text = profile(root=pins[0].path, folders=folders, network=network, read=list(sandbox.get("read") or []),
                            proxy_port=proxy_port, bound_ports=bound, cache=pins[1].path,

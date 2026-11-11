@@ -684,12 +684,12 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
     return [_SANDBOX_EXEC, "-f", str(write_pinned(text, pins))]
 
 
-def _pin_all(names, *, extra=(), follow: bool = False) -> list[root_pin.Pin]:
+def _pin_all(names, *, extra=()) -> list[root_pin.Pin]:
     """SBX-9: pin each of `names` and `extra`, in that order; on a refusal the ones pinned already are released."""
     pins: list[root_pin.Pin] = []
     try:
         for name in [*names, *extra]:
-            pins.append(root_pin.pin(name, follow=follow))
+            pins.append(root_pin.pin(name))
     except BaseException:
         root_pin.release(pins)
         raise

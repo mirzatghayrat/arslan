@@ -69,17 +69,33 @@ def _closed(fd: int) -> bool:
 
 # ── the pin, portable ────────────────────────────────────────────────────────
 
-def test_a_root_that_is_a_link_is_refused_unless_followed(tmp_path):
+def test_a_root_that_is_a_link_is_refused(tmp_path):
     folder, link = tmp_path / "folder", tmp_path / "link"
     folder.mkdir()
     link.symlink_to(folder, target_is_directory=True)
     with pytest.raises(root_pin.Swapped):
         root_pin.pin(link)
-    followed = root_pin.pin(link, follow=True)         # a user's granted folder may be a link: resolved once, here
+
+
+@pytest.mark.parametrize("portable", [False, True], ids=["nofollow-any", "walk-from-root"])
+def test_a_link_in_any_component_of_the_real_path_is_refused_at_the_pin_and_the_check(tmp_path, monkeypatch,
+                                                                                         portable):
+    """Astra #855 P1: an ancestor of the pinned folder swapped for a link to where it went keeps the folder's identity;
+    the open refuses it all the same (macOS `O_NOFOLLOW_ANY`, or the walk from `/` elsewhere)."""
+    if portable:
+        monkeypatch.setattr(root_pin, "_NOFOLLOW_ANY", 0)
+    above, moved = tmp_path / "above", tmp_path / "moved"
+    (above / "work").mkdir(parents=True)
+    pinned = root_pin.pin(above / "work")
     try:
-        assert followed.path == real(folder) and followed.identity == (folder.stat().st_dev, folder.stat().st_ino)
+        os.rename(above, moved)
+        os.symlink(moved, above, target_is_directory=True)        # same folder, reached through a link now
+        with pytest.raises(root_pin.Swapped):
+            root_pin.check([pinned])
+        with pytest.raises(OSError):
+            root_pin.open_folder(str(pinned.path))
     finally:
-        root_pin.release([followed])
+        root_pin.release([pinned])
 
 
 def test_a_real_path_that_is_a_link_at_the_open_is_refused(tmp_path, monkeypatch):
@@ -150,15 +166,22 @@ def test_a_pinned_path_is_not_resolved_again_while_the_profile_is_built(tmp_path
 
 # ── an MCP server's folders ──────────────────────────────────────────────────
 
-def test_an_mcp_servers_own_and_granted_folders_are_pinned_and_checked(home, tmp_path):
-    """Its own folder and cache pinned, a granted link resolved once (the user may grant one); the profile names those
-    real paths, and a swap after it is caught by the check before the start. The descriptors go with the file."""
+def _mcp_grants(home, tmp_path):
+    """An MCP server's folder, and grants: a real folder, then a file, a missing path and a link to a folder."""
     root, granted, outside = home / "data" / "srv", tmp_path / "granted", tmp_path / "outside"
     for folder in (root, granted, outside):
         folder.mkdir()
-    (tmp_path / "grant").symlink_to(granted, target_is_directory=True)
-    _, args, _, _ = capability_sandbox.wrap("/bin/echo", [], {}, {"root": str(root),
-                                                                  "folders": [str(tmp_path / "grant")]})
+    (tmp_path / "file").write_text("x")
+    (tmp_path / "link").symlink_to(outside, target_is_directory=True)
+    return root, granted, outside, {"file": tmp_path / "file", "missing": tmp_path / "missing",
+                                    "link": tmp_path / "link"}
+
+
+def test_an_mcp_servers_own_and_granted_folders_are_pinned_and_checked(home, tmp_path):
+    """Its own folder, its cache and a granted folder pinned; the profile names those real paths, and a swap after it
+    is caught by the check before the start. The descriptors go with the file."""
+    root, granted, outside, _ = _mcp_grants(home, tmp_path)
+    _, args, _, _ = capability_sandbox.wrap("/bin/echo", [], {}, {"root": str(root), "folders": [str(granted)]})
     profile = command_sandbox.profile_path(args)
     pins = list(command_sandbox._PINS[str(profile)])
     try:
@@ -171,6 +194,56 @@ def test_an_mcp_servers_own_and_granted_folders_are_pinned_and_checked(home, tmp
     finally:
         command_sandbox.remove_profile(profile)
     assert all(p.fd is None for p in pins) and str(profile) not in command_sandbox._PINS
+
+
+@pytest.mark.parametrize("kind", ["file", "missing", "link"])
+def test_an_unpinnable_mcp_grant_is_left_out_of_the_profile(home, tmp_path, kind):
+    """Astra #855 P1: a grant that can't be pinned (a file, a missing path, a link) is omitted: not pinned, and not
+    passed to the profile by its name to be resolved later. The pinned grant beside it stays."""
+    root, granted, outside, unpinnable = _mcp_grants(home, tmp_path)
+    grant = unpinnable[kind]
+    _, args, _, _ = capability_sandbox.wrap("/bin/echo", [], {}, {"root": str(root),
+                                                                  "folders": [str(grant), str(granted)]})
+    profile = command_sandbox.profile_path(args)
+    try:
+        assert [p.path for p in command_sandbox._PINS[str(profile)]] == [real(root), real(root / "cache"),
+                                                                         real(granted)]
+        text = profile.read_text()
+        assert str(grant) not in text and str(real(outside)) not in text and subpath(real(granted)) in text
+    finally:
+        command_sandbox.remove_profile(profile)
+
+
+@pytest.mark.macos
+@macos
+def test_missing_mcp_grant_cannot_become_unpinned_write_allow(home, tmp_path, monkeypatch):
+    """Astra #855's probe: a grant missing when it is pinned becomes a link to an outside folder before the profile is
+    built (the race). It was left out, so on real seatbelt nothing is written outside, through the link or straight
+    there; the pinned grant beside it is written."""
+    root, granted, outside, unpinnable = _mcp_grants(home, tmp_path)
+    missing = unpinnable["missing"]
+    pin = root_pin.pin
+
+    def racing(name):
+        try:
+            return pin(name)
+        except root_pin.Swapped:
+            if Path(name) == missing:
+                os.symlink(outside, missing, target_is_directory=True)  # it appears, as a link, right after the pin
+            raise
+    monkeypatch.setattr(root_pin, "pin", racing)
+    _, args, _, cwd = capability_sandbox.wrap("/usr/bin/touch", [], {}, {"root": str(root),
+                                                                         "folders": [str(missing), str(granted)]})
+    profile = command_sandbox.profile_path(args)
+    try:
+        runs = [subprocess.run([capability_sandbox.SANDBOX_EXEC, "-f", str(profile), "/usr/bin/touch", str(target)],
+                               cwd=cwd, capture_output=True)
+                for target in (missing / "through", outside / "straight", granted / "marker")]
+    finally:
+        command_sandbox.remove_profile(profile)
+    assert missing.is_symlink() and runs[0].returncode != 0 and runs[1].returncode != 0, runs
+    assert not list(outside.iterdir())
+    assert runs[2].returncode == 0 and (granted / "marker").exists(), runs[2].stderr
 
 
 def test_a_plugin_hooks_temp_swapped_for_a_link_is_refused_before_its_profile(home, tmp_path):
@@ -214,9 +287,119 @@ def test_a_write_is_refused_when_the_working_folder_is_swapped_before_it(home, t
             (outside / "notes.md").write_text("outside")
         return out
     monkeypatch.setattr(file_tools, "resolve_in_workspace", then_swap)
-    with pytest.raises(workspace_paths.PathEscape, match="isn't the folder it was"):
-        file_tools._write_inside(work, work / "notes.md", "new")
+    pin = workspace_paths.pin_root(work)
+    try:
+        with pytest.raises(workspace_paths.PathEscape, match="isn't the folder it was"):
+            file_tools._write_inside(pin, work / "notes.md", "new")
+    finally:
+        root_pin.release([pin])
     assert (outside / "notes.md").read_text() == "outside" and sorted(p.name for p in outside.iterdir()) == ["notes.md"]
+
+
+def _file_tools(monkeypatch, work: Path):
+    async def workspace():
+        return work
+    monkeypatch.setattr(file_tools, "_workspace_root", workspace)
+    return file_tools.WriteFileExecutor().execute, file_tools.EditFileExecutor().execute
+
+
+def _after_resolution(monkeypatch, action):
+    """`action()` once, right after the tool's resolution (at its snapshot, before any folder is made or written)."""
+    snapshot, done = file_tools._snapshot_write, []
+
+    def then(root, path, content):
+        if not done:
+            done.append(action())
+        return snapshot(root, path, content)
+    monkeypatch.setattr(file_tools, "_snapshot_write", then)
+    checkpoint = file_tools.checkpoints.ensure
+
+    async def first(*args, **kwargs):
+        if not done:
+            done.append(action())
+        return await checkpoint(*args, **kwargs)
+    monkeypatch.setattr(file_tools.checkpoints, "ensure", first)
+
+
+async def test_one_file_write_acquires_one_root_pin(home, tmp_path, monkeypatch):
+    """Astra #855 P1: one pin from the resolution through the folders to the write, for write_file and edit_file."""
+    work = tmp_path / "work"
+    work.mkdir()
+    write, edit = _file_tools(monkeypatch, work)
+    pin, pins = root_pin.pin, []
+
+    def counting(*args, **kwargs):
+        pins.append(pin(*args, **kwargs))
+        return pins[-1]
+    monkeypatch.setattr(root_pin, "pin", counting)
+    assert (await write({"path": "a/b/notes.md", "content": "one"}))["ok"]
+    assert len(pins) == 1 and pins[0].fd is None
+    assert (await edit({"path": "a/b/notes.md", "old_string": "one", "new_string": "two"}))["ok"]
+    assert len(pins) == 2 and pins[1].fd is None
+    assert (work / "a" / "b" / "notes.md").read_text() == "two"
+
+
+@pytest.mark.parametrize("tool", ["write", "edit"])
+async def test_replaced_root_between_resolution_and_write_is_refused(home, tmp_path, monkeypatch, tool):
+    """Astra #855 P1: the working folder renamed away and a new one put at its path after the resolution: the write
+    compares against the identity the resolution pinned, so it is refused, and neither folder is written."""
+    work, old = tmp_path / "work", tmp_path / "old"
+    work.mkdir()
+    (work / "notes.md").write_text("one")
+    write, edit = _file_tools(monkeypatch, work)
+
+    def replace():
+        os.rename(work, old)
+        work.mkdir()
+    _after_resolution(monkeypatch, replace)
+    if tool == "write":
+        out = await write({"path": "notes.md", "content": "two"})
+    else:
+        out = await edit({"path": "notes.md", "old_string": "one", "new_string": "two"})
+    assert out["ok"] is False and "isn't the folder it was" in out["error"], out
+    assert list(work.iterdir()) == [] and (old / "notes.md").read_text() == "one"
+
+
+async def test_root_ancestor_link_after_validation_is_refused(home, tmp_path, monkeypatch):
+    """Astra #855 P1: after the resolution, a folder ABOVE the working folder is moved and a link to where it went put
+    at its name. The working folder keeps its identity, but its path now runs through a link: the write is refused
+    (as before SBX-9), and nothing lands in the relocated original."""
+    above, moved = tmp_path / "above", tmp_path / "moved"
+    work = above / "work"
+    work.mkdir(parents=True)
+    write, _ = _file_tools(monkeypatch, work)
+
+    def relink():
+        os.rename(above, moved)
+        os.symlink(moved, above, target_is_directory=True)
+    _after_resolution(monkeypatch, relink)
+    out = await write({"path": "sub/notes.md", "content": "x"})
+    assert out["ok"] is False, out
+    assert list((moved / "work").iterdir()) == []
+
+
+async def test_root_ancestor_link_under_a_flipper_writes_only_where_the_path_has_no_link(home, tmp_path, monkeypatch):
+    """The same swap, over and over, from another process, while 200 writes run: every write is either refused or
+    lands in the working folder, and nothing is made anywhere else."""
+    above = tmp_path / "above"
+    work = above / "work"
+    work.mkdir(parents=True)
+    write, _ = _file_tools(monkeypatch, work)
+    stop, done = tmp_path / "stop", {"ok": 0, "refused": 0}
+    # The link points at where the folder goes (`above.aside`): the relocated original.
+    flipper = subprocess.Popen([sys.executable, "-c", _FLIPPER, str(above), str(above) + ".aside", str(stop)],
+                               stdout=subprocess.PIPE, text=True)
+    try:
+        for i in range(COMMANDS):
+            out = await write({"path": f"d{i}/notes.md", "content": "x"})
+            done["ok" if out["ok"] else "refused"] += 1
+    finally:
+        stop.write_text("")
+        flips = int(flipper.communicate(timeout=30)[0] or 0)
+    print(f"\nSBX-9 ancestor flipper: {done}, flips {flips}")
+    written = sorted(p.parent.name for p in work.glob("d*/notes.md"))
+    assert flips > 0 and not above.is_symlink() and len(written) == done["ok"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["above", "home", "stop", "t"]
 
 
 #: A flipper in its own process (no GIL shared with the writer): swaps argv[1] for a link to argv[2] and back until the

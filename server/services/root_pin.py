@@ -70,12 +70,36 @@ def _identity(st: os.stat_result) -> tuple[int, int]:
     return st.st_dev, st.st_ino
 
 
-def pin(name, *, follow: bool = False) -> Pin:
-    """Resolve `name` once and pin the folder there. Raises Swapped when its real path is a link at the open (a swap
-    since the realpath), isn't a folder or is gone, or (unless `follow`) when `name` itself is a link or another
-    folder now; any other error reading it (I/O, permission) propagates, as `command_sandbox._identity`'s does:
-    `name` was checked as a real folder before (the work folder, a run's temp). `follow` is for a name the user may
-    have chosen as a link (an MCP server's granted folder): it is resolved once, here, and that is what is pinned."""
+_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
+#: macOS 11+: no component of the path may be a link at the open (never together with O_NOFOLLOW: EINVAL).
+_NOFOLLOW_ANY = getattr(os, "O_NOFOLLOW_ANY", 0)
+
+
+def open_folder(real: str) -> int:
+    """A descriptor on the folder at the absolute path `real`, with no link in ANY of its components (Astra #855 P1:
+    `O_NOFOLLOW` alone guards only the last one, so an ancestor swapped for a link would be followed). macOS:
+    `O_NOFOLLOW_ANY`. Elsewhere: walked from `/` one name at a time, each opened `O_NOFOLLOW` relative to the one
+    before. OSError (ELOOP for a link, ENOTDIR, ENOENT) otherwise."""
+    if _NOFOLLOW_ANY:
+        return os.open(real, _DIR | _NOFOLLOW_ANY)
+    fd = os.open("/", _DIR)
+    try:
+        for part in Path(real).parts[1:]:
+            inner = os.open(part, _DIR | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = inner
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def pin(name) -> Pin:
+    """Resolve `name` once and pin the folder there. Raises Swapped when a component of its real path is a link at
+    the open (a swap since the realpath), it isn't a folder or is gone, or `name` itself is a link or another folder
+    now: `name` was checked as a real folder before (the work folder, a run's temp), and a link given as a root (an
+    MCP grant) isn't pinned. Any other error reading it (I/O, permission) propagates, as `command_sandbox._identity`'s
+    does: no profile is built."""
     try:
         real = os.path.realpath(os.path.expanduser(str(name)))
     except OSError as exc:                      # a link that went between its lstat and its readlink (EINVAL)
@@ -83,22 +107,21 @@ def pin(name, *, follow: bool = False) -> Pin:
             raise Swapped(name, "changed while it was resolved") from None
         raise
     try:
-        fd = os.open(real, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        fd = open_folder(real)
     except OSError as exc:
         if exc.errno in _SWAPPED:
             raise Swapped(name, f"isn't a folder now ({exc.strerror})") from None
         raise                                   # any other error (I/O, permission): no profile is built
     try:
         identity = _identity(os.fstat(fd))
-        if not follow:
-            try:
-                named = os.lstat(os.path.expanduser(str(name)))
-            except OSError as exc:
-                if exc.errno in _SWAPPED:
-                    raise Swapped(name, "is gone") from None
-                raise
-            if stat.S_ISLNK(named.st_mode) or _identity(named) != identity:
-                raise Swapped(name, "was replaced while the sandbox was starting")
+        try:
+            named = os.lstat(os.path.expanduser(str(name)))
+        except OSError as exc:
+            if exc.errno in _SWAPPED:
+                raise Swapped(name, "is gone") from None
+            raise
+        if stat.S_ISLNK(named.st_mode) or _identity(named) != identity:
+            raise Swapped(name, "was replaced while the sandbox was starting")
     except BaseException:
         os.close(fd)
         raise
@@ -106,14 +129,18 @@ def pin(name, *, follow: bool = False) -> Pin:
 
 
 def check(pins: Iterable[Pin]) -> None:
-    """Right before the spawn: each pinned path is still a folder, not a link, with the same identity."""
+    """Right before the spawn or the write: each pinned path still opens, with no link in any component
+    (`open_folder`), as a folder with the same identity."""
     for p in pins:
         try:
-            st = os.lstat(p.path)
+            fd = open_folder(str(p.path))
         except OSError:
-            raise Swapped(p.path, "is gone") from None
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or _identity(st) != p.identity:
-            raise Swapped(p.path, "was replaced while the sandbox was starting")
+            raise Swapped(p.path, "is gone, or a folder on the way to it is a link now") from None
+        try:
+            if _identity(os.fstat(fd)) != p.identity:
+                raise Swapped(p.path, "was replaced while the sandbox was starting")
+        finally:
+            os.close(fd)
 
 
 def release(pins: Iterable[Pin]) -> None:
