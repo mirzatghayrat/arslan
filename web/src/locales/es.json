@@ -649,13 +649,6 @@
     "voiceModeConversation": "Conversación",
     "labelVoiceEndpointSilence": "Fin de frase (ms)",
     "voiceEndpointSilenceDesc": "Cuánto debes pausar antes de que se envíe lo dicho. 900 ms es una respiración normal; menos te corta, más parece lento.",
-    "terminalRulesTitle": "No volver a preguntar por",
-    "terminalRulesEmpty": "Nada todavía. Elige «Siempre» en una tarjeta de comando para añadir ese tipo aquí.",
-    "terminalRulesForget": "Volver a preguntar",
-    "sandboxGrantsTitle": "Conversaciones cuyos comandos pueden ejecutarse fuera del entorno aislado, también en tareas en segundo plano",
-    "sandboxGrantsEmpty": "Ninguna. Elegir «En esta conversación» en una tarjeta para ejecutar fuera del entorno aislado añade esa conversación aquí.",
-    "sandboxGrantsTakeBack": "Retirar",
-    "sandboxGrantsUntitled": "Conversación sin título",
     "navGeneral": "General",
     "navAbilities": "Lo que Arslan puede hacer",
     "navBackground": "En segundo plano",
@@ -770,7 +763,7 @@
     "glyph": {
       "waiting": "Espera tu aprobación",
       "waiting_reminder": "Un trabajo detenido te dejó un recordatorio",
-      "waiting_away": "No pudo preguntarte mientras no estabas",
+      "waiting_away": "Una tarjeta caducó",
       "working": "En curso",
       "progress": "En curso: {{done}} de {{total}}",
       "done": "Hecho",
@@ -1435,7 +1428,9 @@
   },
   "inbox": {
     "addWatch": "Vigilar otra página o carpeta",
-    "refusedTitle": "Lo que no se hizo mientras no estabas",
+    "refusedTitle": "Caducado, sin hacer",
+    "expiredShown": "Nadie respondió en 30 minutos, así que caducó",
+    "expiredUnopened": "Una tarjeta anterior quedó sin respuesta, así que esta caducó sin mostrarse",
     "alwaysAllow": "Permitir siempre",
     "alwaysStores": "Esto permitirá siempre: {{what}}",
     "asksEachTime": "Pregunta cada vez",
@@ -1488,14 +1483,60 @@
   "scheduledPage": {
     "intro": "Tareas que se ejecutan según un horario, y las páginas y carpetas que Arslan vigila por ti. Un punto marca una fila que necesita tu atención.",
     "watches": "Páginas y carpetas vigiladas",
-    "awayTitle": "Lo que no se hizo mientras no estabas (solo esta tarea)",
-    "seenNote": "Abrir una tarea marca como visto lo que sus ejecuciones no pudieron hacer. Lo que no se hizo en su propia conversación mientras no estabas se borra al abrir esa conversación; una tarjeta allí, solo cuando la respondes.",
+    "awayTitle": "Caducado o sin poder preguntar, sin hacer (solo esta tarea)",
+    "seenNote": "Abrir una tarea marca como visto lo que sus ejecuciones no pudieron hacer. Lo que caducó sin hacerse en su propia conversación se borra al abrir esa conversación; una tarjeta allí, solo cuando la respondes.",
     "attention": "Necesita tu atención",
     "changed": "Ha cambiado",
     "failing": "Falló o se pausó sola"
   },
+  "remembered": {
+    "title": "Respuestas recordadas",
+    "desc": "Aquí está todo lo que respondiste con «En esta conversación» o «Siempre» en una tarjeta. Si lo retiras, la próxima vez se te vuelve a preguntar lo mismo.",
+    "never": "Pagar, enviar, entregar y borrar (fuera de la carpeta de trabajo) se pregunta cada vez y nunca se recuerda, así que no está aquí. Un «Solo esta vez» o «Durante esta tarea» termina con su tarea, así que tampoco está aquí.",
+    "always": "Siempre",
+    "conversation": "En esta conversación",
+    "none": "Ninguna",
+    "empty": "Aún no hay respuestas recordadas. Elige «En esta conversación» o «Siempre» en una tarjeta y aparecerá aquí, para retirarla cuando quieras.",
+    "unavailable": "No se puede mostrar ahora",
+    "allConversations": "Todas las conversaciones",
+    "subOnly": "Solo en esta subsesión",
+    "given": "Dada {{when}}",
+    "lastUsed_one": "Último uso {{when}} · {{count}} vez",
+    "lastUsed_other": "Último uso {{when}} · {{count}} veces",
+    "neverUsed": "Aún no se ha usado",
+    "revoke": "Retirar",
+    "revokeFailed": "No se pudo retirar. Inténtalo de nuevo",
+    "open": "Abrir conversación",
+    "revokeAll": "Retirar todo lo de esta conversación",
+    "untitled": "Conversación sin título",
+    "subSession": "Subsesión: {{title}}",
+    "pointer": "Comandos permitidos en una conversación → Respuestas recordadas",
+    "rule": {
+      "app": "Puede ver y usar «{{name}}» sin volver a preguntar. Borrar, enviar y pagar se siguen preguntando cada vez.",
+      "other": "Siempre: {{name}}"
+    },
+    "grant": {
+      "outside": "Los comandos de esta conversación (también en tareas en segundo plano) pueden ejecutarse fuera del entorno aislado",
+      "unsandboxed": "Los comandos de esta conversación pueden ejecutarse sin entorno aislado y sin preguntar",
+      "command": "En esta conversación, este comando vuelve a ejecutarse sin preguntar: {{name}}",
+      "network": "En esta conversación, tras leer páginas web, los comandos del entorno aislado también pueden usar la red",
+      "workspace_write": "En esta conversación, Arslan puede escribir en la carpeta «{{name}}» sin preguntar",
+      "schedule": "En esta conversación, Arslan puede crear tareas programadas sin preguntar",
+      "mcp_tool": "En esta conversación, Arslan puede usar «{{name}}» de {{server}}, con cualquier argumento",
+      "app": "En esta conversación, Arslan puede ver y usar «{{name}}»",
+      "site": "En esta conversación, Arslan puede hacer clic y escribir en {{name}}",
+      "shortcut": "En esta conversación, Arslan puede ejecutar el atajo «{{name}}»",
+      "other": "Permitido en esta conversación: {{name}}"
+    },
+    "note": {
+      "unsandboxed": "Solo cuenta mientras el entorno aislado está apagado o no puede iniciarse",
+      "command": "Solo cuenta con «Preguntar antes de cada comando»",
+      "network": "Los comandos fuera del entorno aislado siguen preguntando cada vez",
+      "serverGone": "Este servidor se ha eliminado"
+    }
+  },
   "whileAway": {
-    "title": "Lo que no se hizo mientras no estabas (esta conversación)",
+    "title": "Caducado, sin hacer (esta conversación)",
     "stopped": "Una tarea que se detuvo aquí"
   },
   "waiting": {

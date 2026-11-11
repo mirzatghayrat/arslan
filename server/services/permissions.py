@@ -47,10 +47,13 @@ KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "syste
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
                    "workspace_write", "network"})
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
-#: of a stored rule or grant that are never a request's own. A command's "Always" is a
-#: `legacy_rule` per rule it matched (§A9). (§A5 also names the rule kinds `command_prefix` and
-#: `mcp_server`: the PR that first stores one adds it here.)
-_STORED_ONLY = frozenset({"legacy_rule"})
+#: of a stored rule or grant that are never a request's own. None today. (§A5 also names the rule
+#: kinds `command_prefix` and `mcp_server`: the PR that first stores one adds it here.)
+#: S6: `legacy_rule` (a command's "Always", one per rule it matched, §A9) was here. No command card
+#: has offered "Always" since S2a-2, migration 0092 deleted the rows, and the user chose (2026-11-11)
+#: that they are not kept: so no card may store one again (`_check` raises), and the Inbox's "Always
+#: allow" refuses a recorded set that names one (`always_from`).
+_STORED_ONLY: frozenset[str] = frozenset()
 
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
@@ -58,11 +61,11 @@ _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "syst
 #: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
 #: the island and the phone answer only the first choice (§A4).
 _TASK_FIRST = frozenset({"app", "shortcut", "site"})
-#: Kinds that never offer "Always". A site's and a Shortcut's are here for 0.1.61 only: the Settings
-#: page that lists and removes such rules is a later PR, and until it exists an "Always" for either
-#: could be taken back only with the Inbox's 10-second Undo. Take them out of this set, and out of
-#: nowhere else, when that page ships: the card, the Inbox's "Always allow" (`always_from`) and the
-#: rule lookup (`_standing`) all follow it.
+#: Kinds that never offer "Always". A site's and a Shortcut's were here until a Settings page listed
+#: such rules; S6's "Remembered answers" page (v0.1.64) does, and the user chose (2026-11-11) that no
+#: "Always" comes back for a site, a Shortcut or an MCP tool even so. A later change that offers one
+#: takes the kind out of this set, and out of nowhere else: the card, the Inbox's "Always allow"
+#: (`always_from`) and the rule lookup (`_standing`) all follow it.
 # S2a-1: "network" (a command reaching the network after the turn read outside content) is asked this
 # time or for this conversation, never "Always": outside content can steer what it sends.
 # S4a: "outside" (every command of a conversation out of the sandbox) is this time or this conversation,
@@ -525,7 +528,9 @@ def _always_set(req: Request) -> list[list[str]]:
 def always_from(extra) -> list[tuple[str, str, str]]:
     """The "Always" set a row of what could not be asked recorded (`ALWAYS_KEY`), or [] when there
     is none or it is not well formed — then nothing may be allowed from that row. A kind never
-    remembered is never in it (fail closed: the whole set is refused)."""
+    remembered is never in it (fail closed: the whole set is refused). S6: nor is a kind that is not a
+    request's own: a ledger row from before S2a-2 (kept 90 days) recorded a command's `legacy_rule`
+    set, and storing it would bring back the rules migration 0092 deleted."""
     entries = extra.get(ALWAYS_KEY) if isinstance(extra, dict) else None
     if not isinstance(entries, list) or not entries:
         return []
@@ -533,7 +538,7 @@ def always_from(extra) -> list[tuple[str, str, str]]:
     for entry in entries:
         if (not isinstance(entry, list) or len(entry) != 3
                 or not all(isinstance(x, str) for x in entry)
-                or not entry[0] or not entry[1] or entry[0] in _NEVER_ALWAYS):
+                or not entry[0] or not entry[1] or entry[0] not in KINDS or entry[0] in _NEVER_ALWAYS):
             return []
         out.setdefault((entry[0], entry[1]), entry[2])
     return [(kind, target, label) for (kind, target), label in out.items()]
