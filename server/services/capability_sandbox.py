@@ -185,14 +185,15 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     # those pinned real paths only, and the caller checks them right before the start (`command_sandbox.check_pins`).
     # Raises `root_pin.Swapped` when its own folders can't be pinned: it doesn't start. Astra #855 P1: a grant that
     # can't be pinned (missing, a file, a link, or swapped) is OMITTED from the profile, never passed on by its name to
-    # be resolved later: the server starts without it (logged), and writes there are refused.
+    # be resolved later: the server starts without it (logged), and writes there are refused. So is a grant whose
+    # identity can't be read (an I/O or permission error): left out, not a live write grant.
     pins = command_sandbox._pin_all([root, root / "cache"])
     try:
         for grant in sandbox.get("folders") or []:
             try:
                 pins.append(root_pin.pin(grant))
-            except root_pin.Swapped as exc:
-                _log.warning("SBX-9: an MCP server's granted folder is left out: %s", exc)
+            except OSError as exc:      # Swapped, or its identity can't be read (I/O, permission): never granted
+                _log.warning("SBX-9: an MCP server's granted folder is left out: %s: %s", grant, exc)
         folders = [str(p.path) for p in pins[2:]]
         with root_pin.pinned(pins):
             text = profile(root=pins[0].path, folders=folders, network=network, read=list(sandbox.get("read") or []),

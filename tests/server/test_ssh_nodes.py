@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import Base, Setting, SshAudit
 from server.orchestrator import tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.registry import ssh_tools
 from server.services import ssh_exec, ssh_nodes
 
@@ -111,11 +112,11 @@ async def test_an_enrolled_machine_still_produces_a_card(maker, monkeypatch):
             return {"ok": True}
 
     monkeypatch.setitem(tool_loop.EXECUTORS, "ssh_run", _Stub())
-    r = await tool_loop._dispatch_tool(
+    r = await tool_loop._run_tool(
         "ssh_run", {"host": "192.168.1.8", "user": "someone", "command": "git",
                     "argv": ["status"]},
-        "{}", resolve_tools=lambda: _one_tool(), emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=[], convo=[], confirm_command=_confirm)
+        "{}", ToolTurn(resolve_tools=lambda: _one_tool(), emit=lambda e: None, tool_timeout_s=5,
+        tool_trace=[], convo=[], confirm_command=_confirm))
     assert r["ok"] is True
     assert len(asked) == 1, "an enrolled machine must still ask, every time"
     assert "studio" in asked[0]["remote_host"], (
@@ -175,11 +176,11 @@ async def test_a_changed_host_key_is_refused_not_offered(maker, monkeypatch):
 
     stub = _Stub()
     monkeypatch.setitem(tool_loop.EXECUTORS, "ssh_run", stub)
-    r = await tool_loop._dispatch_tool(
+    r = await tool_loop._run_tool(
         "ssh_run", {"host": "192.168.1.8", "user": "someone", "command": "git",
                     "argv": ["status"]},
-        "{}", resolve_tools=lambda: _one_tool(), emit=lambda e: None, tool_timeout_s=5,
-        tool_trace=[], convo=[], confirm_command=_confirm)
+        "{}", ToolTurn(resolve_tools=lambda: _one_tool(), emit=lambda e: None, tool_timeout_s=5,
+        tool_trace=[], convo=[], confirm_command=_confirm))
     assert r["ok"] is False
     assert "CHANGED" in r["error"]
     assert asked == [], "a changed key must never reach a confirmation card"

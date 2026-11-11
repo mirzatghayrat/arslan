@@ -12,6 +12,7 @@ from arslan.execution_budget import current as current_budget
 from arslan.llm.adapter import LLMAdapter
 from server.db.models import CompanionTask, Run, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent
 from server.orchestrator import arslan, tool_loop
+from server.orchestrator.turn_state import ToolTurn
 from server.services import host_run, personal_context as pc, run_registry, task_service
 from server.services.task_repository import TaskError, TaskRepository, repository
 from tests.server.conftest import worker_scope
@@ -49,10 +50,10 @@ async def test_secret_arguments_never_reach_emitted_previews_or_traces():
     async def never():
         raise AssertionError("Rejected credential data must not resolve or execute a tool")
     with run_trace.collecting():
-        result = await tool_loop._dispatch_tool(
+        result = await tool_loop._run_tool(
             "fixture", {"headers": {"Authorization": "synthetic-private-canary"}},
-            "synthetic-private-canary", resolve_tools=never, emit=events.append,
-            tool_timeout_s=1, tool_trace=trace, convo=convo)
+            "synthetic-private-canary", ToolTurn(resolve_tools=never, emit=events.append,
+            tool_timeout_s=1, tool_trace=trace, convo=convo))
         captured = str([events, trace, convo, run_trace.snapshot()])
     assert result["code"] == "credentials_not_tool_data"
     assert "synthetic-private-canary" not in captured
@@ -144,9 +145,9 @@ async def test_actual_tool_throat_journals_before_effect_and_blocks_uncertain_re
         return [{"key": "synthetic_external_write", "description": "test-only effect"}]
     monkeypatch.setattr(tool_loop, "resolve_executor", resolve)
     async def function(conversation, message, emit):
-        return await tool_loop._dispatch_tool(
-            "synthetic_external_write", {"value": "test"}, "", resolve_tools=tools, emit=emit,
-            tool_timeout_s=2, tool_trace=[], convo=[], conversation_id=conversation)
+        return await tool_loop._run_tool(
+            "synthetic_external_write", {"value": "test"}, "", ToolTurn(resolve_tools=tools, emit=emit,
+            tool_timeout_s=2, tool_trace=[], convo=[], conversation_id=conversation))
     with pytest.raises(Crash):
         await run(function)
     assert effects == ["external write succeeded"]

@@ -266,19 +266,38 @@ def _unreadable_identity(monkeypatch, path: Path) -> None:
     monkeypatch.setattr(os, "lstat", failing)
 
 
-@pytest.mark.parametrize("surface", ["commands", "mcp"])
+@pytest.mark.parametrize("surface", ["commands"])   # SBX-9: the `mcp` case is the test below now
 def test_a_root_whose_identity_cant_be_read_builds_no_profile(home, tmp_path, monkeypatch, surface):
-    """A work folder or grant by another spelling of ~, whose identity can't be read: no profile is built (an
-    error, never a profile without the holds), so the command or server doesn't start."""
+    """A work folder by another spelling of ~, whose identity can't be read: no profile is built (an error, never a
+    profile without the holds), so the command doesn't start."""
     _sentinel(home / ".agents" / "skills")
     spelt = home.with_name(home.name.upper())
     _unreadable_identity(monkeypatch, spelt)
     with pytest.raises(OSError, match="Input/output error"):
-        if surface == "commands":
-            command_sandbox.commands_profile(spelt, offline=True)
-        else:
-            capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
-                                    {"root": str(tmp_path / "server"), "folders": [str(spelt)], "network": False})
+        command_sandbox.commands_profile(spelt, offline=True)
+
+
+def test_an_mcp_grant_whose_identity_cant_be_read_is_left_out(home, tmp_path, monkeypatch, caplog):
+    """SBX-9 (Astra #855 P1): an MCP grant by another spelling of ~ whose identity can't be read, or that isn't there
+    (a case-sensitive volume), is left out of the profile and logged: the server starts, with no write grant there,
+    under either spelling of ~."""
+    _sentinel(home / ".agents" / "skills")
+    spelt = home.with_name(home.name.upper())
+    _unreadable_identity(monkeypatch, spelt)
+    with caplog.at_level("WARNING", logger=capability_sandbox.__name__):
+        _, args, _, _ = capability_sandbox.wrap("/bin/echo", [], {"PATH": "/usr/bin"},
+                                                {"root": str(tmp_path / "server"), "folders": [str(spelt)],
+                                                 "network": False})
+    profile = command_sandbox.profile_path(args)
+    try:
+        writes = [line for line in profile.read_text().splitlines() if line.startswith("(allow") and "file-write" in line]
+        assert writes and not any(f"(subpath {json.dumps(str(p))})" in line
+                                  for line in writes for p in (spelt, home, home.resolve()))
+        assert [p.path for p in command_sandbox._PINS[str(profile)]] == [(tmp_path / "server").resolve(),
+                                                                         (tmp_path / "server" / "cache").resolve()]
+    finally:
+        command_sandbox.remove_profile(profile)
+    assert "granted folder is left out" in caplog.text
 
 
 def test_the_scan_names_the_entry_it_couldnt_read(home, tmp_path, monkeypatch):

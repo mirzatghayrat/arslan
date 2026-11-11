@@ -63,7 +63,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 5. **R63 判定里没有记录的两半**（M3 第 7 条 Mac 那半、第 12 条截屏那半）：v0.1.64 冒烟时补测，还是放下。
 6. **K8c 的 Gemini M1：** 要 Gemini 代理和额度（只有用户能放 key）。
 7. **还没确认的建议：** ~~旁聊进 v0.1.64~~ (decided by the user on 2026-10-28: in v0.1.64, card SIDE, `docs/plans/0164/SIDE-side-chat.md`)；界面版的设计图先出；Aegis 试点的结论（§9 还没跑）。
-8. **钩子支持排在 v0.1.65 之后**（⓪Plan 排的）、**收件箱各条放哪一版**（⓪Plan 排的）、**按 U2 整份删除的 PR 不让 Codex 审**（⓪Plan 定的）：用户可以改。
+8. ~~**钩子支持排在 v0.1.65 之后**（⓪Plan 排的）~~ Changed: the user moved hook running into v0.1.64 on 2026-11-10 (HOOK-1 to HOOK-4). **收件箱各条放哪一版**（⓪Plan 排的）、**按 U2 整份删除的 PR 不让 Codex 审**（⓪Plan 定的）：用户可以改。
 9. **M64 开工前的两个小问**（M64 卡末尾）：Codex 参考线第一轮用「用户贴题、存回复」；三道代码审查题用 Python、TypeScript、Swift。⓪Plan 先按这两个默认做，用户可以改。
 
 ## 3. 卡清单（分级用户 10-28 已定）
@@ -296,8 +296,9 @@ The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until S
 | 道 | 卡 |
 |---|---|
 | ⓪Plan | M64；本页、STATUS、各卡；R64 门槛判定 |
-| ②Main | S5a、S5b、INB（含 MEM1）、review of SBX、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
+| ②Main | S5a、S5b、INB（含 MEM1）、review of SBX、SUB、STY、ACM、C7c、C5b、K6、K10、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
 | 新开一个会话（用户 10-28 定，为了并行） | CAP |
+| LOOP1 | L6 and L7 (moved from ②Main by ⓪Plan on 2026-11-11) |
 | ③Hands | **S64-0（effort=max 写）**；S64-0b；**SBX (from 2026-10-28)**；HR；CLS；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
 | ①iOS | Q1 的 iPhone 端；Bridge 帧的变更清单（和 ②Main 一起） |
 | Codex（外部工具，不是会话） | 安全面和大 PR 的独立审查（§8 安全审查路径）。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |

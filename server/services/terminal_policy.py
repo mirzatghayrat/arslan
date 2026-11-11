@@ -391,10 +391,10 @@ def _parsed(text: str) -> shell_grammar.PrefixReading:
     """The reader's one pass over `text` (LOOP1 d2), the whole text as given: whether it understands the text and
     why not, and the commands the named rules read. Every reader here reads this one pass, and nothing reads the text
     through the grammar again; the card's steps read it too (`reading`, d2b).
-    `shell_grammar.read` refuses exactly where this pass does: the folders it follows as well never change what is
-    read (its docstring), so `refused` is its "not understood" with the same why, and an understood command's
-    commands are its own. One it does not understand keeps the path it had: its named rules read the commands
-    before the refusal (additive only, never a grant), beside the rules on the raw text."""
+    An unreadable operation keeps later argv only for additive forbids; its named_unreadable reason takes
+    precedence over named ask rules. Otherwise `refused` is the complete reader's "not understood" with the same
+    why, and an understood command's commands are its own. Commands before a grammar refusal remain available
+    for additive rules, beside the rules on the raw text."""
     return shell_grammar.read_prefix(text)
 
 
@@ -741,23 +741,7 @@ def _options(args: tuple[str, ...], values: frozenset[str]):
 
 
 def _security_verb(args: tuple[str, ...]) -> tuple[str, ...]:
-    # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
-    i = 0
-    while i < len(args) and args[i].startswith("-"):
-        word = args[i]
-        if word == "--":
-            return args[i + 1:]
-        if word == "--help":
-            return ()
-        i += 1
-        if not word.startswith("--"):
-            for offset, letter in enumerate(word[1:], 2):
-                if letter == "h":
-                    return ()
-                if letter == "p":
-                    i += offset == len(word)
-                    break
-    return args[i:]
+    return shell_grammar.security_operation(args)[0]
 
 
 def _dispatch_args(program: str, args: tuple[str, ...]) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -970,6 +954,10 @@ def _unparseable(text: str) -> str:
         return "too complex to read before running"
     if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"
+    # The shared pass keeps literalness when selecting the operation, while
+    # retaining later argv for the forbid floor that has already run.
+    if why := _parsed(text).named_unreadable:
+        return why
     return ""
 
 

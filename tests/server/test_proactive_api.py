@@ -90,6 +90,26 @@ async def test_items_carry_their_source_key_for_the_scheduled_page(client):
 async def test_scope_is_validated(client):
     assert (await client.get("/api/v1/proactive/items", params={"scope": "everything"})).status_code == 422
     assert (await client.get("/api/v1/proactive/items", params={"limit": 0})).status_code == 422
+    # INB7-e: the brief is no kind any more, so asking for it is refused like any other unknown kind.
+    assert (await client.get("/api/v1/proactive/items", params={"kind": "brief"})).status_code == 422
+    assert (await client.get("/api/v1/proactive/items", params={"kind": "web_change"})).status_code == 200
+
+
+async def test_a_stored_brief_row_neither_breaks_nor_shows_in_the_list_and_the_counts(client):
+    """INB7-e: a brief row made before the brief went (no migration removes it) is read past by every list and count, so the
+    window, the badge and the phone never see it."""
+    from server.db.models import ProactiveItem
+    async with db_session.AsyncSessionLocal() as db:
+        db.add(ProactiveItem(kind="brief", fingerprint="brief:2026-09-30", source_key="brief", title_key="title.brief",
+                             params={"day": "2026-09-30"}, evidence=[{"key": "brief.open", "params": {"count": 1}}], goal="",
+                             criteria=[], priority="high", status="new", created_at=NOW))
+        await db.commit()
+    await make_item()
+    for scope in ("open", "all", "done"):
+        r = await client.get("/api/v1/proactive/items", params={"scope": scope})
+        assert r.status_code == 200 and all(i["kind"] != "brief" for i in r.json()["items"]), scope
+    summary = (await client.get("/api/v1/proactive/summary")).json()
+    assert (summary["open"], summary["unread"], summary["high"]) == (1, 1, 0)
 
 
 async def test_seen_clears_the_unread_count(client):
@@ -176,10 +196,11 @@ async def test_snooze_and_dismiss_codes(client):
 
 async def test_config_round_trip_and_refusals(client):
     assert (await client.get("/api/v1/proactive/config")).json()["diagnosis_daily_usd"] == 0
-    r = await client.put("/api/v1/proactive/config", json={"brief_enabled": True, "diagnosis_daily_usd": 0.5})
-    assert r.status_code == 200 and r.json()["brief_enabled"] is True
+    r = await client.put("/api/v1/proactive/config", json={"watches": False, "diagnosis_daily_usd": 0.5})
+    assert r.status_code == 200 and r.json()["watches"] is False
     assert (await client.get("/api/v1/proactive/config")).json()["diagnosis_daily_usd"] == 0.5
-    for bad in ({"diagnosis_daily_usd": 99}, {"quiet_start": "soon"}, {"nonsense": True}):
+    assert not {"brief_enabled", "brief_time"} & set(r.json())                          # INB7-e: the brief's fields went
+    for bad in ({"diagnosis_daily_usd": 99}, {"quiet_start": "soon"}, {"nonsense": True}, {"brief_enabled": True}):
         r = await client.put("/api/v1/proactive/config", json=bad)
         assert r.status_code == 422 and r.json()["detail"] == {"code": "invalid_config"}, bad
     assert (await client.get("/api/v1/proactive/config")).json()["diagnosis_daily_usd"] == 0.5

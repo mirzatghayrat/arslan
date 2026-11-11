@@ -1058,7 +1058,14 @@ async def settle(old_id: str) -> None:
 async def replace(old_id: str, candidate: dict, prepared: dict, keys: dict) -> dict:
     """CAP8-2: an imported group switched off for a hook, replaced by its card's yes: install, then swap (the matrix
     above). An install that doesn't finish (`failed`, `blocked`, a cancel) puts the old group back as it was, off,
-    marked, with its card; its connections are never touched until the new group is in."""
+    marked, with its card; its connections are never touched until the new group is in.
+    HOOK-4 (#853 review): each hook exactly as before keeps the switch the user left it at (`plugin_hooks.carry`, by
+    the digest `changed` compares); a hook that is new or changed takes the default the card showed."""
+    async with db_session.AsyncSessionLocal() as db:
+        old = await db.get(CapabilitySource, old_id)
+        before = ((old.candidate if old is not None else None) or {}).get("hook_rows")
+    if prepared.get("hook_rows"):
+        prepared = {**prepared, "hook_rows": plugin_hooks.carry(before, prepared["hook_rows"])}
     new_id = uuid.uuid4().hex
     await _set_aside(old_id, new_id, prepared["skills"])
     try:

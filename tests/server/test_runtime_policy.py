@@ -7,7 +7,7 @@ import pytest
 from arslan.execution_budget import Budget, BudgetExceeded, Limits, current, scope
 from arslan.models import LLMResponse
 from arslan.runtime_policy import FailureKind, ProgressPolicy, bounded_history, exception_kind, tool_failure
-from server.orchestrator import tool_loop
+from server.orchestrator import answer_salvage, tool_loop
 from server.services.task_repository import TaskError
 
 
@@ -104,7 +104,7 @@ async def test_only_transient_model_errors_retry(monkeypatch, error, retries):
             seen.append(True)
             raise error
     with pytest.raises(type(error)):
-        await tool_loop._chat_retry(Adapter(), "s", "u")
+        await answer_salvage._chat_retry(Adapter(), "s", "u")
     assert len(seen) == retries
 
 
@@ -116,9 +116,9 @@ async def test_answer_salvage_never_swallows_runtime_control(monkeypatch, error,
             raise error
     with pytest.raises(type(error)):
         if salvage == "plain":
-            await tool_loop._salvage_plain(Adapter(), "s", "u")
+            await answer_salvage._salvage_plain(Adapter(), "s", "u")
         else:
-            await tool_loop._synthesize_from_findings(Adapter(), "s", "u", [
+            await answer_salvage._synthesize_from_findings(Adapter(), "s", "u", [
                 {"tool": "read", "result": {"ok": True, "text": "synthetic evidence"}}])
 
 

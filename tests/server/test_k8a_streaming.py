@@ -22,7 +22,7 @@ import httpx
 import pytest
 
 from arslan.llm.adapter import LLMAdapter
-from server.orchestrator import tool_loop, turn_stream
+from server.orchestrator import answer_guards, model_step, tool_loop, turn_stream
 from sqlalchemy import select
 
 from server.db.models import CompanionTask, Run
@@ -132,7 +132,7 @@ async def test_a_long_answer_goes_out_while_it_is_written(turn):
         tool_loop._TurnText.show = original
     total = len([e for e in _reply(PROSE).split(b"\n\n") if e])
     assert at_first and at_first[0] < total                       # out before the model finished
-    assert (at_first[0] - 1) * 20 >= tool_loop._DEFERRAL_MAX       # and not before the window passed
+    assert (at_first[0] - 1) * 20 >= answer_guards._DEFERRAL_MAX      # and not before the window passed
     assert "".join(chunks) == result["final"] and result["final"].strip() == PROSE.strip()
 
 
@@ -168,7 +168,7 @@ async def test_a_tool_call_written_as_text_never_goes_out_one_char_at_a_time(tur
     text = PROSE + marker + " and some words after it."
     result, chunks, events, _ = await turn([_reply(text, size=1), _reply(PROSE)], tools=("web_search",))
     joined = "".join(chunks)
-    assert not tool_loop._embeds_protocol(joined) and joined.startswith(PROSE[:100])
+    assert not answer_guards._embeds_protocol(joined) and joined.startswith(PROSE[:100])
     assert any(e["type"] == "stream_restart" for e in events) and result["final"].strip() == PROSE.strip()
 
 
@@ -209,10 +209,10 @@ def test_what_is_held_back_stays_bounded():
     step = tool_loop._StepStream(tool_loop._TurnText(shown.append))
     for ch in PROSE * 2:
         step.feed(ch)
-        assert len(step.pending) <= tool_loop._STREAM_HOLD
+        assert len(step.pending) <= turn_stream._STREAM_HOLD
     for ch in '{"a": "' + "x" * 3000:                             # a JSON object still open
         step.feed(ch)
-        assert len(step.pending) <= tool_loop._JSON_HOLD + tool_loop._STREAM_HOLD
+        assert len(step.pending) <= turn_stream._JSON_HOLD + turn_stream._STREAM_HOLD
 
 
 async def test_an_error_after_text_went_out_ends_with_interrupted_and_a_failure(turn):
@@ -235,14 +235,14 @@ async def test_a_cut_answer_is_continued_never_resent(turn):
     result, chunks, _, bodies = await turn([_reply(PROSE, stop="length"), _reply(" And that is the end.")])
     joined = "".join(chunks)
     assert joined == result["final"] and joined.rstrip().endswith("And that is the end.")
-    assert bodies[1]["messages"][-1]["content"] == tool_loop.CONTINUE_PROMPT
+    assert bodies[1]["messages"][-1]["content"] == model_step.CONTINUE_PROMPT
 
 
 async def test_an_answer_that_keeps_claiming_is_sent_back_at_most_twice(turn):
     claim = _reply("I searched the web: it is 42.")
     result, _, _, bodies = await turn([claim, claim, claim, "fallback"], tools=("web_search",))
     streamed = [b for b in bodies if b.get("stream")]
-    assert len(streamed) == tool_loop._UNVERIFIED_BOUNCES + 1 and "42" not in (result["final"] or "")
+    assert len(streamed) == turn_stream._UNVERIFIED_BOUNCES + 1 and "42" not in (result["final"] or "")
 
 
 async def test_a_bad_link_after_text_went_out_is_listed_not_rewritten(turn, monkeypatch, execution_db):
@@ -320,8 +320,8 @@ async def test_whether_a_turn_streams(execution_db, monkeypatch):
 
 
 def test_nothing_found_is_not_a_search_claim():
-    assert not tool_loop._claims_search("没查到相关结果") and not tool_loop._claims_search("未查到")
-    assert not tool_loop._claims_search("查到了三条")        # 2026-11-03: 「查到」 claims no web search (test_k8a_one_answer)
+    assert not answer_guards._claims_search("没查到相关结果") and not answer_guards._claims_search("未查到")
+    assert not answer_guards._claims_search("查到了三条")        # 2026-11-03: 「查到」 claims no web search (test_k8a_one_answer)
 
 
 async def test_text_that_went_out_before_a_choice_card_is_kept(maker, monkeypatch):  # noqa: F811

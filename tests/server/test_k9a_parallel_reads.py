@@ -285,7 +285,7 @@ def test_the_allowlist_is_reads_only():
     assert parallel_reads.READS == {"web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
                                     "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities",
                                     "whats_new", "my_status", "task_progress", "background_status",
-                                    "mac_list_shortcuts"}
+                                    "mac_list_shortcuts", "progress_report"}
 
 
 async def test_the_run_record_has_one_step_per_call_with_its_own_arguments(monkeypatch, execution_db):

@@ -126,15 +126,16 @@ describe("the gaps the #611 review found in the tests (3)", () => {
     expect(allow).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("「知道了」 looks held, with the visible held style (R2, R3)", async () => {
-    cards([item(6, "brief")]);
+  // INB7-e: this held 「知道了」, the brief's read-only door; the brief went with it, so a reminder's own first door is checked.
+  it("「去办」 looks held, with the visible held style (R2, R3)", async () => {
+    cards([item(6)]);
     await settle(600);
     resized();
     resized();
-    const gotIt = screen.getByRole("button", { name: "Got it" });
-    expect(gotIt).toHaveAttribute("aria-disabled", "true");
-    expect(gotIt.className).toContain("aria-disabled:opacity-50");
-    expect(gotIt.className).toContain("aria-disabled:cursor-not-allowed");
+    const doIt = screen.getByRole("button", { name: "Do it" });
+    expect(doIt).toHaveAttribute("aria-disabled", "true");
+    expect(doIt.className).toContain("aria-disabled:opacity-50");
+    expect(doIt.className).toContain("aria-disabled:cursor-not-allowed");
   });
 });
 

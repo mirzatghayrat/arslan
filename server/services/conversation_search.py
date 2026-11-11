@@ -16,6 +16,33 @@ from server.db import session as db_session
 
 SNIPPET_CHARS = 240
 MAX_LIMIT = 20
+#: The conversations no other conversation may read, over `conversation_contexts c`: temporary and "don't use memory" ones,
+#: and sub-sessions (SUB2: a sub-session's settings live along its chain, not on this row, and no list shows one). `search`
+#: leaves them out, and so does progress_report (INB7-f, #862 review).
+HIDDEN_SQL = "c.temporary = 1 OR c.no_memory = 1 OR c.kind = 'sub'"
+
+
+def refusal(ctx) -> dict | None:
+    """Why this turn may not use past conversations, or None: the memory block's permissions. Off in a temporary or "no
+    memory" conversation, and off for a cloud model when the user turned memory off for conversations. The tools that read
+    other conversations (conversation_search, progress_report) answer with this."""
+    if ctx is not None and (ctx.no_memory or ctx.temporary):
+        return {"ok": False, "external": False, "error": "memory is off for this conversation"}
+    if ctx is not None and not ctx.model_is_local and not ctx.cloud_memory_effective:
+        return {"ok": False, "external": False, "error": "using past conversations is turned off (Settings › Memory)"}
+    return None
+
+
+async def hidden(db, ids) -> set[str]:
+    """Which of these conversations no other conversation may read (HIDDEN_SQL)."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import aliased
+
+    from server.db.companion_models import ConversationContext
+    if not ids:
+        return set()
+    c = aliased(ConversationContext, name="c")
+    return set((await db.execute(select(c.id).where(c.id.in_(list(ids)), text(HIDDEN_SQL)))).scalars())
 
 
 def _snippet(content: str, query: str) -> str:
@@ -41,9 +68,7 @@ async def search(query: str, *, since: datetime | None = None, until: datetime |
     params: dict = {"limit": limit, "like": f"%{q}%", "since": since, "until": until,
                     "exclude": exclude_conversation or ""}
     where = ("m.role IN ('user', 'arslan') "
-             "AND NOT EXISTS (SELECT 1 FROM conversation_contexts c WHERE c.id = m.conversation_id "
-             # SUB2: a sub-session's settings live along its chain, not on this row, and no list shows one.
-             "AND (c.temporary = 1 OR c.no_memory = 1 OR c.kind = 'sub')) "
+             f"AND NOT EXISTS (SELECT 1 FROM conversation_contexts c WHERE c.id = m.conversation_id AND ({HIDDEN_SQL})) "
              "AND (:since IS NULL OR m.timestamp >= :since) AND (:until IS NULL OR m.timestamp <= :until) "
              "AND m.conversation_id != :exclude")
     async with db_session.AsyncSessionLocal() as db:

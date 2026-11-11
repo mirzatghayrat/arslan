@@ -2,7 +2,7 @@ import { request } from "./client";
 
 // 0.1.47 proactivity. Text arrives as KEYS + params (see locales/proactive.ts); only `goal`,
 // which a background job will be asked to do, is prose.
-export type ProactiveKind = "job_followup" | "scheduled_problem" | "web_change" | "folder_change" | "brief";
+export type ProactiveKind = "job_followup" | "scheduled_problem" | "web_change" | "folder_change";
 export type ProactiveStatus = "new" | "seen" | "accepted" | "snoozed" | "dismissed" | "expired";
 export interface ProactiveEvidence { key: string; params: Record<string, unknown>; quote?: string }
 export interface ProactiveItem {
@@ -27,7 +27,7 @@ export interface ProactiveSummary {
 export interface Waiting { count: number; conversations: string[]; projects: string[]; scheduled: number[] }
 export interface ProactiveConfig {
   enabled: boolean; quiet_start: string; quiet_end: string;
-  job_followups: boolean; scheduled_problems: boolean; watches: boolean; brief_enabled: boolean; brief_time: string;
+  job_followups: boolean; scheduled_problems: boolean; watches: boolean;
   diagnosis_daily_usd: number;
 }
 export interface ProactiveWatch {
