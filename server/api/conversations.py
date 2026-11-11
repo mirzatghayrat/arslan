@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, func, select
 
@@ -140,6 +140,34 @@ async def conversation_list(db: AsyncSession, *, quick: bool = False, sub: bool 
         elif item.parent_id and item.state not in ("working", "waiting") and item.conversation_id in reporting:
             item.state, item.reporting = "working", True
     return out
+
+
+#: The longest query the search takes; `conversation_search.search` cuts there too.
+SEARCH_QUERY_CHARS = 200
+
+
+@router.get("/conversations/search")
+async def search_conversations(q: str = Query(min_length=1, max_length=SEARCH_QUERY_CHARS),
+                               db: AsyncSession = Depends(get_session)) -> list[dict]:
+    """The sidebar's search, its "In messages" part: the words around each match, newest first, at most
+    `conversation_search.MAX_LIMIT`. Auth-gated by the router dependency, like GET /conversations.
+
+    Only conversations the window lists (`conversation_list`'s rule, `phone_ids.in_list`), so a quick question
+    never shows here; `conversation_search.search` already leaves out temporary and no-memory conversations and every
+    sub-session (a sub-session is found by its title only, in the window). The snippet is plain text: the window shows
+    it as text, with the match marked."""
+    from server.db.companion_models import ConversationContext
+    from server.services import conversation_search, phone_ids
+    query = " ".join(q.split())
+    if not query:
+        raise HTTPException(422, detail={"code": "empty_query"})
+    found = await conversation_search.search(query, limit=conversation_search.MAX_LIMIT)
+    ids = {r["conversation_id"] for r in found}
+    kinds = dict((await db.execute(select(ConversationContext.id, ConversationContext.kind).where(
+        ConversationContext.id.in_(ids)))).all()) if ids else {}
+    return [{"conversation_id": r["conversation_id"], "message_id": r["message_id"], "who": r["who"],
+             "when": r["when"], "snippet": r["snippet"]}
+            for r in found if phone_ids.in_list(r["conversation_id"], kinds.get(r["conversation_id"]))]
 
 
 @router.get("/conversations/{conversation_id}/sub-sessions/spend")

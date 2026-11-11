@@ -278,6 +278,47 @@ def island_feed(after: int = 0) -> dict:
                 "active": active, "events": events}
 
 
+def conversations_in_view(feed: dict) -> set[str]:
+    """Every conversation an island feed or a status snapshot names, and every one with work in flight."""
+    with _lock:
+        working = set(_working.values())
+    return {cid for cid in (*working, *feed.get("awaiting_conversations", ()),
+                            *(a.get("conversation_id") for a in feed.get("active", ())),
+                            *(e.get("conversation_id") for e in feed.get("events", ()))) if cid}
+
+
+def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | None = None) -> dict:
+    """SUB5b: an island feed or a status snapshot with each sub-session's work counted as its commander's (`tops`: a
+    sub-session -> the top of its chain, the conversation the Mac lists it under). Its events and cards name the
+    commander; its work in flight is one entry for the commander, named by it (`names`) and with no Stop of its own
+    (stopping the commander stops it), and none when the commander has work of its own; `working` counts it so too.
+    A sub-session's own job ends are no event at all (background_jobs._report): the commander's summary reports once."""
+    if not tops:
+        return feed
+    out = {**feed, "events": [{**e, "conversation_id": tops.get(e.get("conversation_id"), e.get("conversation_id"))}
+                              for e in feed.get("events", ())]}
+    if "awaiting_conversations" in feed:
+        out["awaiting_conversations"] = sorted({tops.get(cid, cid) for cid in feed["awaiting_conversations"]})
+    if "active" in feed:
+        own = {a.get("conversation_id") for a in feed["active"] if a.get("conversation_id") not in tops}
+        active, folded = [], set()
+        for activity in feed["active"]:
+            top = tops.get(activity.get("conversation_id"))
+            if top is None:
+                active.append(activity)
+            elif top not in own and top not in folded:
+                folded.add(top)
+                active.append({**activity, "conversation_id": top, "title": _clip((names or {}).get(top), TITLE_CHARS),
+                               "job_id": None})
+        out["active"] = active
+    if "working" in feed:
+        with _lock:
+            working = list(_working.values())
+        own_work = [cid for cid in working if cid not in tops]
+        out["working"] = len(own_work) + len({tops[cid] for cid in working if cid in tops} - set(own_work))
+    return out
+
+
 def _reset_for_tests() -> None:
     global _event_ids
     with _lock:

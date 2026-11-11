@@ -207,15 +207,21 @@ def references_dir(key: str) -> Path:
 
 # ── reading one folder ─────────────────────────────────────────────────────────────────────────────────────────
 
-def _read_file(path: Path) -> bytes:
+def _read_file(path: Path, expect: os.stat_result | None = None) -> bytes:
     """A regular file's bytes, never through a link. Opened without blocking and checked as opened (#808 review): a
-    FIFO swapped in after the caller's lstat would otherwise hold the open until something writes to it. Raises
+    FIFO swapped in after the caller's lstat would otherwise hold the open until something writes to it. With
+    `expect`, the caller's lstat, the opened file must be that same file and have no other name on disk (#829 review:
+    a second name swapped in between would bring in outside bytes; #816's `_read_tree` checks the same). Raises
     OSError for anything that is not a regular file, and TooLarge for one over MAX_BYTES, which is refused, never cut
     (#809 review: a cut file's hash covers only its start)."""
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as handle:
-        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+        opened = os.fstat(handle.fileno())
+        if not stat.S_ISREG(opened.st_mode):
             raise OSError(f"not a regular file: {path.name}")
+        if expect is not None and ((opened.st_dev, opened.st_ino) != (expect.st_dev, expect.st_ino)
+                                   or opened.st_nlink > 1):
+            raise OSError(f"changed while it was read: {path.name}")
         data = handle.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
         raise TooLarge(f"larger than {MAX_BYTES} bytes: {path.name}")

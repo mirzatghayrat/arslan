@@ -23,6 +23,10 @@ SUB5a: what a restart, a stop and a delete do to them. Each sub-session's row sa
 of a conversation's run stops everything under it, and a sub-session that turn would start afterwards
 (`stopping`, `stop_tree`). Deleting a conversation goes through `before_delete`, and leaves its row a tombstone that
 refuses it from then on (`tombstone`, `is_deleted`).
+
+SUB5b: any job that starts in a sub-session runs as the sub-session's, read from the stored kind (`placement`).
+Whole-app summaries count a sub-session's work as the top of its chain's (`commanders`); the whole app's lists leave it
+out (`not_sub`); a brief framed as outside content marks the sub-session's later typed turns too.
 """
 from __future__ import annotations
 
@@ -48,6 +52,8 @@ MAX_DEPTH = 3
 SUB = "sub"
 #: SUB5a: the kind a deleted conversation's row is left with (`tombstone`).
 DELETED = "deleted"
+#: SUB5b: every sub-session's id starts with this (`create_child`), so one whose row is gone still reads as one.
+CHILD_PREFIX = "sub-"
 #: SUB3 (card, rule 10): how many sub-sessions one conversation may start, by its layer (a commander, a sub-session),
 #: and how many may be alive at once in one tree. The bench may move these numbers.
 MAX_CHILDREN = {1: 4, 2: 2}
@@ -173,7 +179,7 @@ async def create_child(db, parent_id: str, child_id: str | None = None) -> Conve
     if await depth(db, parent_id) >= MAX_DEPTH:
         raise SubSessionError("sub_session_depth")
     child = ConversationContext(
-        id=child_id or f"sub-{uuid4()}", owner_id=parent.owner_id, kind=SUB, parent_id=parent_id,
+        id=child_id or f"{CHILD_PREFIX}{uuid4()}", owner_id=parent.owner_id, kind=SUB, parent_id=parent_id,
         project_id=effective.project_id, no_learning=True, sub_state=WORKING,
         cloud_memory_allowed=effective.cloud_memory_allowed, allow_sensitive=effective.allow_sensitive)
     db.add(child)
@@ -218,7 +224,9 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
     is not the user's words: the job drops what the user asked to save (`background_jobs._execute`).
 
     SUB5a: refused (`sub_session_stopped`) once the window stopped the turn that starts it (`stopping`), checked
-    again right before its job starts, with no await between, so a stop either refuses it or finds its job."""
+    again right before its job starts, with no await between, so a stop either refuses it or finds its job. SUB5b: its
+    `placement` is read before that check, and the job starts through `background_jobs.start_placed`, which is not
+    async."""
     from server.db import session as db_session
     from server.orchestrator import memory, untrusted
     from server.services import background_jobs, execution_context
@@ -243,13 +251,16 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
                 raise SubSessionError("sub_session_alive")
             child = (await create_child(db, parent_id)).id
             await db.commit()
-        framed = untrusted.wrap_external(brief) if outside_seen else None
+        # SUB5b: under a line of its own, so a later turn the user types there starts as having read outside content too.
+        framed = untrusted.sub_session_brief(brief) if outside_seen else None
         await memory.add_message(child, "user", framed or brief, display_content=brief if framed else None)
+        placed = await placement(child)  # SUB5b: its last await, read before the check below
         if turn in _stopped_runs:        # stopped while this one was being made: it never runs, and owes nothing
+            _parents.pop(child, None)
             await _set_state([child], None)
             raise SubSessionError("sub_session_stopped")
         _parents[child] = parent_id
-        await background_jobs.start(child, brief, [], outside_seen=outside_seen, parent_id=parent_id)
+        background_jobs.start_placed(child, brief, [], placed, outside_seen=outside_seen, parent_id=parent_id)
     return child
 
 
@@ -467,6 +478,57 @@ async def sub_ids(db, ids: list[str]) -> set[str]:
         return set()
     return set((await db.execute(select(ConversationContext.id).where(
         ConversationContext.id.in_(ids), ConversationContext.kind == SUB))).scalars())
+
+
+# -- SUB5b: where a sub-session's work shows, and how a job in one runs ------------------------------------------
+
+def refusal(conversation_id: str, row: ConversationContext | None) -> str | None:
+    """Why no job may start in this conversation (None: it may). Fail closed: a sub-session is never read as an
+    ordinary conversation, which would give its job every tool, memory and learning, its cards in its own window, no
+    tree limit and no report up.
+    - `conversation_deleted`: it was deleted (`is_deleted`: its tombstone, or this process's mark).
+    - `sub_session_parent_missing`: it is a sub-session whose parent can't be named. Its row says sub-session with no
+      parent, or it has no row but the id only `create_child` gives (CHILD_PREFIX), read from the id as
+      `phone_ids.kind_of` reads a quick question. A sub-session a delete's keep promoted has a `chat` row: ordinary."""
+    if is_deleted(conversation_id, row):
+        return "conversation_deleted"
+    if row is None:
+        return "sub_session_parent_missing" if conversation_id.startswith(CHILD_PREFIX) else None
+    return "sub_session_parent_missing" if row.kind == SUB and not row.parent_id else None
+
+
+async def placement(conversation_id: str) -> tuple[str | None, str | None]:
+    """For a job about to start in this conversation: its stored parent and the top of its chain, or (None, None)
+    when it isn't a sub-session. Read from the stored kind, never this process's memory, so a job anyone starts in a
+    sub-session (an accepted Inbox follow-up, a typed turn's background work) is the sub-session's: offered `TOOLS`
+    only, its cards asked in its parent, the tree's spend, its report going up. Refused (SubSessionError) where
+    `refusal` says so. Its row records WORKING, as `start` writes it: it owes its parent this job's report, so a
+    restart meanwhile tells the parent (`report_restart`)."""
+    from server.db import session as db_session
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(ConversationContext, conversation_id)
+        if code := refusal(conversation_id, row):
+            raise SubSessionError(code)
+        if row is None or row.kind != SUB:
+            return None, None
+        parent_id, top = row.parent_id, await root_of(db, conversation_id)
+        if row.sub_state != WORKING:
+            row.sub_state = WORKING
+            await db.commit()
+    _parents[conversation_id] = parent_id      # its parent's summary waits for this job too (`_at_work`)
+    return parent_id, top
+
+
+async def commanders(db, ids) -> dict[str, str]:
+    """Each of these conversations that is a sub-session, with the top of its chain: the conversation the Mac lists it
+    under. What sums up the whole app (the island, notifications, the waiting badge) counts its work as that one's."""
+    return {cid: await root_of(db, cid) for cid in await sub_ids(db, [cid for cid in set(ids) if cid])}
+
+
+def not_sub(column):
+    """A SQL condition for the whole app's lists: rows whose conversation isn't a sub-session (or that have none)."""
+    from sqlalchemy import or_
+    return or_(column.is_(None), column.not_in(select(ConversationContext.id).where(ConversationContext.kind == SUB)))
 
 
 async def looser_than_chain(db, row: ConversationContext, values: dict) -> bool:

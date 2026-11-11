@@ -781,7 +781,15 @@
     "moveBack": "戻る",
     "movedTo": "「{{name}}」へ移動しました",
     "movedOut": "プロジェクトから外しました",
-    "moveFailed": "移動できませんでした。作業中かもしれません。"
+    "moveFailed": "移動できませんでした。作業中かもしれません。",
+    "search": {
+      "placeholder": "会話を検索",
+      "clear": "クリア",
+      "titles": "タイトル",
+      "messages": "メッセージ内",
+      "none": "「{{query}}」は見つかりませんでした",
+      "noneHint": "タイトルにもメッセージにもありません。一時的な会話と「記憶を使わない」会話は検索対象外です。"
+    }
   },
   "orchestrator": {
     "greeting_morning": "おはようございます",
@@ -1554,6 +1562,7 @@
       "ended": "完了せずに終了"
     },
     "toggle": "サブセッションを表示／非表示（{{count}}）",
+    "under": "「{{title}}」の下",
     "header": "これは「{{name}}」のサブセッションです。終わると報告します。",
     "back": "「{{name}}」に戻る",
     "panel": "サブセッション",

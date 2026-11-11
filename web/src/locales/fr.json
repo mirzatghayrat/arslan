@@ -781,7 +781,15 @@
     "moveBack": "Retour",
     "movedTo": "Déplacée vers « {{name}} »",
     "movedOut": "Retirée du projet",
-    "moveFailed": "Impossible de la déplacer ; elle travaille peut-être en ce moment."
+    "moveFailed": "Impossible de la déplacer ; elle travaille peut-être en ce moment.",
+    "search": {
+      "placeholder": "Rechercher des conversations",
+      "clear": "Effacer",
+      "titles": "Titres",
+      "messages": "Dans les messages",
+      "none": "Aucun résultat pour « {{query}} »",
+      "noneHint": "Ni dans les titres ni dans les messages. Les conversations temporaires et celles en « Ne pas utiliser la mémoire » ne sont pas recherchées."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Bonjour",
@@ -1554,6 +1562,7 @@
       "ended": "Finie sans aboutir"
     },
     "toggle": "Afficher ou masquer ses sous-sessions ({{count}})",
+    "under": "Sous « {{title}} »",
     "header": "Ceci est une sous-session de « {{name}} » ; elle lui rend compte une fois terminée.",
     "back": "Revenir à « {{name}} »",
     "panel": "Sous-sessions",

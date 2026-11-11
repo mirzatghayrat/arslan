@@ -781,7 +781,15 @@
     "moveBack": "Atrás",
     "movedTo": "Movida a «{{name}}»",
     "movedOut": "Quitada del proyecto",
-    "moveFailed": "No se pudo mover; quizá esté trabajando ahora."
+    "moveFailed": "No se pudo mover; quizá esté trabajando ahora.",
+    "search": {
+      "placeholder": "Buscar conversaciones",
+      "clear": "Borrar",
+      "titles": "Títulos",
+      "messages": "En mensajes",
+      "none": "No se encontró «{{query}}»",
+      "noneHint": "Ni en títulos ni en mensajes. Las conversaciones temporales y las de «No usar memoria» no se buscan."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Buenos días",
@@ -1554,6 +1562,7 @@
       "ended": "Terminó sin acabar"
     },
     "toggle": "Mostrar u ocultar sus subsesiones ({{count}})",
+    "under": "Dentro de «{{title}}»",
     "header": "Esta es una subsesión de «{{name}}»; le informa cuando termina.",
     "back": "Volver a «{{name}}»",
     "panel": "Subsesiones",

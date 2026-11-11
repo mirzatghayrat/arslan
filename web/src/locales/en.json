@@ -781,7 +781,15 @@
     "moveBack": "Back",
     "movedTo": "Moved to “{{name}}”",
     "movedOut": "Removed from the project",
-    "moveFailed": "Couldn't move it — it may be working right now."
+    "moveFailed": "Couldn't move it — it may be working right now.",
+    "search": {
+      "placeholder": "Search conversations",
+      "clear": "Clear",
+      "titles": "Titles",
+      "messages": "In messages",
+      "none": "Nothing found for \"{{query}}\"",
+      "noneHint": "Not in any title or message. Temporary and \"Don't use memory\" conversations aren't searched."
+    }
   },
   "orchestrator": {
     "greeting_morning": "Good morning",
@@ -1554,6 +1562,7 @@
       "ended": "Ended without finishing"
     },
     "toggle": "Show or hide its sub-sessions ({{count}})",
+    "under": "Under \"{{title}}\"",
     "header": "This is a sub-session of «{{name}}»; it reports to it when done.",
     "back": "Back to «{{name}}»",
     "panel": "Sub-sessions",

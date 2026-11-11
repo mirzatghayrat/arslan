@@ -210,7 +210,7 @@ async def test_a_brief_written_after_reading_outside_content_is_stored_framed(he
     async with held() as db:
         [message] = (await db.scalars(select(ArslanMessage).where(
             ArslanMessage.conversation_id == got["sub_session_id"]))).all()
-    assert message.content == untrusted.wrap_external(BRIEF) and message.display_content == BRIEF
+    assert message.content == untrusted.sub_session_brief(BRIEF) and message.display_content == BRIEF
     assert job.outside_seen is True
 
 

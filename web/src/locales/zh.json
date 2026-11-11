@@ -781,7 +781,15 @@
     "moveBack": "返回",
     "movedTo": "已移到「{{name}}」",
     "movedOut": "已移出项目",
-    "moveFailed": "没能移动——它可能正在干活。"
+    "moveFailed": "没能移动——它可能正在干活。",
+    "search": {
+      "placeholder": "搜索对话",
+      "clear": "清空",
+      "titles": "标题",
+      "messages": "消息里",
+      "none": "没找到「{{query}}」",
+      "noneHint": "标题和消息里都没有。临时对话和「不用记忆」的对话不在搜索范围里。"
+    }
   },
   "orchestrator": {
     "greeting_morning": "早上好",
@@ -1554,6 +1562,7 @@
       "ended": "没做完就结束了"
     },
     "toggle": "展开或收起子会话（{{count}}）",
+    "under": "在「{{title}}」下面",
     "header": "这是「{{name}}」的子会话，做完会向它汇报。",
     "back": "回到「{{name}}」",
     "panel": "子会话",
