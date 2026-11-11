@@ -24,11 +24,6 @@ from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services.llm_factory import build_adapter
 from server.services.replay_safety import _check_fetch_budget
-# Only the L0 pins (test_loop1_gate_order.py, test_loop1_pinned_turns.py) still read these here; every other test
-# reads the module that owns them. DELETE-BY: v0.1.64, with LOOP1's slice z2 (it deletes those pins).
-from server.orchestrator.model_step import _BAD_TOOLS, _REFUSES_IMAGES  # noqa: F401
-from server.services.replay_safety import (  # noqa: F401
-    HERMETIC_FETCH_BUDGET, _hermetic_fetches, reset_hermetic_fetch_budget)
 
 logger = logging.getLogger(__name__)
 
@@ -475,12 +470,6 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
         untrusted.mark_external()
         del result["external"]
     return result
-
-
-async def _dispatch_tool(tool_key, args, assistant_content, **turn) -> dict:
-    """`_run_tool` by keyword, the way the L0 gate-order pin calls it; every other test builds its `ToolTurn`.
-    DELETE-BY: v0.1.64, with LOOP1's slice z2 (it deletes that pin)."""
-    return await _run_tool(tool_key, args, assistant_content, ToolTurn(**turn))
 
 
 async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> dict | set[str]:
