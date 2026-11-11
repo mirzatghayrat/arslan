@@ -317,18 +317,16 @@ _FOLDER_REASONS = {"new": "skill_needs_card", "changed": "skill_changed", "gone"
 async def _method_rows() -> list[dict]:
     """The professional methods sit with the skills (v0.1.64 CAP3a; the CAP card, with SUB): built in, never
     switched or deleted here, revised in their editor (`revision`). Named by key while unrevised (the page
-    translates it). Last used: the newest helper a task ran with it."""
-    from server.db.worker_models import TaskWorker
+    translates it). No last use: the helpers that ran with a method went in v0.1.64 SUB6, and nothing else runs
+    one."""
     from server.services import professional_methods
     async with db_session.AsyncSessionLocal() as db:
         methods = await professional_methods.list_methods(db)
         await db.commit()                          # the defaults, written on first read
-        used = dict((await db.execute(select(TaskWorker.method_key, func.max(TaskWorker.created_at))
-                                      .group_by(TaskWorker.method_key))).all())
     rows = []
     for m in methods:
         row = _row(f"method:{m['key']}", "on", name=m["name"] if m["revision"] > 1 else None, section="skills")
-        row.update(revision=m["revision"], last_used=_when(used.get(m["key"])))
+        row.update(revision=m["revision"], last_used=None)
         rows.append(row)
     return rows
 

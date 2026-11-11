@@ -675,33 +675,32 @@ async def test_installed_rows_carry_their_source_and_others_none(api, execution_
 
 
 async def test_the_professional_methods_sit_with_the_skills_built_in_with_their_version(api, execution_db, tmp_path):
-    """CAP3a-2 (the CAP card, with SUB): methods are skills on the page; not switched or deleted here; last used
-    is the newest helper a task ran with one."""
+    """CAP3a-2 (the CAP card, with SUB): methods are skills on the page; not switched or deleted here. No last use
+    since v0.1.64 SUB6: the helpers that ran with a method are gone, even where their old rows are still stored."""
+    from server.db.migrations.versions import _0052_task_workers
     from server.services import professional_methods
     await _seed(execution_db, tmp_path)
     async with execution_db() as db:
         await professional_methods.revise(db, "research", 1, "Research, my way", "Cite every claim.")
         await db.commit()
-    await _used_method(execution_db, "research", datetime(2026, 10, 27, 9))
+    async with execution_db() as db:
+        connection = await db.connection()
+        await connection.exec_driver_sql("PRAGMA foreign_keys=OFF")    # no task or attempt is made
+        for statement in _0052_task_workers._TASK_WORKERS:             # the table as an upgraded install has it
+            await connection.exec_driver_sql(statement)
+        await connection.exec_driver_sql(
+            "INSERT INTO task_workers (id, task_id, attempt_id, spec_revision, method_key, method_revision, "
+            "fingerprint, brief, status, progress, created_at) VALUES ('w1', 't1', 'a1', 1, 'research', 2, 'f', "
+            "'{}', 'completed', '{}', '2026-10-27 09:00:00')")
+        await db.commit()
     rows = await _rows(api)
     methods = {key: row for key, row in rows.items() if key.startswith("method:")}
     assert set(methods) == {f"method:{key}" for key in professional_methods.DEFAULTS}
     research = methods["method:research"]
     assert (research["section"], research["origin"], research["deletable"], research["switch"], research["state"]) \
         == ("skills", "builtin", False, None, "on")
-    assert (research["revision"], research["name"], research["last_used"]) == (2, "Research, my way", "2026-10-27T09:00:00Z")
+    assert (research["revision"], research["name"], research["last_used"]) == (2, "Research, my way", None)
     unrevised = next(row for key, row in methods.items() if key != "method:research")
     assert (unrevised["revision"], unrevised["name"], unrevised["last_used"]) == (1, None, None)
     response = await api.delete("/api/v1/capabilities/method:research")
     assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
-
-
-async def _used_method(execution_db, key: str, when: datetime) -> None:
-    """A helper a task ran with the method. Only its method and time matter here, so the task and attempt it
-    points at are not made (foreign keys off for this one write)."""
-    from server.db.worker_models import TaskWorker
-    async with execution_db() as db:
-        await (await db.connection()).exec_driver_sql("PRAGMA foreign_keys=OFF")
-        db.add(TaskWorker(id="w1", task_id="t1", attempt_id="a1", spec_revision=1, method_key=key, method_revision=2,
-                          fingerprint="f", brief={}, status="completed", created_at=when))
-        await db.commit()

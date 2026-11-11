@@ -26,7 +26,7 @@ from server.orchestrator import run_trace
 from server.registry import tool_defs
 
 #: Reads that never show a card and share no state with each other (⓪Plan's Q2). Not render_chart,
-#: delegate_work, update_plan, browser_* or desktop_* (one browser, one desktop). LOOP1 a6: each tool's
+#: update_plan, browser_* or desktop_* (one browser, one desktop). LOOP1 a6: each tool's
 #: `parallel` trait (server/registry/tool_defs).
 READS = tool_defs.named(lambda traits: traits.parallel)
 CONCURRENCY = 4

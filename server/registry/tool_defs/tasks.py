@@ -24,23 +24,6 @@ TASKS = (
           "additionalProperties": False},
          offered=_in_task,
          traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
-    Tool("delegate_work",
-         "Use only for independent subtasks or isolated review that materially helps the current request. "
-         "Assign up to four small jobs using research, apple-growth or product-design methods; at most two run together. "
-         "Provide minimal context and an explicit read-only tool subset. Workers cannot delegate, change memory or write files. "
-         "Results remain unverified; synthesize and validate them in the host. Do not use for simple questions.",
-         {"type": "object", "properties": {"jobs": {
-             "type": "array", "minItems": 1, "maxItems": 4, "items": {
-                 "type": "object", "properties": {
-                     "method": {"type": "string", "enum": ["research", "apple-growth", "product-design"]},
-                     "objective": {"type": "string", "maxLength": 4000},
-                     "context": {"type": "string", "maxLength": 8000},
-                     "tools": {"type": "array", "maxItems": 2, "items": {
-                         "type": "string", "enum": ["web_search", "web_extract"]}}},
-                 "required": ["method", "objective"], "additionalProperties": False}}},
-          "required": ["jobs"], "additionalProperties": False},
-         offered=_in_task,
-         traits=Traits(effect="read", parallel=False, outside=True, replay_safe=False, saves=False)),
     # 0.1.50 S2: the run's checklist — host bookkeeping (turn_plan), no executor.
     Tool("update_plan",
          "Keep a short checklist for a task with several parts or a target "
@@ -128,5 +111,5 @@ START_SUB_SESSION = Tool(
                   "description": "What the sub-session should do and what done looks like, in the user's language."}},
      "required": ["brief"], "additionalProperties": False},
     # LOOP1 a6: in no table, so in no name set, as before: these are what today's sets say of it. SUB5 decides them
-    # when it joins TASKS (its report carries what the sub-session read, as delegate_work's does).
+    # when it joins TASKS (its report carries what the sub-session read).
     traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False))

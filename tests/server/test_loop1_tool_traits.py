@@ -15,7 +15,7 @@ def test_the_derived_sets_are_the_ones_before_a6():
     assert task_service._READ_TOOLS == {
         "web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir", "search_files", "list_my_tasks",
         "list_nodes", "list_my_capabilities", "whats_new", "my_status", "render_chart", "task_progress",
-        "delegate_work", "background_status", "browser_open", "browser_look", "browser_back", "mac_list_shortcuts",
+        "background_status", "browser_open", "browser_look", "browser_back", "mac_list_shortcuts",
         "update_plan", "desktop_apps", "desktop_look"}
     assert task_service._LOCAL_WRITE_TOOLS == {
         "write_file", "edit_file", "run_python", "remember", "create_skill", "import_memories",
@@ -27,7 +27,7 @@ def test_the_derived_sets_are_the_ones_before_a6():
     # Before a6 a tuple without the browser tools, which `counts_as_external` matched by their prefix instead.
     assert untrusted._OUTSIDE_TOOLS == {
         "web_search", "web_extract", "read_file", "search_files", "conversation_search", "recall", "find_capability",
-        "delegate_work", "task_progress", "browser_open", "browser_look", "browser_back", "browser_click",
+        "task_progress", "browser_open", "browser_look", "browser_back", "browser_click",
         "browser_type", "browser_select", "browser_press",
         "verify"}       # CAP10: what a project's own tests printed
     assert parallel_reads.READS <= task_service._READ_TOOLS

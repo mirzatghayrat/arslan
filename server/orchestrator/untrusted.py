@@ -55,13 +55,12 @@ def wrap_tool_output(text: str) -> str:
     return f"{TOOL_OPEN}\n{_strip_injection(text)}\n{TOOL_CLOSE}"
 
 
-# S64-0: delegate_work's results are what its helpers read on the web (web_search, web_extract).
-_WEB_TOOLS = ("web_search", "web_extract", "find_capability", "delegate_work")
+_WEB_TOOLS = ("web_search", "web_extract", "find_capability")
 
 
 def from_the_web(tool_key: str, args: dict | None) -> bool:
     """A result read from the network (web search and pages, the browser, MCP servers, a command that
-    reaches the network, a helper's report): framed as web content. Everything else a tool returns is
+    reaches the network): framed as web content. Everything else a tool returns is
     tool output."""
     if tool_key in _WEB_TOOLS or tool_key.startswith(("browser_", "mcp_")):
         return True
@@ -77,8 +76,7 @@ def from_the_web(tool_key: str, args: dict | None) -> bool:
 # run_native for one turn; outside a turn the answer is "yes" (the safe side).
 
 _EXTERNAL: contextvars.ContextVar[dict | None] = contextvars.ContextVar("turn_external_seen", default=None)
-# S64-0: delegate_work (its helpers read the web) and task_progress (a task's earlier outputs, which
-# carry old replies, like conversation_search). LOOP1 a6: each tool's `outside` trait (server/registry/
+# S64-0: task_progress (a task's earlier outputs, which carry old replies, like conversation_search). LOOP1 a6: each tool's `outside` trait (server/registry/
 # tool_defs), so the browser_* tools are named here too; the prefix test below still covers any browser_ key.
 _OUTSIDE_TOOLS = tool_defs.named(lambda traits: traits.outside)
 # S64-0: outside content already in a run's inputs before its first step: a background job whose goal

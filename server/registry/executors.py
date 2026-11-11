@@ -31,7 +31,7 @@ from server.registry.hands_tools import (
     DesktopAccessExecutor, DesktopBatchExecutor, DesktopMenuExecutor, DesktopOpenExecutor, DesktopTakeoverExecutor, DesktopPressExecutor, DesktopScrollExecutor, DesktopSelectExecutor, DesktopTypeExecutor,
     MacAppleScriptExecutor, MacListShortcutsExecutor, MacRunShortcutExecutor)
 from server.registry.task_tools import (
-    BackgroundStatusExecutor, DelegateWorkExecutor, StartBackgroundWorkExecutor,
+    BackgroundStatusExecutor, StartBackgroundWorkExecutor,
     StopBackgroundWorkExecutor, TaskProgressExecutor)
 # Module-qualified on purpose. `from net_pin import net_pin._fetch_text` binds the name HERE at
 # import time, so a test patching net_pin._fetch_text would never reach this caller —
@@ -884,7 +884,7 @@ class RunCommandExecutor:
         if verdict.level == "forbid":
             return {"ok": False, "error": f"Arslan never runs this: {verdict.reason}"}
         # 0.1.62 F1: never past what the turn or job has left, so the command's own limit stops
-        # it (with its output) before the turn's does (with nothing), as delegate_work does.
+        # it (with its output) before the turn's does (with nothing).
         limit = terminal_exec.timeout_of(args.get("timeout_s"))
         budget = execution_budget.current()
         if budget is not None:
@@ -1140,7 +1140,7 @@ EXECUTORS = {e.key: e for e in (
     RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(), MyStatusExecutor(),
     FindCapabilityExecutor(), VerifyExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
-    TaskProgressExecutor(), DelegateWorkExecutor(),
+    TaskProgressExecutor(),
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),
     # 0.1.45 hands: Arslan's browser and Mac automation (acting only inside background jobs).
     BrowserOpenExecutor(), BrowserLookExecutor(), BrowserBackExecutor(), BrowserClickExecutor(),

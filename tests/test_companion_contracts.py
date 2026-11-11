@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from arslan.companion.contracts import (
     AcceptanceCheck, ActionJournal, BudgetSpec, CheckResult, ConnectionMetadata,
-    ContextReceipt, Grant, ResourceRef, Scope, TaskSpec, TaskState, ToolResult, WorkerBrief,
+    ContextReceipt, Grant, ResourceRef, Scope, TaskSpec, TaskState, ToolResult,
 )
 
 NOW = datetime(2026, 9, 14, tzinfo=UTC)
@@ -21,7 +21,7 @@ def task():
 
 @pytest.mark.parametrize("contract", [
     AcceptanceCheck, ActionJournal, BudgetSpec, CheckResult, ConnectionMetadata,
-    ContextReceipt, Grant, ResourceRef, Scope, TaskSpec, TaskState, ToolResult, WorkerBrief,
+    ContextReceipt, Grant, ResourceRef, Scope, TaskSpec, TaskState, ToolResult,
 ])
 def test_every_contract_has_closed_versioned_schema(contract):
     schema = contract.model_json_schema()

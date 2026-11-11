@@ -29,7 +29,6 @@ from server.services import (
     permissions,
     replay_safety,
     task_service,
-    task_workers,
 )
 from tests.server.scripted_turn import booted_db_fixture, turn_db_fixture  # noqa: F401 — the fixtures
 
@@ -49,7 +48,6 @@ class _Env:
         self.confirm_schedule = self._card("schedule", True)
         self.mcp_fail_counts = {}
         self.fails = None
-        self.tokens = None
 
     def _card(self, name, answer):
         async def card(*_args, **_own):
@@ -91,12 +89,6 @@ def _spent(env):
 
 def _secret(env):
     env.args.update(SECRET)
-
-
-def _other_worker(env):
-    token = task_workers._worker.set(task_workers.WorkerScope("w1", "t1", frozenset()))
-    env.monkeypatch.setattr(task_service, "current", lambda: types.SimpleNamespace(task_id="t1", closed=False))
-    env.tokens = (task_workers._worker, token)
 
 
 def _nobody(env):
@@ -222,11 +214,10 @@ BUDGET = Gate("budget", _spent, BudgetExceeded, before_frame=True)
 CREDENTIALS = Gate("credentials", _secret,
                    "Credentials cannot be passed as ordinary tool arguments. Use an approved connection.",
                    before_frame=True)
-WORKER = Gate("worker", _other_worker, "This collaborator cannot use that tool.", before_frame=True)
 UNAVAILABLE = Gate("unavailable", _not_live, "is not available to you; you may escalate a need instead")
 EVAL = "is unavailable here. This run is a hermetic evaluation replay that exposes read-only tools only"
 HERMETIC_GATE = Gate("hermetic", _hermetic, EVAL)
-COMMON = [BUDGET, CREDENTIALS, WORKER, UNAVAILABLE]
+COMMON = [BUDGET, CREDENTIALS, UNAVAILABLE]
 FILE_ARGUMENTS = Gate("file arguments", _no_path, "A non-empty string path is required; write_file also requires "
                       "string content. No permission decision was requested and no file was accessed.")
 WRITE_DECLINED = Gate("write declined", _write_declined, "user declined workspace write access", card="write")
@@ -261,7 +252,7 @@ CHAINS = {
         Gate("schedule declined", _schedule_declined, "user declined to schedule this task", card="schedule"),
         _hermetic_after("schedule")]),
     "run_command": ({"command": "ls"}, [
-        BUDGET, CREDENTIALS, WORKER,
+        BUDGET, CREDENTIALS,
         Gate("nobody to ask", _nobody, "needs the user's OK, and this run has nobody to ask: a scheduled run never "
              "takes such a step, and no earlier answer counts here. It was not done."),
         UNAVAILABLE, FORBIDDEN, HEREDOC, JXA,
@@ -349,9 +340,6 @@ async def _outcome(env):
         return str(await env.run())
     except BudgetExceeded as exc:
         return type(exc)
-    finally:
-        if env.tokens:
-            env.tokens[0].reset(env.tokens[1])
 
 
 def _answered_by(gate, env, outcome):
@@ -395,10 +383,11 @@ async def test_enrolling_answers_before_the_eval_backstop(monkeypatch):
 
 
 @pytest.mark.parametrize("gate,recorded_args,counted", [
-    (CREDENTIALS, {}, 1), (WORKER, {}, 0), (UNAVAILABLE, {"q": 1}, 1), (HERMETIC_GATE, {"q": 1}, 1)])
+    (CREDENTIALS, {}, 1), (UNAVAILABLE, {"q": 1}, 1), (HERMETIC_GATE, {"q": 1}, 1)])
 async def test_what_a_refusal_records(gate, recorded_args, counted, monkeypatch):
-    """Two refusals record no arguments, in the trace and in the call's own text, and one of them doesn't count
-    against an MCP tool's streak. The rest record the call as it came."""
+    """A credentials refusal records no arguments, in the trace and in the call's own text. The rest record the call
+    as it came. Each counts against an MCP tool's streak. (The helpers' scope refusal, which recorded none and didn't
+    count, went with the helpers in v0.1.64 SUB6.)"""
     env = _Env("mcp_1__lookup", {"q": 1}, monkeypatch)
     gate.trip(env)
     await _outcome(env)
