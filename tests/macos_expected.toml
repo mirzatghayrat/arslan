@@ -18,6 +18,69 @@ markers = 3
 cases = 171
 xfail = 0
 
+# 0.1.64 HR-1 review delta 12, the profile folder (`sandbox-profiles/` in Arslan's data folder) closed, in the commands
+# preset, an MCP server's and the outside floor, from a profile delivered by `-f`: its own profile read, rewritten or
+# removed, another rewritten or renamed, a new one added and the folder listed are each refused and the files
+# unchanged, while the preset's writable folder is written (3 cases).
+["server/sbx/test_hr1_profile_folder_closed.py"]
+markers = 1
+cases = 3
+xfail = 0
+
+# 0.1.64 HR-1 review delta 9, consumer aliases, in the commands preset, an MCP server's granted folder and the outside
+# floor: a held name of each family, or a held folder, linked into node_modules is refused through the link and held
+# in place, and a held name in another dependency is refused too (21 cases); a held name linked into an ordinary
+# sibling folder is refused and turns the exemption off (3 cases); no new link at a held name or held folder name, by
+# symlink or by rename, while an ordinary link and folder are made and a dependency stays writable (3 cases); and the
+# measurement the link rule rests on (1 case).
+["server/sbx/test_hr1_run_later_aliases.py"]
+markers = 4
+cases = 28
+xfail = 0
+
+# 0.1.64 HR-1: real seatbelt refuses a plain write to one name of each run-later family in the commands preset
+# (6 cases) and in an MCP server's granted and own folders, and git still commits, branches, checks out and stashes
+# inside the sandbox while a config write fails. A dependency folder (node_modules) may hold those names, and the same
+# names elsewhere stay refused (1 case, #813 review). checkout and a fast-forward merge that must change a tracked held
+# file leave it as it was, and git's real output carries the note (2 cases); a work folder inside node_modules keeps
+# every name held (1 case, #813 review 2). CI files are written like any other, and the everyday git flow is measured
+# step by step (2 cases, #813 review 3). The four config-only refusals at exit 0, the held-file checkout under the
+# outside floor that holds them, and that checkout in German and Chinese carry the git note; an MCP server's own
+# folder inside node_modules keeps every name held (8 cases, #813 review 4). A checkout under `2>&1` gets the note
+# from stdout; a commit whose hook prints its `.husky` path and the add of an ignored `.envrc` name a held file without
+# a refusal and get none (3 cases, #813 review 5). The ancestor hold: the held folders and the folders above them stay
+# in place in both presets and under the floor, a rename round trip leaves no held file (.git, .vscode, .husky),
+# committing still works and `rm -rf .git` fails, a dependency's folders still move, and past the walk's cap they are
+# held by name (9 cases, #813 review 6). 2,000 repositories take the held-folder cap's fallback fast, and a command
+# still starts there with a hook write refused (1 case, #813 review 7). With a scratch HOME as the work folder, a
+# repository in ~/Documents or ~/Library, which the walk doesn't list, is held by name: a hook write, a rename of its
+# `.git` and a new `.git` there are refused, while a new `.git` in an ordinary folder is made (2 cases, #813 review 8).
+["server/sbx/test_hr1_run_later_kernel.py"]
+markers = 22
+cases = 37
+xfail = 0
+
+# 0.1.64 HR-1 review delta 11, links past the held-folder cap, in the commands preset, an MCP server's granted folder
+# and the outside floor, with more held folders than the cap: 200 and 256 links at held names have every target's
+# held names refused and the target held in place, the profile delivered as a file (6 cases); past 256 (257, 1,000 and
+# 4,097 links) no profile is built (9 cases); from the product path the command doesn't start, with the note, and no
+# profile file is left (1 case).
+["server/sbx/test_hr1_run_later_link_cap.py"]
+markers = 3
+cases = 16
+xfail = 0
+
+# 0.1.64 HR-1 review delta 10, link targets, in the commands preset, an MCP server's granted folder and the outside
+# floor: a held name or held folder that is a link (as a checkout leaves it) has the held names at its real path held,
+# mapped through the link and only those: .vscode, .husky, .envrc, .claude, deeper siblings, .cursor and a file link
+# (24 cases); a link on inside a linked folder is followed (3 cases); a broken link's target can't be made (3 cases);
+# an ordinary link and an unlinked folder are unaffected (3 cases); a `.git` that is a link has its hooks and config
+# held, objects written, and stays in place (3 cases).
+["server/sbx/test_hr1_run_later_link_targets.py"]
+markers = 5
+cases = 36
+xfail = 0
+
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
 # protected folder named in ASCII, CJK, accents, emoji or with a control character is closed; a
 # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
