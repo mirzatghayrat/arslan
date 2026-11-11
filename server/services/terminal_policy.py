@@ -224,17 +224,20 @@ _ASK = [
                        r"|\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$|\S))"
                        r"|docker\s+(?:image\s+)?push|terraform\s+(?:apply|destroy)"
                        r"|kubectl\s+(?:apply|create|delete|replace|patch|scale|rollout)"
-                       r"|vercel(?:\s+(?:deploy|--prod)|\s*$|\s*[;&|])"
-                       # Deploy and hosting CLIs: their deploy and write verbs only. Unlike vercel, the bare program
-                       # prints help, so it runs; read-only verbs (status, logs, list) run too.
-                       r"|netlify\s+deploy" + _END
-                       + r"|fly(?:ctl)?\s+(?:deploy|secrets\s+set|apps\s+destroy|scale\s+count)" + _END
-                       + r"|heroku\s+(?:releases:rollback|config:set|apps:destroy|container:release)" + _END
+                       r"|(?:vercel|vc)(?:\s+(?:deploy|--prod)|\s*$|\s*[;&|])"
+                       # Deploy and hosting CLIs: their deploy and write verbs only, with each CLI's own aliases for
+                       # them (`_DEPLOY_PUBLISH`). Unlike vercel, the bare program prints help, so it runs; read-only
+                       # verbs (status, logs, list) run too.
+                       r"|(?:netlify|ntl)\s+deploy" + _END
+                       + r"|fly(?:ctl)?\s+(?:deploy|destroy|secrets\s+set|apps?\s+(?:destroy|delete|remove|rm)"
+                       r"|scale\s+count)" + _END
+                       + r"|heroku\s+(?:releases:rollback|rollback|config:set|config:add|apps:destroy|apps:delete"
+                       r"|destroy|container:release)" + _END
                        + r"|railway\s+up" + _END
                        + r"|wrangler\s+(?:deploy|publish|rollback|versions\s+deploy|pages\s+(?:deploy|publish)"
                        r"|secret\s+put)" + _END
                        + r"|firebase\s+(?:deploy|hosting:channel:deploy|functions:delete|database:set)" + _END
-                       + r"|helm\s+(?:install|upgrade|uninstall|rollback|push)" + _END + r")",
+                       + r"|helm\s+(?:install|upgrade|uninstall|delete|del|un|rollback|push)" + _END + r")",
      "publishes or changes something online"),
     # deletes or stops things
     ("force-kill", _CMD + r"(?:kill" + _H + r"+(?:-[^\s]+" + _H + r"+)*-(?:9|KILL|SIGKILL)\b|killall|pkill)" + _END,
@@ -404,6 +407,13 @@ def _operands(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tu
         else:
             out.append(word)
     return tuple(out)
+
+
+def _expands(word: str) -> bool:
+    """A word the shell may still change before the program sees it: a parameter or command substitution (`$X`,
+    `${X}`, `"$@"`, `$(…)`, a backquote) or a glob (`*`, `?`, `[…]`). The reader's words keep these as written and
+    cannot tell a quoted one from one that word-splits, so neither its value nor its word count is known here."""
+    return any(char in word for char in "$`*?[")
 
 
 def _verb(args: tuple[str, ...], values: frozenset[str] = frozenset()) -> tuple[str, ...]:
@@ -602,18 +612,25 @@ def _fully_accounted(program: str, args: tuple[str, ...]) -> bool:
 
 # Deploy and hosting CLIs (#821): the verbs that publish or change something online, and those that open a shell on a
 # deployed machine (heroku's `run` with any `run:*` suffix). vercel's own reading stays in `_named_rules`: its bare
-# program deploys.
+# program deploys. Each CLI's own aliases for a listed verb are listed with it, from its source: flyctl's `app` for
+# `apps`, `delete`/`remove`/`rm` for `apps destroy` and its hidden top-level `destroy`; heroku's hidden aliases
+# `rollback`, `config:add`, `destroy` and `apps:delete`; helm's `delete`, `del` and `un` for `uninstall`.
 _DEPLOY_PUBLISH = {
     "netlify": {("deploy",)},
-    "fly": {("deploy",), ("secrets", "set"), ("apps", "destroy"), ("scale", "count")},
-    "heroku": {("releases:rollback",), ("config:set",), ("apps:destroy",), ("container:release",)},
+    "fly": {("deploy",), ("secrets", "set"), ("scale", "count"), ("destroy",),
+            *((group, verb) for group in ("apps", "app") for verb in ("destroy", "delete", "remove", "rm"))},
+    "heroku": {("releases:rollback",), ("rollback",), ("config:set",), ("config:add",), ("apps:destroy",),
+               ("apps:delete",), ("destroy",), ("container:release",)},
     "railway": {("up",)},
     "wrangler": {("deploy",), ("publish",), ("rollback",), ("versions", "deploy"), ("pages", "deploy"),
                  ("pages", "publish"), ("secret", "put")},
     "firebase": {("deploy",), ("hosting:channel:deploy",), ("functions:delete",), ("database:set",)},
-    "helm": {("install",), ("upgrade",), ("uninstall",), ("rollback",), ("push",)},
+    "helm": {("install",), ("upgrade",), ("uninstall",), ("delete",), ("del",), ("un",), ("rollback",), ("push",)},
 }
 _DEPLOY_PUBLISH["flyctl"] = _DEPLOY_PUBLISH["fly"]
+# A second program name the same package installs: netlify-cli's `ntl`, the vercel package's `vc`. `_named_rules`
+# reads it as the first name, with that name's options and verbs.
+_PROGRAM_ALIASES = {"ntl": "netlify", "vc": "vercel"}
 _DEPLOY_SHELL = {"fly": {("ssh", "console")}, "flyctl": {("ssh", "console")}, "heroku": {("run",)}}
 _DEPLOY_PROGRAMS = frozenset(_DEPLOY_PUBLISH) | {"vercel"}
 _TWO_WORD_HEADS = {program: frozenset(verb[0] for verb in _DEPLOY_PUBLISH.get(program, set())
@@ -632,13 +649,18 @@ def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
     option between the two words of a two-word verb (`fly secrets -a x set`). Then the reader cannot tell a deploy
     from a read, so `_named_rules` asks as `publish`. Known means the program's own `_GLOBAL_OPTIONS` row: a help or
     version spelling that row does not list is unknown before a verb (`netlify -help deploy`, `vercel -h deploy`).
-    Only a command of help and version words alone (`vercel --help`) has nothing to place; it keeps main's reading."""
+    Only a command of help and version words alone (`vercel --help`) has nothing to place; it keeps main's reading.
+    A word the shell may still expand (`_expands`) at or before the verb is unplaceable too: as the verb or its second
+    word (`fly $X`, `fly secrets $Y K=V`, `fly deplo*`), before it (`fly $OPTS deploy`), or as an option's value,
+    which can split into a verb (`fly -a $X`). After a placed verb it is only that verb's data (`fly status -a "$APP"`)."""
     if all(word in _HELP_WORDS for word in args):
         return False
     verb = _verb(args, _OPTION_VALUES.get(program, frozenset()))
     head = args[:len(args) - len(verb) + 1]
-    split = len(verb) > 2 and verb[0].lower() in _TWO_WORD_HEADS[program] and verb[1].startswith("-")
-    return split or not _fully_accounted(program, head)
+    two_word = bool(verb) and verb[0].lower() in _TWO_WORD_HEADS[program]
+    split = two_word and len(verb) > 2 and verb[1].startswith("-")
+    placed = head + verb[1:2] if two_word else head
+    return split or any(_expands(word) for word in placed) or not _fully_accounted(program, head)
 
 
 def _legacy_named_rules(words: tuple[str, ...]) -> set[str]:
@@ -722,6 +744,7 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     The old text rules remain an independent conservative floor.
     """
     program, args = words[0].lower(), words[1:]
+    program = _PROGRAM_ALIASES.get(program, program)
     if program in _DEPLOY_PROGRAMS and _verb_unplaceable(program, args):
         return _legacy_named_rules(words) | {"publish"}
     if not _fully_accounted(program, args):
@@ -1077,7 +1100,7 @@ def _fold_effect_safe(words: tuple[str, ...] | None) -> bool:
     operands = False
     for arg in args:
         # Expansion can supply an option; even quoted expansion has no known value here.
-        if any(char in arg for char in "$`*?["):
+        if _expands(arg):
             return False
         if arg == "--":
             operands = True
