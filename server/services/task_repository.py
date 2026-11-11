@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from pydantic import Field
+from pydantic import Field, model_serializer
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -23,6 +23,7 @@ from arslan.companion.contracts import (
 )
 from arslan.execution_budget import Budget
 from server.db import session as db_session
+from server.services.goal_mode import GoalProgress
 from server.db.models import (
     CompanionTask, Project, Run, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision, TaskWorker,
 )
@@ -42,6 +43,16 @@ class Progress(Contract):
     continuation_ref: ResourceRef | None = None
     loop_fingerprints: tuple[Identifier, ...] = Field(default=(), max_length=256)
     validation_repairs: tuple[Identifier, ...] = Field(default=(), max_length=2)
+    # L7 goal mode: the rounds' record, written with each verdict. Nothing reads it yet (L7-2 does).
+    goal: GoalProgress | None = None
+
+    @model_serializer(mode="wrap")
+    def _no_goal_no_key(self, handler):
+        # With no goal a checkpoint, and the resumed turn's recovery text, stay byte for byte as before L7.
+        data = handler(self)
+        if self.goal is None:
+            data.pop("goal", None)
+        return data
 
 
 def encoded_action(tool_key: str, arguments: dict) -> str:

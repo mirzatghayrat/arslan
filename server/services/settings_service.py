@@ -46,6 +46,9 @@ _PLAIN_KEYS = (
                "heartbeat_interval_s", "lan_discovery_enabled", "ssh_enabled", "default_read_enabled",
                # K10-1: a folder's rules in each turn ("true" | "false"; default on). The UI comes with L11-0.
                "folder_rules_enabled",
+               # L7 (v0.1.64): goal mode, `/goal` in chat ("true" | "false"; default off). Read only by `/goal` parsing
+               # (L7-3). DELETE-BY: v0.1.65, the default goes to the user after the bench (L7 card, Q6).
+               "goal_mode",
                # SBX-6a (the user's decision, 2026-11-02: off by default, as Anthropic's, with a switch): sandboxed commands may ask
                # macOS's certificate trust service ("true" | "false"; default off). Its switch is in Settings › What
                # Arslan can do › Terminal (SBX settings), written by PUT /settings only.
@@ -291,6 +294,14 @@ async def folder_rules_enabled(session: AsyncSession) -> bool:
     not an old path (§9)."""
     raw = await _get_raw(session, "folder_rules_enabled")
     return raw is None or str(raw).strip().lower() != "false"
+
+
+async def goal_mode(session: AsyncSession) -> bool:
+    """L7: whether `/goal` sets a goal (Settings → Advanced). Default OFF until the bench decides, and with it off
+    `/goal` is plain text. Only an explicit 'true' turns it on. DELETE-BY: v0.1.65, once the user decides the
+    default after the bench (the switch may stay; the default is what is decided)."""
+    raw = await _get_raw(session, "goal_mode")
+    return str(raw).strip().lower() == "true" if raw is not None else False
 
 
 async def sandbox_system_certificates(session: AsyncSession) -> bool:

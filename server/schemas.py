@@ -79,6 +79,7 @@ class SettingsIn(BaseModel):
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
     folder_rules_enabled: str | None = None
+    goal_mode: str | None = None   # L7, default off
     sandbox_system_certificates: str | None = None   # SBX-6a, default off
     # Not `sandbox_trusted_devices` (SBX settings): a device is added through POST /settings/sandbox/trusted-devices,
     # where the server resolves and checks it, or a card's answer, never as raw JSON here (trusted_devices).
@@ -149,6 +150,7 @@ class SettingsOut(BaseModel):
     ssh_enabled: str = ""
     default_read_enabled: str = ""
     folder_rules_enabled: str = ""
+    goal_mode: str = ""   # L7, default off
     sandbox_system_certificates: str = ""   # SBX-6a, default off
     sandbox_trusted_devices: str = ""   # SBX-6a, JSON list, default empty
     voice_input_locale: str = ""

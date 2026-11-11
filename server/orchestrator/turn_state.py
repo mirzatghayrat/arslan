@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from server.orchestrator.tool_caller import ToolCaller
+    from server.services.goal_mode import GoalSpec
 
 TOOL_TIMEOUT_S = 20.0
 
@@ -42,6 +43,9 @@ class TurnRequest:
     progress_lane: Any = None
     turn_notes: list[str] | None = None
     steerable: bool = False
+    # L7 goal mode: None is no goal, and the turn runs as before L7. Nothing reads these yet (L7-2, L7-3 do).
+    goal: GoalSpec | None = None
+    steer_key: str | None = None     # a goal job's own K9b key (its job id), so chat messages never land in it
 
 
 @dataclass(slots=True)
@@ -111,6 +115,11 @@ class TurnState:
     # SMART-5: whether a call so far changed something, and how far that was checked
     work: dict = field(default_factory=lambda: {"done": False, "seen": 0})
     link_hints: dict[str, int] = field(default_factory=dict)
+    # L7 goal mode, with `request.goal` set: the round, the rounds in a row without progress, and the checks not
+    # met at the last verdict. Written with each verdict (L7-2); unused with no goal.
+    goal_round: int = 0
+    goal_stall: int = 0
+    goal_unmet: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
