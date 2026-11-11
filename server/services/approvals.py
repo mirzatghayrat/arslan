@@ -489,10 +489,11 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
     only where the kernel's hold on files that run later doesn't stand (the command runs outside the sandbox, or with
     none). Then the card is this time only, whatever else it would offer: no "In this conversation", no "Always", and
     no stored grant or rule answers it (`once_only`), so only a click on this command's own card lets the write
-    happen. Its title names the file (`card_purpose.phrase`)."""
+    happen; and it never joins an identical waiting ask (`never_joined`), so one click runs one command. Its title
+    names the file (`card_purpose.phrase`)."""
     from server.services import card_purpose, permissions, task_service
     net = " It will use the network, this time." if network else ""
-    later = {"once_only": True, "conversation_ok": False} if run_later else {}
+    later = {"once_only": True, "conversation_ok": False, "never_joined": True} if run_later else {}
 
     def plain(old: str, **where) -> str:
         # #689 review 2: a card that also asks for the network says so in its title.
@@ -517,7 +518,7 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
                                    title=plain(old, shortcut_as_you=bool(bare) and "shortcuts" in rules, outside=bool(bare),
                                                unsandboxed=unsandboxed),
                                    model_title=old if lang else "", detail=shell,
-                                   conversation_ok=False, once_only=True,
+                                   conversation_ok=False, once_only=True, never_joined=bool(run_later),
                                    frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame)
     if ask_all:
         old = f"Run `{shell[:80]}`?{net}"
