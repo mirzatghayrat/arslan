@@ -18,6 +18,14 @@ markers = 3
 cases = 171
 xfail = 0
 
+# 0.1.64 HOOK-2, `commands_profile(plugin_read=...)`: a hook's own plugin folder readable and not writable, a sibling
+# plugin, a link to it and the plugin root closed, with the work folder open and inside a closed folder (2 cases); with
+# no parameter, the folder closed (1 case).
+["server/sbx/test_hook2_plugin_read.py"]
+markers = 2
+cases = 3
+xfail = 0
+
 # 0.1.64 HR-1 review delta 12, the profile folder (`sandbox-profiles/` in Arslan's data folder) closed, in the commands
 # preset, an MCP server's and the outside floor, from a profile delivered by `-f`: its own profile read, rewritten or
 # removed, another rewritten or renamed, a new one added and the folder listed are each refused and the files
