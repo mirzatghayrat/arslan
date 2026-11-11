@@ -51,7 +51,7 @@ CHAT_LISTED = {
     "web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search", "memory_note",
     "task_progress", "delegate_work", "start_sub_session", "update_plan", "ask_user_choice", *BACKGROUND, "browser_open", "browser_look",
     "browser_back", "mac_list_shortcuts", *HANDS, "read_skill", "find_capability", "propose_capability", "create_skill",
-    "import_memories", "verify", "whats_new", "my_status", "list_my_capabilities", "read_file", "list_dir",
+    "import_memories", "verify", "whats_new", "my_status", "progress_report", "list_my_capabilities", "read_file", "list_dir",
     "search_files", "write_file", "edit_file", "schedule_task", "list_my_tasks", "cancel_task", "run_command",
     "attach_file", "mcp_1__lookup"}
 CHAT_SHOWN = {"web_search", "web_extract", "recall", "remember", "update_plan", "ask_user_choice",
@@ -152,7 +152,7 @@ TRAITS = {
     "read_skill": "read parallel replay_safe", "propose_plan_change": "external_write",
     "find_capability": "external_write outside", "propose_capability": "external_write", "create_skill": "local_write",
     "import_memories": "local_write", "verify": "local_write outside", "whats_new": "read parallel",
-    "my_status": "read parallel", "list_my_capabilities": "read parallel",
+    "my_status": "read parallel", "progress_report": "read parallel", "list_my_capabilities": "read parallel",
     "read_file": "read parallel outside gate=file_arguments", "list_dir": "read parallel",
     "search_files": "read parallel outside", "write_file": "local_write saves gate=file_arguments_then_write",
     "edit_file": "local_write saves gate=workspace_write", "scan_local_network": "external_write",

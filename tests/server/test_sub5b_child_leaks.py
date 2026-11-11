@@ -8,7 +8,7 @@ These tests make sub-sessions with `sub_sessions.create_child` or
 
 1. An accepted Inbox follow-up for a sub-session's job runs as the sub-session's job: its tools only, its cards in its
    parent's window, the tree's spend, its report going up. An ordinary conversation's follow-up is unchanged.
-2. Whole-app summaries (the island, notifications, the waiting badge, the retired daily brief) count a sub-session's
+2. Whole-app summaries (the island, notifications, the waiting badge) count a sub-session's
    work once, as its commander's; the whole app's `/runs` and `/tasks` leave it out, its own conversation's keep it.
 3. A brief framed as outside content marks the sub-session's later typed turns, and a summary folding it in.
 4. A message typed in a sub-session waits for its background turn.
@@ -314,8 +314,9 @@ async def test_the_island_and_the_status_count_a_sub_sessions_work_once_as_its_c
         desktop_status.push("turn_finished", conversation_id=KID2, outcome="ok", title="typed there", work="turn")
         feed = (await api.get("/api/v1/island/feed")).json()
         status = (await api.get("/api/v1/desktop/status")).json()
+        # SUB5 (commander stop): the entry's Stop names every sub-session under the commander.
         assert [(a["conversation_id"], a["title"], a["job_id"]) for a in feed["active"]] == [
-            (ROOT, "Make the launch video", None)]
+            (ROOT, "Make the launch video", f"{sub_sessions.STOP_ALL}{ROOT}")]
         assert feed["awaiting_conversations"] == [ROOT]
         assert {(e["kind"], e["conversation_id"]) for e in feed["events"]} == {
             ("approval_needed", ROOT), ("turn_finished", ROOT)}
@@ -378,18 +379,6 @@ async def test_the_whole_apps_runs_and_tasks_leave_a_sub_session_out_and_its_own
     assert [t["state"]["task_id"] for t in (await api.get("/api/v1/tasks")).json()] == [f"t-{ROOT}"]
     assert [t["state"]["task_id"] for t in (await api.get("/api/v1/tasks", params={"conversation_id": KID})).json()
             ] == [f"t-{KID}"]
-
-
-async def test_the_retired_daily_brief_counts_a_commanders_sub_sessions_once(memory):  # noqa: F811
-    async with memory() as db:
-        await _family(db, KID, KID2)
-        await _family(db, "sub-other", parent="c-other")
-    background_jobs._slots = asyncio.Semaphore(0)               # everything stays queued
-    for cid, goal in ((ROOT, "the commander's own work"), (KID, BRIEF), (KID2, "a cover"), ("sub-other", "more")):
-        await background_jobs.start(cid, goal, [], outside_seen=False)
-    found = await proactive_service.build_brief(datetime.utcnow(), datetime.now(), "en")
-    [running] = [e for e in found.candidate.evidence if e.key == "brief.running"]
-    assert (running.params["count"], running.quote) == (2, "the commander's own work")
 
 
 # -- 3. a brief framed as outside content marks the sub-session's later turns ----------------------------------------

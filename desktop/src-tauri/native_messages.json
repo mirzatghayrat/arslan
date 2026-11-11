@@ -46,7 +46,9 @@
     "notify_scheduled_failed_title": "Scheduled task failed",
     "notify_scheduled_failed_body": "“{name}” did not finish. Open Arslan for details.",
     "notify_scheduled_paused_title": "Scheduled task paused",
-    "notify_scheduled_paused_body": "“{name}” failed several times in a row and was paused."
+    "notify_scheduled_paused_body": "“{name}” failed several times in a row and was paused.",
+    "notify_scheduled_paused_deleted_title": "Scheduled task paused",
+    "notify_scheduled_paused_deleted_body": "“{name}” paused: the conversation it writes into was deleted. Delete this task, or make it again."
   },
   "zh": {
     "backup_not_started": "备份未开始。请检查存储权限，必要时手动重启。不会自动重试。",
@@ -95,7 +97,9 @@
     "notify_scheduled_failed_title": "定时任务失败",
     "notify_scheduled_failed_body": "「{name}」没有完成，打开 Arslan 查看详情。",
     "notify_scheduled_paused_title": "定时任务已暂停",
-    "notify_scheduled_paused_body": "「{name}」连续失败多次，已自动暂停。"
+    "notify_scheduled_paused_body": "「{name}」连续失败多次，已自动暂停。",
+    "notify_scheduled_paused_deleted_title": "定时任务已暂停",
+    "notify_scheduled_paused_deleted_body": "「{name}」已暂停：它写入的对话已被删除。请删除这个任务，或重新创建。"
   },
   "ja": {
     "backup_not_started": "バックアップは開始されませんでした。保存先の権限を確認し、必要なら手動で再起動してください。自動再試行はしません。",
@@ -144,7 +148,9 @@
     "notify_scheduled_failed_title": "スケジュールタスク失敗",
     "notify_scheduled_failed_body": "「{name}」は完了しませんでした。詳細は Arslan で確認してください。",
     "notify_scheduled_paused_title": "スケジュールタスクを一時停止",
-    "notify_scheduled_paused_body": "「{name}」が続けて失敗したため一時停止しました。"
+    "notify_scheduled_paused_body": "「{name}」が続けて失敗したため一時停止しました。",
+    "notify_scheduled_paused_deleted_title": "スケジュールタスクを一時停止",
+    "notify_scheduled_paused_deleted_body": "「{name}」は一時停止中：書き込み先の会話が削除されました。このタスクを削除するか、作り直してください。"
   },
   "es": {
     "backup_not_started": "La copia no comenzó. Revisa permisos y reinicia manualmente si hace falta. Sin reintento automático.",
@@ -193,7 +199,9 @@
     "notify_scheduled_failed_title": "Falló una tarea programada",
     "notify_scheduled_failed_body": "«{name}» no terminó. Abre Arslan para ver los detalles.",
     "notify_scheduled_paused_title": "Tarea programada en pausa",
-    "notify_scheduled_paused_body": "«{name}» falló varias veces seguidas y se pausó."
+    "notify_scheduled_paused_body": "«{name}» falló varias veces seguidas y se pausó.",
+    "notify_scheduled_paused_deleted_title": "Tarea programada en pausa",
+    "notify_scheduled_paused_deleted_body": "«{name}» en pausa: se eliminó la conversación en la que escribe. Elimina esta tarea o créala de nuevo."
   },
   "de": {
     "backup_not_started": "Sicherung nicht gestartet. Rechte prüfen und bei Bedarf manuell neu starten. Kein automatischer Neuversuch.",
@@ -242,7 +250,9 @@
     "notify_scheduled_failed_title": "Geplante Aufgabe fehlgeschlagen",
     "notify_scheduled_failed_body": "„{name}“ wurde nicht abgeschlossen. Details in Arslan.",
     "notify_scheduled_paused_title": "Geplante Aufgabe pausiert",
-    "notify_scheduled_paused_body": "„{name}“ ist mehrmals hintereinander fehlgeschlagen und wurde pausiert."
+    "notify_scheduled_paused_body": "„{name}“ ist mehrmals hintereinander fehlgeschlagen und wurde pausiert.",
+    "notify_scheduled_paused_deleted_title": "Geplante Aufgabe pausiert",
+    "notify_scheduled_paused_deleted_body": "„{name}“ pausiert: Die Unterhaltung, in die sie schreibt, wurde gelöscht. Lösche diese Aufgabe oder lege sie neu an."
   },
   "fr": {
     "backup_not_started": "Sauvegarde non démarrée. Vérifiez les autorisations et redémarrez manuellement si nécessaire. Aucun nouvel essai automatique.",
@@ -291,6 +301,8 @@
     "notify_scheduled_failed_title": "Échec d’une tâche planifiée",
     "notify_scheduled_failed_body": "« {name} » n’a pas abouti. Détails dans Arslan.",
     "notify_scheduled_paused_title": "Tâche planifiée en pause",
-    "notify_scheduled_paused_body": "« {name} » a échoué plusieurs fois de suite et a été mise en pause."
+    "notify_scheduled_paused_body": "« {name} » a échoué plusieurs fois de suite et a été mise en pause.",
+    "notify_scheduled_paused_deleted_title": "Tâche planifiée en pause",
+    "notify_scheduled_paused_deleted_body": "« {name} » en pause : la conversation dans laquelle elle écrit a été supprimée. Supprimez cette tâche ou recréez-la."
   }
 }

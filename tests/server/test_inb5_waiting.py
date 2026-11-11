@@ -182,6 +182,15 @@ async def test_a_scheduled_task_waits_when_it_failed_paused_itself_has_a_problem
     assert waiting["conversations"] == []                # a scheduled run's entry belongs to its task, not its conversation
 
 
+async def test_a_card_in_a_tasks_stored_own_conversation_counts_as_the_task(client, monkeypatch):
+    """SUB5a: a task made since v0.1.64 stores its own conversation (`scheduled-<uuid>`, scheduler.own_conversation), not
+    `scheduled-<id>`. A card waiting there is the task's, counted once, as in a task made before (#590 review F4)."""
+    monkeypatch.setattr(approvals, "all_pending", lambda: [{"call_id": "c1", "conversation_id": "scheduled-0f3a"}])
+    await _add(client, _task(4, conversation_id="scheduled-0f3a"))
+    waiting = await _waiting(client)
+    assert (waiting["scheduled"], waiting["conversations"]) == ([4], [])
+
+
 async def test_only_the_last_run_counts(client):
     await _add(client, _task(1), _task(2))
     await _add(client, ScheduledTaskRun(task_id=1, outcome="error"), ScheduledTaskRun(task_id=2, outcome="ok"))

@@ -24,9 +24,9 @@ _CONVERSATIONS = 128
 _used: OrderedDict[str, list[str]] = OrderedDict()
 
 FIND_TOOLS = {"key": "find_tools", "description":
-    "Find a tool not in your list: sending a file to the user, browser, background jobs, schedules, "
-    "charts, memory, Mac automation, Hands, SSH, MCP servers, sub-sessions (split independent parts "
-    "to run in parallel). Search in English keywords; call one with use_tool."}
+    "Tools not in your list: sending a file to the user, browser, background jobs, overall progress, "
+    "schedules, charts, memory, Mac automation, Hands, SSH, MCP, sub-sessions (split independent "
+    "parts to run in parallel). Search in English keywords; call one with use_tool."}
 USE_TOOL = {"key": "use_tool", "description":
     "Call a tool find_tools returned, with the same approvals as a direct call. From the next turn it is "
     "in your list."}

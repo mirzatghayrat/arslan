@@ -94,6 +94,8 @@ export default function App() {
   const [activeSection, setActiveSection] = useState<Section>('arslan');
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | string | undefined>();
   const [panelView, setPanelView] = useState<'default' | 'editor'>('default');
+  // SUB5a: the task a clicked notification asked the Scheduled page to show (`n` tells a second click of the same task apart).
+  const [scheduledFocus, setScheduledFocus] = useState<{ taskId: number; n: number } | null>(null);
 
   // Custom states for style variations (specifically asked in prompt)
   const [currentChatStyle, setCurrentChatStyle] = useState<'quartz' | 'brutalist' | 'linear'>('linear');
@@ -128,7 +130,9 @@ export default function App() {
 
   // A clicked desktop notification (0.1.41), or a link to an earlier conversation in a reply (0.1.52 S3), opens a conversation the
   // user has and has not archived (useNotificationRoutes).
-  useNotificationRoutes({ threads, selectConversation });
+  useNotificationRoutes({ threads, selectConversation, openScheduledTask: (taskId) => {
+    setScheduledFocus((was) => ({ taskId, n: (was?.n ?? 0) + 1 })); setActiveSection('scheduled'); setPanelView('default');
+  } });
   useEffect(() => {
     const onOpen = (event: Event) => {
       const asked = readOpenSection((event as CustomEvent<unknown>).detail);
@@ -816,6 +820,7 @@ export default function App() {
             {activeSection === 'projects' && <ProjectsSection onStart={handleStartProject}
               openProjectId={openProjectId} onOpenedProject={() => setOpenProjectId(null)} />}
             {activeSection === 'scheduled' && <ScheduledPage attention={scheduledAttention} waitingTasks={waiting.scheduled} onOpenConversation={openCardConversation}
+              focus={scheduledFocus}
               onOpenModelSettings={() => { setSettingsInitialSection('models'); setActiveSection('settings'); }} />}
             {activeSection === 'brain' && <MemorySection legacy={!restoredInit.mintedFresh} />}
             {activeSection === 'progress' && <ActivityView waiting={waiting} threads={threads} projects={sidebarProjects}

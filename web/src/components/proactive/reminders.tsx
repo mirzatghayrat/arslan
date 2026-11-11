@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CalendarClock, Check, Clock, FolderOpen, Globe, Inbox, ListChecks, MessageSquare, Sun, X } from "lucide-react";
+import { CalendarClock, Clock, FolderOpen, Globe, Inbox, ListChecks, MessageSquare, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../api/client";
 import { proactiveApi, type MuteChoice, type ProactiveItem, type ProactiveKind } from "../../api/proactive";
@@ -14,7 +14,7 @@ import { useAnswerGuard, useAnswerHeld } from "../kit/guard";
 // Scheduled page shows a task's problem and a watch's change the same way. The Inbox uses them too until INB5 removes it.
 
 const ICONS: Record<ProactiveKind, typeof Globe> = {
-  web_change: Globe, folder_change: FolderOpen, job_followup: ListChecks, scheduled_problem: CalendarClock, brief: Sun,
+  web_change: Globe, folder_change: FolderOpen, job_followup: ListChecks, scheduled_problem: CalendarClock,
 };
 const ACTIONABLE = new Set(["new", "seen", "snoozed"]);
 const menuItem = "block w-full rounded px-3 py-1.5 text-left text-xs hover:bg-foreground/5";
@@ -46,7 +46,6 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
   const Icon = ICONS[item.kind] ?? Inbox;
   const groups = groupEvidence(evidenceLines(t, language, item.evidence));
   const actionable = ACTIONABLE.has(item.status);
-  const readOnly = item.kind === "brief";
   const when = formatUiDateTime(item.created_at, language);
   const titleId = `proactive-item-${item.id}`;
   return <article aria-labelledby={titleId} data-testid={`proactive-item-${item.id}`} data-kind={item.kind}
@@ -72,15 +71,13 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
       <p className="mt-1 text-[11px] text-muted-foreground">{t("proactive.item.guessNote")}</p>
     </div>}
     {actionable ? <div className="mt-4 flex flex-wrap items-center gap-2">
-      {readOnly
-        ? <button className={`${primaryClass} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined} onClick={() => { if (!held()) onDismiss(); }}><Check size={14} />{t("proactive.item.gotIt")}</button>
-        : <button className={`${primaryClass} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined} onClick={() => { if (!held()) onDo(); }}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>}
+      <button className={`${primaryClass} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined} onClick={() => { if (!held()) onDo(); }}>{busy ? t("proactive.item.starting") : t("proactive.item.doIt")}</button>
       <Menu label={t("proactive.item.snooze")} icon={<Clock size={14} />}>{(close) => <>
         {/* #611 review, 2: the choices look held as the buttons do, and a held pick keeps the menu open (it is not dropped silently). */}
         {([1, 3, 7] as const).map((days) => <button key={days} role="menuitem" className={`${menuItem} ${HELD_LOOK}`} disabled={busy}
           aria-disabled={heldNow || undefined} onClick={() => { if (held()) return; close(); onSnooze(days); }}>{t(`proactive.item.snooze${days}`)}</button>)}
       </>}</Menu>
-      {!readOnly && <Menu label={t("proactive.item.notUseful")} icon={<X size={14} />}>{(close) => <>
+      <Menu label={t("proactive.item.notUseful")} icon={<X size={14} />}>{(close) => <>
         <button role="menuitem" className={`${menuItem} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined}
           onClick={() => { if (held()) return; close(); onDismiss(); }}>{t("proactive.item.dismissOnly")}</button>
         {/* A one-off job has no recurring source to silence; pages, folders and schedules do. */}
@@ -88,7 +85,7 @@ export function ReminderCard({ item, busy, language, onDo, onSnooze, onDismiss, 
           aria-disabled={heldNow || undefined} onClick={() => { if (held()) return; close(); onDismiss("source"); }}>{t("proactive.item.stopSource")}</button>}
         <button role="menuitem" className={`${menuItem} ${HELD_LOOK}`} disabled={busy} aria-disabled={heldNow || undefined}
           onClick={() => { if (held()) return; close(); onDismiss("kind"); }}>{t("proactive.item.stopKind")}</button>
-      </>}</Menu>}
+      </>}</Menu>
       {item.status === "snoozed" && item.snooze_until && <span className="text-[11px] text-muted-foreground">{t("proactive.item.snoozedUntil", { date: formatUiDateTime(item.snooze_until, language) })}</span>}
     </div> : <p className="mt-4 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
       <span>{t(item.status === "accepted" ? "proactive.item.started" : item.status === "expired" ? "proactive.item.expired" : "proactive.item.dismissed")}</span>

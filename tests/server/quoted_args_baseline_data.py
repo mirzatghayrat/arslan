@@ -87,9 +87,9 @@ def validate_source_hashes(recorded):
             found = recorded[source][name]
             assert wanted == found, (
                 f"Baseline source hash mismatch: {source}/{name}: expected {wanted}, recorded {found}")
-    # This source is unchanged from main and is available in shallow checkouts.
+    # The current source is independently pinned; historical baseline hashes stay frozen.
     path = Path(__file__).resolve().parents[2] / "server/services/shell_text.py"
-    wanted = SOURCE_SHA256["main"][path.name]
+    wanted = "83d99db09fb9805726dfc58b679426f0ba8f599eddeeac7ab6f8b1bbbc0f4571"
     assert path.is_file(), f"Baseline source hash mismatch: current/{path.name}: expected {wanted}, recorded <missing>"
     found = hashlib.sha256(path.read_bytes()).hexdigest()
     assert wanted == found, f"Baseline source hash mismatch: current/{path.name}: expected {wanted}, recorded {found}"

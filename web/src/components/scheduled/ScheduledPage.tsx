@@ -25,8 +25,10 @@ function openRun(runId: number) {
   window.dispatchEvent(new CustomEvent(OPEN_ACTIVITY_RUN_EVENT, { detail: runId }));
 }
 
-export default function ScheduledPage({ attention, waitingTasks, onOpenConversation, onOpenModelSettings }: {
+export default function ScheduledPage({ attention, waitingTasks, onOpenConversation, onOpenModelSettings, focus }: {
   attention: ScheduledAttention;
+  /** SUB5a: a task to open, from a clicked notification (ScheduledTasksCard's `focus`). */
+  focus?: { taskId: number; n: number } | null;
   /** The tasks waiting on you, as the server counts them (progress.waiting_on_user's `scheduled`). */
   waitingTasks: number[];
   /** `created` is true when the app must first make a conversation with this id for the job to report into. */
@@ -72,7 +74,7 @@ export default function ScheduledPage({ attention, waitingTasks, onOpenConversat
       {notice && <Notice tone={notice.kind === "error" ? "error" : "info"}
         action={notice.needsModel && onOpenModelSettings ? <button className="text-[13px] underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button> : undefined}>
         {notice.text}</Notice>}
-      <ScheduledTasksCard onOpenRun={openRun} attention={needsLook} onOpen={markSeen} details={(task) => <div className="mt-3 space-y-3">
+      <ScheduledTasksCard onOpenRun={openRun} attention={needsLook} onOpen={markSeen} focus={focus} details={(task) => <div className="mt-3 space-y-3">
         {(attention.tasks[task.id]?.problems ?? []).map(reminder)}
         <NotDoneList conversationId={scheduledConversation(task)} hours={AWAY_HOURS} unattended title={t("scheduledPage.awayTitle")} />
         <p className="text-[11px] text-muted-foreground">{t("scheduledPage.seenNote")}</p>

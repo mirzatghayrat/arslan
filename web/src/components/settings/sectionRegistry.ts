@@ -98,7 +98,6 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'proactive.enabled': 'background',
   'proactive.sources': 'background',
   'proactive.quiet_hours': 'general',
-  'proactive.brief': 'background',
   'proactive.watches': 'background',
   'proactive.muted': 'background',
   'proactive.diagnosis_cap': 'background',

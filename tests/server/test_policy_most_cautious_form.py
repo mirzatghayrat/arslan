@@ -6,10 +6,12 @@ written (the form main reads) is always among them, so adding a form can only ad
 
 Every rule here is a stand-in on a made-up word: no test spells a real rule's command."""
 import re
+from functools import cache
 
 import pytest
 
 from server.services import shell_text, terminal_policy as tp
+from tests.server.folder_revision_data import MAIN, sources
 
 WORD = "zz-stand-in-word"
 WIDE = "zz-wide-word"
@@ -39,9 +41,19 @@ def _verdict(command: str) -> tuple[str, str]:
     return found.level, found.rule
 
 
+@cache
+def _main_matcher():
+    # This existing snapshot has the same matcher bytes as the security-stdin base.
+    # Historical assertions must not silently follow changes to the live matcher.
+    namespace = {}
+    exec(compile(sources(MAIN)["shell_text"], "<historical-matcher>", "exec"), namespace)
+    return namespace
+
+
 def _main_forms(command: str) -> tuple[str, ...]:
-    """The whole-command forms main reads: as written, normalized, and the variants of the text."""
-    return (command, shell_text.normalize(command), *shell_text._command_detection_variants(command))
+    """The historical whole-command forms, independent of the live matcher."""
+    matcher = _main_matcher()
+    return (command, matcher["normalize"](command), *matcher["_command_detection_variants"](command))
 
 
 def _lines(form: str) -> int:
