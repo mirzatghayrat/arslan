@@ -423,7 +423,7 @@ async def _status_workspace(wired_keys) -> tuple:
     from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            return (await settings_service.workspace_dir(db),
+            return (await settings_service.workspace_dir_for_run(db),       # SUB5c: a sub-session's own folder
                     await settings_service.workspace_is_default(db))
     except Exception:  # noqa: BLE001
         return None, False
@@ -455,7 +455,7 @@ async def _read_saved(rel: str) -> str | None:
     from server.services.workspace_paths import resolve_in_workspace
     try:
         async with db_session.AsyncSessionLocal() as db:
-            root = await settings_service.workspace_dir(db)
+            root = await settings_service.workspace_dir_for_run(db)       # SUB5c: where `rel` was written
         return resolve_in_workspace(rel, root).read_text(encoding="utf-8", errors="replace")[:200_000]
     except Exception:  # noqa: BLE001 — a check that cannot read simply does not run
         return None
@@ -593,7 +593,12 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     if executor is None:
         result = await _unavailable(tool_key, live)
     else:
+        # SBX settings: what the proxy refuses while a command runs becomes the window's card, never part of the result.
+        from server.services import sandbox_proxy, trusted_devices
+        watch = sandbox_proxy.watch() if tool_key == "run_command" else None
         result = await tool_execute.run_executor(tool_key, args, executor, plan, budget, turn)
+        for frame in await trusted_devices.offer(conversation_id, tool_key, result, sandbox_proxy.unwatch(watch)):
+            emit(frame)
     return await _after(tool_key, args, result, assistant_content, turn)
 
 

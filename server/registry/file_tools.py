@@ -51,18 +51,23 @@ _SNIPPET_CHARS = 240
 
 
 async def _workspace_root() -> Path | None:
+    """Where write_file and edit_file may write: the workspace, or a sub-session's own folder (SUB5c)."""
     async with db_session.AsyncSessionLocal() as db:
-        return await settings_service.workspace_dir(db)
+        return await settings_service.workspace_dir_for_run(db)
 
 
 async def _read_ctx() -> tuple[list[Path], Path | None]:
     """(read roots, workspace) — reads span the green ring; the workspace is the
     base for backward-compatible relative paths. Reads and writes keep DIFFERENT
-    boundaries: a widened read surface must never silently widen writes."""
+    boundaries: a widened read surface must never silently widen writes. SUB5c: a
+    sub-session still reads the whole workspace; its relative paths start in its own
+    folder, as its writes and commands do."""
     async with db_session.AsyncSessionLocal() as db:
         ws = await settings_service.workspace_dir(db)
         default_read = await settings_service.default_read_enabled(db)
-    return read_roots(ws, default_read=default_read), ws    # resolved by workspace_dir; SBX-9: not again
+        base = await settings_service.workspace_dir_for_run(db) if settings_service.run_sub_folder() != () else ws
+    # Resolved by workspace_dir (or sub_folder, which checks its real path); SBX-9: not resolved again here.
+    return read_roots(ws, default_read=default_read), base
 
 
 def _home_rel(path: Path) -> str:
@@ -84,14 +89,19 @@ async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool =
                     default: str = ".") -> tuple[Path | None, Path | None, dict | None]:
     """(root, path, error) — the shared prologue every tool needs."""
     root = await _workspace_root()
+    own = settings_service.run_sub_folder() != ()      # SUB5c: a sub-session's job, in its own folder
     if root is None:
-        return None, None, {"ok": False,
-                            "error": "no workspace is configured — set one in Settings first"}
+        return None, None, {"ok": False, "error": "this sub-session's own folder can't be used, so nothing is written"
+                            if own else "no workspace is configured — set one in Settings first"}
     try:
         return root, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
                                           make_parents=make_parents), None
     except (PathEscape, SecretFile) as exc:
-        return root, None, _refusal(exc)
+        refused = _refusal(exc)
+        return root, None, ({**refused, "note": f"A sub-session writes only in its own folder ({root}); the "
+                             "commander merges the work."} if own and isinstance(exc, PathEscape) else refused)
+    except OSError as exc:      # SBX-9: a link swapped while it was resolved (realpath's EINVAL): refused, not raised
+        return root, None, {"ok": False, "error": f"cannot check this path now: {exc.strerror or exc}"}
 
 
 # macOS 11+: no segment of the path may be a link at the moment of the open. Where it is
@@ -110,36 +120,49 @@ def _write_inside(root: Path, path: Path, text: str) -> None:
     file is 0o666 under the umask (never executable); an overwritten one keeps its mode.
     Raises PathEscape, SecretFile or OSError; on failure the old file is untouched.
 
-    SBX-9: the working folder is pinned once (`pin_root`) and its identity checked again right before the new file is
-    opened and before it replaces the old one (`check_root`)."""
+    SBX-9: the working folder is pinned once (`pin_root`); the file's folder is opened from the working folder's own
+    descriptor one name at a time, never through a link (`open_inside`), and the new file is made, and swapped in,
+    relative to that folder's descriptor; the working folder's identity is checked again right before (`check_root`)."""
     root, identity = workspace_paths.pin_root(root)
     resolve_in_workspace(str(path), root, for_write=True)
+    folder = workspace_paths.open_inside(root, identity, path.parent.relative_to(root).parts)
     try:
-        st = os.stat(path, follow_symlinks=False)
-        keep = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
-    except FileNotFoundError:
-        keep = None
-    # A name already near the 255-byte limit cannot take the temp prefix and suffix: keep at most
-    # 200 bytes of it (cut on a character boundary).
-    stem = path.name.encode("utf-8")[:200].decode("utf-8", errors="ignore")
-    tmp = path.with_name(f".{stem}.{secrets.token_hex(4)}.tmp")
-    workspace_paths.check_root(root, identity)
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o666)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-            f.flush()
-            if keep is not None:
-                os.fchmod(f.fileno(), keep)
-            os.fsync(f.fileno())
-        workspace_paths.check_root(root, identity)
-        os.replace(tmp, path)
-    except BaseException:
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+            st = os.stat(path.name, dir_fd=folder, follow_symlinks=False)
+            keep = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
+        except FileNotFoundError:
+            keep = None
+        # A name already near the 255-byte limit cannot take the temp prefix and suffix: keep at most
+        # 200 bytes of it (cut on a character boundary).
+        stem = path.name.encode("utf-8")[:200].decode("utf-8", errors="ignore")
+        tmp = f".{stem}.{secrets.token_hex(4)}.tmp"
+        workspace_paths.check_root(root, identity)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o666, dir_fd=folder)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+                f.flush()
+                if keep is not None:
+                    os.fchmod(f.fileno(), keep)
+                os.fsync(f.fileno())
+            workspace_paths.check_root(root, identity)
+            workspace_paths.replace_in(folder, tmp, path.name)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=folder)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(folder)
+
+
+def _make_folders(root: Path, path: Path) -> None:
+    """SBX-9: the missing folders above `path`, made from the working folder's own descriptor one name at a time
+    (mkdirat, then an `O_NOFOLLOW` open), so a folder on the way swapped for a link is refused, never followed: no
+    folder is made outside. PathEscape for a link or a file on the way; OSError when one can't be made."""
+    root, identity = workspace_paths.pin_root(root)
+    os.close(workspace_paths.open_inside(root, identity, path.parent.relative_to(root).parts, make=True))
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -315,7 +338,9 @@ class WriteFileExecutor:
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         _touch_rules(path)
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            _make_folders(root, path)                   # SBX-9: never through a link (was mkdir(parents=True))
+        except (PathEscape, SecretFile) as exc:
+            return _refusal(exc)
         except OSError as exc:
             return {"ok": False, "error": f"cannot create folder {_rel(path.parent, root)}: {exc}"}
         artifact = _snapshot_write(root, path, content)

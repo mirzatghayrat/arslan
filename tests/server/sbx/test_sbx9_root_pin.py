@@ -15,6 +15,7 @@ that folder right before the spawn.
 import asyncio
 import errno
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -172,6 +173,18 @@ def test_an_mcp_servers_own_and_granted_folders_are_pinned_and_checked(home, tmp
     assert all(p.fd is None for p in pins) and str(profile) not in command_sandbox._PINS
 
 
+def test_a_plugin_hooks_temp_swapped_for_a_link_is_refused_before_its_profile(home, tmp_path):
+    """HOOK-2's runner pins the hook's temp, its one writable folder, as the commands do."""
+    from server.services import plugin_hook_runner
+    temp, outside = tmp_path / "hooktemp", tmp_path / "outside"
+    temp.mkdir()
+    outside.mkdir()
+    _swap_for_link(temp, outside)
+    with pytest.raises(root_pin.Swapped):
+        plugin_hook_runner._prefix(temp, tmp_path, tmp_path, ())
+    assert command_sandbox._PINS == {}
+
+
 # ── the file tools ───────────────────────────────────────────────────────────
 
 def test_the_file_tools_refuse_a_working_folder_that_is_a_link(tmp_path):
@@ -204,6 +217,62 @@ def test_a_write_is_refused_when_the_working_folder_is_swapped_before_it(home, t
     with pytest.raises(workspace_paths.PathEscape, match="isn't the folder it was"):
         file_tools._write_inside(work, work / "notes.md", "new")
     assert (outside / "notes.md").read_text() == "outside" and sorted(p.name for p in outside.iterdir()) == ["notes.md"]
+
+
+#: A flipper in its own process (no GIL shared with the writer): swaps argv[1] for a link to argv[2] and back until the
+#: file argv[3] exists, then prints how many times. A writer may make a folder at the name in the gap between the two
+#: renames: that one is removed (it is inside the work folder) and the original put back.
+_FLIPPER = """
+import os, shutil, sys
+folder, outside, stop = sys.argv[1:4]
+aside, flips = folder + ".aside", 0
+while not os.path.exists(stop) or os.path.lexists(aside):
+    try:
+        os.rename(folder, aside)
+        os.symlink(outside, folder)
+        os.unlink(folder)
+    except OSError:
+        pass
+    if os.path.lexists(aside):
+        if os.path.islink(folder):
+            os.unlink(folder)
+        elif os.path.isdir(folder):
+            shutil.rmtree(folder, ignore_errors=True)
+        try:
+            os.rename(aside, folder)
+        except OSError:
+            pass
+    flips += 1
+print(flips)
+"""
+
+
+async def test_write_file_under_an_active_flipper_makes_no_folder_outside(home, tmp_path, monkeypatch):
+    """⓪Plan: `write_file` into a new nested path while a folder on the way is swapped for a link to an outside folder
+    and back. Its folders are made from the working folder's descriptor (mkdirat, O_NOFOLLOW opens), so none is made
+    outside and no file lands there. Repeated 200 times."""
+    work, outside = tmp_path / "work", tmp_path / "outside"
+    (work / "a").mkdir(parents=True)
+    outside.mkdir()
+
+    async def workspace():
+        return work
+    monkeypatch.setattr(file_tools, "_workspace_root", workspace)
+    write = file_tools.WriteFileExecutor().execute
+    stop, results = tmp_path / "stop", {"ok": 0, "refused": 0}
+    flipper = subprocess.Popen([sys.executable, "-c", _FLIPPER, str(work / "a"), str(outside), str(stop)],
+                               stdout=subprocess.PIPE, text=True)
+    try:
+        for i in range(COMMANDS):
+            out = await write({"path": f"a/b{i}/c/f.txt", "content": "x"})
+            results["ok" if out["ok"] else "refused"] += 1
+    finally:
+        stop.write_text("")
+        flips = int(flipper.communicate(timeout=30)[0] or 0)
+    made = sorted(str(p.relative_to(outside)) for p in outside.rglob("*"))
+    print(f"\nSBX-9 write_file race: {results}, flips {flips}, {len(made)} entr(ies) outside")
+    assert flips > 0 and (work / "a").is_dir() and not (work / "a").is_symlink()
+    assert made == [], f"{len(made)} made outside: {made[:10]} ({results})"
 
 
 # ── real seatbelt, through the real executor ─────────────────────────────────
