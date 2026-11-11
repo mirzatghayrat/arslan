@@ -340,6 +340,30 @@ async def test_one_file_write_acquires_one_root_pin(home, tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("tool", ["write", "edit"])
+async def test_a_file_write_never_resolves_the_pinned_root_again(home, tmp_path, monkeypatch, tool):
+    """Astra #855 delta: the pinned root is its own real path; a write at the root's top level (where the parent
+    probe is the root itself) must not resolve it again, in the resolution or in _write_inside."""
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "notes.md").write_text("one")
+    write, edit = _file_tools(monkeypatch, work)
+    real_work = Path(os.path.realpath(work))
+    resolve, roots = Path.resolve, []
+
+    def watching(self, *args, **kwargs):
+        if self == real_work:
+            roots.append(self)
+        return resolve(self, *args, **kwargs)
+    monkeypatch.setattr(Path, "resolve", watching)
+    if tool == "write":
+        result = await write({"path": "notes.md", "content": "two"})
+    else:
+        result = await edit({"path": "notes.md", "old_string": "one", "new_string": "two"})
+    assert result["ok"] and (work / "notes.md").read_text() == "two"
+    assert roots == []
+
+
+@pytest.mark.parametrize("tool", ["write", "edit"])
 async def test_replaced_root_between_resolution_and_write_is_refused(home, tmp_path, monkeypatch, tool):
     """Astra #855 P1: the working folder renamed away and a new one put at its path after the resolution: the write
     compares against the identity the resolution pinned, so it is refused, and neither folder is written."""

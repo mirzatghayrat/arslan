@@ -93,7 +93,8 @@ def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool)
                 raise PathEscape(f"path is outside the workspace: {user_path}")
             missing.append(probe.name)
             probe = probe.parent
-        parent = probe.resolve()
+        # SBX-9 (Astra #855 delta): the pinned root is already its own real path; never resolve it again.
+        parent = root if probe == root else probe.resolve()
         if not parent.is_dir():
             raise PathEscape(f"parent directory does not exist: {candidate.parent}")
         if not _contained(parent, root):
