@@ -26,6 +26,7 @@ import pytest
 
 from server.services import command_sandbox, sandbox_profile, terminal_exec
 from server.services.sandbox_profile import NetworkMode
+from tests.server.sbx.profile_files import read_profile
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
@@ -47,21 +48,30 @@ def test_available_starts_the_real_commands_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(command_sandbox, "_SANDBOX_EXEC", str(exe))
     monkeypatch.setattr(command_sandbox.sys, "platform", "darwin")
     monkeypatch.setattr(command_sandbox, "commands_profile", recorded)
-    monkeypatch.setattr(command_sandbox.subprocess, "run",
-                        lambda argv, **kw: calls.append(argv) or SimpleNamespace(returncode=0))
+    started = []                    # #813 review 11: the profile file's text while sandbox-exec runs
+
+    def run(argv, **kw):
+        calls.append(argv)
+        started.append(Path(argv[2]).read_text())
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(command_sandbox.subprocess, "run", run)
     command_sandbox._reset_for_tests()
     try:
         assert command_sandbox.available() is True
     finally:
         command_sandbox._reset_for_tests()
-    assert calls == [[str(exe), "-p", texts[0], "/usr/bin/true"]]
+    assert len(calls) == 1 and calls[0][:2] == [str(exe), "-f"] and calls[0][3:] == ["/usr/bin/true"]
+    assert started == [texts[0]] and not os.path.lexists(calls[0][2])     # read as written, gone after
     assert texts[0].startswith("(version 1)\n(deny default)\n")     # the commands profile, on the base
 
 
 def test_a_command_starts_under_the_same_profile(monkeypatch, tmp_path):
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    assert command_sandbox.wrapper(tmp_path) == [command_sandbox._SANDBOX_EXEC, "-p",
-                                                 command_sandbox.commands_profile(tmp_path)]
+    prefix = command_sandbox.wrapper(tmp_path)
+    assert prefix[:2] == [command_sandbox._SANDBOX_EXEC, "-f"] and len(prefix) == 3
+    assert read_profile(prefix) == command_sandbox.commands_profile(tmp_path)
+    command_sandbox.remove_profile(command_sandbox.profile_path(prefix))
 
 
 # ── §1b: tagged roots and the classifier's scope ─────────────────────────────
@@ -148,8 +158,10 @@ def _base_for(home, network, **kw):
 
 
 def _shared_caches_read_only() -> str:
-    """SBX-5 §1c: the one rule 3a's preset always adds after the base."""
-    return "(deny file-write* " + " ".join(f'(subpath "{p}")' for p in command_sandbox.shared_caches()) + ")\n"
+    """SBX-5 §1c: the rule 3a's preset always adds after the base, then HR-1's run-later denies."""
+    from tests.server.test_hr1_run_later import RUN_LATER_TEXT
+    return ("(deny file-write* " + " ".join(f'(subpath "{p}")' for p in command_sandbox.shared_caches()) + ")\n"
+            + RUN_LATER_TEXT)
 
 
 def test_the_commands_profile_starts_with_the_base_text(home):
@@ -189,15 +201,18 @@ def test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_c
     text = command_sandbox.commands_profile(desk / "ws", closed=[desk], readable=[desk / "proj"], copies=[copy])
     base = _base_for(home, NetworkMode.NONE)
     assert not text.startswith(base)                        # the closed Desktop is part of the base's text
+    from tests.server.test_hr1_run_later import RUN_LATER_TEXT
+    later = RUN_LATER_TEXT.splitlines()
     shown = text.replace(os.path.realpath(home), "<H>").splitlines()
-    tail = shown[len(shown) - 5:]
+    tail = shown[len(shown) - 5 - len(later):]
     assert tail[0] == '(allow file-read* file-write* file-map-executable (subpath "<H>/Desktop/ws"))'
     assert tail[1] == '(allow file-read* file-map-executable (subpath "<H>/Desktop/proj"))'
     assert tail[2].startswith("(deny file-read* file-write* file-map-executable ") and '"<H>/.ssh"' in tail[2]
     assert '"<H>/.agents/skills"' in tail[2]                               # SBX-5: CAP6b closes again too
     assert tail[3] == '(deny file-write* (subpath "<H>/Library/Caches") (subpath "<H>/.cache") (subpath "<H>/.npm"))'
-    assert tail[4] == '(allow file-read* (literal "<H>/Library/Application Support/Arslan/out.txt"))'
-    assert shown[len(shown) - 6].startswith("(deny network-outbound ")   # the base's protected sockets, before
+    assert tail[4:4 + len(later)] == later                                 # HR-1: after the reopen, before the copies
+    assert tail[-1] == '(allow file-read* (literal "<H>/Library/Application Support/Arslan/out.txt"))'
+    assert shown[len(shown) - 6 - len(later)].startswith("(deny network-outbound ")   # the base's protected sockets
 
 
 def test_the_sbx_harness_registers_the_product_preset():

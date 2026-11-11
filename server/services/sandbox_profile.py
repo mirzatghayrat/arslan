@@ -41,9 +41,16 @@ def real(path) -> Path:
     return Path(os.path.realpath(os.path.expanduser(str(path))))
 
 
+#: The characters `sbpl_string` changes. A text with none of them is returned as is, quoted: the same output, without
+#: the loop (HR-1 #813 review 11: a profile with thousands of held paths spent most of its build time here).
+_SBPL_SPECIAL = re.compile('[\\\\"\\x00-\\x1f\\x7f]')
+
+
 def sbpl_string(text: str) -> str:
     """`text` as an SBPL string literal: its own characters, `\\` and `"` escaped, control characters
     (below U+0020, and U+007F) as `\\xHH`. For printable ASCII this is exactly what `json.dumps` wrote."""
+    if _SBPL_SPECIAL.search(text) is None:
+        return '"' + text + '"'
     out = []
     for ch in text:
         if ch in ('\\', '"'):

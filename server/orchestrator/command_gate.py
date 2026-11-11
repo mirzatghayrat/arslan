@@ -208,6 +208,9 @@ class CommandPlan:
     deletes_outside: bool = False
     confined: bool = False
     offline_reason: str = ""        # S2a-3 step 3: why it runs offline with no card (`unreadable`), for SBX-8's count
+    # HR-1 (ruling 2): out under the grant with no click on its own card, so the outside floor keeps the run-later
+    # files unwritable. Only the user's click on this command's own card lifts that.
+    holds_run_later: bool = False
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -229,6 +232,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
     deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
     offline_reason = ""                # S2a-3 step 3: an unread command runs offline in the sandbox, with no card
+    clicked = False                    # HR-1: the user clicked this command's own card
 
     def delete_kw(outside: bool) -> dict:
         """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
@@ -383,6 +387,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         run_outside = run_outside or unwrapped
         by_grant = by_grant and not unwrapped     # a bare run is the user's click on its card, not the grant
         net_clicked = net_due and decided is not None and decided.by == "user"
+        clicked = decided is not None and decided.by == "user"
     if not offline_reason:     # an unread command already runs offline: nothing after outside content can add to it
         network = {} if net_clicked else await _network_after_outside_content(
             command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
@@ -394,4 +399,5 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         run_outside, by_grant, unwrapped, kept_wrapped = False, False, False, kept_wrapped or unwrapped
     return CommandPlan(command=command, run_outside=run_outside, by_grant=by_grant, sandbox_on=sandbox_on,
                        unwrapped=unwrapped, kept_wrapped=kept_wrapped, network=network,
-                       deletes_outside=deletes_outside, confined=confined, offline_reason=offline_reason)
+                       deletes_outside=deletes_outside, confined=confined, offline_reason=offline_reason,
+                       holds_run_later=run_outside and by_grant and not clicked)

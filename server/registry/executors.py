@@ -951,7 +951,8 @@ class RunCommandExecutor:
                                          sandbox=in_sub or (sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get()),
                                          closed=closed, readable=readable,
                                          copies=tool_outputs.given(tool_outputs.conversation.get()),
-                                         unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub)
+                                         unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub,
+                                         hold_run_later=terminal_exec.HOLD_RUN_LATER.get())
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")

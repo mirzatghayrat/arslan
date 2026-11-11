@@ -53,7 +53,11 @@ def test_every_permission_kind_is_placed_once_and_never_autos_kinds_are_its_rows
 def test_ids_are_unique_and_every_row_names_a_layer():
     ids = [row.id for row in hard_rules.ALL]
     assert len(ids) == len(set(ids)) and {row.layer for row in hard_rules.ALL} <= set(hard_rules.LAYERS)
-    assert hard_rules.RUN_LATER == ()                       # HR-1 fills it
+    # HR-1: one kernel row per run-later family, and the rows are kernel rows.
+    from server.services import run_later
+    later = {row.id for row in hard_rules.RUN_LATER}
+    assert {"run-later/" + name for name, _ in run_later.FAMILIES} <= later
+    assert {row.layer for row in hard_rules.RUN_LATER} == {"kernel"}
 
 
 def _row_files() -> tuple[str, ...]:
