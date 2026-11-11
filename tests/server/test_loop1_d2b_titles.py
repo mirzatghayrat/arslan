@@ -78,6 +78,19 @@ def test_a_harmless_first_step_never_takes_the_title_from_a_once_only_one(line, 
     assert card_purpose.phrase(line, lang="en") == title
 
 
+@pytest.mark.parametrize("line, rule, title", [
+    ("bash <<'EOF'\ngit push origin main\nEOF", "git-push", "Publish your commits to origin (and 2 more steps)"),
+    ("python3 - <<'EOF'\nrm -rf ../x\nEOF", "delete-outside", "Delete 1 file or folder (and 2 more steps)"),
+])
+def test_a_here_document_a_shell_or_an_interpreter_runs_keeps_the_rules_step_in_the_title(line, rule, title):
+    """③Hands on #828: a here-document's body is data only to a program that reads it as data (`cat`). One a shell or
+    an interpreter runs is code, which the grammar does not read (step 3's file-run rule), so the card keeps its own
+    reading of the body's steps and the title names the step the rule asks for."""
+    assert tp.reading(line).refused
+    assert rule in tp.ONCE_ONLY_RULES and rule in tp.ask_rules(line)
+    assert card_purpose.phrase(line, lang="en") == title
+
+
 def test_outside_reach_takes_the_title_too():
     line = "ls docs; at now"
     assert tp.ask_rules(line, outside=True) == {tp.OUTSIDE_REACH[0]}
