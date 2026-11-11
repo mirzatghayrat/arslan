@@ -113,8 +113,18 @@ def test_an_error_adds_nothing_elsewhere_and_is_recorded(event, case):
     assert result.error
 
 
+@pytest.mark.parametrize("event", GUARDS + OTHERS)
+@pytest.mark.parametrize("out", ["[" * 5000, '{"a":' * 5000], ids=["array", "object"])
+def test_deep_json_is_unreadable(event, out):
+    result = runner.parse(event, 0, out, "")
+    assert result.error == "unreadable JSON"
+    assert (result.decision, result.context) == ((runner.ASK if event in GUARDS else runner.NONE), "")
+
+
 def test_user_prompt_submit_blocks_or_adds_context():
     assert runner.parse("UserPromptSubmit", 2, "", "secret in it") == runner.HookResult(runner.BLOCK, "secret in it")
+    assert runner.parse("UserPromptSubmit", 0, _json(**{"continue": False, "stopReason": "x"}), "") == (
+        runner.HookResult(runner.BLOCK, "x"))
     assert runner.parse("UserPromptSubmit", 0, _json(decision="block", reason="no"), "") == runner.HookResult(
         runner.BLOCK, "no")
     add = _json(hookSpecificOutput={"hookEventName": "UserPromptSubmit", "additionalContext": "today is Monday"})
@@ -290,10 +300,78 @@ async def test_a_timed_out_hooks_children_are_killed(setup, parsed):
 
 @pytest.mark.macos
 @macos
-@pytest.mark.parametrize("command", ["exit 1", "kill -SEGV $$", "echo '{broken'"])
+async def test_a_child_left_running_after_a_normal_exit_is_killed(setup, parsed):
+    """The child lets go of the pipes, so the hook's exit ends the run; its group is killed then too."""
+    result = await _run(setup, "sleep 30 >/dev/null 2>&1 & echo $!", event="PostToolUse")
+    assert result == runner.HookResult()
+    child = int(parsed[0][1].split()[0])
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.05)
+    else:
+        os.kill(child, 9)
+        pytest.fail(f"the hook's child {child} outlived its normal exit")
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("command", ["exit 1", "kill -SEGV $$", "echo '{broken'",
+                                     f"{shlex.quote(sys.executable)} -I -c \"print('['*60000)\""],
+                         ids=["exit-1", "segv", "broken-json", "deep-json"])
 async def test_a_crash_or_bad_output_asks(setup, command):
     result = await _run(setup, command)
     assert (result.decision, result.reason) == (runner.ASK, runner.DIDNT_ANSWER) and result.error
+
+
+@pytest.mark.macos
+@macos
+async def test_output_parse_cant_read_still_asks(setup, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(runner, "parse", broken)
+    result = await _run(setup, "echo '{}'")
+    assert (result.decision, result.reason, result.error) == (runner.ASK, runner.DIDNT_ANSWER, "unreadable output")
+
+
+@pytest.mark.macos
+@macos
+async def test_the_commands_cache_is_not_writable(setup):
+    from server.services import run_temp
+    cache = run_temp.cache("commands")
+    command_sandbox.cache_environment(cache)
+    result = await _run(setup, f"echo x > {shlex.quote(str(cache / 'poison'))}")
+    assert (result.decision, result.tried) == (runner.ASK, (runner.TRIED_WRITE,))
+    assert not (cache / "poison").exists()
+
+
+@pytest.mark.macos
+@macos
+async def test_a_work_folder_inside_a_closed_folder_stays_readable(setup, tmp_path):
+    plugin, _ = setup
+    shut = tmp_path / "Documents"
+    work = shut / "project"
+    work.mkdir(parents=True)
+    (work / "notes.md").write_text("inside a closed folder")
+    result = await runner.run(_row("cat notes.md", "SessionStart"),
+                              runner.hook_input("SessionStart", workspace=work.resolve(), session_id="s"),
+                              plugin_dir=plugin, workspace=work.resolve(), closed=[shut])
+    assert result == runner.HookResult(context="inside a closed folder")
+
+
+@pytest.mark.macos
+@macos
+async def test_a_dash_led_exec_form_passes_no_sandbox_exec_options(setup):
+    """`-D K=V` would be read by sandbox-exec as a parameter, then /bin/echo run: `--` makes it the program name."""
+    plugin, work = setup
+    result = await runner.run(_row("-D", "SessionStart", args=["K=V", "/bin/echo", "ran"]),
+                              runner.hook_input("SessionStart", workspace=work, session_id="s"),
+                              plugin_dir=plugin, workspace=work)
+    assert result.context == "" and result.error
 
 
 @pytest.mark.macos

@@ -130,7 +130,7 @@ def parse(event: str, code: int | None, stdout: str, stderr: str, *, timed_out: 
         try:
             data = json.loads(stdout)
             result = _answer(event, data if isinstance(data, dict) else None)
-        except (ValueError, TypeError, AttributeError):
+        except (ValueError, TypeError, AttributeError, RecursionError):     # nested past the limit too
             return _failed(event, "unreadable JSON", tried)
     else:   # plain text: context for these two, as in Claude Code; no answer elsewhere
         result = HookResult(context=stdout.strip()[:TEXT_CAP] if event in ("UserPromptSubmit", "SessionStart") else "")
@@ -206,7 +206,8 @@ async def run(row: dict, payload: dict, *, plugin_dir: Path, workspace: Path, cl
         except (ValueError, OSError, run_later.TooManyLinks) as exc:
             return _failed(event, f"the sandbox didn't start: {exc}")
         try:
-            return await _execute(event, prefix + argv, payload, cwd=workspace, env=env, key=key,
+            # `--`: a dash-led exec-form command can't pass options to sandbox-exec.
+            return await _execute(event, [*prefix, "--", *argv], payload, cwd=workspace, env=env, key=key,
                                   limit=limit_of(row))
         finally:
             command_sandbox.remove_profile(command_sandbox.profile_path(prefix))
@@ -244,5 +245,8 @@ async def _execute(event: str, argv: list[str], payload: dict, *, cwd: Path, env
     terminal_exec._kill_group(proc)         # at the limit, and anything the hook left running when it exited
     _, pending = await asyncio.wait(tasks, timeout=terminal_exec.DRAIN_AFTER_KILL_S)
     await terminal_exec._cancel(pending)
-    return parse(event, proc.returncode, out.data().decode("utf-8", errors="replace"),
-                 err.data().decode("utf-8", errors="replace"), timed_out=timed_out)
+    try:
+        return parse(event, proc.returncode, out.data().decode("utf-8", errors="replace"),
+                     err.data().decode("utf-8", errors="replace"), timed_out=timed_out)
+    except Exception:  # noqa: BLE001 — output parse can't read fails closed: ask for the guards, nothing else
+        return _failed(event, "unreadable output")
