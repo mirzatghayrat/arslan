@@ -7,12 +7,37 @@ def _in_task(offer: Offer) -> bool:
     return offer.in_task
 
 
+def _can_start_a_sub_session(offer: Offer) -> bool:
+    """SUB5e: a turn that someone can be asked in, never inside a job (a sub-session's own job is offered
+    `sub_sessions.TOOLS` only, and a summary turn is a job), and never on the bottom layer (the card's rule 10:
+    a sub-session's sub-session has no such tool; `sub_sessions.start` refuses it there too)."""
+    return offer.in_task and not offer.in_job and offer.can_ask and not offer.bottom_layer
+
+
 def _can_start_a_job(offer: Offer) -> bool:
     """0.1.42 background work: offered to a host TURN only. Inside a job these are absent, so a job can never start (or
     stop) another job. S1 (R7): only where someone can be asked. A scheduled run binds no card surface; through a job it
     could put a card on the window, and it cannot act on this Mac itself (decide refuses unattended, U14 a)."""
     from server.registry.executors import EXECUTORS
     return offer.in_task and not offer.in_job and "start_background_work" in EXECUTORS and offer.can_ask
+
+
+#: SUB3 defined it; SUB5e puts it in TASKS. Offered where `_can_start_a_sub_session` says; who may start one, and how
+#: many, is still `sub_sessions.start`'s to refuse (the card's rule 10).
+START_SUB_SESSION = Tool(
+    "start_sub_session",
+    "Hand one independent part of a larger piece of work to a sub-session: a conversation of its own that works in "
+    "the background with files, commands and the web, and reports back here. Use it only when the work splits into "
+    "parts that can be done apart; anything one turn can do, do here. Write the brief so it stands alone: the "
+    "sub-session sees nothing of this conversation but the brief.",
+    {"type": "object", "properties": {
+        "brief": {"type": "string", "minLength": 1, "maxLength": 4000,
+                  "description": "What the sub-session should do and what done looks like, in the user's language."}},
+     "required": ["brief"], "additionalProperties": False},
+    offered=_can_start_a_sub_session,
+    # It returns the new sub-session's id only, nothing it read: its report reaches this conversation in SUB4's
+    # summary turn, framed as outside content there. So not `outside`, unlike delegate_work.
+    traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False))
 
 
 TASKS = (
@@ -41,6 +66,7 @@ TASKS = (
           "required": ["jobs"], "additionalProperties": False},
          offered=_in_task,
          traits=Traits(effect="read", parallel=False, outside=True, replay_safe=False, saves=False)),
+    START_SUB_SESSION,
     # 0.1.50 S2: the run's checklist — host bookkeeping (turn_plan), no executor.
     Tool("update_plan",
          "Keep a short checklist for a task with several parts or a target "
@@ -114,19 +140,3 @@ TASKS = (
          offered=_can_start_a_job,
          traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
 )
-
-#: SUB3: defined, and answered by task_tools.StartSubSessionExecutor, but in no table yet: SUB5 adds it to TASKS (and
-#: the executor to EXECUTORS) once the M64 bench passes with it, so no model can call it before then.
-START_SUB_SESSION = Tool(
-    "start_sub_session",
-    "Hand one independent part of a larger piece of work to a sub-session: a conversation of its own that works in "
-    "the background with files, commands and the web, and reports back here. Use it only when the work splits into "
-    "parts that can be done apart; anything one turn can do, do here. Write the brief so it stands alone: the "
-    "sub-session sees nothing of this conversation but the brief.",
-    {"type": "object", "properties": {
-        "brief": {"type": "string", "minLength": 1, "maxLength": 4000,
-                  "description": "What the sub-session should do and what done looks like, in the user's language."}},
-     "required": ["brief"], "additionalProperties": False},
-    # LOOP1 a6: in no table, so in no name set, as before: these are what today's sets say of it. SUB5 decides them
-    # when it joins TASKS (its report carries what the sub-session read, as delegate_work's does).
-    traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False))
