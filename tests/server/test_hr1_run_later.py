@@ -318,11 +318,11 @@ def test_inside_a_dependency_folder_the_walk_holds_nothing_unless_the_root_is_in
 
 @pytest.mark.parametrize("caps", [{"max_entries": 3}, {"max_depth": 1}, {"max_held": 8}, {"max_held_bytes": 400}])
 def test_the_walk_stops_at_its_caps_incomplete(tmp_path, caps):
-    ws = _tree(tmp_path / "ws")                                    # 9 held folders
+    ws = _tree(tmp_path / "ws")                    # 9 held folders and a link's target (sub/.cursor, review 10)
     walk = run_later.held_folders([ws], **caps)
     assert not walk.complete
-    assert len(walk.folders) <= caps.get("max_held", 9)
-    assert run_later.held_folders([ws], max_entries=1000, max_depth=8, max_held=9).complete
+    assert len(walk.folders) + len(walk.targets) <= caps.get("max_held", 10)
+    assert run_later.held_folders([ws], max_entries=1000, max_depth=8, max_held=10).complete
 
 
 def _aliased(ws: Path) -> Path:
@@ -348,8 +348,10 @@ def test_the_walk_finds_the_held_names_that_link_out_of_their_folder(tmp_path):
     assert walk.complete
     assert sorted(walk.aliases) == sorted(_found(ws, ".envrc", ".vscode", ".git/hooks/pre-commit",
                                                  ".claude/settings.json"))
+    # #813 review 10: every held name that is a link has its target held, beside it too (.npmrc -> .npmrc.base).
     assert sorted(walk.targets) == sorted(_found(ws, f"node_modules/{STAND_IN}/.envrc", f"node_modules/{STAND_IN}/.vscode",
-                                                 f"{STAND_IN}-sib/hook", f"{STAND_IN}-sib/settings.json"))
+                                                 f"{STAND_IN}-sib/hook", f"{STAND_IN}-sib/settings.json",
+                                                 ".npmrc.base"))
     assert run_later.held_folders([ws / "sub"]).aliases == ()                 # an ordinary name links where it likes
 
 
@@ -377,6 +379,86 @@ def test_an_alias_turns_the_exemption_off_holds_its_target_and_says_so(home, cap
     command_sandbox.commands_profile(plain)
     assert "link out of their folder" not in command_sandbox.note(plain)
     assert KERNEL_TEXT.splitlines()[0] in command_sandbox.commands_profile(plain).splitlines()   # exempt again
+
+
+# ── #813 review 10: link targets ────────────────────────────────────────────
+
+@pytest.mark.parametrize("path, below", [
+    ("w/.vscode", {(("tasks.json",), False), (("launch.json",), False), (("settings.json",), False),
+                   (("mcp.json",), False)}),
+    ("w/.husky", {((), True)}),
+    ("w/.husky/sub/x", {((), True)}),
+    ("w/.envrc", {((), False)}),
+    ("w/.vscode/settings.json", {((), False)}),
+    ("w/.claude", {(("settings*.json",), False), (("launch.json",), False)}),
+    ("w/.git", {(("hooks",), True), (("config",), False), (("config.worktree",), False),
+                (("worktrees", "*", "config.worktree"), False), (("modules", "*", "hooks"), True),
+                (("modules", "*", "config"), False)}),
+    ("w/.git/hooks", {((), True)}),
+    ("w/.git/modules/m", {(("hooks",), True), (("config",), False)}),
+    ("w/.GIT/Modules/m", {(("hooks",), True), (("config",), False)}),
+    ("w/vsc", set()), ("w/settings.json", set()), ("w/.vscode-x", set()),
+])
+def test_the_held_names_at_and_below_a_path_come_from_the_patterns(path, below):
+    assert set(run_later._below(run_later._parts("/" + path))) == below
+
+
+def test_a_held_folders_target_holds_the_held_names_mapped_through_the_link_and_nothing_else(tmp_path):
+    ws = Path(os.path.realpath(tmp_path))
+    (ws / "vsc").mkdir()
+    (ws / "c").mkdir()
+    (ws / "gd" / "hooks").mkdir(parents=True)
+    (ws / "gd" / "modules").mkdir()
+    vsc = run_later.link_filters(ws / "vsc", run_later._below(("w", ".vscode")))
+    assert set(vsc) == {f'(literal "{ws}/vsc/{n}")' for n in ("tasks.json", "launch.json", "settings.json",
+                                                              "mcp.json")}
+    claude = run_later.link_filters(ws / "c", run_later._below(("w", ".claude")))
+    depth = "/[^/]+" * len(ws.parts[1:]) + "/[^/]+"
+    assert set(claude) == {f'(require-all (subpath "{ws}/c") (regex #"^{depth}/[Ss][Ee][Tt][Tt][Ii][Nn][Gg][Ss]'
+                           f'[^/]*[.][Jj][Ss][Oo][Nn]$"))', f'(literal "{ws}/c")', f'(literal "{ws}/c/launch.json")'}
+    git = run_later.link_filters(ws / "gd", run_later._below(("w", ".git")))
+    for spelled in (f'(subpath "{ws}/gd/hooks")', f'(literal "{ws}/gd/config")', f'(literal "{ws}/gd/modules")',
+                    f'(literal "{ws}/gd/worktrees")', f'(require-all (subpath "{ws}/gd/modules")'):
+        assert any(f.startswith(spelled) for f in git), spelled
+    assert not any(f'"{ws}/gd"' in f or "objects" in f for f in git)
+    husky = run_later.link_filters(ws / "h", run_later._below(("w", ".husky")))
+    assert husky == (f'(subpath "{ws}/h")', f'(literal "{ws}/h")')                 # missing: not made either
+
+
+def test_a_broken_links_first_missing_folder_is_held_and_a_deep_regex_falls_back_closed(tmp_path):
+    ws = Path(os.path.realpath(tmp_path))
+    gone = run_later.link_filters(ws / "a" / "b" / "envrc", (((), False),))
+    assert gone == (f'(literal "{ws}/a/b/envrc")', f'(literal "{ws}/a")')
+    deep = Path("/", *(f"d{i}" for i in range(170)))                 # 170 counted components pass MAX_REGEX
+    filters = run_later.link_filters(deep, ((("*.json",), False),))
+    assert filters[0].endswith('(regex #"^.*/[^/]*[.][Jj][Ss][Oo][Nn]$"))') and "[^/]+" not in filters[0]
+
+
+def test_a_link_whose_target_links_on_is_held_at_both(tmp_path):
+    """`.vscode -> vsc`, `vsc/settings.json -> ../elsewhere.json`: the real path the consumer reaches is held, and so
+    is the link in vsc, so it can't be replaced by a file there."""
+    ws = Path(os.path.realpath(tmp_path))
+    (ws / "vsc").mkdir()
+    (ws / "elsewhere.json").write_text("old")
+    (ws / "vsc" / "settings.json").symlink_to("../elsewhere.json")
+    filters = run_later.link_filters(ws / "vsc", run_later._below(("w", ".vscode")))
+    assert f'(literal "{ws}/elsewhere.json")' in filters and f'(literal "{ws}/vsc/settings.json")' in filters
+
+
+def test_the_link_targets_count_toward_the_walks_caps(tmp_path):
+    """Each held name that is a link counts as a held folder, and its filters' bytes count too."""
+    ws = tmp_path / "ws"
+    for i in range(6):
+        (ws / f"r{i}" / "vsc").mkdir(parents=True)
+        (ws / f"r{i}" / ".vscode").symlink_to("vsc")
+    walk = run_later.held_folders([ws])
+    assert walk.complete and walk.folders == () and len(walk.targets) == 6 and len(walk.link_filters) == 24
+    assert not run_later.held_folders([ws], max_held=5).complete
+    folders_only = sum(len(os.fsencode(p)) + 20 for p in (*walk.targets, *(t.parent for t in walk.targets)))
+    assert not run_later.held_folders([ws], max_held_bytes=folders_only).complete
+    assert run_later.held_folders([ws], max_held_bytes=folders_only * 4).complete
+    hold = command_sandbox.run_later_folders([ws])
+    assert hold.at_targets == walk.link_filters and hold.by_name == ()
 
 
 def _repositories(ws: Path, count: int) -> Path:
@@ -582,6 +664,25 @@ def test_the_walk_never_lists_the_closed_or_privacy_protected_home_folders(home,
         assert Path(os.path.realpath(home)) / f"{STAND_IN}-plain" / ".git" / "hooks" in made.folders
 
 
+def test_a_link_into_a_private_folder_is_held_there_but_not_listed(home, monkeypatch):
+    """#813 review 10: `.claude -> ~/Documents/c` holds the held names at `c` by path, and the walk doesn't list `c`
+    for links on (a privacy prompt); a work folder inside ~/Documents lists its own linked folders as before."""
+    real = Path(os.path.realpath(home))
+    (home / "Documents" / "c").mkdir(parents=True)
+    ws = home / f"{STAND_IN}-ws"
+    ws.mkdir()
+    (ws / ".claude").symlink_to(real / "Documents" / "c")
+    opened = _recorded(monkeypatch)
+    walk = run_later.held_folders([ws])
+    assert walk.complete and walk.targets == (real / "Documents" / "c",)
+    assert f'(literal "{real}/Documents/c/launch.json")' in walk.link_filters
+    assert real / "Documents" / "c" not in opened
+    (home / "Documents" / "ws").mkdir()
+    (home / "Documents" / "ws" / ".claude").symlink_to("../c")
+    run_later.held_folders([home / "Documents" / "ws"])
+    assert real / "Documents" / "c" in opened
+
+
 def test_a_home_that_is_a_link_still_skips_them_by_real_path(home, monkeypatch, tmp_path):
     """`~` may itself be a link: the private folders are compared by real path, as the walk sees them."""
     tcc, closed = _private_home(home)
@@ -631,7 +732,10 @@ def test_the_profiles_hold_the_held_folders_in_them_by_name_and_not_by_literal(h
 
 def test_with_nothing_to_skip_the_profiles_have_no_by_name_hold(home):
     ws = _tree(home / "ws")
-    assert "(require-all (subpath" not in command_sandbox.commands_profile(ws)
+    hold = command_sandbox.run_later_folders([ws])
+    assert hold.by_name == () and hold.at_targets                   # sub/.cursor's target only (review 10)
+    lines = [line for line in command_sandbox.commands_profile(ws).splitlines() if "(require-all (subpath" in line]
+    assert lines == [f"(deny file-write* {' '.join(hold.at_targets)})"]
     assert command_sandbox.too_large_to_map(ws) is False
 
 

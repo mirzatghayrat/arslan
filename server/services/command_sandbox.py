@@ -241,6 +241,9 @@ class RunLaterHold:
     by_name: tuple[str, ...]        # filters to deny `file-write*` over
     complete: bool                  # the walk was complete
     aliases: tuple[Path, ...]       # #813 review 9: held names that link out of their folder
+    #: #813 review 10: filters to deny `file-write*` over, the held names at the real path of each held name and held
+    #: folder name the walk found as a link (`run_later.link_filters`)
+    at_targets: tuple[str, ...] = ()
 
     @property
     def aliased(self) -> bool:
@@ -257,6 +260,8 @@ def run_later_folders(folders, *, roots=(), closed=()) -> RunLaterHold:
     incomplete (`run_later.folder_filters`). A skipped private folder is kept too, so it and the folders above it
     stay in place and its by-name hold can't be renamed away. #813 review 9: the real paths of the aliases the walk
     found are kept too (a dependency's file a held name links to, and the folders above it, stay in place).
+    #813 review 10: so are the real paths of every held name and held folder name the walk found as a link, and the
+    held names at them are denied (`run_later.link_filters`: `.vscode -> vsc` holds `vsc/settings.json`).
     A hooksPath that can't be read raises, as in `kernel_filters`."""
     folders, roots = list(folders), list(roots)
     walk = run_later.held_folders([*folders, *roots], roots=roots, closed=closed)
@@ -274,7 +279,7 @@ def run_later_folders(folders, *, roots=(), closed=()) -> RunLaterHold:
                      "name in this run, so a new one (a .git, a first .vscode) can't be made, and dependency folders "
                      "get no exemption")
         by_name = (*by_name, *run_later.folder_filters(folders, roots=roots, aliased=True))
-    return RunLaterHold(kept, by_name, walk.complete, walk.aliases)
+    return RunLaterHold(kept, by_name, walk.complete, walk.aliases, walk.link_filters)
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
@@ -516,6 +521,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     after.deny("file-write-create", *run_later.symlink_filters())
     for filters in run_later.kernel_filters([workspace], aliased=hold.aliased):
         after.deny("file-write*", *filters)
+    if hold.at_targets:                     # #813 review 10: the held names at a link's real path
+        after.deny("file-write*", *hold.at_targets)
     held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),
                           kept=hold.kept)
     if held:
@@ -573,6 +580,8 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
         rules.deny("file-write-create", *run_later.symlink_filters())
         for filters in run_later.kernel_filters([run_later_in], aliased=hold.aliased):
             rules.deny("file-write*", *filters)
+        if hold.at_targets:                 # #813 review 10: the held names at a link's real path
+            rules.deny("file-write*", *hold.at_targets)
     held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder),
                           kept=hold.kept if hold is not None else ())
     if held:

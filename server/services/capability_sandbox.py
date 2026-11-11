@@ -96,6 +96,8 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], p
     rules.deny("file-write-create", *run_later.symlink_filters())
     for filters in run_later.kernel_filters(granted, roots=[real(root), own], aliased=hold.aliased):
         rules.deny("file-write*", *filters)
+    if hold.at_targets:                     # #813 review 10: the held names at a link's real path
+        rules.deny("file-write*", *hold.at_targets)
     held = command_sandbox.held_ancestors(
         [*granted, own, real(root)], [*command_sandbox.default_protected(), *command_sandbox.shared_caches(), peer],
         planted=command_sandbox.cap6b_spellings(plugin_folder), kept=hold.kept)

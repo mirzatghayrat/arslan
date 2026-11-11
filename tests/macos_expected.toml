@@ -51,6 +51,17 @@ markers = 22
 cases = 37
 xfail = 0
 
+# 0.1.64 HR-1 review delta 10, link targets, in the commands preset, an MCP server's granted folder and the outside
+# floor: a held name or held folder that is a link (as a checkout leaves it) has the held names at its real path held,
+# mapped through the link and only those: .vscode, .husky, .envrc, .claude, deeper siblings, .cursor and a file link
+# (24 cases); a link on inside a linked folder is followed (3 cases); a broken link's target can't be made (3 cases);
+# an ordinary link and an unlinked folder are unaffected (3 cases); a `.git` that is a link has its hooks and config
+# held, objects written, and stays in place (3 cases).
+["server/sbx/test_hr1_run_later_link_targets.py"]
+markers = 5
+cases = 36
+xfail = 0
+
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
 # protected folder named in ASCII, CJK, accents, emoji or with a control character is closed; a
 # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is

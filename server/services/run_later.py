@@ -25,11 +25,13 @@ held by the file tools and not by the kernel, if APFS folds it at all).
 Not on the list, and why: the rest of `.git` (commit, branch, checkout and stash must keep working); the user's
 home-level files (shell startup, global git config, LaunchAgents: the commands profile doesn't make them writable
 unless the work folder is ~; a separate set, not this one); a submodule's git folder deeper than one name under
-`.git/modules`, a bare repository's hooks, and a `.git` that is a link to a folder named otherwise (Codex's corpus).
+`.git/modules`, and a bare repository's hooks (Codex's corpus). A `.git` (or any held name or held folder) that is a
+link to a path named otherwise is held at that path (`link_filters`, #813 review 10).
 """
 from __future__ import annotations
 
 import fnmatch
+import itertools
 import os
 import stat
 from collections.abc import Iterable
@@ -397,9 +399,12 @@ class HeldWalk:
     #: by real path; the profiles hold the held folders inside them by name (`private_filters`).
     skipped: tuple[Path, ...] = ()
     #: #813 review 9: the held names and held folder names the walk listed that are links whose real path leaves the
-    #: folder the link is in (`aliases`, by their own path), and those real paths (`targets`), each once.
+    #: folder the link is in (`aliases`, by their own path). #813 review 10: the real paths of every held name and
+    #: held folder name the walk listed as a link, wherever they are (`targets`, each once, held in place), and the
+    #: filters that hold the held names at them (`link_filters`: the profiles deny `file-write*` over them).
     aliases: tuple[Path, ...] = ()
     targets: tuple[Path, ...] = ()
+    link_filters: tuple[str, ...] = ()
 
 
 class _Incomplete(Exception):
@@ -452,8 +457,13 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
 
     #813 review 9: a held name or held folder name the walk lists as a link (from the listing's type: one call more,
     `realpath`, only for those) is an alias when its real path leaves the folder it is in; it is returned in
-    `aliases` and its real path in `targets`, which count against the caps as held folders do. A held folder with no
-    held folders of its own (`.git/hooks`) is listed for its links too."""
+    `aliases`. A held folder with no held folders of its own (`.git/hooks`) is listed for its links too.
+
+    #813 review 10: every such link, alias or not (`.vscode -> vsc`, `.envrc -> envrc.real`, a repository can check
+    one out), has its real path in `targets` and the held names at that path in `link_filters` (`link_filters`); a
+    target and the bytes of its filters count against the caps as a held folder and its literals do. A target that is a
+    folder is listed for links at held names as the consumer sees them through it (`through`), its entries counted as
+    the walk's, except inside a private folder no walked folder lies in."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
@@ -471,12 +481,14 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     found: list[Path] = []
     aliases: list[Path] = []
     targets: list[Path] = []
+    filters: list[str] = []
+    through_seen: set[Path] = set()
     counted: set[Path] = set(starts)          # the folders whose literal is counted (the starts: by the caller)
     held_bytes = [0]
 
-    def keep(path: Path, into: list[Path] = found) -> None:
-        """`path` is held: count it and the folders above it in the walk (each once) against the caps, which end the
-        walk before it is kept when it would pass either."""
+    def keep(path: Path, into: list[Path] = found, extra: int = 0) -> None:
+        """`path` is held: count it and the folders above it in the walk (each once), and `extra` bytes of filters,
+        against the caps, which end the walk before it is kept when it would pass either."""
         if len(found) + len(targets) >= max_held:
             raise _Incomplete
         for folder in (path, *path.parents):
@@ -484,26 +496,60 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                 break                         # it, and every folder above it, is counted already
             counted.add(folder)
             held_bytes[0] += len(os.fsencode(folder)) + _LITERAL_BYTES
+        held_bytes[0] += extra
         if held_bytes[0] > max_held_bytes:
             raise _Incomplete
         into.append(path)
 
-    def alias(entry: os.DirEntry, folder: Path, tree: dict) -> None:
-        """#813 review 9: `entry` is a link. When it is a held name or a held folder name (`tree`'s, here) and its
-        real path leaves `folder`, it is an alias: the profile drops the dependency exemption and holds the real path
-        and the folders above it in place, as a held folder's (`targets`, for `held_ancestors(kept=...)`)."""
+    def alias(entry: os.DirEntry, folder: Path, seen_as: Path | None = None) -> None:
+        """`entry` is a link. When a held name lies at it or below it (`_below`: it is a held name or a held folder
+        name, at any depth, `*` components included; by `seen_as`, the path a consumer reads it by, when the walk
+        reached `folder` through a link), #813 review 10: its real path is held in place, as a held folder
+        (`targets`, for `held_ancestors(kept=...)`), the held names at that path are denied (`link_filters`), and a
+        folder there is listed for further links (`through`). #813 review 9: when that real path leaves `folder`,
+        it is an alias too: the profile drops the dependency exemption."""
         path = folder / entry.name
-        if entry.name.casefold() not in tree and not _held_name(path):
+        seen_as = seen_as or path
+        below = _below(_parts(seen_as))
+        if not below:
             return
         target = Path(os.path.realpath(path))
+        held = link_filters(target, below)
+        keep(target, targets, sum(len(f.encode()) + 1 for f in held))
+        filters.extend(held)
         if target.parent != folder:
             aliases.append(path)
-            keep(target, targets)
+        try:
+            listed = _is_folder(target)
+        except OSError:                         # a loop, a folder it can't read: not mapped, so closed
+            raise _Incomplete from None
+        if listed:
+            through(target, seen_as)
+
+    def through(folder: Path, seen_as: Path) -> None:
+        """#813 review 10: `folder`, the real path of a link a consumer reads as `seen_as`, listed for the links in it
+        at held names by that path (`.claude -> c`, `c/settings.local.json -> ../x.json`): the folders on the way to
+        a held name are listed too, a held folder (`**`) for its own entries only, as `inside_held` lists
+        `.git/hooks`. Each folder once; never one the walk doesn't list (`private_folders`)."""
+        if folder in through_seen or not listable(folder):
+            return
+        through_seen.add(folder)
+        further = any(rest for rest, _ in _below(_parts(seen_as)))
+        for entry in _listing(folder, budget):
+            if _is_link_entry(entry):
+                alias(entry, folder, seen_as / entry.name)
+            elif further and _is_folder_entry(entry) and _below(_parts(seen_as / entry.name)):
+                through(folder / entry.name, seen_as / entry.name)
+
+    def listable(folder: Path) -> bool:
+        """Not inside a private folder, unless a walked folder lies at or inside that one (Arslan works there)."""
+        return not any((p == folder or p in folder.parents) and not any(s == p or p in s.parents for s in starts)
+                       for p in private_list)
 
     def inside_held(folder: Path, tree: dict) -> None:
         for entry in _listing(folder, budget):
             if _is_link_entry(entry):
-                alias(entry, folder, tree)
+                alias(entry, folder)
                 continue
             sub = tree.get(entry.name.casefold())
             if sub is not None and _is_folder_entry(entry):
@@ -516,7 +562,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
             folder, depth = stack.pop()
             for entry in _listing(folder, budget):
                 if _is_link_entry(entry):
-                    alias(entry, folder, HELD_FOLDERS)
+                    alias(entry, folder)
                     continue
                 if not _is_folder_entry(entry):
                     continue
@@ -541,7 +587,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     else:
         complete = True
     return HeldWalk(tuple(dict.fromkeys(found)), complete, tuple(dict.fromkeys(skipped)),
-                    tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)))
+                    tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)), tuple(dict.fromkeys(filters)))
 
 
 def _is_link_entry(entry: os.DirEntry) -> bool:
@@ -552,11 +598,74 @@ def _is_link_entry(entry: os.DirEntry) -> bool:
         raise _Incomplete from None
 
 
-def _held_name(path: Path) -> bool:
-    """`path` matches a held name (FAMILIES) at any depth, dependency folders not exempted."""
-    parts = _parts(path)
-    return any(_fits(parts[i:], tuple(pattern.split("/")))
-               for _, patterns in FAMILIES for pattern in patterns for i in range(len(parts)))
+#: FAMILIES' patterns as (components, whether everything below them is held): `.husky/**` is ((".husky",), True).
+_SPLIT: tuple[tuple[tuple[str, ...], bool], ...] = tuple(
+    (tuple(p.split("/")[:-1]), True) if p.endswith("/**") else (tuple(p.split("/")), False)
+    for _, patterns in FAMILIES for p in patterns)
+
+
+def _below(parts: tuple[str, ...]) -> tuple[tuple[tuple[str, ...], bool], ...]:
+    """#813 review 10: the held names at and below a path with components `parts`, by the patterns' own components,
+    relative to it: `((), False)` is the path itself (a held file), `((), True)` the path and everything below it,
+    `(("tasks.json",), False)` that name in it, `(("hooks",), True)` that folder and everything below it,
+    `(("modules", "*", "config"), False)` a `*` component on the way. Empty: no held name at or below it.
+    For `.vscode` that is its four files; for `.git` its hooks, configs, worktrees' and modules' ones."""
+    out: list[tuple[tuple[str, ...], bool]] = []
+    for fixed, below in _SPLIT:
+        if below and any(_fits(parts[i:], (*fixed, "**")) for i in range(len(parts))):
+            out.append(((), True))             # at or below a `**` folder: everything below the path is held
+            continue
+        for k in range(1, min(len(fixed), len(parts)) + 1):     # the path is the pattern's k-th component
+            if all(fnmatch.fnmatchcase(part.casefold(), name.casefold())
+                   for part, name in zip(parts[-k:], fixed[:k])):
+                out.append((fixed[k:], below))
+    return tuple(dict.fromkeys(out))
+
+
+#: A component in a regex: a run of characters but `/`.
+_ANY_COMPONENT = "/[^/]+"
+
+
+def link_filters(target: Path, below: Iterable[tuple[tuple[str, ...], bool]]) -> tuple[str, ...]:
+    """#813 review 10: the filters that hold, at `target` (the real path of a link at a held name or held folder
+    name), the held names `below` (`_below`) the link: what a consumer reads through the link, whatever `target` is
+    named and wherever it is. A fixed name as a `literal` (a file) or a `subpath` (`**`), each by its real path and by
+    its spelling under `target` when another link in there leads elsewhere; a name with a `*` component as
+    `(require-all (subpath <folder>) (regex …))`, the folder before its first `*` by its real path, and the regex
+    built from the pattern's components with that folder's depth counted in `[^/]+` components (never its path), so
+    it holds that name exactly under that folder and nothing deeper (`.claude -> c`: `c/settings.json`, not
+    `c/x/settings.json`; past `MAX_REGEX`, any depth below the folder: closed, not open); that folder itself as a
+    literal too, so it stays in place or, missing, isn't made. And, for a path in there that doesn't exist (a broken
+    link's target, a name not made yet), its first missing component as a literal: nothing can be made there, a link
+    included, that would carry the name elsewhere. Paths go in as SBPL strings (`sbpl_string`), never into a regex."""
+    from server.services.sandbox_profile import literal, regex, subpath
+    out: list[str] = []
+    for rest, everything in below:
+        fixed = tuple(itertools.takewhile(lambda part: "*" not in part, rest))
+        wild = rest[len(fixed):]
+        lexical = target.joinpath(*fixed)
+        anchor = Path(os.path.realpath(lexical))
+        spellings = tuple(dict.fromkeys((anchor, lexical)))
+        if not wild:
+            out += [subpath(s) if everything else literal(s) for s in spellings]
+        else:
+            body = "/".join(map(_component, wild)) + ("(/.*)?" if everything else "")
+            counted = "^" + _ANY_COMPONENT * len(_parts(anchor)) + "/" + body + "$"
+            pattern = counted if len(counted) <= MAX_REGEX else "^.*/" + body + "$"
+            out += [f"(require-all {subpath(anchor)} {regex(pattern)})", *map(literal, spellings)]
+        missing = _first_missing(anchor)
+        if missing is not None:
+            out.append(literal(missing))
+    return tuple(dict.fromkeys(out))
+
+
+def _first_missing(path: Path) -> Path | None:
+    """The first component of `path`, from the top, that doesn't exist (a link counts as existing), or None."""
+    if os.path.lexists(path):
+        return None
+    while not os.path.lexists(path.parent) and path.parent != path:
+        path = path.parent
+    return path
 
 
 def _is_private(entry: os.DirEntry, path: Path, private: set[tuple[int, int]], inodes: set[int],

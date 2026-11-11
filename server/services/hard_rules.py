@@ -95,6 +95,7 @@ DIRECT: tuple[HardRule, ...] = (
 _HR1 = _T + "test_hr1_run_later.py::"
 _HR1_KERNEL = _T + "sbx/test_hr1_run_later_kernel.py::"
 _HR1_ALIASES = _T + "sbx/test_hr1_run_later_aliases.py::"
+_HR1_LINK_TARGETS = _T + "sbx/test_hr1_run_later_link_targets.py::"
 
 
 def _later(family: str) -> HardRule:
@@ -119,6 +120,9 @@ RUN_LATER: tuple[HardRule, ...] = (
              _HR1_ALIASES + "test_a_held_name_linked_into_a_dependency_is_refused_and_so_is_the_dependencys"),
     HardRule("run-later/new-links", "run-later", "kernel", "server.services.run_later:symlink_filters",
              _HR1_ALIASES + "test_no_link_is_made_at_a_held_name_during_the_run_and_ordinary_ones_are"),
+    # #813 review 10: a held name or held folder that is a link has the held names at its real path held.
+    HardRule("run-later/link-targets", "run-later", "kernel", "server.services.run_later:link_filters",
+             _HR1_LINK_TARGETS + "test_a_held_name_or_folder_that_is_a_link_has_the_held_names_at_its_target_held"),
 )
 
 NEVER_AUTO: tuple[HardRule, ...] = (
