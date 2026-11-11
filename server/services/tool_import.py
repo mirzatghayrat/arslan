@@ -94,8 +94,8 @@ def _claude() -> Path:
 # ── reading, never writing ───────────────────────────────────────────────────────────────────────────────────────
 
 def _read_local(base: Path) -> dict[str, bytes]:
-    """Every file of one folder by its plain relative path. A link anywhere, the folder itself included, or a special
-    file refuses it, and each file is opened without following one. Raises Refused."""
+    """Every file of one folder by its plain relative path. A link anywhere, the folder itself included, a hard link
+    or a special file refuses it, and each file is opened without following one. Raises Refused."""
     try:
         if not stat.S_ISDIR(os.lstat(base).st_mode):
             raise Refused("unreadable", "a link or not a folder")
@@ -109,8 +109,11 @@ def _read_local(base: Path) -> dict[str, bytes]:
             for name in sorted(names):
                 path = here / name
                 rel = path.relative_to(base).as_posix()
-                if not stat.S_ISREG(os.lstat(path).st_mode) or not skill_import._plain_path(rel):
+                info = os.lstat(path)
+                if not stat.S_ISREG(info.st_mode) or not skill_import._plain_path(rel):
                     raise Refused("unreadable", "holds a link or an odd name")
+                if info.st_nlink > 1:       # #816: another name on disk could bring in a file that isn't the skill's
+                    raise Refused("unreadable", "holds a file with another name on disk (a hard link)")
                 if len(files) >= MAX_FILES:
                     raise Refused("too_large", "files")
                 try:

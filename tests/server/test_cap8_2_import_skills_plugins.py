@@ -285,6 +285,19 @@ async def test_a_link_is_refused(api, home, tmp_path):
     assert all(r["tick"] is False for r in scan["skills"])
 
 
+async def test_a_hard_link_is_refused(api, home, tmp_path):
+    """#816's rule for the import too: a file with another name on disk could be read in as the skill's own."""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not the skill's\n")
+    folder = _skill(home, "hard-link")
+    (folder / "scripts").mkdir()
+    os.link(outside, folder / "scripts" / "x.py")
+    _skill(home, "plain")
+    scan = await _scan(api)
+    assert {r["id"].rsplit("/", 1)[-1]: r["refused"] for r in scan["skills"]} == {"hard-link": "unreadable",
+                                                                                  "plain": None}
+
+
 async def test_a_change_after_the_scan_adds_nothing(api, home):
     folder = _skill(home)
     row = _row(await _scan(api), "skills", "release-notes")
