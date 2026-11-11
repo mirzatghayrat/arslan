@@ -10,10 +10,10 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, request } from '../api/client';
 import type { SandboxCardItem } from '../api/client.types';
-import { openSetting } from '../lib/sections';
+import { openSection } from '../lib/sections';
 import { useArslanStore } from '../stores/arslanStore';
 import { Button, toast } from './kit';
-import { CERTIFICATES_SWITCH_ID, refusalText } from './settings/SandboxNetworkPanel';
+import { refusalText } from './settings/SandboxNetworkPanel';
 
 export default function SandboxCard({ card }: { card: SandboxCardItem }) {
   const { t } = useTranslation();
@@ -65,7 +65,7 @@ export default function SandboxCard({ card }: { card: SandboxCardItem }) {
       <div className="flex flex-wrap gap-2">
         {!lan && (
           <Button size="sm" tone="primary" data-testid="sandbox-card-settings"
-            onClick={() => openSetting('abilities', CERTIFICATES_SWITCH_ID)}>
+            onClick={() => openSection('settings', 'sandbox_certificates')}>
             {t('sandboxNet.openSettings')}
           </Button>
         )}

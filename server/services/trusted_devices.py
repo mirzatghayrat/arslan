@@ -8,8 +8,8 @@ A device becomes trusted only two ways (the rule the user approved, 2026-11-11):
   approval card's answer names its `call_id` (approvals.answer). A card that isn't pending (never shown, answered
   already, or past its 30 minutes) is refused, and so is a device it didn't show.
 
-Nothing a model can call reaches either. A command the proxy refused makes a card (`offer`, from tool_execute), never a
-trusted device; `PUT /settings` doesn't take this setting (it isn't on SettingsIn), and no tool writes settings. The
+Nothing a model can call reaches either. A command the proxy refused makes a card (`offer`, from the tool loop), never
+a trusted device; `PUT /settings` doesn't take this setting (it isn't on SettingsIn), and no tool writes settings. The
 certificate switch (`sandbox_system_certificates`) is an ordinary setting that only `PUT /settings` writes.
 tests/server/sbx/test_sbx_trust_cards.py pins both.
 """
@@ -21,8 +21,6 @@ import re
 import secrets
 import socket
 import time
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass
 
 from arslan.aio import within
@@ -173,7 +171,6 @@ class _Card:
 
 
 _cards: dict[str, _Card] = {}
-_stopped: ContextVar[dict | None] = ContextVar("sandbox_stopped", default=None)
 
 
 def _shown(entries: list[dict]) -> tuple[tuple[str, str], ...]:
@@ -185,40 +182,21 @@ def _frame(card_id: str, card: _Card) -> dict:
                                  addresses=[address for _, address in card.entries])
 
 
-@contextmanager
-def collecting():
-    """Around one tool call (tool_execute): what `note_stop` notes meanwhile. A dict, so a note made in a task the call
-    awaits (`within` copies the context) still reaches it, as run_trace's denial does."""
-    held: dict = {}
-    token = _stopped.set(held)
-    try:
-        yield held
-    finally:
-        _stopped.reset(token)
-
-
-def note_stop(*, certificates: bool = False, hosts: list[str] = ()) -> None:
-    """terminal_exec: the sandbox stopped the command being run. Its certificate check failed with the switch off, or
-    the proxy refused `hosts` while it ran. Never on the result, which the model reads."""
-    held = _stopped.get()
-    if held is None:
-        return
-    if certificates:
-        held["certificates"] = True
-    for host in hosts:
-        if host not in held.setdefault("hosts", []):
-            held["hosts"].append(host)
-
-
-async def offer(conversation_id: str | None, stopped: dict) -> list[dict]:
-    """The cards for one tool call the sandbox stopped (`stopped`, from `collecting`): the certificate card when its
-    certificate check failed with the switch off, and a device card when the proxy refused one LAN device while it ran
-    (one only: of two, one may be another command's, run at the same time). A card trusts nothing: these are frames for
-    the Mac windows, and `answer` is the only way a card trusts its device."""
+async def offer(conversation_id: str | None, tool_key: str, result, refused: list[str]) -> list[dict]:
+    """The cards for one run_command call (the tool loop, once it ran): the certificate card when the sandbox stopped
+    it on a certificate check with the switch off, and a device card when its output shows the proxy's refusal and the
+    proxy refused one LAN device while it ran (`refused`, the call's watch; one only: of two, one may be another
+    command's, run at the same time). Read from the result and the proxy's own record, never written onto the result.
+    A card trusts nothing: these are frames for the Mac windows, and `answer` is the only way a card trusts its
+    device."""
+    from server.services import command_sandbox, terminal_exec
+    if tool_key != "run_command" or not isinstance(result, dict):
+        return []
     frames = []
-    if stopped.get("certificates"):
+    if (result.get("sandbox_denied") and command_sandbox.trust_check_failed(result)
+            and not await terminal_exec.trust_service_allowed()):
         frames.append(protocol.sandbox_card(secrets.token_hex(16), "certificates"))
-    hosts = (stopped.get("hosts") or [])[:3]
+    hosts = refused[:3] if command_sandbox.proxy_refused(result) else []
     if conversation_id and hosts:
         try:
             pinned = await within(asyncio.gather(*(asyncio.to_thread(pin, host) for host in hosts),

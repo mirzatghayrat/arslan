@@ -9,8 +9,8 @@ vi.mock("../../api/client", async (original) => ({
 }));
 
 import { ApiError } from "../../api/client";
-import { OPEN_SECTION_EVENT, openSetting } from "../../lib/sections";
-import SandboxNetworkPanel, { CERTIFICATES_SWITCH_ID } from "./SandboxNetworkPanel";
+import SandboxNetworkPanel from "./SandboxNetworkPanel";
+import { SECTION_ANCHORS, resolveSection } from "./sectionRegistry";
 
 const NAS = { host: "nas.local", address: "192.168.1.20" };
 const IP = { address: "192.168.1.42" };
@@ -34,16 +34,13 @@ describe("SBX settings: the certificate switch and the trusted local devices (th
     expect(request).toHaveBeenCalledWith("/settings/sandbox/trusted-devices");
   });
 
-  it("lands on the switch when a card opened Settings for it", async () => {
+  it("holds the switch in the row the certificate card's deep link opens at", async () => {
     request.mockResolvedValueOnce(devices());
-    const asked: unknown[] = [];
-    const listen = (e: Event) => asked.push((e as CustomEvent).detail);
-    window.addEventListener(OPEN_SECTION_EVENT, listen);
-    openSetting("abilities", CERTIFICATES_SWITCH_ID);
-    window.removeEventListener(OPEN_SECTION_EVENT, listen);
-    expect(asked).toEqual([{ section: "settings", sub: "abilities" }]);
     render(<SandboxNetworkPanel systemCertificates={false} />);
-    expect(document.activeElement).toBe(screen.getByTestId(CERTIFICATES_SWITCH_ID));
+    expect(resolveSection("sandbox_certificates")).toBe("abilities");
+    const row = document.getElementById(SECTION_ANCHORS.sandbox_certificates.elementId);
+    expect(row).toContainElement(screen.getByTestId("settings-sandbox-certificates-toggle"));
+    await screen.findByText("还没有信任的设备。");
   });
 
   it("lists the devices, adds one by name or by IP, and stops trusting one", async () => {

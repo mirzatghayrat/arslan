@@ -58,6 +58,8 @@ export const LEGACY_SECTION: Record<string, SettingsSectionId> = {
  */
 export const SECTION_ANCHORS: Record<string, { section: SettingsSectionId; elementId: string }> = {
   remembered: { section: 'abilities', elementId: 'settings-remembered-answers' },
+  // SBX settings: the certificate card's "Turn it on in Settings" lands on the switch.
+  sandbox_certificates: { section: 'abilities', elementId: 'settings-sandbox-certificates' },
 };
 
 export function resolveSection(id: string | undefined): SettingsSectionId | undefined {

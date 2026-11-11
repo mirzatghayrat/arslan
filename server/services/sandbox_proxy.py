@@ -247,7 +247,7 @@ async def _trusted() -> list[dict]:
 
 
 # ── what the proxy refused while a command ran (SBX settings: the LAN card) ──
-# terminal_exec watches the proxy while one sandboxed command runs, and trusted_devices.offer turns a LAN device it
+# The tool loop watches the proxy while one run_command call runs, and trusted_devices.offer turns a LAN device it
 # refused meanwhile into a card. The proxy can't tell which command a connection came from (it takes no credentials),
 # so a refusal reaches every watch open at that moment: a command running beside another may see the other's, which is
 # why a card is offered only when a single device was refused. A watch only collects names; it trusts nothing.

@@ -11,10 +11,9 @@ vi.mock("../api/client", async (original) => ({
 import { ApiError } from "../api/client";
 import type { ArslanServerMessage } from "../api/client.types";
 import { toUiMessages } from "../api/adapters";
-import { OPEN_SECTION_EVENT, takeSettingFocus } from "../lib/sections";
+import { OPEN_SECTION_EVENT } from "../lib/sections";
 import { initialArslanState, useArslanStore } from "../stores/arslanStore";
 import SandboxCard from "./SandboxCard";
-import { CERTIFICATES_SWITCH_ID } from "./settings/SandboxNetworkPanel";
 
 const frame = (x: Partial<Extract<ArslanServerMessage, { type: "sandbox_card" }>>) =>
   useArslanStore.getState().handleFrame({ type: "sandbox_card", card_id: "c1", kind: "lan_device", ...x } as ArslanServerMessage);
@@ -58,8 +57,7 @@ describe("SBX settings: the chat cards (the mock, in Chinese)", () => {
     window.addEventListener(OPEN_SECTION_EVENT, listen);
     fireEvent.click(screen.getByRole("button", { name: "去设置打开" }));
     window.removeEventListener(OPEN_SECTION_EVENT, listen);
-    expect(asked).toEqual([{ section: "settings", sub: "abilities" }]);
-    expect(takeSettingFocus(CERTIFICATES_SWITCH_ID)).toBe(true);
+    expect(asked).toEqual([{ section: "settings", sub: "sandbox_certificates" }]);       // the switch's anchor
     expect(request).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "不用" }));
     expect(screen.queryByTestId("sandbox-card")).toBeNull();

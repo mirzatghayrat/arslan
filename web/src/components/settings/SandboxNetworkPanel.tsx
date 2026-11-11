@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, request } from '../../api/client';
-import { takeSettingFocus } from '../../lib/sections';
 import { toast } from '../kit';
-
-/** The certificate switch's element id: a chat card's "Turn it on in Settings" opens Settings here (lib/sections). */
-export const CERTIFICATES_SWITCH_ID = 'settings-sandbox-certificates';
+import { SECTION_ANCHORS } from './sectionRegistry';
 
 type Device = { address: string; host?: string };
 /** One row of the list: a device added by name, with every address it was pinned to, or one IP. */
@@ -49,20 +46,16 @@ interface Props {
  */
 export default function SandboxNetworkPanel({ systemCertificates, onSystemCertificatesChange }: Props) {
   const { t } = useTranslation();
-  const certificates = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (!takeSettingFocus(CERTIFICATES_SWITCH_ID)) return;
-    certificates.current?.scrollIntoView?.({ block: 'center' });
-    certificates.current?.focus();
-  }, []);
   return (
     <>
-      <div className="flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
+      {/* The certificate card's deep link (SECTION_ANCHORS.sandbox_certificates) scrolls this row to the top. */}
+      <div id={SECTION_ANCHORS.sandbox_certificates.elementId}
+        className="scroll-mt-4 flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
         <div>
           <h4 className="text-[13px] font-medium text-foreground">{t('sandboxNet.certificatesTitle')}</h4>
           <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('sandboxNet.certificatesDesc')}</p>
         </div>
-        <input ref={certificates} id={CERTIFICATES_SWITCH_ID} data-testid={CERTIFICATES_SWITCH_ID} type="checkbox"
+        <input data-testid="settings-sandbox-certificates-toggle" type="checkbox"
           aria-label={t('sandboxNet.certificatesTitle')} checked={systemCertificates}
           onChange={(e) => onSystemCertificatesChange?.(e.target.checked)} className="kit-switch mt-0.5" />
       </div>

@@ -39,6 +39,12 @@ ANSWERS = {
     "public.example": ["93.184.216.34"],
 }
 DEVICES = "/api/v1/settings/sandbox/trusted-devices"
+# run_command results as terminal_exec makes them: a sandboxed command whose output shows the proxy's refusal, and one
+# stopped on a certificate check the closed trust service failed.
+REFUSED = {"ok": False, "exit_code": 56, "stdout": "", "stderr": "curl: (56) CONNECT tunnel failed, response 403",
+           "sandbox": "workspace", "sandbox_denied": True, "error": "the sandbox stopped this command (exit code 56)"}
+CERTIFICATE = {"ok": False, "exit_code": 1, "stdout": "", "stderr": "x509: OSStatus -26276", "sandbox": "workspace",
+               "sandbox_denied": True, "error": "the sandbox stopped this command (exit code 1)"}
 
 
 @pytest.fixture(autouse=True)
@@ -75,8 +81,10 @@ async def _raw(client) -> str:
         return await settings_service.sandbox_trusted_devices(db)
 
 
-async def _card(conversation: str = "c1", **stopped) -> dict:
-    [frame] = [f for f in await trusted_devices.offer(conversation, stopped) if f["kind"] == "lan_device"]
+async def _card(conversation: str = "c1", hosts: tuple[str, ...] = ()) -> dict:
+    """The device card for a command whose output shows the proxy's refusal, `hosts` being what the proxy refused."""
+    [frame] = [f for f in await trusted_devices.offer(conversation, "run_command", REFUSED, list(hosts))
+               if f["kind"] == "lan_device"]
     return frame
 
 
@@ -141,7 +149,7 @@ async def test_the_certificate_switch_is_off_until_settings_turns_it_on(client):
     async with client.db_maker() as db:
         assert await settings_service.sandbox_system_certificates(db) is False
     assert (await client.get("/api/v1/settings")).json()["sandbox_system_certificates"] == ""
-    [card] = await trusted_devices.offer("c1", {"certificates": True})          # its card turns nothing on
+    [card] = await trusted_devices.offer("c1", "run_command", CERTIFICATE, [])   # its card turns nothing on
     assert card == {"type": "sandbox_card", "card_id": card["card_id"], "kind": "certificates"}
     async with client.db_maker() as db:
         assert await settings_service.sandbox_system_certificates(db) is False
@@ -229,7 +237,18 @@ async def test_an_answer_is_checked_against_this_macs_addresses_again(client, mo
                                    ["192.168.1.20", "192.168.1.30"]])
 async def test_no_device_card_for_what_no_entry_could_hold_or_for_two_devices(hosts):
     """Two devices refused while one command ran: one may be another command's, run at the same time."""
-    assert await trusted_devices.offer("c1", {"hosts": hosts}) == []
+    assert await trusted_devices.offer("c1", "run_command", REFUSED, hosts) == []
+
+
+async def test_a_card_needs_the_refusal_in_the_commands_own_output_and_a_command():
+    """The proxy's record alone makes no card: the command's own output must show the refusal, and only run_command's
+    results are read."""
+    failed = {**REFUSED, "stderr": "curl: (7) Failed to connect to 192.168.1.20 port 80: Connection refused"}
+    assert await trusted_devices.offer("c1", "run_command", failed, ["192.168.1.20"]) == []
+    assert await trusted_devices.offer("c1", "fetch_url", REFUSED, ["192.168.1.20"]) == []
+    assert await trusted_devices.offer("c1", "run_command", {**REFUSED, "sandbox": "outside"}, ["192.168.1.20"]) == []
+    assert await trusted_devices.offer(None, "run_command", REFUSED, ["192.168.1.20"]) == []    # no conversation
+    assert len(await trusted_devices.offer("c1", "run_command", REFUSED, ["192.168.1.20"])) == 1
 
 
 async def test_the_same_device_again_shows_the_card_still_waiting():
@@ -277,9 +296,10 @@ async def test_the_proxy_notes_each_destination_it_refuses_to_the_watches_open_t
     finally:
         await proxy.close()
 
+
 async def test_a_lan_refusal_through_the_real_proxy_offers_its_card_and_trusts_nothing(client, tmp_path, monkeypatch):
     """Python's own client, through the proxy terminal_exec started and pointed it at (the stand-in wrapper, no seatbelt
-    here), to a LAN literal net_pin refuses."""
+    here), to a LAN literal net_pin refuses, watched as the tool loop watches a run_command call."""
     monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {})
 
     async def nothing_trusted():
@@ -288,22 +308,22 @@ async def test_a_lan_refusal_through_the_real_proxy_offers_its_card_and_trusts_n
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **k: ["/usr/bin/env"])
     sandbox_proxy._reset_for_tests()
     command = f"{sys.executable} -I -c \"import urllib.request as u; u.urlopen('https://10.0.0.1/', timeout=5)\""
-    watches = len(sandbox_proxy._watches)
+    watch = sandbox_proxy.watch()
     try:
-        with trusted_devices.collecting() as held:
-            result = await terminal_exec.run(command, cwd=tmp_path, sandbox=True)
+        result = await terminal_exec.run(command, cwd=tmp_path, sandbox=True)
     finally:
         await sandbox_proxy.shutdown()
+    refused = sandbox_proxy.unwatch(watch)
     assert result["sandbox_denied"] is True, result["stderr"][-400:]
-    assert held == {"hosts": ["10.0.0.1"]} and len(sandbox_proxy._watches) == watches       # its watch is closed
-    frame = await _card(**held)
-    assert frame["addresses"] == ["10.0.0.1"] and "host" not in frame
+    assert refused == ["10.0.0.1"] and watch not in sandbox_proxy._watches
+    [frame] = await trusted_devices.offer("c1", "run_command", result, refused)
+    assert (frame["kind"], frame["addresses"]) == ("lan_device", ["10.0.0.1"]) and "host" not in frame
     assert frame["card_id"] not in json.dumps(result) and await _devices(client) == []
 
 
-@pytest.mark.parametrize(("switch_on", "noted"), [(False, {"certificates": True}), (True, {})])
-async def test_a_failed_certificate_check_notes_its_card_only_while_the_switch_is_off(tmp_path, monkeypatch, switch_on,
-                                                                                      noted):
+@pytest.mark.parametrize(("switch_on", "cards"), [(False, ["certificates"]), (True, [])])
+async def test_a_failed_certificate_check_offers_its_card_only_while_the_switch_is_off(tmp_path, monkeypatch, switch_on,
+                                                                                       cards):
     async def port():
         return 41000
 
@@ -312,19 +332,18 @@ async def test_a_failed_certificate_check_notes_its_card_only_while_the_switch_i
     monkeypatch.setattr(sandbox_proxy, "port", port)
     monkeypatch.setattr(terminal_exec, "trust_service_allowed", allowed)
     monkeypatch.setattr(command_sandbox, "wrapper", lambda *a, **k: ["/usr/bin/env"])
-    with trusted_devices.collecting() as held:
-        result = await terminal_exec.run("printf '%s\\n' 'x509: OSStatus -26276' >&2; exit 1", cwd=tmp_path, sandbox=True)
-    assert result["sandbox_denied"] is True and held == noted
+    result = await terminal_exec.run("printf '%s\\n' 'x509: OSStatus -26276' >&2; exit 1", cwd=tmp_path, sandbox=True)
+    assert result["sandbox_denied"] is True
+    assert [f["kind"] for f in await trusted_devices.offer("c1", "run_command", result, [])] == cards
 
 
 async def test_the_tool_loop_shows_the_card_and_the_model_never_sees_it(execution_db, monkeypatch):
     from server.orchestrator import tool_loop
+    from server.orchestrator.turn_state import ToolTurn
 
     async def run(command, **kw):
-        trusted_devices.note_stop(hosts=["192.168.1.20"])
-        return {"ok": False, "exit_code": 56, "stdout": "", "stderr": "curl: (56) CONNECT tunnel failed, response 403",
-                "sandbox": "workspace", "sandbox_denied": True,
-                "error": "the sandbox stopped this command (exit code 56)"}
+        sandbox_proxy._note_refused("192.168.1.20")                # as the proxy does when it refuses the command
+        return dict(REFUSED)
     monkeypatch.setattr(terminal_exec, "run", run)
 
     async def card(command, argv, **kw):
@@ -333,13 +352,15 @@ async def test_the_tool_loop_shows_the_card_and_the_model_never_sees_it(executio
     async def resolve():
         return [{"key": "run_command", "description": "run"}]
     frames, convo = [], []
-    result = await tool_loop._dispatch_tool("run_command", {"command": "ls"}, "{}", resolve_tools=resolve,
-                                            emit=frames.append, tool_timeout_s=5, tool_trace=[], convo=convo,
-                                            confirm_command=card, conversation_id="c1")
+    watches = len(sandbox_proxy._watches)
+    turn = ToolTurn(resolve_tools=resolve, emit=frames.append, tool_timeout_s=5, tool_trace=[], convo=convo,
+                    confirm_command=card, conversation_id="c1")
+    result = await tool_loop._run_tool("run_command", {"command": "ls"}, "{}", turn)
     [shown] = [f for f in frames if f.get("type") == "sandbox_card"]
     assert shown["kind"] == "lan_device" and shown["addresses"] == ["192.168.1.20"]
     told = json.dumps([result, convo, [f for f in frames if f is not shown]], default=str)
     assert shown["card_id"] not in told and "192.168.1.20" not in told       # the model's result, its record, the rest
+    assert len(sandbox_proxy._watches) == watches                             # the call's watch is closed
     async with execution_db() as db:
         assert await trusted_devices.listed(db) == []
 
