@@ -45,6 +45,15 @@ markers = 14
 cases = 58
 xfail = 0
 
+# Step 5: six ran, including five strict xfails for probe-confirmed unavailable controls:
+# three ambient spool refusals and two unusable owned-target/nested-sender controls.
+# CI previously saw five skips; these now count as ran/xfail, not measured denials.
+# A measurable pass is strict XPASS; policy assertions and fixture failures still fail.
+["server/sbx/test_sbx3_outside_reach.py"]
+markers = 3
+cases = 6
+xfail = 5
+
 # 0.1.64 SBX-3a §1a: a sandboxed command writes its own run's TMPDIR. Seatbelt is macOS-only.
 ["server/sbx/test_sbx3_run_temp.py"]
 markers = 1
