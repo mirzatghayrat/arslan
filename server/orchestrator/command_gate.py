@@ -167,7 +167,7 @@ async def _work_folder_holds_home() -> bool:
     from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            folder = await settings_service.workspace_dir(db)
+            folder = await settings_service.workspace_dir_for_run(db)     # SUB5c: where this run's commands write
         if folder is None:
             return True
         home = [part.casefold() for part in Path.home().resolve().parts]
@@ -208,6 +208,9 @@ class CommandPlan:
     deletes_outside: bool = False
     confined: bool = False
     offline_reason: str = ""        # S2a-3 step 3: why it runs offline with no card (`unreadable`), for SBX-8's count
+    # HR-1 (ruling 2): out under the grant with no click on its own card, so the outside floor keeps the run-later
+    # files unwritable. Only the user's click on this command's own card lifts that.
+    holds_run_later: bool = False
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -229,6 +232,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     network: dict = {}                 # S2a-1 piece 2: {"offline", "note"} for a command after outside content
     deletes_outside = confined = False  # SMART-8: an allowed delete outside the working folder; the sandbox holds it
     offline_reason = ""                # S2a-3 step 3: an unread command runs offline in the sandbox, with no card
+    clicked = False                    # HR-1: the user clicked this command's own card
 
     def delete_kw(outside: bool) -> dict:
         """SMART-8: how allow deletes, for the card of a delete outside the working folder."""
@@ -260,7 +264,18 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
                   "note": "Write it as plain AppleScript (osascript -e or a heredoc) for Reminders, Calendar, "
                           "Notes or Contacts, without outside_sandbox; or use mac_applescript."}
         return result
-    sandbox_on = await _sandbox_enabled()
+    # SUB5c: a sub-session's command runs in the sandbox, writing only in its own folder, whatever the switch, a grant
+    # or a card says. Asked to leave it, or with no sandbox that can start, it doesn't run (the executor holds too).
+    from server.services import settings_service
+    own = settings_service.run_sub_folder() != ()
+    if own and (args.get("outside_sandbox") is True or not command_sandbox.available()):
+        result = {"ok": False, "executed": False,
+                  "error": "a sub-session's commands run only in the sandbox, where they write only in its own folder; "
+                           + ("they can't run outside it" if args.get("outside_sandbox") is True
+                              else "the sandbox can't start here") + ". Nothing ran.",
+                  "note": "Run it without outside_sandbox, or say in your report what the commander should run."}
+        return result
+    sandbox_on = own or await _sandbox_enabled()
     deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
     confined = sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
     from server.services import task_service as _task_service
@@ -272,7 +287,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     # answered "In this conversation"), found as decide finds one: in a chat turn and a background job
     # alike. With nobody to ask (a scheduled run) nothing stands, and the command starts inside the
     # sandbox. Its ledger row is written below, once the command is cleared to run.
-    outside_grant = await _outside_grant(conversation_id, command)
+    outside_grant = None if own else await _outside_grant(conversation_id, command)   # SUB5c: its grant never lets it out
     run_outside = sandbox_on and outside_grant is not None
     by_grant = run_outside            # the grant is what lets this command run outside the sandbox
     # S2a-3 step 5: with a grant, or no sandbox to run in, it runs outside, and `outside-reach` asks. Its card reads it
@@ -372,6 +387,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         run_outside = run_outside or unwrapped
         by_grant = by_grant and not unwrapped     # a bare run is the user's click on its card, not the grant
         net_clicked = net_due and decided is not None and decided.by == "user"
+        clicked = decided is not None and decided.by == "user"
     if not offline_reason:     # an unread command already runs offline: nothing after outside content can add to it
         network = {} if net_clicked else await _network_after_outside_content(
             command, args, sandbox_on=sandbox_on, run_outside=run_outside, unwrapped=unwrapped,
@@ -379,6 +395,9 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     if network.get("refused"):
         result = {"ok": False, "error": network["refused"]}
         return result
+    if own:          # SUB5c: an approved bare call stays in the sandbox too (its Apple Events stay blocked there)
+        run_outside, by_grant, unwrapped, kept_wrapped = False, False, False, kept_wrapped or unwrapped
     return CommandPlan(command=command, run_outside=run_outside, by_grant=by_grant, sandbox_on=sandbox_on,
                        unwrapped=unwrapped, kept_wrapped=kept_wrapped, network=network,
-                       deletes_outside=deletes_outside, confined=confined, offline_reason=offline_reason)
+                       deletes_outside=deletes_outside, confined=confined, offline_reason=offline_reason,
+                       holds_run_later=run_outside and by_grant and not clicked)

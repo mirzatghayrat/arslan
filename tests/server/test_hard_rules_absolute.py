@@ -12,6 +12,7 @@ from server.orchestrator import tool_loop, untrusted
 from server.services import (approvals, command_sandbox, permission_store, permissions, sandbox_profile,
                              settings_service, terminal_exec)
 from tests.server import hard_rules_cases as hr
+from tests.server.sbx.profile_files import with_profile_text
 
 CONV = "c1"
 STAND_IN = "zz-stand-in-word"
@@ -52,7 +53,7 @@ async def _run(monkeypatch, command, *, approve_card=False, surface=None, **args
     started, cards = [], []
 
     async def fake_exec(*argv, **kwargs):
-        started.append(argv)
+        started.append(with_profile_text(argv))     # #813 review 11: the `-f` file, read while it exists
         raise RuntimeError("not run")
 
     async def card(command, argv, **kw):

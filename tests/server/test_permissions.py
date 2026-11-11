@@ -111,15 +111,16 @@ async def test_money_always_asks_even_after_yes():
     assert asker.frames[0]["options"] == ["once"]
 
 
-async def test_remember_as_stores_every_rule_a_command_matched():
-    req = Request(kind="command", target="delete|hermes:recursive delete", title="Run rm -rf build?",
-                  always_label="deletes files, recursive delete",
-                  remember_as=(("legacy_rule", "delete"), ("legacy_rule", "hermes:recursive delete")))
+async def test_remember_as_stores_every_rule_it_names():
+    # S6: this was a command's `legacy_rule` per rule it matched; no card may store one now.
+    req = Request(kind="app", target="notes+mail", title="Use Notes and Mail?",
+                  always_label="Notes, Mail",
+                  remember_as=(("app", "com.apple.Notes"), ("app", "com.apple.mail")))
     with permissions.asking_with(Asker(yes("always"))):
         await permissions.decide(req, CTX)
     async with db_session.AsyncSessionLocal() as db:
-        rules = {r.target for r in await permission_store.list_rules(db, "legacy_rule")}
-    assert rules == {"delete", "hermes:recursive delete"}
+        rules = {r.target for r in await permission_store.list_rules(db, "app")}
+    assert rules == {"com.apple.Notes", "com.apple.mail"}
 
 
 async def test_an_expired_card_is_not_a_refusal():
@@ -218,7 +219,8 @@ async def test_the_context_is_filled_from_the_running_turn(monkeypatch):
     from types import SimpleNamespace
     from server.services import personal_context
     monkeypatch.setattr(personal_context, "current",
-                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="tidy my notes"))
+                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="tidy my notes",
+                                                sub_folder=()))
     asker = Asker(yes("task"))
     with permissions.asking_with(asker):
         await permissions.decide(app(), Context(conversation_id="conv-1"))
@@ -472,7 +474,7 @@ async def test_the_ledger_row_carries_the_ids_of_the_turn_that_asked(monkeypatch
     from types import SimpleNamespace
     from server.services import personal_context
     monkeypatch.setattr(personal_context, "current",
-                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query=""))
+                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="", sub_folder=()))
     with permissions.asking_with(Asker(yes("task"))):
         await permissions.decide(app(), Context(conversation_id="conv-1"))
     async with db_session.AsyncSessionLocal() as db:
@@ -609,7 +611,7 @@ async def test_a_task_id_the_caller_gave_wins_over_the_running_turns(monkeypatch
     from types import SimpleNamespace
     from server.services import personal_context
     monkeypatch.setattr(personal_context, "current",
-                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query=""))
+                        lambda: SimpleNamespace(task_id="turn-x", run_id="turn-turn-x", query="", sub_folder=()))
     with permissions.asking_with(Asker(yes("task"))):
         await permissions.decide(app(), Context(conversation_id="conv-1", task_id="turn-given"))
     async with db_session.AsyncSessionLocal() as db:
@@ -720,15 +722,15 @@ async def test_each_rule_a_many_app_card_stores_keeps_its_own_label():
 
 
 async def test_a_remember_as_entry_may_carry_its_own_label():
-    req = Request(kind="command", target="delete|git-push", title="Run it?",
-                  always_label="deletes files, publishes",
-                  remember_as=(("legacy_rule", "delete", "deletes files"), ("legacy_rule", "git-push")))
+    req = Request(kind="app", target="notes+mail", title="Use them?",
+                  always_label="Notes, Mail",
+                  remember_as=(("app", "com.apple.Notes", "Notes"), ("app", "com.apple.mail")))
     with permissions.asking_with(Asker(yes("always"))):
         await permissions.decide(req, CTX)
     async with db_session.AsyncSessionLocal() as db:
-        rules = {r.target: r.label for r in await permission_store.list_rules(db, "legacy_rule")}
+        rules = {r.target: r.label for r in await permission_store.list_rules(db, "app")}
     # an entry with a label keeps it; one without falls back to the request's own
-    assert rules == {"delete": "deletes files", "git-push": "deletes files, publishes"}
+    assert rules == {"com.apple.Notes": "Notes", "com.apple.mail": "Notes, Mail"}
 
 
 @pytest.mark.parametrize("answer, outcome", [(EXPIRED, "expired"), (no("later"), "declined")])
@@ -894,9 +896,10 @@ AWAY = {"approved": False, "scope": None, "note": "", "by": None, "away": True}
 
 
 def _git_push() -> Request:
-    return Request(kind="command", target="rules:git-push", title="Run `git push origin main`?",
-                   detail="git push origin main", always_label="publishes to a remote",
-                   remember_as=(("legacy_rule", "git-push", "publishes to a remote"),))
+    # S6: was a command card storing a `legacy_rule`; no card may store one now, so an app's card stands in.
+    return Request(kind="app", target="com.apple.Terminal", title="Use Terminal?",
+                   detail="git push origin main", always_label="Terminal",
+                   remember_as=(("app", "com.apple.Terminal", "Terminal"),))
 
 
 async def test_a_card_that_never_opened_because_the_person_is_away_is_an_expiry_the_inbox_lists():
@@ -908,7 +911,7 @@ async def test_a_card_that_never_opened_because_the_person_is_away_is_an_expiry_
     with permissions.asking_with(Asker(AWAY, EXPIRED)):
         away = await permissions.decide(_git_push(), CTX)
         assert (approvals.LAST_OUTCOME.get(), permissions.LAST_DECISION.get()) == ("expired", away)
-        await permissions.decide(replace(_git_push(), title="Run `git push` again?"), CTX)
+        await permissions.decide(replace(_git_push(), title="Use Terminal again?"), CTX)
     assert (away.allowed, away.by, away.scope) == (False, "expired", None)
     assert "NOT a refusal" in away.model_text
     async with db_session.AsyncSessionLocal() as db:
@@ -916,8 +919,7 @@ async def test_a_card_that_never_opened_because_the_person_is_away_is_an_expiry_
         listed = await permission_store.refused_groups(db, datetime.utcnow() - timedelta(hours=1))
     assert (never_shown.decided_by, never_shown.decision, never_shown.scope, never_shown.wait_ms) \
         == ("away", "expired", None, None)
-    assert permissions.always_from(never_shown.extra) == [("legacy_rule", "git-push",
-                                                           "publishes to a remote")]
+    assert permissions.always_from(never_shown.extra) == [("app", "com.apple.Terminal", "Terminal")]
     assert (shown.decided_by, shown.decision) == ("expired", "expired")
     assert permissions.always_from(shown.extra) == []
     assert [row.id for row, _, _ in listed] == [shown.id, never_shown.id]

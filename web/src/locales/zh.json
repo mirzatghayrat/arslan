@@ -649,13 +649,6 @@
     "voiceModeConversation": "对话",
     "labelVoiceEndpointSilence": "一句话的结束(毫秒)",
     "voiceEndpointSilenceDesc": "停顿多久之后把你说的话发出去。900 毫秒约等于正常换气;更短会打断你,更长会显得迟钝。",
-    "terminalRulesTitle": "以后不再询问",
-    "terminalRulesEmpty": "还没有。在命令卡上选「始终允许」，那一类命令就会出现在这里。",
-    "terminalRulesForget": "恢复询问",
-    "sandboxGrantsTitle": "命令（包括后台任务）可以在沙盒外运行的对话",
-    "sandboxGrantsEmpty": "还没有。在「沙盒外运行」的卡上选「本对话内」，那段对话就会出现在这里。",
-    "sandboxGrantsTakeBack": "收回",
-    "sandboxGrantsUntitled": "未命名对话",
     "navGeneral": "通用",
     "navAbilities": "Arslan 能做什么",
     "navBackground": "后台与主动",
@@ -770,7 +763,7 @@
     "glyph": {
       "waiting": "等你批准",
       "waiting_reminder": "停下的作业给你留了提醒",
-      "waiting_away": "你不在时没能问你",
+      "waiting_away": "有卡片过期了",
       "working": "进行中",
       "progress": "进行中：{{done}} / {{total}}",
       "done": "已完成",
@@ -1443,7 +1436,9 @@
   },
   "inbox": {
     "addWatch": "再盯一个网页或文件夹",
-    "refusedTitle": "你不在时没做的事",
+    "refusedTitle": "过期了、没做的",
+    "expiredShown": "30 分钟没人回应，过期了",
+    "expiredUnopened": "前一张卡没人回应，这张没弹出来就过期了",
     "alwaysAllow": "始终允许",
     "alwaysStores": "这会始终允许：{{what}}",
     "asksEachTime": "每次都会问",
@@ -1496,14 +1491,60 @@
   "scheduledPage": {
     "intro": "按时自动跑的任务，和你让 Arslan 盯着的网页、文件夹。哪一行有点，就是那一行要你看一眼。",
     "watches": "盯着的网页和文件夹",
-    "awayTitle": "你不在时没做的（只算这个任务的）",
-    "seenNote": "打开一个任务，就算看过它的运行没做成的事。任务自己的对话里，你不在时没做成的，要打开那个对话才会清掉；那里的卡片要答完才会清掉。",
+    "awayTitle": "过期或没法问、没做的（只算这个任务的）",
+    "seenNote": "打开一个任务，就算看过它的运行没做成的事。任务自己的对话里，过期没做成的，要打开那个对话才会清掉；那里的卡片要答完才会清掉。",
     "attention": "要你看一眼",
     "changed": "有变化",
     "failing": "没跑成或已自动暂停"
   },
+  "remembered": {
+    "title": "记住的回答",
+    "desc": "你在卡片上选过「本对话内」或「始终允许」的，都在这里。收回以后，下次同样的事会重新问你。",
+    "never": "付款、发送、提交、删除（工作文件夹以外的）这类事，每次都单独问，从不记住，所以这里没有它们。选「仅这一次」或「本次任务内」的，任务一结束就没了，也不在这里。",
+    "always": "始终允许",
+    "conversation": "本对话内",
+    "none": "没有",
+    "empty": "还没有记住的回答。在卡片上选「本对话内」或「始终允许」，就会出现在这里，随时可以收回。",
+    "unavailable": "现在列不出来",
+    "allConversations": "所有对话",
+    "subOnly": "只在这个子会话里",
+    "given": "{{when}}给的",
+    "lastUsed_one": "上次用到：{{when}} · 共 {{count}} 次",
+    "lastUsed_other": "上次用到：{{when}} · 共 {{count}} 次",
+    "neverUsed": "还没用到",
+    "revoke": "收回",
+    "revokeFailed": "没收回成功，再试一次",
+    "open": "打开对话",
+    "revokeAll": "收回这段对话的全部",
+    "untitled": "未命名对话",
+    "subSession": "子会话：{{title}}",
+    "pointer": "本对话内允许过的命令 → 记住的回答",
+    "rule": {
+      "app": "可以看、可以操作「{{name}}」，以后不再问。删除、发送、付款仍每次问。",
+      "other": "始终允许：{{name}}"
+    },
+    "grant": {
+      "outside": "这段对话里的命令（包括后台任务）可以在沙盒外运行",
+      "unsandboxed": "这段对话里的命令可以不放进沙盒、不问就运行",
+      "command": "这段对话里，这条命令再运行时不再问：{{name}}",
+      "network": "这段对话里，读过网页之后，沙盒里的命令也可以联网",
+      "workspace_write": "这段对话里可以写「{{name}}」文件夹，不再问",
+      "schedule": "这段对话里可以新建定时任务，不再问",
+      "mcp_tool": "这段对话里可以用「{{server}}」的「{{name}}」，参数不限",
+      "app": "这段对话里可以看、可以操作「{{name}}」",
+      "site": "这段对话里可以在 {{name}} 上点击、输入",
+      "shortcut": "这段对话里可以运行快捷指令「{{name}}」",
+      "other": "这段对话里允许过：{{name}}"
+    },
+    "note": {
+      "unsandboxed": "只在沙盒关着或启动不了时用得上",
+      "command": "只在「每条命令都先问」时用得上",
+      "network": "在沙盒外运行的命令仍每次问",
+      "serverGone": "这个服务器已经删掉了"
+    }
+  },
   "whileAway": {
-    "title": "你不在时没做的（这个对话）",
+    "title": "过期了、没做的（这个对话）",
     "stopped": "停在这里的任务"
   },
   "waiting": {
@@ -1537,5 +1578,34 @@
       "choiceRequired": "它现在有 {{count}} 个子会话。请重新选择怎么处理它们。",
       "failed": "没删成，再试一次。"
     }
+  },
+  "sandboxNet": {
+    "certificatesTitle": "允许沙盒里的命令检查系统证书",
+    "certificatesDesc": "有些工具（比如某些包管理器、公司内部的 HTTPS 服务）联网时要用 macOS 的证书检查，沙盒里默认不让用，它们会报证书错误。打开后只在命令联网时允许，读不到你的钥匙串。默认关。",
+    "devicesTitle": "信任的本地设备",
+    "devicesDesc": "沙盒里的命令默认连不了局域网（路由器、NAS、打印机、别的电脑）。加进这里的设备可以连，它的所有端口都能连。用名字加的，会记下现在的地址，每次连都再核对一次。这台 Mac 自己的地址不能加。",
+    "devicesEmpty": "还没有信任的设备。",
+    "placeholder": "名称或局域网 IP，比如 nas.local 或 192.168.1.20",
+    "inputLabel": "名称或局域网 IP",
+    "add": "信任",
+    "remove": "不再信任",
+    "notFound": "找不到「{{value}}」。用局域网里的名字（比如 nas.local）或 IP。",
+    "notLan": "{{value}} 不是局域网地址。这里只能加局域网里的设备。",
+    "ownAddress": "这是这台 Mac 自己的地址，不能加。",
+    "listed": "已经在列表里了。",
+    "failed": "没成功，再试一次。",
+    "trustedToast": "已信任 {{name}}",
+    "untrustedToast": "已不再信任",
+    "certificatesCardTitle": "证书检查没通过",
+    "certificatesCardBody": "这条命令联网时要用 macOS 的证书检查，沙盒里默认不让用。打开「允许沙盒里的命令检查系统证书」后再试一次。",
+    "openSettings": "去设置打开",
+    "notNow": "不用",
+    "notNowToast": "好的，这次不连",
+    "lanTitle": "命令想连局域网里的设备 {{device}}",
+    "lanBody": "沙盒里的命令默认连不了局域网。信任这台设备后，它的所有端口都能连，随时能在设置里删掉。",
+    "lanTrusted": "这台设备现在已经被信任，再试一次就能连。",
+    "trustDevice": "信任这台设备",
+    "namedDevice": "{{name}}（{{addresses}}）",
+    "cardGone": "这张卡已经失效了，可以在设置里加这台设备。"
   }
 }

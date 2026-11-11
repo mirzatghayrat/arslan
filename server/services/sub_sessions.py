@@ -27,6 +27,10 @@ refuses it from then on (`tombstone`, `is_deleted`).
 SUB5b: any job that starts in a sub-session runs as the sub-session's, read from the stored kind (`placement`).
 Whole-app summaries count a sub-session's work as the top of its chain's (`commanders`); the whole app's lists leave it
 out (`not_sub`); a brief framed as outside content marks the sub-session's later typed turns too.
+
+SUB5c: a sub-session's job writes only in its own folder, `<workspace>/sub/<short name>/` (`folder_names`, made and
+checked by `workspace_paths.sub_folder`, read by `settings_service.workspace_dir_for_run`); its commands always run in
+the sandbox there. It still reads the whole workspace, and its commander still writes anywhere and merges the work.
 """
 from __future__ import annotations
 
@@ -262,6 +266,61 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
         _parents[child] = parent_id
         background_jobs.start_placed(child, brief, [], placed, outside_seen=outside_seen, parent_id=parent_id)
     return child
+
+
+# -- SUB5c: each sub-session writes only in its own folder ---------------------------------------------------------
+
+#: How long a sub-session's short name may be, and how much of its id it takes.
+NAME_MAX, NAME_FROM_ID = 32, 8
+
+
+def folder_name(raw: str) -> str:
+    """A sub-session's short name as a folder name: lower case (APFS ignores case, so two names that differ only in
+    case would be one folder), ASCII letters, digits, `-` and `_` only (no `/`, `.`, space or control character, so
+    never `..` nor a hidden name), no leading or trailing `-`, at most NAME_MAX characters; "sub" when nothing is
+    left."""
+    import re
+    import unicodedata
+    text = unicodedata.normalize("NFKC", str(raw)).casefold()
+    name = re.sub(r"-{2,}", "-", re.sub(r"[^a-z0-9_-]", "-", text))[:NAME_MAX].strip("-")
+    return name or SUB
+
+
+def _unique(names: list[str]) -> list[str]:
+    """`names` in order, a later one that collides with an earlier one suffixed `-2`, `-3`, …"""
+    taken: set[str] = set()
+    out = []
+    for name in names:
+        unique, n = name, 1
+        while unique in taken:
+            n += 1
+            unique = f"{name[:NAME_MAX - len(str(n)) - 1]}-{n}"
+        taken.add(unique)
+        out.append(unique)
+    return out
+
+
+async def folder_names(conversation_id: str) -> tuple[str, ...]:
+    """SUB5c: the short names of this sub-session's folder, top first (`workspace_paths.sub_folder`): each from its
+    id (`folder_name` of NAME_FROM_ID characters after CHILD_PREFIX), suffixed where an older sibling, by creation,
+    has the same one. Read from the stored rows each time, so it is the same for every job of the sub-session and
+    after a restart. A grandchild's folder is inside its parent's: a sub-session never gets a folder its commander
+    can't write, and the commander can merge its sub-sessions' work into its own folder. Raises SubSessionError
+    (`sub_session_parent_missing`) when the chain can't be read, or this isn't a sub-session: no folder, no writes."""
+    from server.db import session as db_session
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(ConversationContext, conversation_id)
+        chain, whole = await _chain(db, row) if row is not None else ([], False)
+        if not whole or len(chain) < 2:
+            raise SubSessionError("sub_session_parent_missing")
+        names = []
+        for member in reversed(chain[:-1]):
+            siblings = list((await db.execute(select(ConversationContext.id).where(
+                ConversationContext.parent_id == member.parent_id, ConversationContext.kind == SUB).order_by(
+                ConversationContext.created_at, ConversationContext.id))).scalars())
+            short = [folder_name(sid.removeprefix(CHILD_PREFIX)[:NAME_FROM_ID]) for sid in siblings]
+            names.append(_unique(short)[siblings.index(member.id)])
+    return tuple(names)
 
 
 def _usd(snapshot) -> float:

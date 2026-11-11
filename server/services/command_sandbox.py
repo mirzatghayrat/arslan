@@ -30,6 +30,7 @@ Leaving the sandbox is always a click (see tool_loop): the model asks, or the us
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import stat
@@ -39,12 +40,14 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from server.services import run_later
 from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_profile, file_or_folder, literal,
                                              real as _real, regex, subpath)
 
 _SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 _TRUST_SERVICE = '(global-name "com.apple.trustd.agent")'   # SBX-6a, the user's setting
 _available: bool | None = None
+_log = logging.getLogger(__name__)
 
 # strerror(EPERM): what seatbelt returns for a denied file operation, and what
 # sandbox-exec prints when it cannot start inside another sandbox.
@@ -147,7 +150,7 @@ def cap6b_spellings(plugin_folder: Path | None = None) -> list[Path]:
     return [Path.home() / ".agents" / "skills", *([plugin] if plugin is not None else [])]
 
 
-def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
+def held_ancestors(writable, protected, *, planted=(), kept=()) -> list[Path]:
     """SBX-5a (#772 review): the folders between a writable root and a protected path, root included, which the
     profiles deny `file-write*` as literals. A rule on a folder holds its contents but not its parents: a process
     that may write ~ could rename ~/.agents away, skills inside, and use them there. A literal is that one folder
@@ -162,11 +165,15 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
     Containment goes by `(st_dev, st_ino)` as well as by path (#772 delta review): `realpath` keeps the spelling it
     is given, so a work folder spelt `~/HOME` or in NFD is the same folder as the ~ the protected paths are under.
     A folder that doesn't exist yet is judged by its existing ancestors. Seatbelt matches the folder on disk, so a
-    literal in either spelling holds it."""
+    literal in either spelling holds it.
+
+    HR-1 (#813 review 6): `kept` folders (the held run-later folders the walk found, `run_later_folders`) are held
+    themselves as well as every folder above them, up to and including the root, when they exist."""
     roots = _resolved(writable)
     ids = {i for i in map(_identity, roots) if i is not None}
     seen: dict[Path, tuple[int, int] | None] = {}
     out: list[Path] = []
+    judged: set[Path] = set()           # #813 review 7: membership by set, so the build is linear in `kept`
 
     def inside(folder: Path) -> bool:
         if any(folder == r or r in folder.parents for r in roots):
@@ -179,7 +186,10 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
         return False
 
     def hold(folder: Path) -> None:
-        if folder not in out and inside(folder):
+        if folder in judged:
+            return
+        judged.add(folder)
+        if inside(folder):
             out.append(folder)
 
     for path in [*(_real(p) for p in protected if _real(p).exists()), *(_real(p) for p in planted)]:
@@ -193,7 +203,83 @@ def held_ancestors(writable, protected, *, planted=()) -> list[Path]:
         entry = _real(lexical.parent) / lexical.name
         if entry.is_symlink():
             hold(entry)                                          # the CAP6b folder is a link: hold the link
+    for path in kept:
+        folder = _real(path)
+        if folder.exists():
+            for each in (*reversed(folder.parents), folder):
+                hold(each)
     return out
+
+
+#: Work folders whose last commands-profile walk stopped at a cap (or an unlistable folder): their profile holds the
+#: run-later folders by name. `note` says why (⓪Plan, #813 review 6). Keyed by the folder that walk started from and
+#: set or cleared only by `commands_profile` (#813 review 7): an MCP server's walk covers its own folder as well, so
+#: its outcome says nothing about the work folder's.
+_TOO_LARGE: set[Path] = set()
+#: #813 review 9: the aliases the last commands-profile walk of a work folder found, for `note`; set the same way.
+_ALIASED: dict[Path, tuple[Path, ...]] = {}
+
+
+def too_large_to_map(workspace: Path) -> bool:
+    try:
+        return _real(workspace) in _TOO_LARGE
+    except OSError:
+        return False
+
+
+def aliases_in(workspace: Path) -> tuple[Path, ...]:
+    try:
+        return _ALIASED.get(_real(workspace), ())
+    except OSError:
+        return ()
+
+
+@dataclass(frozen=True)
+class RunLaterHold:
+    """What `run_later_folders` found, for a profile."""
+    kept: list[Path]                # for `held_ancestors(kept=...)`
+    by_name: tuple[str, ...]        # filters to deny `file-write*` over
+    complete: bool                  # the walk was complete
+    aliases: tuple[Path, ...]       # #813 review 9: held names that link out of their folder
+    #: #813 review 10: filters to deny `file-write*` over, the held names at the real path of each held name and held
+    #: folder name the walk found as a link (`run_later.link_filters`)
+    at_targets: tuple[str, ...] = ()
+
+    @property
+    def aliased(self) -> bool:
+        """#813 review 9: the profile drops the dependency exemption (`run_later.kernel_filters(aliased=...)`): an
+        alias was found, or the walk couldn't finish, so one may be where it didn't look."""
+        return bool(self.aliases) or not self.complete
+
+
+def run_later_folders(folders, *, roots=(), closed=()) -> RunLaterHold:
+    """HR-1's ancestor hold (#813 review 6): the held run-later folders that exist under `folders` and `roots` (the
+    walk's) and each of `folders`' `core.hooksPath` target, as `run_later.kernel_filters` takes them, for
+    `held_ancestors(kept=...)`; and the name filters to deny: inside each private folder the walk didn't list
+    (#813 review 8: `closed` and the TCC home folders, `run_later.private_filters`), and everywhere when the walk was
+    incomplete (`run_later.folder_filters`). A skipped private folder is kept too, so it and the folders above it
+    stay in place and its by-name hold can't be renamed away. #813 review 9: the real paths of the aliases the walk
+    found are kept too (a dependency's file a held name links to, and the folders above it, stay in place).
+    #813 review 10: so are the real paths of every held name and held folder name the walk found as a link, and the
+    held names at them are denied (`run_later.link_filters`: `.vscode -> vsc` holds `vsc/settings.json`).
+    A hooksPath that can't be read raises, as in `kernel_filters`."""
+    folders, roots = list(folders), list(roots)
+    walk = run_later.held_folders([*folders, *roots], roots=roots, closed=closed)
+    kept = [*walk.skipped, *walk.folders, *walk.targets]
+    for folder in folders:
+        target = run_later.hooks_path(folder)
+        if target is not None and run_later._is_folder(target):
+            kept.append(_real(target))
+    by_name = run_later.private_filters(walk.skipped)
+    if walk.aliases:
+        _log.warning("HR-1: %d run-later name(s) link out of their folder (%s); dependency folders get no exemption "
+                     "in this run", len(walk.aliases), ", ".join(map(str, walk.aliases[:5])))
+    if not walk.complete:
+        _log.warning("HR-1: the held-folder walk stopped at a cap or an unlistable folder; held folders are held by "
+                     "name in this run, so a new one (a .git, a first .vscode) can't be made, and dependency folders "
+                     "get no exemption")
+        by_name = (*by_name, *run_later.folder_filters(folders, roots=roots, aliased=True))
+    return RunLaterHold(kept, by_name, walk.complete, walk.aliases, walk.link_filters)
 
 
 def _identity(path: Path) -> tuple[int, int] | None:
@@ -364,7 +450,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
                      ipc_prefix: str | None = None, bound_ports: list[int] | None = None,
                      system_proxies: list[str] | None = None, trust_service: bool = False,
                      cache: Path | None = None, peer_cache: Path | None = None,
-                     plugin_folder: Path | None = None) -> str:
+                     plugin_folder: Path | None = None, plugin_read: Path | None = None) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -384,11 +470,24 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     SBX-5: the CAP6b folders (`cap6b_folders`, with `plugin_folder`) close like a protected path, so a work folder
     inside them is not reopened; the user's caches are never written, even inside a writable work folder; the
     one cache written is `cache` (Arslan's commands cache by default), and `peer_cache` is closed when given. An
-    MCP server's cache is under its folder, in Arslan's data folder, which is protected here already."""
+    MCP server's cache is under its folder, in Arslan's data folder, which is protected here already.
+
+    HOOK-2 (rule 1): `plugin_read`, one plugin's own folder, read-only for that plugin's hook. It must be an existing
+    folder, a resolved real path strictly inside the CAP6b plugin root (the root itself is refused), holding no
+    closed or protected path (the allow comes after their denies, so it would reopen them), or no profile is built
+    (ValueError). Writes there stay denied, and every other plugin folder stays closed. Seatbelt matches real paths,
+    so a symlink in this folder to another plugin's file is judged by where it points; a hard link is not: it is that
+    file, inside this folder, and readable. The install (CAP7 / HOOK-3) must refuse hard links in plugin folders."""
+    root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
+    if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
+                                    or _real(root) not in plugin_read.parents):
+        raise ValueError(f"not a plugin's own folder inside the plugin root: {plugin_read}")
     roots = writable_roots(workspace, temp, cache)
     writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
     protected = [*default_protected(), *cap6b_folders(plugin_folder)]
     shut = _resolved([*closed, *app_data(), *([peer_cache] if peer_cache is not None else [])])
+    if plugin_read is not None and any(p == plugin_read or plugin_read in p.parents for p in [*protected, *shut]):
+        raise ValueError(f"a plugin's folder holding a closed or protected path: {plugin_read}")
     if network is None:
         network = NetworkMode.NONE if offline or proxy_port is None else NetworkMode.PROXY
     network = NetworkMode(network)
@@ -416,37 +515,145 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     after.allow_paths("file-read* file-map-executable", open_r, file_or_folder)
     if open_rw or open_r:
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
+    if plugin_read is not None:             # HOOK-2: after every CAP6b deny, reads only
+        after.allow("file-read*", subpath(plugin_read))
     # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
     after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
-    held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder))
+    # HR-1 (#813 review 6): nor the held run-later folders in the work folder and every folder above them.
+    # #813 review 8: the walk never lists the user's closed folders nor the TCC home folders (`closed` is the user's
+    # list, before Arslan's own data is added); it holds the held folders inside them by name.
+    hold = run_later_folders([workspace], closed=closed)
+    (_TOO_LARGE.discard if hold.complete else _TOO_LARGE.add)(_real(workspace))  # this walk's root only (review 7)
+    if hold.aliases:                                                             # #813 review 9, for `note`
+        _ALIASED[_real(workspace)] = hold.aliases
+    else:
+        _ALIASED.pop(_real(workspace), None)
+    # HR-1: nor the files that make something run later (git hooks and config, editor tasks, agent and package
+    # settings, the work folder's core.hooksPath), after every grant and reopen. Raises when hooksPath can't be read.
+    # #813 review 9: with no dependency exemption when the walk found an alias (or couldn't finish), and no new link
+    # at a held name or held folder name.
+    after.deny("file-write-create", *run_later.symlink_filters())
+    for filters in run_later.kernel_filters([workspace], aliased=hold.aliased):
+        after.deny("file-write*", *filters)
+    if hold.at_targets:                     # #813 review 10: the held names at a link's real path
+        after.deny("file-write*", *hold.at_targets)
+    held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),
+                          kept=hold.kept)
     if held:
         after.deny("file-write*", *map(literal, held))
+    if hold.by_name:
+        after.deny("file-write*", *hold.by_name)
     if trust_service and network == NetworkMode.PROXY:
         after.allow("mach-lookup", _TRUST_SERVICE)
     after.allow_paths("file-read*", map(_real, copies), literal)
     return text + "".join(after.text().splitlines(True)[2:])        # its rules, without a second header
 
 
+# ── the profile as a file (#813 review 11) ───────────────────────────────────
+#
+# sandbox-exec takes the profile as a file (`-f`), not as an argument (`-p`): a profile holding thousands of link
+# targets is past ARG_MAX (1 MiB with the environment). sandbox-exec reads the file when it starts, before anything
+# of the command runs. The file is made new (O_CREAT | O_EXCL | O_NOFOLLOW, 0600: a file or a link already at its
+# path fails the start, and is never followed) in `PROFILE_FOLDER` inside Arslan's data folder, which every preset
+# closes (commands, the outside floor, MCP servers; the folders above it held), so no sandboxed command, floored
+# command or MCP server can change it between its writing and its reading. The run's own temp, ⓪Plan's first
+# choice, is written by the run's other commands (a background one could rewrite a later command's profile before
+# sandbox-exec reads it), and an MCP server's own folders by that server. The caller removes the file when the
+# process has exited (or, for an MCP server, once it has answered), on every path (`remove_profile`).
+
+PROFILE_FOLDER = "sandbox-profiles"
+
+
+def profile_folder() -> Path:
+    """Where the profile files are written: a 0700 folder of ours in Arslan's data folder (`_private_folder`)."""
+    from server import config
+    folder = _real(config.data_dir()) / PROFILE_FOLDER
+    folder.parent.mkdir(parents=True, exist_ok=True)
+    _private_folder(folder)
+    return folder
+
+
+def _profile_name() -> str:
+    import secrets
+    return f"{os.getpid()}-{secrets.token_hex(12)}.sb"
+
+
+def write_profile(text: str) -> Path:
+    """A new file holding `text`, for `sandbox-exec -f`. Raises (FileExistsError for anything already at its path, a
+    link included) without following it; on a failed write the file is removed."""
+    path = profile_folder() / _profile_name()
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(text.encode())
+    except BaseException:
+        remove_profile(path)
+        raise
+    return path
+
+
+def remove_profile(path) -> None:
+    """Remove a profile file; one already gone is fine."""
+    if path is not None:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+
+
+def profile_path(argv) -> Path | None:
+    """The profile file a sandbox-exec argv (a prefix, or an MCP server's args) carries with `-f`, or None."""
+    argv = list(argv or ())
+    if argv[:1] == [_SANDBOX_EXEC]:
+        argv = argv[1:]
+    return Path(argv[1]) if len(argv) >= 2 and argv[0] == "-f" else None
+
+
+async def in_thread(build, *args, profile_of=None, **kwargs):
+    """`build(*args, **kwargs)` (a wrapper, or `capability_sandbox.wrap`) in a thread, off the event loop. When the
+    caller is cancelled while it runs, the thread still finishes, and the profile file it wrote is removed then (the
+    cancel path). `profile_of` finds that file in the result (default: `profile_path`, for a prefix)."""
+    import asyncio
+    profile_of = profile_path if profile_of is None else profile_of
+    future = asyncio.ensure_future(asyncio.to_thread(build, *args, **kwargs))
+    try:
+        return await asyncio.shield(future)
+    except asyncio.CancelledError:
+        def drop(done) -> None:
+            if not done.cancelled() and done.exception() is None:
+                remove_profile(profile_of(done.result()))
+        future.add_done_callback(drop)
+        raise
+
+
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
             readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
             trust_service: bool = False) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
-    is missing or cannot start (then the caller runs as before and says so)."""
+    is missing or cannot start (then the caller runs as before and says so). #813 review 11: `-f` and a profile file
+    (`write_profile`) the caller removes (`remove_profile(profile_path(prefix))`) once the process has exited.
+    Raises `run_later.TooManyLinks` past the link cap: the command doesn't start."""
     if not available():
         return None
-    return [_SANDBOX_EXEC, "-p", commands_profile(workspace, temp=temp, offline=offline, closed=closed,
-                                                  readable=readable, copies=copies, proxy_port=proxy_port,
-                                                  trust_service=trust_service)]
+    return [_SANDBOX_EXEC, "-f", str(write_profile(commands_profile(
+        workspace, temp=temp, offline=offline, closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
+        trust_service=trust_service)))]
 
 
-def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None) -> str:
+def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None,
+                    run_later_in: Path | None = None, closed: list[Path] = ()) -> str:
     """S2a-1 piece 4 (decision U11): what a command the user let out of the sandbox, or one run with
     the sandbox off, still may not do — send Apple Events, reach the network when offline, read or
     write Arslan's own data, keys and Hands' folder (files and sockets). The user's secrets stay open:
     ssh, git push, gh and aws need them out here. The saved copies this conversation was given stay
     readable, file by file (piece 5). An approved plain osascript or `shortcuts run` runs with no
-    wrapper at all (`task_service.unwrapped_once`): any seatbelt wrapper blocks Apple Events."""
+    wrapper at all (`task_service.unwrapped_once`): any seatbelt wrapper blocks Apple Events.
+
+    HR-1: `run_later_in` (the work folder) is given when the command left the sandbox under this conversation's
+    grant, with no click on its own card: then the files that make something run later stay unwritable, anywhere,
+    as inside the sandbox (ruling 2: only that click lifts them). `closed` (the user's closed folders) only tells
+    that walk which folders it never lists (#813 review 8); nothing is closed by it out here."""
     rules = Profile("allow")
     rules.deny("appleevent-send")
     if offline:
@@ -456,20 +663,38 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
     rules.deny("network-outbound", *ours)
     # SBX-5 CAP6b: the skill and plugin folders are closed outside too (CAP6a); the user's secrets stay open.
     rules.deny("file-read* file-write*", *(file_or_folder(p) for p in cap6b_folders(plugin_folder)))
-    # SBX-5a (#772 review): everything is writable out here, so every folder above those is held.
-    held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder))
+    # SBX-5a (#772 review): everything is writable out here, so every folder above those is held. HR-1 (#813 review
+    # 6): with `run_later_in`, so are the held run-later folders in the work folder and every folder above them.
+    # Only those (#813 review 7): the walk covers the work folder, so a held folder elsewhere on disk keeps its files
+    # held by name (`kernel_filters` below matches at any depth) but is not held in place. #813 review 8: the walk
+    # never lists the closed and TCC home folders; the held folders inside them are held by name.
+    hold = run_later_folders([run_later_in], closed=closed) if run_later_in is not None else None
+    if hold is not None:
+        # #813 review 9: no dependency exemption when the walk found an alias, and no new link at a held name.
+        rules.deny("file-write-create", *run_later.symlink_filters())
+        for filters in run_later.kernel_filters([run_later_in], aliased=hold.aliased):
+            rules.deny("file-write*", *filters)
+        if hold.at_targets:                 # #813 review 10: the held names at a link's real path
+            rules.deny("file-write*", *hold.at_targets)
+    held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder),
+                          kept=hold.kept if hold is not None else ())
     if held:
         rules.deny("file-write*", *map(literal, held))
+    if hold is not None and hold.by_name:
+        rules.deny("file-write*", *hold.by_name)
     rules.allow_paths("file-read*", map(_real, copies), literal)
     return rules.text()
 
 
-def outside_wrapper(*, offline: bool = False, copies: list[Path] = ()) -> list[str] | None:
+def outside_wrapper(*, offline: bool = False, copies: list[Path] = (),
+                    run_later_in: Path | None = None, closed: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
-    command outside the sandbox runs as before)."""
+    command outside the sandbox runs as before). As `wrapper`: `-f` and a file the caller removes; `TooManyLinks`
+    past the link cap when it holds the run-later files."""
     if not available():
         return None
-    return ["/usr/bin/sandbox-exec", "-p", minimal_profile(offline=offline, copies=copies)]
+    return [_SANDBOX_EXEC, "-f", str(write_profile(minimal_profile(offline=offline, copies=copies,
+                                                                   run_later_in=run_later_in, closed=closed)))]
 
 
 def available() -> bool:
@@ -482,12 +707,16 @@ def available() -> bool:
     if _available is None:
         ok = False
         if sys.platform == "darwin" and Path(_SANDBOX_EXEC).exists():
+            path = None
             try:
                 with tempfile.TemporaryDirectory(prefix="arslan-sandbox-probe-") as scratch:
-                    ok = subprocess.run([_SANDBOX_EXEC, "-p", commands_profile(Path(scratch)), "/usr/bin/true"],
+                    path = write_profile(commands_profile(Path(scratch)))     # as commands start (`-f`, review 11)
+                    ok = subprocess.run([_SANDBOX_EXEC, "-f", str(path), "/usr/bin/true"],
                                         capture_output=True, timeout=10).returncode == 0
             except (OSError, subprocess.SubprocessError):
                 ok = False
+            finally:
+                remove_profile(path)
         _available = ok
     return _available
 
@@ -531,6 +760,98 @@ def trust_check_failed(result: dict) -> bool:
     return bool(_TRUST_FAILED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
+#: HR-1 (#813 review 4): what may be a path in a line of git's, in any language. git translates its words (LANG,
+#: LC_ALL) but never a path, so a run of characters that are none of white space, quotes, brackets, colons, commas and
+#: semicolons, ASCII or full width (git's Chinese messages put a full-width colon right after a path), is a candidate.
+_WIDE = "".join(map(chr, (0x2018, 0x2019, 0x201A, 0x201C, 0x201D, 0x201E, 0x00AB, 0x00BB, 0x2039, 0x203A, 0x300C,
+                          0x300D, 0x300E, 0x300F, 0xFF08, 0xFF09, 0xFF1A, 0xFF0C, 0xFF1B, 0x3001, 0x3002)))
+_PATH_RUN = re.compile("[^\\s'\"`()\\[\\]<>{}:,;" + _WIDE + "]+")
+_GIT_WORD = re.compile(r"(?<![\w.-])git(?![\w.-])")
+
+
+def _is_git(command: str) -> bool:
+    """The command runs git, by its text or by the reader's words (quotes removed). Generous on purpose: a word `git`
+    anywhere counts, since a false positive only adds a note."""
+    if _GIT_WORD.search(command):
+        return True
+    from server.services import shell_grammar
+    reading = shell_grammar.read(command)
+    return reading.understood and any(os.path.basename(word) == "git" for words in reading.commands for word in words)
+
+
+def _held_for_git(token: str, folder: Path, root: Path, target: Path | None) -> bool:
+    """`token`, a path git printed (relative to the work folder or the repository's top, or absolute), names a file
+    the kernel holds: a run-later name by the work folder's root rule (`.git/config`, `.git/hooks/...` and the work-tree
+    names among them), or the work folder's `core.hooksPath` target or a file in it."""
+    if run_later.matches(Path(os.path.normpath(os.path.join(folder, token))), root):
+        return True
+    if target is None:
+        return False
+    held = os.path.normpath(target)
+    return any((path := os.path.normpath(os.path.join(base, token))) == held or path.startswith(held + os.sep)
+               for base in (folder, *folder.parents))
+
+
+def git_refused_paths(result: dict, *, command: str, cwd: Path, hold: bool = False) -> list[str]:
+    """HR-1 (#813 reviews 4 and 5): the held paths a git command's refusal lines name, whatever the exit code. A line
+    counts only when it carries the EPERM text (`_DENIED`) and names a file the kernel holds from git; on stdout as well
+    as stderr (`2>&1`). checkout and switch exit 0 with a held tracked file left as it was; a tracking checkout, `push
+    -u` and `--set-upstream-to` exit 0 with the upstream unsaved (`.git/config`). git translates its own words (LANG,
+    LC_ALL) but not the path, and macOS doesn't translate strerror, so "Operation not permitted" ends the line in
+    every language git speaks. Without that text a held path is only named (a hook printing its own path, a hint, a
+    pathspec error, a diff), not refused. In the workspace sandbox, and under the outside floor when it holds them
+    (`hold`: let out under this conversation's grant with no click on its own card)."""
+    where = result.get("sandbox")
+    if not (where == "workspace" or (where == "outside" and hold)):
+        return []
+    lines = [line for stream in (result.get("stderr") or "", result.get("stdout") or "")
+             for line in stream.splitlines() if _DENIED.search(line)]
+    tokens = [t for line in lines for t in (run.rstrip(".") for run in _PATH_RUN.findall(line)) if t.strip(".")]
+    if not tokens or not _is_git(command):
+        return []
+    folder = Path(os.path.abspath(cwd))
+    try:
+        target = run_later.hooks_path(folder)
+    except OSError:
+        target = None           # only a note: the profile itself failed closed on this already
+    root = _real(folder)
+    return [token for token in tokens if _held_for_git(token, folder, root, target)]
+
+
+def git_refused(result: dict, *, command: str, cwd: Path, hold: bool = False) -> bool:
+    """`git_refused_paths` names one. Heuristic on purpose: a false positive only adds a note."""
+    return bool(git_refused_paths(result, command=command, cwd=cwd, hold=hold))
+
+
+def git_setup_failed(result: dict, held: list[str]) -> bool:
+    """HR-1 (#813 review 5): a git step that failed outright on the repository's own config or hooks only (clone,
+    init, `remote add`, a `git config` write): a non-zero exit, and every held path git named is inside a `.git` folder.
+    Nothing in the work tree moved, so the ordinary stop note (or, under the floor, the floor's) fits it, not the git
+    note's partly updated tree."""
+    return bool(held) and not result.get("ok") and all(".git" in Path(token).parts for token in held)
+
+
+def git_note() -> str:
+    """HR-1 (#813 review 4): what the model reads when `git_refused` holds, in the sandbox or under the outside floor,
+    at any exit code, except for a setup step that failed outright (`git_setup_failed`). Not the stop note: running it again outside the sandbox doesn't help (the floor holds these files
+    too, and only the user's click on that command's own card lifts it), so it ends with the user, not outside_sandbox."""
+    return ("Commands can't change files that make something run later (git config or hooks, editor or agent "
+            "settings), and git needed to change some of them here, so it didn't update them, even if it exited 0: "
+            "an upstream, remote or setting may not have been saved, and a tracked file may have kept its old "
+            "content, leaving the work tree partly updated. Check `git status`, tell the user which files or settings "
+            "weren't updated, and don't commit over them (a `commit -a` now would undo that change).")
+
+
+def links_note(workspace: Path) -> str:
+    """#813 review 11: the stop note when the walk saw more links at held names than `run_later.WALK_LINKS`: no
+    profile was built, so the command didn't start."""
+    return (f"The sandbox didn't start this command: the working folder ({workspace}) has more than "
+            f"{run_later.WALK_LINKS:,} links at the names of files that make something run later (git hooks and "
+            "config, editor tasks, agent and package settings), too many for Arslan to protect, so no command starts "
+            "in the sandbox there. Nothing ran. Tell the user: removing those links, or working in a smaller folder, "
+            "lets commands run again.")
+
+
 def refused_outside(result: dict) -> bool:
     """A command under the minimal outside profile that failed with EPERM (piece 4)."""
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
@@ -547,7 +868,20 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 "non-public destination (this Mac, the local network or a link-local address).")
     else:
         head = ("The sandbox stopped this command: commands may write only inside the working folder "
-                f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data." + shut)
+                f"({workspace}), temp and cache folders, and cannot read ~/.ssh, the keychain or Arslan's data." + shut
+                # HR-1: for these, not outside_sandbox.
+                + " Commands also can't change files that make something run later (git hooks and config, "
+                "editor tasks, agent and package settings), even in the working folder: if that is what it "
+                "changed, use write_file, which asks the user, or tell the user what to change.")
+        if too_large_to_map(workspace):
+            # #813 review 7: true under HR-1 alone (git init and clone fail in every sandboxed folder); HR-1b revisits.
+            head += (" This working folder is too large to map, so Arslan holds the folders those files live in "
+                     "(such as .git and .vscode) by name everywhere in it.")
+        if aliased := aliases_in(workspace):
+            # #813 review 9: why a dependency's own editor or hook files are refused in this run.
+            names = ", ".join(os.path.relpath(p, _real(workspace)) for p in aliased[:5])
+            head += (f" Here some of them link out of their folder ({names}), so they are held inside dependency "
+                     "folders (node_modules) too in this run.")
     return (head + (" This looks like a certificate check through macOS's trust service, which the sandbox "
                       "closes: the user can allow it in Settings (\"Allow system certificate checks in the "
                       "sandbox\")." if trust else "")

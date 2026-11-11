@@ -84,11 +84,11 @@ def test_grades_map_to_the_confirmation_layer():
     assert (tp.risk_grade("ls"), tp.risk_grade("git push"), tp.risk_grade("rm -rf /")) == ("LOW", "MEDIUM", "HIGH")
 
 
-async def test_an_unreadable_setting_grants_nothing():
-    class Broken:
-        async def execute(self, *a, **k):
-            raise RuntimeError("no db")
-    assert await tp.always_allowed(Broken()) == set()
+def test_describe_says_a_rule_in_its_cards_words_and_falls_back_to_the_rule():
+    """S6 (#836 review): its fallbacks were covered only by the removed /settings/terminal-rules test."""
+    assert tp.describe("git-push") == "publishes to a remote repository"
+    assert tp.describe("hermes:recursive delete") == "recursive delete"
+    assert tp.describe("something-else") == "something-else"
 
 
 @pytest.mark.parametrize("command,rule", [

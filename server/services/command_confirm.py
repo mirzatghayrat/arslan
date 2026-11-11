@@ -52,7 +52,7 @@ class Confirmations:
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service
         async with db_session.AsyncSessionLocal() as db:
-            root = await settings_service.workspace_dir(db)
+            root = await settings_service.workspace_dir_for_run(db)     # SUB5c: a sub-session's card names its folder
         if root is None:
             permissions.LAST_DECISION.set(None)    # no card: the refusal is not an earlier answer
             approvals.LAST_OUTCOME.set(None)
@@ -144,7 +144,7 @@ class Confirmations:
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
-            rules=rules, unreadable=unreadable)
+            rules=rules, unreadable=unreadable, outside=outside)    # LOOP1 d2b: read as the gate read it
         frame.update(_delete_keys(delete, shell))
         # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
         # its rules card too; otherwise as before, "ask for every command" asks where it would run.

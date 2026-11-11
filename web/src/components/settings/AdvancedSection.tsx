@@ -20,8 +20,7 @@ import { confirmSheet } from '../kit';
 import McpTokenControl from './McpTokenControl';
 import SshIdentityPanel from './SshIdentityPanel';
 import SshNodesPanel from './SshNodesPanel';
-import SandboxGrantsPanel from './SandboxGrantsPanel';
-import TerminalRulesPanel from './TerminalRulesPanel';
+import SandboxNetworkPanel from './SandboxNetworkPanel';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
 
@@ -51,6 +50,9 @@ export interface AdvancedSectionProps {
   /** 0.1.51 P3: commands run in the workspace sandbox (on by default). Optional so older hosts still render. */
   terminalSandboxEnabled?: boolean;
   onTerminalSandboxChange?: (value: boolean) => void;
+  /** SBX settings: sandboxed commands may use macOS's certificate checks (default off). */
+  sandboxSystemCertificates?: boolean;
+  onSandboxSystemCertificatesChange?: (value: boolean) => void;
   /** 0.1.43: where a background job wraps up. Optional so older hosts still render. */
   backgroundJobBudget?: BackgroundJobBudget;
   onBackgroundJobBudgetChange?: (value: BackgroundJobBudget) => void;
@@ -104,6 +106,8 @@ export default function AdvancedSection({
   onShellConfirmPolicyChange,
   terminalSandboxEnabled = true,
   onTerminalSandboxChange,
+  sandboxSystemCertificates = false,
+  onSandboxSystemCertificatesChange,
   backgroundJobBudget = 'standard',
   onBackgroundJobBudgetChange,
   taskUsdCap = 2,
@@ -414,8 +418,13 @@ export default function AdvancedSection({
             />
           </div>
         )}
-        {orchestratorShellEnabled && <TerminalRulesPanel />}
-        {orchestratorShellEnabled && <SandboxGrantsPanel />}
+        {/* SBX settings (the mock the user OK'd): under the sandbox, the certificate switch and the trusted local devices. */}
+        {orchestratorShellEnabled && (
+          <SandboxNetworkPanel systemCertificates={sandboxSystemCertificates}
+            onSystemCertificatesChange={onSandboxSystemCertificatesChange} />
+        )}
+        {/* S6: the remembered command rules and the conversations let out of the sandbox are listed with every other
+            remembered answer, the last group of this page (RememberedAnswers). */}
     </>)],
     ['budget', (<>
         {/* 0.1.43: where a background job stops gathering and writes up its result. */}

@@ -5,7 +5,7 @@
 - Temporary and no-memory conversations, and sub-sessions, are never found by their messages (a sub-session is
   found by its title only, in the window).
 - The snippet is plain text, exactly the words around the match; the window shows it as text.
-- The query is 1 to 200 characters, and at most 20 results come back.
+- The query is 1 to 200 characters, counted after its whitespace is collapsed, and at most 20 results come back.
 """
 from __future__ import annotations
 
@@ -95,3 +95,22 @@ async def test_the_length_limits(client):
     found = (await client.get(URL, params={"q": WORD})).json()
     assert len(found) == 20
     assert all(WORD in r["snippet"] and len(r["snippet"]) <= 240 + 2 for r in found)     # 240 characters and two "…"
+
+
+async def test_the_200_characters_are_counted_after_the_trim(client):
+    # #831 review: 200 visible characters with padding around them fit once the whitespace is collapsed; a limit
+    # counted on the raw query would refuse them. Runs of inner spaces collapse too. 201 after the trim is still
+    # refused, and the raw input stays bounded.
+    async with client.db_maker() as db:
+        db.add(ArslanMessage(conversation_id="listed", role="user", content="b" * 200))
+        db.add(ConversationContext(id="listed"))
+        await db.commit()
+    await _index(client)
+    padded = await client.get(URL, params={"q": "   " + "b" * 200 + "   "})
+    assert padded.status_code == 200, padded.text
+    assert [r["conversation_id"] for r in padded.json()] == ["listed"]
+    spaced = " ".join(["b" * 99, "b" * 100])                     # 200 after the collapse, 205 before it
+    assert (await client.get(URL, params={"q": spaced.replace(" ", "      ")})).status_code == 200
+    over = await client.get(URL, params={"q": "  " + "a" * 201 + "  "})
+    assert over.status_code == 422 and over.json()["detail"] == {"code": "query_too_long"}
+    assert (await client.get(URL, params={"q": " " * 1990 + "a" * 11})).status_code == 422     # past the raw cap

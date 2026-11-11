@@ -87,7 +87,7 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
                         rule: str | None = None,
                         sandbox: str | None = None, why: str = "",
                         network: bool = False, rules: list[str] | None = None,
-                        unreadable: str = "") -> dict[str, Any]:
+                        unreadable: str = "", outside: bool = False) -> dict[str, Any]:
     """Arslan proposes running ONE command. Emitting this frame runs NOTHING — the
     frontend renders a confirm card showing the full command; only the user's
     `confirm_run_command {call_id}` lets it execute (or `cancel_run_command`).
@@ -105,14 +105,16 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     (`command_confirm.UNREADABLE`). Extra keys: the phone reads `rule` and `reason` as before.
     `summary` (LOOP1 d1): what the command is for and what it touches, read from `pretty`
     (`card_purpose.summarize`), which the Mac card shows; the Bridge's FrameMapper does not read it. A caller that
-    titles the card from the same text passes it on as `card_purpose.phrase(reading=…)`, so the line is read once."""
+    titles the card from the same text passes it on as `card_purpose.phrase(reading=…)`, so the line is read once.
+    `outside` (LOOP1 d2b): the gate runs it outside the sandbox, so the summary reads it that way (as `sandbox`
+    "outside" does); no key of its own."""
     from server.services import card_purpose
     if network:
         reason = f"{reason}; uses the network" if reason else "uses the network"
     pretty = " ".join([command, *argv])
     frame = {"type": "propose_run_command", "call_id": call_id, "command": command,
              "argv": argv, "pretty": pretty, "reason": reason,
-             "summary": card_purpose.summarize(pretty)}
+             "summary": card_purpose.summarize(pretty, outside=outside or sandbox == "outside")}
     if network:
         frame["network"] = True
     if sandbox == "outside":
@@ -208,6 +210,22 @@ def propose_enroll_node(*, call_id: str, name: str, host: str, user: str,
     them a second time."""
     return {"type": "propose_enroll_node", "call_id": call_id, "name": name,
             "host": host, "user": user, "fingerprints": list(fingerprints)}
+
+
+def sandbox_card(card_id: str, kind: str, *, host: str | None = None,
+                 addresses: list[str] | None = None) -> dict[str, Any]:
+    """SBX settings (the mock the user OK'd with A): the sandbox stopped a command, and the chat says why. Emitting this
+    changes NOTHING. `kind` "certificates": its certificate check failed with "Allow system certificate checks in the
+    sandbox" off, and the card's button opens Settings at that switch. "lan_device": the proxy refused a device on the
+    LAN; the card shows `host` (when it was asked for by name) and `addresses` exactly as "Trust this device" pins them,
+    and the click is answered over REST by `card_id` (trusted_devices.answer). The Mac window's frame only: the
+    Bridge's FrameMapper drops a type it doesn't know, and the socket answers no frame for it."""
+    frame: dict[str, Any] = {"type": "sandbox_card", "card_id": card_id, "kind": kind}
+    if kind == "lan_device":
+        frame["addresses"] = list(addresses or [])
+        if host:
+            frame["host"] = host
+    return frame
 
 
 def clarify_options(question: str, options: list[dict[str, Any]]) -> dict[str, Any]:
