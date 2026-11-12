@@ -58,6 +58,23 @@ async def _workspace_root() -> Path | None:
         return await settings_service.workspace_dir_for_run(db)
 
 
+async def _write_roots() -> tuple[Path | None, Path | None]:
+    """(root, walk_root): `_workspace_root`, and SBX-10 parity (HR-2a): in a sub-session its commander's workspace
+    (`settings_service.workspace_dir`, the whole HR-1 root, as `run_command` passes it), whose run-later files its
+    writes are checked against (`workspace_paths.held_for_later(walk_root=...)`); None outside one. A sub-session with
+    a folder but no known commander's workspace: RunLaterUnknown (closed). The two are read one after the other; the
+    check pins the walk root and refuses one that doesn't hold the folder (`workspace_paths._pin_walk_root`)."""
+    root = await _workspace_root()
+    if settings_service.run_sub_folder() == ():
+        return root, None
+    async with db_session.AsyncSessionLocal() as db:
+        walk = await settings_service.workspace_dir(db)
+    if root is not None and walk is None:
+        raise workspace_paths.RunLaterUnknown("refusing to write: the commander's workspace, whose run-later files "
+                                              "this sub-session's writes are checked against, isn't known")
+    return root, walk
+
+
 async def _read_ctx() -> tuple[list[Path], Path | None]:
     """(read roots, workspace) — reads span the green ring; the workspace is the
     base for backward-compatible relative paths. Reads and writes keep DIFFERENT
@@ -114,35 +131,45 @@ async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool =
                     key: str = "path", default: str = ".",
                     run_later_ok: Path | None = None) -> tuple[Path | None, Path | None, dict | None]:
     """(root, path, error) — the shared prologue every tool needs."""
-    root, pin, path, err = await _pinned(args, for_write=for_write, make_parents=make_parents, key=key,
-                                         default=default, run_later_ok=run_later_ok)
+    root, _, pin, path, err = await _pinned(args, for_write=for_write, make_parents=make_parents, key=key,
+                                            default=default, run_later_ok=run_later_ok)
     root_pin.release([pin] if pin is not None else [])
     return root, path, err
 
 
 async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = False, key: str = "path",
                   default: str = ".", run_later_ok: Path | None = None,
-                  ) -> tuple[Path | None, root_pin.Pin | None, Path | None, dict | None]:
-    """(root, pin, path, error): `_resolved` with the working folder's pin kept (SBX-9, Astra #855 P1), which a writing
-    tool carries to the write and releases. The pin is None whenever the error isn't."""
-    root = await _workspace_root()
+                  ) -> tuple[Path | None, Path | None, root_pin.Pin | None, Path | None, dict | None]:
+    """(root, walk_root, pin, path, error): `_resolved` with the working folder's pin kept (SBX-9, Astra #855 P1),
+    which a writing tool carries to the write and releases, and the walk root (`_write_roots`), which it passes to the
+    write's own check (`_write_inside`). The pin is None whenever the error isn't."""
     own = settings_service.run_sub_folder() != ()      # SUB5c: a sub-session's job, in its own folder
+    try:
+        root, walk = await _write_roots()
+    except PathEscape as exc:                          # RunLaterUnknown: no commander's workspace known (closed)
+        return None, None, None, None, _refusal(exc)
     if root is None:
-        return None, None, None, {"ok": False, "error": "this sub-session's own folder can't be used, so nothing is "
-                                  "written" if own else "no workspace is configured — set one in Settings first"}
+        return None, None, None, None, {"ok": False, "error": "this sub-session's own folder can't be used, so "
+                                        "nothing is written" if own else
+                                        "no workspace is configured — set one in Settings first"}
     pin = None
     try:
         pin = workspace_paths.pin_root(root)
-        return root, pin, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
-                                               make_parents=make_parents, pin=pin, run_later_ok=run_later_ok), None
+        return root, walk, pin, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
+                                                     make_parents=make_parents, pin=pin, run_later_ok=run_later_ok,
+                                                     walk_root=walk), None
     except (PathEscape, SecretFile) as exc:
         root_pin.release([pin] if pin is not None else [])
         refused = _refusal(exc)
-        return root, None, None, ({**refused, "note": f"A sub-session writes only in its own folder ({root}); the "
-                                   "commander merges the work."} if own and isinstance(exc, PathEscape) else refused)
+        return root, None, None, None, ({**refused, "note": f"A sub-session writes only in its own folder ({root}); "
+                                         "the commander merges the work."}
+                                        if own and isinstance(exc, PathEscape) else refused)
     except OSError as exc:      # SBX-9: a link swapped while it was resolved (realpath's EINVAL): refused, not raised
         root_pin.release([pin] if pin is not None else [])
-        return root, None, None, {"ok": False, "error": f"cannot check this path now: {exc.strerror or exc}"}
+        return root, None, None, None, {"ok": False, "error": f"cannot check this path now: {exc.strerror or exc}"}
+    except BaseException:       # #874 review G2: any other failure (ValueError, RuntimeError, cancellation) releases
+        root_pin.release([pin] if pin is not None else [])   # the pin too; it is handed over only on a return
+        raise
 
 
 # macOS 11+: no segment of the path may be a link at the moment of the open. Where it is
@@ -151,7 +178,8 @@ async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = F
 _NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
 
 
-def _write_inside(pin: root_pin.Pin, path: Path, text: str, run_later_ok: Path | None = None) -> None:
+def _write_inside(pin: root_pin.Pin, path: Path, text: str, run_later_ok: Path | None = None,
+                  walk_root: Path | None = None) -> None:
     """0.1.62 F4b (R1): write `text` to `path` without following a link out of the workspace.
 
     The path is resolved again now that its folders exist (a segment swapped for a link since
@@ -166,8 +194,10 @@ def _write_inside(pin: root_pin.Pin, path: Path, text: str, run_later_ok: Path |
     SBX-9: `pin` is the working folder's pin from the tool's resolution (`_pinned`), never a fresh one (Astra #855
     P1); the file's folder is opened from the pin's own descriptor one name at a time, never through a link
     (`open_inside`), and the new file is made, and swapped in, relative to that folder's descriptor; right before
-    each, the pinned path is checked to still name that same folder (`check_root`)."""
-    resolve_in_workspace(str(path), pin.path, for_write=True, pin=pin, run_later_ok=run_later_ok)
+    each, the pinned path is checked to still name that same folder (`check_root`).
+    SBX-10 parity: `walk_root`, a sub-session's commander's workspace (`_pinned`), is walked again in this check."""
+    resolve_in_workspace(str(path), pin.path, for_write=True, pin=pin, run_later_ok=run_later_ok,
+                         walk_root=walk_root)
     folder = workspace_paths.open_inside(pin, path.parent.relative_to(pin.path).parts)
     try:
         try:
@@ -375,16 +405,16 @@ class WriteFileExecutor:
         content = args.get("content")
         if not isinstance(content, str):
             return {"ok": False, "error": "content must be a string"}
-        root, pin, path, err = await _pinned(args, for_write=True, make_parents=True, run_later_ok=approved)
+        root, walk, pin, path, err = await _pinned(args, for_write=True, make_parents=True, run_later_ok=approved)
         if err:
             return err
         try:                                            # SBX-9: one pin from the resolution to the write
-            return await self._write(root, pin, path, content, approved)
+            return await self._write(root, pin, path, content, approved, walk)
         finally:
             root_pin.release([pin])
 
     async def _write(self, root: Path, pin: root_pin.Pin, path: Path, content: str,
-                     approved: Path | None) -> dict:
+                     approved: Path | None, walk: Path | None = None) -> dict:
         # 0.1.63 S3: the run's first change saves the folder first, before any folder is made.
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         _touch_rules(path)
@@ -396,7 +426,7 @@ class WriteFileExecutor:
             return {"ok": False, "error": f"cannot create folder {_rel(path.parent, root)}: {exc}"}
         artifact = _snapshot_write(root, path, content)
         try:
-            _write_inside(pin, path, content, approved)
+            _write_inside(pin, path, content, approved, walk)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:
@@ -422,16 +452,16 @@ class EditFileExecutor:
             return {"ok": False, "error": "'old_string' must be a non-empty string"}
         if not isinstance(new, str):
             return {"ok": False, "error": "'new_string' must be a string"}
-        root, pin, path, err = await _pinned(args)
+        root, walk, pin, path, err = await _pinned(args)
         if err:
             return err
         try:                                            # SBX-9: one pin from the resolution to the write
-            return await self._edit(root, pin, path, old, new, approved)
+            return await self._edit(root, pin, path, old, new, approved, walk)
         finally:
             root_pin.release([pin])
 
     async def _edit(self, root: Path, pin: root_pin.Pin, path: Path, old: str, new: str,
-                    approved: Path | None) -> dict:
+                    approved: Path | None, walk: Path | None = None) -> dict:
         if not path.is_file():
             return {"ok": False, "error": f"file not found: {_rel(path, root)}"}
         try:
@@ -450,7 +480,7 @@ class EditFileExecutor:
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         artifact = _snapshot_write(root, path, updated)
         try:
-            _write_inside(pin, path, updated, approved)
+            _write_inside(pin, path, updated, approved, walk)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:

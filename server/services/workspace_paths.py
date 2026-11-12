@@ -68,7 +68,8 @@ def is_secret_name(name: str) -> bool:
 
 
 def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False,
-                         make_parents: bool = False, pin=None, run_later_ok: Path | None = None) -> Path:
+                         make_parents: bool = False, pin=None, run_later_ok: Path | None = None,
+                         walk_root: Path | None = None) -> Path:
     """Absolute, symlink-resolved path inside `ws_root`, or raise.
 
     `for_write=True` judges by the parent directory so a not-yet-existing file
@@ -80,6 +81,9 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
 
     SBX-9: `pin` is the caller's pin of the working folder (`pin_root`), carried from this resolution to the write
     (Astra #855 P1: one identity, not a fresh one per step); without it, the folder is pinned for this call only.
+
+    SBX-10 parity: `walk_root`, for a sub-session's write, is its commander's workspace: the run-later check walks it
+    too (`_refuse_run_later`), pinned, and refuses (RunLaterUnknown) when it can't be pinned or doesn't hold `ws_root`.
     """
     if ws_root is None and pin is None:
         raise PathEscape("no workspace is configured")
@@ -87,18 +91,18 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
         raise PathEscape("path is required")
     if pin is not None:
         return _resolve(user_path, pin.path, for_write=for_write, make_parents=make_parents,
-                        run_later_ok=run_later_ok)
+                        run_later_ok=run_later_ok, walk_root=walk_root)
     from server.services import root_pin
     own = pin_root(ws_root)
     try:
         return _resolve(user_path, own.path, for_write=for_write, make_parents=make_parents,
-                        run_later_ok=run_later_ok)
+                        run_later_ok=run_later_ok, walk_root=walk_root)
     finally:
         root_pin.release([own])
 
 
 def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
-             run_later_ok: Path | None = None) -> Path:
+             run_later_ok: Path | None = None, walk_root: Path | None = None) -> Path:
     raw = Path(user_path.strip())
     candidate = raw if raw.is_absolute() else (root / raw)
     if for_write and candidate.name in ("", ".", ".."):
@@ -138,19 +142,18 @@ def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
     if for_write:
         _refuse_cap6b(resolved, root, user_path)
-        _refuse_run_later(resolved, candidate, root, user_path, run_later_ok)
+        _refuse_run_later(resolved, candidate, root, user_path, run_later_ok, walk_root)
     return resolved
 
 
-def held_for_later(user_path, ws_root: Path | None) -> Path | None:
+def held_for_later(user_path, ws_root: Path | None, *, walk_root: Path | None = None) -> Path | None:
     """HR-2a: the path a write of `user_path` in `ws_root` would land on, when it is a file that runs later (what
     its card names), else None: an ordinary write, or one the executor refuses for another reason. The one test the
-    gate (`tool_gates`) and `hard_rules.never_auto` share. RunLaterUnknown propagates: it can't be told."""
-    # SBX-10 (#870, not merged yet): in a sub-session this walk should also cover the commander's workspace
-    # (`settings_service.workspace_dir`), pinned with SBX-9's `root_pin`, and refuse when that workspace is unknown or
-    # doesn't contain the child's folder. To be applied when #870 lands; today only the child's own folder is walked.
+    gate (`tool_gates`) and `hard_rules.never_auto` share. RunLaterUnknown propagates: it can't be told.
+    SBX-10 parity: `walk_root` (a sub-session's commander's workspace, `file_tools._write_roots`) is walked too, as
+    `run_command`'s profile walks it; one that can't be pinned or doesn't hold `ws_root` is RunLaterUnknown."""
     try:
-        resolve_in_workspace(user_path, ws_root, for_write=True, make_parents=True)
+        resolve_in_workspace(user_path, ws_root, for_write=True, make_parents=True, walk_root=walk_root)
     except RunLater as held:
         return held.path
     except RunLaterUnknown:
@@ -160,7 +163,8 @@ def held_for_later(user_path, ws_root: Path | None) -> Path | None:
     return None
 
 
-def _refuse_run_later(path: Path, candidate: Path, root: Path, user_path, approved: Path | None) -> None:
+def _refuse_run_later(path: Path, candidate: Path, root: Path, user_path, approved: Path | None,
+                      walk_root: Path | None = None) -> None:
     """HR-2a: a write into a file that makes something run later (HR-1's list, `run_later.matches`, and the
     repository's `core.hooksPath` folder) needs the user's click on this call's own card: refused unless `path`
     (the resolved path, where the write lands) is the one that card named (`approved`). `matches` folds case and
@@ -179,18 +183,29 @@ def _refuse_run_later(path: Path, candidate: Path, root: Path, user_path, approv
         walk found an alias, couldn't finish, or skipped a private folder the path is in: the kernel's profile then
         has none (`aliased`);
       - the hooks folder of the work folder's repository (`hooks_path(root)`, what the kernel holds) and of the nearest
-        repository above the file (a nested one's own)."""
-    from server.services import run_later
+        repository above the file (a nested one's own).
+
+    SBX-10 parity (#870, as `run_command`'s profile): `walk_root`, a sub-session's commander's workspace, is pinned
+    (`_pin_walk_root`, which refuses one that can't be pinned or doesn't hold `root`) and walked after `root`
+    (`held_folders(walk_roots=...)`), and its repository's hooks folder is held: a link at a held name there whose
+    real path is in the sub-session's folder (`.git/hooks -> sub/kid/hk`) holds that target here too."""
+    from server.services import root_pin, run_later
+    outer = [_pin_walk_root(walk_root, root)] if walk_root is not None else []
     try:
-        hooks = [h for h in (run_later.hooks_path(path.parent), run_later.hooks_path(root)) if h is not None]
-    except OSError as exc:
-        raise RunLaterUnknown(f"refusing to write: can't read this repository's git config ({exc.strerror or exc})") \
-            from None
+        with root_pin.pinned(outer):
+            try:
+                hooks = [h for h in (run_later.hooks_path(path.parent), run_later.hooks_path(root),
+                                     *(run_later.hooks_path(o.path) for o in outer)) if h is not None]
+            except OSError as exc:
+                raise RunLaterUnknown("refusing to write: can't read this repository's git config "
+                                      f"({exc.strerror or exc})") from None
+            try:
+                walk = run_later.held_folders([root], walk_roots=[o.path for o in outer])
+            except run_later.TooManyLinks as exc:
+                raise RunLaterUnknown(f"refusing to write: {exc}") from None
+    finally:
+        root_pin.release(outer)
     hops = _link_hops(candidate, root)
-    try:
-        walk = run_later.held_folders([root])
-    except run_later.TooManyLinks as exc:
-        raise RunLaterUnknown(f"refusing to write: {exc}") from None
     aliased = (any(run_later.held_link(link, root=root) for link, _ in hops) or bool(walk.aliases)
                or not walk.complete or any(path.is_relative_to(skipped) for skipped in walk.skipped))
     held = (any(run_later.matches(p, root=root, aliased=aliased) for p in (*(read for _, read in hops), path))
@@ -198,6 +213,23 @@ def _refuse_run_later(path: Path, candidate: Path, root: Path, user_path, approv
             or any(_within(path, h) for h in hooks))
     if held and path != approved:
         raise RunLater(user_path, path)
+
+
+def _pin_walk_root(walk_root: Path, root: Path):
+    """SBX-10 parity: the commander's workspace pinned (`root_pin.pin`: no link in any component), as
+    `command_sandbox.wrapper` pins a command's walk root, holding `root` (the sub-session's folder, a real path):
+    the pin, which the caller releases. Otherwise RunLaterUnknown: closed, as the command doesn't start."""
+    from server.services import root_pin
+    try:
+        pin = root_pin.pin(walk_root)
+    except OSError as exc:                                  # root_pin.Swapped too
+        raise RunLaterUnknown("refusing to write: the commander's workspace, whose run-later files this "
+                              f"sub-session's writes are checked against, can't be checked ({exc})") from None
+    if pin.path != root and pin.path not in root.parents:
+        root_pin.release([pin])
+        raise RunLaterUnknown("refusing to write: the commander's workspace, whose run-later files this "
+                              "sub-session's writes are checked against, doesn't hold this sub-session's folder")
+    return pin
 
 
 def _through_links(path: Path, links, root: Path, aliased: bool) -> bool:
