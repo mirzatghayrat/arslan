@@ -24,8 +24,8 @@ _PLAIN_KEYS = (
                "shell_confirm_policy", "background_job_budget", "task_usd_cap",
                # K4a (v0.1.64): the dollar cap's off switch ("true" | "false"; default on).
                "task_usd_cap_enabled",
-               # v0.1.63 (R63): "pending" when migration 0070 switched this user from ask_risky; the window shows a
-               # one-time notice and writes "seen". DELETE-BY: v0.1.64, with the notice.
+               # v0.1.64 ASK1-a: "pending" when migration 0095 found an existing install whose stored policy isn't
+               # ask_risky; the window shows a one-time note and writes "seen". DELETE-BY: v0.1.65, with the note.
                "shell_policy_switch_notice",
                # v0.1.64 ROUTE1: "pending" when migration 0086 cleared the old model roles; Settings says so once, then
                # writes "seen".
@@ -431,11 +431,13 @@ async def mcp_server_enabled(session: AsyncSession) -> bool:
 
 
 async def shell_confirm_policy(session: AsyncSession) -> str:
-    """'ask_all' (v0.1.63 default, user's decision): every command shows a card.
-    'ask_risky': harmless commands run, the rest show a card; only an explicit choice gives it, as its judgement
-    of what is risky is completed in v0.1.64 (S2a-3). Only the exact value counts (what Settings writes); unset
-    or anything else reads as ask_all, the same rule migration 0070 used when it moved a stored ask_risky."""
+    """'ask_risky' (the default again in v0.1.64, ASK1-a): a command that isn't dangerous runs in the sandbox with
+    no card; a card is shown to leave the sandbox, for a real danger or for an explicit rule.
+    'ask_all': every command shows a card. Unset reads ask_risky; the exact value Settings writes reads as itself;
+    any other spelling reads ask_all, so anything unreadable stays strict (the rule migration 0070 used)."""
     raw = await _get_raw(session, "shell_confirm_policy")
+    if raw is None:
+        return "ask_risky"
     return "ask_risky" if raw == "ask_risky" else "ask_all"
 
 

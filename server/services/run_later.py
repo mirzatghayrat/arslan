@@ -57,6 +57,16 @@ FAMILIES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hooks", (".pre-commit-config.yaml", ".husky/**")),
 )
 
+#: HR-1b (ruling 1): git's sample hooks (git never runs a `.sample` file), exempt below each hooks pattern as the whole
+#: last component, in the kernel's filter and in `family`; an exact hook name stays held, a rename into one too.
+SAMPLE_HOOKS: dict[str, str] = {".git/hooks/**": ".git/hooks/*.sample",
+                                ".git/modules/*/hooks/**": ".git/modules/*/hooks/*.sample"}
+
+#: HR-1b (ruling 2): the config names the git_config grant lifts in the commands profile only (`kernel_filters`), and
+#: nothing else; git_config_guard puts back what changed past its allowlist. The file tools keep them (`matches`).
+GIT_CONFIG: tuple[str, ...] = (".git/config", ".git/config.worktree", ".git/worktrees/*/config.worktree",
+                               ".git/modules/*/config")
+
 #: CI files: recognised, not denied (the user's list decision, #813 review 3). A CI job runs only after a push, on
 #: the CI service and not on this Mac, so their guard moves to the push card (HR-2b), which uses `is_ci_file` to name
 #: a pushed change to one. The same pattern form as FAMILIES; not in the kernel's profiles nor in `matches`.
@@ -121,6 +131,16 @@ def dependency_regex() -> str:
     return "^.*/(" + "|".join(map(_component, DEPENDENCY_FOLDERS)) + ")/.*$"
 
 
+#: HR-1b (review delta 2): a path below a `.git` folder's own `.git` folder, which git_config_guard's walk doesn't open.
+_NESTED_GIT = "^.*/" + _component(".git") + "/(.*/)?" + _component(".git") + "/.*$"
+
+
+def git_config_filters() -> tuple[str, ...]:
+    """HR-1b review delta 2: the GIT_CONFIG names as bare filters (the grant's link, flag and ACL denies)."""
+    from server.services.sandbox_profile import regex
+    return tuple(regex(pattern_regex(p)) for p in GIT_CONFIG)
+
+
 def _parts(path) -> tuple[str, ...]:
     return tuple(p for p in PurePath(os.fspath(path)).parts if p not in ("/", ""))
 
@@ -134,26 +154,58 @@ def exempts(roots: Iterable) -> bool:
     return not any(part.casefold() in _FOLDED_DEPENDENCIES for root in roots for part in _parts(root))
 
 
-def family(path, root=None) -> str | None:
+def _exempted(parts: tuple[str, ...], root) -> bool:
+    """A path with components `parts` is inside a dependency folder that `root` exempts (`family`'s rule)."""
+    return (root is None or exempts([root])) and any(part.casefold() in _FOLDED_DEPENDENCIES for part in parts[:-1])
+
+
+def family(path, root=None, *, aliased: bool = False) -> str | None:
     """The family of the first name `path` matches at any depth, or None. None inside a dependency folder too, unless
     `root` is given and its own path has one (`exempts`): the same rule as the kernel's for that root, which HR-2
-    passes (the work folder, by its real path). Without `root` a dependency folder anywhere on the path exempts."""
+    passes (the work folder, by its real path). Without `root` a dependency folder anywhere on the path exempts.
+    `aliased` drops the exemptions, as `kernel_filters(aliased=True)` does (the dependency folders, and HR-1b's
+    SAMPLE_HOOKS): HR-2a passes it when the write's path goes through a link at a held name (`held_link`)."""
     parts = _parts(path)
-    if (root is None or exempts([root])) and any(part.casefold() in _FOLDED_DEPENDENCIES for part in parts[:-1]):
+    if not aliased and _exempted(parts, root):
         return None
     for name, patterns in FAMILIES:
         for pattern in patterns:
-            names = tuple(pattern.split("/"))
-            if any(_fits(parts[i:], names) for i in range(len(parts))):
+            sample = not aliased and pattern in SAMPLE_HOOKS and _anywhere(parts, SAMPLE_HOOKS[pattern])
+            if _anywhere(parts, pattern) and not sample:
                 return name
     return None
 
 
-def matches(path, root=None) -> bool:
-    """Whether a write to `path` (as given: HR-2 passes the resolved path, and the work folder's real path as `root`)
-    is a write into a file that runs later. The names only; the work folder's `core.hooksPath` target is
-    `hooks_path`'s."""
-    return family(path, root) is not None
+def _anywhere(parts: tuple[str, ...], pattern: str) -> bool:
+    names = tuple(pattern.split("/"))
+    return any(_fits(parts[i:], names) for i in range(len(parts)))
+
+
+def _at_hook_name(parts: tuple[str, ...]) -> bool:
+    """HR-1b: the path is a hooks folder or a name in one (SAMPLE_HOOKS' folders), at any depth, case folded."""
+    return any(_anywhere(parts, pattern) for pattern in SAMPLE_HOOKS)
+
+
+def is_git_config(path) -> bool:
+    """Whether `path` names one of the repository config files (GIT_CONFIG) at any depth, letter case folded: what
+    the git_config grant lifts, and what git's refusal note offers it for (HR-1b)."""
+    parts = _parts(path)
+    return any(_anywhere(parts, pattern) for pattern in GIT_CONFIG)
+
+
+def matches(path, root=None, *, aliased: bool = False) -> bool:
+    """Whether a write to `path` (as given: HR-2 passes the resolved path and the path as read at each link on the
+    way, and the work folder's real path as `root`) is a write into a file that runs later. The names only; the work
+    folder's `core.hooksPath` target is `hooks_path`'s. `aliased`: as `family`'s."""
+    return family(path, root, aliased=aliased) is not None
+
+
+def held_link(path, root=None) -> bool:
+    """HR-2a (#813 review 9 and 10, for the file tools): whether `path`, a link, is at a held name or a held folder
+    name (`_below`, as `held_folders` judges the links it lists), where the kernel's walk would list it: not inside a
+    dependency folder that `root` exempts, which the walk skips."""
+    parts = _parts(path)
+    return not _exempted(parts, root) and bool(_below(parts))
 
 
 def is_ci_file(path) -> bool:
@@ -273,19 +325,34 @@ def hooks_path(folder: Path) -> Path | None:
 
 
 def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
-                   aliased: bool = False) -> list[tuple[str, ...]]:
+                   aliased: bool = False, git_config_ok: bool = False,
+                   walk_roots: Iterable[Path] = ()) -> list[tuple[str, ...]]:
     """The SBPL filters a profile denies `file-write*` over, one tuple per family in FAMILIES' order, then one for
     the `core.hooksPath` targets of `folders` (the work folder, or an MCP server's granted folders) when any is
     set: the folder by its real path and by its name in its real parent, so a link there can't be swapped.
     Each name is wrapped to exempt dependency folders only when `exempts` holds for the real paths of `folders`
     and `roots` (an MCP server's own folder) and not `aliased` (#813 review 9: the walk found a held name that links
-    out of its folder, or couldn't finish); otherwise it is the bare regex. The regexes stay built from constants."""
-    from server.services.sandbox_profile import real, subpath
-    folders = list(folders)
-    exempt = _exempt(folders, roots) and not aliased
-    out =[tuple(_filter(pattern_regex(p), exempt) for p in patterns) for _, patterns in FAMILIES]
+    out of its folder, or couldn't finish); otherwise it is the bare regex. HR-1b: a hooks name exempts SAMPLE_HOOKS
+    unless `aliased`; `git_config_ok` lifts GIT_CONFIG only where git_config_guard's walk looks (in `folders`, not in
+    a held dependency folder nor below a nested `.git`; at a link's target it stays held). Built from constants.
+    SBX-10: `walk_roots` (a sub-session's commander's workspace) count for the exemption and have their hooksPath
+    targets held, but lift nothing: the git_config lift stays in `folders`, where the guard looks."""
+    from server.services.sandbox_profile import real, regex, subpath
+    folders, walk_roots = list(folders), list(walk_roots)
+    unless = ([f"(require-not {regex(dependency_regex())})"]
+              if _exempt([*folders, *walk_roots], roots) and not aliased else [])
+    outside = " ".join(f"(require-not {subpath(real(Path(os.path.abspath(f))))})" for f in folders)
+    unwalked = [f"(require-all {outside})", regex(_NESTED_GIT)] + ([] if unless else [regex(dependency_regex())])
+
+    def name(pattern: str) -> str:
+        sample = ([f"(require-not {regex(pattern_regex(SAMPLE_HOOKS[pattern]))})"]
+                  if pattern in SAMPLE_HOOKS and not aliased else [])
+        lifted = [f"(require-any {' '.join(unwalked)})"] if git_config_ok and pattern in GIT_CONFIG and folders else []
+        parts = [regex(pattern_regex(pattern)), *sample, *lifted, *unless]
+        return parts[0] if len(parts) == 1 else f"(require-all {' '.join(parts)})"
+    out = [tuple(name(p) for p in patterns) for _, patterns in FAMILIES]
     targets: list[str] = []
-    for folder in folders:
+    for folder in [*folders, *walk_roots]:
         target = hooks_path(folder)
         if target is None:
             continue
@@ -427,6 +494,10 @@ class HeldWalk:
     aliases: tuple[Path, ...] = ()
     targets: tuple[Path, ...] = ()
     link_filters: tuple[str, ...] = ()
+    #: HR-2a: each of those links as (the path a consumer reads it by, its real path), in the walk's order: the file
+    #: tools map a write at or below the real path back through the link and test that with `matches`, the Python
+    #: form of `link_filters` (workspace_paths._refuse_run_later).
+    links: tuple[tuple[Path, Path], ...] = ()
 
 
 class _Incomplete(Exception):
@@ -465,7 +536,8 @@ _LITERAL_BYTES = len('(literal "")') + 1
 
 def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed: Iterable[Path] = (),
                  max_entries: int | None = None, max_depth: int | None = None, max_held: int | None = None,
-                 max_held_bytes: int | None = None, max_links: int | None = None) -> HeldWalk:
+                 max_held_bytes: int | None = None, max_links: int | None = None,
+                 walk_roots: Iterable[Path] = ()) -> HeldWalk:
     """The existing held folders under `folders` (the work folder, or an MCP server's granted folders and its own),
     found by a bounded walk of real paths (caps `WALK_ENTRIES`, `WALK_DEPTH`, `WALK_HELD` and `WALK_HELD_BYTES`
     unless given). Links aren't followed. Dependency folders are skipped when `exempts` holds for `folders` and
@@ -489,7 +561,15 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     #813 review 11: links are outside the held-folder caps (`WALK_HELD`, `WALK_HELD_BYTES`). Past those the walk goes
     on, keeping no further held folder (they are held by name: `complete` is False) but every link it sees at a held
     name, with its target and filters; only the entry and depth caps, or a folder it can't list, end it. Those links
-    have their own cap, `max_links` (`WALK_LINKS`), past which `TooManyLinks` is raised: no profile, closed."""
+    have their own cap, `max_links` (`WALK_LINKS`), past which `TooManyLinks` is raised: no profile, closed.
+
+    SBX-10 review delta 1: `walk_roots` (a sub-session's commander's workspace) are walked after `folders`, each from
+    its own root, skipping the folders of `folders` (by spelling or `(st_dev, st_ino)`): those were walked first, each
+    with the full depth budget from its own root, as before SBX-10, so a link deep in the sub-session's folder isn't
+    lost to the depth counted from the commander's root, nor walked twice. One walk, so every cap counts over both.
+    A walk root at or inside one of `folders` adds nothing. A folder a link leads to is listed once for each set of
+    held names the consumer reads in it (`_below` of the link's path), not once in all: two families' aliases of one
+    folder (`.vscode -> shared`, `.claude -> shared`) each have their names mapped through it."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
@@ -497,19 +577,28 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     max_held_bytes = WALK_HELD_BYTES if max_held_bytes is None else max_held_bytes
     max_links = WALK_LINKS if max_links is None else max_links
     folders = [real(Path(os.path.abspath(p))) for p in folders]
-    skip = _exempt(folders, roots)
+    outer = [real(Path(os.path.abspath(p))) for p in walk_roots]
+    skip = _exempt([*folders, *outer], roots)
     private_list = private_folders(closed)
     private_paths = set(map(str, private_list))
     private = _identities(private_list)
     private_inodes = {ino for _, ino in private}
     skipped: list[Path] = []
-    starts = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
+    inner = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
+    # SBX-10 review delta 1: the walk roots after `folders`' own, none at or inside one of those.
+    outer = [w for w in dict.fromkeys(outer) if not any(o != w and o in w.parents for o in outer)
+             and not any(s == w or s in w.parents for s in inner)]
+    starts = [*inner, *outer]
+    inner_paths = set(map(str, inner)) if outer else set()
+    inner_ids = _identities(inner) if outer else set()
+    inner_inodes = {ino for _, ino in inner_ids}
     budget = [max_entries]
     found: list[Path] = []
     aliases: list[Path] = []
     targets: list[Path] = []
     filters: list[str] = []
-    through_seen: set[Path] = set()
+    seen: list[tuple[Path, Path]] = []
+    through_seen: set[tuple[Path, tuple]] = set()   # (a folder, the held names read in it): review delta 1 (c)
     counted: set[Path] = set(starts)          # the folders whose literal is counted (the starts: by the caller)
     held_bytes = [0]
     full = [False]                            # #813 review 11: a held-folder cap was reached; the walk goes on
@@ -556,8 +645,10 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
             raise TooManyLinks(max_links)
         target = Path(os.path.realpath(path))
         targets.append(target)
+        seen.append((seen_as, target))
         filters.extend(link_filters(target, below))
-        if target.parent != folder:
+        # HR-1b (⓪Plan): a link at a hook name (or the hooks folder) is an alias wherever it points (no sample exemption).
+        if target.parent != folder or _at_hook_name(_parts(seen_as)):
             aliases.append(path)
         try:
             listed = _is_folder(target)
@@ -570,16 +661,34 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
         """#813 review 10: `folder`, the real path of a link a consumer reads as `seen_as`, listed for the links in it
         at held names by that path (`.claude -> c`, `c/settings.local.json -> ../x.json`): the folders on the way to
         a held name are listed too, a held folder (`**`) for its own entries only, as `inside_held` lists
-        `.git/hooks`. Each folder once; never one the walk doesn't list (`private_folders`)."""
-        if folder in through_seen or not listable(folder):
+        `.git/hooks`. Each folder once for each set of held names read in it (SBX-10 review delta 1: another family's
+        alias of the same folder maps its own names; a link loop reads the same set again and stops); never one the
+        walk doesn't list (`private_folders`)."""
+        below = _below(_parts(seen_as))
+        if (folder, below) in through_seen or not listable(folder):
             return
-        through_seen.add(folder)
-        further = any(rest for rest, _ in _below(_parts(seen_as)))
+        through_seen.add((folder, below))
+        further = any(rest for rest, _ in below)
         for entry in _listing(folder, budget):
             if _is_link_entry(entry):
                 alias(entry, folder, seen_as / entry.name)
             elif further and _is_folder_entry(entry) and _below(_parts(seen_as / entry.name)):
                 through(folder / entry.name, seen_as / entry.name)
+            else:
+                hard_linked(entry, seen_as / entry.name)
+
+    def hard_linked(entry: os.DirEntry, seen_as: Path) -> None:
+        """HR-1b review delta 2: a file at a hook name with another name (a hard-linked sample) is an alias too."""
+        if not _at_hook_name(_parts(seen_as)):
+            return
+        try:
+            st = entry.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        except OSError:
+            raise _Incomplete from None
+        if stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
+            aliases.append(Path(entry.path))
 
     #: The private folders no walked folder lies at or inside (Arslan works in those), as strings: `listable`'s test,
     #: by prefix (#813 review 11: `Path.parents` per link was most of a large walk's time).
@@ -599,6 +708,11 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
             if sub is not None and _is_folder_entry(entry):
                 keep(folder / entry.name)
                 inside_held(folder / entry.name, sub)       # an empty `sub` too (.git/hooks): for its links
+            elif sub is None and _is_folder_entry(entry) and _below(_parts(folder / entry.name)):
+                # HR-1b: a folder behind a `*` (`.git/modules/<name>`), listed for links at its hook names, as `through`.
+                through(folder / entry.name, folder / entry.name)
+            else:
+                hard_linked(entry, folder / entry.name)
 
     stack = [(start, 0) for start in reversed(starts)]
     try:
@@ -614,6 +728,8 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                 if skip and name in _FOLDED_DEPENDENCIES:
                     continue
                 path = folder / entry.name
+                if inner_paths and _is_private(entry, path, inner_ids, inner_inodes, inner_paths):
+                    continue                  # SBX-10 review delta 1: walked from its own root already
                 if _is_private(entry, path, private, private_inodes, private_paths):
                     skipped.append(path)
                     continue
@@ -631,7 +747,8 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     else:
         complete = not full[0]
     return HeldWalk(tuple(dict.fromkeys(found)), complete, tuple(dict.fromkeys(skipped)),
-                    tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)), tuple(dict.fromkeys(filters)))
+                    tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)), tuple(dict.fromkeys(filters)),
+                    tuple(dict.fromkeys(seen)))
 
 
 def _is_link_entry(entry: os.DirEntry) -> bool:

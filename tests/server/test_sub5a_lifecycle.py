@@ -1,7 +1,7 @@
 """SUB5a (v0.1.64, card docs/plans/0164/SUB-sub-sessions.md, SUB5): what a restart, the window's stop, a delete and
 an undo do to sub-sessions. Server only.
 
-No tool table offers `start_sub_session` yet, so these tests start sub-sessions with `sub_sessions.start` and run the
+These tests start sub-sessions with `sub_sessions.start` and run the
 rest for real: their jobs and the summary turn through the background job runner with a scripted model (SUB4's
 harness), the HTTP routes, and the boot pass.
 

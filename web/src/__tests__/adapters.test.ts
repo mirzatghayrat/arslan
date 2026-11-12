@@ -318,16 +318,16 @@ describe("toUiMessages", () => {
   });
 });
 
-describe("terminal settings follow the backend's defaults (0.1.48, v0.1.63)", () => {
-  // The backend treats an unset switch as ON (0.1.48) and an unset policy as ask_all (v0.1.63)
-  // (settings_service.shell_enabled / shell_confirm_policy). Reading `=== "true"`
-  // here showed a fresh install's terminal as OFF while it was working.
+describe("terminal settings follow the backend's defaults (0.1.48, v0.1.64)", () => {
+  // The backend treats an unset switch as ON (0.1.48) (settings_service.shell_enabled). Reading `=== "true"`
+  // here showed a fresh install's terminal as OFF while it was working. The policy arrives as the server reads it
+  // (ASK1-a: unset is ask_risky there); anything else that arrives here stays strict.
   const read = (enabled: string, policy: string) =>
     toUiSettings({ orchestrator_shell_enabled: enabled, shell_confirm_policy: policy } as unknown as BackendAppSettings);
-  it("unset is on and asks before every command", () => {
+  it("unset is on; a policy that is not exactly ask_risky asks before every command", () => {
     expect(read("", "")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
     expect(read("true", "garbage")).toMatchObject({ shellConfirmPolicy: "ask_all" });
-    // One rule with the server (settings_service, migration 0070): only the exact value Settings writes.
+    // One rule with the server (settings_service): only the exact value Settings writes.
     for (const odd of [" ask_risky", "ask_risky\n", "ASK_RISKY", "ask_risky\u00a0"]) {
       expect(read("true", odd)).toMatchObject({ shellConfirmPolicy: "ask_all" });
     }

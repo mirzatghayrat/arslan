@@ -5,9 +5,12 @@ approved that on 2026-11-11). ③Hands' four conditions are pinned here: the tit
 prefix stays on the new title, an unread command keeps today's reading, and the card keeps the full command text."""
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from server.services import card_purpose, command_confirm, command_sandbox, permissions, terminal_policy as tp
+from server.services import (card_purpose, command_confirm, command_sandbox, permissions, settings_service,
+                             terminal_policy as tp)
 from tests.server.test_s2a3_outside_reach import _dispatch, gate  # noqa: F401  (`gate` is a fixture)
 
 S = card_purpose.summarize
@@ -81,6 +84,8 @@ def test_a_harmless_first_step_never_takes_the_title_from_a_once_only_one(line, 
 @pytest.mark.parametrize("line, rule, title", [
     ("bash <<'EOF'\ngit push origin main\nEOF", "git-push", "Publish your commits to origin (and 2 more steps)"),
     ("python3 - <<'EOF'\nrm -rf ../x\nEOF", "delete-outside", "Delete 1 file or folder (and 2 more steps)"),
+    # expect is a launcher since v0.1.64 (it was a program the grammar understood): its script is not read either
+    ("expect - <<'EOF'\nrm -rf ../x\nEOF", "delete-outside", "Delete 1 file or folder (and 2 more steps)"),
 ])
 def test_a_here_document_a_shell_or_an_interpreter_runs_keeps_the_rules_step_in_the_title(line, rule, title):
     """③Hands on #828: a here-document's body is data only to a program that reads it as data (`cat`). One a shell or
@@ -99,7 +104,7 @@ BODY = "\nrm -rf ../x\nEOF"
     "python3 -m code <<'EOF'" + BODY, "uv run python <<'EOF'" + BODY, "uvx python <<'EOF'" + BODY,
     "pipx run python <<'EOF'" + BODY, "poetry run python <<'EOF'" + BODY, "npx -y tsx <<'EOF'" + BODY,
     # a shell, a REPL or a tool that reads commands, under a name the grammar has no reason to refuse
-    "busybox sh <<'EOF'" + BODY, "irb <<'EOF'" + BODY, "expect - <<'EOF'" + BODY, "sqlite3 <<'EOF'" + BODY,
+    "busybox sh <<'EOF'" + BODY, "irb <<'EOF'" + BODY, "sqlite3 <<'EOF'" + BODY,
     "make -f - <<'EOF'" + BODY,
     # a scheduler, also behind a wrapper
     "at now <<'EOF'" + BODY, "batch <<'EOF'" + BODY, "crontab - <<'EOF'" + BODY, "nohup at now <<'EOF'" + BODY,
@@ -206,6 +211,9 @@ class _Seen:
 @pytest.fixture
 def seen(monkeypatch):
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    # The card for every command, as these titles were written under (ASK1-a made unset read ask_risky, where a
+    # command with no rule reaches its card only with no sandbox, and is titled so).
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_all"))
     decide = _Seen()
     monkeypatch.setattr(permissions, "decide", decide)
     return decide.requests

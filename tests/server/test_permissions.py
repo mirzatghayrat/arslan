@@ -160,8 +160,8 @@ async def test_every_decision_is_one_ledger_row_with_its_scope_and_wait():
     assert [(e.decided_by, e.decision, e.scope) for e in events] == [
         ("user", "allow", "conversation"), ("grant", "allow", "conversation")]
     assert events[0].wait_ms is not None and events[1].wait_ms is None
-    # v0.1.63: unset asks before every command, which the ledger calls Careful.
-    assert events[0].conversation_id == "conv-1" and events[0].mode == "careful"
+    # ASK1-a (v0.1.64): unset asks only for risky commands, which the ledger calls Standard.
+    assert events[0].conversation_id == "conv-1" and events[0].mode == "standard"
 
 
 async def test_decide_many_asks_once_for_the_apps_not_yet_allowed():
@@ -259,7 +259,7 @@ class _OpenSessions:
 
 # The plan's scope table (§A4): which choices a card offers for which kind. Task 5's API refuses to
 # create a rule for any kind that never offers "Always".
-ONCE_ONLY = ["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover"]
+ONCE_ONLY = ["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover", "run_later"]
 
 
 @pytest.mark.parametrize("kind", ONCE_ONLY)
@@ -821,7 +821,9 @@ async def test_a_decision_that_raises_leaves_no_stale_outcome(monkeypatch, call)
 SPEC_KINDS = ["command", "folder", "outside", "send", "destructive", "system", "screen", "opaque",
               "app", "app_risky", "money", "takeover", "shortcut", "site", "mcp_tool", "other_agent",
               "capability", "schedule", "remote", "workspace_write",
-              "network"]                    # S2a-1: a command reaching the network after outside content
+              "network",                    # S2a-1: a command reaching the network after outside content
+              "git_config",                 # HR-1b: git updating the working folder's repository config
+              "run_later"]                  # HR-2a: a file tool's write into a file that runs later
 #: Kinds a caller could mistype (final review probe P1).
 TYPOS = ["payment", "app-risky", "Money"]
 

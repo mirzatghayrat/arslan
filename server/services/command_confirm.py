@@ -77,12 +77,16 @@ class Confirmations:
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
                       fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
-                      network: bool = False, host: str | None = None, delete: str = "", outside: bool = False) -> bool:
+                      network: bool = False, host: str | None = None, delete: str = "", outside: bool = False,
+                      run_later=()) -> bool:
         """Called, a card is shown: which commands need none (layer ③ in the sandbox) is the tool loop's to
         decide, once (S2a-2). `sandbox` (0.1.51 P3): "outside" — the model asks to run this command
         outside the sandbox. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
         machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`). `delete` (SMART-8):
-        for a delete outside the working folder, how allow deletes (`delete_to_trash.card_mode`); the card says it."""
+        for a delete outside the working folder, how allow deletes (`delete_to_trash.card_mode`); the card says it.
+        `run_later` (HR-3 part 1): what it writes that runs later, where the kernel's hold doesn't stand (the gate's
+        click-lift rule): the outside card names it, and the command's own card is this time only
+        (`approvals._command_request`)."""
         from server.db import session as db_session
         from server.services import approvals, permissions, settings_service, terminal_policy
         from server.ws.arslan import effective_risk
@@ -90,12 +94,15 @@ class Confirmations:
         outside = outside or sandbox == "outside"   # S2a-3 step 5: it runs outside the sandbox, so read it that way
         risk = effective_risk(remote_host, command, argv, outside=outside)
         shell = terminal_policy.as_shell(command, argv)
-        verdict = terminal_policy.assess(shell, outside=outside)
+        # S2a-3 step 4b: read from the folder the gate read (another machine's folder is not known here)
+        from server.orchestrator.command_gate import run_folder
+        cwd = None if remote_host else await run_folder()
+        verdict = terminal_policy.assess(shell, cwd=cwd, outside=outside)
         # SMART-8 (#688 review 1, 3, 5): every rule it matched goes on every command card, with why it could not be
         # read when that is one of them; the card's risk row names each and takes the worst.
         # SMART-8 (#689): every card's title is its plain purpose in the user's language (the iPhone's heading).
         lang = await card_purpose.language()
-        rules = sorted(terminal_policy.ask_rules(shell, outside=outside))
+        rules = sorted(terminal_policy.ask_rules(shell, cwd=cwd, outside=outside))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
@@ -116,7 +123,8 @@ class Confirmations:
             request = permissions.Request(
                 kind="outside", target="*", title=card_purpose.phrase(
                     shell, why, rules, lang=lang, outside=True, network=network, delete_mode=delete,
-                    reading=card_purpose.frame_reading(frame, shell)),    # the frame's reading, not a second one
+                    reading=card_purpose.frame_reading(frame, shell),     # the frame's reading, not a second one
+                    run_later=run_later),
                 model_title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
                 why=why, frame=frame)
         elif remote_host:
@@ -151,11 +159,17 @@ class Confirmations:
         unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
                                              unsandboxed=unsandboxed, lang=lang, why=why,
-                                             delete_mode=delete)
+                                             delete_mode=delete, run_later=run_later)
         if deletes:     # the model's English text; the title and the card word `delete_mode` themselves
             request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
-        with self._surface():
-            decision = await permissions.decide(request, self._context())
+        # S2a-3 step 4b: the card keeps this folder while it waits (`approvals.open_card`), so the island reads it from
+        # the same folder, server-side (no frame key)
+        token = approvals.CARD_FOLDER.set(cwd)
+        try:
+            with self._surface():
+                decision = await permissions.decide(request, self._context())
+        finally:
+            approvals.CARD_FOLDER.reset(token)
         return decision.allowed
 
 

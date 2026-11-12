@@ -16,7 +16,7 @@ def test_the_derived_sets_are_the_ones_before_a6():
         "web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir", "search_files", "list_my_tasks",
         "list_nodes", "list_my_capabilities", "whats_new", "my_status", "render_chart", "task_progress",
         "background_status", "browser_open", "browser_look", "browser_back", "mac_list_shortcuts",
-        "update_plan", "desktop_apps", "desktop_look"}
+        "update_plan", "desktop_apps", "desktop_look", "progress_report"}    # INB7-f
     assert task_service._LOCAL_WRITE_TOOLS == {
         "write_file", "edit_file", "run_python", "remember", "create_skill", "import_memories",
         "start_background_work", "stop_background_work", "attach_file", "verify"}   # CAP10: verify writes only its copy

@@ -23,8 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from arslan import proactive_policy as policy
 from arslan.proactive_policy import Candidate, ProactiveConfig
 from server.db import session as db_session
-from server.db.models import (ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, ProviderConfig, ScheduledTask,
-                              Setting)
+from server.db.models import (ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, ProviderConfig, Setting)
 from arslan.aio import within
 from server.services import proactive_detectors as detectors, runtime_messages, settings_service
 
@@ -62,10 +61,9 @@ def local_now() -> datetime:
 
 # ── config ──────────────────────────────────────────────────────────────────
 
-#: INB8: a config saved before these went still holds them, and ProactiveConfig refuses a key it doesn't know: that would
-#: reset the user's other choices. A stored config loses them when it is next saved. DELETE-BY: the next migration that
-#: rewrites this setting.
-RETIRED_CONFIG = ("notify", "notify_daily_cap")
+#: INB7-e: what "stop this kind" / "stop this source" on a morning brief stored. Nothing raises a brief any more and the window
+#: has no words for one, so the silenced list leaves them out. DELETE-BY: the next migration that touches proactive_mutes.
+RETIRED_MUTES = ("kind:brief", "brief")
 
 
 async def load_config() -> ProactiveConfig:
@@ -73,7 +71,10 @@ async def load_config() -> ProactiveConfig:
         row = await db.get(Setting, CONFIG_KEY)
     try:
         stored = json.loads(row.value) if row and row.value else {}
-        return ProactiveConfig(**{k: v for k, v in stored.items() if k not in RETIRED_CONFIG})
+        # A config saved before a field went (INB8: the notices; INB7-e: the morning brief) still holds it, and ProactiveConfig
+        # refuses a key it doesn't know: that would reset the user's other choices. Only what save_config wrote is stored, so a key
+        # it doesn't know is a retired one; it is left out here and goes when the config is next saved.
+        return ProactiveConfig(**{k: v for k, v in stored.items() if k in ProactiveConfig.model_fields})
     except (ValueError, TypeError, AttributeError):
         logger.warning("stored proactive config is unreadable; using defaults")
         return ProactiveConfig()          # defaults spend nothing
@@ -151,50 +152,6 @@ async def ingest(found: list[detectors.Found], *, now_utc: datetime) -> dict:
     return {"created": created, "rejected": rejected}
 
 
-# ── the morning brief ───────────────────────────────────────────────────────
-# Retired (the user's Q9, #605 review F2): the scan no longer calls these. DELETE-BY: INB7-e (v0.1.64), with the brief kind.
-
-async def build_brief(now_utc: datetime, now_local: datetime, locale: str) -> detectors.Found | None:
-    """Today at a glance, from data already in hand. No model. Nothing to say means
-    no brief: an empty 'good morning' is noise."""
-    from server.services import background_jobs
-    async with db_session.AsyncSessionLocal() as db:
-        open_items = (await db.execute(select(ProactiveItem).where(
-            ProactiveItem.status.in_(OPEN), ProactiveItem.kind != "brief"))).scalars().all()
-        soon = (await db.execute(select(ScheduledTask).where(
-            ScheduledTask.enabled.is_(True), ScheduledTask.name != detectors.HEARTBEAT_NAME,
-            ScheduledTask.next_due_at.is_not(None), ScheduledTask.next_due_at <= now_utc + timedelta(hours=24),
-            ScheduledTask.next_due_at >= now_utc))).scalars().all()
-    running = [j for j in background_jobs._jobs.values() if j.phase != "finished"]
-    lines: list[policy.Evidence] = []
-    if open_items:
-        kinds: dict[str, int] = {}
-        for item in open_items:
-            kinds[item.kind] = kinds.get(item.kind, 0) + 1
-        lines.append(policy.Evidence("brief.open", {"count": len(open_items), "kinds": kinds}))
-    if running:
-        # SUB5b: a sub-session's work counts once, as its commander's, and its brief is not quoted as a job of its own.
-        own = [j for j in running if not j.commander]
-        under = {j.commander for j in running if j.commander} - {j.conversation_id for j in own}
-        lines.append(policy.Evidence("brief.running", {"count": len(own) + len(under)},
-                                     quote=" · ".join(j.goal[:60] for j in own[:3])))
-    if soon:
-        lines.append(policy.Evidence("brief.schedules", {"count": len(soon)},
-                                     quote=" · ".join(t.name[:40] for t in soon[:3])))
-    if not lines:
-        return None
-    day = now_local.strftime("%Y-%m-%d")
-    return detectors.Found(Candidate(kind="brief", fingerprint=f"brief:{day}", source_key="brief",
-                                     title_key="title.brief", params={"day": day}, evidence=tuple(lines)))
-
-
-async def _last_brief_day() -> str | None:
-    async with db_session.AsyncSessionLocal() as db:
-        fingerprint = await db.scalar(select(ProactiveItem.fingerprint).where(ProactiveItem.kind == "brief")
-                                      .order_by(ProactiveItem.id.desc()).limit(1))
-    return fingerprint.split(":", 1)[1] if fingerprint else None
-
-
 # ── scanning ────────────────────────────────────────────────────────────────
 
 async def scan_once(*, now_utc: datetime | None = None, now_local: datetime | None = None,
@@ -223,9 +180,6 @@ async def scan_once(*, now_utc: datetime | None = None, now_local: datetime | No
         except Exception as exc:  # noqa: BLE001 — isolated on purpose
             logger.warning("proactive detector %s failed: %s %s", name, type(exc).__name__, exc)
     result = await ingest(found, now_utc=now_utc)
-    # The morning brief is retired (the user's Q9, #605 review F2): since the Inbox went (INB5) nothing shows a brief, so the scan
-    # makes none, and no notice leads nowhere, whatever brief_enabled says. DELETE-BY: INB7-e (v0.1.64), which removes build_brief,
-    # policy.brief_due, the brief kind and the config's brief fields.
     if config.diagnosis_daily_usd > 0 and result["created"]:
         from server.services import proactive_diagnosis
         for item_id in result["created"][:2]:
@@ -278,12 +232,19 @@ async def _get(db, item_id: int) -> ProactiveItem:
     return item
 
 
+def _known_kind():
+    """INB7-e: a row of a kind no longer raised (a morning brief stored before it went; no migration removes it) is read past by
+    every list and count, so nothing has to know its words, its icon or its days. It expires by the default days (`maintain`) and
+    is then pruned with the other finished rows."""
+    return ProactiveItem.kind.in_(policy.KINDS)
+
+
 async def list_items(scope: str = "open", limit: int = 100, conversation_id: str | None = None,
                      kind: str | None = None) -> list[dict]:
     """INB5b: `conversation_id` and `kind` narrow the list, so a conversation reads only its own stopped-job reminders."""
     statuses = {"open": OPEN, "done": FINISHED, "snoozed": ("snoozed",)}.get(scope)
     async with db_session.AsyncSessionLocal() as db:
-        query = select(ProactiveItem)
+        query = select(ProactiveItem).where(_known_kind())
         if statuses:
             query = query.where(ProactiveItem.status.in_(statuses))
         if conversation_id is not None:
@@ -298,7 +259,7 @@ async def summary() -> dict:
     from server.services import approvals, progress
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(select(ProactiveItem.status, ProactiveItem.priority, func.count())
-                                 .where(ProactiveItem.status.in_(OPEN))
+                                 .where(ProactiveItem.status.in_(OPEN), _known_kind())
                                  .group_by(ProactiveItem.status, ProactiveItem.priority))).all()
         waiting = await progress.waiting_on_user(db)
     return {"open": sum(n for _, _, n in rows),
@@ -340,7 +301,7 @@ async def accept(item_id: int, conversation_id: str | None = None) -> dict:
     from server.services import background_jobs
     async with db_session.AsyncSessionLocal() as db:
         item = await _get(db, item_id)
-        if item.kind == "brief" or not (item.goal or "").strip():
+        if item.kind not in policy.KINDS or not (item.goal or "").strip():
             raise ProactiveError("nothing_to_do")
         if item.status not in ACTIONABLE:
             raise ProactiveError("already_handled")
@@ -421,7 +382,7 @@ async def unmute(key: str) -> None:
 
 async def list_mutes() -> list[str]:
     async with db_session.AsyncSessionLocal() as db:
-        return sorted((await db.execute(select(ProactiveMute.key))).scalars())
+        return sorted((await db.execute(select(ProactiveMute.key).where(ProactiveMute.key.not_in(RETIRED_MUTES)))).scalars())
 
 
 # ── watches ─────────────────────────────────────────────────────────────────

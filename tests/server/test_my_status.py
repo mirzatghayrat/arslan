@@ -53,7 +53,9 @@ async def test_no_model_configured_says_so(client):
 
 
 @pytest.mark.parametrize("sandbox, policy, lan, expected", [
-    (None, None, None, {"command_sandbox": "on", "approvals": "every command asks", "local_network_scan": "off"}),
+    (None, None, None, {"command_sandbox": "on", "approvals": "harmless commands run, the rest ask",   # ASK1-a
+                        "local_network_scan": "off"}),
+    (None, "ask_all", None, {"command_sandbox": "on", "approvals": "every command asks", "local_network_scan": "off"}),
     ("false", "ask_risky", "true", {"command_sandbox": "off", "approvals": "harmless commands run, the rest ask", "local_network_scan": "on"}),
 ])
 async def test_the_safety_settings_are_the_stored_ones(client, sandbox, policy, lan, expected):

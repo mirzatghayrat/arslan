@@ -184,7 +184,7 @@ async def test_no_model_configured_means_no_model(client):
     assert "model" not in await _details(client)
 
 
-@pytest.mark.parametrize("policy, mode", [(None, "careful"), ("ask_all", "careful"), ("ask_risky", "standard")])
+@pytest.mark.parametrize("policy, mode", [(None, "standard"), ("ask_all", "careful"), ("ask_risky", "standard")])
 async def test_the_mode_is_the_approval_mode_in_effect(client, policy, mode):
     from server.db.models import Setting
     if policy:

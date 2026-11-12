@@ -40,7 +40,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from server.services import run_later
+from server.services import root_pin, run_later
 from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_profile, file_or_folder, literal,
                                              real as _real, regex, subpath)
 
@@ -240,7 +240,7 @@ class RunLaterHold:
     kept: list[Path]                # for `held_ancestors(kept=...)`
     by_name: tuple[str, ...]        # filters to deny `file-write*` over
     complete: bool                  # the walk was complete
-    aliases: tuple[Path, ...]       # #813 review 9: held names that link out of their folder
+    aliases: tuple[Path, ...]       # #813 review 9: held names that link out of their folder (HR-1b: or at a hook name)
     #: #813 review 10: filters to deny `file-write*` over, the held names at the real path of each held name and held
     #: folder name the walk found as a link (`run_later.link_filters`)
     at_targets: tuple[str, ...] = ()
@@ -252,7 +252,7 @@ class RunLaterHold:
         return bool(self.aliases) or not self.complete
 
 
-def run_later_folders(folders, *, roots=(), closed=()) -> RunLaterHold:
+def run_later_folders(folders, *, roots=(), closed=(), walk_roots=()) -> RunLaterHold:
     """HR-1's ancestor hold (#813 review 6): the held run-later folders that exist under `folders` and `roots` (the
     walk's) and each of `folders`' `core.hooksPath` target, as `run_later.kernel_filters` takes them, for
     `held_ancestors(kept=...)`; and the name filters to deny: inside each private folder the walk didn't list
@@ -262,11 +262,16 @@ def run_later_folders(folders, *, roots=(), closed=()) -> RunLaterHold:
     found are kept too (a dependency's file a held name links to, and the folders above it, stay in place).
     #813 review 10: so are the real paths of every held name and held folder name the walk found as a link, and the
     held names at them are denied (`run_later.link_filters`: `.vscode -> vsc` holds `vsc/settings.json`).
-    A hooksPath that can't be read raises, as in `kernel_filters`."""
-    folders, roots = list(folders), list(roots)
-    walk = run_later.held_folders([*folders, *roots], roots=roots, closed=closed)
+    A hooksPath that can't be read raises, as in `kernel_filters`.
+    SBX-10: `walk_roots` are walked too, and their hooksPath read, but grant nothing: a sub-session's commander's
+    workspace, so a held name there that links into the sub-session's folder has its target held in that profile.
+    The caps count over all of it; held folders outside the writable roots drop out in `held_ancestors`. Review
+    delta 1: `folders` and `roots` are walked first, each from its own root with the full depth budget, and the walk
+    roots after them without walking those again (`held_folders(walk_roots=...)`)."""
+    folders, roots, walk_roots = list(folders), list(roots), list(walk_roots)
+    walk = run_later.held_folders([*folders, *roots], roots=roots, closed=closed, walk_roots=walk_roots)
     kept = [*walk.skipped, *walk.folders, *walk.targets]
-    for folder in folders:
+    for folder in [*folders, *walk_roots]:
         target = run_later.hooks_path(folder)
         if target is not None and run_later._is_folder(target):
             kept.append(_real(target))
@@ -450,7 +455,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
                      ipc_prefix: str | None = None, bound_ports: list[int] | None = None,
                      system_proxies: list[str] | None = None, trust_service: bool = False,
                      cache: Path | None = None, peer_cache: Path | None = None,
-                     plugin_folder: Path | None = None, plugin_read: Path | None = None) -> str:
+                     plugin_folder: Path | None = None, plugin_read: Path | None = None,
+                     git_config_ok: bool = False, walk_root: Path | None = None) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -477,7 +483,14 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     closed or protected path (the allow comes after their denies, so it would reopen them), or no profile is built
     (ValueError). Writes there stay denied, and every other plugin folder stays closed. Seatbelt matches real paths,
     so a symlink in this folder to another plugin's file is judged by where it points; a hard link is not: it is that
-    file, inside this folder, and readable. The install (CAP7 / HOOK-3) must refuse hard links in plugin folders."""
+    file, inside this folder, and readable. The install (CAP7 / HOOK-3) must refuse hard links in plugin folders.
+
+    HR-1b: `git_config_ok`, the git_config grant, lifts the config names (`run_later.GIT_CONFIG`) where
+    git_config_guard's walk looks, links, flags and ACLs still denied. Nothing else changes; never the outside floor.
+
+    SBX-10: `walk_root`, for a sub-session's command, is its commander's workspace (pinned by `wrapper`): HR-1's walk
+    and hooksPath read cover all of it (`run_later_folders(walk_roots=...)`), writes stay in `workspace`. The
+    git_config lift stays where git_config_guard looks (`workspace`), never the rest of `walk_root`."""
     root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
     if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
                                     or _real(root) not in plugin_read.parents):
@@ -523,7 +536,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # HR-1 (#813 review 6): nor the held run-later folders in the work folder and every folder above them.
     # #813 review 8: the walk never lists the user's closed folders nor the TCC home folders (`closed` is the user's
     # list, before Arslan's own data is added); it holds the held folders inside them by name.
-    hold = run_later_folders([workspace], closed=closed)
+    walk = [walk_root] if walk_root is not None else []
+    hold = run_later_folders([workspace], closed=closed, walk_roots=walk)
     (_TOO_LARGE.discard if hold.complete else _TOO_LARGE.add)(_real(workspace))  # this walk's root only (review 7)
     if hold.aliases:                                                             # #813 review 9, for `note`
         _ALIASED[_real(workspace)] = hold.aliases
@@ -534,8 +548,14 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # #813 review 9: with no dependency exemption when the walk found an alias (or couldn't finish), and no new link
     # at a held name or held folder name.
     after.deny("file-write-create", *run_later.symlink_filters())
-    for filters in run_later.kernel_filters([workspace], aliased=hold.aliased):
+    # HR-1b: under the git_config grant the repository config names are left out; at a link's target they stay held.
+    # SBX-10: the walk root's hooksPath is held too, and the lift stays inside `workspace`, where the guard looks.
+    for filters in run_later.kernel_filters([workspace], aliased=hold.aliased, git_config_ok=git_config_ok,
+                                            walk_roots=walk):
         after.deny("file-write*", *filters)
+    if git_config_ok:
+        # HR-1b delta 2: no hard link to or from a config (`file-link` refuses both, measured), no flags or ACL on one.
+        after.deny("file-link file-write-flags file-write-acl", *run_later.git_config_filters())
     if hold.at_targets:                     # #813 review 10: the held names at a link's real path
         after.deny("file-write*", *hold.at_targets)
     held = held_ancestors(writable, [*protected, *shut, *shared_caches()], planted=cap6b_spellings(plugin_folder),
@@ -579,6 +599,11 @@ def _profile_name() -> str:
     return f"{os.getpid()}-{secrets.token_hex(12)}.sb"
 
 
+#: SBX-9: the roots each profile file was built from (`root_pin`), checked right before the spawn (`check_pins`) and
+#: released after it (`release_pins`, or with the file, `remove_profile`).
+_PINS: dict[str, list[root_pin.Pin]] = {}
+
+
 def write_profile(text: str) -> Path:
     """A new file holding `text`, for `sandbox-exec -f`. Raises (FileExistsError for anything already at its path, a
     link included) without following it; on a failed write the file is removed."""
@@ -593,9 +618,34 @@ def write_profile(text: str) -> Path:
     return path
 
 
-def remove_profile(path) -> None:
-    """Remove a profile file; one already gone is fine."""
+def write_pinned(text: str, pins: list[root_pin.Pin]) -> Path:
+    """SBX-9: `write_profile`, with the pins the text was built from going with the file. Released on a failure."""
+    try:
+        path = write_profile(text)
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    _PINS[str(path)] = list(pins)
+    return path
+
+
+def check_pins(path) -> None:
+    """SBX-9: right before the spawn, the roots the profile file at `path` was built from are still those folders.
+    Raises `root_pin.Swapped`: the caller doesn't start the process (`root_pin.note`)."""
     if path is not None:
+        root_pin.check(_PINS.get(str(path), ()))
+
+
+def release_pins(path) -> None:
+    """SBX-9: after the spawn, close the descriptors on the roots the profile file at `path` was built from."""
+    if path is not None:
+        root_pin.release(_PINS.pop(str(path), ()))
+
+
+def remove_profile(path) -> None:
+    """Remove a profile file; one already gone is fine. Its pins are released too."""
+    if path is not None:
+        release_pins(path)
         try:
             os.unlink(path)
         except FileNotFoundError:
@@ -629,16 +679,49 @@ async def in_thread(build, *args, profile_of=None, **kwargs):
 
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
             readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
-            trust_service: bool = False) -> list[str] | None:
+            trust_service: bool = False, git_config_ok: bool = False,
+            walk_root: Path | None = None) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so). #813 review 11: `-f` and a profile file
     (`write_profile`) the caller removes (`remove_profile(profile_path(prefix))`) once the process has exited.
-    Raises `run_later.TooManyLinks` past the link cap: the command doesn't start."""
+    Raises `run_later.TooManyLinks` past the link cap: the command doesn't start.
+
+    SBX-9: the work folder, `temp` and the commands cache are pinned first (`root_pin`) and the profile is built from
+    their pinned real paths only; the caller checks them right before the spawn (`check_pins`). Raises
+    `root_pin.Swapped` when one isn't the folder it was: the command doesn't start.
+
+    SBX-10: `walk_root` (a sub-session's commander's workspace) is pinned last and must hold the pinned work folder,
+    or `root_pin.Swapped`: the command doesn't start (closed)."""
     if not available():
         return None
-    return [_SANDBOX_EXEC, "-f", str(write_profile(commands_profile(
-        workspace, temp=temp, offline=offline, closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
-        trust_service=trust_service)))]
+    from server.services import run_temp
+    cache = run_temp.cache("commands")
+    pins = _pin_all([workspace, *([temp] if temp is not None else [])],
+                    extra=[*([cache] if cache.exists() else []), *([walk_root] if walk_root is not None else [])])
+    try:
+        walk = pins[-1].path if walk_root is not None else None
+        if walk is not None and walk != pins[0].path and walk not in pins[0].path.parents:
+            raise root_pin.Swapped(walk_root, "doesn't hold the sub-session's folder")
+        with root_pin.pinned(pins):
+            text = commands_profile(pins[0].path, temp=pins[1].path if temp is not None else None, offline=offline,
+                                    closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
+                                    trust_service=trust_service, git_config_ok=git_config_ok, walk_root=walk)
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    return [_SANDBOX_EXEC, "-f", str(write_pinned(text, pins))]
+
+
+def _pin_all(names, *, extra=()) -> list[root_pin.Pin]:
+    """SBX-9: pin each of `names` and `extra`, in that order; on a refusal the ones pinned already are released."""
+    pins: list[root_pin.Pin] = []
+    try:
+        for name in [*names, *extra]:
+            pins.append(root_pin.pin(name))
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    return pins
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None,
@@ -690,11 +773,19 @@ def outside_wrapper(*, offline: bool = False, copies: list[Path] = (),
                     run_later_in: Path | None = None, closed: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
     command outside the sandbox runs as before). As `wrapper`: `-f` and a file the caller removes; `TooManyLinks`
-    past the link cap when it holds the run-later files."""
+    past the link cap when it holds the run-later files. SBX-9: the work folder it holds them in is pinned, as in
+    `wrapper` (`root_pin.Swapped`)."""
     if not available():
         return None
-    return [_SANDBOX_EXEC, "-f", str(write_profile(minimal_profile(offline=offline, copies=copies,
-                                                                   run_later_in=run_later_in, closed=closed)))]
+    pins = _pin_all([run_later_in] if run_later_in is not None else [])
+    try:
+        with root_pin.pinned(pins):
+            text = minimal_profile(offline=offline, copies=copies, closed=closed,
+                                   run_later_in=pins[0].path if pins else None)
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    return [_SANDBOX_EXEC, "-f", str(write_pinned(text, pins))]
 
 
 def available() -> bool:
@@ -828,18 +919,37 @@ def git_setup_failed(result: dict, held: list[str]) -> bool:
     init, `remote add`, a `git config` write): a non-zero exit, and every held path git named is inside a `.git` folder.
     Nothing in the work tree moved, so the ordinary stop note (or, under the floor, the floor's) fits it, not the git
     note's partly updated tree."""
-    return bool(held) and not result.get("ok") and all(".git" in Path(token).parts for token in held)
+    # HR-1b: `.git` as a whole path component, case folded as APFS folds it; never a substring (`.gitmodules`).
+    return bool(held) and not result.get("ok") and all(
+        any(part.casefold() == ".git" for part in Path(token).parts) for token in held)
 
 
-def git_note() -> str:
+def git_config_only(held: list[str], cwd: Path) -> bool:
+    """HR-1b: every held path git named is a repository config file (`run_later.GIT_CONFIG`), which this
+    conversation's git_config grant would let git update."""
+    folder = os.path.abspath(cwd)
+    return bool(held) and all(run_later.is_git_config(os.path.normpath(os.path.join(folder, token))) for token in held)
+
+
+#: HR-1b: what a refusal on the repository's config only adds, in the sandbox without the grant.
+GIT_CONFIG_HINT = (" If git needed to update this repository's settings (.git/config: an upstream, a remote, "
+                   "user.name), call run_command again with git_config: true and a short why: the user is asked once "
+                   "for this conversation, and settings that name programs (hooks, editors, filters, aliases) are put "
+                   "back after each command.")
+
+
+def git_note(*, git_config: bool = False) -> str:
     """HR-1 (#813 review 4): what the model reads when `git_refused` holds, in the sandbox or under the outside floor,
     at any exit code, except for a setup step that failed outright (`git_setup_failed`). Not the stop note: running it again outside the sandbox doesn't help (the floor holds these files
-    too, and only the user's click on that command's own card lifts it), so it ends with the user, not outside_sandbox."""
+    too, and only the user's click on that command's own card lifts it), so it ends with the user, not outside_sandbox.
+    `git_config` (HR-1b): the refusal was on the repository's config only, in the sandbox with no grant yet, so the
+    note offers the grant (GIT_CONFIG_HINT)."""
     return ("Commands can't change files that make something run later (git config or hooks, editor or agent "
             "settings), and git needed to change some of them here, so it didn't update them, even if it exited 0: "
             "an upstream, remote or setting may not have been saved, and a tracked file may have kept its old "
             "content, leaving the work tree partly updated. Check `git status`, tell the user which files or settings "
-            "weren't updated, and don't commit over them (a `commit -a` now would undo that change).")
+            "weren't updated, and don't commit over them (a `commit -a` now would undo that change)."
+            + (GIT_CONFIG_HINT if git_config else ""))
 
 
 def links_note(workspace: Path) -> str:
@@ -857,7 +967,9 @@ def refused_outside(result: dict) -> bool:
     return bool(_DENIED.search(f"{result.get('stderr') or ''}\n{result.get('stdout') or ''}"))
 
 
-def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False) -> str:
+def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy: bool = False,
+         git_config: bool = False) -> str:
+    """`git_config` (HR-1b): git was refused on the repository's config only, so the note offers the grant."""
     shut = ""
     if closed:
         names = ", ".join(f"~/{p.name}" if p.parent == Path.home() else str(p) for p in closed)
@@ -872,7 +984,8 @@ def note(workspace: Path, closed: list[Path] = (), *, trust: bool = False, proxy
                 # HR-1: for these, not outside_sandbox.
                 + " Commands also can't change files that make something run later (git hooks and config, "
                 "editor tasks, agent and package settings), even in the working folder: if that is what it "
-                "changed, use write_file, which asks the user, or tell the user what to change.")
+                "changed, use write_file, which asks the user, or tell the user what to change."
+                + (GIT_CONFIG_HINT if git_config else ""))
         if too_large_to_map(workspace):
             # #813 review 7: true under HR-1 alone (git init and clone fail in every sandboxed folder); HR-1b revisits.
             head += (" This working folder is too large to map, so Arslan holds the folders those files live in "

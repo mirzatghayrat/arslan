@@ -53,8 +53,8 @@ class StartBackgroundWorkExecutor:
 
 
 class StartSubSessionExecutor:
-    """SUB3: start a sub-session of this conversation and return at once; it works in the background. Not in
-    EXECUTORS until SUB5 (tool_defs.tasks.START_SUB_SESSION)."""
+    """SUB3: start a sub-session of this conversation and return at once; it works in the background. SUB5e: in
+    EXECUTORS, offered where tool_defs.tasks.START_SUB_SESSION says."""
     key = "start_sub_session"
 
     async def execute(self, args: dict) -> dict:

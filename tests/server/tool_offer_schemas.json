@@ -169,6 +169,7 @@
   "text: string"
  ],
  "my_status": [],
+ "progress_report": [],
  "propose_capability": [
   "candidate_id: string required",
   "folders: array of string",
@@ -212,6 +213,7 @@
  ],
  "run_command": [
   "command: string required",
+  "git_config: boolean",
   "network: boolean",
   "outside_sandbox: boolean",
   "timeout_s: integer",
@@ -242,6 +244,9 @@
   "criteria[].minimum: integer",
   "criteria[].target: string",
   "goal: string required"
+ ],
+ "start_sub_session": [
+  "brief: string required"
  ],
  "stop_background_work": [
   "job_id: string required"

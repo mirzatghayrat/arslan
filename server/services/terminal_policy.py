@@ -51,7 +51,7 @@ import shlex
 import stat
 from dataclasses import dataclass
 
-from server.services import shell_grammar, shell_text
+from server.services import run_later, shell_grammar, shell_text
 
 MAX_COMMAND_CHARS = 8000
 
@@ -391,10 +391,10 @@ def _parsed(text: str) -> shell_grammar.PrefixReading:
     """The reader's one pass over `text` (LOOP1 d2), the whole text as given: whether it understands the text and
     why not, and the commands the named rules read. Every reader here reads this one pass, and nothing reads the text
     through the grammar again; the card's steps read it too (`reading`, d2b).
-    `shell_grammar.read` refuses exactly where this pass does: the folders it follows as well never change what is
-    read (its docstring), so `refused` is its "not understood" with the same why, and an understood command's
-    commands are its own. One it does not understand keeps the path it had: its named rules read the commands
-    before the refusal (additive only, never a grant), beside the rules on the raw text."""
+    An unreadable operation keeps later argv only for additive forbids; its named_unreadable reason takes
+    precedence over named ask rules. Otherwise `refused` is the complete reader's "not understood" with the same
+    why, and an understood command's commands are its own. Commands before a grammar refusal remain available
+    for additive rules, beside the rules on the raw text."""
     return shell_grammar.read_prefix(text)
 
 
@@ -741,23 +741,7 @@ def _options(args: tuple[str, ...], values: frozenset[str]):
 
 
 def _security_verb(args: tuple[str, ...]) -> tuple[str, ...]:
-    # -p consumes a prompt; -q/-v/-i are flags. Help never selects an operation.
-    i = 0
-    while i < len(args) and args[i].startswith("-"):
-        word = args[i]
-        if word == "--":
-            return args[i + 1:]
-        if word == "--help":
-            return ()
-        i += 1
-        if not word.startswith("--"):
-            for offset, letter in enumerate(word[1:], 2):
-                if letter == "h":
-                    return ()
-                if letter == "p":
-                    i += offset == len(word)
-                    break
-    return args[i:]
+    return shell_grammar.security_operation(args)[0]
 
 
 def _dispatch_args(program: str, args: tuple[str, ...]) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -970,6 +954,10 @@ def _unparseable(text: str) -> str:
         return "too complex to read before running"
     if shell_text.grep_unreadable(shell_text.mask_quoted_newlines(text)) or not _quotes_close(text):
         return "its quoting does not close, so what runs cannot be read"
+    # The shared pass keeps literalness when selecting the operation, while
+    # retaining later argv for the forbid floor that has already run.
+    if why := _parsed(text).named_unreadable:
+        return why
     return ""
 
 
@@ -1097,6 +1085,31 @@ def _joined(folder: str, word: str) -> str:
     return word if word.startswith(("/", "~", "$")) else f"{folder.rstrip('/')}/{word}"
 
 
+def _relative(word: str) -> bool:
+    """A path the text alone can't place (not `/…` or `~…`, nor a redirection to a descriptor)."""
+    return not word.startswith(("/", "~", "&"))
+
+
+def _links_out(real_folder, folder: str, word: str) -> bool:
+    """#872 review B2: a relative path whose existing folders lead out of the working folder (`real_folder()`, its real
+    path, or None when it could not be resolved) through a link to a folder outside. Read-only, resolved strictly: a
+    failure to resolve asks (review delta 2), except a missing folder, where there is nothing to delete. A target named
+    with no trailing slash is itself removed, not followed, so only its folder is resolved."""
+    path = word if not folder else _joined(folder, word)
+    if not path or path.startswith(("/", "~", "$")):
+        return False
+    if (real := real_folder()) is None:
+        return True                    # the working folder given could not be resolved: as a path outside
+    try:
+        joined = os.path.join(real, path)
+        resolved = os.path.realpath(joined if path.endswith("/") else os.path.dirname(joined), strict=True)
+    except FileNotFoundError:
+        return False                   # no such folder: nothing in it to delete
+    except (OSError, ValueError):
+        return True                    # it can't be placed: as a path outside
+    return resolved != real and not resolved.startswith(real.rstrip("/") + "/")
+
+
 def _protected(folders: tuple[str, ...], word: str) -> bool:
     paths = [_joined(f, part) for f in folders if f for part in {word, word.split("=", 1)[-1]}]
     return any(_PROTECTED_PATH_C.match(p) or _PROTECTED_PATH_C.match(posixpath.normpath(p)) for p in paths)
@@ -1217,6 +1230,18 @@ def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[
             anchor_checked = True
         return _safe_fold_prefix(prefix, anchor, checked)
 
+    real: list = []
+
+    def real_folder() -> str | None:
+        """#872 review B2: the working folder's real path, read once, only for a relative delete."""
+        if not real:
+            try:
+                path = os.fspath(cwd)
+                real.append(os.path.realpath(path) if isinstance(path, str) and path.startswith("/") else None)
+            except (OSError, TypeError, ValueError):
+                real.append(None)
+        return real[0]
+
     if reading.understood:
         reading = shell_grammar.read(text, fold_partial=False, fold_guard=guard)
         if not reading.understood:
@@ -1229,18 +1254,22 @@ def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[
         name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
         if name not in _MOVED_DELETERS | _MOVED_FINDERS | _MOVED_WRITERS:
             continue
-        moved = tuple(f for f in folders if f)
-        if not moved:
-            continue
+        # #872 review B1: `()` is a change of folder the reader can't follow (`folders_known`): from a known starting
+        # folder, a relative path after it may be anywhere, so the path rules ask (fail closed).
+        unknown, moved = not folders, tuple(f for f in folders if f)
         operands = [w for w in args if not w.startswith("-") or w == "-"]
         if name in _MOVED_DELETERS:
-            outside |= not operands or any(_outside_target(_joined(f, w)) for f in moved for w in operands)
+            outside |= unknown or (bool(moved) and (not operands or any(
+                _outside_target(_joined(f, w)) for f in moved for w in operands)))
+            outside |= any(_links_out(real_folder, f, w) for f in folders for w in operands)
         elif name in _MOVED_FINDERS and "-delete" in args:
             start = args[0] if args and not args[0].startswith("-") else "."
-            outside |= any(_outside_target(_joined(f, start)) for f in moved)
+            outside |= unknown or any(_outside_target(_joined(f, start)) for f in moved)
+            outside |= any(_links_out(real_folder, f, start) for f in folders)
         elif name in _MOVED_WRITERS:
-            protected |= any(_protected(moved, w) for w in operands)
-    protected |= any(_protected(folders, target) for target, folders in reading.writes)
+            protected |= any(_protected(moved, w) or (unknown and _relative(w)) for w in operands)
+    protected |= any(_protected(folders, target) or (not folders and _relative(target))
+                     for target, folders in reading.writes)
     return outside, protected
 
 
@@ -1254,6 +1283,27 @@ def as_shell(command: str, argv=None) -> str:
     return command
 
 
+# find's -exec family and xargs start the command written after them, where no rule's command position reads it. The
+# wipe rules read it there too, so `find . -exec rm -rf / \;` and `xargs -I{} rm -rf ~` are refused as `rm -rf /` and
+# `rm -rf ~` are: either wipes the writable work folder, in the sandbox too. Read in the text's forms, where a `{}` the
+# reader stops at is no matter (it stops before it records the find or xargs), and in each find or xargs the reader
+# did record, its words joined again, so a quoted `'rm'` reads as rm there (#376's PR1b found the find form).
+_FIND_LINE = re.compile(_POS + r"find" + _H + r"[^\n&|]*", re.I)
+_FIND_STARTS = re.compile(_H + r"-(?:exec|execdir|ok|okdir)" + _H + r"+")
+_XARGS_STARTS = re.compile(_POS + r"xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+", re.I)
+_PAYLOAD_RULES = frozenset({"wipe-root", "wipe-home"})
+
+
+def _payloads(texts: tuple[str, ...]) -> tuple[str, ...]:
+    """The text from each command a find -exec family or an xargs in `texts` starts, to the end of its line."""
+    out = []
+    for text in texts:
+        for line in _FIND_LINE.finditer(text):
+            out += (line.group()[start.end():] for start in _FIND_STARTS.finditer(line.group()))
+        out += (text[start.end():] for start in _XARGS_STARTS.finditer(text))
+    return tuple(out)
+
+
 def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
     masked = None
     named_rules = set().union(*(_named_rules(words) for words in _command_words(text)))
@@ -1263,6 +1313,12 @@ def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
         named = not quote_masked and key != "arslan-keys"
         if (_matches(pattern, masked if quote_masked else texts)
                 or (named and key in named_rules)):
+            return Assessment("forbid", key, why)
+    # After every other rule, so what one refuses keeps its rule.
+    payloads = _payloads(texts + tuple(shlex.join(words) for words in _command_words(text)
+                                       if words[0].lower() in ("find", "xargs")))
+    for key, pattern, why, _ in _FORBID_C:
+        if key in _PAYLOAD_RULES and _matches(pattern, payloads):
             return Assessment("forbid", key, why)
     return None
 
@@ -1341,6 +1397,491 @@ def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None, outsid
     named = {key for key, _why in _layer_two(texts, _command_words(text), text=text, cwd=cwd, outside=outside)}
     # With no named rule, what asks is unreadable: its code is hidden, or the reader does not understand it (`assess`).
     return named | ({UNREADABLE} if not named or _hidden_code(texts) else set())
+
+
+# ── HR-3 part 1: the direct forms of a write into a file that runs later ─────
+#
+# `run_later_targets` reads a command through shell_grammar's reader (`read`, folders followed) and names what it writes
+# that makes something run later: run_later's names (git hooks and config, .envrc, editor tasks and settings, agents'
+# settings, package-manager settings, pre-commit and husky), at any depth, and the home-level ones (`_HOME_RUN_LATER`).
+# Not CI files nor instruction files (AGENTS.md, CLAUDE.md…): the user's rulings in run_later's docstring. The gate asks
+# with it where the kernel's hold doesn't stand (`command_gate.check`, the click-lift rule); hard_rules.never_auto reads
+# it too. Pure: no file is read, no folder listed, so a link or a file's contents are not followed (see the docstring).
+
+#: A command, or one write in it, that this can't pin down: the caller treats it as a hit (fails closed). Never a target
+#: a write names: a lone `?` is a pattern, which a writer's word never is here (`_expands` makes it unknown first).
+RUN_LATER_UNKNOWN = "?"
+#: A target that names a git setting for this one run (`git -c`, `--config-env`, `--exec-path=`) rather than a file.
+RUN_LATER_SETTING = "git -c "
+
+#: Home-level names that make something run later, below the home folder (`~/…`, `/Users/<name>/…`) or relative to
+#: the folder a command runs in (which may be home): shell startup files, git's global config, fish's config folder,
+#: ssh's per-user config and rc, launch agents, and Claude Code's user settings file. Agents' settings folders are
+#: run_later's names already; the rest of `~/.claude` etc. is `protected-write`'s (once-only already).
+_HOME_RUN_LATER = re.compile(
+    r"(?:\.(?:zshrc|zshenv|zprofile|zlogin|zlogout|bashrc|bash_profile|bash_login|bash_logout|profile|kshrc|cshrc"
+    r"|tcshrc|login|logout)|\.gitconfig|\.config/git/config|\.config/fish|\.ssh/(?:config|rc|authorized_keys)"
+    r"|Library/(?:LaunchAgents|LaunchDaemons|StartupItems)|\.claude\.json)(?:/.*)?", re.I)
+#: The home-level folders above those names: a copy or move into one may carry one of them in.
+_HOME_PARENTS = frozenset({".config", ".config/git", ".ssh", "library"})
+_DEPENDENCIES = frozenset(name.casefold() for name in run_later.DEPENDENCY_FOLDERS)
+#: Programs that write nothing they are given (redirections are read on their own, `reading.writes`): they read, or
+#: delete (a deleted hook runs nothing; deletes have their own rules, `delete-outside`).
+_READS_ONLY = frozenset({"cat", "less", "more", "head", "tail", "grep", "egrep", "fgrep", "rg", "ls", "wc", "file",
+                         "stat", "diff", "cmp", "od", "hexdump", "shasum", "md5", "cksum", "realpath", "readlink",
+                         "basename", "dirname", "du", "echo", "printf", "test", "[", "true", "false", ":", "pwd",
+                         "type", "which", "cd", "pushd", "popd", "nl", "strings", "tree",
+                         "rm", "rmdir", "unlink", "srm", "trash"})
+#: Programs that put their operands somewhere (the last operand, or `-t DIR`, is where): every operand is read as a
+#: path, the folder `**` names too (`cp x .git/hooks`), and the destination joined with each source's name.
+_COPIERS = frozenset({"cp", "mv", "ln", "install", "ditto", "rsync", "gcp", "gmv", "gln", "ginstall"})
+#: Programs that write or change the files they name.
+_FILE_WRITERS = frozenset({"tee", "touch", "truncate", "chmod", "chown", "chgrp", "chflags", "xattr", "dd", "gtee",
+                           "gtouch", "gtruncate", "gchmod", "gchown", "gchgrp"})
+_SEDS = frozenset({"sed", "gsed"})
+#: git's options before its subcommand that take a value, and those that don't.
+_GIT_GLOBAL_VALUES = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix",
+                                "--attr-source", "--list-cmds"})
+_GIT_GLOBAL_FLAGS = frozenset({"-p", "--paginate", "-P", "--no-pager", "--bare", "--no-replace-objects",
+                               "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs",
+                               "--no-optional-locks", "--no-lazy-fetch", "--no-advice", "--version", "-v", "--help",
+                               "-h", "--html-path", "--man-path", "--info-path", "--exec-path"})
+#: `git -c` keys that start no program: anything else, for this run, may (core.hooksPath, core.fsmonitor, aliases…).
+_GIT_HARMLESS_KEYS = re.compile(r"user\.(?:name|email)|color\.[\w.-]+|advice\.[\w.-]+|core\.quotepath"
+                                r"|init\.defaultbranch", re.I)
+#: git subcommands that write no working file by a name given on the line (their other effects are not this check's).
+_GIT_READS = frozenset({"status", "log", "diff", "show", "blame", "ls-files", "ls-tree", "grep", "cat-file",
+                        "rev-parse", "add", "describe", "shortlog", "reflog", "check-ignore", "check-attr", "diff-files",
+                        "diff-index", "diff-tree", "rev-list", "for-each-ref", "show-ref", "name-rev", "version",
+                        "help", "branch", "tag", "fetch", "commit", "remote", "stash", "rm", "switch", "merge-base"})
+_GIT_CONFIG_READS = frozenset({"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color",
+                               "--get-colorbool", "-l", "--list"})
+_GIT_CONFIG_WRITES = frozenset({"--add", "--unset", "--unset-all", "--replace-all", "--rename-section",
+                                "--remove-section", "-e", "--edit"})
+_GIT_CONFIG_VALUES = frozenset({"-f", "--file", "--blob", "--type", "--default", "--comment", "--value"})
+_GIT_CONFIG_FLAGS = frozenset({"--global", "--system", "--local", "--worktree", "--bool", "--int", "--bool-or-int",
+                               "--path", "--expiry-date", "-z", "--null", "--name-only", "--show-origin",
+                               "--show-scope", "--includes", "--no-includes", "--fixed-value", "--all"})
+#: Other programs' own forms that write a file that runs later: (program, verb words) → the file they write.
+_TOOL_WRITES = {
+    ("npm", ("config", "set")): ".npmrc", ("npm", ("config", "delete")): ".npmrc",
+    ("npm", ("config", "edit")): ".npmrc", ("npm", ("config", "fix")): ".npmrc", ("npm", ("set",)): ".npmrc",
+    ("pnpm", ("config", "set")): ".npmrc", ("pnpm", ("config", "delete")): ".npmrc", ("pnpm", ("set",)): ".npmrc",
+    ("yarn", ("config", "set")): ".yarnrc.yml", ("yarn", ("config", "unset")): ".yarnrc.yml",
+    ("yarn", ("config", "delete")): ".yarnrc.yml",
+    ("pip", ("config", "set")): "pip.conf", ("pip", ("config", "unset")): "pip.conf",
+    ("pip", ("config", "edit")): "pip.conf", ("pip3", ("config", "set")): "pip.conf",
+    ("pip3", ("config", "unset")): "pip.conf", ("pip3", ("config", "edit")): "pip.conf",
+    ("pre-commit", ("install",)): ".git/hooks/pre-commit", ("pre-commit", ("install-hooks",)): ".git/hooks/pre-commit",
+    ("pre-commit", ("init-templatedir",)): ".git/hooks/pre-commit",
+    ("direnv", ("allow",)): ".envrc", ("direnv", ("permit",)): ".envrc", ("direnv", ("grant",)): ".envrc",
+    ("direnv", ("edit",)): ".envrc",
+}
+_TOOLS = frozenset(program for program, _ in _TOOL_WRITES) | {"husky"}
+
+
+def _home_relative(path: str) -> str | None:
+    """`path` below the home folder, as written (`~/x`, `~user/x`, `/Users/name/x`, its Data-volume spelling), or as
+    given when it is relative (the command may run in home); None for any other absolute path."""
+    if path.startswith("~"):
+        _, slash, rest = path.partition("/")
+        return rest if slash else ""
+    home = re.match(r"(?:/System/Volumes/Data)?/Users/[^/]+(?:/(.*))?\Z", path, re.I | re.S)
+    if home:
+        return home.group(1) or ""
+    return None if path.startswith("/") else path
+
+
+def _held(path: str, *, below: bool) -> bool:
+    """A write to `path` writes a file that runs later: run_later's names at any depth (with its dependency-folder
+    exemption) or a home-level one; with `below`, also a folder with one of them at or below it (`.git`, `.vscode`,
+    `~/Library`), where a copy or a move may put one. As written and with `.` and `x/..` folded (links not followed)."""
+    for spelling in dict.fromkeys((path, posixpath.normpath(path) if path else path)):
+        if not spelling:
+            continue
+        parts = run_later._parts(spelling)
+        # inside a dependency folder neither form holds (run_later.family's exemption, which `matches` applies)
+        dependency = any(part.casefold() in _DEPENDENCIES for part in parts[:-1])
+        if run_later.matches(spelling) or (below and not dependency and run_later._below(parts)):
+            return True
+        rel = _home_relative(spelling)
+        if rel is not None and (_HOME_RUN_LATER.fullmatch(rel)
+                                or (below and posixpath.normpath(rel or ".").casefold() in _HOME_PARENTS)):
+            return True
+    return False
+
+
+def _in(folder: str, word: str) -> str:
+    """`word` as a path from `folder` (shell_grammar's: "" is the work folder)."""
+    return word if not folder or word.startswith(("/", "~")) else posixpath.join(folder, word)
+
+
+def _at(word: str, folders: tuple[str, ...], *, strict: bool) -> list[str]:
+    """`word`, in each folder the command may run in, where a write there is held (`_held`, `below`). With `strict` (a
+    program that writes the path it is given), a relative word whose folder the reader lost is unknown."""
+    if word.startswith(("/", "~")) or (not folders and not strict):
+        return [word] if _held(word, below=True) else []
+    if not folders:
+        return [RUN_LATER_UNKNOWN]
+    return [path for path in dict.fromkeys(_in(f, word) for f in folders) if _held(path, below=True)]
+
+
+def _spellings(word: str) -> tuple[str, ...]:
+    """The paths a word may name: itself, the value after its first `=` (`--output=x`, `of=x`) and, for a short
+    option, what follows its letter (`-o.envrc`)."""
+    out = [word]
+    if "=" in word:
+        out.append(word.split("=", 1)[1])
+    if word.startswith("-") and not word.startswith("--") and len(word) > 2:
+        out.append(word[2:])
+    return tuple(out)
+
+
+def _non_options(words: tuple[str, ...]) -> list[str]:
+    """The words that are not options (every word after `--`)."""
+    out, ended = [], False
+    for word in words:
+        if ended or word == "-" or not word.startswith("-"):
+            out.append(word)
+        elif word == "--":
+            ended = True
+    return out
+
+
+def _copier_targets(args: tuple[str, ...], folders: tuple[str, ...], program: str) -> list[str]:
+    found = [hit for word in args for spelling in _spellings(word) for hit in _at(spelling, folders, strict=True)]
+    operands = _non_options(args)
+    into = next((args[i + 1] for i, w in enumerate(args[:-1]) if w == "-t"), None) or next(
+        (w.split("=", 1)[1] for w in args if w.startswith("--target-directory=")), None)
+    if into is not None:
+        dest, sources = into, operands
+    elif len(operands) >= 2:
+        dest, sources = operands[-1], operands[:-1]
+    elif len(operands) == 1 and program in ("ln", "gln"):
+        dest, sources = ".", operands                       # `ln -s /x/.envrc` makes ./.envrc
+    else:
+        return found
+    for source in sources:
+        name = posixpath.basename(source.rstrip("/"))
+        if name and name not in (".", ".."):
+            found += _at(posixpath.join(dest, name), folders, strict=True)
+    return found
+
+
+def _sed_script_targets(script: str, folders: tuple[str, ...]) -> list[str]:
+    """Read command boundaries and substitution fields before interpreting a `w` as a write."""
+    def field_end(start: int, delimiter: str) -> int:
+        while start < len(script):
+            if script[start] == "\\":
+                start += 2
+            elif script[start] == delimiter:
+                return start + 1
+            else:
+                start += 1
+        return len(script) + 1
+
+    found, i = [], 0
+    while i < len(script):
+        ch = script[i]
+        # Addresses, ranges, negation, and groups precede a command. Regex addresses
+        # consume their delimiter too, so a `w` in an address is never a command.
+        if ch in " \t\r\n;{},!$+~" or ch.isdigit():
+            i += 1
+            continue
+        if ch == "/" or (ch == "\\" and i + 1 < len(script)):
+            start = i + (ch == "\\")
+            i = field_end(start + 1, script[start])
+            continue
+        i += 1
+        if ch in ("s", "y") and i < len(script):
+            delimiter = script[i]
+            i = field_end(i + 1, delimiter)
+            i = field_end(i, delimiter)
+            if ch == "s":
+                while i < len(script) and (script[i] in "gpIiMme \t" or script[i].isdigit()):
+                    i += 1
+                if i < len(script) and script[i] == "w":
+                    ch, i = "w", i + 1
+        if ch in ("w", "W"):
+            end = script.find("\n", i)
+            end = len(script) if end < 0 else end
+            filename = script[i:end].lstrip(" \t")
+            if filename:
+                found += _at(filename, folders, strict=True)
+            i = end
+        elif ch in ("a", "i", "c", "#", "r", "R"):
+            # Text and file operands run to the newline, including any semicolons.
+            end = script.find("\n", i)
+            i = len(script) if end < 0 else end
+        else:
+            while i < len(script) and script[i] not in ";\n{}":
+                i += 1
+    return found
+
+
+def _sed_targets(args: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
+    """In-place operands and inline `w`/`W` or substitution writes; file scripts are unknown.
+    Keep the older whitespace/semicolon path scan as an additive conservative check."""
+    in_place = any(w.startswith("--in-place") or (w.startswith("-") and not w.startswith("--") and
+                                                   ("i" in w[1:] or "I" in w[1:])) for w in args)
+    found = [hit for w in _non_options(args) for hit in _at(w, folders, strict=True)] if in_place else []
+    for word in args:
+        if any(ch in word for ch in " \t\n;"):
+            found += [hit for piece in re.split(r"[\s;]+", word) if piece for hit in _at(piece, folders, strict=True)]
+    scripts, operands, explicit, ended = [], [], False, False
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        option, equals, value = word.partition("=")
+        if ended or not word.startswith("-") or word == "-":
+            operands.append(word)
+        elif word == "--":
+            ended = True
+        elif option in ("-f", "--file") or (word.startswith("-f") and not word.startswith("--")):
+            return [RUN_LATER_UNKNOWN]
+        elif option in ("-e", "--expression"):
+            explicit = True
+            if not equals:
+                if i >= len(args):
+                    return [RUN_LATER_UNKNOWN]
+                value, i = args[i], i + 1
+            scripts.append(value)
+        elif word.startswith("-e") and not word.startswith("--"):
+            explicit = True
+            scripts.append(word[2:])
+    if not explicit and operands:
+        scripts.append(operands[0])
+    for script in scripts:
+        found += _sed_script_targets(script, folders)
+    return found
+
+
+def _git_config_targets(args: tuple[str, ...], repo: str, git_dir: str | None,
+                        folders: tuple[str, ...]) -> list[str]:
+    """`git config` that writes: the file it writes, named (always a hit: git's config can start programs). A read
+    (`--get…`, `--list`, `get`, `list`, one operand) writes nothing; an option this doesn't know reads as a write."""
+    operands, writes, reads, scope, file, ended = [], False, False, "local", None, False
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        option, equals, value = word.partition("=")
+        if ended or not word.startswith("-") or word == "-":
+            operands.append(word)
+        elif word == "--":
+            ended = True
+        elif option in _GIT_CONFIG_VALUES:
+            if not equals:
+                if i >= len(args):
+                    return [RUN_LATER_UNKNOWN]
+                value, i = args[i], i + 1
+            if option in ("-f", "--file"):
+                scope, file = "file", value
+        elif word in _GIT_CONFIG_WRITES:
+            writes = True
+        elif word in _GIT_CONFIG_READS:
+            reads = True
+        elif word in _GIT_CONFIG_FLAGS:
+            if word in ("--global", "--system", "--worktree", "--local"):
+                scope = word[2:]
+        else:
+            writes = True                                   # an option this doesn't know: read as a write
+    verb = operands[0].lower() if operands else ""
+    if not writes and (reads or verb in ("get", "list") or (len(operands) <= 1 and verb not in
+                                                              ("set", "unset", "rename-section", "remove-section",
+                                                               "edit"))):
+        return [RUN_LATER_UNKNOWN] if any(_expands(w) for w in args) else []
+    if scope == "global":
+        return ["~/.gitconfig"]
+    if scope == "system":
+        return ["/etc/gitconfig"]
+    if scope == "file":
+        return _at(file, folders, strict=True) if not _expands(file) else [RUN_LATER_UNKNOWN]
+    name = "config.worktree" if scope == "worktree" else "config"
+    path = posixpath.join(git_dir, name) if git_dir is not None else posixpath.join(repo, ".git", name)
+    if path.startswith(("/", "~")) or not folders:
+        return [path]
+    return list(dict.fromkeys(_in(f, path) for f in folders))
+
+
+def _git_targets(args: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
+    """git's direct forms: a `-c` or `--config-env` setting that may start a program in this run, and `--exec-path=`,
+    the folder git runs its subcommands from; `git config` writing; `init` and `clone`, which write a repository's hooks (from a template git or its environment may name:
+    an assignment before the command is not among the reader's words); `submodule`, which writes .gitmodules and
+    the submodules' git folders; any other subcommand's word naming a held path (`git checkout -- .envrc`)."""
+    found: list[str] = []
+    repo, git_dir, placed = "", None, True
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        word = args[i]
+        i += 1
+        option, equals, value = word.partition("=")
+        if option in _GIT_GLOBAL_VALUES:                    # `--git-dir=x`, or the next word (`-c k=v`, `-C x`)
+            if not equals:
+                if i >= len(args):
+                    return [RUN_LATER_UNKNOWN]
+                value, i = args[i], i + 1
+            if _expands(value):
+                placed = False
+            if option == "-c":
+                key = value.split("=", 1)[0]
+                if _expands(value):
+                    found.append(RUN_LATER_UNKNOWN)
+                elif not _GIT_HARMLESS_KEYS.fullmatch(key):
+                    found.append(RUN_LATER_SETTING + key)
+            elif option == "--config-env":
+                found.append(RUN_LATER_SETTING + value.split("=", 1)[0])
+            elif option == "-C":
+                repo = posixpath.join(repo, value)
+            elif option == "--git-dir":
+                git_dir = value
+        elif option == "--exec-path" and equals:            # where git runs its subcommands' programs from
+            found.append(RUN_LATER_SETTING + option)
+        elif word not in _GIT_GLOBAL_FLAGS:
+            return [RUN_LATER_UNKNOWN]                      # a global option this doesn't know: the verb can't be placed
+    sub = args[i].lower() if i < len(args) else ""
+    rest = args[i + 1:]
+    if _expands(sub):
+        return [*found, RUN_LATER_UNKNOWN]
+    if sub == "config":
+        targets = _git_config_targets(rest, repo, git_dir, folders)
+        return [*found, *([RUN_LATER_UNKNOWN] if targets and not placed else targets)]
+    if sub in ("init", "clone"):
+        return [*found, posixpath.join(git_dir, "hooks") if git_dir is not None else ".git/hooks"]
+    if sub == "submodule":
+        verb = next((w.lower() for w in rest if not w.startswith("-")), "")
+        if verb in ("", "status", "summary"):
+            return found
+        return [*found, ".gitmodules" if verb in ("add", "set-url", "set-branch") else ".git/modules"]
+    if sub in _GIT_READS or not sub:
+        return found
+    return [*found, *(hit for word in rest for spelling in _spellings(word) if not _expands(spelling)
+                      for hit in _at(spelling, folders, strict=False))]
+
+
+def _tool_targets(program: str, args: tuple[str, ...]) -> list[str]:
+    """A package manager's or hook tool's own form that writes its settings or hooks (`_TOOL_WRITES`); husky, any
+    form but help (it sets core.hooksPath and writes .husky). A verb that comes from an expansion is unknown."""
+    if program in ("npm", "pnpm", "yarn", "pip"):
+        values = {
+            "npm": {"--prefix", "--location", "--userconfig", "--globalconfig", "--workspace", "-w",
+                    "--registry", "--cache", "--loglevel", "--otp"},
+            "pnpm": {"--cwd", "-C", "--dir", "--filter", "-F", "--prefix"},
+            "yarn": {"--cwd", "-C", "--dir", "--filter", "-F", "--prefix"},
+            "pip": {"--python", "--cache-dir", "--log"},
+        }[program]
+        flags = {"--isolated", "--require-virtualenv", "-v"} if program == "pip" else set()
+        verbs, optional, ended, i = [], False, False, 0
+        while i < len(args):
+            word = args[i]
+            i += 1
+            if ended or not word.startswith("-") or word == "-":
+                verbs.append((word.lower(), optional))
+                optional = False
+            elif word == "--":
+                ended, optional = True, False
+            else:
+                option, equals, _ = word.partition("=")
+                optional = not equals and option not in values | flags
+                if option in values and not equals:
+                    i += 1
+        # An unknown option's following word may be a value or a verb. Keep both
+        # readings without constructing exponentially many complete word lists.
+        previous, required, found = set(), 0, []
+        for word, maybe_value in verbs:
+            if _expands(word) and (required < 2 or "config" in previous or "c" in previous):
+                return [RUN_LATER_UNKNOWN]
+            word = "config" if program == "npm" and word == "c" else word
+            for (name, pair), file in _TOOL_WRITES.items():
+                if name == program and ((len(pair) == 2 and pair[0] in previous and pair[1] == word)
+                                        or (len(pair) == 1 and required == 0 and pair[0] == word)):
+                    found.append(file)
+            previous = previous | {word} if maybe_value else {word}
+            required += not maybe_value
+        if found:
+            return found[:1]
+        # Keep existing prefix hits as conservative holds, even for ambiguous
+        # option/value spellings. The new verb scan must not remove a hold.
+    verbs = tuple(w for w in args if not w.startswith("-"))
+    if any(_expands(w) for w in verbs[:2]):
+        return [RUN_LATER_UNKNOWN]
+    if program == "husky":
+        return [] if not verbs and any(w in ("-h", "--help", "-v", "--version") for w in args) else [".husky"]
+    lowered = tuple(w.lower() for w in verbs)
+    return [file for (name, words), file in _TOOL_WRITES.items()
+            if name == program and lowered[:len(words)] == words][:1]
+
+
+def _command_targets(words: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
+    program, args = words[0].lower(), words[1:]             # by name, in any case: the default disk ignores case
+    if re.fullmatch(r"python(?:3(?:\.\d+)?)?", program) and args[:2] == ("-m", "pip"):
+        program, args = "pip", args[2:]
+    elif re.fullmatch(r"pip3(?:\.\d+)?", program):
+        program = "pip"
+    if program == "git":
+        return _git_targets(args, folders)
+    if program == "find":
+        # read-only but for its -fprint family (shell_grammar refuses its -exec family, and any expansion in it)
+        return [hit for i, w in enumerate(args[:-1]) if w in ("-fprint", "-fprint0", "-fprintf", "-fls")
+                for hit in _at(args[i + 1], folders, strict=True)]
+    if program in _READS_ONLY:
+        return []
+    strict = program in _COPIERS or program in _FILE_WRITERS or program in _SEDS
+    if strict and any(_expands(w) for w in args):
+        return [RUN_LATER_UNKNOWN]                          # a name or an option the shell makes: can't be pinned
+    found = _tool_targets(program, args) if program in _TOOLS else []
+    if program in _COPIERS:
+        return found + _copier_targets(args, folders, program)
+    if program in _SEDS:
+        return found + _sed_targets(args, folders)
+    return found + [hit for word in args for spelling in _spellings(word) if not _expands(spelling)
+                    for hit in _at(spelling, folders, strict=strict)]
+
+
+def run_later_targets(command: str) -> list[str]:
+    """HR-3 part 1: what `command` writes, by a direct form, that makes something run later, as named on its line (and
+    joined to a folder its `cd` leads to), each once, in order; [] for none. `[RUN_LATER_UNKNOWN]` (with any it did
+    name) when it can't tell: text the reader doesn't understand (an interpreter's script, xargs, eval, find -exec, a
+    program named by a path, an assignment to GIT_DIR or GIT_CONFIG*, …), a writer's word the shell expands, or a
+    write after a change of folder the reader couldn't follow. The caller treats any non-empty answer as a hit.
+
+    Covered: redirections (`>`, `>>`, `>|`, `&>`, a here-document's command's); `tee`, `touch`, `truncate`, `chmod`,
+    `chown`, `chflags`, `xattr`, `dd of=`; `cp`, `mv`, `ln`, `install`, `ditto`, `rsync` (every operand, a held folder
+    as one too, and the destination joined with each source's name, `-t DIR`); `sed` in place, and a `w` file in its
+    script; `git config` writing (any scope; `--file` when it names a held file), `git -c` and `--config-env` with a
+    key that may start a program, `git --exec-path=`, `git init`, `git clone`, `git submodule` (but status); npm,
+    pnpm, yarn and pip `config set`…; `pre-commit install`, husky, `direnv allow` and `edit`; and any other program
+    (not one that only reads) given a held path as a word, an `=` value or a short option's value. Through the
+    reader's wrappers and `bash -c` scripts.
+
+    Not covered (no file is read here): a link already on disk that leads to a held name; what a program writes by
+    names it doesn't take on the line (a checkout, merge, pull, patch, archive or copied tree whose contents hold such
+    names; a script or a Makefile); a path that reaches a held name only through a variable in a program that isn't a
+    writer above; git's other config writers (`remote add`, `branch -u`: HR-1b's); CI files and instruction files (the
+    user's rulings, run_later)."""
+    text = str(command or "")
+    if not text.strip():
+        return []
+    if len(text) > MAX_COMMAND_CHARS:
+        return [RUN_LATER_UNKNOWN]
+    reading = shell_grammar.read(text)
+    carriers = _parsed(text).carriers                       # the same pass: its commands are read's, in order
+    if not reading.understood or len(_parsed(text).commands) != len(reading.commands):
+        return [RUN_LATER_UNKNOWN]
+    found: list[str] = []
+    for target, folders in reading.writes:
+        found += _at(target, folders, strict=True)
+    for index, (words, folders) in enumerate(zip(reading.commands, reading.folders)):
+        if index not in carriers:                           # a wrapper's words are its command's, read there
+            found += _command_targets(words, folders)
+    return list(dict.fromkeys(found))
+
+
+def run_later_file(targets) -> str:
+    """The first file `run_later_targets` named (for the card's line), or "" when it named only a setting or nothing
+    it could pin down."""
+    return next((t for t in targets if t != RUN_LATER_UNKNOWN and not t.startswith(RUN_LATER_SETTING)), "")
 
 
 # JXA and any other OSA language than AppleScript (`osascript -l JavaScript`). It can bridge to

@@ -202,7 +202,7 @@ class _Exec:
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
 
 
-async def _run(monkeypatch, args, *, sandbox_on, available=True, exec_=None):
+async def _run(monkeypatch, args, *, sandbox_on, available=True, exec_=None, click=False):
     ex = exec_ or _Exec()
     monkeypatch.setitem(tool_loop.EXECUTORS, "run_command", ex)
 
@@ -222,6 +222,9 @@ async def _run(monkeypatch, args, *, sandbox_on, available=True, exec_=None):
 
     async def cards(command, argv, **kw):
         asked.append(kw)
+        if click:      # the user's own click on this card, as decide records it
+            from server.services import permissions
+            permissions.LAST_DECISION.set(permissions.Decision(True, "user", "once"))
         return True
 
     async def resolve():
@@ -254,7 +257,9 @@ async def test_in_the_sandbox_it_keeps_the_sandboxs_limits(monkeypatch):
 
 @pytest.mark.parametrize("command", ["rm -rf ~/smart8/*", "ls | xargs rm", "find ~/smart8 -delete", 'rm -rf "$D"'])
 async def test_a_delete_that_cant_be_read_runs_as_before_and_its_card_says_permanent(monkeypatch, command):
-    ex, asked = await _run(monkeypatch, {"command": command}, sandbox_on=False)
+    # HR-3 part 1: outside the sandbox an unread command may write a file that runs later, so only the user's click
+    # on its card runs it (a yes with no recorded click runs nothing).
+    ex, asked = await _run(monkeypatch, {"command": command}, sandbox_on=False, click=True)
     assert asked == [{"delete": "permanent"}] and ex.ran == [False]
 
 

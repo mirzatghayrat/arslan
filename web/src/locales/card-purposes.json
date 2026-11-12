@@ -39,7 +39,10 @@
    "join": " · ",
    "ownFilesStay": "Arslan's own files stay",
    "permanent": "Deletes permanently",
-   "permanentSandbox": "Deletes permanently where the sandbox allows"
+   "permanentSandbox": "Deletes permanently where the sandbox allows",
+   "runsLater": "Writes a file that runs later: {{file}}",
+   "runsLaterGit": "Changes what git runs: {{name}}",
+   "runsLaterUnsure": "May write a file that runs later"
   }
  },
  "zh": {
@@ -81,7 +84,10 @@
    "join": " · ",
    "ownFilesStay": "Arslan 自己的文件不动",
    "permanent": "彻底删除",
-   "permanentSandbox": "在沙箱允许的范围内彻底删除"
+   "permanentSandbox": "在沙箱允许的范围内彻底删除",
+   "runsLater": "会写入以后会运行的文件：{{file}}",
+   "runsLaterGit": "会改变 git 运行的程序：{{name}}",
+   "runsLaterUnsure": "可能写入以后会运行的文件"
   }
  },
  "ja": {
@@ -123,7 +129,10 @@
    "join": " · ",
    "ownFilesStay": "Arslan 自身のファイルはそのまま",
    "permanent": "完全に削除",
-   "permanentSandbox": "サンドボックスで許可された範囲を完全に削除"
+   "permanentSandbox": "サンドボックスで許可された範囲を完全に削除",
+   "runsLater": "後で実行されるファイルに書き込む：{{file}}",
+   "runsLaterGit": "git が実行するものを変える：{{name}}",
+   "runsLaterUnsure": "後で実行されるファイルに書き込む可能性"
   }
  },
  "es": {
@@ -165,7 +174,10 @@
    "join": " · ",
    "ownFilesStay": "Los archivos de Arslan se quedan",
    "permanent": "Borra de forma permanente",
-   "permanentSandbox": "Borra de forma permanente donde el sandbox lo permite"
+   "permanentSandbox": "Borra de forma permanente donde el sandbox lo permite",
+   "runsLater": "Escribe un archivo que se ejecuta más tarde: {{file}}",
+   "runsLaterGit": "Cambia lo que ejecuta git: {{name}}",
+   "runsLaterUnsure": "Puede escribir un archivo que se ejecuta más tarde"
   }
  },
  "de": {
@@ -207,7 +219,10 @@
    "join": " · ",
    "ownFilesStay": "Arslans eigene Dateien bleiben",
    "permanent": "Löscht endgültig",
-   "permanentSandbox": "Löscht endgültig, wo die Sandbox es erlaubt"
+   "permanentSandbox": "Löscht endgültig, wo die Sandbox es erlaubt",
+   "runsLater": "Schreibt eine Datei, die später ausgeführt wird: {{file}}",
+   "runsLaterGit": "Ändert, was git ausführt: {{name}}",
+   "runsLaterUnsure": "Kann eine Datei schreiben, die später ausgeführt wird"
   }
  },
  "fr": {
@@ -249,7 +264,10 @@
    "join": " · ",
    "ownFilesStay": "Les fichiers d'Arslan restent",
    "permanent": "Supprime définitivement",
-   "permanentSandbox": "Supprime définitivement là où le bac à sable l'autorise"
+   "permanentSandbox": "Supprime définitivement là où le bac à sable l'autorise",
+   "runsLater": "Écrit un fichier qui s'exécute plus tard : {{file}}",
+   "runsLaterGit": "Change ce que git exécute : {{name}}",
+   "runsLaterUnsure": "Peut écrire un fichier qui s'exécute plus tard"
   }
  }
 }
