@@ -108,6 +108,85 @@ def test_the_git_config_lift_stays_in_the_sub_sessions_folder(tmp_path, hooks_pa
     assert walked[families:] == ([(sandbox_profile.subpath(kid / "hp"),)] if hooks_path else [])
 
 
+def _deep_layout(tmp_path):
+    """Review delta 1 (b): the child's folder `ws/sub/kid` holds `x/.vscode -> v`, three folders below the commander's
+    workspace and one below the child's folder; the walk's depth cap is set to 2 by the tests."""
+    ws = (tmp_path / "home" / "ws").resolve()
+    kid = ws / "sub" / "kid"
+    (kid / "x" / "v").mkdir(parents=True)
+    (kid / "x" / "v" / "settings.json").write_text("old")
+    (kid / f"{STAND_IN}.txt").write_text("old")
+    (kid / "x" / ".vscode").symlink_to(kid / "x" / "v", target_is_directory=True)
+    return ws, kid
+
+
+def test_the_childs_own_folder_is_walked_with_its_own_depth_budget(tmp_path, monkeypatch):
+    """Review delta 1 (b), any OS: past the depth cap counted from the commander's workspace, but within it from the
+    child's folder, the child's link target is still found (the child's folder is walked from its own root, first)."""
+    monkeypatch.setattr(run_later, "WALK_DEPTH", 2)
+    ws, kid = _deep_layout(tmp_path)
+    hold = command_sandbox.run_later_folders([kid], walk_roots=[ws])
+    assert kid / "x" / "v" in hold.kept and hold.complete
+    assert sandbox_profile.literal(kid / "x" / "v" / "settings.json") in hold.at_targets
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.usefixtures("home")
+async def test_a_link_deep_in_the_childs_folder_is_held_past_the_commanders_depth_cap(tmp_path, monkeypatch):
+    """Review delta 1 (b), real seatbelt: the child's write to the link's target is refused, the file stays "old";
+    its other file is written."""
+    monkeypatch.setattr(run_later, "WALK_DEPTH", 2)
+    ws, kid = _deep_layout(tmp_path)
+    writes = [("x/v/settings.json", "refused"), (f"{STAND_IN}.txt", "done")]
+    result = await terminal_exec.run(_writes(writes), cwd=kid, sandbox=True, offline=True, walk_root=ws)
+    assert result["sandbox"] == "workspace", result
+    assert result["stdout"].split() == ["refused", "done"], result
+    assert [(kid / p).read_text() for p, _ in writes] == ["old", "zz"]
+
+
+def _shared_layout(tmp_path):
+    """Review delta 1 (c): `ws/.vscode -> shared` and `ws/sub/.claude -> ../shared`, two families' aliases of one
+    folder (the walk lists `ws` before `ws/sub`, so `.vscode`'s is met first). In `shared`: `settings.json` (both
+    families hold it), `tasks.json -> ../t.json` (the editor family's name) and `settings.local.json -> ../c.json`
+    (the agent family's, by its `settings*.json` pattern, so only listing `shared` as `.claude` maps it)."""
+    ws = (tmp_path / "home" / "ws").resolve()
+    shared = ws / "shared"
+    (ws / "sub").mkdir(parents=True)
+    shared.mkdir()
+    for path in ("shared/settings.json", "t.json", "c.json", f"{STAND_IN}.txt"):
+        (ws / path).write_text("old")
+    (shared / "tasks.json").symlink_to(ws / "t.json")
+    (shared / "settings.local.json").symlink_to(ws / "c.json")
+    (ws / ".vscode").symlink_to(shared, target_is_directory=True)
+    (ws / "sub" / ".claude").symlink_to(shared, target_is_directory=True)
+    return ws
+
+
+def test_each_alias_of_a_shared_folder_maps_its_own_names(tmp_path):
+    """Review delta 1 (c), any OS: both aliases' names are held at the shared folder, the links in it included."""
+    ws = _shared_layout(tmp_path)
+    filters = run_later.held_folders([ws]).link_filters
+    for path in ("shared/settings.json", "t.json", "c.json"):
+        assert sandbox_profile.literal(ws / path) in filters, path
+
+
+@pytest.mark.macos
+@macos
+@pytest.mark.usefixtures("home")
+async def test_two_families_aliases_of_one_folder_are_both_held(tmp_path):
+    """Review delta 1 (c), real seatbelt: the editor family's name and the agent family's name, each through the link
+    in the shared folder, and the name both hold, are refused and stay "old"; an ordinary file is written."""
+    ws = _shared_layout(tmp_path)
+    writes = [("shared/settings.json", "refused"), ("t.json", "refused"), ("c.json", "refused"),
+              (f"{STAND_IN}.txt", "done")]
+    labelled = "; ".join(f"(printf zz > '{p}') 2>/dev/null && echo {p}=done || echo {p}=refused" for p, _ in writes)
+    result = await terminal_exec.run(labelled, cwd=ws, sandbox=True, offline=True)   # distinct lines (no folding)
+    assert result["sandbox"] == "workspace", result
+    assert result["stdout"].split() == [f"{p}={w}" for p, w in writes], result
+    assert [(ws / p).read_text() for p, _ in writes] == ["old", "old", "old", "zz"]
+
+
 @pytest.fixture
 def sub_session(execution_db, tmp_path, monkeypatch):
     """A sub-session's run (its folder `ws/sub/kid`), the sandbox available, `terminal_exec.run` recorded."""

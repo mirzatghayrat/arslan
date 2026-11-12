@@ -265,9 +265,11 @@ def run_later_folders(folders, *, roots=(), closed=(), walk_roots=()) -> RunLate
     A hooksPath that can't be read raises, as in `kernel_filters`.
     SBX-10: `walk_roots` are walked too, and their hooksPath read, but grant nothing: a sub-session's commander's
     workspace, so a held name there that links into the sub-session's folder has its target held in that profile.
-    The caps count over all of it; held folders outside the writable roots drop out in `held_ancestors`."""
+    The caps count over all of it; held folders outside the writable roots drop out in `held_ancestors`. Review
+    delta 1: `folders` and `roots` are walked first, each from its own root with the full depth budget, and the walk
+    roots after them without walking those again (`held_folders(walk_roots=...)`)."""
     folders, roots, walk_roots = list(folders), list(roots), list(walk_roots)
-    walk = run_later.held_folders([*folders, *roots, *walk_roots], roots=roots, closed=closed)
+    walk = run_later.held_folders([*folders, *roots], roots=roots, closed=closed, walk_roots=walk_roots)
     kept = [*walk.skipped, *walk.folders, *walk.targets]
     for folder in [*folders, *walk_roots]:
         target = run_later.hooks_path(folder)

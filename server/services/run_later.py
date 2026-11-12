@@ -516,7 +516,8 @@ _LITERAL_BYTES = len('(literal "")') + 1
 
 def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed: Iterable[Path] = (),
                  max_entries: int | None = None, max_depth: int | None = None, max_held: int | None = None,
-                 max_held_bytes: int | None = None, max_links: int | None = None) -> HeldWalk:
+                 max_held_bytes: int | None = None, max_links: int | None = None,
+                 walk_roots: Iterable[Path] = ()) -> HeldWalk:
     """The existing held folders under `folders` (the work folder, or an MCP server's granted folders and its own),
     found by a bounded walk of real paths (caps `WALK_ENTRIES`, `WALK_DEPTH`, `WALK_HELD` and `WALK_HELD_BYTES`
     unless given). Links aren't followed. Dependency folders are skipped when `exempts` holds for `folders` and
@@ -540,7 +541,15 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     #813 review 11: links are outside the held-folder caps (`WALK_HELD`, `WALK_HELD_BYTES`). Past those the walk goes
     on, keeping no further held folder (they are held by name: `complete` is False) but every link it sees at a held
     name, with its target and filters; only the entry and depth caps, or a folder it can't list, end it. Those links
-    have their own cap, `max_links` (`WALK_LINKS`), past which `TooManyLinks` is raised: no profile, closed."""
+    have their own cap, `max_links` (`WALK_LINKS`), past which `TooManyLinks` is raised: no profile, closed.
+
+    SBX-10 review delta 1: `walk_roots` (a sub-session's commander's workspace) are walked after `folders`, each from
+    its own root, skipping the folders of `folders` (by spelling or `(st_dev, st_ino)`): those were walked first, each
+    with the full depth budget from its own root, as before SBX-10, so a link deep in the sub-session's folder isn't
+    lost to the depth counted from the commander's root, nor walked twice. One walk, so every cap counts over both.
+    A walk root at or inside one of `folders` adds nothing. A folder a link leads to is listed once for each set of
+    held names the consumer reads in it (`_below` of the link's path), not once in all: two families' aliases of one
+    folder (`.vscode -> shared`, `.claude -> shared`) each have their names mapped through it."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
@@ -548,19 +557,27 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     max_held_bytes = WALK_HELD_BYTES if max_held_bytes is None else max_held_bytes
     max_links = WALK_LINKS if max_links is None else max_links
     folders = [real(Path(os.path.abspath(p))) for p in folders]
-    skip = _exempt(folders, roots)
+    outer = [real(Path(os.path.abspath(p))) for p in walk_roots]
+    skip = _exempt([*folders, *outer], roots)
     private_list = private_folders(closed)
     private_paths = set(map(str, private_list))
     private = _identities(private_list)
     private_inodes = {ino for _, ino in private}
     skipped: list[Path] = []
-    starts = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
+    inner = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
+    # SBX-10 review delta 1: the walk roots after `folders`' own, none at or inside one of those.
+    outer = [w for w in dict.fromkeys(outer) if not any(o != w and o in w.parents for o in outer)
+             and not any(s == w or s in w.parents for s in inner)]
+    starts = [*inner, *outer]
+    inner_paths = set(map(str, inner)) if outer else set()
+    inner_ids = _identities(inner) if outer else set()
+    inner_inodes = {ino for _, ino in inner_ids}
     budget = [max_entries]
     found: list[Path] = []
     aliases: list[Path] = []
     targets: list[Path] = []
     filters: list[str] = []
-    through_seen: set[Path] = set()
+    through_seen: set[tuple[Path, tuple]] = set()   # (a folder, the held names read in it): review delta 1 (c)
     counted: set[Path] = set(starts)          # the folders whose literal is counted (the starts: by the caller)
     held_bytes = [0]
     full = [False]                            # #813 review 11: a held-folder cap was reached; the walk goes on
@@ -622,11 +639,14 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
         """#813 review 10: `folder`, the real path of a link a consumer reads as `seen_as`, listed for the links in it
         at held names by that path (`.claude -> c`, `c/settings.local.json -> ../x.json`): the folders on the way to
         a held name are listed too, a held folder (`**`) for its own entries only, as `inside_held` lists
-        `.git/hooks`. Each folder once; never one the walk doesn't list (`private_folders`)."""
-        if folder in through_seen or not listable(folder):
+        `.git/hooks`. Each folder once for each set of held names read in it (SBX-10 review delta 1: another family's
+        alias of the same folder maps its own names; a link loop reads the same set again and stops); never one the
+        walk doesn't list (`private_folders`)."""
+        below = _below(_parts(seen_as))
+        if (folder, below) in through_seen or not listable(folder):
             return
-        through_seen.add(folder)
-        further = any(rest for rest, _ in _below(_parts(seen_as)))
+        through_seen.add((folder, below))
+        further = any(rest for rest, _ in below)
         for entry in _listing(folder, budget):
             if _is_link_entry(entry):
                 alias(entry, folder, seen_as / entry.name)
@@ -686,6 +706,8 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
                 if skip and name in _FOLDED_DEPENDENCIES:
                     continue
                 path = folder / entry.name
+                if inner_paths and _is_private(entry, path, inner_ids, inner_inodes, inner_paths):
+                    continue                  # SBX-10 review delta 1: walked from its own root already
                 if _is_private(entry, path, private, private_inodes, private_paths):
                     skipped.append(path)
                     continue

@@ -113,10 +113,11 @@ xfail = 0
 
 # 0.1.64 SBX-10, a sub-session's walk covers the commander's workspace: its links into the child's folder (.git/hooks,
 # .vscode) and its core.hooksPath there are refused, the own-workspace control as before; a walk root that is a link
-# or doesn't hold the folder refuses with the note.
+# or doesn't hold the folder refuses with the note. Review delta 1: a link deep in the child's folder past the depth
+# cap counted from the commander's root is refused; two families' aliases of one folder are both held.
 ["server/sbx/test_sbx10_walk_roots.py"]
-markers = 2
-cases = 8
+markers = 4
+cases = 10
 xfail = 0
 
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
