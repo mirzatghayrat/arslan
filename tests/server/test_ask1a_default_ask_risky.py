@@ -316,9 +316,6 @@ def test_a_relative_delete_after_cd_is_judged_where_it_runs(tmp_path, text, verd
     assert (result.level, result.rule) == verdict
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="open: command_gate.check calls terminal_policy.assess(command) with no working "
-                   "folder, so #789's folder tracking never runs at the gate; in the sandbox the kernel stops the delete, "
-                   "outside it (a conversation's outside grant) it runs with no card. Flips when the gate passes cwd.")
 async def test_by_default_a_relative_delete_outside_the_folder_gets_its_card(execution_db, monkeypatch, tmp_path):
     work = tmp_path / "zz-work"
     work.mkdir()
