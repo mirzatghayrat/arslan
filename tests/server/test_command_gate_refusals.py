@@ -12,6 +12,8 @@ NEVER_RUNS = [
     pytest.param("rm -rf /", "Arslan never runs this", id="forbidden"),
     pytest.param("X=$(cat <<EOF\nhi\nEOF\n)", "A here-document inside $( ) can't run here", id="here-document"),
     pytest.param("osascript -l JavaScript -e x", "JXA (osascript -l JavaScript)", id="JXA"),
+    pytest.param("find . -exec rm -rf / \\;", "Arslan never runs this", id="forbidden-find-exec"),
+    pytest.param("echo a | xargs -I{} rm -rf ~", "Arslan never runs this", id="forbidden-xargs"),
 ]
 
 

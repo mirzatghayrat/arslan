@@ -1242,6 +1242,27 @@ def as_shell(command: str, argv=None) -> str:
     return command
 
 
+# find's -exec family and xargs start the command written after them, where no rule's command position reads it. The
+# wipe rules read it there too, so `find . -exec rm -rf / \;` and `xargs -I{} rm -rf ~` are refused as `rm -rf /` and
+# `rm -rf ~` are: either wipes the writable work folder, in the sandbox too. Read in the text's forms, where a `{}` the
+# reader stops at is no matter (it stops before it records the find or xargs), and in each find or xargs the reader
+# did record, its words joined again, so a quoted `'rm'` reads as rm there (#376's PR1b found the find form).
+_FIND_LINE = re.compile(_POS + r"find" + _H + r"[^\n&|]*", re.I)
+_FIND_STARTS = re.compile(_H + r"-(?:exec|execdir|ok|okdir)" + _H + r"+")
+_XARGS_STARTS = re.compile(_POS + r"xargs(?:" + _H + r"+" + _XARGS_OPT + r")*" + _H + r"+", re.I)
+_PAYLOAD_RULES = frozenset({"wipe-root", "wipe-home"})
+
+
+def _payloads(texts: tuple[str, ...]) -> tuple[str, ...]:
+    """The text from each command a find -exec family or an xargs in `texts` starts, to the end of its line."""
+    out = []
+    for text in texts:
+        for line in _FIND_LINE.finditer(text):
+            out += (line.group()[start.end():] for start in _FIND_STARTS.finditer(line.group()))
+        out += (text[start.end():] for start in _XARGS_STARTS.finditer(text))
+    return tuple(out)
+
+
 def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
     masked = None
     named_rules = set().union(*(_named_rules(words) for words in _command_words(text)))
@@ -1251,6 +1272,12 @@ def _forbid(text: str, texts: tuple[str, ...]) -> Assessment | None:
         named = not quote_masked and key != "arslan-keys"
         if (_matches(pattern, masked if quote_masked else texts)
                 or (named and key in named_rules)):
+            return Assessment("forbid", key, why)
+    # After every other rule, so what one refuses keeps its rule.
+    payloads = _payloads(texts + tuple(shlex.join(words) for words in _command_words(text)
+                                       if words[0].lower() in ("find", "xargs")))
+    for key, pattern, why, _ in _FORBID_C:
+        if key in _PAYLOAD_RULES and _matches(pattern, payloads):
             return Assessment("forbid", key, why)
     return None
 
@@ -1343,7 +1370,7 @@ def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None, outsid
 #: A command, or one write in it, that this can't pin down: the caller treats it as a hit (fails closed). Never a target
 #: a write names: a lone `?` is a pattern, which a writer's word never is here (`_expands` makes it unknown first).
 RUN_LATER_UNKNOWN = "?"
-#: A target that names a git setting for this one run (`git -c`, `--config-env`) rather than a file.
+#: A target that names a git setting for this one run (`git -c`, `--config-env`, `--exec-path=`) rather than a file.
 RUN_LATER_SETTING = "git -c "
 
 #: Home-level names that make something run later, below the home folder (`~/…`, `/Users/<name>/…`) or relative to
@@ -1638,8 +1665,8 @@ def _git_config_targets(args: tuple[str, ...], repo: str, git_dir: str | None,
 
 
 def _git_targets(args: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
-    """git's direct forms: a `-c` or `--config-env` setting that may start a program in this run; `git config`
-    writing; `init` and `clone`, which write a repository's hooks (from a template git or its environment may name:
+    """git's direct forms: a `-c` or `--config-env` setting that may start a program in this run, and `--exec-path=`,
+    the folder git runs its subcommands from; `git config` writing; `init` and `clone`, which write a repository's hooks (from a template git or its environment may name:
     an assignment before the command is not among the reader's words); `submodule`, which writes .gitmodules and
     the submodules' git folders; any other subcommand's word naming a held path (`git checkout -- .envrc`)."""
     found: list[str] = []
@@ -1668,7 +1695,9 @@ def _git_targets(args: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
                 repo = posixpath.join(repo, value)
             elif option == "--git-dir":
                 git_dir = value
-        elif word not in _GIT_GLOBAL_FLAGS and option != "--exec-path":
+        elif option == "--exec-path" and equals:            # where git runs its subcommands' programs from
+            found.append(RUN_LATER_SETTING + option)
+        elif word not in _GIT_GLOBAL_FLAGS:
             return [RUN_LATER_UNKNOWN]                      # a global option this doesn't know: the verb can't be placed
     sub = args[i].lower() if i < len(args) else ""
     rest = args[i + 1:]
@@ -1780,10 +1809,10 @@ def run_later_targets(command: str) -> list[str]:
     `chown`, `chflags`, `xattr`, `dd of=`; `cp`, `mv`, `ln`, `install`, `ditto`, `rsync` (every operand, a held folder
     as one too, and the destination joined with each source's name, `-t DIR`); `sed` in place, and a `w` file in its
     script; `git config` writing (any scope; `--file` when it names a held file), `git -c` and `--config-env` with a
-    key that may start a program, `git init`, `git clone`, `git submodule` (but status); npm, pnpm, yarn and pip
-    `config set`…; `pre-commit install`, husky, `direnv allow` and `edit`; and any other program (not one that only
-    reads) given a held path as a word, an `=` value or a short option's value. Through the reader's wrappers and
-    `bash -c` scripts.
+    key that may start a program, `git --exec-path=`, `git init`, `git clone`, `git submodule` (but status); npm,
+    pnpm, yarn and pip `config set`…; `pre-commit install`, husky, `direnv allow` and `edit`; and any other program
+    (not one that only reads) given a held path as a word, an `=` value or a short option's value. Through the
+    reader's wrappers and `bash -c` scripts.
 
     Not covered (no file is read here): a link already on disk that leads to a held name; what a program writes by
     names it doesn't take on the line (a checkout, merge, pull, patch, archive or copied tree whose contents hold such

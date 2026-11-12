@@ -14,7 +14,7 @@ It reads:
   - ( … ), { …; }, if, for, while, until and case (case outside $( … ));
   - NAME=value before a command or on its own, except the names in CODE_VARIABLES;
   - SAFE_BUILTINS, with export, unset, read, printf and set in their plain forms, and test and [ without -v;
-  - these wrappers, read through to the command they start, with no options: sudo, nohup, time, nice, caffeinate,
+  - these wrappers, read through to the command they start, with no options: sudo, doas, nohup, time, nice, caffeinate,
     command (also command -v), exec, env NAME=value…, timeout DURATION, npx / bunx [-y|--yes];
   - bash or sh -c or -lc with its script written out, read again as a command;
   - Python -m MODULE, and find without -exec and its relatives. Every word that decides this is written out.
@@ -104,12 +104,12 @@ CODE_VARIABLES = frozenset({
     "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS"})
 _CODE_VARIABLE_PREFIXES = ("BASH_FUNC_", "LD_", "DYLD_", "GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
-_PLAIN_WRAPPERS = frozenset({"sudo", "nohup", "time", "nice", "caffeinate", "command", "exec"})
+_PLAIN_WRAPPERS = frozenset({"sudo", "doas", "nohup", "time", "nice", "caffeinate", "command", "exec"})
 # Programs that take a command from their own syntax or from data. osascript and shortcuts are not read here: layer ②
 # always asks for them by name (`apple-events`, `shortcuts`), and U11 runs an approved plain call by that name.
 _LAUNCHERS = frozenset({"watch", "script", "tmux", "screen", "parallel", "concurrently", "su", "sg", "runuser", "flock",
                         "entr", "nodemon", "arch", "xcrun", "stdbuf", "setsid", "sandbox-exec", "xargs", "gxargs", "gfind",
-                        "awk", "gawk", "nawk", "mawk", "lockf"})
+                        "awk", "gawk", "nawk", "mawk", "lockf", "expect"})
 # Programs whose code is not in the command text, except the inline shells and Python modules read below.
 _INTERPRETER = re.compile(r"(?:bash|sh|zsh|ksh|mksh|dash|ash|fish|csh|tcsh|pwsh|nu|xonsh|elvish|yash|rc|python|pypy|node"
                           r"|nodejs|deno|bun|perl|ruby|php|rscript|lua|luajit|tclsh|swift|julia)[0-9.-]*")
