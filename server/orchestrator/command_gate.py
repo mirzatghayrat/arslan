@@ -268,6 +268,43 @@ async def end_git_config(conversation_id: str | None) -> None:
         logging.getLogger(__name__).warning("ending the git_config grant failed", exc_info=True)
 
 
+async def _git_include(command: str, conversation_id: str | None) -> dict | None:
+    """HR-1c: a git command in a repository whose effective settings changed through an included file outside the
+    working folder during an earlier command (git_config_guard.mark) asks first: one card, this time only (kind
+    `git_include`, never automatic; the island never answers it; with nobody to ask it is refused and listed in the
+    Inbox). A yes clears the mark, a no keeps it. The working folder is read only when this conversation has a mark;
+    unknown, every mark counts. None: it runs."""
+    from server.services import background_jobs, git_config_guard, permissions
+    if not (git_config_guard.runs_git(command) and git_config_guard.marked(conversation_id, None)):
+        return None
+    from pathlib import Path
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            folder = await settings_service.workspace_dir(db)
+    except Exception:  # noqa: BLE001 — fails closed: an unknown folder means every mark counts
+        folder = None
+    repos = git_config_guard.marked(conversation_id, Path(folder) if folder else None)
+    if not repos:
+        return None
+    request = permissions.Request(
+        kind="git_include", target="git_include:" + str(min(repos)),
+        title="Run git where its settings changed through a file outside the working folder?",
+        detail=(f"{command[:300]}\n\nDuring an earlier command, git settings that can name programs changed through "
+                "an included file outside the working folder: "
+                + "; ".join(f"{top}: {said}" for top, said in sorted(repos.items()))[:1500]),
+        model_title="Run git in a repository whose settings changed through an included file outside the working "
+                    "folder?", conversation_ok=False, once_only=True)
+    decision = await permissions.decide(request, permissions.Context(
+        conversation_id, job_id=background_jobs._inside_job.get()))
+    if decision.allowed:
+        git_config_guard.unmark(conversation_id, repos)
+        return None
+    return {"ok": False, "error": decision.model_text or "the user did not let git run in a repository whose "
+                                                          "settings changed through a file outside the working folder"}
+
+
 @dataclass(frozen=True, slots=True)
 class CommandPlan:
     """What the command gate settled, for the execute stage. Any other tool runs with `NOT_A_COMMAND`."""
@@ -330,6 +367,9 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     git_config = await _git_config(args, turn.conversation_id) if draft.confined and not draft.run_outside else False
     if isinstance(git_config, dict):
         return git_config
+    refused = await _git_include(command, turn.conversation_id)         # HR-1c: in the sandbox or out
+    if refused is not None:
+        return refused
     refused = await _network(draft, args, turn.conversation_id)
     if refused is not None:
         return refused

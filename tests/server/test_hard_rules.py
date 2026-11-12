@@ -64,6 +64,22 @@ def test_ids_are_unique_and_every_row_names_a_layer():
     assert {"run-later/direct-forms", "run-later/click-lift", "run-later/never-auto"} <= later
 
 
+#: HR-1c: the check after each command, one row per thing it undoes or names (written out, not derived).
+POST_RUN_IDS = {"post-run/hooks-quarantine", "post-run/config-revert", "post-run/include-check"}
+
+
+@pytest.mark.timeout(600)
+def test_the_post_run_rows_resolve_like_the_others():
+    rows = [row for row in hard_rules.ALL if row.layer == "post-run"]
+    assert "post-run" in hard_rules.LAYERS and {row.id for row in rows} == POST_RUN_IDS
+    assert rows == list(hard_rules.POST_RUN)
+    for row in rows:
+        module, name = row.holder.split(":")
+        assert module == "server.services.git_config_guard"
+        assert callable(getattr(importlib.import_module(module), name)), row.id
+    assert hr.unresolved(rows, hr.collected(tuple(sorted({row.test.split("::")[0] for row in rows})))) == []
+
+
 def _row_files() -> tuple[str, ...]:
     return tuple(sorted({row.test.split("::")[0] for row in hard_rules.ALL}))
 

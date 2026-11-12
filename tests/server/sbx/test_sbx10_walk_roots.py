@@ -48,7 +48,9 @@ def _lay_out(tmp_path, layout):
         (ws / name).symlink_to(kid / target, target_is_directory=True)
     if layout == "hooks-path":
         (ws / ".git" / "config").write_text("[core]\n\thooksPath = sub/kid/hp\n")
-        (kid / ".git").mkdir()
+        for name in ("objects", "refs"):          # HR-1c: what git takes for a repository, so D's check answers
+            (kid / ".git" / name).mkdir(parents=True)
+        (kid / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
     return ws, kid, writes
 
 

@@ -851,9 +851,9 @@ async def test_the_hooks_path_target_is_denied_and_an_unreadable_config_builds_n
         raise AssertionError("started")
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(terminal_exec.asyncio, "create_subprocess_exec", spawn)
-    with pytest.raises(OSError):
-        await terminal_exec.run(f"echo {STAND_IN}", cwd=ws, sandbox=True)
-    assert started == []
+    # HR-1c (review delta 1): D's check reads the config before the profile is built, and refuses first.
+    result = await terminal_exec.run(f"echo {STAND_IN}", cwd=ws, sandbox=True)
+    assert result["code"] == "git_unchecked" and started == []
 
 
 def test_a_permission_error_fails_closed_and_no_repository_reads_as_none(tmp_path, monkeypatch):

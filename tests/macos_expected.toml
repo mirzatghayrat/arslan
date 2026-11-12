@@ -111,6 +111,14 @@ markers = 15
 cases = 24
 xfail = 0
 
+# 0.1.64 HR-1c, D under real seatbelt without the grant: hooks written into a bare repository and a nested submodule
+# are quarantined, the sample left (1 case); a new `.git` file pointing outside the work folder is renamed aside (1
+# case).
+["server/sbx/test_hr1c_git_view_kernel.py"]
+markers = 2
+cases = 2
+xfail = 0
+
 # 0.1.64 SBX-10, a sub-session's walk covers the commander's workspace: its links into the child's folder (.git/hooks,
 # .vscode) and its core.hooksPath there are refused, the own-workspace control as before; a walk root that is a link
 # or doesn't hold the folder refuses with the note. Review delta 1: a link deep in the child's folder past the depth
@@ -344,6 +352,26 @@ xfail = 0
 ["server/test_hr1b_git_config.py"]
 markers = 1
 cases = 3
+xfail = 0
+
+# 0.1.64 HR-1c: git's effective config (includes followed) is listed in seatbelt, so these run on macOS only. An
+# included file in the work folder given a program key is quarantined; one outside is named and the next git command
+# asks; an allowlisted key through an include is left alone, inside and outside (2 cases); a listing that fails is
+# named as unchecked.
+["server/test_hr1c_git_include.py"]
+markers = 4
+cases = 5
+xfail = 0
+
+# 0.1.64 HR-1c, D: git is asked in seatbelt, so these run on macOS only. Nothing a repository names runs while D asks
+# git; git gets the pinned environment and the read-only profile; a hook that appeared during a command is
+# quarantined, a changed one too; a `.git` replaced by a `gitdir:` file, inside and outside the work folder (2 cases);
+# commondir changed; a new repository with a hook; an ordinary commit gets no note; Codex's round-3 classes, one plain
+# stand-in each (8 cases); without the grant a config changed through another name is put back; the outside floor is
+# checked too, and nothing where seatbelt can't start.
+["server/test_hr1c_git_view.py"]
+markers = 11
+cases = 19
 xfail = 0
 
 # 2026-09-25: native manual-backup maintenance subprocess at the macOS
