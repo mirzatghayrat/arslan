@@ -41,6 +41,9 @@ HOLD_RUN_LATER: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_
 
 # HR-1b: set by the tool loop only, for one call in the sandbox under this conversation's git_config grant.
 GIT_CONFIG: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_git_config", default=False)
+# SBX-5b: set by the tool loop only, for one call in the sandbox whose once-only `app_data` card the user clicked: the
+# one app's listed folder its profile reopens read-only (`command_sandbox.commands_profile(open_once=...)`).
+OPEN_ONCE: contextvars.ContextVar[Path | None] = contextvars.ContextVar("terminal_open_once", default=None)
 #: HR-1b: what a command under that grant gets in its environment (`_run`): no template folder for clone and init.
 GIT_CONFIG_ENV = {"GIT_TEMPLATE_DIR": ""}
 
@@ -186,7 +189,8 @@ def _reads_a_saved_output(result: dict) -> bool:
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
               offline: bool = False, sandbox: bool = False, closed: list[Path] = (),
               readable: list[Path] = (), copies: list[Path] = (), unwrapped: bool = False,
-              hold_run_later: bool = False, git_config: bool = False, walk_root: Path | None = None) -> dict:
+              hold_run_later: bool = False, git_config: bool = False, walk_root: Path | None = None,
+              open_once: Path | None = None) -> dict:
     """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
     cannot start, the command runs as before and the result says
     sandbox="unavailable" (offline mode still refuses without isolation).
@@ -205,7 +209,11 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     git's own view of each repository before and after (`_guarded`), where seatbelt can start.
 
     SBX-10: `walk_root`, a sub-session's commander's workspace, is walked for run-later files in the sandbox's
-    profile (`command_sandbox.wrapper`); writes stay in `cwd`."""
+    profile (`command_sandbox.wrapper`); writes stay in `cwd`.
+
+    SBX-5b: `open_once`, in the sandbox only, one app's listed folder the profile reopens read-only for this command
+    (its once-only card's click, `command_gate._app_data`); a folder the profile refuses means the command doesn't
+    start."""
     from server.services import command_sandbox, execution_context, git_config_guard, run_temp, tool_outputs
     note = ""
     if git_config_guard.WATCHED:
@@ -228,7 +236,7 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
         kw = dict(command=command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
                   readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
-                  hold_run_later=hold_run_later, walk_root=walk_root)
+                  hold_run_later=hold_run_later, walk_root=walk_root, open_once=open_once if sandbox else None)
         viewed = (sandbox or hold_run_later) and command_sandbox.available()
         granted = git_config and sandbox
         result = await (_guarded(cwd, kw, granted=granted, viewed=viewed) if granted or viewed else _run(**kw))
@@ -323,7 +331,8 @@ async def trust_service_allowed() -> bool:
 
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
                readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int,
-               hold_run_later: bool = False, git_config_ok: bool = False, walk_root: Path | None = None) -> dict:
+               hold_run_later: bool = False, git_config_ok: bool = False, walk_root: Path | None = None,
+               open_once: Path | None = None) -> dict:
     # bash writes here-document temp files under TMPDIR and a nested zsh (`zsh -c`, a `#!/bin/zsh` script) under
     # TMPPREFIX: where /tmp is not writable a `python3 - <<'PY'` save would fail (0.1.49 bench). Both stay in the run's folder.
     # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
@@ -352,9 +361,15 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
             prefix = await command_sandbox.in_thread(
                 command_sandbox.wrapper, cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
                 copies=copies, proxy_port=proxy_port, trust_service=trust, git_config_ok=git_config_ok,
-                walk_root=walk_root) or []
+                walk_root=walk_root, open_once=open_once) or []
         except run_later.TooManyLinks:
             return _not_started(cwd, "workspace", command_sandbox.links_note(cwd))
+        except ValueError as exc:                       # SBX-5b: the profile refused the folder to reopen
+            if open_once is None:
+                raise
+            return {**_not_started(cwd, "workspace", f"The sandbox can't reopen {open_once} for this command "
+                                   f"({exc}). Tell the user."), "code": "app_data_refused",
+                    "error": "not started: the folder its card allowed can't be reopened read-only here"}
         except root_pin.Swapped as exc:                 # SBX-9: a root swapped while it was pinned
             return _swapped(cwd, "workspace", exc)
         mode = "workspace" if prefix else "unavailable"
@@ -510,6 +525,15 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
             run_trace.note_denial("proxy" if proxy else "eperm")
         result["note"] = (command_sandbox.git_note(git_config=offer) if git
                           else command_sandbox.note(cwd, closed, trust=trust, proxy=proxy, git_config=offer))
+        # SBX-5b: a command that reached another app's listed private data is told how to ask for it, once.
+        named = None if git else command_sandbox.app_data_named(
+            f"{command}\n{result.get('stderr') or ''}\n{result.get('stdout') or ''}")
+        if named is not None:
+            app, folder = named
+            result["note"] = (f"{result['note']} {app}'s private data ({folder}) is closed to commands: it can hold "
+                              "messages, passwords or contacts. Only if the user's request needs it, run the same "
+                              f"command again with app_data_once: \"{folder}\" and a why; the user is asked to let it "
+                              "read that folder once, read-only.").strip()
     elif result["ok"] and command_sandbox.proxy_refused(result):
         # A client that printed the proxy's refusal and exited 0 (curl without -f on plain http): still a denial,
         # but not a failed step.

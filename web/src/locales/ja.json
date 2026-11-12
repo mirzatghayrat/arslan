@@ -1440,6 +1440,7 @@
     "alwaysStores": "常に許可される内容：{{what}}",
     "asksEachTime": "毎回確認します",
     "scheduledNeverAsks": "スケジュールタスクは確認が必要なことを行いません。チャットで行ってください。",
+    "appDataUnattended": "実行していません。他のアプリの個人データには毎回あなたの許可が必要ですが、このタスクはあなたがいないときに動きました。",
     "allowedNow": "今後は許可されます",
     "refusedTimes": "{{since}} から {{count}} 回",
     "undo": "元に戻す"

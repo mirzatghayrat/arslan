@@ -1440,6 +1440,7 @@
     "alwaysStores": "Cela autorisera toujours : {{what}}",
     "asksEachTime": "Demande à chaque fois",
     "scheduledNeverAsks": "Une tâche planifiée ne fait rien qui demande votre confirmation. Faites-le dans une conversation.",
+    "appDataUnattended": "Non autorisé. Les données privées d’une autre app demandent votre accord à chaque fois, et cette tâche s’est exécutée en votre absence.",
     "allowedNow": "Autorisé désormais",
     "refusedTimes": "{{count}} fois depuis {{since}}",
     "undo": "Annuler"

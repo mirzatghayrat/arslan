@@ -153,7 +153,7 @@ TRAITS = {
     "find_capability": "external_write outside", "propose_capability": "external_write", "create_skill": "local_write",
     "import_memories": "local_write", "verify": "local_write outside", "whats_new": "read parallel",
     "my_status": "read parallel", "progress_report": "read parallel", "list_my_capabilities": "read parallel",
-    "read_file": "read parallel outside gate=file_arguments", "list_dir": "read parallel",
+    "read_file": "read parallel outside gate=file_arguments_then_app_data", "list_dir": "read parallel gate=app_data",
     "search_files": "read parallel outside", "write_file": "local_write saves gate=file_arguments_then_write",
     "edit_file": "local_write saves gate=workspace_write", "scan_local_network": "external_write",
     "ssh_probe": "external_write", "enroll_node": "external_write gate=enrol",

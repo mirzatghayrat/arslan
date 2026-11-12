@@ -107,11 +107,58 @@ async def _run_later_card(path: Path, conversation_id: str | None) -> dict | Non
     return None
 
 
+def _home_rel(path: Path) -> str:
+    try:
+        return "~/" + str(path.relative_to(Path.home()))
+    except ValueError:
+        return str(path)
+
+
+async def app_data(tool_key, args, turn: ToolTurn) -> dict | None:
+    """SBX-5b: read_file, list_dir, write_file and edit_file on another app's listed private data (the commands
+    sandbox's list, `command_sandbox.app_data_folders`): a once-only `app_data` card for this one call, whatever grant
+    exists (no grant or rule answers the kind; never automatic, never the island). Only the user's own click lets it
+    through: it gives this call's executor the path (`approve_app_data`), which the executor checks again. With nobody
+    to ask, `decide` refuses and lists it in the Inbox. None: no card (an ordinary path), or allowed."""
+    from server.registry import file_tools
+    from server.services import background_jobs, permissions
+    from server.ws import protocol
+    file_tools.approve_app_data(None)
+    held = await file_tools.app_data_at(tool_key, args)
+    if held is None:
+        return None
+    write = tool_key in ("write_file", "edit_file")
+    verb = "change" if write else "read"
+    shown = _home_rel(held.path)
+    decision = await permissions.decide(permissions.Request(
+        kind="app_data", target=str(held.path), detail=shown, once_only=True, conversation_ok=False,
+        title=f"Let Arslan {verb} {held.app}'s private data, just this once?",
+        why=str(args.get("why") or "").strip()[:300],
+        frame=protocol.propose_action(uuid.uuid4().hex, "app_data_file", held.app, shown)),
+        permissions.Context(turn.conversation_id, job_id=background_jobs._inside_job.get()))
+    if not (decision.allowed and decision.by == "user"):
+        return {"ok": False, "code": "app_data",
+                "error": _declined(f"the user did not let Arslan {verb} {held.app}'s private data",
+                                   f"{verb}ing {held.app}'s private data")}
+    file_tools.approve_app_data(held.path)
+    return None
+
+
+async def file_arguments_then_app_data(tool_key, args, turn: ToolTurn) -> dict | None:
+    """read_file's two gates: its arguments, then the app-data card (SBX-5b)."""
+    refused = await file_arguments(tool_key, args, turn)
+    return refused if refused is not None else await app_data(tool_key, args, turn)
+
+
 async def workspace_write(tool_key, args, turn: ToolTurn) -> dict | None:
-    """write_file and edit_file: the run-later card for a file that runs later (HR-2a), which stands in for the
-    folder's card on this call; otherwise the write card, unless the workspace is Arslan's own folder."""
+    """write_file and edit_file: SBX-5b's app-data card for another app's private data first (it doesn't stand in for
+    the folder's card: both are asked); then the run-later card for a file that runs later (HR-2a), which stands in
+    for the folder's card on this call; otherwise the write card, unless the workspace is Arslan's own folder."""
     from server.registry import file_tools
     from server.services import workspace_paths
+    refused = await app_data(tool_key, args, turn)
+    if refused is not None:
+        return refused
     file_tools.approve_run_later(None)
     confirm_workspace_write, conversation_id = turn.confirm_workspace_write, turn.conversation_id
     try:

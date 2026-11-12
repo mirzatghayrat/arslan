@@ -49,6 +49,18 @@ class RunLater(PathEscape):
         self.path = path
 
 
+class AppData(PathEscape):
+    """SBX-5b: the path is at or inside another app's private data folder on the commands sandbox's named list
+    (`command_sandbox.app_data_folders`): a read or write needs the user's click on this call's own once-only
+    `app_data` card (`tool_gates.app_data`). A PathEscape, so every caller that refuses one refuses this too. `path`
+    is the resolved path the card names, `folder` the listed folder, `app` its app."""
+
+    def __init__(self, user_path, path: Path, app: str, folder: Path):
+        super().__init__(f"refusing {user_path}: it is {app}'s private data, which needs your OK on its own card "
+                         "each time")
+        self.path, self.app, self.folder = path, app, folder
+
+
 class RunLaterUnknown(PathEscape):
     """HR-2a: whether the write is into a file that runs later can't be told (the repository's git config, or a
     folder on the way, can't be read), so it is refused: the gate refuses it before any card (`tool_gates`)."""
@@ -69,7 +81,7 @@ def is_secret_name(name: str) -> bool:
 
 def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False,
                          make_parents: bool = False, pin=None, run_later_ok: Path | None = None,
-                         walk_root: Path | None = None) -> Path:
+                         walk_root: Path | None = None, app_data_ok: Path | None = None) -> Path:
     """Absolute, symlink-resolved path inside `ws_root`, or raise.
 
     `for_write=True` judges by the parent directory so a not-yet-existing file
@@ -84,6 +96,9 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
 
     SBX-10 parity: `walk_root`, for a sub-session's write, is its commander's workspace: the run-later check walks it
     too (`_refuse_run_later`), pinned, and refuses (RunLaterUnknown) when it can't be pinned or doesn't hold `ws_root`.
+
+    SBX-5b: a path at or inside another app's listed private data folder raises AppData, for a read or a write,
+    unless it resolves to `app_data_ok`, the path this call's card was clicked for (`_refuse_app_data`).
     """
     if ws_root is None and pin is None:
         raise PathEscape("no workspace is configured")
@@ -91,18 +106,33 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
         raise PathEscape("path is required")
     if pin is not None:
         return _resolve(user_path, pin.path, for_write=for_write, make_parents=make_parents,
-                        run_later_ok=run_later_ok, walk_root=walk_root)
+                        run_later_ok=run_later_ok, walk_root=walk_root, app_data_ok=app_data_ok)
     from server.services import root_pin
     own = pin_root(ws_root)
     try:
         return _resolve(user_path, own.path, for_write=for_write, make_parents=make_parents,
-                        run_later_ok=run_later_ok, walk_root=walk_root)
+                        run_later_ok=run_later_ok, walk_root=walk_root, app_data_ok=app_data_ok)
     finally:
         root_pin.release([own])
 
 
+def _refuse_app_data(path: Path, user_path, ok: Path | None, folders=None) -> None:
+    """SBX-5b (the user's "C lite"): the file tools refuse the same named list the commands sandbox closes
+    (`command_sandbox.app_data_folders`, or `folders`, that list read once by a caller that checks many paths), and
+    nothing more, for reads and writes alike: AppData, unless `path` is `ok`, the one path this call's card was
+    clicked for. Judged by what is on disk (`_within`: a link, another letter case or NFD spelling of a listed folder
+    is that folder)."""
+    from server.services import command_sandbox
+    for app, folder in command_sandbox.app_data_folders() if folders is None else folders:
+        if _within(path, folder):
+            if ok is not None and path == ok:
+                return
+            raise AppData(user_path, path, app, folder)
+
+
 def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
-             run_later_ok: Path | None = None, walk_root: Path | None = None) -> Path:
+             run_later_ok: Path | None = None, walk_root: Path | None = None,
+             app_data_ok: Path | None = None) -> Path:
     raw = Path(user_path.strip())
     candidate = raw if raw.is_absolute() else (root / raw)
     if for_write and candidate.name in ("", ".", ".."):
@@ -140,6 +170,7 @@ def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
 
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
+    _refuse_app_data(resolved, user_path, app_data_ok)        # SBX-5b: reads (edit_file's) and writes alike
     if for_write:
         _refuse_cap6b(resolved, root, user_path)
         _refuse_run_later(resolved, candidate, root, user_path, run_later_ok, walk_root)
@@ -545,7 +576,8 @@ def read_roots(ws_root: Path | None, *, default_read: bool) -> list[Path]:
     return roots
 
 
-def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = None) -> Path:
+def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = None,
+                     app_data_ok: Path | None = None, app_data=None) -> Path:
     """Absolute, symlink-resolved path contained in ONE of `roots`, or raise.
 
     Path forms:
@@ -557,7 +589,8 @@ def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = N
         refused rather than guessed.
 
     A path inside none of the roots is a PathEscape (this is the whole boundary);
-    a credential-shaped name is a SecretFile even inside a root."""
+    a credential-shaped name is a SecretFile even inside a root. SBX-5b: another app's listed private data is AppData
+    unless it is `app_data_ok`, the path this call's card was clicked for (`_refuse_app_data`)."""
     if not roots:
         raise PathEscape("nothing is readable — default read is off and no workspace is set")
     if not isinstance(user_path, str) or not user_path.strip():
@@ -576,4 +609,5 @@ def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = N
         raise PathEscape(f"path is outside the readable folders: {user_path}")
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to read a credential-shaped file: {resolved.name}")
+    _refuse_app_data(resolved, user_path, app_data_ok, app_data)
     return resolved

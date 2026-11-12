@@ -7,7 +7,11 @@ import { CONVERSATION_FIRST_KINDS, DeclineNote, RED_KINDS, ScopeChoice, lineIcon
 const ICONS: Record<string, typeof Globe> = { browser_site: Globe, mac_shortcut: Zap, mac_script: Terminal,
   desktop_app: AppWindow, desktop_risky: TriangleAlert,
   // HR-2a: a file tool's write into a file another program runs or loads later (once only; the path is the detail).
-  run_later: TriangleAlert };
+  run_later: TriangleAlert,
+  // SBX-5b: another app's private data (once only): a file tool's one call, or one command run again. The target is
+  // the app's name, the detail its path (and the command), folded.
+  app_data_file: LockKeyhole, app_data_command: LockKeyhole };
+const APP_DATA_KINDS = new Set(["app_data_file", "app_data_command"]);
 /** The Hands kinds whose card line says what is granted apart from for how long (`hands.grant.<kind>`,
  *  cut from `hands.scope.<kind>`). A Shortcut's line is only its scope, so it has none. */
 const GRANTS = new Set(["browser_site", "mac_script", "desktop_app", "desktop_risky"]);
@@ -72,7 +76,11 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   // as English.
   const englishTitle = Boolean(frameTitle) && !LOCALIZED_TITLES.has(kind);
   const fromFrame = !known && !modelLine && Boolean(frameTitle);
-  const heading = known ? t(`hands.title.${kind}`, { target }) : (modelLine || frameTitle || target);
+  // SBX-5b (SMART-8's shape): the purpose first (Arslan's line, else the card's own), then what it touches and the risk,
+  // in the card's own words from the server's app name; the path (and command) folded, never cut.
+  const appData = APP_DATA_KINDS.has(kind);
+  const heading = appData ? (modelLine || t(`hands.appData.purpose_${kind}`, { app: target }))
+    : known ? t(`hands.title.${kind}`, { target }) : (modelLine || frameTitle || target);
   // The model's line may frame the ask; it is never the only description of it (a prompt-injected model could word a
   // harmless-sounding one). So under it the card says what is being approved in the server's own words: the frame's
   // literal title, else the bare target. Not translated and not marked as the model's. Without a model line the title
@@ -86,10 +94,15 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
       who={background ? t("jobs.askingBadge") : t("kit.whoArslan")}
       title={<span className="inline-flex max-w-full items-start gap-2">{lineIcon(Icon)}
         <span data-testid="action-title" lang={fromFrame && englishTitle ? "en" : undefined} className="min-w-0 [overflow-wrap:anywhere]">{heading}</span></span>}
-      said={known && modelLine ? modelLine : null} saidTestId="action-said"
-      risk={script ? scriptRiskLine(detail, t) : null}
+      said={known && modelLine && !appData ? modelLine : null} saidTestId="action-said"
+      risk={script ? scriptRiskLine(detail, t) : appData ? t("hands.appData.risk") : null}
       destructive={red}
-      detail={script
+      detail={appData
+        ? <details data-testid="action-app-data-path" className="text-[13px] text-muted-foreground">
+            <summary className="cursor-pointer">{t(kind === "app_data_command" ? "hands.appData.showCommand" : "hands.appData.showPath")}</summary>
+            <pre className="mt-1.5 whitespace-pre-wrap break-all font-mono text-[12px]">{detail}</pre>
+          </details>
+        : script
         ? <div data-testid="action-script"><CodeBox code={detail} marks={["delete", "send", "move", "do shell script", "quit"]} /></div>
         : subject ? (
           <div className="flex flex-col gap-1.5">
@@ -98,7 +111,10 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
             {detailLine}
           </div>)
         : detailLine}
-      context={grantLine ? [{ icon: lineIcon(LockKeyhole), text: grantLine }] : []}
+      context={appData
+        ? [{ icon: lineIcon(LockKeyhole), text: <span data-testid="action-app-data-touches">{t("hands.appData.touches", { app: target })}</span> },
+           { text: t(`hands.appData.once_${kind}`) }]
+        : grantLine ? [{ icon: lineIcon(LockKeyhole), text: grantLine }] : []}
       options={<ScopeChoice options={offered} value={scope} onChange={setScope} alwaysLabel={alwaysLabel}
         conversationLabel={permKind === "mcp_tool" ? t("kit.scope.anyToolUse") : undefined} subSession={subSession}
         testId="action-scope" />}
@@ -106,7 +122,7 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
         onDeclineWithNote={(note) => (note ? onCancel(note) : onCancel())} />}
       expiresAt={expiresAt} queue={queue} busy={busy} onOpenContext={onOpenContext}
       allowDisabled={scopeToSend(offered, scope, alwaysLabel) === undefined}
-      allowLabel={t("hands.allow")} declineLabel={t("hands.deny")}
+      allowLabel={appData ? t("hands.appData.allowOnce") : t("hands.allow")} declineLabel={t("hands.deny")}
       allowTestId="action-allow" declineTestId="action-deny"
       onAllow={() => onConfirm(scopeToSend(offered, scope, alwaysLabel))}
       onDecline={() => onCancel()} />

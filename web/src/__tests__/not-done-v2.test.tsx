@@ -97,6 +97,17 @@ describe("Not done while you were away", () => {
     expect(within(row(1)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.scheduledNeverAsks");
   });
 
+  it("SBX-5b: a scheduled run's refusal of another app's private data says so, in every language", async () => {
+    serve([{ ...write, id: 40, kind: "app_data", target: "/Users/me/Library/Messages", detail: "~/Library/Messages",
+      unattended: true }]);
+    render(<NotDoneList />);
+    await screen.findAllByTestId("inbox-refused-row");
+    expect(within(row(0)).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.appDataUnattended");
+    for (const words of [en, zh, ja, es, de, fr] as { inbox: Record<string, string> }[]) {
+      expect(words.inbox.appDataUnattended.trim().length).toBeGreaterThan(0);
+    }
+  });
+
   it("an entry whose card would not have offered Always gets no click even if a list came with it", async () => {
     serve([{ ...mail, always_ok: false }]);
     render(<NotDoneList />);

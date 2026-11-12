@@ -1440,6 +1440,7 @@
     "alwaysStores": "Esto permitirá siempre: {{what}}",
     "asksEachTime": "Pregunta cada vez",
     "scheduledNeverAsks": "Una tarea programada no hace nada que necesite tu confirmación. Hazlo en un chat.",
+    "appDataUnattended": "No permitido. Los datos privados de otra app necesitan tu permiso cada vez, y esta tarea se ejecutó mientras no estabas.",
     "allowedNow": "Permitido a partir de ahora",
     "refusedTimes": "{{count}} veces desde {{since}}",
     "undo": "Deshacer"

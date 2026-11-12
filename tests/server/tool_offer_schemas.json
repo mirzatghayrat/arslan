@@ -212,6 +212,7 @@
   "x: array"
  ],
  "run_command": [
+  "app_data_once: string",
   "command: string required",
   "git_config: boolean",
   "network: boolean",

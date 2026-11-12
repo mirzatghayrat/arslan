@@ -393,14 +393,106 @@ def default_protected() -> list[Path]:
 # Desktop/Documents/Downloads are while that setting is off (`closed`), except that these are always closed.
 # Safari's data is a protected path already (`_SECRETS`). SBX-M didn't measure these folders (#592: the corpus
 # leaves the final closed paths to SBX-3); that they are refused is SBX-3p's to test (Codex).
-_APP_DATA = ("Library/Mail", "Library/Containers/com.apple.mail", "Library/Messages",
-             "Library/Containers/com.apple.MobileSMS", "Pictures/Photos Library.photoslibrary", "Library/Photos",
-             "Library/Containers/com.apple.Photos")
+#
+# SBX-5b (the user's "C lite", 2026-11-11): ONE named list, used by both sides: the commands sandbox closes these
+# folders to reads and writes, and Arslan's file tools refuse them (`workspace_paths._refuse_app_data`). Nothing
+# else: Application Support, Containers, Group Containers and Preferences are not closed wholesale, as mainstream
+# agents leave reads open. The concrete risk this list stops, which is why it is stricter than mainstream: commands
+# inherit Arslan's TCC grants, and with Full Disk Access TCC no longer stops a sandboxed command; these apps hold
+# messages, credentials, contacts and private notes that a prompt-injected command could read and send out. A
+# once-only `app_data` card reopens one folder for one call (file tools) or one command, read-only (`open_once`).
+# Each entry is the app's own data folder as the app or macOS lays it out; an app installed another way (the Mac App
+# Store build vs a direct download) keeps it in another place, so both are listed where known. Entries are closed
+# whether or not they exist (a folder made later is closed too).
+_APP_DATA: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Mail", ("Library/Mail", "Library/Containers/com.apple.mail")),
+    ("Messages", ("Library/Messages", "Library/Containers/com.apple.MobileSMS")),
+    ("Photos", ("Pictures/Photos Library.photoslibrary", "Library/Photos", "Library/Containers/com.apple.Photos")),
+    # Browser profiles not already in `_SECRETS` (Chrome, Firefox, Brave, Edge, Arc and Safari are there).
+    ("Chromium", ("Library/Application Support/Chromium",)),
+    ("Vivaldi", ("Library/Application Support/Vivaldi",)),
+    ("Opera", ("Library/Application Support/com.operasoftware.Opera",
+               "Library/Application Support/com.operasoftware.OperaGX")),
+    # Password managers. 1Password 8 keeps its data in the AgileBits team's group container (2BUA8C4S2C), 1Password 7
+    # in the `agilebits` one; the sandboxed containers are the Mac App Store builds.
+    ("1Password", ("Library/Group Containers/2BUA8C4S2C.com.1password",
+                   "Library/Group Containers/2BUA8C4S2C.com.agilebits",
+                   "Library/Containers/com.1password.1password", "Library/Containers/com.agilebits.onepassword7")),
+    ("Bitwarden", ("Library/Application Support/Bitwarden", "Library/Containers/com.bitwarden.desktop")),
+    # Chat apps: the direct download's Application Support folder, and the Mac App Store build's container.
+    ("Slack", ("Library/Application Support/Slack", "Library/Containers/com.tinyspeck.slackmacgap")),
+    ("Discord", ("Library/Application Support/discord",)),
+    ("WhatsApp", ("Library/Containers/net.whatsapp.WhatsApp",
+                  "Library/Group Containers/group.net.whatsapp.WhatsApp.shared",
+                  "Library/Application Support/WhatsApp")),
+    ("Telegram", ("Library/Application Support/Telegram Desktop",
+                  "Library/Group Containers/6N38VWS5BX.ru.keepcoder.Telegram",
+                  "Library/Containers/ru.keepcoder.Telegram")),
+    ("Signal", ("Library/Application Support/Signal",)),
+    ("WeChat", ("Library/Containers/com.tencent.xinWeChat",)),
+    # Apple's personal-data apps.
+    ("Notes", ("Library/Group Containers/group.com.apple.notes", "Library/Containers/com.apple.Notes")),
+    ("Reminders", ("Library/Group Containers/group.com.apple.reminders",)),
+    ("Calendar", ("Library/Calendars", "Library/Group Containers/group.com.apple.calendar")),
+    ("Contacts", ("Library/Application Support/AddressBook",)),
+)
+
+
+def app_data_folders() -> list[tuple[str, Path]]:
+    """SBX-5b: every listed folder, resolved, with its app's name: (app, folder). One already protected is left out."""
+    protected = set(default_protected())
+    out: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+    for app, names in _APP_DATA:
+        for name in names:
+            folder = _real(Path.home() / name)
+            if folder not in protected and folder not in seen:
+                seen.add(folder)
+                out.append((app, folder))
+    return out
 
 
 def app_data() -> list[Path]:
-    protected = default_protected()
-    return [p for p in _resolved(Path.home() / name for name in _APP_DATA) if p not in protected]
+    return [folder for _, folder in app_data_folders()]
+
+
+def app_data_entry(path) -> tuple[str, Path] | None:
+    """SBX-5b: the listed folder `path` is at or inside, by its real path, with its app: (app, folder); else None.
+    The file tools judge by identity too (`workspace_paths._refuse_app_data`); this is what a command's card names."""
+    here = _real(Path(path).expanduser())
+    for app, folder in app_data_folders():
+        if here == folder or folder in here.parents:
+            return app, folder
+    return None
+
+
+def app_data_named(text: str) -> tuple[str, Path] | None:
+    """SBX-5b: the first listed folder a command's text or output names, as a real path or as `~/...`; else None.
+    Only for the note a stopped command gets (how to ask for its card), never a boundary."""
+    home = _real(Path.home())
+    for app, folder in app_data_folders():
+        spellings = [str(folder)]
+        if home in folder.parents:
+            spellings.append("~/" + str(folder.relative_to(home)))
+        if any(s in text for s in spellings):
+            return app, folder
+    return None
+
+
+def _check_open_once(folder, writable: list[Path], protected: list[Path], shut: list[Path]) -> None:
+    """SBX-5b, ③Hands' rules for `open_once`: ValueError unless `folder` is an existing real folder, at or inside a
+    closed or app-data folder, neither inside nor holding a protected path, holding no other closed folder, and not
+    already inside a writable root (only what is actually closed is reopened)."""
+    if not isinstance(folder, Path) or _real(folder) != folder or not folder.is_dir():
+        raise ValueError(f"open_once: not an existing real folder: {folder}")
+    if any(p == folder or folder in p.parents or p in folder.parents for p in protected):
+        raise ValueError(f"open_once: a folder inside or holding a protected path: {folder}")
+    if not _inside(folder, shut):
+        raise ValueError(f"open_once: not a closed or app-data folder: {folder}")
+    if any(p != folder and folder in p.parents for p in shut):
+        raise ValueError(f"open_once: a folder holding another closed folder: {folder}")
+    if _inside(folder, writable):
+        raise ValueError(f"open_once: already inside a writable folder: {folder}")
 
 
 def _inside(path: Path, folders: list[Path]) -> bool:
@@ -456,7 +548,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
                      system_proxies: list[str] | None = None, trust_service: bool = False,
                      cache: Path | None = None, peer_cache: Path | None = None,
                      plugin_folder: Path | None = None, plugin_read: Path | None = None,
-                     git_config_ok: bool = False, walk_root: Path | None = None) -> str:
+                     git_config_ok: bool = False, walk_root: Path | None = None,
+                     open_once: Path | None = None) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -490,7 +583,17 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
 
     SBX-10: `walk_root`, for a sub-session's command, is its commander's workspace (pinned by `wrapper`): HR-1's walk
     and hooksPath read cover all of it (`run_later_folders(walk_roots=...)`), writes stay in `workspace`. The
-    git_config lift stays where git_config_guard looks (`workspace`), never the rest of `walk_root`."""
+    git_config lift stays where git_config_guard looks (`workspace`), never the rest of `walk_root`.
+
+    SBX-5b: `open_once`, one closed folder (an app's listed folder, `app_data_entry`) reopened read-only for this one
+    command, set only by the user's click on that command's once-only `app_data` card and never stored. One
+    `(allow file-read* (subpath <folder>))`, after the closed, app-data and protected denies and before the run-later,
+    held, ancestor and link blocks; never a write. It must be an existing real folder at or inside a closed or app-data
+    folder, neither inside nor holding a protected path, holding no other closed folder, and not inside a writable
+    root, or no profile is built (ValueError, `_check_open_once`). Seatbelt matches real paths, so a link inside it is
+    judged by where it points; a hard link is that file. The rule names the path as it was when the profile was built:
+    a folder swapped there afterwards is reached only through this same path, and a sandboxed command can't write
+    under it (it stays closed to writes), so a swap after the build only narrows what is read."""
     root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
     if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
                                     or _real(root) not in plugin_read.parents):
@@ -501,6 +604,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     shut = _resolved([*closed, *app_data(), *([peer_cache] if peer_cache is not None else [])])
     if plugin_read is not None and any(p == plugin_read or plugin_read in p.parents for p in [*protected, *shut]):
         raise ValueError(f"a plugin's folder holding a closed or protected path: {plugin_read}")
+    if open_once is not None:
+        _check_open_once(open_once, writable, protected, shut)
     if network is None:
         network = NetworkMode.NONE if offline or proxy_port is None else NetworkMode.PROXY
     network = NetworkMode(network)
@@ -516,8 +621,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     if network != NetworkMode.PROXY:
         proxy_port = None
     text = default_deny_profile(writable, protected, closed=shut, network=network, proxy_port=proxy_port,
-                                denied_ports=denied_ports, ipc_prefix=ipc_prefix)
-    # The base closes `closed` and then `protected` last, over every grant. Reopen what lives inside a closed
+                                denied_ports=denied_ports, ipc_prefix=ipc_prefix)    # The base closes `closed` and then `protected` last, over every grant. Reopen what lives inside a closed
     # folder (0.1.59: the work folder read and write, project folders read only), close the protected paths
     # again so a reopened folder can't uncover them, then let the saved copies be read (S2a-1 piece 5).
     # Sockets stay closed under all of them: the base allows only its listed sockets.
@@ -530,6 +634,8 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
         after.deny("file-read* file-write* file-map-executable", *(file_or_folder(_real(p)) for p in protected))
     if plugin_read is not None:             # HOOK-2: after every CAP6b deny, reads only
         after.allow("file-read*", subpath(plugin_read))
+    if open_once is not None:               # SBX-5b: after every closed and protected deny, reads only, this command
+        after.allow("file-read*", subpath(open_once))
     # SBX-5 §1c: the user's caches stay readable and are never written, even inside a writable work folder (~).
     after.deny("file-write*", *(file_or_folder(p) for p in shared_caches()))
     # SBX-5a (#772 review): nor are the folders above them moved or replaced, when a writable root holds them.
@@ -680,7 +786,7 @@ async def in_thread(build, *args, profile_of=None, **kwargs):
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
             readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
             trust_service: bool = False, git_config_ok: bool = False,
-            walk_root: Path | None = None) -> list[str] | None:
+            walk_root: Path | None = None, open_once: Path | None = None) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so). #813 review 11: `-f` and a profile file
     (`write_profile`) the caller removes (`remove_profile(profile_path(prefix))`) once the process has exited.
@@ -691,7 +797,9 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
     `root_pin.Swapped` when one isn't the folder it was: the command doesn't start.
 
     SBX-10: `walk_root` (a sub-session's commander's workspace) is pinned last and must hold the pinned work folder,
-    or `root_pin.Swapped`: the command doesn't start (closed)."""
+    or `root_pin.Swapped`: the command doesn't start (closed).
+
+    SBX-5b: `open_once` goes to `commands_profile` as given (its ValueError propagates: the command doesn't start)."""
     if not available():
         return None
     from server.services import run_temp
@@ -705,7 +813,8 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
         with root_pin.pinned(pins):
             text = commands_profile(pins[0].path, temp=pins[1].path if temp is not None else None, offline=offline,
                                     closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
-                                    trust_service=trust_service, git_config_ok=git_config_ok, walk_root=walk)
+                                    trust_service=trust_service, git_config_ok=git_config_ok, walk_root=walk,
+                                    open_once=open_once)
     except BaseException:
         root_pin.release(pins)
         raise
