@@ -926,6 +926,12 @@ class RunCommandExecutor:
                     "error": "a sub-session's commands run only in the sandbox, in its own folder, and "
                              + ("that folder can't be used" if cwd is None else "the sandbox can't start here")
                              + "; nothing ran"}
+        # SBX-10: its profile holds the run-later files of the commander's whole workspace (a `.vscode` there may link
+        # into this folder), so that workspace must be known and hold this folder; otherwise nothing runs (closed).
+        if in_sub and (workspace is None or not cwd.is_relative_to(workspace)):
+            return {"ok": False, "executed": False,
+                    "error": "a sub-session's command didn't start: the commander's workspace, whose run-later files "
+                             "its sandbox holds, isn't known or doesn't hold this sub-session's folder; nothing ran"}
         # S1 (U14 b): a run with nobody to ask (a scheduled run) works in Arslan's own folder, whatever
         # folder the user chose. Its commands always run in the sandbox (#308), so they write only there
         # and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7). Since v0.1.63 the
@@ -971,7 +977,8 @@ class RunCommandExecutor:
                                          copies=tool_outputs.given(tool_outputs.conversation.get()),
                                          unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub,
                                          hold_run_later=terminal_exec.HOLD_RUN_LATER.get(),
-                                         git_config=terminal_exec.GIT_CONFIG.get())
+                                         git_config=terminal_exec.GIT_CONFIG.get(),
+                                         walk_root=workspace if in_sub else None)
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")

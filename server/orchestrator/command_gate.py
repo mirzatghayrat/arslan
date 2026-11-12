@@ -63,7 +63,7 @@ async def _outside_grant(conversation_id: str | None, command: str):
 
 
 async def _network_after_outside_content(command: str, args: dict, *, sandbox_on: bool, run_outside: bool,
-                                         unwrapped: bool, conversation_id: str | None) -> dict:
+                                         unwrapped: bool, conversation_id: str | None, cwd=None) -> dict:
     """S2a-1 piece 2. After this turn read outside content (a page, a file, an MCP tool), a command
     runs offline under the kernel's rule — in the sandbox, and outside it under the minimal profile,
     which carries the same rule (card, piece 4; the internal review's case: a script refused inside for
@@ -92,7 +92,7 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
         # review 3): the Mac's action card shows the title as the server's own words under it.
         request = permissions.Request(
             kind="network", target="network:*", title=card_purpose.phrase(
-                command, "", sorted(terminal_policy.ask_rules(command)), lang=await card_purpose.language(),
+                command, "", sorted(terminal_policy.ask_rules(command, cwd=cwd)), lang=await card_purpose.language(),
                 network=True),
             model_title=f"Let the Shortcut `{command[:80]}` use the network?",
             detail=command, why=why, conversation_ok=False, once_only=True)
@@ -113,7 +113,8 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     why = str(args.get("why") or "").strip()[:300]
     decision = await permissions.decide(permissions.Request(   # SMART-8: the plain purpose, never `why` (as above)
         kind="network", target="network:*", title=card_purpose.phrase(   # read with its rules (Astra 5)
-            command, "", sorted(terminal_policy.ask_rules(command, outside=not inside)), lang=await card_purpose.language(),
+            command, "", sorted(terminal_policy.ask_rules(command, cwd=cwd, outside=not inside)),
+            lang=await card_purpose.language(),
             network=True), detail=command,
         model_title=f"Let `{command[:80]}` use the network?", why=why, conversation_ok=inside, once_only=not inside),
         permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
@@ -135,13 +136,13 @@ def _network_card_due(command: str, args: dict) -> bool:
     return args.get("network") is True or _untrusted.reaches_network(command)
 
 
-def _bare_once(command: str, *, by_user: bool) -> tuple[bool, bool]:
+def _bare_once(command: str, *, by_user: bool, cwd=None) -> tuple[bool, bool]:
     """S2a-1 piece 4, decision U11: (run with no wrapper, kept wrapped) for an approved command. Only
     a command with an Apple Events or Shortcuts rule, approved by the user's click on its card (a
     once-only card: no grant or rule ever answers it), and one plain call runs bare, this once.
     Approved but not plain (a script that acts beyond its app): kept under the sandbox's profiles."""
     from server.services import task_service, terminal_policy
-    if not (by_user and terminal_policy.ask_rules(command) & terminal_policy.BARE_RULES):
+    if not (by_user and terminal_policy.ask_rules(command, cwd=cwd) & terminal_policy.BARE_RULES):
         return False, False
     bare = task_service.unwrapped_once(command)
     return bare, not bare
@@ -177,20 +178,33 @@ async def _work_folder_holds_home() -> bool:
         return True
 
 
+async def run_folder():
+    """S2a-3 step 4b: the folder this run's command starts in, read as the executor reads it (`workspace_dir_for_run`),
+    so the policy follows a change of folder from there. The gate, its card and the island read this one folder. None
+    when it can't be read: the policy then reads the text alone, as before."""
+    from server.db import session as db_session
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.workspace_dir_for_run(db)
+    except Exception:  # noqa: BLE001 — unknown reads as before step 4b (no folder)
+        return None
+
+
 #: S2a-3 step 3: what the model reads when an unread command ran offline in the sandbox with no card.
 OFFLINE_UNREAD_NOTE = ("ran offline in the sandbox: Arslan can't fully read this command ({why}), so it ran with no "
                        "network and no card. If it needs the network, call run_command again with network: true; "
                        "the user is asked first.")
 
 
-async def _runs_offline_unread(command: str, args: dict, verdict, *, confined: bool, outside_grant) -> bool:
+async def _runs_offline_unread(command: str, args: dict, verdict, *, confined: bool, outside_grant, cwd=None) -> bool:
     """S2a-3 step 3 (design point 1): a command whose only rule is `unreadable` runs in the sandbox, offline, with no
     card, when all of these hold: the sandbox is on and can start; no "ask for every command"; the working folder is
     not home and does not hold it; the call has no `network: true` (that call gets today's card); and the
     conversation has no grant to leave the sandbox (⓪Plan's ruling 2: then it gets a card). A background job with no
     card callback takes this branch too (ruling 5)."""
     from server.services import terminal_policy
-    return (verdict.level == "ask" and terminal_policy.ask_rules(command) == {terminal_policy.UNREADABLE}
+    return (verdict.level == "ask" and terminal_policy.ask_rules(command, cwd=cwd) == {terminal_policy.UNREADABLE}
             and confined and outside_grant is None and args.get("network") is not True
             and not await _asks_for_everything() and not await _work_folder_holds_home())
 
@@ -301,7 +315,8 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     # card, so nobody is ever asked to approve wiping the disk.
     from server.services import terminal_policy
     command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
-    draft = _Draft(command=command, verdict=terminal_policy.assess(command))
+    cwd = await run_folder()        # S2a-3 step 4b: a change of folder is judged from where the command starts
+    draft = _Draft(command=command, cwd=cwd, verdict=terminal_policy.assess(command, cwd=cwd))
     refused = _never_runs(draft)
     if refused is not None:
         return refused
@@ -328,6 +343,7 @@ class _Draft:
     `CommandPlan` is made from it once every stage has passed."""
     command: str
     verdict: object                    # terminal_policy's verdict, read again as outside where it runs outside
+    cwd: object = None                 # S2a-3 step 4b: the run's working folder (`run_folder`); every reading takes it
     argv: list = field(default_factory=list)
     own: bool = False                  # SUB5c: a sub-session's command, which writes only in its own folder
     sandbox_on: bool = False
@@ -409,7 +425,7 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
                   "note": "Run it without outside_sandbox, or say in your report what the commander should run."}
         return result
     d.sandbox_on = d.own or await _sandbox_enabled()
-    d.deletes_outside = "delete-outside" in terminal_policy.ask_rules(command)
+    d.deletes_outside = "delete-outside" in terminal_policy.ask_rules(command, cwd=d.cwd)
     d.confined = d.sandbox_on and command_sandbox.available()   # where it runs unless something lets it out
     from server.services import task_service as _task_service
     # S2a-2: a plain osascript that U11 runs bare takes its own card, the one way it works; asking to run it
@@ -428,7 +444,7 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
     # says so itself).
     d.outside = d.outside_grant is not None or not d.confined
     if d.outside:
-        d.verdict = terminal_policy.assess(command, outside=True)
+        d.verdict = terminal_policy.assess(command, cwd=d.cwd, outside=True)
     d.out_kw = {"outside": True} if d.verdict.rule == terminal_policy.OUTSIDE_REACH[0] else {}
     # HR-3 part 1, the click-lift rule: in the sandbox the kernel holds the files that run later (HR-1). Wherever this
     # command would run outside it (a grant, the setting off, seatbelt unable to start), a write into one, by a direct
@@ -454,7 +470,8 @@ async def _card(d: _Draft, args: dict, confirm_command, conversation_id: str | N
     from server.services import command_sandbox, terminal_policy
     if d.wants_out and not d.run_outside:
         return await _outside_card(d, args, confirm_command, conversation_id)
-    if await _runs_offline_unread(d.command, args, d.verdict, confined=d.confined, outside_grant=d.outside_grant):
+    if await _runs_offline_unread(d.command, args, d.verdict, confined=d.confined, outside_grant=d.outside_grant,
+                                  cwd=d.cwd):
         # S2a-3 step 3: no card, in the sandbox, offline. The note says why and how to ask for the network.
         d.offline_reason = terminal_policy.UNREADABLE
         d.network = {"offline": True, "note": OFFLINE_UNREAD_NOTE.format(why=d.verdict.reason[:200])}
@@ -515,7 +532,7 @@ async def _outside_card(d: _Draft, args: dict, confirm_command, conversation_id:
     # only the asking window's own ("mac") unlocks a bare run. A conversation grant shows no card.
     d.unwrapped, d.kept_wrapped = _bare_once(
         command, by_user=_approvals.LAST_OUTCOME.get() == "approved"
-        and _approvals.LAST_ANSWERED_BY.get() == "mac")
+        and _approvals.LAST_ANSWERED_BY.get() == "mac", cwd=d.cwd)
     return None
 
 
@@ -534,7 +551,8 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
             if verdict.level == "ask" or ask_all else
             "this command would run outside the sandbox here (it is switched off or cannot start), "
             "which needs the user's OK, and nobody can be asked here",
-            _approvals._command_request(command, sorted(terminal_policy.ask_rules(command, outside=d.outside)), None,
+            _approvals._command_request(command, sorted(terminal_policy.ask_rules(command, cwd=d.cwd, outside=d.outside)),
+                                        None,
                                         ask_all=ask_all, unsandboxed=bool(d.out_kw), lang=await card_purpose.language(),
                                         why=str(args.get("why") or "").strip()[:300],
                                         run_later=d.later_line if d.lift else ()),
@@ -555,7 +573,7 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
     # the command wrapped.
     decided = permissions.LAST_DECISION.get()
     d.unwrapped, d.kept_wrapped = _bare_once(
-        command, by_user=confirm_command is not None and decided is not None and decided.by == "user")
+        command, by_user=confirm_command is not None and decided is not None and decided.by == "user", cwd=d.cwd)
     d.run_outside = d.run_outside or d.unwrapped
     d.by_grant = d.by_grant and not d.unwrapped     # a bare run is the user's click on its card, not the grant
     d.net_clicked = d.net_due and decided is not None and decided.by == "user"
@@ -570,7 +588,7 @@ async def _network(d: _Draft, args: dict, conversation_id: str | None) -> dict |
     if not d.offline_reason:     # an unread command already runs offline: nothing after outside content can add to it
         d.network = {} if d.net_clicked else await _network_after_outside_content(
             d.command, args, sandbox_on=d.sandbox_on, run_outside=d.run_outside, unwrapped=d.unwrapped,
-            conversation_id=conversation_id)
+            conversation_id=conversation_id, cwd=d.cwd)
     if d.network.get("refused"):
         result = {"ok": False, "error": d.network["refused"]}
         return result
