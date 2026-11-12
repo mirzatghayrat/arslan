@@ -94,12 +94,15 @@ class Confirmations:
         outside = outside or sandbox == "outside"   # S2a-3 step 5: it runs outside the sandbox, so read it that way
         risk = effective_risk(remote_host, command, argv, outside=outside)
         shell = terminal_policy.as_shell(command, argv)
-        verdict = terminal_policy.assess(shell, outside=outside)
+        # S2a-3 step 4b: read from the folder the gate read (another machine's folder is not known here)
+        from server.orchestrator.command_gate import run_folder
+        cwd = None if remote_host else await run_folder()
+        verdict = terminal_policy.assess(shell, cwd=cwd, outside=outside)
         # SMART-8 (#688 review 1, 3, 5): every rule it matched goes on every command card, with why it could not be
         # read when that is one of them; the card's risk row names each and takes the worst.
         # SMART-8 (#689): every card's title is its plain purpose in the user's language (the iPhone's heading).
         lang = await card_purpose.language()
-        rules = sorted(terminal_policy.ask_rules(shell, outside=outside))
+        rules = sorted(terminal_policy.ask_rules(shell, cwd=cwd, outside=outside))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
@@ -151,6 +154,8 @@ class Confirmations:
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable, outside=outside)    # LOOP1 d2b: read as the gate read it
         frame.update(_delete_keys(delete, shell))
+        if cwd is not None:
+            frame["cwd"] = str(cwd)     # S2a-3 step 4b: the island reads the card from it too (an extra key, as above)
         # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
         # its rules card too; otherwise as before, "ask for every command" asks where it would run.
         unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
