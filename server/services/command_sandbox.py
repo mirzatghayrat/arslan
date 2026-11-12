@@ -40,7 +40,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from server.services import run_later
+from server.services import root_pin, run_later
 from server.services.sandbox_profile import (NetworkMode, Profile, default_deny_profile, file_or_folder, literal,
                                              real as _real, regex, subpath)
 
@@ -587,6 +587,11 @@ def _profile_name() -> str:
     return f"{os.getpid()}-{secrets.token_hex(12)}.sb"
 
 
+#: SBX-9: the roots each profile file was built from (`root_pin`), checked right before the spawn (`check_pins`) and
+#: released after it (`release_pins`, or with the file, `remove_profile`).
+_PINS: dict[str, list[root_pin.Pin]] = {}
+
+
 def write_profile(text: str) -> Path:
     """A new file holding `text`, for `sandbox-exec -f`. Raises (FileExistsError for anything already at its path, a
     link included) without following it; on a failed write the file is removed."""
@@ -601,9 +606,34 @@ def write_profile(text: str) -> Path:
     return path
 
 
-def remove_profile(path) -> None:
-    """Remove a profile file; one already gone is fine."""
+def write_pinned(text: str, pins: list[root_pin.Pin]) -> Path:
+    """SBX-9: `write_profile`, with the pins the text was built from going with the file. Released on a failure."""
+    try:
+        path = write_profile(text)
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    _PINS[str(path)] = list(pins)
+    return path
+
+
+def check_pins(path) -> None:
+    """SBX-9: right before the spawn, the roots the profile file at `path` was built from are still those folders.
+    Raises `root_pin.Swapped`: the caller doesn't start the process (`root_pin.note`)."""
     if path is not None:
+        root_pin.check(_PINS.get(str(path), ()))
+
+
+def release_pins(path) -> None:
+    """SBX-9: after the spawn, close the descriptors on the roots the profile file at `path` was built from."""
+    if path is not None:
+        root_pin.release(_PINS.pop(str(path), ()))
+
+
+def remove_profile(path) -> None:
+    """Remove a profile file; one already gone is fine. Its pins are released too."""
+    if path is not None:
+        release_pins(path)
         try:
             os.unlink(path)
         except FileNotFoundError:
@@ -641,12 +671,37 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so). #813 review 11: `-f` and a profile file
     (`write_profile`) the caller removes (`remove_profile(profile_path(prefix))`) once the process has exited.
-    Raises `run_later.TooManyLinks` past the link cap: the command doesn't start."""
+    Raises `run_later.TooManyLinks` past the link cap: the command doesn't start.
+
+    SBX-9: the work folder, `temp` and the commands cache are pinned first (`root_pin`) and the profile is built from
+    their pinned real paths only; the caller checks them right before the spawn (`check_pins`). Raises
+    `root_pin.Swapped` when one isn't the folder it was: the command doesn't start."""
     if not available():
         return None
-    return [_SANDBOX_EXEC, "-f", str(write_profile(commands_profile(
-        workspace, temp=temp, offline=offline, closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
-        trust_service=trust_service, git_config_ok=git_config_ok)))]
+    from server.services import run_temp
+    cache = run_temp.cache("commands")
+    pins = _pin_all([workspace, *([temp] if temp is not None else [])], extra=[cache] if cache.exists() else [])
+    try:
+        with root_pin.pinned(pins):
+            text = commands_profile(pins[0].path, temp=pins[1].path if temp is not None else None, offline=offline,
+                                    closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
+                                    trust_service=trust_service, git_config_ok=git_config_ok)
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    return [_SANDBOX_EXEC, "-f", str(write_pinned(text, pins))]
+
+
+def _pin_all(names, *, extra=()) -> list[root_pin.Pin]:
+    """SBX-9: pin each of `names` and `extra`, in that order; on a refusal the ones pinned already are released."""
+    pins: list[root_pin.Pin] = []
+    try:
+        for name in [*names, *extra]:
+            pins.append(root_pin.pin(name))
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    return pins
 
 
 def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_folder: Path | None = None,
@@ -698,11 +753,19 @@ def outside_wrapper(*, offline: bool = False, copies: list[Path] = (),
                     run_later_in: Path | None = None, closed: list[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix with the minimal profile, or None where seatbelt cannot start (then a
     command outside the sandbox runs as before). As `wrapper`: `-f` and a file the caller removes; `TooManyLinks`
-    past the link cap when it holds the run-later files."""
+    past the link cap when it holds the run-later files. SBX-9: the work folder it holds them in is pinned, as in
+    `wrapper` (`root_pin.Swapped`)."""
     if not available():
         return None
-    return [_SANDBOX_EXEC, "-f", str(write_profile(minimal_profile(offline=offline, copies=copies,
-                                                                   run_later_in=run_later_in, closed=closed)))]
+    pins = _pin_all([run_later_in] if run_later_in is not None else [])
+    try:
+        with root_pin.pinned(pins):
+            text = minimal_profile(offline=offline, copies=copies, closed=closed,
+                                   run_later_in=pins[0].path if pins else None)
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    return [_SANDBOX_EXEC, "-f", str(write_pinned(text, pins))]
 
 
 def available() -> bool:
