@@ -1,7 +1,7 @@
 """SUB3 (v0.1.64, card docs/plans/0164/SUB-sub-sessions.md): starting a sub-session and running it.
 
-No tool table offers `start_sub_session` yet (SUB5 adds it after the M64 bench), so these tests reach the executor
-and `sub_sessions.start` directly, and run the sub-session's job for real: its own conversation, the background job
+These tests reach the executor and `sub_sessions.start` directly (SUB5e's test_sub5e_open_tool reaches them through a
+real turn's tool tables), and run the sub-session's job for real: its own conversation, the background job
 runner, the real `background_body` and tool loop, with a scripted model.
 
 - How many: four children of a commander, two of a sub-session, none below that, six alive in a tree.
@@ -47,6 +47,7 @@ _SINKS: list = []
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     monkeypatch.setattr(sub_sessions, "ended", lambda job, text: None)   # SUB4's summary turn: test_sub4_report
+    assert not run_registry._sinks.get(ROOT), f"an earlier test left a window sink on {ROOT}"   # it would answer cards
     background_jobs._reset_for_tests()
     approvals._reset_for_tests()
     sub_sessions._reset_for_tests()
@@ -262,12 +263,13 @@ async def test_it_is_refused_where_nobody_can_be_asked_and_for_bad_arguments(hel
     assert background_jobs._jobs == {}
 
 
-def test_its_schema_is_defined_but_in_no_tool_table():
-    """SUB5 adds it to a table once the M64 bench passes; until then no model can reach it."""
+def test_its_schema_is_in_the_tool_tables_and_its_executor_answers_it():
+    """SUB5e: in the tables (test_sub5e_open_tool reaches it through a real turn's tables)."""
     assert tool_loop._schema_problem({"brief": BRIEF}, START_SUB_SESSION.schema) is None
     assert tool_loop._schema_problem({}, START_SUB_SESSION.schema) is not None
     assert START_SUB_SESSION.schema["additionalProperties"] is False
-    assert "start_sub_session" not in SCHEMAS and "start_sub_session" not in executors.EXECUTORS
+    assert SCHEMAS["start_sub_session"] is START_SUB_SESSION.schema
+    assert isinstance(executors.EXECUTORS["start_sub_session"], StartSubSessionExecutor)
     from tests.server.test_k5_tool_schemas import _walk
     bad: list = []
     _walk(START_SUB_SESSION.schema, "start_sub_session", bad)

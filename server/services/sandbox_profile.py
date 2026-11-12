@@ -35,10 +35,16 @@ from collections.abc import Callable, Iterable
 from enum import Enum
 from pathlib import Path
 
+from server.services import root_pin
+
 
 def real(path) -> Path:
-    """`path` with `~` expanded and every link resolved: what seatbelt compares against."""
-    return Path(os.path.realpath(os.path.expanduser(str(path))))
+    """`path` with `~` expanded and every link resolved: what seatbelt compares against. SBX-9: a root pinned for the
+    profile being built (`root_pin.pinned`) is its real path already and is never resolved again."""
+    text = os.path.expanduser(str(path))
+    if root_pin.is_pinned(text):
+        return Path(text)
+    return Path(os.path.realpath(text))
 
 
 #: The characters `sbpl_string` changes. A text with none of them is returned as is, quoted: the same output, without

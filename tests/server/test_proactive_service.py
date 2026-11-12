@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from arslan.proactive_policy import Candidate, Evidence, ProactiveConfig
-from server.db.models import ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, ScheduledTask, Setting
+from server.db.models import ProactiveItem, ProactiveMute, ProactiveSpend, ProactiveWatch, Setting
 from server.services import background_jobs, desktop_status, proactive_detectors as det, proactive_service as svc
 from server.services.proactive_service import ProactiveError
 
@@ -49,17 +49,19 @@ def events(monkeypatch):
 
 async def test_config_defaults_spend_nothing(execution_db):
     config = await svc.load_config()
-    assert config.enabled and config.diagnosis_daily_usd == 0 and not config.brief_enabled
+    assert config.enabled and config.diagnosis_daily_usd == 0
 
 
 async def test_config_patch_merges_and_persists(execution_db):
     await svc.save_config({"quiet_start": "23:15"})
-    saved = await svc.save_config({"brief_enabled": True})
-    assert (saved.quiet_start, saved.brief_enabled) == ("23:15", True)
+    saved = await svc.save_config({"watches": False})
+    assert (saved.quiet_start, saved.watches) == ("23:15", False)
     assert (await svc.load_config()).quiet_start == "23:15"
 
 
-@pytest.mark.parametrize("patch", [{"quiet_start": "25:00"}, {"diagnosis_daily_usd": 50}, {"surprise": 1}])
+# INB7-e: the morning brief's switch and time went with it, so a patch naming them is refused like any unknown key.
+@pytest.mark.parametrize("patch", [{"quiet_start": "25:00"}, {"diagnosis_daily_usd": 50}, {"surprise": 1},
+                                   {"brief_enabled": True}, {"brief_time": "08:30"}])
 async def test_a_bad_config_patch_is_refused_and_changes_nothing(execution_db, patch):
     with pytest.raises(ProactiveError) as err:
         await svc.save_config(patch)
@@ -144,6 +146,22 @@ async def test_a_config_saved_before_inb8_keeps_the_users_other_choices(executio
     assert (saved.quiet_start, saved.quiet_end) == ("23:15", "07:00")
 
 
+async def test_a_config_saved_with_the_retired_brief_fields_still_loads_and_drops_them_on_save(execution_db):
+    """INB7-e: a config saved while the morning brief had a switch still holds brief_enabled and brief_time. It loads with the
+    user's other choices, and the next save leaves the two out."""
+    async with execution_db() as db:
+        db.add(Setting(key=svc.CONFIG_KEY, value=json.dumps({"brief_enabled": True, "brief_time": "07:00", "quiet_start": "23:15",
+                                                             "watches": False})))
+        await db.commit()
+    loaded = await svc.load_config()
+    assert (loaded.quiet_start, loaded.watches) == ("23:15", False)
+    await svc.save_config({"quiet_end": "07:00"})
+    async with execution_db() as db:
+        stored = json.loads((await db.get(Setting, svc.CONFIG_KEY)).value)
+    assert not {"brief_enabled", "brief_time"} & set(stored)
+    assert (stored["quiet_start"], stored["quiet_end"], stored["watches"]) == ("23:15", "07:00", False)
+
+
 @pytest.mark.parametrize("stored", ["[]", "null", "1", '"x"', "{not json"])
 async def test_a_config_that_isnt_an_object_reads_as_the_defaults(execution_db, stored):
     """The desktop status poll reads this: raising here would stop notifications, the tray and the Bridge's tick."""
@@ -159,38 +177,14 @@ async def test_quiet_hours_follow_the_config_and_the_local_clock(execution_db, m
     assert await svc.in_quiet_hours_now() is quiet
 
 
-# ── the brief ────────────────────────────────────────────────────────────────
-
-async def test_no_brief_when_there_is_nothing_to_say(execution_db):
-    assert await svc.build_brief(NOON, NOON, "en") is None
-
-
-async def test_the_brief_counts_what_is_open_running_and_due_soon(execution_db, monkeypatch):
-    await ingest(found(cand(1), cand(2, kind="job_followup")))
-    async with execution_db() as db:
-        db.add(ScheduledTask(name="Weekly numbers", prompt="p", schedule_kind="interval", interval_s=3600, enabled=True,
-                             next_due_at=NOON + timedelta(hours=3)))
-        db.add(ScheduledTask(name=det.HEARTBEAT_NAME, prompt="p", schedule_kind="interval", interval_s=3600, enabled=True,
-                             next_due_at=NOON + timedelta(hours=1)))
-        await db.commit()
-    monkeypatch.setitem(background_jobs._jobs, "j1", SimpleNamespace(phase="running", goal="Compare two phones",
-                                                                     job_id="j1", conversation_id="c1", commander=None))
-    monkeypatch.setitem(background_jobs._jobs, "j2", SimpleNamespace(phase="finished", goal="old", job_id="j2",
-                                                                     conversation_id="c2", commander=None))
-    brief = await svc.build_brief(NOON, NOON, "en")
-    c = brief.candidate
-    assert (c.kind, c.fingerprint, c.goal) == ("brief", "brief:2026-09-30", "")
-    keys = {e.key: e for e in c.evidence}
-    assert keys["brief.open"].params["count"] == 2
-    assert keys["brief.running"].params["count"] == 1 and keys["brief.running"].quote == "Compare two phones"
-    assert keys["brief.schedules"].params["count"] == 1 and keys["brief.schedules"].quote == "Weekly numbers"
-
+# ── the retired brief ────────────────────────────────────────────────────────
 
 async def test_the_scan_makes_no_brief_even_when_it_was_switched_on(execution_db):
-    """The user's Q9 (#605 review F2): the morning brief goes. Since the Inbox went (INB5) nothing shows a brief, so the scan makes
-    none and no notice leads nowhere. build_brief, brief_due and the config's brief fields go with the brief in INB7-e."""
+    """The user's Q9 (#605 review F2): the morning brief went (INB7-e). A config saved with it switched on makes none."""
     await ingest(found(cand(1)))
-    await svc.save_config({"brief_enabled": True, "brief_time": "08:30", "watches": False})
+    async with execution_db() as db:
+        db.add(Setting(key=svc.CONFIG_KEY, value=json.dumps({"brief_enabled": True, "brief_time": "08:30", "watches": False})))
+        await db.commit()
     await svc.scan_once(now_utc=NOON, now_local=NOON)
     await svc.scan_once(now_utc=NOON + timedelta(hours=1), now_local=NOON + timedelta(hours=1))
     assert not any(i.kind == "brief" for i in await rows(execution_db))
@@ -370,11 +364,39 @@ async def test_model_configured_asks_what_the_job_would_ask(execution_db):
     assert await svc.model_configured() is True
 
 
-async def test_a_brief_is_read_not_run(execution_db, started):
-    await ingest(found(cand(1, kind="brief", goal="")))
+async def stored_brief(execution_db, *, created_at=NOON, status="new") -> int:
+    """A row of the retired brief kind, as one made before INB7-e is still stored (no migration removes it)."""
+    async with execution_db() as db:
+        row = ProactiveItem(kind="brief", fingerprint=f"brief:{created_at:%Y-%m-%d}", source_key="brief", title_key="title.brief",
+                            params={"day": f"{created_at:%Y-%m-%d}"}, evidence=[{"key": "brief.open", "params": {"count": 1}}],
+                            goal="", criteria=[], priority="normal", status=status, created_at=created_at)
+        db.add(row)
+        await db.commit()
+        return row.id
+
+
+async def test_a_stored_brief_row_is_not_listed_counted_or_run(execution_db, started):
+    """INB7-e: a brief row made before the brief went is read past: not in any list, not in the counts, never run."""
+    brief_id = await stored_brief(execution_db)
+    await ingest(found(cand(1)))
+    for scope in ("open", "all", "done", "snoozed"):
+        assert all(i["kind"] != "brief" for i in await svc.list_items(scope)), scope
+    assert await svc.list_items("open", kind="brief") == []
+    summary = await svc.summary()
+    assert (summary["open"], summary["unread"]) == (1, 1)
     with pytest.raises(ProactiveError) as err:
-        await svc.accept((await rows(execution_db))[0].id, "c")
+        await svc.accept(brief_id, "c")
     assert err.value.code == "nothing_to_do" and started == []
+
+
+async def test_a_stored_brief_row_expires_by_the_default_days_and_is_then_pruned(execution_db):
+    """No migration: such a row goes the way of any open item, expired after the default 7 days, deleted 90 days on."""
+    fresh, old = await stored_brief(execution_db, created_at=NOON - timedelta(days=6)), \
+        await stored_brief(execution_db, created_at=NOON - timedelta(days=8))
+    await svc.maintain(NOON)
+    assert {i.id: i.status for i in await rows(execution_db)} == {fresh: "new", old: "expired"}
+    await svc.maintain(NOON + timedelta(days=100))
+    assert await rows(execution_db) == []
 
 
 async def test_a_handled_item_cannot_be_accepted_again(execution_db, started):
@@ -475,6 +497,15 @@ async def test_dismiss_can_mute_a_whole_kind_and_unmute_undoes_it(execution_db):
         await svc.dismiss(item_id, mute="everything")
 
 
+async def test_a_stored_mute_of_the_retired_brief_is_not_listed(execution_db):
+    """INB7-e: "stop this kind" or "stop this source" on a brief left `kind:brief` or `brief`. Nothing raises a brief any more and
+    the window has no words for one, so the silenced list leaves both out."""
+    async with execution_db() as db:
+        db.add_all([ProactiveMute(key=key, created_at=NOON) for key in ("kind:brief", "brief", "kind:web_change", "watch:5")])
+        await db.commit()
+    assert await svc.list_mutes() == ["kind:web_change", "watch:5"]
+
+
 async def test_unread_and_high_counts_follow_the_user_reading(execution_db):
     await ingest(found(cand(1, priority="high"), cand(2)))
     assert await svc.summary() == {"open": 2, "unread": 2, "high": 1, "approvals": 0, "waiting": {"count": 0, "conversations": [], "projects": [], "scheduled": []}}
@@ -493,10 +524,10 @@ async def test_list_puts_the_urgent_first_and_scopes_done_items_apart(execution_
 # ── maintenance: everything is bounded ───────────────────────────────────────
 
 async def test_stale_open_items_expire_but_are_kept(execution_db):
-    await ingest(found(cand(1, kind="brief", goal="")), now=NOON - timedelta(days=3))
-    await ingest(found(cand(2)), now=NOON - timedelta(days=3))
+    await ingest(found(cand(1, kind="job_followup")), now=NOON - timedelta(days=8))
+    await ingest(found(cand(2)), now=NOON - timedelta(days=8))
     await svc.maintain(NOON)
-    assert {i.kind: i.status for i in await rows(execution_db)} == {"brief": "expired", "web_change": "new"}
+    assert {i.kind: i.status for i in await rows(execution_db)} == {"job_followup": "expired", "web_change": "new"}
 
 
 async def test_old_finished_items_are_deleted_open_ones_never(execution_db):
@@ -641,8 +672,7 @@ async def test_stop_before_the_first_scan_never_scans(execution_db, monkeypatch)
 async def test_every_detector_produces_items_the_gate_and_the_catalog_accept(execution_db, tmp_path):
     """No stubbed detectors: a stopped job, a failing schedule, a page that changed and a
     folder that got a file all travel scan -> gate -> inbox. A key the catalog did not know
-    would be rejected here as `unknown_key`. The brief, switched on, makes nothing since it
-    retired (the user's Q9, #605 review F2)."""
+    would be rejected here as `unknown_key`."""
     from server.db.models import CompanionTask, ProactiveWatch, TaskRevision
     from tests.server.test_proactive_detectors import add_schedule
 
@@ -671,7 +701,6 @@ async def test_every_detector_produces_items_the_gate_and_the_catalog_accept(exe
     async def fetch(url):
         return page
 
-    await svc.save_config({"brief_enabled": True, "brief_time": "08:30"})
     result = await svc.scan_once(now_utc=NOON, now_local=NOON, fetch=fetch)
     items = await rows(execution_db)
     assert result["rejected"] == {}, result["rejected"]

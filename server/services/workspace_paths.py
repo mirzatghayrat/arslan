@@ -68,7 +68,7 @@ def is_secret_name(name: str) -> bool:
 
 
 def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False,
-                         make_parents: bool = False, run_later_ok: Path | None = None) -> Path:
+                         make_parents: bool = False, pin=None, run_later_ok: Path | None = None) -> Path:
     """Absolute, symlink-resolved path inside `ws_root`, or raise.
 
     `for_write=True` judges by the parent directory so a not-yet-existing file
@@ -77,13 +77,28 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
     and the deepest existing ancestor must resolve inside (rule 3).
     A write into a file that runs later raises RunLater unless it resolves to `run_later_ok`, the path this
     call's card was clicked for (HR-2a).
+
+    SBX-9: `pin` is the caller's pin of the working folder (`pin_root`), carried from this resolution to the write
+    (Astra #855 P1: one identity, not a fresh one per step); without it, the folder is pinned for this call only.
     """
-    if ws_root is None:
+    if ws_root is None and pin is None:
         raise PathEscape("no workspace is configured")
     if not isinstance(user_path, str) or not user_path.strip():
         raise PathEscape("path is required")
+    if pin is not None:
+        return _resolve(user_path, pin.path, for_write=for_write, make_parents=make_parents,
+                        run_later_ok=run_later_ok)
+    from server.services import root_pin
+    own = pin_root(ws_root)
+    try:
+        return _resolve(user_path, own.path, for_write=for_write, make_parents=make_parents,
+                        run_later_ok=run_later_ok)
+    finally:
+        root_pin.release([own])
 
-    root = Path(ws_root).resolve()
+
+def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
+             run_later_ok: Path | None = None) -> Path:
     raw = Path(user_path.strip())
     candidate = raw if raw.is_absolute() else (root / raw)
     if for_write and candidate.name in ("", ".", ".."):
@@ -98,7 +113,8 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
                 raise PathEscape(f"path is outside the workspace: {user_path}")
             missing.append(probe.name)
             probe = probe.parent
-        parent = probe.resolve()
+        # SBX-9 (Astra #855 delta): the pinned root is already its own real path; never resolve it again.
+        parent = root if probe == root else probe.resolve()
         if not parent.is_dir():
             raise PathEscape(f"parent directory does not exist: {candidate.parent}")
         if not _contained(parent, root):
@@ -130,6 +146,9 @@ def held_for_later(user_path, ws_root: Path | None) -> Path | None:
     """HR-2a: the path a write of `user_path` in `ws_root` would land on, when it is a file that runs later (what
     its card names), else None: an ordinary write, or one the executor refuses for another reason. The one test the
     gate (`tool_gates`) and `hard_rules.never_auto` share. RunLaterUnknown propagates: it can't be told."""
+    # SBX-10 (#870, not merged yet): in a sub-session this walk should also cover the commander's workspace
+    # (`settings_service.workspace_dir`), pinned with SBX-9's `root_pin`, and refuse when that workspace is unknown or
+    # doesn't contain the child's folder. To be applied when #870 lands; today only the child's own folder is walked.
     try:
         resolve_in_workspace(user_path, ws_root, for_write=True, make_parents=True)
     except RunLater as held:
@@ -253,6 +272,75 @@ def _link_hops(candidate: Path, root: Path) -> list[tuple[Path, Path]]:
     return hops
 
 
+def pin_root(ws_root):
+    """SBX-9: the working folder resolved once, with no link in any component of its real path, and pinned
+    (`root_pin.Pin`: the real path, the identity and a descriptor, which the caller releases). `ws_root` was checked as
+    a real folder (`settings_service.workspace_dir`), so it must still be that folder, not a link to another one now.
+    PathEscape when it isn't."""
+    from server.services import root_pin
+    try:
+        return root_pin.pin(ws_root)
+    except root_pin.Swapped as exc:
+        raise PathEscape(f"the working folder isn't the folder it was: {exc}") from None
+    except OSError as exc:
+        raise PathEscape(f"the working folder can't be checked ({exc.strerror or exc})") from None
+
+
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+
+
+def open_inside(pin, parts, *, make: bool = False) -> int:
+    """SBX-9: a descriptor on the folder `<pinned working folder>/parts...`, walked from the pin's own descriptor (never
+    the root reopened by its path) one name at a time: each opened `O_NOFOLLOW` relative to the one before (a link at
+    any step is refused, never followed), and with `make` a missing one made there first (`mkdir(dir_fd=...)`,
+    mkdirat). PathEscape for a link, a file or another folder on the way; OSError when a folder can't be made. The
+    caller closes the descriptor."""
+    fd = os.dup(pin.fd)
+    try:
+        for part in parts:
+            if part in ("", ".", "..") or "/" in part:
+                raise PathEscape(f"not a folder name: {part!r}")
+            if make:
+                try:
+                    os.mkdir(part, 0o777, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            try:
+                inner = os.open(part, _DIR_FLAGS, dir_fd=fd)
+            except OSError as exc:
+                raise PathEscape(f"refusing to write through {part}: it isn't a plain folder now "
+                                 f"({exc.strerror or exc})") from None
+            os.close(fd)
+            fd = inner
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def replace_in(dir_fd: int, source: str, target: str) -> None:
+    """`os.replace(source, target)` inside the folder `dir_fd` (renameat): Python on macOS has no `dir_fd` for it."""
+    if os.replace in os.supports_dir_fd:
+        os.replace(source, target, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        return
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.renameat(dir_fd, os.fsencode(source), dir_fd, os.fsencode(target)) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), target)
+
+
+def check_root(pin) -> None:
+    """SBX-9: right before a write, the pinned working folder's real path still opens, with no link in any component,
+    as the same folder (the identity `pin_root` found, never a fresh one). PathEscape when not: the folder was
+    renamed away, replaced or relinked since the resolution."""
+    from server.services import root_pin
+    try:
+        root_pin.check([pin])
+    except root_pin.Swapped as exc:
+        raise PathEscape(f"the working folder isn't the folder it was: {exc}") from None
+
+
 #: SUB5c: the folder under the workspace (or a parent sub-session's folder) that holds the sub-sessions' own folders.
 SUB_DIR = "sub"
 
@@ -264,24 +352,29 @@ def sub_folder(ws_root: Path, names) -> Path:
     is refused, never followed or reused. The result then goes through `resolve_in_workspace`'s checks for a write
     (real path inside the workspace, links, Arslan's own folders). Raises PathEscape (or OSError when a folder can't
     be made). `names` come from `sub_sessions.folder_name`: plain names, refused here otherwise."""
-    root = Path(ws_root).resolve()
-    parts = [part for name in names for part in (SUB_DIR, name)]
-    if not parts or any(not part or part in (".", "..") or "/" in part or part != part.strip() for part in parts):
-        raise PathEscape(f"not a sub-session folder name: {list(names)}")
-    path = root
-    for part in parts:
-        path = path / part
-        try:
-            os.mkdir(path, 0o755)                # never follows a link: an existing one is EEXIST, judged below
-        except FileExistsError:
-            pass
-        st = os.lstat(path)
-        if not stat.S_ISDIR(st.st_mode):
-            raise PathEscape(f"refusing a sub-session folder that isn't a plain folder: {path}")
-    _same_spelling(path, parts)
-    if resolve_in_workspace(str(path), root, for_write=True) != path:
-        raise PathEscape(f"refusing a sub-session folder that resolves elsewhere: {path}")
-    return path
+    from server.services import root_pin
+    pinned = pin_root(ws_root)                  # SBX-9: resolved once, and still the folder workspace_dir checked
+    try:
+        root = pinned.path
+        parts = [part for name in names for part in (SUB_DIR, name)]
+        if not parts or any(not part or part in (".", "..") or "/" in part or part != part.strip() for part in parts):
+            raise PathEscape(f"not a sub-session folder name: {list(names)}")
+        path = root
+        for part in parts:
+            path = path / part
+            try:
+                os.mkdir(path, 0o755)                # never follows a link: an existing one is EEXIST, judged below
+            except FileExistsError:
+                pass
+            st = os.lstat(path)
+            if not stat.S_ISDIR(st.st_mode):
+                raise PathEscape(f"refusing a sub-session folder that isn't a plain folder: {path}")
+        _same_spelling(path, parts)
+        if resolve_in_workspace(str(path), root, for_write=True, pin=pinned) != path:
+            raise PathEscape(f"refusing a sub-session folder that resolves elsewhere: {path}")
+        return path
+    finally:
+        root_pin.release([pinned])
 
 
 def _same_spelling(path: Path, parts: list[str]) -> None:

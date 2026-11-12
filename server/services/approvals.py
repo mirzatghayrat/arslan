@@ -460,7 +460,8 @@ async def runs_unsandboxed(conversation_id: str | None = None) -> bool:
 
 
 def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_all: bool = False,
-                     network: bool = False, unsandboxed: bool = False, lang: str | None = None, why: str = "", delete_mode: str = ""):
+                     network: bool = False, unsandboxed: bool = False, lang: str | None = None, why: str = "", delete_mode: str = "",
+                     run_later=()):
     """A command card as a permission request, by the command's layer (S2a-2):
 
     - layer ② or `unreadable` (it matched rules): this time only; nothing is remembered and no stored
@@ -482,15 +483,24 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
     language (`card_purpose.phrase`: Arslan's `why`, else read from the command), which the phone shows as the
     approval's heading; then where it runs when that is outside the sandbox. The model keeps the old sentence, with the
     command in it (`model_title`), for its refusal and expiry texts. Without `lang` (a caller with no language yet),
-    the title is the old English sentence."""
+    the title is the old English sentence.
+
+    `run_later` (HR-3 part 1, the click-lift rule): what `terminal_policy.run_later_targets` found, given by the gate
+    only where the kernel's hold on files that run later doesn't stand (the command runs outside the sandbox, or with
+    none). Then the card is this time only, whatever else it would offer: no "In this conversation", no "Always", and
+    no stored grant or rule answers it (`once_only`), so only a click on this command's own card lets the write
+    happen; and it never joins an identical waiting ask (`never_joined`), so one click runs one command. Its title
+    names the file (`card_purpose.phrase`)."""
     from server.services import card_purpose, permissions, task_service
     net = " It will use the network, this time." if network else ""
+    later = {"once_only": True, "conversation_ok": False, "never_joined": True} if run_later else {}
 
     def plain(old: str, **where) -> str:
         # #689 review 2: a card that also asks for the network says so in its title.
         # #817 review: the frame's reading of the same text, when it has one, so the command is read once.
         return card_purpose.phrase(shell, why, rules, lang=lang, network=network, delete_mode=delete_mode,
-                                   reading=card_purpose.frame_reading(frame, shell), **where) if lang else old
+                                   reading=card_purpose.frame_reading(frame, shell), run_later=run_later,
+                                   **where) if lang else old
     if rules:
         # 0.1.62 F4a, S2a-2. S2a-1 (U11): an approved plain osascript or Shortcut runs outside the sandbox,
         # and the card says so; a Shortcut cannot be inspected, so its card says it runs as the user.
@@ -508,20 +518,20 @@ def _command_request(shell: str, rules: list[str], frame: dict | None, *, ask_al
                                    title=plain(old, shortcut_as_you=bool(bare) and "shortcuts" in rules, outside=bool(bare),
                                                unsandboxed=unsandboxed),
                                    model_title=old if lang else "", detail=shell,
-                                   conversation_ok=False, once_only=True,
+                                   conversation_ok=False, once_only=True, never_joined=bool(run_later),
                                    frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame)
     if ask_all:
         old = f"Run `{shell[:80]}`?{net}"
         return permissions.Request(kind="command", target="text:" + shell, title=plain(old, unsandboxed=unsandboxed),
                                    model_title=old if lang else "",
                                    detail=shell,
-                                   frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame)
+                                   frame={**frame, "unsandboxed": True} if frame and unsandboxed else frame, **later)
     # Marked on the card (a key the web and the phone ignore), so the island never approves a command
     # that would run with no sandbox around it: `rm notes.txt` there is a real delete.
     return permissions.Request(kind="command", target="unsandboxed:*",
                                title=plain(f"Run `{shell[:80]}` outside the sandbox?{net}", unsandboxed=True),
                                model_title=f"Run `{shell[:80]}` outside the sandbox?{net}" if lang else "", detail=shell,
-                               frame={**frame, "unsandboxed": True} if frame else None)
+                               frame={**frame, "unsandboxed": True} if frame else None, **later)
 
 
 def _paused_clock():

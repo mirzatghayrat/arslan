@@ -5,7 +5,8 @@ test that proves it:
 
   DIRECT      what a command's text alone decides: the parser's forbid rules (layer ①) and this-time-only rules
               (layer ②), and what the gate refuses before any card;
-  RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-2 adds the file tools);
+  RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-3 part 1: a command's
+              direct forms outside the sandbox, lifted only by a click on its own card; HR-2 adds the file tools);
   NEVER_AUTO  what only the user answers, never a grant, a rule, a mode or a classifier (`never_auto`);
   ABSOLUTE    what holds under the least strict settings Arslan has, and the network cut after outside content, by path.
 
@@ -31,7 +32,8 @@ NEVER_AUTO_RULES = terminal_policy.ONCE_ONLY_RULES
 #: Full access still asks these (S5's table), so nothing automatic answers them either (CLS: never what full access
 #: would still ask).
 FULL_ACCESS_ASKS = frozenset({"send", "site", "shortcut"})
-NEVER_AUTO_KINDS = permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
+NEVER_AUTO_KINDS = (permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
+                    | permissions._CONVERSATION_ONLY)       # HR-1b: git_config, the user's own click only
 #: Kinds whose request decides (a command by its rules; HR-2 adds a write by its path). Written out, not derived: a
 #: kind added to permissions.KINDS is never answered automatically until it is placed here or in NEVER_AUTO_KINDS
 #: (the meta-test fails meanwhile).
@@ -97,6 +99,7 @@ _HR1_KERNEL = _T + "sbx/test_hr1_run_later_kernel.py::"
 _HR1_ALIASES = _T + "sbx/test_hr1_run_later_aliases.py::"
 _HR1_LINK_TARGETS = _T + "sbx/test_hr1_run_later_link_targets.py::"
 _HR2A = _T + "test_hr2a_run_later_writes.py::"
+_HR3 = _T + "test_hr3_run_later_text.py::"
 
 
 def _later(family: str) -> HardRule:
@@ -105,7 +108,8 @@ def _later(family: str) -> HardRule:
 
 
 #: HR-1: the names (run_later.FAMILIES), held by the kernel for commands in the sandbox, MCP servers and a command
-#: let out under this conversation's grant. HR-2 adds the file tools' rows, HR-3 the direct forms outside the sandbox.
+#: let out under this conversation's grant. HR-3 part 1: the direct forms outside the sandbox, which only a click on
+#: the command's own card lets through. HR-2 adds the file tools' rows.
 RUN_LATER: tuple[HardRule, ...] = (
     *map(_later, (name for name, _ in run_later.FAMILIES)),
     HardRule("run-later/hooks-path", "run-later", "kernel", "server.services.run_later:hooks_path",
@@ -131,6 +135,13 @@ RUN_LATER: tuple[HardRule, ...] = (
              _HR2A + "test_in_arslans_own_folder_a_held_write_asks_its_own_card_each_time"),
     HardRule("run-later/write-token", "run-later", "gate", "server.registry.file_tools:_write_inside",
              _HR2A + "test_a_link_swapped_after_the_click_fails_closed"),
+    # HR-3 part 1: the direct forms, read from the command, where the kernel's hold doesn't stand (outside the sandbox).
+    HardRule("run-later/direct-forms", "run-later", "parser", f"{_TP}:run_later_targets",
+             _HR3 + "test_run_later_targets"),
+    HardRule("run-later/click-lift", "run-later", "gate", f"{_GATE}:check",
+             _HR3 + "test_under_an_outside_grant_a_run_later_write_gets_a_once_only_card"),
+    HardRule("run-later/never-auto", "run-later", "permissions", "server.services.hard_rules:never_auto",
+             _HR3 + "test_a_command_that_writes_a_file_that_runs_later_is_never_auto"),
 )
 
 NEVER_AUTO: tuple[HardRule, ...] = (
@@ -145,6 +156,9 @@ NEVER_AUTO: tuple[HardRule, ...] = (
     HardRule("outside", "always-asks", "permissions", f"{_PERMS}:decide",
              _T + "test_s4a_outside_remote.py::test_review_3_the_outside_card_is_shown_even_with_a_grant_and_writes_no_grant_row",
              kinds=permissions._ALWAYS_ASKS),
+    HardRule("git-config", "user-only", "permissions", f"{_PERMS}:options_for",
+             _T + "test_hr1b_git_config.py::test_the_card_asks_once_per_conversation_and_never_leaks_to_another",
+             kinds=permissions._CONVERSATION_ONLY),
     HardRule("full-access-still-asks", "user-only", "permissions", "server.services.hard_rules:never_auto",
              _T + "test_hard_rules.py::test_what_full_access_still_asks_is_never_auto", kinds=FULL_ACCESS_ASKS),
     HardRule("unknown-kind", "fails-closed", "permissions", f"{_PERMS}:_check",
@@ -204,16 +218,19 @@ if not _NAMED <= FORBID_KEYS | ASK_KEYS or not (NEVER_AUTO_KINDS | MAY_AUTO_KIND
 
 
 def _writes_run_later(request) -> bool:
-    """HR-2a: a file tool's write request (`workspace_write`) whose file makes something run later: its detail (the
+    """A write into a file that makes something run later. HR-3 part 1: a command's, by a direct form or one it can't
+    read (`terminal_policy.run_later_targets`, the same reading the gate's click-lift rule asks with).
+    HR-2a: a file tool's write request (`workspace_write`) whose file makes something run later: its detail (the
     path the model gave) in its target (the work folder) judged by `workspace_paths.held_for_later`, the gate's own
     test (every link on the way, #813 review 9 and 10), and its detail by name as well (a target that isn't a folder
     on this Mac judges nothing). Not a string, or a write that can't be told (RunLaterUnknown, an OS error): True.
     The file tools
-    ask such a write as a `run_later` card of its own (tool_gates), so this holds for a request built some other way.
-    A command's writes are held by the kernel since HR-1 (RUN_LATER), not read from its request here."""
+    ask such a write as a `run_later` card of its own (tool_gates), so this holds for a request built some other way."""
     from pathlib import Path
 
     from server.services import workspace_paths
+    if getattr(request, "kind", None) == "command":
+        return bool(terminal_policy.run_later_targets(request.detail))
     if request.kind != "workspace_write":
         return False
     detail, target = getattr(request, "detail", None), getattr(request, "target", None)

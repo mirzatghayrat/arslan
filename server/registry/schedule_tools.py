@@ -105,6 +105,8 @@ class ScheduleTaskExecutor:
             except ValueError as exc:
                 return {"ok": False, "error": f"that schedule never comes due: {exc}"}
             db.add(task)
+            await db.flush()
+            await scheduler.forget_reused_id(db, task.id)     # SUB5a: a reused id's reminders are the old task's
             await db.commit()
             await db.refresh(task)
             return {"ok": True, "task_id": task.id, "name": task.name,

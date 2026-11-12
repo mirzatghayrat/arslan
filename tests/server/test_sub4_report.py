@@ -1,6 +1,6 @@
 """SUB4 (v0.1.64, card docs/plans/0164/SUB-sub-sessions.md): a sub-session's report and its commander's summary turn.
 
-No tool table offers `start_sub_session` yet (SUB5 adds it after the M64 bench), so these tests start sub-sessions with
+These tests start sub-sessions with
 `sub_sessions.start` and run everything else for real: each sub-session's job and the commander's summary turn through
 the background job runner, the real `background_body` and tool loop, real cards and the real turn lock, with a
 scripted model.
@@ -43,6 +43,7 @@ _SINKS: list = []
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     monkeypatch.setattr(sub_sessions, "POLL_SECONDS", 0.01)
+    assert not run_registry._sinks.get(ROOT), f"an earlier test left a window sink on {ROOT}"   # it would answer cards
     for module in (background_jobs, approvals, sub_sessions):
         module._reset_for_tests()
     yield

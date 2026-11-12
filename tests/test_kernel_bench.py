@@ -183,6 +183,31 @@ def test_an_open_background_job_keeps_the_run_going_until_it_finishes():
     assert t.finished(now=100 + IDLE_AFTER_TURN_S, started=0)
 
 
+def test_a_started_sub_session_keeps_the_run_going_until_its_summary_turn_finishes():
+    """SUB5e (T16): a sub-session's frames go to its own conversation; its commander's summary turn
+    is a job of this one. The commander's own job, open before, does not stand in for it."""
+    t = TurnTracker("/r")
+    t.on_frame({"type": "job_update", "job_id": "own", "phase": "running"}, now=1)
+    t.on_frame({"type": "tool_result", "tool": "start_sub_session", "ok": False}, now=2)
+    assert not t.awaiting_summary                                  # a refused start owes no summary
+    t.on_frame({"type": "tool_result", "tool": "start_sub_session", "ok": True}, now=3)
+    t.on_frame({"type": "stream_end"}, now=4)
+    t.on_frame({"type": "job_update", "job_id": "own", "phase": "finished"}, now=5)
+    assert not t.finished(now=5 + IDLE_AFTER_TURN_S * 3, started=0)
+    t.on_frame({"type": "job_update", "job_id": "sum", "phase": "queued"}, now=200)
+    t.on_frame({"type": "job_update", "job_id": "sum", "phase": "finished"}, now=300)
+    assert t.finished(now=300 + IDLE_AFTER_TURN_S, started=0) and t.end_reason == "done"
+    assert t.sub_sessions_started == 1
+
+
+def test_a_summary_turn_that_never_comes_ends_at_the_runs_time_limit():
+    t = TurnTracker("/r")
+    t.on_frame({"type": "tool_result", "tool": "start_sub_session", "ok": True}, now=1)
+    t.on_frame({"type": "stream_end"}, now=2)
+    assert not t.finished(now=RUN_TIMEOUT_S - 1, started=0)
+    assert t.finished(now=RUN_TIMEOUT_S, started=0) and t.end_reason == "timeout"
+
+
 def test_each_turn_records_when_its_first_answer_text_and_its_end_arrived():
     """K8's M1 is first-token latency per task: seconds from sending a turn to its first
     stream_chunk, and to its stream_end. A turn that never streamed says so (None)."""

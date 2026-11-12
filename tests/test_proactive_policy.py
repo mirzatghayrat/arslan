@@ -40,9 +40,10 @@ def test_the_gate_refuses_and_names_the_rule(change, reason):
     assert (verdict.ok, verdict.reason) == (False, reason)
 
 
-def test_a_brief_needs_no_goal_but_still_needs_evidence():
-    assert gated(candidate(kind="brief", goal="", fingerprint="brief:2026-09-30", source_key="brief")).ok
-    assert gated(candidate(kind="brief", goal="", evidence=())).reason == "no_evidence"
+@pytest.mark.parametrize("kind", policy.KINDS)
+def test_every_kind_needs_a_goal(kind):
+    """INB7-e: the morning brief was the one kind with nothing to do; with it gone, every item carries a goal."""
+    assert gated(candidate(kind=kind, title_key=f"title.{kind}", goal="")).reason == "no_goal"
 
 
 def test_duplicates_and_mutes_are_dropped():
@@ -84,17 +85,19 @@ def test_a_watch_raises_once_a_day():
 def test_items_go_stale_by_kind():
     assert not policy.is_stale("job_followup", NOON - timedelta(days=6), NOON)
     assert policy.is_stale("job_followup", NOON - timedelta(days=8), NOON)
-    assert policy.is_stale("brief", NOON - timedelta(days=3), NOON)            # yesterday's brief is history
     assert not policy.is_stale("web_change", NOON - timedelta(days=13), NOON)
+    # A kind no longer raised (a stored brief row, INB7-e) still has days: the default 7.
+    assert not policy.is_stale("brief", NOON - timedelta(days=6), NOON)
+    assert policy.is_stale("brief", NOON - timedelta(days=8), NOON)
 
 
-def test_the_brief_comes_once_a_day_after_its_time_and_only_if_on():
-    on = ProactiveConfig(brief_enabled=True, brief_time="08:30")
-    assert not policy.brief_due(datetime(2026, 9, 30, 8, 29), on, None)
-    assert policy.brief_due(datetime(2026, 9, 30, 8, 30), on, None)
-    assert policy.brief_due(datetime(2026, 9, 30, 14, 0), on, "2026-09-29")     # woke late: still today's
-    assert not policy.brief_due(datetime(2026, 9, 30, 14, 0), on, "2026-09-30")
-    assert not policy.brief_due(datetime(2026, 9, 30, 14, 0), ProactiveConfig(), None)   # default off
+def test_the_morning_brief_is_gone_from_the_policy():
+    """INB7-e (the user's Q9, #605 review F2): the brief kind, its keys and days, brief_due and its config fields went."""
+    assert "brief" not in policy.KINDS and "brief" not in policy.FRESH_DAYS
+    assert "title.brief" not in policy.TITLE_KEYS and not any(k.startswith("brief.") for k in policy.EVIDENCE_KEYS)
+    assert not hasattr(policy, "brief_due")
+    assert not {"brief_enabled", "brief_time"} & set(ProactiveConfig.model_fields)
+    assert gated(candidate(kind="brief", title_key="title.brief", goal="")).reason == "unknown_kind"
 
 
 def test_diagnosis_spend_is_off_at_zero_and_bounded_otherwise():
@@ -112,9 +115,9 @@ def test_most_important_first_then_newest():
 
 def test_config_defaults_spend_nothing_and_reject_bad_input():
     config = ProactiveConfig()
-    assert config.enabled and config.diagnosis_daily_usd == 0 and not config.brief_enabled
+    assert config.enabled and config.diagnosis_daily_usd == 0
     assert ProactiveConfig(quiet_start="6:5").quiet_start == "06:05"
-    for bad in ({"quiet_start": "25:00"}, {"brief_time": "noon"}, {"diagnosis_daily_usd": 9},
+    for bad in ({"quiet_start": "25:00"}, {"quiet_end": "noon"}, {"diagnosis_daily_usd": 9},
                 {"surprise": 1}):
         with pytest.raises(ValueError):
             ProactiveConfig(**bad)

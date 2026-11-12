@@ -40,7 +40,7 @@ export default function ImportPluginCard({ card, n, total, others, busy, onAdd, 
         {card.from ? t("capabilityList.import_cardSource", { from: isolate(card.from) }) : t("capabilityList.import_cardSourceSkills")}
       </Row>
       <Row label={t("discover.card_contains")} testId="capability-card-contains"><PluginContains card={shaped} /></Row>
-      <HooksRow hooks={card.hooks} kind="plugin" />
+      <HooksRow hooks={card.hooks} rows={card.hook_rows} kind="plugin" />
       <SecurityRow card={shaped} />
       <Row label={t("discover.card_checks")}>{t("capabilityList.import_cardChecks")}</Row>
       {card.keys.length > 0 && <Row label={t("discover.card_needs")}>

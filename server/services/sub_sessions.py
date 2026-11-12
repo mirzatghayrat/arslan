@@ -11,8 +11,8 @@ the permissions.
 SUB3: `start` opens one and runs it as a background job of its own conversation (`background_jobs.start` with a
 `parent_id`). Its cards are asked in the parent's conversation and answered for the sub-session
 (`approvals.SubSessionAsker`); it is offered `TOOLS` only (`arslan.background_body`); one tree shares a spending limit,
-read before each model request, that wraps a run up before it stops it (`check_tree_spend`). No tool table offers `start` yet: SUB5 adds `start_sub_session`
-once the M64 bench passes on its branch.
+read before each model request, that wraps a run up before it stops it (`check_tree_spend`). SUB5e: the model reaches
+`start` through the `start_sub_session` tool (tool_defs.tasks), on demand, in a turn someone can be asked in.
 
 SUB4: a sub-session that ends leaves a report (`ended`); its result is posted in its own conversation only. Once
 nothing under its parent is at work and the parent is idle, one summary turn runs there with every report framed as
@@ -31,6 +31,10 @@ out (`not_sub`); a brief framed as outside content marks the sub-session's later
 SUB5c: a sub-session's job writes only in its own folder, `<workspace>/sub/<short name>/` (`folder_names`, made and
 checked by `workspace_paths.sub_folder`, read by `settings_service.workspace_dir_for_run`); its commands always run in
 the sandbox there. It still reads the whole workspace, and its commander still writes anywhere and merges the work.
+
+SUB5 (commander stop): a commander's sub-sessions stop also once its own turn has ended (`stop_commander`: the
+window's stop of that ended turn, the island's entry for them), and stopping a sub-session's job stops the ones under
+it (`stop_job`).
 """
 from __future__ import annotations
 
@@ -625,7 +629,8 @@ def is_deleted(conversation_id: str, row: ConversationContext | None) -> bool:
 
     Why a tombstone: there is no conversations table. A conversation is its messages and, once a setting changes,
     its context row, and a first message to an id nothing has seen is what makes one (the window's `thread-<uuid>`,
-    the phone's `phone-<uuid>`, a scheduled task's `scheduled-<id>` on each fire). So a missing row means a new
+    the phone's `phone-<uuid>`, a scheduled task's own conversation on each fire: the `scheduled-<uuid>` stored on its
+    row, or `scheduled-<id>` on a row made before v0.1.64). So a missing row means a new
     conversation and reads the defaults, as it always did; only a row can say "deleted", also after a restart."""
     return conversation_id in _deleted or (row is not None and row.kind == DELETED)
 
@@ -720,26 +725,41 @@ def _forget(ids) -> None:
             task.cancel()
 
 
+def _jobs_now() -> list:
+    """Every job queued, running, or finished and still reporting, once each."""
+    from server.services import background_jobs
+    return list({job.job_id: job for job in (*background_jobs.active(), *background_jobs.unreported())}.values())
+
+
 async def stop_tree(db, conversation_id: str) -> list[str]:
     """A run of this conversation was stopped: every sub-session under it that is still at work stops too, and
     what they owed it goes with them: no report, no summary turn (the user stopped that work). In `db`'s transaction;
     the caller commits. Returns the jobs stopped.
 
     The reports of its own sub-sessions that had already finished go too; it gets one line saying how many, as a
-    restart writes one (`report_restart`). Their results are in their own conversations."""
+    restart writes one (`report_restart`). Their results are in their own conversations.
+
+    SUB5 (commander stop): its own summary turn stops too, queued or running, and the reports it holds count in that
+    line; before, only one still waiting for its turn went (`_forget`), and one already running posted its summary."""
     from server.db.models import ArslanMessage
     from server.services import background_jobs, runtime_messages
     below = (await tree(db, conversation_id))[1:]
     stopped = []
     finished = {report["sub_session"] for report in _reports.get(conversation_id, ())}
     # One that has just finished and not reported yet can't be stopped, but its report goes too.
-    for job in {job.job_id: job for job in (*background_jobs.active(), *background_jobs.unreported())}.values():
+    for job in _jobs_now():
         if job.conversation_id in below:
             _hushed.add(job.job_id)
             if background_jobs.stop(job.conversation_id, job.job_id):
                 stopped.append(job.job_id)
             elif job.parent_id == conversation_id:
                 finished.add(job.conversation_id)
+        elif job.conversation_id == conversation_id and is_summary(job.job_id):
+            if job.parent_id:               # a sub-session's summary turn would report up; the top one reports nothing
+                _hushed.add(job.job_id)
+            if background_jobs.stop(job.conversation_id, job.job_id):
+                stopped.append(job.job_id)
+                finished.update(_summing.pop(job.job_id, ()))
     _forget([conversation_id, *below])
     if finished:                    # read before this transaction writes, as `report_restart` does
         db.add(ArslanMessage(conversation_id=conversation_id, role="arslan", content=runtime_messages.render(
@@ -748,17 +768,58 @@ async def stop_tree(db, conversation_id: str) -> list[str]:
     return stopped
 
 
+def _started_its_sub_sessions(job) -> bool:
+    """Whether this job is what its conversation's sub-sessions came from: a sub-session's own job is; a
+    conversation's own job and a summary turn are not."""
+    return job.parent_id is not None and job.reports is None
+
+
 async def stop_with(db, run_id: int, task_id: str | None) -> None:
     """POST /runs/{id}/cancel stopped this run: a chat turn's, or a sub-session's job, stops what is under its
     conversation. A conversation's own job or a summary turn is not what started its sub-sessions."""
     from server.db.models import Run
     from server.services import background_jobs
     job = background_jobs._jobs.get(task_id) if task_id else None
-    if job is not None and (job.parent_id is None or job.reports is not None):
+    if job is not None and not _started_its_sub_sessions(job):
         return
     run = await db.get(Run, run_id)
     if run is not None:
         await stop_tree(db, run.conversation_id)
+        await db.commit()
+
+
+#: SUB5 (commander stop): the island's one entry for a commander's sub-sessions (`desktop_status.under_commanders`)
+#: carries this followed by the commander's id where a job's id goes, so its Stop, which posts to
+#: POST /background-jobs/{id}/stop as any job's does, stops them all (`stop_commander`). No job's id starts so
+#: (`background_jobs.start_placed`: `job-…`).
+STOP_ALL = "sub-sessions-of-"
+
+
+async def stop_commander(db, conversation_id: str) -> bool:
+    """SUB5: the stop of a conversation whose own turn may have ended while what it started works on. When anything
+    under it is at work (a sub-session's job at any depth, queued, running or still reporting; a report not summed up
+    yet; a summary turn there or below, waiting or running), it all stops through `stop_tree`, as the window's stop
+    of a live turn does: no report, no summary turn, the one line for the reports that go. Committed here. False,
+    and nothing changes, when nothing is.
+
+    Reached by POST /runs/{id}/cancel of a turn that has ended (its 409 before), and by the island's entry for the
+    commander's sub-sessions (STOP_ALL). Starts nothing; a sub-session already stopped is not run again."""
+    below = (await tree(db, conversation_id))[1:]
+    at_work = any(job.conversation_id in below for job in _jobs_now()) or any(
+        _reports.get(cid) or cid in _summaries for cid in (conversation_id, *below))
+    if not at_work:
+        return False
+    await stop_tree(db, conversation_id)
+    await db.commit()
+    return True
+
+
+async def stop_job(db, job) -> None:
+    """SUB5: POST /background-jobs/{id}/stop stopped this job. A sub-session's own job stops what is under that
+    sub-session too, as the window's stop of a run does (`stop_with`); a conversation's own job and a summary turn
+    stop alone, as before."""
+    if _started_its_sub_sessions(job):
+        await stop_tree(db, job.conversation_id)
         await db.commit()
 
 

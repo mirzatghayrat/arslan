@@ -60,7 +60,7 @@ export default function CapabilityProposeCard({ card, callId, expiresAt, queue, 
       </Row>
       {plugin && <Row label={t("discover.card_contains")} testId="capability-card-contains"><PluginContains card={card} /></Row>}
       {/* CAP8-2's hook rule: a skill's (or a plugin's skills') frontmatter hooks, which Arslan doesn't run. */}
-      <HooksRow hooks={card.hooks} kind={plugin ? "plugin" : "skill"} />
+      <HooksRow hooks={card.hooks} rows={card.hook_rows} kind={plugin ? "plugin" : "skill"} />
       {/* CAP9: what OSV.dev knows of the locked packages, the package itself first. */}
       <SecurityRow card={card} />
       {!plugin && <Row label={t("discover.card_runs")} testId="capability-card-runs">

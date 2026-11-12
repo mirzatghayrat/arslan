@@ -1057,9 +1057,10 @@ class ProactiveItem(Base):
     __tablename__ = "proactive_items"
 
     id = Column(Integer, primary_key=True)
-    kind = Column(String(24), nullable=False)        # job_followup|scheduled_problem|web_change|folder_change|brief
+    kind = Column(String(24), nullable=False)        # job_followup|scheduled_problem|web_change|folder_change (a stored
+                                                     # "brief" from before INB7-e is read past: proactive_service._known_kind)
     fingerprint = Column(String(200), nullable=False, unique=True)   # dedupe: same evidence, same item
-    source_key = Column(String(120), nullable=False, index=True)     # job:<id> | sched:<id> | watch:<id> | brief
+    source_key = Column(String(120), nullable=False, index=True)     # job:<id> | sched:<id> | watch:<id>
     title_key = Column(String(60), nullable=False)
     params = Column(JSON, nullable=False, default=dict)
     evidence = Column(JSON, nullable=False, default=list)            # [{key, params, quote?}] — never empty

@@ -111,15 +111,15 @@ async def test_edit_file_splits_a_hard_link_instead_of_writing_through_it(ws, de
 async def test_a_folder_swapped_for_a_link_while_it_is_made_is_caught(ws, tmp_path, monkeypatch):
     outside = tmp_path / "elsewhere"
     outside.mkdir()
-    real_mkdir = Path.mkdir
+    real_mkdir = os.mkdir
 
-    def mkdir_then_swap(self, *a, **kw):
-        real_mkdir(self, *a, **kw)
-        if self.name == "new":
-            self.rmdir()
-            self.symlink_to(outside)
-    monkeypatch.setattr(Path, "mkdir", mkdir_then_swap)
-    # As on a system without O_NOFOLLOW_ANY (Linux CI): the second resolve alone must catch it.
+    def mkdir_then_swap(path, *a, **kw):
+        real_mkdir(path, *a, **kw)
+        if Path(path).name == "new":              # SBX-9: made relative to its parent's descriptor (mkdirat)
+            (ws / "new").rmdir()
+            (ws / "new").symlink_to(outside)
+    monkeypatch.setattr(os, "mkdir", mkdir_then_swap)
+    # As on a system without O_NOFOLLOW_ANY (Linux CI): the O_NOFOLLOW open of each folder must catch it.
     monkeypatch.setattr(file_tools, "_NOFOLLOW", os.O_NOFOLLOW)
     r = await write({"path": "new/f.txt", "content": "pwned"})
     assert r["ok"] is False
@@ -153,7 +153,8 @@ async def test_a_parent_swapped_for_a_link_at_the_open_is_refused_by_the_kernel(
 
     def swap_then_open(path, flags, *a, **kw):
         sub = ws / "sub"
-        if str(path).startswith(str(sub)) and not sub.is_symlink():
+        # SBX-9: the folder is opened by its name relative to the working folder's descriptor
+        if (os.fspath(path) == "sub" or str(path).startswith(str(sub))) and not sub.is_symlink():
             sub.rename(tmp_path / "sub-moved")
             sub.symlink_to(outside)
         return real_open(path, flags, *a, **kw)
@@ -185,9 +186,10 @@ async def test_overwriting_keeps_the_files_mode(ws):
 async def test_a_failed_write_leaves_the_old_file_and_no_temp_file(ws, monkeypatch):
     (ws / "notes.txt").write_text("old")
 
-    def broken_replace(src, dst):
+    def broken_replace(folder, src, dst):
         raise OSError(28, "No space left on device")
-    monkeypatch.setattr(file_tools.os, "replace", broken_replace)
+    # SBX-9: the swap is made inside the file's folder's descriptor (renameat)
+    monkeypatch.setattr(file_tools.workspace_paths, "replace_in", broken_replace)
     r = await write({"path": "notes.txt", "content": "new"})
     assert r["ok"] is False and "cannot write" in r["error"]
     assert (ws / "notes.txt").read_text() == "old"

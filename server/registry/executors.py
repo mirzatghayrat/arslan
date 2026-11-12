@@ -31,7 +31,7 @@ from server.registry.hands_tools import (
     DesktopAccessExecutor, DesktopBatchExecutor, DesktopMenuExecutor, DesktopOpenExecutor, DesktopTakeoverExecutor, DesktopPressExecutor, DesktopScrollExecutor, DesktopSelectExecutor, DesktopTypeExecutor,
     MacAppleScriptExecutor, MacListShortcutsExecutor, MacRunShortcutExecutor)
 from server.registry.task_tools import (
-    BackgroundStatusExecutor, DelegateWorkExecutor, StartBackgroundWorkExecutor,
+    BackgroundStatusExecutor, DelegateWorkExecutor, StartBackgroundWorkExecutor, StartSubSessionExecutor,
     StopBackgroundWorkExecutor, TaskProgressExecutor)
 # Module-qualified on purpose. `from net_pin import net_pin._fetch_text` binds the name HERE at
 # import time, so a test patching net_pin._fetch_text would never reach this caller —
@@ -606,6 +606,24 @@ class MyStatusExecutor:
         return {"ok": True, **await self_status.snapshot(ctx.conversation_id if ctx else None)}
 
 
+class ProgressReportExecutor:
+    """INB7-f (v0.1.64): "how is it going" in any conversation. The brief Progress reads (progress.brief): done today, running,
+    stuck and waiting on you, counted as conversations, projects and scheduled tasks, from the records only. It never counts on
+    its own. It reads other conversations, so it follows conversation_search's permissions (#862 review): refused where
+    conversation_search is, and without the conversations conversation_search never reads, or quick questions."""
+
+    key = "progress_report"
+
+    async def execute(self, args: dict) -> dict:
+        from server.db import session as db_session
+        from server.services import conversation_search, personal_context, progress
+        refused = conversation_search.refusal(personal_context.current())
+        if refused is not None:
+            return refused
+        async with db_session.AsyncSessionLocal() as db:
+            return {"ok": True, **await progress.brief(db, hide_private=True)}
+
+
 _CHART_MAX_POINTS = 50
 _CHART_MAX_SERIES = 8
 
@@ -952,10 +970,13 @@ class RunCommandExecutor:
                                          closed=closed, readable=readable,
                                          copies=tool_outputs.given(tool_outputs.conversation.get()),
                                          unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub,
-                                         hold_run_later=terminal_exec.HOLD_RUN_LATER.get())
+                                         hold_run_later=terminal_exec.HOLD_RUN_LATER.get(),
+                                         git_config=terminal_exec.GIT_CONFIG.get())
         head = command if len(command) <= 80 else command[:77] + "…"
         result["summary"] = (f"`{head}` → exit {result['exit_code']}" if not result.get("error", "").startswith("stopped")
                              else f"`{head}` → {result['error']}")
+        if result.get("git_config_note"):
+            result["summary"] += f" · {result['git_config_note']}"    # HR-1b: the user sees it on the step
         return result
 
 
@@ -1138,9 +1159,10 @@ from server.registry.file_tools import (  # noqa: E402 — registry assembly
 EXECUTORS = {e.key: e for e in (
     WebSearchExecutor(), WebExtractExecutor(), ChartExecutor(),
     RunPythonExecutor(), RunCommandExecutor(), ListMyCapabilitiesExecutor(), WhatsNewExecutor(), MyStatusExecutor(),
+    ProgressReportExecutor(),
     FindCapabilityExecutor(), VerifyExecutor(),
     ReadSkillExecutor(), RecallExecutor(), RememberExecutor(), ConversationSearchExecutor(), MemoryNoteExecutor(),
-    TaskProgressExecutor(), DelegateWorkExecutor(),
+    TaskProgressExecutor(), DelegateWorkExecutor(), StartSubSessionExecutor(),   # SUB5e: sub_sessions.start
     StartBackgroundWorkExecutor(), BackgroundStatusExecutor(), StopBackgroundWorkExecutor(),
     # 0.1.45 hands: Arslan's browser and Mac automation (acting only inside background jobs).
     BrowserOpenExecutor(), BrowserLookExecutor(), BrowserBackExecutor(), BrowserClickExecutor(),
