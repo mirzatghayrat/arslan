@@ -167,6 +167,9 @@ async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = F
     except OSError as exc:      # SBX-9: a link swapped while it was resolved (realpath's EINVAL): refused, not raised
         root_pin.release([pin] if pin is not None else [])
         return root, None, None, None, {"ok": False, "error": f"cannot check this path now: {exc.strerror or exc}"}
+    except BaseException:       # #874 review G2: any other failure (ValueError, RuntimeError, cancellation) releases
+        root_pin.release([pin] if pin is not None else [])   # the pin too; it is handed over only on a return
+        raise
 
 
 # macOS 11+: no segment of the path may be a link at the moment of the open. Where it is

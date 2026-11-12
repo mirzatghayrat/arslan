@@ -917,3 +917,21 @@ async def test_a_sub_sessions_write_with_no_known_commanders_workspace_is_refuse
 async def test_outside_a_sub_session_there_is_no_walk_root(db):
     root, walk = await file_tools._write_roots()
     assert root == await _own_folder() and walk is None
+
+
+@pytest.mark.parametrize("error", [ValueError("embedded null byte"), RuntimeError("resolver failed")])
+async def test_a_resolution_error_other_than_a_refusal_releases_the_working_folders_pin(tmp_path, monkeypatch,
+                                                                                        error):
+    """#874 review G2: `_pinned` hands its pin over only on a return. Any exception after the pin is taken (not just
+    PathEscape, SecretFile or OSError) releases it, so a raising resolver leaves no descriptor behind."""
+    async def roots():
+        return tmp_path.resolve(), None
+
+    def raises(*args, **kwargs):
+        raise error
+    monkeypatch.setattr(file_tools, "_write_roots", roots)
+    monkeypatch.setattr(file_tools, "resolve_in_workspace", raises)
+    fds = len(os.listdir("/dev/fd"))
+    with pytest.raises(type(error)):
+        await file_tools._pinned({"path": "a.txt"}, for_write=True)
+    assert len(os.listdir("/dev/fd")) == fds                                   # the pin was released
