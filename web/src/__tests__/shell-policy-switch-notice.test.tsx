@@ -1,7 +1,8 @@
 /**
- * R63 (the user's decision, 10-24): someone migration 0070 moved off "Ask only for risky commands" is told once,
- * after the upgrade. The server leaves `shell_policy_switch_notice = "pending"`; the window shows the notice and
- * writes "seen" at once, so it never shows again. Nobody else ever sees it.
+ * ASK1-a (v0.1.64; the user, 2026-11-07): "Ask only for risky commands" is the default again. Migration 0095 leaves
+ * `shell_policy_switch_notice = "pending"` on an existing install whose stored policy isn't ask_risky; the window
+ * shows the note, with the text for the policy as the server reads it, and writes "seen" at once, so it never shows
+ * again. Nobody else ever sees it.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
@@ -14,8 +15,8 @@ import ShellPolicySwitchNotice from "../components/ShellPolicySwitchNotice";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { AppSettings } from "../api/client.types";
 
-function withFlag(flag: string | undefined) {
-  const settings = { shell_confirm_policy: "ask_all" } as AppSettings;
+function withFlag(flag: string | undefined, policy = "ask_all") {
+  const settings = { shell_confirm_policy: policy } as AppSettings;
   if (flag !== undefined) settings.shell_policy_switch_notice = flag;
   act(() => useSettingsStore.getState().setSettings(settings));
 }
@@ -27,10 +28,21 @@ describe("ShellPolicySwitchNotice", () => {
     useSettingsStore.setState({ settings: null });
   });
 
-  it("a switched user sees it once, with the reason and the way back, and it is marked seen at once", async () => {
+  it.each([
+    ["ask_risky", "settings.policyNoticeRiskyTitle", "settings.policyNoticeRiskyBody"],   // was unset: moved
+    ["ask_all", "settings.policyNoticeAllTitle", "settings.policyNoticeAllBody"],         // stored ask_all: kept
+    ["", "settings.policyNoticeAllTitle", "settings.policyNoticeAllBody"],                // unknown: the strict text
+  ])("the text follows the policy as read (%s)", (policy, title, body) => {
+    withFlag("pending", policy);
+    render(<ShellPolicySwitchNotice />);
+    expect(screen.getByTestId("shell-policy-switch-notice").textContent).toContain(title);
+    expect(screen.getByTestId("shell-policy-switch-notice-body").textContent).toBe(body);
+  });
+
+  it("a told user sees it once, with the way to switch, and it is marked seen at once", async () => {
     withFlag("pending");
     render(<ShellPolicySwitchNotice />);
-    expect(screen.getByTestId("shell-policy-switch-notice-body").textContent).toBe("settings.policyNoticeBody");
+    expect(screen.getByTestId("shell-policy-switch-notice-body").textContent).toBe("settings.policyNoticeAllBody");
     expect(updateSettings).toHaveBeenCalledTimes(1);
     expect(updateSettings).toHaveBeenCalledWith({ shell_policy_switch_notice: "seen" });
     await waitFor(() => expect(useSettingsStore.getState().settings?.shell_policy_switch_notice).toBe("seen"));
