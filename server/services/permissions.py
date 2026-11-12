@@ -45,7 +45,9 @@ logger = logging.getLogger(__name__)
 KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "system", "screen",
                    "opaque", "app", "app_risky", "money", "takeover", "shortcut", "site",
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
-                   "workspace_write", "network", "git_config", "git_include"})
+                   "workspace_write", "network", "git_config",
+                   "run_later",    # HR-2a: a file tool's write into a file that runs later (once only)
+                   "git_include"})  # HR-1c: git after an included file outside the working folder changed
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
 #: of a stored rule or grant that are never a request's own. None today. (§A5 also names the rule
 #: kinds `command_prefix` and `mcp_server`: the PR that first stores one adds it here.)
@@ -57,7 +59,8 @@ _STORED_ONLY: frozenset[str] = frozenset()
 
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
-                        "remote", "takeover"})
+                        "remote", "takeover",
+                        "run_later"})
 #: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
 #: the island and the phone answer only the first choice (§A4).
 _TASK_FIRST = frozenset({"app", "shortcut", "site"})
@@ -84,7 +87,8 @@ _WINDOW_SCOPE_ONLY = frozenset({"outside"})
 _ALWAYS_ASKS = frozenset({"outside"})
 # S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
 # card, as before S4a. One click must not run the same remote command for two jobs.
-_NEVER_JOINED = frozenset({"outside", "remote"})
+_NEVER_JOINED = frozenset({"outside", "remote",
+                           "run_later"})   # HR-2a: one click is one write (the card doesn't show the content)
 # HR-1b: kinds a card offers for this conversation only (and no). The island never answers it (not one of its kinds).
 _CONVERSATION_ONLY = frozenset({"git_config"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.

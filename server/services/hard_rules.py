@@ -101,6 +101,7 @@ _HR1 = _T + "test_hr1_run_later.py::"
 _HR1_KERNEL = _T + "sbx/test_hr1_run_later_kernel.py::"
 _HR1_ALIASES = _T + "sbx/test_hr1_run_later_aliases.py::"
 _HR1_LINK_TARGETS = _T + "sbx/test_hr1_run_later_link_targets.py::"
+_HR2A = _T + "test_hr2a_run_later_writes.py::"
 _HR3 = _T + "test_hr3_run_later_text.py::"
 
 
@@ -130,6 +131,13 @@ RUN_LATER: tuple[HardRule, ...] = (
     # #813 review 10: a held name or held folder that is a link has the held names at its real path held.
     HardRule("run-later/link-targets", "run-later", "kernel", "server.services.run_later:link_filters",
              _HR1_LINK_TARGETS + "test_a_held_name_or_folder_that_is_a_link_has_the_held_names_at_its_target_held"),
+    # HR-2a: the file tools, which run in Arslan's own process (no kernel on their path).
+    HardRule("run-later/file-tools", "run-later", "gate", "server.services.workspace_paths:_refuse_run_later",
+             _HR2A + "test_each_held_name_is_refused_for_a_write"),
+    HardRule("run-later/file-tools-card", "run-later", "permissions", "server.orchestrator.tool_gates:_run_later_card",
+             _HR2A + "test_in_arslans_own_folder_a_held_write_asks_its_own_card_each_time"),
+    HardRule("run-later/write-token", "run-later", "gate", "server.registry.file_tools:_write_inside",
+             _HR2A + "test_a_link_swapped_after_the_click_fails_closed"),
     # HR-3 part 1: the direct forms, read from the command, where the kernel's hold doesn't stand (outside the sandbox).
     HardRule("run-later/direct-forms", "run-later", "parser", f"{_TP}:run_later_targets",
              _HR3 + "test_run_later_targets"),
@@ -161,6 +169,9 @@ NEVER_AUTO: tuple[HardRule, ...] = (
              _T + "test_hard_rules.py::test_what_full_access_still_asks_is_never_auto", kinds=FULL_ACCESS_ASKS),
     HardRule("unknown-kind", "fails-closed", "permissions", f"{_PERMS}:_check",
              _T + "test_permissions.py::test_an_unknown_kind_raises_before_anything_is_asked_stored_or_recorded"),
+    # HR-2a: the run_later kind is once only (the row above); a write request naming such a file is never auto too.
+    HardRule("run-later-write", "once-only", "permissions", "server.services.hard_rules:never_auto",
+             _HR2A + "test_a_run_later_card_or_a_write_naming_a_held_file_is_never_auto"),
 )
 
 
@@ -229,11 +240,29 @@ if not _NAMED <= FORBID_KEYS | ASK_KEYS or not (NEVER_AUTO_KINDS | MAY_AUTO_KIND
 
 def _writes_run_later(request) -> bool:
     """A write into a file that makes something run later. HR-3 part 1: a command's, by a direct form or one it can't
-    read (`terminal_policy.run_later_targets`, the same reading the gate's click-lift rule asks with). HR-2 adds a
-    file tool's write (`run_later.matches`)."""
+    read (`terminal_policy.run_later_targets`, the same reading the gate's click-lift rule asks with).
+    HR-2a: a file tool's write request (`workspace_write`) whose file makes something run later: its detail (the
+    path the model gave) in its target (the work folder) judged by `workspace_paths.held_for_later`, the gate's own
+    test (every link on the way, #813 review 9 and 10), and its detail by name as well (a target that isn't a folder
+    on this Mac judges nothing). Not a string, or a write that can't be told (RunLaterUnknown, an OS error): True.
+    The file tools
+    ask such a write as a `run_later` card of its own (tool_gates), so this holds for a request built some other way."""
+    from pathlib import Path
+
+    from server.services import workspace_paths
     if getattr(request, "kind", None) == "command":
         return bool(terminal_policy.run_later_targets(request.detail))
-    return False
+    if request.kind != "workspace_write":
+        return False
+    detail, target = getattr(request, "detail", None), getattr(request, "target", None)
+    if not isinstance(detail, str):
+        return True
+    try:
+        held = (isinstance(target, str) and Path(target).is_absolute()
+                and workspace_paths.held_for_later(detail, Path(target)) is not None)
+    except (workspace_paths.RunLaterUnknown, OSError, RuntimeError, ValueError):     # ValueError: a NUL in the path
+        return True
+    return held or run_later.matches(detail)
 
 
 def never_auto(request) -> bool:

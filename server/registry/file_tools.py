@@ -18,6 +18,8 @@ import secrets
 import stat
 
 import logging
+from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
 
 from server.db import session as db_session
@@ -84,18 +86,43 @@ def _refusal(exc: Exception) -> dict:
     return {"ok": False, "error": str(exc)}
 
 
+@dataclass
+class _RunLaterToken:
+    path: Path | None
+
+
+#: HR-2a: the path the user's click on this call's run-later card named, set by the gate
+#: (`tool_gates.workspace_write`) for the executor of the same call. One object per call, taken once:
+#: a task the executor runs in copies the context, so taking it clears it for every copy.
+_RUN_LATER: ContextVar[_RunLaterToken | None] = ContextVar("run_later_token", default=None)
+
+
+def approve_run_later(path: Path | None) -> None:
+    """The gate: this call's run-later card was clicked for `path` (None: no click for this call)."""
+    _RUN_LATER.set(_RunLaterToken(path))
+
+
+def _take_run_later() -> Path | None:
+    token = _RUN_LATER.get()
+    if token is None:
+        return None
+    path, token.path = token.path, None
+    return path
+
+
 async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool = False,
-                    key: str = "path",
-                    default: str = ".") -> tuple[Path | None, Path | None, dict | None]:
+                    key: str = "path", default: str = ".",
+                    run_later_ok: Path | None = None) -> tuple[Path | None, Path | None, dict | None]:
     """(root, path, error) — the shared prologue every tool needs."""
     root, pin, path, err = await _pinned(args, for_write=for_write, make_parents=make_parents, key=key,
-                                         default=default)
+                                         default=default, run_later_ok=run_later_ok)
     root_pin.release([pin] if pin is not None else [])
     return root, path, err
 
 
 async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = False, key: str = "path",
-                  default: str = ".") -> tuple[Path | None, root_pin.Pin | None, Path | None, dict | None]:
+                  default: str = ".", run_later_ok: Path | None = None,
+                  ) -> tuple[Path | None, root_pin.Pin | None, Path | None, dict | None]:
     """(root, pin, path, error): `_resolved` with the working folder's pin kept (SBX-9, Astra #855 P1), which a writing
     tool carries to the write and releases. The pin is None whenever the error isn't."""
     root = await _workspace_root()
@@ -107,7 +134,7 @@ async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = F
     try:
         pin = workspace_paths.pin_root(root)
         return root, pin, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
-                                               make_parents=make_parents, pin=pin), None
+                                               make_parents=make_parents, pin=pin, run_later_ok=run_later_ok), None
     except (PathEscape, SecretFile) as exc:
         root_pin.release([pin] if pin is not None else [])
         refused = _refusal(exc)
@@ -124,7 +151,7 @@ async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = F
 _NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
 
 
-def _write_inside(pin: root_pin.Pin, path: Path, text: str) -> None:
+def _write_inside(pin: root_pin.Pin, path: Path, text: str, run_later_ok: Path | None = None) -> None:
     """0.1.62 F4b (R1): write `text` to `path` without following a link out of the workspace.
 
     The path is resolved again now that its folders exist (a segment swapped for a link since
@@ -132,13 +159,15 @@ def _write_inside(pin: root_pin.Pin, path: Path, text: str) -> None:
     where there is one, else O_NOFOLLOW), and os.replace swaps the directory entry: a link
     there is replaced, not followed, and a hard link's other name keeps its old content. A new
     file is 0o666 under the umask (never executable); an overwritten one keeps its mode.
+    HR-2a: a file that runs later is written only if it still resolves to `run_later_ok`, the path
+    this call's card named: a link swapped since the click fails closed.
     Raises PathEscape, SecretFile or OSError; on failure the old file is untouched.
 
     SBX-9: `pin` is the working folder's pin from the tool's resolution (`_pinned`), never a fresh one (Astra #855
     P1); the file's folder is opened from the pin's own descriptor one name at a time, never through a link
     (`open_inside`), and the new file is made, and swapped in, relative to that folder's descriptor; right before
     each, the pinned path is checked to still name that same folder (`check_root`)."""
-    resolve_in_workspace(str(path), pin.path, for_write=True, pin=pin)
+    resolve_in_workspace(str(path), pin.path, for_write=True, pin=pin, run_later_ok=run_later_ok)
     folder = workspace_paths.open_inside(pin, path.parent.relative_to(pin.path).parts)
     try:
         try:
@@ -342,18 +371,20 @@ class WriteFileExecutor:
     key = "write_file"
 
     async def execute(self, args: dict) -> dict:
+        approved = _take_run_later()          # first: an early return leaves no click for a later call (HR-2a)
         content = args.get("content")
         if not isinstance(content, str):
             return {"ok": False, "error": "content must be a string"}
-        root, pin, path, err = await _pinned(args, for_write=True, make_parents=True)
+        root, pin, path, err = await _pinned(args, for_write=True, make_parents=True, run_later_ok=approved)
         if err:
             return err
         try:                                            # SBX-9: one pin from the resolution to the write
-            return await self._write(root, pin, path, content)
+            return await self._write(root, pin, path, content, approved)
         finally:
             root_pin.release([pin])
 
-    async def _write(self, root: Path, pin: root_pin.Pin, path: Path, content: str) -> dict:
+    async def _write(self, root: Path, pin: root_pin.Pin, path: Path, content: str,
+                     approved: Path | None) -> dict:
         # 0.1.63 S3: the run's first change saves the folder first, before any folder is made.
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         _touch_rules(path)
@@ -365,7 +396,7 @@ class WriteFileExecutor:
             return {"ok": False, "error": f"cannot create folder {_rel(path.parent, root)}: {exc}"}
         artifact = _snapshot_write(root, path, content)
         try:
-            _write_inside(pin, path, content)
+            _write_inside(pin, path, content, approved)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:
@@ -384,6 +415,7 @@ class EditFileExecutor:
     key = "edit_file"
 
     async def execute(self, args: dict) -> dict:
+        approved = _take_run_later()          # first: an early return leaves no click for a later call (HR-2a)
         old = args.get("old_string")
         new = args.get("new_string")
         if not isinstance(old, str) or not old:
@@ -394,11 +426,12 @@ class EditFileExecutor:
         if err:
             return err
         try:                                            # SBX-9: one pin from the resolution to the write
-            return await self._edit(root, pin, path, old, new)
+            return await self._edit(root, pin, path, old, new, approved)
         finally:
             root_pin.release([pin])
 
-    async def _edit(self, root: Path, pin: root_pin.Pin, path: Path, old: str, new: str) -> dict:
+    async def _edit(self, root: Path, pin: root_pin.Pin, path: Path, old: str, new: str,
+                    approved: Path | None) -> dict:
         if not path.is_file():
             return {"ok": False, "error": f"file not found: {_rel(path, root)}"}
         try:
@@ -417,7 +450,7 @@ class EditFileExecutor:
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         artifact = _snapshot_write(root, path, updated)
         try:
-            _write_inside(pin, path, updated)
+            _write_inside(pin, path, updated, approved)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:
