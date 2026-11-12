@@ -72,6 +72,18 @@ def window_only(frame: dict) -> bool:
             or _runs_bare(frame))
 
 
+#: S2a-3 step 4b: the run's working folder while `command_confirm` decides its card (`command_gate.run_folder`, the
+#: gate's source). `open_card` keeps it on the card (`Pending.folder`) until the card's last waiter is done. Server-side
+#: only: the frame has no folder key. The island is answered outside the run, so it reads the folder the run read.
+CARD_FOLDER: ContextVar = ContextVar("card_folder", default=None)
+
+
+def card_folder(frame: dict):
+    """The folder `frame`'s command runs in, kept by its waiting card; None (the text alone) for any other frame."""
+    pending = _pending.get(str(frame.get("call_id") or ""))
+    return pending.folder if pending is not None else None
+
+
 def _runs_bare(frame: dict) -> bool:
     """S2a-1 (U11, ⓪Plan for v0.1.63): a command card whose command, approved, runs with no sandbox at all
     (one plain osascript or `shortcuts run`, `task_service.unwrapped_once`) is approved only in the window,
@@ -83,7 +95,7 @@ def _runs_bare(frame: dict) -> bool:
     # The shell line the tool loop runs (terminal_policy.as_shell, as tool_loop builds it), never the
     # card's display field: the card and the executor are judged on the same string (③Hands, #265).
     command = terminal_policy.as_shell(frame.get("command"), frame.get("argv"))
-    return bool(terminal_policy.ask_rules(command) & terminal_policy.BARE_RULES) \
+    return bool(terminal_policy.ask_rules(command, cwd=card_folder(frame)) & terminal_policy.BARE_RULES) \
         and task_service.unwrapped_once(command)
 
 
@@ -106,6 +118,9 @@ class Pending:
     #: that joins it later too — so the card never outlives the expiry it shows, and a step of
     #: the system clock never lengthens or ends a wait.
     deadline: float = 0.0
+    #: S2a-3 step 4b: the run's working folder for a command card (`CARD_FOLDER` when it opened), for as long as the
+    #: card waits. Server-side only; a card from another folder never joins it.
+    folder: object = None
 
     def __post_init__(self) -> None:
         if not self.expires_at:
@@ -132,6 +147,7 @@ def joining(conversation_id: str, frame: dict) -> Pending | None:
         return None
     for existing in _pending.values():
         if (existing.conversation_id == conversation_id and existing.frame.get("dedupe") == key
+                and existing.folder == CARD_FOLDER.get()                   # #872 review B3: one card per folder
                 and not existing.future.done() and remaining(existing) > 0):
             return existing                # (a card whose time is up is not joined: never shown)
     return None
@@ -153,7 +169,7 @@ def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True,
         existing.waiters += 1                  # the same question, already on screen: one card
         return existing
     pending = Pending(frame["call_id"], conversation_id, frame, asyncio.get_running_loop().create_future(),
-                      private=not broadcast)
+                      private=not broadcast, folder=CARD_FOLDER.get())
     _pending[pending.call_id] = pending
     if broadcast:
         # `skip` (S2a-1b, see ws/arslan._ask_everywhere): one socket left out, the Bridge's.
@@ -306,7 +322,8 @@ def island_may_answer(frame: dict) -> bool:
                 or frame.get("network")):
             return False                   # another machine, outside the sandbox, or the network too (S2a-2)
         from server.services import terminal_policy
-        verdict = terminal_policy.assess(str(frame.get("pretty") or ""))
+        # S2a-3 step 4b: from the run's working folder, as the gate and the card read it (`card_folder`)
+        verdict = terminal_policy.assess(str(frame.get("pretty") or ""), cwd=card_folder(frame))
         # S2a-3 step 5: and the card's own rules, read where it runs (`outside-reach` only outside the sandbox)
         return (verdict.level != "forbid" and verdict.rule not in _island_risky_rules()
                 and not set(frame.get("rules") or ()) & _island_risky_rules())
