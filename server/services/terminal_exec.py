@@ -201,10 +201,12 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
 
     HR-1b: `git_config`, the grant, lifts the configs in the sandbox (`_guarded`). Review deltas 3 and 4: once any
     folder had it, every command is checked first (`git_config_guard.recheck`), and not started if that fails.
+    HR-1c, D: every command in the sandbox, and one under the outside floor that holds run-later files, is checked by
+    git's own view of each repository before and after (`_guarded`), where seatbelt can start.
 
     SBX-10: `walk_root`, a sub-session's commander's workspace, is walked for run-later files in the sandbox's
     profile (`command_sandbox.wrapper`); writes stay in `cwd`."""
-    from server.services import execution_context, git_config_guard, run_temp, tool_outputs
+    from server.services import command_sandbox, execution_context, git_config_guard, run_temp, tool_outputs
     note = ""
     if git_config_guard.WATCHED:
         try:
@@ -219,32 +221,49 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         kw = dict(command=command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
                   readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
                   hold_run_later=hold_run_later, walk_root=walk_root)
-        result = await (_guarded(cwd, kw) if git_config and sandbox else _run(**kw))
+        viewed = (sandbox or hold_run_later) and command_sandbox.available()
+        granted = git_config and sandbox
+        result = await (_guarded(cwd, kw, granted=granted, viewed=viewed) if granted or viewed else _run(**kw))
     if note:
         result["git_config_note"] = f"{note} {result.get('git_config_note', '')}".strip()
     return result
 
 
-async def _guarded(cwd: Path, kw: dict) -> dict:
-    """HR-1b: under the grant, the configs saved (else it runs held, and says so), then put back however it ended."""
+async def _guarded(cwd: Path, kw: dict, *, granted: bool, viewed: bool) -> dict:
+    """HR-1b: under the grant, the configs saved (else it runs held, and says so), then put back however it ended.
+    D (`viewed`): git's view saved and compared too, with or without the grant; a config with a second name drops the
+    lift only. When the working folder can't be walked it runs unchecked (held), and says so."""
     from server.services import git_config_guard
-    try:
-        saved = await asyncio.to_thread(git_config_guard.snapshot, cwd, kw["closed"])
-    except (git_config_guard.GuardError, OSError) as exc:
+    note, saved = "", None
+    for lift in (True, False) if granted else (False,):
+        try:
+            saved = await asyncio.to_thread(git_config_guard.snapshot, cwd, kw["closed"], grant=lift, view=viewed)
+            break
+        except (git_config_guard.GuardError, OSError) as exc:
+            if lift:
+                note = (("A git config file in the working folder has a second name (a hard link) or is a link"
+                         if isinstance(exc, git_config_guard.Linked) else "Arslan couldn't look through the working "
+                         "folder's git settings before this command (too many folders, or one it can't read)")
+                        + ", so git couldn't update them this time, as without the git_config permission.")
+            if not viewed or not isinstance(exc, git_config_guard.Linked):
+                break
+    if saved is None:
         result = await _run(**kw)
-        result["git_config_note"] = ((
-            "A git config file in the working folder has a second name (a hard link) or is a link"
-            if isinstance(exc, git_config_guard.Linked) else "Arslan couldn't look through the working folder's git "
-            "settings before this command (too many folders, or one it can't read)")
-            + ", so git couldn't update them this time, as without the git_config permission.")
+        if viewed:
+            note = (f"{note} Arslan couldn't look through the working folder's git repositories before this command, "
+                    "so it couldn't check what git will run or load there afterwards.").strip()
+        result["git_config_note"] = note
         return result
-    git_config_guard.watch(cwd, kw["closed"])          # review delta 3: checked before every later command
+    lifted = saved.grant
+    if lifted:
+        git_config_guard.watch(cwd, kw["closed"])      # review delta 3: checked before every later command
     try:
-        result = await _run(**kw, git_config_ok=True)
+        result = await _run(**kw, git_config_ok=lifted)
     except BaseException:
         _put_back(saved)                 # stopped or failed: still checked, here on the loop (it is quick)
         raise
     message, held = await asyncio.to_thread(_put_back, saved)
+    message = f"{note} {message}".strip()
     if result.pop("git_config_stopped", False):
         message = ("Arslan stopped what this command left running: under the git_config permission nothing may run on "
                    "past the check of the git settings. " + message).strip()
@@ -261,6 +280,8 @@ def _put_back(saved) -> tuple[str, bool]:
     try:
         outcome = git_config_guard.restore(saved)
         message, held = outcome.message(), bool(outcome.held)
+        # HR-1c: a repository changed through an included file outside the work folder: its next git command asks.
+        git_config_guard.mark(tool_outputs.conversation.get(), outcome.marks)
     except Exception:  # noqa: BLE001 — reported to the model and on the step instead
         import logging
         logging.getLogger(__name__).warning("git config restore failed", exc_info=True)

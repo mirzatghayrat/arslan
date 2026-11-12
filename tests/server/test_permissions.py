@@ -822,7 +822,8 @@ SPEC_KINDS = ["command", "folder", "outside", "send", "destructive", "system", "
               "app", "app_risky", "money", "takeover", "shortcut", "site", "mcp_tool", "other_agent",
               "capability", "schedule", "remote", "workspace_write",
               "network",                    # S2a-1: a command reaching the network after outside content
-              "git_config"]                 # HR-1b: git updating the working folder's repository config
+              "git_config",                 # HR-1b: git updating the working folder's repository config
+              "git_include"]                # HR-1c: git after an included file outside the working folder changed
 #: Kinds a caller could mistype (final review probe P1).
 TYPOS = ["payment", "app-risky", "Money"]
 

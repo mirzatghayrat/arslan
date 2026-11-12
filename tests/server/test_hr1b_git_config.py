@@ -70,9 +70,16 @@ def test_section_and_variable_names_fold_case_and_a_subsection_is_verbatim():
 
 # ── the revert, with real git ────────────────────────────────────────────────
 
+def _git_folder(path: Path) -> Path:
+    """What git takes for a git folder (HEAD, objects and refs), so HR-1c's view answers for it."""
+    for name in ("objects", "refs"):
+        (path / name).mkdir(parents=True)
+    (path / "HEAD").write_text("ref: refs/heads/main\n")
+    return path
+
+
 def _repo(ws: Path, name: str = "r", text: str = "") -> Path:
-    config = ws / name / ".git" / "config"
-    config.parent.mkdir(parents=True)
+    config = _git_folder(ws / name / ".git") / "config"
     config.write_text(text)
     return config
 
@@ -277,11 +284,12 @@ async def test_terminal_exec_saves_runs_lifted_and_puts_back(tmp_path, monkeypat
     await terminal_exec.run("true", cwd=ws, sandbox=False, git_config=True)
     assert seen == [True, False]
 
-    def failing(folder, closed=()):
+    def failing(folder, closed=(), **kw):
         raise git_config_guard.GuardError("stand-in")
     monkeypatch.setattr(git_config_guard, "snapshot", failing)
     result = await terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True)
     assert seen == [True, False, False] and "couldn't look through" in result["git_config_note"]
+    assert "git_config permission" in result["git_config_note"]
 
 
 async def test_a_stopped_command_is_still_put_back(tmp_path, monkeypatch):
@@ -421,7 +429,7 @@ async def test_a_held_put_back_ends_the_grant_in_this_process_and_in_the_store(e
     async def run(**kw):
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "sandbox": "workspace"}
     monkeypatch.setattr(terminal_exec, "_run", run)
-    monkeypatch.setattr(git_config_guard, "snapshot", lambda folder, closed=(): git_config_guard.Snapshot(ws, {}))
+    monkeypatch.setattr(git_config_guard, "snapshot", lambda folder, closed=(), **kw: git_config_guard.Snapshot(ws, {}))
     monkeypatch.setattr(git_config_guard, "restore",
                         lambda saved: git_config_guard.Outcome(held=[os.path.join("r", ".git", "config")]))
     asker = _Asker()

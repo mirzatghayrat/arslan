@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "system", "screen",
                    "opaque", "app", "app_risky", "money", "takeover", "shortcut", "site",
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
-                   "workspace_write", "network", "git_config"})
+                   "workspace_write", "network", "git_config", "git_include"})
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
 #: of a stored rule or grant that are never a request's own. None today. (§A5 also names the rule
 #: kinds `command_prefix` and `mcp_server`: the PR that first stores one adds it here.)
@@ -72,7 +72,8 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 # never "Always": no rule, however it was stored, lets every command out for good.
 _NEVER_ALWAYS = (_ONCE_ONLY
                  | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
-                              "mcp_tool", "outside", "git_config"}))  # S1: no "Always" for an MCP tool in this release
+                              "mcp_tool", "outside", "git_config",  # S1: no "Always" for an MCP tool in this release
+                              "git_include"}))   # HR-1c: its card is this time only (`once_only`, command_gate)
 # S4a (⓪Plan review, fix 1): kinds whose "In this conversation" only a Mac window may give. The Inbox lists every
 # conversation's cards, a background job's too: a click there must not let every later command of a conversation
 # the user is not looking at out of the sandbox, past a restart. Elsewhere such a yes is this time.
@@ -107,9 +108,10 @@ _LIVE_GRANT_TARGETS = {
     "app": bool, "site": bool, "shortcut": bool,                           # a bundle id, an origin, a name
 }
 #: Kinds no current request is granted for, besides `_ONCE_ONLY`: `destructive` is asked once only (the MCP card), and
-#: nothing builds a `folder`, `send` or `screen` request. A grant of one of these, of a kind outside KINDS, or of a
-#: target not above (a 0.1.61–0.1.62 rule card's `command` / `rules:<rules>`) is dead.
-_NEVER_GRANTED = frozenset({"destructive", "folder", "send", "screen"})
+#: nothing builds a `folder`, `send` or `screen` request; HR-1c's `git_include` is asked once only too. A grant of one
+#: of these, of a kind outside KINDS, or of a target not above (a 0.1.61–0.1.62 rule card's `command` /
+#: `rules:<rules>`) is dead.
+_NEVER_GRANTED = frozenset({"destructive", "folder", "send", "screen", "git_include"})
 # Every kind is classified, so a kind added later must say whether its grants are read before the page can hide them.
 if set(_LIVE_GRANT_TARGETS) | _ONCE_ONLY | _NEVER_GRANTED != KINDS or set(_LIVE_GRANT_TARGETS) & (_ONCE_ONLY | _NEVER_GRANTED):
     raise AssertionError("every kind is exactly one of: live grant targets, once only, never granted")

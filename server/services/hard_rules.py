@@ -1,6 +1,6 @@
 """The hard rules, written once (v0.1.64 HR-0): what Arslan never does, or never does without the user's own answer.
 
-Four tables, each row naming the rule, the layer that holds it (`LAYERS`), the function that holds it there and the
+Five tables, each row naming the rule, the layer that holds it (`LAYERS`), the function that holds it there and the
 test that proves it:
 
   DIRECT      what a command's text alone decides: the parser's forbid rules (layer ①) and this-time-only rules
@@ -8,7 +8,8 @@ test that proves it:
   RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-3 part 1: a command's
               direct forms outside the sandbox, lifted only by a click on its own card; HR-2 adds the file tools);
   NEVER_AUTO  what only the user answers, never a grant, a rule, a mode or a classifier (`never_auto`);
-  ABSOLUTE    what holds under the least strict settings Arslan has, and the network cut after outside content, by path.
+  ABSOLUTE    what holds under the least strict settings Arslan has, and the network cut after outside content, by path;
+  POST_RUN    what the check after each command undoes or names in git's own view of each repository (HR-1c).
 
 The rule keys and kinds come from the tables that decide them (terminal_policy, permissions), never copied: a row
 names a key, and tests/server/test_hard_rules.py fails when a key or a kind has no row, or a row's test is not
@@ -20,8 +21,9 @@ from dataclasses import dataclass
 
 from server.services import permissions, run_later, terminal_policy
 
-#: Where a rule is held: the command's text, the seatbelt profile, the tool loop's gate, the permission ladder.
-LAYERS = ("parser", "kernel", "gate", "permissions")
+#: Where a rule is held: the command's text, the seatbelt profile, the tool loop's gate, the permission ladder, and
+#: the check after each command (HR-1c: git's own view of each repository, `git_config_guard.restore`).
+LAYERS = ("parser", "kernel", "gate", "permissions", "post-run")
 
 #: Every key the parser's tables give a command: layer ①'s and layer ②'s (with `delete-outside` and `unreadable`).
 FORBID_KEYS = frozenset(key for key, *_ in terminal_policy._FORBID)
@@ -33,7 +35,8 @@ NEVER_AUTO_RULES = terminal_policy.ONCE_ONLY_RULES
 #: would still ask).
 FULL_ACCESS_ASKS = frozenset({"send", "site", "shortcut"})
 NEVER_AUTO_KINDS = (permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
-                    | permissions._CONVERSATION_ONLY)       # HR-1b: git_config, the user's own click only
+                    | permissions._CONVERSATION_ONLY        # HR-1b: git_config, the user's own click only
+                    | {"git_include"})                      # HR-1c: git after an include outside changed
 #: Kinds whose request decides (a command by its rules; HR-2 adds a write by its path). Written out, not derived: a
 #: kind added to permissions.KINDS is never answered automatically until it is placed here or in NEVER_AUTO_KINDS
 #: (the meta-test fails meanwhile).
@@ -151,6 +154,9 @@ NEVER_AUTO: tuple[HardRule, ...] = (
     HardRule("git-config", "user-only", "permissions", f"{_PERMS}:options_for",
              _T + "test_hr1b_git_config.py::test_the_card_asks_once_per_conversation_and_never_leaks_to_another",
              kinds=permissions._CONVERSATION_ONLY),
+    HardRule("git-include", "once-only", "gate", f"{_GATE}:_git_include",
+             _T + "test_hr1c_git_include.py::test_the_marked_repositorys_next_git_command_asks_once_and_not_the_island",
+             kinds=frozenset({"git_include"})),
     HardRule("full-access-still-asks", "user-only", "permissions", "server.services.hard_rules:never_auto",
              _T + "test_hard_rules.py::test_what_full_access_still_asks_is_never_auto", kinds=FULL_ACCESS_ASKS),
     HardRule("unknown-kind", "fails-closed", "permissions", f"{_PERMS}:_check",
@@ -197,7 +203,22 @@ ABSOLUTE: tuple[HardRule, ...] = (
          _T + "test_s2a2_three_layers.py::test_a_card_that_asks_for_the_network_too_says_so_and_the_island_leaves_it"),
 )
 
-ALL: tuple[HardRule, ...] = (*DIRECT, *RUN_LATER, *NEVER_AUTO, *ABSOLUTE)
+def _post_run(key: str, holder: str, test: str) -> HardRule:
+    return HardRule("post-run/" + key, "post-run", "post-run", f"server.services.git_config_guard:{holder}", _T + test)
+
+
+#: HR-1c: what the check after each command in the sandbox (and one under the outside floor that holds run-later
+#: files) undoes or names, from git's own view of each repository (terminal_exec._guarded).
+POST_RUN: tuple[HardRule, ...] = (
+    _post_run("hooks-quarantine", "_check_hooks", "test_hr1c_git_view.py::"
+              "test_a_hook_that_appeared_during_the_command_is_quarantined_and_one_from_before_is_not"),
+    _post_run("config-revert", "_revised",
+              "test_hr1c_git_view.py::test_without_the_grant_a_config_changed_through_another_name_is_put_back"),
+    _post_run("include-check", "_check_includes",
+              "test_hr1c_git_include.py::test_an_include_in_the_work_folder_given_a_program_key_is_quarantined"),
+)
+
+ALL: tuple[HardRule, ...] = (*DIRECT, *RUN_LATER, *NEVER_AUTO, *ABSOLUTE, *POST_RUN)
 
 # A row naming a key or a kind its table does not have would protect nothing (as permissions' scope sets).
 _NAMED = {r.id for r in DIRECT if r.category in ("forbid", "this-time-only")}
