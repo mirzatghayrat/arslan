@@ -19,8 +19,9 @@ HR-1c, D: a path rule can't see a write to what git later reads through another 
 every command in the sandbox, and one under the outside floor that holds run-later files, where seatbelt can start,
 `snapshot(view=True)` also records git's own view of each repository the same walk finds (`view`: git, common and
 hooks folders, `rev-parse` only), each hooks folder's entries and the keys off ALLOWED reached through an include;
-`restore` puts the configs git reads back through the allowlist above (with or without the grant; without it D keeps
-no baseline and adds nothing to WATCHED, and still walks, asks git, writes configs back and quarantines), then
+`restore` puts the configs git reads back through the allowlist above (with or without the grant; without it nothing
+goes into HR-1b's baseline cache `_BASELINES` or into `WATCHED`, while D still walks, asks git, writes configs back,
+quarantines, and keeps the last complete snapshot as the recovery point of a check that didn't finish), then
 quarantines new or changed hooks inside the work folder, names a moved repository, renames aside a new `.git` pointing
 outside, and checks the includes (`_check_includes`). Nothing a repository names runs: files are read directly, and
 git runs only `rev-parse` and `config --list`/`--file` under `_env`, the first two in a read-only, no-network seatbelt
@@ -937,8 +938,28 @@ UNRESOLVED: dict[Path, tuple[str, Snapshot]] = {}
 
 
 def keep_unresolved(unresolved: dict[Path, str], saved: Snapshot) -> None:
+    """Each key with the last complete snapshot; a repository's also under what shares its git metadata
+    (`_sharing`), so a command through another worktree meets the same mark (review delta 2)."""
     for top, why in unresolved.items():
-        UNRESOLVED[top] = (why, saved)
+        for key in {top} | _sharing(top, saved):
+            UNRESOLVED[key] = (why, saved)
+
+
+def _sharing(top: Path, saved: Snapshot) -> set[Path]:
+    """What shares the git common folder D's snapshot recorded for the repository at `top`: that folder, the main
+    worktree above it, and each linked worktree it lists (`worktrees/*/gitdir`, read as a file, never run)."""
+    out: set[Path] = set()
+    for common in {answer[1] for entry, answer in saved.repos.items() if answer and _top_real(entry) == top}:
+        out |= {common} | ({Path(os.path.realpath(common.parent))} if common.name.casefold() == ".git" else set())
+        try:
+            with os.scandir(common / "worktrees") as found:
+                pointers = [Path(each.path) / "gitdir" for each in found if each.is_dir(follow_symlinks=False)]
+        except OSError:
+            continue
+        for pointer in pointers:
+            with contextlib.suppress(OSError):
+                out.add(Path(os.path.realpath(pointer.parent / pointer.read_text(errors="replace").strip())).parent)
+    return out - {top}
 
 
 def touches(top: Path, command: str, cwd: Path) -> bool:
@@ -987,7 +1008,9 @@ def resolve(command: str, cwd: Path) -> Outcome | None:
         outcome.marks.update(result.marks)
         for name in ("reverted", "restored", "quarantined", "aside", "includes_moved", "includes_outside"):
             getattr(outcome, name).extend(getattr(result, name))
-    left = {top: UNRESOLVED[top][0] for top in touched if top in UNRESOLVED}
+    # Review delta 2: every unresolved key now, old or new (a failed recheck can turn a repository's mark into its
+    # folder's, or the folder's into its repositories'), each still holding the last complete snapshot.
+    left = {top: why for top, (why, _) in UNRESOLVED.items() if touches(top, command, cwd)}
     if left:
         raise Refused(f"Arslan couldn't fully check git in {_unresolved_names(left)}, so it didn't run this command, "
                       "which reaches it: a hook or setting left there could run later. Tell the user; commands there "

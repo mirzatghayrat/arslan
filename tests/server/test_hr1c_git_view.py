@@ -473,8 +473,11 @@ class _FakeGit:
     def __call__(self, argv, **kw):
         if argv[0] != git_config_guard._SANDBOX_EXEC:
             return _POPEN(argv, **kw)                             # HR-1b's `config --file` runs (subprocess.run)
-        git = Path(os.path.realpath(next(a for a in argv if a.startswith("--git-dir=")).split("=", 1)[1]))
-        mode = self.mode if self.only is None or self.only in git.parents else "ok"
+        given = Path(next(a for a in argv if a.startswith("--git-dir=")).split("=", 1)[1])
+        mode = self.mode if self.only is None or self.only == given or self.only in given.parents else "ok"
+        git = Path(os.path.realpath(given))
+        if git.is_file():                                         # a linked worktree's `.git` file
+            git = Path(os.path.realpath(git.parent / git.read_text().split(":", 1)[1].strip()))
         if mode == "launch":
             raise OSError(2, "stand-in: not started")
         listing = "--list" in argv
@@ -486,8 +489,8 @@ class _FakeGit:
             return _Proc(b"stand-in\0" if listing else b"stand-in\n")
         if listing:
             return _Proc(b"")
-        common = Path(os.path.realpath((git / "commondir").read_text().strip())) if (git / "commondir").exists() \
-            else git
+        common = Path(os.path.realpath(git / (git / "commondir").read_text().strip())) \
+            if (git / "commondir").exists() else git
         return _Proc(f"{git}\n{common}\n{common / 'hooks'}\n".encode())
 
 
@@ -555,7 +558,10 @@ async def test_g2_a_check_after_the_command_that_cant_finish_refuses_the_next_co
             _in_r1(monkeypatch, r1, "restore", lambda saved, *a: saved.folder, OSError(5, "Input/output error"))
     ran = _fake_run(monkeypatch, effect)
     result = await terminal_exec.run("true", cwd=ws / "r1", sandbox=True)
-    assert ran == [ws / "r1"] and list(git_config_guard.UNRESOLVED) == [ws / "r1"], result.get("git_config_note")
+    # Review delta 2: a repository's mark is also kept under its git common folder (the work folder here is r1's top,
+    # so a folder mark from the walk or the whole check gets it too).
+    common = {ws / "r1" / ".git"}
+    assert ran == [ws / "r1"] and set(git_config_guard.UNRESOLVED) == {ws / "r1"} | common, result.get("git_config_note")
     if what != "check":
         assert "refuses the next command" in result["git_config_note"]
     ran.clear()
@@ -567,7 +573,7 @@ async def test_g2_a_check_after_the_command_that_cant_finish_refuses_the_next_co
         cwd.mkdir(exist_ok=True)
         assert (await terminal_exec.run("true", cwd=cwd, sandbox=True))["ok"]
     assert ran == [ws / "r2", ws.parent / f"{STAND_IN}-elsewhere"]
-    assert list(git_config_guard.UNRESOLVED) == [ws / "r1"]
+    assert set(git_config_guard.UNRESOLVED) == {ws / "r1"} | common
 
 
 _RESTORE = git_config_guard.restore
@@ -603,12 +609,81 @@ async def test_g2_the_repository_stays_refused_until_a_full_check_succeeds_again
     _fake_run(monkeypatch)
     for _ in range(3):
         assert (await terminal_exec.run("true", cwd=ws / "r1", sandbox=True))["code"] == "git_unchecked"
-    assert (ws / "r1" / ".git" / "hooks" / "pre-commit").exists() and list(git_config_guard.UNRESOLVED) == [ws / "r1"]
+    assert (ws / "r1" / ".git" / "hooks" / "pre-commit").exists()
+    assert set(git_config_guard.UNRESOLVED) == {ws / "r1", ws / "r1" / ".git"}
     monkeypatch.setattr(git_config_guard, "restore", _RESTORE)                    # a full check can succeed now
     result = await terminal_exec.run("true", cwd=ws / "r1", sandbox=True)
     assert result["ok"] and "pre-commit" in result["git_config_note"] and git_config_guard.UNRESOLVED == {}
     assert not (ws / "r1" / ".git" / "hooks" / "pre-commit").exists() and _quarantined(tmp_path) == ["pre-commit"]
     assert ran == [ws / "r1"]
+
+
+_WALK = git_config_guard._walk
+
+
+async def test_g2_a_repository_mark_that_becomes_its_folders_mark_on_a_failed_recheck_still_refuses(
+        ws, g2, monkeypatch):
+    """Review delta 2: the command ran in the folder holding r1 and r2; r1's check didn't finish (its mark). Its
+    recheck then can't walk the folder: the mark becomes the folder's, and a command in r1, or in r2 inside that
+    folder, is refused; it still checks against the last complete snapshot."""
+    def effect():
+        g2.mode, g2.only = "timeout", ws / "r1"
+    _fake_run(monkeypatch, effect)
+    await terminal_exec.run("true", cwd=ws, sandbox=True)
+    assert set(git_config_guard.UNRESOLVED) == {ws / "r1", ws / "r1" / ".git"}
+    saved = git_config_guard.UNRESOLVED[ws / "r1"][1]
+    _in_r1(monkeypatch, ws, "_walk", lambda folder, *a: folder,
+           git_config_guard.GuardError("more than 30000 folders to check"))
+    ran = _fake_run(monkeypatch)
+    for cwd in (ws / "r1", ws / "r2"):
+        refused = await terminal_exec.run("git status", cwd=cwd, sandbox=True)
+        assert refused["code"] == "git_unchecked" and "looked through" in refused["git_config_note"], cwd
+    assert ran == [] and set(git_config_guard.UNRESOLVED) == {ws}
+    assert git_config_guard.UNRESOLVED[ws][1] is saved
+    monkeypatch.setattr(git_config_guard, "_walk", _WALK)
+    g2.mode = "ok"
+    assert (await terminal_exec.run("git status", cwd=ws / "r1", sandbox=True))["ok"] and ran == [ws / "r1"]
+    assert git_config_guard.UNRESOLVED == {}
+
+
+async def test_g2_a_folder_mark_that_becomes_repository_marks_on_a_failed_recheck_still_refuses_each(
+        ws, g2, monkeypatch):
+    """Review delta 2: the folder couldn't be walked after the command (its mark); at the recheck it can, but git
+    gives no answer for r2. A command run in the healthy r1 that reaches r2 (`git -C ../r2`) is refused by r2's new
+    mark, though its own folder checks fine; then r1's own command runs, and r2's is refused."""
+    _fake_run(monkeypatch, lambda: _in_r1(monkeypatch, ws, "_walk", lambda folder, *a: folder,
+                                          git_config_guard.GuardError("more than 30000 folders to check")))
+    await terminal_exec.run("true", cwd=ws, sandbox=True)
+    assert set(git_config_guard.UNRESOLVED) == {ws}
+    monkeypatch.setattr(git_config_guard, "_walk", _WALK)
+    g2.mode, g2.only = "timeout", ws / "r2"
+    ran = _fake_run(monkeypatch)
+    refused = await terminal_exec.run("git -C ../r2 status", cwd=ws / "r1", sandbox=True)
+    assert refused["code"] == "git_unchecked" and "answer" in refused["git_config_note"] and ran == []
+    assert set(git_config_guard.UNRESOLVED) == {ws / "r2", ws / "r2" / ".git"}
+    assert (await terminal_exec.run("true", cwd=ws / "r1", sandbox=True))["ok"] and ran == [ws / "r1"]
+    assert (await terminal_exec.run("git status", cwd=ws / "r2", sandbox=True))["code"] == "git_unchecked"
+
+
+async def test_g2_a_worktree_sharing_an_unresolved_repositorys_git_metadata_is_refused_too(ws, g2, monkeypatch):
+    """Review delta 2: `main` and a linked worktree `wt` share one common folder (`main/.git`); main's check didn't
+    finish, and a command in `wt`, which no path of main's reaches, meets the same mark."""
+    main = ws / "main" / ".git"
+    _git_folder(main)
+    (_git_folder(main / "worktrees" / "wt") / "commondir").write_text("../..\n")
+    (ws / "wt").mkdir()
+    (ws / "wt" / ".git").write_text(f"gitdir: {main / 'worktrees' / 'wt'}\n")
+    (main / "worktrees" / "wt" / "gitdir").write_text(f"{ws / 'wt' / '.git'}\n")
+
+    def effect():
+        g2.mode, g2.only = "timeout", main
+    _fake_run(monkeypatch, effect)
+    await terminal_exec.run("true", cwd=ws / "main", sandbox=True)
+    assert set(git_config_guard.UNRESOLVED) == {ws / "main", main, ws / "wt"}
+    ran = _fake_run(monkeypatch)
+    refused = await terminal_exec.run("git status", cwd=ws / "wt", sandbox=True)
+    assert refused["code"] == "git_unchecked" and ran == []
+    assert (await terminal_exec.run("true", cwd=ws / "r2", sandbox=True))["ok"] and ran == [ws / "r2"]
 
 
 async def test_g2_with_no_git_binary_it_is_a_note_not_a_refusal(ws, g2, monkeypatch):

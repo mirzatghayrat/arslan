@@ -175,7 +175,7 @@ def test_git_failing_to_list_the_effective_config_refuses_the_next_command_there
     git_config_guard.keep_unresolved(outcome.unresolved, saved)
     with pytest.raises(git_config_guard.Refused, match="couldn't list its settings"):
         git_config_guard.resolve("git status", ws / "r")
-    assert list(git_config_guard.UNRESOLVED) == [ws / "r"]
+    assert set(git_config_guard.UNRESOLVED) == {ws / "r", ws / "r" / ".git"}       # its top and its common folder
 
 
 # ── the card ─────────────────────────────────────────────────────────────────
