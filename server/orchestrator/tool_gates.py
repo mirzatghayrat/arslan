@@ -75,12 +75,20 @@ async def file_arguments(tool_key, args, turn: ToolTurn) -> dict | None:
 async def _held_for_later(args) -> Path | None:
     """HR-2a: the resolved path when this write is into a file that runs later, else None (an ordinary write, or
     one the executor refuses on its own). `workspace_paths.held_for_later`, the test `hard_rules` uses too; its
-    RunLaterUnknown (an unreadable git config) propagates, for the gate to refuse before any card."""
+    RunLaterUnknown (an unreadable git config) propagates, for the gate to refuse before any card.
+    SBX-10 parity: in a sub-session the commander's workspace is walked too (`file_tools._write_roots`, the executor's
+    own); one that isn't known, can't be pinned or doesn't hold the sub-session's folder is RunLaterUnknown."""
+    from server.registry import file_tools
     from server.services import workspace_paths
-    root = await _workspace_root_or_none()
+    try:
+        root, walk = await file_tools._write_roots()
+    except workspace_paths.RunLaterUnknown:
+        raise
+    except Exception:  # noqa: BLE001 — as `_workspace_root_or_none`: no folder known, the executor refuses on its own
+        return None
     if root is None:
         return None
-    return workspace_paths.held_for_later(args.get("path"), root)
+    return workspace_paths.held_for_later(args.get("path"), root, walk_root=walk)
 
 
 async def _run_later_card(path: Path, conversation_id: str | None) -> dict | None:

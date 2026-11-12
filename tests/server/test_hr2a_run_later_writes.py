@@ -28,6 +28,8 @@ from server.services import (approvals, command_confirm, hard_rules, permission_
 from server.services.workspace_paths import PathEscape, RunLater, RunLaterUnknown, resolve_in_workspace
 from tests.server.sbx.test_hr1_run_later_link_targets import LAYOUTS as HR1_LAYOUTS
 from tests.server.sbx.test_hr1_run_later_link_targets import _lay_out as hr1_lay_out
+from tests.server.sbx.test_sbx10_walk_roots import LAYOUTS as SBX10_LAYOUTS
+from tests.server.sbx.test_sbx10_walk_roots import _lay_out as sbx10_lay_out
 from tests.server.test_s64_0_outside_content_gaps import memory  # noqa: F401  (the fixture)
 from tests.server.test_sub4_report import OUTLINE as _SUB_BRIEF
 from tests.server.test_sub4_report import ROOT as _SUB_ROOT
@@ -760,10 +762,11 @@ async def test_a_sub_sessions_held_write_in_its_own_folder_asks_its_card_and_its
     `.claude/settings.json` each ask a once-only run_later card, past the sub-session's own write grant (and its
     commander's): yes writes the first, no leaves the second unwritten. An ordinary file asks no run_later card.
 
-    The dependency exemption is the write root's: the commander's workspace has an alias at a held name outside the
-    sub-session's folder (which takes the exemption away from a walk of the whole workspace), and a copy below the
-    sub-session's own node_modules is still written with no card, as its command's profile, walking only its folder,
-    would let it."""
+    SBX-10 parity (#870): the dependency exemption is the joint walk's, the sub-session's folder and its commander's
+    workspace: the commander's workspace has an alias at a held name outside the sub-session's folder, which takes the
+    exemption away, so a copy below the sub-session's own node_modules asks its card too, as its command's profile,
+    walking the commander's workspace as well, holds it (`run_later_folders(walk_roots=...).aliased`)."""
+    from server.services import command_sandbox
     from server.services import run_registry, sub_sessions
     ws, sinks = child_ws
     shown: list = []
@@ -801,7 +804,10 @@ async def test_a_sub_sessions_held_write_in_its_own_folder_asks_its_card_and_its
     run_later_cards = [(f["target"], f["options"]) for f in shown
                        if f.get("type") == "propose_action" and f.get("perm_kind") == "run_later"]
     assert run_later_cards == [(str(folder / ".vscode" / "tasks.json"), ["once"]),
-                               (str(folder / ".claude" / "settings.json"), ["once"])]
+                               (str(folder / ".claude" / "settings.json"), ["once"]),
+                               (str(folder / "node_modules" / "pkg" / ".vscode" / "tasks.json"), ["once"])]
+    assert command_sandbox.run_later_folders([folder], walk_roots=[ws]).aliased      # the kernel's view, the same
+    assert not command_sandbox.run_later_folders([folder]).aliased                   # and the child's folder alone
     # The no is the gate's: that write never reached the executor, and the model was told the user said no.
     ran = [(args["path"], result["ok"]) for key, args, result in _SUB_LOG if key == "write_file"]
     assert ran == [(".vscode/tasks.json", True), ("notes.md", True), ("node_modules/pkg/.vscode/tasks.json", True)]
@@ -812,3 +818,102 @@ async def test_a_sub_sessions_held_write_in_its_own_folder_asks_its_card_and_its
     assert (folder / "notes.md").read_text() == "plain"                 # the negative control: no run_later card
     assert (folder / "node_modules" / "pkg" / ".vscode" / "tasks.json").read_text() == "{}"
     assert not (ws / ".vscode").exists() and not (ws / ".claude").exists() and not (ws / "notes.md").exists()
+
+
+# ── SBX-10 parity: a sub-session's check walks its commander's workspace (#870) ──
+
+@pytest.mark.parametrize("layout", sorted(SBX10_LAYOUTS))
+def test_a_commanders_link_into_the_childs_folder_is_held_for_the_child(tmp_path, layout):
+    """SBX-10's layouts (`.git/hooks -> sub/kid/hk`, `.vscode -> sub/kid/v`, the commander's `core.hooksPath` set into
+    the child's folder, which has a `.git` of its own): with the commander's workspace as the walk root the held
+    targets are held, the other files aren't. The control: the child's folder alone (no walk root) holds none."""
+    ws, kid, writes = sbx10_lay_out(tmp_path, layout)
+    for path, want in writes:
+        held = workspace_paths.held_for_later(path, kid, walk_root=ws)
+        assert held == (kid / path if want == "refused" else None), path
+        assert workspace_paths.held_for_later(path, kid) is None, path
+
+
+def test_a_walk_root_that_isnt_pinned_or_doesnt_hold_the_childs_folder_refuses(tmp_path):
+    ws, kid, _ = sbx10_lay_out(tmp_path, "vscode")
+    other, alias = ws.parent / "other", ws.parent / "ws-link"
+    other.mkdir()
+    alias.symlink_to(ws, target_is_directory=True)
+    fds = len(os.listdir("/dev/fd"))
+    for walk in (other, alias, kid / "v"):            # elsewhere; a link to it (not pinned); inside the child's folder
+        for path in ("v/settings.json", "v/other.json"):
+            with pytest.raises(RunLaterUnknown, match="commander's workspace"):
+                workspace_paths.held_for_later(path, kid, walk_root=walk)
+    assert len(os.listdir("/dev/fd")) == fds                                   # every pin released
+    assert workspace_paths.held_for_later("v/settings.json", kid, walk_root=kid) is None    # the folder itself holds
+
+
+@pytest.fixture
+def kid_session(db, tmp_path, monkeypatch):
+    """A sub-session's run in `ws/sub/kid` (SBX-10's `.vscode -> sub/kid/v` layout), with the commander's workspace
+    `state["workspace"]` as `settings_service.workspace_dir` reads it, through the real gate and executors."""
+    from server.services import checkpoints, settings_service
+    ws, kid, _ = sbx10_lay_out(tmp_path, "vscode")
+    state = {"workspace": ws}
+
+    async def for_run(session):
+        return kid
+
+    async def workspace(session):
+        return state["workspace"]
+
+    async def no_save(*args, **kwargs):
+        return None
+    monkeypatch.setattr(settings_service, "run_sub_folder", lambda: ("kid",))
+    monkeypatch.setattr(settings_service, "workspace_dir_for_run", for_run)
+    monkeypatch.setattr(settings_service, "workspace_dir", workspace)
+    monkeypatch.setattr(checkpoints, "ensure", no_save)
+    return ws, kid, state
+
+
+async def test_a_sub_sessions_write_into_a_commanders_link_target_asks_its_card(kid_session):
+    """Through the tool loop: the write to `v/settings.json` (the commander's `.vscode/settings.json`) asks its
+    once-only run_later card naming it, and a no leaves it as it was; the executor alone (no click) refuses it; an
+    ordinary file beside it is written."""
+    ws, kid, _ = kid_session
+    no = _Asker(False)
+    with permissions.asking_with(no):
+        out = await _dispatch("write_file", {"path": "v/settings.json", "content": "zz"})
+    assert out["ok"] is False and "said no" in out["error"], out
+    assert [(f["perm_kind"], f["target"]) for f in no.frames] == [("run_later", str(kid / "v" / "settings.json"))]
+    direct = await file_tools.WriteFileExecutor().execute({"path": "v/settings.json", "content": "zz"})
+    assert direct["ok"] is False and "runs later" in direct["error"], direct
+    edit = await file_tools.EditFileExecutor().execute({"path": "v/settings.json", "old_string": "old",
+                                                         "new_string": "zz"})
+    assert edit["ok"] is False and "runs later" in edit["error"], edit
+    assert (kid / "v" / "settings.json").read_text() == "old"
+    plain = await file_tools.WriteFileExecutor().execute({"path": "v/other.json", "content": "zz"})
+    assert plain["ok"] is True and (kid / "v" / "other.json").read_text() == "zz"
+
+
+@pytest.mark.parametrize("commander", ["unknown", "elsewhere"])
+async def test_a_sub_sessions_write_with_no_known_commanders_workspace_is_refused(kid_session, tmp_path, commander):
+    """Closed, as SBX-10's command doesn't start: the gate refuses before any card, and the executor refuses even an
+    ordinary file, when the commander's workspace isn't known or doesn't hold the sub-session's folder."""
+    from server.orchestrator import tool_gates
+    _, kid, state = kid_session
+    other = tmp_path / "other"
+    other.mkdir()
+    state["workspace"] = None if commander == "unknown" else other.resolve()
+    for path in ("v/settings.json", "v/other.json"):
+        with pytest.raises(RunLaterUnknown, match="commander's workspace"):
+            await tool_gates._held_for_later({"path": path})
+        out = await file_tools.WriteFileExecutor().execute({"path": path, "content": "zz"})
+        assert out["ok"] is False and "commander's workspace" in out["error"], out
+
+    async def no_card(frame):
+        raise AssertionError(f"no card when the commander's workspace can't be told: {frame}")
+    with permissions.asking_with(no_card):
+        gated = await _dispatch("write_file", {"path": "v/settings.json", "content": "zz"})
+    assert gated["ok"] is False and "commander's workspace" in gated["error"], gated
+    assert [(kid / p).read_text() for p in ("v/settings.json", "v/other.json")] == ["old", "old"]
+
+
+async def test_outside_a_sub_session_there_is_no_walk_root(db):
+    root, walk = await file_tools._write_roots()
+    assert root == await _own_folder() and walk is None
