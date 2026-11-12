@@ -21,7 +21,8 @@ from server.orchestrator import command_gate
 
 #: Spellings the old, forgiving reader took as ask_risky. The reader and 0070 now share one rule, the exact
 #: value Settings writes, so each of these reads ask_all before 0070 and after it (#398 review, F1).
-ODD = ["ask_risky\t", "\nask_risky", " ask_risky", "ask_risky　", " ASK_RISKY ", "ASK_RISKY"]
+ODD = ["ask_risky\t", "\nask_risky", chr(0xA0) + "ask_risky", "ask_risky" + chr(0x3000), " ASK_RISKY ",
+       "AS" + chr(0x212A) + "_RISKY"]                     # NBSP, ideographic space, Kelvin sign: spelled out
 
 
 async def _boot(db_path) -> None:

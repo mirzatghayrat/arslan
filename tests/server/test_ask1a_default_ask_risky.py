@@ -90,7 +90,7 @@ async def test_a_new_install_asks_only_for_risky_commands(tmp_path):
 @pytest.mark.parametrize("stored, reads", [
     ("ask_risky", "ask_risky"), ("ask_all", "ask_all"),
     ("", "ask_all"), ("garbage", "ask_all"), (" ask_risky", "ask_all"),
-    ("ASK_RISKY", "ask_all"), ("ask_risky ", "ask_all"), ("ask_everything", "ask_all"),
+    ("ASK_RISKY", "ask_all"), ("ask_risky" + chr(0xA0), "ask_all"), ("ask_everything", "ask_all"),   # NBSP spelled out
 ])
 async def test_only_unset_and_the_exact_value_read_ask_risky(tmp_path, stored, reads):
     """Anything unreadable stays strict: an unknown spelling reads ask_all, and a stored ask_all stays."""
@@ -109,6 +109,8 @@ async def test_only_unset_and_the_exact_value_read_ask_risky(tmp_path, stored, r
     (None, None, "pending"),               # moves to ask_risky, and told so
     (None, "pending", "pending"),
     ("garbage", None, "pending"),          # reads ask_all: told how to switch
+    (" ASK_RISKY ", None, "pending"),      # a near miss reads ask_all, so it is told too (0095 matches exactly)
+    ("ask_risky\n", "pending", "pending"),
     ("ask_risky", "pending", None),        # nothing changes for it: the pending 0070 notice is cleared
     ("ask_risky", None, None),
     ("ask_risky", "seen", "seen"),         # only a pending notice is cleared
@@ -152,6 +154,22 @@ def test_0095_twice_leaves_the_same_rows(tmp_path, stored, before):
         engine.dispose()
     assert once == twice
     assert dict(once).get("shell_confirm_policy") == stored
+
+
+@pytest.mark.parametrize("stored", [None, "ask_all"])
+def test_0095_called_on_its_own_counts_the_install_as_existing(tmp_path, stored):
+    """No runner marker on the connection (as 0070 reads it): the install is an existing one and gets the note."""
+    db = tmp_path / "bare-call.db"
+    _before_0095(db)
+    _seed(db, shell_confirm_policy=stored)
+    engine = sa.create_engine(f"sqlite:///{db}")
+    try:
+        with engine.begin() as conn:
+            assert runner.EXISTED_BEFORE_THIS_BOOT not in conn.info
+            m0095.upgrade_sync(conn)
+    finally:
+        engine.dispose()
+    assert _rows(db).get(NOTE) == "pending"
 
 
 def test_0095_leaves_a_database_without_settings_alone(tmp_path):
