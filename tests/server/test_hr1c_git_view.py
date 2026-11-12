@@ -389,7 +389,8 @@ async def test_without_the_grant_a_config_changed_through_another_name_is_put_ba
     result = await terminal_exec.run("true", cwd=ws, sandbox=True, git_config=False)
     assert lifted == [False] and (real / "config").read_bytes() == before
     assert "core.hookspath" in result["git_config_note"] and STAND_IN not in result["git_config_note"]
-    # No grant: no baseline kept, and the folder isn't checked before later commands.
+    # No grant: nothing in HR-1b's baseline cache and nothing in WATCHED, so HR-1b's pre-command check doesn't run
+    # for this folder. D's own recovery snapshot (for the fail-closed recheck) is a separate store.
     assert not any(ws in Path(os.path.realpath(p)).parents for p in git_config_guard._BASELINES)
     assert ws not in git_config_guard.WATCHED
 
