@@ -59,11 +59,14 @@ async def _check(command: str, confirm_command):
 
 @pytest.fixture
 def shown(monkeypatch):
-    """The real card (`command_confirm`), its decision replaced by a no: what it would show, and nothing runs."""
+    """The real card (`command_confirm`), its decision replaced by a no: what it would show, and nothing runs. The
+    island is asked while the card waits, as the island page asks."""
     requests: list = []
 
     async def decide(request, context):
-        requests.append(request)
+        # The island on the card, and its own reading alone (the card's rules left out): both from the run's folder.
+        requests.append((request, (approvals.island_may_answer(request.frame),
+                                   approvals.island_may_answer({**request.frame, "rules": []}))))
         return permissions.Decision(False, "user", "once")
     monkeypatch.setattr(permissions, "decide", decide)
     return requests
@@ -77,10 +80,23 @@ async def test_a_change_of_folder_out_of_the_working_folder_asks_delete_outside(
     result = await _check(command, command_confirm.Confirmations("c1").command)
     assert isinstance(result, dict) and result["ok"] is False, result        # a card, answered no: not a run
     assert len(shown) == 1
-    frame = shown[0].frame
-    assert "delete-outside" in frame["rules"]                    # the card's rules agree with the gate's verdict
-    assert frame["cwd"] == str(work)
-    assert approvals.island_may_answer(frame) is False           # and the island leaves it to Arslan
+    (request, island), = shown
+    assert "delete-outside" in request.frame["rules"]            # the card's rules agree with the gate's verdict
+    assert island == (False, False)                              # and the island, asked while it waits, agrees
+    assert approvals.CARD_FOLDERS == {}                          # held only while the card waits
+
+
+async def test_the_card_frame_keys_are_unchanged(folders, risky_with_grant, shown, monkeypatch):
+    """No folder key on the frame (not a Bridge frame change): a card that asks the same with a folder and with none
+    (main's reading) has the same keys."""
+    work, elsewhere = folders
+    command = f"rm {elsewhere / STAND_IN}"
+    keys = []
+    for folder in (None, work):
+        _work_folder(monkeypatch, folder)
+        await command_confirm.Confirmations("c1").command(command, [])
+        keys.append(set(shown[-1][0].frame))
+    assert keys[0] == keys[1] and "cwd" not in keys[1]
 
 
 async def test_the_same_command_into_a_folder_inside_runs_as_before(folders, risky_with_grant, shown, monkeypatch):
@@ -109,11 +125,14 @@ async def test_the_gate_card_and_island_read_one_folder(folders, risky_with_gran
 
 
 @pytest.mark.parametrize("cwd, island", [(None, True), ("work", False)])
-def test_the_island_reads_the_cards_folder(folders, cwd, island):
-    """The island's own reading of a card with no rules on it: from the card's folder, else as before."""
+def test_the_island_reads_the_cards_folder(folders, cwd, island, monkeypatch):
+    """The island's own reading of a card with no rules on it: from the folder held for the waiting card, else as
+    before."""
     work, elsewhere = folders
-    frame = {"type": "propose_run_command", "pretty": f"cd {elsewhere} && rm {STAND_IN}", "perm_kind": "command",
-             **({"cwd": str(work)} if cwd else {})}
+    if cwd:
+        monkeypatch.setitem(approvals.CARD_FOLDERS, "zz-call", work)
+    frame = {"type": "propose_run_command", "call_id": "zz-call", "pretty": f"cd {elsewhere} && rm {STAND_IN}",
+             "perm_kind": "command"}
     assert approvals.island_may_answer(frame) is island
 
 

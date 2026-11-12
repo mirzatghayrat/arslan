@@ -72,6 +72,17 @@ def window_only(frame: dict) -> bool:
             or _runs_bare(frame))
 
 
+#: S2a-3 step 4b: each waiting command card's working folder, by call id, as `command_confirm` read it
+#: (`command_gate.run_folder`, the gate's source). Server-side only: the frame has no folder key. The island is
+#: answered outside the run (no await, no sub-session), so it reads the folder the run read.
+CARD_FOLDERS: dict[str, object] = {}
+
+
+def card_folder(frame: dict):
+    """The folder `frame`'s command runs in, while its card waits; None (the text alone) otherwise."""
+    return CARD_FOLDERS.get(str(frame.get("call_id") or ""))
+
+
 def _runs_bare(frame: dict) -> bool:
     """S2a-1 (U11, ⓪Plan for v0.1.63): a command card whose command, approved, runs with no sandbox at all
     (one plain osascript or `shortcuts run`, `task_service.unwrapped_once`) is approved only in the window,
@@ -83,7 +94,7 @@ def _runs_bare(frame: dict) -> bool:
     # The shell line the tool loop runs (terminal_policy.as_shell, as tool_loop builds it), never the
     # card's display field: the card and the executor are judged on the same string (③Hands, #265).
     command = terminal_policy.as_shell(frame.get("command"), frame.get("argv"))
-    return bool(terminal_policy.ask_rules(command, cwd=frame.get("cwd")) & terminal_policy.BARE_RULES) \
+    return bool(terminal_policy.ask_rules(command, cwd=card_folder(frame)) & terminal_policy.BARE_RULES) \
         and task_service.unwrapped_once(command)
 
 
@@ -306,8 +317,8 @@ def island_may_answer(frame: dict) -> bool:
                 or frame.get("network")):
             return False                   # another machine, outside the sandbox, or the network too (S2a-2)
         from server.services import terminal_policy
-        # S2a-3 step 4b: from the run's working folder, as the gate and the card read it (`command_confirm`'s `cwd`)
-        verdict = terminal_policy.assess(str(frame.get("pretty") or ""), cwd=frame.get("cwd"))
+        # S2a-3 step 4b: from the run's working folder, as the gate and the card read it (`card_folder`)
+        verdict = terminal_policy.assess(str(frame.get("pretty") or ""), cwd=card_folder(frame))
         # S2a-3 step 5: and the card's own rules, read where it runs (`outside-reach` only outside the sandbox)
         return (verdict.level != "forbid" and verdict.rule not in _island_risky_rules()
                 and not set(frame.get("rules") or ()) & _island_risky_rules())

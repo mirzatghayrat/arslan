@@ -154,8 +154,6 @@ class Confirmations:
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable, outside=outside)    # LOOP1 d2b: read as the gate read it
         frame.update(_delete_keys(delete, shell))
-        if cwd is not None:
-            frame["cwd"] = str(cwd)     # S2a-3 step 4b: the island reads the card from it too (an extra key, as above)
         # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
         # its rules card too; otherwise as before, "ask for every command" asks where it would run.
         unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
@@ -164,8 +162,13 @@ class Confirmations:
                                              delete_mode=delete, run_later=run_later)
         if deletes:     # the model's English text; the title and the card word `delete_mode` themselves
             request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
-        with self._surface():
-            decision = await permissions.decide(request, self._context())
+        # S2a-3 step 4b: the island reads this card from the same folder, held server-side while it waits (no frame key)
+        approvals.CARD_FOLDERS[frame["call_id"]] = cwd
+        try:
+            with self._surface():
+                decision = await permissions.decide(request, self._context())
+        finally:
+            approvals.CARD_FOLDERS.pop(frame["call_id"], None)
         return decision.allowed
 
 
