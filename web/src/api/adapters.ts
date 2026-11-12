@@ -72,7 +72,8 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     language: backend.language ?? "en",
     // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
     // both default OFF / most-cautious when absent.
-    // Mirrors settings_service.shell_enabled / shell_confirm_policy: unset means ON (0.1.48) and ask_all (v0.1.63).
+    // Mirrors settings_service.shell_enabled: unset means ON (0.1.48). The policy arrives as the server reads it
+    // (ASK1-a: unset is ask_risky, an odd spelling ask_all); a missing field stays strict.
     orchestratorShellEnabled: backend.orchestrator_shell_enabled !== "false",
     shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
     // 0.1.43: budget tier for one background job; unknown → the server's default.

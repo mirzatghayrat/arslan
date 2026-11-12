@@ -5,9 +5,12 @@ approved that on 2026-11-11). ③Hands' four conditions are pinned here: the tit
 prefix stays on the new title, an unread command keeps today's reading, and the card keeps the full command text."""
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from server.services import card_purpose, command_confirm, command_sandbox, permissions, terminal_policy as tp
+from server.services import (card_purpose, command_confirm, command_sandbox, permissions, settings_service,
+                             terminal_policy as tp)
 from tests.server.test_s2a3_outside_reach import _dispatch, gate  # noqa: F401  (`gate` is a fixture)
 
 S = card_purpose.summarize
@@ -208,6 +211,9 @@ class _Seen:
 @pytest.fixture
 def seen(monkeypatch):
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    # The card for every command, as these titles were written under (ASK1-a made unset read ask_risky, where a
+    # command with no rule reaches its card only with no sandbox, and is titled so).
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_all"))
     decide = _Seen()
     monkeypatch.setattr(permissions, "decide", decide)
     return decide.requests

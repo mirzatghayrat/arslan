@@ -160,8 +160,8 @@ async def test_every_decision_is_one_ledger_row_with_its_scope_and_wait():
     assert [(e.decided_by, e.decision, e.scope) for e in events] == [
         ("user", "allow", "conversation"), ("grant", "allow", "conversation")]
     assert events[0].wait_ms is not None and events[1].wait_ms is None
-    # v0.1.63: unset asks before every command, which the ledger calls Careful.
-    assert events[0].conversation_id == "conv-1" and events[0].mode == "careful"
+    # ASK1-a (v0.1.64): unset asks only for risky commands, which the ledger calls Standard.
+    assert events[0].conversation_id == "conv-1" and events[0].mode == "standard"
 
 
 async def test_decide_many_asks_once_for_the_apps_not_yet_allowed():

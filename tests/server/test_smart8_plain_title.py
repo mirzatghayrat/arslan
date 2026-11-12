@@ -247,8 +247,14 @@ async def test_a_card_reads_its_command_once(execution_db, monkeypatch, cmd, kw,
 async def test_a_card_whose_frame_reads_other_text_titles_from_its_own(execution_db, monkeypatch):
     """The older {command, argv} form: the title reads the quoted shell line, the frame its plain join; neither takes
     the other's reading."""
-    # The card runs in the sandbox (CI's Linux has none, so its title would lead with "No sandbox").
+    # The card runs in the sandbox (CI's Linux has none, so its title would lead with "No sandbox"), under "ask for every
+    # command": since ASK1-a an unset policy reads ask_risky, where this card comes only with no sandbox.
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    from server.services import settings_service
+
+    async def ask_all(_db):
+        return "ask_all"
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", ask_all)
     assert await _title(cmd=("rm", ["a b"])) == card_purpose.phrase("rm 'a b'") == "Delete 1 file or folder"
 
 

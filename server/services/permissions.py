@@ -647,7 +647,7 @@ async def _mode() -> str:
     try:
         async with db_session.AsyncSessionLocal() as db:
             policy = await settings_service.shell_confirm_policy(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default (ask_all since v0.1.63)
+    except Exception:  # noqa: BLE001 — an unreadable setting stays strict (ask_all), whatever the default
         return "careful"
     return "careful" if policy == "ask_all" else "standard"
 

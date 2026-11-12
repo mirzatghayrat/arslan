@@ -254,6 +254,9 @@ async def _settings_out(session: AsyncSession) -> SettingsOut:
 
     from server.services import checkpoints
     data = await settings_service.get_settings(session)
+    # ASK1-a: the policy as the server reads it (unset is ask_risky, an odd spelling ask_all), so the window shows
+    # what applies and needs no copy of the rule.
+    data["shell_confirm_policy"] = await settings_service.shell_confirm_policy(session)
     # S3b: the folder as set (Arslan's own when empty), never created by reading Settings; the check reads
     # the disk, so off the event loop (⓪Plan's review 🟡10). A folder that isn't there reads False.
     raw = str(data.get("workspace_dir") or "").strip()
