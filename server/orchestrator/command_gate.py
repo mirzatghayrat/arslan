@@ -276,6 +276,17 @@ class CommandPlan:
 NOT_A_COMMAND = CommandPlan()
 
 
+def _run_later_refused(targets) -> dict:
+    """HR-3 part 1: a command that writes a file that runs later, outside the sandbox, approved by anything but the
+    user's own click on its card (a remembered answer, a callback that recorded no click): it doesn't run."""
+    from server.services import terminal_policy
+    named = terminal_policy.run_later_file(targets) or "a file that runs later"
+    return {"ok": False, "executed": False,
+            "error": f"This command writes {named[:120]}, which makes something run later. Outside the sandbox only "
+                     "the user's own click on this command's card allows that, and there was none. Nothing ran.",
+            "note": "Tell the user what you wanted to write and why, or run it without leaving the sandbox."}
+
+
 async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     """The refusal to record, or the plan to run with.
 
@@ -328,6 +339,9 @@ class _Draft:
     by_grant: bool = False             # S4a: that grant is what lets this command run outside (read again at execute)
     outside: bool = False              # S2a-3 step 5: it runs outside the sandbox, so `outside-reach` asks
     out_kw: dict = field(default_factory=dict)
+    later: tuple = ()                  # HR-3 part 1: what `run_later_targets` found (a hit, or unknown)
+    later_line: tuple = ()             # what the card names: `later`, except for text the reader refused (a rules card)
+    lift: bool = False                 # HR-3 part 1: a hit where it runs outside; only its own card's click lets it run
     net_due: bool = False
     net_kw: dict = field(default_factory=dict)
     net_clicked: bool = False          # the command's own card, clicked, asked for the network too
@@ -416,6 +430,18 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
     if d.outside:
         d.verdict = terminal_policy.assess(command, outside=True)
     d.out_kw = {"outside": True} if d.verdict.rule == terminal_policy.OUTSIDE_REACH[0] else {}
+    # HR-3 part 1, the click-lift rule: in the sandbox the kernel holds the files that run later (HR-1). Wherever this
+    # command would run outside it (a grant, the setting off, seatbelt unable to start), a write into one, by a direct
+    # form or one `run_later_targets` can't read, is let through only by the user's click on this command's own card:
+    # never by the conversation's grant, a stored grant or rule, or the mode. Its card is this time only and names the
+    # file (`run_later`, the confirm callback's), and so is the outside card when the model asks to leave.
+    # Text the reader doesn't understand is unknown there, so a hit too, all the way to the lift (⓪Plan's review,
+    # blocker 2): only the user's click on its own card lets it run, never a yes recorded as a grant. Its card is a
+    # rules card already (`unreadable` or a named layer ② rule), once-only, so the card itself takes no file line.
+    d.later = tuple(terminal_policy.run_later_targets(command))
+    unread = d.later == (terminal_policy.RUN_LATER_UNKNOWN,) and terminal_policy.reading(command).refused
+    d.later_line = () if unread else d.later
+    d.lift = bool(d.later) and d.outside        # the command's own click is the only thing that lets it run
     d.net_due = _network_card_due(command, args)
     d.net_kw = {"network": True} if d.net_due else {}
     return None
@@ -433,7 +459,7 @@ async def _card(d: _Draft, args: dict, confirm_command, conversation_id: str | N
         d.offline_reason = terminal_policy.UNREADABLE
         d.network = {"offline": True, "note": OFFLINE_UNREAD_NOTE.format(why=d.verdict.reason[:200])}
         return None
-    if (d.verdict.level == "run" and not await _asks_for_everything()
+    if (d.verdict.level == "run" and not d.lift and not await _asks_for_everything()
             and (d.outside_grant is not None or (d.sandbox_on and command_sandbox.available()))):
         # S2a-2 layer ③: no card, and decided here only. In the sandbox only when it can start (R4: with
         # seatbelt unavailable the command would run unwrapped). Outside it under this conversation's
@@ -473,7 +499,8 @@ async def _outside_card(d: _Draft, args: dict, confirm_command, conversation_id:
     from server.services import approvals as _approvals
     _approvals.LAST_OUTCOME.set(None)          # S2a-1: an earlier card's click never counts here
     _approvals.LAST_ANSWERED_BY.set(None)
-    if not await confirm_command(command, argv, sandbox="outside", why=why, **d.net_kw, **_delete_kw(d, True)):
+    if not await confirm_command(command, argv, sandbox="outside", why=why, **d.net_kw, **_delete_kw(d, True),
+                                 **({"run_later": d.later_line} if d.later_line else {})):
         result = {"ok": False, "error": _declined("user declined running this command outside the sandbox", "running this command outside the sandbox")}
         return result
     d.run_outside = True
@@ -482,6 +509,8 @@ async def _outside_card(d: _Draft, args: dict, confirm_command, conversation_id:
     from server.services import permissions
     decided = permissions.LAST_DECISION.get()
     d.net_clicked = d.net_due and decided is not None and decided.by == "user"
+    if d.later and not (decided is not None and decided.by == "user"):
+        return _run_later_refused(d.later)         # HR-3 part 1: only the user's click on this card lifts it
     # S2a-1: the plain outside card records whose click approved it (approvals.LAST_ANSWERED_BY);
     # only the asking window's own ("mac") unlocks a bare run. A conversation grant shows no card.
     d.unwrapped, d.kept_wrapped = _bare_once(
@@ -507,7 +536,8 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
             "which needs the user's OK, and nobody can be asked here",
             _approvals._command_request(command, sorted(terminal_policy.ask_rules(command, outside=d.outside)), None,
                                         ask_all=ask_all, unsandboxed=bool(d.out_kw), lang=await card_purpose.language(),
-                                        why=str(args.get("why") or "").strip()[:300]),
+                                        why=str(args.get("why") or "").strip()[:300],
+                                        run_later=d.later_line if d.lift else ()),
             conversation_id)}
         return result
     from server.services import permissions
@@ -515,7 +545,8 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
     # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
     said = str(args.get("why") or "").strip()[:300]
     approved = await confirm_command(command, argv, **({"why": said} if said else {}), **d.net_kw,
-                                     **_delete_kw(d, d.run_outside), **d.out_kw)
+                                     **_delete_kw(d, d.run_outside), **d.out_kw,
+                                     **({"run_later": d.later_line} if d.lift and d.later_line else {}))
     if not approved:
         result = {"ok": False, "error": _declined("user declined this command", "this command")}
         return result
@@ -529,6 +560,8 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
     d.by_grant = d.by_grant and not d.unwrapped     # a bare run is the user's click on its card, not the grant
     d.net_clicked = d.net_due and decided is not None and decided.by == "user"
     d.clicked = decided is not None and decided.by == "user"
+    if d.lift and not d.clicked:
+        return _run_later_refused(d.later)          # a yes that wasn't the user's click on this card (fails closed)
     return None
 
 

@@ -569,7 +569,7 @@ class _Asker:
         return {"approved": self.approve, "scope": self.scope, "by": "user", "call_id": frame["call_id"]}
 
 
-async def _after_outside_content(monkeypatch, command, *, asker=None, outside=False, **args):
+async def _after_outside_content(monkeypatch, command, *, asker=None, outside=False, cards=None, **args):
     from server.orchestrator import untrusted
     from server.services import permissions
     seen = untrusted.track_turn()
@@ -584,7 +584,7 @@ async def _after_outside_content(monkeypatch, command, *, asker=None, outside=Fa
             await db.commit()
     try:
         with permissions.asking_with(asker):
-            result = await _dispatch(monkeypatch, command, ex, _Cards(True), **args)
+            result = await _dispatch(monkeypatch, command, ex, cards or _Cards(True), **args)
     finally:
         untrusted.end_turn(seen)
         command_sandbox._reset_for_tests()
@@ -645,7 +645,9 @@ async def test_outside_the_sandbox_after_outside_content_a_command_runs_offline_
     """The minimal outside profile carries the offline rule (card, piece 4): a script whose network use
     its text does not show cannot reach out with the user's secrets readable."""
     asker = _Asker()                           # a stored grant stands only where someone could be asked (S1)
-    ex, result = await _after_outside_content(monkeypatch, "python3 collect.py", asker=asker, outside=True)
+    # HR-3 part 1: an unread command outside the sandbox runs only on the user's click on its own card.
+    ex, result = await _after_outside_content(monkeypatch, "python3 collect.py", asker=asker, outside=True,
+                                              cards=_UserClick(True))
     assert ex.runs == [(True, True)] and result["ok"] and asker.frames == []
 
 
@@ -668,7 +670,8 @@ async def test_asking_to_leave_after_a_stop_stays_offline_after_outside_content(
     try:
         with permissions.asking_with(_Asker()):
             await _dispatch(monkeypatch, "python3 collect.py", ex, _Cards(True, True))
-            result = await _dispatch(monkeypatch, "python3 collect.py", ex, _Cards(True, True),
+            # HR-3 part 1: outside the sandbox an unread command runs only on the user's click on its card.
+            result = await _dispatch(monkeypatch, "python3 collect.py", ex, _UserClick(True, True),
                                      outside_sandbox=True, why="it writes to the user's Library")
     finally:
         untrusted.end_turn(seen)

@@ -162,6 +162,10 @@ class Request:
     #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
     #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
     once_only: bool = False
+    #: HR-3 part 1: this card never joins an identical waiting ask (as `_NEVER_JOINED`'s kinds), so one click runs one
+    #: command. Set by `approvals._command_request` only for a lifted run-later command card (a command that writes a
+    #: file that runs later, outside the sandbox). HR-2a's `run_later` kind (#851) covers the file tools' card.
+    never_joined: bool = False
     #: TITLE1: how the texts the model reads name this step, when not as the card does. An MCP card shows
     #: the server's label as installed; the model reads it as a label (`label_of`). "" → `title`.
     model_title: str = ""
@@ -499,7 +503,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     call_id = base.get("call_id") or uuid.uuid4().hex
     frame = {**base, "call_id": call_id, "title": req.title, "options": opts,
              "always_label": req.always_label if "always" in opts else "",
-             "perm_kind": req.kind, "dedupe": call_id if req.kind in _NEVER_JOINED else _dedupe(req),
+             "perm_kind": req.kind, "dedupe": call_id if req.kind in _NEVER_JOINED or req.never_joined else _dedupe(req),
              "expires_at": time.time() + approvals.TIMEOUT_S}
     if req.why and "why" not in frame:
         frame["why"] = req.why[:300]

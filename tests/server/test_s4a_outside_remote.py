@@ -599,6 +599,40 @@ async def test_review_5_two_identical_asks_get_two_cards(execution_db, monkeypat
     assert await first is False and await second is False
 
 
+@pytest.mark.parametrize("command", ["git push origin main", "ls"], ids=["rules-card", "ask-all-card"])
+@pytest.mark.parametrize("run_later,cards", [((".git/hooks/pre-commit",), 2), ((), 1)],
+                         ids=["lifted-run-later", "ordinary"])
+async def test_a_lifted_run_later_card_never_joins_an_identical_ask(execution_db, monkeypatch, command, run_later,
+                                                                   cards):
+    """HR-3 part 1 (⓪Plan's review): the once-only card of a command that writes a file that runs later, outside the
+    sandbox, never joins an identical waiting ask (`Request.never_joined`): one click runs one command. An ordinary
+    identical command ask still joins one card, as before."""
+    import asyncio
+
+    from server.services import run_registry, settings_service
+    from unittest.mock import AsyncMock
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_all"))
+    shown = []
+    monkeypatch.setattr(run_registry, "make_emit", lambda cid: (
+        lambda f: shown.append(f) if f["type"].startswith("propose_") else None))
+
+    def ask(job):
+        return job.command(command, [], **({"run_later": run_later} if run_later else {}))
+    first = asyncio.ensure_future(ask(approvals.JobConfirmations("c1", job_id="job-a")))
+    second = asyncio.ensure_future(ask(approvals.JobConfirmations("c1", job_id="job-b")))
+    for _ in range(300):
+        if len(shown) == 2:
+            break
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
+    assert len({f["call_id"] for f in shown}) == cards, shown
+    approvals.answer({"type": "confirm_run_command", "call_id": shown[0]["call_id"], "scope": "once"})
+    for f in shown[1:]:
+        approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
+    # One click: with two cards it runs one command; joined, the one card answers both waiters.
+    assert [await first, await second] == ([True, False] if cards == 2 else [True, True])
+
+
 
 # ── ⓪Plan's re-review follow-ups (A–D) ───────────────────────────────────────
 
