@@ -287,6 +287,8 @@ async def test_terminal_exec_saves_runs_lifted_and_puts_back(tmp_path, monkeypat
     def failing(folder, closed=(), **kw):
         raise git_config_guard.GuardError("stand-in")
     monkeypatch.setattr(git_config_guard, "snapshot", failing)
+    # Where HR-1c's D can't run (no seatbelt), HR-1b's own path: it runs held. (With D, it is refused: HR-1c's tests.)
+    monkeypatch.setattr(command_sandbox, "available", lambda: False)
     result = await terminal_exec.run("true", cwd=ws, sandbox=True, git_config=True)
     assert seen == [True, False, False] and "couldn't look through" in result["git_config_note"]
     assert "git_config permission" in result["git_config_note"]

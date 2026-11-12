@@ -62,6 +62,7 @@ def _snap(ws: Path) -> git_config_guard.Snapshot:
 @pytest.fixture
 def ws(tmp_path, monkeypatch):
     monkeypatch.setattr(git_config_guard, "QUARANTINE", tmp_path / "quarantine")
+    monkeypatch.setattr(git_config_guard, "UNRESOLVED", {})
     folder = tmp_path / "ws"
     folder.mkdir()
     return Path(os.path.realpath(folder))
@@ -126,18 +127,20 @@ def test_git_is_asked_with_the_pinned_environment_in_a_read_only_profile(ws, tmp
 
 
 @pytest.mark.parametrize("how", ["timeout", "failure"])
-def test_git_failing_or_timing_out_fails_closed_with_a_note(ws, monkeypatch, how):
+async def test_git_failing_or_timing_out_refuses_the_command(ws, monkeypatch, how):
+    """Review delta 1 (G2): an incomplete snapshot is not a note: the command doesn't start, and the step says why."""
     git = _init(ws / "r")
     if how == "timeout":
         monkeypatch.setattr(git_config_guard, "VIEW_TIMEOUT_S", 0)
     else:
         monkeypatch.setattr(git_config_guard, "_SANDBOX_EXEC", str(ws / f"{STAND_IN}-missing"))
     saved = _snap(ws)
-    assert saved.repos == {git: None}
-    _hook(git / "hooks")                                          # still compared, by the folder itself
-    outcome = git_config_guard.restore(saved)
-    assert outcome.unanswered == [os.path.join("r", ".git")] and outcome.quarantined == ["pre-commit"]
-    assert "couldn't ask git" in outcome.message() and "Tell the user" in outcome.message()
+    assert saved.repos == {git: None} and git_config_guard.incomplete(saved) == {ws / "r": "git couldn't answer for it"}
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    ran = _fake_run(monkeypatch)
+    result = await terminal_exec.run("true", cwd=ws, sandbox=True)
+    assert ran == [] and result["code"] == "git_unchecked" and not result["ok"]
+    assert "git couldn't answer for it" in result["git_config_note"] and str(ws / "r") in result["git_config_note"]
 
 
 # ── the plain cases ──────────────────────────────────────────────────────────
@@ -190,13 +193,17 @@ def test_a_git_folder_replaced_by_a_gitdir_file(ws, tmp_path, inside):
 
 @pytest.mark.macos
 @seatbelt
-def test_a_changed_commondir_is_named(ws, tmp_path):
+def test_a_commondir_changed_to_outside_is_named_and_the_next_command_there_is_refused(ws, tmp_path):
     git = _init(ws / "r")
     elsewhere = _init(tmp_path / f"{STAND_IN}.git", "--bare")
     saved = _snap(ws)
     (git / "commondir").write_text(f"{elsewhere}\n")
     outcome = git_config_guard.restore(saved)
     assert outcome.moved == [os.path.join("r", ".git")] and "r/.git" in outcome.message()
+    assert list(outcome.unresolved) == [ws / "r"] and "refuses the next command" in outcome.message()
+    git_config_guard.keep_unresolved(outcome.unresolved, saved)
+    with pytest.raises(git_config_guard.Refused, match="moved outside the working folder"):
+        git_config_guard.resolve("git status", ws / "r")
 
 
 @pytest.mark.macos
@@ -410,16 +417,213 @@ async def test_terminal_exec_checks_the_outside_floor_too_and_nothing_where_seat
     assert "git_config_note" not in result and (git / "hooks" / "pre-commit").exists()
 
 
-async def test_a_folder_that_cant_be_walked_runs_unchecked_and_says_so(ws, monkeypatch):
+async def test_a_folder_that_cant_be_walked_is_refused_and_says_so(ws, monkeypatch):
+    """Review delta 1 (G2), flipped: it used to run with a note."""
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
 
     def failing(folder, closed=(), **kw):
-        raise git_config_guard.GuardError("stand-in")
+        raise git_config_guard.GuardError("more than 3 folders to check")
     monkeypatch.setattr(git_config_guard, "snapshot", failing)
+    ran = _fake_run(monkeypatch)
+    result = await terminal_exec.run("true", cwd=ws, sandbox=True)
+    assert ran == [] and result["code"] == "git_unchecked"
+    assert "more than 3 folders" in result["git_config_note"] and "didn't run it" in result["git_config_note"]
+    assert "git_config permission" not in result["git_config_note"]
+
+
+# ── review delta 1 (G2): an incomplete check fails closed, per repository ────
+
+def _fake_run(monkeypatch, effect=None) -> list:
+    """terminal_exec._run replaced: each call's cwd; the first call also runs `effect` (the command's own doing)."""
+    ran: list = []
+    pending = [effect] if effect is not None else []
 
     async def run(**kw):
+        ran.append(Path(kw["cwd"]))
+        if pending:
+            pending.pop()()
         return {"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "sandbox": "workspace"}
     monkeypatch.setattr(terminal_exec, "_run", run)
-    result = await terminal_exec.run("true", cwd=ws, sandbox=True)
-    assert "couldn't check what git will run or load" in result["git_config_note"]
-    assert "git_config permission" not in result["git_config_note"]
+    return ran
+
+
+_POPEN = subprocess.Popen
+
+
+class _Proc:
+    def __init__(self, out: bytes, code: int = 0, hang: bool = False):
+        self.out, self.returncode, self.hang = out, code, hang
+
+    def communicate(self, timeout=None):
+        if self.hang and timeout is not None:
+            raise subprocess.TimeoutExpired("git", timeout)
+        return self.out, b""
+
+    def kill(self):
+        self.hang = False
+
+
+class _FakeGit:
+    """Stands in for git under sandbox-exec (`subprocess.Popen` in git_config_guard): answers rev-parse and config
+    --list as git would for a plain repository (commondir followed), or fails as `mode` says for the repositories
+    inside `only` (every one when None)."""
+    def __init__(self):
+        self.mode, self.only = "ok", None
+
+    def __call__(self, argv, **kw):
+        if argv[0] != git_config_guard._SANDBOX_EXEC:
+            return _POPEN(argv, **kw)                             # HR-1b's `config --file` runs (subprocess.run)
+        git = Path(os.path.realpath(next(a for a in argv if a.startswith("--git-dir=")).split("=", 1)[1]))
+        mode = self.mode if self.only is None or self.only in git.parents else "ok"
+        if mode == "launch":
+            raise OSError(2, "stand-in: not started")
+        listing = "--list" in argv
+        if mode == "nonzero" or (mode == "include-error" and listing):
+            return _Proc(b"", 128)
+        if mode == "timeout":
+            return _Proc(b"", hang=True)
+        if mode == "malformed":
+            return _Proc(b"stand-in\0" if listing else b"stand-in\n")
+        if listing:
+            return _Proc(b"")
+        common = Path(os.path.realpath((git / "commondir").read_text().strip())) if (git / "commondir").exists() \
+            else git
+        return _Proc(f"{git}\n{common}\n{common / 'hooks'}\n".encode())
+
+
+@pytest.fixture
+def g2(ws, monkeypatch):
+    """Two repositories in the work folder (git folders only, no git run), the fake git, D on."""
+    for name in ("r1", "r2"):
+        (_git_folder(ws / name / ".git") / "config").write_text("[core]\n\tbare = false\n")
+    fake = _FakeGit()
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    monkeypatch.setattr(git_config_guard, "UNRESOLVED", {})
+    return fake
+
+
+GIT_FAILURES = ["launch", "nonzero", "timeout", "malformed", "include-error"]
+
+
+@pytest.mark.parametrize("mode", GIT_FAILURES)
+async def test_g2_git_failing_before_the_command_refuses_it_and_only_there(ws, g2, monkeypatch, mode):
+    ran = _fake_run(monkeypatch)
+    g2.mode = mode
+    result = await terminal_exec.run("true", cwd=ws / "r1", sandbox=True)
+    assert ran == [] and result["code"] == "git_unchecked" and str(ws / "r1") in result["git_config_note"]
+    assert git_config_guard.UNRESOLVED == {}                     # nothing ran: the next command checks afresh
+    g2.mode = "ok"
+    assert (await terminal_exec.run("true", cwd=ws / "r1", sandbox=True))["ok"] and ran == [ws / "r1"]
+
+
+def _commondir_outside(ws: Path) -> None:
+    (ws / "r1" / ".git" / "commondir").write_text(f"{_git_folder(ws.parent / f'{STAND_IN}-common')}\n")
+
+
+POST_FAILURES = [*GIT_FAILURES, "walk", "identity", "repair", "re-survey", "quarantine", "check"]
+
+
+@pytest.mark.parametrize("what", POST_FAILURES)
+async def test_g2_a_check_after_the_command_that_cant_finish_refuses_the_next_command_there(ws, g2, monkeypatch,
+                                                                                               what):
+    """Each incomplete path after the command: that repository's next command is refused, `git -C` from elsewhere
+    too; the healthy repository beside it and a folder with no repository run, the failure still in place for r1."""
+    r1 = ws / "r1"
+    config = r1 / ".git" / "config"
+
+    def effect():
+        if what in GIT_FAILURES:
+            g2.mode, g2.only = what, r1
+        elif what == "walk":
+            _in_r1(monkeypatch, r1, "_walk", lambda folder, *a: folder,
+                   git_config_guard.GuardError("more than 30000 folders to check"))
+        elif what == "identity":
+            _commondir_outside(ws)
+        elif what in ("repair", "re-survey"):
+            config.write_text(f"[core]\n\tbare = false\n\thooksPath = {STAND_IN}\n")     # through another name
+            if what == "repair":
+                _in_r1(monkeypatch, r1, "_replace", lambda path, *a: path, PermissionError(1, "Operation not permitted"))
+            else:
+                # The check after the command asks once (before the put-back), then fails when asked again.
+                _in_r1(monkeypatch, r1, "_survey", lambda repos: repos[0] if repos else Path("/"),
+                       git_config_guard.GuardError("stand-in: git couldn't be asked"), after=1)
+        elif what == "quarantine":
+            _hook(r1 / ".git" / "hooks")
+            _in_r1(monkeypatch, r1, "_quarantine", lambda path, box: path, PermissionError(1, "Operation not permitted"))
+        else:
+            _in_r1(monkeypatch, r1, "restore", lambda saved, *a: saved.folder, OSError(5, "Input/output error"))
+    ran = _fake_run(monkeypatch, effect)
+    result = await terminal_exec.run("true", cwd=ws / "r1", sandbox=True)
+    assert ran == [ws / "r1"] and list(git_config_guard.UNRESOLVED) == [ws / "r1"], result.get("git_config_note")
+    if what != "check":
+        assert "refuses the next command" in result["git_config_note"]
+    ran.clear()
+    for command, cwd in (("git status", ws / "r1"), ("git -C ../r1 status", ws / "r2"), (f"ls {ws}", ws.parent)):
+        refused = await terminal_exec.run(command, cwd=cwd, sandbox=True)
+        assert refused["code"] == "git_unchecked" and str(ws / "r1") in refused["git_config_note"], command
+    assert ran == []
+    for cwd in (ws / "r2", ws.parent / f"{STAND_IN}-elsewhere"):
+        cwd.mkdir(exist_ok=True)
+        assert (await terminal_exec.run("true", cwd=cwd, sandbox=True))["ok"]
+    assert ran == [ws / "r2", ws.parent / f"{STAND_IN}-elsewhere"]
+    assert list(git_config_guard.UNRESOLVED) == [ws / "r1"]
+
+
+_RESTORE = git_config_guard.restore
+
+
+def _refused(*a, **k):
+    raise PermissionError(1, "Operation not permitted")
+
+
+def _in_r1(monkeypatch, r1: Path, name: str, where, error: BaseException, after: int = 0) -> None:
+    """`git_config_guard.<name>` fails with `error` when `where(args)` is inside r1, after `after` such calls; it
+    works as before everywhere else."""
+    real, count = getattr(git_config_guard, name), [0]
+
+    def failing(*args, **kw):
+        if r1 in Path(os.path.realpath(where(*args))).parents or Path(os.path.realpath(where(*args))) == r1:
+            count[0] += 1
+            if count[0] > after:
+                raise error
+        return real(*args, **kw)
+    monkeypatch.setattr(git_config_guard, name, failing)
+
+
+async def test_g2_the_repository_stays_refused_until_a_full_check_succeeds_against_the_last_complete_one(
+        ws, tmp_path, g2, monkeypatch):
+    """Refused on every command while the check can't finish; then it runs, and what the unfinished check missed (a
+    hook written during that command) is quarantined, not adopted as the starting point."""
+    def effect():
+        _hook(ws / "r1" / ".git" / "hooks")
+        monkeypatch.setattr(git_config_guard, "restore", _refused)               # the check after it fails
+    ran = _fake_run(monkeypatch, effect)
+    await terminal_exec.run("true", cwd=ws / "r1", sandbox=True)
+    _fake_run(monkeypatch)
+    for _ in range(3):
+        assert (await terminal_exec.run("true", cwd=ws / "r1", sandbox=True))["code"] == "git_unchecked"
+    assert (ws / "r1" / ".git" / "hooks" / "pre-commit").exists() and list(git_config_guard.UNRESOLVED) == [ws / "r1"]
+    monkeypatch.setattr(git_config_guard, "restore", _RESTORE)                    # a full check can succeed now
+    result = await terminal_exec.run("true", cwd=ws / "r1", sandbox=True)
+    assert result["ok"] and "pre-commit" in result["git_config_note"] and git_config_guard.UNRESOLVED == {}
+    assert not (ws / "r1" / ".git" / "hooks" / "pre-commit").exists() and _quarantined(tmp_path) == ["pre-commit"]
+    assert ran == [ws / "r1"]
+
+
+async def test_g2_with_no_git_binary_it_is_a_note_not_a_refusal(ws, g2, monkeypatch):
+    monkeypatch.setattr(git_config_guard, "_GITS", (str(ws / f"{STAND_IN}-no-git"),))
+    ran = _fake_run(monkeypatch)
+    result = await terminal_exec.run("true", cwd=ws / "r1", sandbox=True)
+    assert result["ok"] and ran == [ws / "r1"] and "couldn't ask git" in result["git_config_note"]
+    assert git_config_guard.UNRESOLVED == {}
+
+
+@pytest.mark.parametrize(("command", "cwd", "reaches"), [
+    ("git status", "r1", True), ("git -C ../r1 log", "r2", True), ("git --git-dir=../r1/.git log", "r2", True),
+    ("cat ../r1/a.txt", "r2", True), ("ls", ".", True), ("git status", "r2", False), ("ls /usr/bin", "r2", False),
+    ("echo 'unclosed", "r2", True)])
+def test_what_reaches_a_repository(ws, command, cwd, reaches):
+    (ws / "r1").mkdir()
+    (ws / "r2").mkdir()
+    assert git_config_guard.touches(ws / "r1", command, ws / cwd) is reaches

@@ -217,6 +217,14 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
                     "sandbox": "workspace" if sandbox else "outside", "git_config_held": True,
                     "error": "not started: git settings couldn't be checked", "git_config_note": str(exc)
                     if isinstance(exc, git_config_guard.Refused) else git_config_guard.REFUSED}
+    if git_config_guard.UNRESOLVED:       # HR-1c review delta 1 (G2): a repository whose last check didn't finish
+        try:
+            found = await asyncio.to_thread(git_config_guard.resolve, command, cwd)
+        except git_config_guard.Refused as exc:
+            return _unchecked(cwd, sandbox, str(exc))
+        if found is not None:
+            git_config_guard.mark(tool_outputs.conversation.get(), found.marks)
+            note = f"{note} {found.message()}".strip()
     with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
         kw = dict(command=command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
                   readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
@@ -232,9 +240,10 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
 async def _guarded(cwd: Path, kw: dict, *, granted: bool, viewed: bool) -> dict:
     """HR-1b: under the grant, the configs saved (else it runs held, and says so), then put back however it ended.
     D (`viewed`): git's view saved and compared too, with or without the grant; a config with a second name drops the
-    lift only. When the working folder can't be walked it runs unchecked (held), and says so."""
+    lift only. Review delta 1 (G2): when D's snapshot is incomplete (the folder can't be walked, git gave no answer)
+    the command doesn't start; a check after it that can't finish leaves the repository unresolved (`_put_back`)."""
     from server.services import git_config_guard
-    note, saved = "", None
+    note, saved, failed = "", None, ""
     for lift in (True, False) if granted else (False,):
         try:
             saved = await asyncio.to_thread(git_config_guard.snapshot, cwd, kw["closed"], grant=lift, view=viewed)
@@ -245,13 +254,18 @@ async def _guarded(cwd: Path, kw: dict, *, granted: bool, viewed: bool) -> dict:
                          if isinstance(exc, git_config_guard.Linked) else "Arslan couldn't look through the working "
                          "folder's git settings before this command (too many folders, or one it can't read)")
                         + ", so git couldn't update them this time, as without the git_config permission.")
+            failed = str(exc)
             if not viewed or not isinstance(exc, git_config_guard.Linked):
                 break
+    missing = git_config_guard.incomplete(saved) if saved is not None else {}
+    if viewed and (saved is None or missing):
+        why = (git_config_guard._unresolved_names(missing) if missing
+               else f"the working folder ({failed or 'it could not be read'})")
+        return _unchecked(kw["cwd"], kw["sandbox"], f"{note} Arslan couldn't fully check git in {why} before this "
+                          "command, so it didn't run it: what git will run or load there couldn't be compared "
+                          "afterwards. Tell the user.".strip())
     if saved is None:
         result = await _run(**kw)
-        if viewed:
-            note = (f"{note} Arslan couldn't look through the working folder's git repositories before this command, "
-                    "so it couldn't check what git will run or load there afterwards.").strip()
         result["git_config_note"] = note
         return result
     lifted = saved.grant
@@ -282,10 +296,14 @@ def _put_back(saved) -> tuple[str, bool]:
         message, held = outcome.message(), bool(outcome.held)
         # HR-1c: a repository changed through an included file outside the work folder: its next git command asks.
         git_config_guard.mark(tool_outputs.conversation.get(), outcome.marks)
+        git_config_guard.keep_unresolved(outcome.unresolved, saved)     # review delta 1 (G2)
     except Exception:  # noqa: BLE001 — reported to the model and on the step instead
         import logging
         logging.getLogger(__name__).warning("git config restore failed", exc_info=True)
         message, held = git_config_guard.HELD_NOTE, True
+        if getattr(saved, "viewed", False):             # G2: the whole work folder, until a full check succeeds
+            git_config_guard.keep_unresolved({Path(os.path.realpath(saved.folder)): "the check after a command "
+                                              "failed"}, saved)
     if held:
         git_config_guard.ENDED.add(tool_outputs.conversation.get() or "")
     return message, held
@@ -359,6 +377,13 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                               git_config_ok=git_config_ok)
     finally:
         command_sandbox.remove_profile(profile)
+
+
+def _unchecked(cwd: Path, sandbox: bool, note: str) -> dict:
+    """HR-1c review delta 1 (G2): a command not started because a repository it reaches couldn't be fully checked."""
+    return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
+            "sandbox": "workspace" if sandbox else "outside", "code": "git_unchecked",
+            "error": "not started: a git repository it reaches couldn't be fully checked", "git_config_note": note}
 
 
 def _not_started(cwd: Path, mode: str, note: str) -> dict:

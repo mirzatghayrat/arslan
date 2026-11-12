@@ -34,6 +34,7 @@ seatbelt = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.av
 @pytest.fixture
 def ws(tmp_path, monkeypatch):
     monkeypatch.setattr(git_config_guard, "QUARANTINE", tmp_path / "quarantine")
+    monkeypatch.setattr(git_config_guard, "UNRESOLVED", {})
     folder = tmp_path / "ws"
     folder.mkdir()
     return Path(os.path.realpath(folder))
@@ -161,13 +162,20 @@ def test_an_allowlisted_key_changed_through_an_include_is_left_alone(ws, tmp_pat
 
 @pytest.mark.macos
 @seatbelt
-def test_git_failing_to_list_the_effective_config_names_the_repository_unchecked(ws, monkeypatch):
+def test_git_failing_to_list_the_effective_config_refuses_the_next_command_there(ws, monkeypatch):
+    """Review delta 1 (G2), flipped: named as unchecked, and the repository's next command is refused until a full
+    check succeeds."""
     git = _init(ws / "r")
     saved = _snap(ws)
     assert saved.included == {git: {}}
     monkeypatch.setattr(git_config_guard, "_parse_included", lambda out, direct: None)
     outcome = git_config_guard.restore(saved)
     assert outcome.unanswered == [os.path.join("r", ".git")] and "couldn't ask git" in outcome.message()
+    assert outcome.unresolved == {ws / "r": "git couldn't list its settings"}
+    git_config_guard.keep_unresolved(outcome.unresolved, saved)
+    with pytest.raises(git_config_guard.Refused, match="couldn't list its settings"):
+        git_config_guard.resolve("git status", ws / "r")
+    assert list(git_config_guard.UNRESOLVED) == [ws / "r"]
 
 
 # ── the card ─────────────────────────────────────────────────────────────────

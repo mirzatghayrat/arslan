@@ -19,11 +19,15 @@ HR-1c, D: a path rule can't see a write to what git later reads through another 
 every command in the sandbox, and one under the outside floor that holds run-later files, where seatbelt can start,
 `snapshot(view=True)` also records git's own view of each repository the same walk finds (`view`: git, common and
 hooks folders, `rev-parse` only), each hooks folder's entries and the keys off ALLOWED reached through an include;
-`restore` puts the configs git reads back through the allowlist above (with or without the grant; without it no
-baseline is kept), then quarantines new or changed hooks inside the work folder, names a moved repository, renames
-aside a new `.git` pointing outside, and checks the includes (`_check_includes`). Nothing a repository names runs:
-files are read directly, and git runs only `rev-parse` and `config --list`/`--file` under `_env`, the first two in a
-read-only, no-network seatbelt profile with a time limit, failing closed (the repository is named as unchecked).
+`restore` puts the configs git reads back through the allowlist above (with or without the grant; without it D keeps
+no baseline and adds nothing to WATCHED, and still walks, asks git, writes configs back and quarantines), then
+quarantines new or changed hooks inside the work folder, names a moved repository, renames aside a new `.git` pointing
+outside, and checks the includes (`_check_includes`). Nothing a repository names runs: files are read directly, and
+git runs only `rev-parse` and `config --list`/`--file` under `_env`, the first two in a read-only, no-network seatbelt
+profile with a time limit. Review delta 1 (G2): an incomplete check fails closed per repository: before the command
+it doesn't start (`incomplete`); after it, the repository stays unresolved (`UNRESOLVED`) and the next command that
+reaches it is refused until `resolve` checks it again against the last complete snapshot and finishes. Without a git
+binary at `_GITS` (nothing can run a hook through git) it is a note only.
 """
 from __future__ import annotations
 
@@ -228,11 +232,12 @@ class Snapshot:
     files: dict[Path, bytes]
     closed: tuple[Path, ...] = ()
     modes: dict[Path, int] = field(default_factory=dict)
-    grant: bool = True              # under the git_config grant: baselines kept (D without it: none)
+    grant: bool = True              # under the git_config grant: baselines kept (without it: none, no WATCHED)
     viewed: bool = False            # D: git's view was taken (`repos`, `hooks`, `included`)
     repos: dict[Path, Answer | None] = field(default_factory=dict)
     hooks: dict[Path, dict[str, Hook]] = field(default_factory=dict)
     included: dict[Path, Included] = field(default_factory=dict)
+    git: bool = True                # a git binary was found (`_GITS`): without one nothing runs hooks, so a note only
 
 
 def snapshot(folder: Path, closed=(), *, grant: bool = True, view: bool = False) -> Snapshot:
@@ -254,7 +259,21 @@ def snapshot(folder: Path, closed=(), *, grant: bool = True, view: bool = False)
         if st is None or data is None or (grant and path in _BASELINES and _BASELINES[path] is None):
             continue                                      # gone, or a new repository's whose put-back failed
         files[path], modes[path] = (grant and _BASELINES.get(path)) or (data, stat.S_IMODE(st.st_mode))
-    return Snapshot(folder, files, closed, modes, grant, view, seen.answers, seen.hooks, seen.included)
+    return Snapshot(folder, files, closed, modes, grant, view, seen.answers, seen.hooks, seen.included,
+                    any(os.access(path, os.X_OK) for path in _GITS))
+
+
+def incomplete(saved: Snapshot) -> dict[Path, str]:
+    """Review delta 1 (G2): the repositories (their top, a real path) D's snapshot couldn't fully check, and why.
+    The command must not start there. None without a git binary (nothing can run a hook through git then)."""
+    if not saved.git:
+        return {}
+    return {_top_real(entry): ("git couldn't answer for it" if answer is None else "git couldn't list its settings")
+            for entry, answer in saved.repos.items() if answer is None or saved.included.get(entry, {}) is None}
+
+
+def _top_real(entry: Path) -> Path:
+    return Path(os.path.realpath(_top(entry)))
 
 
 def _git_binary() -> str:
@@ -485,6 +504,9 @@ class Outcome:
     unfinished: bool = False
     #: Repositories (their top, a real path) whose next git command asks first, with what the card names.
     marks: dict[Path, str] = field(default_factory=dict)
+    #: Review delta 1 (G2): repositories (top, real path; the work folder when the walk failed) this check couldn't
+    #: finish, and why: the next command that touches one is refused until a full check succeeds (`UNRESOLVED`).
+    unresolved: dict[Path, str] = field(default_factory=dict)
 
     def message(self) -> str:
         """What the model reads and the step shows: key names, hook names and paths only, never a value or content.
@@ -525,8 +547,11 @@ class Outcome:
         if self.unfinished:
             parts.append("Arslan couldn't finish checking the git hooks and settings in the working folder after "
                          "this command.")
+        if self.unresolved:
+            parts.append(f"Until a full check of {_unresolved_names(self.unresolved)} succeeds, Arslan refuses the "
+                         "next command that touches it.")
         if any((self.quarantined, self.aside, self.moved, self.outside, self.unanswered, self.includes_moved,
-                self.includes_outside, self.unfinished)):
+                self.includes_outside, self.unfinished, self.unresolved)):
             parts.append("Tell the user, and don't run git there until they have checked.")
         return " ".join(parts)
 
@@ -643,6 +668,8 @@ def restore(saved: Snapshot, outcome: Outcome | None = None) -> Outcome:
             now = _merged(now, seen.configs, lambda path: path in saved.files or _inside(path, real))
     except GuardError:
         outcome.unchecked = unchecked = True
+        if saved.viewed:
+            outcome.unresolved[real] = "the working folder couldn't be looked through after a command"
         now = []
     paths = sorted(set(now) | set(saved.files))
     with tempfile.TemporaryDirectory(prefix="arslan-git-config-") as scratch_name:
@@ -680,13 +707,22 @@ def restore(saved: Snapshot, outcome: Outcome | None = None) -> Outcome:
                 outcome.reverted.extend(reverted)
     if seen is not None:
         if outcome.reverted or outcome.restored or outcome.replaced:
-            with contextlib.suppress(GuardError):     # judged on what git reads after the put-back
+            try:                                      # judged on what git reads after the put-back
                 seen = _survey(_walk(saved.folder, saved.closed)[1])
+            except GuardError:
+                _every(outcome, seen, real, "git couldn't be asked again after a setting was put back")
         try:
             _check_includes(saved, seen, outcome, _check_hooks(saved, seen, outcome, real), real)
         except (OSError, GuardError):
             outcome.unfinished = True
+            _every(outcome, seen, real, "the check after a command couldn't finish")
     return outcome
+
+
+def _every(outcome: Outcome, seen: _Survey, folder: Path, why: str) -> None:
+    """G2: each repository of `seen` unresolved (the work folder when there is none)."""
+    for top in {_top_real(entry) for entry in seen.answers} or {folder}:
+        outcome.unresolved.setdefault(top, why)
 
 
 def _linked(path: Path) -> bool:
@@ -706,6 +742,10 @@ def _put(outcome: Outcome, saved: Snapshot, path: Path, data: bytes | None, mode
         _write(path, data, mode)
     except OSError:
         outcome.held.append(_relative(path, saved.folder))
+        if saved.viewed and not saved.grant:          # G2 (under the grant, HR-1b's recheck refuses instead)
+            owner = next((_top_real(entry) for entry, answer in saved.repos.items() if answer and any(
+                _inside(path, where) for where in answer[:2])), Path(os.path.realpath(saved.folder)))
+            outcome.unresolved[owner] = "a setting couldn't be put back"
         data, mode = saved.files.get(path), saved.modes.get(path)
         if saved.grant:
             _keep_baseline(path, None if data is None else (data, mode))
@@ -735,9 +775,11 @@ def _check_hooks(saved: Snapshot, seen: _Survey, outcome: Outcome, folder: Path)
     counts as all new), and name such a folder outside it. Returns the quarantine box (see `_quarantine`)."""
     skipped = set()
     for entry, answer in seen.answers.items():
-        before = saved.repos.get(entry)
+        before, top = saved.repos.get(entry), _top_real(entry)
         if answer is None or (entry in saved.repos and before is None):
             outcome.unanswered.append(_named(entry, folder))
+            if saved.git:                                 # G2: refused until a full check succeeds
+                outcome.unresolved[top] = "git couldn't answer for it"
         elif before is not None and answer != before:
             outcome.moved.append(_named(entry, folder))
         not_a_folder = os.path.islink(entry) or not os.path.isdir(entry)
@@ -746,6 +788,10 @@ def _check_hooks(saved: Snapshot, seen: _Survey, outcome: Outcome, folder: Path)
             os.rename(entry, entry.with_name(f"{entry.name}.arslan-aside-{time.strftime('%Y%m%dT%H%M%S')}"))
             outcome.aside.append(_named(entry, folder))
             skipped.add(answer[2])
+        elif answer is not None and before is not None and answer != before \
+                and not all(_inside(where, folder) for where in answer):
+            # G2: what moved inside the work folder is checked there (its hooks count as new); outside it, not.
+            outcome.unresolved[top] = "where git finds its metadata or hooks moved outside the working folder"
     box: list[Path] = []
     for where, entries in seen.hooks.items():
         prior = saved.hooks.get(where, {})
@@ -787,6 +833,8 @@ def _check_includes(saved: Snapshot, seen: _Survey, outcome: Outcome, box: list[
         if now is None or before is None:
             if _named(entry, folder) not in outcome.unanswered:
                 outcome.unanswered.append(_named(entry, folder))
+            if saved.git:                                 # G2: refused until a full check succeeds
+                outcome.unresolved.setdefault(_top_real(entry), "git couldn't list its settings")
             continue
         changed: dict[Path, set[str]] = {}
         for key, pairs in now.items():
@@ -879,6 +927,72 @@ def unmark(conversation: str | None, repos) -> None:
 
 def runs_git(command: str) -> bool:
     return bool(_RUNS_GIT.search(command))
+
+
+#: Review delta 1 (G2): repositories (top, real path; a work folder when its walk failed) whose check after a command
+#: couldn't finish, with why and the last complete snapshot before it. A command that touches one (`touches`) is
+#: refused until `resolve` checks it again against that snapshot, never against what is there now, and finishes.
+#: Kept while the server runs; any conversation's command is checked against it.
+UNRESOLVED: dict[Path, tuple[str, Snapshot]] = {}
+
+
+def keep_unresolved(unresolved: dict[Path, str], saved: Snapshot) -> None:
+    for top, why in unresolved.items():
+        UNRESOLVED[top] = (why, saved)
+
+
+def touches(top: Path, command: str, cwd: Path) -> bool:
+    """Whether a command run in `cwd` reaches the repository at `top`, as the include card reads it: the folder it
+    runs in is inside it or holds it, or a word of the command (`git -C <dir>`, `--git-dir=<dir>`, a path) names a
+    path inside it or holding it, relative to `cwd`. A command that can't be split into words touches every one."""
+    import shlex
+    here = Path(os.path.realpath(cwd))
+    if _inside(here, top) or _inside(top, here):
+        return True
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        return True
+    for word in words:
+        for part in word.split("="):
+            if "/" in part or part in (".", "..", "~"):
+                path = Path(os.path.expanduser(part))
+                real = Path(os.path.realpath(path if path.is_absolute() else here / path))
+                if _inside(real, top) or _inside(top, real):
+                    return True
+    return False
+
+
+def _unresolved_names(unresolved: dict[Path, str]) -> str:
+    return _shown([f"{top} ({why})" for top, why in sorted(unresolved.items())], _PATH_MAX)
+
+
+def resolve(command: str, cwd: Path) -> Outcome | None:
+    """Before a command (every mode, any conversation): each unresolved repository it touches is checked again,
+    `restore` against the last complete snapshot (so what the unfinished check missed is quarantined or put back,
+    not adopted). Cleared when that finishes; else Refused, naming why. None when it touches none."""
+    touched = [top for top in UNRESOLVED if touches(top, command, cwd)]
+    if not touched:
+        return None
+    outcome = Outcome()
+    for saved in {id(UNRESOLVED[top][1]): UNRESOLVED[top][1] for top in touched}.values():
+        tops = [top for top, (_, kept) in UNRESOLVED.items() if kept is saved]
+        try:
+            result = restore(saved, Outcome())
+        except Exception:  # noqa: BLE001 — fails closed: still unresolved
+            result = Outcome(unresolved={top: UNRESOLVED[top][0] for top in tops})
+        for top in tops:
+            UNRESOLVED.pop(top, None)
+        keep_unresolved(result.unresolved, saved)
+        outcome.marks.update(result.marks)
+        for name in ("reverted", "restored", "quarantined", "aside", "includes_moved", "includes_outside"):
+            getattr(outcome, name).extend(getattr(result, name))
+    left = {top: UNRESOLVED[top][0] for top in touched if top in UNRESOLVED}
+    if left:
+        raise Refused(f"Arslan couldn't fully check git in {_unresolved_names(left)}, so it didn't run this command, "
+                      "which reaches it: a hook or setting left there could run later. Tell the user; commands there "
+                      "run again once a full check of that repository succeeds.")
+    return outcome
 
 
 def _relative(path: Path, folder: Path) -> str:
