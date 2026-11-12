@@ -1085,6 +1085,31 @@ def _joined(folder: str, word: str) -> str:
     return word if word.startswith(("/", "~", "$")) else f"{folder.rstrip('/')}/{word}"
 
 
+def _relative(word: str) -> bool:
+    """A path the text alone can't place (not `/…` or `~…`, nor a redirection to a descriptor)."""
+    return not word.startswith(("/", "~", "&"))
+
+
+def _links_out(real_folder, folder: str, word: str) -> bool:
+    """#872 review B2: a relative path whose existing folders lead out of the working folder (`real_folder()`, its real
+    path, or None when it could not be resolved) through a link to a folder outside. Read-only, resolved strictly: a
+    failure to resolve asks (review delta 2), except a missing folder, where there is nothing to delete. A target named
+    with no trailing slash is itself removed, not followed, so only its folder is resolved."""
+    path = word if not folder else _joined(folder, word)
+    if not path or path.startswith(("/", "~", "$")):
+        return False
+    if (real := real_folder()) is None:
+        return True                    # the working folder given could not be resolved: as a path outside
+    try:
+        joined = os.path.join(real, path)
+        resolved = os.path.realpath(joined if path.endswith("/") else os.path.dirname(joined), strict=True)
+    except FileNotFoundError:
+        return False                   # no such folder: nothing in it to delete
+    except (OSError, ValueError):
+        return True                    # it can't be placed: as a path outside
+    return resolved != real and not resolved.startswith(real.rstrip("/") + "/")
+
+
 def _protected(folders: tuple[str, ...], word: str) -> bool:
     paths = [_joined(f, part) for f in folders if f for part in {word, word.split("=", 1)[-1]}]
     return any(_PROTECTED_PATH_C.match(p) or _PROTECTED_PATH_C.match(posixpath.normpath(p)) for p in paths)
@@ -1205,6 +1230,18 @@ def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[
             anchor_checked = True
         return _safe_fold_prefix(prefix, anchor, checked)
 
+    real: list = []
+
+    def real_folder() -> str | None:
+        """#872 review B2: the working folder's real path, read once, only for a relative delete."""
+        if not real:
+            try:
+                path = os.fspath(cwd)
+                real.append(os.path.realpath(path) if isinstance(path, str) and path.startswith("/") else None)
+            except (OSError, TypeError, ValueError):
+                real.append(None)
+        return real[0]
+
     if reading.understood:
         reading = shell_grammar.read(text, fold_partial=False, fold_guard=guard)
         if not reading.understood:
@@ -1217,18 +1254,22 @@ def _after_moves(text: str, cwd: str | os.PathLike[str] | None = None) -> tuple[
         name, args = words[0].rsplit("/", 1)[-1].lower(), words[1:]
         if name not in _MOVED_DELETERS | _MOVED_FINDERS | _MOVED_WRITERS:
             continue
-        moved = tuple(f for f in folders if f)
-        if not moved:
-            continue
+        # #872 review B1: `()` is a change of folder the reader can't follow (`folders_known`): from a known starting
+        # folder, a relative path after it may be anywhere, so the path rules ask (fail closed).
+        unknown, moved = not folders, tuple(f for f in folders if f)
         operands = [w for w in args if not w.startswith("-") or w == "-"]
         if name in _MOVED_DELETERS:
-            outside |= not operands or any(_outside_target(_joined(f, w)) for f in moved for w in operands)
+            outside |= unknown or (bool(moved) and (not operands or any(
+                _outside_target(_joined(f, w)) for f in moved for w in operands)))
+            outside |= any(_links_out(real_folder, f, w) for f in folders for w in operands)
         elif name in _MOVED_FINDERS and "-delete" in args:
             start = args[0] if args and not args[0].startswith("-") else "."
-            outside |= any(_outside_target(_joined(f, start)) for f in moved)
+            outside |= unknown or any(_outside_target(_joined(f, start)) for f in moved)
+            outside |= any(_links_out(real_folder, f, start) for f in folders)
         elif name in _MOVED_WRITERS:
-            protected |= any(_protected(moved, w) for w in operands)
-    protected |= any(_protected(folders, target) for target, folders in reading.writes)
+            protected |= any(_protected(moved, w) or (unknown and _relative(w)) for w in operands)
+    protected |= any(_protected(folders, target) or (not folders and _relative(target))
+                     for target, folders in reading.writes)
     return outside, protected
 
 

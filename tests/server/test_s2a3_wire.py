@@ -243,7 +243,7 @@ async def test_the_gate_reads_the_working_folder_on_every_call(unread, monkeypat
         asked: list = []
         ex, _result, _steps = await _gate(monkeypatch, {"command": STAND_IN}, _cards(asked, False), home=None)
         assert (len(asked), len(ex.ran)) == ((1, 0) if card else (0, 1))
-    assert len(reads) == 2
+    assert len(reads) == 4      # every call: the home check, and the folder the policy reads from (step 4b)
 
 @pytest.mark.parametrize("folder, holds", [
     (lambda: Path.home(), True), (lambda: Path.home().parent, True), (lambda: Path("/"), True),

@@ -94,12 +94,15 @@ class Confirmations:
         outside = outside or sandbox == "outside"   # S2a-3 step 5: it runs outside the sandbox, so read it that way
         risk = effective_risk(remote_host, command, argv, outside=outside)
         shell = terminal_policy.as_shell(command, argv)
-        verdict = terminal_policy.assess(shell, outside=outside)
+        # S2a-3 step 4b: read from the folder the gate read (another machine's folder is not known here)
+        from server.orchestrator.command_gate import run_folder
+        cwd = None if remote_host else await run_folder()
+        verdict = terminal_policy.assess(shell, cwd=cwd, outside=outside)
         # SMART-8 (#688 review 1, 3, 5): every rule it matched goes on every command card, with why it could not be
         # read when that is one of them; the card's risk row names each and takes the worst.
         # SMART-8 (#689): every card's title is its plain purpose in the user's language (the iPhone's heading).
         lang = await card_purpose.language()
-        rules = sorted(terminal_policy.ask_rules(shell, outside=outside))
+        rules = sorted(terminal_policy.ask_rules(shell, cwd=cwd, outside=outside))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
@@ -159,8 +162,14 @@ class Confirmations:
                                              delete_mode=delete, run_later=run_later)
         if deletes:     # the model's English text; the title and the card word `delete_mode` themselves
             request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
-        with self._surface():
-            decision = await permissions.decide(request, self._context())
+        # S2a-3 step 4b: the card keeps this folder while it waits (`approvals.open_card`), so the island reads it from
+        # the same folder, server-side (no frame key)
+        token = approvals.CARD_FOLDER.set(cwd)
+        try:
+            with self._surface():
+                decision = await permissions.decide(request, self._context())
+        finally:
+            approvals.CARD_FOLDER.reset(token)
         return decision.allowed
 
 

@@ -319,7 +319,8 @@ def test_vetoed_returns_overflow_loses_only_folder_observations(tmp_path):
     reading = sg.read(text, fold_partial=False, fold_guard=lambda *args: False)
     assert reading.understood and reading.folders[-1] == ()
     assert reading.commands[-1] == (DEL, "zz-file")
-    assert tp.assess(text, cwd=tmp_path).level == "run"
+    # #872 review B1: from a known starting folder, a relative delete in a folder lost to the cap asks (fail closed)
+    assert tp.assess(text, cwd=tmp_path).level == "ask"
 
 
 def test_plain_moves_have_the_existing_effect_gap(tmp_path, monkeypatch):
