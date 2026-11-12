@@ -1,286 +1,291 @@
-# Harness 方案：让同一个模型在 Arslan 里发挥到上限（提案，待用户定）
+# Harness plan: getting each model to its ceiling inside Arslan (proposal, for the user to decide)
 
-- **谁写的：** 云端审计，2026-11-11，应用户要求。只读调研后写成，没有改任何产品代码。
-- **依据：** main `0eef043a` 的代码；`docs/plans/0162`、`docs/plans/0164` 里的历次跑分记录；Anthropic、OpenAI、DeepSeek、Manus、Factory、Cognition 等公开的 harness 经验（来源见 §11）。
-- **状态：** 提案。里面的分期、数字和排期都等用户定。用户定之前不动任何卡。
-- **事实的可靠程度：** §1 的代码事实由子代理读 main 得出，其中 6 条我自己复核过（标 ✔）。跑分数字抄自书面报告，原始运行记录不在仓库里。
+- **Written by:** the cloud audit, 2026-11-11, at the user's request. Read-only research; no product code was changed.
+- **Based on:** the code on main `0eef043a`; the bench records under `docs/plans/0162` and `docs/plans/0164`; published harness practice from Anthropic, OpenAI, DeepSeek, Manus, Factory and Cognition (sources in §11).
+- **Status:** a proposal. Every phase, number and date below waits for the user. No card changes until then.
+- **How reliable the facts are:** the code facts in §1 come from a subagent's read of main; six of them I rechecked myself (marked ✔). Bench numbers are copied from the written reports; the raw runs are not in the repo.
+- **What this is not:** it consolidates practice that has good public evidence. It is not a survey of every open harness or of the research literature (§10).
 
-## 0. 一页结论
+## 0. One page
 
-1. **现在的位置：** 地基稳（预算、停止条件、缓存、重试都有），但「让模型发挥好」这一层是靠事故补丁堆出来的，没有按测量来调。五级里在第 2 级和第 3 级之间（§1）。
-2. **极致的定义：** 同一个模型下，稳定赢 Hermes 和 OpenClaw，不输 Claude Code；自己的题做到接近满分后换更难的题；在公开榜单上有一个外人认的数（§2）。harness 超不过模型本身，所以目标按「同模型对比」来写。
-3. **做法：** 先建测量（H0），再按证据强弱做十件事（H1–H10）。每一项都有可检查的验收和否决条件（§4、§5）。
-4. **和 v0.1.64 的关系：** 这十一项没有一项在现在那 64 个 PR 的清单里。建议 H0、H1、H8a 插进 v0.1.64（发版前本来就要把 27 题修回来），H2–H7 作为 v0.1.65 的主线，H9、H10 持续做（§6）。
-5. **量级：** 约 36 个 PR。大部分不在安全面上，不需要最高档审查加 Codex，所以不挤占现在最紧的那份审查额度（§6）。
-6. **要用户定的四件事在 §9。**
+1. **Where Arslan is:** the base is solid (budgets, stop conditions, caching, retries). The layer that makes the model perform well was built from incident patches and has never been tuned by measurement. On a five-level scale it sits between levels 2 and 3 (§1).
+2. **What "the ceiling" means:** on the same model, reliably ahead of Hermes and OpenClaw and not behind Claude Code; near full marks on Arslan's own tasks and then a harder set; one number on a public leaderboard (§2). A harness can't exceed the model, so every target is a same-model comparison.
+3. **How:** build the measurement first (H0), then ten pieces of work in order of evidence (H1–H10). Each has a checkable acceptance line and a veto rule (§4, §5).
+4. **Against v0.1.64:** none of these eleven items is in today's list of 64 PRs. Proposed: H0's first PR, H1 and H8a go into v0.1.64 (the 27-task gate has to be restored before the tag anyway); H2–H7 become v0.1.65's main line; H9 and H10 continue (§6).
+5. **Size:** about 36 PRs. Most are off the security surface, so they don't draw on the effort=max plus Codex review budget (§6).
+6. **Four things for the user to decide are in §9.**
 
-## 1. 现状基线
+## 1. Baseline
 
-### 1.1 五级里的位置
+### 1.1 Position on five levels
 
-| 级 | 含义 | Arslan |
+| Level | Meaning | Arslan |
 |---|---|---|
-| 1 | 循环能跑，工具能用 | 有 |
-| 2 | 跑得稳：预算、停止条件、出错重试、缓存 | 有 |
-| 3 | 靠测量来调：每次改动单独量，按模型分别调 | 没有 |
-| 4 | 自己会验证：做完前由程序强制检查 | 只有后台任务有 |
-| 5 | 长任务不跑偏：上下文、计划、记忆是设计过的 | 有零件，没调过 |
+| 1 | The loop runs and tools work | Yes |
+| 2 | It runs steadily: budgets, stop conditions, retries, caching | Yes |
+| 3 | Tuned by measurement: each change measured alone, tuned per model | No |
+| 4 | Checks itself: the program enforces a check before "done" | Background jobs only |
+| 5 | Long tasks stay on course: context, plan and memory are designed | Parts exist, untuned |
 
-### 1.2 代码里的证据
+### 1.2 Evidence in code
 
-| # | 事实 | 位置 | 后果 |
+| # | Fact | Where | Effect |
 |---|---|---|---|
-| 1 | 系统提示词约 14,700 字符，一份给所有模型。注释里写着每条规则对应哪次事故。「立刻行动」重复 3 次，「别编造」至少 5 次 | `server/orchestrator/answer_rules.py`（文件 21,404 字节 ✔） | 规则互相稀释；为 DeepSeek 写的大写强调原样发给 Claude |
-| 2 | `web_search` 的说明写「Do at most 1–2 broad searches… answer as soon as you can」 ✔ | `server/registry/tool_defs/web.py:9` | 和「把活干完」打架 |
-| 3 | 读过网页的回合，每步注入「use at most six relevant comparison rows」 ✔ | `server/orchestrator/tool_loop.py:1168-1176` | 可能是「找 10 个岗位」长期只出 7、8 行的原因之一（推断，H1 里验证） |
-| 4 | 非 Claude 模型一轮内的历史上限固定 64,000 字符（上网后 96,000），不看模型窗口；超了砍到一半，不留摘要 ✔ | `tool_loop.py:35-36`、`:1179-1181` | 128k 窗口的 DeepSeek 只用一成多；读一个长网页就可能挤掉之前的全部内容 |
-| 5 | 回合之间不保留工具结果，下一轮每次调用只剩一行 | `server/orchestrator/turn_tools.py:26-27,120` | 追问上一轮读过的网页要重读或靠猜 |
-| 6 | 聊天回合的验收只有「回答发出去了」 ✔ | `server/services/task_service.py:985-1039`（`_answer_only`） | 「做完了」没人查 |
-| 7 | 回答守卫只核对「画了图」「搜过了」两种声称，靠中英文正则；改文件、跑命令的声称不核对 | `server/orchestrator/answer_guards.py:155-164` | 虚报完成拦不住 |
-| 8 | 干活时温度是默认的 0.7；Claude 的思考力度从没设过；OpenAI 兼容和 Gemini 的输出上限默认 8,192 ✔ | `arslan/llm/providers/*.py`；`anthropic_provider.py:56` | 结果更随机；长输出被截断 |
-| 9 | `search_files` 只能搜字面内容，不能按路径、文件名或正则；`edit_file` 报错里的参数名（`old`）和说明里的（`old_string`）对不上 | `tool_defs/files.py:50,83`；`file_tools.py:360-363` | 模型退回去用 `grep`、`find`，多走几步 |
-| 10 | 大部分工具失败只返回原始异常；恢复提示只有三条通用规则 | `tool_execute.py:148`；`recovery_hints.py:14-26` | 失败后不知道下一步 |
-| 11 | 计划（`update_plan`）只活一轮，没有提醒 | `server/orchestrator/turn_plan.py:7` | 长任务跑偏 |
-| 12 | 提示词要求模型调用 `my_status`、`attach_file`，但它们不在常驻工具里 | `answer_rules.py:303,323`；`arslan.py:1034` | 每次多两步 |
-| 13 | 「学到的做法」没有任何效果数据 | `server/services/lessons.py` | 可能有害也不知道 |
+| 1 | The system prompt is about 14,700 characters, one text for every model. Comments name the incident behind each rule. "Act now" appears three times, "don't invent" at least five | `server/orchestrator/answer_rules.py` (file is 21,404 bytes ✔) | Rules dilute each other; capitals written for DeepSeek also go to Claude |
+| 2 | `web_search`'s description says "Do at most 1–2 broad searches… answer as soon as you can" ✔ | `server/registry/tool_defs/web.py:9` | Fights "finish the job" |
+| 3 | Once a page has been read, every step injects "use at most six relevant comparison rows" ✔ | `server/orchestrator/tool_loop.py:1168-1176` | May be one reason "find 10 jobs" keeps returning 7 or 8 rows (inference; H1 tests it) |
+| 4 | On non-Claude models the in-turn history is bounded at a fixed 64,000 characters (96,000 after a web read), whatever the model's window; over it, half is dropped with no summary ✔ | `tool_loop.py:35-36`, `:1179-1181` | A 128k DeepSeek uses about a tenth of its window; one long page can evict everything before it |
+| 5 | Tool results are not kept between turns; the next turn sees one line per call | `server/orchestrator/turn_tools.py:26-27,120` | A follow-up about a page read last turn means re-reading or guessing |
+| 6 | A chat turn's only acceptance is "an answer was delivered" ✔ | `server/services/task_service.py:985-1039` (`_answer_only`) | Nothing checks "done" |
+| 7 | Answer guards check only "drew a chart" and "searched" claims, by Chinese and English regex; file and command claims are unchecked | `server/orchestrator/answer_guards.py:155-164` | A false "done" gets through |
+| 8 | Tool work runs at the default temperature 0.7; Claude's effort is never set; OpenAI-compatible and Gemini default to 8,192 output tokens ✔ | `arslan/llm/providers/*.py`; `anthropic_provider.py:56` | Noisier results; long outputs are cut |
+| 9 | `search_files` matches literal content only, with no path, file-name or regex; `edit_file`'s errors name a parameter (`old`) that its description calls `old_string` | `tool_defs/files.py:50,83`; `file_tools.py:360-363` | The model falls back to `grep` and `find`, costing steps |
+| 10 | Most tool failures return the raw exception; there are three generic recovery hints | `tool_execute.py:148`; `recovery_hints.py:14-26` | No next step after a failure |
+| 11 | The plan (`update_plan`) lives for one turn, with no reminder | `server/orchestrator/turn_plan.py:7` | Long tasks drift |
+| 12 | The prompt tells the model to call `my_status` and `attach_file`, which aren't resident tools | `answer_rules.py:303,323`; `arslan.py:1034` | Two extra steps each time |
+| 13 | Lessons have no measured effect | `server/services/lessons.py` | Could be harmful and nobody would know |
 
-### 1.3 跑分里的证据
+### 1.3 Evidence in the bench records
 
-有记录的失分 37 条，按原因分：停下来等用户 8，结果不完整 6，没按细节要求 6，事实或出处 5，工具或环境 4，跑分自身 4，自己的改动造成退步 2，其他 3（`docs/plans/0162/R63-gate-report.md`、`U10-rerun-results.md`、`M1B-baseline-results.md`、`docs/plans/0164/STATUS.md`）。
+37 recorded losses with a stated reason: stopped to wait for the user 8, incomplete result 6, missed an instruction detail 6, facts or sources 5, tool or environment 4, the bench itself 4, a regression from Arslan's own change 2, other 3 (`docs/plans/0162/R63-gate-report.md`, `U10-rerun-results.md`, `M1B-baseline-results.md`, `docs/plans/0164/STATUS.md`).
 
-三条最要紧：
-- **输给 Hermes 的题原因固定，两轮没修好：** T3 财报「6 个数全写对，但文件里没写出处」（`R63-gate-report.md:55`，`U10-rerun-results.md:41`）；T2 岗位自 10 月初起没有一轮 3/3，都是行数不够或链接核不上。报告自己写「差距在 Arslan 自己身上，不在搜索上」。
-- **自己的改动是主要失分来源之一：** S2a-2 让 Claude 上 T11 从 3/3 到 0/3；STY2 的收尾说明让回答长度连输 OpenClaw 两轮；STY2 门槛重跑 20/27 → 16/27、等你 0 → 3。
-- **现在的测量分不清真假：** 9 题 × 3 次，差两三题在噪声里（`R63-gate-report.md` 自己这么写）。
+The three that matter most:
+- **The tasks lost to Hermes have a fixed cause, unfixed for two rounds.** T3: all six figures right, but the file names no source (`R63-gate-report.md:55`, `U10-rerun-results.md:41`). T2 has not reached 3/3 in any round since early October: too few rows, or links that can't be matched. The report itself says the gap is in Arslan, not in search.
+- **Arslan's own changes are a main source of losses.** S2a-2 took T11 on Claude from 3/3 to 0/3; STY2's closing note lost the length measure to OpenClaw for two rounds; the STY2 gate rerun went from 20/27 to 16/27 and from 0 waits to 3.
+- **Today's measurement can't tell signal from noise.** Nine tasks × three runs; a difference of two or three is within noise (`R63-gate-report.md` says so).
 
-## 2. 目标：「极致」怎么量
+A same-model, same-question comparison from 2026-11-12 (a tracking-link redirect diagnosis, Opus 5.5) shows the same pattern: Claude Code ran four rounds, formed a hypothesis and tested it, and returned a verified fix; Arslan stopped after one step and returned a list of possible causes, two of them marked as unverified guesses, and asked the user to run the tests. The run trace has not been read, so the cause is not established. It belongs in the capability set (§4.1).
 
-| 编号 | 目标 | 现在 | 目标值 |
+## 2. Targets: how "the ceiling" is measured
+
+| Id | Target | Today | Target value |
 |---|---|---|---|
-| G1 | 回归集（现有 9 题，每题 5 次）在 DeepSeek 上 | 22/27（3 次制） | ≥ 43/45；等你 0；无证据就说做完 ≤ 1 |
-| G2 | 同题同模型对 Hermes（三次全过的题数） | 少 1 题 | 至少多 1 题 |
-| G3 | 同题同模型对 OpenClaw（做成任务） | 没量过 | 不低于它；SMART-5 四项继续不输 |
-| G4 | 同 Claude 模型对 Claude Code | 17/24 对 17/24 | 不低于它 |
-| G5 | 能力集（新出的 30 题，更难） | 没有 | 先出基线，再定「比基线高 20 个百分点」 |
-| G6 | 效率：每题工具步数中位数；Claude 缓存命中 | 没记；81%（Claude Code 97%） | 步数降 20%，花费不升；命中 ≥ 90% |
-| G7 | 公开榜单（Terminal-Bench，私下跑） | 没有 | 先出一个数，不预设目标 |
-| G8 | 用户自己的 10 件日常事 | 没有 | 9/10 一次做成，不用中途纠正 |
+| G1 | Regression set (today's 9 tasks, 5 runs each) on DeepSeek | 22/27 (3 runs each) | ≥ 43/45; 0 waits; "done without evidence" ≤ 1 |
+| G2 | Same task, same model, against Hermes (tasks passed 3 of 3) | 1 task behind | At least 1 ahead |
+| G3 | Same task, same model, against OpenClaw (task success) | Not measured | Not below it; SMART-5's four measures still not behind |
+| G4 | Same Claude model against Claude Code | 17/24 vs 17/24 | Not below it |
+| G5 | Capability set (30 new, harder tasks) | None | Baseline first; then 20 points above baseline |
+| G6 | Efficiency: median tool steps per task; Claude cache hits | Not recorded; 81% (Claude Code 97%) | Steps down 20% at no higher cost; hits ≥ 90% |
+| G7 | A public leaderboard (Terminal-Bench, run privately) | None | Get one number; no target set in advance |
+| G8 | Ten everyday jobs the user names | None | 9 of 10 done first time, with no correction |
 
-G1–G4 是硬门槛，G5–G8 先出基线。数字是目标，不是预测。
+G1–G4 are hard gates. G5–G8 start with a baseline. These are targets, not predictions.
 
-## 3. 原则
+## 3. Principles
 
-1. **先量后改。** 没有 H0 的测量，后面任何一项都不合并。
-2. **一次只改一处。** 一个 PR 一个开关，单独量它的效果和花费。
-3. **能由程序强制的，不靠提示词求。** 一句话要靠加大写才管用，就说明它该变成程序里的检查（Claude Code 文档的原话是该放进钩子）。
-4. **每个机制都有删除条件。** 量不出效果的守卫、提示词行、功能，一律删。模型变强后重测。
-5. **按模型分别调。** DeepSeek、Claude、Gemini 各一份档案，默认档给其余的。
-6. **不动安全边界。** 这份方案里没有一项放宽确认卡、沙盒或外部内容标记。复核者和完成检查都不回答任何卡。
+1. **Measure, then change.** Nothing after H0 merges without H0's measurement.
+2. **One change at a time.** One PR, one switch, its effect and its cost measured alone.
+3. **What the program can enforce, the prompt doesn't plead for.** If a sentence only works in capitals, it belongs in a check in code.
+4. **Every mechanism has a delete condition.** A guard, a prompt line or a feature with no measured effect goes. Re-test when models improve.
+5. **Tune per model.** One profile each for DeepSeek, Claude and Gemini, and a default for the rest.
+6. **No security boundary moves.** Nothing here loosens a card, the sandbox or the outside-content mark. The reviewer and the done-check never answer a card.
 
-## 4. 验证机制（H0，所有后续项的前提）
+## 4. Verification (H0, the precondition for everything else)
 
-### 4.1 四组题
+### 4.1 Four task sets
 
-| 组 | 内容 | 用途 | 规模 |
+| Set | Contents | Purpose | Size |
 |---|---|---|---|
-| 回归集 | 现有 T1–T17 里稳定能过的 | 守住不退步，通过率应接近满分 | 约 12 题 × 5 次 |
-| 能力集 | 从真实失败里出的新题（§1.3 的九类各出几道），加用户的 10 件日常事 | 看有没有变强，通过率故意偏低 | 30 题 × 3 次（开发）/ 5 次（门槛） |
-| 留出集 | 能力集里随机留 10 题，调的时候不看 | 防止只会做见过的题 | 10 题 × 5 次 |
-| 行为集 | 「不该做」的：一句话的问题不该长篇大论、一步能做完的不该开子会话（现有 SMART-5、T17） | 防止用力过猛 | 约 15 题 × 3 次 |
+| Regression | Today's T1–T17 that pass reliably | Hold the line; pass rate near 100% | About 12 tasks × 5 runs |
+| Capability | New tasks written from real failures (several per class in §1.3), plus the user's ten everyday jobs | Show improvement; pass rate deliberately low | 30 tasks × 3 runs (development) or 5 (gate) |
+| Held-out | 10 capability tasks set aside and not looked at while tuning | Guard against learning the test | 10 tasks × 5 runs |
+| Behaviour | Things it should not do: a one-line question gets no essay, a one-step request opens no sub-session (today's SMART-5 and T17) | Guard against over-effort | About 15 tasks × 3 runs |
 
-每个版本往能力集里加 5 道新题，把已经稳过的挪进回归集。
+Each release adds five new capability tasks and moves the ones that pass reliably into the regression set.
 
-### 4.2 每次运行记什么
+### 4.2 What each run records
 
-通过与否；结束状态（done / 等你 / 预算用完）；工具步数；模型请求数；输入输出 token；缓存命中；美元；用时；确认卡张数；「无证据就说做完」（现有 `done_without_evidence.py`）；失败时按 §1.3 的九类之一归因，写一句原因。结果落在 bench 根目录的一个表里，按提交号和开关名存。
+Pass or fail; end state (done, waiting, budget used up); tool steps; model requests; input and output tokens; cache hits; dollars; time; cards shown; "done without evidence" (today's `done_without_evidence.py`); and, on a failure, one of the nine classes in §1.3 with one sentence of cause. Results go into one table in the bench root, keyed by commit and switch name.
 
-### 4.3 改动怎么判
+### 4.3 How a change is judged
 
-- 每个改动带一个开关（`BENCH_ARSLAN_SETTINGS` 已支持给测试实例设设置，#310）。同一天、同一模型，先跑关、再跑开。
-- **否决：** 回归集任何一题从 5/5 掉到 3/5 以下；或回归集总数掉 2 次以上；或行为集掉 2 次以上；或每题花费涨 25% 以上而通过数没涨。
-- **算有效：** 能力集通过数涨 3 次以上（90 次里），留出集不掉。
-- **没效果的：** 不合并。例外是纯删减（删提示词行、删守卫），不退步就合。
-- 结果写进 PR 描述：开和关各自的通过数、步数、花费、失败归因。
+- Every change has a switch (`BENCH_ARSLAN_SETTINGS` already sets settings on the test instance, #310). Same day, same model: run with the switch off, then on.
+- **Veto:** any regression task falls from 5/5 to 3/5 or lower; or the regression total falls by more than 2 runs; or the behaviour set falls by more than 2; or cost per task rises more than 25% with no gain in passes.
+- **Counts as working:** capability passes rise by 3 or more (out of 90), and the held-out set doesn't fall.
+- **No effect:** not merged. The exception is a pure removal (a prompt line, a guard): it merges if nothing regresses.
+- The PR body gives passes, steps, cost and failure classes for off and on.
 
-### 4.4 节奏和花费
+### 4.4 Cadence and cost
 
-- 每个 H 项的 PR：回归集 + 行为集（DeepSeek），约 75 次运行。
-- 每周一次全套：四组题，DeepSeek 和 Claude 各一遍。
-- 每个版本一次对比：Hermes、OpenClaw、Claude Code 跑同题。
-- **花费估计：** R63 那轮 Arslan 在 DeepSeek 上 27 次运行花 $2.18，Claude 上 $4.86。按这个比例，一次 PR 级检查约 $6（DeepSeek），一次全套约 $20（DeepSeek）加 $45（Claude）。这是估算。
-- **读记录：** 每周从失败的运行里抽 10 条通读，归因有疑问的改归因。新发现的失败类型变成能力集的新题。
+- Per H PR: regression plus behaviour sets on DeepSeek, about 75 runs.
+- Weekly: all four sets, once on DeepSeek and once on Claude.
+- Per release: Hermes, OpenClaw and Claude Code on the same tasks.
+- **Cost estimate:** in the R63 round Arslan's 27 runs cost $2.18 on DeepSeek and $4.86 on Claude. At that rate a PR-level check is about $6 (DeepSeek), and a full pass about $20 (DeepSeek) plus $45 (Claude). These are estimates.
+- **Reading runs:** each week, read ten failed runs end to end and correct their class where it's wrong. A new kind of failure becomes a new capability task.
 
-### 4.5 H0 的交付和验收
+### 4.5 H0's deliverables and acceptance
 
-- PR 1：每题多次运行和开关对比的跑法；结果表；失败归因字段。
-- PR 2：能力集 30 题和留出集的题面与检查脚本。检查脚本先用一份人工写的标准答案验证（一条发现算成两条这类问题 M64 已经碰到过，`M64-bench.md:64`）。
-- PR 3：行为集并入；周报脚本。
-- **验收：** 同一个提交连跑两遍全套，两遍的通过数差不超过 3（说明测量够稳）；四组题的基线数写进文档。
+- PR 1: repeated runs and off/on comparison; the results table; the failure-class field.
+- PR 2: the 30 capability tasks and the held-out set, with checkers. Each checker is first validated against a hand-written reference answer (M64 already met a checker that counted one finding as two, `M64-bench.md:64`).
+- PR 3: the behaviour set folded in; the weekly report script.
+- **Acceptance:** the same commit run twice through all four sets differs by no more than 3 passes; the four baselines are written down.
 
-## 5. 十项工作
+## 5. Ten pieces of work
 
-每项写：目标、步骤、验收、量级、依赖。量级是估计。
+Each gives the goal, the steps, the acceptance line, the size and what it depends on. Sizes are estimates.
 
-### H1 快修：参数和明显的矛盾（约 4 个 PR）
+### H1 Quick fixes: settings and plain contradictions (about 4 PRs)
 
-- **目标：** 去掉自己给自己设的限制。
-- **步骤：**
-  1. 工具回合的温度：DeepSeek、OpenAI 兼容、Gemini 各按厂商文档设定值（DeepSeek 思考模式下温度被忽略，Gemini 建议保持默认），不再一律 0.7。量 0.7 对比新值。
-  2. Claude：按模型设思考力度，起步用 high，再量 medium；输出上限从 8,192 提到模型允许的合理值。OpenAI 兼容和 Gemini 的 8,192 同理。参数名以各家当前文档为准，实现时核对。
-  3. 删掉 `web_search` 说明里的「最多 1–2 次、尽快回答」和每步注入的「最多六行」，各一个开关，单独量。量 T2 的行数有没有回到 10。
-  4. `edit_file` 报错的参数名改对；`my_status`、`attach_file` 要么常驻、要么从提示词里去掉；环境快照加本地时区。
-  5. `promise_guard` 的触发词里去掉「generating」「in progress」这类正常用语，量误报。
-- **验收：** 回归集不退步；T2 在 DeepSeek 上 ≥ 2/3 且不再出现 7、8 行；27 题回到 ≥ 22/27、等你 0。
-- **依赖：** H0 PR 1。
+- **Goal:** remove limits Arslan sets on itself.
+- **Steps:**
+  1. Temperature for tool work: set per vendor guidance for DeepSeek, OpenAI-compatible and Gemini instead of 0.7 everywhere (DeepSeek ignores it in thinking mode; Gemini advises defaults). Measure 0.7 against the new value.
+  2. Claude: set effort per model, starting at high and then measuring medium; raise the output limit from 8,192 to a sensible value the model allows. The same for the OpenAI-compatible and Gemini 8,192. Check parameter names against each vendor's current docs when building.
+  3. Remove "at most 1–2 searches… answer as soon as you can" from `web_search`'s description and the injected "at most six rows", each behind its own switch. Measure whether T2 returns to 10 rows.
+  4. Fix the parameter name in `edit_file`'s errors; make `my_status` and `attach_file` resident or take them out of the prompt; add the local time zone to the environment snapshot.
+  5. Take ordinary words such as "generating" and "in progress" out of `promise_guard`'s triggers; measure false corrections.
+- **Acceptance:** no regression; T2 on DeepSeek ≥ 2/3 with no 7- or 8-row result; the 27 tasks back to ≥ 22/27 with 0 waits.
+- **Depends on:** H0 PR 1.
 
-### H2 一轮之内和回合之间的上下文（约 4 个 PR）
+### H2 Context inside a turn and between turns (about 4 PRs)
 
-- **目标：** 该记得的记得住，缓存不被打断。
-- **步骤：**
-  1. 一轮内的上限按模型窗口算（例如窗口的 50%），不再固定 64,000 字符。
-  2. 超限时先清旧的工具结果：正文换成一行「结果已存到某路径，需要时再读」（长输出本来就有存档，`tool_outputs.py`），保留最近几次的原文，工具调用和它的结果成对保留。清不够再做摘要，摘要里保留文件路径、链接、数字这类原样的标识。
-  3. 告诉模型「上下文会自动整理，不用因为快满了而提前收尾」。
-  4. 回合之间：上一轮读过的文件和网页留下路径或链接加一句内容提要，外部内容的标记照旧带着。
-  5. 把每次请求的缓存命中写进运行记录；清理按整块做，避免每步都让缓存失效。
-- **验收：** 能力集里的长任务题（读 5 个以上来源、20 步以上）通过数涨；追问题（第二轮问上一轮读过的内容）不重读就能答对；Claude 缓存命中 ≥ 90%，DeepSeek 的 `prompt_cache_hit_tokens` 占比不降。
-- **依赖：** H0。第 4 步碰外部内容标记，走安全审查。
+- **Goal:** keep what should be kept, without breaking the cache.
+- **Steps:**
+  1. Bound the in-turn history by the model's window (for example 50% of it), not a fixed 64,000 characters.
+  2. Over the bound, clear old tool results first: replace the body with one line saying where the saved copy is (long outputs are already saved, `tool_outputs.py`); keep the most recent results whole; keep each call with its result. If that isn't enough, summarise, keeping paths, links and numbers verbatim.
+  3. Tell the model that context is tidied automatically, so it doesn't wind down early.
+  4. Between turns: for files and pages read last turn, keep the path or link and one line about the content; the outside-content mark stays on them.
+  5. Record cache hits per request; clear in whole chunks so the cache isn't invalidated every step.
+- **Acceptance:** long capability tasks (five or more sources, twenty or more steps) pass more often; follow-up tasks are answered without re-reading; Claude cache hits ≥ 90%, and DeepSeek's `prompt_cache_hit_tokens` share doesn't fall.
+- **Depends on:** H0. Step 4 touches the outside-content mark and takes a security review.
 
-### H3 完成前强制检查（约 5 个 PR，证据最强的一项）
+### H3 An enforced check before "done" (about 5 PRs; the strongest evidence)
 
-- **目标：** 「做完了」必须有证据，由程序查，不靠模型自觉。
-- **步骤：**
-  1. **本轮证据账：** 程序自己记这一轮真实发生了什么：写了哪些文件、哪些命令的退出码、打开过哪些链接。检查点里本来就有文件前后的差异。
-  2. **从用户的话里取可查的条件：** 数量（「10 个」）、要出处、要文件、要表格、「改短」这类。开工时由模型列出，放进状态块；这一步只在干活的回合做，一句话的问答不做（行为集守着）。
-  3. **确定性的检查器：** 文件在不在、表有几行、文件里有没有出处、链接是不是这一轮真打开过、声称改过的文件在差异里有没有、声称跑过的命令有没有成功。
-  4. **收尾时强制：** 模型要结束时跑检查。不过关就把缺的那一条退回去让它补，最多退 2 次；还不过就照实告诉用户哪条没做到。现有后台任务的 `AcceptanceCheck` 是同一套，扩到聊天里的干活回合。
-  5. 现有的「画了图」「搜过了」两条正则守卫并进来；`done_without_evidence` 从跑分脚本变成产品里的同一个判断。
-- **验收：** T3 在 DeepSeek 上 3/3（出处）；T2 ≥ 2/3 且链接都是打开过的；「无证据就说做完」27 次里 ≤ 1（现在 4）；行为集不退步；每题花费涨幅 ≤ 15%。
-- **依赖：** H0、H2 的证据存档。不放宽任何权限：检查器只读。
+- **Goal:** "done" needs evidence, checked by the program.
+- **Steps:**
+  1. **A ledger of the turn's evidence:** the program records what actually happened: files written, commands and their exit codes, links opened. Checkpoints already hold the file differences.
+  2. **Checkable conditions from the user's words:** a count ("10"), sources wanted, a file wanted, a table wanted, "shorter". The model lists them at the start and they go in the status block. Only on turns that do work; a one-line question gets none (the behaviour set guards this).
+  3. **Deterministic checkers:** the file exists; the table has N rows; the file names its sources; each link was opened this turn; a file said to be edited appears in the differences; a command said to have run succeeded.
+  4. **Enforced at the end:** when the model is about to finish, run the checks. A failed one is sent back for repair, at most twice; if it still fails, the answer says plainly which condition wasn't met. Background jobs' `AcceptanceCheck` is the same mechanism, extended to working chat turns.
+  5. Fold the two existing regex guards in; `done_without_evidence` becomes the same judgement in the product.
+- **Acceptance:** T3 on DeepSeek 3/3 (sources); T2 ≥ 2/3 with every link one that was opened; "done without evidence" ≤ 1 in 27 (4 today); no behaviour regression; cost per task up by no more than 15%.
+- **Depends on:** H0 and H2's saved evidence. Checkers are read-only and loosen nothing.
 
-### H4 提示词重构（约 4 个 PR）
+### H4 The prompt, rebuilt (about 4 PRs)
 
-- **目标：** 从事故补丁变成原则，按模型分档。
-- **步骤：**
-  1. 把现有提示词逐行标来源：原则、某个工具的用法、某次事故的补丁。
-  2. 工具用法挪进各自的工具说明；事故补丁先归并成原则。
-  3. 核心提示词写到约 5,000 字符以内：身份和语气、怎么干活（先看再做、做完要验证、遇到障碍换路）、什么时候问用户、怎么回答。每条规则带一句原因。
-  4. 加 3–5 个不同类型的好例子，不是边角情况清单。
-  5. 按模型分档：Claude 档去掉大写强调；DeepSeek 档保留「必须真的发出工具调用」这类已经量出有用的话，并加强计划提示；Gemini 档按它的模板把约束放系统指令、问题放最后。
-  6. 成批删旧行，每批单独量。删了不退步就不恢复。
-- **验收：** 提示词字符数降一半以上；回归集和行为集不退步；SMART-5 的长度项对 OpenClaw 不输；Claude 上不必要的工具调用数下降（步数中位数降）。
-- **依赖：** H0。和 STY2、SMART-3/4 改的是同一个文件，排在它们之后。H1 第 3 步先做。
+- **Goal:** principles instead of incident patches, with a profile per model.
+- **Steps:**
+  1. Tag every line of today's prompt: a principle, how to use one tool, or a patch for one incident.
+  2. Move tool usage into the tool's own description; merge the patches into principles.
+  3. Write the core prompt to about 5,000 characters: identity and tone; how to work (look first, verify after, find another way round an obstacle); when to ask the user; how to answer. Each rule carries its reason.
+  4. Add three to five varied good examples, not a list of edge cases.
+  5. Profiles: Claude's drops the capitals; DeepSeek's keeps the lines measured to help (such as actually emitting the tool call) and strengthens planning; Gemini's follows its template, with constraints in the system instruction and the question last.
+  6. Remove old lines in batches, each measured. What can go without a regression stays gone.
+- **Acceptance:** the prompt is at most half its size; no regression in the regression or behaviour sets; SMART-5 length not behind OpenClaw; fewer unnecessary tool calls on Claude (median steps down).
+- **Depends on:** H0. It edits the same file as STY2 and SMART-3/4, so it follows them. H1 step 3 comes first.
 
-### H5 工具面（约 5 个 PR）
+### H5 The tool surface (about 5 PRs)
 
-- **目标：** 工具少而清楚，不容易填错，出错告诉下一步。
-- **步骤：**
-  1. `search_files` 加路径、文件名匹配和正则；范围仍限于现在可读的根目录。
-  2. `edit_file` 加「全部替换」，找不到时返回最接近的几行。
-  3. **报错约定：** 每个工具失败都返回三样：发生了什么、多半是为什么、下一步可以怎么做。先覆盖失败记录里出现最多的 20 种。
-  4. 合并重叠的工具：`task_progress` / `background_status` / `progress_report`；`remember` / `memory_note`；`list_my_capabilities` / `my_status` / `whats_new`。
-  5. 按需工具的查找加同义词；最常用的 3–5 个之外，把跑分里最常被找的几个改成常驻；查不到时的提示写清楚。每个对话记住的工具存下来，重启不丢。
-  6. 长输出的头尾截断统一成一条规则，说明里告诉模型全文存在哪。
-- **验收：** 文件类题的步数中位数降 20%；「工具不存在」「参数错」两类失败次数减半；工具说明总长仍在 12,000 字符以内。
-- **依赖：** H0。和 K6（文件工具更好用）是同一件事，合成一张卡。第 1 步碰可读范围，走安全审查。
+- **Goal:** few clear tools that are hard to misuse and say what to do after a failure.
+- **Steps:**
+  1. `search_files` gains a path, file-name matching and regex, within today's readable roots.
+  2. `edit_file` gains replace-all and returns the nearest lines when nothing matches.
+  3. **An error contract:** every failure returns what happened, the likely cause and a next step. Start with the twenty most frequent failures in the records.
+  4. Merge overlapping tools: `task_progress` / `background_status` / `progress_report`; `remember` / `memory_note`; `list_my_capabilities` / `my_status` / `whats_new`.
+  5. On-demand lookup gains synonyms; beyond the three to five most used, make the tools the bench looks up most often resident; a clearer no-match message; the per-conversation set survives a restart.
+  6. One rule for head-and-tail truncation, with the description saying where the full text is.
+- **Acceptance:** median steps on file tasks down 20%; "tool not available" and "bad arguments" failures halved; the tool table still under 12,000 characters.
+- **Depends on:** H0. It is the same work as K6, so one card. Step 1 touches the readable range and takes a security review.
 
-### H6 计划和长任务（约 3 个 PR）
+### H6 Planning and long tasks (about 3 PRs)
 
-- **目标：** 几十步的任务不跑偏。
-- **步骤：**
-  1. 计划在对话里跨回合保留，新一轮开头带上未完成的项。
-  2. 连续若干步没更新计划时，在状态块里提醒一次。
-  3. 后台任务和子会话写一份进度记录（做了什么、下一步、已知问题）；上下文重置后先读它再继续。
-  4. 开工前和用户对一次「怎样算做完」，对后台任务是现成的验收标准，对目标模式（L7）是它的入口。
-- **验收：** 能力集里 30 步以上的题通过数涨；中途打断再继续的题能接着做，不重头来。
-- **依赖：** H0、H2。和 L7（目标模式）、S5（计划模式）对齐后再开工。
+- **Goal:** a task of dozens of steps stays on course.
+- **Steps:**
+  1. The plan persists across turns in a conversation; a new turn opens with its unfinished items.
+  2. After several steps without a plan update, one reminder in the status block.
+  3. Background jobs and sub-sessions write a progress note (done, next, known problems) and read it first after a context reset.
+  4. Agree what "done" means before starting: the existing acceptance criteria for background jobs, and the way into goal mode (L7).
+- **Acceptance:** capability tasks of thirty or more steps pass more often; an interrupted task continues without starting over.
+- **Depends on:** H0 and H2. Align with L7 and S5 before starting.
 
-### H7 独立复核和研究质量（约 3 个 PR）
+### H7 An independent review, and research quality (about 3 PRs)
 
-- **目标：** 重要产出有一个没看过过程的眼睛再看一遍。
-- **步骤：**
-  1. 复核者是一次全新上下文的模型调用，只看用户的要求、最终产出和本轮证据账，不看主模型的推理。
-  2. 只在产出够重时才触发：写了报告或多个文件、研究类回答。一句话的问答不触发。
-  3. 研究类加一遍出处检查：每个结论对应一个这一轮真的打开过的来源，对不上的标出来或删掉。
-  4. 复核者只能说「这几条没做到」并退回一次，不能批准任何动作，不能回答确认卡。
-- **验收：** T2「链接和表里写的对不上」这类清零；T13–T15 代码审查题的误报不升；每题花费涨幅 ≤ 20%，否则只对研究类开。
-- **依赖：** H3。复核用哪个模型要遵守「只在本机」的设置和 BYOK 边界（和分类器同一条约束）。
+- **Goal:** a second look by something that didn't watch the work.
+- **Steps:**
+  1. The reviewer is one fresh-context model call that sees the user's request, the final output and the turn's evidence ledger, not the main model's reasoning.
+  2. It runs only when the output is weighty: a report or several files written, or a research answer. A one-line question never triggers it.
+  3. Research gets a source pass: each conclusion maps to a source opened this turn; what doesn't is flagged or removed.
+  4. The reviewer can only say which conditions weren't met and send the work back once. It can't approve an action or answer a card.
+- **Acceptance:** "the links don't match the table" in T2 goes to zero; false positives on T13–T15 don't rise; cost per task up by no more than 20%, or it runs for research only.
+- **Depends on:** H3. The reviewer's model honours the local-only setting and the BYOK boundary (the same constraint as the classifier's).
 
-### H8 出错恢复和「结果不明」（约 3 个 PR，其中 H8a 进 v0.1.64）
+### H8 Recovery and unknown outcomes (about 3 PRs; H8a goes into v0.1.64)
 
-- **目标：** 把最大的一类失分「停下来等用户」压到零。
-- **步骤：**
-  1. **H8a：** 一个动作结果不明时（典型是 AppleScript 超时），先用只读的办法去看实际状态（提醒事项建没建上），能确认就继续，确认不了再停。这也是现在挂着的 `known_local_failure` 修复所在的地方。
-  2. 用户拒绝一张卡后，返回里带上可行的下一步（换一种不需要这张卡的做法，或照实说明做不了）。
-  3. 恢复提示从 3 条扩到覆盖失败记录里最常见的 20 种，从 H0 的失败归因里取。
-  4. 失败的调用留在上下文里，不清掉。
-- **验收：** 回归集「等你」为 0，连续三周；T1 在两个模型上都 ≥ 2/3。
-- **依赖：** H0。H8a 只读状态，不新增权限。
+- **Goal:** bring the largest loss class, stopping to wait, to zero.
+- **Steps:**
+  1. **H8a:** when an action's outcome is unknown (typically an AppleScript timeout), look at the real state by a read-only route first (was the reminder created?). Continue if that settles it; stop only if it doesn't. The pending `known_local_failure` fix lives here.
+  2. When the user declines a card, the result names a workable next step (a route that doesn't need that card, or a plain statement that it can't be done).
+  3. Grow the recovery hints from three to the twenty most frequent failures in H0's records.
+  4. Failed calls stay in context.
+- **Acceptance:** 0 waits in the regression set for three weeks running; T1 ≥ 2/3 on both models.
+- **Depends on:** H0. H8a only reads state and adds no permission.
 
-### H9 学习闭环（约 2 个 PR，持续）
+### H9 The learning loop (about 2 PRs, continuing)
 
-- **步骤：** 量「学到的做法」开和关的差别，没有正效果就默认关；跑分里的失败自动生成候选规则，人看过才生效；反复做的同类任务提示用户存成技能。
-- **验收：** 有一个数说明它有用，或它被关掉。
+- **Steps:** measure lessons on against off, and turn them off by default if there's no gain; bench failures produce candidate rules that take effect only after a person reads them; repeated tasks of one kind prompt the user to save a skill.
+- **Acceptance:** a number shows they help, or they are off.
 
-### H10 精简（持续）
+### H10 Trimming (continuing)
 
-- **步骤：** 每个版本做一次「机制体检」：每个守卫、每段注入的提示，关掉量一次；不退步就删。每换一代模型重做一次。
-- **验收：** 守卫和注入的条数只减不增，除非新加的那条带着 H0 的正结果。
+- **Steps:** each release, switch every guard and every injected note off in turn and measure; what can go without a regression is deleted. Repeat with each new model generation.
+- **Acceptance:** the count of guards and injected notes only falls, unless a new one arrives with a positive H0 result.
 
-## 6. 排期和量级
+## 6. Schedule and size
 
-| 放在哪 | 项 | PR 数（估） | 说明 |
+| Where | Items | PRs (estimate) | Note |
 |---|---|---|---|
-| v0.1.64，发版前 | H0（PR 1）、H1、H8a | 约 6 | 发版前本来就要把 27 题修回 22/27、等你 0 |
-| v0.1.65 主线 | H0（其余）、H2、H3、H4、H5、H6、H7、H8 其余 | 约 26 | 取代「继续加功能」 |
-| 持续 | H9、H10 | 约 4 | 每个版本做一次 |
+| v0.1.64, before the tag | H0 (PR 1), H1, H8a | About 6 | The 27 tasks have to be back at 22/27 with 0 waits before the tag anyway |
+| v0.1.65 main line | H0 (the rest), H2, H3, H4, H5, H6, H7, the rest of H8 | About 26 | In place of more features |
+| Continuing | H9, H10 | About 4 | Once per release |
 
-- **顺序：** H0 → H1 → H8a →（H2、H5 可并行）→ H3 → H4 → H6 → H7。H4 放在 H3 之后，因为很多提示词行的作用会被 H3 的程序检查取代，到时可以直接删。
-- **审查：** 只有 H2 第 4 步（外部内容标记）、H5 第 1 步（可读范围）、H7（复核者的权限边界）在安全面上。其余按普通档审查，不占最高档加 Codex 的额度。
-- **和现有卡的关系：** K6 并进 H5；L7、S5 和 H6 对齐；STY2 的收尾说明并进 H3；`known_local_failure` 是 H8a；分类器（CLS）和 H7 的复核者是两个东西，前者管权限、后者管质量，共用「只在本机」和 BYOK 的约束。
+- **Order:** H0 → H1 → H8a → (H2 and H5 in parallel) → H3 → H4 → H6 → H7. H4 follows H3 because H3's checks replace many prompt lines, which can then simply go.
+- **Review:** only H2 step 4 (the outside-content mark), H5 step 1 (the readable range) and H7 (the reviewer's limits) are on the security surface. The rest take an ordinary review.
+- **Against existing cards:** K6 folds into H5; L7 and S5 align with H6; STY2's closing note folds into H3; `known_local_failure` is H8a. The classifier (CLS) and H7's reviewer are different things: one decides permission, the other judges quality; they share the local-only and BYOK constraints.
+- **In v0.1.64:** H1 follows ASK1-a, since both change command behaviour and the bench couldn't tell them apart. The 27-task round run for ASK1-a serves as H1's "before" baseline.
 
-## 7. 每个阶段之后应该看到的数
+## 7. What each stage should show
 
-| 做完 | 应该看到 |
+| After | Expect |
 |---|---|
-| H0 | 四组题的基线；同一提交两遍的差 ≤ 3 |
-| H1 + H8a | 27 题 ≥ 22/27，等你 0；T2 不再只出 7、8 行 |
-| H2 | 长任务题和追问题上涨；Claude 缓存命中 ≥ 90% |
-| H3 | T3 3/3；无证据就说做完 ≤ 1；G2（对 Hermes 多 1 题）应在这一步达到 |
-| H4 + H5 | 步数中位数降 20%；提示词减半；SMART-5 不输 |
-| H6 + H7 | 能力集比基线高 20 个百分点（G5）；G1、G3、G4 |
-| 之后 | G7 出数；G8 用户的 10 件事 |
+| H0 | Baselines for the four sets; two runs of one commit within 3 passes |
+| H1 + H8a | 27 tasks ≥ 22/27, 0 waits; T2 no longer returns 7 or 8 rows |
+| H2 | Long and follow-up tasks up; Claude cache hits ≥ 90% |
+| H3 | T3 3/3; "done without evidence" ≤ 1; G2 (one task ahead of Hermes) should be reached here |
+| H4 + H5 | Median steps down 20%; the prompt halved; SMART-5 not behind |
+| H6 + H7 | The capability set 20 points above baseline (G5); G1, G3, G4 |
+| Later | A number for G7; the user's ten jobs for G8 |
 
-哪一步之后没看到对应的数，就停下来读失败记录，不接着往下做。
+If a stage doesn't show its number, stop and read the failed runs before going on.
 
-## 8. 风险
+## 8. Risks
 
-| 风险 | 对策 |
+| Risk | Answer |
 |---|---|
-| 改动又造成退步 | H0 的否决规则；一次一处；开关可以随时关 |
-| 只会做见过的题 | 留出集；每个版本加新题；用户的 10 件事 |
-| 检查和复核让它变慢变贵 | 只在干活的回合触发；退回次数封顶；花费涨幅写进验收 |
-| 提示词重构打掉缓存或已有行为 | 成批替换，每批单独量；量缓存命中 |
-| 弱一些的模型需要更多扶持 | 按模型分档；DeepSeek 档保留量出有用的强提示 |
-| 范围又变大 | 这条线自己封顶 36 个 PR；新想法进下一版 |
-| 跑分花费 | §4.4 的估算，每周约 $65；用户定上限 |
+| A change causes another regression | H0's veto rules; one change at a time; a switch that can be turned off |
+| It learns the test | The held-out set; new tasks each release; the user's ten jobs |
+| Checks and reviews make it slower and dearer | They run only on working turns; send-backs are capped; cost limits are in each acceptance line |
+| The prompt rebuild breaks the cache or existing behaviour | Batches, each measured; cache hits measured |
+| Weaker models need more support | Per-model profiles; DeepSeek's keeps the lines measured to help |
+| Scope grows again | This line is capped at 36 PRs; new ideas go to the next release |
+| Bench cost | §4.4's estimate, about $65 a week; the user sets the limit |
 
-## 9. 要用户定的
+## 9. For the user to decide
 
-1. **这条线作为 v0.1.65 的主线，取代继续加功能，同意吗？**
-2. **H0（PR 1）、H1、H8a 插进 v0.1.64，同意吗？** 多约 6 个 PR，换来发版时 27 题不退步、等你为 0。
-3. **跑分花费上限：** 建议每周 DeepSeek $30、Claude $45。
-4. **你的 10 件日常事：** 请写下你自己最常想让 Arslan 做的 10 件具体的事。它们进能力集，也是 G8 的题。
+1. **Is this the main line of v0.1.65, in place of more features?**
+2. **Do H0 (PR 1), H1 and H8a go into v0.1.64?** About 6 more PRs, for a release whose 27 tasks don't regress and whose waits are 0.
+3. **The bench spending limit:** suggested $30 a week on DeepSeek and $45 on Claude.
+4. **Your ten everyday jobs:** ten specific things you most often want Arslan to do. They join the capability set and are G8.
 
-## 10. 这份方案没有覆盖的
+## 10. What this plan doesn't cover
 
-- 确认卡的数量（安全线的 ASK1、CLS 管）。它是用户最直接的痛点，和这条线并行，不互相替代。
-- 界面、iPhone、插件钩子、子会话的新功能。
-- 换模型或训练模型。
+- The number of confirmation cards (ASK1 and CLS on the security line). That is the user's most direct complaint; it runs alongside this line and neither replaces the other.
+- The interface, the iPhone app, plugin hooks, new sub-session features.
+- Changing or training models.
+- **Depth of research.** One subagent read about twenty primary sources. Not done: reading the source of open harnesses (Codex CLI, opencode, OpenHands, Goose, Cline, Aider, Hermes, OpenClaw); what the top leaderboard entries do; the research literature; and automatic optimisation of prompts and tool descriptions against an eval. H0–H5 rest on the strongest evidence and are unlikely to change; H6–H10 and a possible "automatic optimisation" layer are what a deeper round would revise.
 
-## 11. 来源
+## 11. Sources
 
-- Anthropic：[Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)；[Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)；[Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)；[Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)；[Harness design for long-running apps](https://www.anthropic.com/engineering/harness-design-long-running-apps)；[Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)；[Claude Code best practices](https://code.claude.com/docs/en/best-practices)；[Claude prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)；[Context editing](https://platform.claude.com/docs/en/build-with-claude/context-editing)。
-- OpenAI：[GPT-5 prompting guide](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_prompting_guide)；[Codex prompting guide](https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide)。
-- DeepSeek：[Thinking mode](https://api-docs.deepseek.com/guides/thinking_mode)；[Tool calls](https://api-docs.deepseek.com/guides/tool_calls)；[Context caching](https://api-docs.deepseek.com/guides/kv_cache)。
-- 其他：[Manus: Context engineering lessons](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus)；[Factory: Terminal-Bench](https://factory.com/news/terminal-bench)；[Cognition: Don't build multi-agents](https://cognition.com/blog/dont-build-multi-agents)；[mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)；[OpenClaw compaction](https://docs.openclaw.ai/concepts/compaction)；[Hermes Agent memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory)。
-- 这些页面由子代理抓取并转述，引用前请对原文再核一遍。OpenAI 的 Codex 循环那篇和 Terminal-Bench 榜单页当时没能读到。
+- Anthropic: [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents); [Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents); [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents); [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents); [Harness design for long-running apps](https://www.anthropic.com/engineering/harness-design-long-running-apps); [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents); [Claude Code best practices](https://code.claude.com/docs/en/best-practices); [Claude prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices); [Context editing](https://platform.claude.com/docs/en/build-with-claude/context-editing).
+- OpenAI: [GPT-5 prompting guide](https://developers.openai.com/cookbook/examples/gpt-5/gpt-5_prompting_guide); [Codex prompting guide](https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide).
+- DeepSeek: [Thinking mode](https://api-docs.deepseek.com/guides/thinking_mode); [Tool calls](https://api-docs.deepseek.com/guides/tool_calls); [Context caching](https://api-docs.deepseek.com/guides/kv_cache).
+- Others: [Manus: Context engineering lessons](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus); [Factory: Terminal-Bench](https://factory.com/news/terminal-bench); [Cognition: Don't build multi-agents](https://cognition.com/blog/dont-build-multi-agents); [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent); [OpenClaw compaction](https://docs.openclaw.ai/concepts/compaction); [Hermes Agent memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory).
+- A subagent fetched and relayed these pages; check the original wording before quoting. OpenAI's post on the Codex loop and the Terminal-Bench leaderboard page could not be read at the time.
