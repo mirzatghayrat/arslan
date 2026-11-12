@@ -309,7 +309,8 @@ def hooks_path(folder: Path) -> Path | None:
 
 
 def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
-                   aliased: bool = False, git_config_ok: bool = False) -> list[tuple[str, ...]]:
+                   aliased: bool = False, git_config_ok: bool = False,
+                   walk_roots: Iterable[Path] = ()) -> list[tuple[str, ...]]:
     """The SBPL filters a profile denies `file-write*` over, one tuple per family in FAMILIES' order, then one for
     the `core.hooksPath` targets of `folders` (the work folder, or an MCP server's granted folders) when any is
     set: the folder by its real path and by its name in its real parent, so a link there can't be swapped.
@@ -317,10 +318,13 @@ def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
     and `roots` (an MCP server's own folder) and not `aliased` (#813 review 9: the walk found a held name that links
     out of its folder, or couldn't finish); otherwise it is the bare regex. HR-1b: a hooks name exempts SAMPLE_HOOKS
     unless `aliased`; `git_config_ok` lifts GIT_CONFIG only where git_config_guard's walk looks (in `folders`, not in
-    a held dependency folder nor below a nested `.git`; at a link's target it stays held). Built from constants."""
+    a held dependency folder nor below a nested `.git`; at a link's target it stays held). Built from constants.
+    SBX-10: `walk_roots` (a sub-session's commander's workspace) count for the exemption and have their hooksPath
+    targets held, but lift nothing: the git_config lift stays in `folders`, where the guard looks."""
     from server.services.sandbox_profile import real, regex, subpath
-    folders = list(folders)
-    unless = [f"(require-not {regex(dependency_regex())})"] if _exempt(folders, roots) and not aliased else []
+    folders, walk_roots = list(folders), list(walk_roots)
+    unless = ([f"(require-not {regex(dependency_regex())})"]
+              if _exempt([*folders, *walk_roots], roots) and not aliased else [])
     outside = " ".join(f"(require-not {subpath(real(Path(os.path.abspath(f))))})" for f in folders)
     unwalked = [f"(require-all {outside})", regex(_NESTED_GIT)] + ([] if unless else [regex(dependency_regex())])
 
@@ -332,7 +336,7 @@ def kernel_filters(folders: Iterable[Path], *, roots: Iterable[Path] = (),
         return parts[0] if len(parts) == 1 else f"(require-all {' '.join(parts)})"
     out = [tuple(name(p) for p in patterns) for _, patterns in FAMILIES]
     targets: list[str] = []
-    for folder in folders:
+    for folder in [*folders, *walk_roots]:
         target = hooks_path(folder)
         if target is None:
             continue

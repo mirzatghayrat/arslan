@@ -111,6 +111,14 @@ markers = 15
 cases = 24
 xfail = 0
 
+# 0.1.64 SBX-10, a sub-session's walk covers the commander's workspace: its links into the child's folder (.git/hooks,
+# .vscode) and its core.hooksPath there are refused, the own-workspace control as before; a walk root that is a link
+# or doesn't hold the folder refuses with the note.
+["server/sbx/test_sbx10_walk_roots.py"]
+markers = 2
+cases = 8
+xfail = 0
+
 # 0.1.64 SBX-1b: paths are written as SBPL strings seatbelt decodes. Real sandbox-exec runs: a
 # protected folder named in ASCII, CJK, accents, emoji or with a control character is closed; a
 # rule matches either Unicode normalization; a CJK working folder is writable; a CJK MCP grant is
