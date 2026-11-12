@@ -154,16 +154,24 @@ def exempts(roots: Iterable) -> bool:
     return not any(part.casefold() in _FOLDED_DEPENDENCIES for root in roots for part in _parts(root))
 
 
-def family(path, root=None) -> str | None:
+def _exempted(parts: tuple[str, ...], root) -> bool:
+    """A path with components `parts` is inside a dependency folder that `root` exempts (`family`'s rule)."""
+    return (root is None or exempts([root])) and any(part.casefold() in _FOLDED_DEPENDENCIES for part in parts[:-1])
+
+
+def family(path, root=None, *, aliased: bool = False) -> str | None:
     """The family of the first name `path` matches at any depth, or None. None inside a dependency folder too, unless
     `root` is given and its own path has one (`exempts`): the same rule as the kernel's for that root, which HR-2
-    passes (the work folder, by its real path). Without `root` a dependency folder anywhere on the path exempts."""
+    passes (the work folder, by its real path). Without `root` a dependency folder anywhere on the path exempts.
+    `aliased` drops the exemptions, as `kernel_filters(aliased=True)` does (the dependency folders, and HR-1b's
+    SAMPLE_HOOKS): HR-2a passes it when the write's path goes through a link at a held name (`held_link`)."""
     parts = _parts(path)
-    if (root is None or exempts([root])) and any(part.casefold() in _FOLDED_DEPENDENCIES for part in parts[:-1]):
+    if not aliased and _exempted(parts, root):
         return None
     for name, patterns in FAMILIES:
         for pattern in patterns:
-            if _anywhere(parts, pattern) and not (pattern in SAMPLE_HOOKS and _anywhere(parts, SAMPLE_HOOKS[pattern])):
+            sample = not aliased and pattern in SAMPLE_HOOKS and _anywhere(parts, SAMPLE_HOOKS[pattern])
+            if _anywhere(parts, pattern) and not sample:
                 return name
     return None
 
@@ -185,11 +193,19 @@ def is_git_config(path) -> bool:
     return any(_anywhere(parts, pattern) for pattern in GIT_CONFIG)
 
 
-def matches(path, root=None) -> bool:
-    """Whether a write to `path` (as given: HR-2 passes the resolved path, and the work folder's real path as `root`)
-    is a write into a file that runs later. The names only; the work folder's `core.hooksPath` target is
-    `hooks_path`'s."""
-    return family(path, root) is not None
+def matches(path, root=None, *, aliased: bool = False) -> bool:
+    """Whether a write to `path` (as given: HR-2 passes the resolved path and the path as read at each link on the
+    way, and the work folder's real path as `root`) is a write into a file that runs later. The names only; the work
+    folder's `core.hooksPath` target is `hooks_path`'s. `aliased`: as `family`'s."""
+    return family(path, root, aliased=aliased) is not None
+
+
+def held_link(path, root=None) -> bool:
+    """HR-2a (#813 review 9 and 10, for the file tools): whether `path`, a link, is at a held name or a held folder
+    name (`_below`, as `held_folders` judges the links it lists), where the kernel's walk would list it: not inside a
+    dependency folder that `root` exempts, which the walk skips."""
+    parts = _parts(path)
+    return not _exempted(parts, root) and bool(_below(parts))
 
 
 def is_ci_file(path) -> bool:
@@ -478,6 +494,10 @@ class HeldWalk:
     aliases: tuple[Path, ...] = ()
     targets: tuple[Path, ...] = ()
     link_filters: tuple[str, ...] = ()
+    #: HR-2a: each of those links as (the path a consumer reads it by, its real path), in the walk's order: the file
+    #: tools map a write at or below the real path back through the link and test that with `matches`, the Python
+    #: form of `link_filters` (workspace_paths._refuse_run_later).
+    links: tuple[tuple[Path, Path], ...] = ()
 
 
 class _Incomplete(Exception):
@@ -577,6 +597,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     aliases: list[Path] = []
     targets: list[Path] = []
     filters: list[str] = []
+    seen: list[tuple[Path, Path]] = []
     through_seen: set[tuple[Path, tuple]] = set()   # (a folder, the held names read in it): review delta 1 (c)
     counted: set[Path] = set(starts)          # the folders whose literal is counted (the starts: by the caller)
     held_bytes = [0]
@@ -624,6 +645,7 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
             raise TooManyLinks(max_links)
         target = Path(os.path.realpath(path))
         targets.append(target)
+        seen.append((seen_as, target))
         filters.extend(link_filters(target, below))
         # HR-1b (⓪Plan): a link at a hook name (or the hooks folder) is an alias wherever it points (no sample exemption).
         if target.parent != folder or _at_hook_name(_parts(seen_as)):
@@ -725,7 +747,8 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     else:
         complete = not full[0]
     return HeldWalk(tuple(dict.fromkeys(found)), complete, tuple(dict.fromkeys(skipped)),
-                    tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)), tuple(dict.fromkeys(filters)))
+                    tuple(dict.fromkeys(aliases)), tuple(dict.fromkeys(targets)), tuple(dict.fromkeys(filters)),
+                    tuple(dict.fromkeys(seen)))
 
 
 def _is_link_entry(entry: os.DirEntry) -> bool:

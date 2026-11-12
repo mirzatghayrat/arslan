@@ -39,6 +39,21 @@ class SecretFile(Exception):
     """The path names a credential-shaped file; refused by policy."""
 
 
+class RunLater(PathEscape):
+    """HR-2a: the path is a file that makes something run later (`run_later`): a write needs the user's click on
+    this call's own card (`tool_gates.workspace_write`). A PathEscape, so every caller that refuses one refuses
+    this too. `path` is the resolved path the card names."""
+
+    def __init__(self, user_path, path: Path):
+        super().__init__(f"refusing to write a file that runs later without your OK on its own card: {user_path}")
+        self.path = path
+
+
+class RunLaterUnknown(PathEscape):
+    """HR-2a: whether the write is into a file that runs later can't be told (the repository's git config, or a
+    folder on the way, can't be read), so it is refused: the gate refuses it before any card (`tool_gates`)."""
+
+
 # Names that carry credentials often enough that reading one by accident is
 # worse than the friction of refusing. Matched on the FILENAME, case-folded.
 _SECRET_GLOBS = (
@@ -53,13 +68,15 @@ def is_secret_name(name: str) -> bool:
 
 
 def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False,
-                         make_parents: bool = False, pin=None) -> Path:
+                         make_parents: bool = False, pin=None, run_later_ok: Path | None = None) -> Path:
     """Absolute, symlink-resolved path inside `ws_root`, or raise.
 
     `for_write=True` judges by the parent directory so a not-yet-existing file
     is allowed; the parent must itself exist and resolve inside — unless
     `make_parents`, where missing folders are allowed (the caller creates them)
     and the deepest existing ancestor must resolve inside (rule 3).
+    A write into a file that runs later raises RunLater unless it resolves to `run_later_ok`, the path this
+    call's card was clicked for (HR-2a).
 
     SBX-9: `pin` is the caller's pin of the working folder (`pin_root`), carried from this resolution to the write
     (Astra #855 P1: one identity, not a fresh one per step); without it, the folder is pinned for this call only.
@@ -69,16 +86,19 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
     if not isinstance(user_path, str) or not user_path.strip():
         raise PathEscape("path is required")
     if pin is not None:
-        return _resolve(user_path, pin.path, for_write=for_write, make_parents=make_parents)
+        return _resolve(user_path, pin.path, for_write=for_write, make_parents=make_parents,
+                        run_later_ok=run_later_ok)
     from server.services import root_pin
     own = pin_root(ws_root)
     try:
-        return _resolve(user_path, own.path, for_write=for_write, make_parents=make_parents)
+        return _resolve(user_path, own.path, for_write=for_write, make_parents=make_parents,
+                        run_later_ok=run_later_ok)
     finally:
         root_pin.release([own])
 
 
-def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool) -> Path:
+def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
+             run_later_ok: Path | None = None) -> Path:
     raw = Path(user_path.strip())
     candidate = raw if raw.is_absolute() else (root / raw)
     if for_write and candidate.name in ("", ".", ".."):
@@ -118,7 +138,138 @@ def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool)
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
     if for_write:
         _refuse_cap6b(resolved, root, user_path)
+        _refuse_run_later(resolved, candidate, root, user_path, run_later_ok)
     return resolved
+
+
+def held_for_later(user_path, ws_root: Path | None) -> Path | None:
+    """HR-2a: the path a write of `user_path` in `ws_root` would land on, when it is a file that runs later (what
+    its card names), else None: an ordinary write, or one the executor refuses for another reason. The one test the
+    gate (`tool_gates`) and `hard_rules.never_auto` share. RunLaterUnknown propagates: it can't be told."""
+    # SBX-10 (#870, not merged yet): in a sub-session this walk should also cover the commander's workspace
+    # (`settings_service.workspace_dir`), pinned with SBX-9's `root_pin`, and refuse when that workspace is unknown or
+    # doesn't contain the child's folder. To be applied when #870 lands; today only the child's own folder is walked.
+    try:
+        resolve_in_workspace(user_path, ws_root, for_write=True, make_parents=True)
+    except RunLater as held:
+        return held.path
+    except RunLaterUnknown:
+        raise
+    except (PathEscape, SecretFile):
+        return None
+    return None
+
+
+def _refuse_run_later(path: Path, candidate: Path, root: Path, user_path, approved: Path | None) -> None:
+    """HR-2a: a write into a file that makes something run later (HR-1's list, `run_later.matches`, and the
+    repository's `core.hooksPath` folder) needs the user's click on this call's own card: refused unless `path`
+    (the resolved path, where the write lands) is the one that card named (`approved`). `matches` folds case and
+    Unicode (casefold); the hooks folder is judged by identity (`_within`), whatever its spelling. The work folder's
+    real path is `root`, so a dependency folder is exempt only below it (`run_later.exempts`). A config that can't be
+    read is refused, as the kernel's profile is never built then.
+
+    #813 review 9 and 10, as the kernel holds them (⓪Plan's and ③Hands' reviews of HR-2a):
+      - the names are tested on the resolved path and on the path as read at every link on the way (`_link_hops`:
+        the link as written with the rest of the path, then each link's target with the rest), so a held name or held
+        folder that is a link to an ordinary name (`.vscode -> vsc`, `.envrc -> envrc.real`) is held;
+      - a write at a link's target named otherwise (`vsc/tasks.json`) is held as the kernel's `link_filters` hold it:
+        HR-1's own walk of the work folder (`run_later.held_folders`) gives each link at a held name, and the write's
+        path mapped back through it is tested with `matches` (`_through_links`);
+      - no dependency exemption when the path goes through a link at a held name (`run_later.held_link`), or HR-1's
+        walk found an alias, couldn't finish, or skipped a private folder the path is in: the kernel's profile then
+        has none (`aliased`);
+      - the hooks folder of the work folder's repository (`hooks_path(root)`, what the kernel holds) and of the nearest
+        repository above the file (a nested one's own)."""
+    from server.services import run_later
+    try:
+        hooks = [h for h in (run_later.hooks_path(path.parent), run_later.hooks_path(root)) if h is not None]
+    except OSError as exc:
+        raise RunLaterUnknown(f"refusing to write: can't read this repository's git config ({exc.strerror or exc})") \
+            from None
+    hops = _link_hops(candidate, root)
+    try:
+        walk = run_later.held_folders([root])
+    except run_later.TooManyLinks as exc:
+        raise RunLaterUnknown(f"refusing to write: {exc}") from None
+    aliased = (any(run_later.held_link(link, root=root) for link, _ in hops) or bool(walk.aliases)
+               or not walk.complete or any(path.is_relative_to(skipped) for skipped in walk.skipped))
+    held = (any(run_later.matches(p, root=root, aliased=aliased) for p in (*(read for _, read in hops), path))
+            or _through_links(path, walk.links, root, aliased)
+            or any(_within(path, h) for h in hooks))
+    if held and path != approved:
+        raise RunLater(user_path, path)
+
+
+def _through_links(path: Path, links, root: Path, aliased: bool) -> bool:
+    """HR-2a: `path` is at or below the real path of a link at a held name (`HeldWalk.links`) and, read through that
+    link as a consumer reads it, is a held name: the Python form of `run_later.link_filters`."""
+    from server.services import run_later
+    if not links:
+        return False
+    ancestors = [(above, _identity(above)) for above in (path, *path.parents)]
+    for seen_as, target in links:
+        rest = _rest_below(path, ancestors, target)
+        if rest is not None and run_later.matches(seen_as.joinpath(*rest), root=root, aliased=aliased):
+            return True
+    return False
+
+
+def _rest_below(path: Path, ancestors, folder: Path) -> tuple[str, ...] | None:
+    """`path`'s components below `folder` when it is `folder` or inside it, else None. By identity where they exist
+    (`ancestors`: `path` and each folder above it, with its identity; one of them is `folder` on disk, whatever the
+    spelling, as `_within`), else by name, folded (a target that isn't there yet)."""
+    target = _identity(folder)
+    if target is not None:
+        for above, identity in ancestors:
+            if identity == target:
+                return path.parts[len(above.parts):]
+    width = len(folder.parts)
+    if _folded(path.parts[:width]) == _folded(folder.parts):
+        return path.parts[width:]
+    return None
+
+
+#: The links `_link_hops` follows before it refuses (Linux's own limit).
+_MAX_HOPS = 40
+
+
+def _link_hops(candidate: Path, root: Path) -> list[tuple[Path, Path]]:
+    """HR-2a: each link on the way to `candidate`, followed as the file system follows it, from the work folder
+    (`root`, a real path) when `candidate` is below it as written: (the link, by the real path of its folder and its
+    own name; the path a consumer reads there, that link with the rest of the path as written). A link's target joins
+    the rest, so each later link reads as the earlier link's target with the rest. A component that can't be read,
+    or more than `_MAX_HOPS` links, refuses (RunLaterUnknown): it can't be told where the write lands."""
+    if candidate.is_relative_to(root):
+        here, pending = root, list(candidate.relative_to(root).parts)
+    else:
+        here, pending = Path(candidate.anchor), list(candidate.parts[1:])
+    hops: list[tuple[Path, Path]] = []
+    while pending:
+        name = pending.pop(0)
+        if name in ("", "."):
+            continue
+        if name == "..":
+            here = here.parent
+            continue
+        step = here / name
+        try:
+            target = Path(os.readlink(step)) if stat.S_ISLNK(os.lstat(step).st_mode) else None
+        except (FileNotFoundError, NotADirectoryError):
+            target = None
+        except OSError as exc:
+            raise RunLaterUnknown(f"refusing to write: can't read a folder on the way ({exc.strerror or exc})") \
+                from None
+        if target is None:
+            here = step
+            continue
+        if len(hops) >= _MAX_HOPS:
+            raise RunLaterUnknown("refusing to write: too many links on the way")
+        hops.append((step, step.joinpath(*pending)))
+        if target.is_absolute():
+            here, pending = Path(target.anchor), [*target.parts[1:], *pending]
+        else:
+            pending = [*target.parts, *pending]
+    return hops
 
 
 def pin_root(ws_root):
