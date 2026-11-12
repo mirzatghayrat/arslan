@@ -360,6 +360,31 @@ def view(entries: list[Path]) -> dict[Path, Answer | None]:
     return answers
 
 
+#: HR-2b: the files the outgoing commits change, names only (no external diff, no textconv), NUL-separated.
+_OUTGOING = ("-c", "core.fsmonitor=false", "diff", "--name-only", "--no-ext-diff", "--no-textconv", "-z")
+#: The remote a `git push` names (its first word after `push` and its options), when it is a plain remote name.
+_PUSH_REMOTE = re.compile(r"\bpush(?:\s+-\S+)*\s+([A-Za-z0-9][\w.-]*)(?=\s|$)")
+
+
+def outgoing_ci(folder: Path, command: str) -> list[str] | None:
+    """HR-2b: the CI files (`run_later.is_ci_file`) the commits `command` (a `git push` run from `folder`) sends
+    change, asked as `view` asks (`_each`: pinned environment, read-only seatbelt, time limit): `<upstream>..HEAD`,
+    else `<remote>/HEAD..HEAD` for the remote it names (origin when none). None: couldn't list (no repository at or
+    above `folder`, or git failed or timed out); the caller says so and the card still shows. `git -C` isn't read."""
+    from server.services import run_later
+    here = Path(os.path.realpath(folder))
+    entry = next((p / ".git" for p in (here, *here.parents) if os.path.lexists(p / ".git")), None)
+    if entry is None:
+        return None
+    named = _PUSH_REMOTE.search(command)
+    for base in ("@{upstream}", f"refs/remotes/{named.group(1) if named else 'origin'}/HEAD"):
+        out = _each([entry], (*_OUTGOING, f"{base}..HEAD", "--"))[entry]
+        if out is not None:
+            names = out.decode("utf-8", errors="surrogateescape").split("\0")
+            return sorted({name for name in names if name and run_later.is_ci_file(name)})
+    return None
+
+
 #: Off the allowlist, by key: the (file, value) pairs reached through an included file (not a config git reads
 #: directly, which the allowlist covers). None: git couldn't list it.
 Included = dict[Key, frozenset[tuple[Path, str]]] | None

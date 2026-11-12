@@ -306,6 +306,8 @@ async def test_a_job_no_longer_honours_a_stored_always(execution_db, monkeypatch
         await db.commit()
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "reason"))
+    from server.services import git_config_guard
+    monkeypatch.setattr(git_config_guard, "outgoing_ci", lambda *_a: [])     # HR-2b: no outgoing CI file to name
     confirm = approvals.JobConfirmations(CID)
     assert await confirm.command("git push origin main", []) is False
     assert asked == ["publishes to a remote repository"]

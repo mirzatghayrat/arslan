@@ -47,7 +47,8 @@ KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "syste
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
                    "workspace_write", "network", "git_config",
                    "run_later",    # HR-2a: a file tool's write into a file that runs later (once only)
-                   "git_include"})  # HR-1c: git after an included file outside the working folder changed
+                   "git_include",   # HR-1c: git after an included file outside the working folder changed
+                   "git_refused"})  # HR-2b: git add/commit after git's refusal left the tree half updated
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
 #: of a stored rule or grant that are never a request's own. None today. (§A5 also names the rule
 #: kinds `command_prefix` and `mcp_server`: the PR that first stores one adds it here.)
@@ -60,7 +61,7 @@ _STORED_ONLY: frozenset[str] = frozenset()
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
                         "remote", "takeover",
-                        "run_later"})
+                        "run_later", "git_refused"})
 #: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
 #: the island and the phone answer only the first choice (§A4).
 _TASK_FIRST = frozenset({"app", "shortcut", "site"})
