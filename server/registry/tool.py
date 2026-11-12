@@ -31,6 +31,7 @@ class Offer:
     folders_open: bool          # run_command's words follow this later read of the folder setting
     nobody_to_ask: bool         # a task's turn with no card surface (a scheduled run). DELETE-BY: as at its read
     shell: bool
+    bottom_layer: bool          # SUB5e: this conversation is a sub-session's sub-session (or its chain can't be read)
 
 
 async def read_offer(skill_index: Callable[[], Awaitable[str]]) -> Offer:
@@ -72,10 +73,27 @@ async def read_offer(skill_index: Callable[[], Awaitable[str]]) -> Offer:
         # read-only commands back).
         nobody_to_ask = task_service.current() is not None and permissions.current_asker() is None
         shell = await settings_service.shell_enabled(db)
+    bottom_layer = await _bottom_layer(context.conversation_id if context is not None else None)
     return Offer(in_task=in_task, in_job=in_job, can_ask=can_ask, browser=browser, mac=mac, hands=hands,
                  scheduled=scheduled, skills=skills, in_project=bool(context is not None and context.project_id),
                  default_read=default_read, workspace=workspace is not None, own_folder=own_folder, lan=lan, ssh=ssh,
-                 enrolled=enrolled, folders_open=folders_open, nobody_to_ask=nobody_to_ask, shell=shell)
+                 enrolled=enrolled, folders_open=folders_open, nobody_to_ask=nobody_to_ask, shell=shell,
+                 bottom_layer=bottom_layer)
+
+
+async def _bottom_layer(conversation_id: str | None) -> bool:
+    """SUB5e: whether this conversation is on the last layer a sub-session can be (`sub_sessions.MAX_DEPTH`), read from
+    the stored chain. One that can't be read counts as the bottom: it is offered no sub-session, as a chain that can't
+    be read gets none of the permissions."""
+    if not conversation_id:
+        return False
+    from server.db import session as db_session
+    from server.services import sub_sessions
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await sub_sessions.depth(db, conversation_id) >= sub_sessions.MAX_DEPTH
+    except Exception:  # noqa: BLE001 — never a reason to fail a turn's table
+        return True
 
 
 def always(_offer: Offer) -> bool:

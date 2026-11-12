@@ -4,7 +4,7 @@ the command's own card, then the network after outside content. Since S2a-3 step
 refusal the model reads, or with what it settled for the execute stage."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from server.orchestrator.tool_gates import _declined, _unattended
 from server.orchestrator.turn_state import ToolTurn
@@ -195,6 +195,65 @@ async def _runs_offline_unread(command: str, args: dict, verdict, *, confined: b
             and not await _asks_for_everything() and not await _work_folder_holds_home())
 
 
+def _git_config_request(why: str = ""):
+    """HR-1b: one card, for this conversation only, stored under `*` as `outside` is (the lift is the working
+    folder's, whichever it is when the command runs)."""
+    from server.services import permissions
+    return permissions.Request(
+        kind="git_config", target="*", title="Let git update this repository's settings?",
+        detail=("For the rest of this conversation, in the working folder: upstreams, remotes, user.name and "
+                "user.email. Settings that name programs (hooks, editors, filters, aliases) are put back after each "
+                "command."),
+        model_title="Let git update this repository's settings (git_config) in this conversation?", why=why)
+
+
+async def _git_config(args: dict, conversation_id: str | None) -> bool | dict:
+    """HR-1b: whether this command runs under the git_config grant (stored: every sandboxed command, no card; a failed
+    lookup is none), or the refusal the model reads. Otherwise only `git_config: true` with a why asks: one card."""
+    from server.orchestrator import untrusted as _untrusted
+    from server.services import background_jobs, git_config_guard, permissions
+    if (conversation_id or "") in git_config_guard.ENDED:      # review delta 2: a put-back failed here
+        await end_git_config(conversation_id)
+        return False if args.get("git_config") is not True else {
+            "ok": False, "external": False, "executed": False, "error": "git_config ended in this conversation (a "
+            "put-back failed after an earlier command). Tell the user which settings to change instead."}
+    context = permissions.Context(conversation_id, job_id=background_jobs._inside_job.get())
+    request = _git_config_request()
+    try:
+        found = await permissions.standing(request, context)
+    except Exception:  # noqa: BLE001 — fails closed: no grant read means the configs stay held
+        found = None
+    if found is not None:
+        await permissions.note_standing(request, context, found)
+        return True
+    if args.get("git_config") is not True:
+        return False
+    why = _untrusted.clean_name(args.get("why"), 300)
+    if not why:
+        return {"ok": False, "external": False, "executed": False,
+                "error": "git_config needs a why: one short sentence on why git has to update this repository's "
+                         "settings. The user reads it on the card."}
+    decision = await permissions.decide(replace(request, why=why), context)
+    if decision.allowed:
+        return True
+    return {"ok": False, "error": decision.model_text or "the user did not let git update this repository's settings"}
+
+
+async def end_git_config(conversation_id: str | None) -> None:
+    """HR-1b review delta 2: a put-back failed. No lift again here (ENDED) nor after a restart (the grant deleted)."""
+    import logging
+    from server.db import session as db_session
+    from server.services import git_config_guard, permission_store
+    git_config_guard.ENDED.add(conversation_id or "")
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            grant = await permission_store.find_grant(db, conversation_id, None, "git_config", "*")
+            if grant is not None and await permission_store.delete_conversation_grant(db, grant.id):
+                await db.commit()
+    except Exception:  # noqa: BLE001 — ENDED holds the configs in this process either way
+        logging.getLogger(__name__).warning("ending the git_config grant failed", exc_info=True)
+
+
 @dataclass(frozen=True, slots=True)
 class CommandPlan:
     """What the command gate settled, for the execute stage. Any other tool runs with `NOT_A_COMMAND`."""
@@ -211,6 +270,7 @@ class CommandPlan:
     # HR-1 (ruling 2): out under the grant with no click on its own card, so the outside floor keeps the run-later
     # files unwritable. Only the user's click on this command's own card lifts that.
     holds_run_later: bool = False
+    git_config: bool = False        # HR-1b: in the sandbox under this conversation's git_config grant
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -251,11 +311,15 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     refused = await _card(draft, args, turn.confirm_command, turn.conversation_id)
     if refused is not None:
         return refused
+    # HR-1b: after the card (its click is read before this replaces LAST_DECISION), in the sandbox only.
+    git_config = await _git_config(args, turn.conversation_id) if draft.confined and not draft.run_outside else False
+    if isinstance(git_config, dict):
+        return git_config
     refused = await _network(draft, args, turn.conversation_id)
     if refused is not None:
         return refused
     _own_folder_holds(draft)
-    return draft.plan()
+    return replace(draft.plan(), git_config=git_config)
 
 
 @dataclass(slots=True)
@@ -385,7 +449,7 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
 
 async def _card(d: _Draft, args: dict, confirm_command, conversation_id: str | None) -> dict | None:
     """The third stage: the card, if any, in today's order; the first branch that applies answers. The refusal to
-    record, or None. A new card branch (③Hands' `git_config` card, mirroring the outside_sandbox card's) is one more
+    record, or None. A new card branch (HR-1b's `git_config` card is not one: it follows this stage) is one more
     branch here, in its place in the order."""
     from server.services import command_sandbox, terminal_policy
     if d.wants_out and not d.run_outside:

@@ -11,8 +11,8 @@ the permissions.
 SUB3: `start` opens one and runs it as a background job of its own conversation (`background_jobs.start` with a
 `parent_id`). Its cards are asked in the parent's conversation and answered for the sub-session
 (`approvals.SubSessionAsker`); it is offered `TOOLS` only (`arslan.background_body`); one tree shares a spending limit,
-read before each model request, that wraps a run up before it stops it (`check_tree_spend`). No tool table offers `start` yet: SUB5 adds `start_sub_session`
-once the M64 bench passes on its branch.
+read before each model request, that wraps a run up before it stops it (`check_tree_spend`). SUB5e: the model reaches
+`start` through the `start_sub_session` tool (tool_defs.tasks), on demand, in a turn someone can be asked in.
 
 SUB4: a sub-session that ends leaves a report (`ended`); its result is posted in its own conversation only. Once
 nothing under its parent is at work and the parent is idle, one summary turn runs there with every report framed as

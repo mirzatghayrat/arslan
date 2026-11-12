@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "system", "screen",
                    "opaque", "app", "app_risky", "money", "takeover", "shortcut", "site",
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
-                   "workspace_write", "network"})
+                   "workspace_write", "network", "git_config"})
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
 #: of a stored rule or grant that are never a request's own. None today. (§A5 also names the rule
 #: kinds `command_prefix` and `mcp_server`: the PR that first stores one adds it here.)
@@ -72,7 +72,7 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 # never "Always": no rule, however it was stored, lets every command out for good.
 _NEVER_ALWAYS = (_ONCE_ONLY
                  | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
-                              "mcp_tool", "outside"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
+                              "mcp_tool", "outside", "git_config"}))  # S1: no "Always" for an MCP tool in this release
 # S4a (⓪Plan review, fix 1): kinds whose "In this conversation" only a Mac window may give. The Inbox lists every
 # conversation's cards, a background job's too: a click there must not let every later command of a conversation
 # the user is not looking at out of the sandbox, past a restart. Elsewhere such a yes is this time.
@@ -84,8 +84,11 @@ _ALWAYS_ASKS = frozenset({"outside"})
 # S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
 # card, as before S4a. One click must not run the same remote command for two jobs.
 _NEVER_JOINED = frozenset({"outside", "remote"})
+# HR-1b: kinds a card offers for this conversation only (and no). The island never answers it (not one of its kinds).
+_CONVERSATION_ONLY = frozenset({"git_config"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
-_SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
+_SCOPE_SETS = (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
+               | _CONVERSATION_ONLY)
 if not _SCOPE_SETS <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: {sorted(_SCOPE_SETS - KINDS)}")
 
@@ -97,6 +100,7 @@ _LIVE_GRANT_TARGETS = {
     "command": lambda t: t == "unsandboxed:*" or t.startswith("text:"),   # approvals._command_request; `rules:…` is once only since S2a-2
     "outside": lambda t: t == "*",                                         # command_gate._outside_request
     "network": lambda t: t == "network:*",                                 # command_gate, inside the sandbox
+    "git_config": lambda t: t == "*",                                      # command_gate._git_config_request (HR-1b)
     "schedule": lambda t: t == "*",
     "workspace_write": bool,                                               # the working folder's path (or "*")
     "mcp_tool": lambda t: t.startswith("mcp_"),                            # discovery.mcp_tool_key
@@ -227,6 +231,8 @@ def current_asker() -> Asker | None:
 def options_for(req: Request) -> list[str]:
     if req.once_only:
         return ["once"]
+    if req.kind in _CONVERSATION_ONLY:
+        return ["conversation"]
     opts = ["task" if req.kind in _TASK_FIRST else "once"]
     if req.conversation_ok and req.kind not in _ONCE_ONLY:
         opts.append("conversation")

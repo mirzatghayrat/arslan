@@ -1,7 +1,7 @@
 """SUB5b (v0.1.64, card docs/plans/0164/SUB-sub-sessions.md, SUB5 points 3, 8 and 9): where a sub-session still showed
 or ran where it shouldn't.
 
-No tool table offers `start_sub_session` yet, so these tests make sub-sessions with `sub_sessions.create_child` or
+These tests make sub-sessions with `sub_sessions.create_child` or
 `sub_sessions.start` and run the rest for real: the Inbox's accept route, the background job runner with
 `background_body` and the tool loop (a scripted model), the chat entry, the island and status endpoints, `/runs`,
 `/tasks` and the socket's turn lock.
