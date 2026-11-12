@@ -186,7 +186,7 @@ def _reads_a_saved_output(result: dict) -> bool:
 async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
               offline: bool = False, sandbox: bool = False, closed: list[Path] = (),
               readable: list[Path] = (), copies: list[Path] = (), unwrapped: bool = False,
-              hold_run_later: bool = False, git_config: bool = False) -> dict:
+              hold_run_later: bool = False, git_config: bool = False, walk_root: Path | None = None) -> dict:
     """`sandbox`: run inside the workspace sandbox. Where seatbelt is missing or
     cannot start, the command runs as before and the result says
     sandbox="unavailable" (offline mode still refuses without isolation).
@@ -200,7 +200,10 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     outside any run gets one of its own that goes with it.
 
     HR-1b: `git_config`, the grant, lifts the configs in the sandbox (`_guarded`). Review deltas 3 and 4: once any
-    folder had it, every command is checked first (`git_config_guard.recheck`), and not started if that fails."""
+    folder had it, every command is checked first (`git_config_guard.recheck`), and not started if that fails.
+
+    SBX-10: `walk_root`, a sub-session's commander's workspace, is walked for run-later files in the sandbox's
+    profile (`command_sandbox.wrapper`); writes stay in `cwd`."""
     from server.services import execution_context, git_config_guard, run_temp, tool_outputs
     note = ""
     if git_config_guard.WATCHED:
@@ -215,7 +218,7 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
         kw = dict(command=command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
                   readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
-                  hold_run_later=hold_run_later)
+                  hold_run_later=hold_run_later, walk_root=walk_root)
         result = await (_guarded(cwd, kw) if git_config and sandbox else _run(**kw))
     if note:
         result["git_config_note"] = f"{note} {result.get('git_config_note', '')}".strip()
@@ -281,7 +284,7 @@ async def trust_service_allowed() -> bool:
 
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
                readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int,
-               hold_run_later: bool = False, git_config_ok: bool = False) -> dict:
+               hold_run_later: bool = False, git_config_ok: bool = False, walk_root: Path | None = None) -> dict:
     # bash writes here-document temp files under TMPDIR and a nested zsh (`zsh -c`, a `#!/bin/zsh` script) under
     # TMPPREFIX: where /tmp is not writable a `python3 - <<'PY'` save would fail (0.1.49 bench). Both stay in the run's folder.
     # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
@@ -309,7 +312,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         try:
             prefix = await command_sandbox.in_thread(
                 command_sandbox.wrapper, cwd, temp=tmp, offline=offline, closed=closed, readable=readable,
-                copies=copies, proxy_port=proxy_port, trust_service=trust, git_config_ok=git_config_ok) or []
+                copies=copies, proxy_port=proxy_port, trust_service=trust, git_config_ok=git_config_ok,
+                walk_root=walk_root) or []
         except run_later.TooManyLinks:
             return _not_started(cwd, "workspace", command_sandbox.links_note(cwd))
         except root_pin.Swapped as exc:                 # SBX-9: a root swapped while it was pinned
