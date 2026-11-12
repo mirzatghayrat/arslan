@@ -49,13 +49,6 @@
   "name: string required",
   "why: string"
  ],
- "delegate_work": [
-  "jobs: array of object required",
-  "jobs[].context: string",
-  "jobs[].method: string required enum=research|apple-growth|product-design",
-  "jobs[].objective: string required",
-  "jobs[].tools: array of string items enum=web_search|web_extract"
- ],
  "desktop_access": [
   "apps: array of string required",
   "why: string required"

@@ -26,15 +26,9 @@ export interface TaskDetail extends TaskSummary {
     checks: { check_id: string; status: string; evaluator: string; code: string }[];
     artifacts: { id: string; filename: string; title?: string; run_id?: number; url?: string;
       status: string; code: string; sha256?: string; bytes?: number }[] } | null;
-  workers?: TaskWorker[];
   checkpoint: { progress: { completed_steps: string[]; artifacts: TaskRef[]; pending_actions: string[] } } | null;
   attempts: { id: string; number: number; status: string; run_ids: number[] }[];
   actions: TaskAction[];
-}
-export interface TaskWorker {
-  id: string; method: string; method_revision: number; objective: string; run_id: number | null;
-  status: "queued" | "running" | "completed" | "partial" | "failed" | "cancelled" | "interrupted";
-  result: { status: string; result: string; artifacts: TaskRef[]; evidence: { kind: string; url: string }[]; remaining_work: string[] } | null;
 }
 const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
 export const tasksApi = {

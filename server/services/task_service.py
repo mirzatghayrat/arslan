@@ -626,7 +626,6 @@ class TaskRuntime:
         # 0.1.62 F2 ④: a work limit (no progress, budget) reached after a deliverable was saved. It
         # holds the task only if the finish-time checks do not pass a saved file (_run). In memory only.
         self.limit_reason: str | None = None
-        self.worker_slots = asyncio.Semaphore(2)
         self.validation_results = ()
         self.validation_report = None
         self.memory_dependencies = {}

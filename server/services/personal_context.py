@@ -129,7 +129,7 @@ def bind(context: TaskMemoryContext):
 def worker_context(parent: TaskMemoryContext, expert_id: str) -> TaskMemoryContext:
     """The one narrowing for a specialist working inside a host turn: its expert scope, without the
     host's sensitive-memory permission or write authority, whatever the conversation allows. Every
-    specialist path uses it (memory_tools_v2's recall/remember, task_workers)."""
+    specialist path uses it (memory_tools_v2's recall/remember)."""
     return replace(parent, expert_id=expert_id, explicit_save_ref=None, explicit_save_digest=None,
                    allow_global_save=False, allow_sensitive=False)
 

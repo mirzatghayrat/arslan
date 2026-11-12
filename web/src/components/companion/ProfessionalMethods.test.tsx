@@ -3,7 +3,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import { professionalMethodsApi } from "../../api/professionalMethods";
 import { methodMessages } from "../../locales/methods";
 import { MethodEditor } from "./ProfessionalMethods";
-import TaskWorkers from "./TaskWorkers";
 
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -23,21 +22,6 @@ it("edits a new method version only after save, preserving drafts after an error
   fireEvent.click(screen.getByRole("button", { name: "methods.saveVersion" }));
   await waitFor(() => expect(saved).toHaveBeenCalledWith({ ...method, revision: 2, name: "My research" }));
   expect(revise).toHaveBeenLastCalledWith(method, "My research", "Check primary sources.");
-});
-
-it("shows worker results as unverified and does not execute embedded markup", () => {
-  const open = vi.fn();
-  const { container } = render(<TaskWorkers workers={[{
-    id: "worker", method: "research", method_revision: 1, objective: "Check fixture", status: "completed", run_id: 9,
-    result: { status: "completed", result: "<script>unsafe()</script>", artifacts: [], evidence: [], remaining_work: [] },
-  }]} onOpenRun={open} />);
-  expect(container.querySelector("details")).not.toHaveAttribute("open");
-  fireEvent.click(screen.getByText("methods.collaboration"));
-  expect(screen.getByText("methods.completed")).toBeInTheDocument();
-  expect(container.querySelector("script")).toBeNull();
-  expect(screen.getByText("<script>unsafe()</script>")).toBeInTheDocument();
-  fireEvent.click(screen.getByText("methods.openResult"));
-  expect(open).toHaveBeenCalledWith(9);
 });
 
 it("provides matching professional-method copy in all six interface languages", () => {

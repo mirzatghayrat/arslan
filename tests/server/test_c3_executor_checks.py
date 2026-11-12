@@ -9,7 +9,7 @@ from server.registry.executors import EXECUTORS
 
 OFFERED_WITHOUT_A_CHECK = (
     "web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search", "memory_note",
-    "task_progress", "delegate_work", "read_skill", "find_capability", "whats_new", "list_my_capabilities",
+    "task_progress", "read_skill", "find_capability", "whats_new", "list_my_capabilities",
 )
 
 

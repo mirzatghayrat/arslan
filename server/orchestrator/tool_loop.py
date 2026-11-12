@@ -497,15 +497,6 @@ async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> d
         safe_call = json.dumps({"tool": tool_key, "args": {}}, ensure_ascii=False)
         return _record_tool_result(tool_key, {}, result, emit, tool_trace, safe_call, convo,
                                    mcp_fail_counts=mcp_fail_counts)
-    from server.services.task_workers import current as current_worker
-    worker = current_worker()
-    if worker is not None:
-        from server.services.task_service import current as current_task
-        task = current_task()
-        if task is None or task.task_id != worker.task_id or tool_key not in worker.allowed_tools:
-            return _record_tool_result(tool_key, {}, {"ok": False, "external": False,
-                "code": "worker_tool_scope_denied", "error": "This collaborator cannot use that tool."},
-                emit, tool_trace, json.dumps({"tool": tool_key, "args": {}}), convo)
     from server.services import desktop_status
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200],

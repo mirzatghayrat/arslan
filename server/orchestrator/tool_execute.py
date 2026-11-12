@@ -73,8 +73,7 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
                 timeout = (max(0.0, min(float(own), budget.remaining_seconds() - _RUN_COMMAND_BACKSTOP_RESERVE_S))
                            if budget else float(own))
             else:
-                timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
-                           else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
+                timeout = max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s
             return await within(executor.execute(admitted_args), timeout=timeout)
         runtime = current_task()
 

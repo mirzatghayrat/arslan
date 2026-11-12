@@ -111,10 +111,8 @@ async def test_a_delete_outside_the_sandbox_goes_to_the_trash(monkeypatch, turn_
     ([call("run_command", {"command": "ls"})], "run_command", {"run_command": 15}, [15.0]),
     ([call("web_search", {"query": "a"}, "c1"), call("read_file", {"path": "a.md"}, "c2")], "web_search read_file",
      {"web_search": 300, "read_file": 5}, [300.0, 20.0]),
-    ([call("delegate_work", {"jobs": [{"method": "research", "objective": "o"}]})], "delegate_work",
-     {"delegate_work": 300}, [100.0]),
 ], ids=["a command leaves its reserve", "a command's own limit under the default",
-        "a tool's own limit over and under the default", "delegating gets what is left"])
+        "a tool's own limit over and under the default"])
 async def test_a_calls_time_limit(replies, tools, own_limit, limits, monkeypatch, turn_db):
     turn = Turn()
     await run_turn(turn, monkeypatch, turn_db, [*replies, Reply("Done.")], tools=table(*tools.split()),

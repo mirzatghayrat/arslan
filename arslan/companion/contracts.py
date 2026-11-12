@@ -191,19 +191,6 @@ class TaskState(Contract):
         return self
 
 
-class WorkerBrief(Contract):
-    id: Identifier
-    task_id: Identifier
-    run_id: Identifier
-    spec_revision: PositiveInt
-    scope: Scope
-    objective: Annotated[str, Field(min_length=1, max_length=20_000)]
-    input_refs: tuple[ResourceRef, ...] = ()
-    grant_ids: tuple[Identifier, ...] = ()
-    shared_budget_id: Identifier
-    # References the parent's budget; a worker cannot create/reset one here.
-
-
 class ToolResult(Contract):
     call_id: Identifier
     task_id: Identifier

@@ -36,7 +36,7 @@ START_SUB_SESSION = Tool(
      "required": ["brief"], "additionalProperties": False},
     offered=_can_start_a_sub_session,
     # It returns the new sub-session's id only, nothing it read: its report reaches this conversation in SUB4's
-    # summary turn, framed as outside content there. So not `outside`, unlike delegate_work.
+    # summary turn, framed as outside content there. So it isn't `outside` itself.
     traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False))
 
 
@@ -49,23 +49,6 @@ TASKS = (
           "additionalProperties": False},
          offered=_in_task,
          traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
-    Tool("delegate_work",
-         "Use only for independent subtasks or isolated review that materially helps the current request. "
-         "Assign up to four small jobs using research, apple-growth or product-design methods; at most two run together. "
-         "Provide minimal context and an explicit read-only tool subset. Workers cannot delegate, change memory or write files. "
-         "Results remain unverified; synthesize and validate them in the host. Do not use for simple questions.",
-         {"type": "object", "properties": {"jobs": {
-             "type": "array", "minItems": 1, "maxItems": 4, "items": {
-                 "type": "object", "properties": {
-                     "method": {"type": "string", "enum": ["research", "apple-growth", "product-design"]},
-                     "objective": {"type": "string", "maxLength": 4000},
-                     "context": {"type": "string", "maxLength": 8000},
-                     "tools": {"type": "array", "maxItems": 2, "items": {
-                         "type": "string", "enum": ["web_search", "web_extract"]}}},
-                 "required": ["method", "objective"], "additionalProperties": False}}},
-          "required": ["jobs"], "additionalProperties": False},
-         offered=_in_task,
-         traits=Traits(effect="read", parallel=False, outside=True, replay_safe=False, saves=False)),
     START_SUB_SESSION,
     # 0.1.50 S2: the run's checklist — host bookkeeping (turn_plan), no executor.
     Tool("update_plan",

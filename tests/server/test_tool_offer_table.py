@@ -49,7 +49,7 @@ JOB_ONLY = {"browser_click", "browser_type", "browser_select", "browser_press", 
             "desktop_takeover"}
 CHAT_LISTED = {
     "web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search", "memory_note",
-    "task_progress", "delegate_work", "start_sub_session", "update_plan", "ask_user_choice", *BACKGROUND, "browser_open", "browser_look",
+    "task_progress", "start_sub_session", "update_plan", "ask_user_choice", *BACKGROUND, "browser_open", "browser_look",
     "browser_back", "mac_list_shortcuts", *HANDS, "read_skill", "find_capability", "propose_capability", "create_skill",
     "import_memories", "verify", "whats_new", "my_status", "progress_report", "list_my_capabilities", "read_file", "list_dir",
     "search_files", "write_file", "edit_file", "schedule_task", "list_my_tasks", "cancel_task", "run_command",
@@ -66,7 +66,7 @@ BASE_CHANGES = {
 FLIP_CHANGES = {
     "chat": {
         "platform": (set(), {"mac_list_shortcuts"}, set(), set()),
-        "task": (set(), BACKGROUND | SUB | {"delegate_work", "task_progress"}, set(), {"start_background_work"}),
+        "task": (set(), BACKGROUND | SUB | {"task_progress"}, set(), {"start_background_work"}),
         "job": BASE_CHANGES["job"],
         "asker": BASE_CHANGES["scheduled"],
         "scheduled": NONE,
@@ -85,7 +85,7 @@ FLIP_CHANGES = {
     },
     "job": {
         "platform": (set(), {"mac_list_shortcuts", "mac_run_shortcut", "mac_applescript"}, set(), set()),
-        "task": (set(), {"delegate_work", "task_progress"}, set(), set()),
+        "task": (set(), {"task_progress"}, set(), set()),
         "asker": (set(), {"run_command", "verify"}, set(), {"run_command"}),
         "scheduled": NONE,
         "browser": (set(), {"browser_open", "browser_look", "browser_back", "browser_click", "browser_type",
@@ -93,7 +93,7 @@ FLIP_CHANGES = {
         "hands": (set(), HANDS | {"desktop_takeover"}, set(), HANDS | {"desktop_takeover"}),
     },
     "scheduled": {
-        "task": ({"run_command", "verify"}, {"delegate_work", "task_progress"}, {"run_command"}, set()),
+        "task": ({"run_command", "verify"}, {"task_progress"}, {"run_command"}, set()),
         "job": (JOB_ONLY, set(), {"desktop_takeover"}, set()),
         "workspace": (set(), {"write_file", "edit_file"}, set(), {"write_file", "edit_file"}),
         "shell": NONE,
@@ -138,7 +138,7 @@ TRAITS = {
     "web_search": "read parallel outside replay_safe", "web_extract": "read parallel outside replay_safe",
     "render_chart": "read replay_safe", "recall": "read parallel outside", "remember": "local_write",
     "conversation_search": "external_write outside", "memory_note": "external_write",
-    "task_progress": "read parallel outside", "delegate_work": "read outside", "start_sub_session": "external_write",
+    "task_progress": "read parallel outside", "start_sub_session": "external_write",
     "update_plan": "read",
     "ask_user_choice": "external_write", "start_background_work": "local_write", "background_status": "read parallel",
     "stop_background_work": "local_write", "browser_open": "read outside", "browser_look": "read outside",

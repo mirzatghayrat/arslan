@@ -1030,7 +1030,7 @@ async def _skill_index(limit: int = 80) -> str:
 # To keep a request under 12k characters (the master plan's K7 row; ⓪Plan chose A): attach_file, the
 # browser and a job's status and stop are found on demand too. find_tools names them.
 # With Hands on, the whole desktop family is resident: a Hands task is one long turn (Q1).
-# C3b's demotions (browser back/click/type/select/press, delegate_work, propose_capability) are here.
+# C3b's demotions (browser back/click/type/select/press, propose_capability) are here.
 RESIDENT = frozenset({
     "web_search", "web_extract", "read_file", "list_dir", "search_files", "write_file", "edit_file",
     "run_command", "update_plan", "ask_user_choice", "start_background_work", "recall", "remember",
