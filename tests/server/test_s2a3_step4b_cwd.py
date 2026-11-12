@@ -11,6 +11,9 @@ Stand-ins only: a plain `cd` and an `rm` of a stand-in name, in tmp folders; not
 the executor)."""
 from __future__ import annotations
 
+import errno
+import os
+
 import pytest
 
 from server.orchestrator import command_gate, untrusted
@@ -64,9 +67,14 @@ def shown(monkeypatch):
     requests: list = []
 
     async def decide(request, context):
-        # The island on the card, and its own reading alone (the card's rules left out): both from the run's folder.
-        requests.append((request, (approvals.island_may_answer(request.frame),
-                                   approvals.island_may_answer({**request.frame, "rules": []}))))
+        # The card opens as an asker opens it; the island on it, and its own reading alone (the card's rules left
+        # out): both from the folder the waiting card keeps.
+        card = approvals.open_card("c1", dict(request.frame), broadcast=False)
+        try:
+            requests.append((request, (approvals.island_may_answer(card.frame),
+                                       approvals.island_may_answer({**card.frame, "rules": []}))))
+        finally:
+            approvals.close_card(card)
         return permissions.Decision(False, "user", "once")
     monkeypatch.setattr(permissions, "decide", decide)
     return requests
@@ -218,6 +226,43 @@ def test_a_relative_path_through_a_link_out_asks(linked, command):
 @pytest.mark.parametrize("command", ["rm zz-link", f"rm sub/{STAND_IN}", f"cd sub && rm {STAND_IN}"])
 def test_the_link_itself_and_real_folders_inside_run(linked, command):
     assert tp.assess(command, cwd=linked).level == "run"
+
+
+@pytest.mark.parametrize("failure", ["anchor", "parent-metadata"])
+def test_resolution_failure_does_not_allow_outside_delete(linked, failure, monkeypatch):
+    """Review delta 2: with the link out in place, a failure to resolve the given working folder, or a metadata error
+    on the way to the target's folder (one a realpath that isn't strict swallows), asks; it never lets the delete
+    through. The failures are injected (PermissionError), never made with real permissions."""
+    real_realpath, real_lstat = os.path.realpath, os.lstat
+    link = os.path.join(real_realpath(linked), "zz-link")
+
+    def realpath(path, *, strict=False):
+        if os.fspath(path) == str(linked):
+            raise PermissionError(errno.EACCES, "stand-in")
+        return real_realpath(path, strict=strict)
+
+    def lstat(path, *args, **kwargs):
+        if os.fspath(path) == link:
+            raise PermissionError(errno.EACCES, "stand-in")
+        return real_lstat(path, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        if failure == "anchor":
+            patch.setattr(os.path, "realpath", realpath)
+        else:
+            patch.setattr(os, "lstat", lstat)
+        rules = tp.ask_rules(f"rm zz-link/{STAND_IN}", cwd=linked)
+    assert "delete-outside" in rules
+
+
+def test_a_card_folder_is_none_with_no_waiting_card(folders):
+    """Review delta 2 (B3): a frame with no waiting card has no folder, whatever this run's folder is."""
+    work, elsewhere = folders
+    token = approvals.CARD_FOLDER.set(work)
+    try:
+        assert approvals.card_folder(_card("zz-no-card", elsewhere)) is None
+        assert approvals.card_folder({}) is None
+    finally:
+        approvals.CARD_FOLDER.reset(token)
 
 
 async def test_a_folder_that_cannot_be_read_is_none(monkeypatch):

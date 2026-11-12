@@ -1092,14 +1092,19 @@ def _relative(word: str) -> bool:
 
 def _links_out(real_folder, folder: str, word: str) -> bool:
     """#872 review B2: a relative path whose existing folders lead out of the working folder (`real_folder()`, its real
-    path, or None) through a link to a folder outside. Read-only: realpath follows only what exists. A target named
+    path, or None when it could not be resolved) through a link to a folder outside. Read-only, resolved strictly: a
+    failure to resolve asks (review delta 2), except a missing folder, where there is nothing to delete. A target named
     with no trailing slash is itself removed, not followed, so only its folder is resolved."""
     path = word if not folder else _joined(folder, word)
-    if not path or path.startswith(("/", "~", "$")) or (real := real_folder()) is None:
+    if not path or path.startswith(("/", "~", "$")):
         return False
+    if (real := real_folder()) is None:
+        return True                    # the working folder given could not be resolved: as a path outside
     try:
         joined = os.path.join(real, path)
-        resolved = os.path.realpath(joined if path.endswith("/") else os.path.dirname(joined))
+        resolved = os.path.realpath(joined if path.endswith("/") else os.path.dirname(joined), strict=True)
+    except FileNotFoundError:
+        return False                   # no such folder: nothing in it to delete
     except (OSError, ValueError):
         return True                    # it can't be placed: as a path outside
     return resolved != real and not resolved.startswith(real.rstrip("/") + "/")

@@ -79,9 +79,9 @@ CARD_FOLDER: ContextVar = ContextVar("card_folder", default=None)
 
 
 def card_folder(frame: dict):
-    """The folder `frame`'s command runs in: its waiting card's, else this run's; None (the text alone) otherwise."""
+    """The folder `frame`'s command runs in, kept by its waiting card; None (the text alone) for any other frame."""
     pending = _pending.get(str(frame.get("call_id") or ""))
-    return pending.folder if pending is not None else CARD_FOLDER.get()
+    return pending.folder if pending is not None else None
 
 
 def _runs_bare(frame: dict) -> bool:
