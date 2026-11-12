@@ -162,13 +162,14 @@ class Confirmations:
                                              delete_mode=delete, run_later=run_later)
         if deletes:     # the model's English text; the title and the card word `delete_mode` themselves
             request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
-        # S2a-3 step 4b: the island reads this card from the same folder, held server-side while it waits (no frame key)
-        approvals.CARD_FOLDERS[frame["call_id"]] = cwd
+        # S2a-3 step 4b: the card keeps this folder while it waits (`approvals.open_card`), so the island reads it from
+        # the same folder, server-side (no frame key)
+        token = approvals.CARD_FOLDER.set(cwd)
         try:
             with self._surface():
                 decision = await permissions.decide(request, self._context())
         finally:
-            approvals.CARD_FOLDERS.pop(frame["call_id"], None)
+            approvals.CARD_FOLDER.reset(token)
         return decision.allowed
 
 

@@ -83,7 +83,7 @@ async def test_a_change_of_folder_out_of_the_working_folder_asks_delete_outside(
     (request, island), = shown
     assert "delete-outside" in request.frame["rules"]            # the card's rules agree with the gate's verdict
     assert island == (False, False)                              # and the island, asked while it waits, agrees
-    assert approvals.CARD_FOLDERS == {}                          # held only while the card waits
+    assert approvals.CARD_FOLDER.get() is None                   # set only while the card is decided
 
 
 async def test_the_card_frame_keys_are_unchanged(folders, risky_with_grant, shown, monkeypatch):
@@ -124,16 +124,100 @@ async def test_the_gate_card_and_island_read_one_folder(folders, risky_with_gran
     assert tp.ask_rules(command, cwd=work) == {"delete-outside"} and tp.ask_rules(command) == set()
 
 
+def _card(call_id: str, elsewhere) -> dict:
+    """A waiting command card with no rules on it, so the island's own reading decides."""
+    return {"type": "propose_run_command", "call_id": call_id, "dedupe": "zz-dedupe", "perm_kind": "command",
+            "pretty": f"cd {elsewhere} && rm {STAND_IN}"}
+
+
+def _open(frame: dict, folder):
+    token = approvals.CARD_FOLDER.set(folder)
+    try:
+        return approvals.open_card("c1", frame, broadcast=False)
+    finally:
+        approvals.CARD_FOLDER.reset(token)
+
+
 @pytest.mark.parametrize("cwd, island", [(None, True), ("work", False)])
-def test_the_island_reads_the_cards_folder(folders, cwd, island, monkeypatch):
-    """The island's own reading of a card with no rules on it: from the folder held for the waiting card, else as
-    before."""
+async def test_the_island_reads_the_cards_folder(folders, cwd, island):
+    """The island's own reading of a waiting card, outside the run: from the folder the card keeps, else as before."""
     work, elsewhere = folders
-    if cwd:
-        monkeypatch.setitem(approvals.CARD_FOLDERS, "zz-call", work)
-    frame = {"type": "propose_run_command", "call_id": "zz-call", "pretty": f"cd {elsewhere} && rm {STAND_IN}",
-             "perm_kind": "command"}
-    assert approvals.island_may_answer(frame) is island
+    pending = _open(_card("zz-call", elsewhere), work if cwd else None)
+    try:
+        assert approvals.island_may_answer(pending.frame) is island
+    finally:
+        approvals.close_card(pending)
+
+
+async def test_a_joined_card_keeps_its_folder_until_its_last_waiter_leaves(folders):
+    """#872 review B3: two waiters on one card; the first leaves, and the island still reads the card's folder."""
+    work, elsewhere = folders
+    first = _open(_card("zz-first", elsewhere), work)
+    second = _open(_card("zz-second", elsewhere), work)
+    assert second is first and first.waiters == 2                   # joined: one card, the first one's id
+    approvals.close_card(first)                                     # the first waiter leaves
+    assert approvals.card_folder(first.frame) == work
+    assert approvals.island_may_answer(first.frame) is False
+    approvals.close_card(second)                                    # the last waiter: the card is gone
+    assert approvals.card_folder(first.frame) is None
+
+
+async def test_the_same_command_from_two_folders_makes_two_cards(folders):
+    """#872 review B3: a request from another run folder never joins a waiting card."""
+    work, elsewhere = folders
+    one = _open(_card("zz-one", elsewhere), work)
+    two = _open(_card("zz-two", elsewhere), work / "sub")
+    try:
+        assert two is not one and (one.folder, two.folder) == (work, work / "sub")
+    finally:
+        approvals.close_card(one)
+        approvals.close_card(two)
+
+
+# ── #872 review B1: a change of folder the reader can't follow, from a known starting folder ─────────────────────
+
+@pytest.mark.parametrize("command, rule", [
+    (f'cd "$ZZ_STAND_IN" && rm {STAND_IN}', "delete-outside"),
+    (f"cd - && rm {STAND_IN}", "delete-outside"),
+    (f'cd "$ZZ_STAND_IN" && touch {STAND_IN}', "protected-write"),
+    (f'cd "$ZZ_STAND_IN" && echo x > {STAND_IN}', "protected-write"),
+])
+def test_an_unknown_folder_after_a_move_asks(folders, command, rule):
+    work, _elsewhere = folders
+    assert rule in tp.ask_rules(command, cwd=work)
+    assert rule not in tp.ask_rules(command)                       # no starting folder: as on main
+
+
+def test_an_unknown_move_then_an_absolute_path_reads_as_before(folders):
+    work, elsewhere = folders
+    command = f'cd "$ZZ_STAND_IN" && touch {elsewhere / STAND_IN}'
+    assert tp.assess(command, cwd=work) == tp.assess(command)
+
+
+def test_a_literal_move_inside_still_runs(folders):
+    work, _elsewhere = folders
+    assert tp.assess(f"cd sub && rm {STAND_IN}", cwd=work).level == "run"
+
+
+# ── #872 review B2: a relative path through a link to a folder outside ─────────────────────────────────────────
+
+@pytest.fixture
+def linked(folders):
+    work, elsewhere = folders
+    (work / "zz-link").symlink_to(elsewhere, target_is_directory=True)
+    return work
+
+
+@pytest.mark.parametrize("command", [
+    f"rm zz-link/{STAND_IN}", f"cd zz-link && rm {STAND_IN}", "rm -r zz-link/", "find zz-link/ -delete"])
+def test_a_relative_path_through_a_link_out_asks(linked, command):
+    assert "delete-outside" in tp.ask_rules(command, cwd=linked)
+    assert tp.ask_rules(command) == set()                          # no starting folder: as on main
+
+
+@pytest.mark.parametrize("command", ["rm zz-link", f"rm sub/{STAND_IN}", f"cd sub && rm {STAND_IN}"])
+def test_the_link_itself_and_real_folders_inside_run(linked, command):
+    assert tp.assess(command, cwd=linked).level == "run"
 
 
 async def test_a_folder_that_cannot_be_read_is_none(monkeypatch):
