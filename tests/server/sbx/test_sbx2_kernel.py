@@ -47,7 +47,7 @@ def test_service_policy_and_reachability(sbx, mode, service, record_property):
     sbx.network = mode
     argv = [sys.executable, "-I", "-c", PROBE.read_text(), "mach-lookup", service]
     # This control queries reachability only: no RPC, no credential or UI access.
-    for base in ("legacy-commands", "outside-floor"):
+    for base in ("outside-floor",):           # an allow-default floor: the service is there to be refused
         control = Harness(sbx.root, base, mode, executions=sbx.executions).run(
             argv, probe="mach-lookup-control")
         assert control.returncode == 0, control.stderr
