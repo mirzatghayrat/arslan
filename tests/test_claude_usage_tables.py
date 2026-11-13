@@ -118,7 +118,7 @@ def test_dedupe_across_records_and_subagent_file(
     rows = detail_rows(out)
     assert len(rows) == 1
     # hand sum: msg-1 (largest output, 10/20/30/5) + msg-2 (1/2/3/4)
-    assert rows[0][4:] == ["11", "22", "33", "9"]
+    assert rows[0][5:9] == ["11", "22", "33", "9"]
 
 
 def test_dedupe_falls_back_to_request_id_and_keeps_keyless(
@@ -132,7 +132,7 @@ def test_dedupe_falls_back_to_request_id_and_keeps_keyless(
     ]
     write(tmp_path / "p" / "sess-a.jsonl", recs)
     rows = detail_rows(run(tmp_path, capsys, "--format", "csv"))
-    assert rows[0][4:] == ["11", "0", "0", "11"]
+    assert rows[0][5:9] == ["11", "0", "0", "11"]
 
 
 def test_subagent_counts_toward_parent_session(
@@ -146,9 +146,11 @@ def test_subagent_counts_toward_parent_session(
         [assistant("m2", T1, sid="other-id", out=3)],
     )
     rows = detail_rows(run(tmp_path, capsys, "--format", "csv"))
-    assert len(rows) == 1
-    assert rows[0][2] == "Lane A — test"
-    assert rows[0][7] == "10"
+    # One row per source; both belong to the parent session.
+    assert [(r[2], r[4], r[8]) for r in rows] == [
+        ("Lane A — test", "main", "7"),
+        ("Lane A — test", "sub", "3"),
+    ]
 
 
 def test_split_by_utc_date_and_model(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -161,7 +163,7 @@ def test_split_by_utc_date_and_model(tmp_path: Path, capsys: pytest.CaptureFixtu
     ]
     write(tmp_path / "p" / "sess-a.jsonl", recs)
     rows = detail_rows(run(tmp_path, capsys, "--format", "csv"))
-    got = {(r[0], r[3]): r[7] for r in rows}
+    got = {(r[0], r[3]): r[8] for r in rows}
     assert got == {
         ("2026-03-01", "model-x"): "1",
         ("2026-03-02", "model-x"): "2",
@@ -198,7 +200,7 @@ def test_latest_title_and_lane_prefix(tmp_path: Path, capsys: pytest.CaptureFixt
         "Unrelated": "other",
         "s4": "other",  # no title: session id shown
     }
-    summary = {(r[0], r[1]): r[5] for r in summary_rows(out)}
+    summary = {(r[0], r[1]): r[6] for r in summary_rows(out)}
     assert summary[("2026-03-01", "other")] == "12"
 
 
@@ -269,7 +271,11 @@ def test_projection_only_touches_allow_listed_keys(
         "csv",
         wrap=lambda d: Guard(d, SCHEMA, seen),
     )
-    assert detail_rows(out)[0][4:] == ["1", "2", "3", "9"]
+    rows = detail_rows(out)
+    assert [r[4:9] for r in rows] == [
+        ["main", "1", "2", "3", "4"],
+        ["sub", "0", "0", "0", "5"],
+    ]
     assert {"message", "usage", "output_tokens", "customTitle", "id"} <= seen
     assert not seen & {"content", "text", "toolUseResult", "tool_input", "server_tool_use"}
 
@@ -304,7 +310,7 @@ def test_malformed_lines_skipped(tmp_path: Path, capsys: pytest.CaptureFixture[s
     )
     assert cut.main(["--root", str(tmp_path), "--format", "csv"]) == 0
     cap = capsys.readouterr()
-    assert detail_rows(cap.out)[0][7] == "5"
+    assert detail_rows(cap.out)[0][8] == "5"
     assert "skipped 2 malformed" in cap.err
 
 
@@ -324,8 +330,115 @@ def test_markdown_layout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> 
     out = run(tmp_path, capsys, "--lane", "Lane A=lane-a")
     assert (
         out.splitlines()[0]
-        == "| date | lane | session | model | input | cache_read | cache_write | output |"
+        == "| date | lane | session | model | source | input | cache_read | cache_write | output"
+        " | requests | avg_context | cache_rewrites |"
     )
-    assert "| 2026-03-01 | lane-a | Lane A — test | model-x | 1 | 0 | 0 | 2 |" in out
+    assert (
+        "| 2026-03-01 | lane-a | Lane A — test | model-x | main | 1 | 0 | 0 | 2 | 1 | 0 | 0 |"
+        in out
+    )
     assert "Per-lane daily totals" in out
-    assert "| 2026-03-01 | lane-a | 1 | 0 | 0 | 2 |" in out
+    assert "| 2026-03-01 | lane-a | main | 1 | 0 | 0 | 2 | 1 | 0 | 0 |" in out
+
+
+def _col(rows: list[list[str]], name: str) -> list[str]:
+    idx = (
+        cut.DETAIL_HEAD.index(name)
+        if len(rows[0]) == len(cut.DETAIL_HEAD)
+        else cut.SUMMARY_HEAD.index(name)
+    )
+    return [r[idx] for r in rows]
+
+
+def test_requests_counted_after_dedupe(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    recs = [
+        assistant("m1", T1, out=1),
+        assistant("m1", T1, out=9),  # duplicate, kept as one request
+        assistant("m2", T1, out=1),
+        assistant(None, T1, out=1, request_id="r1"),
+        assistant(None, T1, out=1, request_id="r1"),
+        assistant(None, T1, out=1),  # keyless: always counted
+    ]
+    write(tmp_path / "p" / "sess-a.jsonl", recs)
+    rows = detail_rows(run(tmp_path, capsys, "--format", "csv"))
+    assert _col(rows, "requests") == ["4"]
+
+
+def test_avg_context_floor_and_zero(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    recs = [
+        assistant("m1", T1, cr=10),
+        assistant("m2", T1, cr=5),
+        assistant("m3", T1, cr=0),
+        # a record with no usage at all still counts as a request with zero cache_read
+        {"type": "assistant", "sessionId": "sess-b", "timestamp": T1, "message": {"id": "m4"}},
+    ]
+    write(tmp_path / "p" / "sess-a.jsonl", recs[:3])
+    write(tmp_path / "p" / "sess-b.jsonl", recs[3:])
+    rows = detail_rows(run(tmp_path, capsys, "--format", "csv"))
+    by_session = {r[2]: (r[9], r[10]) for r in rows}
+    assert by_session["sess-a"] == ("3", "5")  # 15 // 3
+    assert by_session["sess-b"] == ("1", "0")
+    assert cut._columns([0, 7, 0, 0, 2, 0])[5] == 3  # floor of 3.5
+    assert cut._columns([0, 0, 0, 0, 0, 0])[5] == 0  # no requests
+
+
+@pytest.mark.parametrize(
+    ("cr", "cw", "inp", "expected"),
+    [
+        (21_000, 79_000, 0, False),  # 79% write
+        (20_000, 80_000, 0, True),  # exactly 80%
+        (0, 100_000, 0, True),  # all write
+        (25_000, 25_000, 0, False),  # context exactly 50,000 is not counted
+        (10_000, 40_001, 0, True),  # 50,001, write share ~80.0%
+        (10_000, 40_000, 1, True),  # input counts toward the context: 50,001
+        (10_000, 40_000, 0, False),  # 50,000 exactly
+        (0, 0, 60_000, False),  # no cache at all
+    ],
+)
+def test_cache_rewrite_thresholds(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], cr: int, cw: int, inp: int, expected: bool
+) -> None:
+    assert cut.REWRITE_WRITE_SHARE == 0.8
+    assert cut.REWRITE_MIN_CONTEXT == 50_000
+    write(tmp_path / "p" / "sess-a.jsonl", [assistant("m1", T1, inp=inp, cr=cr, cw=cw)])
+    rows = detail_rows(run(tmp_path, capsys, "--format", "csv"))
+    assert _col(rows, "cache_rewrites") == [("1" if expected else "0")]
+
+
+def test_main_sub_split_and_totals(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    proj = tmp_path / "p"
+    write(
+        proj / "s1.jsonl",
+        [
+            title("s1", "Lane A — test"),
+            assistant("a1", T1, sid="s1", cr=100, cw=0, out=1),
+            assistant("a2", T1, sid="s1", cr=0, cw=60_000, out=1),  # rewrite
+        ],
+    )
+    write(
+        proj / "s2.jsonl",
+        [
+            title("s2", "Lane A — other"),
+            assistant("b1", T1, sid="s2", model="model-y", cr=50, out=1),
+        ],
+    )
+    write(
+        proj / "s1" / "subagents" / "x.jsonl",
+        [
+            assistant("c1", T1, sid="s1", cr=40, out=1),
+            assistant("c2", T1, sid="s1", cr=0, cw=70_000, out=1),  # rewrite
+            assistant("c3", T1, sid="s1", cr=1, out=1),
+        ],
+    )
+    out = run(tmp_path, capsys, "--format", "csv", "--lane", "Lane A=lane-a")
+    detail = detail_rows(out)
+    assert [(r[2], r[3], r[4], r[9], r[10], r[11]) for r in detail] == [
+        ("Lane A — other", "model-y", "main", "1", "50", "0"),
+        ("Lane A — test", "model-x", "main", "2", "50", "1"),
+        ("Lane A — test", "model-x", "sub", "3", "13", "1"),
+    ]
+    # Totals: date, lane, source, in, cr, cw, out, requests, avg_context, rewrites
+    assert summary_rows(out) == [
+        ["2026-03-01", "lane-a", "main", "0", "150", "60000", "3", "3", "50", "1"],
+        ["2026-03-01", "lane-a", "sub", "0", "41", "70000", "3", "3", "13", "1"],
+    ]
