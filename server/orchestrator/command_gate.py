@@ -201,10 +201,11 @@ async def _sandbox_enabled() -> bool:
 
 
 async def _folder_for_run(db):
-    """Where this run's commands start, as the executor reads it: a run with nobody to ask (a scheduled fire) works in
-    Arslan's own folder (`executors.RunCommand`), any other in `workspace_dir_for_run` (SUB5c: a sub-session's own)."""
+    """Where this run's commands start, as the executor reads it: a scheduled fire, with nobody to ask, works in Arslan's
+    own folder (`executors.RunCommand`), any other run in `workspace_dir_for_run` (SUB5c: a sub-session's own). The
+    other runs with nobody to ask never reach the gate (`refuses_commands`)."""
     from server.services import permissions, settings_service
-    if permissions.current_asker() is None and settings_service.run_sub_folder() == ():
+    if _FIRE.get() is not None and permissions.current_asker() is None and settings_service.run_sub_folder() == ():
         return settings_service.default_workspace().resolve()
     return await settings_service.workspace_dir_for_run(db)
 
