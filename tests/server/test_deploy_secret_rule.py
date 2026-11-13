@@ -525,3 +525,26 @@ def test_what_does_not_prove_a_dry_run_still_asks(command):
 def test_the_registry_it_publishes_to(command, line):
     assert card_purpose.consequence(command) == line
     assert "hunter2" not in line
+
+
+# ── heredoc bodies and quoted text ─────────────────────────────────────────────
+
+# Layer two reads a heredoc's body as raw text, since a body can be fed to a shell (`bash <<EOF`, where the reader
+# sees only `bash`). A secret write there asks as `secret-write`, in step with `publish` and `git-push` on main; text
+# that is only an argument still runs.
+@pytest.mark.parametrize("command, rule", [
+    ("cat <<EOF\ngh secret set ZZ\nEOF", "secret-write"),
+    ("bash <<EOF\ngh secret set ZZ\nEOF", "secret-write"),
+    ("cat <<EOF\nnpm publish\nEOF", "publish"),
+    ("cat <<EOF\ngit push\nEOF", "git-push"),
+])
+def test_a_heredoc_body_asks_like_publish(command, rule):
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", rule)
+
+
+@pytest.mark.parametrize("command", [
+    'echo "gh secret set ZZ"', 'git commit -m "fly secrets set K=v"', 'grep "npm publish" notes',
+])
+def test_quoted_text_that_names_a_secret_write_runs(command):
+    assert tp.assess(command).level == "run"

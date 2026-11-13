@@ -153,6 +153,39 @@ def step3_move(row):
     return (row["main"], row["fixed"], row.get("rule")) == ("run", "ask", tp.UNREADABLE)
 
 
+def heredoc_secret_write(text):
+    """A heredoc body, not a command the reader places, that writes a secret: the body's own text matches
+    `secret-write` and one of its lines starts with a program from `tp._SECRET_WRITE`."""
+    if any(words and words[0].lower() in tp._SECRET_WRITE for words in sg.read(text).commands):
+        return False
+    return any(tp._RULE_TEXT["secret-write"].search(body.group(0))
+               and any(line.split() and line.split()[0].lower() in tp._SECRET_WRITE
+                       for line in body.group(0).splitlines()[1:])
+               for body in tp._HEREDOC.finditer(text))
+
+
+# The deploy rule (2026-11-14), on purpose: layer two reads a heredoc's body as raw text, so a body that sets a secret
+# asks as `secret-write` where main ran it, as a body with `npm publish` or `git push` already asks on main (a body
+# can be fed to a shell, and the reader sees only `bash` in `bash <<EOF`). Counted apart, on the default sample.
+HEREDOC_SECRET_ROWS = {"negative": 1}
+
+
+def heredoc_secret_move(row):
+    return ((row["main"], row["fixed"], row.get("rule")) == ("run", "ask", "secret-write")
+            and row.get("heredoc_secret") is True)
+
+
+def test_heredoc_secret_move_needs_the_rule_and_a_heredoc_body():
+    assert heredoc_secret_move({"main": "run", "fixed": "ask", "rule": "secret-write", "heredoc_secret": True})
+    assert not heredoc_secret_move({"main": "run", "fixed": "ask", "rule": "secret-write", "heredoc_secret": False})
+    assert not heredoc_secret_move({"main": "run", "fixed": "ask", "rule": "publish", "heredoc_secret": True})
+    assert not heredoc_secret_move({"main": "run", "fixed": "forbid", "rule": "secret-write", "heredoc_secret": True})
+    assert heredoc_secret_write("cat <<'EOF'\ngh secret set ZZ\nEOF")
+    assert not heredoc_secret_write("cat <<'EOF'\nnotes about gh secret set\nEOF")
+    assert not heredoc_secret_write("gh secret set ZZ <<'EOF'\nvalue\nEOF")
+    assert not heredoc_secret_write("echo 'gh secret set ZZ'")
+
+
 def test_step3_move_is_only_run_to_ask_unreadable():
     assert step3_move({"main": "run", "fixed": "ask", "rule": tp.UNREADABLE})
     assert not step3_move({"main": "run", "fixed": "ask", "rule": "stand-in-rule"})
@@ -178,6 +211,10 @@ def assert_matrix(result, *, negative=False, cautious_forbids=False):
         # S2a-3 step 3: a command the reader does not understand asks as `unreadable` (offline in the sandbox, no
         # card) where main ran it. That move is set aside; every other change from main is still checked below.
         changes = [row for row in result["changed_from_main"] if not step3_move(row)]
+        heredocs = [row for row in changes if heredoc_secret_move(row)]
+        changes = [row for row in changes if not heredoc_secret_move(row)]
+        if os.environ.get("QUOTED_ARGS_EVIDENCE_FULL") != "1":
+            assert len(heredocs) == HEREDOC_SECRET_ROWS.get(result.get("kind"), 0), heredocs
         if cautious_forbids:
             assert {row["id"] for row in changes} == accepted, changes
             assert all((row["main"], row["pr"], row["fixed"]) ==
@@ -308,7 +345,8 @@ def matrix(kind, rows):
             losses.append(f"{kind}/{case}: expected >= {verdicts[1][0]}, actual {verdicts[2][0]}")
         if verdicts[0] != verdicts[2]:
             changes.append({"id": case, "main": verdicts[0], "pr": verdicts[1], "fixed": verdicts[2],
-                            "rule": head.rule, "matrix": kind, "expected": verdicts[0][0], "actual": verdicts[2][0]})
+                            "rule": head.rule, "matrix": kind, "expected": verdicts[0][0], "actual": verdicts[2][0],
+                            "heredoc_secret": heredoc_secret_write(text) and tp.ask_rules(text) == {"secret-write"}})
         if RANK[verdicts[2]] < RANK[verdicts[0]]:
             toward_run.append(f"{kind}/{case}: expected >= {verdicts[0][0]}, actual {verdicts[2][0]}")
     return dict(kind=kind, cases=count, loosened=loosened, losses=losses, transitions=dict(transitions), by_class=dict(classes),

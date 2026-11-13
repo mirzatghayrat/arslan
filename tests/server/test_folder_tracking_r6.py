@@ -98,6 +98,15 @@ GAP_PROGRAMS = frozenset(tp._PUBLISH_MORE) | frozenset(tp._SECRET_WRITE)
 # Sweep: 28 `uv publish` rows. Named, policy and positive: every row is the quoted-word table's `secret-write` seed
 # (`gh secret set ZZ`) asking as `secret-write` where main ran it.
 LATER_GAP_ROWS = {"sweep": 28, "named": 6, "policy": 48, "positive": 28}
+# Also on purpose: a heredoc body that sets a secret asks as `secret-write` where main ran it, as a body with
+# `npm publish` or `git push` already asks on main (`evidence.HEREDOC_SECRET_ROWS`). Counted apart, on the default
+# sample.
+LATER_HEREDOC_ROWS = {"negative": 1}
+
+
+def later_heredoc_secret(text, before, after):
+    return ((before.level, after.level, after.rule) == ('run', 'ask', 'secret-write')
+            and tp.ask_rules(text) == {'secret-write'} and evidence.heredoc_secret_write(text))
 # Round 1 of the #897 review, also on purpose: a registry publish with its tool's documented dry-run option
 # (`tp._DRY_RUN`: `cargo publish --dry-run`) publishes nothing, so `publish` leaves its rules and every other rule
 # stays. Counted apart, on the default sample: every one is cargo's, spelled quoted, escaped or after another command.
@@ -129,7 +138,7 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
         rows = list(evidence.GENERATORS[corpus]())
         texts = (text for _, text in (rows if revisions.FULL else evidence.stratified(rows)))
     counts = Counter()
-    later = gaps = dry = 0
+    later = gaps = dry = heredocs = 0
     for text in texts:
         before, after = baseline.assess(text), tp.assess(text)
         main_rules = baseline.ask_rules(text)
@@ -138,6 +147,9 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
             before, main_rules = after, {after.rule}    # the cwd check below then holds the new rule
         elif later_deploy_rule(text, before, after, GAP_PROGRAMS):
             gaps += 1
+            before, main_rules = after, {after.rule}
+        elif later_heredoc_secret(text, before, after):
+            heredocs += 1
             before, main_rules = after, {after.rule}
         elif later_dry_run(text, main_rules):
             dry += 1
@@ -155,6 +167,7 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
     assert later == LATER_DEPLOY_ROWS.get(corpus, 0), (corpus, later)
     assert revisions.FULL or gaps == LATER_GAP_ROWS.get(corpus, 0), (corpus, gaps)
     assert revisions.FULL or dry == LATER_DRY_RUN_ROWS.get(corpus, 0), (corpus, dry)
+    assert revisions.FULL or heredocs == LATER_HEREDOC_ROWS.get(corpus, 0), (corpus, heredocs)
     print('R6_IDENTITY ' + json.dumps({'corpus': corpus, 'cases': sum(counts.values()), 'differences': 0,
                                      'later_deploy_rule': later, 'later_dry_run': dry, 'with_cwd': counts},
                                     sort_keys=True))
