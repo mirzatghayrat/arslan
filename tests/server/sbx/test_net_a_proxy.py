@@ -385,7 +385,7 @@ async def test_an_unjudged_run_passes_what_a_judged_one_refuses(execution_db, pr
 
 @contextlib.asynccontextmanager
 async def _online(monkeypatch, port: int):
-    """terminal_exec as a sandboxed online run, with no seatbelt profile around it (CI's Linux has none): the real
+    """terminal_exec as a sandboxed online run, without a seatbelt profile around it (CI's Linux has none): the real
     proxy, started on first use, and every destination answered by the stand-in."""
     _pin_to(monkeypatch, port)
     monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {})
