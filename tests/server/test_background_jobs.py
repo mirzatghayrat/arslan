@@ -659,6 +659,52 @@ async def test_a_job_that_keeps_researching_after_wrap_up_is_made_to_answer(exec
     assert "Settings → Advanced" not in message["content"]
 
 
+async def test_a_job_the_hard_limit_ends_says_what_was_done_blocked_and_left(execution_db, active, frames,
+                                                                             monkeypatch):
+    """A real run's shape: a card nobody answered, work that ran, then the hard limit with no text. The report
+    names the blocked step and what is left, from the turn's own records, after the budget note."""
+    from arslan import execution_budget
+    from server.registry import executors
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
+                        dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    seen = []
+
+    class Recall:
+        async def execute(self, args):
+            seen.append(args)
+            if len(seen) == 1:
+                return {"ok": False, "error": permissions._EXPIRED.format(title="Read the notes?", minutes=30)}
+            return {"ok": True, "summary": "1 note"}
+    monkeypatch.setitem(executors.EXECUTORS, "recall", Recall())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=20)
+    assert job.outcome == "out_of_budget"
+    await _wait(lambda: any(f.get("type") == "message" for f in frames))
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    note, closing = content.split("\n\nFrom this run's own records:\n")
+    assert "model requests (6/6)" in note and "Settings → Advanced" in note
+    assert "Done: " in closing and "recall ×" in closing
+    assert "Blocked:\n- nobody answered the card: recall `notes 1`" in closing
+    # The job's goal as the user gave it, never the instruction its turn was sent with (the host's context).
+    assert closing.endswith("Left: the request itself, Research everything")
+
+
+async def test_a_job_with_an_answer_posts_it_byte_for_byte(execution_db, active, frames, monkeypatch):
+    """The closing is only for an empty report: a job's own text is never changed, even next to a closing."""
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    for outcome in ("out_of_budget", "done", "blocked"):
+        job = background_jobs.Job(job_id=f"j-{outcome}", conversation_id=CID, goal="g", acceptance=[],
+                                  outside_seen=False)
+        job.outcome, job.closing = outcome, "From this run's own records:\nBlocked:\n- x"
+        answer = f"  The report for {outcome}.\nTwo steps were not run.  "
+        assert await background_jobs._report(job, answer) == answer.strip()
+    empty = background_jobs.Job(job_id="j-empty", conversation_id=CID, goal="g", acceptance=[], outside_seen=False)
+    empty.outcome = "out_of_budget"
+    assert "From this run's own records" not in await background_jobs._report(empty, "")
+
+
 def test_outcome_names_a_budget_stop_apart_from_being_stuck():
     assert background_jobs.outcome_of("waiting_user", {}, "task_budget_exhausted") == "out_of_budget"
     assert background_jobs.outcome_of("waiting_user", {}, "task_validation_failed") == "blocked"
