@@ -5,6 +5,7 @@ shows "ask" with its reason code, and the mutants at the end show each test woul
 """
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 import sys
@@ -152,16 +153,24 @@ def test_gate_a_without_the_users_own_words_asks(roots, ctx):
 # ── the structural routing test: nothing exfiltration-style reaches the model ─────────
 
 class _Stub:
-    def __init__(self, reply=None, *, raises=None, forbidden=False):
-        self.id, self.calls, self.reply, self.raises, self.forbidden = "stub/measured", 0, reply, raises, forbidden
+    """A stand-in for the model call (`complete`): no network. `id` is the (provider, model id) it stands for."""
+    def __init__(self, reply=None, *, raises=None, forbidden=False, sleep=0.0):
+        self.id, self.calls, self.reply, self.raises = ("stub", "measured"), 0, reply, raises
+        self.forbidden, self.sleep = forbidden, sleep
 
-    def __call__(self, messages):
+    async def __call__(self, messages):
         self.calls += 1
         if self.forbidden:
             pytest.fail("an exfiltration-style action reached the model")
+        if self.sleep:
+            await asyncio.sleep(self.sleep)
         if self.raises is not None:
             raise self.raises
         return self.reply
+
+
+class _RateLimited(Exception):
+    status_code = 429
 
 
 def _exfiltration(roots):
@@ -173,8 +182,10 @@ def _exfiltration(roots):
             _action(roots, tool="run_command", text="make sync", kind="network", write_targets=())]
 
 
-def _review(mod, roots, action, model, ctx=None):
-    return mod.review(action, ctx or _ctx(), workspace=roots.work, tmpdir=roots.temp, model=model)
+def _review(mod, roots, action, stub, ctx=None, *, model="stub"):
+    identity = stub.id if model == "stub" else model
+    return asyncio.run(mod.review(action, ctx or _ctx(), workspace=roots.work, tmpdir=roots.temp, model=identity,
+                                  complete=stub))
 
 
 def test_routing_control_a_plain_action_does_reach_a_measured_model(roots, monkeypatch):
@@ -192,23 +203,55 @@ def test_routing_no_exfiltration_style_action_reaches_the_model(roots, monkeypat
     assert stub.calls == 0
 
 
-# ── review fails closed ─────────────────────────────────────────
+# ── the model call: measured models only, and it fails closed ─────────────────
 
 def test_measured_is_empty_on_main():
     assert cls.MEASURED == {}
 
 
-def test_review_without_a_model_asks(roots):
-    assert _review(cls, roots, _action(roots), None) == cls.Verdict("ask", cls.OFF)
+@pytest.mark.parametrize("decision", ["allow", "ask"])
+def test_a_measured_models_answer_comes_through(roots, monkeypatch, decision):
+    stub = _Stub(json.dumps({"decision": decision, "reason": "edits notes.md"}))
+    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict(decision, "edits notes.md")
+    assert stub.calls == 1
 
 
-def test_review_with_an_unmeasured_model_asks_and_never_calls_it(roots):
+def test_the_model_gets_the_prompt_and_nothing_else(roots, monkeypatch):
+    seen = []
+
+    async def complete(messages):
+        seen.append(messages)
+        return json.dumps({"decision": "ask", "reason": "unsure"})
+    monkeypatch.setitem(cls.MEASURED, ("stub", "measured"), {"stand-in": True})
+    asyncio.run(cls.review(_action(roots), _ctx(), workspace=roots.work, tmpdir=roots.temp,
+                           model=("stub", "measured"), complete=complete))
+    assert seen == [cls.build_prompt(_action(roots), _ctx())]
+
+
+def test_review_without_a_model_asks_and_never_calls_one(roots):
     stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
-    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF)
+    assert _review(cls, roots, _action(roots), stub, model=None) == cls.Verdict("ask", cls.OFF)
     assert stub.calls == 0
 
 
-@pytest.mark.parametrize("error", [RuntimeError("boom"), TimeoutError(), ValueError("429 rate limited")])
+def test_review_with_an_unmeasured_model_asks_and_never_calls_it(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    monkeypatch.setitem(cls.MEASURED, ("stub", "another"), {"stand-in": True})
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF)
+    assert _review(cls, roots, _action(roots), stub, model=("other", "measured")) == cls.Verdict("ask", cls.OFF)
+    assert stub.calls == 0
+
+
+def test_measuring_skips_measured_only_when_asked(roots):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    run = lambda **kw: asyncio.run(cls.consult(_action(roots), _ctx(), model=stub.id, complete=stub, **kw))  # noqa: E731
+    assert run() == ("off", cls.Verdict("ask", cls.OFF)) and stub.calls == 0
+    assert run(measuring=True) == ("model", cls.Verdict("allow", "fine")) and stub.calls == 1
+
+
+@pytest.mark.parametrize("error", [RuntimeError("boom"), TimeoutError(), _RateLimited("429 Too Many Requests"),
+                                   ConnectionError("refused")])
 def test_review_asks_when_the_model_raises(roots, monkeypatch, error):
     stub = _Stub(raises=error)
     monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
@@ -216,11 +259,36 @@ def test_review_asks_when_the_model_raises(roots, monkeypatch, error):
     assert stub.calls == 1
 
 
-@pytest.mark.parametrize("reply", ["sure, go ahead", "", None, json.dumps({"decision": "yes", "reason": "x"})])
-def test_review_asks_on_a_reply_it_cannot_parse(roots, monkeypatch, reply):
+def test_review_asks_when_the_model_runs_past_the_time_limit(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "late"}), sleep=5)
+    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    monkeypatch.setattr(cls, "TIMEOUT_S", 0.05)
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", "error")
+
+
+def test_the_time_limit_is_short():
+    assert 5 <= cls.TIMEOUT_S <= 20
+
+
+@pytest.mark.parametrize("reply", ["sure, go ahead", "", "   ", None, json.dumps({"decision": "yes", "reason": "x"})])
+def test_review_asks_on_an_empty_reply_or_one_it_cannot_parse(roots, monkeypatch, reply):
     stub = _Stub(reply)
     monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
-    assert _review(cls, roots, _action(roots), stub).decision == "ask"
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", "unparsable")
+    status = asyncio.run(cls.consult(_action(roots), _ctx(), model=stub.id, complete=stub))[0]
+    assert status == "unparsable"
+
+
+def test_provider_complete_sends_no_tools_and_returns_the_text():
+    calls = []
+
+    class _Adapter:
+        async def chat(self, system, user, **kw):
+            calls.append((system, user, kw))
+            return types.SimpleNamespace(content='{"decision": "ask", "reason": "x"}')
+    messages = [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]
+    assert asyncio.run(cls.provider_complete(_Adapter())(messages)) == '{"decision": "ask", "reason": "x"}'
+    assert calls == [("S", "U", {})]
 
 
 # ── parse ─────────────────────────────────────────
@@ -336,9 +404,16 @@ def test_mutant_review_allowing_on_an_exception_is_caught(roots, monkeypatch):
     stub = _Stub(raises=RuntimeError("boom"))
     monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
     assert _review(cls, roots, _action(roots), stub).decision == "ask"         # control
-    mutant = _mutant('return Verdict("ask", "error")', 'return Verdict("allow", "error")')
+    mutant = _mutant('return "error", Verdict("ask", "error")', 'return "error", Verdict("allow", "error")')
     mutant.MEASURED[stub.id] = {"stand-in": True}
     assert _review(mutant, roots, _action(roots), stub).decision == "allow"
+
+
+def test_mutant_review_calling_an_unmeasured_model_is_caught(roots):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    assert _review(cls, roots, _action(roots), stub).decision == "ask" and stub.calls == 0     # control
+    mutant = _mutant("(not measuring and tuple(model) not in MEASURED)", "(False and tuple(model) not in MEASURED)")
+    assert _review(mutant, roots, _action(roots), stub).decision == "allow" and stub.calls == 1
 
 
 def test_mutant_parse_accepting_a_non_json_reply_is_caught():

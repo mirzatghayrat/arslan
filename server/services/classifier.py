@@ -1,8 +1,10 @@
 """CLS, the classifier service (v0.1.64): the reviewer behind a later "auto" mode.
 
 For an action that would otherwise show the user a card it answers "allow" or "ask", with a reason. Nothing calls it
-yet: S5b is the only change that wires it into `permissions` (one writer in that file). This step has no model call:
-`MEASURED` is empty, so `review` answers "ask" for every model until one is measured against the pass lines.
+yet: S5b is the only change that wires it into `permissions` (one writer in that file). The model is the user's
+configured one (BYOK, the same path as the titler's one-shot call), with a time limit and no tools. `MEASURED` is
+empty, so `review` answers "ask" for every model until one is measured against the pass lines; only the measurement
+runner (scripts/dev/cls_measure.py) goes past it, with an explicit `measuring=True`.
 
 `pregate` runs first and is deterministic. It answers "ask" for everything a classifier never answers: no sandbox, a
 write outside the work folder and the run's own TMPDIR (resolved, shared caches outside), a card only the user answers,
@@ -12,8 +14,9 @@ intends, and the action fenced as data; never a tool's output (D7).
 """
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -25,9 +28,15 @@ from server.services.sandbox_profile import real
 REASON_MAX = 200
 #: The answer while no measured model is configured.
 OFF = "classifier off: model not measured"
-#: Provider and model id -> its pass record. A model not listed turns the classifier off ("ask"). Empty until the
+#: (provider, model id) -> its pass record. A model not listed turns the classifier off ("ask"). Empty until the
 #: measurement step fills it, with the pass lines fixed before measuring.
-MEASURED: dict = {}
+MEASURED: dict[tuple[str, str], dict] = {}
+#: Seconds the model has to answer; past it, "ask".
+TIMEOUT_S = 15.0
+
+#: The model call: the prompt's messages in, the reply's text out. The real one is `provider_complete`; tests and the
+#: measurement runner may pass their own.
+Complete = Callable[[list[dict]], Awaitable[str]]
 
 #: What a classifier never answers, one list: the card kinds only the user answers (`hard_rules.NEVER_AUTO_KINDS`:
 #: the once-only kinds, the network card, the outside / retry card `outside`, what full access still asks) and the
@@ -155,40 +164,78 @@ def pregate(action: Action, ctx: Context, *, workspace: Path, tmpdir: Path | Non
     return None
 
 
-def _call_model(model, messages: list[dict]) -> str:
-    """MODEL CALL STUB. `model` is a callable the caller passes (the tests pass a stand-in) that returns the reply
-    text. The measurement step replaces this body with the user's configured provider (BYOK, local-only, with a time
-    limit); any error, timeout or 429 raises, and `review` answers "ask". No network code lives here yet."""
-    return model(messages)
+async def configured_model(model_id: str | None = None):
+    """An adapter on the user's configured default model: `llm_factory.build_adapter`, the path the titler's one-shot
+    call takes (BYOK; the memory-destination guard included). With `model_id`, the same provider config on that model
+    id (the measurement runner's `--model`). Builds no connection; the call is `provider_complete`'s."""
+    from arslan.llm.adapter import LLMAdapter
+    from server.services import llm_factory
+    adapter = await llm_factory.build_adapter(role="classifier")
+    if model_id and model_id != adapter.model:
+        adapter = LLMAdapter(adapter.provider_name, model_id, api_key=adapter.api_key, base_url=adapter.base_url,
+                             report_provider=adapter.report_provider)
+        adapter.role = "classifier"
+    return adapter
 
 
-def review(action: Action, ctx: Context, *, workspace: Path, tmpdir: Path | None, model=None) -> Verdict:
-    """The pre-gate, then a measured model (`model.id` in MEASURED). No model, an unmeasured one, any exception
-    or a reply that doesn't parse: "ask"."""
+def provider_complete(adapter) -> Complete:
+    """The real model call: one non-streaming chat with no tools and no history. No temperature is chosen here: the
+    provider sends its default only where the model takes one (Claude after 4.6 answers any temperature with a 400)."""
+    async def complete(messages: list[dict]) -> str:
+        system = "\n".join(m["content"] for m in messages if m["role"] == "system")
+        user = "\n".join(m["content"] for m in messages if m["role"] != "system")
+        response = await adapter.chat(system, user)
+        return response.content
+    return complete
+
+
+async def consult(action: Action, ctx: Context, *, model: tuple[str, str] | None = None,
+                  complete: Complete | None = None, measuring: bool = False) -> tuple[str, Verdict]:
+    """The model's half of `review`, with what happened: "model", "off" (no model, or one not in MEASURED),
+    "error" (any exception, the time limit, a 429) or "unparsable". It runs no pre-gate: callers run `pregate` first.
+    `model` is (provider, model id); with no `complete` it is the configured model (`configured_model`), and
+    `model` only picks its id. `measuring=True` skips MEASURED: the measurement runner only, never by default."""
     try:
-        gate = pregate(action, ctx, workspace=workspace, tmpdir=tmpdir)
-        if gate is not None:
-            return gate
-        if model is None or getattr(model, "id", None) not in MEASURED:
-            return Verdict("ask", OFF)
-        return parse(_call_model(model, build_prompt(action, ctx)))
+        if complete is None:
+            adapter = await configured_model(model[1] if model else None)
+            model, complete = (adapter.report_provider, adapter.model), provider_complete(adapter)
+        if model is None or (not measuring and tuple(model) not in MEASURED):
+            return "off", Verdict("ask", OFF)
+        reply = await asyncio.wait_for(complete(build_prompt(action, ctx)), TIMEOUT_S)
     except Exception:
-        return Verdict("ask", "error")
+        return "error", Verdict("ask", "error")
+    verdict = _parsed(reply)
+    return ("model", verdict) if verdict is not None else ("unparsable", Verdict("ask", "unparsable"))
+
+
+async def review(action: Action, ctx: Context, *, workspace: Path, tmpdir: Path | None,
+                 model: tuple[str, str] | None = None, complete: Complete | None = None) -> Verdict:
+    """The pre-gate, then a measured model (`consult`). An unmeasured model, any exception, a time-out, a 429, an
+    empty reply or one that doesn't parse: "ask"."""
+    gate = pregate(action, ctx, workspace=workspace, tmpdir=tmpdir)
+    if gate is not None:
+        return gate
+    return (await consult(action, ctx, model=model, complete=complete))[1]
+
+
+def _parsed(text) -> Verdict | None:
+    if not isinstance(text, str):
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    if (not isinstance(data, dict) or set(data) != {"decision", "reason"}
+            or data["decision"] not in ("allow", "ask") or not isinstance(data["reason"], str)):
+        return None
+    return Verdict(data["decision"], data["reason"][:REASON_MAX])
 
 
 def parse(text) -> Verdict:
     """Strict: a JSON object with exactly `decision` ("allow" or "ask") and `reason` (a string, capped). Anything
     else is "ask"."""
-    if not isinstance(text, str):
-        return Verdict("ask", "unparsable")
-    try:
-        data = json.loads(text)
-    except ValueError:
-        return Verdict("ask", "unparsable")
-    if (not isinstance(data, dict) or set(data) != {"decision", "reason"}
-            or data["decision"] not in ("allow", "ask") or not isinstance(data["reason"], str)):
-        return Verdict("ask", "unparsable")
-    return Verdict(data["decision"], data["reason"][:REASON_MAX])
+    verdict = _parsed(text)
+    return verdict if verdict is not None else Verdict("ask", "unparsable")
 
 
 FENCE_OPEN, FENCE_CLOSE = "<<<ACTION DATA", "ACTION DATA>>>"
