@@ -95,7 +95,9 @@ LATER_DEPLOY_ROWS = {"controls": 64, "unknown": 100}
 # `config:set` rows above among them), and the measured deploy, publish and secret-write gaps of other programs
 # (`uv publish`, `gcloud app deploy`…) ask as `publish` or `secret-write`. Counted apart, on the default sample.
 GAP_PROGRAMS = frozenset(tp._PUBLISH_MORE) | frozenset(tp._SECRET_WRITE)
-LATER_GAP_ROWS = {"sweep": 28}
+# Sweep: 28 `uv publish` rows. Named, policy and positive: every row is the quoted-word table's `secret-write` seed
+# (`gh secret set ZZ`) asking as `secret-write` where main ran it.
+LATER_GAP_ROWS = {"sweep": 28, "named": 6, "policy": 48, "positive": 28}
 # Round 1 of the #897 review, also on purpose: a registry publish with its tool's documented dry-run option
 # (`tp._DRY_RUN`: `cargo publish --dry-run`) publishes nothing, so `publish` leaves its rules and every other rule
 # stays. Counted apart, on the default sample: every one is cargo's, spelled quoted, escaped or after another command.
