@@ -233,6 +233,24 @@ async def test_accepting_the_review_closes_a_done_jobs_row_and_its_glance_stops_
         assert (await progress.waiting_on_user(db)).count == 0
 
 
+async def test_a_job_whose_only_check_is_its_delivered_answer_posts_the_answer_alone(
+        execution_db, active, frames, monkeypatch):  # noqa: F811
+    # The answer is its own evidence: a sheet saying only "An answer was delivered" adds a line and tells nothing.
+    job = await _finished(frames, [], monkeypatch)
+    assert job.results == {"answer-delivered": "passed"}, job.results
+    [message] = await _messages(execution_db)
+    assert message.content == f"Done: {PHRASE}"
+
+
+async def test_a_job_whose_answer_was_not_delivered_still_gets_its_sheet(monkeypatch):
+    monkeypatch.setattr(runtime_messages, "selected_locale", lambda: _en())
+    job = background_jobs.Job(job_id="job-x", conversation_id=CID, goal="g",
+                               acceptance=background_jobs.criteria_to_acceptance([]), outside_seen=False,
+                               outcome="partial", results={"answer-delivered": "failed"})
+    body, _ = await background_jobs._with_sheet(job, "I made a start.")
+    assert body.startswith("I made a start.\n\n**⚠️ Not verified**\n- An answer was delivered")
+
+
 # -- 5: 👀 reaches the badge ----------------------------------------------------------------------------------------
 
 async def test_an_open_glance_waits_on_you_until_you_look(execution_db, active, frames, monkeypatch):  # noqa: F811

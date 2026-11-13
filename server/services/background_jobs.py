@@ -541,6 +541,10 @@ async def _with_sheet(job: Job, body: str) -> tuple[str, int]:
     of its own: its sheet is its answer and the files it wrote."""
     from server.services import acceptance_sheet, runtime_messages
     files = job.files if job.parent_id else ()
+    if not files and job.acceptance and all(
+            check.get("id") == acceptance_sheet.ANSWER and job.results.get(check.get("id")) == "passed"
+            for check in job.acceptance):
+        return body, 0          # only "an answer was delivered", and it was: the answer itself says so, no sheet
     sheet = acceptance_sheet.render(job.acceptance, job.results, job.report, await runtime_messages.selected_locale(),
                                     files=files)
     glances = len(acceptance_sheet.columns(job.acceptance, job.results, job.report)[1])
