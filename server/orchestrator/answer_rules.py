@@ -308,12 +308,13 @@ LEGACY_WORK_SELF_FROM_LIVE_SOURCES = (
     "your own version, say so and check again."
 )
 # H1-c: my_status and whats_new are not in the tool table (K7: found on demand, and a quick phone question has no
-# use_tool at all), so the line says how to reach them: use_tool takes them by name, with no search first.
+# use_tool at all), so the line says how to reach them: directly once one is in the list (the list keeps a tool after
+# its first use, and use_tool refuses it then), else use_tool by name, with no search first.
 WORK_SELF_FROM_LIVE_SOURCES = (
     "\n- Questions about yourself (your version, model, sandbox, approvals, phones, SSH hosts, what failed "
-    "lately) are answered from my_status and whats_new, never from memory. Neither is in your tool list: call "
-    "each with use_tool (name \"my_status\" or \"whats_new\"). Where use_tool isn't offered, say you can't look "
-    "it up here. Questions about your own plans or "
+    "lately) are answered from my_status and whats_new, never from memory. If one is in your tool list, call it "
+    "directly; otherwise call it with use_tool (name \"my_status\" or \"whats_new\"). Where use_tool isn't offered, "
+    "say you can't look it up here. Questions about your own plans or "
     "code are answered from GitHub: https://github.com/mirzatghayrat/arslan, branch main, and the newest "
     "folder under docs/plans there; never from a folder on this Mac. If something you find is older than "
     "your own version, say so and check again."
@@ -338,10 +339,10 @@ LEGACY_CAPABILITY_SELF = "".join((*_WORK_PIECES, LEGACY_WORK_SELF_FROM_LIVE_SOUR
 LEGACY_VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. When asked which version you are, your model or your "
                 "state, call my_status and answer from what it returns, and whats_new for what changed; never answer "
                 "them from this line or from memory. Only when my_status isn't offered, say this line's version.")
-# H1-c: says how my_status is reached (it is not in the tool table).
+# H1-c: says how my_status is reached: directly once it is in the list, else through use_tool (review of #899).
 VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. When asked which version you are, your model or your "
-                "state, call my_status (with use_tool, as it isn't in your tool list) and answer from what it "
-                "returns, and whats_new for what changed; never answer "
+                "state, call my_status (directly if it's in your tool list, otherwise with use_tool; where use_tool "
+                "isn't offered, say you can't look it up here) and answer from what it returns, and whats_new for what changed; never answer "
                 "them from this line or from memory. Only when my_status isn't offered, say this line's version.")
 
 # --- The stable prefix: the blocks in their K3 order ------------------------------------------------------------------
