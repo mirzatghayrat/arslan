@@ -296,8 +296,8 @@ The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until S
 | 道 | 卡 |
 |---|---|
 | ⓪Plan | M64；本页、STATUS、各卡；R64 门槛判定 |
-| ②Main | S5a、S5b、INB（含 MEM1）、review of SBX、SUB、STY、ACM、C7c、C5b、K6、K10、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
-| 新开一个会话（用户 10-28 定，为了并行） | CAP |
+| ②Main | INB（含 MEM1）、review of SBX、SUB、STY、ACM、C7c、C5b、K6、K10、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
+| 新开一个会话（用户 10-28 定，为了并行） | CAP; S5a and S5b (moved from ②Main) |
 | LOOP1 | L6 and L7 (moved from ②Main by ⓪Plan on 2026-11-11) |
 | ③Hands | **S64-0（effort=max 写）**；S64-0b；**SBX (from 2026-10-28)**；HR；CLS；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
 | ①iOS | Q1 的 iPhone 端；Bridge 帧的变更清单（和 ②Main 一起） |
@@ -352,7 +352,7 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0092 | S6 | Data only: deletes the old command rules (`permission_rules` of kind `legacy_rule`) and the `terminal_always_allow` settings list they were copied from (the user's decision of 2026-11-11: deleted, not listed), and every `permission_grants` row no request reads (a frozen copy of `permissions.grant_is_live`; the user's decision after #836's review); live grants and everything else untouched, no-op downgrade | ②Main |
 | 0095 | ASK1-a | Data only: writes no policy; on an existing install whose stored `shell_confirm_policy` isn't `ask_risky`, sets `shell_policy_switch_notice` to "pending" (replacing a pending 0070 notice); for a stored `ask_risky`, clears a pending one; a new install gets none; no-op downgrade | ③Hands |
 
-0093 (SIDE-1), 0094 (SUB7), 0096 (SUB6b) and 0097 (ASK1-b) are reserved. The next free number is 0098. Ask ②Main before taking it.
+0093 (SIDE-1), 0094 (SUB7), 0096 (SUB6b), 0097 (ASK1-b) and 0098 (S5a) are reserved. The next free number is 0099. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 
