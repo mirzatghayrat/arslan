@@ -35,6 +35,13 @@ def inside_job() -> bool:
     return _inside_job.get() is not None
 
 
+def current_goal() -> str | None:
+    """The goal of the job this code runs in, as the user's turn gave it (not the instruction its turn is sent with,
+    which carries the host's context), or None."""
+    job = _jobs.get(_inside_job.get() or "")
+    return job.goal if job is not None else None
+
+
 @dataclass
 class Job:
     job_id: str
@@ -48,7 +55,10 @@ class Job:
     # 0.1.43: which limit ended the job, e.g. {"reason": "tool_calls", "used": 80, "limit": 80}.
     budget_stop: dict | None = None
     tool_calls_seen: int = 0
-    run_id: int | None = None         # its recorded run: the phone reviews the steps by it
+    # A turn the limit ended with no text: what its records show it did, what was blocked and what is left
+    # (`BudgetExceeded.closing`). Its report carries it after the budget note.
+    closing: str = field(default="", repr=False)
+    run_id: int | None = None        # its recorded run: the phone reviews the steps by it
     origin: str = "mac"               # "phone": started from the paired iPhone
     # S64-0: whether the goal may carry outside content. A fixed answer (True: nobody knows), or the
     # starting turn's mark, asked again when the job gets its slot (start).
@@ -429,6 +439,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             logger.exception("background job %s execution raised %s %s", job.job_id, type(exc).__name__,
                              getattr(exc, "code", ""))
             output = None
+            job.closing = getattr(exc, "closing", "") or job.closing
             if isinstance(exc, sub_sessions.TreeLimitReached):
                 tree_stop = {**exc.stop, "tier": tier}
     async with repository() as repo:
@@ -473,6 +484,8 @@ async def _report(job: Job, text: str) -> str:
     try:
         if not body and job.outcome == "out_of_budget":
             body = await _budget_note(job)
+            if job.closing:             # never empty of what the run did: the host's closing from its records
+                body = f"{body}\n\n{job.closing}"
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
             # S64-0b: what may carry outside content (the result, or the budget note naming the goal)
             # reaches later turns framed; the user sees it as written. Only a job known clean is not.

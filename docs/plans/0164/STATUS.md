@@ -2,7 +2,60 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-11 (UTC, evening), by ⓪Plan: progress, the user's decisions and tier 3 owners, below. Before that, 2026-11-10 (UTC, evening): the list of what's left. Before that, 2026-11-07 (UTC, morning). The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+**Updated:** 2026-11-14 (UTC), by ⓪Plan: tier 1 progress, owners, decisions and corrections, below. Before that, 2026-11-11 (UTC, evening), by ⓪Plan: progress, the user's decisions and tier 3 owners, below. Before that, 2026-11-10 (UTC, evening): the list of what's left. Before that, 2026-11-07 (UTC, morning). The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+
+### 2026-11-14: tier 1 progress, owners and decisions
+
+**Merged since 11-12 (tier 1 and related):**
+- #851 HR-2a; #874 its follow-up (file-tool walk roots).
+- #870 SBX-10.
+- #872 S2a-3 step 4b: closes "cd then a relative delete doesn't ask".
+- #871 ASK1-a: the default is now "ask only when risky". The 27-task bench gave 24/27 with 0 waiting.
+- #873 HR-1c.
+- #863 SUB6.
+- #875 SBX-2 adapter deletion.
+- #876 HR-2b.
+- #877 SBX-5b (C lite): the file-tool card is read-only, like commands.
+- #879 and #885: harness H0.
+- #878 and #883: the sessions.md rules.
+- #880: usage tables.
+
+**In review:**
+- #881 S4b-0 (Codex round 2).
+- #890 ASK1-b (Codex round 1).
+- #886 and #888: sessions.md §13 practices.
+- #887: usage tables, three columns.
+
+**Corrections to earlier counts:**
+1. ASK1-a was not held for SBX-8. The user decided on 2026-11-12 that SBX-8 runs before the tag on the user's Mac, and its two numbers go in the release notes.
+2. #869 is #376's remaining cases, not the "6 rows main under-forbids" item. Those 6 were closed by #791 and #832.
+3. HR-1c and SBX-10 are new tier 1 sub-items, split from HR-1 and found in #846's review.
+4. #872 is S2a-3 step 4b, which closes "cd then a relative delete doesn't ask". It isn't #376's remaining cases.
+
+**Owners now:**
+- ③Hands: S4b-0, CLS (service, model call, measurement runner), then ASK1-b fixes.
+- ②Main: HR-3 part 2, then SUB6b (migration 0096), then #298b-2, last before the release.
+- ⑤CAP: S5a (four modes: plan, ask every step, ask only when risky, full access; migration 0098), then S5b and H8a.
+- ⑥Helper: NET (moved up by the user on 2026-11-14; replaces S2a-1's network card), then H1-b, H1-c, INB9-a and SIDE-1 (migration 0093).
+- LOOP1: harness H0 (done), H1-a, and H3 (an enforced check before "done", added by the user on 2026-11-14 in the reserved sixth harness slot), then the L7 slices.
+
+**User decisions, 2026-11-13 and 11-14 (paraphrased):**
+- S5a:
+  - ASK1's setting merges into the modes. The tier is named "Ask only when risky", and the old "when to ask" setting is deleted.
+  - Users who stored "ask every command" default to "Ask every step".
+  - It falls back to "Ask every step", with a reason shown, when the sandbox is off, a checkpoint can't be saved, or the work folder is home.
+  - Full access doesn't show the outside-sandbox card.
+  - The demo was approved.
+- NET:
+  - Allowed: hosts the user named, listed sites and common package hosts.
+  - Refused or carded: hosts seen only in outside content. IP literals after outside content are treated the same, except loopback and trusted devices.
+  - Unknown hosts are allowed. It is on by default.
+- CLS:
+  - Pass lines are measured with the user's default provider, on the user's own API.
+  - Codex built a local-only adversarial set of 120 cases.
+- The working rules are in docs/sessions.md §12 and §13, with the budget by tier.
+
+**Migration numbers:** 0093 SIDE-1, 0094 SUB7, 0095 ASK1-a (merged), 0096 SUB6b, 0097 ASK1-b (#890), 0098 S5a. The next free number is 0099.
 
 ### 2026-11-11, evening: progress
 

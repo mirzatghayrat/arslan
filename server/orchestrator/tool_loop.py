@@ -819,12 +819,23 @@ async def run_native(**kwargs) -> dict:
             result["external_seen"] = _untrusted.external_seen()
             _learn_after(request, state, result)
         return result
-    except BudgetExceeded:
+    except BudgetExceeded as stopped:
         from server.services import background_jobs
         trace = state.tool_trace
         # 0.1.52: the chat path passes ToolCaller(actor="host"); checking for no caller
         # at all left this closing message unreachable from a real chat turn.
         host_turn = _host_turn(request.caller, request.progress_lane)
+        if host_turn and background_jobs.inside_job():
+            # A job's turn ends with no text here (a job shows no streamed text, and nothing is returned). The job
+            # records the stop and reports it; the report carries what this turn's records show (`_report`).
+            from server.orchestrator.answer_salvage import _records_closing
+            from server.services import runtime_messages
+            try:
+                stopped.closing = _records_closing(background_jobs.current_goal() or request.user_content, trace,
+                                                   state.plan.items if state.plan else [],
+                                                   locale=await runtime_messages.selected_locale())
+            except Exception:  # noqa: BLE001 — the stop is what propagates; the job's note still says it
+                logger.warning("budget closing not written", exc_info=True)
         if not host_turn or background_jobs.inside_job() \
                 or not any((t.get("result") or {}).get("ok") for t in trace):
             raise                       # workers and jobs record the stop themselves
