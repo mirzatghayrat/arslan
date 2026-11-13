@@ -376,10 +376,10 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         except root_pin.Swapped as exc:                 # SBX-9: a root swapped while it was pinned
             return _swapped(cwd, "workspace", exc)
         mode = "workspace" if prefix else "unavailable"
-        if not prefix and SANDBOX_ONLY.get():      # ASK1-b G2: a fire's command never runs unwrapped
-            return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd), "sandbox": mode,
-                    "error": "not started: the sandbox couldn't start, and a scheduled run's command runs only "
-                             "inside it. Nothing ran."}
+        if not prefix and SANDBOX_ONLY.get():      # ASK1-b G2: a fire's command never runs unwrapped; refused, listed
+            from server.orchestrator import command_gate
+            return {"ok": False, "executed": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
+                    "sandbox": mode, "error": await command_gate.fire_sandbox_refused(command)}
     elif not unwrapped:
         try:
             prefix = await command_sandbox.in_thread(

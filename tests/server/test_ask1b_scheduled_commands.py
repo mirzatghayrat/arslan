@@ -194,19 +194,33 @@ async def test_a_sandbox_gone_between_the_gate_and_the_executor_refuses_and_list
     assert row.conversation_id == CID
 
 
-async def test_a_fires_command_never_runs_unwrapped_when_seatbelt_gives_no_wrapper(monkeypatch, tmp_path):
-    """The last line, in terminal_exec: sandbox asked for, no wrapper came back (seatbelt gone): not started."""
+@pytest.mark.parametrize("how", ["seatbelt gone at the wrapper", "no wrapper"])
+async def test_a_fires_command_with_no_wrapper_at_the_last_moment_is_refused_and_listed(monkeypatch, how):
+    """Round 2: the gate and the executor both passed (seatbelt available), the real terminal_exec runs, and then the
+    wrapper gives no prefix: seatbelt became unavailable as the wrapper was built, or it returned none. Refused,
+    listed once under the fire, and nothing starts, inside or outside."""
     async def never(*_a, **_k):
         raise AssertionError("nothing starts")
-    monkeypatch.setattr(command_sandbox, "available", lambda: False)
-    monkeypatch.setattr(command_sandbox, "wrapper", lambda *_a, **_k: [])
+
+    def outside(*_a, **_k):
+        raise AssertionError("the outside runner is never used for a fire")
     monkeypatch.setattr(terminal_exec, "_execute", never)
-    token = terminal_exec.SANDBOX_ONLY.set(True)
-    try:
-        out = await terminal_exec.run("ls", cwd=tmp_path, sandbox=True)
-    finally:
-        terminal_exec.SANDBOX_ONLY.reset(token)
-    assert out["ok"] is False and "Nothing ran" in json.dumps(out)
+    monkeypatch.setattr(command_sandbox, "outside_wrapper", outside)
+    if how == "no wrapper":
+        monkeypatch.setattr(command_sandbox, "wrapper", lambda *_a, **_k: [])
+    else:
+        real, gone = command_sandbox.wrapper, []
+
+        def wrapper(*a, **k):
+            gone.append(True)
+            return real(*a, **k)                       # reads available() again: now False, so no prefix
+        monkeypatch.setattr(command_sandbox, "wrapper", wrapper)
+        monkeypatch.setattr(command_sandbox, "available", lambda: not gone)
+    out = await _fire("ls")
+    assert out["ok"] is False and out["executed"] is False and "nobody to ask" in json.dumps(out)
+    [row] = await _rows()
+    assert (row.kind, row.target, row.decided_by, row.decision, row.conversation_id) == (
+        "command", "unsandboxed:*", "policy", "deny", CID)
 
 
 async def test_the_cut_back_starts_a_fires_command_in_its_runs_temp_folder(ran, monkeypatch, tmp_path):

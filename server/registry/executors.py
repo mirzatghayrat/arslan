@@ -926,11 +926,7 @@ class RunCommandExecutor:
         if terminal_exec.SANDBOX_ONLY.get() and not (sandboxed and command_sandbox.available()
                                                      and not terminal_exec.OUTSIDE_SANDBOX.get()):
             from server.orchestrator import command_gate
-            from server.orchestrator.tool_gates import _unattended
-            from server.services import approvals
-            return {"ok": False, "executed": False, "error": await _unattended(        # listed under the fire's task
-                "a scheduled run's command runs only in the sandbox, which is switched off or can't start now",
-                approvals._command_request(command, [], None, unsandboxed=True), command_gate._FIRE.get())}
+            return {"ok": False, "executed": False, "error": await command_gate.fire_sandbox_refused(command)}
         if in_sub and (cwd is None or not command_sandbox.available()):
             return {"ok": False, "executed": False,
                     "error": "a sub-session's commands run only in the sandbox, in its own folder, and "

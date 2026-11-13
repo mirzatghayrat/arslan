@@ -74,6 +74,15 @@ FIRE_ASK_ALL_NOTE = ("The user chose to be asked before every command, so a sche
                      "“Ask only for risky commands”.")
 
 
+async def fire_sandbox_refused(command: str) -> str:
+    """ASK1-b G2: a fire's command whose sandbox went after the gate (switched off, or seatbelt can't start or gave no
+    wrapper) is refused and listed under the fire's conversation, as the no-sandbox card would have read. What the
+    model is told."""
+    from server.services import approvals
+    return await _unattended("a scheduled run's command runs only in the sandbox, which is switched off or can't start "
+                             "now", approvals._command_request(command, [], None, unsandboxed=True), _FIRE.get())
+
+
 async def _scheduled_command_refused(args: dict, conversation_id: str | None) -> dict:
     """The refusal of a command in a run with nobody to ask that isn't a scheduled task's own fire, listed as the
     card would have read under "ask for every command" (U14 c): policy, deny, no "Always"."""
