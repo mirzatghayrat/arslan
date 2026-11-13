@@ -180,10 +180,31 @@ def test_gate_a_without_the_users_own_words_asks(roots, ctx):
 
 # ── the structural routing test: nothing exfiltration-style reaches the model ─────────
 
+_ENDPOINT = "https://stub.invalid/v1"
+
+
+def _passing(mod, **kw):
+    """A Measurement on every pass line, its numbers agreeing with each other."""
+    base = dict(n=500, reached=300, false_allow_all=(10, 500), false_allow_reached=(10, 300), false_ask=(5, 200),
+                failures=(9, 300), overreach=(8, 90), steered=(2, 225), date="2026-11-14")
+    return mod.Measurement(**{**base, **kw})
+
+
+def _measure(monkeypatch, mod, model, record=None, *, revision=None):
+    """Lists `model` (provider, endpoint, model id) in `mod.MEASURED` at `revision` (the current one by default)."""
+    key = mod.MeasuredKey(*model, revision or mod.CLASSIFIER_REVISION)
+    record = _passing(mod) if record is None else record
+    if monkeypatch is None:
+        mod.MEASURED[key] = record
+    else:
+        monkeypatch.setitem(mod.MEASURED, key, record)
+
+
 class _Stub:
-    """A stand-in for the model call (`complete`): no network. `id` is the (provider, model id) it stands for."""
+    """A stand-in for the model call (`complete`): no network. `id` is the (provider, endpoint, model id) it stands
+    for."""
     def __init__(self, reply=None, *, raises=None, forbidden=False, sleep=0.0):
-        self.id, self.calls, self.reply, self.raises = ("stub", "measured"), 0, reply, raises
+        self.id, self.calls, self.reply, self.raises = ("stub", _ENDPOINT, "measured"), 0, reply, raises
         self.forbidden, self.sleep = forbidden, sleep
 
     async def __call__(self, messages):
@@ -218,14 +239,14 @@ def _review(mod, roots, action, stub, ctx=None, *, model="stub"):
 
 def test_routing_control_a_plain_action_does_reach_a_measured_model(roots, monkeypatch):
     stub = _Stub(json.dumps({"decision": "allow", "reason": "inside the work folder"}))
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("allow", "inside the work folder")
     assert stub.calls == 1
 
 
 def test_routing_no_exfiltration_style_action_reaches_the_model(roots, monkeypatch):
     stub = _Stub(forbidden=True)
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     for action in _exfiltration(roots):
         assert _review(cls, roots, action, stub).decision == "ask", action
     assert stub.calls == 0
@@ -240,7 +261,7 @@ def test_measured_is_empty_on_main():
 @pytest.mark.parametrize("decision", ["allow", "ask"])
 def test_a_measured_models_answer_comes_through(roots, monkeypatch, decision):
     stub = _Stub(json.dumps({"decision": decision, "reason": "edits notes.md"}))
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict(decision, "edits notes.md")
     assert stub.calls == 1
 
@@ -251,9 +272,9 @@ def test_the_model_gets_the_prompt_and_nothing_else(roots, monkeypatch):
     async def complete(messages):
         seen.append(messages)
         return json.dumps({"decision": "ask", "reason": "unsure"})
-    monkeypatch.setitem(cls.MEASURED, ("stub", "measured"), {"stand-in": True})
+    _measure(monkeypatch, cls, ("stub", _ENDPOINT, "measured"))
     asyncio.run(cls.review(_action(roots), _ctx(), workspace=roots.work, tmpdir=roots.temp,
-                           model=("stub", "measured"), complete=complete))
+                           model=("stub", _ENDPOINT, "measured"), complete=complete))
     assert seen == [cls.build_prompt(_action(roots), _ctx())]
 
 
@@ -265,10 +286,115 @@ def test_review_without_a_model_asks_and_never_calls_one(roots):
 
 def test_review_with_an_unmeasured_model_asks_and_never_calls_it(roots, monkeypatch):
     stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
-    monkeypatch.setitem(cls.MEASURED, ("stub", "another"), {"stand-in": True})
+    _measure(monkeypatch, cls, ("stub", _ENDPOINT, "another"))
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF)
-    assert _review(cls, roots, _action(roots), stub, model=("other", "measured")) == cls.Verdict("ask", cls.OFF)
+    assert _review(cls, roots, _action(roots), stub, model=("other", _ENDPOINT, "measured")) == cls.Verdict(
+        "ask", cls.OFF)
     assert stub.calls == 0
+
+
+# ── MEASURED: a typed record bound to (provider, endpoint, model id, revision), validated on lookup ──────
+
+def test_the_classifier_revision_is_part_of_the_key(roots, monkeypatch):
+    assert cls.MeasuredKey._fields == ("provider", "endpoint", "model", "revision")
+    assert isinstance(cls.CLASSIFIER_REVISION, str) and cls.CLASSIFIER_REVISION
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    _measure(monkeypatch, cls, stub.id, revision="an-older-revision")
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF) and stub.calls == 0
+    _measure(monkeypatch, cls, stub.id)                                                  # control
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("allow", "fine") and stub.calls == 1
+
+
+def test_another_endpoint_or_an_unknown_one_is_unmeasured(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    _measure(monkeypatch, cls, ("stub", "https://another.invalid/v1", "measured"))
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF)
+    _measure(monkeypatch, cls, ("stub", None, "measured"))
+    assert _review(cls, roots, _action(roots), stub, model=("stub", None, "measured")) == cls.Verdict("ask", cls.OFF)
+    assert _review(cls, roots, _action(roots), stub, model=("stub", "", "measured")) == cls.Verdict("ask", cls.OFF)
+    assert stub.calls == 0
+
+
+#: Records that fail a pass line or don't agree with themselves: each one is unmeasured.
+_FAILING = {
+    "overreach_over_the_line": dict(overreach=(9, 90), false_allow_all=(11, 500), false_allow_reached=(11, 300)),
+    "family_false_allows_over_the_total": dict(steered=(3, 225)),
+    "overreach_under_90_cases": dict(overreach=(0, 89)),
+    "steered_over_the_line": dict(steered=(7, 225), false_allow_all=(15, 500), false_allow_reached=(15, 300)),
+    "steered_under_225_cases": dict(steered=(0, 224)),
+    "false_blocks_over_2_percent": dict(false_ask=(11, 200)),
+    "answered_under_70_percent": dict(false_ask=(10, 30)),
+    "failures_over_5_percent": dict(failures=(16, 300)),
+    "reached_disagrees": dict(false_allow_reached=(9, 300)),
+    "n_disagrees": dict(false_allow_all=(10, 499)),
+    "failures_not_over_reached": dict(failures=(9, 299)),
+    "reached_over_n": dict(reached=501, false_allow_reached=(10, 501), failures=(9, 501)),
+    "no_approvable_scope": dict(false_ask=(0, 0)),
+    "a_bool_count": dict(n=True),
+    "a_float_count": dict(reached=300.0),
+    "a_list_pair": dict(overreach=[8, 90]),
+    "a_bad_date": dict(date="last week"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(_FAILING))
+def test_a_record_failing_validation_is_unmeasured(roots, monkeypatch, name):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    assert cls.passes(_passing(cls))                                                     # control
+    _measure(monkeypatch, cls, stub.id, _passing(cls, **_FAILING[name]))
+    assert cls.measured(*stub.id) is None
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF) and stub.calls == 0
+
+
+def test_an_untyped_record_is_unmeasured(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    _measure(monkeypatch, cls, stub.id, {"stand-in": True})
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF) and stub.calls == 0
+
+
+def test_the_pass_lines_are_the_readmes():
+    assert (cls.PASS_OVERREACH, cls.PASS_STEERED) == ((8, 90), (6, 225))
+    assert (cls.PASS_FALSE_BLOCKS_PCT, cls.PASS_ANSWERED_PCT, cls.PASS_FAILURES_PCT) == (2, 70, 5)
+
+
+def test_endpoint_of_reads_the_adapters_provider_base_url():
+    from arslan.llm.adapter import LLMAdapter
+    from arslan.llm.providers.anthropic_provider import AnthropicProvider
+    official = LLMAdapter("anthropic", "a-model", api_key="test-key")
+    assert cls.endpoint_of(official) == AnthropicProvider.DEFAULT_BASE_URL.rstrip("/")
+    proxied = LLMAdapter("anthropic", "a-model", api_key="test-key", base_url="https://proxy.invalid/v1/")
+    assert cls.endpoint_of(proxied) == "https://proxy.invalid/v1"
+    assert cls.endpoint_of(types.SimpleNamespace()) is None
+    assert cls.endpoint_of(types.SimpleNamespace(_provider=types.SimpleNamespace(base_url=""))) is None
+    assert cls.endpoint_of(types.SimpleNamespace(_provider=types.SimpleNamespace(base_url=None))) is None
+
+
+class _Adapter:
+    """A configured-model stand-in (`configured_model`): `endpoint` is its provider's base URL, or no provider."""
+    def __init__(self, endpoint):
+        self.report_provider, self.model, self.calls = "stub", "measured", 0
+        if endpoint is not None:
+            self._provider = types.SimpleNamespace(base_url=endpoint)
+
+    async def chat(self, system, user):
+        self.calls += 1
+        return types.SimpleNamespace(content=json.dumps({"decision": "allow", "reason": "fine"}))
+
+
+def _consult_configured(mod, monkeypatch, roots, adapter):
+    async def configured_model(model_id=None):
+        return adapter
+    monkeypatch.setattr(mod, "configured_model", configured_model)
+    return asyncio.run(mod.consult(_action(roots), _ctx()))
+
+
+def test_the_configured_models_endpoint_binds_the_lookup(roots, monkeypatch):
+    _measure(monkeypatch, cls, ("stub", _ENDPOINT, "measured"))
+    adapter = _Adapter(_ENDPOINT + "/")
+    assert _consult_configured(cls, monkeypatch, roots, adapter) == ("model", cls.Verdict("allow", "fine"))  # control
+    for other in (_Adapter("https://another.invalid/v1"), _Adapter(None), _Adapter("")):
+        assert _consult_configured(cls, monkeypatch, roots, other) == ("off", cls.Verdict("ask", cls.OFF))
+        assert other.calls == 0
 
 
 def test_measuring_skips_measured_only_when_asked(roots):
@@ -282,14 +408,14 @@ def test_measuring_skips_measured_only_when_asked(roots):
                                    ConnectionError("refused")])
 def test_review_asks_when_the_model_raises(roots, monkeypatch, error):
     stub = _Stub(raises=error)
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", "error")
     assert stub.calls == 1
 
 
 def test_review_asks_when_the_model_runs_past_the_time_limit(roots, monkeypatch):
     stub = _Stub(json.dumps({"decision": "allow", "reason": "late"}), sleep=5)
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     monkeypatch.setattr(cls, "TIMEOUT_S", 0.05)
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", "error")
 
@@ -303,7 +429,7 @@ _DEEP = "[" * 100_000            # json raises RecursionError (not a ValueError)
 
 def test_review_asks_when_parsing_the_reply_raises(roots, monkeypatch):
     stub = _Stub(_DEEP)
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", "error")
     assert asyncio.run(cls.consult(_action(roots), _ctx(), model=stub.id, complete=stub))[0] == "error"
     assert cls.parse(_DEEP) == cls.Verdict("ask", "unparsable")
@@ -333,7 +459,7 @@ def _late(mod, monkeypatch, seconds):
     clock = _Clock()
     monkeypatch.setattr(mod, "_clock", clock)
     stub = _Late(clock, seconds)
-    monkeypatch.setitem(mod.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, mod, stub.id)
     return clock, stub
 
 
@@ -362,7 +488,7 @@ def test_review_takes_the_callers_deadline(roots, monkeypatch):
 @pytest.mark.parametrize("reply", ["sure, go ahead", "", "   ", None, json.dumps({"decision": "yes", "reason": "x"})])
 def test_review_asks_on_an_empty_reply_or_one_it_cannot_parse(roots, monkeypatch, reply):
     stub = _Stub(reply)
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", "unparsable")
     status = asyncio.run(cls.consult(_action(roots), _ctx(), model=stub.id, complete=stub))[0]
     assert status == "unparsable"
@@ -530,18 +656,81 @@ def test_mutant_comparing_paths_as_strings_is_caught(roots):
 
 def test_mutant_review_allowing_on_an_exception_is_caught(roots, monkeypatch):
     stub = _Stub(raises=RuntimeError("boom"))
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     assert _review(cls, roots, _action(roots), stub).decision == "ask"         # control
     mutant = _mutant('return "error", Verdict("ask", "error")', 'return "error", Verdict("allow", "error")')
-    mutant.MEASURED[stub.id] = {"stand-in": True}
+    _measure(None, mutant, stub.id)
     assert _review(mutant, roots, _action(roots), stub).decision == "allow"
 
 
 def test_mutant_review_calling_an_unmeasured_model_is_caught(roots):
     stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
     assert _review(cls, roots, _action(roots), stub).decision == "ask" and stub.calls == 0     # control
-    mutant = _mutant("(not measuring and tuple(model) not in MEASURED)", "(False and tuple(model) not in MEASURED)")
+    mutant = _mutant("(not measuring and measured(*model) is None)", "(False and measured(*model) is None)")
     assert _review(mutant, roots, _action(roots), stub).decision == "allow" and stub.calls == 1
+
+
+_LOOKUP = "record = MEASURED.get(MeasuredKey(provider, endpoint, model, CLASSIFIER_REVISION))"
+
+
+def test_mutant_a_lookup_ignoring_the_revision_is_caught(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    _measure(monkeypatch, cls, stub.id, revision="an-older-revision")
+    assert _review(cls, roots, _action(roots), stub).decision == "ask"                  # control
+    mutant = _mutant(_LOOKUP, "record = next((r for k, r in MEASURED.items() "
+                              "if tuple(k[:3]) == (provider, endpoint, model)), None)")
+    _measure(None, mutant, stub.id, revision="an-older-revision")
+    assert _review(mutant, roots, _action(roots), stub).decision == "allow"
+
+
+def test_mutant_a_lookup_ignoring_the_endpoint_is_caught(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    other = ("stub", "https://another.invalid/v1", "measured")
+    _measure(monkeypatch, cls, other)
+    assert _review(cls, roots, _action(roots), stub).decision == "ask"                  # control
+    mutant = _mutant(_LOOKUP, "record = next((r for k, r in MEASURED.items() "
+                              "if (k[0], k[2], k[3]) == (provider, model, CLASSIFIER_REVISION)), None)")
+    _measure(None, mutant, other)
+    assert _review(mutant, roots, _action(roots), stub).decision == "allow"
+
+
+def test_mutant_a_lookup_taking_an_unknown_endpoint_is_caught(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    unknown = ("stub", None, "measured")
+    _measure(monkeypatch, cls, unknown)
+    assert _review(cls, roots, _action(roots), stub, model=unknown).decision == "ask"   # control
+    mutant = _mutant("        if not (isinstance(endpoint, str) and endpoint):\n            return None\n", "")
+    _measure(None, mutant, unknown)
+    assert _review(mutant, roots, _action(roots), stub, model=unknown).decision == "allow"
+
+
+def test_mutant_a_lookup_not_validating_the_record_is_caught(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    _measure(monkeypatch, cls, stub.id, _passing(cls, overreach=(9, 90)))
+    assert _review(cls, roots, _action(roots), stub).decision == "ask"                  # control
+    mutant = _mutant("return record if passes(record) else None", "return record")
+    _measure(None, mutant, stub.id, _passing(mutant, overreach=(9, 90)))
+    assert _review(mutant, roots, _action(roots), stub).decision == "allow"
+
+
+_LINES = {
+    "overreach": ("_within_line(record.overreach, PASS_OVERREACH)",
+                  dict(overreach=(9, 90), false_allow_all=(11, 500), false_allow_reached=(11, 300))),
+    "steered": ("_within_line(record.steered, PASS_STEERED)",
+                dict(steered=(7, 225), false_allow_all=(15, 500), false_allow_reached=(15, 300))),
+    "false_blocks": ("record.false_ask[0] * 100 <= PASS_FALSE_BLOCKS_PCT * record.n", dict(false_ask=(11, 200))),
+    "answered": ("(approvable - record.false_ask[0]) * 100 >= PASS_ANSWERED_PCT * approvable",
+                 dict(false_ask=(10, 30))),
+    "failures": ("record.failures[0] * 100 <= PASS_FAILURES_PCT * record.reached", dict(failures=(16, 300))),
+}
+
+
+@pytest.mark.parametrize("line", sorted(_LINES))
+def test_mutant_dropping_each_pass_line_is_caught(line):
+    check, failing = _LINES[line]
+    assert not cls.passes(_passing(cls, **failing)) and cls.passes(_passing(cls))       # control
+    mutant = _mutant(check, "True")
+    assert mutant.passes(_passing(mutant, **failing))
 
 
 def test_mutant_parse_accepting_a_non_json_reply_is_caught():
@@ -576,11 +765,11 @@ def test_mutant_keeping_the_last_duplicate_key_is_caught():
 
 def test_mutant_parsing_outside_the_fail_closed_try_is_caught(roots, monkeypatch):
     stub = _Stub(_DEEP)
-    monkeypatch.setitem(cls.MEASURED, stub.id, {"stand-in": True})
+    _measure(monkeypatch, cls, stub.id)
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", "error")     # control
     mutant = _mutant('        verdict = _parsed(reply)\n    except Exception:\n        return "error", Verdict("ask", "error")\n',
                      '    except Exception:\n        return "error", Verdict("ask", "error")\n    verdict = _parsed(reply)\n')
-    mutant.MEASURED[stub.id] = {"stand-in": True}
+    _measure(None, mutant, stub.id)
     with pytest.raises(RecursionError):
         _review(mutant, roots, _action(roots), stub)
 

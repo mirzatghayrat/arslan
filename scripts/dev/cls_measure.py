@@ -9,7 +9,8 @@ no `rules` or `never_auto`: both are derived from the real policy (`terminal_pol
 `hard_rules.never_auto`, as the command gate and CLS read them); a record where that fails takes no rules and
 `never_auto=False`, and is counted as a fallback.
 
-It prints counts only: never a record's id, text, user words, intent or why, nor a model's reason. It writes nothing
+It prints counts only: never a record's id, text, user words, intent or why, nor a model's reason. A family is printed
+only by a known ID (`FAMILIES`); any other family name is counted under "other" and never printed. It writes nothing
 to the repo or the data folder: relative write targets are placed in a throwaway work folder in the system temp
 folder, which is removed at the end.
 """
@@ -33,7 +34,18 @@ TOOLS = {"exec_command": "run_command", "apply_patch": "edit_file"}
 ADD_FILE = "*** Add File:"
 #: The card a tool raises when the record names none.
 DEFAULT_KIND = {"run_command": "command", "edit_file": "workspace_write", "write_file": "workspace_write"}
-_LABEL = re.compile(r"[^A-Za-z0-9_.-]")
+#: The family IDs the runner prints. A record's family is printed only when it is one of these and matches
+#: `_FAMILY_ID`; anything else is counted under OTHER and its name is never printed.
+FAMILIES = frozenset({"steered", "overreach", "disguised", "benign"})
+OTHER = "other"
+_FAMILY_ID = re.compile(r"[a-z0-9_-]{1,32}")
+
+
+def family_of(value) -> str:
+    """The family ID as printed: a known, well-formed ID, or OTHER."""
+    if isinstance(value, str) and _FAMILY_ID.fullmatch(value) and value in FAMILIES:
+        return value
+    return OTHER
 
 
 def tool_of(tool, text) -> str:
@@ -44,14 +56,15 @@ def tool_of(tool, text) -> str:
 
 
 def derive(tool: str, text, kind: str, targets: tuple[Path, ...], workspace: Path) -> tuple[frozenset[str], bool]:
-    """`rules` and `never_auto` from the real policy. A command: its layer ② rules read as if outside the sandbox
-    (`terminal_policy.ask_rules(outside=True)`, the cautious reading) and `hard_rules.never_auto` on the request the
-    gate would build (`approvals._command_request`: a ruled card is once-only). A file write: no rules, and
-    `never_auto` on each target's write request. Raises when the record can't be read this way."""
+    """`rules` and `never_auto` from the real policy. A command: its layer ② rules read in the case's work folder
+    (`cwd=workspace`, as the gate passes the run folder) as if outside the sandbox (`terminal_policy.ask_rules(
+    outside=True)`, the cautious reading) and `hard_rules.never_auto` on the request the gate would build
+    (`approvals._command_request`: a ruled card is once-only). A file write: no rules, and `never_auto` on each
+    target's write request. Raises when the record can't be read this way."""
     if not isinstance(text, str):
         raise TypeError("action text is not a string")
     if tool == "run_command":
-        rules = frozenset(terminal_policy.ask_rules(text, outside=True))
+        rules = frozenset(terminal_policy.ask_rules(text, cwd=workspace, outside=True))
         target = "rules:" + "|".join(sorted(rules)) if rules else "text:" + text
         request = permissions.Request(kind=kind, target=target, title="", detail=text, once_only=bool(rules))
         return rules, hard_rules.never_auto(request)
@@ -64,17 +77,24 @@ class Counts:
     def __init__(self) -> None:
         self.families: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
         self.pregate: collections.Counter = collections.Counter()
-        self.total = self.reached = self.false_allow = self.fallbacks = 0
+        self.total = self.reached = self.false_allow = self.false_ask = self.approvable = self.fallbacks = 0
         self.errors = self.unparsable = self.invalid = 0
 
-    def as_dict(self, model: str) -> dict:
+    def as_dict(self, model: tuple[str, str | None, str]) -> dict:
+        """The counts, and what a MEASURED entry is keyed by (`classifier.MeasuredKey`): provider, endpoint, model
+        id and the classifier's revision."""
+        provider, endpoint, model_id = model
         return {
-            "model": model,
+            "model": f"{provider}/{model_id}",
+            "endpoint": endpoint,
+            "revision": cls.CLASSIFIER_REVISION,
             "cases": self.total,
             "reached_model": self.reached,
             "invalid_records": self.invalid,
             "false_allow": {"all": [self.false_allow, self.total],
                             "reached_model": [self.false_allow, self.reached]},
+            "false_ask": [self.false_ask, self.approvable],
+            "failures": [self.errors + self.unparsable, self.reached],
             "families": {name: {"n": c["n"], "false_allow": c["false_allow"], "false_ask": c["false_ask"]}
                          for name, c in sorted(self.families.items())},
             "pregate_stops": dict(sorted(self.pregate.items())),
@@ -85,22 +105,18 @@ class Counts:
 
 
 def render(data: dict) -> str:
-    lines = [f"model: {data['model']}",
+    lines = [f"model: {data['model']}  endpoint: {data['endpoint']}  revision: {data['revision']}",
              f"cases: {data['cases']}  reached the model: {data['reached_model']}  "
              f"invalid records: {data['invalid_records']}",
              "false-allow: all {}/{}  reached-model {}/{}".format(*data["false_allow"]["all"],
-                                                                  *data["false_allow"]["reached_model"])]
+                                                                  *data["false_allow"]["reached_model"]),
+             "false-ask: {}/{}  failures: {}/{}".format(*data["false_ask"], *data["failures"])]
     lines += [f"family {name}: n={c['n']} false-allow={c['false_allow']} false-ask={c['false_ask']}"
               for name, c in data["families"].items()]
     lines.append("pre-gate stops: " + (" ".join(f"{k}={v}" for k, v in data["pregate_stops"].items()) or "none"))
     lines.append(f"fallbacks (rules/never_auto not derived): {data['fallbacks']}")
     lines.append(f"errors: {data['errors']}  unparsable: {data['unparsable']}")
     return "\n".join(lines)
-
-
-def _label(value) -> str:
-    """A family label as printed: a short name, never free text."""
-    return _LABEL.sub("_", str(value))[:32] or "_"
 
 
 def _case(record: dict, workspace: Path) -> tuple[cls.Action, cls.Context, str]:
@@ -122,7 +138,7 @@ def _case(record: dict, workspace: Path) -> tuple[cls.Action, cls.Context, str]:
     return action, context, fell_back
 
 
-async def run(lines, *, model: tuple[str, str], complete: cls.Complete) -> Counts:
+async def run(lines, *, model: tuple[str, str | None, str], complete: cls.Complete) -> Counts:
     counts = Counts()
     with tempfile.TemporaryDirectory(prefix="cls-measure-") as root:
         workspace, tmpdir = Path(root) / "work", Path(root) / "tmp"
@@ -136,12 +152,13 @@ async def run(lines, *, model: tuple[str, str], complete: cls.Complete) -> Count
                 expected = record["expected"]
                 if expected not in ("allow", "ask"):
                     raise ValueError("bad expected")
-                family = _label(record.get("family"))
+                family = family_of(record.get("family"))
                 action, ctx, fell_back = _case(record, workspace)
             except Exception:
                 counts.invalid += 1
                 continue
             counts.total += 1
+            counts.approvable += expected == "allow"
             counts.fallbacks += bool(fell_back)
             fam = counts.families[family]
             fam["n"] += 1
@@ -152,13 +169,14 @@ async def run(lines, *, model: tuple[str, str], complete: cls.Complete) -> Count
             else:
                 counts.reached += 1
                 status, verdict = await cls.consult(action, ctx, model=model, complete=complete, measuring=True)
-                counts.errors += status in ("error", "off")
+                counts.errors += status in ("error", "off", "expired")
                 counts.unparsable += status == "unparsable"
                 decision = verdict.decision
             if decision == "allow" and expected == "ask":
                 counts.false_allow += 1
                 fam["false_allow"] += 1
             elif decision == "ask" and expected == "allow":
+                counts.false_ask += 1
                 fam["false_ask"] += 1
     return counts
 
@@ -176,10 +194,11 @@ async def amain(argv: list[str] | None = None, *, complete: cls.Complete | None 
         return 2
     if complete is None:
         adapter = await cls.configured_model(args.model)
-        model, complete = (adapter.report_provider, adapter.model), cls.provider_complete(adapter)
+        model = (adapter.report_provider, cls.endpoint_of(adapter), adapter.model)
+        complete = cls.provider_complete(adapter)
     else:
-        model = ("stand-in", args.model or "stand-in")
-    data = (await run(lines, model=model, complete=complete)).as_dict("/".join(model))
+        model = ("stand-in", None, args.model or "stand-in")
+    data = (await run(lines, model=model, complete=complete)).as_dict(model)
     print(json.dumps(data, ensure_ascii=True, indent=2) if args.json else render(data))
     return 0
 

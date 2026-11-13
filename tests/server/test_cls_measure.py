@@ -46,10 +46,14 @@ RECORDS = [
 
 EXPECTED = {
     "model": "stand-in/stand-in",
+    "endpoint": None,
+    "revision": cls.CLASSIFIER_REVISION,
     "cases": 10,
     "reached_model": 7,
     "invalid_records": 0,
     "false_allow": {"all": [1, 10], "reached_model": [1, 7]},
+    "false_ask": [1, 4],
+    "failures": [2, 7],
     "families": {"benign": {"n": 4, "false_allow": 0, "false_ask": 1},
                  "disguised": {"n": 2, "false_allow": 0, "false_ask": 0},
                  "overreach": {"n": 2, "false_allow": 0, "false_ask": 0},
@@ -110,6 +114,8 @@ def test_the_counts_are_exact(cases, capsys):
 def test_the_text_report_has_the_same_counts(cases, capsys):
     out, _ = _run(runner, cases, capsys)
     assert "false-allow: all 1/10  reached-model 1/7" in out
+    assert "false-ask: 1/4  failures: 2/7" in out
+    assert f"revision: {cls.CLASSIFIER_REVISION}" in out
     assert "family benign: n=4 false-allow=0 false-ask=1" in out
     assert "family steered: n=2 false-allow=1 false-ask=0" in out
     assert "pre-gate stops: ci_file=1 no_sandbox=1 refused_card=1" in out
@@ -142,6 +148,80 @@ def test_rules_and_never_auto_come_from_the_real_policy(tmp_path):
         frozenset(), False)
     with pytest.raises(TypeError):
         runner.derive("run_command", None, "command", (), tmp_path)
+
+
+#: Family names that are not printed: free text, a near miss, too long, not a string. All count under "other".
+_UNPRINTED = ["secretfamily", "Benign", "steered ", "two words", "x" * 40, "benign\nleak", "évasion", 7, None]
+
+
+def _families_file(tmp_path):
+    path = tmp_path / "families.jsonl"
+    records = [{**RECORDS[0], "family": "benign"}, {**RECORDS[4], "family": "overreach"}]
+    records += [{**RECORDS[0], "id": f"other-{i}", "family": name} for i, name in enumerate(_UNPRINTED)]
+    path.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
+    return path
+
+
+def test_only_known_family_ids_are_printed(tmp_path, capsys):
+    path = _families_file(tmp_path)
+    out, _ = _run(runner, path, capsys, "--json")
+    families = json.loads(out)["families"]
+    assert set(families) == {"benign", "overreach", "other"}
+    assert families["other"]["n"] == len(_UNPRINTED)
+    out_text, _ = _run(runner, path, capsys)
+    for name in ("secretfamily", "two words", "x" * 40, "évasion", "leak"):
+        assert name not in out and name not in out_text, name
+    assert {runner.family_of(name) for name in _UNPRINTED} == {"other"}
+    assert {runner.family_of(name) for name in runner.FAMILIES} == runner.FAMILIES
+    assert runner.FAMILIES == {"steered", "overreach", "disguised", "benign"}
+
+
+def test_rules_are_read_in_the_cases_work_folder(cases, capsys, monkeypatch):
+    seen = []
+    real_ask_rules = runner.terminal_policy.ask_rules
+
+    def ask_rules(command, *, cwd=None, outside=False):
+        seen.append(cwd)
+        return real_ask_rules(command, cwd=cwd, outside=outside)
+    monkeypatch.setattr(runner, "terminal_policy", types.SimpleNamespace(ask_rules=ask_rules))
+    _run(runner, cases, capsys)
+    assert seen and all(Path(c).name == "work" and Path(c).parent.name.startswith("cls-measure-") for c in seen)
+
+
+# ── mutants for the family IDs and the work folder ─────────────────
+
+def test_mutant_printing_an_unknown_family_name_is_caught(tmp_path, capsys):
+    path = _families_file(tmp_path)
+    out, _ = _run(runner, path, capsys, "--json")
+    assert "secretfamily" not in out                                              # control
+    mutant = _mutant(" and value in FAMILIES:", ":")
+    out, _ = _run(mutant, path, capsys, "--json")
+    assert "secretfamily" in out
+
+
+def test_mutant_printing_any_family_name_is_caught(tmp_path, capsys):
+    path = _families_file(tmp_path)
+    out, _ = _run(runner, path, capsys)
+    assert "two words" not in out                                                 # control
+    mutant = _mutant("    return OTHER\n", "    return str(value)\n")
+    out, _ = _run(mutant, path, capsys)
+    assert "two words" in out
+
+
+def test_mutant_reading_rules_without_the_work_folder_is_caught(cases, capsys, monkeypatch):
+    def seen_by(mod):
+        seen = []
+        real_ask_rules = runner.terminal_policy.ask_rules
+
+        def ask_rules(command, *, cwd=None, outside=False):
+            seen.append(cwd)
+            return real_ask_rules(command, cwd=cwd, outside=outside)
+        monkeypatch.setattr(mod, "terminal_policy", types.SimpleNamespace(ask_rules=ask_rules))
+        _run(mod, cases, capsys)
+        return seen
+    assert None not in seen_by(runner)                                            # control
+    mutant = _mutant("ask_rules(text, cwd=workspace, outside=True)", "ask_rules(text, outside=True)")
+    assert set(seen_by(mutant)) == {None}
 
 
 def test_a_bad_record_is_counted_not_printed(tmp_path, capsys):
@@ -182,8 +262,8 @@ def _mutant(old: str, new: str) -> types.ModuleType:
 def test_mutant_printing_a_records_text_is_caught(cases, capsys):
     out, _ = _run(runner, cases, capsys)
     assert not any(text in out for text in _record_texts())                       # control
-    mutant = _mutant('                family = _label(record.get("family"))',
-                     '                family = _label(record.get("family")); print(record.get("user_words"))')
+    mutant = _mutant('                family = family_of(record.get("family"))',
+                     '                family = family_of(record.get("family")); print(record.get("user_words"))')
     out, _ = _run(mutant, cases, capsys)
     assert any(text in out for text in _record_texts())
 
