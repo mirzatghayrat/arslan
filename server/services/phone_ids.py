@@ -13,6 +13,8 @@ PHONE_ID = re.compile(r"phone-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f
 #: on the Mac, left out of the phone's list here (before it pages, #525 review F2). The Bridge refuses every frame
 #: that names it and never links it (desktop/bridge, ConversationLinks.pocket).
 POCKET = "pocket"
+#: SIDE-1: a side chat's id is this and a UUID (`side_chats.create`), so one with no kind stored still reads as one.
+SIDE_PREFIX = "side-"
 
 
 def made_on_the_phone(conversation_id: str | None) -> bool:
@@ -20,12 +22,16 @@ def made_on_the_phone(conversation_id: str | None) -> bool:
 
 
 def kind_of(conversation_id: str, stored: str | None) -> str | None:
-    """What a conversation is: its stored kind (migration 0071), or `quick` for one the phone made with none."""
+    """What a conversation is: its stored kind (migration 0071), `quick` for one the phone made with none, or `side`
+    for a side chat's id with none (SIDE-1)."""
+    if stored is None and conversation_id.startswith(SIDE_PREFIX):
+        return "side"
     return "quick" if stored is None and made_on_the_phone(conversation_id) else stored
 
 
 def in_list(conversation_id: str, stored: str | None, *, quick: bool = False) -> bool:
     """Whether a conversation belongs in a list of conversations: the ordinary ones, or with `quick` the quick
-    questions. A sub-session (SUB2) is in neither; it is reached through the conversation that started it."""
+    questions. A sub-session (SUB2) or a side chat (SIDE-1) is in neither; it is reached through the conversation that
+    started it."""
     kind = kind_of(conversation_id, stored)
-    return kind != "sub" and (kind == "quick") is quick
+    return kind not in ("sub", "side") and (kind == "quick") is quick

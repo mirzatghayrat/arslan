@@ -305,9 +305,11 @@ def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | N
     has work of its own; `working` counts it so too. SUB5: that entry's Stop stops every sub-session under the
     commander, at any depth, also while the commander is idle: its `job_id` names them all (`sub_sessions.STOP_ALL`),
     which POST /background-jobs/{id}/stop reads. A sub-session's own job ends are no event at all
-    (background_jobs._report): the commander's summary reports once."""
+    (background_jobs._report): the commander's summary reports once. SIDE-1: a side chat's turn is listed as its
+    parent's too, but stays an entry of its own, with no Stop for the parent's sub-sessions: they aren't what it runs."""
     if not tops:
         return feed
+    from server.services.phone_ids import SIDE_PREFIX
     from server.services.sub_sessions import STOP_ALL
     out = {**feed, "events": [{**e, "conversation_id": tops.get(e.get("conversation_id"), e.get("conversation_id"))}
                               for e in feed.get("events", ())]}
@@ -320,6 +322,8 @@ def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | N
             top = tops.get(activity.get("conversation_id"))
             if top is None:
                 active.append(activity)
+            elif str(activity.get("conversation_id")).startswith(SIDE_PREFIX):
+                active.append({**activity, "conversation_id": top})
             elif top not in own and top not in folded:
                 folded.add(top)
                 active.append({**activity, "conversation_id": top, "title": _clip((names or {}).get(top), TITLE_CHARS),

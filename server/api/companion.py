@@ -275,9 +275,11 @@ async def pin_conversation(conversation_id: str, body: ConversationPin, repo=Dep
     if len(conversation_id) > 100 or not conversation_id.strip():
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
     row = await repo.db.get(ConversationContext, conversation_id)
-    from server.services import sub_sessions
+    from server.services import phone_ids, sub_sessions
     if row and (row.owner_id != USER.owner_id or row.kind == sub_sessions.DELETED):  # SUB5a: a tombstone stays one
         raise HTTPException(404, detail={"code": "conversation_not_found"})
+    if phone_ids.kind_of(conversation_id, row.kind if row else None) == sub_sessions.SIDE:
+        raise HTTPException(404, detail={"code": "conversation_not_found"})    # SIDE-1: in no sidebar, so never pinned
     from sqlalchemy.dialects.sqlite import insert
     statement = insert(ConversationContext).values(id=conversation_id, owner_id=USER.owner_id, version=1,
                                                    pinned=body.pinned)
@@ -302,6 +304,9 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
     from server.services import sub_sessions
     if row and (row.owner_id != USER.owner_id or row.kind == sub_sessions.DELETED):  # SUB5a: a tombstone stays one
         raise HTTPException(404, detail={"code": "conversation_not_found"})
+    if phone_ids.kind_of(conversation_id, row.kind if row else None) == sub_sessions.SIDE:
+        # SIDE-1: a side chat's settings are its parent's, read through it each turn, with memory and learning off.
+        raise HTTPException(422, detail={"code": "side_chat_inherits"})
     if phone_ids.kind_of(conversation_id, row.kind if row else None) == "quick" and not body.no_learning:
         # #490 review, 5: a quick question learns nothing until the user turns it into a chat (phone.py, Q1 #3).
         # Read as every turn reads it (#486 review, G1): one the phone made with no kind stored counts as one.

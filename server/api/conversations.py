@@ -242,6 +242,7 @@ async def delete_conversation(
     conversation_id: str,
     sub_sessions: Literal["delete", "keep"] | None = None,
     sub_session: bool = False,
+    side_chat: bool = False,
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
@@ -258,11 +259,13 @@ async def delete_conversation(
     `sub_sessions.deleted`). A conversation
     with sub-sessions needs `sub_sessions`: "delete" takes its whole tree, "keep" makes its own sub-sessions
     top-level chats (`sub_sessions.before_delete`); 409 while one is at work. A sub-session is deleted only when
-    named as one (`sub_session=true`): the phone's `conversation.delete` names none, and gets its not-found."""
+    named as one (`sub_session=true`), and so is a side chat (`side_chat=true`, SIDE-1): the phone's
+    `conversation.delete` names none, and gets its not-found. A conversation's side chats go with it."""
     from server.db.companion_models import ConversationContext
     from server.services import sub_sessions as subs
     try:
-        ids, kept = await subs.before_delete(db, conversation_id, choice=sub_sessions, as_sub_session=sub_session)
+        ids, kept = await subs.before_delete(db, conversation_id, choice=sub_sessions, as_sub_session=sub_session,
+                                             as_side_chat=side_chat)
     except subs.SubSessionError as exc:
         if exc.code == "not_found":
             raise HTTPException(404, detail="not_found") from None
@@ -324,6 +327,7 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
     from server.db.models import ConversationModel, ProviderConfig
     if len(conversation_id) > 100 or not conversation_id.strip():
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
+    await _no_model_of_its_own(db, conversation_id)
     if await db.get(ProviderConfig, body.config_id) is None:
         raise HTTPException(404, detail={"code": "provider_config_not_found"})
     model = body.model.strip()
@@ -344,6 +348,7 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
 async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     from server.db.models import ConversationModel
     from server.services import llm_factory
+    await _no_model_of_its_own(db, conversation_id)
     row = await db.get(ConversationModel, conversation_id)
     if row is not None:
         await db.delete(row)
@@ -406,6 +411,15 @@ async def start_from_plan(conversation_id: str, db: AsyncSession = Depends(get_s
     return await _permission_mode_out(db, conversation_id)
 
 
+async def _no_model_of_its_own(db: AsyncSession, conversation_id: str) -> None:
+    """SIDE-1: a side chat runs on its parent's model (`llm_factory`); none of its own is set or cleared."""
+    from server.db.companion_models import ConversationContext
+    from server.services import phone_ids, sub_sessions
+    row = await db.get(ConversationContext, conversation_id)
+    if phone_ids.kind_of(conversation_id, row.kind if row else None) == sub_sessions.SIDE:
+        raise HTTPException(422, detail={"code": "side_chat_inherits"})
+
+
 @router.post("/conversations/{conversation_id}/seen")
 async def mark_conversation_seen(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     """INB4: the window shows this conversation, so its newest message is seen: a reply or a job done there stops reading
@@ -414,3 +428,33 @@ async def mark_conversation_seen(conversation_id: str, db: AsyncSession = Depend
     if await db.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1)) is None:
         raise HTTPException(404, detail={"code": "conversation_not_found"})
     return {"seen_message_id": await conversation_seen.mark(db, conversation_id)}
+
+
+# ── SIDE-1 (v0.1.64): side chats (`server/services/side_chats.py`) ─────────────
+
+class SideChatIn(BaseModel):
+    """Where it branches; none: at the parent's newest message. The quote the user selected is no field here: it is the
+    side chat's first message (⓪Plan, 2026-11-14)."""
+    model_config = ConfigDict(extra="forbid")
+    branch_message_id: int | None = Field(default=None, ge=1)
+
+
+@router.get("/conversations/{conversation_id}/side-chats")
+async def list_side_chats(conversation_id: str, db: AsyncSession = Depends(get_session)) -> list[dict]:
+    """This conversation's side chats, oldest first (`side_chats.listing`)."""
+    from server.services import side_chats
+    try:
+        return await side_chats.listing(db, conversation_id)
+    except side_chats.SideChatError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code}) from None
+
+
+@router.post("/conversations/{conversation_id}/side-chats", status_code=201)
+async def start_side_chat(conversation_id: str, body: SideChatIn, db: AsyncSession = Depends(get_session)) -> dict:
+    """A new side chat of this conversation (`side_chats.create`). Its messages go over the window's socket, as any
+    conversation's; DELETE /conversations/{id}?side_chat=true deletes it, and deleting its parent does too."""
+    from server.services import side_chats
+    try:
+        return await side_chats.create(db, conversation_id, body.branch_message_id)
+    except side_chats.SideChatError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code}) from None

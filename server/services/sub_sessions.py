@@ -35,6 +35,10 @@ the sandbox there. It still reads the whole workspace, and its commander still w
 SUB5 (commander stop): a commander's sub-sessions stop also once its own turn has ended (`stop_commander`: the
 window's stop of that ended turn, the island's entry for them), and stopping a sub-session's job stops the ones under
 it (`stop_job`).
+
+SIDE-1: a side chat (`side_chats`) lives under its parent as a sub-session does (`UNDER`): its settings are read
+through its parent (`_chain`), the whole app counts its work as its parent's (`commanders`, `not_sub`), and it goes with
+its parent (`before_delete`). No job ever starts in one (`refusal`).
 """
 from __future__ import annotations
 
@@ -52,12 +56,16 @@ from sqlalchemy import select, update
 
 from arslan.execution_budget import BudgetExceeded
 from server.db.companion_models import ConversationContext
+from server.services import phone_ids
 
 logger = logging.getLogger(__name__)
 
 #: A conversation, a sub-session, and the one layer below it.
 MAX_DEPTH = 3
 SUB = "sub"
+#: SIDE-1: a side chat. With a sub-session, the kinds that live under another conversation.
+SIDE = "side"
+UNDER = (SUB, SIDE)
 #: SUB5a: the kind a deleted conversation's row is left with (`tombstone`).
 DELETED = "deleted"
 #: SUB5b: every sub-session's id starts with this (`create_child`), so one whose row is gone still reads as one.
@@ -101,6 +109,8 @@ INHERITANCE: dict[str, str] = {
     # each step (`permissions._chosen`), so a child never widens.
     "permission_mode": "own",
     "previous_mode": "own",
+    "branch_message_id": "own",
+    "outside_at_start": "own",
     "version": "own",
     "created_at": "own",
     "updated_at": "own",
@@ -135,9 +145,10 @@ class EffectiveSettings:
 
 
 async def _chain(db, row: ConversationContext) -> tuple[list[ConversationContext], bool]:
-    """`row` and its parents, nearest first, and whether the chain is whole."""
+    """`row` and its parents, nearest first, and whether the chain is whole. SIDE-1: a side chat's parent is on it;
+    its own row stores memory and learning off, so the chain's strictest values keep them off."""
     chain = [row]
-    while chain[-1].kind == SUB:
+    while chain[-1].kind in UNDER:
         parent_id = chain[-1].parent_id
         if not parent_id or parent_id in {r.id for r in chain} or len(chain) >= MAX_DEPTH:
             return chain, False
@@ -216,10 +227,10 @@ async def tree(db, root_id: str) -> list[str]:
 
 
 async def root_of(db, conversation_id: str) -> str:
-    """The top of this conversation's chain, as far as it can be read."""
+    """The top of this conversation's chain, as far as it can be read (a side chat's: its parent)."""
     row = await db.get(ConversationContext, conversation_id)
     top, steps = conversation_id, 1
-    while row is not None and row.kind == SUB and row.parent_id and steps < MAX_DEPTH:
+    while row is not None and row.kind in UNDER and row.parent_id and steps < MAX_DEPTH:
         top, steps = row.parent_id, steps + 1
         row = await db.get(ConversationContext, top)
     return top
@@ -246,10 +257,7 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
     if not brief:
         raise SubSessionError("sub_session_brief_required")
     turn = execution_context.current_run_id()
-    global _starting
-    if _starting is None:
-        _starting = asyncio.Lock()
-    async with _starting:            # two starts in one tree must not both pass the counts
+    async with starting():           # two starts in one tree must not both pass the counts
         async with db_session.AsyncSessionLocal() as db:
             if turn in _stopped_runs:
                 raise SubSessionError("sub_session_stopped")
@@ -274,6 +282,15 @@ async def start(parent_id: str, brief: str, *, outside_seen: bool) -> str:
         _parents[child] = parent_id
         background_jobs.start_placed(child, brief, [], placed, outside_seen=outside_seen, parent_id=parent_id)
     return child
+
+
+def starting() -> asyncio.Lock:
+    """What makes a conversation under another one (`start`; SIDE-1's `side_chats.create`) and what deletes one
+    (`before_delete`) hold, so a delete either finds what is being made or refuses it."""
+    global _starting
+    if _starting is None:
+        _starting = asyncio.Lock()
+    return _starting
 
 
 # -- SUB5c: each sub-session writes only in its own folder ---------------------------------------------------------
@@ -539,12 +556,12 @@ def _reset_for_tests() -> None:
 
 
 async def sub_ids(db, ids: list[str]) -> set[str]:
-    """Which of these conversations are sub-sessions, for the lists that start from something other than
-    conversation_list (running jobs)."""
+    """Which of these conversations are sub-sessions or side chats (SIDE-1), for the lists that start from something
+    other than conversation_list (running jobs, the phone's history, runs and files) and for `commanders`."""
     if not ids:
         return set()
     return set((await db.execute(select(ConversationContext.id).where(
-        ConversationContext.id.in_(ids), ConversationContext.kind == SUB))).scalars())
+        ConversationContext.id.in_(ids), ConversationContext.kind.in_(UNDER)))).scalars())
 
 
 # -- SUB5b: where a sub-session's work shows, and how a job in one runs ------------------------------------------
@@ -556,9 +573,13 @@ def refusal(conversation_id: str, row: ConversationContext | None) -> str | None
     - `conversation_deleted`: it was deleted (`is_deleted`: its tombstone, or this process's mark).
     - `sub_session_parent_missing`: it is a sub-session whose parent can't be named. Its row says sub-session with no
       parent, or it has no row but the id only `create_child` gives (CHILD_PREFIX), read from the id as
-      `phone_ids.kind_of` reads a quick question. A sub-session a delete's keep promoted has a `chat` row: ordinary."""
+      `phone_ids.kind_of` reads a quick question. A sub-session a delete's keep promoted has a `chat` row: ordinary.
+    - `side_chat_read_only`: a side chat (SIDE-1), by its row or by its id alone. A job there would get the background
+      tool set (commands, writes, memory) instead of its five read-only tools: an Inbox item accepted into it, say."""
     if is_deleted(conversation_id, row):
         return "conversation_deleted"
+    if phone_ids.kind_of(conversation_id, row.kind if row else None) == SIDE:
+        return "side_chat_read_only"
     if row is None:
         return "sub_session_parent_missing" if conversation_id.startswith(CHILD_PREFIX) else None
     return "sub_session_parent_missing" if row.kind == SUB and not row.parent_id else None
@@ -593,9 +614,11 @@ async def commanders(db, ids) -> dict[str, str]:
 
 
 def not_sub(column):
-    """A SQL condition for the whole app's lists: rows whose conversation isn't a sub-session (or that have none)."""
+    """A SQL condition for the whole app's lists: rows whose conversation isn't a sub-session or a side chat (SIDE-1),
+    or that have none."""
     from sqlalchemy import or_
-    return or_(column.is_(None), column.not_in(select(ConversationContext.id).where(ConversationContext.kind == SUB)))
+    return or_(column.is_(None), column.not_in(select(ConversationContext.id).where(
+        ConversationContext.kind.in_(UNDER))))
 
 
 async def looser_than_chain(db, row: ConversationContext, values: dict) -> bool:
@@ -657,7 +680,7 @@ async def tombstone(db, ids) -> int:
     now = datetime.utcnow()
     values = dict(kind=DELETED, project_id=None, parent_id=None, no_memory=True, no_learning=True, temporary=False,
                   cloud_memory_allowed=False, allow_sensitive=False, pinned=False, sub_state=None,
-                  learns_after_message_id=None, updated_at=now)
+                  learns_after_message_id=None, branch_message_id=None, outside_at_start=None, updated_at=now)
     for cid in ids:
         statement = insert(ConversationContext).values(id=cid, version=1, created_at=now, **values)
         await db.execute(statement.on_conflict_do_update(
@@ -827,12 +850,14 @@ async def stop_job(db, job) -> None:
         await db.commit()
 
 
-async def before_delete(db, conversation_id: str, *, choice: str | None,
-                        as_sub_session: bool) -> tuple[list[str], list[str]]:
+async def before_delete(db, conversation_id: str, *, choice: str | None, as_sub_session: bool,
+                        as_side_chat: bool = False) -> tuple[list[str], list[str]]:
     """DELETE /conversations/{id}: which conversations go and which of its sub-sessions stay, as top-level chats
-    (the user's decision, 2026-11-07: the dialog offers to delete its sub-sessions too, ticked by default). Raises
-    SubSessionError:
-    - `not_found` for a sub-session not named as one (`as_sub_session`): what a phone's `conversation.delete` gets;
+    (the user's decision, 2026-11-07: the dialog offers to delete its sub-sessions too, ticked by default). SIDE-1: the
+    side chats of everything that goes go too, whatever `choice` says (they aren't sub-sessions, so they never ask
+    for one). Raises SubSessionError:
+    - `not_found` for a sub-session not named as one (`as_sub_session`), or a side chat not named as one
+      (`as_side_chat`): what a phone's `conversation.delete` gets;
     - `sub_sessions_running` while anything under it is at work;
     - `sub_sessions_choice_required` when it has sub-sessions and `choice` is neither "delete" nor "keep", with how
       many there are at every level (`sub_sessions`).
@@ -847,13 +872,10 @@ async def before_delete(db, conversation_id: str, *, choice: str | None,
     sub-session being started either has its job by then (`sub_sessions_running`) or is refused (`create_child`). A
     failure after the mark leaves it marked: refused, never looser."""
     from server.services import background_jobs
-    global _starting
-    if _starting is None:
-        _starting = asyncio.Lock()
-    async with _starting:
+    async with starting():
         row = await db.get(ConversationContext, conversation_id)
         is_sub = row is not None and row.kind == SUB
-        if is_sub and not as_sub_session:
+        if (is_sub and not as_sub_session) or (row is not None and row.kind == SIDE and not as_side_chat):
             raise SubSessionError("not_found")
         below = (await tree(db, conversation_id))[1:]
         if any(job.conversation_id in below for job in (*background_jobs.active(), *background_jobs.unreported())):
@@ -864,6 +886,8 @@ async def before_delete(db, conversation_id: str, *, choice: str | None,
             raise SubSessionError("sub_sessions_choice_required", sub_sessions=len(below))
         kept = direct if choice == "keep" else []
         gone = [conversation_id] if kept else [conversation_id, *below]
+        gone += (await db.execute(select(ConversationContext.id).where(
+            ConversationContext.parent_id.in_(gone), ConversationContext.kind == SIDE))).scalars().all()
         _deleted.update(gone)
     await _stop_for_delete(gone, conversation_id if is_sub else None, row.parent_id if is_sub else None)
     for child_id in kept:
