@@ -30,6 +30,19 @@ always kept). Among duplicates we keep the one with the largest
 final record), and on a tie the first one seen. Files are read in sorted
 path order, so the result is deterministic.
 
+Extra columns
+-------------
+``source`` is ``main`` (top-level transcripts) or ``sub`` (records read from
+``subagents/*.jsonl``); the source of a deduped request is the source of the
+record we kept. ``requests`` counts deduped assistant requests. ``avg_context``
+is ``cache_read // requests`` (0 with no requests). ``cache_rewrites`` counts
+deduped requests that look like near-full cache-expiry rewrites: ``cache_write``
+is at least ``REWRITE_WRITE_SHARE`` of ``cache_read + cache_write`` and the
+context (``input + cache_read + cache_write``) is above ``REWRITE_MIN_CONTEXT``
+tokens. The per-lane daily totals sum ``requests`` and ``cache_rewrites`` and
+compute ``avg_context`` from the summed ``cache_read`` and ``requests``, also
+split by source.
+
 Limits
 ------
 Cloud sessions have no local transcript; they report their own usage and do
@@ -65,6 +78,9 @@ USAGE_KEYS = (
 )
 FIELDS = ("input", "cache_read", "cache_write", "output")
 UNKNOWN_DATE = "unknown"
+REWRITE_WRITE_SHARE = 0.8  # cache_write / (cache_read + cache_write), inclusive
+REWRITE_MIN_CONTEXT = 50_000  # input + cache_read + cache_write must exceed this
+NCOL = 6  # four token sums, requests, cache_rewrites
 
 
 def _num(value: object) -> int:
@@ -164,10 +180,20 @@ def utc_date(timestamp: str) -> str:
     return dt.astimezone(UTC).date().isoformat()
 
 
+def is_cache_rewrite(tokens: list[int]) -> bool:
+    inp, cache_read, cache_write, _ = tokens
+    cached = cache_read + cache_write
+    if cached == 0 or inp + cached <= REWRITE_MIN_CONTEXT:
+        return False
+    # Integer form of cache_write >= share * cached (avoids float rounding at 80%).
+    return cache_write * 100 >= round(REWRITE_WRITE_SHARE * 100) * cached
+
+
 def collect(
     root: Path, wrap: Callable[[Any], Any] | None = None
-) -> tuple[dict[tuple[str, str, str], list[int]], dict[str, str], int]:
-    """Return ({(date, session, model): [4 sums]}, {session: title}, skipped)."""
+) -> tuple[dict[tuple[str, str, str, str], list[int]], dict[str, str], int]:
+    """Return ({(date, session, model, source): [in, cr, cw, out, requests, rewrites]},
+    {session: title}, skipped)."""
     skipped = [0]
     best: dict[str, dict[str, Any]] = {}  # dedupe key -> chosen record
     unkeyed: list[dict[str, Any]] = []
@@ -184,17 +210,20 @@ def collect(
                         titles[sid] = (order, proj["title"])
                 continue
             proj["session_id"] = sid
+            proj["source"] = "main" if parent is None else "sub"
             key = proj["message_id"] or proj["request_id"]
             if not key:
                 unkeyed.append(proj)
             elif key not in best or proj["tokens"][3] > best[key]["tokens"][3]:
                 best[key] = proj
-    rows: dict[tuple[str, str, str], list[int]] = {}
+    rows: dict[tuple[str, str, str, str], list[int]] = {}
     for proj in [*best.values(), *unkeyed]:
-        k = (utc_date(proj["timestamp"]), proj["session_id"], proj["model"])
-        acc = rows.setdefault(k, [0, 0, 0, 0])
+        k = (utc_date(proj["timestamp"]), proj["session_id"], proj["model"], proj["source"])
+        acc = rows.setdefault(k, [0] * NCOL)
         for i, v in enumerate(proj["tokens"]):
             acc[i] += v
+        acc[4] += 1
+        acc[5] += is_cache_rewrite(proj["tokens"])
     return rows, {s: t for s, (_, t) in titles.items()}, skipped[0]
 
 
@@ -207,15 +236,15 @@ def lane_for(title: str, lanes: Mapping[str, str]) -> str:
 
 
 def build_tables(
-    rows: Mapping[tuple[str, str, str], list[int]],
+    rows: Mapping[tuple[str, str, str, str], list[int]],
     titles: Mapping[str, str],
     lanes: Mapping[str, str],
     since: date | None,
     until: date | None,
 ) -> tuple[list[list[Any]], list[list[Any]]]:
     detail: list[list[Any]] = []
-    totals: dict[tuple[str, str], list[int]] = {}
-    for (day, sid, model), sums in rows.items():
+    totals: dict[tuple[str, str, str], list[int]] = {}
+    for (day, sid, model, source), sums in rows.items():
         if since or until:
             if day == UNKNOWN_DATE:
                 continue
@@ -224,17 +253,25 @@ def build_tables(
                 continue
         title = titles.get(sid, sid)
         lane = lane_for(title, lanes)
-        detail.append([day, lane, title, model, *sums])
-        acc = totals.setdefault((day, lane), [0, 0, 0, 0])
+        detail.append([day, lane, title, model, source, *_columns(sums)])
+        acc = totals.setdefault((day, lane, source), [0] * NCOL)
         for i, v in enumerate(sums):
             acc[i] += v
-    detail.sort(key=lambda r: (r[0], r[1], r[2], r[3]))
-    summary = [[d, ln, *s] for (d, ln), s in sorted(totals.items())]
+    detail.sort(key=lambda r: (r[0], r[1], r[2], r[3], r[4]))
+    summary = [[d, ln, src, *_columns(s)] for (d, ln, src), s in sorted(totals.items())]
     return detail, summary
 
 
-DETAIL_HEAD = ["date", "lane", "session", "model", *FIELDS]
-SUMMARY_HEAD = ["date", "lane", *FIELDS]
+def _columns(sums: list[int]) -> list[int]:
+    """[in, cr, cw, out, requests, rewrites] -> [in, cr, cw, out, requests, avg_context, rewrites]."""
+    requests = sums[4]
+    avg = sums[1] // requests if requests else 0
+    return [*sums[:5], avg, sums[5]]
+
+
+COLUMNS = (*FIELDS, "requests", "avg_context", "cache_rewrites")
+DETAIL_HEAD = ["date", "lane", "session", "model", "source", *COLUMNS]
+SUMMARY_HEAD = ["date", "lane", "source", *COLUMNS]
 
 
 def render_md(detail: list[list[Any]], summary: list[list[Any]]) -> str:
