@@ -14,13 +14,13 @@ intends, and the action fenced as data; never a tool's output (D7).
 """
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from arslan.aio import within
 from server.services import command_sandbox, hard_rules, permissions, run_later, run_temp, workspace_paths
 from server.services.sandbox_profile import real
 
@@ -201,7 +201,7 @@ async def consult(action: Action, ctx: Context, *, model: tuple[str, str] | None
             model, complete = (adapter.report_provider, adapter.model), provider_complete(adapter)
         if model is None or (not measuring and tuple(model) not in MEASURED):
             return "off", Verdict("ask", OFF)
-        reply = await asyncio.wait_for(complete(build_prompt(action, ctx)), TIMEOUT_S)
+        reply = await within(complete(build_prompt(action, ctx)), TIMEOUT_S)
     except Exception:
         return "error", Verdict("ask", "error")
     verdict = _parsed(reply)
