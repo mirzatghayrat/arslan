@@ -517,7 +517,7 @@ async def _report(job: Job, text: str) -> str:
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
             # INB9-a: the acceptance sheet ends the same one message; a summary turn's has none (its commander's
             # sub-sessions each posted their own). What the commander hears of a sub-session stays its answer.
-            shown, glances = (body, 0) if job.reports is not None else await _with_sheet(job, body)
+            shown, glances = (body, 0) if job.reports is not None else await _sheet_or_answer(job, body)
             # S64-0b: what may carry outside content (the result, or the budget note naming the goal)
             # reaches later turns framed; the user sees it as written. Only a job known clean is not.
             framed = untrusted.job_result(shown) if job.outside_seen is not False else None
@@ -534,6 +534,16 @@ async def _report(job: Job, text: str) -> str:
     run_registry.make_emit(job.conversation_id)({"type": "job_spoken", "job_id": job.job_id,
                                                  "outcome": job.outcome, "goal": job.goal[:200]})
     return body
+
+
+async def _sheet_or_answer(job: Job, body: str) -> tuple[str, int]:
+    """INB9-a (#900 review): the sheet never drops the answer. A sheet that cannot be made (a render or locale
+    error) is logged and the answer is posted alone, with no 👀 counted."""
+    try:
+        return await _with_sheet(job, body)
+    except Exception as exc:  # noqa: BLE001 — the answer is posted either way
+        logger.warning("background job %s acceptance sheet not added: %s", job.job_id, type(exc).__name__)
+        return body, 0
 
 
 async def _with_sheet(job: Job, body: str) -> tuple[str, int]:

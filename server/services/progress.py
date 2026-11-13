@@ -114,9 +114,12 @@ _FIRST = ("card", "away", "glance", "reminder")
 
 async def _latest_glance(db: AsyncSession) -> dict[str, datetime]:
     """INB9-a: per conversation, the newest task within AWAY_HOURS that waits for the user's review with a 👀 open (a
-    human check not passed, from a job's `glance` criteria). Accepting the review passes it (`accept_review`)."""
+    human check not passed, from a job's `glance` criteria). Accepting the review passes it (`accept_review`). Only a row
+    paused for that review counts: a row paused for anything else (a check not run, one that failed) is one
+    `accept_review` refuses, so its 👀 could never be closed (#900 review). Its sheet still lists what to look at."""
     rows = await db.execute(select(CompanionTask.conversation_id, CompanionTask.updated_at, CompanionTask.results)
                             .where(CompanionTask.phase == "waiting_user",
+                                   CompanionTask.pause_reason == "acceptance_review_required",
                                    CompanionTask.updated_at >= datetime.utcnow() - timedelta(hours=AWAY_HOURS)))
     latest: dict[str, datetime] = {}
     for cid, updated, results in rows.all():

@@ -233,6 +233,50 @@ async def test_accepting_the_review_closes_a_done_jobs_row_and_its_glance_stops_
         assert (await progress.waiting_on_user(db)).count == 0
 
 
+async def test_a_glance_only_job_waits_until_its_review_is_accepted_and_then_nothing_waits(
+        execution_db, active, frames, monkeypatch):  # noqa: F811
+    # #900 review: the whole path for a job whose criteria are all glances. It stays partial (the ruling), its row
+    # waits for exactly the review accept_review takes, and accepting it leaves nothing waiting.
+    job = await _finished(frames, [{"description": "Looks right", "kind": "glance"},
+                                   {"description": "Tone fits", "kind": "glance"}], monkeypatch)
+    assert job.outcome == "partial"
+    async with execution_db() as db:
+        row = await db.get(CompanionTask, job.job_id)
+        assert (row.phase, row.pause_reason) == ("waiting_user", "acceptance_review_required")
+        assert await progress.waiting_reasons(db) == {CID: "glance"}
+    async with repository() as repo:
+        row = await repo.get(job.job_id)
+        accepted = await repo.accept_review(job.job_id, row.version)
+    assert accepted["state"]["phase"] == "succeeded"
+    async with execution_db() as db:
+        assert await progress.waiting_reasons(db) == {}
+        assert (await progress.waiting_on_user(db)).count == 0
+
+
+async def test_a_glance_on_a_row_the_review_cannot_close_does_not_wait_on_you(
+        execution_db, active, frames, monkeypatch):  # noqa: F811
+    # A check left unrun (here a third glance, which is a model check) pauses the row for another reason, and
+    # accept_review refuses it: a 👀 there could never be closed, so it is not opened.
+    job = await _finished(frames, [{"description": d, "kind": "glance"} for d in ("one", "two", "three")],
+                          monkeypatch)
+    async with execution_db() as db:
+        row = await db.get(CompanionTask, job.job_id)
+        assert (row.phase, row.pause_reason) == ("waiting_user", "task_checks_not_run")
+        assert await progress.waiting_reasons(db) == {}
+
+
+async def test_a_sheet_that_cannot_be_made_never_drops_the_answer(execution_db, active, frames, monkeypatch):  # noqa: F811
+    def broken(*args, **kwargs):
+        raise KeyError("sheet_checked")
+    monkeypatch.setattr(acceptance_sheet, "render", broken)
+    job = await _finished(frames, _glance_criteria(), monkeypatch)
+    [message] = await _messages(execution_db)
+    assert message.content == f"Done: {PHRASE}"
+    posted = [f for f in frames if f.get("type") == "message" and f.get("job_id") == job.job_id]
+    assert [f["content"] for f in posted] == [f"Done: {PHRASE}"]
+    assert "glance" not in desktop_status.snapshot()["events"][-1]
+
+
 async def test_a_job_whose_only_check_is_its_delivered_answer_posts_the_answer_alone(
         execution_db, active, frames, monkeypatch):  # noqa: F811
     # The answer is its own evidence: a sheet saying only "An answer was delivered" adds a line and tells nothing.
