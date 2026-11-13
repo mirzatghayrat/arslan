@@ -127,8 +127,13 @@ async def app_data(tool_key, args, turn: ToolTurn) -> dict | None:
     held = await file_tools.app_data_at(tool_key, args)
     if held is None:
         return None
-    write = tool_key in ("write_file", "edit_file")
-    verb = "change" if write else "read"
+    if tool_key in ("write_file", "edit_file"):
+        # #877 review: the card grants a read once, never a write, the same as a command's `open_once`. A write or
+        # edit to another app's listed private data is refused with no card.
+        return {"ok": False, "code": "app_data",
+                "error": f"{held.app}'s private data can be read once with the user's OK, but never changed by "
+                         "Arslan's file tools. Leave it as it is, or ask the user to change it themselves."}
+    verb = "read"
     shown = _home_rel(held.path)
     decision = await permissions.decide(permissions.Request(
         kind="app_data", target=str(held.path), detail=shown, once_only=True, conversation_ok=False,

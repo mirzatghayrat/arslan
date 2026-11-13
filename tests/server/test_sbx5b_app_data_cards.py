@@ -77,7 +77,8 @@ def test_the_approved_path_passes_and_only_that_one(home):
     with pytest.raises(AppData):
         resolve_for_read(str(home / "Library/Messages"), [home], app_data_ok=chat)
     new = home / "Library/Messages/new.txt"
-    assert resolve_in_workspace(str(new), home, for_write=True, app_data_ok=new) == new
+    with pytest.raises(AppData):                    # #877 review: the write path never honours a click
+        resolve_in_workspace(str(new), home, for_write=True, app_data_ok=new)
     with pytest.raises(AppData):
         resolve_in_workspace(str(new), home, for_write=True, app_data_ok=chat)
 
@@ -161,18 +162,26 @@ async def test_an_unlisted_folder_asks_nothing(db, home):
     assert out["ok"] is True and out["content"] == "tool config"
 
 
-async def test_a_write_asks_its_card_and_writes_only_that_path(db, home):
+async def test_a_write_or_edit_is_refused_with_no_card(db, home):
+    """#877 review: the card grants a read once, never a write (the same as a command's read-only `open_once`).
+    write_file and edit_file to a listed folder are refused before any card, and even an executor handed a click
+    for that path refuses it."""
     await _home_workspace(home)
+    (home / "Library/Messages").mkdir(parents=True, exist_ok=True)
+    (home / "Library/Messages/note.txt").write_text("old")
     yes = _Asker(True)
     with permissions.asking_with(yes):
-        out = await _dispatch("write_file", {"path": "Library/Messages/note.txt", "content": "x"},
-                              confirm_workspace_write=_yes_write)
-    assert out["ok"] is True and (home / "Library/Messages/note.txt").read_text() == "x"
-    assert [f["perm_kind"] for f in yes.frames] == ["app_data"]
-    with permissions.asking_with(_Asker(False)):
-        refused = await _dispatch("edit_file", {"path": "Library/Messages/note.txt", "old_string": "x",
-                                                "new_string": "y"}, confirm_workspace_write=_yes_write)
-    assert refused["ok"] is False and (home / "Library/Messages/note.txt").read_text() == "x"
+        wrote = await _dispatch("write_file", {"path": "Library/Messages/note.txt", "content": "x"},
+                                confirm_workspace_write=_yes_write)
+        edited = await _dispatch("edit_file", {"path": "Library/Messages/note.txt", "old_string": "old",
+                                               "new_string": "y"}, confirm_workspace_write=_yes_write)
+    assert wrote["ok"] is False and wrote.get("code") == "app_data", wrote
+    assert edited["ok"] is False and edited.get("code") == "app_data", edited
+    assert yes.frames == []                                                      # no card was shown
+    file_tools.approve_app_data((home / "Library/Messages/note.txt").resolve())  # a click reaching the executor
+    forced = await file_tools.WriteFileExecutor().execute({"path": "Library/Messages/note.txt", "content": "x"})
+    assert forced["ok"] is False
+    assert (home / "Library/Messages/note.txt").read_text() == "old"
 
 
 async def test_one_click_is_one_call(db, home):

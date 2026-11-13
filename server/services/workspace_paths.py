@@ -170,7 +170,10 @@ def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
 
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
-    _refuse_app_data(resolved, user_path, app_data_ok)        # SBX-5b: reads (edit_file's) and writes alike
+    # SBX-5b (#877 review): the file tools' write path (write_file, edit_file) never honours a click: another app's
+    # listed data is read-only once, as for commands (`open_once`), so `app_data_ok` is ignored here and a write or
+    # edit there is always AppData. Only `resolve_for_read` takes the click.
+    _refuse_app_data(resolved, user_path, None)
     if for_write:
         _refuse_cap6b(resolved, root, user_path)
         _refuse_run_later(resolved, candidate, root, user_path, run_later_ok, walk_root)
