@@ -90,16 +90,37 @@ async def test_workers_and_jobs_still_raise(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_no_work_done_still_raises(monkeypatch):
-    class _Fail:
+async def test_no_work_done_ends_with_blocked_and_left_not_an_error(monkeypatch):
+    """Until #896 a chat turn the cap stopped with no successful call raised BudgetExceeded and showed nothing.
+    It now ends with the closing and the records (Blocked / Left), with no model request past the cap."""
+    class _Refused:
         async def execute(self, args):
-            return {"ok": False, "error": "x"}
+            return {"ok": False, "error": "Arslan never runs this search"}
     from server.registry import executors
-    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Fail())
-    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _Counting([_search(0), _search(1)]))
-    with pytest.raises(BudgetExceeded):
-        with scope(Budget(Limits(model_requests=2))):
-            async def resolve():
-                return [{"key": "web_search", "description": "s"}]
-            await tool_loop.run_native(system="S", user_content="x", history=[], emit=lambda e: None,
-                                       on_chunk=lambda c: None, resolve_tools=resolve)
+    from server.services import runtime_messages
+
+    async def en():
+        return "en"
+    monkeypatch.setattr(runtime_messages, "selected_locale", en)
+    monkeypatch.setitem(executors.EXECUTORS, "web_search", _Refused())
+    class _Attempts(_Counting):
+        attempts = 0
+
+        async def chat(self, *args, **kwargs):
+            self.attempts += 1      # before admission: a refused extra request counts too
+            return await super().chat(*args, **kwargs)
+    adapter = _Attempts([_search(0), _search(1), _search(2)])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    chunks = []
+    budget = Budget(Limits(model_requests=2))
+    with scope(budget):
+        async def resolve():
+            return [{"key": "web_search", "description": "s"}]
+        result = await tool_loop.run_native(system="S", user_content="find the jobs", history=[],
+                                            emit=lambda e: None, on_chunk=chunks.append, resolve_tools=resolve)
+    assert adapter.attempts == budget.model_requests == 2 and len(adapter._r) == 1, "no model request past the cap"
+    assert result["stop_reason"] == "task_budget_exhausted" and result["final"] == "".join(chunks)
+    final = result["final"]
+    assert "work limit (model requests)" in final and "Done: no tool call succeeded." in final
+    assert "Blocked:" in final and "web_search `q0`" in final
+    assert final.endswith("Left: the request itself, find the jobs")
