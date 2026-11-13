@@ -618,9 +618,9 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # #813 review 8: the walk never lists the user's closed folders nor the TCC home folders (`closed` is the user's
     # list, before Arslan's own data is added); it holds the held folders inside them by name.
     walk = [walk_root] if walk_root is not None else []
-    # S4b-0: the allowed roots as walk roots, each from its own root after the work folder (#881 review: as `folders`
-    # one holding the work folder would drop it as a start, its depth then counted from that root). One walk, one cap.
-    hold = run_later_folders([workspace], closed=closed, walk_roots=[*walk, *allowed])
+    # S4b-0: the work folder and each allowed root, each from its own root with the full depth budget, also when one
+    # holds another or the walk root holds them (#881 reviews 1 and 2, `held_folders`). One walk, one set of caps.
+    hold = run_later_folders([workspace, *allowed], closed=closed, walk_roots=walk)
     (_TOO_LARGE.discard if hold.complete else _TOO_LARGE.add)(_real(workspace))  # this walk's root only (review 7)
     if hold.aliases:                                                             # #813 review 9, for `note`
         _ALIASED[_real(workspace)] = hold.aliases

@@ -163,6 +163,22 @@ def test_a_root_holding_the_work_folder_leaves_it_its_own_depth_budget(env, monk
     assert not command_sandbox.too_large_to_map(kid)
 
 
+def test_a_root_inside_the_commanders_workspace_keeps_its_own_depth_budget(env, monkeypatch):
+    """#881 review 2, SBX-10's depth layout: a sub-session's command in `C/sub/kid` with its commander's workspace `C`
+    as the walk root, and an allowed root `C/sub/A` holding `x/.vscode -> v`, past the depth cap counted from `C` but
+    within it from `A`. `A` is walked from its own root (as the work folder is): the target is held, the walk complete."""
+    home, _ = env
+    monkeypatch.setattr(command_sandbox.run_later, "WALK_DEPTH", 2)
+    commander = home / "C"
+    kid, root = _folders(commander / "sub" / "kid", commander / "sub" / "A" / "x" / "v")
+    root = root.parent.parent
+    (root / "x" / "v" / "settings.json").write_text("old")
+    (root / "x" / ".vscode").symlink_to(root / "x" / "v", target_is_directory=True)
+    text = _profile(kid, [root], walk_root=commander)
+    assert literal(root / "x" / "v" / "settings.json") in text and literal(root / "x" / "v") in text
+    assert not command_sandbox.too_large_to_map(kid)
+
+
 def test_the_roots_are_tagged_allowed_and_not_in_scope(env):
     home, ws = env
     proj = _folders(home / "proj")[0]
