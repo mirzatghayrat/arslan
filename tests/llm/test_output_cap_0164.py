@@ -102,6 +102,17 @@ async def test_unknown_openai_compatible_models_get_32768(model, base):
     assert p.max_tokens == p.output_ceiling == 32_768
 
 
+@pytest.mark.parametrize("model", ["deepseek-chat", "deepseek-reasoner", "fixture-model"])
+@pytest.mark.parametrize("base", sorted(output_budget.DEEPSEEK_BASES))
+async def test_official_deepseek_host_keeps_mains_budget_for_any_model(model, base):
+    """Official DeepSeek is unchanged for every id, listed or not: an unlisted id keeps main's 8,192
+    opening budget and 16,384 ceiling (the stable-eval spend guard reserves against exactly 8,192)."""
+    p, sent = _openai(model, base)
+    await p.chat(list(_MESSAGES))
+    assert _cap(sent[-1]) == ("max_tokens", 8_192)
+    assert (p.max_tokens, p.output_ceiling) == (8_192, 16_384)
+
+
 async def test_unknown_gemini_model_gets_32768():
     p, sent = _gemini("gemini-future-pro")
     await p.chat(list(_MESSAGES))

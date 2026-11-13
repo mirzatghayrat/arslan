@@ -63,9 +63,11 @@ _COMPLETION_TOKENS_FAMILY = re.compile(r"(?:gpt-5|o[1-9])(?:[.\-].*)?")
 
 def for_model(base_url: str, model: str) -> OutputBudget:
     """OpenAI-compatible and Gemini keys: the model's documented maximum, or UNKNOWN_MAX_OUTPUT. Official
-    DeepSeek keeps for_endpoint(). The opening budget is the ceiling: a length cut is continued, not raised."""
+    DeepSeek keeps for_endpoint() for every model id, listed or not (an unlisted id keeps main's 8,192, which
+    the stable-eval spend guard reserves against). The opening budget is the ceiling: a length cut is
+    continued, not raised."""
     base = (base_url or "").rstrip("/")
-    if base in DEEPSEEK_BASES and model in DEEPSEEK_MODELS:
+    if base in DEEPSEEK_BASES:
         return for_endpoint(base_url, model)
     cap = DOCUMENTED_MAX_OUTPUT.get(model, UNKNOWN_MAX_OUTPUT)
     return OutputBudget(initial=cap, ceiling=cap)
