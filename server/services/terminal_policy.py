@@ -162,10 +162,15 @@ def _unless_dry_run(spellings: str) -> str:
     """Not when a registry publish's own dry-run option (`spellings`, case as written) follows its verb, read as
     `_dry_run` reads argv but stricter (#897 review, item 3): every word before it plain (no quote, escape, expansion
     or glob, which the text can't read), `--` not among them, and the word right before it the verb, an operand or
-    an `--option=value`, never a bare option that could take it as its value. Linear: each word is read one way."""
+    an `--option=value`, never a bare option that could take it as its value. Linear: each word is read one way.
+    Nor when the command's own span (to the next `;`, `&`, `|` or line) turns it off or gives it a value, as `_dry_run`
+    reads argv (#897 round 2): `--no-dry-run`, `--dry-run=…` or `--dry-run <boolean>`, quoted or not."""
     plain = r"[^\s;&|'\"\\`$*?\[\]()<>]"
-    return (r"(?!(?:(?:" + _H + r"+(?!--(?:" + _H + r"|$))" + plain + r"+)*" + _H + r"+(?:(?!-)" + plain + r"+|--?[\w-]+="
-            + plain + r"*))?" + _H + r"+(?-i:" + spellings + r")(?=$|[\s;&|)<>]))")
+    dry = (r"(?:(?:" + _H + r"+(?!--(?:" + _H + r"|$))" + plain + r"+)*" + _H + r"+(?:(?!-)" + plain + r"+|--?[\w-]+="
+           + plain + r"*))?" + _H + r"+(?-i:" + spellings + r")(?=$|[\s;&|)<>])")
+    off = (r"[^\n;&|]*?(?<![\w-])['\"]?(?:--no-dry-run|(?:" + spellings + r")(?:=|['\"]?" + _H
+           + r"+['\"]?(?:true|false|yes|no|on|off|0|1)['\"]?(?=$|[\s;&|)<>])))")
+    return r"(?!(?=" + dry + r")(?!" + off + r"))"
 _HTTPIE = r"(?:https?|xhs?)"
 # Apps that run what they are given (`open -a`/`-b`): terminals, script and automation apps.
 _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty|script\s+editor|automator"
@@ -727,21 +732,28 @@ _HELP_WORDS = frozenset({"-h", "--help", "-help", "--version", "-version"})
 # gem's and yarn's publish document none, so they still ask.
 _DRY_RUN = {"npm": frozenset({"--dry-run"}), "pnpm": frozenset({"--dry-run"}), "cargo": frozenset({"--dry-run", "-n"}),
             "uv": frozenset({"--dry-run"}), "poetry": frozenset({"--dry-run"})}
+_BOOLEAN_WORDS = frozenset({"true", "false", "yes", "no", "on", "off", "0", "1"})
 
 
 def _dry_run(program: str, args: tuple[str, ...]) -> bool:
-    """The program's dry-run option among its options: before any `--`, after no word the shell may still change
-    (`_expands`: `$X` could be `--`), and right after no bare option that could take it as its value (`--tag
-    --dry-run`). The text floor reads it the same way (`_unless_dry_run`)."""
+    """The program's dry-run option among its options, and only when the run is unambiguously dry (#897 round 2): before
+    any `--`, no word the shell may still change (`_expands`: `$X` could be `--` or `--no-dry-run`), right after no
+    bare option that could take it as its value (`--tag --dry-run`), and no option anywhere turning it off or giving it
+    a value (`--no-dry-run`, `--dry-run=false`, `--dry-run false`: nopt takes a boolean word as the flag's value). The
+    text floor reads it the same way (`_unless_dry_run`)."""
     spellings = _DRY_RUN.get(program, frozenset())
-    before = ""
-    for word in args:
-        if word == "--" or _expands(word):
+    found, before = False, ""
+    for i, word in enumerate(args):
+        if word == "--":
+            break
+        option, equals, _ = word.lower().partition("=")
+        if (_expands(word) or option == "--no-dry-run" or equals and option in spellings
+                or word in spellings and args[i + 1:i + 2] and args[i + 1].lower() in _BOOLEAN_WORDS):
             return False
         if word in spellings and not (before.startswith("-") and "=" not in before and before not in spellings):
-            return True
+            found = True
         before = word
-    return False
+    return found
 
 
 def _deploy_verb(table: set[tuple[str, ...]], lower: tuple[str, ...]) -> tuple[str, ...]:
@@ -846,13 +858,18 @@ def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
 
 
 def _legacy_named_rules(words: tuple[str, ...]) -> set[str]:
-    """The original bounded flattened-tuple matcher, used only on coverage gaps."""
-    command = " ".join(words)
+    """The original bounded flattened-tuple matcher, used only on coverage gaps. `publish` also reads the words joined
+    quoted (`shlex.join`), so a value holding a blank stays one word and its dry run exempts nothing (#897 round 2:
+    `--user-agent 'audit --dry-run marker'`). Additive only: every other rule keeps the plain join it was measured on
+    (the quoted join alone let `rm '-rf /'` and `curl -H '-d x'` run)."""
+    command, quoted = " ".join(words), shlex.join(words)
     if shell_text.too_complex(command):
         command = shell_text.over_limit_forms(command)[0]
+    if shell_text.too_complex(quoted):
+        quoted = shell_text.over_limit_forms(quoted)[0]
     found = {key for key, pattern, _, masked in _FORBID_C
              if not masked and key != "arslan-keys" and pattern.match(command)}
-    found.update(key for key, pattern, _ in _ASK_C if pattern.match(command))
+    found.update(key for key, pattern, _ in _ASK_C if pattern.match(command) or key == "publish" and pattern.match(quoted))
     if ((_DELETE_LINE.match(command) or _FIND_DELETE.match(command))
             and _deletes_outside((command,))):
         found.add("delete-outside")
@@ -2305,6 +2322,7 @@ _COVERED_AT = re.compile(_CMD + r"(?P<program>" + "|".join(sorted(
     map(re.escape, {*_REGISTRIES, *_DEPLOYS, *_SECRET_WRITE, *_PROGRAM_ALIASES}), key=len, reverse=True)) + r")" + _END,
     re.I)
 _RULE_TEXT = {key: pattern for key, pattern, _ in _ASK_C if key in {"publish", "secret-write"}}
+_SPAN_END = re.compile(r"[;&|\n]")
 
 
 def consequence(command: str) -> tuple[str, dict[str, str]] | None:
@@ -2320,10 +2338,13 @@ def consequence(command: str) -> tuple[str, dict[str, str]] | None:
         found = _words_line(program, words[1:], _named_rules((program, *words[1:])), text)
         if found:
             return found
-    texts = _detection_texts(text)
-    rules = {key for key, pattern in _RULE_TEXT.items() if _matches(pattern, texts)}
-    for match in (match for form in texts for match in _COVERED_AT.finditer(form)):
-        program = match["program"].lower()
-        if found := _program_line(_PROGRAM_ALIASES.get(program, program), rules):
-            return found
+    for form in _detection_texts(text):
+        for match in _COVERED_AT.finditer(form):
+            # the rules on this command's own span only (#897 round 2): `gh secret list; heroku config:unset K` is Heroku's
+            end = _SPAN_END.search(form, match.end())
+            span = form[match.start():end.start() if end else len(form)]
+            rules = {key for key, pattern in _RULE_TEXT.items() if pattern.search(span)}
+            program = match["program"].lower()
+            if found := _program_line(_PROGRAM_ALIASES.get(program, program), rules):
+                return found
     return None

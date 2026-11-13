@@ -485,6 +485,53 @@ def test_what_does_not_prove_a_dry_run_still_asks(command):
     assert card_purpose.consequence(command).startswith("Publishes")
 
 
+# Round 2: a dry run turned off or given a value later, or a dry run inside another option's value, publishes; and
+# the fallback line names the program whose own command carries the rule. Each in the profiles' 24 renderings.
+_RENDERINGS = [(family, position) for family in profiles.FAMILIES for position in profiles.POSITIONS]
+ROUND2_PUBLISH = [("npm", "publish", "--dry-run", "false"), ("npm", "publish", "--dry-run", "--dry-run=false"),
+                  ("npm", "publish", "--dry-run", "--no-dry-run"),
+                  ("npm", "publish", "--user-agent", "audit --dry-run marker")]
+ROUND2_DRY = [("npm", "publish", "--dry-run"), ("npm", "publish", "--dry-run", "pkgdir")]
+
+
+def test_round2_renderings_are_24():
+    assert len(_RENDERINGS) == 24
+
+
+@pytest.mark.parametrize("family, position", _RENDERINGS)
+@pytest.mark.parametrize("words", ROUND2_PUBLISH)
+def test_a_dry_run_turned_off_or_inside_a_value_asks(words, family, position):
+    text = profiles.render(words, family, position)
+    verdict = tp.assess(text)
+    assert (verdict.level, verdict.rule) == ("ask", "publish"), text
+    assert "publish" in tp.ask_rules(text), text
+
+
+@pytest.mark.parametrize("family, position", _RENDERINGS)
+@pytest.mark.parametrize("words", ROUND2_DRY)
+def test_a_plain_dry_run_still_runs(words, family, position):
+    text = profiles.render(words, family, position)
+    assert tp.assess(text).level == "run" and not tp.ask_rules(text), text
+
+
+@pytest.mark.parametrize("family, position", _RENDERINGS)
+def test_the_fallback_line_names_the_command_that_carries_the_rule(family, position):
+    text = "gh secret list; " + profiles.render(("/usr/local/bin/heroku", "config:unset", "K"), family, position)
+    verdict = tp.assess(text)
+    if family in {"single", "double", "split", "prefix"}:
+        # a path program with quoted words or an assignment before it is unreadable: it asks, and with the rule on no
+        # command's own span, no program's line (never GitHub's)
+        assert (verdict.level, verdict.rule) == ("ask", "unreadable"), text
+        assert tp.consequence(text) is None, text
+        return
+    assert (verdict.level, verdict.rule) == ("ask", "secret-write"), text
+    assert "secret-write" in tp.ask_rules(text), text
+    key, values = tp.consequence(text)
+    assert key in {"changesASecret", "removesSecret", "removesASecret"} and "Heroku" in values.values(), (text, key, values)
+    assert "GitHub" not in values.values(), text
+    assert "Heroku" in card_purpose.consequence(text), text
+
+
 # ── the registry it publishes to (round 1, item 5) ──────────────────────────────────────────────────────────────
 # "public and permanent" only when the command proves the public registry: no option or setting choosing another, or
 # one naming the public one. Another registry by URL: its host. One this can't read: "a package registry".
