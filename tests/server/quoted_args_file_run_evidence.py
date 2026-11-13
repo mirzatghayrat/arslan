@@ -162,7 +162,7 @@ def test_step3_move_is_only_run_to_ask_unreadable():
 
 
 # #897 review, item 3: the rows whose cargo seed (`cargo publish --dry-run`) runs now, on the default sample.
-DRY_RUN_ROWS = {"positive": 11}
+DRY_RUN_ROWS = {"positive": 25}
 
 
 def assert_matrix(result, *, negative=False, cautious_forbids=False):
@@ -290,7 +290,7 @@ def matrix(kind, rows):
         sg.read(text)
         head = tp.assess(text)
         verdicts = [*levels(kind, case, text), head.level]
-        if (verdicts[:2], head.level) == (["ask", "ask"], "run") and any(
+        if verdicts[0] != "forbid" and (verdicts[1], head.level) == ("ask", "run") and any(
                 words and tp._dry_run(words[0].lower(), words[1:]) for words in tp._command_words(text)):
             dry_runs.append(case)       # a dry run publishes nothing, so it runs (#897 review, item 3); counted apart
             continue
