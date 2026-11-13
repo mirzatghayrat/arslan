@@ -113,7 +113,7 @@ def auto_class(row: dict) -> tuple[str | None, str | None]:
     return None, None
 
 
-def requests_sent(label: str, usage_rows: list[dict], since: float = 0.0) -> dict:
+def requests_sent(label: str, usage_rows: list[dict], since: float) -> dict:
     """The run's model requests as the metering proxy saw them sent: the tools offered (their union, in first-seen
     order) and each request setting's distinct values. Rows from a meter older than H0 carry none of it.
     #879 review, later item 4: only the rows from when the run started (`since`, as runner.usage reads them), so a
@@ -141,7 +141,7 @@ def table_row(record: dict, *, commit: str, dirty: bool, switch: str, arm: str, 
     usage = record.get("usage") or {}
     hit, miss = usage.get("cache_hit_tokens", 0), usage.get("cache_miss_tokens", 0)
     pause = pause_reason(folder) if folder else None
-    sent = requests_sent(record["run"], usage_rows, record.get("started", 0.0))   # 0: a record older than item 4
+    sent = requests_sent(record["run"], usage_rows, record["started"])   # run() passes the record run_one just made
     row = {"commit": commit, "dirty": dirty, "switch": switch, "arm": arm, "value": value,
            "model": record.get("model"), "task": record["task"], "repeat": record["repeat"], "round": round_name,
            "day": day, "run": record["run"], "passed": bool(record.get("passed")),

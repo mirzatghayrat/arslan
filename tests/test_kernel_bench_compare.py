@@ -237,11 +237,11 @@ def test_a_row_carries_what_the_requests_carried():
         {"cand": "L", "model": "deepseek-v4-pro", "req": {"tools": ["a", "c"], "temperature": 0.7, "max_tokens": 8192}},
         {"cand": "other", "model": "x", "req": {"tools": ["z"]}},
     ]
-    sent = compare.requests_sent("L", usage_rows)
+    sent = compare.requests_sent("L", usage_rows, 0.0)
     assert sent["source"] == "metering proxy (as sent)"
     assert sent["tools_offered"] == ["a", "b", "c"]
     assert sent["settings"] == {"model": ["deepseek-v4-pro"], "temperature": [0.7], "max_tokens": [8192]}
-    assert compare.requests_sent("L", [{"cand": "L", "model": "m"}])["source"].startswith("not observed")
+    assert compare.requests_sent("L", [{"cand": "L", "model": "m"}], 0.0)["source"].startswith("not observed")
 
 
 def test_review_4_a_rerun_of_the_label_reads_only_its_own_requests():
