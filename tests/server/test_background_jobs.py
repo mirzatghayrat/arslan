@@ -689,7 +689,10 @@ async def test_a_job_the_hard_limit_ends_says_what_was_done_blocked_and_left(exe
     assert "Done: " in closing and "recall ×" in closing
     assert "Blocked:\n- nobody answered the card: recall `notes 1`" in closing
     # The job's goal as the user gave it, never the instruction its turn was sent with (the host's context).
+    # INB9-a: the acceptance sheet follows the closing note, after a blank line and its first bold heading.
+    closing, _, sheet = closing.partition("\n\n**")
     assert closing.endswith("Left: the request itself, Research everything")
+    assert sheet.startswith("⚠️ Not verified**")
 
 
 async def test_a_job_with_an_answer_posts_it_byte_for_byte(execution_db, active, frames, monkeypatch):

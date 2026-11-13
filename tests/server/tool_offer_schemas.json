@@ -241,7 +241,7 @@
  "start_background_work": [
   "criteria: array of object required",
   "criteria[].description: string required",
-  "criteria[].kind: string enum=file_saved|sources_read|mentions|judgement",
+  "criteria[].kind: string enum=file_saved|sources_read|mentions|judgement|glance",
   "criteria[].minimum: integer",
   "criteria[].target: string",
   "goal: string required"
