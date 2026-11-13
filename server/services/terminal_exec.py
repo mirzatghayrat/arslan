@@ -44,6 +44,9 @@ GIT_CONFIG: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_git_
 # SBX-5b: set by the tool loop only, for one call in the sandbox whose once-only `app_data` card the user clicked: the
 # one app's listed folder its profile reopens read-only (`command_sandbox.commands_profile(open_once=...)`).
 OPEN_ONCE: contextvars.ContextVar[Path | None] = contextvars.ContextVar("terminal_open_once", default=None)
+# ASK1-b round 1 (G2): set by the tool loop only, from the gate's plan, for a scheduled fire's command: it runs in the
+# sandbox or not at all (`executors.RunCommand`).
+SANDBOX_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_sandbox_only", default=False)
 #: HR-1b: what a command under that grant gets in its environment (`_run`): no template folder for clone and init.
 GIT_CONFIG_ENV = {"GIT_TEMPLATE_DIR": ""}
 
@@ -373,6 +376,10 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
         except root_pin.Swapped as exc:                 # SBX-9: a root swapped while it was pinned
             return _swapped(cwd, "workspace", exc)
         mode = "workspace" if prefix else "unavailable"
+        if not prefix and SANDBOX_ONLY.get():      # ASK1-b G2: a fire's command never runs unwrapped
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd), "sandbox": mode,
+                    "error": "not started: the sandbox couldn't start, and a scheduled run's command runs only "
+                             "inside it. Nothing ran."}
     elif not unwrapped:
         try:
             prefix = await command_sandbox.in_thread(

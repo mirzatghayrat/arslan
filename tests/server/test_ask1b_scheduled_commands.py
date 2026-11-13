@@ -15,6 +15,7 @@ tests/server/sbx/test_ask1b_fire_seatbelt.py).
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 import pytest
@@ -163,6 +164,49 @@ async def test_with_no_sandbox_every_command_is_refused_and_listed(ran, monkeypa
     out = await _fire("ls")
     [row] = await _rows()
     assert ran == [] and out["ok"] is False and (row.kind, row.decision) == ("command", "deny")
+
+
+@pytest.mark.parametrize("how", ["switched off", "seatbelt can't start"])
+async def test_a_sandbox_gone_between_the_gate_and_the_executor_refuses_and_lists(ran, monkeypatch, how):
+    """Round 1 (G2): the gate passed the command in the sandbox; by the time the executor reads again the sandbox is
+    switched off, or seatbelt can't start. The plan carries `sandbox_only`: refused and listed, never run outside."""
+    async def on():
+        return True
+
+    def outside(*_a, **_k):
+        raise AssertionError("the outside runner is never used for a fire")
+    monkeypatch.setattr(command_sandbox, "outside_wrapper", outside)
+    if how == "switched off":
+        monkeypatch.setattr(command_gate, "_sandbox_enabled", on)           # what the gate read
+        await _set(terminal_sandbox_enabled="false")                        # what the executor reads
+    else:
+        real, gone = command_gate._own_folder_holds, []
+
+        def last_stage(d):                                                  # the gate's last stage, then seatbelt goes
+            real(d)
+            gone.append(True)
+        monkeypatch.setattr(command_gate, "_own_folder_holds", last_stage)
+        monkeypatch.setattr(command_sandbox, "available", lambda: not gone)
+    out = await _fire("ls")
+    assert ran == [] and out["ok"] is False and out["executed"] is False and "nobody to ask" in out["error"]
+    [row] = await _rows()                                                   # as the no-sandbox card would have read
+    assert (row.kind, row.target, row.decided_by, row.decision) == ("command", "unsandboxed:*", "policy", "deny")
+    assert row.conversation_id == CID
+
+
+async def test_a_fires_command_never_runs_unwrapped_when_seatbelt_gives_no_wrapper(monkeypatch, tmp_path):
+    """The last line, in terminal_exec: sandbox asked for, no wrapper came back (seatbelt gone): not started."""
+    async def never(*_a, **_k):
+        raise AssertionError("nothing starts")
+    monkeypatch.setattr(command_sandbox, "available", lambda: False)
+    monkeypatch.setattr(command_sandbox, "wrapper", lambda *_a, **_k: [])
+    monkeypatch.setattr(terminal_exec, "_execute", never)
+    token = terminal_exec.SANDBOX_ONLY.set(True)
+    try:
+        out = await terminal_exec.run("ls", cwd=tmp_path, sandbox=True)
+    finally:
+        terminal_exec.SANDBOX_ONLY.reset(token)
+    assert out["ok"] is False and "Nothing ran" in json.dumps(out)
 
 
 async def test_the_cut_back_starts_a_fires_command_in_its_runs_temp_folder(ran, monkeypatch, tmp_path):

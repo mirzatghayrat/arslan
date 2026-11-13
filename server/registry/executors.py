@@ -921,6 +921,16 @@ class RunCommandExecutor:
             sandboxed = await settings_service.terminal_sandbox_enabled(db)
             default_read = await settings_service.default_read_enabled(db)
         from server.services import command_sandbox
+        # ASK1-b round 1 (G2): a scheduled fire's command runs in the sandbox or not at all, read again here: switched
+        # off or unable to start since the gate, it is refused and listed, never run by the outside runner.
+        if terminal_exec.SANDBOX_ONLY.get() and not (sandboxed and command_sandbox.available()
+                                                     and not terminal_exec.OUTSIDE_SANDBOX.get()):
+            from server.orchestrator import command_gate
+            from server.orchestrator.tool_gates import _unattended
+            from server.services import approvals
+            return {"ok": False, "executed": False, "error": await _unattended(        # listed under the fire's task
+                "a scheduled run's command runs only in the sandbox, which is switched off or can't start now",
+                approvals._command_request(command, [], None, unsandboxed=True), command_gate._FIRE.get())}
         if in_sub and (cwd is None or not command_sandbox.available()):
             return {"ok": False, "executed": False,
                     "error": "a sub-session's commands run only in the sandbox, in its own folder, and "
@@ -978,7 +988,8 @@ class RunCommandExecutor:
         from server.services import tool_outputs
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
-                                         sandbox=in_sub or (sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get()),
+                                         sandbox=in_sub or terminal_exec.SANDBOX_ONLY.get()
+                                         or (sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get()),
                                          closed=closed, readable=readable,
                                          copies=tool_outputs.given(tool_outputs.conversation.get()),
                                          unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub,

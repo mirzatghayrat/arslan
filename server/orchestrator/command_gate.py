@@ -404,6 +404,9 @@ class CommandPlan:
     #: SBX-5b: one app's listed private data folder reopened read-only for this one command in the sandbox
     #: (`commands_profile(open_once=...)`), by the user's click on its once-only `app_data` card. Never stored.
     open_once: Path | None = None
+    #: ASK1-b round 1 (G2): a scheduled fire's command. The executor runs it in the sandbox or not at all: a setting
+    #: switched off, or seatbelt gone, after this gate is a refusal listed for the user, never the outside runner.
+    sandbox_only: bool = False
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -505,7 +508,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         return refused
     _own_folder_holds(draft)
     return replace(draft.plan(), git_config=git_config, open_once=opened if draft.confined and not draft.run_outside
-                   else None)
+                   else None, sandbox_only=fire_runs_commands(turn.conversation_id))
 
 
 @dataclass(slots=True)
