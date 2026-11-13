@@ -476,10 +476,12 @@ MAX_ALLOWED = 5     # S4b (the user, 2026-11-11): at most 5 allowed folders
 def _check_allowed(allowed: list[Path], workspace: Path, protected: list[Path], closed: list[Path]) -> None:
     """S4b-0, as `_check_open_once`: ValueError unless there are at most MAX_ALLOWED and each allowed folder is an
     existing real folder, not the home folder, neither at, inside nor above a system folder, neither equal to, inside
-    nor holding a `protected` path (the protected, CAP6b and app-data folders, Arslan's data folder among them),
-    neither equal to nor holding one of the user's `closed` folders (one inside is reopened like the work folder), not
-    in the work folder and overlapping no other allowed folder. By identity as well as path (`workspace_paths._within`:
-    another case or Unicode form is the same folder). S4b's service filters first, so a raise is a bug upstream."""
+    nor holding a user's shared cache (#881 review: their write deny comes after every grant anyway; this is the early
+    "no", against poisoning packages that later run outside the sandbox), a `protected` path (the protected, CAP6b and
+    app-data folders, Arslan's data folder among them) or one of the user's `closed` folders (unlike the work folder,
+    not reopened inside one: #881 review), not in the work folder and overlapping no other allowed folder. By identity
+    as well as path (`workspace_paths._within`: another case or Unicode form is the same folder). S4b's service
+    filters first, so a raise is a bug upstream."""
     from server.services.workspace_paths import _within
 
     def overlap(a: Path, b: Path) -> bool:
@@ -493,7 +495,9 @@ def _check_allowed(allowed: list[Path], workspace: Path, protected: list[Path], 
             raise ValueError(f"allowed: the home folder: {folder}")
         if any(overlap(folder, s) for s in _resolved(SYSTEM_FOLDERS)):
             raise ValueError(f"allowed: at, inside or above a system folder: {folder}")
-        if any(overlap(folder, p) for p in protected) or any(_within(c, folder) for c in closed):
+        if any(overlap(folder, c) for c in shared_caches()):
+            raise ValueError(f"allowed: at, inside or holding a shared cache: {folder}")
+        if any(overlap(folder, p) for p in [*protected, *closed]):
             raise ValueError(f"allowed: at, inside or holding a protected or closed folder: {folder}")
         if _within(folder, workspace) or any(overlap(folder, other) for other in allowed[:i]):
             raise ValueError(f"allowed: inside the work folder or another allowed folder: {folder}")
@@ -558,9 +562,9 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     under it (it stays closed to writes), so a swap after the build only narrows what is read.
 
     S4b-0: `allowed`, the user's allowed folders (pinned by `wrapper`), are writable roots too, tagged ALLOWED. HR-1's
-    walk and holds cover each like the work folder (the git_config lift stays in `workspace`); one inside a closed
-    folder is reopened, and `open_once` refuses a folder inside an allowed one. Unsafe ones raise ValueError (`_check_allowed`):
-    no profile is built. None leaves the profile byte for byte as it was."""
+    walk and holds cover each like the work folder (the git_config lift stays in `workspace`), and `open_once` refuses
+    a folder inside one. Unsafe ones raise ValueError (`_check_allowed`; one in a closed folder is refused, not
+    reopened): no profile is built. None leaves the profile byte for byte as it was."""
     root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
     if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
                                     or _real(root) not in plugin_read.parents):
@@ -614,7 +618,9 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # #813 review 8: the walk never lists the user's closed folders nor the TCC home folders (`closed` is the user's
     # list, before Arslan's own data is added); it holds the held folders inside them by name.
     walk = [walk_root] if walk_root is not None else []
-    hold = run_later_folders([workspace, *allowed], closed=closed, walk_roots=walk)   # S4b-0: each allowed root
+    # S4b-0: the allowed roots as walk roots, each from its own root after the work folder (#881 review: as `folders`
+    # one holding the work folder would drop it as a start, its depth then counted from that root). One walk, one cap.
+    hold = run_later_folders([workspace], closed=closed, walk_roots=[*walk, *allowed])
     (_TOO_LARGE.discard if hold.complete else _TOO_LARGE.add)(_real(workspace))  # this walk's root only (review 7)
     if hold.aliases:                                                             # #813 review 9, for `note`
         _ALIASED[_real(workspace)] = hold.aliases

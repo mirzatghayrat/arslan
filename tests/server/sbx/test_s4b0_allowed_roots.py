@@ -2,12 +2,12 @@
 
 S4b (②Main) wires Settings' allowed folders to the callers; this is the sandbox's side. `allowed` on `writable_roots`,
 `commands_profile` and `wrapper`: each root tagged ALLOWED (not in scope for the classifier), pinned by `wrapper` like
-the work folder (SBX-9), walked by HR-1 like it (its held folders, `core.hooksPath` and caps), reopened inside a closed
-folder, and seen by `open_once`. An unsafe root raises ValueError (no profile, the command doesn't start). None leaves
-the profile byte for byte as it was.
+the work folder (SBX-9), and walked by HR-1 like it (its held folders, `core.hooksPath` and caps; a root holding the
+work folder leaves it its own depth budget). An unsafe root (in a closed folder or a shared cache among them) raises
+ValueError (no profile, the command doesn't start). None leaves the profile byte for byte as it was.
 
 - Portable: each refusal class, what is accepted (a folder outside home, on a stand-in volume, among them), the tag,
-  `open_once`, and the empty case against today's text rebuilt from its parts (test_sbx3a's).
+  the depth budget, and the empty case against today's text rebuilt from its parts (test_sbx3a's).
 - Real seatbelt: `cp` into an allowed root works and the folder beside it stays denied; inside one, a git hook, the
   `.git` folder and a `core.hooksPath` target are refused as in the work folder; a swap after the build is refused.
 
@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from server.services import command_sandbox, root_pin
-from server.services.sandbox_profile import NetworkMode, real, subpath
+from server.services.sandbox_profile import NetworkMode, literal, real, subpath
 from tests.server.sbx.test_sbx3a_commands_profile import _base_for, _shared_caches_read_only
 from tests.server.sbx import test_sbx9_root_pin as sbx9
 from tests.server.sbx.test_sbx9_root_pin import _swap_for_link
@@ -78,8 +78,12 @@ def _refused_cases(home: Path, ws: Path, system: Path) -> dict:
         "inside a protected folder": (_folders(home / ".ssh" / STAND_IN), {}),
         "inside the data folder": (_folders(home / "data" / STAND_IN), {}),
         "inside an app's data": (_folders(home / "Library" / "Mail" / STAND_IN), {}),
-        "holding an app's data": (_folders(home / "Library"), {}),
+        "holding an app's data": (_folders(home / "Library" / "Containers"), {}),   # com.apple.mail's
+        "a shared cache": (_folders(home / ".npm"), {}),
+        "inside a shared cache": (_folders(home / ".cache" / STAND_IN), {}),
+        "holding a shared cache": (_folders(home / "Library"), {}),                 # ~/Library/Caches
         "a closed folder": (_folders(home / "Desktop"), {"closed": [home / "Desktop"]}),
+        "inside a closed folder": (_folders(home / "Desktop" / STAND_IN), {"closed": [home / "Desktop"]}),
         "holding a closed folder": (_folders(home / STAND_IN / "shut")[:0] + [home / STAND_IN],
                                     {"closed": [home / STAND_IN / "shut"]}),
         "the work folder": ([ws], {}),
@@ -92,13 +96,16 @@ def _refused_cases(home: Path, ws: Path, system: Path) -> dict:
 
 _SYSTEM, _REAL, _SHUT, _OVERLAP = ("a system folder", "not an existing real folder", "a protected or closed folder",
                                     "the work folder or another allowed folder")
+_CACHE = "a shared cache"
 #: case: the reason it is refused for (each class has its own check, so dropping one is seen even where another
 #: would also refuse it: the home folder holds ~/.ssh's name).
 CASES = {"home itself": "the home folder", "/": _SYSTEM, "inside a system folder": _SYSTEM,
          "above a system folder": _SYSTEM, "missing": _REAL, "a file": _REAL, "a link to a folder": _REAL,
          "holding a protected path": _SHUT, "a protected folder": _SHUT, "inside a protected folder": _SHUT,
          "inside the data folder": _SHUT, "inside an app's data": _SHUT, "holding an app's data": _SHUT,
-         "a closed folder": _SHUT, "holding a closed folder": _SHUT, "the work folder": _OVERLAP,
+         "a shared cache": _CACHE, "inside a shared cache": _CACHE, "holding a shared cache": _CACHE,
+         "a closed folder": _SHUT, "inside a closed folder": _SHUT, "holding a closed folder": _SHUT,
+         "the work folder": _OVERLAP,
          "inside the work folder": _OVERLAP, "overlapping": _OVERLAP, "the same twice": _OVERLAP,
          "a sixth": "more than 5 folders"}
 
@@ -128,16 +135,32 @@ def test_safe_roots_are_accepted_outside_home_and_on_a_volume_too(env, tmp_path)
         assert f'(subpath "{root}")' in text
 
 
-def test_a_root_inside_a_closed_folder_is_reopened_and_open_once_sees_it(env):
-    """The closed-folder reopen covers an allowed root, as the work folder; `open_once` refuses a folder inside it."""
+def test_a_root_inside_a_closed_folder_is_refused_while_the_work_folder_there_is_still_reopened(env):
+    """#881 review: an allowed root inside the user's closed Desktop is refused, not reopened; the work folder's own
+    reopen there is unchanged (the control)."""
     home, ws = env
     desk = home / "Desktop"
-    proj, sub = _folders(desk / "proj", desk / "proj" / STAND_IN)
-    text = _profile(ws, [proj], closed=[desk])
-    assert f'(allow file-read* file-write* file-map-executable (subpath "{proj}"))' in text
-    _profile(ws, [], closed=[desk], open_once=sub)                              # the control: closed, so reopened
-    with pytest.raises(ValueError, match="already inside a writable folder"):
-        _profile(ws, [proj], closed=[desk], open_once=sub)
+    proj, work = _folders(desk / "proj", desk / "ws")
+    with pytest.raises(ValueError, match="a protected or closed folder"):
+        _profile(ws, [proj], closed=[desk])
+    text = _profile(work, [], closed=[desk])
+    assert f'(allow file-read* file-write* file-map-executable (subpath "{work}"))' in text
+
+
+def test_a_root_holding_the_work_folder_leaves_it_its_own_depth_budget(env, monkeypatch):
+    """#881 review, SBX-10's depth layout: an allowed root holds the work folder `A/sub/kid`, whose `x/.vscode -> v`
+    is past the depth cap counted from the root but within it from the work folder. The work folder is still walked
+    from its own root first: the link's target is held, and the walk is complete."""
+    home, _ = env
+    monkeypatch.setattr(command_sandbox.run_later, "WALK_DEPTH", 2)
+    root = home / "A"
+    kid = root / "sub" / "kid"
+    (kid / "x" / "v").mkdir(parents=True)
+    (kid / "x" / "v" / "settings.json").write_text("old")
+    (kid / "x" / ".vscode").symlink_to(kid / "x" / "v", target_is_directory=True)
+    text = _profile(kid, [root])
+    assert literal(kid / "x" / "v" / "settings.json") in text and literal(kid / "x" / "v") in text
+    assert not command_sandbox.too_large_to_map(kid)
 
 
 def test_the_roots_are_tagged_allowed_and_not_in_scope(env):
