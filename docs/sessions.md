@@ -265,5 +265,7 @@ Rules 1–6 and 8 are in force. Rule 7 is open. The security-surface review rule
 1. **Long-running work goes to a fresh subagent or a new session,** and the main session takes only the result summary. That covers bench runs, waiting for CI, repeated test runs and long investigations. The earlier "fewer subagents" advice applies only to subagents that read many files.
 2. **A session with a large context doesn't poll.** It waits for a PR merge or for CI through a notification, or hands the watching to a small session.
 3. **Before a long wait, compact first.**
+4. **Keep each subagent short.** On 11-13 one lane's coding subagents ran 76–149 steps each, re-reading about 230k tokens every step. Give a subagent one checkable piece of work, such as "this function and its tests". It ends with a summary, and the next piece starts a new subagent. One subagent doesn't carry a task from design to push.
+5. **Test loops on the cheaper model.** Running the full suite, waiting on it and rerunning flaky tests go to a Sonnet subagent. Opus does the design and the code changes.
 
 **Order is unchanged:** tier 1 first. The six harness PRs come after ASK1-a.
