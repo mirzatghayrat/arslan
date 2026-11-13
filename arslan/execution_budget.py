@@ -21,7 +21,9 @@ from functools import wraps
 
 
 class BudgetExceeded(RuntimeError):
-    pass
+    #: What a background job's turn did, what was blocked and what is left, written by the host from the turn's own
+    #: records when the limit ended it with no text (`tool_loop.run_native`); the job's report carries it. "" if none.
+    closing: str = ""
 
 
 @dataclass(frozen=True)
