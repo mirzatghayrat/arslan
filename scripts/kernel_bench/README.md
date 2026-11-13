@@ -163,6 +163,53 @@ only `~/.zshrc` puts on PATH (`runner.fresh_instance(prepare_home=…)` for Arsl
 card's gate: Arslan at least matches OpenClaw on focus, length, verify, guide and self-state. `--compare` compares
 two rounds of one entrant. Card: `docs/plans/0164/SMART-feels-smart.md`.
 
+## Off/on comparison and the results table (v0.1.64, harness plan H0 PR 1)
+
+Harness plan §4.2 and §4.3 (`docs/plans/2026-11-11-harness-plan.md`): every harness change has a switch, run off and
+then on, the same day, on the same model and commit.
+
+```bash
+python -m scripts.kernel_bench.compare run --tasks T1,T3 --runs 2 --switch show_technical_details --off false --on true
+python -m scripts.kernel_bench.compare report --switch show_technical_details        # [--commit SHA] [--round NAME]
+python -m scripts.kernel_bench.compare classify ROW_ID facts "The table names no source."
+```
+
+- `run` runs each task `--runs` times per arm on Arslan, off then on for each task and repeat. The switch is a
+  settings key, set per arm through `BENCH_ARSLAN_SETTINGS` (on top of what that variable already holds); each arm's
+  runs get their own round in the label (`<round>-<switch>-off|on`). Use `BENCH_FRESH_INSTANCE=1`: a kept
+  instance keeps its settings, and both values are given explicitly for that reason.
+- Each run is a row of `$BENCH_ROOT/harness_results.jsonl`, keyed by commit, switch, arm, model, task, repeat and
+  round, with §4.2's fields the bench can observe: pass, end state (`done`, `waiting`, `budget`, or how else it
+  ended, from the driver's end and the last `task_state`'s pause reason), tool steps, model requests, input and
+  output tokens, cache hits, dollars at peak price, seconds, cards shown, "done without evidence", and what the
+  model was sent: the tools offered and the request settings (temperature, max tokens, thinking, effort). The
+  metering proxy records those from each request it forwards (`req` in `usage.jsonl`); the row says where they
+  came from (`request_source`), and a meter older than H0 leaves them "not observed".
+- The failure class is one of §1.3's (`wait`, `incomplete`, `instruction`, `facts`, `tool`, `bench`,
+  `regression`, `other`) with one sentence of cause. The bench fills it when the end says it (waiting: `wait`;
+  budget used up: `incomplete`; no report from the driver: `bench`; 429s from the provider: `tool`); a run that
+  ended `done` and failed its check is left for a reader. `classify` writes a reader's class to
+  `failure_classes.jsonl`, apart from the table, so a rerun or rewrite of the row keeps it.
+- `report` prints off against on: passes per task and per arm, median tool steps, cost, failure classes, and §4.3's
+  veto and "counts as working" lines. The four task sets don't exist yet, so the rules apply to the tasks that ran
+  (the veto as if they were the regression set: a task from k/k to k-2 or lower, the total down more than 2, or cost
+  per run up more than 25% with no gain; "counts as working": passes up 3 or more), and the report says so. Arms
+  that differ in model, commit, day or runs are not judged.
+
+**C1, the capability set's first task.** A tracking link opens the app on Android but sends iPhones to the App Store
+(from a same-question comparison on 2026-11-12, where Arslan listed guesses and Claude Code tested a fix).
+`fixture_c1.py` writes two files into the run folder (made-up names): `link_sim.py`, a stand-in for the link vendor's
+server that the worker runs (`python3 link_sim.py --ua "<user agent>" "<link>"`, rules packed, request log in
+`link_requests.jsonl` beside it), and `app/make_link.py`, the app's code that builds the link. An iPhone gets a 301 to
+the store, Android a page with the app's scheme, and only `force_deeplink=true` turns the iPhone answer into the
+scheme page. `check_c1.py` reads the log, the simulator's hash and the fixed code from disk: 3 needs the agent's own
+iPhone request with the fix (and both platforms compared), the fix in `make_link.py`'s code, the fix named with the
+before and after statuses, no checks handed back to the user and at most one hedged sentence. The draft's judge step
+is not built. C1 was a stub on 127.0.0.1 first; it is file-based because Arslan's sandbox reaches loopback only while
+a command runs online: after the first request's output (outside content), each later network command asks a card the
+bench declines, and other commands run offline, loopback included (the real commands profile, measured: offline
+curl to the stub fails to connect, online and unsandboxed get 200). Not yet run on a model.
+
 ## T1 / T2 / T4 / T6 (0.1.49)
 
 | Task | Fixture | Checker | Human step | Arslan |

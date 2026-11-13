@@ -7,7 +7,8 @@ Anthropic key) serves Claude Code and Arslan-on-Claude. `start_proxy.sh anthropi
 - Holds the only real key (BENCH_REAL_KEY); candidates send a dummy key, which is replaced.
 - Counts usage from OpenAI-style and Anthropic-style responses, streamed or not.
 - Hard cap: refuses new requests once the conservative (peak-price) total reaches BENCH_CAP_USD.
-- Logs one JSON line per request to usage.jsonl (no key, no prompt text).
+- Logs one JSON line per request to usage.jsonl (no key, no prompt text), with the tool names the request offered
+  and its sampling, output and thinking settings (`req`, H0: what the instance actually sent).
 - Hands L3 (scripts/hands_l3): for a candidate whose name ends in "-nobatch", desktop_batch is taken
   out of the tools offered, so a run can be compared with and without batches.
 """
@@ -73,6 +74,22 @@ def withhold_tools(cand, j):
     return True
 
 
+#: H0 (harness plan §4.2): the request settings the meter records as sent, when the request carries them.
+SENT_SETTINGS = ("temperature", "top_p", "max_tokens", "max_completion_tokens", "thinking", "reasoning_effort")
+
+
+def request_settings(j):
+    """What one request offered the model and how it asked: the tool names (after withhold_tools) and the sampling,
+    output and thinking settings it carried (Anthropic's effort sits in output_config). No prompt text."""
+    out = {"tools": [str((t.get("function") or {}).get("name") or t.get("name")) for t in j.get("tools") or []
+                     if isinstance(t, dict)]}
+    out.update({k: j[k] for k in SENT_SETTINGS if k in j})
+    effort = (j.get("output_config") or {}).get("effort") if isinstance(j.get("output_config"), dict) else None
+    if effort is not None:
+        out["effort"] = effort
+    return out
+
+
 def cost(model, hit, miss, out, write=0):
     h, m, o = PRICE.get(model, CLAUDE_DEFAULT_PRICE if str(model).startswith("claude-") else DEFAULT_PRICE)
     return (hit * h + miss * m + write * m * WRITE_UPLIFT + out * o) / 1e6
@@ -133,7 +150,7 @@ def scan(obj, acc):
                 merge_usage(acc, obj[k]["usage"])
 
 
-async def record(cand, path, model, acc, status, t0):
+async def record(cand, path, model, acc, status, t0, sent=None):
     c = cost(model, acc["hit"], acc["miss"], acc["out"], acc.get("write", 0))
     async with lock:
         spent["total"] += c
@@ -154,6 +171,8 @@ async def record(cand, path, model, acc, status, t0):
         }
         if acc.get("server_tools"):
             line["server_tools"] = acc["server_tools"]
+        if sent is not None:
+            line["req"] = sent
         with open(LOG, "a") as f:
             f.write(json.dumps(line) + "\n")
 
@@ -178,12 +197,14 @@ async def handle(request):
     body = await request.body()
     model = "?"
     stream = False
+    sent = None
     if body:
         try:
             j = json.loads(body)
             model = j.get("model", "?")
             stream = bool(j.get("stream"))
             changed = withhold_tools(cand, j)
+            sent = request_settings(j)
             if wants_usage_option(stream, j, path, ANTHROPIC):
                 j.setdefault("stream_options", {})["include_usage"] = True
                 changed = True
@@ -228,7 +249,7 @@ async def handle(request):
             finally:
                 await resp.aclose()
                 await client.aclose()
-                await record(cand, path, model, acc, resp.status_code, t0)
+                await record(cand, path, model, acc, resp.status_code, t0, sent)
 
         return StreamingResponse(gen(), status_code=resp.status_code, headers=passthrough)
     data = await resp.aread()
@@ -238,7 +259,7 @@ async def handle(request):
         scan(json.loads(data), acc)
     except Exception:
         pass
-    await record(cand, path, model, acc, resp.status_code, t0)
+    await record(cand, path, model, acc, resp.status_code, t0, sent)
     return Response(data, status_code=resp.status_code, headers=passthrough)
 
 
