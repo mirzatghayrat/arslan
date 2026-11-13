@@ -261,4 +261,9 @@ Rules 1–6 and 8 are in force. Rule 7 is open. The security-surface review rule
    - A tier that goes over stops and reports to the user. Nothing moves to another tier automatically.
    - These are warning lines, not hard targets. Quality gates (CI, tests, benches, security-boundary reviews) are never lowered to save quota. What's needed gets spent, and an overrun is reported with its reason.
 
+**Fewer steps, smaller context (user, 2026-11-14).** Cost is roughly context size × number of steps. On 11-13, re-reading context was about 65% of it, cache writes about 24%, and output about 11%. Compacting cuts the size; these cut the steps:
+1. **Long-running work goes to a fresh subagent or a new session,** and the main session takes only the result summary. That covers bench runs, waiting for CI, repeated test runs and long investigations. The earlier "fewer subagents" advice applies only to subagents that read many files.
+2. **A session with a large context doesn't poll.** It waits for a PR merge or for CI through a notification, or hands the watching to a small session.
+3. **Before a long wait, compact first.**
+
 **Order is unchanged:** tier 1 first. The six harness PRs come after ASK1-a.
