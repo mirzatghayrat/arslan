@@ -1,0 +1,342 @@
+{
+ "anthropic/claude-opus-5-5": {
+  "max_tokens": 8192,
+  "output_ceiling": 16384,
+  "payloads": [
+   {
+    "max_tokens": 8192,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-opus-5-5",
+    "system": "SYS"
+   },
+   {
+    "max_tokens": 8192,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-opus-5-5",
+    "system": "SYS",
+    "tools": [
+     {
+      "description": "Search the web",
+      "input_schema": {
+       "properties": {
+        "query": {
+         "type": "string"
+        }
+       },
+       "type": "object"
+      },
+      "name": "web_search"
+     }
+    ]
+   },
+   {
+    "max_tokens": 16384,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-opus-5-5",
+    "system": "SYS"
+   },
+   {
+    "max_tokens": 8192,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-opus-5-5",
+    "stream": true,
+    "system": "SYS",
+    "tools": [
+     {
+      "description": "Search the web",
+      "input_schema": {
+       "properties": {
+        "query": {
+         "type": "string"
+        }
+       },
+       "type": "object"
+      },
+      "name": "web_search"
+     }
+    ]
+   }
+  ]
+ },
+ "anthropic/claude-sonnet-5-5": {
+  "max_tokens": 8192,
+  "output_ceiling": 16384,
+  "payloads": [
+   {
+    "max_tokens": 8192,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-sonnet-5-5",
+    "system": "SYS"
+   },
+   {
+    "max_tokens": 8192,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-sonnet-5-5",
+    "system": "SYS",
+    "tools": [
+     {
+      "description": "Search the web",
+      "input_schema": {
+       "properties": {
+        "query": {
+         "type": "string"
+        }
+       },
+       "type": "object"
+      },
+      "name": "web_search"
+     }
+    ]
+   },
+   {
+    "max_tokens": 16384,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-sonnet-5-5",
+    "system": "SYS"
+   },
+   {
+    "max_tokens": 8192,
+    "messages": [
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "claude-sonnet-5-5",
+    "stream": true,
+    "system": "SYS",
+    "tools": [
+     {
+      "description": "Search the web",
+      "input_schema": {
+       "properties": {
+        "query": {
+         "type": "string"
+        }
+       },
+       "type": "object"
+      },
+      "name": "web_search"
+     }
+    ]
+   }
+  ]
+ },
+ "deepseek/deepseek-v4-flash": {
+  "max_tokens": 32768,
+  "output_ceiling": 131072,
+  "payloads": [
+   {
+    "max_tokens": 32768,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-flash",
+    "temperature": 0.7
+   },
+   {
+    "max_tokens": 32768,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "stream_options": {
+     "include_usage": true
+    },
+    "temperature": 0.7,
+    "tools": [
+     {
+      "function": {
+       "description": "Search the web",
+       "name": "web_search",
+       "parameters": {
+        "properties": {
+         "query": {
+          "type": "string"
+         }
+        },
+        "type": "object"
+       }
+      },
+      "type": "function"
+     }
+    ]
+   },
+   {
+    "max_tokens": 131072,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-flash",
+    "temperature": 0.7
+   },
+   {
+    "max_tokens": 32768,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-flash",
+    "stream": true,
+    "stream_options": {
+     "include_usage": true
+    },
+    "temperature": 0.7
+   }
+  ]
+ },
+ "deepseek/deepseek-v4-pro": {
+  "max_tokens": 32768,
+  "output_ceiling": 131072,
+  "payloads": [
+   {
+    "max_tokens": 32768,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-pro",
+    "temperature": 0.7
+   },
+   {
+    "max_tokens": 32768,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-pro",
+    "stream": true,
+    "stream_options": {
+     "include_usage": true
+    },
+    "temperature": 0.7,
+    "tools": [
+     {
+      "function": {
+       "description": "Search the web",
+       "name": "web_search",
+       "parameters": {
+        "properties": {
+         "query": {
+          "type": "string"
+         }
+        },
+        "type": "object"
+       }
+      },
+      "type": "function"
+     }
+    ]
+   },
+   {
+    "max_tokens": 131072,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-pro",
+    "temperature": 0.7
+   },
+   {
+    "max_tokens": 32768,
+    "messages": [
+     {
+      "content": "SYS",
+      "role": "system"
+     },
+     {
+      "content": "ping",
+      "role": "user"
+     }
+    ],
+    "model": "deepseek-v4-pro",
+    "stream": true,
+    "stream_options": {
+     "include_usage": true
+    },
+    "temperature": 0.7
+   }
+  ]
+ }
+}

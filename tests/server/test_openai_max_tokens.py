@@ -15,14 +15,9 @@ def _payload(**kw):
 
 
 def test_payload_declares_max_tokens():
-    assert _payload()["max_tokens"] == OpenAIProvider.DEFAULT_MAX_TOKENS
-
-
-def test_the_default_is_a_working_budget_not_a_model_ceiling():
-    """Large enough for real answers, far below the 64K ceiling whose blind
-    reservation caused the 402."""
-    v = OpenAIProvider.DEFAULT_MAX_TOKENS
-    assert 2048 <= v <= 16384
+    """v0.1.64: an unknown model declares 32,768 (output_budget.UNKNOWN_MAX_OUTPUT); a refused cap is
+    sent once more at 8,192 (output_fallback.py, tests/llm/test_output_cap_0164.py)."""
+    assert _payload()["max_tokens"] == 32_768
 
 
 def test_an_explicit_budget_overrides_the_default():
