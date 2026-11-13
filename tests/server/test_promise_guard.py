@@ -41,9 +41,7 @@ def test_promise_re_hits_real_incident_strings():
 
 
 def test_promise_re_hits_english_promises():
-    assert promise_guard.PROMISE_RE.search("I'm working on it right now")
-    assert promise_guard.PROMISE_RE.search("The deck is Generating, hang tight")
-    assert promise_guard.PROMISE_RE.search("your report is in progress")
+    # H1-c: "working on" / "generating" / "in progress" are no longer triggers (tests/server/test_h1c_tool_fixes.py)
     assert promise_guard.PROMISE_RE.search("I'll get that over to the team")
     assert promise_guard.PROMISE_RE.search("I’ll have it ready")  # curly apostrophe
 

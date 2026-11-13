@@ -32,6 +32,7 @@ from server.orchestrator.answer_rules import (  # noqa: F401
     ARSLAN_SYSTEM as _ARSLAN_SYSTEM,
     CAPABILITY_SELF as _CAPABILITY_SELF,
     CLARIFY_CHOICE_NUDGE as _CLARIFY_CHOICE_NUDGE,
+    LEGACY_ANSWER_STABLE_PREFIX as _LEGACY_ANSWER_STABLE_PREFIX,
     NO_BACKGROUND_EXEC as _NO_BACKGROUND_EXEC,
     NO_REPASTE as _NO_REPASTE,
     OUTPUT_RULES as _OUTPUT_RULES,
@@ -151,7 +152,18 @@ def _now_line() -> str:
 # LOOP1 e: the prefix is built from one piece per rule in answer_rules.py (the version line too).
 
 
-def _build_answer_system(*, route: str = ""):
+async def _status_route_named() -> bool:
+    """H1-c: whether the prompt says how to reach my_status (the `status_route_in_prompt` switch; OFF = the old wording).
+    A setting that can't be read means the default. DELETE-BY: v0.1.65, with the switch."""
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.status_route_in_prompt(db)
+    except Exception:  # noqa: BLE001 — a prompt's wording is never a reason to fail a turn
+        return True
+
+
+def _build_answer_system(*, route: str = "", status_route: bool = True):
     """Arslan's answer system: the static guards, plus a route's fixed text (background work's).
 
     0.1.63 K3: nothing per turn is in it any more, so it is the same bytes from turn to turn and Claude
@@ -159,7 +171,8 @@ def _build_answer_system(*, route: str = ""):
     rides at the start of the turn's request (`_turn_context`). CachedSystem keeps its two parts until
     v0.1.64 (K3 card §5: merge them into one then); the provider marks the system's last block.
     """
-    return build_cached_system(_ANSWER_STABLE_PREFIX, route)
+    # H1-c: status_route=False is the old my_status wording. DELETE-BY: v0.1.65, with the switch.
+    return build_cached_system(_ANSWER_STABLE_PREFIX if status_route else _LEGACY_ANSWER_STABLE_PREFIX, route)
 
 
 def _turn_context(*, addendum: str = "", facts: str, summary: str, kb_block: str, mcp_line: str = "",
@@ -678,7 +691,7 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("background kb retrieve failed (non-fatal): %s", exc)
     asked = next((m.get("content") for m in reversed(ctx["history"]) if m.get("role") == "user"), None)
-    system = _build_answer_system(route=BACKGROUND_SYSTEM)
+    system = _build_answer_system(route=BACKGROUND_SYSTEM, status_route=await _status_route_named())
     rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(asked if isinstance(asked, str) else goal),
@@ -768,7 +781,7 @@ async def _answer_context(conversation_id: str, user_message: str, *, extra_syst
         kb_block = _knowledge.knowledge_block(_kb)
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
-    system = _build_answer_system()
+    system = _build_answer_system(status_route=await _status_route_named())
     rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(addendum=extra_system.strip(), facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(user_message), mcp_line=await _mcp_status_line(),

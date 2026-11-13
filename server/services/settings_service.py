@@ -50,6 +50,9 @@ _PLAIN_KEYS = (
                # macOS's certificate trust service ("true" | "false"; default off). Its switch is in Settings › What
                # Arslan can do › Terminal (SBX settings), written by PUT /settings only.
                "sandbox_system_certificates",
+               # H1-c: two plain contradictions fixed by default ("true" | "false"; only "false" brings the old behaviour
+               # back). No UI. DELETE-BY: v0.1.65, both, once the bench shows no regression.
+               "status_route_in_prompt", "promise_guard_trim_words",
                # SBX-6a (the user's decision, 2026-11-02): the LAN devices sandboxed commands may reach through the proxy,
                # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused). Read here; written
                # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
@@ -290,6 +293,20 @@ async def folder_rules_enabled(session: AsyncSession) -> bool:
     'false' turns it off, for example for a cloned repo whose rules the user doesn't want. A long-lived user switch,
     not an old path (§9)."""
     raw = await _get_raw(session, "folder_rules_enabled")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def status_route_in_prompt(session: AsyncSession) -> bool:
+    """H1-c: whether the system prompt says how to reach my_status and whats_new (through use_tool: neither is in the
+    tool table). Default ON; only an explicit 'false' brings the old wording back. DELETE-BY: v0.1.65."""
+    raw = await _get_raw(session, "status_route_in_prompt")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def promise_guard_trim_words(session: AsyncSession) -> bool:
+    """H1-c: whether promise_guard leaves out the ordinary English words "working on", "generating" and "in progress".
+    Default ON; only an explicit 'false' brings the old trigger list back. DELETE-BY: v0.1.65."""
+    raw = await _get_raw(session, "promise_guard_trim_words")
     return raw is None or str(raw).strip().lower() != "false"
 
 

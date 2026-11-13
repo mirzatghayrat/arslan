@@ -298,20 +298,35 @@ WORK_ASK_ONLY_WHEN_NEEDED = (
 )
 WORK_WHAT_CAN_YOU_DO = "\n- To answer 'what can you do', call list_my_capabilities and summarize it in plain words."
 # v0.1.64 SMART-2: questions about itself, and about its own code and plans, from live sources.
-WORK_SELF_FROM_LIVE_SOURCES = (
+#: The old wording, byte for byte, kept for the `status_route_in_prompt` switch (OFF = this).
+#: DELETE-BY: v0.1.65, with the switch.
+LEGACY_WORK_SELF_FROM_LIVE_SOURCES = (
     "\n- Questions about yourself (your version, model, sandbox, approvals, phones, SSH hosts, what failed "
     "lately) are answered from my_status and whats_new, never from memory. Questions about your own plans or "
     "code are answered from GitHub: https://github.com/mirzatghayrat/arslan, branch main, and the newest "
     "folder under docs/plans there; never from a folder on this Mac. If something you find is older than "
     "your own version, say so and check again."
 )
+# H1-c: my_status and whats_new are not in the tool table (K7: found on demand, and a quick phone question has no
+# use_tool at all), so the line says how to reach them: use_tool takes them by name, with no search first.
+WORK_SELF_FROM_LIVE_SOURCES = (
+    "\n- Questions about yourself (your version, model, sandbox, approvals, phones, SSH hosts, what failed "
+    "lately) are answered from my_status and whats_new, never from memory. Neither is in your tool list: call "
+    "each with use_tool (name \"my_status\" or \"whats_new\"). Where use_tool isn't offered, say you can't look "
+    "it up here. Questions about your own plans or "
+    "code are answered from GitHub: https://github.com/mirzatghayrat/arslan, branch main, and the newest "
+    "folder under docs/plans there; never from a folder on this Mac. If something you find is older than "
+    "your own version, say so and check again."
+)
 
-CAPABILITY_SELF = "".join((
+_WORK_PIECES = (
     WORK_HEADER, WORK_TOOLS_ARE_THE_TRUTH, WORK_TERMINAL, WORK_FOLDER, WORK_ACT_NOW, WORK_FINISH_THE_JOB,
     WORK_DEEPER_NOT_BIGGER, WORK_READ_BEFORE_CHANGE, WORK_CHECK_AFTER_CHANGE, WORK_BACKGROUND_IS_SAME_WORK,
     WORK_READ_THE_ERROR, WORK_GUIDE_WHEN_BLOCKED, WORK_CITE_WHAT_YOU_READ, WORK_REPORTS_CANT_BE_MISREAD,
-    WORK_ANSWER_WHAT_WAS_ASKED, WORK_ASK_ONLY_WHEN_NEEDED, WORK_WHAT_CAN_YOU_DO, WORK_SELF_FROM_LIVE_SOURCES,
-))
+    WORK_ANSWER_WHAT_WAS_ASKED, WORK_ASK_ONLY_WHEN_NEEDED, WORK_WHAT_CAN_YOU_DO,
+)
+CAPABILITY_SELF = "".join((*_WORK_PIECES, WORK_SELF_FROM_LIVE_SOURCES))
+LEGACY_CAPABILITY_SELF = "".join((*_WORK_PIECES, LEGACY_WORK_SELF_FROM_LIVE_SOURCES))
 
 # --- The running version (was _VERSION_LINE) -------------------------------------------------------------------------
 # D2 (0.1.55): the running version, fixed for the life of the process, so the prefix
@@ -319,8 +334,14 @@ CAPABILITY_SELF = "".join((
 # v0.1.64 SMART-5: the line used to say "use this line", and the bench's version question was answered from it with
 # no my_status call (SMART-2's self-state rule asks for the live source).
 
-VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. When asked which version you are, your model or your "
+#: The old wording, byte for byte, for the `status_route_in_prompt` switch. DELETE-BY: v0.1.65, with the switch.
+LEGACY_VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. When asked which version you are, your model or your "
                 "state, call my_status and answer from what it returns, and whats_new for what changed; never answer "
+                "them from this line or from memory. Only when my_status isn't offered, say this line's version.")
+# H1-c: says how my_status is reached (it is not in the tool table).
+VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. When asked which version you are, your model or your "
+                "state, call my_status (with use_tool, as it isn't in your tool list) and answer from what it "
+                "returns, and whats_new for what changed; never answer "
                 "them from this line or from memory. Only when my_status isn't offered, say this line's version.")
 
 # --- The stable prefix: the blocks in their K3 order ------------------------------------------------------------------
@@ -328,4 +349,9 @@ VERSION_LINE = (f"\n\nYou are Arslan {_settings.app_version}. When asked which v
 ANSWER_STABLE_PREFIX = "".join((
     ARSLAN_SYSTEM, ANTI_FABRICATION, NO_BACKGROUND_EXEC, CLARIFY_CHOICE_NUDGE, NO_REPASTE, OUTPUT_RULES,
     WEB_TOOL_GUIDANCE, CAPABILITY_SELF, VERSION_LINE,
+))
+#: The prefix with the old my_status wording (`status_route_in_prompt` OFF). DELETE-BY: v0.1.65, with the switch.
+LEGACY_ANSWER_STABLE_PREFIX = "".join((
+    ARSLAN_SYSTEM, ANTI_FABRICATION, NO_BACKGROUND_EXEC, CLARIFY_CHOICE_NUDGE, NO_REPASTE, OUTPUT_RULES,
+    WEB_TOOL_GUIDANCE, LEGACY_CAPABILITY_SELF, LEGACY_VERSION_LINE,
 ))
