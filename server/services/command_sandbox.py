@@ -838,6 +838,12 @@ def git_refused(result: dict, *, command: str, cwd: Path, hold: bool = False) ->
     return bool(git_refused_paths(result, command=command, cwd=cwd, hold=hold))
 
 
+#: HR-2b: conversations where git's refusal lines named a held file and the tree may be partly updated (terminal_exec
+#: `explain`); their next `git add` or `git commit` asks first (command_gate._git_refused_card). In memory: a restart
+#: forgets them.
+GIT_REFUSED_IN: set[str] = set()
+
+
 def git_setup_failed(result: dict, held: list[str]) -> bool:
     """HR-1 (#813 review 5): a git step that failed outright on the repository's own config or hooks only (clone,
     init, `remote add`, a `git config` write): a non-zero exit, and every held path git named is inside a `.git` folder.

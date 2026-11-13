@@ -138,7 +138,8 @@ export interface TurnUndone {
 export interface RunChangesOut {
   state: "running" | "finishing" | "interrupted" | "kept" | "none" | "expired" | "not_saved";
   undone: boolean;
-  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  /** HR-2b: `ci`, a CI file (it runs on the CI service after a push). */
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted"; ci?: boolean }[];
   conversation_id: string;
 }
 

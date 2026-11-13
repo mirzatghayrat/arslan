@@ -375,6 +375,14 @@ markers = 11
 cases = 19
 xfail = 0
 
+# 0.1.64 HR-2b: the push card's outgoing files are read by git in seatbelt, so these run on macOS only. A CI file in
+# the outgoing commits is listed and another file is not, against the upstream and against origin/HEAD (2 cases); a
+# push with no CI file adds nothing.
+["server/test_hr2b_git_cards.py"]
+markers = 2
+cases = 3
+xfail = 0
+
 # 2026-09-25: native manual-backup maintenance subprocess at the macOS
 # profile path (0.1.40). It already skipped off darwin; CI run 35973558629
 # showed test_every_darwin_only_file_is_marked flagging it unmarked, so

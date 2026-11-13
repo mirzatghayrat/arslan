@@ -104,6 +104,7 @@ class Confirmations:
         lang = await card_purpose.language()
         rules = sorted(terminal_policy.ask_rules(shell, cwd=cwd, outside=outside))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
+        pushed = await _pushed_ci(shell, cwd) if "git-push" in rules and not remote_host else []     # HR-2b
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
         deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
@@ -120,6 +121,7 @@ class Confirmations:
                 reason=verdict.reason if verdict.level == "ask" else "",
                 sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
                 **_delete_keys(delete, shell)}
+            _with_ci(frame, pushed)
             request = permissions.Request(
                 kind="outside", target="*", title=card_purpose.phrase(
                     shell, why, rules, lang=lang, outside=True, network=network, delete_mode=delete,
@@ -154,6 +156,7 @@ class Confirmations:
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable, outside=outside)    # LOOP1 d2b: read as the gate read it
         frame.update(_delete_keys(delete, shell))
+        _with_ci(frame, pushed)
         # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
         # its rules card too; otherwise as before, "ask for every command" asks where it would run.
         unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
@@ -171,6 +174,33 @@ class Confirmations:
         finally:
             approvals.CARD_FOLDER.reset(token)
         return decision.allowed
+
+
+#: HR-2b: what the push card says when the outgoing files couldn't be read (the card still shows: fails closed).
+PUSH_UNLISTED = "Arslan couldn't list the files this push sends"
+
+
+async def _pushed_ci(shell: str, cwd) -> list[str]:
+    """HR-2b: the push card's lines for the CI files its outgoing commits change (`git_config_guard.outgoing_ci`, off
+    the event loop): one per file, PUSH_UNLISTED when they couldn't be read (no folder, a git failure or timeout, an
+    error), [] when there are none. A CI job runs on the CI service after a push, so the push is where it is named."""
+    import asyncio
+    from pathlib import Path
+    from server.services import git_config_guard
+    try:
+        found = None if cwd is None else await asyncio.to_thread(git_config_guard.outgoing_ci, Path(cwd), shell)
+    except Exception:  # noqa: BLE001 — fails closed: the card says it couldn't list them
+        found = None
+    return [PUSH_UNLISTED] if found is None else [f"CI file: {name}" for name in found]
+
+
+def _with_ci(frame: dict, lines: list[str]) -> None:
+    """HR-2b, no new frame key: the lines lead the Mac card's touches row (`summary.touches`, which the Bridge doesn't
+    read) and end the `reason` the phone shows (the first 10 there)."""
+    if lines:
+        frame["summary"] = {**frame["summary"], "touches": [*lines, *frame["summary"].get("touches", [])]}
+        shown = lines[:10] + ([f"and {len(lines) - 10} more"] if len(lines) > 10 else [])
+        frame["reason"] = "; ".join([*([frame["reason"]] if frame.get("reason") else []), *shown])
 
 
 def _delete_keys(mode: str, shell: str) -> dict:
