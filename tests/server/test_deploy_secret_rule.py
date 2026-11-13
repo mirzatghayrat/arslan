@@ -80,26 +80,63 @@ def test_a_look_alike_read_runs_with_no_card(command):
     assert tp.assess(command).level == "run" and not tp.ask_rules(command)
 
 
-@pytest.mark.parametrize("command, rule", [
+_READ = ", which CI or production will read"
+_READS = ", which CI or production reads"
+_PUBLIC = ", public and permanent"
+
+
+@pytest.mark.parametrize("command, rule, line", [
     # deploys and publishes past the measured spellings: aliases, options before the verb, a release track
-    ("render deploys create srv-1", "publish"), ("gcloud run deploy svc", "publish"),
-    ("gcloud functions deploy fn", "publish"), ("gcloud beta run deploy svc", "publish"),
-    ("gcloud --project p app deploy", "publish"), ("pulumi update", "publish"), ("eas build --auto-submit", "publish"),
-    ("fastlane pilot", "publish"), ("fastlane upload_to_testflight", "publish"), ("cd x && uv publish", "publish"),
-    ("sh -c 'gem push zz-1.0.gem'", "publish"),
+    ("render deploys create srv-1", "publish", "Deploys srv-1 to Render"),
+    ("gcloud run deploy svc", "publish", "Deploys svc to Cloud Run"),
+    ("gcloud functions deploy fn", "publish", "Deploys fn to Cloud Functions"),
+    ("gcloud beta run deploy svc", "publish", "Deploys svc to Cloud Run"),
+    ("gcloud --project p app deploy", "publish", "Deploys p to App Engine"),
+    ("pulumi update", "publish", "Deploys to Pulumi"), ("eas build --auto-submit", "publish", "Deploys to EAS"),
+    ("fastlane pilot", "publish", "Deploys to TestFlight"),
+    ("fastlane upload_to_testflight", "publish", "Deploys to TestFlight"),
+    ("cd x && uv publish", "publish", "Publishes to PyPI" + _PUBLIC),
+    ("sh -c 'gem push zz-1.0.gem'", "publish", "Publishes zz@1.0 to RubyGems" + _PUBLIC),
     # secret writes and removals, each family
-    ("gh secret delete ZZ", "secret-write"), ("gh -R o/r secret set ZZ", "secret-write"),
-    ("gh variable set ZZ --body x", "secret-write"), ("vc env rm ZZ production", "secret-write"),
-    ("ntl env:unset ZZ", "secret-write"), ("aws --profile p secretsmanager create-secret --name zz", "secret-write"),
-    ("aws ssm put-parameter --name n --value v", "secret-write"), ("gcloud secrets create zz", "secret-write"),
-    ("gcloud secrets versions add zz --data-file=f", "secret-write"), ("doppler secrets set ZZ=x", "secret-write"),
-    ("flyctl secrets unset ZZ", "secret-write"), ("fly -a x secrets set ZZ=x", "secret-write"),
-    ("heroku config:unset ZZ", "secret-write"), ("wrangler secret delete ZZ", "secret-write"),
-    ("/usr/local/bin/heroku config:add ZZ=x", "secret-write"),
+    ("gh secret delete ZZ", "secret-write", "Removes secret ZZ from GitHub" + _READS),
+    ("gh -R o/r secret set ZZ", "secret-write", "Sets secret ZZ in o/r" + _READ),
+    ("gh variable set ZZ --body x", "secret-write", "Sets secret ZZ in GitHub" + _READ),
+    ("vc env rm ZZ production", "secret-write", "Removes secret ZZ from Vercel" + _READS),
+    ("ntl env:unset ZZ", "secret-write", "Removes secret ZZ from Netlify" + _READS),
+    ("aws --profile p secretsmanager create-secret --name zz", "secret-write",
+     "Sets secret zz in AWS Secrets Manager" + _READ),
+    ("aws ssm put-parameter --name n --value v", "secret-write", "Sets secret n in AWS Systems Manager" + _READ),
+    ("gcloud secrets create zz", "secret-write", "Sets secret zz in Google Secret Manager" + _READ),
+    ("gcloud secrets versions add zz --data-file=f", "secret-write", "Sets secret zz in Google Secret Manager" + _READ),
+    ("doppler secrets set ZZ=x", "secret-write", "Sets secret ZZ in Doppler" + _READ),
+    ("flyctl secrets unset ZZ", "secret-write", "Removes secret ZZ from Fly.io" + _READS),
+    ("fly -a x secrets set ZZ=x", "secret-write", "Sets secret ZZ in x" + _READ),
+    ("heroku config:unset ZZ", "secret-write", "Removes secret ZZ from Heroku" + _READS),
+    ("wrangler secret delete ZZ", "secret-write", "Removes secret ZZ from Cloudflare" + _READS),
+    # the reader does not read a program named by its path, but the rule's text still asks: the program's own line
+    # (#897 review, item 4)
+    ("/usr/local/bin/heroku config:add ZZ=x", "secret-write", "Sets or removes a secret in Heroku" + _READS),
 ])
-def test_the_rest_of_each_family_asks(command, rule):
+def test_the_rest_of_each_family_asks_and_says_what_happens(command, rule, line):
     verdict = tp.assess(command)
     assert (verdict.level, verdict.rule) == ("ask", rule)
+    assert card_purpose.consequence(command) == line
+
+
+@pytest.mark.parametrize("command, line", [
+    # a path the reader does not read, and a verb it cannot place (#821's `publish`): what the rule says the program
+    # does there, no more (an unread secret verb may set or remove; a deploy CLI's may destroy)
+    ("/opt/homebrew/bin/flyctl secrets unset ZZ", "Sets or removes a secret in Fly.io" + _READS),
+    ("cd x && /usr/local/bin/heroku config:set ZZ=x", "Sets or removes a secret in Heroku" + _READS),
+    ("/usr/local/bin/npm publish", "Publishes to a package registry"),
+    ("/usr/local/bin/vercel deploy --prod", "Publishes or changes something on Vercel"),
+    ("fly secrets -a x list", "Publishes or changes something on Fly.io"),
+    ("netlify --weird status", "Publishes or changes something on Netlify"),
+    ("fly destroy", "Publishes or changes something on Fly.io"),
+])
+def test_a_covered_command_the_reader_cannot_place_still_says_what_happens(command, line):
+    assert tp.assess(command).level == "ask"
+    assert card_purpose.consequence(command) == line
 
 
 # ── secret-write is once only and never automatic ──────────────────────────────
@@ -173,8 +210,9 @@ def test_the_card_line_in_the_users_language(lang, command, line):
 
 
 def test_every_language_has_every_consequence_line():
-    keys = {"publishes", "publishesTo", "deploys", "deploysTo", "setsSecret", "setsASecret", "removesSecret",
-            "removesASecret"}
+    keys = {"publishes", "publishesTo", "publishesHost", "publishesToHost", "publishesSomewhere",
+            "publishesToARegistry", "deploys", "deploysTo", "changesOn", "setsSecret", "setsASecret", "removesSecret",
+            "removesASecret", "changesASecret"}
     for lang in ("en", "zh", "ja", "es", "de", "fr"):
         assert keys <= set(card_purpose.TEXT[lang]["fact"]), lang
 
@@ -341,3 +379,149 @@ def test_the_option_between_corpus_has_no_miss_and_no_new_read_ask():
     assert (writes, reads) == ((67440, 16104) if FULL else (2810, 671))
     assert not misses, (len(misses), misses[:10])
     assert not new_read_asks, (len(new_read_asks), new_read_asks[:10])
+
+
+@pytest.mark.parametrize("command, line", [
+    # the consequence reads the verb past options between its words, as the rule does (round 1, item 6)
+    ("gcloud app --project X deploy", "Deploys X to App Engine"),
+    ("gcloud beta --quiet run deploy svc", "Deploys svc to Cloud Run"),
+    ("gcloud app --weird X deploy", "Deploys to App Engine"),
+    ("fly secrets --app a set K=v", "Sets secret K in a" + _READ),
+    ("fly secrets -aSample import", "Sets a secret in Fly.io" + _READ),
+    ("gh --repo o/r secret set K", "Sets secret K in o/r" + _READ),
+    ("gh secret --repo o/r delete K", "Removes secret K from o/r" + _READS),
+    ("heroku config:set --app a K=v", "Sets secret K in a" + _READ),
+    ("vercel env --token t add K production", "Sets secret K in Vercel" + _READ),
+    ("wrangler pages --env prod deploy dist", "Deploys dist to Cloudflare"),
+    ("yarn npm --silent publish", "Publishes to npm" + _PUBLIC),
+    ("render deploys -o json create srv-1", "Deploys srv-1 to Render"),
+])
+def test_the_consequence_reads_options_between_the_words(command, line):
+    assert card_purpose.consequence(command) == line
+
+
+@pytest.mark.parametrize("command, rule", OPTION_BETWEEN)
+def test_every_option_between_command_has_a_consequence_of_its_rule(command, rule):
+    key, _ = tp.consequence(command)
+    assert key in ({"setsSecret", "setsASecret", "removesSecret", "removesASecret"} if rule == "secret-write"
+                   else {"publishes", "publishesTo", "deploys", "deploysTo", "changesOn"}), command
+
+
+# ── a credential is never shown as a name (round 1, item 2) ──────────────────────────────────────────────────────
+# Each program's own options name the package, target, secret or place; every other option's value is dropped, and
+# a `K=v` shows `K` only. Stand-in values, never real ones.
+
+CREDENTIALS = [
+    ("twine upload -p hunter2-stand-in dist/pkg-1.0.tar.gz", "Publishes pkg@1.0 to PyPI" + _PUBLIC),
+    ("twine upload -u __token__ -p hunter2-stand-in dist/pkg-1.0.tar.gz", "Publishes to PyPI" + _PUBLIC),
+    ("twine upload --password hunter2-stand-in dist/*", "Publishes to PyPI" + _PUBLIC),
+    ("uv publish -p hunter2-stand-in", "Publishes to PyPI" + _PUBLIC),
+    ("uv publish --token hunter2-stand-in", "Publishes to PyPI" + _PUBLIC),
+    ("poetry publish -u u -p hunter2-stand-in", "Publishes to PyPI" + _PUBLIC),
+    ("cargo publish --token hunter2-stand-in", "Publishes to crates.io" + _PUBLIC),
+    ("gem push -k hunter2-stand-in zz-1.0.gem", "Publishes to RubyGems" + _PUBLIC),
+    ("netlify deploy -a hunter2-stand-in", "Deploys to Netlify"),             # netlify's `-a` is `--auth`
+    ("netlify deploy --auth hunter2-stand-in", "Deploys to Netlify"),
+    ("vercel deploy --token hunter2-stand-in", "Deploys to Vercel"),
+    ("eas submit -p hunter2-stand-in", "Deploys to EAS"),                    # eas's `-p` is the platform
+    ("pulumi up -p hunter2-stand-in", "Deploys to Pulumi"),                  # pulumi's `-p` is `--parallel`
+    ("gh secret set -a hunter2-stand-in K", "Sets secret K in GitHub" + _READ),  # gh's `-a` is the app, not where
+    ("fly secrets set K=hunter2-stand-in", "Sets secret K in Fly.io" + _READ),
+    ("heroku config:set K=hunter2-stand-in", "Sets secret K in Heroku" + _READ),
+    ("doppler secrets set K=hunter2-stand-in", "Sets secret K in Doppler" + _READ),
+    ("netlify env:set K hunter2-stand-in", "Sets secret K in Netlify" + _READ),
+    ("aws secretsmanager put-secret-value --secret-id zz --secret-string hunter2-stand-in",
+     "Sets secret zz in AWS Secrets Manager" + _READ),
+    ("aws secretsmanager put-secret-value --secret-string hunter2-stand-in --secret-id zz",
+     "Sets a secret in AWS Secrets Manager" + _READ),
+]
+
+
+@pytest.mark.parametrize("command, line", CREDENTIALS)
+def test_a_credential_is_never_shown_as_a_name(command, line):
+    assert card_purpose.consequence(command) == line
+    assert "hunter2" not in str(tp.consequence(command))
+
+
+@pytest.mark.parametrize("command", [
+    "twine upload -p hunter2-stand-in dist/pkg-1.0.tar.gz", "twine upload --token hunter2-stand-in dist/*",
+    "fly secrets set K=hunter2-stand-in", "heroku config:set K=hunter2-stand-in",
+])
+async def test_the_card_never_shows_the_credential(execution_db, command):
+    asker = _Asker()
+    with permissions.asking_with(asker):
+        await command_confirm.Confirmations("c1").command(command, [])
+    [frame] = asker.frames
+    assert "hunter2" not in frame["reason"] and "hunter2" not in str(frame["summary"])
+    assert frame["reason"].startswith(("Publishes", "Sets secret K in"))
+
+
+# ── a dry run publishes nothing (round 1, item 3) ────────────────────────────────────────────────────────────────
+# Each tool's own documented option: npm's and pnpm's `--dry-run`, cargo's `--dry-run` / `-n`, uv's and poetry's
+# `--dry-run`. twine, gem and yarn's publish document none, so they still ask.
+
+DRY_RUNS = ["npm publish --dry-run", "npm publish --access public --dry-run", "npm --dry-run publish",
+            "npm publish ./my-pkg-1.2.3.tgz --tag=next --dry-run", "pnpm publish --dry-run", "cargo publish --dry-run",
+            "cargo publish -n", "uv publish --dry-run", "poetry publish --dry-run", "cd x && npm publish --dry-run",
+            "sh -c 'cargo publish --dry-run'"]
+NOT_DRY = ["npm publish --tag --dry-run",             # the option before it may take it as its value
+           "npm publish -- --dry-run", "npm publish --dry-run=false", "npm publish $X --dry-run",
+           'npm publish --otp "1 --dry-run"', "npm publish --otp 'a --dry-run b'",   # a value, not the option
+           "npm publish --dry-run; npm publish", "npm publish --DRY-RUN",
+           "cargo publish --token 'x -n'", "yarn npm publish --dry-run", "yarn publish --dry-run",
+           "twine upload --dry-run dist/*", "gem push --dry-run zz.gem", "uv publish --dry-run2"]
+
+
+@pytest.mark.parametrize("command", DRY_RUNS)
+def test_a_dry_run_runs_with_no_card_and_no_publish_line(command):
+    assert tp.assess(command).level == "run" and not tp.ask_rules(command), command
+    assert tp.consequence(command) is None and card_purpose.consequence(command) == ""
+
+
+@pytest.mark.parametrize("command", NOT_DRY)
+def test_what_does_not_prove_a_dry_run_still_asks(command):
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", "publish"), command
+    assert card_purpose.consequence(command).startswith("Publishes")
+
+
+# ── the registry it publishes to (round 1, item 5) ──────────────────────────────────────────────────────────────
+# "public and permanent" only when the command proves the public registry: no option or setting choosing another, or
+# one naming the public one. Another registry by URL: its host. One this can't read: "a package registry".
+
+@pytest.mark.parametrize("command, line", [
+    ("npm publish ./my-pkg-1.2.3.tgz --registry https://registry.npmjs.org/", "Publishes my-pkg@1.2.3 to npm" + _PUBLIC),
+    ("npm publish --registry=https://registry.npmjs.org", "Publishes to npm" + _PUBLIC),
+    ("yarn publish --registry https://registry.yarnpkg.com", "Publishes to npm" + _PUBLIC),
+    ("twine upload -r pypi dist/pkg-1.0.tar.gz", "Publishes pkg@1.0 to PyPI" + _PUBLIC),
+    ("twine upload --repository-url https://upload.pypi.org/legacy/ dist/*", "Publishes to PyPI" + _PUBLIC),
+    ("uv publish --publish-url https://upload.pypi.org/legacy/", "Publishes to PyPI" + _PUBLIC),
+    ("cargo publish --registry crates-io -p foo", "Publishes foo to crates.io" + _PUBLIC),
+    ("gem push zz-1.0.gem --host https://rubygems.org", "Publishes zz@1.0 to RubyGems" + _PUBLIC),
+    # another registry, by URL: its host, not "public and permanent"
+    ("npm publish ./my-pkg-1.2.3.tgz --registry https://npm.example.com/", "Publishes my-pkg@1.2.3 to npm.example.com"),
+    ("npm --registry=https://npm.example.com publish", "Publishes to npm.example.com"),
+    ("npm publish --otp 123 --registry https://npm.example.com", "Publishes to npm.example.com"),
+    ("npm publish --registry https://u:hunter2-stand-in@npm.example.com/", "Publishes to npm.example.com"),
+    ("pnpm publish --registry https://npm.example.com", "Publishes to npm.example.com"),
+    ("twine upload --repository-url https://test.pypi.org/legacy/ dist/pkg-1.0.tar.gz", "Publishes pkg@1.0 to test.pypi.org"),
+    ("uv publish --publish-url https://pypi.example.com/upload", "Publishes to pypi.example.com"),
+    ("cargo publish --index sparse+https://index.example.com/", "Publishes to index.example.com"),
+    ("gem push zz-1.0.gem --host https://gems.example.com", "Publishes zz@1.0 to gems.example.com"),
+    # one this can't read: a name from the tool's config, a variable, not a URL, a scope's registry, the environment
+    ("twine upload -r testpypi dist/pkg-1.0.tar.gz", "Publishes pkg@1.0 to a package registry"),
+    ("twine upload -rtestpypi dist/*", "Publishes to a package registry"),
+    ("poetry publish -r internal", "Publishes to a package registry"),
+    ("cargo publish --registry my-reg -p foo", "Publishes foo to a package registry"),
+    ("uv publish --index internal", "Publishes to a package registry"),
+    ("npm publish --registry $REG", "Publishes to a package registry"),
+    ("npm publish --registry npm.example.com", "Publishes to a package registry"),
+    ("npm publish --@my:registry=https://npm.example.com", "Publishes to a package registry"),
+    ("NPM_CONFIG_REGISTRY=https://npm.example.com npm publish", "Publishes to a package registry"),
+    ("export npm_config_registry=https://npm.example.com; npm publish", "Publishes to a package registry"),
+    ("npm publish --registry https://npm.example.com --registry https://registry.npmjs.org",
+     "Publishes to a package registry"),
+])
+def test_the_registry_it_publishes_to(command, line):
+    assert card_purpose.consequence(command) == line
+    assert "hunter2" not in line

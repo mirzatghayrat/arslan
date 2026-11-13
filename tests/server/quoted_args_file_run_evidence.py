@@ -161,8 +161,14 @@ def test_step3_move_is_only_run_to_ask_unreadable():
     assert not step3_move({"main": "forbid", "fixed": "ask", "rule": tp.UNREADABLE})
 
 
+# #897 review, item 3: the rows whose cargo seed (`cargo publish --dry-run`) runs now, on the default sample.
+DRY_RUN_ROWS = {"positive": 11}
+
+
 def assert_matrix(result, *, negative=False, cautious_forbids=False):
     assert not result["toward_run"], result["toward_run"]
+    if os.environ.get("QUOTED_ARGS_EVIDENCE_FULL") != "1":
+        assert len(result.get("dry_runs", ())) == DRY_RUN_ROWS.get(result.get("kind"), 0), result.get("dry_runs")
     if negative:
         # Exactly seven accepted cautious forbids: the unsplittable cluster
         # keeps 9be27b5f's verdict. Whitespace cannot imply an operand; the
@@ -227,8 +233,10 @@ def assert_accounting(kind):
         expected = kind == "controls"
         assert tp._fully_accounted(words[0], words[1:]) == expected, case
         if not expected:
-            # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as `publish`
-            unplaceable = {"publish"} if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set()
+            # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as
+            # `publish`; heroku's seed, `config:set`, is read past the option as a secret write (#897 review, item 1)
+            unplaceable = ({"secret-write" if words[0] == "heroku" else "publish"}
+                           if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set())
             assert tp._named_rules(words) == tp._legacy_named_rules(words) | unplaceable, case
 
 
@@ -276,11 +284,16 @@ def matrix(kind, rows):
     count = 0
     loosened = []
     losses = []
+    dry_runs = []
     for case, text in rows:
         count += 1
         sg.read(text)
         head = tp.assess(text)
         verdicts = [*levels(kind, case, text), head.level]
+        if (verdicts[:2], head.level) == (["ask", "ask"], "run") and any(
+                words and tp._dry_run(words[0].lower(), words[1:]) for words in tp._command_words(text)):
+            dry_runs.append(case)       # a dry run publishes nothing, so it runs (#897 review, item 3); counted apart
+            continue
         fallback_programs = {words[0].lower() for words in tp._command_words(text)
                              if not tp._fully_accounted(words[0].lower(), words[1:])}
         if fallback_programs:
@@ -299,7 +312,7 @@ def matrix(kind, rows):
         if RANK[verdicts[2]] < RANK[verdicts[0]]:
             toward_run.append(f"{kind}/{case}: expected >= {verdicts[0][0]}, actual {verdicts[2][0]}")
     return dict(kind=kind, cases=count, loosened=loosened, losses=losses, transitions=dict(transitions), by_class=dict(classes),
-                changed_from_main=changes, toward_run=toward_run,
+                changed_from_main=changes, toward_run=toward_run, dry_runs=dry_runs,
                 fallback_cases=fallback_cases, fallback_programs=dict(fallbacks))
 
 
