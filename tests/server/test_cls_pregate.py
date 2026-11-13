@@ -32,7 +32,8 @@ def _action(roots, **kw):
 
 
 def _ctx(**kw):
-    base = dict(user_words="tidy the notes file", intent="write notes.md", job_kind="turn", outside_seen=False)
+    base = dict(user_words="tidy the notes file", intent="write notes.md", job_kind="turn", outside_seen=False,
+                checkpoint_exists=True)
     return cls.Context(**{**base, **kw})
 
 
@@ -100,6 +101,35 @@ def test_never_auto_asks(roots):
                                   ".husky/pre-commit", ".npmrc"])
 def test_a_target_on_hrs_run_later_list_asks(roots, name):
     assert _asks(_gate(cls, roots, _action(roots, write_targets=(roots.work / name,))), "run_later")
+
+
+@pytest.mark.parametrize("name", [".github/workflows/ci.yml", "sub/.gitlab-ci.yml", "Jenkinsfile", ".circleci/config.yml"])
+def test_a_ci_file_asks(roots, name):
+    assert _asks(_gate(cls, roots, _action(roots, write_targets=(roots.work / name,))), "ci_file")
+
+
+def test_control_a_workflows_folder_name_elsewhere_is_not_a_ci_file(roots):
+    assert _gate(cls, roots, _action(roots, write_targets=(roots.work / "docs" / "workflows.md",))) is None
+
+
+@pytest.mark.parametrize("name", ["AGENTS.md", "CLAUDE.md", "deep/sub/agents.md", "pkg/Claude.MD"])
+def test_an_agent_instruction_file_asks(roots, name):
+    assert _asks(_gate(cls, roots, _action(roots, write_targets=(roots.work / name,))), "agent_file")
+
+
+def test_control_a_name_near_an_agent_file_is_not_one(roots):
+    for name in ("AGENTS.md.bak", "MY-CLAUDE.md", "agents/notes.md"):
+        assert _gate(cls, roots, _action(roots, write_targets=(roots.work / name,))) is None, name
+
+
+def test_a_write_before_the_checkpoint_exists_asks(roots):
+    assert _asks(_gate(cls, roots, _action(roots), _ctx(checkpoint_exists=False)), "no_checkpoint")
+    assert _asks(_gate(cls, roots, _action(roots), _ctx(checkpoint_exists=None)), "no_checkpoint")
+
+
+def test_control_an_action_with_no_write_target_needs_no_checkpoint(roots):
+    assert _gate(cls, roots, _command(roots, "make docs"), _ctx(checkpoint_exists=False)) is None
+    assert cls.Context(user_words="x").checkpoint_exists is False
 
 
 @pytest.mark.parametrize("tool", ["remember", "import_memories", "memory_note", "create_skill", "schedule_task"])
@@ -250,9 +280,9 @@ def test_the_fence_cannot_be_closed_from_inside_the_action(roots):
 # ── the ledger record ─────────────────────────────────────────
 
 def test_the_ledger_record_keeps_the_flags():
-    record = cls.LedgerRecord.of(cls.Verdict("ask", "no_sandbox"), _ctx(outside_seen=True), checkpoint_exists=False)
+    record = cls.LedgerRecord.of(cls.Verdict("ask", "no_sandbox"), _ctx(outside_seen=True, checkpoint_exists=False))
     assert record == cls.LedgerRecord("ask", "no_sandbox", True, False)
-    model = cls.LedgerRecord.of(cls.Verdict("allow", "edits notes.md"), _ctx(), checkpoint_exists=True)
+    model = cls.LedgerRecord.of(cls.Verdict("allow", "edits notes.md"), _ctx())
     assert model == cls.LedgerRecord("allow", "model", False, True)
 
 
@@ -278,6 +308,9 @@ _CONDITIONS = {
     "refused_card": lambda r: (_action(r, kind="network"), _ctx()),
     "never_auto": lambda r: (_action(r, never_auto=True), _ctx()),
     "run_later": lambda r: (_action(r, write_targets=(r.work / ".envrc",)), _ctx()),
+    "ci_file": lambda r: (_action(r, write_targets=(r.work / ".github" / "workflows" / "ci.yml",)), _ctx()),
+    "agent_file": lambda r: (_action(r, write_targets=(r.work / "sub" / "AGENTS.md",)), _ctx()),
+    "no_checkpoint": lambda r: (_action(r), _ctx(checkpoint_exists=False)),
     "persists": lambda r: (_action(r, tool="remember", write_targets=()), _ctx()),
     "no_user_words": lambda r: (_action(r), _ctx(job_kind="scheduled")),
 }

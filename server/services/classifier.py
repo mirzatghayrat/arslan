@@ -6,8 +6,8 @@ yet: S5b is the only change that wires it into `permissions` (one writer in that
 
 `pregate` runs first and is deterministic. It answers "ask" for everything a classifier never answers: no sandbox, a
 write outside the work folder and the run's own TMPDIR (resolved, shared caches outside), a card only the user answers,
-a never-auto request, a file on HR's run-later list, a tool whose writes persist, and a run without the user's own
-words (gate a). So no exfiltration-style action reaches a model. The model sees the user's words, what the model
+a never-auto request, a file on HR's e list (run-later, CI and agent instruction files), a tool whose writes persist,
+a write before S3's checkpoint exists, and a run without the user's own words (gate a). So no exfiltration-style action reaches a model. The model sees the user's words, what the model
 intends, and the action fenced as data; never a tool's output (D7).
 """
 from __future__ import annotations
@@ -42,6 +42,10 @@ if hard_rules.NEVER_AUTO_KINDS & hard_rules.NEVER_AUTO_RULES:
 PERSISTS: tuple[str, ...] = ("remember", "import_memories", "memory_note", "create_skill",
                              "schedule_task", "cancel_task")
 
+#: Agent instruction files: a later agent run reads them as instructions. Matched by name at any depth, case folded.
+#: With `run_later.matches` and `run_later.is_ci_file`, the README's e list for HR.
+AGENT_FILES: tuple[str, ...] = ("AGENTS.md", "CLAUDE.md")
+
 JobKind = Literal["turn", "job", "model_job", "scheduled", "resumed"]
 #: Runs that start from the user's own message (for a job, its opening message in `Job.origin`). Model-started
 #: jobs, scheduled runs and resumed tasks have none (gate a).
@@ -70,11 +74,13 @@ class Action:
 @dataclass(frozen=True)
 class Context:
     """`user_words`: the user's own message, no attachments or OCR text. `intent`: the model's stated goal, shown
-    only as what the model intends. `outside_seen`: the run read outside content (the ledger's flag)."""
+    only as what the model intends. `outside_seen`: the run read outside content (the ledger's flag).
+    `checkpoint_exists`: S3's checkpoint for this turn exists, so an approved change can be undone."""
     user_words: str | None
     intent: str = ""
     job_kind: JobKind = "turn"
     outside_seen: bool = True
+    checkpoint_exists: bool = False
 
 
 def _in(path: Path, root: Path) -> bool:
@@ -101,6 +107,19 @@ def _run_later(action: Action, workspace: Path) -> bool:
     return any(run_later.matches(real(t), root) or run_later.matches(Path(t), root) for t in action.write_targets)
 
 
+def _ci_file(action: Action) -> bool:
+    """HR's CI files (`run_later.is_ci_file`: `.github/workflows` and the rest), as given and as resolved."""
+    return any(run_later.is_ci_file(Path(t)) or run_later.is_ci_file(real(t)) for t in action.write_targets)
+
+
+_AGENT_NAMES = frozenset(name.casefold() for name in AGENT_FILES)
+
+
+def _agent_file(action: Action) -> bool:
+    return any(Path(t).name.casefold() in _AGENT_NAMES or real(t).name.casefold() in _AGENT_NAMES
+               for t in action.write_targets)
+
+
 def _no_user_words(ctx: Context) -> bool:
     words = ctx.user_words
     return ctx.job_kind not in _WITH_WORDS or not (isinstance(words, str) and words.strip())
@@ -115,7 +134,10 @@ _CHECKS: tuple[tuple[str, _Check], ...] = (
     ("never_auto", lambda a, c, w, t: a.never_auto is not False),
     ("persists", lambda a, c, w, t: a.tool in PERSISTS),
     ("run_later", lambda a, c, w, t: _run_later(a, w)),
+    ("ci_file", lambda a, c, w, t: _ci_file(a)),
+    ("agent_file", lambda a, c, w, t: _agent_file(a)),
     ("outside_scope", lambda a, c, w, t: _outside_scope(a, w, t)),
+    ("no_checkpoint", lambda a, c, w, t: bool(a.write_targets) and c.checkpoint_exists is not True),
 )
 REASON_CODES: tuple[str, ...] = (*(code for code, _ in _CHECKS), OFF, "error", "unparsable")
 
@@ -206,6 +228,6 @@ class LedgerRecord:
     checkpoint_exists: bool
 
     @classmethod
-    def of(cls, verdict: Verdict, ctx: Context, *, checkpoint_exists: bool) -> LedgerRecord:
+    def of(cls, verdict: Verdict, ctx: Context) -> LedgerRecord:
         code = verdict.reason if verdict.decision == "ask" and verdict.reason in REASON_CODES else "model"
-        return cls(verdict.decision, code, bool(ctx.outside_seen), bool(checkpoint_exists))
+        return cls(verdict.decision, code, bool(ctx.outside_seen), ctx.checkpoint_exists is True)
