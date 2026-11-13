@@ -26,27 +26,18 @@ logger = logging.getLogger(__name__)
 # NOTE — deliberate deviation from the spec sketch: the 交给…(生成|…) gap is 0,20 (spec
 # sketched 0,12) because the real incident string has 14 chars between 交给 and 生成
 # ("交给 Deck Master 来生成" — an English spawn name in the gap). 0,12 missed the incident.
-#: H1-c: the old list, kept byte for byte for the `promise_guard_trim_words` switch (OFF = this one). It also matched
-#: ordinary words ("working on", "generating", "in progress") that describe a state and promise nothing.
-#: DELETE-BY: v0.1.65, with the switch.
-LEGACY_PROMISE_RE = re.compile(
+PROMISE_RE = re.compile(
     r"正在生成|正在为你|稍等|马上(?:就好|给你)|已交给"
     r"|交给.{0,20}?(?:生成|制作|处理|来做)"
     r"|working on|generating|in progress"
     r"|I(?:'|’)ll (?:get|have)",
     re.IGNORECASE,
 )
-PROMISE_RE = re.compile(
-    r"正在生成|正在为你|稍等|马上(?:就好|给你)|已交给"
-    r"|交给.{0,20}?(?:生成|制作|处理|来做)"
-    r"|I(?:'|’)ll (?:get|have)",
-    re.IGNORECASE,
-)
 
 
-def find_promise(text: str, *, legacy_words: bool = False) -> str | None:
-    """The matched promise snippet in `text` (PROMISE_RE; LEGACY_PROMISE_RE when `legacy_words`), or None."""
-    m = (LEGACY_PROMISE_RE if legacy_words else PROMISE_RE).search(text or "")
+def find_promise(text: str) -> str | None:
+    """The matched promise snippet in `text` (PROMISE_RE), or None."""
+    m = PROMISE_RE.search(text or "")
     return m.group(0) if m else None
 
 
@@ -76,26 +67,13 @@ def _fallback_template(locale="zh") -> str:
     return runtime_messages.render("correction", locale)
 
 
-async def trim_words_enabled() -> bool:
-    """H1-c: the `promise_guard_trim_words` switch (default ON; an unreadable setting means the default).
-    DELETE-BY: v0.1.65, with the switch."""
-    from server.db import session as db_session
-    from server.services import settings_service
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.promise_guard_trim_words(db)
-    except Exception:  # noqa: BLE001 — the guard's word list is never a reason to fail a turn
-        return True
-
-
 async def correct(full_text: str, conversation_id: str | None = None) -> dict | None:
     """Detect + bounded-correct. Returns None when `full_text` carries no promise
     language; otherwise {"correction": str, "pattern": matched snippet, "corrected":
     bool} where corrected=True means the LLM re-synthesis passed the same regex gate
     (False = deterministic template). At most ONE extra LLM call, never loops. The correction is appended
     to this conversation's reply, so it runs on the model the reply ran on (v0.1.64 ROUTE1)."""
-    legacy = not await trim_words_enabled()
-    snippet = find_promise(full_text, legacy_words=legacy)
+    snippet = find_promise(full_text)
     if snippet is None:
         return None
     locale = await runtime_messages.selected_locale()
@@ -105,7 +83,7 @@ async def correct(full_text: str, conversation_id: str | None = None) -> dict | 
         resp = await a.chat(_CORRECTION_SYS + f"\nWrite this product notice in locale {locale}.",
                             _correction_user(full_text))
         candidate = (getattr(resp, "content", None) or "").strip()
-        if candidate and find_promise(candidate, legacy_words=legacy) is None:
+        if candidate and find_promise(candidate) is None:
             return {"correction": candidate, "pattern": snippet, "corrected": True}
         logger.warning("promise correction re-synthesis also promised — using template")
     except Exception as exc:  # noqa: BLE001 — correction must never break the turn
