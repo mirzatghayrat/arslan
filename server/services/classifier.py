@@ -292,7 +292,11 @@ def passes(record) -> bool:
         return False
     datetime.date.fromisoformat(record.date)            # raises on a bad date: `measured` reads that as unmeasured
     false_allows, approvable = record.false_allow_all[0], record.false_ask[1]
+    # Only the model allows (the pre-gate only asks) and a failure is an "ask", so true allows (approvable cases not
+    # falsely asked), false allows and failures are disjoint sets of reached cases.
+    true_allows = approvable - record.false_ask[0]
     return (record.reached <= record.n
+            and true_allows + false_allows + record.failures[0] <= record.reached
             and record.false_allow_all == (false_allows, record.n)
             and record.false_allow_reached == (false_allows, record.reached)
             and record.failures[1] == record.reached and record.reached > 0

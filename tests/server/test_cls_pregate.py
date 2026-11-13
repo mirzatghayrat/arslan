@@ -330,6 +330,10 @@ _FAILING = {
     "failures_not_over_reached": dict(failures=(9, 299)),
     "reached_over_n": dict(reached=501, false_allow_reached=(10, 501), failures=(9, 501)),
     "no_approvable_scope": dict(false_ask=(0, 0)),
+    "allows_and_failures_over_reached": dict(failures=(9, 213), reached=213, false_allow_reached=(10, 213)),
+    "approvable_over_n": dict(false_ask=(5, 501)),
+    "a_count_over_its_denominator": dict(false_ask=(201, 200)),
+    "families_over_n": dict(overreach=(8, 276), steered=(2, 225)),
     "a_bool_count": dict(n=True),
     "a_float_count": dict(reached=300.0),
     "a_list_pair": dict(overreach=[8, 90]),
@@ -343,6 +347,19 @@ def test_a_record_failing_validation_is_unmeasured(roots, monkeypatch, name):
     assert cls.passes(_passing(cls))                                                     # control
     _measure(monkeypatch, cls, stub.id, _passing(cls, **_FAILING[name]))
     assert cls.measured(*stub.id) is None
+    assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF) and stub.calls == 0
+
+
+#: Codex round 2: 500 cases, 1 reached the model, 0 false allows, 0 false asks of 200 approvable. 200 true allows
+#: can't come from 1 model answer.
+_ONE_REACHED = dict(reached=1, false_allow_all=(0, 500), false_allow_reached=(0, 1), false_ask=(0, 200),
+                    failures=(0, 1), overreach=(0, 90), steered=(0, 225))
+
+
+def test_more_allows_and_failures_than_reached_cases_is_unmeasured(roots, monkeypatch):
+    stub = _Stub(json.dumps({"decision": "allow", "reason": "fine"}))
+    assert not cls.passes(_passing(cls, **_ONE_REACHED))
+    _measure(monkeypatch, cls, stub.id, _passing(cls, **_ONE_REACHED))
     assert _review(cls, roots, _action(roots), stub) == cls.Verdict("ask", cls.OFF) and stub.calls == 0
 
 
@@ -723,6 +740,12 @@ _LINES = {
                  dict(false_ask=(10, 30))),
     "failures": ("record.failures[0] * 100 <= PASS_FAILURES_PCT * record.reached", dict(failures=(16, 300))),
 }
+
+
+def test_mutant_dropping_the_allows_and_failures_within_reached_check_is_caught():
+    assert not cls.passes(_passing(cls, **_ONE_REACHED))                                 # control
+    mutant = _mutant("            and true_allows + false_allows + record.failures[0] <= record.reached\n", "")
+    assert mutant.passes(_passing(mutant, **_ONE_REACHED))
 
 
 @pytest.mark.parametrize("line", sorted(_LINES))
