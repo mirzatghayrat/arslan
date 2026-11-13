@@ -113,6 +113,9 @@ def test_a_stop_shows_no_card_and_asking_to_leave_shows_one_with_the_models_reas
 
 def test_the_window_that_was_given_the_grant_runs_outside_from_the_start(app_client, monkeypatch):
     """S4a: a stored grant, so a reload (a new socket) or a restart keeps it."""
+    # Pinned so CI's Linux runs it too: with no sandbox, S5a's fallback turns "ask only when risky"
+    # into "ask every step", and the grant no longer skips the card.
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
     _enable_shell(app_client, policy="ask_risky")
     _stub_tool_loop_adapter(monkeypatch, "mv", ["~/Downloads/a.png", "~/Pictures/"])
     _stub_run_command_executor(monkeypatch)
