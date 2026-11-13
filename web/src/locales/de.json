@@ -489,16 +489,14 @@
     "sectionLlmConfig": "LLM-Konfiguration",
     "labelOrchestratorShell": "Terminal",
     "orchestratorShellDesc": "Arslan erledigt Dinge im Terminal: lesen, umwandeln, bauen, Skripte ausführen. Alles, was sendet, veröffentlicht, löscht, installiert oder eine andere App steuert, fragt vorher. Passwörter aus dem Schlüsselbund lesen, sudo und Systemordner löschen ist nie erlaubt.",
-    "labelShellConfirmPolicy": "Wann fragen",
-    "shellPolicyAskAll": "Vor jedem Befehl fragen",
-    "shellPolicyAskAllNote": "Jeder neue Befehl fragt zuerst. Einen Befehl, den du „In diesem Gespräch“ erlaubt hast, führt Arslan in diesem Gespräch ohne erneute Frage wieder aus.",
+    "labelDefaultPermissionMode": "Modus für neue Gespräche",
+    "defaultPermissionModeDesc": "Jedes Gespräch kann ihn über die Taste an seinem Eingabefeld wechseln. Telefon und Island können ihn nicht wechseln.",
     "shellPolicyUndoPointer": "Hat ein Befehl im Arbeitsordner etwas geändert oder gelöscht, das du nicht wolltest, öffne ⋯ unter dieser Antwort, wähle „Diese Runde rückgängig machen…“ und dann „Dateien zurücksetzen“: Diese Dateien kommen in den Zustand vor der Runde zurück. Das geht, wenn der Arbeitsordner höchstens 20.000 Dateien und 5 GB hat, Python-Umgebungen, node_modules, Build-Ausgaben und Python-Caches nicht mitgezählt; diese werden nie zurückgeholt.",
     "policyNoticeRiskyTitle": "Arslan fragt jetzt nur bei riskanten Befehlen",
-    "policyNoticeRiskyBody": "Befehle laufen jetzt ohne Nachfrage in der Sandbox. Eine Karte erscheint weiterhin, wenn ein Befehl die Sandbox verlassen muss, echten Schaden anrichten könnte oder eine Regel eine Nachfrage verlangt. Wieder vor jedem Befehl fragen: Einstellungen › Was Arslan darf › Terminal › Wann fragen › „Vor jedem Befehl fragen“.",
+    "policyNoticeRiskyBody": "Befehle laufen jetzt ohne Nachfrage in der Sandbox. Eine Karte erscheint weiterhin, wenn ein Befehl die Sandbox verlassen muss, echten Schaden anrichten könnte oder eine Regel eine Nachfrage verlangt. Wieder bei jedem Schritt fragen: Einstellungen › Was Arslan darf › Modus für neue Gespräche › „Bei jedem Schritt fragen“. Jedes Gespräch kann ihn auch über die Taste an seinem Eingabefeld wechseln.",
     "policyNoticeAllTitle": "Arslan fragt vor jedem Befehl",
-    "policyNoticeAllBody": "Ab 0.1.64 fragt eine neue Installation nur bei riskanten Befehlen: Befehle laufen ohne Nachfrage in der Sandbox, und eine Karte erscheint, wenn ein Befehl die Sandbox verlassen muss, echten Schaden anrichten könnte oder eine Regel eine Nachfrage verlangt. Hier fragt Arslan vor jedem Befehl, und das bleibt so, bis du es änderst: Einstellungen › Was Arslan darf › Terminal › Wann fragen › „Nur bei riskanten Befehlen fragen“.",
+    "policyNoticeAllBody": "Ab 0.1.64 fragt eine neue Installation nur bei riskanten Befehlen: Befehle laufen ohne Nachfrage in der Sandbox, und eine Karte erscheint, wenn ein Befehl die Sandbox verlassen muss, echten Schaden anrichten könnte oder eine Regel eine Nachfrage verlangt. Hier fragt Arslan vor jedem Befehl, und das bleibt so, bis du es änderst: Einstellungen › Was Arslan darf › Modus für neue Gespräche › „Nur bei Risiko fragen“. Jedes Gespräch kann ihn auch über die Taste an seinem Eingabefeld wechseln.",
     "policyNoticeOk": "Verstanden",
-    "shellPolicyAskRisky": "Nur bei riskanten Befehlen fragen",
     "labelMcpServer": "MCP-Server (eingehend)",
     "mcpServerDesc": "Erlaubt externen MCP-Clients (Claude Code, Codex) den Aufruf schreibgeschützter Tools. Standardmäßig deaktiviert; erfordert ein generiertes MCP-Token. Nur localhost.",
     "mcpToken": {
@@ -1497,7 +1495,7 @@
     "changed": "Geändert",
     "failing": "Fehlgeschlagen oder selbst pausiert",
     "commandsNoteTitle": "Geplante Aufgaben können wieder Befehle ausführen",
-    "commandsNoteBody": "Der Lauf einer geplanten Aufgabe führt jetzt Befehle aus, die dein OK nicht bräuchten, in der Sandbox, in Arslans eigenem Arbeitsordner. Was dein OK bräuchte, wird abgelehnt und hier unter der Aufgabe aufgeführt. Aufgaben von vor diesem Update oder nach dem Lesen von Inhalten von außen führen ihre Befehle ohne Netzwerk aus. Hast du „Vor jedem Befehl fragen“ gewählt, führen geplante Läufe keine aus.",
+    "commandsNoteBody": "Der Lauf einer geplanten Aufgabe führt jetzt Befehle aus, die dein OK nicht bräuchten, in der Sandbox, in Arslans eigenem Arbeitsordner. Was dein OK bräuchte, wird abgelehnt und hier unter der Aufgabe aufgeführt. Aufgaben von vor diesem Update oder nach dem Lesen von Inhalten von außen führen ihre Befehle ohne Netzwerk aus. Hast du „Bei jedem Schritt fragen“ gewählt, führen geplante Läufe keine Befehle aus.",
     "commandsNoteOk": "Verstanden"
   },
   "remembered": {
@@ -1610,5 +1608,27 @@
     "trustDevice": "Diesem Gerät vertrauen",
     "namedDevice": "{{name}} ({{addresses}})",
     "cardGone": "Diese Karte gilt nicht mehr. Du kannst das Gerät in den Einstellungen hinzufügen."
+  },
+  "modes": {
+    "pillAria": "Berechtigungsmodus: {{label}}",
+    "plan": "Planen",
+    "planLine": "Liest und schreibt einen Plan. Ändert nichts, bis du auf Starten drückst.",
+    "ask": "Bei jedem Schritt fragen",
+    "askLine": "Fragt dich vor jedem Befehl und jeder Änderung.",
+    "askRisky": "Nur bei Risiko fragen",
+    "askRiskyLine": "Änderungen im Arbeitsordner und sichere Befehle laufen ohne Nachfrage. Alles Riskante fragt dich zuerst.",
+    "fullAccess": "Vollzugriff",
+    "fullAccessLine": "Läuft ohne Nachfrage: Befehle (auch außerhalb der Sandbox), Änderungen, Zeitpläne, MCP-Werkzeuge (auch löschende) und Apps. Geld, Senden, Websites, Kurzbefehle, später ausgeführte Dateien, git, Daten anderer Apps, das Netzwerk und die festen Regeln fragen weiter oder bleiben gesperrt.",
+    "current": "Aktuell",
+    "footnote": "Nur für dieses Gespräch. Die Vorgabe für neue steht in den Einstellungen.",
+    "narrowed": "Eingeschränkt durch die Sitzung, die diese gestartet hat.",
+    "askForNow": "Bei jedem Schritt fragen (vorerst)",
+    "fallbackBanner": "Fragt vorerst bei jedem Schritt: {{reason}} Es kehrt von selbst zu „Nur bei Risiko fragen“ zurück.",
+    "reasonSandboxOff": "Die Sandbox läuft nicht.",
+    "reasonNoCheckpoint": "Arslan kann von diesem Ordner keinen Prüfpunkt speichern (zu viele oder zu große Dateien), Änderungen ließen sich also nicht rückgängig machen.",
+    "reasonHomeFolder": "Der Arbeitsordner ist dein ganzer Benutzerordner.",
+    "start": "Starten",
+    "startsIn": "Startet in {{mode}}",
+    "saveFailed": "Der Modus ließ sich nicht ändern. Versuch es noch einmal."
   }
 }

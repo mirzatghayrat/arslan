@@ -34,7 +34,7 @@ import SettingsScreen from "../components/SettingsScreen";
 import { SECTION_ANCHORS } from "../components/settings/sectionRegistry";
 import type { AppSettings } from "../types";
 
-const settings = { language: "en", orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" } as AppSettings;
+const settings = { language: "en", orchestratorShellEnabled: true, defaultPermissionMode: "ask" } as AppSettings;
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
