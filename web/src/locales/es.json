@@ -1056,6 +1056,7 @@
         "send-message": "Envía o publica en tu nombre; no se puede deshacer",
         "upload": "Envía datos a un sitio web o a la nube",
         "publish": "Publica o cambia algo en internet",
+        "secret-write": "Define o elimina un secreto que leen la CI o producción",
         "git-push": "Publica en un repositorio remoto",
         "remote-shell": "Se conecta a otra máquina",
         "apple-events": "Controla otras apps; podrían enviar, borrar o comprar",

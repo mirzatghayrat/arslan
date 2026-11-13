@@ -42,7 +42,15 @@
    "permanentSandbox": "Deletes permanently where the sandbox allows",
    "runsLater": "Writes a file that runs later: {{file}}",
    "runsLaterGit": "Changes what git runs: {{name}}",
-   "runsLaterUnsure": "May write a file that runs later"
+   "runsLaterUnsure": "May write a file that runs later",
+   "publishes": "Publishes {{package}} to {{registry}}, public and permanent",
+   "publishesTo": "Publishes to {{registry}}, public and permanent",
+   "deploys": "Deploys {{target}} to {{service}}",
+   "deploysTo": "Deploys to {{service}}",
+   "setsSecret": "Sets secret {{name}} in {{where}}, which CI or production will read",
+   "setsASecret": "Sets a secret in {{where}}, which CI or production will read",
+   "removesSecret": "Removes secret {{name}} from {{where}}, which CI or production reads",
+   "removesASecret": "Removes a secret from {{where}}, which CI or production reads"
   }
  },
  "zh": {
@@ -87,7 +95,15 @@
    "permanentSandbox": "在沙箱允许的范围内彻底删除",
    "runsLater": "会写入以后会运行的文件：{{file}}",
    "runsLaterGit": "会改变 git 运行的程序：{{name}}",
-   "runsLaterUnsure": "可能写入以后会运行的文件"
+   "runsLaterUnsure": "可能写入以后会运行的文件",
+   "publishes": "发布 {{package}} 到 {{registry}}，公开且无法撤回",
+   "publishesTo": "发布到 {{registry}}，公开且无法撤回",
+   "deploys": "把 {{target}} 部署到 {{service}}",
+   "deploysTo": "部署到 {{service}}",
+   "setsSecret": "在 {{where}} 设置密钥 {{name}}，CI 或线上环境会读取它",
+   "setsASecret": "在 {{where}} 设置一个密钥，CI 或线上环境会读取它",
+   "removesSecret": "从 {{where}} 删除密钥 {{name}}，CI 或线上环境在用它",
+   "removesASecret": "从 {{where}} 删除一个密钥，CI 或线上环境在用它"
   }
  },
  "ja": {
@@ -132,7 +148,15 @@
    "permanentSandbox": "サンドボックスで許可された範囲を完全に削除",
    "runsLater": "後で実行されるファイルに書き込む：{{file}}",
    "runsLaterGit": "git が実行するものを変える：{{name}}",
-   "runsLaterUnsure": "後で実行されるファイルに書き込む可能性"
+   "runsLaterUnsure": "後で実行されるファイルに書き込む可能性",
+   "publishes": "{{package}} を {{registry}} に公開（誰でも見られ、取り消せません）",
+   "publishesTo": "{{registry}} に公開（誰でも見られ、取り消せません）",
+   "deploys": "{{target}} を {{service}} にデプロイ",
+   "deploysTo": "{{service}} にデプロイ",
+   "setsSecret": "{{where}} にシークレット {{name}} を設定（CI や本番環境が読み取ります）",
+   "setsASecret": "{{where}} にシークレットを設定（CI や本番環境が読み取ります）",
+   "removesSecret": "{{where}} からシークレット {{name}} を削除（CI や本番環境が使っています）",
+   "removesASecret": "{{where}} からシークレットを削除（CI や本番環境が使っています）"
   }
  },
  "es": {
@@ -177,7 +201,15 @@
    "permanentSandbox": "Borra de forma permanente donde el sandbox lo permite",
    "runsLater": "Escribe un archivo que se ejecuta más tarde: {{file}}",
    "runsLaterGit": "Cambia lo que ejecuta git: {{name}}",
-   "runsLaterUnsure": "Puede escribir un archivo que se ejecuta más tarde"
+   "runsLaterUnsure": "Puede escribir un archivo que se ejecuta más tarde",
+   "publishes": "Publica {{package}} en {{registry}}, público y permanente",
+   "publishesTo": "Publica en {{registry}}, público y permanente",
+   "deploys": "Despliega {{target}} en {{service}}",
+   "deploysTo": "Despliega en {{service}}",
+   "setsSecret": "Define el secreto {{name}} en {{where}}, que leerán la CI o producción",
+   "setsASecret": "Define un secreto en {{where}}, que leerán la CI o producción",
+   "removesSecret": "Elimina el secreto {{name}} de {{where}}, que usan la CI o producción",
+   "removesASecret": "Elimina un secreto de {{where}}, que usan la CI o producción"
   }
  },
  "de": {
@@ -222,7 +254,15 @@
    "permanentSandbox": "Löscht endgültig, wo die Sandbox es erlaubt",
    "runsLater": "Schreibt eine Datei, die später ausgeführt wird: {{file}}",
    "runsLaterGit": "Ändert, was git ausführt: {{name}}",
-   "runsLaterUnsure": "Kann eine Datei schreiben, die später ausgeführt wird"
+   "runsLaterUnsure": "Kann eine Datei schreiben, die später ausgeführt wird",
+   "publishes": "Veröffentlicht {{package}} auf {{registry}}, öffentlich und dauerhaft",
+   "publishesTo": "Veröffentlicht auf {{registry}}, öffentlich und dauerhaft",
+   "deploys": "Stellt {{target}} auf {{service}} bereit",
+   "deploysTo": "Stellt auf {{service}} bereit",
+   "setsSecret": "Setzt das Secret {{name}} in {{where}}, das CI oder Produktion lesen wird",
+   "setsASecret": "Setzt ein Secret in {{where}}, das CI oder Produktion lesen wird",
+   "removesSecret": "Entfernt das Secret {{name}} aus {{where}}, das CI oder Produktion nutzt",
+   "removesASecret": "Entfernt ein Secret aus {{where}}, das CI oder Produktion nutzt"
   }
  },
  "fr": {
@@ -267,7 +307,15 @@
    "permanentSandbox": "Supprime définitivement là où le bac à sable l'autorise",
    "runsLater": "Écrit un fichier qui s'exécute plus tard : {{file}}",
    "runsLaterGit": "Change ce que git exécute : {{name}}",
-   "runsLaterUnsure": "Peut écrire un fichier qui s'exécute plus tard"
+   "runsLaterUnsure": "Peut écrire un fichier qui s'exécute plus tard",
+   "publishes": "Publie {{package}} sur {{registry}}, public et définitif",
+   "publishesTo": "Publie sur {{registry}}, public et définitif",
+   "deploys": "Déploie {{target}} sur {{service}}",
+   "deploysTo": "Déploie sur {{service}}",
+   "setsSecret": "Définit le secret {{name}} dans {{where}}, que la CI ou la production lira",
+   "setsASecret": "Définit un secret dans {{where}}, que la CI ou la production lira",
+   "removesSecret": "Supprime le secret {{name}} de {{where}}, que la CI ou la production utilise",
+   "removesASecret": "Supprime un secret de {{where}}, que la CI ou la production utilise"
   }
  }
 }

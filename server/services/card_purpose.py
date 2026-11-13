@@ -824,6 +824,16 @@ def _run_later_fact(lang: str, shell: str, targets) -> list[str]:
     return [] if terminal_policy.reading(shell).refused else [_say(lang, "fact", "runsLaterUnsure", {})]
 
 
+def consequence(shell: str, lang: str = "en") -> str:
+    """A publish, deploy or secret-write card's consequence line in `lang` (`terminal_policy.consequence`): what it
+    publishes where, what it deploys where, which secret it sets where. "" when the line has no such step."""
+    found = terminal_policy.consequence(shell)
+    if found is None:
+        return ""
+    key, params = found
+    return _say(lang, "fact", key, {k: untrusted.clean_name(v, 80) for k, v in params.items()})
+
+
 def frame_reading(frame: dict | None, shell: str) -> dict | None:
     """A `propose_run_command` frame's `summary` when it was read from `shell` itself (its `pretty` is that text), for
     `phrase(reading=…)`; else None, and the title reads `shell` on its own (#817 review)."""

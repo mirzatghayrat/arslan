@@ -91,12 +91,17 @@ DEPLOY_PROGRAMS = profiles.DEPLOY_PROGRAMS
 # The rows that move, the same with or without FOLDER_TRACKING_EVIDENCE_FULL: 64 controls (8 per deploy CLI); 100
 # unknown-option rows (4 spellings x 3 positions on each of the 8 deploy CLIs, and the 4 before vercel's verb).
 LATER_DEPLOY_ROWS = {"controls": 64, "unknown": 100}
+# The deploy rule (2026-11-14), also on purpose: the deploy CLIs' secret verbs ask as `secret-write` (heroku's
+# `config:set` rows above among them), and the measured deploy, publish and secret-write gaps of other programs
+# (`uv publish`, `gcloud app deploy`…) ask as `publish` or `secret-write`. Counted apart, on the default sample.
+GAP_PROGRAMS = frozenset(tp._PUBLISH_MORE) | frozenset(tp._SECRET_WRITE)
+LATER_GAP_ROWS = {"sweep": 28}
 
 
-def later_deploy_rule(text, before, after):
-    return ((before.level, after.level) == ('run', 'ask') and after.rule in {'publish', 'remote-shell'}
+def later_deploy_rule(text, before, after, programs=DEPLOY_PROGRAMS):
+    return ((before.level, after.level) == ('run', 'ask') and after.rule in {'publish', 'remote-shell', 'secret-write'}
             and tp.ask_rules(text) == {after.rule}
-            and any(words and words[0].lower() in DEPLOY_PROGRAMS for words in sg.read(text).commands))
+            and any(words and words[0].lower() in programs for words in sg.read(text).commands))
 
 
 @pytest.mark.parametrize("corpus", ('named', 'policy', *evidence.GENERATORS))
@@ -111,13 +116,16 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
         rows = list(evidence.GENERATORS[corpus]())
         texts = (text for _, text in (rows if revisions.FULL else evidence.stratified(rows)))
     counts = Counter()
-    later = 0
+    later = gaps = 0
     for text in texts:
         before, after = baseline.assess(text), tp.assess(text)
         main_rules = baseline.ask_rules(text)
         if later_deploy_rule(text, before, after):
             later += 1
             before, main_rules = after, {after.rule}    # the cwd check below then holds the new rule
+        elif later_deploy_rule(text, before, after, GAP_PROGRAMS):
+            gaps += 1
+            before, main_rules = after, {after.rule}
         assert (after.level, after.rule, after.reason) == (before.level, before.rule, before.reason), text
         assert tp.ask_rules(text) == main_rules, text
         main_read, reading = baseline.shell_grammar.read(text), sg.read(text)
@@ -129,6 +137,7 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
             assert anchored.rule == before.rule, text
         counts[before.level + '->' + anchored.level] += 1
     assert later == LATER_DEPLOY_ROWS.get(corpus, 0), (corpus, later)
+    assert revisions.FULL or gaps == LATER_GAP_ROWS.get(corpus, 0), (corpus, gaps)
     print('R6_IDENTITY ' + json.dumps({'corpus': corpus, 'cases': sum(counts.values()),
                                      'differences': 0, 'later_deploy_rule': later, 'with_cwd': counts}, sort_keys=True))
 

@@ -229,16 +229,35 @@ _ASK = [
                        # them (`_DEPLOY_PUBLISH`). Unlike vercel, the bare program prints help, so it runs; read-only
                        # verbs (status, logs, list) run too.
                        r"|(?:netlify|ntl)\s+deploy" + _END
-                       + r"|fly(?:ctl)?\s+(?:deploy|destroy|secrets\s+set|apps?\s+(?:destroy|delete|remove|rm)"
+                       + r"|fly(?:ctl)?\s+(?:deploy|destroy|apps?\s+(?:destroy|delete|remove|rm)"
                        r"|scale\s+count)" + _END
-                       + r"|heroku\s+(?:releases:rollback|rollback|config:set|config:add|apps:destroy|apps:delete"
+                       + r"|heroku\s+(?:releases:rollback|rollback|apps:destroy|apps:delete"
                        r"|destroy|container:release)" + _END
                        + r"|railway\s+up" + _END
-                       + r"|wrangler\s+(?:deploy|publish|rollback|versions\s+deploy|pages\s+(?:deploy|publish)"
-                       r"|secret\s+put)" + _END
+                       + r"|wrangler\s+(?:deploy|publish|rollback|versions\s+deploy|pages\s+(?:deploy|publish))" + _END
                        + r"|firebase\s+(?:deploy|hosting:channel:deploy|functions:delete|database:set)" + _END
-                       + r"|helm\s+(?:install|upgrade|uninstall|delete|del|un|rollback|push)" + _END + r")",
+                       + r"|helm\s+(?:install|upgrade|uninstall|delete|del|un|rollback|push)" + _END
+                       # The deploy and publish gaps measured on 2026-11-14 (`_PUBLISH_MORE` is their word table).
+                       + r"|(?:yarn\s+npm\s+publish|uv\s+publish|gem\s+push|poetry\s+publish|pulumi\s+(?:up|update)"
+                       r"|render\s+(?:deploy|deploys\s+create)|eas\s+(?:submit|build\b[^\n;&|]*\s--auto-submit)"
+                       r"|fastlane\s+(?:deliver|pilot|upload_to_\w+))" + _END
+                       + r"|gcloud" + _opts(r"alpha|beta|app|run|functions") + r"(?:(?:alpha|beta)"
+                       + _opts(r"app|run|functions") + r")?(?:app|run|functions)" + _opts(r"deploy") + r"deploy" + _END
+                       + r")",
      "publishes or changes something online"),
+    # Sets or removes a secret or setting that CI or production reads remotely (`_SECRET_WRITE` is its word table).
+    ("secret-write", _CMD + r"(?:gh" + _opts(r"secret|variable") + r"(?:secret" + _opts(r"set|delete|remove")
+                     + r"(?:set|delete|remove)|variable" + _opts(r"set|delete") + r"(?:set|delete))"
+                     r"|(?:vercel|vc)\s+env\s+(?:add|rm)|(?:netlify|ntl)\s+env:(?:set|unset)"
+                     r"|aws" + _opts(r"secretsmanager|ssm") + r"(?:secretsmanager"
+                     + _opts(r"put-secret-value|create-secret|update-secret|delete-secret")
+                     + r"(?:put-secret-value|create-secret|update-secret|delete-secret)|ssm" + _opts(r"put-parameter")
+                     + r"put-parameter)"
+                     r"|gcloud" + _opts(r"alpha|beta|secrets") + r"(?:(?:alpha|beta)" + _opts(r"secrets") + r")?secrets"
+                     + _opts(r"create|delete|versions") + r"(?:create|delete|versions" + _opts(r"add") + r"add)"
+                     r"|doppler\s+secrets\s+(?:set|delete)|fly(?:ctl)?\s+secrets\s+(?:set|unset|import)"
+                     r"|heroku\s+config:(?:set|add|unset|remove)|wrangler\s+secret\s+(?:put|delete))" + _END,
+     "sets or removes a secret that CI or production reads"),
     # deletes or stops things
     ("force-kill", _CMD + r"(?:kill" + _H + r"+(?:-[^\s]+" + _H + r"+)*-(?:9|KILL|SIGKILL)\b|killall|pkill)" + _END,
      "force-quits other programs"),
@@ -268,7 +287,8 @@ _ASK = [
 ]
 #: Layer ② by group. The names are stable: the M1 driver answers cards by them
 #: (scripts/kernel_bench/arslan_driver.py) and task_service reads the outbound ones.
-SEND_OUT_RULES = frozenset({"send-mail", "send-message", "upload", "remote-shell", "git-push", "publish"})
+SEND_OUT_RULES = frozenset({"send-mail", "send-message", "upload", "remote-shell", "git-push", "publish",
+                            "secret-write"})
 #: What may have left something behind elsewhere when it fails (task_service.known_local_failure).
 OUTBOUND_RULES = SEND_OUT_RULES | {"apple-events", "shortcuts"}
 #: The two whose approved plain call may run with no sandbox at all (U11, task_service.unwrapped_once).
@@ -647,30 +667,57 @@ def _fully_accounted(program: str, args: tuple[str, ...]) -> bool:
 # `rollback`, `config:add`, `destroy` and `apps:delete`; helm's `delete`, `del` and `un` for `uninstall`.
 _DEPLOY_PUBLISH = {
     "netlify": {("deploy",)},
-    "fly": {("deploy",), ("secrets", "set"), ("scale", "count"), ("destroy",),
+    "fly": {("deploy",), ("scale", "count"), ("destroy",),
             *((group, verb) for group in ("apps", "app") for verb in ("destroy", "delete", "remove", "rm"))},
-    "heroku": {("releases:rollback",), ("rollback",), ("config:set",), ("config:add",), ("apps:destroy",),
-               ("apps:delete",), ("destroy",), ("container:release",)},
+    "heroku": {("releases:rollback",), ("rollback",), ("apps:destroy",), ("apps:delete",), ("destroy",),
+               ("container:release",)},
     "railway": {("up",)},
     "wrangler": {("deploy",), ("publish",), ("rollback",), ("versions", "deploy"), ("pages", "deploy"),
-                 ("pages", "publish"), ("secret", "put")},
+                 ("pages", "publish")},
     "firebase": {("deploy",), ("hosting:channel:deploy",), ("functions:delete",), ("database:set",)},
     "helm": {("install",), ("upgrade",), ("uninstall",), ("delete",), ("del",), ("un",), ("rollback",), ("push",)},
 }
 _DEPLOY_PUBLISH["flyctl"] = _DEPLOY_PUBLISH["fly"]
+# The deploy and publish gaps measured on 2026-11-14 (yarn's v2+ `npm publish`, gcloud's three deploys…). Not in
+# `_DEPLOY_PROGRAMS`: uv, gem, gcloud and the rest have many other verbs, so an unplaceable one must not ask as publish.
+_PUBLISH_MORE = {
+    "yarn": {("npm", "publish")}, "uv": {("publish",)}, "gem": {("push",)}, "poetry": {("publish",)},
+    "render": {("deploy",), ("deploys", "create")}, "pulumi": {("up",), ("update",)}, "eas": {("submit",)},
+    "fastlane": {("deliver",), ("pilot",)}, "gcloud": {("app", "deploy"), ("run", "deploy"), ("functions", "deploy")},
+}
+# `secret-write`: a secret or setting that CI or production reads, set or removed remotely (fly's, heroku's and
+# wrangler's moved from `publish`, so the card says "secret").
+_SECRET_WRITE = {
+    "fly": {("secrets", "set"), ("secrets", "unset"), ("secrets", "import")},
+    "heroku": {("config:set",), ("config:add",), ("config:unset",), ("config:remove",)},
+    "wrangler": {("secret", "put"), ("secret", "delete")}, "vercel": {("env", "add"), ("env", "rm")},
+    "netlify": {("env:set",), ("env:unset",)}, "doppler": {("secrets", "set"), ("secrets", "delete")},
+    "gh": {("secret", "set"), ("secret", "delete"), ("secret", "remove"), ("variable", "set"), ("variable", "delete")},
+    "aws": {("ssm", "put-parameter"), *(("secretsmanager", verb) for verb in (
+        "put-secret-value", "create-secret", "update-secret", "delete-secret"))},
+    "gcloud": {("secrets", "create"), ("secrets", "delete"), ("secrets", "versions", "add")},
+}
+_SECRET_WRITE["flyctl"] = _SECRET_WRITE["fly"]
 # A second program name the same package installs: netlify-cli's `ntl`, the vercel package's `vc`. `_named_rules`
 # reads it as the first name, with that name's options and verbs.
 _PROGRAM_ALIASES = {"ntl": "netlify", "vc": "vercel"}
 _DEPLOY_SHELL = {"fly": {("ssh", "console")}, "flyctl": {("ssh", "console")}, "heroku": {("run",)}}
 _DEPLOY_PROGRAMS = frozenset(_DEPLOY_PUBLISH) | {"vercel"}
 _TWO_WORD_HEADS = {program: frozenset(verb[0] for verb in _DEPLOY_PUBLISH.get(program, set())
-                                      | _DEPLOY_SHELL.get(program, set()) if len(verb) == 2)
+                                      | _DEPLOY_SHELL.get(program, set()) | _SECRET_WRITE.get(program, set())
+                                      if len(verb) == 2)
                    for program in _DEPLOY_PROGRAMS}
 _HELP_WORDS = frozenset({"-h", "--help", "-help", "--version", "-version"})
 
 
-def _deploy_verb(table: set[tuple[str, ...]], lower: tuple[str, ...]) -> bool:
-    return lower[:1] in table or lower[:2] in table
+def _deploy_verb(table: set[tuple[str, ...]], lower: tuple[str, ...]) -> tuple[str, ...]:
+    """The table's verb `lower` starts with, or ()."""
+    return next((verb for verb in table if lower[:len(verb)] == verb), ())
+
+
+def _track(program: str, lower: tuple[str, ...]) -> tuple[str, ...]:
+    """gcloud's verb past its `alpha` or `beta` release track."""
+    return lower[1:] if program == "gcloud" and lower[:1] in (("alpha",), ("beta",)) else lower
 
 
 def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
@@ -832,7 +879,11 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         or program == "terraform" and first in {"apply", "destroy"}
         or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
         or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations)
-        or program in _DEPLOY_PUBLISH and _deploy_verb(_DEPLOY_PUBLISH[program], lower))
+        or program in _DEPLOY_PUBLISH and _deploy_verb(_DEPLOY_PUBLISH[program], lower)
+        or program in _PUBLISH_MORE and _deploy_verb(_PUBLISH_MORE[program], _track(program, lower))
+        or program == "eas" and first == "build" and any(w.startswith("--auto-submit") for w in lower)
+        or program == "fastlane" and first.startswith("upload_to_"))
+    add("secret-write", program in _SECRET_WRITE and _deploy_verb(_SECRET_WRITE[program], _track(program, lower)))
     add("force-kill", program in {"killall", "pkill"})
     add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
         or program == "defaults" and first == "write" or program == "crontab" and first != "-l")
@@ -1923,3 +1974,100 @@ def describe(rule: str) -> str:
     if rule == OUTSIDE_REACH[0]:
         return OUTSIDE_REACH[1]
     return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule
+
+
+# ── the consequence a publish, deploy or secret-write card states (⓪Plan's condition on the deploy rule) ──────────
+# Filled from the command's own words where they say it, else the registry or service the program is for. Display
+# only: no verdict reads it. A word is taken for a name only before any option this can't place, so an option's value
+# (a token, a secret's value) is never shown as one.
+_REGISTRIES = {"npm": "npm", "pnpm": "npm", "yarn": "npm", "cargo": "crates.io", "twine": "PyPI", "uv": "PyPI",
+               "poetry": "PyPI", "gem": "RubyGems"}
+_REGISTRY_VERBS = {("publish",), ("npm", "publish"), ("upload",), ("push",)}
+_DEPLOYS = {"vercel": {("deploy",)}, "netlify": {("deploy",)}, "fly": {("deploy",)}, "flyctl": {("deploy",)},
+            "heroku": {("container:release",)}, "railway": {("up",)}, "firebase": {("deploy",), ("hosting:channel:deploy",)},
+            "wrangler": {("deploy",), ("publish",), ("versions", "deploy"), ("pages", "deploy"), ("pages", "publish")},
+            "eas": {("submit",), ("build",)}, **{p: _PUBLISH_MORE[p] for p in ("render", "pulumi", "fastlane", "gcloud")}}
+_SERVICES = {"vercel": "Vercel", "netlify": "Netlify", "fly": "Fly.io", "flyctl": "Fly.io", "heroku": "Heroku",
+             "railway": "Railway", "firebase": "Firebase", "wrangler": "Cloudflare", "render": "Render",
+             "pulumi": "Pulumi", "eas": "EAS", "fastlane": "App Store Connect", "gcloud": "Google Cloud", "gh": "GitHub",
+             "doppler": "Doppler", "aws secretsmanager": "AWS Secrets Manager", "aws ssm": "AWS Systems Manager",
+             "gcloud secrets": "Google Secret Manager", "gcloud app": "App Engine", "gcloud run": "Cloud Run",
+             "gcloud functions": "Cloud Functions", "fastlane pilot": "TestFlight",
+             "fastlane upload_to_testflight": "TestFlight", "fastlane upload_to_play_store": "Google Play"}
+_REMOVES = frozenset({"delete", "remove", "rm", "unset", "config:unset", "config:remove", "env:unset", "delete-secret"})
+_NAMING = ("-a", "--app", "-R", "--repo", "--site", "--dir", "--project", "-P", "--service", "-s", "--stack", "--name",
+           "--secret-id", "-p", "--package")
+_VALUED = frozenset({*_NAMING, "-e", "--env", "--environment", "-t", "--token", "--scope", "--cwd", "-c", "--config",
+                     "--region", "--profile", "-o", "--org", "--registry", "-r", "--repository", "--platform"})
+_FLAGS = frozenset({"--prod", "--yes", "-y", "--remote-only", "--detach", "--quiet", "-q", "--json", "--non-interactive",
+                    "--no-wait", "--skip-preview", "--dry-run", "--auto-submit"})
+_ARTIFACT = re.compile(r"(?P<name>[A-Za-z0-9][\w.]*?(?:-[A-Za-z_][\w.]*?)*)(?:-(?P<version>\d[\w.+]*?))?(?:-[^/]*)?"
+                       r"\.(?:tgz|gem|tar\.gz|zip|whl)")
+
+
+def _scan(words: tuple[str, ...]) -> tuple[dict[str, str], str]:
+    """The options with values and the first operand, read up to the first option this can't place."""
+    named: dict[str, str] = {}
+    i = 0
+    while i < len(words):
+        word = words[i]
+        i += 1
+        if not word.startswith("-") or word == "-":
+            return named, "" if _expands(word) else word
+        option, equals, value = word.partition("=")
+        if option in _VALUED and not equals and i < len(words):
+            value, i = words[i], i + 1
+        elif not equals and option not in _FLAGS:
+            break                       # unknown: its value, if any, could be the next word
+        if not _expands(value):
+            named.setdefault(option, value)
+    return named, ""
+
+
+def _service(program: str, verb: tuple[str, ...]) -> str:
+    """The service a program's verb reaches, else the program's own, else the program's name."""
+    return _SERVICES.get(f"{program} {verb[0]}" if verb else "") or _SERVICES.get(program, program)
+
+
+def consequence(command: str) -> tuple[str, dict[str, str]] | None:
+    """The first publish, deploy or secret write in `command` as a card line's key (card-purposes.json `fact`) and its
+    values: `publishes` (package, registry), `deploys` (target, service), `setsSecret` / `removesSecret` (name,
+    where), each with an `…To`/`…A…` form when the words don't name it. None: no such step."""
+    for words in _command_words(str(command or "")):
+        program = _PROGRAM_ALIASES.get(words[0].rsplit("/", 1)[-1].lower(), words[0].rsplit("/", 1)[-1].lower())
+        rules = _named_rules(words)
+        args = _verb(words[1:], _OPTION_VALUES.get(program, frozenset()))
+        head, lower = words[1:len(words) - len(args)], _track(program, tuple(w.lower() for w in args))
+        args = args[len(args) - len(lower):]
+        named = {**_scan(head)[0]}
+        if "secret-write" in rules and (verb := _deploy_verb(_SECRET_WRITE.get(program, set()), lower)):
+            more, word = _scan(args[len(verb):])
+            named = {**named, **more}
+            name = (word or named.get("--secret-id") or named.get("--name") or "").split("=", 1)[0]
+            where = (named.get("-R") or named.get("--repo") or named.get("-a") or named.get("--app")
+                     or _service(program, verb))
+            key = "removesSecret" if verb[-1] in _REMOVES else "setsSecret"
+            return (key, {"name": name, "where": where}) if name else (key.replace("Secret", "ASecret"), {"where": where})
+        if "publish" not in rules:
+            continue
+        if program in _REGISTRIES and (verb := _deploy_verb(_REGISTRY_VERBS, lower)):
+            more, word = _scan(args[len(verb):])
+            found = _ARTIFACT.fullmatch(word.rsplit("/", 1)[-1])
+            package = more.get("-p") or more.get("--package") or (found and found["name"]) or ""
+            version = found["version"] if found and package == found["name"] else ""
+            if package:
+                return "publishes", {"package": f"{package}@{version}" if version else package,
+                                     "registry": _REGISTRIES[program]}
+            return "publishesTo", {"registry": _REGISTRIES[program]}
+        verb = _deploy_verb(_DEPLOYS.get(program, set()), lower) or (lower[:1] if lower[:1] and (
+            program == "fastlane" and lower[0].startswith("upload_to_")) else ())
+        if program == "vercel" and not verb and (not lower or lower[0].startswith("-")):
+            verb = ()                   # the bare program deploys the folder it runs in
+        elif not verb:
+            continue
+        more, word = _scan(args[len(verb):])
+        named = {**named, **more}
+        target = next((named[o] for o in _NAMING if named.get(o)), "") or word
+        service = _service(program, verb)
+        return ("deploys", {"target": target, "service": service}) if target else ("deploysTo", {"service": service})
+    return None
