@@ -113,10 +113,12 @@ def auto_class(row: dict) -> tuple[str | None, str | None]:
     return None, None
 
 
-def requests_sent(label: str, usage_rows: list[dict]) -> dict:
+def requests_sent(label: str, usage_rows: list[dict], since: float = 0.0) -> dict:
     """The run's model requests as the metering proxy saw them sent: the tools offered (their union, in first-seen
-    order) and each request setting's distinct values. Rows from a meter older than H0 carry none of it."""
-    mine = [r for r in usage_rows if r.get("cand") == label and r.get("model") != "?"]
+    order) and each request setting's distinct values. Rows from a meter older than H0 carry none of it.
+    #879 review, later item 4: only the rows from when the run started (`since`, as runner.usage reads them), so a
+    rerun of the same round, whose label is the same, doesn't mix in the earlier run's requests."""
+    mine = [r for r in usage_rows if r.get("cand") == label and r.get("model") != "?" and r.get("t", 0.0) >= since]
     sent = [r["req"] for r in mine if isinstance(r.get("req"), dict)]
     if not sent:
         return {"source": "not observed (no request settings in the meter's log)", "tools_offered": None,
@@ -139,7 +141,7 @@ def table_row(record: dict, *, commit: str, dirty: bool, switch: str, arm: str, 
     usage = record.get("usage") or {}
     hit, miss = usage.get("cache_hit_tokens", 0), usage.get("cache_miss_tokens", 0)
     pause = pause_reason(folder) if folder else None
-    sent = requests_sent(record["run"], usage_rows)
+    sent = requests_sent(record["run"], usage_rows, record.get("started", 0.0))   # 0: a record older than item 4
     row = {"commit": commit, "dirty": dirty, "switch": switch, "arm": arm, "value": value,
            "model": record.get("model"), "task": record["task"], "repeat": record["repeat"], "round": round_name,
            "day": day, "run": record["run"], "passed": bool(record.get("passed")),
