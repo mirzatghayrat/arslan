@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from arslan.context_budget import estimate_tokens
-from arslan.llm import tool_names, usage_sink
+from arslan.llm import model_params, tool_names, usage_sink
 from arslan.llm.providers.anthropic_provider import AnthropicProvider
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.llm.providers.gemini_provider import GeminiProvider
@@ -55,6 +55,7 @@ class LLMAdapter:
         base_url: str = "",
         report_provider: str | None = None,
         max_tokens: int | None = None,
+        switches: model_params.Switches | None = None,
     ) -> None:
         self.provider_name = provider_name
         # Usage-attribution identity (S3-M3): Tier-0 presets (deepseek/qwen/ollama/…)
@@ -69,6 +70,8 @@ class LLMAdapter:
         # OpenAI-compatible server serves a small context).
         self.base_url = base_url
         self._provider = self._create_provider(provider_name, model, api_key, base_url)
+        if switches is not None:   # H1-a (settings_service.model_switches); before max_tokens, which wins
+            model_params.configure(self._provider, switches)
         if max_tokens is not None:
             # Explicit opening output budget (e.g. a cost-capped eval whose
             # approved spend math assumes it); overrides output_budget.py.

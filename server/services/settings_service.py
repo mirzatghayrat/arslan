@@ -54,7 +54,9 @@ _PLAIN_KEYS = (
                # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused). Read here; written
                # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
                "sandbox_trusted_devices",
-               "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
+               "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms",
+               # v0.1.64 H1-a: model parameters, each measured off against on by the bench (model_switches).
+               "tool_temperature_vendor", "claude_effort", "output_cap_raised")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
@@ -283,6 +285,19 @@ async def default_read_enabled(session: AsyncSession) -> bool:
     This governs READS only. Writes stay workspace-bound and gated regardless."""
     raw = await _get_raw(session, "default_read_enabled")
     return raw is None or str(raw).strip().lower() != "false"
+
+
+async def model_switches(session: AsyncSession):
+    """H1-a: the three model-parameter switches (arslan/llm/model_params.py). Each is off unless set: "true" for
+    the vendor temperature and the raised cap, "high" or "medium" for Claude's effort; anything else is off.
+    DELETE-BY: v0.1.65, with the losing value of each, once the bench has decided its default."""
+    from arslan.llm import model_params
+    raw = {key: str(await _get_raw(session, key) or "").strip().lower()
+           for key in ("tool_temperature_vendor", "claude_effort", "output_cap_raised")}
+    return model_params.Switches(
+        tool_temperature=raw["tool_temperature_vendor"] == "true",
+        claude_effort=raw["claude_effort"] if raw["claude_effort"] in model_params.EFFORTS else "",
+        output_cap=raw["output_cap_raised"] == "true")
 
 
 async def folder_rules_enabled(session: AsyncSession) -> bool:

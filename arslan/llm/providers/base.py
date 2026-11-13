@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import Any
 
+from arslan.llm import model_params
 from arslan.models import LLMResponse
 
 
@@ -19,6 +20,8 @@ class BaseLLMProvider(ABC):
     # of every stream attempt. Safe as instance state because llm_factory builds a
     # fresh provider per adapter per call (no concurrent streams share an instance).
     _last_stream_usage: dict[str, int | None] | None = None
+    #: H1-a's switches (arslan/llm/model_params.py); all off unless the adapter was given them.
+    switches: model_params.Switches = model_params.OFF
 
     def __init__(self, model: str, api_key: str = "", base_url: str = "") -> None:
         self.model = model

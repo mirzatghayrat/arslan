@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence, tool_schema
+from arslan.llm import model_params, param_heal, request_evidence, tool_schema
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -210,7 +210,13 @@ class GeminiProvider(BaseLLMProvider):
                         function["name"], function.get("parameters") or {"type": "object"}, "gemini"),
                 })
             payload["tools"] = [{"functionDeclarations": declarations}]
+            if self.switches.tool_temperature and model_params.TOOL_TEMPERATURE["gemini"] is None:
+                del payload["generationConfig"]["temperature"]   # H1-a: the model's own default
         return payload
+
+    def _max_output(self) -> int:
+        """8192, or with H1-a's raised cap the most Gemini 2.5 and later write."""
+        return (self.switches.output_cap and model_params.gemini_cap(self.model)) or 8192
 
     async def chat(
         self,
@@ -232,7 +238,7 @@ class GeminiProvider(BaseLLMProvider):
         if tool_choice == "none" and payload.get("tools"):
             # The forced wrap-up keeps the same declarations and may not call one (K1).
             payload["toolConfig"] = {"functionCallingConfig": {"mode": "NONE"}}
-        payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        payload["generationConfig"]["maxOutputTokens"] = model_request(self._max_output())
         from arslan.execution_checkpoint import save
         await save("before_model")
         # A resend (param_heal) follows an error status, raised before any body is read: no text first.
@@ -316,7 +322,7 @@ class GeminiProvider(BaseLLMProvider):
         self._last_stream_usage = None
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature)
-        payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        payload["generationConfig"]["maxOutputTokens"] = model_request(self._max_output())
         from arslan.execution_checkpoint import save
         await save("before_model")
         async for piece in param_heal.stream(self.endpoint_fingerprint(), payload,

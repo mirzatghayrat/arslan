@@ -37,7 +37,7 @@ from urllib.parse import urlparse
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import anthropic_stream, param_heal, request_evidence, tool_schema, trajectory
+from arslan.llm import anthropic_stream, model_params, param_heal, request_evidence, tool_schema, trajectory
 
 from arslan.llm.cached_system import CachedSystem
 from arslan.llm.providers.base import BaseLLMProvider
@@ -53,9 +53,9 @@ _CLAUDE_OLD = re.compile(r"claude-(\d+)(?:-(\d{1,2}))?-(?:opus|sonnet|haiku)")
 # Claude 5 and later think when `thinking` is omitted. The switch that turns it
 # off, per model (claude-api model-migration guide, 2026-10): Sonnet 5.5 answers
 # "disabled" with a 400 and takes "between_tools"; Opus 5.5 and Fable refuse
-# every off switch, so they are absent on purpose. Only the default effort is
-# ever sent with these, which is "high" or below on all four — the ceiling for
-# both switches.
+# every off switch, so they are absent on purpose. Only the default effort, or
+# H1-a's "high" or "medium" (model_params.EFFORTS), is ever sent with these:
+# "high" or below on all four, the ceiling for both switches.
 _THINKING_OFF = {
     "claude-sonnet-5-5": {"type": "between_tools"},
     "claude-sonnet-5": {"type": "disabled"},
@@ -458,6 +458,9 @@ class AnthropicProvider(BaseLLMProvider):
         }
         if self._sends_sampling():
             payload["temperature"] = temperature
+        if self.switches.claude_effort and model_params.takes_effort(self.model):
+            # H1-a: the same level on every request of the model, so the cache never sees it change.
+            payload["output_config"] = {"effort": self.switches.claude_effort}
         if system:
             payload["system"] = system
         from arslan.llm.request_policy import (

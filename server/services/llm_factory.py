@@ -57,9 +57,10 @@ async def build_adapter(role: str | None = None) -> LLMAdapter:
             return await _legacy_build_adapter(db)
         _guard_memory_destination(chosen["provider"], chosen["base_url"] or "")
         key = await provider_config_service.get_decrypted_key(db, chosen["id"])
+        switches = await settings_service.model_switches(db)
     provider, model, base_url = expand_preset(chosen["provider"], chosen["model"], chosen["base_url"] or "")
     adapter = LLMAdapter(provider, _require_model(model, chosen["provider"]), api_key=key,
-                         base_url=base_url, report_provider=chosen["provider"])
+                         base_url=base_url, report_provider=chosen["provider"], switches=switches)
     adapter.role = "chat" if role in (None, "execute") else role
     return adapter
 
@@ -157,7 +158,8 @@ async def _config_adapter(db, config_id, model_override: str | None, role: str =
             provider, model, base_url = expand_preset(
                 c["provider"], model_override or c["model"], c.get("base_url") or "")
             adapter = LLMAdapter(provider, _require_model(model, c["provider"]), api_key=key,
-                                 base_url=base_url, report_provider=c["provider"])
+                                 base_url=base_url, report_provider=c["provider"],
+                                 switches=await settings_service.model_switches(db))
             adapter.role = role   # SMART-3: what it is for, said by a failed call
             return adapter
     return None
@@ -192,4 +194,5 @@ async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001
     _guard_memory_destination(config_provider, base_url)
     provider, model, base_url = expand_preset(config_provider, model, base_url)
     return LLMAdapter(provider, _require_model(model, config_provider), api_key=api_key,
-                      base_url=base_url, report_provider=config_provider)
+                      base_url=base_url, report_provider=config_provider,
+                      switches=await settings_service.model_switches(db))

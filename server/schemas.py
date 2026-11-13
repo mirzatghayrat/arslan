@@ -85,6 +85,10 @@ class SettingsIn(BaseModel):
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None
+    # v0.1.64 H1-a (settings_service.model_switches); no UI, the bench sets them. DELETE-BY: v0.1.65.
+    tool_temperature_vendor: str | None = None
+    claude_effort: str | None = None
+    output_cap_raised: str | None = None
 
 
 class SettingsOut(BaseModel):
@@ -154,6 +158,9 @@ class SettingsOut(BaseModel):
     voice_input_locale: str = ""
     voice_mode: str = ""
     voice_endpoint_silence_ms: str = ""
+    tool_temperature_vendor: str = ""   # H1-a, DELETE-BY: v0.1.65
+    claude_effort: str = ""
+    output_cap_raised: str = ""
 
 
 class AccessTokenOut(BaseModel):
