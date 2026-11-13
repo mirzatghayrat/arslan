@@ -42,6 +42,8 @@ from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_
                                   tool_record)
 from scripts.kernel_bench.arslan_driver import snapshot
 
+from scripts.kernel_bench import check_c1, fixture_c1
+
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("BENCH_ROOT", "/tmp/arslan-kernel-bench")).resolve()
 PROXY = os.environ.get("BENCH_PROXY", "http://127.0.0.1:8900/c")
@@ -361,6 +363,12 @@ def check_t4_site():
 # Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
 DECLINES: dict = {"T11": {"rules": [r"delete|\brm\b|\brmdir\b|unlink"], "note": check_t11.NOTE}}   # patterns on the rule
 
+# H0 (harness plan §4.1), the capability set's first task: C1 talks to a local link stub. The runner starts it as the
+# run's site (its `url` fills the prompt) and stops it after the check, as it does T4's; the checker reads the stub's
+# request log, so a fix the agent never tried fails.
+SITES = {"C1": fixture_c1.fixture}
+CHECKS["C1"] = lambda run, reply, ctx: check_c1.check(reply, ctx["site"].log())
+
 
 def driver_out(who: str, run: Path) -> dict:
     """Arslan's driver summary (its last stdout line): end, approvals, declined, ...; {} for
@@ -536,6 +544,8 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         # The model is in the name: the same label runs on several models in one round, and a second
         # model's reminders landed in the first model's list (M1B, 2026-10-19: 6 items, scored 0).
         ctx["list"] = f"对比测试-{label}-{model}"
+    if task in SITES:
+        ctx["site"] = SITES[task](str(run))
     if task in ("T4", "T4x"):
         _t4_setup(task, who, ctx, manual_login)
     fill = {"dir": run, "list": ctx.get("list", ""), "url": ctx["site"].url if "site" in ctx else ""}
