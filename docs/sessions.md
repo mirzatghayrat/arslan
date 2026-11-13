@@ -71,7 +71,7 @@
     - **A clean merge of main carries the OK.** If the merge has no conflict in the PR's own lines, the author notes the merge commit on the PR and asks ⓪Plan to post `review-ok` at the new head; no reviewer is woken. A conflict in the PR's own lines, or any other change, gets a delta review first.
     - **Merge main only for a real reason:** a conflict, or a merged change to an interface the PR uses.
     - **PRs the user merges** (Codex's, and those that change a Bridge frame) get the status too and stay unarmed.
-  - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session reviews it and ⓪Plan posts `review-ok` **at the current head**, and every other required check on that head is green. The authoring session arms auto-merge with `ccd_pr` `set_auto_merge` when the PR opens (the merge flow above).
+  - **The session merges** (GitHub auto-merge): docs, plan cards, bench scripts, tests, and deletion-only PRs, all outside the security surface. Condition: another session reviews it and ⓪Plan posts `review-ok` **at the current head**, and every other required check on that head is green. Since 2026-11-13, §13 rule 3 drops the other-session review for these. The authoring session arms auto-merge with `ccd_pr` `set_auto_merge` when the PR opens (the merge flow above).
   - **The user merges** everything else: anything on the security surface, and ordinary product code (for example BR2's file grouping), except where the 2026-11-01 rules below let the author auto-merge. The security surface here means:
     - the outside-content mark;
     - the sandbox;
@@ -118,7 +118,7 @@
 - **Less rework (user, 2026-11-07, relayed by ④参谋):**
   - **A real design choice:** for a card or PR with one, send ⓪Plan 10 lines before writing code: what you will do, how a mainstream agent does it, what you rejected.
   - **A bench shows a gap:** remove or simplify a rule first. A new exception needs a stated reason.
-  - **Size and sessions:** new cards stay under about 60 lines; docs changes batch into the daily STATUS PR; each lane or card gets a fresh session, and a session past about 300k tokens writes a handoff and moves.
+  - **Size and sessions:** new cards stay under about 60 lines; docs changes batch into the daily STATUS PR; each lane or card gets a fresh session. Context size: see §13 rule 1, which replaces the earlier "past about 300k tokens, hand off and move" rule.
 
 ## 6. 文档卫生
 
@@ -220,3 +220,32 @@ Defence there follows the security process (the user decides, a review at effort
    - Catching `asyncio.CancelledError` and not re-raising needs the same comment (for example, awaiting a task you just cancelled during shutdown).
 
 **Reviewing (every review, by sessions and by Codex):** besides correctness and the evidence (§8), point out unnecessary defensive code, the same validation repeated in several layers, and helpers or abstractions with a single use. Name the file and line and say what to remove; the author answers each one (remove it, or state the failure mode it guards against).
+
+## 13. Working rules from the 2026-11-13 reset (user, 2026-11-13)
+
+Rules 1–6 and 8 are in force. Rule 7 is open. The security-surface review rules (§5, effort=max) are unchanged this week.
+
+1. **Context: compact, don't switch.** A working session runs `/compact` after each PR it lands. A coordinating session compacts once it passes about 300k tokens. Before compacting, write the key state into the handoff file or the status page. This replaces the 2026-11-07 rule to hand off and move a session past about 300k tokens.
+2. **Progress questions go to one session.** The others don't recount.
+3. **No session review for non-security work.** For docs, plan cards, tests, deletion-only PRs and the status page, ⓪Plan posts `review-ok` once every CI check is green and ⓪Plan has looked at the change's scope.
+4. **At most two review rounds.**
+   - Round one lists every finding, split into "must fix" and "later". Only "must fix" blocks the merge.
+   - Round two reads only what changed since round one.
+   - A disagreement left after two rounds goes to the user.
+5. **Cheap models for cheap work:** the status page, counts, doc tidying, clearing marks, and subagents that only search.
+6. **One line a day from each session:** the quota used that day, the current context size, PRs written and PRs reviewed. ⓪Plan folds these into the per-session tables.
+7. **Open:** whether the security surface splits into two review levels. The user decides after seeing the tables.
+8. **This week's budget**, as a share of the weekly quota:
+
+   | Share | What |
+   |---|---|
+   | 30% | Tier 1 |
+   | 25% | Tier 2 |
+   | 10% | The six harness PRs |
+   | 10% | Release wrap-up |
+   | 25% | Tier 3 and the unexpected |
+
+   - A tier that goes over stops and reports to the user. Nothing moves to another tier automatically.
+   - These are warning lines, not hard targets. Quality gates (CI, tests, benches, security-boundary reviews) are never lowered to save quota. What's needed gets spent, and an overrun is reported with its reason.
+
+**Order is unchanged:** tier 1 first. The six harness PRs come after ASK1-a.
