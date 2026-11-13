@@ -120,22 +120,25 @@ async def test_a_push_with_no_ci_file_adds_nothing(execution_db, tmp_path, monke
 
 
 class _Popen:
-    """A stand-in for git under sandbox-exec: records each launch, then fails, times out or answers `out`."""
+    """A stand-in for git under sandbox-exec: records each launch, then fails, times out or answers `out`. `answers`
+    overrides that per launch, keyed by a substring of an argument; the upstream query (`for-each-ref`) answers
+    "upstream configured" unless overridden."""
 
-    def __init__(self, how: str, out: bytes = b""):
+    def __init__(self, how: str, out: bytes = b"", answers: dict[str, tuple[str, bytes]] | None = None):
         self.how, self.out, self.launched = how, out, []
+        self.answers = {"for-each-ref": (how, b"*refs/remotes/origin/main\n"), **(answers or {})}
 
     def __call__(self, argv, **kw):
         self.launched.append((argv, kw))
-        outer = self
+        how, out = next((v for k, v in self.answers.items() if any(k in a for a in argv)), (self.how, self.out))
 
         class _Process:
-            returncode = 0 if outer.how == "answers" else 128
+            returncode = 0 if how == "answers" else 128
 
             def communicate(self, timeout=None):
-                if outer.how == "times out" and timeout is not None:
+                if how == "times out" and timeout is not None:
                     raise subprocess.TimeoutExpired(argv, timeout)
-                return outer.out, b""
+                return out, b""
 
             def kill(self):
                 pass
@@ -168,7 +171,8 @@ def test_the_listing_runs_git_through_the_pinned_launcher(repo_dir, monkeypatch)
     fake = _Popen("answers", f"{CI}\0{OTHER}\0".encode())
     monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
     assert git_config_guard.outgoing_ci(repo_dir / "src", "git push") == [CI]
-    [(argv, kw)] = fake.launched
+    assert [a for a in fake.launched[0][0] if a == "for-each-ref"] == ["for-each-ref"]
+    [_, (argv, kw)] = fake.launched
     scratch = Path(kw["env"]["HOME"])
     assert argv[:4] == ["/usr/bin/sandbox-exec", "-p", default_deny_profile(writable=[scratch]), "/usr/bin/git"]
     assert kw["env"] == git_config_guard._env(scratch) and kw["cwd"] == repo_dir
@@ -176,12 +180,32 @@ def test_the_listing_runs_git_through_the_pinned_launcher(repo_dir, monkeypatch)
     assert kw["stdin"] == subprocess.DEVNULL
 
 
+def _diffs(fake: _Popen) -> list[str]:
+    return [a for argv, _ in fake.launched for a in argv if a.endswith("..HEAD")]
+
+
 def test_with_no_upstream_it_reads_the_named_remotes_head(repo_dir, monkeypatch):
-    fake = _Popen("fails")
+    fake = _Popen("answers", f"{CI}\0".encode(), answers={"for-each-ref": ("answers", b" refs/remotes/o/x\n*\n")})
     monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
-    assert git_config_guard.outgoing_ci(repo_dir, "git push -u zz-remote topic") is None
-    assert [next(a for a in argv if a.endswith("..HEAD")) for argv, _ in fake.launched] == [
-        "@{upstream}..HEAD", "refs/remotes/zz-remote/HEAD..HEAD"]
+    assert git_config_guard.outgoing_ci(repo_dir, "git push -u zz-remote topic") == [CI]
+    assert _diffs(fake) == ["refs/remotes/zz-remote/HEAD..HEAD"]
+
+
+def test_a_failed_upstream_read_says_couldnt_list_and_never_falls_back_to_the_remote_head(repo_dir, monkeypatch):
+    """With an upstream configured, a failed or timed-out `<upstream>..HEAD` read must not be replaced by the remote
+    HEAD's answer (which could show a clean list): it is "couldn't list"."""
+    for how in ("fails", "times out"):
+        fake = _Popen("answers", answers={"@{upstream}": (how, b""), "/HEAD..HEAD": ("answers", f"{CI}\0".encode())})
+        monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
+        assert git_config_guard.outgoing_ci(repo_dir, "git push") is None
+        assert _diffs(fake) == ["@{upstream}..HEAD"]
+
+
+def test_a_failed_upstream_query_says_couldnt_list(repo_dir, monkeypatch):
+    fake = _Popen("answers", f"{CI}\0".encode(), answers={"for-each-ref": ("fails", b"")})
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
+    assert git_config_guard.outgoing_ci(repo_dir, "git push") is None
+    assert _diffs(fake) == []
 
 
 # ── 2. the change list ───────────────────────────────────────────────────────
