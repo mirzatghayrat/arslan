@@ -5,7 +5,7 @@ it may write only to the working folder, its run's temp and the tool caches; it 
 services, sockets and devices; it can't listen (the user's D1, 2026-11-01); and it can neither read nor write
 the user's credentials, other apps' data and Arslan's own data and keys. Reading elsewhere and running programs
 stay open. Online, outbound TCP goes to any host with DNS until SBX-6's proxy (the user's D2); offline, no network.
-`profile()` below is the pre-SBX-3 allow-default text, kept only for the harness's historical baseline.
+The pre-SBX-3 allow-default text (`profile()`) and SBX-2's harness baseline built from it are gone (v0.1.64).
 
 Seatbelt applies the LAST matching rule (measured 2026-10-03): the protected
 paths come last, so they stay closed even inside a writable folder. It matches
@@ -298,40 +298,6 @@ def _identity(path: Path) -> tuple[int, int] | None:
     return st.st_dev, st.st_ino
 
 
-# Kept for SBX-2's harness only: its `legacy-commands` base rebuilds main's commands profile from these as the
-# historical baseline (tests/server/sbx/harness.py), and `profile()` with no devices and nothing in
-# `deny_write_after_roots` writes main's text byte for byte. No product path calls them
-# (test_sbx3a_commands_profile.py pins that). DELETE-BY: v0.1.64, together with that adapter, in Codex's follow-up to
-# SBX-3a that removes it (card, "SBX-2 harness retention").
-# SBX-M has recorded the baseline (#592), so the adapter may go now; the harness is Codex's
-# (docs/plans/0164/SBX-sandbox.md, "SBX-2 harness retention").
-_CS_DARWIN_USER_TEMP_DIR = 65537      # <unistd.h>; Python's os.confstr has no name for it
-
-
-def _darwin_user_dir() -> Path | None:
-    try:
-        temp = os.confstr(_CS_DARWIN_USER_TEMP_DIR)
-    except (ValueError, OSError):
-        return None
-    return _real(temp).parent if temp else None
-
-
-def temp_roots() -> list[Path]:
-    tmp = _real(tempfile.gettempdir())
-    user = tmp.parent if tmp.name == "T" else tmp
-    roots = [user]
-    darwin = _darwin_user_dir()
-    if darwin is not None and darwin not in roots:
-        roots.append(darwin)
-    return [*roots, _real("/private/tmp"), _real("/private/var/tmp")]
-
-
-def default_writable(workspace: Path) -> list[Path]:
-    home = Path.home()
-    return [_real(workspace), *temp_roots(), Path("/dev"),
-            _real(home / "Library" / "Caches"), _real(home / ".cache"), _real(home / ".npm")]
-
-
 def in_scope(path, roots: list[Root]) -> bool:
     """Whether `path`, resolved the way seatbelt matches it, is inside an in-scope root (§1b): a link in the work
     folder that points elsewhere is judged by where it points."""
@@ -497,48 +463,6 @@ def _check_open_once(folder, writable: list[Path], protected: list[Path], shut: 
 
 def _inside(path: Path, folders: list[Path]) -> bool:
     return any(path == folder or folder in path.parents for folder in folders)
-
-
-def profile(writable: list[Path], protected: list[Path], *, offline: bool = False,
-            closed: list[Path] = (), readable: list[Path] = (), copies: list[Path] = (),
-            devices: tuple[str, ...] = (), deny_write_after_roots: list[Path] = ()) -> str:
-    """The SBPL text. Order matters: deny all writes, re-allow the writable
-    folders and `devices` (SBPL filters, SBX-3), close `closed` (0.1.59: the user's
-    Desktop/Documents/Downloads while they are off; SBX-3: other apps' data) and
-    re-open what lives inside them — writable folders read and write, `readable`
-    ones (project folders) read only — then deny writes to `deny_write_after_roots`
-    (SBX-3 §e: HR fills it), then close the protected paths (last rule wins) — to
-    files and to sockets alike."""
-    # S2a-1: no Apple Events from the sandbox. On macOS 26 any seatbelt wrapper already makes them
-    # fail (-10004, measured 2026-10-20); the rule makes it explicit (they fail with -600) and holds
-    # wherever that is not so. Nothing lifts it: an approved osascript cannot work inside seatbelt.
-    rules = Profile("allow")
-    rules.deny("appleevent-send")
-    if offline:
-        rules.deny("network*")
-    rules.deny("file-write*", subpath("/"))
-    writable = [_real(p) for p in writable]
-    rules.allow_paths("file-write*", writable, file_or_folder)
-    if devices:
-        rules.allow("file-write*", *devices)
-    shut = [_real(p) for p in closed]
-    if shut:
-        rules.deny("file-read* file-write*", *map(file_or_folder, shut))
-        open_rw = [p for p in writable if _inside(p, shut)]
-        open_r = [p for p in map(_real, readable) if _inside(p, shut) and p not in open_rw]
-        rules.allow_paths("file-read* file-write*", open_rw, file_or_folder)
-        rules.allow_paths("file-read*", open_r, file_or_folder)
-    later = [file_or_folder(_real(p)) for p in deny_write_after_roots]
-    if later:
-        rules.deny("file-write*", *later)
-    shut_to_all = [file_or_folder(_real(p)) for p in protected]
-    if shut_to_all:
-        rules.deny("file-read* file-write*", *shut_to_all)
-        rules.deny("network-outbound", *shut_to_all)   # sockets under them
-    # S2a-1 piece 5: the saved tool outputs this conversation was given, read-only and one file at
-    # a time, after the protected paths (the last rule wins). Never the folder: `ls` stays closed.
-    rules.allow_paths("file-read*", map(_real, copies), literal)
-    return rules.text()
 
 
 def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
@@ -1021,6 +945,12 @@ def git_refused_paths(result: dict, *, command: str, cwd: Path, hold: bool = Fal
 def git_refused(result: dict, *, command: str, cwd: Path, hold: bool = False) -> bool:
     """`git_refused_paths` names one. Heuristic on purpose: a false positive only adds a note."""
     return bool(git_refused_paths(result, command=command, cwd=cwd, hold=hold))
+
+
+#: HR-2b: conversations where git's refusal lines named a held file and the tree may be partly updated (terminal_exec
+#: `explain`); their next `git add` or `git commit` asks first (command_gate._git_refused_card). In memory: a restart
+#: forgets them.
+GIT_REFUSED_IN: set[str] = set()
 
 
 def git_setup_failed(result: dict, held: list[str]) -> bool:

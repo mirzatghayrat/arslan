@@ -500,6 +500,9 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
     # step that exited 0 with its upstream or setting unsaved.
     held = command_sandbox.git_refused_paths(result, command=command, cwd=cwd, hold=hold)
     git = bool(held) and not command_sandbox.git_setup_failed(result, held)
+    if git:                                     # HR-2b: this conversation's next `git add`/`commit` asks first
+        from server.services import tool_outputs
+        command_sandbox.GIT_REFUSED_IN.add(tool_outputs.conversation.get() or "")
     # HR-1b: refused on the repository's config only, in the sandbox, without the grant: the note offers it.
     offer = (result.get("sandbox") == "workspace" and not git_config
              and command_sandbox.git_config_only(held, cwd))

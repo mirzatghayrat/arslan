@@ -1,7 +1,7 @@
 """Writing seatbelt profiles: the one place Arslan turns paths and permissions into SBPL (SBX-1, v0.1.64).
 
 The profiles Arslan starts processes under are written with this module: commands in and out of
-the sandbox (`command_sandbox.profile`, `minimal_profile`), `run_python` and the artifact checks
+the sandbox (`command_sandbox.commands_profile`, `minimal_profile`), `run_python` and the artifact checks
 (`code_sandbox.computation_profile`), installed MCP servers (`capability_sandbox.profile`) and
 `ssh_run` (`ssh_exec.ssh_profile`). Each of those keeps its own rules; SBX-1 moved how they are
 written here without changing a byte of what they produce, and SBX-1b changed how a path is spelt

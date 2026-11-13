@@ -645,7 +645,9 @@ def changes(run_id: int, not_before: float) -> dict | None:
     rule as `summary` and a restore, so the list covers exactly the turns an undo can still take back (②Main's
     review of #545: no separate age rule). Only what an undo can put back is listed: changes it could not save
     (`not_saved`) are not. `.git` is left out (it goes back whole); paths are relative to their folder, with
-    the folder alongside. One manifest read; a caller runs it off the event loop."""
+    the folder alongside. HR-2b: a CI file (`run_later.is_ci_file`, run by the CI service after a push) is marked
+    `ci: true`. One manifest read; a caller runs it off the event loop."""
+    from server.services import run_later
     data = manifest(run_id)
     if data is None or data["created_at"] < not_before:
         return None
@@ -655,7 +657,8 @@ def changes(run_id: int, not_before: float) -> dict | None:
             if _in_git(rel):
                 continue
             kind = "made" if state.get("saved") is None else "deleted" if state.get("now") is None else "edited"
-            out.append({"folder": entry["path"], "path": rel, "kind": kind})
+            out.append({"folder": entry["path"], "path": rel, "kind": kind,
+                        **({"ci": True} if run_later.is_ci_file(rel) else {})})
     return {"paths": out, "undone": bool(data.get("restored_at"))}
 
 

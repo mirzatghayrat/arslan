@@ -167,6 +167,9 @@ NEVER_AUTO: tuple[HardRule, ...] = (
     HardRule("git-include", "once-only", "gate", f"{_GATE}:_git_include",
              _T + "test_hr1c_git_include.py::test_the_marked_repositorys_next_git_command_asks_once_and_not_the_island",
              kinds=frozenset({"git_include"})),
+    # HR-2b: its kind is once only (`once-only-kinds` above places it); this row names where it is asked.
+    HardRule("git-refused", "once-only", "gate", f"{_GATE}:_git_refused_card",
+             _T + "test_hr2b_git_cards.py::test_after_a_git_refusal_the_next_commit_asks_once_and_status_does_not"),
     HardRule("full-access-still-asks", "user-only", "permissions", "server.services.hard_rules:never_auto",
              _T + "test_hard_rules.py::test_what_full_access_still_asks_is_never_auto", kinds=FULL_ACCESS_ASKS),
     HardRule("unknown-kind", "fails-closed", "permissions", f"{_PERMS}:_check",

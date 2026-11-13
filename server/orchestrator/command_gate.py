@@ -4,6 +4,7 @@ the command's own card, then the network after outside content. Since S2a-3 step
 refusal the model reads, or with what it settled for the execute stage."""
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -307,6 +308,36 @@ async def _git_include(command: str, conversation_id: str | None) -> dict | None
                                                           "settings changed through a file outside the working folder"}
 
 
+#: HR-2b: a `git add` or `git commit` in the text, generously (a false positive is one more card in a marked
+#: conversation only). Not across `;`, `&` or `|`, so `git status; echo commit` isn't one.
+_ADD_OR_COMMIT = re.compile(r"(?<![\w.-])git(?![\w.])[^\n;&|]*?\s(?:add|commit)(?![\w-])")
+
+
+async def _git_refused_card(command: str, conversation_id: str | None) -> dict | None:
+    """HR-2b: after git's refusal lines named a held file in this conversation (`command_sandbox.GIT_REFUSED_IN`),
+    its next `git add` or `git commit` asks first: one card, this time only (kind `git_refused`, never automatic; the
+    island never answers it; with nobody to ask it is refused and listed in the Inbox). The risk it names: a commit
+    over a half-updated tree. The user's answer, yes or no, clears the mark. None: it runs."""
+    from server.services import background_jobs, command_sandbox, permissions
+    key = conversation_id or ""
+    if key not in command_sandbox.GIT_REFUSED_IN or not _ADD_OR_COMMIT.search(command):
+        return None
+    request = permissions.Request(
+        kind="git_refused", target="git_refused:*", title="Some files weren't updated last time. Check git status?",
+        detail=(f"{command[:300]}\n\nAn earlier git command in this conversation couldn't update some files (the "
+                "sandbox held them), so the tree may be half updated. Check `git status` before adding or committing."),
+        model_title="Run git add or commit after an earlier git command left some files not updated?",
+        conversation_ok=False, once_only=True)
+    decision = await permissions.decide(request, permissions.Context(
+        conversation_id, job_id=background_jobs._inside_job.get()))
+    if decision.by == "user":
+        command_sandbox.GIT_REFUSED_IN.discard(key)
+    if decision.allowed:
+        return None
+    return {"ok": False, "error": decision.model_text or "the user did not let git add or commit yet: an earlier git "
+                                                          "command left some files not updated; check git status"}
+
+
 @dataclass(frozen=True, slots=True)
 class CommandPlan:
     """What the command gate settled, for the execute stage. Any other tool runs with `NOT_A_COMMAND`."""
@@ -415,6 +446,9 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     if isinstance(git_config, dict):
         return git_config
     refused = await _git_include(command, turn.conversation_id)         # HR-1c: in the sandbox or out
+    if refused is not None:
+        return refused
+    refused = await _git_refused_card(command, turn.conversation_id)    # HR-2b
     if refused is not None:
         return refused
     opened = await _app_data(draft, args, turn.confirm_command, turn.conversation_id)   # SBX-5b: in the sandbox
