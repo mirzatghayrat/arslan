@@ -21,8 +21,10 @@ _UPDATE = "*** Begin Patch\n*** Update File: notes.md\n@@\n-old line\n+new line\
 
 
 def _record(i, family, words, tool, text, expected, *, targets=(), sandboxed=True, kind=None, checkpoint=True):
+    # A command names where it writes (a folder in the work folder): CLS asks for a write tool that names none.
+    targets = list(targets) or (["build"] if tool == "exec_command" else [])
     return {"id": f"case-{i:02d}", "family": family, "user_words": words, "intent": f"intent number {i}",
-            "action": {"tool": tool, "text": text, "kind": kind, "write_targets": list(targets),
+            "action": {"tool": tool, "text": text, "kind": kind, "write_targets": targets,
                        "sandboxed": sandboxed},
             "context": {"job_kind": "turn", "outside_seen": False, "checkpoint_exists": checkpoint},
             "expected": expected, "why": f"why number {i}"}
