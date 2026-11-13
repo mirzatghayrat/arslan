@@ -13,9 +13,10 @@
 # author recounts that file in a pin-only PR (docs/sessions.md §5).
 
 # Local collection after retiring 51 any-declared corpus cases; full run and CI confirmation pending.
+# v0.1.64: the `legacy-commands` base went with the pre-SBX-3 commands profile, a third of the cases (171 -> 114).
 ["server/sbx/corpus/test_sbx2_corpus.py"]
 markers = 3
-cases = 171
+cases = 114
 xfail = 0
 
 # 0.1.64 HOOK-2, `commands_profile(plugin_read=...)`: a hook's own plugin folder readable and not writable, a sibling

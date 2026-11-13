@@ -102,13 +102,11 @@ teardown. These files contain local paths and must not be committed. The report
 records ids, versions, hashes, outcomes, gaps and card costs only; never raw
 command arguments, profile text or service output.
 
-`harness.py` selects `legacy-commands`, `default-deny`, or `outside-floor` by
-name. Legacy uses today's real command builder and its writable/protected roots
-with scratch HOME/TMPDIR, including the parent's cached `tempfile` root. The real
-builder still includes its historical shared temp roots and Darwin user directory;
-the legacy comparison is not confined to scratch. Proxy-mode rows on
-the historical profiles mean their historical online behavior; they have no
-proxy. On the candidate, the reserved proxy port has **no listener**: this tests
+`harness.py` selects `default-deny` or `outside-floor` by name for the corpus
+(the product presets, `commands` and the rest, by their own names). The
+`legacy-commands` base, main's pre-SBX-3 commands profile, was removed in v0.1.64
+with that profile; SBX-M's report (#592) keeps what it measured. Proxy-mode rows
+on the outside floor mean its online behavior; it has no proxy. On the candidate, the reserved proxy port has **no listener**: this tests
 compatibility with the restriction, not end-to-end proxy forwarding (SBX-6).
 
 The commands gate fails explicitly before any smoke or probe while its adapter
@@ -166,9 +164,9 @@ an authenticated SSH git remote. The background row measures child temp access,
 not Run cleanup. Device tests exercise selected nodes, not a syscall trace of
 all toolchains. These gaps must stay in the SBX-M report.
 
-DELETE-BY: v0.1.64 after SBX-M records the historical baseline, before SBX-3
-replaces that preset: remove the `legacy-commands` adapter and its parameters.
-The outside floor remains a comparison because it remains a product policy.
+The `legacy-commands` adapter and its parameters were removed in v0.1.64 (its
+DELETE-BY: after SBX-M recorded the historical baseline). The outside floor
+remains a comparison because it remains a product policy.
 
 ABI references (facts only, no copied implementation or profile):
 [Apple launchd bootstrap declarations](https://github.com/apple-oss-distributions/launchd/blob/main/liblaunch/bootstrap_priv.h)

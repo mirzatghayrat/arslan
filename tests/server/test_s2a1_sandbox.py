@@ -50,9 +50,9 @@ def test_protected_paths_are_arslans_own_plus_the_users_secrets():
 
 # ── piece 1: no Apple Events from the sandbox, and an honest word about it ────────────
 
-def test_the_workspace_profile_denies_apple_events(tmp_path):
-    lines = command_sandbox.profile([tmp_path], []).splitlines()
-    assert lines[:3] == ["(version 1)", "(allow default)", "(deny appleevent-send)"]
+# The workspace profile's Apple Events deny: SBX-2's base writes it in every network mode
+# (test_sbx2_profile.py), the commands profile is that base (test_sbx3a_commands_profile.py), and the kernel
+# refuses the send (test_sbx2_kernel.py, sbx_mac).
 
 
 def test_a_sandboxed_apple_event_refusal_gets_an_honest_hint():
@@ -254,16 +254,8 @@ def test_saved_copies_are_remembered_for_their_conversation_newest_last(outputs)
     assert outputs.given(None) == [] and outputs.given("nobody") == []
 
 
-def test_copies_are_opened_one_by_one_after_the_protected_paths(tmp_path):
-    data = tmp_path / "data"
-    copy = data / "tool_outputs" / 'a "quoted" name.txt'
-    copy.parent.mkdir(parents=True)
-    copy.write_text("x")
-    lines = command_sandbox.profile([tmp_path / "ws"], [data], copies=[copy]).splitlines()
-    deny = next(i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write* "))
-    allow = [line for line in lines if line.startswith("(allow file-read* (literal")]
-    assert allow == ['(allow file-read* (literal ' + __import__("json").dumps(str(copy.resolve())) + '))']
-    assert lines.index(allow[0]) > deny and "subpath" not in allow[0] and "write" not in allow[0]
+# The copies opened one by one after the protected paths, on the commands profile:
+# test_sbx3a_commands_profile.py::test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_closed_again.
 
 
 async def test_the_executor_passes_this_conversations_copies(outputs, monkeypatch, tmp_path):

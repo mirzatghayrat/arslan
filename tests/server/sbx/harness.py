@@ -15,7 +15,9 @@ import pytest
 from server.services import command_sandbox
 from server.services.sandbox_profile import NetworkMode, default_deny_profile
 
-MEASUREMENT_BASES = ("legacy-commands", "default-deny", "outside-floor")
+# v0.1.64: the `legacy-commands` base (main's pre-SBX-3 commands profile, SBX-M's historical baseline, #592) is gone
+# with that profile; SBX-M's report keeps the numbers it measured.
+MEASUREMENT_BASES = ("default-deny", "outside-floor")
 DENY_BASES = ("default-deny",)
 
 
@@ -74,18 +76,7 @@ class Harness:
             options.update(parameters)
             return default_deny_profile([self.work, self.temp], [self.protected], **options)
         if parameters:
-            raise ValueError("candidate parameters cannot be applied to a historical base")
-        if self.base == "legacy-commands":
-            # DELETE-BY: v0.1.64 after SBX-M records the historical baseline,
-            # before SBX-3 replaces this preset. No runtime fallback uses it.
-            with pytest.MonkeyPatch.context() as environment:
-                environment.setenv("HOME", str(self.home))
-                environment.setenv("TMPDIR", str(self.temp))
-                environment.setattr(tempfile, "tempdir", str(self.temp))
-                return command_sandbox.profile(
-                    command_sandbox.default_writable(self.work),
-                    [*command_sandbox.default_protected(), self.protected],
-                    offline=self.network == NetworkMode.NONE)
+            raise ValueError("candidate parameters cannot be applied to a comparison base")
         if self.base == "outside-floor":
             return command_sandbox.minimal_profile(offline=self.network == NetworkMode.NONE,
                                                    plugin_folder=getattr(self, "plugin_root", None))
