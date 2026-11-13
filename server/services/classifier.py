@@ -318,7 +318,7 @@ def measured(provider, endpoint, model) -> Measurement | None:
             return None
         record = MEASURED.get(MeasuredKey(provider, endpoint, model, CLASSIFIER_REVISION))
         return record if passes(record) else None
-    except Exception:
+    except Exception:  # noqa: BLE001 — any fault in the lookup or a malformed record means unmeasured: "ask"
         return None
 
 
