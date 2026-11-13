@@ -8,10 +8,13 @@ verbs moved from `publish` to it, so a secret card says "secret". Reads that loo
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from server.services import approvals, card_purpose, command_confirm, hard_rules, permissions, terminal_policy as tp
 from server.services.permissions import Request
+from tests.server import quoted_args_option_profiles as profiles
 
 # ── the 43 measured probes ─────────────────────────────────────────────────────
 
@@ -201,3 +204,140 @@ def test_a_card_with_no_consequence_keeps_its_fields():
     frame = {"summary": {"touches": ["a"]}, "reason": "r"}
     command_confirm.with_consequence(frame, "")
     assert frame == {"summary": {"touches": ["a"]}, "reason": "r"}
+
+
+# ── options between the program and its verb words (Codex's round-1 item 1 on #897) ──────────────────────────────
+# A CLI reads its options wherever they stand, so `gcloud app --project X deploy` is `gcloud app deploy`. The verb
+# path is read past options: a known option's value (`_OPTION_VALUES`) is skipped with it, and an unknown option's
+# arity is unknown, so both readings are tried and either one placing a write verb asks.
+
+OPTION_BETWEEN = [
+    # the seven Codex named
+    ("gcloud app --project X deploy", "publish"), ("gcloud --quiet run deploy svc", "publish"),
+    ("fly --app a secrets set K=v", "secret-write"), ("gh --repo o/r secret set K", "secret-write"),
+    ("vercel --token t env add K production", "secret-write"),
+    ("aws --region r secretsmanager put-secret-value --secret-id x --secret-string y", "secret-write"),
+    ("heroku config:set --app a K=v", "secret-write"),
+    # more from the option profiles: a value option, its spaced and attached forms, flags and unknown options,
+    # between the words of a two-word verb and before a one-word verb
+    ("fly secrets --app a set K=v", "secret-write"), ("fly secrets --app 'Sample Account' set K=v", "secret-write"),
+    ("flyctl secrets -t tok unset K", "secret-write"), ("fly secrets -aSample import", "secret-write"),
+    ("vercel env --token t add K production", "secret-write"), ("vercel env -t t rm K", "secret-write"),
+    ("wrangler secret -e prod put K", "secret-write"), ("wrangler secret --env=prod delete K", "secret-write"),
+    ("heroku --weird config:set K=V", "secret-write"), ("gh variable -R o/r set K", "secret-write"),
+    ("gh secret --repo 'Sample Account' delete K", "secret-write"),
+    ("doppler secrets --config prd set K=v", "secret-write"), ("doppler --s2a3-unknown secrets set K", "secret-write"),
+    ("gcloud secrets --project p versions add zz --data-file=f", "secret-write"),
+    ("aws ssm --region r put-parameter --name n --value v", "secret-write"),
+    ("netlify --auth t env:set K v", "secret-write"),
+    ("yarn npm --silent publish", "publish"), ("yarn --cwd d npm publish", "publish"),
+    ("yarn npm --cwd 'Sample Account' publish", "publish"), ("uv --s2a3-unknown publish", "publish"),
+    ("uv -Z x publish", "publish"), ("pulumi --non-interactive up", "publish"),
+    ("render deploys -o json create srv-1", "publish"), ("gcloud beta --quiet run deploy svc", "publish"),
+    ("gcloud app --weird X deploy", "publish"), ("fly scale --app x count 2", "publish"),
+    ("wrangler pages --env prod deploy dist", "publish"), ("eas --x submit", "publish"),
+    ("fastlane --verbose upload_to_testflight", "publish"), ("eas --x build --auto-submit", "publish"),
+    ("poetry -q publish", "publish"), ("gem -V push zz.gem", "publish"),
+]
+#: Reads with the same options between their words: they run with no card.
+OPTION_BETWEEN_READS = [
+    "gcloud app --project X describe", "gh --repo o/r secret list", "fly --app a secrets list",
+    "vercel --token t env ls", "gh -R o/r variable list", "aws --region r secretsmanager list-secrets",
+    "gcloud --project p secrets list", "yarn --cwd d npm info zz", "doppler --config prd secrets get K",
+    "uv --s2a3-unknown sync", "pulumi --non-interactive preview", "gcloud --quiet run services list",
+    "heroku config:get --app a K", "render deploys -o json list", "gh secret --repo o/r list",
+]
+
+
+@pytest.mark.parametrize("command, rule", OPTION_BETWEEN)
+def test_options_between_the_words_still_ask_with_the_rule(command, rule):
+    assert len(OPTION_BETWEEN) >= 17
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("ask", rule), command
+
+
+@pytest.mark.parametrize("command", OPTION_BETWEEN_READS)
+def test_reads_with_options_between_still_run(command):
+    assert tp.assess(command).level == "run" and not tp.ask_rules(command), command
+
+
+# The corpus: every write verb path in the three tables, with each option form from the option profiles
+# (`quoted_args_option_profiles.OPTIONS`: a flag, a short and a long value option; the program's unknown-option forms
+# for every program) at every gap from before the first verb word to after the last, rendered in the profiles' six
+# spellings and four positions. The reads beside them get the same forms.
+FULL = os.environ.get("QUOTED_ARGS_EVIDENCE_FULL") == "1"
+_UNKNOWN_FORMS = (("-Z",), ("--s2a3-unknown",), ("-ZSample",), ("-ZvZ",), ("--s2a3-unknown", "sample"),
+                  ("-Z", "Sample Account"))
+_READ_PATHS = [
+    ("gcloud", ("app", "describe")), ("gcloud", ("secrets", "list")), ("gcloud", ("run", "services", "list")),
+    ("gh", ("secret", "list")), ("gh", ("variable", "list")), ("fly", ("secrets", "list")), ("flyctl", ("status",)),
+    ("vercel", ("env", "ls")), ("netlify", ("env:list",)), ("heroku", ("config:get",)), ("wrangler", ("secret", "list")),
+    ("doppler", ("secrets", "get")), ("aws", ("secretsmanager", "list-secrets")), ("aws", ("ssm", "get-parameter")),
+    ("render", ("deploys", "list")), ("pulumi", ("preview",)), ("pulumi", ("stack", "ls")), ("uv", ("sync",)),
+    ("gem", ("install",)), ("poetry", ("install",)), ("yarn", ("npm", "info")), ("eas", ("build",)),
+    ("fastlane", ("lanes",)), ("firebase", ("projects:list",)), ("helm", ("list",)), ("railway", ("status",)),
+]
+
+
+def _option_forms(program):
+    flag, short, long = profiles.OPTIONS.get(program, ("", "", ""))
+    forms = []
+    if flag:
+        forms += [(flag,)] + ([(flag + flag[1:],)] if len(flag) == 2 else [])
+    for value in filter(None, (short, long)):
+        forms += [(value, "sample"), (value, "Sample Account")]
+    if short:
+        forms += [(short + "Sample",)] + ([(flag + short[1:], "Sample")] if len(flag) == 2 else [])
+    if long:
+        forms += [(long + "=Sample",)]
+    return forms + list(_UNKNOWN_FORMS)
+
+
+def _between(paths):
+    for program, verb in paths:
+        for form in _option_forms(program):
+            for gap in range(len(verb) + 1):
+                yield program, verb, (program, *verb[:gap], *form, *verb[gap:], "sample")
+
+
+def option_between_corpus():
+    """(text, rule) for the writes, (text, None) for the reads, each in every spelling and position."""
+    writes = sorted({(program, verb, rule) for rule, table in (
+        ("publish", tp._DEPLOY_PUBLISH), ("publish", tp._PUBLISH_MORE), ("secret-write", tp._SECRET_WRITE))
+        for program, verbs in table.items() for verb in verbs})
+    rows = [(words, rule) for program, verb, rule in writes for _, _, words in _between([(program, verb)])]
+    rows += [(words, None) for _, _, words in _between(_READ_PATHS)]
+    renderings = [(family, position) for family in profiles.FAMILIES for position in profiles.POSITIONS]
+    for j, (words, rule) in enumerate(rows):
+        # By default each row in one spelling and position, rotating through all 24; every one with FULL.
+        for family, position in renderings if FULL else renderings[j % len(renderings):][:1]:
+            yield words, profiles.render(words, family, position), rule
+
+
+def _measure():
+    misses, new_read_asks, writes, reads = [], [], 0, 0
+    for words, text, rule in option_between_corpus():
+        verdict = tp.assess(text)
+        if rule:
+            writes += 1
+            if (verdict.level, verdict.rule) != ("ask", rule):
+                misses.append(text)
+        else:
+            reads += 1
+            program = tp._PROGRAM_ALIASES.get(words[0], words[0])
+            # #821's reading, kept: a deploy CLI's verb this reader can't place asks as `publish`
+            unplaceable = program in tp._DEPLOY_PROGRAMS and tp._verb_unplaceable(program, words[1:])
+            if verdict.level != "run" and not (unplaceable and (verdict.level, verdict.rule) == ("ask", "publish")
+                                               and tp.ask_rules(text) == {"publish"}):
+                new_read_asks.append(text)
+    return misses, new_read_asks, writes, reads
+
+
+def test_the_option_between_corpus_has_no_miss_and_no_new_read_ask():
+    """Measured on the full corpus (QUOTED_ARGS_EVIDENCE_FULL=1, 67,440 write and 16,104 read rows): before this,
+    10,053 write rows missed (4,437 ran with no card, 5,616 asked as `publish` instead of `secret-write`); after it,
+    none, and no read row's verdict changed."""
+    misses, new_read_asks, writes, reads = _measure()
+    assert (writes, reads) == ((67440, 16104) if FULL else (2810, 671))
+    assert not misses, (len(misses), misses[:10])
+    assert not new_read_asks, (len(new_read_asks), new_read_asks[:10])

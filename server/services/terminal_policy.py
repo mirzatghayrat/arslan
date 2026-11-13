@@ -720,6 +720,75 @@ def _track(program: str, lower: tuple[str, ...]) -> tuple[str, ...]:
     return lower[1:] if program == "gcloud" and lower[:1] in (("alpha",), ("beta",)) else lower
 
 
+_READINGS_CAP = 4096
+
+
+def _verb_readings(program: str, args: tuple[str, ...], depth: int) -> set[tuple[str, ...]] | None:
+    """The first `depth` words that are not options, lowercased, in each way the options can be read (#897 review):
+    these CLIs read an option wherever it stands, so `gcloud app --project X deploy` is `gcloud app deploy`. A known
+    option's value (`_OPTION_VALUES`) is skipped with it; an attached or `=` value, a known flag or a known cluster
+    takes no word. An unknown option may or may not take the next word, so both readings are kept. After `--` every
+    word is an operand. None: more readings than `_READINGS_CAP` (only a crafted line), which the caller asks on."""
+    values = _OPTION_VALUES.get(program, frozenset())
+    flags = _OPTION_FLAGS.get(program, frozenset())
+    out: set[tuple[str, ...]] = set()
+    seen: set[tuple[int, tuple[str, ...]]] = set()
+    todo = [(0, ())]
+    while todo:
+        if len(seen) > _READINGS_CAP:
+            return None
+        i, words = todo.pop()
+        if (i, words) in seen:
+            continue
+        seen.add((i, words))
+        if len(words) == depth or i >= len(args):
+            out.add(words)
+            continue
+        word = args[i]
+        if word == "--":
+            out.add(words + tuple(w.lower() for w in args[i + 1:i + 1 + depth - len(words)]))
+            continue
+        if not word.startswith("-") or word == "-":
+            todo.append((i + 1, words + (word.lower(),)))
+            continue
+        option, equals, _ = word.partition("=")
+        if equals or word in flags:
+            takes = (False,)
+        elif option in values:
+            takes = (True,)
+        elif word.startswith("--"):
+            takes = (False, True)
+        else:
+            takes = (False, True)
+            for offset, letter in enumerate(word[1:], 2):
+                if "-" + letter in values:
+                    takes = (offset == len(word),)
+                    break
+                if "-" + letter not in flags:
+                    break
+            else:
+                takes = (False,)
+        todo.extend((i + 1 + take, words) for take in takes)
+    return out
+
+
+def _write_verbs(program: str, args: tuple[str, ...]) -> set[str]:
+    """`publish` or `secret-write` when a reading of the verb path past its options (`_verb_readings`) is one of the
+    tables' write verbs; the stricter reading wins, so either one placing a write asks."""
+    tables = [(rule, table[program]) for rule, table in (("publish", _DEPLOY_PUBLISH), ("publish", _PUBLISH_MORE),
+                                                        ("secret-write", _SECRET_WRITE)) if program in table]
+    if not tables:
+        return set()
+    readings = _verb_readings(program, args, 4)
+    if readings is None:
+        return {rule for rule, _ in tables}
+    found = {rule for rule, table in tables for reading in readings if _deploy_verb(table, _track(program, reading))}
+    if any(program == "eas" and reading[:1] == ("build",) and any(w.lower().startswith("--auto-submit") for w in args)
+           or program == "fastlane" and reading[:1] and reading[0].startswith("upload_to_") for reading in readings):
+        found.add("publish")
+    return found
+
+
 def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
     """A deploy CLI whose verb this reader cannot place (#821): a word before the verb that is neither one of the
     program's global options nor such an option's value (`firebase --foo deploy`, `netlify --weird status`), or an
@@ -806,16 +875,18 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     """
     program, args = words[0].lower(), words[1:]
     program = _PROGRAM_ALIASES.get(program, program)
+    # Deploy, publish and secret-write verbs read past options between their words, in every branch (#897 review).
+    writes = _write_verbs(program, args)
     if program in _DEPLOY_PROGRAMS and _verb_unplaceable(program, args):
-        return _legacy_named_rules(words) | {"publish"}
+        return _legacy_named_rules(words) | (writes or {"publish"})
     if not _fully_accounted(program, args):
-        return _legacy_named_rules(words)
+        return _legacy_named_rules(words) | writes
     operations = frozenset()
     if program in _GLOBAL_OPTIONS and program not in {"security", "git"}:
         args, operations = _dispatch_args(program, args)
     lower = tuple(w.lower() for w in args)
     first = lower[0] if lower else ""
-    found: set[str] = set()
+    found: set[str] = set(writes)
 
     def add(rule: str, matches: bool) -> None:
         if matches:
@@ -878,12 +949,7 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         or program == "docker" and (first == "push" or lower[:2] == ("image", "push"))
         or program == "terraform" and first in {"apply", "destroy"}
         or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
-        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations)
-        or program in _DEPLOY_PUBLISH and _deploy_verb(_DEPLOY_PUBLISH[program], lower)
-        or program in _PUBLISH_MORE and _deploy_verb(_PUBLISH_MORE[program], _track(program, lower))
-        or program == "eas" and first == "build" and any(w.startswith("--auto-submit") for w in lower)
-        or program == "fastlane" and first.startswith("upload_to_"))
-    add("secret-write", program in _SECRET_WRITE and _deploy_verb(_SECRET_WRITE[program], _track(program, lower)))
+        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations))
     add("force-kill", program in {"killall", "pkill"})
     add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
         or program == "defaults" and first == "write" or program == "crontab" and first != "-l")

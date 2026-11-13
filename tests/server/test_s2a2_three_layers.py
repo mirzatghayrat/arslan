@@ -67,11 +67,11 @@ _DEPLOY_ASKS = [
     # A verb the reader cannot place asks as `publish`, whatever the verb: a word before it that is not one of the
     # program's known options or such an option's value, or an option between the two words of a two-word verb.
     *[(command, "publish") for command in (
-        "netlify --weird deploy", "fly --weird deploy", "flyctl --weird deploy", "heroku --weird config:set K=V",
+        "netlify --weird deploy", "fly --weird deploy", "flyctl --weird deploy",
         "railway --weird up", "wrangler --weird deploy", "firebase --foo deploy", "helm --weird install x ./c",
         "vercel --foo deploy", "helm -x ns install x ./c", "fly --region iad deploy", "vercel --foo",
-        "fly secrets -a x set K=V", "flyctl apps -a x destroy x", "fly scale --app x count 2", "fly ssh -a x console",
-        "wrangler pages --env prod deploy dist", "wrangler secret -e prod put K", "wrangler versions --env x deploy",
+        "flyctl apps -a x destroy x", "fly scale --app x count 2", "fly ssh -a x console",
+        "wrangler pages --env prod deploy dist", "wrangler versions --env x deploy",
         "netlify --weird status", "fly --weird status", "flyctl --weird logs", "heroku --weird apps",
         "railway --weird status", "wrangler --weird whoami", "firebase --weird projects:list", "helm --weird list",
         "vercel --weird ls", "netlify -help deploy", "vercel -h deploy", "helm --version install x ./c",
@@ -107,6 +107,8 @@ _DEPLOY_ASKS = [
     *[(command, "secret-write") for command in (
         "fly secrets set K=V", "flyctl secrets set K=V", "heroku config:set K=V", "heroku -a x config:set K=V",
         "wrangler secret put K", "heroku config:add K=V", "heroku -a x config:add K=V",
+        # read past an option between its words, or under either reading of an unknown one (#897 review)
+        "fly secrets -a x set K=V", "wrangler secret -e prod put K", "heroku --weird config:set K=V",
     )],
     *[(command, "remote-shell") for command in (
         "fly ssh console", "flyctl ssh console", "fly -a x ssh console", "heroku run bash", "heroku -a x run bash",
