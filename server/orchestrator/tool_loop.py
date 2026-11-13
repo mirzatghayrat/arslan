@@ -13,7 +13,7 @@ from arslan.runtime_policy import ProgressPolicy, bounded_history
 from server.orchestrator import run_trace
 from server.orchestrator.answer_salvage import _CHAT_TIMEOUT_S
 from server.orchestrator import command_gate, on_demand, tool_execute, tool_gates, turn_answer, turn_context
-from server.orchestrator.command_gate import _nobody_to_ask, _scheduled_command_refused
+from server.orchestrator.command_gate import _scheduled_command_refused, refuses_commands
 from server.orchestrator.model_step import (
     _SENT_IS_FINAL, _SchemaDrops, _context_parts, _hiding, _model_call, _rendered_size, _server_trims)
 from server.orchestrator.turn_stream import TextShown, _StepStream, _TurnText, _streams_answer
@@ -505,11 +505,11 @@ async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> d
           "target": desktop_status.step_target(tool_key, args)})
     desktop_status.note_step(tool_key, args)   # the island's "now doing" line (0.1.51)
 
-    # v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask (a scheduled run) runs no command
-    # at all, whatever rule, grant or "always" answer stands. Refused here, before whether this turn could run it
-    # is read: run_command is not offered there, and naming it anyway (or through use_tool) must still be listed in
-    # the Inbox and explained, not answered "not available". DELETE-BY: v0.1.64, with S2a-3 and PR4.
-    if tool_key == "run_command" and _nobody_to_ask(confirm_command):
+    # A run with nobody to ask runs no command at all, whatever rule, grant or "always" answer stands, unless it is a
+    # scheduled task's own fire (ASK1-b: the gate then runs what needs no card, in the sandbox). The heartbeat and a
+    # sub-session's turn with nobody to ask are refused here, before whether this turn could run it is read:
+    # run_command is not offered there, and naming it anyway (or through use_tool) is still listed and explained.
+    if tool_key == "run_command" and refuses_commands(confirm_command, conversation_id):
         return _record_tool_result(tool_key, args, await _scheduled_command_refused(args, conversation_id), emit,
                                    tool_trace, assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
 

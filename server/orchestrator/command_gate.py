@@ -4,6 +4,8 @@ the command's own card, then the network after outside content. Since S2a-3 step
 refusal the model reads, or with what it settled for the execute stage."""
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import re
 import uuid
 from dataclasses import dataclass, field, replace
@@ -25,23 +27,59 @@ async def _asks_for_everything() -> bool:
 
 
 def _nobody_to_ask(confirm_command) -> bool:
-    """A run with no card callback and no card surface: a scheduled run (the heartbeat is one)."""
+    """A run with no card callback and no card surface: a scheduled fire, the heartbeat, a sub-session's turn with
+    nobody to ask."""
     from server.services import permissions
     return confirm_command is None and permissions.current_asker() is None
 
 
-#: What the model is told when a run with nobody to ask names run_command (v0.1.63; DELETE-BY: v0.1.64, with
-#: S2a-3 and PR4).
-SCHEDULED_COMMAND_NOTE = ("Scheduled runs don't run commands. Save what you found with write_file (it writes in "
-                          "Arslan's own folder), or tell the user what to run themselves.")
+#: ASK1-b (v0.1.64): the conversation of the scheduled task's fire running now, set by `scheduler._fire` only (never
+#: for the heartbeat). The gate reads it, not `_nobody_to_ask`, which is wider.
+_FIRE: contextvars.ContextVar[str | None] = contextvars.ContextVar("scheduled_fire", default=None)
+#: ASK1-b: whether a fire's commands may write in Arslan's own folder. False cuts a fire back to read-only commands:
+#: they start in the run's temp folder, the only place besides the cache they can write (`executors.RunCommand`).
+_FIRE_WRITES = True
+
+
+@contextlib.contextmanager
+def scheduled_fire(conversation_id: str):
+    token = _FIRE.set(conversation_id)
+    try:
+        yield
+    finally:
+        _FIRE.reset(token)
+
+
+def fire_runs_commands(conversation_id: str | None) -> bool:
+    """A scheduled task's own fire: its turn, in its own conversation, with nobody to ask and not a sub-session."""
+    from server.services import permissions, settings_service
+    return (conversation_id is not None and _FIRE.get() == conversation_id and permissions.current_asker() is None
+            and settings_service.run_sub_folder() == ())
+
+
+def refuses_commands(confirm_command, conversation_id: str | None) -> bool:
+    """A run with nobody to ask that isn't a scheduled task's own fire runs no command."""
+    return _nobody_to_ask(confirm_command) and not fire_runs_commands(conversation_id)
+
+
+#: What the model is told when a run with nobody to ask that isn't a scheduled task's own fire names run_command.
+SCHEDULED_COMMAND_NOTE = ("This run doesn't run commands: nobody is there to approve them. Save what you found with "
+                          "write_file (it writes in Arslan's own folder), or tell the user what to run themselves.")
+#: ASK1-b: what a fire is told when a command that would ask was refused and listed.
+FIRE_REFUSED_NOTE = ("A scheduled run runs only commands that need no OK, inside the sandbox; this one was refused and "
+                     "listed under the task on the user's Scheduled page. Do the rest without it, or say what to run.")
+#: ASK1-b: under a stored "ask before every command" every command of a fire is refused; this says where to switch.
+FIRE_ASK_ALL_NOTE = ("The user chose to be asked before every command, so a scheduled run runs none. To let scheduled "
+                     "runs run commands in the sandbox: Settings › What Arslan may do › Terminal › When to ask › "
+                     "“Ask only for risky commands”.")
 
 
 async def _scheduled_command_refused(args: dict, conversation_id: str | None) -> dict:
-    """The refusal of a command in a run with nobody to ask, listed in the Inbox as the card would have read under
-    "ask for every command" (U14 c): policy, deny, no "Always"."""
+    """The refusal of a command in a run with nobody to ask that isn't a scheduled task's own fire, listed as the
+    card would have read under "ask for every command" (U14 c): policy, deny, no "Always"."""
     from server.services import approvals, terminal_policy
     command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
-    return {"ok": False, "error": await _unattended("a scheduled run runs no commands",
+    return {"ok": False, "error": await _unattended("this run runs no commands",
                                                     approvals._command_request(command, [], None, ask_all=True),
                                                     conversation_id),
             "note": SCHEDULED_COMMAND_NOTE}
@@ -162,16 +200,24 @@ async def _sandbox_enabled() -> bool:
         return True
 
 
+async def _folder_for_run(db):
+    """Where this run's commands start, as the executor reads it: a run with nobody to ask (a scheduled fire) works in
+    Arslan's own folder (`executors.RunCommand`), any other in `workspace_dir_for_run` (SUB5c: a sub-session's own)."""
+    from server.services import permissions, settings_service
+    if permissions.current_asker() is None and settings_service.run_sub_folder() == ():
+        return settings_service.default_workspace().resolve()
+    return await settings_service.workspace_dir_for_run(db)
+
+
 async def _work_folder_holds_home() -> bool:
     """S2a-3 step 3 (⓪Plan's ruling 7): whether the working folder is the home folder or holds it, read on every
     call. There the sandbox may write all of home, so an unread command asks instead of running with no card. Compared
     case-insensitively (the default macOS disk ignores case). No folder, or one that cannot be read, counts as yes."""
     from pathlib import Path
     from server.db import session as db_session
-    from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            folder = await settings_service.workspace_dir_for_run(db)     # SUB5c: where this run's commands write
+            folder = await _folder_for_run(db)     # SUB5c: where this run's commands write
         if folder is None:
             return True
         home = [part.casefold() for part in Path.home().resolve().parts]
@@ -186,10 +232,9 @@ async def run_folder():
     so the policy follows a change of folder from there. The gate, its card and the island read this one folder. None
     when it can't be read: the policy then reads the text alone, as before."""
     from server.db import session as db_session
-    from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.workspace_dir_for_run(db)
+            return await _folder_for_run(db)
     except Exception:  # noqa: BLE001 — unknown reads as before step 4b (no folder)
         return None
 
@@ -682,6 +727,8 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
                                         why=str(args.get("why") or "").strip()[:300],
                                         run_later=d.later_line if d.lift else ()),
             conversation_id)}
+        if fire_runs_commands(conversation_id):     # ASK1-b: refused and listed; a stored ask_all says where to switch
+            result["note"] = FIRE_ASK_ALL_NOTE if ask_all else FIRE_REFUSED_NOTE
         return result
     from server.services import permissions
     permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below

@@ -1354,7 +1354,7 @@
     "every_minute": "chaque minute",
     "every_n_minutes": "toutes les {{count}} minutes",
     "prompt": "Ce qu’elle fera à chaque fois :",
-    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : une étape qui demanderait votre confirmation est refusée et listée sous la tâche, dans la page Planifiées. Elles peuvent chercher des informations et écrire des fichiers uniquement dans le dossier de travail d’Arslan ; elles ne lancent pas de commandes.",
+    "unattended": "Les exécutions planifiées se font seules et ne vous attendent jamais : elles lancent dans le bac à sable les commandes qui ne demanderaient pas votre confirmation, et n’écrivent des fichiers que dans le dossier de travail d’Arslan. Ce qui demanderait votre confirmation est refusé et listé sous la tâche, dans la page Planifiées.",
     "anyTask": "créer n’importe quelle tâche planifiée"
   },
   "enroll": {
@@ -1493,7 +1493,10 @@
     "seenNote": "Ouvrir une tâche marque comme vu ce que ses exécutions n’ont pas pu faire. Ce qui a expiré sans être fait dans sa propre conversation disparaît quand vous ouvrez cette conversation ; une carte s’y efface seulement une fois que vous y avez répondu.",
     "attention": "À regarder",
     "changed": "Modifié",
-    "failing": "Échouée ou mise en pause d'elle-même"
+    "failing": "Échouée ou mise en pause d'elle-même",
+    "commandsNoteTitle": "Les tâches planifiées peuvent de nouveau lancer des commandes",
+    "commandsNoteBody": "L’exécution d’une tâche planifiée lance désormais les commandes qui ne demanderaient pas votre confirmation, dans le bac à sable, dans le dossier de travail d’Arslan. Ce qui demanderait votre confirmation est refusé et listé ici sous sa tâche. Les tâches créées avant cette mise à jour, ou après la lecture d’un contenu extérieur, lancent leurs commandes sans réseau. Si vous avez choisi « Demander avant chaque commande », les exécutions planifiées n’en lancent aucune.",
+    "commandsNoteOk": "Compris"
   },
   "remembered": {
     "title": "Réponses mémorisées",

@@ -69,8 +69,9 @@ async def test_the_frame_carries_the_prompt_and_the_bridge_reads_the_same(execut
 async def test_the_model_is_told_what_a_scheduled_run_may_do(execution_db, monkeypatch):
     every = {t["key"]: t["description"] for t in await arslan._every_tool()}
     text = every["schedule_task"]
-    # v0.1.63: no commands in a scheduled run (until S2a-3); writes only in Arslan's own folder.
-    assert "Arslan's own folder" in text and "runs no commands" in text and "refused" in text
+    # ASK1-b: commands that need no OK, in the sandbox; writes only in Arslan's own folder.
+    assert "Arslan's own folder" in text and "refused" in text and "runs no commands" not in text
+    assert "runs only commands that need no OK, inside the sandbox" in text
     # INB5 (#605 review F3): the Inbox is gone; a refused step is listed under its task on the Scheduled page.
     assert "under the task on their Scheduled page" in text and "Inbox" not in text
     assert "sandboxed commands" not in text

@@ -48,6 +48,7 @@ class SettingsIn(BaseModel):
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     shell_policy_switch_notice: str | None = None   # v0.1.64 ASK1-a: "pending" / "seen" (migration 0095's note)
+    scheduled_commands_note: str | None = None      # v0.1.64 ASK1-b: "pending" / "seen" (migration 0097's note)
     model_roles_reset_notice: str | None = None     # v0.1.64 ROUTE1: "pending" / "seen" (migration 0086's notice)
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
@@ -124,6 +125,7 @@ class SettingsOut(BaseModel):
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""                  # ASK1-a: the API sends the policy as read (_settings_out)
     shell_policy_switch_notice: str = ""            # v0.1.64 ASK1-a: "pending" after 0095, then "seen"
+    scheduled_commands_note: str = ""               # v0.1.64 ASK1-b: "pending" after 0097, then "seen"
     model_roles_reset_notice: str = ""              # v0.1.64 ROUTE1: "pending" after 0086 cleared the old roles, then "seen"
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)

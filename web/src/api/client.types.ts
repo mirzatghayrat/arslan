@@ -388,6 +388,7 @@ export interface AppSettings {
   orchestrator_shell_enabled?: string; // "true" | "false"
   shell_confirm_policy?: string; // "ask_all" | "ask_risky", as the server reads it (ASK1-a)
   shell_policy_switch_notice?: string; // v0.1.64 ASK1-a: "pending" after migration 0095, then "seen"
+  scheduled_commands_note?: string; // v0.1.64 ASK1-b: "pending" after migration 0097, then "seen"
   model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)

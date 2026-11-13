@@ -27,6 +27,9 @@ _PLAIN_KEYS = (
                # v0.1.64 ASK1-a: "pending" when migration 0095 found an existing install whose stored policy isn't
                # ask_risky; the window shows a one-time note and writes "seen". DELETE-BY: v0.1.65, with the note.
                "shell_policy_switch_notice",
+               # v0.1.64 ASK1-b: "pending" when migration 0097 found an existing install; the Scheduled page says
+               # once that scheduled tasks run commands in the sandbox, and writes "seen". DELETE-BY: v0.1.65.
+               "scheduled_commands_note",
                # v0.1.64 ROUTE1: "pending" when migration 0086 cleared the old model roles; Settings says so once, then
                # writes "seen".
                "model_roles_reset_notice",

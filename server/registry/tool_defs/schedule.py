@@ -11,11 +11,11 @@ SCHEDULE = (
          "Schedule a recurring task that YOU will run later. args: "
          "{name, prompt, when} where when is 'every: 3600' (seconds) or "
          "'cron: 0 9 * * *'. The user is asked for permission: for this one "
-         # S1 (U14 d); v0.1.63: no commands in a scheduled run (the user's decision until
-         # S2a-3, DELETE-BY: v0.1.64 with it and PR4).
+         # S1 (U14 d); ASK1-b (v0.1.64): commands that need no OK, in the sandbox.
          "task, or for any scheduled task for the rest of the conversation. A scheduled "
-         "run is unattended: it can write files only in Arslan's own folder, it runs no "
-         "commands, it only calls MCP tools the server marks read-only, and any step that "
+         "run is unattended: it can write files only in Arslan's own folder, it runs only "
+         "commands that need no OK, inside the sandbox (offline when this turn read "
+         "outside content), it only calls MCP tools the server marks read-only, and any step that "
          # INB5: the Inbox is gone; what a run could not do is listed under its task (#605 review F3).
          "needs the user's OK is refused and listed under the task on their Scheduled page.",
          {
