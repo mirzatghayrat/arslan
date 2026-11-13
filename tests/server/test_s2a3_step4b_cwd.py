@@ -94,6 +94,38 @@ async def test_a_change_of_folder_out_of_the_working_folder_asks_delete_outside(
     assert approvals.CARD_FOLDER.get() is None                   # set only while the card is decided
 
 
+async def test_under_full_access_the_outside_card_still_asks_delete_outside(folders, execution_db, monkeypatch):
+    """S5a (#893 review 1): full access answers an outside card only where the card's own rules, read from the working
+    folder, have no layer ② rule. The same change of folder out of it, asked to run outside, is still the user's."""
+    work, elsewhere = folders
+    _work_folder(monkeypatch, work)
+
+    async def answer(value):
+        return value
+    monkeypatch.setattr(command_gate, "_sandbox_enabled", lambda: answer(True))
+    monkeypatch.setattr(command_gate, "_outside_grant", lambda conversation_id, command: answer(None))
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)
+    monkeypatch.setattr(settings_service, "default_permission_mode", lambda db: answer("full_access"))
+    assert (await permissions.mode_for("c1")).mode == "full_access"
+    frames: list = []
+
+    async def asker(frame):
+        frames.append(frame)
+        return {"approved": False, "scope": None, "note": "", "by": "mac"}
+    command = f"cd {elsewhere} && rm {STAND_IN}"
+    turn = untrusted.track_turn()
+    try:
+        with permissions.asking_with(asker):
+            result = await command_gate.check(
+                "run_command", {"command": command, "outside_sandbox": True, "why": "stand-in"}, ToolTurn(
+                    resolve_tools=None, emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+                    confirm_command=command_confirm.Confirmations("c1").command, conversation_id="c1"))
+    finally:
+        untrusted.end_turn(turn)
+    assert isinstance(result, dict) and result["ok"] is False, result        # a card, answered no: not a run
+    assert len(frames) == 1 and "delete-outside" in frames[0]["rules"], frames
+
+
 async def test_the_card_frame_keys_are_unchanged(folders, risky_with_grant, shown, monkeypatch):
     """No folder key on the frame (not a Bridge frame change): a card that asks the same with a folder and with none
     (main's reading) has the same keys."""

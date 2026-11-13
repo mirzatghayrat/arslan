@@ -276,10 +276,13 @@ async def write_settings(
     body: SettingsIn, session: AsyncSession = Depends(get_session)
 ) -> SettingsOut:
     data = body.model_dump(exclude_none=True)
-    # S5a: the window's old field lands in the new key only. DELETE-BY: S5a-2, when the window writes the mode.
+    # S5a: the window's old field lands in the new key only, and never wider than the default it replaces (#893 review
+    # 4): only `default_permission_mode` itself widens. DELETE-BY: S5a-2, when the window writes the mode.
     old = data.pop("shell_confirm_policy", None)
     if old is not None and "default_permission_mode" not in data:
-        data["default_permission_mode"] = "ask" if old == "ask_all" else "ask_risky"
+        from server.services import permissions
+        data["default_permission_mode"] = permissions.narrower(
+            await settings_service.default_permission_mode(session), "ask" if old == "ask_all" else "ask_risky")
     await settings_service.update_settings(session, data)
     # Keep the heartbeat's scheduled task in step with its settings. Best-effort:
     # a settings write must still succeed if the sync fails, and sync_task is

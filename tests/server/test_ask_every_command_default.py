@@ -226,6 +226,7 @@ async def test_the_bench_instance_asks_as_the_run_said(client, monkeypatch):
         body = {k: v for k, v in settings_body("/run").items() if k != "workspace_dir"}
         assert (await client.put("/api/v1/settings", json=body)).status_code == 200
         async with db_session.AsyncSessionLocal() as session:
-            # S5a: the bench still sends the old field, which lands in the default mode (DELETE-BY: S5a-2).
+            # S5a (#893 review 4): the bench writes the default mode itself (the old field only narrows it).
+            assert "shell_confirm_policy" not in body
             assert await settings_service.default_permission_mode(session) == (
                 "ask" if asked == "ask_all" else "ask_risky")

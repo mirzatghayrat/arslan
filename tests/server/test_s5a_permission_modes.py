@@ -56,8 +56,19 @@ async def _set(conversation_id: str, mode: str | None, *, parent: str | None = N
         await db.commit()
 
 
+def _outside(detail: str, **kw) -> Request:
+    """An outside card as `command_confirm` builds it: its frame carries the rules read from the working folder (none
+    when it has none: `protocol.propose_run_command` leaves the key out)."""
+    from server.services import terminal_policy
+    rules = sorted(terminal_policy.ask_rules(detail, outside=True))
+    frame = {"type": "propose_run_command", "sandbox": "outside", **({"rules": rules} if rules else {})}
+    return Request(kind="outside", target="*", title="outside?", detail=detail, frame=frame, **kw)
+
+
 def _requests(work: Path) -> dict[str, Request]:
     def r(kind, target="*", detail="", **kw):
+        if kind == "outside":
+            return _outside(detail, **kw)
         return Request(kind=kind, target=target, title=f"{kind}?", detail=detail, **kw)
     return {
         "workspace_write": r("workspace_write", str(work), "notes.txt"),
@@ -101,6 +112,43 @@ async def test_each_mode_answers_exactly_its_kinds_and_every_other_card_still_as
         answered = name in _ANSWERED[mode]
         assert (len(asker.frames) == 0) is answered, (mode, name)
         assert decision.allowed is answered and (decision.by == "mode") is answered, (mode, name)
+
+
+#: #893 review 5: exactly the user's list (2026-11-14): a schedule, an MCP tool (a destructive one too), an app, and a
+#: command with no layer ② rule (in the sandbox or leaving it), plus "Ask only when risky"'s edit in the work folder.
+#: Written out, not derived: `folder` and `screen` are not on it.
+_FULL_ACCESS_KINDS = {"schedule", "mcp_tool", "destructive", "app", "command", "outside", "workspace_write"}
+
+
+@pytest.mark.parametrize("kind", sorted(permissions.KINDS))
+async def test_full_access_answers_exactly_the_users_list_over_every_kind(kind, tmp_path):
+    await _set(CONV, "full_access")
+    work = tmp_path / "work"
+    if kind == "outside":
+        req = _outside("ls")
+    elif kind == "workspace_write":
+        req = Request(kind=kind, target=str(work), title="t", detail="notes.txt")
+    else:
+        req = Request(kind=kind, target="x", title="t", detail="ls")
+    asker = Asker()
+    with permissions.asking_with(asker):
+        decision = await permissions.decide(req, Context(CONV, task_id="t"))
+    assert (decision.by == "mode") is (kind in _FULL_ACCESS_KINDS), kind
+    assert (not asker.frames) is (kind in _FULL_ACCESS_KINDS), kind
+
+
+@pytest.mark.parametrize("req", [
+    _outside("ls", once_only=True),                                                  # review 6: the flag is kept
+    Request(kind="outside", target="*", title="t", detail="ls"),                     # no frame: no rules to trust
+    Request(kind="outside", target="*", title="t", detail="ls",
+            frame={"type": "propose_run_command", "rules": ["delete-outside"]}),     # the frame's rules are read
+], ids=["once_only", "no_frame", "frame_rule"])
+async def test_full_access_leaves_an_outside_card_it_cant_trust_to_the_user(req):
+    await _set(CONV, "full_access")
+    asker = Asker()
+    with permissions.asking_with(asker):
+        decision = await permissions.decide(req, Context(CONV, task_id="t"))
+    assert decision.by != "mode" and asker.frames
 
 
 async def test_what_the_mode_answers_is_one_ledger_row_naming_the_mode(tmp_path):
@@ -147,6 +195,17 @@ async def test_a_grandchild_never_widens_past_its_grandparent():
     await _set("mid", "full_access", parent="top")
     await _set("leaf", "full_access", parent="mid")
     assert (await permissions.mode_for("leaf")).mode == "ask"
+
+
+async def test_an_unreadable_stored_mode_is_ask_never_the_parents_or_the_default():
+    """#893 review 6: an invalid own value is "Ask every step", not unset (which would inherit full access)."""
+    await _set("parent", "full_access")
+    await _set("child", "garbage", parent="parent")
+    assert (await permissions.mode_for("child")).mode == "ask"
+    await _set("top", "FULL_ACCESS")
+    assert (await permissions.mode_for("top")).mode == "ask"
+    await _set("unset", None)
+    assert (await permissions.mode_for("unset")).mode == "ask_risky"        # null is the default
 
 
 # ── the three fallbacks: "Ask only when risky" runs as "Ask every step", and says why ─────────────────────────────
@@ -200,6 +259,73 @@ async def test_fallback_when_the_checkpoint_cant_be_saved(monkeypatch, tmp_path)
             mode = await permissions.mode_for(CONV, check_save=True)
             assert (mode.mode, mode.fallback) == ("ask", "no_checkpoint")
             assert await _write_card_shown(tmp_path)
+
+
+def _raises(*a, **kw):
+    raise OSError("stand-in read error")
+
+
+async def _raising(*a, **kw):
+    raise OSError("stand-in read error")
+
+
+@pytest.mark.parametrize("target, name, fake, reason", [
+    ("settings_service", "terminal_sandbox_enabled", _raising, "sandbox_off"),
+    ("command_sandbox", "available", _raises, "sandbox_off"),
+    ("command_gate", "_work_folder_holds_home", _raising, "home_folder"),
+    ("checkpoints", "save_blocked", _raising, "no_checkpoint"),
+])
+async def test_a_fallback_read_that_fails_is_that_fallback(monkeypatch, tmp_path, target, name, fake, reason):
+    """#893 review 2: a check that raises (or whose error a helper swallows, as `command_gate._sandbox_enabled` reads
+    an unreadable setting as on) is the fallback it checks, with its reason, never "Ask only when risky"."""
+    from server.orchestrator import command_gate
+    from server.services import command_sandbox
+    modules = {"settings_service": settings_service, "command_sandbox": command_sandbox,
+               "command_gate": command_gate, "checkpoints": checkpoints}
+    await _set(CONV, "ask_risky")
+    monkeypatch.setattr(modules[target], name, fake)
+    with execution_context.bind_run(4300):
+        mode = await permissions.mode_for(CONV, check_save=True)
+        assert (mode.mode, mode.chosen, mode.fallback) == ("ask", "ask_risky", reason)
+        assert await command_gate._asks_for_everything()
+        assert await _write_card_shown(tmp_path)
+
+
+async def test_the_window_phone_and_status_see_no_checkpoint_from_the_last_save_check(monkeypatch, tmp_path):
+    """#893 review 3 (S5a-2's ca36de82, moved into `mode_for`): a read that doesn't save a checkpoint (the mode API, the
+    phone's details, the status, the ledger) shows the reason the conversation's last save-checking read found; a later
+    one that could save clears it; one that didn't check the save keeps it."""
+    from server.api.conversations import _permission_mode_out
+    from server.services import phone_details, self_status
+
+    async def shown(conversation_id=CONV):
+        async with db_session.AsyncSessionLocal() as db:
+            out = await _permission_mode_out(db, conversation_id)
+            phone = (await phone_details.details(db, conversation_id))["mode"]
+        status = (await self_status.snapshot(conversation_id))["safety"]["approvals"]
+        return out["mode"], out["fallback"], phone, status
+    risky = ("ask_risky", "", "standard", self_status.APPROVALS["ask_risky"])
+    await _set(CONV, "ask_risky")
+    await _set("other", "ask_risky")
+    monkeypatch.setattr(checkpoints, "root_dir", lambda: tmp_path / "checkpoints")
+    checkpoints._reset_for_tests()
+    for name in ("a", "b", "c"):
+        (tmp_path / "work" / name).write_text(name)
+    assert await shown() == risky
+    monkeypatch.setattr(checkpoints, "MAX_FILES", 2)            # over the cap: no undo
+    with execution_context.bind_run(5001):
+        assert await _write_card_shown(tmp_path)
+    assert await shown() == ("ask", "no_checkpoint", "careful", self_status.APPROVALS["ask"])
+    assert await shown("other") == risky                        # per conversation
+    with permissions.asking_with(Asker()):                      # a command's decide doesn't check the save
+        await permissions.decide(_requests(tmp_path / "work")["command"], Context(CONV, task_id="t"))
+    assert (await shown())[:2] == ("ask", "no_checkpoint")
+    assert (await permissions.mode_for(CONV, check_save=True)).fallback == "no_checkpoint"   # no run: not a check
+    checkpoints._reset_for_tests()
+    monkeypatch.setattr(checkpoints, "MAX_FILES", 1000)         # under the cap again: saved
+    with execution_context.bind_run(5002):
+        assert not await _write_card_shown(tmp_path)
+    assert await shown() == risky
 
 
 async def test_no_fallback_for_the_other_modes(monkeypatch):
@@ -322,13 +448,25 @@ async def test_settings_carry_the_default_and_the_old_policy_only_as_a_derived_r
     assert (await client.put("/api/v1/settings", json={"default_permission_mode": "nope"})).status_code == 422
     body = (await client.put("/api/v1/settings", json={"default_permission_mode": "ask"})).json()
     assert (body["default_permission_mode"], body["shell_confirm_policy"]) == ("ask", "ask_all")
-    # S5a-2 deletes this: the window still writes the old field until then; it lands in the new key only.
+    # S5a-2 deletes this: the window still writes the old field until then; it lands in the new key only, and never
+    # wider than the default it replaces (#893 review 4): only the new mode endpoint and field widen.
     body = (await client.put("/api/v1/settings", json={"shell_confirm_policy": "ask_risky"})).json()
-    assert body["default_permission_mode"] == "ask_risky"
+    assert body["default_permission_mode"] == "ask"
     async with client.db_maker() as db:
         keys = set((await db.execute(sa.select(Setting.key))).scalars())
     assert "shell_confirm_policy" not in keys
     assert not hasattr(settings_service, "shell_confirm_policy")
+
+
+@pytest.mark.parametrize("default, old, expected", [
+    ("plan", "ask_all", "plan"), ("plan", "ask_risky", "plan"), ("ask", "ask_risky", "ask"), ("ask", "garbage", "ask"),
+    ("full_access", "ask_all", "ask"), ("full_access", "ask_risky", "ask_risky"), ("ask_risky", "ask_all", "ask"),
+])
+async def test_the_old_policy_field_only_ever_narrows_the_default(client, default, old, expected):
+    """#893 review 4: the legacy bridge (DELETE-BY: S5a-2) clamps to the narrower of the default and its mapping."""
+    await client.put("/api/v1/settings", json={"default_permission_mode": default})
+    body = (await client.put("/api/v1/settings", json={"shell_confirm_policy": old})).json()
+    assert body["default_permission_mode"] == expected
 
 
 @pytest.mark.parametrize("stored, expected", [

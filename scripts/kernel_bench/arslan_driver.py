@@ -324,22 +324,24 @@ def provider_body(provider: str, model: str, base_url: str) -> dict:
 #: The bench asks only for risky commands unless a run says otherwise (BENCH_SHELL_POLICY=ask_all): v0.1.63 made
 #: "ask before every command" the app's default, and a bench round on it would no longer compare with M1B and
 #: the K rounds. The final M1 gates on ask_risky, with one ask_all run for reference.
-SHELL_POLICIES = ("ask_risky", "ask_all")
+#: S5a: each policy's default permission mode, which the driver writes itself: the settings API's old field only ever
+#: narrows the default (#893 review 4). The run's record keeps the policy's name, so records compare across the change.
+SHELL_POLICIES = {"ask_risky": "ask_risky", "ask_all": "ask"}
 
 
 def settings_body(run_dir: str) -> dict:
-    """The test instance's settings: its workspace is the run folder, its command policy BENCH_SHELL_POLICY
-    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell. Values
-    must be strings, as the settings API stores them; the workspace and the policy cannot be set that way."""
+    """The test instance's settings: its workspace is the run folder, its default permission mode from
+    BENCH_SHELL_POLICY (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B
+    cell. Values must be strings, as the settings API stores them; the workspace and the mode cannot be set that way."""
     extra = json.loads(os.environ.get("BENCH_ARSLAN_SETTINGS") or "{}")
     if not isinstance(extra, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in extra.items()):
         raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")
-    if "shell_confirm_policy" in extra:
+    if {"shell_confirm_policy", "default_permission_mode"} & extra.keys():
         raise ValueError("set the command policy with BENCH_SHELL_POLICY, not BENCH_ARSLAN_SETTINGS")
     policy = os.environ.get("BENCH_SHELL_POLICY") or "ask_risky"
     if policy not in SHELL_POLICIES:
         raise ValueError(f"BENCH_SHELL_POLICY must be one of {', '.join(SHELL_POLICIES)}")
-    return {**extra, "shell_confirm_policy": policy, "workspace_dir": run_dir}
+    return {**extra, "default_permission_mode": SHELL_POLICIES[policy], "workspace_dir": run_dir}
 
 
 def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai") -> str:
@@ -355,7 +357,7 @@ def configure(api: str, run_dir: str, base_url: str, model: str, provider: str =
             c.post(f"{api}/settings/provider-configs", json=body).json()
         c.patch(f"{api}/settings/provider-configs/{cfg['id']}/primary").raise_for_status()
         c.put(f"{api}/settings", json=settings).raise_for_status()
-    return settings["shell_confirm_policy"]
+    return os.environ.get("BENCH_SHELL_POLICY") or "ask_risky"
 
 
 if __name__ == "__main__":

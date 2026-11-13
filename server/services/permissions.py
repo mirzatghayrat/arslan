@@ -670,6 +670,13 @@ class Mode:
     fallback: str = ""
 
 
+#: Conversations whose last save-checking read (`mode_for(check_save=True)` in a run: a write's `decide`, the command
+#: gate) found no checkpoint could be saved (#893 review 3, from S5a-2's ca36de82). A read that doesn't save one (the
+#: mode API, the phone's details, the status, the ledger) shows it until a later save-checking read saves one. In
+#: memory only: after a restart the next write learns it again. Only this reason: the other two are read live.
+_NO_CHECKPOINT: set[str] = set()
+
+
 def narrower(a: str, b: str) -> str:
     return MODES[min(MODES.index(a), MODES.index(b))]
 
@@ -677,10 +684,18 @@ def narrower(a: str, b: str) -> str:
 async def mode_for(conversation_id: str | None, *, check_save: bool = False) -> Mode:
     """The mode a step of this conversation runs in. `check_save`: also read whether this run's working folder could
     be saved for undo (`checkpoints.save_blocked`, which saves it first, as the run's first change would)."""
+    from server.services import execution_context
     chosen = await _chosen(conversation_id)
     if chosen != "ask_risky":
         return Mode(chosen, chosen)
     reason = await _fallback(check_save)
+    if conversation_id and check_save and execution_context.current_run_id() is not None:
+        if reason == "no_checkpoint":
+            _NO_CHECKPOINT.add(conversation_id)
+        elif not reason:
+            _NO_CHECKPOINT.discard(conversation_id)
+    elif not reason and conversation_id in _NO_CHECKPOINT:
+        reason = "no_checkpoint"
     return Mode("ask" if reason else chosen, chosen, reason)
 
 
@@ -698,7 +713,9 @@ async def _chosen(conversation_id: str | None) -> str:
                 row = await db.get(ConversationContext, current)
                 if row is None:
                     break
-                chain.append(row.permission_mode if row.permission_mode in MODES else None)
+                # Null is unset (the default, or the parent's); any other value not a mode is "ask" (#893 review 6).
+                own = row.permission_mode
+                chain.append(None if own is None else own if own in MODES else "ask")
                 current = row.parent_id if row.kind == "sub" else None
     except Exception:  # noqa: BLE001 — fails closed: an unreadable mode is "ask every step"
         return "ask"
@@ -711,27 +728,56 @@ async def _chosen(conversation_id: str | None) -> str:
 
 
 async def _fallback(check_save: bool) -> str:
-    """Why "Ask only when risky" can't hold here, or "" (the user's decision, 2026-11-14, one test each)."""
+    """Why "Ask only when risky" can't hold here, or "" (the user's decision, 2026-11-14, one test each). A check that
+    fails is its fallback (#893 review 2): the sandbox setting is read here, not through `command_gate._sandbox_enabled`,
+    which reads an unreadable setting as on."""
     from server.orchestrator import command_gate
-    from server.services import checkpoints, command_sandbox, execution_context
-    if not (await command_gate._sandbox_enabled() and command_sandbox.available()):
-        return "sandbox_off"
-    if await command_gate._work_folder_holds_home():
-        return "home_folder"
-    if check_save and await checkpoints.save_blocked(execution_context.current_run_id(), await command_gate.run_folder()):
-        return "no_checkpoint"
+    from server.services import checkpoints, command_sandbox, execution_context, settings_service
+
+    async def sandbox_on() -> bool:
+        async with db_session.AsyncSessionLocal() as db:
+            on = await settings_service.terminal_sandbox_enabled(db)
+        return on and command_sandbox.available()
+
+    async def save_blocked() -> bool:
+        return await checkpoints.save_blocked(execution_context.current_run_id(), await command_gate.run_folder())
+    for check, holds, reason in ((sandbox_on, False, "sandbox_off"),
+                                 (command_gate._work_folder_holds_home, True, "home_folder"),
+                                 (save_blocked if check_save else None, True, "no_checkpoint")):
+        if check is None:
+            continue
+        try:
+            if bool(await check()) is holds:
+                return reason
+        except Exception:  # noqa: BLE001 — fails closed: a check that can't be read is its fallback
+            logger.warning("permission mode: the %s check failed", reason, exc_info=True)
+            return reason
     return ""
+
+
+#: What full access answers with no card: exactly the user's list (2026-11-14, #893 review 5): a schedule, an MCP tool
+#: (a destructive one too), an app, a command with no layer ② rule (leaving the sandbox too: `outside`), and "Ask only
+#: when risky"'s edit in the work folder. Written out; `hard_rules.never_auto` still holds each one.
+_FULL_ACCESS_KINDS = frozenset({"schedule", "mcp_tool", "destructive", "app", "command", "outside", "workspace_write"})
 
 
 def _widened(req: Request, mode: str) -> bool:
     """What the mode answers with no card. Never money or anything else `hard_rules.never_auto` keeps for the user's
-    own click, whatever the mode. "ask_risky": an edit in the work folder. "full_access": every
-    other card, and leaving the sandbox (no outside card, the user's decision of 2026-11-14) for a command that, read
-    outside the sandbox, has no layer ② rule and writes nothing that runs later."""
+    own click, whatever the mode. "ask_risky": an edit in the work folder. "full_access": `_FULL_ACCESS_KINDS`, and
+    leaving the sandbox (no outside card, the user's decision of 2026-11-14) for a command that, read outside the
+    sandbox, has no layer ② rule and writes nothing that runs later."""
     from server.services import hard_rules
     if mode == "full_access":
+        if req.kind not in _FULL_ACCESS_KINDS:
+            return False
         if req.kind == "outside":
-            return not hard_rules.never_auto(replace(req, kind="command", target="", once_only=False))
+            # #893 review 1: the rules on the server-built card, read from the run's working folder
+            # (`command_confirm`), named to `never_auto`, which also reads the text alone. No frame: not answered.
+            rules = req.frame.get("rules", []) if isinstance(req.frame, dict) else None
+            if not isinstance(rules, list):
+                return False
+            target = "rules:" + "|".join(map(str, rules)) if rules else ""
+            return not hard_rules.never_auto(replace(req, kind="command", target=target))
         return not hard_rules.never_auto(req)
     if mode == "ask_risky":       # the write card's target is the work folder; anything else isn't one
         return (req.kind == "workspace_write" and req.target.startswith("/")
@@ -798,6 +844,7 @@ async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decisi
 
 def _reset_for_tests() -> None:
     _GRANTED_TASKS.clear()
+    _NO_CHECKPOINT.clear()
 
 
 def _extra(extra: dict) -> dict | None:
