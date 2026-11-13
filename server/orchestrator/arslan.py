@@ -691,7 +691,7 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     # project card and a note from off the list put in.
     # K10-1 (D3): a folder's rules are outside content, so a job that read them starts as having read some.
     with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced), \
-            untrusted.carried(rule_files > 0):
+            untrusted.carried(rule_files > 0, text=rules):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_sub_session_tools if sub_session else _background_tools,
@@ -737,6 +737,7 @@ class _AnswerContext:
     card: str
     traced: bool
     rule_files: int
+    rules: str = ""         # NET-a: the folder's rules as the turn reads them, whose sites a turn records as outside
 
 
 #: The dispatch sent an error frame instead of a reply: the turn ends with nothing stored.
@@ -778,7 +779,7 @@ async def _answer_context(conversation_id: str, user_message: str, *, extra_syst
     # A plain string when there are no images; a neutral block list otherwise (providers translate it).
     llm_user = _with_turn_context(context, build_user_blocks(user_message, attached_context, images))
     return _AnswerContext(ctx=ctx, system=system, context=context, llm_user=llm_user, kb_block=kb_block, card=card,
-                          traced=traced, rule_files=rule_files)
+                          traced=traced, rule_files=rule_files, rules=rules)
 
 
 async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventSink, turn: _AnswerContext, *,
@@ -798,7 +799,9 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
         # K10-1 (D3): so is a folder's rules file.
         # INB2 (#475 F2, H1, H2): so is the project knowledge found for it, for the "about you" allowlist, and
         # so are the project card and a note in view that came from a run off the list.
-        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images) or rule_files > 0), \
+        with request_policy.prompt_cache(long=True), untrusted.carried(
+                bool(attached_context or images) or rule_files > 0,
+                text="\n".join(filter(None, (attached_context, turn.rules)))), \
                 untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 

@@ -358,11 +358,16 @@ class MCPSessionManager:
                     if sandbox.get("network"):
                         # SBX-6 MCP proxy: a declared server reaches the network only through the local proxy,
                         # and the user's certificate setting applies as for commands.
-                        from server.services import sandbox_proxy, terminal_exec
+                        from server.services import net_policy, sandbox_proxy, terminal_exec
 
                         sandbox["proxy_port"] = await sandbox_proxy.port()
                         sandbox["trust_service"] = (sandbox["proxy_port"] is not None
                                                     and await terminal_exec.trust_service_allowed())
+                        # NET-a: its own token while the session lives; the proxy doesn't judge its sites (NET's
+                        # design item 7: MCP servers are out of its scope for now).
+                        run = await net_policy.start_run(f"MCP server {sid}", judged=False)
+                        stack.callback(net_policy.end_run, run)
+                        sandbox["proxy_token"] = run.token
                     from server.services import command_sandbox
 
                     # HR-1 (#813 review 11): the profile goes to sandbox-exec as a file. It goes once the server

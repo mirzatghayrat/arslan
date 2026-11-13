@@ -855,12 +855,13 @@ def stopped_by_sandbox(result: dict) -> bool:
             or trust_check_failed(result) or proxy_refused(result))
 
 
-#: SBX-6a (#668 ruling): the local proxy's refusal of a destination the sandbox keeps closed (`sandbox_proxy.DENIED`).
-#: Python prints its reason, and curl without -f its body; curl and git print a refused CONNECT by its code only, which
-#: is enough because only that refusal is a 403 from the proxy. A plain-http refusal under curl -f reads like any
-#: server's 403 and is not counted.
-_PROXY_REFUSED = re.compile(r"Forbidden by Arslan's sandbox: local or non-public destination|"
-                            r"CONNECT tunnel failed, response 403\b|Received HTTP code 403 from proxy after CONNECT")
+#: SBX-6a (#668 ruling): the local proxy's refusal of a destination the sandbox keeps closed (`sandbox_proxy.DENIED`,
+#: and NET-a's `OUTSIDE_ONLY`). Python prints its reason, and curl without -f its body; curl and git print a refused
+#: CONNECT by its code only, which is enough because only those refusals are a 403 from the proxy. A plain-http refusal
+#: under curl -f reads like any server's 403 and is not counted.
+_PROXY_REFUSED = re.compile(r"Forbidden by Arslan's sandbox: (?:local or non-public destination|a site seen only in "
+                            r"outside content)|CONNECT tunnel failed, response 403\b|"
+                            r"Received HTTP code 403 from proxy after CONNECT")
 
 
 def proxy_refused(result: dict) -> bool:

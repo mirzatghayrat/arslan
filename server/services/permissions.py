@@ -107,7 +107,8 @@ if not _SCOPE_SETS <= KINDS:
 _LIVE_GRANT_TARGETS = {
     "command": lambda t: t == "unsandboxed:*" or t.startswith("text:"),   # approvals._command_request; `rules:…` is once only since S2a-2
     "outside": lambda t: t == "*",                                         # command_gate._outside_request
-    "network": lambda t: t == "network:*",                                 # command_gate, inside the sandbox
+    # command_gate, inside the sandbox (`network:*`); NET-a's card, one site (`network:<host>`, net_policy.request)
+    "network": lambda t: t.startswith("network:") and t != "network:",
     "git_config": lambda t: t == "*",                                      # command_gate._git_config_request (HR-1b)
     "schedule": lambda t: t == "*",
     "workspace_write": bool,                                               # the working folder's path (or "*")
@@ -171,6 +172,9 @@ class Request:
     #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
     #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
     once_only: bool = False
+    #: NET-a: this card offers only "In this conversation" (and no), as `_CONVERSATION_ONLY`'s kinds do, for a kind whose
+    #: other cards offer more (`network`: net_policy's card for one site; S2a-1's is this time or this conversation).
+    conversation_only: bool = False
     #: HR-3 part 1: this card never joins an identical waiting ask (as `_NEVER_JOINED`'s kinds), so one click runs one
     #: command. Set by `approvals._command_request` only for a lifted run-later command card (a command that writes a
     #: file that runs later, outside the sandbox). HR-2a's `run_later` kind (#851) covers the file tools' card.
@@ -240,7 +244,7 @@ def current_asker() -> Asker | None:
 def options_for(req: Request) -> list[str]:
     if req.once_only:
         return ["once"]
-    if req.kind in _CONVERSATION_ONLY:
+    if req.conversation_only or req.kind in _CONVERSATION_ONLY:
         return ["conversation"]
     opts = ["task" if req.kind in _TASK_FIRST else "once"]
     if req.conversation_ok and req.kind not in _ONCE_ONLY:
@@ -305,6 +309,7 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str
             always_label=(", ".join(r.always_label for r in shown)
                           if all(r.always_label for r in shown) else ""),
             conversation_ok=all(r.conversation_ok for r in shown),
+            conversation_only=all(r.conversation_only for r in shown),
             extra={"items": [r.extra for r in shown]},
             # The card says every label; each rule keeps its own.
             remember_as=tuple((r.kind, r.target, r.always_label) for r in shown),
@@ -603,11 +608,12 @@ def _dedupe(req: Request) -> str:
     app vs that app plus another under "Always" are not identical: one answer must never approve
     or store what its card did not show. JSON with sorted keys, so no separator inside a field can
     make two different asks read the same. (The model's `why` is not in it.) A once-only ask
-    (0.1.62 F4a) adds one last item, so every other ask's key is what it was."""
+    (0.1.62 F4a) adds one last item, as does a conversation-only one (NET-a), so every other ask's key is what it was."""
     shown = {k: v for k, v in (req.frame or {}).items() if k != "call_id"}
     return json.dumps([req.kind, req.target, req.title, req.detail, shown, req.always_label,
                        req.conversation_ok, [list(e) for e in req.remember_as],
-                       [list(e) for e in req.grant_as]] + (["once_only"] if req.once_only else []),
+                       [list(e) for e in req.grant_as]] + (["once_only"] if req.once_only else [])
+                      + (["conversation_only"] if req.conversation_only else []),
                       sort_keys=True, default=str)
 
 

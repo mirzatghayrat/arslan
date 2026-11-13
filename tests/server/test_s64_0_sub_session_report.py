@@ -12,6 +12,7 @@ clean counterpart is test_s64_0_outside_content_gaps.py's `test_a_clean_turn_is_
 """
 import json
 
+import pytest
 from sqlalchemy import select
 
 from server.db.models import MemoryEntry
@@ -21,6 +22,9 @@ from tests.server.test_s64_0_outside_content_gaps import POISON, _Run, memory  #
 from tests.server.test_sub4_report import (  # noqa: F401  (the fixtures)
     COMMAND, NOTE_ADD, OUTLINE, PAGE, ROOT, _cards, _children, _fresh, _Model, _settled, _sink, _start, _steps,
     _summaries, _wait, runs)
+
+#: NET-a: the mark read through S2a-1's network card, its switch off (tests/server/test_net_a_gate.py has NET-a's).
+pytestmark = pytest.mark.usefixtures("s2a1_network_rule")
 
 
 def _a_child_reads_a_page(monkeypatch, *summary_steps) -> _Model:

@@ -279,6 +279,7 @@ def test_the_model_keeps_reading_the_command():
     assert request.title_for_model == "Run `git push origin main`?"
 
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's card in the sandbox, its switch off
 async def test_the_network_card_is_titled_with_its_purpose(execution_db, monkeypatch):
     await _language("zh")
     seen = []
@@ -356,6 +357,7 @@ def test_a_card_with_no_sandbox_says_so_not_this_time(monkeypatch):
     assert request.title == "No sandbox · Run make"
 
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's card in the sandbox, its switch off
 async def test_the_network_cards_title_never_takes_the_models_words(execution_db, monkeypatch):
     """#689 review 3: the Mac's action card shows the title as the server's own words, under the model's line."""
     seen = []
@@ -390,6 +392,7 @@ def test_the_fact_is_said_in_the_users_language():
     assert card_purpose.phrase("rm -rf ~/x; nc host 4444", lang="zh").startswith("可能发出本机数据 · ")
 
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's card in the sandbox, its switch off
 async def test_the_network_card_is_read_with_the_commands_rules(execution_db, monkeypatch):
     """Astra 5: the network-card path read the command without its rules, so an upload read as a download."""
     seen = []

@@ -14,6 +14,7 @@ import asyncio
 import errno
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -21,7 +22,7 @@ import textwrap
 
 import pytest
 
-from server.services import capability_sandbox, command_sandbox, sandbox_proxy, terminal_exec
+from server.services import capability_sandbox, command_sandbox, net_policy, sandbox_proxy, terminal_exec
 from tests.server.sbx.profile_files import read_profile
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
@@ -168,7 +169,7 @@ async def test_the_session_passes_the_proxy_and_the_setting_to_a_declared_server
 # ── what the kernel does with it (macOS, the real proxy) ─────────────────────
 
 _PROBE = textwrap.dedent("""
-    import json, os, socket, sys
+    import base64, json, os, socket, sys
     proxy, ours, udp_port = (int(a) for a in sys.argv[1:4])
 
     def code(fn):
@@ -178,8 +179,12 @@ _PROBE = textwrap.dedent("""
             return exc.errno
 
     def through_proxy():
+        # NET-a: as its HTTP client would, with the credentials of the address it was told
+        told = os.environ.get("HTTPS_PROXY") or "http://none:none@x"
+        auth = base64.b64encode(told.split("//", 1)[1].split("@", 1)[0].encode()).decode()
         with socket.create_connection(("127.0.0.1", proxy), timeout=5) as s:
-            s.sendall(b"CONNECT 127.0.0.1:22 HTTP/1.1\\r\\nHost: x\\r\\n\\r\\n")
+            s.sendall(("CONNECT 127.0.0.1:22 HTTP/1.1\\r\\nHost: x\\r\\nProxy-Authorization: Basic " + auth
+                       + "\\r\\n\\r\\n").encode())
             return s.recv(64).split(b" ")[1].decode()
 
     def tcp(port):
@@ -217,6 +222,7 @@ async def _start_probe(tmp_path, *, network):
         sandbox = {"root": str(root), "folders": [], "network": network, "read": [os.path.realpath(sys.base_prefix)]}
         if network:
             sandbox["proxy_port"] = proxy_port
+            sandbox["proxy_token"] = (await net_policy.start_run("probe", judged=False)).token    # as the session does
         command, args, env, cwd = await asyncio.to_thread(
             capability_sandbox.wrap, python,
             ["-I", str(root / "probe.py"), str(proxy_port), str(ours.getsockname()[1]), str(receiver.getsockname()[1])],
@@ -235,7 +241,8 @@ async def test_a_declared_server_reaches_the_proxy_and_nothing_local_round_it(tm
         port, seen = await _start_probe(tmp_path, network=True)
     finally:
         await sandbox_proxy.shutdown()
-    assert seen["told"] == f"http://127.0.0.1:{port}", seen
+        net_policy._reset_for_tests()
+    assert re.fullmatch(rf"http://[0-9a-f]{{32}}:sandbox@127\.0\.0\.1:{port}", seen["told"]), seen   # NET-a: its token
     assert seen["proxy"] == "403", seen               # reached, and the proxy refuses a loopback destination
     assert seen["ours"] in _REFUSED, seen             # one of Arslan's own ports
     assert seen["resolver"] in _REFUSED, seen         # no DNS of its own

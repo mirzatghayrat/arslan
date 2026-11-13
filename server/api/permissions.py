@@ -163,6 +163,7 @@ async def _names(db: AsyncSession, grants: list[PermissionGrant]) -> dict[int, d
         name = (g.target[len("text:"):] if what == "command"
                 else PurePath(g.target).name or g.target if what == "workspace_write"
                 else apps.get(g.target) or g.target if what == "app"
+                else g.target[len("network:"):] if what == "network" and g.target != "network:*"   # NET-a: one site
                 else "" if what in ("outside", "unsandboxed", "network", "schedule") else g.target)
         out[g.id] = {"name": name, "server": "", "server_gone": False}
     return out

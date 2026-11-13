@@ -504,6 +504,18 @@ async def wdb(tmp_path, monkeypatch):
     await engine.dispose()
 
 
+@pytest.fixture
+def s2a1_network_rule(monkeypatch):
+    """NET-a's switch (`sandbox_net_judgement`) off: S2a-1's whole-network rule after outside content, as before NET-a.
+    For tests that read the turn's outside-content mark through S2a-1's network card or its offline run. DELETE-BY:
+    v0.1.65, with that path (command_gate._network_after_outside_content)."""
+    from server.services import net_policy
+
+    async def off() -> bool:
+        return False
+    monkeypatch.setattr(net_policy, "judging", off)
+
+
 # ── worker_scope: what personal_context.for_worker did ───────────────────────────────
 # for_worker (a thin wrapper over the live `personal_context.worker_context`) went with the dispatcher
 # in C7b-6 (v0.1.63): no product code entered a worker scope through it any more. The memory-privacy

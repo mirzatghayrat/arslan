@@ -18,6 +18,9 @@ from tests.server.sbx.profile_files import with_profile_text
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt (sandbox-exec) is macOS-only")
+#: NET-a: S2a-1 as it was, with NET-a's switch (`sandbox_net_judgement`) off; with it on (the default) the network after
+#: outside content in the sandbox is tests/server/test_net_a_gate.py's.
+pytestmark = pytest.mark.usefixtures("s2a1_network_rule")
 SANDBOX_REFUSAL = "32:43: execution error: Reminders got an error: Application isn’t running. (-600)"
 # SBX-3: the workspace sandbox is the default-deny base, where osascript fails at the app lookup, before any
 # event (measured 2026-11-02 on macOS 26.6.2). The minimal profile outside it still gives the -600 above.

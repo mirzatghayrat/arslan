@@ -373,20 +373,33 @@ def odd_mcp_key(key: str) -> bool:
     return bool(found) and breaks_mcp_name_rule(found.group(1))
 
 
-def track_turn() -> contextvars.Token:
+def _note_outside(conversation_id: str | None, text: str | None) -> None:
+    """NET-a: the conversation read outside content, and `text` (what was read) names these sites (net_policy)."""
+    from server.services import net_policy
+    net_policy.note_outside(conversation_id, text)
+
+
+def track_turn(conversation_id: str | None = None) -> contextvars.Token:
     """A turn's holder. It starts clean unless its run carries outside content in (`carried`); for INB2's
-    allowlist below it also starts off the list when material off the list was put into it (`off_list_in`)."""
+    allowlist below it also starts off the list when material off the list was put into it (`off_list_in`).
+    NET-a: `conversation_id`, whose record of outside content's sites the turn's marks add to."""
     run = _CARRIED.get()
-    return _EXTERNAL.set({"seen": bool(run and run["seen"]), "off_list": _PUT_IN.get()})
+    seen = bool(run and run["seen"])
+    if seen:
+        _note_outside(conversation_id, "\n".join(run["texts"]))
+    return _EXTERNAL.set({"seen": seen, "off_list": _PUT_IN.get(), "conversation": conversation_id})
 
 
 @contextlib.contextmanager
-def carried(seen: bool):
+def carried(seen: bool, text: str | None = None):
     """Every turn started inside starts as having read outside content when `seen`. An inner
     `carried(False)` never clears what an outer one carries. Yields the run's mark, which a turn
-    of the run that read outside content turns on too (end_turn; S64-0b: a background job)."""
+    of the run that read outside content turns on too (end_turn; S64-0b: a background job).
+    NET-a: `text`, the outside content carried in where the caller has it (an attachment, a folder's rules), whose
+    sites a turn started inside records."""
     outer = _CARRIED.get()
-    run = {"seen": bool(seen) or bool(outer and outer["seen"])}
+    run = {"seen": bool(seen) or bool(outer and outer["seen"]),
+           "texts": [*(outer["texts"] if outer else ()), *([text] if seen and text else [])]}
     token = _CARRIED.set(run)
     try:
         yield run
@@ -405,10 +418,13 @@ def end_turn(token: contextvars.Token) -> bool:
     return seen
 
 
-def mark_external() -> None:
+def mark_external(text: str | None = None) -> None:
+    """This turn read outside content. NET-a: `text`, that content where the caller has it, names sites its
+    conversation records as seen in outside content (net_policy)."""
     holder = _EXTERNAL.get()
     if holder is not None:
         holder["seen"] = True
+        _note_outside(holder.get("conversation"), text)
 
 
 # ── v0.1.64 INB2 (#475 F2): the user's allowlist for "about you" memory ─────────────────────────
@@ -480,11 +496,15 @@ def sub_session_brief(text: str) -> str:
     return f"{BRIEF_FROM_OUTSIDE}\n{wrap_external(text)}"
 
 
-def history_from_outside(history) -> bool:
-    return any(isinstance(item, dict) and (
+def outside_history(history) -> list[str]:
+    """The history's texts framed as outside content: a job's result (S64-0b), a sub-session's brief (SUB5b)."""
+    return [str(item.get("content")) for item in history or () if isinstance(item, dict) and (
         (item.get("role") == "assistant" and str(item.get("content") or "").startswith(JOB_RESULT_FROM_OUTSIDE))
-        or (item.get("role") == "user" and str(item.get("content") or "").startswith(BRIEF_FROM_OUTSIDE)))
-        for item in history or ())
+        or (item.get("role") == "user" and str(item.get("content") or "").startswith(BRIEF_FROM_OUTSIDE)))]
+
+
+def history_from_outside(history) -> bool:
+    return bool(outside_history(history))
 
 
 def folds_outside(texts) -> bool:

@@ -54,6 +54,10 @@ _PLAIN_KEYS = (
                # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused). Read here; written
                # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
                "sandbox_trusted_devices",
+               # NET-a (v0.1.64): whether the sandbox's proxy judges each site ("true" | "false"; default on), and the
+               # sites every sandboxed command may reach, a JSON list of hosts (default empty), checked and kept in one
+               # spelling when PUT /settings saves it (SettingsIn). No UI yet (NET-b).
+               "sandbox_net_judgement", "sandbox_allowed_sites",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days",
@@ -306,6 +310,21 @@ async def sandbox_trusted_devices(session: AsyncSession) -> str:
     """SBX-6a: the raw JSON of the user's trusted local devices; `sandbox_proxy.parse_trusted` reads it, and
     anything malformed trusts nothing. Default empty."""
     raw = await _get_raw(session, "sandbox_trusted_devices")
+    return str(raw) if raw is not None else ""
+
+
+async def sandbox_net_judgement(session: AsyncSession) -> bool:
+    """NET-a: whether the sandbox's proxy judges each site a command reaches (one seen only in outside content is
+    refused) instead of S2a-1's whole-network rule after outside content. Default ON; only an explicit 'false' turns it
+    off. DELETE-BY: v0.1.65, with S2a-1's old path (command_gate._network_after_outside_content)."""
+    raw = await _get_raw(session, "sandbox_net_judgement")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def sandbox_allowed_sites(session: AsyncSession) -> str:
+    """NET-a: the raw JSON list of the sites every sandboxed command may reach; `net_policy.parse_sites` reads it, and
+    anything malformed lists nothing. Default empty."""
+    raw = await _get_raw(session, "sandbox_allowed_sites")
     return str(raw) if raw is not None else ""
 
 
@@ -567,6 +586,7 @@ _BOOL_ACCESSORS = {
     "phone_bridge_enabled": phone_bridge_enabled,
     "mcp_server_enabled": mcp_server_enabled,
     "task_usd_cap_enabled": task_usd_cap_enabled,
+    "sandbox_net_judgement": sandbox_net_judgement,
 }
 
 #: The bool keys this registry is responsible for.

@@ -28,6 +28,7 @@ from server.schemas import SettingsIn
 from server.services import capability_list, command_sandbox, sandbox_proxy, settings_service, terminal_exec
 from server.services import trusted_devices
 from tests.server.conftest import build_ws_client
+from tests.server.sbx import proxy_token
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 OWN = frozenset({"192.168.1.8", "127.0.0.1", "::1", "fe80::1"})
@@ -283,7 +284,7 @@ async def test_the_same_device_again_shows_the_card_still_waiting():
 
 async def _ask(port: int, request: bytes) -> bytes:
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    writer.write(request)
+    writer.write(proxy_token.authed(request))           # NET-a: as a running command (proxy_token.py)
     await writer.drain()
     data = await asyncio.wait_for(reader.read(65536), 5)
     writer.close()
@@ -292,6 +293,7 @@ async def _ask(port: int, request: bytes) -> bytes:
 
 async def test_the_proxy_notes_each_destination_it_refuses_to_the_watches_open_then(monkeypatch):
     from server.registry.net_pin import _FakeIpOnlyHttps
+    proxy_token.register(monkeypatch)
     monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {})
 
     async def nothing_trusted():

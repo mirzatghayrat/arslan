@@ -120,6 +120,13 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
                                         "taken back; it ran in the sandbox")
             if plan.git_config and isinstance(result, dict) and result.pop("git_config_held", False):
                 await command_gate.end_git_config(conversation_id)     # HR-1b review delta 2: fail closed
+            if tool_key == "run_command" and isinstance(result, dict) and result.get("net_refused"):
+                # NET-a: the proxy refused sites this run reached; the user is asked once whether commands in this
+                # conversation may reach them (net_policy.offer), and the model reads the answer.
+                from server.services import net_policy
+                answer = await net_policy.offer(result.pop("net_refused"), command, conversation_id)
+                if answer:
+                    result["network_note"] = f"{result.get('network_note') or ''} {answer}".strip()
         # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
         if tool_key == "run_command" and ran_outside and isinstance(result, dict):
             result["ran_outside_sandbox"] = True

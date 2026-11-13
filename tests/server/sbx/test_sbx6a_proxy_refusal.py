@@ -16,11 +16,18 @@ import pytest
 from server.orchestrator import run_trace
 from server.registry.net_pin import _Unresolvable
 from server.services import command_sandbox, sandbox_proxy, terminal_exec
+from tests.server.sbx import proxy_token
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
 
 DENIED_LINE = "403 Forbidden by Arslan's sandbox: local or non-public destination"
+
+
+@pytest.fixture(autouse=True)
+def _a_running_command(monkeypatch):
+    """NET-a: the proxy serves only a running command's token (tests/server/sbx/proxy_token.py)."""
+    proxy_token.register(monkeypatch)
 
 
 @pytest.fixture
@@ -38,7 +45,7 @@ async def proxy(monkeypatch):
 
 async def _ask(port: int, request: bytes) -> bytes:
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    writer.write(request)
+    writer.write(proxy_token.authed(request))
     await writer.drain()
     data = await asyncio.wait_for(reader.read(65536), 5)
     writer.close()
