@@ -5,7 +5,9 @@ refusal the model reads, or with what it settled for the execute stage."""
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 from server.orchestrator.tool_gates import _declined, _unattended
 from server.orchestrator.turn_state import ToolTurn
@@ -353,9 +355,54 @@ class CommandPlan:
     # files unwritable. Only the user's click on this command's own card lifts that.
     holds_run_later: bool = False
     git_config: bool = False        # HR-1b: in the sandbox under this conversation's git_config grant
+    #: SBX-5b: one app's listed private data folder reopened read-only for this one command in the sandbox
+    #: (`commands_profile(open_once=...)`), by the user's click on its once-only `app_data` card. Never stored.
+    open_once: Path | None = None
 
 
 NOT_A_COMMAND = CommandPlan()
+
+
+async def _app_data(d: "_Draft", args: dict, confirm_command, conversation_id: str | None) -> dict | Path | None:
+    """SBX-5b: `app_data_once`, a folder the model asks this command (in the sandbox) to read once, after the sandbox
+    stopped it there (`terminal_exec.explain`'s note). Only one of the listed apps' folders, by its real path: the
+    card names the app and reopens that app's listed folder, never a parent; anything else is refused before any card.
+    The card is once only (`app_data`: never a grant or a rule, never automatic, never the island); with nobody to ask
+    `decide` refuses and lists it in the Inbox. Only the user's own click counts. Outside the sandbox the listed
+    folders aren't closed (the outside floor doesn't close them), so there is nothing to reopen and no card.
+    The reopened folder (a Path) or the refusal; None: not asked for, or nothing to reopen."""
+    raw = args.get("app_data_once")
+    if raw is None:
+        return None
+    if not isinstance(raw, str) or not raw.strip():
+        return {"ok": False, "executed": False, "error": "app_data_once must be the path of one app's data folder. "
+                                                         "Nothing ran."}
+    if d.run_outside or not d.confined:
+        return None
+    from server.services import background_jobs, command_sandbox, permissions
+    from server.ws import protocol
+    found = command_sandbox.app_data_entry(Path(raw.strip()).expanduser())
+    if found is None:
+        return {"ok": False, "executed": False,
+                "error": f"app_data_once names {raw.strip()[:200]}, which isn't one of the other apps' private data "
+                         "folders the sandbox keeps closed. Nothing ran.",
+                "note": "Leave app_data_once out: other folders are readable in the sandbox already."}
+    app, folder = found
+    if not folder.is_dir():
+        return {"ok": False, "executed": False, "error": f"{app}'s data folder isn't on this Mac. Nothing ran."}
+    home = Path.home()
+    shown = f"~/{folder.relative_to(home)}" if home in folder.parents else str(folder)
+    request = permissions.Request(
+        kind="app_data", target=str(folder), once_only=True, conversation_ok=False,
+        title=f"Run this command again so it can read {app}'s private data, just this once?",
+        detail=f"{d.command[:2000]}\n\n{shown}", why=str(args.get("why") or "").strip()[:300],
+        frame=protocol.propose_action(uuid.uuid4().hex, "app_data_command", app, f"{d.command[:2000]}\n\n{shown}"))
+    decision = await permissions.decide(request, permissions.Context(
+        conversation_id, job_id=background_jobs._inside_job.get()))
+    if decision.allowed and decision.by == "user":
+        return folder
+    return {"ok": False, "executed": False,
+            "error": decision.model_text or f"the user did not let this command read {app}'s private data"}
 
 
 def _run_later_refused(targets) -> dict:
@@ -404,11 +451,15 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
     refused = await _git_refused_card(command, turn.conversation_id)    # HR-2b
     if refused is not None:
         return refused
+    opened = await _app_data(draft, args, turn.confirm_command, turn.conversation_id)   # SBX-5b: in the sandbox
+    if isinstance(opened, dict):
+        return opened
     refused = await _network(draft, args, turn.conversation_id)
     if refused is not None:
         return refused
     _own_folder_holds(draft)
-    return replace(draft.plan(), git_config=git_config)
+    return replace(draft.plan(), git_config=git_config, open_once=opened if draft.confined and not draft.run_outside
+                   else None)
 
 
 @dataclass(slots=True)

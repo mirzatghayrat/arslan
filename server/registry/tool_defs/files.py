@@ -31,7 +31,7 @@ FILES = (
                         "description": "Lines to skip from the start (for paging a long file)."},
              "limit": {"type": "integer", "minimum": 1, "description": "Maximum lines to return."}},
              "required": ["path"], "additionalProperties": False},
-         offered=_readable, gate=tool_gates.file_arguments,
+         offered=_readable, gate=tool_gates.file_arguments_then_app_data,
          traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
     Tool("list_dir",
          "List one level of a folder; with no path, the folders you can "
@@ -44,7 +44,8 @@ FILES = (
                  "the folders you can see.")}},
              "additionalProperties": False,
          },
-         offered=_readable,
+         offered=_readable, gate=tool_gates.app_data,           # SBX-5b: another app's private data asks
+
          traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
     Tool("search_files",
          "Find a literal string across the readable folders' text "

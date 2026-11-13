@@ -127,6 +127,54 @@ def _take_run_later() -> Path | None:
     return path
 
 
+#: SBX-5b: the path the user's click on this call's `app_data` card named (another app's listed private data), set by
+#: the gate (`tool_gates.app_data`) for the executor of the same call, taken once, as HR-2a's token above.
+_APP_DATA_OK: ContextVar[_RunLaterToken | None] = ContextVar("app_data_token", default=None)
+
+
+def approve_app_data(path: Path | None) -> None:
+    """The gate: this call's app-data card was clicked for `path` (None: no click for this call)."""
+    _APP_DATA_OK.set(_RunLaterToken(path))
+
+
+def _take_app_data() -> Path | None:
+    token = _APP_DATA_OK.get()
+    if token is None:
+        return None
+    path, token.path = token.path, None
+    return path
+
+
+def _app_data_refusal(exc: workspace_paths.AppData) -> dict:
+    return {"ok": False, "code": "app_data", "error": str(exc),
+            "note": f"Only the user's click on this call's own card opens {exc.app}'s private data, once. The card "
+                    "was not answered yes. Don't try to reach it another way."}
+
+
+async def app_data_at(tool_key: str, args: dict) -> workspace_paths.AppData | None:
+    """SBX-5b: the AppData refusal this call would get (what its card names), else None: an ordinary path, or one
+    refused for another reason, which the executor reports on its own. The executor's own resolution, read early."""
+    raw = args.get("path")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        if tool_key in ("read_file", "list_dir"):
+            roots, ws = await _read_ctx()
+            if tool_key == "read_file":
+                from server.services import tool_outputs
+                roots = [*roots, tool_outputs.outputs_dir()]
+            resolve_for_read(raw, roots, base=ws)
+        else:
+            root, _ = await _write_roots()
+            write = tool_key == "write_file"
+            resolve_in_workspace(raw, root, for_write=write, make_parents=write)
+    except workspace_paths.AppData as exc:
+        return exc
+    except Exception:  # noqa: BLE001 — any other refusal or error is the executor's to report; no card
+        return None
+    return None
+
+
 async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool = False,
                     key: str = "path", default: str = ".",
                     run_later_ok: Path | None = None) -> tuple[Path | None, Path | None, dict | None]:
@@ -138,7 +186,7 @@ async def _resolved(args: dict, *, for_write: bool = False, make_parents: bool =
 
 
 async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = False, key: str = "path",
-                  default: str = ".", run_later_ok: Path | None = None,
+                  default: str = ".", run_later_ok: Path | None = None, app_data_ok: Path | None = None,
                   ) -> tuple[Path | None, Path | None, root_pin.Pin | None, Path | None, dict | None]:
     """(root, walk_root, pin, path, error): `_resolved` with the working folder's pin kept (SBX-9, Astra #855 P1),
     which a writing tool carries to the write and releases, and the walk root (`_write_roots`), which it passes to the
@@ -157,7 +205,10 @@ async def _pinned(args: dict, *, for_write: bool = False, make_parents: bool = F
         pin = workspace_paths.pin_root(root)
         return root, walk, pin, resolve_in_workspace(args.get(key, default), root, for_write=for_write,
                                                      make_parents=make_parents, pin=pin, run_later_ok=run_later_ok,
-                                                     walk_root=walk), None
+                                                     walk_root=walk, app_data_ok=app_data_ok), None
+    except workspace_paths.AppData as exc:              # SBX-5b: its own refusal, the card's
+        root_pin.release([pin] if pin is not None else [])
+        return root, None, None, None, _app_data_refusal(exc)
     except (PathEscape, SecretFile) as exc:
         root_pin.release([pin] if pin is not None else [])
         refused = _refusal(exc)
@@ -179,7 +230,7 @@ _NOFOLLOW = getattr(os, "O_NOFOLLOW_ANY", 0) or os.O_NOFOLLOW
 
 
 def _write_inside(pin: root_pin.Pin, path: Path, text: str, run_later_ok: Path | None = None,
-                  walk_root: Path | None = None) -> None:
+                  walk_root: Path | None = None, app_data_ok: Path | None = None) -> None:
     """0.1.62 F4b (R1): write `text` to `path` without following a link out of the workspace.
 
     The path is resolved again now that its folders exist (a segment swapped for a link since
@@ -195,9 +246,10 @@ def _write_inside(pin: root_pin.Pin, path: Path, text: str, run_later_ok: Path |
     P1); the file's folder is opened from the pin's own descriptor one name at a time, never through a link
     (`open_inside`), and the new file is made, and swapped in, relative to that folder's descriptor; right before
     each, the pinned path is checked to still name that same folder (`check_root`).
-    SBX-10 parity: `walk_root`, a sub-session's commander's workspace (`_pinned`), is walked again in this check."""
+    SBX-10 parity: `walk_root`, a sub-session's commander's workspace (`_pinned`), is walked again in this check.
+    SBX-5b: another app's private data is written only if it still resolves to `app_data_ok`, the path its card named."""
     resolve_in_workspace(str(path), pin.path, for_write=True, pin=pin, run_later_ok=run_later_ok,
-                         walk_root=walk_root)
+                         walk_root=walk_root, app_data_ok=app_data_ok)
     folder = workspace_paths.open_inside(pin, path.parent.relative_to(pin.path).parts)
     try:
         try:
@@ -257,12 +309,15 @@ class ReadFileExecutor:
     key = "read_file"
 
     async def execute(self, args: dict) -> dict:
+        approved = _take_app_data()            # first: an early return leaves no click for a later call (SBX-5b)
         roots, ws = await _read_ctx()
         # Saved long tool outputs (0.1.49 S9) are always readable, never listable.
         from server.services import tool_outputs
         roots = [*roots, tool_outputs.outputs_dir()]
         try:
-            path = resolve_for_read(args.get("path", ""), roots, base=ws)
+            path = resolve_for_read(args.get("path", ""), roots, base=ws, app_data_ok=approved)
+        except workspace_paths.AppData as exc:
+            return _app_data_refusal(exc)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         if not path.is_file():
@@ -299,6 +354,7 @@ class ListDirExecutor:
     key = "list_dir"
 
     async def execute(self, args: dict) -> dict:
+        approved = _take_app_data()            # SBX-5b: this call's click, taken first
         roots, ws = await _read_ctx()
         raw = (args.get("path") or "").strip()
         if not raw:
@@ -315,7 +371,9 @@ class ListDirExecutor:
                         "truncated": False}
         else:
             try:
-                path = resolve_for_read(raw, roots, base=ws)
+                path = resolve_for_read(raw, roots, base=ws, app_data_ok=approved)
+            except workspace_paths.AppData as exc:
+                return _app_data_refusal(exc)
             except (PathEscape, SecretFile) as exc:
                 return _refusal(exc)
         if not path.is_dir():
@@ -353,6 +411,10 @@ class SearchFilesExecutor:
         matches: list[dict] = []
         truncated = False
         scanned = 0
+        # SBX-5b: other apps' listed private data is never searched (no card: a search names no one folder). Read once.
+        from server.services import command_sandbox
+        app_data = command_sandbox.app_data_folders()
+        skipped = {folder for _, folder in app_data}
         for root in roots:
             if truncated:
                 break
@@ -361,7 +423,7 @@ class SearchFilesExecutor:
                 # and a symlinked subdir out of the ring is not followed (os.walk
                 # does not follow symlinks by default — kept that way).
                 dirnames[:] = [d for d in dirnames
-                               if d not in _SKIP_DIRS and not d.startswith(".")]
+                               if d not in _SKIP_DIRS and not d.startswith(".") and Path(dirpath, d) not in skipped]
                 for name in sorted(filenames):
                     if scanned >= MAX_SEARCH_FILES:
                         truncated = True
@@ -376,7 +438,7 @@ class SearchFilesExecutor:
                         # The boundary re-check: a file reached through a symlink
                         # still has to resolve inside a read root. Redundant with the
                         # name skip on purpose (each has its own mutation).
-                        resolve_for_read(str(path), roots)
+                        resolve_for_read(str(path), roots, app_data=app_data)    # AppData is a PathEscape: skipped
                         text = path.read_text(encoding="utf-8", errors="replace")
                     except (OSError, PathEscape, SecretFile, UnicodeDecodeError):
                         continue
@@ -402,19 +464,21 @@ class WriteFileExecutor:
 
     async def execute(self, args: dict) -> dict:
         approved = _take_run_later()          # first: an early return leaves no click for a later call (HR-2a)
+        other_app = _take_app_data()          # SBX-5b, the same way
         content = args.get("content")
         if not isinstance(content, str):
             return {"ok": False, "error": "content must be a string"}
-        root, walk, pin, path, err = await _pinned(args, for_write=True, make_parents=True, run_later_ok=approved)
+        root, walk, pin, path, err = await _pinned(args, for_write=True, make_parents=True, run_later_ok=approved,
+                                                   app_data_ok=other_app)
         if err:
             return err
         try:                                            # SBX-9: one pin from the resolution to the write
-            return await self._write(root, pin, path, content, approved, walk)
+            return await self._write(root, pin, path, content, approved, walk, other_app)
         finally:
             root_pin.release([pin])
 
     async def _write(self, root: Path, pin: root_pin.Pin, path: Path, content: str,
-                     approved: Path | None, walk: Path | None = None) -> dict:
+                     approved: Path | None, walk: Path | None = None, other_app: Path | None = None) -> dict:
         # 0.1.63 S3: the run's first change saves the folder first, before any folder is made.
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         _touch_rules(path)
@@ -426,7 +490,7 @@ class WriteFileExecutor:
             return {"ok": False, "error": f"cannot create folder {_rel(path.parent, root)}: {exc}"}
         artifact = _snapshot_write(root, path, content)
         try:
-            _write_inside(pin, path, content, approved, walk)
+            _write_inside(pin, path, content, approved, walk, other_app)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:
@@ -446,22 +510,23 @@ class EditFileExecutor:
 
     async def execute(self, args: dict) -> dict:
         approved = _take_run_later()          # first: an early return leaves no click for a later call (HR-2a)
+        other_app = _take_app_data()          # SBX-5b, the same way
         old = args.get("old_string")
         new = args.get("new_string")
         if not isinstance(old, str) or not old:
             return {"ok": False, "error": "'old_string' must be a non-empty string"}
         if not isinstance(new, str):
             return {"ok": False, "error": "'new_string' must be a string"}
-        root, walk, pin, path, err = await _pinned(args)
+        root, walk, pin, path, err = await _pinned(args, app_data_ok=other_app)
         if err:
             return err
         try:                                            # SBX-9: one pin from the resolution to the write
-            return await self._edit(root, pin, path, old, new, approved, walk)
+            return await self._edit(root, pin, path, old, new, approved, walk, other_app)
         finally:
             root_pin.release([pin])
 
     async def _edit(self, root: Path, pin: root_pin.Pin, path: Path, old: str, new: str,
-                    approved: Path | None, walk: Path | None = None) -> dict:
+                    approved: Path | None, walk: Path | None = None, other_app: Path | None = None) -> dict:
         if not path.is_file():
             return {"ok": False, "error": f"file not found: {_rel(path, root)}"}
         try:
@@ -480,7 +545,7 @@ class EditFileExecutor:
         await checkpoints.ensure(execution_context.current_run_id(), [root], written=path)
         artifact = _snapshot_write(root, path, updated)
         try:
-            _write_inside(pin, path, updated, approved, walk)
+            _write_inside(pin, path, updated, approved, walk, other_app)
         except (PathEscape, SecretFile) as exc:
             return _refusal(exc)
         except OSError as exc:
@@ -536,6 +601,12 @@ class AttachFileExecutor:
         if any(path == folder or folder in path.parents for folder in command_sandbox.default_protected()):
             return refused(f"cannot attach {_home_rel(path)}: it is in a protected folder "
                            "(Arslan's own data, keychains, ssh keys)")
+        # SBX-5b: nor another app's listed private data (its bytes would leave this Mac; no card here).
+        try:
+            workspace_paths._refuse_app_data(path, raw.strip(), None)
+        except PathEscape as exc:
+            app = exc.app if isinstance(exc, workspace_paths.AppData) else "another app"
+            return refused(f"cannot attach {_home_rel(path)}: it is {app}'s private data")
         if len(artifact_store.list_artifacts(run_id)) >= artifact_store.MAX_FILES:
             return refused(f"this answer already has {artifact_store.MAX_FILES} files, the most one run can hold")
         too_big = f"{_home_rel(path)} is over 20 MB, the most the iPhone can receive"

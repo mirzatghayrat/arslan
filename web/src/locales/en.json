@@ -1440,6 +1440,7 @@
     "alwaysStores": "This will always allow: {{what}}",
     "asksEachTime": "Asks each time",
     "scheduledNeverAsks": "A scheduled run never takes a step that needs your OK. Do it in a chat.",
+    "appDataUnattended": "Not allowed. Another app's private data needs your OK each time, and this task ran while you weren't there.",
     "allowedNow": "Allowed from now on",
     "refusedTimes": "{{count}} times since {{since}}",
     "undo": "Undo"

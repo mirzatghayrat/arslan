@@ -294,8 +294,8 @@ describe("the kit's one definition of the permission kinds a card treats special
     // tests/server/test_card_kinds.py reads these two lists out of kit/askParts.tsx
     expect([...RED_KINDS].sort()).toEqual(["app_risky", "destructive", "money"]);
     expect([...ONCE_ONLY_KINDS].sort()).toEqual(
-      ["app_risky", "capability", "git_refused", "money", "opaque", "other_agent", "remote", "run_later", "system",
-       "takeover"]);
+      ["app_data", "app_risky", "capability", "git_refused", "money", "opaque", "other_agent", "remote", "run_later",
+       "system", "takeover"]);
   });
 });
 
@@ -322,7 +322,7 @@ describe.each(KINDED)("the $name card and its permission kind", (row) => {
   });
 
   it.each(["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover", "run_later",
-    "git_refused"])(
+    "git_refused", "app_data"])(
     "a %s card (once only) shows and sends only the frame's first choice, whatever else the frame lists", (permKind) => {
     const onConfirm = mount(permKind, ["once", "conversation", "always"], "that kind");
     expect(screen.queryAllByRole("radio")).toHaveLength(0);                      // one choice: nothing to pick

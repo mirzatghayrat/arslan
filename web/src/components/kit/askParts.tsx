@@ -62,7 +62,7 @@ export const RED_KINDS = new Set(["money", "app_risky", "destructive"]);
 /** The kinds a card answers for this one time only. Mirrors the server's `permissions._ONCE_ONLY`; keep the
  *  two in step (plan R14: tests/server/test_card_kinds.py is where the web's kind names meet the server's). */
 export const ONCE_ONLY_KINDS = new Set(["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover", "run_later",
-  "git_refused"]);
+  "git_refused", "app_data"]);
 
 /** The kinds whose card is answered only where its whole card is shown (0.1.57: installing code wants the whole card): the server swallows the
  *  phone's yes and refuses the Inbox's and the island's for a card of one of these, whatever type of frame carries it (`approvals.window_only`),

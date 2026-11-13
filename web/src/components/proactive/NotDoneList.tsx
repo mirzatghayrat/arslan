@@ -225,7 +225,9 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
                       {t("inbox.alwaysAllow")}
                     </button>
                   : <span data-testid="inbox-refused-each-time" className="shrink-0 text-[12px] text-muted-foreground">
-                      {t(row.unattended ? "inbox.scheduledNeverAsks" : "inbox.asksEachTime")}</span>}
+                      {/* SBX-5b: another app's private data is never asked of a run with nobody there; it says so. */}
+                      {t(!row.unattended ? "inbox.asksEachTime"
+                        : row.kind === "app_data" ? "inbox.appDataUnattended" : "inbox.scheduledNeverAsks")}</span>}
             </li>
           );
         })}

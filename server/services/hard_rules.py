@@ -103,6 +103,8 @@ _HR1_ALIASES = _T + "sbx/test_hr1_run_later_aliases.py::"
 _HR1_LINK_TARGETS = _T + "sbx/test_hr1_run_later_link_targets.py::"
 _HR2A = _T + "test_hr2a_run_later_writes.py::"
 _HR3 = _T + "test_hr3_run_later_text.py::"
+_SBX5B = _T + "sbx/test_sbx5b_app_data.py::"
+_SBX5B_CARDS = _T + "test_sbx5b_app_data_cards.py::"
 
 
 def _later(family: str) -> HardRule:
@@ -175,6 +177,17 @@ NEVER_AUTO: tuple[HardRule, ...] = (
     # HR-2a: the run_later kind is once only (the row above); a write request naming such a file is never auto too.
     HardRule("run-later-write", "once-only", "permissions", "server.services.hard_rules:never_auto",
              _HR2A + "test_a_run_later_card_or_a_write_naming_a_held_file_is_never_auto"),
+    # SBX-5b: other apps' listed private data, one list for both sides; its card is once only (the row above).
+    HardRule("app-data/commands", "app-data", "kernel", f"{_SANDBOX}:app_data_folders",
+             _SBX5B + "test_each_listed_folder_is_closed_to_a_command_and_an_unlisted_one_is_not"),
+    HardRule("app-data/open-once", "app-data", "kernel", f"{_SANDBOX}:_check_open_once",
+             _SBX5B + "test_open_once_reads_that_folder_only_and_never_writes_it"),
+    HardRule("app-data/file-tools", "app-data", "gate", "server.services.workspace_paths:_refuse_app_data",
+             _SBX5B_CARDS + "test_a_listed_folder_is_refused_for_a_read_and_a_write_with_its_own_refusal"),
+    HardRule("app-data/file-tools-card", "app-data", "permissions", "server.orchestrator.tool_gates:app_data",
+             _SBX5B_CARDS + "test_one_click_is_one_call"),
+    HardRule("app-data/command-card", "app-data", "permissions", f"{_GATE}:_app_data",
+             _SBX5B_CARDS + "test_a_command_asks_to_reopen_the_one_listed_folder_read_only"),
 )
 
 

@@ -229,6 +229,14 @@ markers = 5
 cases = 5
 xfail = 0
 
+# 0.1.64 SBX-5b: other apps' listed private data closed to a command, an unlisted folder open; `open_once` reads its
+# one folder and never writes it, with the work folder open and inside a closed folder (2 cases), a sibling app
+# closed; through terminal_exec.run; the next command closed again.
+["server/sbx/test_sbx5b_app_data.py"]
+markers = 4
+cases = 5
+xfail = 0
+
 # 0.1.64 SBX-6 MCP proxy: a declared MCP server started the product's way reaches the real proxy and nothing
 # local round it; an undeclared one reaches nothing. Seatbelt is macOS-only.
 ["server/sbx/test_sbx6_mcp_proxy.py"]

@@ -260,7 +260,7 @@ class _OpenSessions:
 # The plan's scope table (§A4): which choices a card offers for which kind. Task 5's API refuses to
 # create a rule for any kind that never offers "Always".
 ONCE_ONLY = ["money", "app_risky", "capability", "other_agent", "system", "opaque", "remote", "takeover", "run_later",
-             "git_refused"]
+             "git_refused", "app_data"]    # HR-2b, SBX-5b
 
 
 @pytest.mark.parametrize("kind", ONCE_ONLY)
@@ -826,7 +826,8 @@ SPEC_KINDS = ["command", "folder", "outside", "send", "destructive", "system", "
               "git_config",                 # HR-1b: git updating the working folder's repository config
               "run_later",                  # HR-2a: a file tool's write into a file that runs later
               "git_include",                # HR-1c: git after an included file outside the working folder changed
-              "git_refused"]                # HR-2b: git add/commit after git's refusal left the tree half updated
+              "git_refused",                # HR-2b: git add/commit after git's refusal left the tree half updated
+              "app_data"]                   # SBX-5b: another app's listed private data
 #: Kinds a caller could mistype (final review probe P1).
 TYPOS = ["payment", "app-risky", "Money"]
 

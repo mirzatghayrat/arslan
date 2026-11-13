@@ -40,6 +40,8 @@ TERMINAL = (
                                                             "software). The user is asked."},
                          # HR-1b: command_gate._git_config; git's note says when (GIT_CONFIG_HINT): no K7 room here.
                          "git_config": {"type": "boolean"},
+                         # SBX-5b: command_gate._app_data; the sandbox's stop note says when and how (no K7 room).
+                         "app_data_once": {"type": "string"},
                          "network": {"type": "boolean",
                                      # S2a-3 step 3: an unread command runs offline too (command_gate).
                                      "description": "Needs the network (a download, an API). Without it, "

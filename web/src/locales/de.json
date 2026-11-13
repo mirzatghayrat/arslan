@@ -1440,6 +1440,7 @@
     "alwaysStores": "Das erlaubt künftig immer: {{what}}",
     "asksEachTime": "Fragt jedes Mal",
     "scheduledNeverAsks": "Eine geplante Aufgabe tut nichts, was dein OK braucht. Mach es in einem Chat.",
+    "appDataUnattended": "Nicht erlaubt. Private Daten einer anderen App brauchen jedes Mal dein OK, und diese Aufgabe lief, während du nicht da warst.",
     "allowedNow": "Ab jetzt erlaubt",
     "refusedTimes": "{{count}}-mal seit {{since}}",
     "undo": "Rückgängig"

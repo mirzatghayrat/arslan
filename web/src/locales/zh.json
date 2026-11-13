@@ -1440,6 +1440,7 @@
     "alwaysStores": "这会始终允许：{{what}}",
     "asksEachTime": "每次都会问",
     "scheduledNeverAsks": "定时任务不做需要你确认的事，请在对话里做。",
+    "appDataUnattended": "没有执行。别的应用的私人数据每次都要你同意，而这个任务运行时你不在。",
     "allowedNow": "以后都允许",
     "refusedTimes": "自 {{since}} 起共 {{count}} 次",
     "undo": "撤销"
