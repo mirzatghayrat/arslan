@@ -219,6 +219,19 @@ Defence there follows the security process (the user decides, a review at effort
    - **On an execution or permission path, a swallow fails closed** (the returned constant asks, sandboxes or refuses), and its comment says so, for example `# noqa: BLE001 — unreadable means the default: sandboxed`. A swallow that fails open there is a security bug, not a style issue.
    - Catching `asyncio.CancelledError` and not re-raising needs the same comment (for example, awaiting a task you just cancelled during shutdown).
 
+**Confirmation cards (user, 2026-11-14):**
+- **A card must have an answer to "what does the user's reply tell the system that it doesn't already know?"** A card with no answer shouldn't exist. Make it an automatic allow if the sandbox holds it or it can be undone, or an automatic refusal if a hard rule covers it.
+- Only something where the system doesn't know the user's intent, and that can't be taken back once done, gets a card.
+- The card states the concrete consequence: what is sent where, and what gets deleted. It never says a vague "Allow?".
+
+**Blocked is not giving up, and never silent (user, 2026-11-14):**
+1. When the sandbox or a rule blocks a step, first find another way to reach the user's goal. If there's none, tell the user three things:
+   - what was blocked;
+   - why;
+   - what they can do: one click to allow, a different approach, or concrete steps to do it themselves.
+2. Apart from a very short "never" list, every restriction is closed by default and the user can open it. Nothing outside that list is locked.
+3. The "never" list is shown in Settings. Each item says why, and how the user can do it themselves.
+
 **Reviewing (every review, by sessions and by Codex):** besides correctness and the evidence (§8), point out unnecessary defensive code, the same validation repeated in several layers, and helpers or abstractions with a single use. Name the file and line and say what to remove; the author answers each one (remove it, or state the failure mode it guards against).
 
 ## 13. Working rules from the 2026-11-13 reset (user, 2026-11-13)
