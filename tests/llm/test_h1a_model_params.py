@@ -1,5 +1,4 @@
-"""H1-a (v0.1.64): per-vendor temperature for tool work, Claude's effort and the raised output cap, each behind its
-own settings switch (harness plan §4.3: measured off against on through BENCH_ARSLAN_SETTINGS).
+"""H1-a (v0.1.64): Claude's effort and Claude's raised output cap, each behind its own settings switch (harness plan §4.3: measured off against on through BENCH_ARSLAN_SETTINGS).
 
 The golden holds the request bodies each adapter sent on main 1dedec970, before H1-a changed any code, byte for byte.
 Regenerate ONLY on purpose: ARSLAN_UPDATE_GOLDEN=1 pytest tests/llm/test_h1a_model_params.py
@@ -83,26 +82,6 @@ async def test_every_switch_at_its_old_value_is_byte_identical_to_main():
     assert await _all(switches=_switches()) == _golden()
 
 
-async def test_tool_temperature_follows_each_vendor_on_requests_with_tools_only():
-    got, gold = await _all(switches=_switches(tool_temperature=True)), _golden()
-    tools = {name: json.loads(bodies[0]) for name, bodies in got.items()}
-    assert tools["deepseek"]["temperature"] == 0.0                        # DeepSeek: coding / math
-    for name in ("openai", "openai_old", "compatible", "openrouter"):     # the endpoint's own default
-        assert "temperature" not in tools[name], name
-    for name in ("gemini", "gemini_old"):                                 # Gemini: the model's default
-        assert "temperature" not in tools[name]["generationConfig"], name
-    for name in ("claude", "claude46", "claude45", "claude3"):            # Claude keeps what it had
-        assert got[name] == gold[name], name
-    for name in CASES:                                                    # no tools: as before
-        assert got[name][1] == gold[name][1], name
-    # Only the temperature changed in a request with tools.
-    for name in ("deepseek", "openai", "gemini"):
-        before, after = json.loads(gold[name][0]), tools[name]
-        for body in (before, after, before.get("generationConfig", {}), after.get("generationConfig", {})):
-            body.pop("temperature", None)
-        assert before == after, name
-
-
 @pytest.mark.parametrize("level", ["high", "medium"])
 async def test_claude_effort_is_sent_to_the_claude_models_that_take_it(level):
     got, gold = await _all(switches=_switches(claude_effort=level)), _golden()
@@ -116,31 +95,21 @@ async def test_claude_effort_is_sent_to_the_claude_models_that_take_it(level):
             assert got[name] == gold[name], name
 
 
-async def test_the_raised_output_cap_goes_where_the_model_allows_it():
+async def test_the_raised_output_cap_goes_to_claude_4_5_and_later_only():
     got, gold = await _all(switches=_switches(output_cap=True)), _golden()
     for name in ("claude", "claude46", "claude45"):
-        for sent in got[name]:
-            assert json.loads(sent)["max_tokens"] == 32_768, name
-    for sent in got["openai"]:                                            # official OpenAI: the current name
-        body = json.loads(sent)
-        assert body["max_completion_tokens"] == 32_768 and "max_tokens" not in body
-    for sent in got["gemini"]:
-        assert json.loads(sent)["generationConfig"]["maxOutputTokens"] == 65_536
-    # gpt-4o (16K), Gemini 2.0 (8K) and Claude 3 cannot take it; OpenRouter reserves it against the key's
-    # credit; an unknown compatible server's limit isn't known; DeepSeek already opens at 32K.
-    for name in ("openai_old", "gemini_old", "claude3", "openrouter", "compatible", "deepseek"):
-        assert got[name] == gold[name], name
+        for sent, before in zip(got[name], gold[name]):
+            body = json.loads(sent)
+            assert body.pop("max_tokens") == 32_768, name
+            assert body == {k: v for k, v in json.loads(before).items() if k != "max_tokens"}, name
+    # Claude 3 cannot take it; the OpenAI-compatible and Gemini caps were removed unmeasured (no keys).
+    for name in CASES:
+        if name not in ("claude", "claude46", "claude45"):
+            assert got[name] == gold[name], name
 
 
 def test_the_raised_cap_raises_the_length_cut_ceiling_with_it():
     from arslan.llm.model_params import configure
-    for protocol, model, base_url in (CASES["claude"], CASES["openai"]):
-        provider = LLMAdapter(protocol, model, api_key="k", base_url=base_url)._provider
-        configure(provider, _switches(output_cap=True))
-        assert (provider.max_tokens, provider.output_ceiling) == (32_768, 65_536), model
-
-
-async def test_an_explicit_opening_budget_still_wins_over_the_raised_cap():
-    """A cost-capped eval passes max_tokens to the adapter (adapter.py); the switch never overrides it."""
-    bodies = await _bodies("openai", max_tokens=4096, switches=_switches(output_cap=True))
-    assert json.loads(bodies[0])["max_completion_tokens"] == 4096
+    provider = LLMAdapter("anthropic", "claude-opus-5-5", api_key="k", base_url=CASES["claude"][2])._provider
+    configure(provider, _switches(output_cap=True))
+    assert (provider.max_tokens, provider.output_ceiling) == (32_768, 65_536)

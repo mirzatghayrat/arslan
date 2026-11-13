@@ -1,4 +1,4 @@
-"""H1-a: the three model-parameter switches are plain settings (the bench sets them through BENCH_ARSLAN_SETTINGS),
+"""H1-a: the two Claude switches are plain settings (the bench sets them through BENCH_ARSLAN_SETTINGS),
 read once where an adapter is built, for the primary, a conversation's own model and the legacy flat settings."""
 import pytest
 from sqlalchemy import insert
@@ -15,12 +15,12 @@ async def _set(db_maker, values: dict) -> None:
 
 @pytest.mark.parametrize("values,expected", [
     ({}, Switches()),
-    ({"tool_temperature_vendor": "true"}, Switches(tool_temperature=True)),
     ({"claude_effort": "high"}, Switches(claude_effort="high")),
     ({"claude_effort": "Medium "}, Switches(claude_effort="medium")),
     ({"claude_effort": "max"}, Switches()),                       # only the two measured levels
     ({"output_cap_raised": "true"}, Switches(output_cap=True)),
-    ({"tool_temperature_vendor": "false", "output_cap_raised": "yes"}, Switches()),
+    ({"output_cap_raised": "yes"}, Switches()),
+    ({"tool_temperature_vendor": "true"}, Switches()),            # the vetoed switch is gone
 ])
 async def test_the_switches_read_off_unless_set(execution_db, values, expected):
     await _set(execution_db, values)
@@ -33,7 +33,8 @@ async def test_the_settings_api_round_trips_them(client):
     r = await client.put("/api/v1/settings", json={"claude_effort": "medium", "output_cap_raised": "true"})
     assert r.status_code == 200, r.text
     got = (await client.get("/api/v1/settings")).json()
-    assert (got["claude_effort"], got["output_cap_raised"], got["tool_temperature_vendor"]) == ("medium", "true", "")
+    assert (got["claude_effort"], got["output_cap_raised"]) == ("medium", "true")
+    assert "tool_temperature_vendor" not in got
 
 
 async def test_every_adapter_the_factory_builds_carries_them(execution_db, monkeypatch):
@@ -59,6 +60,6 @@ async def test_the_legacy_flat_settings_adapter_carries_them(execution_db, monke
         return "k"
     monkeypatch.setattr(llm_factory.settings_service, "get_decrypted_api_key", key)
     await _set(execution_db, {"llm_provider": "deepseek", "llm_model": "deepseek-v4-pro",
-                              "tool_temperature_vendor": "true"})
+                              "claude_effort": "medium"})
     adapter = await llm_factory.build_adapter()
-    assert adapter._provider.switches == Switches(tool_temperature=True)
+    assert adapter._provider.switches == Switches(claude_effort="medium")

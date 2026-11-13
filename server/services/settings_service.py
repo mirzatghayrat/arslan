@@ -55,8 +55,8 @@ _PLAIN_KEYS = (
                # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
                "sandbox_trusted_devices",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms",
-               # v0.1.64 H1-a: model parameters, each measured off against on by the bench (model_switches).
-               "tool_temperature_vendor", "claude_effort", "output_cap_raised")
+               # v0.1.64 H1-a: Claude parameters, each measured off against on by the bench (model_switches).
+               "claude_effort", "output_cap_raised")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days",
              "brain_usage_event_retention_days", "brain_usage_event_max_rows")
@@ -288,14 +288,13 @@ async def default_read_enabled(session: AsyncSession) -> bool:
 
 
 async def model_switches(session: AsyncSession):
-    """H1-a: the three model-parameter switches (arslan/llm/model_params.py). Each is off unless set: "true" for
-    the vendor temperature and the raised cap, "high" or "medium" for Claude's effort; anything else is off.
-    DELETE-BY: v0.1.65, with the losing value of each, once the bench has decided its default."""
+    """H1-a: the two Claude switches (arslan/llm/model_params.py). Each is off unless set: "true" for the raised
+    cap, "high" or "medium" for Claude's effort; anything else is off.
+    DELETE-BY: each flips to on in the H1-a PR once measured working, or is removed there; none outlives v0.1.65."""
     from arslan.llm import model_params
     raw = {key: str(await _get_raw(session, key) or "").strip().lower()
-           for key in ("tool_temperature_vendor", "claude_effort", "output_cap_raised")}
+           for key in ("claude_effort", "output_cap_raised")}
     return model_params.Switches(
-        tool_temperature=raw["tool_temperature_vendor"] == "true",
         claude_effort=raw["claude_effort"] if raw["claude_effort"] in model_params.EFFORTS else "",
         output_cap=raw["output_cap_raised"] == "true")
 

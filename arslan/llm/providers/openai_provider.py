@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import model_params, param_heal, request_evidence, tool_schema
+from arslan.llm import param_heal, request_evidence, tool_schema
 from arslan.llm.locality import loopback_endpoint
 
 from arslan.llm.providers.base import BaseLLMProvider
@@ -200,12 +200,6 @@ class OpenAIProvider(BaseLLMProvider):
             payload["tools"] = [_reshaped(t) for t in tools]
             if tool_choice:
                 payload["tool_choice"] = tool_choice
-            if self.switches.tool_temperature:   # H1-a: the vendor's temperature for tool work
-                vendor = model_params.TOOL_TEMPERATURE["deepseek" if self._official_deepseek() else "openai"]
-                if vendor is None:
-                    del payload["temperature"]
-                else:
-                    payload["temperature"] = vendor
         # Keep the configured model/endpoint. Only this task-local, tool-free
         # critique changes shape: thinking explicitly OFF on official DeepSeek
         # (the only endpoint where that switch is known), deterministic, short.
@@ -218,12 +212,6 @@ class OpenAIProvider(BaseLLMProvider):
             if self._official_deepseek():
                 payload["thinking"] = {"type": "disabled"}
         return payload
-
-    def _name_cap(self, payload: dict[str, Any]) -> None:
-        """H1-a, with the raised cap: OpenAI's reasoning models take `max_completion_tokens` (`max_tokens` is
-        deprecated and refused by them), so the request names it that way instead of waiting for param_heal."""
-        if self.switches.output_cap and model_params.openai_reasoning(self.base_url, self.model):
-            payload["max_completion_tokens"] = payload.pop("max_tokens")
 
     def _official_deepseek(self) -> bool:
         return (self.base_url.rstrip("/") in {"https://api.deepseek.com", "https://api.deepseek.com/v1"}
@@ -251,7 +239,6 @@ class OpenAIProvider(BaseLLMProvider):
             payload["max_tokens"] = max_tokens
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
-        self._name_cap(payload)
         from arslan.execution_checkpoint import save
         await save("before_model")
 
@@ -341,7 +328,6 @@ class OpenAIProvider(BaseLLMProvider):
                 f"{type(self).__name__}.chat_stream does not support tools; "
                 "use chat() for tool-calling turns")
         payload = self._payload(messages, tools, temperature)
-        self._name_cap(payload)
         payload["stream"] = True
         # Ask for the trailing usage frame (a data frame with empty choices
         # and a usage object, sent just before [DONE]).
