@@ -436,8 +436,8 @@ async def test_every_command_card_carries_its_choices(execution_db, monkeypatch,
     from unittest.mock import AsyncMock
 
     from server.services import settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy",
-                        AsyncMock(return_value="ask_all" if ask_all else "ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode",
+                        AsyncMock(return_value="ask" if ask_all else "ask_risky"))
     asker = _Asker(approved=False)
     ladder = command_confirm.Confirmations("c1")
     with permissions.asking_with(asker):
@@ -611,7 +611,7 @@ async def test_a_lifted_run_later_card_never_joins_an_identical_ask(execution_db
 
     from server.services import run_registry, settings_service
     from unittest.mock import AsyncMock
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_all"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask"))
     shown = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: (
         lambda f: shown.append(f) if f["type"].startswith("propose_") else None))

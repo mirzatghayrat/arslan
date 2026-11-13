@@ -21,7 +21,9 @@ _PLAIN_KEYS = (
                # 0.1.63 D5: how a chosen Tavily / SearXNG is used: "" or "only" (as before D5) | "backup".
                "search_provider_role",
                "orchestrator_shell_enabled",
-               "shell_confirm_policy", "background_job_budget", "task_usd_cap",
+               # S5a (migration 0098): the permission mode of a new conversation (`permissions.MODES`); it replaced
+               # `shell_confirm_policy`.
+               "default_permission_mode", "background_job_budget", "task_usd_cap",
                # K4a (v0.1.64): the dollar cap's off switch ("true" | "false"; default on).
                "task_usd_cap_enabled",
                # v0.1.64 ASK1-a: "pending" when migration 0095 found an existing install whose stored policy isn't
@@ -430,15 +432,14 @@ async def mcp_server_enabled(session: AsyncSession) -> bool:
     return str(raw).strip().lower() == "true" if raw is not None else False
 
 
-async def shell_confirm_policy(session: AsyncSession) -> str:
-    """'ask_risky' (the default again in v0.1.64, ASK1-a): a command that isn't dangerous runs in the sandbox with
-    no card; a card is shown to leave the sandbox, for a real danger or for an explicit rule.
-    'ask_all': every command shows a card. Unset reads ask_risky; the exact value Settings writes reads as itself;
-    any other spelling reads ask_all, so anything unreadable stays strict (the rule migration 0070 used)."""
-    raw = await _get_raw(session, "shell_confirm_policy")
+async def default_permission_mode(session: AsyncSession) -> str:
+    """S5a: the mode a conversation with none of its own runs in (`permissions.MODES`). Unset reads ask_risky
+    (ASK1-a's default); a stored mode reads as itself; anything else reads ask, so an unreadable value stays strict."""
+    from server.services.permissions import MODES
+    raw = await _get_raw(session, "default_permission_mode")
     if raw is None:
         return "ask_risky"
-    return "ask_risky" if raw == "ask_risky" else "ask_all"
+    return raw if raw in MODES else "ask"
 
 
 async def background_job_budget(session: AsyncSession) -> str:

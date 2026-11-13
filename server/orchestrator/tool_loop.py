@@ -537,6 +537,13 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     if isinstance(live, dict):
         return live
 
+    # S5a: plan mode runs reads only, before any card or file I/O.
+    from server.services import permissions
+    refusal = await permissions.plan_refusal(tool_key, args, conversation_id)
+    if refusal is not None:
+        return _record_tool_result(tool_key, args, refusal, emit, tool_trace, assistant_content, convo,
+                                   mcp_fail_counts=mcp_fail_counts)
+
     # FU-2b: the eval/replay allowance (live reads have none since 0.1.63 K4b).
     refusal = await _check_fetch_budget(tool_key, conversation_id=conversation_id)
     if refusal is not None:

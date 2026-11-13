@@ -628,7 +628,7 @@ def test_a_card_answered_over_the_socket_is_answered_inside_the_same_turn(portal
     async def ask_all():
         async with client.db_maker() as db:
             await settings_service.update_settings(db, {"orchestrator_shell_enabled": "true",
-                                                        "shell_confirm_policy": "ask_all"})
+                                                        "default_permission_mode": "ask"})
     portal.call(ask_all)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setattr(lessons, "later", lambda coro: coro.close())

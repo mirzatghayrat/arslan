@@ -260,8 +260,8 @@ def gate(monkeypatch):
     monkeypatch.setattr(command_gate, "_sandbox_enabled", lambda: answer(state["sandbox"]))
     monkeypatch.setattr(command_gate, "_asks_for_everything", lambda: answer(state["ask_all"]))
     monkeypatch.setattr(command_gate, "_work_folder_holds_home", lambda: answer(False))
-    monkeypatch.setattr(settings_service, "shell_confirm_policy",
-                        lambda db: answer("ask_all" if state["ask_all"] else "ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode",
+                        lambda db: answer("ask" if state["ask_all"] else "ask_risky"))
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     yield state
     permissions._reset_for_tests()

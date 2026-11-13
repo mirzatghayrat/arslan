@@ -200,7 +200,7 @@ def _cut(key: str, layer: str, holder: str, test: str) -> HardRule:
 
 
 ABSOLUTE: tuple[HardRule, ...] = (
-    # Under the least strict settings (ask_risky, an outside grant, the sandbox off); S5a adds full access.
+    # Under the least strict settings (ask_risky, an outside grant, the sandbox off) and under S5a's full access.
     _absolute("forbid-floor", "gate", f"{_GATE}:check", "test_the_floor_refuses_before_any_card"),
     _absolute("arslan-data", "kernel", f"{_SANDBOX}:minimal_profile", "test_arslans_own_data_stays_closed"),
     _absolute("skills-and-plugins", "kernel", f"{_SANDBOX}:minimal_profile", "test_the_skill_and_plugin_folders_stay_closed"),

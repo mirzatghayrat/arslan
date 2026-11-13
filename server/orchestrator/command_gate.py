@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -13,13 +14,18 @@ from server.orchestrator.tool_gates import _declined, _unattended
 from server.orchestrator.turn_state import ToolTurn
 
 
+#: S5a: the conversation whose command `check` is deciding, for `_asks_for_everything` (and the command card that
+#: `check` asks through, `command_confirm`). Set for the length of `check`; None outside it (the default mode).
+_CONVERSATION: ContextVar[str | None] = ContextVar("command_gate_conversation", default=None)
+
+
 async def _asks_for_everything() -> bool:
-    """The user chose 'ask for every command'. Unknown counts as yes (then nothing runs unasked)."""
-    from server.db import session as db_session
-    from server.services import settings_service
+    """The conversation runs in "Ask every step" (S5a): its own choice, or "Ask only when risky" falling back to it
+    (`permissions.mode_for`, which saves this run's folder first to know whether undo holds). Unknown counts as yes
+    (then nothing runs unasked)."""
+    from server.services import permissions
     try:
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.shell_confirm_policy(db) == "ask_all"
+        return (await permissions.mode_for(_CONVERSATION.get(), check_save=True)).mode == "ask"
     except Exception:  # noqa: BLE001 — fails closed: unreadable means ask for every command
         return True
 
@@ -426,6 +432,14 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
 
     The stages, in the order it has always asked (LOOP1 c4): what never runs, where it runs, the card, the network
     after outside content. Each answers with the refusal to record, or None to go on."""
+    token = _CONVERSATION.set(turn.conversation_id)       # S5a: the mode `_asks_for_everything` reads
+    try:
+        return await _check(args, turn)
+    finally:
+        _CONVERSATION.reset(token)
+
+
+async def _check(args: dict, turn: ToolTurn) -> dict | CommandPlan:
     # 0.1.48: one shell string; a forbidden command is refused here, before any
     # card, so nobody is ever asked to approve wiping the disk.
     from server.services import terminal_policy

@@ -41,7 +41,7 @@ def risky_with_grant(monkeypatch):
     monkeypatch.setattr(command_gate, "_asks_for_everything", lambda: answer(False))
     monkeypatch.setattr(command_gate, "_outside_grant", lambda conversation_id, command: answer(object()))
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", lambda db: answer("ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", lambda db: answer("ask_risky"))
 
 
 def _work_folder(monkeypatch, folder):

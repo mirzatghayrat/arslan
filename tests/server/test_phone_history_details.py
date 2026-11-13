@@ -184,11 +184,17 @@ async def test_no_model_configured_means_no_model(client):
     assert "model" not in await _details(client)
 
 
-@pytest.mark.parametrize("policy, mode", [(None, "standard"), ("ask_all", "careful"), ("ask_risky", "standard")])
-async def test_the_mode_is_the_approval_mode_in_effect(client, policy, mode):
+@pytest.mark.parametrize("policy, mode", [(None, "standard"), ("ask", "careful"), ("ask_risky", "standard")])
+async def test_the_mode_is_the_approval_mode_in_effect(client, monkeypatch, tmp_path, policy, mode):
     from server.db.models import Setting
+    from server.services import command_sandbox, settings_service
+
+    async def folder(db):
+        return tmp_path
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)      # a Mac whose sandbox starts (S5a's fallback)
+    monkeypatch.setattr(settings_service, "workspace_dir_for_run", folder)
     if policy:
-        await _add(client, [Setting(key="shell_confirm_policy", value=policy)])
+        await _add(client, [Setting(key="default_permission_mode", value=policy)])
     assert (await _details(client))["mode"] == mode
 
 

@@ -55,7 +55,7 @@ async def _stand(answer: str, command: str) -> None:
     from server.services import terminal_policy
     async with db_session.AsyncSessionLocal() as db:
         if answer == "ask only for risky commands":
-            db.add(Setting(key="shell_confirm_policy", value="ask_risky"))
+            db.add(Setting(key="default_permission_mode", value="ask_risky"))
         elif answer == "always, this exact command":
             await permission_store.add_rule(db, "command", "text:" + command)
         elif answer == "always, the rules it matches":
