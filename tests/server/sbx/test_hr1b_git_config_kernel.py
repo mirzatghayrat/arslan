@@ -250,10 +250,13 @@ def _own_session_child(key: str) -> str:
     """A child that leaves the command's group (`setsid`) and writes `key` once the test opens `_GATE`, which it does
     only after the granted command (and so its put-back) returned; it then writes `_DONE`. A fixed 0.5 s delay raced
     both ways under load: a put-back slower than 0.5 s reverted the key first, and a child slower than the test's
-    1.5 s wait wrote it after the read; either left the key unset when the test read it."""
+    1.5 s wait wrote it after the read; either left the key unset when the test read it. The parent exits only once
+    the child has left the group: had it exited first, the command's end (`_end_group`) could kill the child before
+    its `setsid`, and the key would never be written."""
     return (f"{sys.executable} -I -c \"import os, subprocess\n"
-            "if os.fork(): os._exit(0)\n"
-            "os.setsid()\n"
+            "r, w = os.pipe()\n"
+            "if os.fork(): os.close(w); os.read(r, 1); os._exit(0)\n"
+            "os.setsid(); os.write(w, b'x'); os.close(w); os.close(r)\n"
             f"open('{_GATE}', 'rb').read(1)\n"
             f"subprocess.run(['git', '-C', 'repo', 'config', '{key}', '{VALUE}'])\n"
             f"open('{_DONE}', 'wb').write(b'x')\" "
