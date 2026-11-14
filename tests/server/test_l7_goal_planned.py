@@ -7,7 +7,7 @@ XPASS is a failure, and the slice removes the marker) or fails on its assertions
 A slice that names a function otherwise renames it here. The behavioural ones (`/goal` in `handle_user_message`,
 `resume_turn` refusing a goal row) run today's code and fail on their assertions (`raises=AssertionError`) until the
 slice lands.
-DELETE-BY: v0.1.64, each marker by its slice (L7-3 to L7-5; L7-2 took its four off).
+DELETE-BY: v0.1.64, each marker by its slice (L7-5; L7-2 took its four off, L7-3 the rest, resume_turn's refusal included).
 """
 from __future__ import annotations
 
@@ -84,7 +84,6 @@ def test_l7_2_a_check_met_again_or_a_measure_seen_before_is_not_progress():
 
 # -- L7-3: `/goal`, drafting and the flag for checks Arslan can't verify ----------------------------------------------
 
-@pytest.mark.xfail(strict=True, raises=MISSING, reason="L7-3 adds the flag for checks Arslan can't verify")
 def test_l7_3_checks_arslan_cant_verify_are_flagged():
     spec = GoalSpec(objective="Make report.md look nice", checks=(
         _check(id="nice", kind="judgement", path=None, description="looks nice"),
@@ -119,7 +118,6 @@ async def test_with_goal_mode_off_slash_goal_is_plain_text(execution_db, monkeyp
     assert answered == ["/goal status"]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="L7-3 parses /goal in handle_user_message")
 async def test_l7_3_slash_goal_is_parsed_in_handle_user_message_before_any_model_call(execution_db, monkeypatch):
     answered, events = await _message_reaches_the_turn(execution_db, monkeypatch, on=True)
     assert answered == [] and events
@@ -127,8 +125,6 @@ async def test_l7_3_slash_goal_is_parsed_in_handle_user_message_before_any_model
 
 # -- L7-4: resume -------------------------------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="L7-4 makes resume_turn refuse a goal row (Resume re-queues the job)")
 async def test_l7_4_resume_turn_refuses_a_goal_row(execution_db, monkeypatch):
     async def load(cid, **kwargs):
         return pc.TaskMemoryContext(task_id="goal-task", run_id="initial", conversation_id=cid, no_learning=True)

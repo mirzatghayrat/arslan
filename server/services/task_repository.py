@@ -254,6 +254,19 @@ class TaskRepository:
         })
         return await self.present(row)
 
+    async def park_goal(self, task_id: str, goal_spec: dict, *, owner_id="local") -> dict:
+        """L7-3: a goal row waits for Start ("not started"): just created, or its checks revised before Start. Its
+        spec rides beside its driver; nothing runs until `start`."""
+        row = await self.get(task_id, owner_id=owner_id)
+        if (row.privacy or {}).get("driver") != {"kind": "background", "goal": True} or not (
+                row.phase == "queued" or (row.phase == "waiting_user"
+                                          and row.pause_reason in {"goal_not_started", "goal_changed"})):
+            raise TaskError("task_cannot_start")
+        await self._advance(row, "goal_not_started", changes={
+            "phase": "waiting_user", "pause_reason": "goal_not_started",
+            "privacy": {**row.privacy, "goal_spec": goal_spec}})
+        return await self.present(row)
+
     async def link_run(self, task_id: str, attempt_id: str, run_id: int):
         row = await self._active(task_id, attempt_id)
         run = await self.db.get(Run, run_id)

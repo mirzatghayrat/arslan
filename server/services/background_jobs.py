@@ -89,6 +89,9 @@ class Job:
     report: dict | None = field(default=None, repr=False)
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
+    # L7-3: a goal job's spec (`goal_mode.GoalSpec`); None for every other job. Only `start_goal` sets it, from the
+    # user's Start: `start_background_work`'s goal string never does.
+    goal_spec: object = field(default=None, repr=False)
 
     def frame(self) -> dict:
         return {"type": "job_update", "job_id": self.job_id, "conversation_id": self.conversation_id,
@@ -267,6 +270,26 @@ def start_placed(conversation_id: str, goal: str, criteria: list[dict], placed: 
     return job
 
 
+def start_goal(conversation_id: str, task_id: str, spec, *, origin: str = "mac") -> Job:
+    """L7-3: the user pressed Start goal (or sent `/goal start`): the goal's not-started row runs as a job, its id
+    the row's, its acceptance the goal's checks. The objective is the user's own words (S64-0: False)."""
+    from server.services import goal_mode
+    job = Job(job_id=task_id, conversation_id=conversation_id, goal=_goal(spec.objective),
+              acceptance=goal_mode.acceptance(spec), origin="phone" if origin == "phone" else "mac",
+              outside_seen=False, goal_spec=spec)
+    _forget_old_finished()
+    _jobs[job.job_id] = job
+    job.task = asyncio.get_running_loop().create_task(_run(job), context=contextvars.Context())
+    _emit(job)
+    return job
+
+
+def goal_job(task_id: str) -> Job | None:
+    """L7-3: the goal's job while it is queued or running, else None."""
+    job = _jobs.get(task_id)
+    return job if job is not None and job.goal_spec is not None and job.phase != "finished" else None
+
+
 KEEP_FINISHED = 50
 
 
@@ -428,7 +451,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan, untrusted
     from arslan.execution_budget import BudgetExceeded, run_budget
     from server.db import session as db_session
-    from server.services import (approvals, host_run, permissions, personal_context, settings_service,
+    from server.services import (approvals, host_run, permissions, personal_context, settings_service, steering,
                                  sub_sessions, task_context, task_service)
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
@@ -455,7 +478,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             runtime = task_service.current()
             try:
                 return await arslan.background_body(conversation_id, goal, _job_sink(job, sink), confirmations,
-                                                    **({"sub_session": True} if job.parent_id else {}))
+                                                    **({"sub_session": True} if job.parent_id else {}),
+                                                    **({"goal_spec": job.goal_spec, "steer_key": job.job_id}
+                                                       if job.goal_spec is not None else {}))
             finally:
                 if runtime is not None:                  # SUB4: what it wrote, for its report
                     job.files = list(dict.fromkeys((*job.files, *sub_sessions.files_written(runtime.trace))))
@@ -465,11 +490,15 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job",
                                                                      job_id=job.job_id), \
             permissions.asking_with(confirmations.asker):
+        goal_row = {"_goal_row": job.job_id} if job.goal_spec is not None else {}
+        if goal_row:
+            steering.open_box(job.job_id)       # L7-3: `/goal note` steers it under its own key (K9b)
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream, counts_steps=False),
-                                                 _driver={"kind": "background"},
-                                                 _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap))
+                                                 _driver={"kind": "background", **({"goal": True} if goal_row else {})},
+                                                 _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap),
+                                                 **goal_row)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — the task row records the failure; read it below
@@ -482,6 +511,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
                            else job.wall_closing if isinstance(exc, TimeoutError) else "")
             if isinstance(exc, sub_sessions.TreeLimitReached):
                 tree_stop = {**exc.stop, "tier": tier}
+        finally:
+            if goal_row:
+                steering.close_box(job.job_id)  # a note it never read goes back to the job's own queue
     async with repository() as repo:
         row = await repo.get(job.job_id)
         for result in row.results or ():

@@ -43,8 +43,8 @@ class TurnRequest:
     progress_lane: Any = None
     turn_notes: list[str] | None = None
     steerable: bool = False
-    # L7 goal mode: None is no goal, and the turn runs as before L7. `turn_answer.finish` reads the goal (L7-2);
-    # nothing sets it or reads the steer key yet (L7-3 does).
+    # L7 goal mode: None is no goal, and the turn runs as before L7. `turn_answer.finish` reads the goal (L7-2); a goal
+    # job sets both (`arslan.background_body`, L7-3), and `tool_batch` reads its K9b box by the steer key.
     goal: GoalSpec | None = None
     steer_key: str | None = None     # a goal job's own K9b key (its job id), so chat messages never land in it
 

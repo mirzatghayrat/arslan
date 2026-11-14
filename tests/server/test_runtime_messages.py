@@ -36,7 +36,10 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                        "image_refused_named": {"model", "provider"},   # SMART-3
                        "image_refused_slot": {"model", "provider"},
                        "goal_blocked": {"round", "met", "unmet", "step"}, "goal_step": {"check"},   # L7-2
-                       "goal_review": {"met", "rest"}, "goal_budget": {"met", "unmet"}}
+                       "goal_review": {"met", "rest"}, "goal_budget": {"met", "unmet"},
+                       "goal_set": {"objective", "checks", "budget"}, "goal_flagged": {"checks"},   # L7-3
+                       "goal_started": {"objective"}, "goal_bad_check": {"line"},
+                       "goal_status": {"objective", "status", "round", "checks"}}
             assert fields == allowed.get(key, set())
             if locale != "en":
                 assert text != copy.MESSAGES["en"][key]

@@ -134,7 +134,7 @@ STEP = "Add invoice INV-07 to notes.md, or send a note with where it is."
 
 
 async def _goal_turn(goal, monkeypatch, tmp_path, replies, *, judge=lambda user: '{"passed": false}',
-                     step=lambda user: json.dumps({"steps": [STEP]}), **kwargs):
+                     step=lambda user: json.dumps({"steps": [STEP]}), budget_snapshot=None, metered=False, **kwargs):
     """One goal job's turn on a scripted model. `replies(n)` is the n-th answer, and may change files first (the
     work). The judge's and the blocked step's requests are told apart by their system text."""
     async def disk(started_at):
@@ -151,6 +151,9 @@ async def _goal_turn(goal, monkeypatch, tmp_path, replies, *, judge=lambda user:
                 calls["step"].append(user)
                 return LLMResponse(usage={}, content=step(user))
             calls["turn"].append(json.dumps([system, user, kw.get("history")], default=str))
+            if metered:                  # as a provider client does: each request is charged to the run's budget
+                from arslan import execution_budget
+                execution_budget.model_request(1024)
             return LLMResponse(usage={}, content=replies(len(calls["turn"])))
     monkeypatch.setattr(tool_loop, "_get_adapter", Adapter)
 
@@ -165,7 +168,7 @@ async def _goal_turn(goal, monkeypatch, tmp_path, replies, *, judge=lambda user:
                                     "scope": {"kind": "task", "owner_id": "local", "task_id": "goal-task"},
                                     "acceptance": goal_mode.acceptance(goal)})
     async with repository() as repo:
-        created = await repo.create(spec, "goal")
+        created = await repo.create(spec, "goal", budget_snapshot=budget_snapshot)
         started = await repo.start(spec.id, created["version"])
     result = await task_service._launch(started, lambda event: None, body)
     async with repository() as repo:
@@ -270,6 +273,23 @@ async def test_wrap_up_past_the_soft_limit_has_no_goal_round_and_the_goal_is_bud
     assert len(calls["turn"]) == 1 and calls["step"] == []
     assert task.phase == "waiting_user" and task.pause_reason == "task_budget_exhausted"
     assert (record.status, record.round, rounds) == ("budget_limited", 1, 1)
+
+
+async def test_a_real_small_soft_limit_ends_the_goal_budget_limited_at_the_round_that_reaches_it(
+        execution_db, monkeypatch, tmp_path):
+    # L7-3 review item: a real soft limit reached by real steps; nothing forced and `soft_reached` not patched. Each
+    # request is charged as a provider client charges it, and two are the soft limit: round 1 goes back to the
+    # model, and round 2's answer reaches the limit, so the goal stops there, budget-limited, never complete.
+    from arslan.execution_budget import Budget, Limits
+    soft = Limits(model_requests=2, tool_calls=80, tokens=600_000, wall_seconds=1800)
+    budget = Budget(Limits(model_requests=3, tool_calls=120, tokens=900_000, wall_seconds=2700), soft=soft)
+    (tmp_path / "notes.md").write_text("nothing yet")
+    result, task, record, rounds, calls = await _goal_turn(_goal(), monkeypatch, tmp_path, lambda n: CLAIM,
+                                                           budget_snapshot=budget.snapshot(), metered=True)
+    assert len(calls["turn"]) == 2 and calls["step"] == []
+    assert task.phase == "waiting_user" and task.pause_reason == "task_budget_exhausted"
+    assert (record.status, record.round, rounds) == ("budget_limited", 2, 2)
+    assert task.budget["used"]["model_requests"] == 2
 
 
 async def test_a_no_progress_stop_on_a_forced_step_ends_the_goal_blocked_not_budget_limited(
