@@ -114,15 +114,24 @@ async def test_anthropic_protocol_drops_a_deprecated_temperature_and_remembers()
     assert len(v.bodies) == 3 and "temperature" not in v.bodies[2]
 
 
-async def test_openai_default_preset_model_heals_temperature_then_max_tokens():
+async def test_openai_default_preset_model_heals_temperature_and_sends_max_completion_tokens():
+    """v0.1.64: the gpt-5 family's cap goes as max_completion_tokens from the first request
+    (output_budget.output_param), so only temperature is healed."""
     v = Vendor([(has("temperature"), OPENAI_TEMPERATURE), (has("max_tokens"), OPENAI_MAX_TOKENS)], OPENAI_OK)
-    p = _openai(v)
+    assert (await _openai(v).chat(_PING)).content == "ok"
+    assert len(v.bodies) == 2 and all("max_tokens" not in b for b in v.bodies)
+    assert v.bodies[-1]["max_completion_tokens"] == 128_000 and "temperature" not in v.bodies[-1]
+
+
+async def test_a_model_outside_that_family_heals_temperature_then_max_tokens():
+    v = Vendor([(has("temperature"), OPENAI_TEMPERATURE), (has("max_tokens"), OPENAI_MAX_TOKENS)], OPENAI_OK)
+    p = _openai(v, model="custom-reasoner")
     assert (await p.chat(_PING)).content == "ok"
     assert len(v.bodies) == 3
     last = v.bodies[-1]
     assert "temperature" not in last and "max_tokens" not in last
     assert last["max_completion_tokens"] == v.bodies[0]["max_tokens"]   # the budget survives the rename
-    await _openai(v).chat(_PING)
+    await _openai(v, model="custom-reasoner").chat(_PING)
     assert len(v.bodies) == 4 and "max_completion_tokens" in v.bodies[3] and "temperature" not in v.bodies[3]
 
 
@@ -334,4 +343,4 @@ async def test_the_error_param_field_outranks_what_the_message_names_first():
     v = Vendor([(has("temperature"), err)], OPENAI_OK)
     assert (await _openai(v).chat(_PING)).content == "ok"
     assert len(v.bodies) == 2
-    assert "temperature" not in v.bodies[1] and "max_tokens" in v.bodies[1]
+    assert "temperature" not in v.bodies[1] and "max_completion_tokens" in v.bodies[1]     # gpt-5 family

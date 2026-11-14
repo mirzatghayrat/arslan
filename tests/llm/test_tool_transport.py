@@ -198,7 +198,7 @@ async def test_gemini_sends_native_function_declarations():
     declarations = captured["payload"]["tools"][0]["functionDeclarations"]
     assert [f["name"] for f in declarations] == ["web_search", "mcp_playwright_navigate"]
     assert declarations[0]["parametersJsonSchema"] == NEUTRAL_TOOLS[0]["function"]["parameters"]
-    assert captured["payload"]["generationConfig"]["maxOutputTokens"] == 8192
+    assert captured["payload"]["generationConfig"]["maxOutputTokens"] == 32_768     # unknown model (v0.1.64)
 
 
 def test_gemini_preserves_opaque_signature_and_parses_calls():

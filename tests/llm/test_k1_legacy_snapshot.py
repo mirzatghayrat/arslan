@@ -109,6 +109,9 @@ def test_the_golden_differs_from_v0162_by_the_k3_guard_sentence_k4as_wrap_up_poi
     now = json.dumps("S\n\n" + GUARD_NOTE[:40], ensure_ascii=False)[:-1]
     then = json.dumps("S" + V0162_RESEARCH_RULES + "\n\n" + GUARD_NOTE[:40], ensure_ascii=False)[:-1]
     assert text.count(now) == 4
+    # v0.1.64: Gemini's unknown test model declares 32,768 output tokens (output_budget.for_model), was 8192.
+    assert text.count('"maxOutputTokens": 32768') == 2 and '"maxOutputTokens": 8192' not in text
     before = (text.replace(now, then).replace(K3_GUARD_SENTENCE, "")
-              .replace("(wrap-up at 80)", "(wrap-up at 24)"))
+              .replace("(wrap-up at 80)", "(wrap-up at 24)")
+              .replace('"maxOutputTokens": 32768', '"maxOutputTokens": 8192'))
     assert hashlib.sha256(before.encode()).hexdigest() == V0162_SHA256
