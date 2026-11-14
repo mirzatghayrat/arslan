@@ -277,21 +277,11 @@ class ChatMessageOut(BaseModel):
     timestamp: str
 
 
-class SeedRefOut(BaseModel):
-    """A persona seed (one of the 249 in the library), resolved for display."""
-    slug: str
-    name: str | None = None
-    division: str | None = None
-    summary: str | None = None
-
-
 class SpawnDetailOut(SpawnOut):
     persona_role: str | None = None
     persona_tone: str | None = None
     system_prompt: str = ""
     messages: list[ChatMessageOut] = []
-    # The persona seeds this spawn was composed from (resolved from config.seed_refs).
-    seeds: list[SeedRefOut] = []
 
 
 class EquipmentUpdateIn(BaseModel):

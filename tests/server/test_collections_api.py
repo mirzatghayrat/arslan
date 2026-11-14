@@ -83,3 +83,34 @@ async def test_delete_collection_cascades(client):
             "SELECT COUNT(*) FROM knowledge_chunks_fts WHERE knowledge_chunks_fts MATCH '烎'"
         ))).scalar_one()
         assert n == 0
+
+
+# Moved from test_knowledge_api.py when the per-spawn knowledge route went (C7c,
+# v0.1.64): the same ingest paths, driven through the collections route that stays.
+async def _collection(client) -> int:
+    return (await client.post("/api/v1/collections", json={"name": "ingest"})).json()["id"]
+
+
+async def test_ingest_file_upload(client):
+    cid = await _collection(client)
+    files = {"file": ("notes.txt", b"hello knowledge", "text/plain")}
+    r = await client.post(f"/api/v1/collections/{cid}/ingest", files=files)
+    assert r.status_code == 200 and r.json()["chunks_added"] == 1
+
+
+async def test_ingest_unsupported_file_400(client):
+    cid = await _collection(client)
+    files = {"file": ("archive.zip", b"PK\x03\x04", "application/zip")}
+    r = await client.post(f"/api/v1/collections/{cid}/ingest", files=files)
+    assert r.status_code == 400
+
+
+async def test_ingest_url_private_rejected_400(client):
+    """The body is asserted too: the private-address check refused it, not a failed lookup."""
+    cid = await _collection(client)
+    r = await client.post(
+        f"/api/v1/collections/{cid}/ingest",
+        json={"url": "http://169.254.169.254/latest/meta-data/"},
+    )
+    assert r.status_code == 400
+    assert r.json() == {"detail": "url refused: blocked address (local network)"}

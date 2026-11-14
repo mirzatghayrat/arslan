@@ -1,4 +1,4 @@
-"""The three v1 read-only, METADATA-ONLY inbound MCP tools.
+"""The two v1 read-only, METADATA-ONLY inbound MCP tools.
 
 Each wraps an existing read service-seam and returns metadata only — never a run's
 output body, a spawn's answer/persona text, or brain content. The no-body golden test
@@ -13,7 +13,7 @@ from server.db import session as db_session
 from server.db.models import Run
 from server.mcp_server import audit
 from server.registry import service as registry_service
-from server.services import mcp_service, spawn_service
+from server.services import mcp_service
 
 # Metadata projection of a Run row — the spec's fixed field list (spec §4).
 # Deliberately EXCLUDES every content/output body: final_output, user_message,
@@ -38,30 +38,6 @@ def _run_status(r: Run) -> dict:
             if (r.overall_score is not None or r.overall_badge is not None) else None
         ),
     }
-
-
-async def list_spawns() -> dict:
-    """The user's agents (spawns) with equipment keys. Metadata only. DELETE-BY: v0.1.64, with C7c-4."""
-    async with db_session.AsyncSessionLocal() as db:
-        spawns = await spawn_service.list_spawns(db)
-        out = []
-        for s in spawns:
-            equip = await registry_service.equipment_for_spawn(s.id, session=db)
-            out.append({
-                "id": s.id,
-                "name": s.name,
-                "domain": s.domain,
-                "capabilities": list(s.capabilities),
-                "generation_level": s.generation_level,
-                "is_default": s.is_default,
-                "has_active_chat": s.has_active_chat,
-                "equipment": {
-                    "toolsets": [t["key"] for t in equip["toolsets"]],
-                    "skills": [sk["key"] for sk in equip["skills"]],
-                },
-            })
-    audit.record(tool="list_spawns", status="ok")
-    return {"spawns": out}
 
 
 async def list_capabilities() -> dict:
