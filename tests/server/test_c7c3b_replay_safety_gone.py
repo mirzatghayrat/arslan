@@ -7,17 +7,19 @@ stages did nothing. A conversation under either id now has the live gates, as un
 (test_gate_order's `test_a_former_eval_id_gets_the_live_gates`).
 """
 import ast
+import dataclasses
 import importlib.util
 import re
 from pathlib import Path
 
 from server.orchestrator import tool_loop
+from server.registry.tool import Traits
 
 
-def test_replay_safety_and_its_stages_are_gone():
+def test_replay_safety_its_stages_and_its_trait_are_gone():
     assert importlib.util.find_spec("server.services.replay_safety") is None
     assert not hasattr(tool_loop, "_eval_backstop") and not hasattr(tool_loop, "_check_fetch_budget")
-    # TODO(C7c-3b commit 2): commit 2 adds the assertion that `Traits` has no `replay_safe` field.
+    assert "replay_safe" not in {field.name for field in dataclasses.fields(Traits)}
 
 
 def test_no_product_code_names_an_eval_sentinel():

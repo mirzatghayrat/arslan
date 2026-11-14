@@ -9,7 +9,7 @@ from server.registry.tool import Offer, Tool, Traits
 
 OBJECT = {"type": "object", "properties": {}}
 # LOOP1 a6: every Tool states its traits (no defaults); these tests are about the other fields.
-_TRAITS = Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)
+_TRAITS = Traits(effect="external_write", parallel=False, outside=False, saves=False)
 
 
 def _offer(**values) -> Offer:

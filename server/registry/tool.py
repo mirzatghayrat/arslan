@@ -116,13 +116,12 @@ class Traits:
     #                     more strictly than it acts; run_command's grade comes from its command first.
     parallel: bool      # parallel_reads: runs alongside the reads next to it (no card, no shared state)
     outside: bool       # untrusted.counts_as_external: what it returns is outside content
-    replay_safe: bool   # replay_safety: offered in a hermetic replay
     saves: bool         # tool_loop.WRAP_UP_TOOLS: saves a job's deliverable, so it may run while the job wraps up
 
     def __post_init__(self) -> None:
         if self.effect not in get_args(Effect):
             raise ValueError(f"effect {self.effect!r} is not one of {get_args(Effect)}")
-        for name in ("parallel", "outside", "replay_safe", "saves"):
+        for name in ("parallel", "outside", "saves"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"trait {name} must be True or False, not {getattr(self, name)!r}")
 

@@ -8,7 +8,7 @@ from server.registry.tool import Tool, Traits
 from server.services import task_service
 
 OBJECT = {"type": "object", "properties": {}}
-_TRAITS = dict(effect="read", parallel=False, outside=False, replay_safe=False, saves=False)
+_TRAITS = dict(effect="read", parallel=False, outside=False, saves=False)
 
 
 def test_the_derived_sets_are_the_ones_before_a6():
@@ -48,7 +48,7 @@ def test_a_tool_without_its_traits_is_refused_when_it_is_defined():
 
 @pytest.mark.parametrize("change,why", [
     ({"effect": "write"}, "effect"), ({"parallel": None}, "parallel"), ({"outside": 1}, "outside"),
-    ({"replay_safe": "yes"}, "replay_safe"), ({"saves": 0}, "saves")])
+    ({"saves": 0}, "saves")])
 def test_a_trait_that_is_not_one_of_its_values_is_refused(change, why):
     with pytest.raises(ValueError, match=why):
         Traits(**{**_TRAITS, **change})

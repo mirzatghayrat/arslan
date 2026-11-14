@@ -59,5 +59,5 @@ TERMINAL = (
          offered=lambda offer: offer.shell and (offer.fire or not offer.nobody_to_ask), gate=command_gate.check,
          # effect_of grades a command a read when the command policy grades it LOW, and an external write otherwise;
          # counts_as_external reads the command for the network. Both read the command itself, not these.
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
 )
