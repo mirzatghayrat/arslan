@@ -371,6 +371,57 @@ def test_each_test_naming_rule_holds_on_its_own(rel, tmp_path):
     assert files == {rel}                                  # and never `latest/contest.py`, the work
 
 
+SWIFT_BUILD = [".build/debug/FooPackageTests.xctest/Contents/MacOS/FooPackageTests",
+               ".build/arm64-apple-macosx/debug/Modules/FooTests.swiftmodule",
+               ".build/arm64-apple-macosx/debug/FooTests.build/FooTests.swift.o",
+               "DerivedData/Foo/Build/Products/Debug/FooTests.xctest/Info.plist",
+               ".swiftpm/xcode/xcuserdata/me.xcuserdatad/xcschemes/FooTests.xcscheme",
+               "coverage/FooTests.swift.html", "dist/FooTests.js", ".next/server/FooTests.js"]
+
+
+def _swift_package(root):
+    for rel in ("Package.swift", "Sources/Foo/Foo.swift", "Tests/FooTests/FooTests.swift"):
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("// x\n")
+
+
+async def test_an_honest_swift_build_writes_its_output_during_the_check_and_the_goal_completes(
+        _a_goal_job, monkeypatch, tmp_path):
+    """Max review round 2: SwiftPM's `.build/` (and DerivedData, Xcode's per-user state, coverage and JS build
+    output) written while the host's check runs is no protected change."""
+    _swift_package(tmp_path)
+
+    def run(n):
+        for rel in SWIFT_BUILD:
+            (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / rel).write_text("built\n")
+        return _exit(0, "Test Suite 'All tests' passed")
+    result, task, record, calls = await _check_turn(_a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", run)
+    assert task.phase == "succeeded" and record.status == "complete", result["final"]
+
+
+@pytest.mark.parametrize("folder", ["DerivedData/x", "coverage", "__pycache__/x", ".swiftpm/xcode/xcuserdata"])
+def test_a_skipped_build_folder_still_shows_a_new_runner_config(folder, tmp_path):
+    """pytest would recurse into these (they aren't in its default norecursedirs): a conftest.py there is a change."""
+    _swift_package(tmp_path)
+    protected = goal_mode.record_protected(tmp_path, (_line("pytest"),))
+    (tmp_path / folder).mkdir(parents=True)
+    (tmp_path / folder / "conftest.py").write_text("")
+    assert _changes(protected, tmp_path) == (f"{folder}/conftest.py",)
+
+
+@pytest.mark.parametrize("why", ["norecursedirs", "argv"])
+def test_a_folder_pytest_is_pointed_into_is_walked_for_config(why, tmp_path):
+    _swift_package(tmp_path)
+    (tmp_path / "dist" / "tests").mkdir(parents=True)
+    if why == "norecursedirs":
+        (tmp_path / "pytest.ini").write_text("[pytest]\nnorecursedirs = .git\n")
+    protected = goal_mode.record_protected(tmp_path, (_line("pytest" if why == "norecursedirs" else
+                                                             "pytest dist/tests"),))
+    (tmp_path / "dist" / "tests" / "conftest.py").write_text("")
+    assert _changes(protected, tmp_path) == ("dist/tests/conftest.py",)
+
+
 async def test_a_check_with_nothing_protected_is_never_complete_on_its_own(_a_goal_job, monkeypatch, tmp_path):
     """Max review round 1: an empty protected set (here `tests/run_checks.py` isn't there at Start, so it is only a
     warning, and nothing else qualifies) stops the goal at review instead of completing."""

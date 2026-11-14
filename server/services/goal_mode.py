@@ -230,8 +230,18 @@ def status_of(phase: str, pause_reason: str | None) -> GoalStatus:
 # in place. Not followed, and so not protected (disclosed): runner plugins in skipped folders (`node_modules`, virtual
 # environments), shell variables, globs and command substitution in scripts, Makefile includes and variables, JS
 # config files (only `vitest.config.*`'s literal `include` is read), and code the check imports beyond these files.
-_SKIP = {".git", "node_modules", "__pycache__", ".tox", ".nox", ".venv", "venv", ".pytest_cache", ".mypy_cache",
-         ".ruff_cache"}
+# Generated folders the scan leaves out, in two kinds (max review round 2). `_SKIP`: never walked, because no runner
+# reads config there: pytest's default `norecursedirs` (`_pytest/main.py`: `*.egg`, `.*`, `_darcs`, `build`, `CVS`,
+# `dist`, `node_modules`, `venv`, `{arch}`) covers each, and its config lookup walks up from the arguments, never
+# down; npm reads `.npmrc` only at the project's own prefix, walking up. `_SKIP_TESTS`: generated build output that
+# pytest would still recurse into (not in `norecursedirs`), so their runner config files are still scanned there;
+# only their test-like names are left out. Both kinds are walked whole (config names only) when a pytest config
+# sets its own `norecursedirs`, or a check's argv names a path inside one (`scan:skipped`). `build/` is not skipped:
+# not clearly generated. `.swiftpm/` is not skipped either (its shared schemes and configuration are the user's);
+# only `xcuserdata/` in it, Xcode's per-user state.
+_SKIP = {".git", "node_modules", ".tox", ".nox", ".venv", "venv", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+         ".build", ".next", "dist"}
+_SKIP_TESTS = {"__pycache__", "DerivedData", "xcuserdata", "coverage"}
 # Matched without regard to case; the CamelCase names (Swift, Xcode, JUnit) case-sensitively, so `latest/` and
 # `contest.py` stay the work.
 _TEST_DIRS = {"tests", "test", "__tests__", "spec", "__snapshots__", "testdata", "fixtures"}
@@ -257,19 +267,30 @@ WALK_MAX = 200_000
 _EMPTY = hashlib.sha256(b"{}").hexdigest()     # a new test-config file with no test sections
 
 
-def _walk(root):
-    """Every file under `root`, relative, past the skipped folders and bytecode caches; a linked folder is an entry."""
+def _walk(root, *, deep: bool = False):
+    """Every file under `root`, relative, past the skipped folders and bytecode caches; a linked folder is an entry.
+    In a `_SKIP_TESTS` folder (and, `deep`, a `_SKIP` one) only the runner config files."""
     import os
     from pathlib import Path
-    count = 0
+    count, configs_only = 0, set()
     for folder, dirs, names in os.walk(root):
-        dirs[:] = [d for d in dirs if d not in _SKIP and not os.path.exists(os.path.join(folder, d, "pyvenv.cfg"))]
+        inside = folder in configs_only
+        keep = []
+        for d in dirs:
+            path = os.path.join(folder, d)
+            if os.path.exists(os.path.join(path, "pyvenv.cfg")) or (d in _SKIP and not deep):
+                continue                    # pytest skips virtual environments itself (`collect_in_virtualenv`)
+            if inside or d in _SKIP_TESTS or d in _SKIP:
+                configs_only.add(path)
+            keep.append(d)
+        dirs[:] = keep
         for name in [*names, *(d for d in dirs if os.path.islink(os.path.join(folder, d)))]:
             count += 1
             if count > WALK_MAX:
                 raise ValueError("the working folder is too large to scan")
-            if not name.endswith(".pyc"):
-                yield Path(folder, name).relative_to(root).as_posix()
+            if name.endswith(".pyc") or inside and name not in (*_PARENTS, "npmrc"):
+                continue
+            yield Path(folder, name).relative_to(root).as_posix()
 
 
 def _conventional(rel: str) -> bool:
@@ -479,6 +500,8 @@ def _runner_patterns(root, tree) -> set[str]:
                 for block in re.findall(r"include\s*:\s*\[([^\]]*)\]", path.read_text()[:1_000_000]):
                     out.update("glob:" + join(folder, v) for v in re.findall(r"['\"]([^'\"]+)['\"]", block))
             if isinstance(pytest, dict):
+                if "norecursedirs" in pytest:
+                    out.add("scan:skipped")         # pytest may recurse into the skipped folders: walk them too
                 words = lambda v: v.split() if isinstance(v, str) else [str(x) for x in v]  # noqa: E731
                 out.update("under:" + join(folder, p.strip("/")) for p in words(pytest.get("testpaths") or ()))
                 out.update("name:" + p for p in words(pytest.get("python_files") or ()))
@@ -501,6 +524,11 @@ def record_protected(root, checks, marks=()) -> ProtectedSet:
     declared = [pattern for check in commands for pattern in check.outputs]
     tree = list(_walk(root))
     patterns = _runner_patterns(root, tree) | {"in:" + p.rpartition("/")[0] for p in declared}
+    if any(set(os.path.normpath(word.partition("=")[2] if word.startswith("-") else word).split(os.sep))
+           & (_SKIP | _SKIP_TESTS) for check in commands for word in check.argv):
+        patterns.add("scan:skipped")                # the argv points into a skipped folder: walk it too
+    if "scan:skipped" in patterns:
+        tree = list(_walk(root, deep=True))
     chosen = {rel: False for rel in tree if _conventional(rel) or rel.rsplit("/", 1)[-1] in _SECTIONED
               or _matches(rel, patterns)}
     for check in commands:
@@ -550,7 +578,7 @@ def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=())
                if item.sha256 is not None and _digest(root / item.path, item.section is not None) != item.sha256}
     changed |= {p[5:] for p in protected.patterns if p.startswith("file:") and (root / p[5:]).exists()}
     new = []
-    for rel in _walk(root):
+    for rel in _walk(root, deep="scan:skipped" in protected.patterns):
         if rel in known and known[rel].sha256 is not None:
             continue
         name = rel.rsplit("/", 1)[-1]
