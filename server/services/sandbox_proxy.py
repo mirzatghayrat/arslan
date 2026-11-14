@@ -2,9 +2,15 @@
 
 Online, a command's kernel profile allows TCP only to this proxy's loopback port, plus other loopback ports
 for local dev servers, minus every port Arslan itself listens on and the system proxies' loopback ports
-(`excluded_ports`). There is no DNS inside: the proxy resolves. It has no site list (NET adds one in
-v0.1.65). What it adds now is that nothing else gets out, and that each host it connects to is named in
-Arslan's log.
+(`excluded_ports`). There is no DNS inside: the proxy resolves. Nothing else gets out, and each host it connects to is
+named in Arslan's log.
+
+NET-a (v0.1.64): each command's proxy address carries its own token (`proxy_url`, `net_policy.start_run`), and the
+proxy serves only a connection whose token belongs to a running command and that comes from that command's own
+processes (`net_policy.owns`, Codex round 1 F1): none, one whose command ended, or another run's is a 407. The run's
+end closes its connections, open or still being set up (`net_policy.end_run`, F2). It judges the host first
+(`net_policy.admits`: a site this conversation saw only in outside content is a 403), then runs its own checks below as
+before.
 
 It speaks CONNECT, to any port, and plain-http forwarding (absolute-form requests). Every destination is
 resolved once and every answer must be public (`net_pin`, as the browser's tunnel does), so a command can't
@@ -21,12 +27,12 @@ Known limits (SBX-6a review):
   public destinations only, the callback needs its state and PKCE).
 - A local proxy this Mac doesn't announce (in the environment or `scutil`), such as Tor's SOCKS port or
   `ssh -D`, is reachable through loopback like any dev server.
-- The proxy takes no client credentials, like `browser_proxy`: anything on this Mac that can reach its port
-  can use it, which is no more than that thing could do itself.
+- A token is no secret from this Mac, but only the processes of its own run can use it (F1, `peer_process`).
 """
 from __future__ import annotations
 
 import asyncio
+import base64
 from contextlib import suppress
 import ipaddress
 import json
@@ -40,7 +46,7 @@ import weakref
 
 from arslan.aio import close_connection, within
 from server.registry.net_pin import _BlockedHost, _FakeIpOnlyHttps, _InvalidHost, _resolve_pinned, _Unresolvable
-from server.services import browser_proxy
+from server.services import browser_proxy, net_policy
 
 logger = logging.getLogger(__name__)
 
@@ -292,9 +298,34 @@ def _note_refused(host: str) -> None:
 # Only a destination the sandbox keeps closed is a 403, so a 403 from this proxy is always the sandbox's: curl and git
 # print only the code (#668 ruling). `command_sandbox._PROXY_REFUSED` reads DENIED's reason.
 DENIED = (403, "Forbidden by Arslan's sandbox: local or non-public destination")
+#: NET-a: a site this conversation saw only in outside content (`net_policy.admits`). A 403 too, so curl's and git's
+#: code-only refusal still reads as the sandbox's; the run's note names the site.
+OUTSIDE_ONLY = (403, "Forbidden by Arslan's sandbox: a site seen only in outside content this conversation read")
+#: NET-a: no running command's token (none, an unknown one, one whose command ended, or another run's: F1). With its
+#: challenge, so a client that sends credentials only when asked (git's default, curl --proxy-anyauth) sends them.
+NO_TOKEN = (407, "Proxy Authentication Required by Arslan's sandbox proxy")
 BAD_REQUEST = (400, "Bad Request: Arslan's sandbox proxy takes CONNECT and absolute plain-http requests")
 UNREACHABLE = (502, "Bad Gateway: Arslan's sandbox proxy could not resolve or reach the destination")
 BUSY = (503, "Service Unavailable: Arslan's sandbox proxy has too many open connections")
+_BASIC = re.compile(r"(?im)^proxy-authorization:[ \t]*basic[ \t]+([A-Za-z0-9+/=]+)[ \t]*\r?$")
+
+
+def proxy_url(port: int, token: str | None) -> str:
+    """The proxy address a run is told (NET-a): its token as the user, with a password, since git asks a credential
+    helper for a proxy password it isn't given, and urllib and Node's fetch send no credentials without one. With no
+    token, the bare address, which the proxy answers with its 407."""
+    return f"http://{token}:sandbox@127.0.0.1:{port}" if token else f"http://127.0.0.1:{port}"
+
+
+def _token(headers: str) -> str | None:
+    """The token of a run's proxy address (`proxy_url`): the user part of the request's Basic credentials."""
+    found = _BASIC.search(headers)
+    if found is None:
+        return None
+    try:
+        return base64.b64decode(found[1], validate=True).decode("latin-1").partition(":")[0] or None
+    except ValueError:                                   # binascii.Error is one
+        return None
 
 
 class _Refused(Exception):
@@ -318,7 +349,8 @@ def _answer(exc: Exception) -> tuple[int, str]:
 def _refusal(answer: tuple[int, str]) -> bytes:
     status, reason = answer
     body = f"{reason}\n".encode("ascii")
-    return (f"HTTP/1.1 {status} {reason}\r\nContent-Type: text/plain\r\nContent-Length: {len(body)}\r\n"
+    challenge = 'Proxy-Authenticate: Basic realm="Arslan sandbox"\r\n' if status == 407 else ""
+    return (f"HTTP/1.1 {status} {reason}\r\n{challenge}Content-Type: text/plain\r\nContent-Length: {len(body)}\r\n"
             "Connection: close\r\n\r\n").encode("ascii") + body
 
 
@@ -402,6 +434,12 @@ class LocalProxy:
             await upstream.drain()
         return remote, upstream
 
+    @staticmethod
+    async def _judged(run, host: str) -> None:
+        """NET-a: the run's judgement of `host`, before this proxy's own checks (`_open`), which still run after it."""
+        if not await net_policy.admits(run, host):
+            raise _Refused("a site seen only in outside content", OUTSIDE_ONLY)
+
     async def _copy(self, reader, writer, last: list[float]):
         """One direction. `last` is the connection's one idle clock, shared by both directions: a tunnel
         is idle only when neither side has sent anything for `_IDLE_S` (6a delta review)."""
@@ -431,6 +469,7 @@ class LocalProxy:
         relays = []
         established = False
         host = None
+        run = None
         try:
             if len(self.tasks) > _CONNECTIONS:
                 raise _Refused("too many connections", BUSY)
@@ -441,8 +480,16 @@ class LocalProxy:
                 if len(parts) != 3 or not re.fullmatch(r"HTTP/1\.[01]", parts[2]):
                     raise _Refused("bad request line")
                 method, target, _version = parts
+                run = net_policy.run_for(_token(headers))          # NET-a: whose connection this is
+                if run is None:
+                    raise _Refused("no running command's token", NO_TOKEN)
+                run.connections.add(task)                          # F2: it ends with its run, at any stage
+                if not await net_policy.owns(run, writer.get_extra_info("peername"),
+                                             writer.get_extra_info("sockname")):
+                    raise _Refused("another run's token", NO_TOKEN)    # F1: its token, but not its process
                 if method == "CONNECT":
                     host, port = _authority(target, None)
+                    await self._judged(run, host)
                     remote, upstream = await self._open(host, port, None)
                     writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                     await writer.drain()
@@ -451,6 +498,7 @@ class LocalProxy:
                     if url.scheme != "http" or not url.netloc or "@" in url.netloc:
                         raise _Refused("only absolute http:// requests are forwarded")
                     host, port = _authority(url.netloc, 80)
+                    await self._judged(run, host)
                     path = (url.path or "/") + (f"?{url.query}" if url.query else "")
                     kept = [h for h in headers.split("\r\n") if h and not re.match(
                         r"(?i)(proxy-[\w-]*|connection|keep-alive)\s*:", h)]
@@ -477,6 +525,8 @@ class LocalProxy:
                     writer.write(_refusal(answer))
                     await writer.drain()
         finally:
+            if run is not None:
+                run.connections.discard(task)
             for relay in relays:
                 relay.cancel()
             await asyncio.gather(*relays, return_exceptions=True)

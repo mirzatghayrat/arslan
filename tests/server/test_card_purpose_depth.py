@@ -193,6 +193,7 @@ def test_the_card_listed_when_nobody_can_be_asked_has_its_title(shape):
     assert request.title == TITLE[shape]
 
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's card in the sandbox, its switch off
 @pytest.mark.parametrize("shape", DEEP)
 async def test_the_network_card_after_outside_content_is_shown(execution_db, monkeypatch, shape):
     seen = []

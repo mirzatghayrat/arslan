@@ -947,32 +947,71 @@ async def test_a_jobs_task_grants_end_with_it_and_its_conversation_grants_stay(e
 
 
 async def test_a_card_answered_after_the_jobs_wall_clock_does_not_stop_the_job(execution_db, active, monkeypatch):
+    """A card's wait pauses the job's wall clock. No real time is raced: the clock is long, the card is held until
+    the test answers it, and the test reads the job's own registered timeout (the seam `running_clock` registers)
+    while the card waits and after it is answered."""
     from arslan import execution_budget
     from server.orchestrator import arslan as arslan_mod
     from server.services import permissions
     monkeypatch.setattr(execution_budget, "run_budget",
-                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=2.0)))
+                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=600)))
     seen = {}
+    card = {}
+    asked = asyncio.Event()
+    hold = asyncio.Event()                  # keeps the job running after the card so the test can read the clock
+    loop_time = asyncio.get_running_loop().time
+    REMAINING = 200.0
+
+    def window(frame: dict) -> None:
+        # The card reaches the window from inside the job, so its contextvar holds the job's clocks.
+        if frame.get("type") == "propose_action" and frame.get("title") == "Use Notes?":
+            card["call_id"] = frame["call_id"]
+            card["clocks"] = execution_budget._clocks.get()
+            asked.set()
 
     async def body(conversation_id, goal, emit, confirmations):
+        # 400 of the 600 seconds have gone: set each timeout to 200 from now (the seam #907 uses), so what a
+        # resume must restore is a known remainder.
+        card["set_at"] = loop_time()
+        for clock in execution_budget._clocks.get():
+            clock.timeout.reschedule(card["set_at"] + REMAINING)
         decision = await permissions.decide(permissions.Request(kind="app", target="com.apple.Notes",
                                                                 title="Use Notes?"),
                                             permissions.Context(conversation_id=conversation_id))
         seen["allowed"] = decision.allowed
+        await hold.wait()
         return f"Done: {PHRASE}"
     monkeypatch.setattr(arslan_mod, "background_body", body)
-    window = _a_window_answering({"Use Notes?": "once"}, after=3.0)   # the user takes their time
     run_registry.attach_sink(CID, window)
     try:
         job = await background_jobs.start(CID, "Tidy my notes into a report", _criteria(), outside_seen=False)
-        await _wait(lambda: job.phase == "finished", seconds=15)
+        await asyncio.wait_for(asked.wait(), 20)
+        # The card is shown just before the wait begins and pauses the clocks; poll for that moment (no real time
+        # is raced: the card stays held until the test answers it).
+        await _wait(lambda: card["clocks"] and all(clock.pauses for clock in card["clocks"]), seconds=20)
+        # While the card waits the job's clock stands still: its timeout has no deadline, so no length of wait
+        # could end the job (a real wait longer than the clock is what the user doing something else looks like).
+        assert [clock.timeout.when() for clock in card["clocks"]] == [None] * len(card["clocks"])
+        assert not job.task.done() and not any(clock.timeout.expired() for clock in card["clocks"])
+        paused_at = loop_time()
+        approvals.answer({"type": "confirm_action", "call_id": card["call_id"], "scope": "once"})
+        await _wait(lambda: "allowed" in seen and not any(clock.pauses for clock in card["clocks"]), seconds=20)
+        resumed_at = loop_time()
+        # The clock resumes with what was left when it paused: the remainder (200 s less the moments between
+        # setting it and the pause) counted from now, never the full 600 s and never nothing. Only the test's own
+        # loop-clock reads are used; the tolerance covers the moments between those reads and the product's.
+        expected = resumed_at + (REMAINING - (paused_at - card["set_at"]))
+        for clock in card["clocks"]:
+            assert clock.timeout.when() == pytest.approx(expected, abs=2.0), (clock.timeout.when(), expected)
+        assert not job.task.done()
+        hold.set()
+        await _wait(lambda: job.phase == "finished", seconds=20)
     finally:
+        hold.set()
         run_registry.detach_sink(CID, window)
     assert seen == {"allowed": True}
     assert (job.outcome, job.budget_stop) == ("done", None), (job.detail, job.budget_stop)
-    async with execution_db() as db:
-        used = (await db.get(CompanionTask, job.job_id)).budget["used"]["wall_seconds"]
-    assert used < 2.0, "the three seconds the card waited are not the job's working time"
+    assert not any(clock.timeout.expired() for clock in card["clocks"])
 
 
 # ── F1 (CI 38293278888): a job's end never waits on forgetting its task grants ───────────────

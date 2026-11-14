@@ -10,7 +10,9 @@ project's files say is put into it. That one command runs once, in SBX's default
   `.git` are not copied but linked, so they are read where they are and never written (a planted git hook would run
   outside the sandbox later);
 - offline, unless the model asks for the network and the user allows it on a card that offers this time only
-  (`permissions`, kind `network`, `once_only`): no grant or rule answers it, and a run with nobody to ask gets no;
+  (`permissions`, kind `network`, `once_only`): no grant or rule answers it, and a run with nobody to ask gets no.
+  Online, the proxy judges each site it reaches as for every sandboxed command (NET-a): one it refused stays on the
+  result (`net_refused`), for the card a command's refusal gets (Codex round 1, F8);
 - never where seatbelt can't start (CI's Linux backend): it refuses and runs nothing. There is no unsandboxed fallback.
 
 What comes back is the command, its exit code and the end of its output. The project's code printed that, so it is
@@ -223,6 +225,12 @@ def _result(plan: Plan, out: dict, online: bool) -> dict:
     for key in ("error", "code", "full_output_path", "truncated"):
         if key in out:
             result[key] = out[key]
+    if out.get("net_refused"):
+        # Codex round 1, F8: the run is judged at the proxy as every sandboxed run is (NET-a). The sites it refused, for
+        # the tool loop's card (tool_execute, as after run_command), and what the run was told of them, as
+        # terminal_exec put it (the note, or beside one about something else).
+        result["net_refused"] = list(out["net_refused"])
+        result["network_note"] = out.get("network_note", out.get("note"))
     if out.get("exit_code") is None and not ok:
         result["executed"] = False
     text = f"{stderr}\n{stdout}"

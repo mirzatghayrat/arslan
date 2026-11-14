@@ -144,3 +144,19 @@ SOFTWARE.
   bans, sources, advisories) gates every CI run and therefore every release.
 - Arslan's own helper `arslan-hands` (`desktop/hands/`) depends only on serde, serde_json
   and libc (MIT OR Apache-2.0).
+
+## The Public Suffix List — inside the sidecar, as `tld/res/effective_tld_names.dat.txt` (0.1.64+)
+
+### publicsuffix/list — Mozilla Public License 2.0 (verified at the source 2026-11-14)
+- <https://publicsuffix.org/list/>, kept at <https://github.com/publicsuffix/list>: its `LICENSE` is the
+  Mozilla Public License 2.0 (GitHub reads it as `MPL-2.0`), and the list file states that licence and where
+  to get it in its first lines.
+- NET-a's sandbox network judgement (`server/services/net_policy.py`) reads it to tell a public suffix, a
+  name anyone can have a site under, from a site. The copy is the one the `tld` package bundles (0.13.2,
+  locked in `uv.lock`): the list at upstream commit `a7621207f34b3a739a5cfb2c47a518b0b9054fe6`
+  (`VERSION: 2026-03-06_02-20-37_UTC`), byte for byte but for the three lines publicsuffix.org adds when it
+  publishes the file (a blank line, `VERSION` and `COMMIT`); sha256
+  `abf32ce9987d505b89765d76f35760543851235508f1f426b5b259a2062b5f68`, the same as the file at tld's tag
+  `0.13.2`. It ships unmodified, and is its own Source Code Form, with its licence notice.
+- `tld` itself is licensed under GPL-2.0, LGPL-2.1 or MPL-1.1, at the recipient's option (its `LICENSE.rst`
+  at tag `0.13.2`). NET-a reads only the list file; it never calls tld's code.

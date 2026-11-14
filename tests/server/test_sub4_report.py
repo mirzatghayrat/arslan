@@ -32,6 +32,9 @@ from tests.server.test_s64_0_outside_content_gaps import (  # noqa: F401  (the f
     NETWORK, NOTE, POISON, _Page, _Run, memory)
 
 ROOT = "c-commander"
+#: NET-a: a command after outside content asks through S2a-1's network card here (the mark's consequence, and a card a
+#: sub-session waits on), its switch off.
+pytestmark = pytest.mark.usefixtures("s2a1_network_rule")
 OUTLINE, COVER = "Draft the outline of the video", "Find a cover image idea"
 PAGE = ("web_extract", {"url": "https://example.test/cover"})
 NOTE_ADD = ("memory_note", {"action": "add", "set": "notes", "text": NOTE})

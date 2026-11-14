@@ -17,7 +17,7 @@ The tee journals ONLY the answer-turn frame vocabulary below. Spawn dispatch
 inherits the caller's emit (arslan.py passes it straight down), so spawn-run
 frames DO flow through the same tee — but those are already journaled by
 their RunRecorder, and journaling them here too would replay them twice.
-A whitelist (retain-semantics, like filter_replay_tools) fails safe: an
+A whitelist (retain-semantics) fails safe: an
 unknown new frame type is merely not replayed, never replayed twice.
 """
 from __future__ import annotations

@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db.session import get_session
-from server.services import approvals, permission_store, permissions
+from server.services import approvals, net_policy, permission_store, permissions
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -70,16 +70,29 @@ async def list_refused(hours: int = 24, conversation_id: str | None = Query(None
     `POST /permissions/rules {refused_id: id}` makes — `[{kind, target, label}]`, each label the
     words its card used; empty when `always_ok` is false. The Inbox shows it before the click.
     An entry whose "Always" set is all allowed already is left out. `conversation_id` (INB3): only that
-    conversation's (a scheduled task's is `task.conversation_id` or `scheduled-<id>`)."""
+    conversation's (a scheduled task's is `task.conversation_id` or `scheduled-<id>`).
+
+    NET-a (Codex round 1, F7): `sites`, the sites of NET-a's card that "In this conversation" allows in the entry's own
+    conversation and that aren't allowed there yet (`POST /permissions/grants {refused_id: id}`), else empty. Once
+    they all are, an entry is left out as above. A scheduled run's entry (`decided_by` policy) has none: a run with
+    nobody to ask reads no grant (S1), so a grant would look like it fixes that run and wouldn't. It stays listed
+    until it ages out, saying the run never takes such a step."""
     hours = max(1, min(168, hours))
     since = datetime.utcnow() - timedelta(hours=hours)
     groups = await permission_store.refused_groups(db, since, conversation_id=conversation_id)
     rules = {(r.kind, r.target) for r in await permission_store.list_rules(db)}
+    granted = {(g.conversation_id, g.target) for g in await permission_store.list_conversation_grants(db, "network")}
     out = []
     for row, count, first in groups:
         always = permissions.always_from(row.extra)
         if always and all((kind, target) in rules for kind, target, _ in always):
             continue                            # allowed since: nothing is waiting any more
+        # A scheduled run's entry offers no grant (S1: it would not count there).
+        named = (net_policy.listed_sites(row.kind, row.target)
+                 if row.conversation_id and row.decided_by != "policy" else [])
+        sites = [site for site in named if (row.conversation_id, f"network:{site}") not in granted]
+        if named and not sites:
+            continue                            # the same, for NET-a's sites in their conversation
         out.append({"id": row.id, "created_at": _utc(row.created_at), "first_at": _utc(first),
                     "count": count, "conversation_id": row.conversation_id, "kind": row.kind,
                     "target": row.target, "detail": row.detail, "always_ok": bool(always),
@@ -88,7 +101,8 @@ async def list_refused(hours: int = 24, conversation_id: str | None = Query(None
                     # earlier one went unanswered (`away`), or it was shown and nobody answered in time.
                     "unopened": row.decided_by == "away",
                     "always": [{"kind": kind, "target": target, "label": label}
-                               for kind, target, label in always]})
+                               for kind, target, label in always],
+                    "sites": sites})
         if len(out) == REFUSED_GROUPS:
             break
     return out

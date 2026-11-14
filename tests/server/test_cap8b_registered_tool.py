@@ -15,7 +15,7 @@ from server.db.models import ArslanMessage, Lesson
 from server.orchestrator import arslan, on_demand, tool_loop
 from server.registry.executors import EXECUTORS
 from server.registry.tool_defs import TOOLS
-from server.services import approvals, background_jobs, lessons, memory_merge, replay_safety, task_service
+from server.services import approvals, background_jobs, lessons, memory_merge, task_service
 from tests.server import test_cap8b_memory_import as base
 from tests.server.test_arslan_loop import _tc, settle_after_turn
 from tests.server.test_cap8b_memory_import import (
@@ -138,9 +138,8 @@ async def test_remember_points_a_pasted_list_at_it(execution_db, monkeypatch):
     assert "import_memories" in shown["remember"]["description"]
 
 
-async def test_it_counts_as_a_local_write_is_out_of_replays_and_is_no_route_for_a_lesson():
+async def test_it_counts_as_a_local_write_and_is_no_route_for_a_lesson():
     assert await task_service.effect_of("import_memories", {}) == "local_write"
-    assert not replay_safety.is_replay_safe("import_memories")
     assert lessons._family("import_memories") is None
 
 

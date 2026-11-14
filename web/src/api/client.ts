@@ -516,13 +516,6 @@ export const api = {
   cancelRun: (id: number) => request<{ ok: boolean }>(`/runs/${id}/cancel`, { method: "POST" }),
   /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */
   redactAllRuns: () => request<{ redacted: number }>(`/runs/redact-all`, { method: "POST" }),
-  getPreferences: (spawnId: number) =>
-    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`),
-  deletePreference: (spawnId: number, fact: string, identity?: { entry_id: string; expected_version: number }) =>
-    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`, {
-      method: "DELETE",
-      body: JSON.stringify({ fact, ...identity }),
-    }),
   listMcpServers: () =>
     request<
       Array<{

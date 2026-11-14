@@ -254,7 +254,7 @@ class MCPProxyExecutor:
         from server.orchestrator import untrusted
         refusal = {"ok": False, "external": False, "executed": False, "code": code, "error": error}
         if untrusted.breaks_mcp_name_rule(self.external_name):
-            untrusted.mark_external()
+            untrusted.mark_external(str(self.external_name))     # NET-a: the sites the name spells, if any
             del refusal["external"]
         return refusal
 

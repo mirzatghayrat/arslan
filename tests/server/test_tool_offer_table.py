@@ -135,8 +135,8 @@ def _cases():
 CASES = _cases()
 # effect, then the traits that are true, then its own gate
 TRAITS = {
-    "web_search": "read parallel outside replay_safe", "web_extract": "read parallel outside replay_safe",
-    "render_chart": "read replay_safe", "recall": "read parallel outside", "remember": "local_write",
+    "web_search": "read parallel outside", "web_extract": "read parallel outside",
+    "render_chart": "read", "recall": "read parallel outside", "remember": "local_write",
     "conversation_search": "external_write outside", "memory_note": "external_write",
     "task_progress": "read parallel outside", "start_sub_session": "external_write",
     "update_plan": "read",
@@ -149,7 +149,7 @@ TRAITS = {
     "desktop_click": "external_write", "desktop_type": "external_write", "desktop_select": "external_write",
     "desktop_scroll": "external_write", "desktop_open": "external_write", "desktop_batch": "external_write",
     "desktop_menu": "external_write", "desktop_press": "external_write", "desktop_takeover": "external_write",
-    "read_skill": "read parallel replay_safe", "propose_plan_change": "external_write",
+    "read_skill": "read parallel", "propose_plan_change": "external_write",
     "find_capability": "external_write outside", "propose_capability": "external_write", "create_skill": "local_write",
     "import_memories": "local_write", "verify": "local_write outside", "whats_new": "read parallel",
     "my_status": "read parallel", "progress_report": "read parallel", "list_my_capabilities": "read parallel",
@@ -231,7 +231,7 @@ async def test_each_case_offers_its_tools_with_their_traits(name, monkeypatch, _
     for tool in tool_defs.TOOLS:
         if tool.name in listed:
             traits = tool.traits
-            stated = " ".join([traits.effect, *(trait for trait in ("parallel", "outside", "replay_safe", "saves")
+            stated = " ".join([traits.effect, *(trait for trait in ("parallel", "outside", "saves")
                                                 if getattr(traits, trait)),
                                *([f"gate={tool.gate.__name__}"] if tool.gate else [])])
             assert stated == TRAITS[tool.name], f"{tool.name}: {stated}"

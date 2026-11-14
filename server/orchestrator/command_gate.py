@@ -151,9 +151,16 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     the network, this time only, and does not run without it. Where seatbelt cannot start nothing is
     wrapped, so only the card holds.
 
+    NET-a (the switch `sandbox_net_judgement`, on by default): in the sandbox a command stays online, through the
+    proxy that judges each site it reaches (net_policy), with no card here; outside it, and a bare Shortcut, as above.
+    Not a scheduled task's own fire (ASK1-b, ⓪Plan's ruling): after outside content (a page its turn read, or an
+    `outside_seen` task's prompt carried in marked) it stays offline, as above with nobody to ask. Nobody is there to
+    answer a site's card, and a site the creating turn read but the prompt doesn't name would pass the proxy as unknown.
+
     Returns {"offline": bool, "note": str} or {"refused": model text}."""
     from server.orchestrator import untrusted as _untrusted
-    from server.services import background_jobs, command_sandbox, permissions, task_service, terminal_policy
+    from server.services import (background_jobs, command_sandbox, net_policy, permissions, task_service,
+                                 terminal_policy)
     if not _untrusted.external_seen():
         return {}
     if unwrapped:
@@ -180,6 +187,12 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
             "refused": decision.model_text or "the user did not allow this Shortcut to use the network"}
     wrapped = command_sandbox.available()
     inside = sandbox_on and not run_outside and wrapped
+    # NET-a: online in the sandbox, judged at the proxy; a scheduled fire stays offline below (ASK1-b, the docstring).
+    if inside and await net_policy.judging() and not fire_runs_commands(conversation_id):
+        return {}
+    # DELETE-BY: v0.1.65 (NET-a's switch, once it has shipped on): S2a-1's whole-network rule in the sandbox below, the
+    # `network:*` card for this conversation, for every run but a scheduled fire. Keep a fire's offline run in the
+    # sandbox (nobody to ask: `{"offline": True, ...}` below) and the rule outside the sandbox (this time only).
     if not (args.get("network") is True or _untrusted.reaches_network(command)):
         return {"offline": True} if wrapped else {}
     if wrapped and permissions.current_asker() is None:
@@ -199,17 +212,18 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
     return {"refused": decision.model_text or "the user did not allow this command to use the network"}
 
 
-def _network_card_due(command: str, args: dict) -> bool:
+def _network_card_due(command: str, args: dict, *, judged: bool = False) -> bool:
     """S2a-2: whether `_network_after_outside_content` would ask for the network, known before the
     command's own card, so that card asks for both (one card, not two). A click on it stands for the
-    network this time; a grant or rule that answers it does not, and the network card still comes."""
+    network this time; a grant or rule that answers it does not, and the network card still comes.
+    NET-a: `judged`, the command runs in the sandbox with the switch on, where nothing asks for the network."""
     from server.orchestrator import untrusted as _untrusted
     from server.services import task_service
     if not _untrusted.external_seen():
         return False
     if task_service.unwrapped_once(command):
         return task_service.bare_shortcut(command)       # a bare osascript is not a network command
-    return args.get("network") is True or _untrusted.reaches_network(command)
+    return not judged and (args.get("network") is True or _untrusted.reaches_network(command))
 
 
 def _bare_once(command: str, *, by_user: bool, cwd=None) -> tuple[bool, bool]:
@@ -675,7 +689,9 @@ async def _where_it_runs(d: _Draft, args: dict, conversation_id: str | None) -> 
     unread = d.later == (terminal_policy.RUN_LATER_UNKNOWN,) and terminal_policy.reading(command).refused
     d.later_line = () if unread else d.later
     d.lift = bool(d.later) and d.outside        # the command's own click is the only thing that lets it run
-    d.net_due = _network_card_due(command, args)
+    from server.services import net_policy
+    d.net_due = _network_card_due(command, args, judged=d.confined and not d.wants_out and not d.run_outside
+                                  and await net_policy.judging())
     d.net_kw = {"network": True} if d.net_due else {}
     return None
 

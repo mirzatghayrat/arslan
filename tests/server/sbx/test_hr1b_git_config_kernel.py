@@ -18,6 +18,7 @@ Stand-in names and plain git steps only; the adversarial config shapes are Codex
 import asyncio
 import json
 import os
+import select
 import sys
 
 import pytest
@@ -241,15 +242,52 @@ def _codes(ran) -> dict:
     return {k: v != "0" for k, v in (line.split("=") for line in ran.stdout.split())}
 
 
-#: A child that writes a program-naming key 0.5 s after the command exits: in the command's group, or in a session of
-#: its own (it leaves the group).
+#: FIFOs in the work folder that order an own-session child against the test, with no timing.
+_GATE, _DONE = f"{STAND_IN}-gate", f"{STAND_IN}-done"
+
+
+def _own_session_child(key: str) -> str:
+    """A child that leaves the command's group (`setsid`) and writes `key` once the test opens `_GATE`, which it does
+    only after the granted command (and so its put-back) returned; it then writes `_DONE`. A fixed 0.5 s delay raced
+    both ways under load: a put-back slower than 0.5 s reverted the key first, and a child slower than the test's
+    1.5 s wait wrote it after the read; either left the key unset when the test read it. The parent exits only once
+    the child has left the group: had it exited first, the command's end (`_end_group`) could kill the child before
+    its `setsid`, and the key would never be written."""
+    return (f"{sys.executable} -I -c \"import os, subprocess\n"
+            "r, w = os.pipe()\n"
+            "if os.fork(): os.close(w); os.read(r, 1); os._exit(0)\n"
+            "os.setsid(); os.write(w, b'x'); os.close(w); os.close(r)\n"
+            f"open('{_GATE}', 'rb').read(1)\n"
+            f"subprocess.run(['git', '-C', 'repo', 'config', '{key}', '{VALUE}'])\n"
+            f"open('{_DONE}', 'wb').write(b'x')\" "
+            ">/dev/null 2>&1 </dev/null")
+
+
+async def _granted_then_child_writes(sbx, script: str) -> dict:
+    """The granted command, then its own-session child's write, strictly after the put-back. Both FIFOs are held open
+    read-write by the test, so neither side's open waits for the other; a child that never writes fails the test."""
+    gate, done = sbx.work / _GATE, sbx.work / _DONE
+    os.mkfifo(gate)
+    os.mkfifo(done)
+    gate_fd, done_fd = os.open(gate, os.O_RDWR), os.open(done, os.O_RDWR)
+    try:
+        granted = await terminal_exec.run(script, cwd=sbx.work, sandbox=True, offline=True, git_config=True)
+        assert granted["ok"], granted
+        os.write(gate_fd, b"x")                                   # the put-back is over: the child may write now
+        ready, _, _ = await asyncio.to_thread(select.select, [done_fd], [], [], 60)
+        assert ready, "the child never wrote the key"
+        assert os.read(done_fd, 1) == b"x"
+    finally:
+        os.close(gate_fd)
+        os.close(done_fd)
+    return granted
+
+
+#: A child that writes a program-naming key after the command: in the command's group 0.5 s after it exits (the group
+#: is ended first, so it never writes), or in a session of its own after the put-back.
 _LATER = {
     "group": f"(sleep 0.5; git -C repo config core.hooksPath {VALUE}) >/dev/null 2>&1 &",
-    "own session": (f"{sys.executable} -I -c \"import os, subprocess, time\n"
-                    "if os.fork(): os._exit(0)\n"
-                    "os.setsid(); time.sleep(0.5)\n"
-                    f"subprocess.run(['git', '-C', 'repo', 'config', 'core.hooksPath', '{VALUE}'])\" "
-                    ">/dev/null 2>&1 </dev/null"),
+    "own session": _own_session_child("core.hooksPath"),
 }
 
 
@@ -264,9 +302,12 @@ async def test_a_process_the_command_leaves_running_never_keeps_a_key(sbx, monke
     _product_env(sbx, monkeypatch)
     assert _git(sbx.work, "init", "-q", "repo").returncode == 0
     config = sbx.work / "repo" / ".git" / "config"
-    result = await terminal_exec.run(_LATER[child], cwd=sbx.work, sandbox=True, offline=True, git_config=True)
-    assert result["ok"], result
-    await asyncio.sleep(1.5)
+    if child == "group":
+        result = await terminal_exec.run(_LATER[child], cwd=sbx.work, sandbox=True, offline=True, git_config=True)
+        assert result["ok"], result
+        await asyncio.sleep(1.5)                  # past the 0.5 s at which the ended child would have written
+    else:
+        result = await _granted_then_child_writes(sbx, _LATER[child])
     if child == "group":
         assert _out(sbx.work / "repo", "config", "core.hooksPath") is None
         assert "stopped what this command left running" in result["git_config_note"]
@@ -395,8 +436,8 @@ def _fresh_guard():
         each.clear()
 
 
-#: A child that leaves the command's group (`setsid`) and writes a stand-in program key 0.5 s later.
-_FSMONITOR_LATER = _LATER["own session"].replace("core.hooksPath", "core.fsmonitor")
+#: A child that leaves the command's group (`setsid`) and writes a stand-in program key after the put-back.
+_FSMONITOR_LATER = _own_session_child("core.fsmonitor")
 
 
 @pytest.mark.macos
@@ -413,9 +454,7 @@ async def test_a_key_written_after_the_put_back_never_reaches_an_ungranted_comma
     _product_env(sbx, monkeypatch)
     assert _git(sbx.work, "init", "-q", "repo").returncode == 0
     git = sbx.work / "repo" / ".git"
-    granted = await terminal_exec.run(_FSMONITOR_LATER, cwd=sbx.work, sandbox=True, offline=True, git_config=True)
-    assert granted["ok"], granted
-    await asyncio.sleep(1.5)
+    await _granted_then_child_writes(sbx, _FSMONITOR_LATER)
     assert _out(sbx.work / "repo", "config", "core.fsmonitor") == VALUE        # written after the put-back
     mode = git.stat().st_mode
     if not writable:
