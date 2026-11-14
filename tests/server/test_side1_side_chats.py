@@ -10,7 +10,10 @@ without it:
   memory and no lesson, and none of its
   settings, its model or a pin can be set on it;
 - a local-only receipt of its parent stops a cloud model in it, as one of its own would;
-- it is in no list of conversations and not on the phone, and it goes with its parent.
+- it is in no list of conversations and not on the phone, and it goes with its parent;
+- deleted, it is still a side chat (#910 review): off the phone, out of the whole app's lists and off the island, also
+  after a restart; a delete stops the turn in flight where it deletes, and no message is ever written into a deleted
+  conversation, whatever the timing.
 """
 import asyncio
 import re
@@ -766,3 +769,262 @@ async def test_one_side_chat_is_deleted_only_when_named_as_one(client):
         kept = (await session.execute(select(ArslanMessage.id).where(ArslanMessage.conversation_id == PARENT)
                                       )).scalars().all()
     assert kept == ids and (await client.get(f"/api/v1/conversations/{PARENT}/side-chats")).json() == []
+
+
+# -- once deleted, still a side chat; a delete stops its turn (#910 review, round 1) ---------------------------------
+
+#: How a side chat goes: alone (the window names it as one), or with its parent, whatever that delete does with the
+#: parent's sub-sessions: the query each sends.
+DELETES = {"alone": "?side_chat=true", "with-its-parent": "", "with-its-parent-and-sub-sessions": "?sub_sessions=delete",
+           "with-its-parent-keeping-sub-sessions": "?sub_sessions=keep"}
+
+
+async def _delete(client, side, how) -> None:
+    if "sub-sessions" in how:
+        async with client.db_maker() as session:
+            await sub_sessions.create_child(session, PARENT, "sub-kid")
+            await session.commit()
+    got = await client.delete(f"/api/v1/conversations/{side if how == 'alone' else PARENT}{DELETES[how]}")
+    assert got.status_code == 200, got.json()
+
+
+@pytest.mark.parametrize("how", list(DELETES))
+async def test_a_deleted_side_chat_stays_off_the_phone_and_out_of_the_whole_apps_lists_after_a_restart_too(client, how):
+    """Its tombstone says `deleted`, not `side`, and its runs and tasks outlive it: its id still says what it was. So
+    its run, the run's files and its history are not there for a phone, and the whole app's runs and tasks leave it
+    out, whether this process still holds the delete's mark or not."""
+    from server.services.task_repository import repository
+    from tests.server.test_task_repository import spec
+    await _talk(client.db_maker)
+    side = (await _start(client.db_maker))["conversation_id"]
+    await _say(client.db_maker, side, "a side needle", minutes=10)
+    run = await _run(client.db_maker, side, False, minutes=10)
+    parent_run = await _run(client.db_maker, PARENT, False)
+    async with repository() as repo:
+        await repo.create(spec("t-side", instruction="a side needle"), side)
+        await repo.create(spec("t-parent"), PARENT)
+    phone = [f"/api/v1/phone/runs/{run}", f"/api/v1/phone/runs/{run}/files",
+             f"/api/v1/phone/conversations/{side}/history"]
+    await _delete(client, side, how)
+    for restarted in (False, True):
+        if restarted:
+            sub_sessions._deleted.clear()            # a restart forgets this process's mark; the rows stay
+        assert {path: (await client.get(path)).status_code for path in phone} == dict.fromkeys(phone, 404), restarted
+        assert [r["id"] for r in (await client.get("/api/v1/runs")).json()] == [parent_run]
+        assert [t["state"]["task_id"] for t in (await client.get("/api/v1/tasks")).json()] == ["t-parent"]
+        assert side not in [c["conversation_id"] for c in (await client.get("/api/v1/conversations")).json()]
+        assert (await client.get("/api/v1/conversations/search", params={"q": "side needle"})).json() == []
+        assert side not in (await client.get("/api/v1/phone/live")).json()["conversation_ids"]
+    assert phone_ids.kind_of(side, sub_sessions.DELETED) == "side"
+    assert not phone_ids.in_list(side, sub_sessions.DELETED) and not phone_ids.in_list(side, "chat")
+
+
+@pytest.mark.parametrize("how", ["alone", "with-its-parent"])
+async def test_once_deleted_it_is_no_entry_of_its_own_on_the_island(client, how):
+    """While it lives, its work and events are listed under its parent. Its tombstone names no parent and the window
+    lists no side chat, so what this process still holds of it shows nowhere once it is deleted."""
+    from server.services import desktop_status
+    await _talk(client.db_maker)
+    side = (await _start(client.db_maker))["conversation_id"]
+    desktop_status._reset_for_tests()
+    try:
+        with desktop_status.working(side, title="what did it mean?"):
+            desktop_status.push("turn_finished", conversation_id=side, outcome="ok", title="what did it mean?",
+                                work="turn")
+            feed = (await client.get("/api/v1/island/feed")).json()
+            assert [e["conversation_id"] for e in feed["events"]] == [PARENT]
+            assert [a["conversation_id"] for a in feed["active"]] == [PARENT]
+            await _delete(client, side, how)
+            sub_sessions._deleted.clear()
+            feed = (await client.get("/api/v1/island/feed")).json()
+            status = (await client.get("/api/v1/desktop/status")).json()
+        assert (feed["events"], feed["active"], status["events"]) == ([], [], [])
+    finally:
+        desktop_status._reset_for_tests()
+
+
+async def _memory_on(execution_db) -> None:
+    """What a full turn through `handle_user_message` reads, as the end-to-end test above sets it up."""
+    from server.services.memory_activation import activate_sync
+    from server.services.memory_migration import migrate_legacy_sync
+    async with execution_db.kw["bind"].begin() as db:
+        await db.run_sync(migrate_legacy_sync)
+        await db.run_sync(activate_sync)
+
+
+@pytest.mark.parametrize("turn_in, deleted, lands, task_cancel", [
+    ("side", PARENT, "in-the-model-request", "done"), ("side", "side", "in-the-model-request", "done"),
+    (PARENT, PARENT, "in-the-model-request", "done"), ("side", PARENT, "after-the-answer", "done"),
+    ("side", PARENT, "in-the-model-request", "refused")],
+    ids=["side-chat-its-parent-deleted", "side-chat-deleted-alone", "ordinary-conversation-deleted",
+         "side-chat-its-parent-deleted-once-the-answer-is-back", "its-task-cancel-refused"])
+async def test_a_delete_stops_the_turn_in_flight_and_nothing_is_written_there(execution_db, monkeypatch, turn_in,
+                                                                              deleted, lands, task_cancel):
+    """Codex's round-1 repro: the parent is deleted after the last model request's checkpoint and before its answer
+    returns (or once it is back, before it is written), with no tool call after it. The delete comes in its own
+    request, as the window's does, and stops the turn as the window's Stop would: the turn ends, its run is
+    cancelled, and nothing is written where it ran. The delete returns once that run has ended, as it does for a
+    job, though the model's stream takes a moment to close. An ordinary conversation's turn is stopped the same way,
+    and a task cancel the repository refuses still stops the run itself."""
+    from arslan.execution_checkpoint import save
+    from server.api import conversations
+    from server.orchestrator import promise_guard
+    from server.services import run_registry, task_service
+    from server.services.task_repository import TaskError
+    if task_cancel == "refused":
+        async def refuse(task_id, expected_version=None):
+            raise TaskError("task_already_finished")
+        monkeypatch.setattr(task_service, "cancel", refuse)
+    await _memory_on(execution_db)
+    ids = await _talk(execution_db)
+    side = (await _start(execution_db, branch=ids[1]))["conversation_id"]
+    cid, target = (side if turn_in == "side" else PARENT), (side if deleted == "side" else PARENT)
+    there, never, answered = asyncio.Event(), asyncio.Event(), []
+
+    async def held():
+        there.set()
+        try:
+            await never.wait()
+        except asyncio.CancelledError:
+            await asyncio.sleep(0.5)            # a provider's stream closing
+            raise
+
+    class Adapter:
+        async def chat(self, system, user, **kwargs):
+            await save("before_model")          # as every provider does first
+            if lands == "in-the-model-request":
+                await held()
+            answered.append(True)
+            return LLMResponse(content="It meant the first one.", usage={}, tool_calls=[])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: Adapter())
+
+    async def correct(full_text, conversation_id=None):     # awaited between the answer and its write
+        await held()
+    if lands == "after-the-answer":
+        monkeypatch.setattr(promise_guard, "correct", correct)
+    turn = asyncio.create_task(arslan.handle_user_message(cid, "what did that mean?", lambda event: None))
+    try:
+        waiting = asyncio.ensure_future(there.wait())
+        await asyncio.wait({waiting, turn}, return_when=asyncio.FIRST_COMPLETED, timeout=10)
+        waiting.cancel()
+        assert there.is_set(), turn
+        [run_task] = [run_registry.get(run_id) for run_id in run_registry.active_for(cid)]
+        async with execution_db() as session:
+            await conversations.delete_conversation(target, sub_sessions=None, sub_session=False,
+                                                    side_chat=deleted == "side", db=session)
+        assert run_task.done(), "the delete returned while the run it stopped was still ending"
+        await asyncio.wait({turn}, timeout=5)
+        assert turn.done(), "the delete left the turn running"
+    finally:
+        never.set()
+        await asyncio.wait({turn}, timeout=5)
+    assert turn.result() is None                # stopped, as the window's Stop ends a turn
+    async with execution_db() as session:
+        said = (await session.execute(select(ArslanMessage.conversation_id).where(
+            ArslanMessage.conversation_id.in_((side, PARENT))))).scalars().all()
+        run = (await session.execute(select(Run).where(Run.conversation_id == cid))).scalar_one()
+    assert said == ([PARENT] * len(ids) if deleted == "side" else [])
+    assert run.status == "cancelled" and answered == ([True] if lands == "after-the-answer" else [])
+
+
+@pytest.mark.parametrize("turn_in", ["side", PARENT], ids=["side-chat", "ordinary-conversation"])
+async def test_a_delete_committed_as_the_reply_is_inserted_leaves_no_message(execution_db, monkeypatch, tmp_path,
+                                                                             turn_in):
+    """The interleaving no stop can catch: the model has answered and the delete commits, from another connection,
+    after the turn's last await and before its INSERT runs (the hook runs right before SQLite executes it). A check
+    and a separate insert would both pass and write; the insert reads the tombstone itself, writes nothing, and the
+    turn ends saying why."""
+    import sqlite3
+    await _memory_on(execution_db)
+    ids = await _talk(execution_db)
+    side = (await _start(execution_db, branch=ids[1]))["conversation_id"]
+    cid, gone = (side if turn_in == "side" else PARENT), (PARENT, side)
+
+    class Adapter:
+        async def chat(self, system, user, **kwargs):
+            return LLMResponse(content="It meant the first one.", usage={}, tool_calls=[])
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: Adapter())
+    reached = []
+
+    def delete_meanwhile(conn, cursor, statement, parameters, context, executemany):
+        values = [value for row in (parameters if executemany else [parameters])
+                  for value in (row.values() if isinstance(row, dict) else row)]
+        if reached or not statement.lstrip().startswith("INSERT INTO arslan_messages") or "arslan" not in values \
+                or cid not in values:
+            return
+        reached.append(statement)
+        other = sqlite3.connect(tmp_path / "execution.db")
+        try:                                    # the delete's own transaction: its rows go, its tombstone is written
+            marks = ", ".join("?" for _ in gone)
+            other.execute(f"DELETE FROM arslan_messages WHERE conversation_id IN ({marks})", gone)
+            other.execute(f"UPDATE conversation_contexts SET kind = 'deleted', parent_id = NULL WHERE id IN ({marks})",
+                          gone)
+            other.commit()
+        finally:
+            other.close()
+    engine = execution_db.kw["bind"].sync_engine
+    sa.event.listen(engine, "before_cursor_execute", delete_meanwhile)
+    refused = None
+    try:
+        await arslan.handle_user_message(cid, "what did that mean?", lambda event: None)
+    except MemoryError as error:
+        refused = error.code
+    finally:
+        sa.event.remove(engine, "before_cursor_execute", delete_meanwhile)
+    async with execution_db() as session:
+        said = (await session.execute(select(ArslanMessage.content).where(
+            ArslanMessage.conversation_id.in_(gone)))).scalars().all()
+    assert (len(reached), said, refused) == (1, [], "conversation_deleted")
+
+
+@pytest.mark.parametrize("kind", ["side", "sub", "chat", "no-row"])
+async def test_no_message_is_written_into_a_deleted_conversation_whatever_it_was(execution_db, kind):
+    """The one write every message goes through: a reply, a choice card, a message typed during a turn, a job's
+    result (a sub-session's reply is one), a restart's note. Its tombstone alone refuses it: no mark of this process."""
+    from server.orchestrator.memory import add_message
+    await _talk(execution_db)
+    cid = (await _start(execution_db))["conversation_id"] if kind == "side" else {
+        "sub": "sub-kid", "chat": "c-chat", "no-row": "c-never-seen"}[kind]
+    async with execution_db() as session:
+        if kind == "sub":
+            await sub_sessions.create_child(session, PARENT, cid)
+        elif kind == "chat":
+            session.add(ConversationContext(id=cid, kind="chat"))
+        await session.commit()
+    written = await add_message(cid, "arslan", "before the delete", job_outcome="done")
+    async with execution_db() as session:
+        row = await session.get(ArslanMessage, written)
+    assert (row.conversation_id, row.content, row.job_outcome) == (cid, "before the delete", "done")
+    assert abs(row.timestamp - datetime.utcnow()) < timedelta(minutes=1)      # stamped as the ORM's default did
+    async with execution_db() as session:              # what DELETE /conversations/{id} commits
+        await session.execute(sa.delete(ArslanMessage).where(ArslanMessage.conversation_id == cid))
+        await sub_sessions.tombstone(session, [cid])
+        await session.commit()
+    with pytest.raises(MemoryError, match="conversation_deleted"):
+        await add_message(cid, "arslan", "after the delete")
+    async with execution_db() as session:
+        assert await session.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == cid)) is None
+
+
+async def test_a_restart_tells_no_deleted_conversation_of_its_cut_job_and_still_tells_the_next(execution_db,
+                                                                                               monkeypatch):
+    """A job that outlived its conversation's delete (it waits STOP_WAIT_S), then the process: at boot its note is
+    refused as any write into a tombstone is, and the conversation after it is still told."""
+    from unittest.mock import AsyncMock
+    from server.services import runtime_messages
+    from server.services.task_repository import repository
+    from tests.server.test_task_repository import spec
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    async with repository() as repo:
+        for identity, cid in (("job-gone", "c-gone"), ("job-kept", "c-kept")):
+            created = await repo.create(spec(identity, instruction=f"Goal of {identity}"), cid,
+                                        privacy={"driver": {"kind": "background"}})
+            await repo.start(identity, created["version"])
+    async with execution_db() as session:
+        await sub_sessions.tombstone(session, ["c-gone"])
+        await session.commit()
+    async with repository() as repo:
+        assert await repo.recover_interrupted() == 2
+    assert await background_jobs.report_interrupted() == 2
+    async with execution_db() as session:
+        assert (await session.execute(select(ArslanMessage.conversation_id))).scalars().all() == ["c-kept"]

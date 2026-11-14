@@ -105,22 +105,33 @@ async def add_message(
     run_id: int | None = None,
 ) -> int:
     """Append an arslan_messages row; return its id. `run_id` on a user message: one sent while that run
-    was working, which it read mid-turn (K9b); the turn's own first message has none."""
+    was working, which it read mid-turn (K9b); the turn's own first message has none.
+
+    Never into a deleted conversation (SIDE-1, #910 review): the row goes in by one statement that reads the
+    conversation's tombstone itself (`sub_sessions.tombstone`), and refuses with MemoryError `conversation_deleted`
+    when there is one. A delete purges the conversation's messages and writes its tombstone in one transaction, and
+    SQLite lets one writer in at a time, so whatever the timing nothing of it is left: a row committed before that
+    transaction is purged by it, and one tried after it is refused. A check and then an insert could pass just before
+    the delete and write just after it: a reply whose model answered while the conversation was being deleted."""
+    from sqlalchemy import exists, insert, literal
+
+    from server.db.companion_models import ConversationContext
+    from server.services import sub_sessions
+    row = {"conversation_id": conversation_id, "role": role, "content": content, "display_content": display_content,
+           "spawn_id": spawn_id, "job_outcome": job_outcome, "source": source, "run_id": run_id}
+    column = ArslanMessage.__table__.c
+    tombstone = select(ConversationContext.id).where(ConversationContext.id == conversation_id,
+                                                     ConversationContext.kind == sub_sessions.DELETED)
+    statement = insert(ArslanMessage).from_select(
+        list(row), select(*(literal(value, column[name].type) for name, value in row.items())).where(~exists(tombstone))
+    ).returning(ArslanMessage.id)
     async with db_session.AsyncSessionLocal() as db:
-        row = ArslanMessage(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            display_content=display_content,
-            spawn_id=spawn_id,
-            job_outcome=job_outcome,
-            source=source,
-            run_id=run_id,
-        )
-        db.add(row)
+        message_id = await db.scalar(statement)
         await db.commit()
-        await db.refresh(row)
-        return row.id
+    if message_id is None:
+        from arslan.companion.memory import MemoryError
+        raise MemoryError("conversation_deleted")
+    return message_id
 
 
 async def _latest_summary(db, conversation_id: str) -> ArslanSummary | None:  # noqa: ANN001

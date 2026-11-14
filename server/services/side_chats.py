@@ -20,7 +20,8 @@ the window talks to it over the socket as to any conversation.
   of one that started marked starts marked (`arslan._answer_dispatch`); a clean one is marked by what each turn reads.
 - It is in no list of conversations (`phone_ids.in_list`), not on the phone (`sub_sessions.sub_ids`), and the whole
   app counts its work as its parent's (`sub_sessions.commanders`, `not_sub`). It goes with its parent
-  (`sub_sessions.before_delete`), and alone only when the delete names it as one.
+  (`sub_sessions.before_delete`), and alone only when the delete names it as one. Deleted, it is still one by its id
+  (#910 review): its tombstone says `deleted`, and its runs and tasks stay.
 """
 from __future__ import annotations
 

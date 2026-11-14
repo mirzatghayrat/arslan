@@ -557,11 +557,12 @@ def _reset_for_tests() -> None:
 
 async def sub_ids(db, ids: list[str]) -> set[str]:
     """Which of these conversations are sub-sessions or side chats (SIDE-1), for the lists that start from something
-    other than conversation_list (running jobs, the phone's history, runs and files) and for `commanders`."""
+    other than conversation_list (running jobs, the phone's history, runs and files) and for `commanders`. A side chat
+    also by its id (`phone_ids.kind_of`): deleted, its row says `deleted` and its runs stay (#910 review)."""
     if not ids:
         return set()
-    return set((await db.execute(select(ConversationContext.id).where(
-        ConversationContext.id.in_(ids), ConversationContext.kind.in_(UNDER)))).scalars())
+    return {cid for cid in ids if cid and phone_ids.kind_of(cid, None) == SIDE} | set((await db.execute(select(
+        ConversationContext.id).where(ConversationContext.id.in_(ids), ConversationContext.kind.in_(UNDER)))).scalars())
 
 
 # -- SUB5b: where a sub-session's work shows, and how a job in one runs ------------------------------------------
@@ -615,10 +616,12 @@ async def commanders(db, ids) -> dict[str, str]:
 
 def not_sub(column):
     """A SQL condition for the whole app's lists: rows whose conversation isn't a sub-session or a side chat (SIDE-1),
-    or that have none."""
-    from sqlalchemy import or_
-    return or_(column.is_(None), column.not_in(select(ConversationContext.id).where(
-        ConversationContext.kind.in_(UNDER))))
+    or that have none. A side chat also by its id, as `phone_ids.kind_of` reads it (`substr`, case-sensitive as
+    `startswith` is; LIKE is not): its runs and tasks outlive it, under a tombstone saying `deleted` (#910 review)."""
+    from sqlalchemy import and_, func, or_
+    side = func.substr(column, 1, len(phone_ids.SIDE_PREFIX)) == phone_ids.SIDE_PREFIX
+    return or_(column.is_(None), and_(~side, column.not_in(select(ConversationContext.id).where(
+        ConversationContext.kind.in_(UNDER)))))
 
 
 async def looser_than_chain(db, row: ConversationContext, values: dict) -> bool:
@@ -899,10 +902,14 @@ async def before_delete(db, conversation_id: str, *, choice: str | None, as_sub_
 
 
 async def _stop_for_delete(gone: list[str], sub_session: str | None, parent_id: str | None) -> None:
-    """The jobs of the conversations being deleted stop and end before their rows go. A sub-session's report to its
-    parent, one still waiting or the one that stop leaves, reads `stopped`, with no result: the user deleted what it
-    said. One that outlives STOP_WAIT_S is refused its next context load and its tree's limit (`deleted`)."""
-    from server.services import background_jobs
+    """The jobs and turns of the conversations being deleted stop and end before their rows go. A sub-session's report
+    to its parent, one still waiting or the one that stop leaves, reads `stopped`, with no result: the user deleted
+    what it said. A turn in flight (#910 review: a side chat's, deleted with its parent or alone; any conversation's)
+    stops as the window's Stop stops it (POST /runs/{id}/cancel): through its task, else its run. One that outlives
+    STOP_WAIT_S is refused its next context load and its tree's limit (`deleted`), and the message it would write
+    once the delete commits (`memory.add_message`)."""
+    from server.services import background_jobs, run_registry, task_service
+    from server.services.task_repository import TaskError
 
     def mark() -> None:
         for report in _reports.get(parent_id, ()) if sub_session else ():
@@ -912,8 +919,19 @@ async def _stop_for_delete(gone: list[str], sub_session: str | None, parent_id: 
     jobs = [job for job in background_jobs.unreported() if job.conversation_id in gone]
     for job in jobs:
         background_jobs.stop(job.conversation_id, job.job_id)
-    if jobs:
-        await asyncio.wait({job.task for job in jobs}, timeout=STOP_WAIT_S)
+    runs = [run_id for cid in gone for run_id in run_registry.active_for(cid)]
+    turns = {task for run_id in runs if (task := run_registry.get(run_id)) is not None}
+    for run_id in runs:
+        task_id = task_service.task_for_run(run_id)
+        try:
+            if task_id is not None:
+                await task_service.cancel(task_id)
+                continue
+        except TaskError:                       # its task can't be cancelled (it ended): the run itself is stopped
+            pass
+        run_registry.cancel(run_id)
+    if jobs or turns:
+        await asyncio.wait({*(job.task for job in jobs), *turns}, timeout=STOP_WAIT_S)
         mark()
 
 

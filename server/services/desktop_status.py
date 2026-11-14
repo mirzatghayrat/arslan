@@ -306,13 +306,18 @@ def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | N
     commander, at any depth, also while the commander is idle: its `job_id` names them all (`sub_sessions.STOP_ALL`),
     which POST /background-jobs/{id}/stop reads. A sub-session's own job ends are no event at all
     (background_jobs._report): the commander's summary reports once. SIDE-1: a side chat's turn is listed as its
-    parent's too, but stays an entry of its own, with no Stop for the parent's sub-sessions: they aren't what it runs."""
+    parent's too, but stays an entry of its own, with no Stop for the parent's sub-sessions: they aren't what it runs.
+    Only there: one whose parent can't be named (deleted, #910 review: its tombstone names none) shows nowhere, since
+    the window lists no side chat (`commanders` names every side chat in view, such a one as itself)."""
     if not tops:
         return feed
     from server.services.phone_ids import SIDE_PREFIX
     from server.services.sub_sessions import STOP_ALL
+
+    def nowhere(cid) -> bool:
+        return str(cid).startswith(SIDE_PREFIX) and tops.get(cid, cid) == cid
     out = {**feed, "events": [{**e, "conversation_id": tops.get(e.get("conversation_id"), e.get("conversation_id"))}
-                              for e in feed.get("events", ())]}
+                              for e in feed.get("events", ()) if not nowhere(e.get("conversation_id"))]}
     if "awaiting_conversations" in feed:
         out["awaiting_conversations"] = sorted({tops.get(cid, cid) for cid in feed["awaiting_conversations"]})
     if "active" in feed:
@@ -323,7 +328,8 @@ def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | N
             if top is None:
                 active.append(activity)
             elif str(activity.get("conversation_id")).startswith(SIDE_PREFIX):
-                active.append({**activity, "conversation_id": top})
+                if not nowhere(activity.get("conversation_id")):
+                    active.append({**activity, "conversation_id": top})
             elif top not in own and top not in folded:
                 folded.add(top)
                 active.append({**activity, "conversation_id": top, "title": _clip((names or {}).get(top), TITLE_CHARS),
