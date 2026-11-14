@@ -746,8 +746,6 @@ def create_app() -> FastAPI:
     app.include_router(workspace_api.router, prefix="/api/v1")
     from server.api import expert_conversion as expert_conversion_api
     app.include_router(expert_conversion_api.router, prefix="/api/v1")
-    from server.api import professional_methods as professional_methods_api
-    app.include_router(professional_methods_api.router, prefix="/api/v1")
 
     from server.api import notes as notes_api
 

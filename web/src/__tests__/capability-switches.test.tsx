@@ -15,7 +15,6 @@ vi.mock("../api/mcp", () => ({
 import CapabilitySwitches, { isolate, usedLabel } from "../components/CapabilitySwitches";
 import { capabilitiesApi, type CapabilityRow } from "../api/capabilities";
 import { ApiError } from "../api/client";
-import { professionalMethodsApi } from "../api/professionalMethods";
 import { ConfirmHost } from "../components/kit";
 import { OPEN_SECTION_EVENT } from "../lib/sections";
 import { capabilityListMessages } from "../locales/capabilityList";
@@ -37,8 +36,6 @@ const ROWS: CapabilityRow[] = [
   ...Array.from({ length: 8 }, (_, i) => row({ key: `skill:s${i}`, ...SKILL, name: `Skill ${i}`, detail: `does ${i}` })),
   row({ key: "skill:mine", section: "skills", origin: "authored", deletable: true, switch: "skill", name: "Mine" }),
   row({ key: "skill:gh-acme", section: "skills", origin: "authored", deletable: true, switch: "skill", name: "Acme" }),  // Discover's, after 0080
-  row({ key: "method:research", section: "skills", revision: 2, name: "Research, my way" }),
-  row({ key: "method:product-design", section: "skills", revision: 1 }),
 ];
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -69,12 +66,6 @@ describe("capability list", () => {
     expect(screen.getByTestId("cap-terminal")).toHaveTextContent("capabilityList.origin_builtin · capabilityList.usedToday");
     expect(screen.getByTestId("cap-skill:s1")).toHaveTextContent("does 1 · capabilityList.origin_installed · capabilityList.usedNever");
     expect(screen.getByTestId("cap-mcp:2")).toHaveTextContent("capabilityList.origin_manual");
-    // The professional methods sit with the skills (after the first six here): the stored name once revised,
-    // else named by key.
-    fireEvent.click(screen.getByTestId("cap-more-skills"));
-    expect(screen.getByTestId("cap-method:research")).toHaveTextContent("Research, my way");
-    expect(screen.getByTestId("cap-method:product-design")).toHaveTextContent("methods.product-design");
-    expect(screen.getByTestId("cap-method:research")).toHaveTextContent("capabilityList.methodWhat");
     // "MCP" is not on the list itself, only in a connection's details.
     expect(screen.getByTestId("cap-section-connections")).not.toHaveTextContent("MCP");
   });
@@ -83,7 +74,7 @@ describe("capability list", () => {
     vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
     render(<CapabilitySwitches />);
     await screen.findByTestId("cap-terminal");
-    for (const key of ["terminal", "files", "hands", "method:research"]) expect(screen.queryByTestId(`cap-delete-${key}`)).toBeNull();
+    for (const key of ["terminal", "files", "hands"]) expect(screen.queryByTestId(`cap-delete-${key}`)).toBeNull();
     for (const key of ["skill:s0", "mcp:2", "mcp:3"]) expect(screen.getByTestId(`cap-delete-${key}`)).toBeInTheDocument();
   });
 
@@ -228,18 +219,26 @@ describe("capability list", () => {
     await waitFor(() => expect(source).toHaveBeenCalledWith("m3"));
   });
 
-  it("a method's details show its version and open its editor", async () => {
-    vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
-    vi.spyOn(professionalMethodsApi, "list").mockResolvedValue([
-      { key: "research", revision: 2, name: "Research, my way", instructions: "Cite every claim." }]);
+  it("the professional methods are gone: no method line, no version line, no editor (SUB6b)", async () => {
+    // A row as an older server sent it (key, revision): the page draws no method section for it any more.
+    const stale = { ...row({ key: "method:research", section: "skills", name: "Research" }), revision: 2 } as CapabilityRow;
+    vi.spyOn(capabilitiesApi, "list").mockResolvedValue([...ROWS, stale]);
+    const fetched = vi.spyOn(globalThis, "fetch");
     render(<CapabilitySwitches />);
     fireEvent.click(await screen.findByTestId("cap-more-skills"));
+    const skills = screen.getByTestId("cap-section-skills");
+    expect(skills).not.toHaveTextContent("capabilityList.methodWhat");
+    for (const key of ["research", "apple-growth", "product-design"]) expect(skills).not.toHaveTextContent(`methods.${key}`);
     fireEvent.click(screen.getByTestId("cap-open-method:research"));
     const sheet = await screen.findByTestId("cap-sheet");
-    expect(within(sheet).getByTestId("cap-sheet-version")).toHaveTextContent("capabilityList.versionNumber:2");
-    expect(within(sheet).queryByTestId("cap-sheet-delete")).toBeNull();
-    fireEvent.click(within(sheet).getByTestId("cap-sheet-edit"));
-    expect(await screen.findByDisplayValue("Cite every claim.")).toBeInTheDocument();
+    expect(within(sheet).queryByTestId("cap-sheet-version")).toBeNull();
+    expect(within(sheet).queryByTestId("cap-sheet-edit")).toBeNull();
+    expect(within(sheet).getByTestId("cap-sheet-used")).toBeInTheDocument();          // the generic last-used line stays
+    expect(fetched.mock.calls.map(call => String(call[0])).filter(url => url.includes("professional-methods"))).toEqual([]);
+    for (const messages of Object.values(capabilityListMessages)) {
+      for (const key of ["methodWhat", "sheetVersion", "versionNumber", "sheetEdit"]) expect(messages).not.toHaveProperty(key);
+      expect(messages).toHaveProperty("addMethod");                                   // skill authoring keeps its row
+    }
   });
 
   it("a switch writes through the API and shows what the server says now", async () => {
@@ -278,7 +277,7 @@ describe("capability list", () => {
     vi.spyOn(capabilitiesApi, "list").mockResolvedValue(ROWS);
     render(<CapabilitySwitches />);
     await screen.findByTestId("cap-terminal");
-    expect(screen.getByTestId("cap-filter-on")).toHaveTextContent("capabilityList.filterOn:13");
+    expect(screen.getByTestId("cap-filter-on")).toHaveTextContent("capabilityList.filterOn:11");
     expect(screen.getByTestId("cap-filter-canTurnOn")).toHaveTextContent("capabilityList.filterCanTurnOn:4");
     fireEvent.click(screen.getByTestId("cap-filter-canTurnOn"));
     expect(screen.queryByTestId("cap-terminal")).toBeNull();
@@ -305,7 +304,7 @@ describe("capability list", () => {
     const skills = await screen.findByTestId("cap-section-skills");
     expect(within(skills).getAllByTestId(/^cap-open-/)).toHaveLength(6);
     fireEvent.click(screen.getByTestId("cap-more-skills"));
-    expect(within(skills).getAllByTestId(/^cap-open-/)).toHaveLength(12);
+    expect(within(skills).getAllByTestId(/^cap-open-/)).toHaveLength(10);
   });
 
   it("adds by hand from the connections header and pastes a link from the side", async () => {

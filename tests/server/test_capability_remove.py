@@ -403,15 +403,11 @@ async def test_no_row_carries_what_it_counts_as_use(api, execution_db, tmp_path)
     from server.services import capability_list
     await _seed(execution_db, tmp_path)
     rows = [*await capability_list._builtin_rows(), *await capability_list._mcp_rows(),
-            *await capability_list._skill_rows(), *await capability_list._method_rows()]
-    assert {row["key"].split(":")[0] for row in rows} >= {"terminal", "mcp", "skill", "method"}
-
-    def fields(row) -> set[str]:                                 # a method row says its revision and last use
-        return FIELDS | {"revision"} if row["key"].startswith("method:") else FIELDS
-    assert not [row["key"] for row in rows
-                if set(row) != fields(row) - (set() if row["key"].startswith("method:") else {"last_used"})]
+            *await capability_list._skill_rows()]
+    assert {row["key"].split(":")[0] for row in rows} >= {"terminal", "mcp", "skill"}
+    assert not [row["key"] for row in rows if set(row) != FIELDS - {"last_used"}]
     sent = (await api.get("/api/v1/capabilities")).json()
-    assert sent and not [row["key"] for row in sent if set(row) != fields(row)]
+    assert sent and not [row["key"] for row in sent if set(row) != FIELDS]
 
 
 def _linked(folder: Path, target: Path) -> None:
@@ -674,33 +670,18 @@ async def test_installed_rows_carry_their_source_and_others_none(api, execution_
     assert not {"group", "source"} & set(rows["terminal"])                     # the old fields are gone
 
 
-async def test_the_professional_methods_sit_with_the_skills_built_in_with_their_version(api, execution_db, tmp_path):
-    """CAP3a-2 (the CAP card, with SUB): methods are skills on the page; not switched or deleted here. No last use
-    since v0.1.64 SUB6: the helpers that ran with a method are gone, even where their old rows are still stored."""
-    from server.db.migrations.versions import _0052_task_workers
-    from server.services import professional_methods
+async def test_the_capabilities_list_and_api_carry_no_professional_methods(api, execution_db, tmp_path):
+    """v0.1.64 SUB6b: the three professional methods are gone. No row is a method, no row says a revision,
+    the list no longer has a method builder, and the methods' own routes are not served."""
+    from server.services import capability_list
     await _seed(execution_db, tmp_path)
-    async with execution_db() as db:
-        await professional_methods.revise(db, "research", 1, "Research, my way", "Cite every claim.")
-        await db.commit()
-    async with execution_db() as db:
-        connection = await db.connection()
-        await connection.exec_driver_sql("PRAGMA foreign_keys=OFF")    # no task or attempt is made
-        for statement in _0052_task_workers._TASK_WORKERS:             # the table as an upgraded install has it
-            await connection.exec_driver_sql(statement)
-        await connection.exec_driver_sql(
-            "INSERT INTO task_workers (id, task_id, attempt_id, spec_revision, method_key, method_revision, "
-            "fingerprint, brief, status, progress, created_at) VALUES ('w1', 't1', 'a1', 1, 'research', 2, 'f', "
-            "'{}', 'completed', '{}', '2026-10-27 09:00:00')")
-        await db.commit()
+    assert not hasattr(capability_list, "_method_rows")
+    listed = await capability_list.capabilities()
+    assert listed and not [row["key"] for row in listed if row["key"].startswith("method:") or "revision" in row]
     rows = await _rows(api)
-    methods = {key: row for key, row in rows.items() if key.startswith("method:")}
-    assert set(methods) == {f"method:{key}" for key in professional_methods.DEFAULTS}
-    research = methods["method:research"]
-    assert (research["section"], research["origin"], research["deletable"], research["switch"], research["state"]) \
-        == ("skills", "builtin", False, None, "on")
-    assert (research["revision"], research["name"], research["last_used"]) == (2, "Research, my way", None)
-    unrevised = next(row for key, row in methods.items() if key != "method:research")
-    assert (unrevised["revision"], unrevised["name"], unrevised["last_used"]) == (1, None, None)
-    response = await api.delete("/api/v1/capabilities/method:research")
-    assert (response.status_code, response.json()["detail"]) == (409, {"code": "not_removable"})
+    assert {"terminal", "skill:xlsx"} <= set(rows)                       # the list itself is still served
+    assert not [key for key, row in rows.items() if key.startswith("method:") or "revision" in row]
+    for key in ("research", "apple-growth", "product-design"):
+        assert f"method:{key}" not in rows
+    assert (await api.get("/api/v1/professional-methods")).status_code == 404
+    assert (await api.put("/api/v1/professional-methods/research", json={})).status_code in (404, 405)
