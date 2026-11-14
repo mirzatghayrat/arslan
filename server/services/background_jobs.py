@@ -89,6 +89,11 @@ class Job:
     report: dict | None = field(default=None, repr=False)
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
+    # L7-3: a goal job's spec (`goal_mode.GoalSpec`); None for every other job. Only `start_goal` sets it, from the
+    # user's Start: `start_background_work`'s goal string never does.
+    goal_spec: object = field(default=None, repr=False)
+    # L7-4: the goal row's version when the user resumed it; None for a Start (and every other job).
+    goal_resume: int | None = field(default=None, repr=False)
 
     def frame(self) -> dict:
         return {"type": "job_update", "job_id": self.job_id, "conversation_id": self.conversation_id,
@@ -267,6 +272,28 @@ def start_placed(conversation_id: str, goal: str, criteria: list[dict], placed: 
     return job
 
 
+def start_goal(conversation_id: str, task_id: str, spec, *, origin: str = "mac", resume: int | None = None) -> Job:
+    """L7-3: the user pressed Start goal (or sent `/goal start`): the goal's not-started row runs as a job, its id
+    the row's, its acceptance the goal's checks. The objective is the user's own words (S64-0: False). L7-4:
+    `resume` (the row's version) re-queues a goal the user resumed: the same row, a fresh budget of its tier and cap,
+    its saved progress carried; that progress is earlier output, so the job starts as having read outside content."""
+    from server.services import goal_mode
+    job = Job(job_id=task_id, conversation_id=conversation_id, goal=_goal(spec.objective),
+              acceptance=goal_mode.acceptance(spec), origin="phone" if origin == "phone" else "mac",
+              outside_seen=resume is not None, goal_spec=spec, goal_resume=resume)
+    _forget_old_finished()
+    _jobs[job.job_id] = job
+    job.task = asyncio.get_running_loop().create_task(_run(job), context=contextvars.Context())
+    _emit(job)
+    return job
+
+
+def goal_job(task_id: str) -> Job | None:
+    """L7-3: the goal's job while it is queued or running, else None."""
+    job = _jobs.get(task_id)
+    return job if job is not None and job.goal_spec is not None and job.phase != "finished" else None
+
+
 KEEP_FINISHED = 50
 
 
@@ -320,6 +347,8 @@ async def _run(job: Job) -> None:
     if _slots is None:
         _slots = asyncio.Semaphore(MAX_CONCURRENT)
     token = _inside_job.set(job.job_id)
+    from server.services import terminal_exec
+    terminal_exec.PYCACHE_APART.set(job.goal_spec is not None)    # L7-5: this job's task only (its own context)
     final_text, phase, reason = "", "failed", "task_execution_failed"
     try:
         async with _slots:
@@ -352,6 +381,8 @@ async def _run(job: Job) -> None:
             # A sub-session's result is posted in its own conversation only; its parent hears of it framed, in one
             # summary turn (SUB4).
             posted = await _report(job, final_text)
+            if job.goal_spec is not None:
+                await _goal_posted(job.job_id)
             if job.reports is None:         # SUB4: a summary's done is not the commander accepting the work
                 await _report_to_project(job)
             if job.parent_id:
@@ -364,6 +395,16 @@ async def _run(job: Job) -> None:
             # whatever the reporting raised: a job id never comes back, so the rows would only wait
             # for the next boot or the store's 24-hour prune.
             await _forget_task_grants(job)
+
+
+async def _goal_posted(task_id: str) -> None:
+    """L7-4: recorded after the post, so a quit between a goal's "complete" and its post is posted on boot."""
+    from server.services.task_repository import repository
+    try:
+        async with repository() as repo:
+            await repo.mark_goal_posted(task_id)
+    except Exception as exc:  # noqa: BLE001 — a missing mark only means the boot pass posts it again
+        logger.warning("goal %s post not recorded: %s", task_id, type(exc).__name__)
 
 
 async def _forget_task_grants(job: Job) -> None:
@@ -428,7 +469,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan, untrusted
     from arslan.execution_budget import BudgetExceeded, run_budget
     from server.db import session as db_session
-    from server.services import (approvals, host_run, permissions, personal_context, settings_service,
+    from server.services import (approvals, host_run, permissions, personal_context, settings_service, steering,
                                  sub_sessions, task_context, task_service)
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
@@ -455,7 +496,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             runtime = task_service.current()
             try:
                 return await arslan.background_body(conversation_id, goal, _job_sink(job, sink), confirmations,
-                                                    **({"sub_session": True} if job.parent_id else {}))
+                                                    **({"sub_session": True} if job.parent_id else {}),
+                                                    **({"goal_spec": job.goal_spec, "steer_key": job.job_id}
+                                                       if job.goal_spec is not None else {}))
             finally:
                 if runtime is not None:                  # SUB4: what it wrote, for its report
                     job.files = list(dict.fromkeys((*job.files, *sub_sessions.files_written(runtime.trace))))
@@ -465,11 +508,17 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job",
                                                                      job_id=job.job_id), \
             permissions.asking_with(confirmations.asker):
+        goal_row = {"_goal_row": job.job_id} if job.goal_spec is not None else {}
+        if goal_row:
+            steering.open_box(job.job_id)       # L7-3: `/goal note` steers it under its own key (K9b)
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream, counts_steps=False),
-                                                 _driver={"kind": "background"},
-                                                 _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap))
+                                                 _driver={"kind": "background", **({"goal": True} if goal_row else {})},
+                                                 _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap),
+                                                 **goal_row, **({"_goal_resume": (job.goal_resume,
+                                                                                 job.goal_spec.objective)}
+                                                                if job.goal_resume is not None else {}))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — the task row records the failure; read it below
@@ -482,6 +531,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
                            else job.wall_closing if isinstance(exc, TimeoutError) else "")
             if isinstance(exc, sub_sessions.TreeLimitReached):
                 tree_stop = {**exc.stop, "tier": tier}
+        finally:
+            if goal_row:
+                steering.close_box(job.job_id)  # a note it never read goes back to the job's own queue
     async with repository() as repo:
         row = await repo.get(job.job_id)
         for result in row.results or ():
@@ -608,7 +660,10 @@ async def report_interrupted() -> int:
     try:
         return await _report_interrupted_jobs()
     finally:
-        await sub_sessions.report_restart()
+        try:
+            await _post_completed_goals()
+        finally:
+            await sub_sessions.report_restart()
 
 
 async def _report_interrupted_jobs() -> int:
@@ -623,8 +678,10 @@ async def _report_interrupted_jobs() -> int:
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(select(CompanionTask).where(
             CompanionTask.phase == "waiting_user", CompanionTask.pause_reason == "process_interrupted"))).scalars().all()
+        # L7-4: never a goal row: it stays interrupted, nothing cancels it, and the user resumes it (Q5).
         targets = [(row.id, row.owner_id, row.conversation_id) for row in rows
-                   if ((row.privacy or {}).get("driver") or {}).get("kind") == "background"]
+                   if ((row.privacy or {}).get("driver") or {}).get("kind") == "background"
+                   and (row.privacy or {}).get("driver", {}).get("goal") is not True]
     if not targets:
         return 0
     locale = await runtime_messages.selected_locale()
@@ -643,6 +700,37 @@ async def _report_interrupted_jobs() -> int:
         desktop_status.push("turn_finished", conversation_id=conversation_id, outcome="needs_review", title=goal,
                             summary=note, work="job")
     return len(targets)
+
+
+async def _post_completed_goals() -> int:
+    """L7-4, boot: a goal that succeeded but whose result this attempt never posted (a quit in between) is posted
+    now, once: its last answer, or a host line, with its acceptance sheet, from the row and never the transcript."""
+    from sqlalchemy import select
+    from server.db import session as db_session
+    from server.db.models import CompanionTask, Run, TaskAttempt
+    from server.services import goal_mode, runtime_messages, task_validation
+    from server.services.task_repository import repository
+    async with db_session.AsyncSessionLocal() as db:
+        rows = [row for row in (await db.scalars(select(CompanionTask).where(CompanionTask.phase == "succeeded"))).all()
+                if (row.privacy or {}).get("driver") == {"kind": "background", "goal": True}
+                and row.privacy.get("goal_posted") != row.attempt_id]
+    for row in rows:
+        try:
+            spec = goal_mode.GoalSpec.model_validate(row.privacy["goal_spec"])
+            job = Job(job_id=row.id, conversation_id=row.conversation_id, goal=_goal(spec.objective),
+                      acceptance=goal_mode.acceptance(spec), phase="finished", outcome="done", goal_spec=spec,
+                      results={item.get("check_id"): item.get("status") for item in row.results or ()})
+            async with repository() as repo:
+                job.report = await task_validation.latest_report(repo, row)
+                attempt = await repo.db.get(TaskAttempt, row.attempt_id)
+                text = await repo.db.scalar(select(Run.final_output).where(
+                    Run.id.in_(attempt.run_ids if attempt else []), Run.kind != "worker").order_by(Run.id.desc()))
+            await _report(job, text or runtime_messages.render(
+                "goal_complete", await runtime_messages.selected_locale(), objective=spec.objective[:200]))
+            await _goal_posted(row.id)
+        except Exception as exc:  # noqa: BLE001 — one goal's post never keeps the others or the boot back
+            logger.warning("goal %s result not posted on boot: %s", row.id, type(exc).__name__)
+    return len(rows)
 
 
 def _reset_for_tests() -> None:

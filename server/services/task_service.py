@@ -961,8 +961,11 @@ def checked_driver(driver: dict | None) -> dict:
     # "recipe" (C7b-3) and "expert" (C7c-3a; C7c-5's migration marks leftover expert tasks ended) are not
     # accepted: an old task with either fails closed here with task_invalid_driver. prepare_resume calls this
     # before it starts an attempt, so the task is left exactly as it was.
+    # L7: a goal is a background task row marked `"goal": True` (exactly True: `1 == True` in a dict compare), written
+    # when the user sets the goal (`goal_command`, L7-3).
     driver = {"kind": "host"} if driver is None else driver
-    if driver not in ({"kind": "host"}, {"kind": "background"}):
+    if driver not in ({"kind": "host"}, {"kind": "background"}, {"kind": "background", "goal": True}) or (
+            "goal" in driver and driver["goal"] is not True):
         raise TaskError("task_invalid_driver")
     return dict(driver)
 
@@ -989,7 +992,11 @@ def answer_only() -> bool:
 
 
 async def run_turn(function, conversation_id: str, user_message: str, emit, *args, _driver=None,
-                   _acceptance: list[dict] | None = None, _budget: Budget | None = None, **kwargs):
+                   _acceptance: list[dict] | None = None, _budget: Budget | None = None,
+                   _goal_row: str | None = None, _goal_resume: tuple[int, str] | None = None, **kwargs):
+    """`_goal_row` (L7-3): a goal job starts its own not-started row (its spec, checks and budget were written when
+    the goal was set) instead of creating one. `_goal_resume` (L7-4: the row's version and objective when the user
+    resumed it): the job resumes that row instead, through `prepare_resume`, never `resume_turn`."""
     if current() is not None:
         return await function(conversation_id, user_message, emit, *args, **kwargs)
     ctx = personal_context.current()
@@ -1003,6 +1010,22 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
                                 usd_cap=await settings_service.task_usd_cap(db))
     if ctx.project_id:
         await _note_project_activity(ctx.project_id)
+    if _goal_row is not None and _goal_resume is not None:
+        if _goal_row != ctx.task_id:
+            raise TaskError("task_cannot_start")
+        version, objective = _goal_resume
+        return await resume_entry(_goal_row, version, conversation_id, objective, emit,
+                                  lambda sink: function(conversation_id, user_message, sink, *args, **kwargs),
+                                  ctx=ctx, driver={"kind": "background", "goal": True}, goal=True)
+    if _goal_row is not None:
+        async with repository() as repo:
+            row = await repo.get(_goal_row, owner_id=ctx.owner_id)
+            if (row.id != ctx.task_id or (row.privacy or {}).get("driver") != {"kind": "background", "goal": True}
+                    or row.phase != "waiting_user" or row.pause_reason != "goal_not_started"):
+                raise TaskError("task_cannot_start")
+            value = await repo.start(row.id, row.version, explicit_resume=True, owner_id=ctx.owner_id)
+        return await _launch(value, emit, lambda sink: function(conversation_id, user_message, sink, *args, **kwargs),
+                             context=ctx)
     from server.services.runtime_messages import normalize
     locale = normalize(locale)
     spec = TaskSpec.model_validate({
@@ -1056,7 +1079,8 @@ def _project_evidence_later(project_id: str, conversation_id: str, user_message:
                                                   said=not background_jobs.inside_job()))
 
 
-async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, instruction=None, driver=None):
+async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, instruction=None, driver=None,
+                         goal=False):
     if ctx.temporary:
         raise TaskError("temporary_task_not_persisted")
     async with repository() as repo:
@@ -1072,8 +1096,15 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
         if instruction is not None and spec.instruction != instruction:
             raise TaskError("task_goal_changed")
         saved_driver = checked_driver(ceiling.get("driver"))
+        if (saved_driver.get("goal") is True) != goal:
+            # L7-3 (Q0): a goal row never runs through the generic resume (the socket's `resume_task`): not started,
+            # it waits for Start and its flagged-check confirm; otherwise its Resume re-queues it as a job (L7-4,
+            # `goal=True`, only from `background_jobs.start_goal`), which in turn runs no other row.
+            raise TaskError("task_invalid_driver")
         if driver is not None and checked_driver(driver) != saved_driver:
             raise TaskError("task_goal_changed")
+        if goal:                            # never a not-started row; a fresh budget of the goal's own tier and cap
+            expected_version = await repo.resume_goal(task_id, expected_version)
         saved = await repo.latest_checkpoint(task_id)
         value = await repo.start(task_id, expected_version, explicit_resume=True)
         # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
@@ -1089,13 +1120,17 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
     if saved and saved.get("spec_revision") != spec.revision:
         progress = Progress(evidence=progress.evidence, artifacts=progress.artifacts,
                             continuation_ref=progress.continuation_ref)
+    if goal and progress.goal is not None:  # L7-4: a fresh streak; the seen set and the rounds are kept
+        progress = progress.model_copy(update={"goal": progress.goal.model_copy(update={"stall": 0,
+                                                                                         "status": "active"})})
     return value, progress, ctx, saved_driver
 
 
-async def resume_entry(task_id, expected_version, conversation_id, instruction, emit, body, *, ctx, driver=None):
+async def resume_entry(task_id, expected_version, conversation_id, instruction, emit, body, *, ctx, driver=None,
+                       goal=False):
     from server.orchestrator import untrusted
     value, progress, ctx, _ = await prepare_resume(task_id, expected_version, conversation_id, ctx,
-                                                  instruction=instruction, driver=driver)
+                                                  instruction=instruction, driver=driver, goal=goal)
     # S64-0 and NET-a F5: as resume_turn below. No saved progress (`_launch`'s default): only the mark is carried in.
     with untrusted.carried(True, text=progress.model_dump_json() if progress is not None else None):
         return await _launch(value, emit, body, progress=progress, context=ctx)

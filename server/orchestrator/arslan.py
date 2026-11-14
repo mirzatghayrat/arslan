@@ -313,6 +313,8 @@ async def handle_user_message(
         emit(protocol.message(source_message_id, stored_text, "user") | {"source": "phone"})
     from server.services.task_context import source_message
     source_message(source_message_id)
+    if not images and await _goal_command(conversation_id, user_message, emit, source=source):
+        return
     from server.services import personal_context, task_context
     active_context = personal_context.current()
     if active_context is not None and task_context.precise_text_request(user_message):
@@ -347,6 +349,28 @@ async def handle_user_message(
     budget = await memory.turn_budget(conversation_id, has_images=bool(images))
     _after_turn_later(conversation_id, user_message, emit, active_context, budget=budget, reply_id=reply["id"],
                       run_id=reply["run"])
+
+
+async def _goal_command(conversation_id: str, user_message: str, emit: EventSink, *, source: str | None) -> bool:
+    """L7-3: `/goal`, parsed here and nowhere else (never in `_handle_answer`, so a scheduled prompt or a resumed
+    instruction stays plain text), before any model call, and only with the `goal_mode` setting on (the one place
+    it is read). The reply is one host line, as the turn's run. False: not a `/goal` command, the turn goes on."""
+    from server.services import goal_command, host_run, settings_service
+    rest = goal_command.parse(user_message)
+    if rest is None:
+        return False
+    from server.db import session as db_session
+    async with db_session.AsyncSessionLocal() as db:
+        if not await settings_service.goal_mode(db):
+            return False
+
+    async def body(run_emit):
+        line = await goal_command.handle(conversation_id, rest, source=source)
+        run_emit({"type": "stream_chunk", "content": line})
+        run_emit({"type": "stream_end", "message_id": await memory.add_message(conversation_id, "arslan", line)})
+        return line
+    await host_run.execute(conversation_id, user_message, emit, body)
+    return True
 
 
 # K2b (U5 ①②): the post-turn jobs still running, and each conversation's latest one.
@@ -709,9 +733,12 @@ async def _sub_session_tools() -> list[dict]:
 
 
 async def background_body(conversation_id: str, goal: str, emit: EventSink, confirmations, *,
-                          sub_session: bool = False) -> str:
+                          sub_session: bool = False, goal_spec=None, steer_key: str | None = None) -> str:
     """One background job's execution: the answer machinery without the chat stream. SUB3: a sub-session's job is
-    offered its own few tools."""
+    offered its own few tools. L7-3: a goal job's turn carries its goal (the rounds, `turn_answer.finish`) and is
+    steerable under its own key, the job id; any other job's turn is as before."""
+    if goal_spec is not None and not steer_key:
+        raise ValueError("goal_job_needs_steer_key")    # never the conversation's box
     ctx = await memory.assemble_working_context(conversation_id, budget=await memory.turn_budget(conversation_id))
     from server.services import personal_context
     traced = False
@@ -754,6 +781,7 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
             confirm_command=confirmations.command, confirm_workspace_write=confirmations.workspace_write,
             confirm_schedule=confirmations.schedule, conversation_id=conversation_id,
             caller=ToolCaller(actor="host", spawn_id=None, conversation_id=conversation_id),
+            **({"goal": goal_spec, "steer_key": steer_key, "steerable": True} if goal_spec is not None else {}),
         )
     final = result.get("final") if isinstance(result, dict) else None
     return final if isinstance(final, str) and final.strip() else "".join(pieces)
