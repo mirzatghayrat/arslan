@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import contextvars
 import os
 import signal
@@ -47,6 +48,11 @@ OPEN_ONCE: contextvars.ContextVar[Path | None] = contextvars.ContextVar("termina
 # ASK1-b round 1 (G2): set by the tool loop only, from the gate's plan, for a scheduled fire's command: it runs in the
 # sandbox or not at all (`executors.RunCommand`).
 SANDBOX_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_sandbox_only", default=False)
+# L7-5: set for a goal job (`background_jobs._run`), never by the model: each of its commands, the host's `check:` runs
+# and the worker's alike, keeps Python's bytecode in a fresh, empty folder of its own under Arslan's data folder
+# (`PYTHONPYCACHEPREFIX`), removed after it. So no `__pycache__` is written beside the protected tests, and none
+# planted there, or left from an earlier command, is ever loaded in their place.
+PYCACHE_APART: contextvars.ContextVar[bool] = contextvars.ContextVar("terminal_pycache_apart", default=False)
 #: HR-1b: what a command under that grant gets in its environment (`_run`): no template folder for clone and init.
 GIT_CONFIG_ENV = {"GIT_TEMPLATE_DIR": ""}
 
@@ -238,16 +244,35 @@ async def run(command: str, *, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         if found is not None:
             git_config_guard.mark(tool_outputs.conversation.get(), found.marks)
             note = f"{note} {found.message()}".strip()
-    with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp):
+    with run_temp.for_command(execution_context.current_run_id()) as (temp_key, tmp), _pycache() as pycache:
         kw = dict(command=command, cwd=cwd, timeout_s=timeout_s, offline=offline, sandbox=sandbox, closed=closed,
                   readable=readable, copies=copies, unwrapped=unwrapped, tmp=tmp, temp_key=temp_key,
-                  hold_run_later=hold_run_later, walk_root=walk_root, open_once=open_once if sandbox else None)
+                  hold_run_later=hold_run_later, walk_root=walk_root, open_once=open_once if sandbox else None,
+                  pycache=pycache)
         viewed = (sandbox or hold_run_later) and command_sandbox.available()
         granted = git_config and sandbox
         result = await (_guarded(cwd, kw, granted=granted, viewed=viewed) if granted or viewed else _run(**kw))
     if note:
         result["git_config_note"] = f"{note} {result.get('git_config_note', '')}".strip()
     return result
+
+
+@contextlib.contextmanager
+def _pycache():
+    """L7-5 (`PYCACHE_APART`): the command's own bytecode folder, or None outside a goal job."""
+    if not PYCACHE_APART.get():
+        yield None
+        return
+    import shutil
+    import tempfile
+    from server.config import data_dir
+    base = data_dir() / "goal-pycache"
+    base.mkdir(mode=0o700, parents=True, exist_ok=True)
+    folder = tempfile.mkdtemp(dir=base)
+    try:
+        yield folder
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 async def _guarded(cwd: Path, kw: dict, *, granted: bool, viewed: bool) -> dict:
@@ -337,7 +362,7 @@ async def trust_service_allowed() -> bool:
 async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbox: bool, closed: list[Path],
                readable: list[Path], copies: list[Path], unwrapped: bool, tmp: Path, temp_key: int,
                hold_run_later: bool = False, git_config_ok: bool = False, walk_root: Path | None = None,
-               open_once: Path | None = None) -> dict:
+               open_once: Path | None = None, pycache: str | None = None) -> dict:
     # bash writes here-document temp files under TMPDIR and a nested zsh (`zsh -c`, a `#!/bin/zsh` script) under
     # TMPPREFIX: where /tmp is not writable a `python3 - <<'PY'` save would fail (0.1.49 bench). Both stay in the run's folder.
     # Off the event loop: before the supervisor's prewarm, the first call reads the login shell (#674 review).
@@ -345,6 +370,8 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
     from server.services import command_sandbox, net_policy, root_pin, run_later, run_temp, sandbox_proxy
+    if pycache is not None:     # L7-5: a goal job's command; set after the child's environment, so nothing undoes it
+        env["PYTHONPYCACHEPREFIX"] = pycache
     if git_config_ok:       # HR-1b: no template, so clone and init make no `.git/hooks` folder (it stays held)
         env.update(GIT_CONFIG_ENV)
     prefix: list[str] = []

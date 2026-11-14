@@ -1,20 +1,18 @@
-"""L7's planned tests for the later slices, red until their slice lands (docs/plans/0164/L7-goal-mode.md, Method).
+"""L7's planned tests for the later slices, each red until its slice landed (docs/plans/0164/L7-goal-mode.md, Method).
 
-Each is a strict xfail that names its slice. Where the slice's code doesn't exist yet, the test calls the function the
+Each was a strict xfail that named its slice. Where the slice's code doesn't exist yet, the test calls the function the
 slice is to add, named here (`goal_mode.after_verdict`, `unverifiable`, `record_protected`, `protected_changes`), and
 `raises=` limits the xfail to that function being absent. So once the slice lands the test either passes (strict:
 XPASS is a failure, and the slice removes the marker) or fails on its assertions; it can't stay quietly expected.
 A slice that names a function otherwise renames it here. The behavioural ones (`/goal` in `handle_user_message`,
 `resume_turn` refusing a goal row) run today's code and fail on their assertions (`raises=AssertionError`) until the
 slice lands.
-DELETE-BY: v0.1.64, each marker by its slice (L7-5; L7-2 took its four off, L7-3 the rest, resume_turn's refusal included).
+Every marker is off now: L7-2 took its four, L7-3 the rest (resume_turn's refusal included), L7-5 the protected set's three.
 """
 from __future__ import annotations
 
 import hashlib
 import time
-
-import pytest
 
 from arslan.companion.contracts import AcceptanceCheck
 from arslan.execution_budget import current as budget
@@ -22,7 +20,6 @@ from server.services import goal_mode, personal_context as pc, task_context, tas
 from server.services.goal_mode import GoalCheck, GoalProgress, GoalSpec, SeenMeasure
 from server.services.task_repository import TaskError, repository
 
-MISSING = (AttributeError,)          # the slice's function isn't there yet
 
 
 def _check(id="c1", **kw) -> GoalCheck:
@@ -154,7 +151,7 @@ async def test_l7_4_resume_turn_refuses_a_goal_row(execution_db, monkeypatch):
     assert refused and answered == []
 
 
-# -- L7-5: the protected set ---------------------------------------------------------------------------------------
+# -- L7-5: the protected set (landed: permanent now) -------------------------------------------------------------------
 
 def _flat(tmp_path):
     (tmp_path / "tests").mkdir()
@@ -163,7 +160,6 @@ def _flat(tmp_path):
     return tmp_path
 
 
-@pytest.mark.xfail(strict=True, raises=MISSING, reason="L7-5 records and verifies the protected set")
 def test_l7_5_a_protected_test_changed_stops_the_goal_and_the_work_never_does(tmp_path):
     root = _flat(tmp_path)
     line = _check(kind="check", path=None, argv=("pytest", "-q"), by_user=True)     # no file in its argv
@@ -174,7 +170,6 @@ def test_l7_5_a_protected_test_changed_stops_the_goal_and_the_work_never_does(tm
     assert goal_mode.protected_changes(protected, root)[0] == ("tests/test_app.py",)
 
 
-@pytest.mark.xfail(strict=True, raises=MISSING, reason="L7-5 leaves bytecode caches out of the scan")
 def test_l7_5_a_pycache_beside_the_protected_tests_doesnt_stop_the_goal(tmp_path):
     root = _flat(tmp_path)
     protected = goal_mode.record_protected(root, (_check(kind="check", path=None, argv=("pytest", "-q"), by_user=True),))
@@ -185,7 +180,6 @@ def test_l7_5_a_pycache_beside_the_protected_tests_doesnt_stop_the_goal(tmp_path
     assert goal_mode.protected_changes(protected, root)[0] == ("tests/test_extra.py",)
 
 
-@pytest.mark.xfail(strict=True, raises=MISSING, reason="L7-5 accepts only the declared output patterns")
 def test_l7_5_only_a_declared_output_pattern_is_accepted(tmp_path):
     root = _flat(tmp_path)
     (root / "tests" / "revealed").mkdir()

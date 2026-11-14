@@ -107,12 +107,20 @@ async def finish(request: TurnRequest, state: TurnState, mode: StepMode, reply: 
     answer = final_text if turn_text is None else turn_text.after(to_show)
     if acceptance_runtime is not None:
         from server.services import task_validation
+        host = None
+        if request.goal is not None:
+            # L7-5: the host runs the goal's `check:` lines through `_run_tool`, in place, the protected set verified
+            # before and after; never on a forced step or in wrap-up, where no round follows.
+            from server.orchestrator import goal_checks
+            host = (goal_checks.HostChecks(accepted=getattr(acceptance_runtime.progress.goal, "accepted", ()))
+                    if forced or mode.finishing or state.budget.soft_reached() else
+                    await goal_checks.run(request, state))
         report = await task_validation.validate_output(acceptance_runtime, answer, tool_trace, model_adapter=a,
-                                                       goal=request.goal)
+                                                       goal=request.goal, host_runs=host.runs if host else ())
         validation_failures = task_validation.failures(report)
         if request.goal is not None:
             # L7-2: a goal round replaces the repair limit of 2. The verdict is recorded, then the next round or its end.
-            goes_on, said = await _goal_round(request, state, mode, report)
+            goes_on, said = await _goal_round(request, state, mode, report, host)
             links = task_validation.unverified_links(answer, report)
             if goes_on:
                 if streamed and links:      # K8a Q1: what went out is never rewritten; the next round follows
@@ -170,7 +178,8 @@ async def finish(request: TurnRequest, state: TurnState, mode: StepMode, reply: 
             "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
 
 
-async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, report: dict) -> tuple[bool, str]:
+async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, report: dict,
+                      host) -> tuple[bool, str]:
     """L7-2: one goal round's verdict, from each check's own condition as the report has it (never the answer),
     written in the checkpoint before anything goes out. (True, the continuation for the model): the next round.
     (False, the line the turn ends with, "" when the goal is met). No round on a forced step or in wrap-up, so the
@@ -189,14 +198,17 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
     if record.status == "active" and (mode.forced or mode.finishing or state.budget.soft_reached()):
         record = record.model_copy(update={
             "status": "blocked" if state.stop_reason == "task_no_progress" else "budget_limited"})
-    record = record.model_copy(update={"last_receipt": len(state.tool_trace)})
+    # L7-5: a protected file changed (before or during a host run): review, never complete, with the files named.
+    record = record.model_copy(update={"last_receipt": len(state.tool_trace), "accepted": host.accepted,
+                                       **({"status": "review"} if host.changed else {})})
     runtime.progress = runtime.progress.model_copy(update={"goal": record})
     state.goal_round, state.goal_stall, state.goal_unmet = record.round, record.stall, record.unmet
     await runtime.checkpoint("goal_round")
     why = lambda ids: "; ".join(f"{cid}: {items.get(cid, {}).get('code', 'not_run')}" for cid in ids)  # noqa: E731
     if record.status == "active":
         return True, (f"Goal round {record.round}. Not met: {why(record.unmet)[:3000]}. Keep the full objective, "
-                      "work within the existing scope, permissions and remaining budget, and check before claiming.")
+                      "work within the existing scope, permissions and remaining budget, and check before claiming."
+                      + (f"\nThe host ran the check: lines in place:\n{host.printed[:8000]}" if host.printed else ""))
     if record.status == "complete":
         return False, ""
     locale = runtime.spec.locale
@@ -204,6 +216,8 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
     met_ids = [check.id for check in goal.checks if not check.user_confirmed and check.id not in record.unmet]
     if record.status == "review":
         runtime.pause_reason = "acceptance_review_required"
+        if host.changed:
+            return False, runtime_messages.render("goal_protected", locale, files=", ".join(host.changed)[:2000])
         return False, runtime_messages.render("goal_review", locale, met=listed(met_ids), rest="; ".join(
             f"{check.id}: {check.description}" for check in goal.checks if check.user_confirmed))
     if record.status == "budget_limited":

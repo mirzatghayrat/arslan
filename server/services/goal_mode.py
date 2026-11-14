@@ -1,5 +1,5 @@
-"""L7 goal mode's types (docs/plans/0164/L7-goal-mode.md, L7-1), the goal's checks as a task's acceptance, and the
-progress rule (L7-2).
+"""L7 goal mode's types (docs/plans/0164/L7-goal-mode.md, L7-1), the goal's checks as a task's acceptance, the
+progress rule (L7-2), and the protected set of its `check:` lines (L7-5).
 
 A goal is a background task whose acceptance checks are the goal, run by today's `_run_native`. Its spec (`GoalSpec`)
 rides on `TurnRequest.goal`; what its rounds have recorded (`GoalProgress`) rides on `Progress.goal`, written in the
@@ -8,6 +8,7 @@ worked out again from the transcript. A new value replaces the old one whole (`m
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
@@ -222,3 +223,327 @@ def status_of(phase: str, pause_reason: str | None) -> GoalStatus:
         return "active"
     return _PHASE_STATUS.get((phase, pause_reason if phase == "waiting_user" else None),
                              "blocked" if phase == "failed" else "review")
+
+
+# -- L7-5: the protected set (card: "Check files are protected from Start") ------------------------------------------
+# Recorded at Start and verified before and after each host run of a `check:` line; nothing is copied, the check runs
+# in place. Not followed, and so not protected (disclosed): runner plugins in skipped folders (`node_modules`, virtual
+# environments), shell variables, globs and command substitution in scripts, Makefile includes and variables, JS
+# config files (only `vitest.config.*`'s literal `include` is read), and code the check imports beyond these files.
+_SKIP = {".git", "node_modules", "__pycache__", ".tox", ".nox", ".venv", "venv", ".pytest_cache", ".mypy_cache",
+         ".ruff_cache"}
+_TEST_DIRS = {"tests", "test", "__tests__", "spec", "__snapshots__", "testdata", "fixtures"}
+_TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*", "*_spec.*", "*.snap", "golden*")
+_CONFIG = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "Makefile", "jest.config.*", "vitest.config.*")
+_SECTIONED = {"pyproject.toml", "package.json"}       # only their test sections: `section` is set
+_PARENTS = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml")
+_RUNNERS, _MAKES = {"npm", "pnpm", "yarn", "bun"}, {"make", "gmake", "$(MAKE)", "${MAKE}"}
+_SCRIPTS = {".sh", ".bash", ".zsh", ""}
+WALK_MAX = 200_000
+_EMPTY = hashlib.sha256(b"{}").hexdigest()     # a new test-config file with no test sections
+
+
+def _walk(root):
+    """Every file under `root`, relative, past the skipped folders and bytecode caches; a linked folder is an entry."""
+    import os
+    from pathlib import Path
+    count = 0
+    for folder, dirs, names in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _SKIP and not os.path.exists(os.path.join(folder, d, "pyvenv.cfg"))]
+        for name in [*names, *(d for d in dirs if os.path.islink(os.path.join(folder, d)))]:
+            count += 1
+            if count > WALK_MAX:
+                raise ValueError("the working folder is too large to scan")
+            if not name.endswith(".pyc"):
+                yield Path(folder, name).relative_to(root).as_posix()
+
+
+def _conventional(rel: str) -> bool:
+    from fnmatch import fnmatchcase
+    *folders, name = rel.split("/")
+    return bool(_TEST_DIRS.intersection(folders)) or any(fnmatchcase(name, p) for p in (*_TEST_NAMES, *_CONFIG))
+
+
+def _matches(rel: str, patterns) -> bool:
+    import re
+    from fnmatch import fnmatchcase
+    for pattern in patterns:
+        kind, _, value = pattern.partition(":")
+        if kind == "under" and (rel == value or rel.startswith(value.rstrip("/") + "/")) \
+                or kind == "in" and rel.rpartition("/")[0] == value \
+                or kind == "name" and fnmatchcase(rel.rsplit("/", 1)[-1], value) \
+                or kind == "glob" and (fnmatchcase(rel, value) or fnmatchcase(rel, value.removeprefix("**/"))):
+            return True
+        if kind == "re":
+            try:
+                if re.search(value, rel):
+                    return True
+            except re.error:
+                return True                     # a pattern that can't be read protects everything: closed
+    return False
+
+
+def _sections(path):
+    import json
+    import tomllib
+    if path.name == "pyproject.toml":
+        tool = tomllib.loads(path.read_text()).get("tool", {})
+        return {key: tool[key] for key in ("pytest", "tox", "coverage") if key in tool}
+    data = json.loads(path.read_text())
+    return {key: data[key] for key in ("scripts", "jest") if key in data} if isinstance(data, dict) else data
+
+
+def _digest(path, sectioned: bool) -> str | None:
+    """A file's sha256, its test sections' for `pyproject.toml` and `package.json` (the whole file when they don't
+    parse), a linked folder's target; None when it can't be read (or is gone)."""
+    import json
+    import os
+    try:
+        if os.path.islink(path) and os.path.isdir(path):
+            body = ("link:" + os.readlink(path)).encode()
+        elif sectioned:
+            try:
+                body = json.dumps(_sections(path), sort_keys=True, default=str).encode()
+            except (ValueError, UnicodeDecodeError):
+                body = path.read_bytes()
+        else:
+            body = path.read_bytes()
+    except OSError:
+        return None
+    return hashlib.sha256(body).hexdigest()
+
+
+def _named(root, words, *, existing: bool) -> list[str]:
+    """The workspace files these words name (an argv, a script's command): inside `root` only. Not `existing`: a name
+    that looks like a file and isn't there yet is kept too (the form warns about it)."""
+    import os
+    out = []
+    for word in words:
+        word = word.partition("=")[2] if word.startswith("-") else word
+        if not word or word.startswith("-") or any(c in word for c in "$*?`"):
+            continue
+        rel = os.path.normpath(os.path.relpath(word, root) if os.path.isabs(word) else word)
+        if rel == "." or rel.startswith(".."):
+            continue
+        path = root / rel
+        if path.is_file() or (not existing and not path.exists() and ("/" in rel or path.suffix)):
+            out.append(rel.replace(os.sep, "/"))
+    return out
+
+
+def _commands(text: str) -> list[list[str]]:
+    import re
+    import shlex
+    out = []
+    for part in re.split(r"&&|\|\||[;\n|&]", text or ""):
+        try:
+            words = shlex.split(part, comments=True)
+        except ValueError:
+            words = part.split()
+        while words and ("=" in words[0] and not words[0].startswith("-") or words[0] in {"exec", "env", "time"}):
+            words = words[1:]
+        if words:
+            out.append(words)
+    return out
+
+
+def _make_rules(text: str) -> tuple[dict, str | None]:
+    import re
+    rules, current, first = {}, None, None
+    for line in (text or "").splitlines():
+        if line.startswith("\t") and current is not None:
+            current[1].append(line.strip().lstrip("@-+"))
+            continue
+        rule = re.match(r"^([A-Za-z0-9_./%$(){}-][^:=#]*)::?(?!=)(.*)$", line)
+        current = None
+        if rule:
+            prereqs, _, inline = rule.group(2).partition(";")
+            current = (prereqs.split(), [inline.strip()] if inline.strip() else [])
+            for target in rule.group(1).split():
+                rules[target] = current
+                first = first or (target if not target.startswith(".") else None)
+    return rules, first
+
+
+def _callees(root, argv) -> set[str]:
+    """The files the check's argv invokes through the runner's own indirection, followed in turn: `npm run X` (and
+    `npm test`, with their pre- and post- scripts), `make T` (prerequisites and recipe), and shell scripts those
+    name. The `test` script and the Makefile `test` recipe always count (card)."""
+    import json
+    from pathlib import Path
+    try:
+        scripts = json.loads((root / "package.json").read_text()).get("scripts") or {}
+    except (OSError, ValueError, AttributeError):
+        scripts = {}
+    out, seen, queue = set(), set(), [("words", tuple(argv)), ("script", "test"), ("target", "test")]
+    while queue and len(seen) < 256:
+        kind, item = queue.pop()
+        if (kind, item) in seen:
+            continue
+        seen.add((kind, item))
+        if kind == "words":
+            head, rest = Path(item[0]).name, [w for w in item[1:] if not w.startswith("-")]
+            if head in _RUNNERS and rest:
+                name = ("test" if rest[0] in {"test", "t", "tst"} else rest[1] if rest[0] in {"run", "run-script"}
+                        and len(rest) > 1 else rest[0] if head != "npm" else None)
+                queue += [("script", n) for n in ((name, "pre" + name, "post" + name) if name else ())]
+            if head in _MAKES or item[0] in _MAKES:
+                makefile, skip, targets = "Makefile", None, []
+                for word in item[1:]:
+                    if skip:
+                        makefile = word + "/Makefile" if skip == "-C" else word if skip == "-f" else makefile
+                        skip = None
+                    elif word in {"-C", "-f", "-I", "-o", "-W"}:
+                        skip = word
+                    elif not word.startswith("-") and "=" not in word:
+                        targets.append(word)
+                queue.append(("make", makefile + "\0" + " ".join(targets)))
+            for rel in _named(root, item, existing=True):
+                out.add(rel)
+                if Path(rel).suffix in _SCRIPTS:
+                    queue.append(("file", rel))
+        elif kind == "script" and isinstance(scripts.get(item), str):
+            queue += [("words", tuple(words)) for words in _commands(scripts[item])]
+        elif kind in {"make", "target"}:
+            makefile, _, targets = item.partition("\0") if kind == "make" else ("Makefile", "", item)
+            try:
+                rules, first = _make_rules((root / makefile).read_text()[:1_000_000])
+            except (OSError, UnicodeDecodeError):
+                continue
+            for target in targets.split() or [first]:
+                prereqs, recipe = rules.get(target, ((), ()))
+                queue += [("make", makefile + "\0" + p) if p in rules else ("words", (p,)) for p in prereqs]
+                queue += [("words", tuple(words)) for line in recipe for words in _commands(line)]
+        elif kind == "file":
+            try:
+                text = (root / item).read_text()[:1_000_000]
+            except (OSError, UnicodeDecodeError):
+                continue
+            queue += [("words", tuple(words)) for words in _commands(text)]
+    return out
+
+
+def _runner_patterns(root, tree) -> set[str]:
+    """Where the runner config points: pytest's `testpaths` and `python_files`, jest's `testMatch`, `testRegex` and
+    `roots`, vitest's literal `include`. A config that can't be read points nowhere; it is protected itself."""
+    import configparser
+    import json
+    import re
+    import tomllib
+    out = set()
+    join = lambda folder, value: f"{folder}/{value}" if folder else value  # noqa: E731
+    for rel in tree:
+        folder, _, name = rel.rpartition("/")
+        path = root / rel
+        try:
+            pytest = None
+            if name in {"pytest.ini", "tox.ini", "setup.cfg"}:
+                parser = configparser.ConfigParser(interpolation=None, strict=False)
+                parser.read_string(path.read_text())
+                section = "tool:pytest" if name == "setup.cfg" else "pytest"
+                pytest = dict(parser[section]) if parser.has_section(section) else None
+            elif name == "pyproject.toml":
+                pytest = tomllib.loads(path.read_text()).get("tool", {}).get("pytest", {}).get("ini_options")
+            elif name == "package.json":
+                jest = json.loads(path.read_text()).get("jest") or {}
+                strip = lambda v: str(v).removeprefix("<rootDir>/")  # noqa: E731
+                out.update("glob:" + join(folder, strip(v)) for v in jest.get("testMatch") or ())
+                regex = jest.get("testRegex") or ()
+                out.update("re:" + str(v) for v in ([regex] if isinstance(regex, str) else regex))
+                out.update("under:" + join(folder, strip(v)) for v in jest.get("roots") or ())
+            elif name.startswith("vitest.config."):
+                for block in re.findall(r"include\s*:\s*\[([^\]]*)\]", path.read_text()[:1_000_000]):
+                    out.update("glob:" + join(folder, v) for v in re.findall(r"['\"]([^'\"]+)['\"]", block))
+            if isinstance(pytest, dict):
+                words = lambda v: v.split() if isinstance(v, str) else [str(x) for x in v]  # noqa: E731
+                out.update("under:" + join(folder, p.strip("/")) for p in words(pytest.get("testpaths") or ()))
+                out.update("name:" + p for p in words(pytest.get("python_files") or ()))
+        except (OSError, ValueError, UnicodeDecodeError, AttributeError, TypeError, configparser.Error):
+            continue
+    return out
+
+
+def record_protected(root, checks, marks=()) -> ProtectedSet:
+    """L7-5: the protected set at Start, for the goal's `check:` lines: each file their argv names (except the user's
+    own outputs: a file to save the user named or confirmed, or a declared output), the files those invoke, the
+    conventional test, expected-output and config files anywhere in the working folder, where the runner config
+    points, the parent folders' pytest config, and the user's marks. ValueError when it's over the limits."""
+    import os
+    from fnmatch import fnmatchcase
+    from pathlib import Path
+    root = Path(root).resolve()
+    commands = [check for check in checks if check.kind == "check"]
+    own = {check.path for check in checks if check.kind == "file_saved" and check.by_user}
+    declared = [pattern for check in commands for pattern in check.outputs]
+    tree = list(_walk(root))
+    patterns = _runner_patterns(root, tree) | {"in:" + p.rpartition("/")[0] for p in declared}
+    chosen = {rel: False for rel in tree if _conventional(rel) or rel.rsplit("/", 1)[-1] in _SECTIONED
+              or _matches(rel, patterns)}
+    for check in commands:
+        for rel in [*_named(root, check.argv, existing=False), *_callees(root, check.argv)]:
+            if rel not in own and not any(fnmatchcase(rel, p) for p in declared):
+                chosen.setdefault(rel, True)
+    for rel in _named(root, marks, existing=False):
+        chosen.setdefault(rel, True)
+    for parent in root.parents:
+        for name in _PARENTS:
+            rel = os.path.relpath(parent / name, root)
+            if (parent / name).is_file():
+                chosen[rel] = False
+            else:
+                patterns.add("file:" + rel)
+    if len(chosen) > PROTECTED_FILES_MAX or len(patterns) > 256:
+        raise ValueError("the protected set is over 2,000 files; narrow it")
+    files, total = [], 0
+    for rel in sorted(chosen):
+        path = root / rel
+        if not (path.is_file() or path.is_symlink()):
+            files.append(ProtectedFile(path=rel))           # named by the argv, not there at Start: a warning
+            continue
+        total += path.stat().st_size if path.is_file() else 0
+        if total > PROTECTED_BYTES_MAX:
+            raise ValueError("the protected set is over 50 MB; narrow it")
+        sectioned = path.name in _SECTIONED
+        digest = _digest(path, sectioned)
+        if digest is None:
+            raise ValueError(f"{rel} can't be read")
+        files.append(ProtectedFile(path=rel, sha256=digest, section="test sections" if sectioned else None,
+                                   size=path.stat().st_size if path.is_file() else 0))
+    return ProtectedSet(files=tuple(files), patterns=tuple(sorted(patterns)))
+
+
+def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=()) -> tuple[tuple[str, ...],
+                                                                                         tuple[ProtectedFile, ...]]:
+    """L7-5: (what changed, the new declared outputs to accept). A change is an edit, addition or deletion of a
+    protected file (or one accepted before), or a new file where one stops the goal. `outputs`: the declared output
+    patterns of the host run just finished; only new files matching one are accepted, never one named like runner
+    config. Before a run it is empty, so a file the worker wrote there between runs is a change."""
+    from fnmatch import fnmatchcase
+    from pathlib import Path
+    root = Path(root).resolve()
+    known = {item.path: item for item in (*protected.files, *accepted)}
+    changed = {item.path for item in known.values()
+               if item.sha256 is not None and _digest(root / item.path, item.section is not None) != item.sha256}
+    changed |= {p[5:] for p in protected.patterns if p.startswith("file:") and (root / p[5:]).exists()}
+    new = []
+    for rel in _walk(root):
+        if rel in known and known[rel].sha256 is not None:
+            continue
+        name = rel.rsplit("/", 1)[-1]
+        if name in _SECTIONED:
+            if _digest(root / rel, True) != _EMPTY:
+                changed.add(rel)
+        elif _conventional(rel) or _matches(rel, protected.patterns):
+            config = name in _PARENTS or any(fnmatchcase(name, p) for p in (*_CONFIG, "*.config.*"))
+            if not config and any(fnmatchcase(rel, p) for p in outputs):
+                new.append(rel)
+            else:
+                changed.add(rel)
+    taken = []
+    for rel in sorted(new):
+        digest = _digest(root / rel, False)
+        if digest is None:
+            changed.add(rel)
+        else:
+            taken.append(ProtectedFile(path=rel, sha256=digest, size=(root / rel).stat().st_size))
+    return tuple(sorted(changed)), tuple(taken)

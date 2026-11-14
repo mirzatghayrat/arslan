@@ -347,6 +347,8 @@ async def _run(job: Job) -> None:
     if _slots is None:
         _slots = asyncio.Semaphore(MAX_CONCURRENT)
     token = _inside_job.set(job.job_id)
+    from server.services import terminal_exec
+    terminal_exec.PYCACHE_APART.set(job.goal_spec is not None)    # L7-5: this job's task only (its own context)
     final_text, phase, reason = "", "failed", "task_execution_failed"
     try:
         async with _slots:
