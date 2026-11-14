@@ -75,6 +75,19 @@ def action_digest(tool_key: str, arguments: dict, effect: str, action_id: str) -
     return hashlib.sha256((digest + action_id).encode()).hexdigest() if effect == "read" else digest
 
 
+def _recorded_check(row, tool_key: str, arguments: dict) -> bool:
+    """L7-5: these arguments are exactly the host's run of a `check:` line recorded at Start on this goal row."""
+    import shlex
+    privacy = row.privacy or {}
+    if tool_key != "run_command" or privacy.get("driver") != {"kind": "background", "goal": True}:
+        return False
+    try:
+        checks = GoalSpec.model_validate(privacy["goal_spec"]).checks
+    except (KeyError, ValueError):
+        return False
+    return any(check.kind == "check" and arguments == {"command": shlex.join(check.argv)} for check in checks)
+
+
 def identity() -> str:
     return str(uuid4())
 
@@ -437,7 +450,7 @@ class TaskRepository:
                 "cursor": cursor, "has_more": cursor < row.sequence}
 
     async def prepare_action(self, task_id: str, attempt_id: str, *, tool_key: str,
-                             arguments: dict, effect: str) -> dict:
+                             arguments: dict, effect: str, host_check: bool = False) -> dict:
         row = await self._active(task_id, attempt_id)
         if effect not in {"read", "local_write", "external_write", "destructive"}:
             raise TaskError("task_invalid_effect")
@@ -454,7 +467,13 @@ class TaskRepository:
             TaskAction.intent_hash == digest))
         # A known failure (0.1.59: a local command that exited with a code, a refused local write) may
         # be tried again — the user or the model fixed something. Only an unknown outcome is refused.
-        if previous and previous.status not in {"not_applied", "failed"}:
+        # L7-5 (reviewer decision): the host's own run of a goal's `check:` line may run again after it succeeded, so
+        # each verdict reads a fresh run. Only with `host_check` (set by `goal_checks` alone), and only when the
+        # arguments are exactly `{"command": shlex.join(argv)}` for an argv the row's goal spec recorded at Start: no
+        # prefix, no other argument, no normalising. An unknown outcome is still refused.
+        again = previous is not None and previous.status == "succeeded" and host_check and _recorded_check(
+            row, tool_key, arguments)
+        if previous and previous.status not in {"not_applied", "failed"} and not again:
             code = "task_action_already_completed" if previous.status == "succeeded" else "task_reconciliation_required"
             raise TaskError(code)
         if previous:

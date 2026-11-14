@@ -704,7 +704,8 @@ class TaskRuntime:
             "continuation_ref": ref,
         })
 
-    async def execute_tool(self, tool_key: str, arguments: dict, execute: Callable[[dict], Awaitable[dict]]) -> dict:
+    async def execute_tool(self, tool_key: str, arguments: dict, execute: Callable[[dict], Awaitable[dict]], *,
+                           host_check: bool = False) -> dict:
         # 0.1.44 completion first: an action whose outcome is unknown no longer
         # stops the whole turn. Repeating THAT exact action is still refused (the
         # journal's intent hash, see prepare_action); everything else goes on, and
@@ -717,7 +718,7 @@ class TaskRuntime:
         async with self.lock:
             async with repository() as repo:
                 action = await repo.prepare_action(self.task_id, self.attempt_id, tool_key=tool_key,
-                                                   arguments=arguments, effect=effect)
+                                                   arguments=arguments, effect=effect, host_check=host_check)
             self.progress = self.progress.model_copy(update={
                 "pending_actions": (*self.progress.pending_actions, action["id"])})
         await self.checkpoint("before_tool")

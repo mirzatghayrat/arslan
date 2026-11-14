@@ -160,3 +160,7 @@ class ToolTurn:
     caller: ToolCaller | None = None
     turn_adapter: Any = None
     resolve_callable: ResolveTools | None = None
+    # L7-5 (reviewer decision): True only on the copy `goal_checks.run` makes for the host's own `check:` run, never
+    # from tool arguments or a trace. It lets the task journal run that exact recorded command again
+    # (`TaskRepository.prepare_action`); every gate and card before it is unchanged.
+    host_check: bool = False

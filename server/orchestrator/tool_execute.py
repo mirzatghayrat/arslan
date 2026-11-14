@@ -93,7 +93,8 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
             # S2a-1 piece 2: offline after outside content (wrap-up may have set it too).
             cut = terminal_exec.OFFLINE.set(True) if network.get("offline") else None
             try:
-                return await runtime.execute_tool(tool_key, args, execute) if runtime else await execute(args)
+                return (await runtime.execute_tool(tool_key, args, execute, host_check=turn.host_check) if runtime
+                        else await execute(args))
             finally:
                 if cut is not None:
                     terminal_exec.OFFLINE.reset(cut)

@@ -355,7 +355,8 @@ async def _check_turn(_gates, monkeypatch, tmp_path, replies, run, *, outputs=()
                                     "scope": {"kind": "task", "owner_id": "local", "task_id": "goal-task"},
                                     "acceptance": goal_mode.acceptance(goal)})
     async with repository() as repo:
-        created = await repo.create(spec, "goal")
+        created = await repo.create(spec, "goal", privacy={"driver": {"kind": "background", "goal": True},
+                                                           "goal_spec": goal.model_dump(mode="json")})
         started = await repo.start(spec.id, created["version"])
     result = await task_service._launch(started, lambda event: None, body)
     async with repository() as repo:
@@ -418,10 +419,10 @@ async def test_a_declared_output_the_check_writes_is_accepted_and_protected_afte
     assert task.phase == "succeeded" and [a.path for a in record.accepted] == ["tests/revealed/test_step_2.py"]
 
 
-async def test_a_passing_check_run_again_meets_the_journals_fence_as_the_workers_would(
+async def test_a_passing_check_is_run_again_by_the_host_and_a_two_check_goal_completes(
         _a_goal_job, monkeypatch, tmp_path):
-    """No bypass: the task journal runs an identical external write once, so the host's second run of a check that
-    passed is answered as the worker's identical second call is, and the goal is never complete on the old run."""
+    """The fence exemption (reviewer decision): check A passes in round 1, check B is met in round 2; the host runs A
+    again in round 2 (a fresh run, not the old one) and the goal completes."""
     _layout(tmp_path)
     notes = GoalCheck(id="c1", description="The notes name INV-07", kind="file_contains", path="notes.md",
                       phrases=("INV-07",))
@@ -431,10 +432,63 @@ async def test_a_passing_check_run_again_meets_the_journals_fence_as_the_workers
             (tmp_path / "notes.md").write_text("INV-07")
         return "Working on it."
     result, task, record, calls = await _check_turn(_a_goal_job, monkeypatch, tmp_path, replies,
-                                                    lambda n: _exit(0, "pass"), more=(notes,))
-    assert calls["host"] == ["python3 tests/run_checks.py"]
-    assert "This exact action already succeeded in this task" in calls["turn"][2]
-    assert task.phase != "succeeded" and record.status != "complete" and "check-1" in record.unmet
+                                                    lambda n: _exit(0, f"pass {n}"), more=(notes,))
+    assert calls["host"] == ["python3 tests/run_checks.py"] * 2
+    assert "already succeeded" not in json.dumps(calls["turn"])
+    assert task.phase == "succeeded" and (record.status, record.round) == ("complete", 2)
+
+
+async def _journal(execution_db, argv=("python3", "tests/run_checks.py"), args=None):
+    """A running goal row whose spec, recorded at Start, has one `check:` line, and one succeeded run of `argv`."""
+    from arslan.companion.contracts import TaskSpec
+    from server.services.task_repository import repository
+    goal = GoalSpec(objective="Make the check pass", checks=(_line("python3 tests/run_checks.py"),))
+    spec = TaskSpec.model_validate({"id": "goal-task", "instruction": goal.objective, "locale": "en",
+                                    "scope": {"kind": "task", "owner_id": "local", "task_id": "goal-task"},
+                                    "acceptance": goal_mode.acceptance(goal)})
+    async with repository() as repo:
+        created = await repo.create(spec, "goal", privacy={"driver": {"kind": "background", "goal": True},
+                                                           "goal_spec": goal.model_dump(mode="json")})
+        await repo.start(spec.id, created["version"])
+        attempt = (await repo.get("goal-task")).attempt_id
+    args = args or {"command": shlex.join(argv)}
+
+    async def prepare(arguments=args, *, host_check):
+        async with repository() as repo:
+            return await repo.prepare_action("goal-task", attempt, tool_key="run_command", arguments=arguments,
+                                             effect="external_write", host_check=host_check)
+    action = await prepare(host_check=True)
+    async with repository() as repo:
+        await repo.action_started("goal-task", attempt, action["id"], arguments=args)
+        await repo.action_finished("goal-task", attempt, action["id"], status="succeeded")
+    return prepare
+
+
+async def test_the_workers_run_of_a_recorded_check_argv_stays_fenced(execution_db):
+    from server.services.task_repository import TaskError
+    prepare = await _journal(execution_db)
+    with pytest.raises(TaskError, match="task_action_already_completed"):
+        await prepare(host_check=False)
+    assert (await prepare(host_check=True))["id"]                  # the host's own run of it, again
+
+
+@pytest.mark.parametrize("argv", [("python3", "tests/run_checks.py", "--all"), ("python3", "tests/run_checks"),
+                                  ("python3", "./tests/run_checks.py")])
+async def test_a_host_run_of_an_argv_not_recorded_at_start_stays_fenced(argv, execution_db):
+    from server.services.task_repository import TaskError
+    prepare = await _journal(execution_db, argv)                    # one argument off the recorded line
+    with pytest.raises(TaskError, match="task_action_already_completed"):
+        await prepare({"command": shlex.join(argv)}, host_check=True)
+
+
+async def test_the_exemption_is_only_on_the_hosts_turn_copy_never_from_arguments(execution_db):
+    from server.services.task_repository import TaskError
+    flagged = {"command": "python3 tests/run_checks.py", "host_check": True}
+    prepare = await _journal(execution_db, args=flagged)
+    for host_check in (False, True):        # a flag in the tool's arguments is just another argument: still fenced
+        with pytest.raises(TaskError, match="task_action_already_completed"):
+            await prepare(flagged, host_check=host_check)
+    assert ToolTurn(resolve_tools=None, emit=print, tool_timeout_s=1, tool_trace=[], convo=[]).host_check is False
 
 
 async def test_a_declared_output_the_worker_writes_between_runs_stops_the_goal(_a_goal_job, monkeypatch, tmp_path):

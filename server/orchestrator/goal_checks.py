@@ -57,7 +57,7 @@ async def run(request, state) -> HostChecks:
         if not changed:
             args = {"command": shlex.join(check.argv)}
             result = await _run_tool("run_command", args, json.dumps({"tool": "run_command", "args": args}),
-                                     replace(_tool_turn(request, state), tool_trace=[], convo=[]))
+                                     replace(_tool_turn(request, state), tool_trace=[], convo=[], host_check=True))
             changed, new = await changes(check.outputs)
         if changed:
             return HostChecks(runs=tuple(runs), changed=changed, accepted=accepted)
