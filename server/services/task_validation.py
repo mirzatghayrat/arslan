@@ -103,14 +103,15 @@ def _changed_files(folder: Path, since: float | None) -> int:
     return count
 
 
-def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, str, int | None]:
+def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, str, str | None, int | None]:
     """Read-only: only inside the readable folders (file_reader.resolve refuses the rest, hidden and
-    credential-shaped names included), so this can tell no more than list_dir already could. The count: a folder's
+    credential-shaped names included), so this can tell no more than list_dir already could. INB9-a: a pass
+    also names the file or folder it found, which the acceptance sheet shows as its evidence. The count: a folder's
     qualifying files when it falls short (L7 goal mode's measure), else None."""
     from server.services import file_reader
     from server.services.file_reader import NotReadable
     if not rule.target:
-        return "not_run", "file_target_unresolved", None
+        return "not_run", "file_target_unresolved", None, None
     named, guesses = _target_candidates(rule.target, trace, context)
     roots = list(context.get("roots") or [])
     readable, missing = [], False
@@ -123,22 +124,22 @@ def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, st
         if path not in readable:
             readable.append(path)
     if not readable:
-        return ("failed", "file_missing", None) if missing else ("not_run", "file_target_unresolved", None)
+        return ("failed", "file_missing", None, None) if missing else ("not_run", "file_target_unresolved", None, None)
     since, minimum, count = context.get("since"), max(1, rule.minimum or 1), None
     for path in readable:
         try:
             if path.is_file():
                 stat = path.stat()
                 if stat.st_size > 0 and _changed_since(stat, since):
-                    return "passed", "file_saved_assertion", None
+                    return "passed", "file_saved_assertion", str(path), None
             elif path.is_dir():
                 changed = _changed_files(path, since)
                 if changed >= minimum:
-                    return "passed", "file_saved_assertion", None
+                    return "passed", "file_saved_assertion", str(path), None
                 count = max(count or 0, changed)
         except OSError:
             continue
-    return "failed", "file_unchanged", count
+    return "failed", "file_unchanged", None, count
 
 
 def _read_named(target: str, trace: list[dict], context: dict) -> str | None:
@@ -239,8 +240,8 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
                 return {**base, "status": "not_run", "code": "artifact_check_not_run"}
             passed = all(item["status"] == "passed" for item in selected)
         else:
-            status, code, count = _file_saved_on_disk(rule, trace, context)
-            return {**base, "status": status, "code": code,
+            status, code, found, count = _file_saved_on_disk(rule, trace, context)
+            return {**base, "status": status, "code": code, **({"path": found} if found else {}),
                     **({"measure": _measure(count, count)} if goal and count is not None else {})}
     elif rule.kind == "file_contains":
         content = _read_named(rule.target or "", trace, context)

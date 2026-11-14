@@ -193,10 +193,15 @@ async def test_status_detects_ahead_and_corrupt_records(execution_db):
         assert target.read_bytes() == b"corrupt synthetic file"
 
 
-async def test_legacy_expert_preference_commit_also_updates_ledger(execution_db):
-    from server.api.spawns import delete_preference
+async def test_legacy_expert_preference_commit_also_updates_ledger(execution_db, monkeypatch):
+    # C7c-3b removed the spawn preferences route; an expert-scope entry is now deleted through the
+    # companion route, whose repository dependency syncs the ledger after the commit.
+    import httpx
+    from fastapi import FastAPI
+
+    from server import auth
+    from server.api.companion import router
     from server.db.models import Spawn
-    from server.schemas import PreferenceDeleteIn
     from server.services.memory_activation import activate_sync
     from server.services.memory_migration import migrate_legacy_sync
 
@@ -209,7 +214,14 @@ async def test_legacy_expert_preference_commit_also_updates_ledger(execution_db)
     content = "Synthetic expert preference"
     async with repository() as repo:
         entry = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="expert", id="3")), MemoryActor(origin="user"))
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-ledger-token")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                 headers={"Authorization": "Bearer synthetic-ledger-token"}) as api:
+        deleted = await api.delete(f"/api/v1/memory/entries/{entry['id']}", params={"expected_version": 1})
+        assert deleted.status_code == 200 and deleted.json()["status"] == "deleted"
+        remaining = (await api.get("/api/v1/memory/entries", params={"scope_kind": "expert", "scope_id": "3"})).json()
+    assert [row for row in remaining if row["status"] == "active"] == []
     async with execution_db() as db:
-        result = await delete_preference(3, PreferenceDeleteIn(fact=content, entry_id=entry["id"], expected_version=1), db)
-        assert result.preferences == []
         assert await ledger.status(db) == {"status": "current", "database_epoch": 1, "saved_epoch": 1}

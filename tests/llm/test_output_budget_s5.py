@@ -19,7 +19,8 @@ def test_budget_table(base, model, expected):
 
 def test_provider_declares_the_endpoint_budget_unless_told_otherwise():
     assert OpenAIProvider(model="deepseek-v4-flash", base_url="https://api.deepseek.com").max_tokens == 32_768
-    assert OpenAIProvider(model="x", base_url="https://openrouter.ai/api/v1").max_tokens == 8_192
+    # v0.1.64: an unknown model on any other endpoint declares 32,768 (tests/llm/test_output_cap_0164.py).
+    assert OpenAIProvider(model="x", base_url="https://openrouter.ai/api/v1").max_tokens == 32_768
     assert OpenAIProvider(model="deepseek-v4-flash", base_url="https://api.deepseek.com",
                           max_tokens=1000).max_tokens == 1000
 

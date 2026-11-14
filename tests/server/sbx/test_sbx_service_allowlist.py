@@ -24,10 +24,20 @@ def test_dns_corpus_and_resolver_channel_follow_network_mode(sbx, mode):
     # No mode grants DNS: online is the proxy, and product SSH accepts IPv4 literals only.
     sbx.network = mode
     case = next(case for case in CASES if case.name == "dns")
-    control = sbx.run(case.argv, profile="(version 1)(allow default)", probe="dns-control")
+    # The control needs no answer from the runner's DNS (a 30 s CI hang): mDNSResponder answers `localhost.`
+    # itself. Bare `localhost` is answered in-process without the channel, so the trailing dot is load-bearing.
+    local = (*case.argv[:-1], case.argv[-1].replace("'example.com'", "'localhost.'"))
+    assert local != case.argv
+    control = sbx.run(local, profile="(version 1)(allow default)", probe="dns-control", timeout=10)
     assert control.returncode == 0, control.stderr
-    result = sbx.run(case.argv, probe="dns-" + mode.value + "-default-deny")
-    assert result.returncode != 0, result.stderr
+    # The control's name resolves only through the resolver channel: closing just that socket fails it.
+    unreachable = f'(version 1)(allow default)(deny network-outbound (literal "{DNS_SOCKET}"))'
+    closed = sbx.run(local, profile=unreachable, probe="dns-control-channel-closed", timeout=10)
+    assert closed.returncode != 0, closed.stderr
+    # Local name first: a policy that opened the channel fails there without waiting on the network.
+    for argv, probe in ((local, "dns-local-"), (case.argv, "dns-")):
+        result = sbx.run(argv, probe=probe + mode.value + "-default-deny")
+        assert result.returncode != 0, result.stderr
     # A cached name result is not evidence that the resolver channel is closed.
     # Connect only, with no protocol bytes; policy must refuse the socket itself.
     channel = sbx.python("""

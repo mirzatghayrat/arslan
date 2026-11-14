@@ -39,6 +39,33 @@ class SecretFile(Exception):
     """The path names a credential-shaped file; refused by policy."""
 
 
+class RunLater(PathEscape):
+    """HR-2a: the path is a file that makes something run later (`run_later`): a write needs the user's click on
+    this call's own card (`tool_gates.workspace_write`). A PathEscape, so every caller that refuses one refuses
+    this too. `path` is the resolved path the card names."""
+
+    def __init__(self, user_path, path: Path):
+        super().__init__(f"refusing to write a file that runs later without your OK on its own card: {user_path}")
+        self.path = path
+
+
+class AppData(PathEscape):
+    """SBX-5b: the path is at or inside another app's private data folder on the commands sandbox's named list
+    (`command_sandbox.app_data_folders`): a read or write needs the user's click on this call's own once-only
+    `app_data` card (`tool_gates.app_data`). A PathEscape, so every caller that refuses one refuses this too. `path`
+    is the resolved path the card names, `folder` the listed folder, `app` its app."""
+
+    def __init__(self, user_path, path: Path, app: str, folder: Path):
+        super().__init__(f"refusing {user_path}: it is {app}'s private data, which needs your OK on its own card "
+                         "each time")
+        self.path, self.app, self.folder = path, app, folder
+
+
+class RunLaterUnknown(PathEscape):
+    """HR-2a: whether the write is into a file that runs later can't be told (the repository's git config, or a
+    folder on the way, can't be read), so it is refused: the gate refuses it before any card (`tool_gates`)."""
+
+
 # Names that carry credentials often enough that reading one by accident is
 # worse than the friction of refusing. Matched on the FILENAME, case-folded.
 _SECRET_GLOBS = (
@@ -53,20 +80,59 @@ def is_secret_name(name: str) -> bool:
 
 
 def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = False,
-                         make_parents: bool = False) -> Path:
+                         make_parents: bool = False, pin=None, run_later_ok: Path | None = None,
+                         walk_root: Path | None = None, app_data_ok: Path | None = None) -> Path:
     """Absolute, symlink-resolved path inside `ws_root`, or raise.
 
     `for_write=True` judges by the parent directory so a not-yet-existing file
     is allowed; the parent must itself exist and resolve inside — unless
     `make_parents`, where missing folders are allowed (the caller creates them)
     and the deepest existing ancestor must resolve inside (rule 3).
+    A write into a file that runs later raises RunLater unless it resolves to `run_later_ok`, the path this
+    call's card was clicked for (HR-2a).
+
+    SBX-9: `pin` is the caller's pin of the working folder (`pin_root`), carried from this resolution to the write
+    (Astra #855 P1: one identity, not a fresh one per step); without it, the folder is pinned for this call only.
+
+    SBX-10 parity: `walk_root`, for a sub-session's write, is its commander's workspace: the run-later check walks it
+    too (`_refuse_run_later`), pinned, and refuses (RunLaterUnknown) when it can't be pinned or doesn't hold `ws_root`.
+
+    SBX-5b: a path at or inside another app's listed private data folder raises AppData, for a read or a write,
+    unless it resolves to `app_data_ok`, the path this call's card was clicked for (`_refuse_app_data`).
     """
-    if ws_root is None:
+    if ws_root is None and pin is None:
         raise PathEscape("no workspace is configured")
     if not isinstance(user_path, str) or not user_path.strip():
         raise PathEscape("path is required")
+    if pin is not None:
+        return _resolve(user_path, pin.path, for_write=for_write, make_parents=make_parents,
+                        run_later_ok=run_later_ok, walk_root=walk_root, app_data_ok=app_data_ok)
+    from server.services import root_pin
+    own = pin_root(ws_root)
+    try:
+        return _resolve(user_path, own.path, for_write=for_write, make_parents=make_parents,
+                        run_later_ok=run_later_ok, walk_root=walk_root, app_data_ok=app_data_ok)
+    finally:
+        root_pin.release([own])
 
-    root = Path(ws_root).resolve()
+
+def _refuse_app_data(path: Path, user_path, ok: Path | None, folders=None) -> None:
+    """SBX-5b (the user's "C lite"): the file tools refuse the same named list the commands sandbox closes
+    (`command_sandbox.app_data_folders`, or `folders`, that list read once by a caller that checks many paths), and
+    nothing more, for reads and writes alike: AppData, unless `path` is `ok`, the one path this call's card was
+    clicked for. Judged by what is on disk (`_within`: a link, another letter case or NFD spelling of a listed folder
+    is that folder)."""
+    from server.services import command_sandbox
+    for app, folder in command_sandbox.app_data_folders() if folders is None else folders:
+        if _within(path, folder):
+            if ok is not None and path == ok:
+                return
+            raise AppData(user_path, path, app, folder)
+
+
+def _resolve(user_path: str, root: Path, *, for_write: bool, make_parents: bool,
+             run_later_ok: Path | None = None, walk_root: Path | None = None,
+             app_data_ok: Path | None = None) -> Path:
     raw = Path(user_path.strip())
     candidate = raw if raw.is_absolute() else (root / raw)
     if for_write and candidate.name in ("", ".", ".."):
@@ -81,7 +147,8 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
                 raise PathEscape(f"path is outside the workspace: {user_path}")
             missing.append(probe.name)
             probe = probe.parent
-        parent = probe.resolve()
+        # SBX-9 (Astra #855 delta): the pinned root is already its own real path; never resolve it again.
+        parent = root if probe == root else probe.resolve()
         if not parent.is_dir():
             raise PathEscape(f"parent directory does not exist: {candidate.parent}")
         if not _contained(parent, root):
@@ -103,9 +170,241 @@ def resolve_in_workspace(user_path, ws_root: Path | None, *, for_write: bool = F
 
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to touch a credential-shaped file: {resolved.name}")
+    # SBX-5b (#877 review): the file tools' write path (write_file, edit_file) never honours a click: another app's
+    # listed data is read-only once, as for commands (`open_once`), so `app_data_ok` is ignored here and a write or
+    # edit there is always AppData. Only `resolve_for_read` takes the click.
+    _refuse_app_data(resolved, user_path, None)
     if for_write:
         _refuse_cap6b(resolved, root, user_path)
+        _refuse_run_later(resolved, candidate, root, user_path, run_later_ok, walk_root)
     return resolved
+
+
+def held_for_later(user_path, ws_root: Path | None, *, walk_root: Path | None = None) -> Path | None:
+    """HR-2a: the path a write of `user_path` in `ws_root` would land on, when it is a file that runs later (what
+    its card names), else None: an ordinary write, or one the executor refuses for another reason. The one test the
+    gate (`tool_gates`) and `hard_rules.never_auto` share. RunLaterUnknown propagates: it can't be told.
+    SBX-10 parity: `walk_root` (a sub-session's commander's workspace, `file_tools._write_roots`) is walked too, as
+    `run_command`'s profile walks it; one that can't be pinned or doesn't hold `ws_root` is RunLaterUnknown."""
+    try:
+        resolve_in_workspace(user_path, ws_root, for_write=True, make_parents=True, walk_root=walk_root)
+    except RunLater as held:
+        return held.path
+    except RunLaterUnknown:
+        raise
+    except (PathEscape, SecretFile):
+        return None
+    return None
+
+
+def _refuse_run_later(path: Path, candidate: Path, root: Path, user_path, approved: Path | None,
+                      walk_root: Path | None = None) -> None:
+    """HR-2a: a write into a file that makes something run later (HR-1's list, `run_later.matches`, and the
+    repository's `core.hooksPath` folder) needs the user's click on this call's own card: refused unless `path`
+    (the resolved path, where the write lands) is the one that card named (`approved`). `matches` folds case and
+    Unicode (casefold); the hooks folder is judged by identity (`_within`), whatever its spelling. The work folder's
+    real path is `root`, so a dependency folder is exempt only below it (`run_later.exempts`). A config that can't be
+    read is refused, as the kernel's profile is never built then.
+
+    #813 review 9 and 10, as the kernel holds them (⓪Plan's and ③Hands' reviews of HR-2a):
+      - the names are tested on the resolved path and on the path as read at every link on the way (`_link_hops`:
+        the link as written with the rest of the path, then each link's target with the rest), so a held name or held
+        folder that is a link to an ordinary name (`.vscode -> vsc`, `.envrc -> envrc.real`) is held;
+      - a write at a link's target named otherwise (`vsc/tasks.json`) is held as the kernel's `link_filters` hold it:
+        HR-1's own walk of the work folder (`run_later.held_folders`) gives each link at a held name, and the write's
+        path mapped back through it is tested with `matches` (`_through_links`);
+      - no dependency exemption when the path goes through a link at a held name (`run_later.held_link`), or HR-1's
+        walk found an alias, couldn't finish, or skipped a private folder the path is in: the kernel's profile then
+        has none (`aliased`);
+      - the hooks folder of the work folder's repository (`hooks_path(root)`, what the kernel holds) and of the nearest
+        repository above the file (a nested one's own).
+
+    SBX-10 parity (#870, as `run_command`'s profile): `walk_root`, a sub-session's commander's workspace, is pinned
+    (`_pin_walk_root`, which refuses one that can't be pinned or doesn't hold `root`) and walked after `root`
+    (`held_folders(walk_roots=...)`), and its repository's hooks folder is held: a link at a held name there whose
+    real path is in the sub-session's folder (`.git/hooks -> sub/kid/hk`) holds that target here too."""
+    from server.services import root_pin, run_later
+    outer = [_pin_walk_root(walk_root, root)] if walk_root is not None else []
+    try:
+        with root_pin.pinned(outer):
+            try:
+                hooks = [h for h in (run_later.hooks_path(path.parent), run_later.hooks_path(root),
+                                     *(run_later.hooks_path(o.path) for o in outer)) if h is not None]
+            except OSError as exc:
+                raise RunLaterUnknown("refusing to write: can't read this repository's git config "
+                                      f"({exc.strerror or exc})") from None
+            try:
+                walk = run_later.held_folders([root], walk_roots=[o.path for o in outer])
+            except run_later.TooManyLinks as exc:
+                raise RunLaterUnknown(f"refusing to write: {exc}") from None
+    finally:
+        root_pin.release(outer)
+    hops = _link_hops(candidate, root)
+    aliased = (any(run_later.held_link(link, root=root) for link, _ in hops) or bool(walk.aliases)
+               or not walk.complete or any(path.is_relative_to(skipped) for skipped in walk.skipped))
+    held = (any(run_later.matches(p, root=root, aliased=aliased) for p in (*(read for _, read in hops), path))
+            or _through_links(path, walk.links, root, aliased)
+            or any(_within(path, h) for h in hooks))
+    if held and path != approved:
+        raise RunLater(user_path, path)
+
+
+def _pin_walk_root(walk_root: Path, root: Path):
+    """SBX-10 parity: the commander's workspace pinned (`root_pin.pin`: no link in any component), as
+    `command_sandbox.wrapper` pins a command's walk root, holding `root` (the sub-session's folder, a real path):
+    the pin, which the caller releases. Otherwise RunLaterUnknown: closed, as the command doesn't start."""
+    from server.services import root_pin
+    try:
+        pin = root_pin.pin(walk_root)
+    except OSError as exc:                                  # root_pin.Swapped too
+        raise RunLaterUnknown("refusing to write: the commander's workspace, whose run-later files this "
+                              f"sub-session's writes are checked against, can't be checked ({exc})") from None
+    if pin.path != root and pin.path not in root.parents:
+        root_pin.release([pin])
+        raise RunLaterUnknown("refusing to write: the commander's workspace, whose run-later files this "
+                              "sub-session's writes are checked against, doesn't hold this sub-session's folder")
+    return pin
+
+
+def _through_links(path: Path, links, root: Path, aliased: bool) -> bool:
+    """HR-2a: `path` is at or below the real path of a link at a held name (`HeldWalk.links`) and, read through that
+    link as a consumer reads it, is a held name: the Python form of `run_later.link_filters`."""
+    from server.services import run_later
+    if not links:
+        return False
+    ancestors = [(above, _identity(above)) for above in (path, *path.parents)]
+    for seen_as, target in links:
+        rest = _rest_below(path, ancestors, target)
+        if rest is not None and run_later.matches(seen_as.joinpath(*rest), root=root, aliased=aliased):
+            return True
+    return False
+
+
+def _rest_below(path: Path, ancestors, folder: Path) -> tuple[str, ...] | None:
+    """`path`'s components below `folder` when it is `folder` or inside it, else None. By identity where they exist
+    (`ancestors`: `path` and each folder above it, with its identity; one of them is `folder` on disk, whatever the
+    spelling, as `_within`), else by name, folded (a target that isn't there yet)."""
+    target = _identity(folder)
+    if target is not None:
+        for above, identity in ancestors:
+            if identity == target:
+                return path.parts[len(above.parts):]
+    width = len(folder.parts)
+    if _folded(path.parts[:width]) == _folded(folder.parts):
+        return path.parts[width:]
+    return None
+
+
+#: The links `_link_hops` follows before it refuses (Linux's own limit).
+_MAX_HOPS = 40
+
+
+def _link_hops(candidate: Path, root: Path) -> list[tuple[Path, Path]]:
+    """HR-2a: each link on the way to `candidate`, followed as the file system follows it, from the work folder
+    (`root`, a real path) when `candidate` is below it as written: (the link, by the real path of its folder and its
+    own name; the path a consumer reads there, that link with the rest of the path as written). A link's target joins
+    the rest, so each later link reads as the earlier link's target with the rest. A component that can't be read,
+    or more than `_MAX_HOPS` links, refuses (RunLaterUnknown): it can't be told where the write lands."""
+    if candidate.is_relative_to(root):
+        here, pending = root, list(candidate.relative_to(root).parts)
+    else:
+        here, pending = Path(candidate.anchor), list(candidate.parts[1:])
+    hops: list[tuple[Path, Path]] = []
+    while pending:
+        name = pending.pop(0)
+        if name in ("", "."):
+            continue
+        if name == "..":
+            here = here.parent
+            continue
+        step = here / name
+        try:
+            target = Path(os.readlink(step)) if stat.S_ISLNK(os.lstat(step).st_mode) else None
+        except (FileNotFoundError, NotADirectoryError):
+            target = None
+        except OSError as exc:
+            raise RunLaterUnknown(f"refusing to write: can't read a folder on the way ({exc.strerror or exc})") \
+                from None
+        if target is None:
+            here = step
+            continue
+        if len(hops) >= _MAX_HOPS:
+            raise RunLaterUnknown("refusing to write: too many links on the way")
+        hops.append((step, step.joinpath(*pending)))
+        if target.is_absolute():
+            here, pending = Path(target.anchor), [*target.parts[1:], *pending]
+        else:
+            pending = [*target.parts, *pending]
+    return hops
+
+
+def pin_root(ws_root):
+    """SBX-9: the working folder resolved once, with no link in any component of its real path, and pinned
+    (`root_pin.Pin`: the real path, the identity and a descriptor, which the caller releases). `ws_root` was checked as
+    a real folder (`settings_service.workspace_dir`), so it must still be that folder, not a link to another one now.
+    PathEscape when it isn't."""
+    from server.services import root_pin
+    try:
+        return root_pin.pin(ws_root)
+    except root_pin.Swapped as exc:
+        raise PathEscape(f"the working folder isn't the folder it was: {exc}") from None
+    except OSError as exc:
+        raise PathEscape(f"the working folder can't be checked ({exc.strerror or exc})") from None
+
+
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+
+
+def open_inside(pin, parts, *, make: bool = False) -> int:
+    """SBX-9: a descriptor on the folder `<pinned working folder>/parts...`, walked from the pin's own descriptor (never
+    the root reopened by its path) one name at a time: each opened `O_NOFOLLOW` relative to the one before (a link at
+    any step is refused, never followed), and with `make` a missing one made there first (`mkdir(dir_fd=...)`,
+    mkdirat). PathEscape for a link, a file or another folder on the way; OSError when a folder can't be made. The
+    caller closes the descriptor."""
+    fd = os.dup(pin.fd)
+    try:
+        for part in parts:
+            if part in ("", ".", "..") or "/" in part:
+                raise PathEscape(f"not a folder name: {part!r}")
+            if make:
+                try:
+                    os.mkdir(part, 0o777, dir_fd=fd)
+                except FileExistsError:
+                    pass
+            try:
+                inner = os.open(part, _DIR_FLAGS, dir_fd=fd)
+            except OSError as exc:
+                raise PathEscape(f"refusing to write through {part}: it isn't a plain folder now "
+                                 f"({exc.strerror or exc})") from None
+            os.close(fd)
+            fd = inner
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def replace_in(dir_fd: int, source: str, target: str) -> None:
+    """`os.replace(source, target)` inside the folder `dir_fd` (renameat): Python on macOS has no `dir_fd` for it."""
+    if os.replace in os.supports_dir_fd:
+        os.replace(source, target, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        return
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.renameat(dir_fd, os.fsencode(source), dir_fd, os.fsencode(target)) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), target)
+
+
+def check_root(pin) -> None:
+    """SBX-9: right before a write, the pinned working folder's real path still opens, with no link in any component,
+    as the same folder (the identity `pin_root` found, never a fresh one). PathEscape when not: the folder was
+    renamed away, replaced or relinked since the resolution."""
+    from server.services import root_pin
+    try:
+        root_pin.check([pin])
+    except root_pin.Swapped as exc:
+        raise PathEscape(f"the working folder isn't the folder it was: {exc}") from None
 
 
 #: SUB5c: the folder under the workspace (or a parent sub-session's folder) that holds the sub-sessions' own folders.
@@ -119,24 +418,29 @@ def sub_folder(ws_root: Path, names) -> Path:
     is refused, never followed or reused. The result then goes through `resolve_in_workspace`'s checks for a write
     (real path inside the workspace, links, Arslan's own folders). Raises PathEscape (or OSError when a folder can't
     be made). `names` come from `sub_sessions.folder_name`: plain names, refused here otherwise."""
-    root = Path(ws_root).resolve()
-    parts = [part for name in names for part in (SUB_DIR, name)]
-    if not parts or any(not part or part in (".", "..") or "/" in part or part != part.strip() for part in parts):
-        raise PathEscape(f"not a sub-session folder name: {list(names)}")
-    path = root
-    for part in parts:
-        path = path / part
-        try:
-            os.mkdir(path, 0o755)                # never follows a link: an existing one is EEXIST, judged below
-        except FileExistsError:
-            pass
-        st = os.lstat(path)
-        if not stat.S_ISDIR(st.st_mode):
-            raise PathEscape(f"refusing a sub-session folder that isn't a plain folder: {path}")
-    _same_spelling(path, parts)
-    if resolve_in_workspace(str(path), root, for_write=True) != path:
-        raise PathEscape(f"refusing a sub-session folder that resolves elsewhere: {path}")
-    return path
+    from server.services import root_pin
+    pinned = pin_root(ws_root)                  # SBX-9: resolved once, and still the folder workspace_dir checked
+    try:
+        root = pinned.path
+        parts = [part for name in names for part in (SUB_DIR, name)]
+        if not parts or any(not part or part in (".", "..") or "/" in part or part != part.strip() for part in parts):
+            raise PathEscape(f"not a sub-session folder name: {list(names)}")
+        path = root
+        for part in parts:
+            path = path / part
+            try:
+                os.mkdir(path, 0o755)                # never follows a link: an existing one is EEXIST, judged below
+            except FileExistsError:
+                pass
+            st = os.lstat(path)
+            if not stat.S_ISDIR(st.st_mode):
+                raise PathEscape(f"refusing a sub-session folder that isn't a plain folder: {path}")
+        _same_spelling(path, parts)
+        if resolve_in_workspace(str(path), root, for_write=True, pin=pinned) != path:
+            raise PathEscape(f"refusing a sub-session folder that resolves elsewhere: {path}")
+        return path
+    finally:
+        root_pin.release([pinned])
 
 
 def _same_spelling(path: Path, parts: list[str]) -> None:
@@ -275,7 +579,8 @@ def read_roots(ws_root: Path | None, *, default_read: bool) -> list[Path]:
     return roots
 
 
-def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = None) -> Path:
+def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = None,
+                     app_data_ok: Path | None = None, app_data=None) -> Path:
     """Absolute, symlink-resolved path contained in ONE of `roots`, or raise.
 
     Path forms:
@@ -287,7 +592,8 @@ def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = N
         refused rather than guessed.
 
     A path inside none of the roots is a PathEscape (this is the whole boundary);
-    a credential-shaped name is a SecretFile even inside a root."""
+    a credential-shaped name is a SecretFile even inside a root. SBX-5b: another app's listed private data is AppData
+    unless it is `app_data_ok`, the path this call's card was clicked for (`_refuse_app_data`)."""
     if not roots:
         raise PathEscape("nothing is readable — default read is off and no workspace is set")
     if not isinstance(user_path, str) or not user_path.strip():
@@ -306,4 +612,5 @@ def resolve_for_read(user_path: str, roots: list[Path], *, base: Path | None = N
         raise PathEscape(f"path is outside the readable folders: {user_path}")
     if is_secret_name(resolved.name):
         raise SecretFile(f"refusing to read a credential-shaped file: {resolved.name}")
+    _refuse_app_data(resolved, user_path, app_data_ok, app_data)
     return resolved

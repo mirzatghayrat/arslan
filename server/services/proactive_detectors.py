@@ -27,6 +27,7 @@ from arslan.proactive_policy import JOB_REASONS, Candidate, Evidence, ProactiveC
 from server.db import session as db_session
 from server.db.models import (CompanionTask, ProactiveWatch, ScheduledTask, ScheduledTaskRun, TaskRevision)
 from server.services import background_jobs, runtime_messages
+from server.services.scheduler import CONVERSATION_DELETED
 
 #: Tasks stop being interesting after this long (the policy also expires items).
 LOOKBACK = timedelta(days=7)
@@ -108,8 +109,13 @@ async def scheduled_problems(ctx: Context) -> list[Found]:
             runs = (await db.execute(select(ScheduledTaskRun).where(
                 ScheduledTaskRun.task_id == task.id, ScheduledTaskRun.outcome == "error")
                 .order_by(ScheduledTaskRun.id.desc()).limit(3))).scalars().all()
-            evidence = [Evidence("sched.state", {"name": task.name, "failures": task.consecutive_failures or 0,
-                                                 "paused": paused})]
+            state = {"name": task.name, "failures": task.consecutive_failures or 0, "paused": paused}
+            if task.paused_reason == CONVERSATION_DELETED:
+                # SUB5a: not failures in a row. The Inbox words it as the Scheduled page does (`reason`), and the run
+                # that says so is no failure to quote (its reason is the bare code).
+                state["reason"] = CONVERSATION_DELETED
+                runs = [run for run in runs if run.reason != CONVERSATION_DELETED]
+            evidence = [Evidence("sched.state", state)]
             for run in runs:
                 evidence.append(Evidence("sched.run", {"at": (run.started_at or ctx.now).isoformat()},
                                          quote=" ".join(str(run.reason or "").split())[:MAX_QUOTE_CHARS] or None))

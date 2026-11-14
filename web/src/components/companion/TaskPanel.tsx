@@ -13,7 +13,6 @@ import { useArslanStore } from "../../stores/arslanStore";
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
 import { companionError, taskErrorKey } from "./errors";
 import RunReplay from "../RunReplay";
-import TaskWorkers from "./TaskWorkers";
 import TaskValidation from "./TaskValidation";
 import MemoryEvidence from "./MemoryEvidence";
 
@@ -183,7 +182,6 @@ export default function TaskPanel({ conversationId, onResume, compact = false }:
           <p className="whitespace-pre-wrap break-words rounded-lg bg-foreground/5 p-3">{detail.spec.instruction}</p>
           <p className="font-medium">{t(`tasks.${detail.state.phase}`)}</p>
           <p className="text-xs leading-relaxed text-muted-foreground">{t(taskReason(detail.pause_reason))}</p>
-          <TaskWorkers workers={detail.workers ?? []} onOpenRun={id => { setOpen(false); setReplayRunId(id); }} />
           <TaskValidation task={detail} />
           <MemoryEvidence conversationId={detail.conversation_id} taskId={detail.spec.id} />
           <div className="rounded-lg border border-border p-3"><h3 className="mb-2 font-medium">{t("tasks.budget")}</h3>

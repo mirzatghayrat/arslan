@@ -86,12 +86,15 @@ def test_harness_environment_has_no_ambient_credentials_or_config(tmp_path, monk
     assert h.env["ARSLAN_SECRET_KEY_FILE"] == ""
 
 
-def test_legacy_profile_replaces_and_restores_cached_temp_root(tmp_path, monkeypatch):
+def test_commands_profile_replaces_and_restores_cached_temp_root(tmp_path, monkeypatch):
+    """The commands preset names Arslan's commands cache next to the runs' root, under `tempfile`'s cached root:
+    the harness swaps in its scratch temp while it writes the text, and puts the parent's back after."""
     stale = str(tmp_path / "cached-host-temp")
     monkeypatch.setattr(tempfile, "tempdir", stale)
-    h = Harness(tmp_path / "scratch", "legacy-commands")
+    h = Harness(tmp_path / "scratch", "commands")
     text = h.profile()
     assert f'(subpath "{h.temp}")' in text
+    assert f'(subpath "{h.temp}/arslan-cache-' in text
     assert stale not in text
     assert tempfile.tempdir == stale
 

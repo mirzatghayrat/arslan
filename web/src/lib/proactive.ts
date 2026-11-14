@@ -8,7 +8,7 @@ import { isolate } from "./outsideText";
 /** Q7 (the user, "as recommended"; ⓪Plan's reading, 2026-11-01): how many days a handled reminder keeps its row, by kind: the
  *  server's FRESH_DAYS (arslan/proactive_policy.py; kept-days-agrees-with-backend.test.ts ties the two), counted from when it was
  *  handled (PR 615 review F2), or from when it was made on an older server, which does not say. */
-export const KEPT_DAYS: Record<string, number> = { job_followup: 7, scheduled_problem: 14, web_change: 14, folder_change: 14, brief: 2 };
+export const KEPT_DAYS: Record<string, number> = { job_followup: 7, scheduled_problem: 14, web_change: 14, folder_change: 14 };
 const OPEN_STATUSES = new Set(["new", "seen"]);
 /** Open: new or seen. Only an open reminder carries a dot. */
 export const isOpen = (item: Pick<ProactiveItem, "status">) => OPEN_STATUSES.has(item.status);
@@ -42,11 +42,17 @@ export function evidencePath(evidence: Pick<ProactiveEvidence, "key" | "params">
   return evidence.key;
 }
 
+/** SUB5a: a task paused because its conversation was deleted did not fail in a row. Its line is the Scheduled page's own words
+ *  for that pause (ScheduledTasksCard's reasonText), not "failed 0 times". */
+const PAUSE_REASONS = new Set(["conversation_deleted"]);
+
 export function evidenceLines(t: TFunction, language: string, evidence: ProactiveEvidence[]): EvidenceLine[] {
   return evidence.map((line) => {
     const params: Record<string, unknown> = { ...isolated(line.params), ...countOf(line.params) };
     if (typeof line.params.at === "string") params.at = formatUiDateTime(line.params.at, language);
-    return { key: line.key, text: t(`proactive.evidence.${evidencePath(line)}`, params) as string, ...(line.quote ? { quote: line.quote } : {}) };
+    const reason = line.key === "sched.state" ? line.params.reason : undefined;
+    const key = typeof reason === "string" && PAUSE_REASONS.has(reason) ? `scheduled.reason.${reason}` : `proactive.evidence.${evidencePath(line)}`;
+    return { key: line.key, text: t(key, params) as string, ...(line.quote ? { quote: line.quote } : {}) };
   });
 }
 

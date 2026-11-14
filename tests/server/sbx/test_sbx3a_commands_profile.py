@@ -5,8 +5,9 @@
 - The writable roots come tagged (§1b): `in_scope` (the work folder), `shared_cache` (temp and the caches),
   `device` (the narrowed /dev entries). Temp is the run's own folder (test_sbx3_run_temp.py), in scope.
   `in_scope()` judges a path where it resolves.
-- `deny_write_after_roots` (§e) is HR's parameter. It is written after the writable roots and before the
-  protected paths, so the last rule wins.
+- HR's write denies (§e) come after every grant and reopen (HR-1's `RUN_LATER_TEXT` below), so the last rule wins.
+  The pre-SBX-3 text and its `deny_write_after_roots` parameter are gone (v0.1.64); the checks they carried that the
+  live profile needs are below, against `commands_profile`.
 - /dev is narrowed (§1) to the null and zero devices, the terminal, the descriptors and ptys.
 - Mail, Messages and Photos data are closed (§1, the user's Q3), like Desktop/Documents/Downloads while that
   setting is off. Safari's data is already a protected path.
@@ -116,29 +117,6 @@ def test_in_scope_judges_a_path_where_it_resolves(work):
     assert not command_sandbox.in_scope(Path(next(r.path for r in roots if r.tag == "shared_cache")) / "x", roots)
 
 
-# ── §e: HR's parameter, and the order of the rules ───────────────────────────
-
-def test_hrs_denies_come_after_the_writable_roots_and_before_the_protected_paths(tmp_path):
-    for folder in ("ws", "closed/ws", "prot"):
-        (tmp_path / folder).mkdir(parents=True)
-    text = command_sandbox.profile(
-        [tmp_path / "ws", tmp_path / "closed/ws"], [tmp_path / "prot"], closed=[tmp_path / "closed"],
-        devices=('(literal "/dev/null")',), deny_write_after_roots=[tmp_path / "ws/placeholder"])
-    assert text.replace(os.path.realpath(tmp_path), "<T>") == """\
-(version 1)
-(allow default)
-(deny appleevent-send)
-(deny file-write* (subpath "/"))
-(allow file-write* (subpath "<T>/ws") (subpath "<T>/closed/ws"))
-(allow file-write* (literal "/dev/null"))
-(deny file-read* file-write* (subpath "<T>/closed"))
-(allow file-read* file-write* (subpath "<T>/closed/ws"))
-(deny file-write* (subpath "<T>/ws/placeholder"))
-(deny file-read* file-write* (subpath "<T>/prot"))
-(deny network-outbound (subpath "<T>/prot"))
-"""
-
-
 # ── §1 and the flip: the commands profile is the default-deny base ────────────
 
 @pytest.fixture
@@ -215,6 +193,59 @@ def test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_c
     assert shown[len(shown) - 6 - len(later)].startswith("(deny network-outbound ")   # the base's protected sockets
 
 
+# ── checks moved from the pre-SBX-3 text (v0.1.64, when `command_sandbox.profile` went) ──
+
+def test_a_closed_folder_with_nothing_inside_to_reopen_stays_closed(home):
+    """The default case for the user's closed folders (Desktop, Documents, Downloads while the setting is off):
+    no work or project folder inside them, so nothing is reopened after the base closes them, and a project
+    folder elsewhere adds not a single rule."""
+    desk, other = home / "Desktop", home / "other"
+    for folder in (desk, other):
+        folder.mkdir()
+    shut = command_sandbox._resolved([desk, *command_sandbox.app_data()])
+    roots = command_sandbox.writable_roots(home / "ws")
+    expected = sandbox_profile.default_deny_profile(
+        [Path(r.path) for r in roots if r.tag != "device"],
+        [*command_sandbox.default_protected(), *command_sandbox.cap6b_folders()],
+        closed=shut, network=NetworkMode.NONE) + _shared_caches_read_only()
+    assert command_sandbox.commands_profile(home / "ws", offline=True, closed=[desk]) == expected
+    assert command_sandbox.commands_profile(home / "ws", offline=True, closed=[desk], readable=[other]) == expected
+
+
+def test_a_folder_name_cannot_add_rules_to_the_commands_profile(home):
+    """A work folder's name is one SBPL string (`sbpl_string`): with every quoted string blanked, the profile for
+    a folder named like a rule has exactly the shape of one for a plain name."""
+    import re
+    evil = home / 'a") (allow default) (allow file-write* (subpath "/'
+    plain = home / "plain"
+    for folder in (evil, plain):
+        folder.mkdir()
+    texts = [command_sandbox.commands_profile(folder, offline=True) for folder in (evil, plain)]
+    assert sandbox_profile.sbpl_string(str(command_sandbox._real(evil))) in texts[0]
+    shapes = [re.sub(r'"(?:\\.|[^"\\])*"', '""', text) for text in texts]
+    assert "(allow default)" not in shapes[0]
+    assert shapes[0] == shapes[1]
+
+
+def test_the_commands_profile_resolves_links_and_closes_a_protected_file_as_a_literal(home, monkeypatch):
+    """Seatbelt matches real paths: a work folder reached through a link is granted where it resolves, and so is a
+    protected path; a protected file is closed exactly (`literal`), a folder with everything under it (`subpath`)."""
+    key, data = home / "updater.key", home / "data"
+    key.write_text("k")
+    data.mkdir()
+    for name, target in (("ws-link", home / "ws"), ("key-link", key), ("data-link", data)):
+        (home / name).symlink_to(target)
+    monkeypatch.setattr(command_sandbox, "default_protected", lambda: [home / "key-link", home / "data-link"])
+    text = command_sandbox.commands_profile(home / "ws-link", offline=True)
+    grant = next(line for line in text.splitlines() if line.startswith("(allow file-write* "))
+    assert f'(subpath "{command_sandbox._real(home / "ws")}")' in grant
+    closing = [line for line in text.splitlines() if line.startswith("(deny file-read* file-write* ")][-1]
+    assert f'(literal "{command_sandbox._real(key)}")' in closing
+    assert f'(subpath "{command_sandbox._real(data)}")' in closing
+    for name in ("ws-link", "key-link", "data-link"):
+        assert f'"{home / name}"' not in text, name
+
+
 def test_the_sbx_harness_registers_the_product_preset():
     from tests.server.sbx.harness import BUILT_BASES, Harness
     assert BUILT_BASES["commands"] is not Harness._measurement_profile
@@ -251,12 +282,13 @@ async def test_a_work_folder_inside_a_closed_folder_and_a_saved_copy_still_work(
     assert result["sandbox"] == "workspace" and result["ok"], result
     assert result["stdout"].split() == ["hi", "kept"]
 
-def test_only_sbx2s_harness_calls_the_baseline_helpers():
-    """`default_writable` and `temp_roots` stay only for the harness's historical baseline (DELETE-BY in
-    command_sandbox.py); no product path writes a profile from them."""
-    import re
-    root = Path(__file__).resolve().parents[3]
-    callers = sorted(str(p.relative_to(root)) for folder in ("server", "arslan", "scripts", "tests")
-                     for p in (root / folder).rglob("*.py")
-                     if re.search(r"\b(default_writable|temp_roots)\(", p.read_text(encoding="utf-8")))
-    assert callers == ["server/services/command_sandbox.py", "tests/server/sbx/harness.py"]
+def test_the_pre_sbx3_profile_and_its_harness_baseline_are_gone(tmp_path):
+    """v0.1.64 (SBX-2 harness retention, DELETE-BY reached): the allow-default commands text, the shared temp roots
+    it granted and SBX-2's `legacy-commands` base built from them are gone, so nothing can start a command, or
+    measure one, on the old policy again."""
+    from tests.server.sbx.harness import BUILT_BASES, MEASUREMENT_BASES, Harness
+    for name in ("profile", "default_writable", "temp_roots", "_darwin_user_dir", "_CS_DARWIN_USER_TEMP_DIR"):
+        assert not hasattr(command_sandbox, name), name
+    assert "legacy-commands" not in MEASUREMENT_BASES and "legacy-commands" not in BUILT_BASES
+    with pytest.raises(NotImplementedError):
+        Harness(tmp_path, "legacy-commands")._measurement_profile()

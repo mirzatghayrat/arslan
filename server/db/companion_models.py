@@ -38,6 +38,10 @@ class ConversationContext(Base):
     # 0091 (SUB5a): what a sub-session owes its parent, kept for a restart (`sub_sessions.WORKING` and its siblings).
     # NULL: nothing owed (summed up, dropped, or not a sub-session).
     sub_state = Column(String(20), nullable=True)
+    # 0098 (S5a): this conversation's permission mode (`permissions.MODES`; NULL = the default) and what plan's "Start"
+    # goes back to. Set only by PUT /conversations/{id}/permission-mode and its /start, never by the context PUT.
+    permission_mode = Column(String(20), nullable=True)
+    previous_mode = Column(String(20), nullable=True)
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

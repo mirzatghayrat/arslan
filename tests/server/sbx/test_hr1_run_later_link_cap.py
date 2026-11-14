@@ -34,7 +34,10 @@ REPOSITORIES = run_later.WALK_HELD // 2 + 22
 
 def _lay_out(folder, links: int) -> None:
     for i in range(REPOSITORIES):
-        (folder / f"{STAND_IN}-r{i:04}" / ".git" / "hooks").mkdir(parents=True)
+        git = folder / f"{STAND_IN}-r{i:04}" / ".git"
+        for name in ("hooks", "objects", "refs"):          # HR-1c: what git takes for a repository, so D answers
+            (git / name).mkdir(parents=True)
+        (git / "HEAD").write_text("ref: refs/heads/main\n")
     for i in range(links):
         target = folder / f"{STAND_IN}-l{i:04}" / "vsc"            # an ordinary name
         target.mkdir(parents=True)

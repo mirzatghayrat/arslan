@@ -57,7 +57,27 @@ def test_ids_are_unique_and_every_row_names_a_layer():
     from server.services import run_later
     later = {row.id for row in hard_rules.RUN_LATER}
     assert {"run-later/" + name for name, _ in run_later.FAMILIES} <= later
-    assert {row.layer for row in hard_rules.RUN_LATER} == {"kernel"}
+    assert {row.layer for row in hard_rules.RUN_LATER if not row.id.startswith(("run-later/direct-forms",
+            "run-later/click-lift", "run-later/never-auto", "run-later/file-tools"))
+            and row.id != "run-later/write-token"} == {"kernel"}         # HR-2a's file-tool rows hold in-process
+    # HR-3 part 1: the direct forms (the parser), the click-lift rule (the gate) and never_auto's command part.
+    assert {"run-later/direct-forms", "run-later/click-lift", "run-later/never-auto"} <= later
+
+
+#: HR-1c: the check after each command, one row per thing it undoes or names (written out, not derived).
+POST_RUN_IDS = {"post-run/hooks-quarantine", "post-run/config-revert", "post-run/include-check"}
+
+
+@pytest.mark.timeout(600)
+def test_the_post_run_rows_resolve_like_the_others():
+    rows = [row for row in hard_rules.ALL if row.layer == "post-run"]
+    assert "post-run" in hard_rules.LAYERS and {row.id for row in rows} == POST_RUN_IDS
+    assert rows == list(hard_rules.POST_RUN)
+    for row in rows:
+        module, name = row.holder.split(":")
+        assert module == "server.services.git_config_guard"
+        assert callable(getattr(importlib.import_module(module), name)), row.id
+    assert hr.unresolved(rows, hr.collected(tuple(sorted({row.test.split("::")[0] for row in rows})))) == []
 
 
 def _row_files() -> tuple[str, ...]:

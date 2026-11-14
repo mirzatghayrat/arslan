@@ -1,8 +1,8 @@
 """Caller identity for the tool-dispatch throat (brain-P2 Task 1).
 
 Executors currently get only `execute(args)` — no identity of WHO is calling. This contextvar
-carries that identity from the run_native entry points (arslan.py's host answer path as "host",
-task_workers.py's background workers as "worker"; spawn_loop went in C7b-4) through
+carries that identity from the run_native entry points (arslan.py's host answer path as "host";
+spawn_loop went in C7b-4, the delegated "worker" path in v0.1.64 SUB6) through
 tool_execute.run_executor, so a later
 memory-write executor can read `current_caller()` to enforce scope isolation.
 

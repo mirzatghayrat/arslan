@@ -130,6 +130,10 @@ async def test_wrapping_up_may_process_files_but_only_offline(monkeypatch):
     monkeypatch.setattr(tool_gates, "_writing_in_own_folder", own)
 
     async def allow(*_a, **_k):
+        # HR-3 part 1: where seatbelt can't start (CI's Linux) this unread command runs outside the sandbox, so only
+        # the user's own click on its card runs it; the card records that click, as decide does.
+        from server.services import permissions
+        permissions.LAST_DECISION.set(permissions.Decision(True, "user", "once"))
         return True
     from server.registry import executors
     monkeypatch.setitem(executors.EXECUTORS, "web_search", _Blocked())

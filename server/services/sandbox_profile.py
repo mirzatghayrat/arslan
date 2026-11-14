@@ -1,7 +1,7 @@
 """Writing seatbelt profiles: the one place Arslan turns paths and permissions into SBPL (SBX-1, v0.1.64).
 
 The profiles Arslan starts processes under are written with this module: commands in and out of
-the sandbox (`command_sandbox.profile`, `minimal_profile`), `run_python` and the artifact checks
+the sandbox (`command_sandbox.commands_profile`, `minimal_profile`), `run_python` and the artifact checks
 (`code_sandbox.computation_profile`), installed MCP servers (`capability_sandbox.profile`) and
 `ssh_run` (`ssh_exec.ssh_profile`). Each of those keeps its own rules; SBX-1 moved how they are
 written here without changing a byte of what they produce, and SBX-1b changed how a path is spelt
@@ -35,10 +35,16 @@ from collections.abc import Callable, Iterable
 from enum import Enum
 from pathlib import Path
 
+from server.services import root_pin
+
 
 def real(path) -> Path:
-    """`path` with `~` expanded and every link resolved: what seatbelt compares against."""
-    return Path(os.path.realpath(os.path.expanduser(str(path))))
+    """`path` with `~` expanded and every link resolved: what seatbelt compares against. SBX-9: a root pinned for the
+    profile being built (`root_pin.pinned`) is its real path already and is never resolved again."""
+    text = os.path.expanduser(str(path))
+    if root_pin.is_pinned(text):
+        return Path(text)
+    return Path(os.path.realpath(text))
 
 
 #: The characters `sbpl_string` changes. A text with none of them is returned as is, quoted: the same output, without

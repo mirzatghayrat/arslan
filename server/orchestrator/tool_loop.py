@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 
 from arslan.execution_budget import BudgetExceeded, governed
 from arslan.llm import tool_names, trajectory, usage_sink
@@ -13,7 +12,7 @@ from arslan.runtime_policy import ProgressPolicy, bounded_history
 from server.orchestrator import run_trace
 from server.orchestrator.answer_salvage import _CHAT_TIMEOUT_S
 from server.orchestrator import command_gate, on_demand, tool_execute, tool_gates, turn_answer, turn_context
-from server.orchestrator.command_gate import _nobody_to_ask, _scheduled_command_refused
+from server.orchestrator.command_gate import _scheduled_command_refused, refuses_commands
 from server.orchestrator.model_step import (
     _SENT_IS_FINAL, _SchemaDrops, _context_parts, _hiding, _model_call, _rendered_size, _server_trims)
 from server.orchestrator.turn_stream import TextShown, _StepStream, _TurnText, _streams_answer
@@ -23,7 +22,6 @@ from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services.llm_factory import build_adapter
-from server.services.replay_safety import _check_fetch_budget
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +201,7 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     if reached and (_untrusted.counts_as_external(tool_key, args)
                     or (tool_key in ("read_skill", "background_status", "find_tools")  # S64-0b/0c: per result
                         and result.get("external") is True)):
-        _untrusted.mark_external()           # 0.1.52: this turn read outside content
+        _untrusted.mark_external(raw_payload)    # 0.1.52: this turn read outside content (NET-a: its sites, as read)
     if not _untrusted.known_local_call(tool_key, result):
         _untrusted.mark_off_the_list()       # INB2 (#475 F2): any call off the user's allowlist, run or not
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
@@ -467,7 +465,7 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
     from server.orchestrator import untrusted
     if any(untrusted.odd_mcp_key(key) for key in live if tool_names.wire(key) in near):
         # S64-0c: a key it lists carries a server's odd tool name: framed (no external: False), and marked.
-        untrusted.mark_external()
+        untrusted.mark_external(result["error"])
         del result["external"]
     return result
 
@@ -497,15 +495,6 @@ async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> d
         safe_call = json.dumps({"tool": tool_key, "args": {}}, ensure_ascii=False)
         return _record_tool_result(tool_key, {}, result, emit, tool_trace, safe_call, convo,
                                    mcp_fail_counts=mcp_fail_counts)
-    from server.services.task_workers import current as current_worker
-    worker = current_worker()
-    if worker is not None:
-        from server.services.task_service import current as current_task
-        task = current_task()
-        if task is None or task.task_id != worker.task_id or tool_key not in worker.allowed_tools:
-            return _record_tool_result(tool_key, {}, {"ok": False, "external": False,
-                "code": "worker_tool_scope_denied", "error": "This collaborator cannot use that tool."},
-                emit, tool_trace, json.dumps({"tool": tool_key, "args": {}}), convo)
     from server.services import desktop_status
     emit({"type": "tool_call", "tool": tool_key,
           "args_summary": json.dumps(args, ensure_ascii=False)[:200],
@@ -514,11 +503,11 @@ async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> d
           "target": desktop_status.step_target(tool_key, args)})
     desktop_status.note_step(tool_key, args)   # the island's "now doing" line (0.1.51)
 
-    # v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask (a scheduled run) runs no command
-    # at all, whatever rule, grant or "always" answer stands. Refused here, before whether this turn could run it
-    # is read: run_command is not offered there, and naming it anyway (or through use_tool) must still be listed in
-    # the Inbox and explained, not answered "not available". DELETE-BY: v0.1.64, with S2a-3 and PR4.
-    if tool_key == "run_command" and _nobody_to_ask(confirm_command):
+    # A run with nobody to ask runs no command at all, whatever rule, grant or "always" answer stands, unless it is a
+    # scheduled task's own fire (ASK1-b: the gate then runs what needs no card, in the sandbox). The heartbeat and a
+    # sub-session's turn with nobody to ask are refused here, before whether this turn could run it is read:
+    # run_command is not offered there, and naming it anyway (or through use_tool) is still listed and explained.
+    if tool_key == "run_command" and refuses_commands(confirm_command, conversation_id):
         return _record_tool_result(tool_key, args, await _scheduled_command_refused(args, conversation_id), emit,
                                    tool_trace, assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
 
@@ -536,8 +525,8 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append one
     framed tool-result record into convo. Returns the raw result dict.
 
-    The stages, in today's order (LOOP1 c2): admit, the eval allowance, the tool's own gate (`Tool.gate`), the eval
-    backstop, execute, after."""
+    The stages, in today's order (LOOP1 c2): admit, plan mode (S5a), the tool's own gate (`Tool.gate`), execute,
+    after."""
     emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
     mcp_fail_counts, conversation_id = turn.mcp_fail_counts, turn.conversation_id
     from arslan.execution_budget import current
@@ -546,11 +535,11 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     if isinstance(live, dict):
         return live
 
-    # FU-2b: the eval/replay allowance (live reads have none since 0.1.63 K4b).
-    refusal = await _check_fetch_budget(tool_key, conversation_id=conversation_id)
+    # S5a: plan mode runs reads only, before any card or file I/O.
+    from server.services import permissions
+    refusal = await permissions.plan_refusal(tool_key, args, conversation_id)
     if refusal is not None:
-        return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
-                                   assistant_content, convo,
+        return _record_tool_result(tool_key, args, refusal, emit, tool_trace, assistant_content, convo,
                                    mcp_fail_counts=mcp_fail_counts)
 
     # The tool's own gate (LOOP1 c2): the refusal to record (enrolling's card is its answer), the command gate's
@@ -565,12 +554,6 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
         if gated is not None:
             plan = gated
 
-    refusal = _eval_backstop(tool_key, conversation_id)
-    if refusal is not None:
-        return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
-                                   assistant_content, convo,
-                                   mcp_fail_counts=mcp_fail_counts)
-
     executor = await resolve_executor(tool_key)
     if executor is None:
         result = await _unavailable(tool_key, live)
@@ -584,36 +567,6 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     return await _after(tool_key, args, result, assistant_content, turn)
 
 
-def _eval_backstop(tool_key, conversation_id) -> dict | None:
-    """The last common gate, after the tool's own: in an eval or replay, only what is safe to replay runs."""
-    # Fail-closed hermetic backstop (eval sealing): in an evolution eval/replay context,
-    # refuse ANY tool that isn't read-only-safe, independent of resolve_tools() and the
-    # replay flag. This is the throat every tool call passes through (model-driven AND the
-    # force_tools pre-run), so a forgotten upstream replay=True cannot silently re-open a
-    # side-effecting tool. run_python's unsandboxed escape valve is also refused here — a
-    # networked run_python is not hermetic.
-    from server.services.replay_safety import is_hermetic_context, is_replay_safe
-    if is_hermetic_context(conversation_id):
-        # Honest, model-readable refusal: the model's behavior here is scored by the judge,
-        # so name the eval context explicitly and tell it not to retry side-effecting tools
-        # (a generic "failed" would make it flail with compensatory actions that pollute the
-        # score). The refusal itself is deterministic and identical across arms.
-        if not is_replay_safe(tool_key):
-            result = {"ok": False, "external": False,
-                      "error": f"evaluation context: '{tool_key}' is unavailable here. This "
-                               "run is a hermetic evaluation replay that exposes read-only "
-                               "tools only (no side-effecting or external tools). Do not retry "
-                               "this tool — answer with the read-only tools you have."}
-            return result
-        if tool_key == "run_python" and os.environ.get("ARSLAN_ALLOW_UNSANDBOXED_PY"):
-            result = {"ok": False, "external": False,
-                      "error": "evaluation context: run_python is unavailable because the "
-                               "unsandboxed escape valve (ARSLAN_ALLOW_UNSANDBOXED_PY) is set; "
-                               "a networked run_python is not hermetic. Answer without it."}
-            return result
-    return None
-
-
 async def _after(tool_key, args, result, assistant_content, turn: ToolTurn) -> dict:
     """The last stage: the call's one record, and the degrade hint the first time an MCP tool fails often enough."""
     emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
@@ -624,9 +577,9 @@ async def _after(tool_key, args, result, assistant_content, turn: ToolTurn) -> d
     if (log_events and mcp_fail_counts is not None and mcp_hint_logged is not None
             and mcp_fail_counts.get(tool_key, 0) >= _MCP_FAIL_HINT_AT
             and tool_key not in mcp_hint_logged):
-        # log_events=False (E3 hermetic replay): the degrade counter still advances (the
-        # guard runs), only the ConversationEvent write is suppressed. In replay MCP tools
-        # are filtered out anyway, so this is belt-and-suspenders against a hallucinated key.
+        # log_events=False (a temporary turn): the degrade counter still advances (the
+        # guard runs), only the ConversationEvent write is suppressed. A temporary turn has
+        # no tools, so `_admit` refuses a hallucinated key before this: belt-and-suspenders.
         mcp_hint_logged.add(tool_key)
         await _log_degrade_hint(conversation_id, tool_key, mcp_fail_counts[tool_key])
     return out
@@ -759,8 +712,8 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     0.1.63 K3: sorted by name, `escalate` last. The table renders before Claude's cached system, so its
     order is part of the cache key; tools loaded later (K7) are appended after it, never sorted in."""
     from server.orchestrator import untrusted
-    if any(untrusted.odd_mcp_key(t["key"]) for t in wired):
-        untrusted.mark_external()       # S64-0c: a key in the table carries a server's odd tool name
+    if odd := [t["key"] for t in wired if untrusted.odd_mcp_key(t["key"])]:
+        untrusted.mark_external("\n".join(odd))     # S64-0c: a key in the table carries a server's odd tool name
     schemas: list[dict] = []
     resident = sorted((t for t in wired if not t.get("appended")), key=lambda tool: tool["key"])
     for t in resident + [t for t in wired if t.get("appended")]:
@@ -816,9 +769,12 @@ async def run_native(**kwargs) -> dict:
     request, state = TurnRequest(**kwargs), TurnState()
     from server.orchestrator import untrusted as _untrusted
     from server.services import tool_outputs
-    seen = _untrusted.track_turn()
-    if _untrusted.history_from_outside(request.history) or _untrusted.context_from_outside(request.user_content):
-        _untrusted.mark_external()       # S64-0b: a job's result framed as outside content, or a summary of one
+    seen = _untrusted.track_turn(request.conversation_id)
+    framed = _untrusted.outside_history(request.history)
+    if framed or _untrusted.context_from_outside(request.user_content):
+        # S64-0b: a job's result framed as outside content, or a summary of one (NET-a: the framed texts' sites; a
+        # summary's are recorded by the caller that has its text, `untrusted.outside_summary`, Codex round 1 F5)
+        _untrusted.mark_external("\n".join(framed))
     sent_is_final = _SENT_IS_FINAL.set(False)
     # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).
     copies_of = tool_outputs.conversation.set(request.conversation_id)
@@ -828,16 +784,23 @@ async def run_native(**kwargs) -> dict:
             result["external_seen"] = _untrusted.external_seen()
             _learn_after(request, state, result)
         return result
-    except BudgetExceeded:
+    except BudgetExceeded as stopped:
         from server.services import background_jobs
         trace = state.tool_trace
         # 0.1.52: the chat path passes ToolCaller(actor="host"); checking for no caller
         # at all left this closing message unreachable from a real chat turn.
         host_turn = _host_turn(request.caller, request.progress_lane)
-        if not host_turn or background_jobs.inside_job() \
-                or not any((t.get("result") or {}).get("ok") for t in trace):
+        if host_turn and background_jobs.inside_job():
+            # A job's turn ends with no text here (a job shows no streamed text, and nothing is returned). The job
+            # records the stop and reports it; the report carries what this turn's records show (`_report`).
+            stopped.closing = await _stop_records(request, state)
+        if not host_turn or background_jobs.inside_job():
             raise                       # workers and jobs record the stop themselves
         text = await _budget_closing(trace, state.ws_root, state.started)
+        if not any((t.get("result") or {}).get("ok") for t in trace) and (records := await _stop_records(request,
+                                                                                                         state)):
+            # Nothing ran, so the closing alone names nothing: what was blocked and what is left, from the records.
+            text = f"{text}\n\n{records}"
         from server.services.task_service import current as current_task
         task = current_task()
         if task is not None:
@@ -850,6 +813,15 @@ async def run_native(**kwargs) -> dict:
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
                 "external_seen": _untrusted.external_seen()}
+    except asyncio.CancelledError:
+        # A job's wall clock ran out: its timeout cancels this turn, so no BudgetExceeded reaches here. The job's
+        # report gets the same closing as a budget stop (`background_jobs._execute`). The user's stop is not this.
+        from arslan.execution_budget import wall_clock_expired
+        from server.services import background_jobs
+        if (_host_turn(request.caller, request.progress_lane) and background_jobs.inside_job()
+                and wall_clock_expired()):
+            background_jobs.note_wall_closing(await _stop_records(request, state))
+        raise
     finally:
         # K9b: a message read after the last batch that no request carried (the turn stopped, hit its limit
         # or failed first) goes back to its sender, to run once as a turn of its own.
@@ -875,6 +847,26 @@ def _learn_after(request: TurnRequest, state: TurnState, result: dict) -> None:
         trace=list(state.tool_trace), external_seen=bool(result.get("external_seen")),
         recalled=list(state.recalled_lessons),
         ok=bool(result.get("final")) and not result.get("stop_reason"), emit=request.emit))
+
+
+async def _stop_records(request: TurnRequest, state: TurnState) -> str:
+    """Done / Blocked / Left for a turn a limit stopped, from its own records (`answer_salvage._records_closing`):
+    a job's against the goal the user gave it, a chat turn's against the user's message. "" if it failed."""
+    from server.orchestrator import answer_salvage
+    from server.services import background_jobs, personal_context, runtime_messages
+    ctx = personal_context.current()
+    request_text = (background_jobs.current_goal() or (ctx.query if ctx is not None else "")
+                    or (request.user_content if isinstance(request.user_content, str) else ""))
+    try:
+        return answer_salvage._records_closing(request_text, state.tool_trace, state.plan.items if state.plan else [],
+                                               locale=await runtime_messages.selected_locale())
+    except Exception:  # noqa: BLE001 — broad on purpose, and loud: see below
+        # This runs while a stop propagates (BudgetExceeded, or the wall clock's cancellation). Whatever it raised
+        # would replace that stop: the job would read as failed rather than out of budget, and the chat turn would
+        # lose its closing. So any failure is logged as an error with its traceback, and the stop goes on with the
+        # job's budget note (or the chat's closing) and no records.
+        logger.exception("stop closing not written")
+        return ""
 
 
 async def _budget_closing(trace: list, ws_root, started: float) -> str:

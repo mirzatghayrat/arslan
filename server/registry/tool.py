@@ -29,8 +29,10 @@ class Offer:
     ssh: bool
     enrolled: bool              # SSH is on and a machine is enrolled
     folders_open: bool          # run_command's words follow this later read of the folder setting
-    nobody_to_ask: bool         # a task's turn with no card surface (a scheduled run). DELETE-BY: as at its read
+    nobody_to_ask: bool         # a task's turn with no card surface (a scheduled fire, the heartbeat)
+    fire: bool                  # ASK1-b: a scheduled task's own fire (command_gate.fire_runs_commands)
     shell: bool
+    bottom_layer: bool          # SUB5e: this conversation is a sub-session's sub-session (or its chain can't be read)
 
 
 async def read_offer(skill_index: Callable[[], Awaitable[str]]) -> Offer:
@@ -66,16 +68,34 @@ async def read_offer(skill_index: Callable[[], Awaitable[str]]) -> Offer:
     async with db_session.AsyncSessionLocal() as db:
         # Read again, in this session, for the command's words only: the tools around it keep the first read.
         folders_open = await settings_service.default_read_enabled(db)
-        # v0.1.63 (the user's decision until S2a-3 lands): a turn with nobody to ask (a scheduled run) runs no
-        # command, so none is offered there; the tool loop refuses one anyway. Outside a turn (the Capabilities
-        # page) the list says what a turn is offered. DELETE-BY: v0.1.64, with S2a-3 and PR4 (scheduled runs get
-        # read-only commands back).
+        # A turn with nobody to ask runs no command, so none is offered there (the tool loop refuses one anyway),
+        # except a scheduled task's own fire (ASK1-b). Outside a turn (the Capabilities page) the list says what a
+        # turn is offered.
         nobody_to_ask = task_service.current() is not None and permissions.current_asker() is None
+        from server.orchestrator import command_gate
+        fire = nobody_to_ask and command_gate.fire_runs_commands(context.conversation_id if context else None)
         shell = await settings_service.shell_enabled(db)
+    bottom_layer = await _bottom_layer(context.conversation_id if context is not None else None)
     return Offer(in_task=in_task, in_job=in_job, can_ask=can_ask, browser=browser, mac=mac, hands=hands,
                  scheduled=scheduled, skills=skills, in_project=bool(context is not None and context.project_id),
                  default_read=default_read, workspace=workspace is not None, own_folder=own_folder, lan=lan, ssh=ssh,
-                 enrolled=enrolled, folders_open=folders_open, nobody_to_ask=nobody_to_ask, shell=shell)
+                 enrolled=enrolled, folders_open=folders_open, nobody_to_ask=nobody_to_ask, fire=fire, shell=shell,
+                 bottom_layer=bottom_layer)
+
+
+async def _bottom_layer(conversation_id: str | None) -> bool:
+    """SUB5e: whether this conversation is on the last layer a sub-session can be (`sub_sessions.MAX_DEPTH`), read from
+    the stored chain. One that can't be read counts as the bottom: it is offered no sub-session, as a chain that can't
+    be read gets none of the permissions."""
+    if not conversation_id:
+        return False
+    from server.db import session as db_session
+    from server.services import sub_sessions
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await sub_sessions.depth(db, conversation_id) >= sub_sessions.MAX_DEPTH
+    except Exception:  # noqa: BLE001 — never a reason to fail a turn's table
+        return True
 
 
 def always(_offer: Offer) -> bool:
@@ -96,13 +116,12 @@ class Traits:
     #                     more strictly than it acts; run_command's grade comes from its command first.
     parallel: bool      # parallel_reads: runs alongside the reads next to it (no card, no shared state)
     outside: bool       # untrusted.counts_as_external: what it returns is outside content
-    replay_safe: bool   # replay_safety: offered in a hermetic replay
     saves: bool         # tool_loop.WRAP_UP_TOOLS: saves a job's deliverable, so it may run while the job wraps up
 
     def __post_init__(self) -> None:
         if self.effect not in get_args(Effect):
             raise ValueError(f"effect {self.effect!r} is not one of {get_args(Effect)}")
-        for name in ("parallel", "outside", "replay_safe", "saves"):
+        for name in ("parallel", "outside", "saves"):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError(f"trait {name} must be True or False, not {getattr(self, name)!r}")
 

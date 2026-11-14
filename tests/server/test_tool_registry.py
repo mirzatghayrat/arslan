@@ -9,7 +9,7 @@ from server.registry.tool import Offer, Tool, Traits
 
 OBJECT = {"type": "object", "properties": {}}
 # LOOP1 a6: every Tool states its traits (no defaults); these tests are about the other fields.
-_TRAITS = Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)
+_TRAITS = Traits(effect="external_write", parallel=False, outside=False, saves=False)
 
 
 def _offer(**values) -> Offer:
@@ -49,6 +49,17 @@ def test_a_job_can_start_only_from_a_turn_where_someone_can_be_asked(in_task, in
     keys = {entry["key"] for entry in tool.listed(tool_defs.TOOLS, offer)}
     jobs = {"start_background_work", "background_status", "stop_background_work"}
     assert (jobs <= keys if offered else not jobs & keys)
+
+
+@pytest.mark.parametrize("in_task,in_job,can_ask,bottom_layer,offered", [
+    (True, False, True, False, True), (False, False, True, False, False), (True, True, True, False, False),
+    (True, False, False, False, False), (True, False, True, True, False)])
+def test_a_sub_session_starts_only_from_a_turn_where_someone_can_be_asked_above_the_bottom_layer(
+        in_task, in_job, can_ask, bottom_layer, offered):
+    """SUB5e: never inside a job (a sub-session's own job, a summary turn), nor on a sub-session's sub-session."""
+    offer = _offer(in_task=in_task, in_job=in_job, can_ask=can_ask, bottom_layer=bottom_layer)
+    keys = {entry["key"] for entry in tool.listed(tool_defs.TOOLS, offer)}
+    assert ("start_sub_session" in keys) is offered
 
 
 def _gates():

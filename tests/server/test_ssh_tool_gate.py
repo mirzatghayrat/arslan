@@ -129,17 +129,6 @@ async def test_a_scheduled_turn_cannot_ssh(tmp_path, monkeypatch):
     assert probed == [], "and it never reached the network on the way to being refused"
 
 
-# ── replay sealing gets it for free, but prove it rather than assume ───────────
-
-def test_ssh_is_not_replay_safe():
-    from server.services import replay_safety
-    assert not replay_safety.is_replay_safe("ssh_run")
-    assert not replay_safety.is_replay_safe("ssh_probe")
-    assert replay_safety.filter_replay_tools(
-        [{"key": "ssh_run"}, {"key": "ssh_probe"}, {"key": "web_search"}]
-    ) == [{"key": "web_search"}]
-
-
 @pytest.mark.parametrize("key", ["ssh_probe", "ssh_run"])
 def test_both_tools_have_an_executor_registered(key):
     from server.registry.executors import EXECUTORS

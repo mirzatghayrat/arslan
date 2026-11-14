@@ -21,7 +21,7 @@ def build_mcp_server() -> FastMCP:
     mcp = FastMCP(
         name="arslan",
         instructions="Arslan personal AI orchestrator — read-only metadata tools "
-                     "(spawns, capabilities, run status).",
+                     "(capabilities, run status).",
         stateless_http=True,
         json_response=True,
         streamable_http_path="/",  # mounted at /mcp-server → endpoint is /mcp-server/
@@ -31,10 +31,6 @@ def build_mcp_server() -> FastMCP:
             allowed_origins=[],  # any present browser Origin is rejected (DNS-rebinding defense)
         ),
     )
-    mcp.add_tool(
-        tools.list_spawns, name="list_spawns",
-        description="List the user's agents (spawns): id, name, domain, capabilities, "
-                    "and equipment keys. Metadata only — no persona or output bodies.")
     mcp.add_tool(
         tools.list_capabilities, name="list_capabilities",
         description="List available built-in tools, connected MCP servers, and skills. "

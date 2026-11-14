@@ -108,6 +108,8 @@ class Checks:
         return 1 if self.failures else 0
 
 
+# DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables
+# (Q3): the legacy_user_facts / legacy_learnings entries in the list below go with those tables.
 def _check_empty_user_storage(conn, c: Checks) -> None:
     objects = dict(conn.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table','view')"))
     for name in ("arslan_messages", "arslan_summaries", "conversation_events", "runs",

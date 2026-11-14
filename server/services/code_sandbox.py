@@ -30,6 +30,7 @@ import sys
 import tempfile
 from pathlib import Path
 from arslan.aio import within
+from server.services import root_pin
 from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, default_deny_profile, literal, real,
                                              subpath)
 
@@ -143,8 +144,8 @@ def computation_profile(python: str, workspace: Path, references: Path | None = 
              Path("/usr/lib"), Path("/usr/share/locale")}
     for prefix in prefixes:
         reads.update({(prefix / "lib").resolve(), (prefix / "bin").resolve()})
-    text = default_deny_profile([workspace.resolve()], readable=[*sorted(reads), workspace.resolve()],
-                                network=NetworkMode.NONE)
+    text = default_deny_profile([real(workspace)], readable=[*sorted(reads), real(workspace)],   # SBX-9: `real`,
+                                network=NetworkMode.NONE)                                    # so a pin holds
     rules = Profile("deny")
     # #666 review: the base opens what computation never had; closed again here, after it (the last rule wins),
     # so the base stays identical across presets. No terminal (tty devices, their ioctls, pseudo-ttys), no file
@@ -364,6 +365,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         return {"ok": False, "sandboxed": False, "network_isolated": False,
                 "error": str(exc)}
     tmp = Path(tempfile.mkdtemp(prefix="arslan-sbx-"))
+    pins: list[root_pin.Pin] = []
     try:
         script = tmp / "main.py"
         script.write_text(code, encoding="utf-8")
@@ -403,7 +405,13 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
         # When references are staged, tighten the seatbelt profile with a kernel write-deny on
         # their REALPATH (resolve symlinks — seatbelt matches realpath; /var → /private/var on
         # macOS). Only emit the rule when the dir exists, and never loosen the base profile.
-        profile = computation_profile(python, tmp, ro_dir if wrote_ro else None) if sandboxed else None
+        # SBX-9: its folder pinned, the profile built from that real path only, checked again right before the spawn.
+        try:
+            pins = [root_pin.pin(tmp)] if sandboxed else []
+        except root_pin.Swapped as exc:
+            return {"ok": False, "sandboxed": sandboxed, "error": root_pin.note(exc), "env_note": env_note}
+        with root_pin.pinned(pins):
+            profile = computation_profile(python, pins[0].path, ro_dir if wrote_ro else None) if sandboxed else None
         wrapper = backend.wrapper(profile) if sandboxed else None
         if sandboxed and not wrapper:
             return {"ok": False, "sandboxed": False, "network_isolated": False,
@@ -420,7 +428,12 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
                 start_new_session=True, preexec_fn=_child_limits,
             )
 
+        try:
+            root_pin.check(pins)
+        except root_pin.Swapped as exc:
+            return {"ok": False, "sandboxed": sandboxed, "error": root_pin.note(exc), "env_note": env_note}
         proc = await _spawn(argv)
+        root_pin.release(pins)
         try:
             out_b, err_b = await within(_bounded_communicate(proc), timeout=timeout_s)
         except asyncio.CancelledError:
@@ -482,6 +495,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
             result["error"] = f"exit {proc.returncode}: {stderr[-500:] or 'no stderr'}"
         return result
     finally:
+        root_pin.release(pins)
         # Restore write perms on the locked-down references/ so rmtree can clean it up
         # (a 0o555 dir / 0o444 files would otherwise leak the tmpdir).
         ro_dir = tmp / "references"

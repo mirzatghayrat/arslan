@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 from server.db.models import ApprovalEvent, ConversationModel, ProviderConfig, Run, RunStep, SshNode
-from server.services import phone_bridge, release_notes, settings_service
+from server.services import permissions, phone_bridge, release_notes, settings_service
 
 FAILURES = 5
 NOTES_MAX = 600
@@ -23,7 +23,10 @@ SOURCE = {
     "plans": "docs/plans/ on main (the newest numbered folder is the version being planned)",
     "note": "Read these on GitHub, not a folder on this Mac.",
 }
-APPROVALS = {"ask_all": "every command asks", "ask_risky": "harmless commands run, the rest ask"}
+#: S5a: the conversation's mode in effect (`permissions.mode_for`).
+APPROVALS = {"plan": "plan: it only reads until the user presses Start", "ask": "every command asks",
+             "ask_risky": "harmless commands run, the rest ask",
+             "full_access": "full access: only money, sending, the network and the hard rules ask"}
 
 
 def _at(moment) -> str:
@@ -67,7 +70,7 @@ async def snapshot(conversation_id: str | None = None) -> dict:
                 models["this_conversation"] = mine
         safety = {
             "command_sandbox": "on" if await settings_service.terminal_sandbox_enabled(db) else "off",
-            "approvals": APPROVALS[await settings_service.shell_confirm_policy(db)],
+            "approvals": APPROVALS[(await permissions.mode_for(conversation_id)).mode],
             "local_network_scan": "on" if await settings_service.lan_discovery_enabled(db) else "off",
         }
         hosts = list((await db.execute(select(SshNode.name).order_by(SshNode.name))).scalars())

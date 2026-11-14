@@ -14,7 +14,7 @@ import sys
 import pytest
 
 from server.services.sandbox_profile import NetworkMode
-from tests.server.sbx import harness
+from tests.server.sbx import harness, proxy_token
 from tests.server.sbx import test_sbx2_kernel as gates
 from tests.server.sbx import test_sbx6_network as network
 
@@ -132,6 +132,7 @@ async def test_trusted_local_devices_are_pinned(net_sbx, feature, scenario, prox
 
     monkeypatch.setattr(proxy, "_trusted", trusted)
     monkeypatch.setattr(proxy, "_dial", dial)
+    proxy_token.register(monkeypatch)          # NET-a: the probe connects as a running command (proxy_token.py)
     # Keep the real public-address refusal logic, replacing only DNS and the
     # transport. Even a regression admitting a private address cannot touch LAN.
     from types import SimpleNamespace
@@ -145,7 +146,8 @@ async def test_trusted_local_devices_are_pinned(net_sbx, feature, scenario, prox
     source = """
 import socket, sys
 with socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=4) as client:
-    client.sendall(('CONNECT ' + sys.argv[2] + ':' + sys.argv[3] + ' HTTP/1.1\\r\\nHost: test\\r\\n\\r\\n').encode())
+    client.sendall(('CONNECT ' + sys.argv[2] + ':' + sys.argv[3] + ' HTTP/1.1\\r\\nHost: test\\r\\n').encode()
+                   + %r + b'\\r\\n')""" % proxy_token.header() + """
     response = b''
     while b'\\r\\n\\r\\n' not in response:
         part = client.recv(1)

@@ -1,10 +1,12 @@
-"""v0.1.63 (the user's decision until S2a-3 lands in v0.1.64): a scheduled run runs no command at all.
+"""A run with nobody to ask that isn't a scheduled task's own fire runs no command at all.
 
-A scheduled run has nobody to ask. Until S2a-3 closes the command classifier's known gaps, it gets no run_command:
-it is not offered there, and the tool loop refuses one anyway (a model may still name it, or reach it through
-use_tool) before any rule, grant or "always" answer is read. The refusal is listed in the Inbox as the row decide()
-writes for a run with nobody to ask (U14 c). Writes still go through write_file into Arslan's own folder.
-DELETE-BY: v0.1.64, with S2a-3 and PR4 (scheduled runs get read-only commands back).
+Since ASK1-b (v0.1.64) a scheduled task's own fire runs commands that need no OK, in the sandbox
+(test_ask1b_scheduled_commands.py). Every other run with nobody to ask keeps the v0.1.63 refusal: the heartbeat (a
+scheduled task whose fire never sets the signal), a sub-session's turn with nobody to ask, and a resumed task. Such a
+run gets no run_command: it is not offered there, and the tool loop refuses one anyway (a model may still name it, or
+reach it through use_tool) before any rule, grant or "always" answer is read. The refusal is listed as the row
+decide() writes for a run with nobody to ask (U14 c). Writes still go through write_file into Arslan's own folder.
+These tests run such a turn with no fire signal set, which is how each of those runs reaches the tool loop.
 """
 from __future__ import annotations
 
@@ -55,7 +57,7 @@ async def _stand(answer: str, command: str) -> None:
     from server.services import terminal_policy
     async with db_session.AsyncSessionLocal() as db:
         if answer == "ask only for risky commands":
-            db.add(Setting(key="shell_confirm_policy", value="ask_risky"))
+            db.add(Setting(key="default_permission_mode", value="ask_risky"))
         elif answer == "always, this exact command":
             await permission_store.add_rule(db, "command", "text:" + command)
         elif answer == "always, the rules it matches":
@@ -90,7 +92,7 @@ async def test_a_scheduled_run_never_starts_a_command_whatever_answer_stands(ran
     await _stand(answer, command)
     out = await _dispatch(command)
     assert ran == [] and out["ok"] is False
-    assert "nobody to ask" in out["error"] and "don't run commands" in out["note"]
+    assert "nobody to ask" in out["error"] and "doesn't run commands" in out["note"]
     [row] = await _rows()                                            # listed in the Inbox, once
     assert (row.kind, row.target, row.decided_by, row.decision, row.conversation_id) == (
         "command", "text:" + command, "policy", "deny", CID)
@@ -163,12 +165,12 @@ class _CallsACommand:
 
 @pytest.mark.parametrize("offered,through", [(False, "run_command"), (False, "use_tool"), (True, "run_command")],
                          ids=["as offered", "through use_tool", "offered by mistake"])
-async def test_a_real_scheduled_turn_with_every_standing_answer_runs_no_command(ran, monkeypatch, offered, through):
-    """The scheduler's own path (run_arslan_turn: no callbacks, no card surface), with every answer that would
-    let `ls` run in a chat turn standing at once. The model is told up front that commands are off; run_command
-    is not offered; naming it anyway, directly or through use_tool (or were it offered by mistake), starts
-    nothing, tells the model why, and is listed in the Inbox (#399 review, 1)."""
-    from server.orchestrator.arslan import SCHEDULED_NOTE
+async def test_a_real_unattended_turn_with_every_standing_answer_runs_no_command(ran, monkeypatch, offered, through):
+    """The scheduler's own turn (run_arslan_turn: no callbacks, no card surface) with no fire signal, as the heartbeat
+    runs it, with every answer that would let `ls` run in a chat turn standing at once. The model is told up front
+    that commands are off; run_command is not offered; naming it anyway, directly or through use_tool (or were it
+    offered by mistake), starts nothing, tells the model why, and is listed (#399 review, 1)."""
+    from server.orchestrator.arslan import UNATTENDED_NOTE as SCHEDULED_NOTE
     for answer in STANDING[1:]:
         await _stand(answer, "ls")
     model = _CallsACommand(through)
@@ -197,7 +199,7 @@ def test_the_note_says_where_a_refused_step_is_listed():
 
 
 async def test_a_turn_with_someone_to_ask_is_not_told_commands_are_off(monkeypatch):
-    from server.orchestrator.arslan import SCHEDULED_NOTE
+    from server.orchestrator.arslan import UNATTENDED_NOTE as SCHEDULED_NOTE
     model = _CallsACommand()
     model.inputs.append("")                       # answer at once: no tool call
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)

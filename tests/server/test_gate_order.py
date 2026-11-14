@@ -27,13 +27,10 @@ from server.services import (
     command_sandbox,
     permission_store,
     permissions,
-    replay_safety,
     task_service,
-    task_workers,
 )
 from tests.server.scripted_turn import booted_db_fixture, turn_db_fixture  # noqa: F401 — the fixtures
 
-HERMETIC = "evolution-replay"
 SECRET = {"password": "not-a-real-one"}
 
 
@@ -49,7 +46,6 @@ class _Env:
         self.confirm_schedule = self._card("schedule", True)
         self.mcp_fail_counts = {}
         self.fails = None
-        self.tokens = None
 
     def _card(self, name, answer):
         async def card(*_args, **_own):
@@ -93,12 +89,6 @@ def _secret(env):
     env.args.update(SECRET)
 
 
-def _other_worker(env):
-    token = task_workers._worker.set(task_workers.WorkerScope("w1", "t1", frozenset()))
-    env.monkeypatch.setattr(task_service, "current", lambda: types.SimpleNamespace(task_id="t1", closed=False))
-    env.tokens = (task_workers._worker, token)
-
-
 def _nobody(env):
     env.confirm_command = None
     env.monkeypatch.setattr(permissions, "current_asker", lambda: None)
@@ -108,10 +98,10 @@ def _not_live(env):
     env.live = set()
 
 
-def _fetches_spent(env):
-    env.conversation_id = HERMETIC
-    replay_safety.reset_hermetic_fetch_budget()
-    replay_safety._hermetic_fetches[HERMETIC] = replay_safety.HERMETIC_FETCH_BUDGET
+def _plan(env):
+    async def plan(_conversation_id):
+        return "plan"
+    env.monkeypatch.setattr(permissions, "_chosen", plan)
 
 
 def _no_path(env):
@@ -187,15 +177,6 @@ def _network_refused(env):
     env.monkeypatch.setattr(command_gate, "_network_after_outside_content", refused)
 
 
-def _hermetic(env):
-    env.conversation_id = HERMETIC
-
-
-def _valve(env):
-    env.conversation_id = HERMETIC
-    env.monkeypatch.setenv("ARSLAN_ALLOW_UNSANDBOXED_PY", "1")
-
-
 def _remote_no_callback(env):
     env.confirm_command = None
 
@@ -222,11 +203,10 @@ BUDGET = Gate("budget", _spent, BudgetExceeded, before_frame=True)
 CREDENTIALS = Gate("credentials", _secret,
                    "Credentials cannot be passed as ordinary tool arguments. Use an approved connection.",
                    before_frame=True)
-WORKER = Gate("worker", _other_worker, "This collaborator cannot use that tool.", before_frame=True)
 UNAVAILABLE = Gate("unavailable", _not_live, "is not available to you; you may escalate a need instead")
-EVAL = "is unavailable here. This run is a hermetic evaluation replay that exposes read-only tools only"
-HERMETIC_GATE = Gate("hermetic", _hermetic, EVAL)
-COMMON = [BUDGET, CREDENTIALS, WORKER, UNAVAILABLE]
+COMMON = [BUDGET, CREDENTIALS, UNAVAILABLE]
+# S5a (#893): after the common gates and before the tool's own, for a command or any tool that isn't a read.
+PLAN = Gate("plan mode", _plan, "Plan mode: this conversation only reads and plans for now")
 FILE_ARGUMENTS = Gate("file arguments", _no_path, "A non-empty string path is required; write_file also requires "
                       "string content. No permission decision was requested and no file was accessed.")
 WRITE_DECLINED = Gate("write declined", _write_declined, "user declined workspace write access", card="write")
@@ -237,64 +217,54 @@ JXA = Gate("JXA", _jxa, "JXA (osascript -l JavaScript) cannot control apps from 
 NETWORK = Gate("network refused", _network_refused, "the network was refused")
 
 
-def _hermetic_after(card):
-    """The eval backstop comes after the tool's own card: an approved card is shown, then the call is refused."""
-    return Gate("hermetic", _hermetic, EVAL, card=card)
-
-
 CHAINS = {
-    "web_search": ({"query": "x"}, [*COMMON, Gate(
-        "fetch budget", _fetches_spent, "evaluation fetch budget reached (50 web_search/web_extract calls")]),
-    "read_file": ({"path": "a.md"}, [*COMMON, FILE_ARGUMENTS, HERMETIC_GATE]),
+    "web_search": ({"query": "x"}, [*COMMON]),
+    "read_file": ({"path": "a.md"}, [*COMMON, FILE_ARGUMENTS]),
     "write_file": ({"path": "a.md", "content": "x"}, [
-        *COMMON, FILE_ARGUMENTS,
+        *COMMON, PLAN, FILE_ARGUMENTS,
         Gate("no write card", _no_write_card, "writing to the workspace needs your permission, which is not "
              "available on this channel"),
-        WRITE_DECLINED, _hermetic_after("write")]),
-    "edit_file": ({"path": "a.md"}, [*COMMON, WRITE_DECLINED, _hermetic_after("write")]),
+        WRITE_DECLINED]),
+    "edit_file": ({"path": "a.md"}, [*COMMON, PLAN, WRITE_DECLINED]),
     "schedule_task": ({"name": "n", "when": "every: 3600", "prompt": "p"}, [
-        *COMMON,
+        *COMMON, PLAN,
         Gate("no schedule card", _no_schedule_card, "scheduling needs your permission, which is not available on "
              "this channel"),
         Gate("too long", _too_long, "Not scheduled: the task's text is 20000 characters, more than a card can show "
              "the user (4000). Shorten it."),
-        Gate("schedule declined", _schedule_declined, "user declined to schedule this task", card="schedule"),
-        _hermetic_after("schedule")]),
+        Gate("schedule declined", _schedule_declined, "user declined to schedule this task", card="schedule")]),
     "run_command": ({"command": "ls"}, [
-        BUDGET, CREDENTIALS, WORKER,
+        BUDGET, CREDENTIALS,
         Gate("nobody to ask", _nobody, "needs the user's OK, and this run has nobody to ask: a scheduled run never "
              "takes such a step, and no earlier answer counts here. It was not done."),
-        UNAVAILABLE, FORBIDDEN, HEREDOC, JXA,
+        UNAVAILABLE, PLAN, FORBIDDEN, HEREDOC, JXA,
         Gate("outside, no click", _outside_no_callback, "running a command outside the sandbox needs the user's "
              "click, which is not available here"),
         Gate("outside, no why", _outside_no_why, "outside_sandbox needs a why: one short sentence on why this has to "
              "run outside the sandbox. The user reads it on the card."),
         Gate("outside declined", _outside_declined, "user declined running this command outside the sandbox",
              card="command"),
-        NETWORK, HERMETIC_GATE]),
+        NETWORK]),
     "run_command#ask": ({"command": "ls"}, [
         FORBIDDEN, HEREDOC, JXA,
         Gate("ask, no click", _ask_no_callback, "run_command requires user confirmation, which is not available in "
              "this context"),
         Gate("command declined", _command_declined, "user declined this command'", card="command"),
-        NETWORK, HERMETIC_GATE]),
+        NETWORK]),
     "ssh_run": ({"host": "10.0.0.2", "user": "me", "command": "uptime"}, [
-        *COMMON,
+        *COMMON, PLAN,
         Gate("no remote card", _remote_no_callback, "running a command on another machine requires your "
              "confirmation, which is not available in this context"),
         Gate("cannot reach", _ssh_unreachable, "could not prepare it"),
-        Gate("remote declined", _remote_declined, "user declined this remote command", card="command"),
-        _hermetic_after("command")]),
+        Gate("remote declined", _remote_declined, "user declined this remote command", card="command")]),
     "enroll_node": ({"host": "10.0.0.2", "user": "me", "name": "box"}, [
-        *COMMON,
+        *COMMON, PLAN,
         Gate("no enrol card", _remote_no_callback, "enrolling a machine has to be proposed to you directly, and there "
              "is nobody on this channel to propose it to"),
         Gate("cannot enrol", _ssh_unreachable, "could not prepare it")]),
-    "mac_applescript": ({"script": "x"}, [*COMMON, HERMETIC_GATE]),
-    "run_python": ({"code": "x"}, [*COMMON, Gate(
-        "the escape valve", _valve, "run_python is unavailable because the unsandboxed escape valve "
-        "(ARSLAN_ALLOW_UNSANDBOXED_PY) is set; a networked run_python is not hermetic.")]),
-    "mcp_1__lookup": ({}, [*COMMON, HERMETIC_GATE]),
+    "mac_applescript": ({"script": "x"}, [*COMMON, PLAN]),
+    "run_python": ({"code": "x"}, [*COMMON, PLAN]),
+    "mcp_1__lookup": ({}, [*COMMON, PLAN]),
 }
 
 
@@ -335,7 +305,6 @@ def _a_mac_with_a_sandbox(monkeypatch, turn_db):
     monkeypatch.setattr(permissions, "current_asker", lambda: object())
     monkeypatch.setattr(task_service, "current", lambda: None)
     yield
-    replay_safety.reset_hermetic_fetch_budget()
 
 
 def _env(chain, monkeypatch):
@@ -349,9 +318,6 @@ async def _outcome(env):
         return str(await env.run())
     except BudgetExceeded as exc:
         return type(exc)
-    finally:
-        if env.tokens:
-            env.tokens[0].reset(env.tokens[1])
 
 
 def _answered_by(gate, env, outcome):
@@ -388,17 +354,24 @@ async def test_with_no_gate_tripped_the_executor_runs(chain, monkeypatch):
         assert env.ran == [env.tool], outcome
 
 
-async def test_enrolling_answers_before_the_eval_backstop(monkeypatch):
-    env = _env("enroll_node", monkeypatch)
-    _hermetic(env)
-    assert "asked the user to enrol" in await _outcome(env)
+async def test_a_former_eval_id_gets_the_live_gates(monkeypatch):
+    """C7c-3b: `evolution-replay` names an ordinary conversation now. Its write card still binds, and a yes runs the
+    write as under any other id (the eval backstop used to refuse it after the card)."""
+    declined = _env("write_file", monkeypatch)
+    declined.conversation_id = "evolution-replay"
+    WRITE_DECLINED.trip(declined)
+    _answered_by(WRITE_DECLINED, declined, await _outcome(declined))
+    approved = _env("write_file", monkeypatch)
+    approved.conversation_id = "evolution-replay"
+    outcome = await _outcome(approved)
+    assert approved.cards == ["write"] and approved.ran == ["write_file"], outcome
 
 
-@pytest.mark.parametrize("gate,recorded_args,counted", [
-    (CREDENTIALS, {}, 1), (WORKER, {}, 0), (UNAVAILABLE, {"q": 1}, 1), (HERMETIC_GATE, {"q": 1}, 1)])
+@pytest.mark.parametrize("gate,recorded_args,counted", [(CREDENTIALS, {}, 1), (UNAVAILABLE, {"q": 1}, 1)])
 async def test_what_a_refusal_records(gate, recorded_args, counted, monkeypatch):
-    """Two refusals record no arguments, in the trace and in the call's own text, and one of them doesn't count
-    against an MCP tool's streak. The rest record the call as it came."""
+    """A credentials refusal records no arguments, in the trace and in the call's own text. The rest record the call
+    as it came. Each counts against an MCP tool's streak. (The helpers' scope refusal, which recorded none and didn't
+    count, went with the helpers in v0.1.64 SUB6.)"""
     env = _Env("mcp_1__lookup", {"q": 1}, monkeypatch)
     gate.trip(env)
     await _outcome(env)

@@ -10,11 +10,11 @@ def test_transport_security_is_loopback_and_rebinding_on():
     assert mcp.settings.stateless_http is True and mcp.settings.json_response is True
 
 
-async def test_lists_exactly_three_tools_with_valid_input_schema():
+async def test_lists_exactly_two_tools_with_valid_input_schema():
     mcp = build_mcp_server()
     listed = await mcp.list_tools()
     names = {t.name for t in listed}
-    assert names == {"list_spawns", "list_capabilities", "get_run_status"}
+    assert names == {"list_capabilities", "get_run_status"}
     for t in listed:
         assert isinstance(t.inputSchema, dict)
         assert t.inputSchema.get("type") == "object"     # valid JSON-Schema object

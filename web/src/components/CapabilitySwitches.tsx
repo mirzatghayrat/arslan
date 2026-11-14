@@ -130,12 +130,9 @@ export default function CapabilitySwitches() {
   }
   function open(next: Sheet) { setError(null); setSheet(next); }
 
-  const isMethod = (row: CapabilityRow) => row.key.startsWith("method:");
-  const name = (row: CapabilityRow) => row.name
-    ?? (isMethod(row) ? t(`methods.${row.key.slice(7)}`) : t(`capabilityList.${row.key}_name`));
+  const name = (row: CapabilityRow) => row.name ?? t(`capabilityList.${row.key}_name`);
   const stopped = (row: CapabilityRow) => row.reason === "plugin_stopped";
   const what = (row: CapabilityRow) => row.section === "builtin" ? t(`capabilityList.${row.key}_what`)
-    : isMethod(row) ? t("capabilityList.methodWhat")
     : row.section === "plugins" && stopped(row) ? t("capabilityList.plugin_stopped", { name: row.detail ?? "" })
     // CAP8-2: an update in Claude Code added a blocking hook; only its card on the Import sheet brings it back.
     : row.section === "plugins" && row.reason === "plugin_hooks" ? t("capabilityList.plugin_hooks", { name: row.detail ?? "" })

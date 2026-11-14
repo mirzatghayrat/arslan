@@ -2,7 +2,116 @@
 
 Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](README.md). The v0.1.63 page is [`docs/plans/0162/STATUS.md`](../0162/STATUS.md); its "Codex 待审" section (which Codex model, the prompt to paste, the queue) still applies.
 
-**Updated:** 2026-11-10 (UTC, evening), by ⓪Plan: the list of what's left, below. Before that, 2026-11-07 (UTC, morning). The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+**Updated:** 2026-11-14 (UTC), by ⓪Plan: tier 1 progress, owners, decisions and corrections, below. Before that, 2026-11-11 (UTC, evening), by ⓪Plan: progress, the user's decisions and tier 3 owners, below. Before that, 2026-11-10 (UTC, evening): the list of what's left. Before that, 2026-11-07 (UTC, morning). The sections below are kept as they were; the morning section supersedes the open-PR tables in all of them. Where an older line below is corrected, the correction is in the morning section, not in the old text.
+
+### 2026-11-14: tier 1 progress, owners and decisions
+
+**Merged since 11-12 (tier 1 and related):**
+- #851 HR-2a; #874 its follow-up (file-tool walk roots).
+- #870 SBX-10.
+- #872 S2a-3 step 4b: closes "cd then a relative delete doesn't ask".
+- #871 ASK1-a: the default is now "ask only when risky". The 27-task bench gave 24/27 with 0 waiting.
+- #873 HR-1c.
+- #863 SUB6.
+- #875 SBX-2 adapter deletion.
+- #876 HR-2b.
+- #877 SBX-5b (C lite): the file-tool card is read-only, like commands.
+- #879 and #885: harness H0.
+- #878 and #883: the sessions.md rules.
+- #880: usage tables.
+
+**In review:**
+- #881 S4b-0 (Codex round 2).
+- #890 ASK1-b (Codex round 1).
+- #886 and #888: sessions.md §13 practices.
+- #887: usage tables, three columns.
+
+**Corrections to earlier counts:**
+1. ASK1-a was not held for SBX-8. The user decided on 2026-11-12 that SBX-8 runs before the tag on the user's Mac, and its two numbers go in the release notes.
+2. #869 is #376's remaining cases, not the "6 rows main under-forbids" item. Those 6 were closed by #791 and #832.
+3. HR-1c and SBX-10 are new tier 1 sub-items, split from HR-1 and found in #846's review.
+4. #872 is S2a-3 step 4b, which closes "cd then a relative delete doesn't ask". It isn't #376's remaining cases.
+
+**Owners now:**
+- ③Hands: S4b-0, CLS (service, model call, measurement runner), then ASK1-b fixes.
+- ②Main: HR-3 part 2, then SUB6b (migration 0096), then #298b-2, last before the release.
+- ⑤CAP: S5a (four modes: plan, ask every step, ask only when risky, full access; migration 0098), then S5b and H8a.
+- ⑥Helper: NET (moved up by the user on 2026-11-14; replaces S2a-1's network card), then H1-b, H1-c, INB9-a and SIDE-1 (migration 0093).
+- LOOP1: harness H0 (done), H1-a, and H3 (an enforced check before "done", added by the user on 2026-11-14 in the reserved sixth harness slot), then the L7 slices.
+
+**User decisions, 2026-11-13 and 11-14 (paraphrased):**
+- S5a:
+  - ASK1's setting merges into the modes. The tier is named "Ask only when risky", and the old "when to ask" setting is deleted.
+  - Users who stored "ask every command" default to "Ask every step".
+  - It falls back to "Ask every step", with a reason shown, when the sandbox is off, a checkpoint can't be saved, or the work folder is home.
+  - Full access doesn't show the outside-sandbox card.
+  - The demo was approved.
+- NET:
+  - Allowed: hosts the user named, listed sites and common package hosts.
+  - Refused or carded: hosts seen only in outside content. IP literals after outside content are treated the same, except loopback and trusted devices.
+  - Unknown hosts are allowed. It is on by default.
+- CLS:
+  - Pass lines are measured with the user's default provider, on the user's own API.
+  - Codex built a local-only adversarial set of 120 cases.
+- The working rules are in docs/sessions.md §12 and §13, with the budget by tier.
+
+**Migration numbers:** 0093 SIDE-1, 0094 SUB7, 0095 ASK1-a (merged), 0096 SUB6b, 0097 ASK1-b (#890), 0098 S5a. The next free number is 0099.
+
+### 2026-11-11, evening: progress
+
+22 PRs merged since 2026-11-10 18:00 UTC: 20 code PRs and 2 cards. Tiers are the ones in the 11-10 evening section below.
+
+Against the 64 items (④参谋's count, 2026-11-11 10:15 UTC): 18 done, counting #808 and #817, which merged after the list was written. By tier: 5 of 20, 9 of 34 (LOOP1 z waits on z1) and 4 of 10. That leaves 46, plus SBX-9, so 47. #833 isn't counted; it isn't one of the 20 unless ⓪Plan maps it to a command-policy item.
+
+**Merged, tier 1 (security, 5):**
+- #813 HR-1: the sandbox refuses writes to files that run later.
+- #821 the deploy-program rule: deploy tools ask before they publish (one of the 4 command-policy items).
+- #829 the CAP8-2 import's hard-link refusal.
+- #847 the SBX settings UI: system certificate checks and trusted local devices.
+- #833 S2a-3 step 5: adversarial outside-reach tests and SBX-M follow-up rows.
+
+**Merged, tier 2 (features and cleanup, 11):**
+- SUB: #805 (SUB5b), #819 (SUB5d, the Mac's sub-session UI), #831 (the sidebar search) and #835 (its ⌘K-only follow-up).
+- LOOP1: #824 (c3c), #826 (d2, the policy half), #828 (d2 part 2, card titles), #837 (z2) and #841 (z3).
+- CAP: #825 (CAP8-2's plugin rows) and #827 (HOOK-1: hooks are read, stored and shown; nothing runs).
+
+**Merged, tier 3 (should, 4):** #836 (S6 and the S4a follow-ups, migration 0092), #834 and #842 (IMG1-B and its follow-ups), #830 (C5a).
+
+**Merged, docs only (2):** #839 (card L6), #840 (card L7).
+
+**Open PRs:**
+- #849 HR-1b (tier 1): armed and green; waits on its effort=max review.
+- #848 HOOK-2 (tier 2): armed and green; waits on its effort=max review (security surface).
+- #846 SUB5c (tier 2): OK at `f1ba64fd` after the merge with main; armed; the backend check is red on the latest run, so it waits on a green run.
+- #845 the L6 card delta (docs): armed; waits on the re-review of the deltas that answer the NOT OK review.
+- #844 the L7 card delta (docs): armed; waits on the re-review of its deltas.
+- #843 LOOP1 c4 (tier 2): OK at `c137051c` and armed; merges on its own.
+- #838 LOOP1 z1 (tier 2): draft; waits on its author.
+- #832 interactive and stdin-driven `security` as unreadable (tier 1): NOT OK at `bc240c08`, because the fix doesn't survive a merge with current main; waits on its author.
+- #376 S2a-3 c part b (tier 1): its remaining cases are to be re-measured; no change since 2026-11-09.
+- #298 the run_python fail-closed doc (tier 1, as #298b): no change since 2026-10-31.
+- #535 SBX-5a part 1 (draft), #396, #378 and #375 (S2a-3 d, b and a+c): older PRs with no change since October or 2026-11-01.
+
+**New since the list:**
+- **SBX-9: pin writable roots once.** Tier 1, owner ③Hands, in the order HR-1b, then SBX-9, then HR-1c. Found in #846's review; it applies to main as well. Details stay off this page until the fix lands. Decided by ⓪Plan.
+- **HR-3 is split in two.** Part 1, the parser plus the card rule, goes to ②Main now. Part 2, the `minimal_profile` floor, follows HR-1c.
+
+**Decisions on 2026-11-11 (the user):**
+- **S6:** the dead grants are deleted in migration 0092. Sites, Shortcuts and MCP get no "always" answer. The entry point is the last group of 「Arslan 能做什么」.
+- **SBX settings:** option A. The LAN card trusts the device directly, and the device can be removed in Settings.
+- **L7:** all of the card's recommendations are taken. Nothing runs until Start. Completing goals is the priority. The bench costs about $31 (up to about $54 with one pooled rerun) on DeepSeek.
+- **L6:** match Claude Code desktop's background-task experience, with the sandbox as the boundary. L6-7, loopback listening, is deferred to v0.1.65, consistent with D1.
+- **HOOK:** a newly added plugin's hooks start on.
+- **Review slots:** tier 1 gets first claim.
+
+**Owners for tier 3:**
+- IMG1-B: ⑥Helper (done: #834, #842).
+- S6 and the S4a follow-ups: ②Main (done: #836).
+- S4b: ②Main.
+- NET: ③Hands, after HR-1c; listening is v0.1.65.
+- MCPF1 and K6: ⑤CAP.
+- L6 and L7: LOOP1 (cards #839, #840, #844, #845).
+- C5a: ④参谋 (done: #830).
 
 ### 2026-11-10, evening: what's left (single source)
 

@@ -63,7 +63,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 5. **R63 判定里没有记录的两半**（M3 第 7 条 Mac 那半、第 12 条截屏那半）：v0.1.64 冒烟时补测，还是放下。
 6. **K8c 的 Gemini M1：** 要 Gemini 代理和额度（只有用户能放 key）。
 7. **还没确认的建议：** ~~旁聊进 v0.1.64~~ (decided by the user on 2026-10-28: in v0.1.64, card SIDE, `docs/plans/0164/SIDE-side-chat.md`)；界面版的设计图先出；Aegis 试点的结论（§9 还没跑）。
-8. **钩子支持排在 v0.1.65 之后**（⓪Plan 排的）、**收件箱各条放哪一版**（⓪Plan 排的）、**按 U2 整份删除的 PR 不让 Codex 审**（⓪Plan 定的）：用户可以改。
+8. ~~**钩子支持排在 v0.1.65 之后**（⓪Plan 排的）~~ Changed: the user moved hook running into v0.1.64 on 2026-11-10 (HOOK-1 to HOOK-4). **收件箱各条放哪一版**（⓪Plan 排的）、**按 U2 整份删除的 PR 不让 Codex 审**（⓪Plan 定的）：用户可以改。
 9. **M64 开工前的两个小问**（M64 卡末尾）：Codex 参考线第一轮用「用户贴题、存回复」；三道代码审查题用 Python、TypeScript、Swift。⓪Plan 先按这两个默认做，用户可以改。
 
 ## 3. 卡清单（分级用户 10-28 已定）
@@ -296,8 +296,9 @@ The chain waits on Codex's SBX-2. HR, CLS, S5a and S5b are not scheduled until S
 | 道 | 卡 |
 |---|---|
 | ⓪Plan | M64；本页、STATUS、各卡；R64 门槛判定 |
-| ②Main | S5a、S5b、INB（含 MEM1）、review of SBX、SUB、STY、ACM、C7c、C5b、K6、K10、L6、L7、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
-| 新开一个会话（用户 10-28 定，为了并行） | CAP |
+| ②Main | INB（含 MEM1）、review of SBX、SUB、STY、ACM、C7c、C5b、K6、K10、FS1、LANG1、S4b/S5/S6；合并队列和迁移号；S64-0 的审查（带 effort=max 独立审查员） |
+| 新开一个会话（用户 10-28 定，为了并行） | CAP; S5a and S5b (moved from ②Main) |
+| LOOP1 | L6 and L7 (moved from ②Main by ⓪Plan on 2026-11-11) |
 | ③Hands | **S64-0（effort=max 写）**；S64-0b；**SBX (from 2026-10-28)**；HR；CLS；PRJ0；S2a-3（看 #432）；F5b-2；Hands 文件的审查 |
 | ①iOS | Q1 的 iPhone 端；Bridge 帧的变更清单（和 ②Main 一起） |
 | Codex（外部工具，不是会话） | 安全面和大 PR 的独立审查（§8 安全审查路径）。 **Changed (user, 2026-10-28 evening):** Codex only for what a Claude review cannot cover; see §1.3. |
@@ -343,14 +344,15 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0084 | INB5a | `scheduled_tasks.seen_at`: when you last opened a scheduled task. Its runs' "could not ask" entries newer than it wait on you (the INB card's count). The task's own column, so no conversation id can collide with it | #590 |
 | 0085 | INB7-c4b follow-up | `judgments.run_id`: the run a judgment was made for (nullable; older rows stay null), so Progress's 「诊断」 tab matches judgments by run, not by time (#634 review) | ③Hands |
 | 0086 | ROUTE1 | Data only: clears `llm_strategy`, the removed compaction and final-answer slots, and the old router/vision pins from `settings`; sets `model_roles_reset_notice` to "pending" when it cleared anything, so Settings says so once | ②Main |
-| 0087 | ASK1 | Reserved for ASK1; the card fills in what it does | ②Main, for ASK1 |
-| 0088 | ASK1 | Reserved for ASK1; the card fills in what it does | ②Main, for ASK1 |
+| 0087 | — | Released (2026-11-12): ASK1-a took 0095, since 0089-0092 had merged and the chain's head is its last entry | — |
+| 0088 | — | Released (2026-11-12) with 0087; ASK1-b asks ②Main for a new number | — |
 | 0089 | CAP7a | Rebuilds `capability_sources` so the `kind` CHECK also allows `plugin` (CAP7b stores a plugin as one source); copy-rename like 0069, schema otherwise unchanged, rows preserved, no-op downgrade | ⑤CAP |
 | 0090 | ⑤CAP | Data only: removes stored MCP sign-ins from `settings` whose server no longer exists | ⑤CAP |
 | 0091 | SUB5a | `conversation_contexts.sub_state`: what a sub-session still owes its parent (`working`, `summing`, `interrupted`), written when it changes and only read at boot, so a restart can tell its parent; add-only, nullable, no-op downgrade | ②Main |
 | 0092 | S6 | Data only: deletes the old command rules (`permission_rules` of kind `legacy_rule`) and the `terminal_always_allow` settings list they were copied from (the user's decision of 2026-11-11: deleted, not listed), and every `permission_grants` row no request reads (a frozen copy of `permissions.grant_is_live`; the user's decision after #836's review); live grants and everything else untouched, no-op downgrade | ②Main |
+| 0095 | ASK1-a | Data only: writes no policy; on an existing install whose stored `shell_confirm_policy` isn't `ask_risky`, sets `shell_policy_switch_notice` to "pending" (replacing a pending 0070 notice); for a stored `ask_risky`, clears a pending one; a new install gets none; no-op downgrade | ③Hands |
 
-The next free number is 0093. Ask ②Main before taking it.
+0093 (SIDE-1), 0094 (SUB7), 0096 (SUB6b), 0097 (ASK1-b) and 0098 (S5a) are reserved. The next free number is 0099. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 

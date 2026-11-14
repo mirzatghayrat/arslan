@@ -7,6 +7,7 @@ import json
 import logging
 import re
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 
 from arslan.llm import tool_names, trajectory
 from arslan.runtime_policy import bounded_history
@@ -177,56 +178,81 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
 
     `step` (K8a) gets the answer's text as it arrives, where the endpoint streams. Once some of it was
     shown, nothing re-sends the request (a retry, a protocol switch, a compaction or a raised output limit
-    would show it twice): TextShown ends the turn instead. A cut answer is still continued."""
-    from server.orchestrator import agent_status
+    would show it twice): TextShown ends the turn instead. A cut answer is still continued.
+
+    The stages (LOOP1 c4): prepare the step's messages, send, recover once from a refusal and send again, then the
+    cut answer's recovery. The request and the relaxing of a refused schema are `_Call`'s, whose fields the
+    recovery changes."""
     from server.orchestrator import model_call as mc
 
-    def build_messages():
+    call = _Call(a, system, convo, current_request, tools=tools, schemas=schemas, forced=forced, state=state,
+                 status=status, drops=drops, conversation_id=conversation_id, step=step)
+    await _prepare(call)
+    remaining = _remaining_seconds()
+    relaxed = False
+    try:
+        resp = await mc.call_with_recovery(_once_shown(call.request, step), state, remaining_s=remaining)
+    except mc.ModelCallError as exc:
+        relaxed = await _recover(call, exc)
+        if relaxed is None:
+            raise
+        try:
+            resp = await mc.call_with_recovery(_once_shown(call.request, step), state, remaining_s=remaining)
+        except mc.ModelCallError as again:
+            # Refused again after one tool was left out: every MCP tool goes, for one last try.
+            if not (relaxed and await call.relax(again, last=True)):
+                raise
+            resp = await mc.call_with_recovery(_once_shown(call.request, step), state, remaining_s=remaining)
+    return await _recover_truncation(a, resp, call.request, state, remaining, step)
+
+
+@dataclass(slots=True)
+class _Call:
+    """One `_model_call`'s request, and what its recovery changes in it (LOOP1 c4: the locals its closures shared)."""
+    a: object
+    system: str
+    convo: list[dict]
+    current_request: dict
+    tools: object
+    schemas: object
+    forced: bool
+    state: object
+    status: str
+    drops: _SchemaDrops | None
+    conversation_id: str | None
+    step: _StepStream | None
+    native: bool = False
+    status_record: dict | None = None
+    messages: list[dict] = field(default_factory=list)
+
+    def build_messages(self):
+        convo, current_request = self.convo, self.current_request
         return convo if any(item is current_request for item in convo) else [current_request, *convo]
 
-    if trajectory.image_count(convo) and _model_key(a) in _REFUSES_IMAGES:
-        await _images_to_text(convo)          # known not to take images: read them first
-    messages = build_messages()
-    native = False
-    use_native = getattr(a, "native_trajectory", None)
-    if not state.legacy and callable(use_native) and use_native():
-        try:
-            trajectory.validate(messages)
-            native = True
-        except trajectory.TrajectoryError as exc:
-            # Never send a malformed native history; the legacy rendering of the
-            # same trajectory is always well-formed. Sticky for this turn.
-            state.legacy, state.reason = True, f"invalid trajectory: {exc}"
-            logger.warning("native tool protocol degraded to legacy: %s", exc)
-    # 0.1.63 K1: a provider that must never see history edited (Claude's preserved thinking; Gemini
-    # too) keeps each step's status in the trajectory, as its own block after the step's results,
-    # instead of having it glued onto the last message for one request and gone the next.
-    status_record = None
-    if native and status and getattr(getattr(a, "_provider", None), "APPENDS_STATUS", False):
-        status_record = trajectory.status(status)
-        convo.append(status_record)
-        messages = build_messages()
-
-    async def request(extra=None, max_tokens=None):
-        base = list(messages) if status_record is not None and native else agent_status.attach(messages, status)
+    async def request(self, extra=None, max_tokens=None):
+        from server.orchestrator import agent_status
+        a, step = self.a, self.step
+        base = (list(self.messages) if self.status_record is not None and self.native
+                else agent_status.attach(self.messages, self.status))
         sent = base + list(extra or [])
         kwargs = {"max_tokens": max_tokens} if max_tokens else {}
-        if native:
-            step_tools = schemas if forced else tools
+        if self.native:
+            step_tools = self.schemas if self.forced else self.tools
             # tool_choice only with tools: leaving every MCP tool out (0.1.62 F3) can empty the list.
             if step is not None:
                 kwargs["on_text"] = step.feed
-            return await a.chat_trajectory(system, sent, tools=step_tools,
-                                           tool_choice="none" if forced and step_tools else None, **kwargs)
+            return await a.chat_trajectory(self.system, sent, tools=step_tools,
+                                           tool_choice="none" if self.forced and step_tools else None, **kwargs)
         # One legacy entry point (_render_request) for every request of the step.
-        rendered = _render_request(convo, current_request, status) + trajectory.to_legacy(list(extra or []))
-        return await a.chat(system, rendered[-1]["content"], history=rendered[:-1], tools=tools, **kwargs)
+        rendered = (_render_request(self.convo, self.current_request, self.status)
+                    + trajectory.to_legacy(list(extra or [])))
+        return await a.chat(self.system, rendered[-1]["content"], history=rendered[:-1], tools=self.tools, **kwargs)
 
-    async def relax(exc, *, last: bool = False) -> bool:
+    async def relax(self, exc, *, last: bool = False) -> bool:
         """0.1.62 F3: an `input` refusal of a request carrying MCP tools that names one (or reads
         like a schema problem): leave it out (`last`, or none named: every MCP tool) and say so."""
-        nonlocal tools, schemas, status, status_record, messages
-        sent = ((schemas if forced else tools) if native else tools) or []
+        a, drops, state = self.a, self.drops, self.state
+        sent = ((self.schemas if self.forced else self.tools) if self.native else self.tools) or []
         if (drops is None or exc.kind not in ("input", "protocol") or state.exhausted
                 or not any(t["function"]["name"].startswith("mcp_") for t in sent)):
             return False
@@ -247,77 +273,101 @@ async def _model_call(a, system: str, convo: list[dict], current_request: dict, 
         else:
             left_out = name
         drops.changed = True
-        tools, schemas = drops.keep_schemas(tools), drops.keep_schemas(schemas)
+        self.tools, self.schemas = drops.keep_schemas(self.tools), drops.keep_schemas(self.schemas)
         what = "every MCP tool" if left_out == "all" else f"the MCP tool {left_out}"
         state.note(f"left out {what} (the provider refused its parameter schema)")
         shown = "every MCP tool" if left_out == "all" else f"the MCP tool {tool_names.wire(left_out)}"  # NAME1
-        status = (f"{status}\n\n" if status else "") + (
+        self.status = (f"{self.status}\n\n" if self.status else "") + (
             f"Note: {shown} is not available in this turn: the model provider refused its parameter "
             "schema. Use the other tools, or tell the user that capability cannot be used right now.")
-        if status_record is not None:
-            status_record["content"] = status       # not accepted by the provider yet: still editable
-        elif native and getattr(getattr(a, "_provider", None), "APPENDS_STATUS", False):
-            status_record = trajectory.status(status)
-            convo.append(status_record)
-            messages = build_messages()
+        if self.status_record is not None:
+            self.status_record["content"] = self.status       # not accepted by the provider yet: still editable
+        elif self.native and getattr(getattr(a, "_provider", None), "APPENDS_STATUS", False):
+            self.status_record = trajectory.status(self.status)
+            self.convo.append(self.status_record)
+            self.messages = self.build_messages()
         provider = getattr(a, "_provider", None)
         reported = getattr(a, "report_provider", None) or getattr(provider, "provider_name", type(provider).__name__)
         try:
             from server.services import recap_service
             await recap_service.log_event(
-                conversation_id, "mcp_schema_relaxed", {"tool_key": left_out, "provider": str(reported)},
+                self.conversation_id, "mcp_schema_relaxed", {"tool_key": left_out, "provider": str(reported)},
                 f"left out {what}: the provider refused its parameter schema")
         except Exception:  # noqa: BLE001 — observability is never fatal
             pass
         return True
 
-    remaining = _remaining_seconds()
-    relaxed = False
-    try:
-        resp = await mc.call_with_recovery(_once_shown(request, step), state, remaining_s=remaining)
-    except mc.ModelCallError as exc:
-        from server.services import ocr_fallback
-        if step is not None and step.released:
-            raise TextShown(exc.excerpt) from exc
-        # First: an image refusal can also look like a protocol rejection; switching protocols
-        # would send the same screenshots again and fail the same way.
-        if (trajectory.image_count(convo) and not state.images_read_locally
-                and ocr_fallback.model_refused_the_image(f"{exc.excerpt} {exc}")):
-            # §4.4: the model refused the screenshots as images (vision_errors' narrow match, never
-            # a rate limit or a bad key). Read them locally, remember this model, ask once more.
-            state.images_read_locally = True
-            _REFUSES_IMAGES.add(_model_key(a))
-            await _images_to_text(convo)
-            messages = build_messages()
-            state.note("read screenshots as text (this model cannot take images)")
-        elif await relax(exc):
-            relaxed = True
-        elif exc.kind == "protocol" and native and not state.exhausted:
-            native = False
-            state.legacy, state.reason = True, f"endpoint rejected native history: {exc.excerpt[:200]}"
-            state.note("switched to the legacy tool protocol")
-            logger.warning("native tool protocol degraded to legacy: %s", exc.excerpt[:200])
-        elif exc.kind == "context" and not state.context_retry_used and not state.exhausted:
-            state.context_retry_used = True
-            convo[:], _ = bounded_history(convo, max_chars=max(8_000, _rendered_size(convo) // 2),
-                                          size_of=_rendered_size)
-            messages = build_messages()
-            state.note("compacted context")
-            if _SENT_IS_FINAL.get():
-                # K1b: the one edit of sent history this path allows; thinking blocks after it drop.
-                from arslan.execution_budget import current
-                if (budget := current()) is not None:
-                    budget.note_context("compacted", reason="context_overflow", count=1)
-        else:
-            raise
+
+async def _prepare(call: _Call) -> None:
+    """The first stage: screenshots read as text for a model known not to take them, the native protocol where the
+    history validates, and the step's status as its own block where the provider keeps it there."""
+    a, convo, state = call.a, call.convo, call.state
+    if trajectory.image_count(convo) and _model_key(a) in _REFUSES_IMAGES:
+        await _images_to_text(convo)          # known not to take images: read them first
+    call.messages = call.build_messages()
+    call.native = False
+    use_native = getattr(a, "native_trajectory", None)
+    if not state.legacy and callable(use_native) and use_native():
         try:
-            resp = await mc.call_with_recovery(_once_shown(request, step), state, remaining_s=remaining)
-        except mc.ModelCallError as again:
-            # Refused again after one tool was left out: every MCP tool goes, for one last try.
-            if not (relaxed and await relax(again, last=True)):
-                raise
-            resp = await mc.call_with_recovery(_once_shown(request, step), state, remaining_s=remaining)
-    return await _recover_truncation(a, resp, request, state, remaining, step)
+            trajectory.validate(call.messages)
+            call.native = True
+        except trajectory.TrajectoryError as exc:
+            # Never send a malformed native history; the legacy rendering of the
+            # same trajectory is always well-formed. Sticky for this turn.
+            state.legacy, state.reason = True, f"invalid trajectory: {exc}"
+            logger.warning("native tool protocol degraded to legacy: %s", exc)
+    # 0.1.63 K1: a provider that must never see history edited (Claude's preserved thinking; Gemini
+    # too) keeps each step's status in the trajectory, as its own block after the step's results,
+    # instead of having it glued onto the last message for one request and gone the next.
+    call.status_record = None
+    if call.native and call.status and getattr(getattr(a, "_provider", None), "APPENDS_STATUS", False):
+        call.status_record = trajectory.status(call.status)
+        convo.append(call.status_record)
+        call.messages = call.build_messages()
+
+
+async def _recover(call: _Call, exc) -> bool | None:
+    """The recovery a refused request gets before it goes once more, in today's order: an answer already shown ends
+    the turn (TextShown), refused images are read as text, an MCP tool's refused schema is left out, a protocol
+    rejection switches to the legacy rendering, a context overflow compacts once. Whether a tool was left out, or None
+    where none applies (the caller raises the refusal)."""
+    from server.services import ocr_fallback
+    a, convo, state, step = call.a, call.convo, call.state, call.step
+    relaxed = False
+    if step is not None and step.released:
+        raise TextShown(exc.excerpt) from exc
+    # First: an image refusal can also look like a protocol rejection; switching protocols
+    # would send the same screenshots again and fail the same way.
+    if (trajectory.image_count(convo) and not state.images_read_locally
+            and ocr_fallback.model_refused_the_image(f"{exc.excerpt} {exc}")):
+        # §4.4: the model refused the screenshots as images (vision_errors' narrow match, never
+        # a rate limit or a bad key). Read them locally, remember this model, ask once more.
+        state.images_read_locally = True
+        _REFUSES_IMAGES.add(_model_key(a))
+        await _images_to_text(convo)
+        call.messages = call.build_messages()
+        state.note("read screenshots as text (this model cannot take images)")
+    elif await call.relax(exc):
+        relaxed = True
+    elif exc.kind == "protocol" and call.native and not state.exhausted:
+        call.native = False
+        state.legacy, state.reason = True, f"endpoint rejected native history: {exc.excerpt[:200]}"
+        state.note("switched to the legacy tool protocol")
+        logger.warning("native tool protocol degraded to legacy: %s", exc.excerpt[:200])
+    elif exc.kind == "context" and not state.context_retry_used and not state.exhausted:
+        state.context_retry_used = True
+        convo[:], _ = bounded_history(convo, max_chars=max(8_000, _rendered_size(convo) // 2),
+                                      size_of=_rendered_size)
+        call.messages = call.build_messages()
+        state.note("compacted context")
+        if _SENT_IS_FINAL.get():
+            # K1b: the one edit of sent history this path allows; thinking blocks after it drop.
+            from arslan.execution_budget import current
+            if (budget := current()) is not None:
+                budget.note_context("compacted", reason="context_overflow", count=1)
+    else:
+        return None
+    return relaxed
 
 
 def _once_shown(make, step: "_StepStream | None"):

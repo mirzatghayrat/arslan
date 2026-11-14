@@ -184,6 +184,18 @@ describe("Changes (WB1-3)", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
+  it("marks a CI file, and only that one (HR-2b)", async () => {
+    files.changes.mockResolvedValue({ turns: [{ run_id: 13, at: "2026-10-30T09:40:00", undone: false, paths: [
+      { folder: "~/w", path: ".github/workflows/zz.yml", kind: "made", ci: true }, { folder: "~/w", path: "zz.txt", kind: "made" }] }] });
+    useWorkbench.getState().show("overview");
+    mount();
+    const turn = await screen.findByTestId("overview-turn-13");
+    const [mark] = within(turn).getAllByTestId("change-ci");
+    expect(within(turn).getAllByTestId("change-ci")).toHaveLength(1);
+    expect(mark).toHaveAttribute("title", "workbench.ciFile");
+    expect(mark.closest("li")).toHaveTextContent("zz.yml");
+  });
+
   it("is left out when no turn changed anything", async () => {
     useWorkbench.getState().show("overview");
     mount();

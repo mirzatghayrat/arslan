@@ -8,6 +8,9 @@ Scheduling is spending future money, so it sits behind the same session grant
 shape as a workspace write (user ruling 2026-08-20). And a agent that can
 create but not list or cancel would leave the user with things they cannot find
 — so all three ship together.
+
+Every task gets a conversation of its own (SUB5a), whatever conversation its
+arguments name (C7c-3b, review round 1).
 """
 import pytest
 import pytest_asyncio
@@ -16,7 +19,21 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.models import Base, ScheduledTask
+from server.orchestrator import tool_caller
 from server.registry import schedule_tools
+from tests.server import scripted_turn
+from tests.server.scripted_turn import (  # noqa: F401 — the fixtures
+    FINDERS,
+    REACHABLE,
+    Reply,
+    Turn,
+    booted_db_fixture,
+    call,
+    card,
+    run_turn,
+    table,
+    turn_db_fixture,
+)
 
 
 @pytest_asyncio.fixture
@@ -38,14 +55,13 @@ async def _count(m) -> int:
 # ── creating ──────────────────────────────────────────────────────────────
 async def test_creates_an_interval_task_owned_by_arslan(db):
     out = await schedule_tools.ScheduleTaskExecutor().execute(
-        {"name": "morning CI", "prompt": "summarise CI", "when": "every: 3600",
-         "conversation_id": "c1"})
+        {"name": "morning CI", "prompt": "summarise CI", "when": "every: 3600"})
     assert out["ok"] is True
     async with db() as s:
         (task,) = (await s.execute(select(ScheduledTask))).scalars().all()
     assert task.spawn_id is None            # runs as Arslan itself (P2 §1.1)
     assert task.interval_s == 3600
-    assert task.conversation_id == "c1"     # results land where the user is
+    assert task.conversation_id.startswith("scheduled-")    # results land in a conversation of its own
     assert task.enabled is True
 
 
@@ -58,6 +74,30 @@ async def test_creates_a_cron_task(db):
     assert task.cron == "0 9 * * *" and task.schedule_kind == "cron"
     # SUB5a: no conversation named means one of its own, never a reused id's `scheduled-<id>`.
     assert task.conversation_id.startswith("scheduled-") and task.conversation_id != f"scheduled-{task.id}"
+
+
+async def test_a_conversation_named_in_use_tools_arguments_is_ignored(monkeypatch, turn_db):
+    """use_tool's `arguments` may carry a field the tool's table doesn't list (`_schema_problem` reads only the listed
+    ones), and the card shows no conversation. One naming another conversation reaches the executor through the real
+    unwrap, card and dispatch; the task still gets a conversation of its own, neither the one named nor the turn's."""
+    turn = Turn()
+    monkeypatch.delitem(scripted_turn.ANSWERS, "schedule_task")         # the real executor, and the row it writes
+    asked = {"name": "n", "when": "every: 3600", "prompt": "p", "conversation_id": "c-other"}
+    host = tool_caller.ToolCaller(actor="host", spawn_id=None, conversation_id="c1")
+
+    async def reachable():
+        return [*REACHABLE, *table("schedule_task")]
+    await run_turn(turn, monkeypatch, turn_db, [call("use_tool", {"name": "schedule_task", "arguments": asked}),
+                                                Reply("Scheduled.")],
+                   tools=FINDERS, resolve_callable=reachable, confirm_schedule=card(turn, "schedule"),
+                   conversation_id="c1", caller=host)
+    [step] = turn.returned["tool_trace"]
+    assert (step["tool"], step["args"], step["result"]["ok"]) == ("schedule_task", asked, True)   # unwrapped, ran
+    assert turn.cards == [("schedule", ["n", "every: 3600"], {"prompt": "p"})]
+    async with turn_db() as s:
+        (task,) = (await s.execute(select(ScheduledTask))).scalars().all()
+    assert task.conversation_id.startswith("scheduled-")
+    assert task.conversation_id not in ("c-other", "c1")
 
 
 async def test_an_invalid_cron_is_refused_and_nothing_lands(db):

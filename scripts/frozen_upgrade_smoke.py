@@ -84,6 +84,7 @@ def main():
                 assert len(migrated) == 1 and migrated[0][1:] == (1, "Synthetic legacy preference: concise reports")
                 assert db.execute("SELECT content FROM user_facts WHERE id=987654").fetchone() == (
                     "Synthetic legacy preference: concise reports",)
+                # DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables (Q3): legacy_user_facts is dropped with the table.
                 assert db.execute("SELECT content FROM legacy_user_facts WHERE id=987654").fetchone() == (
                     "Synthetic legacy preference: concise reports",)
                 if attempt == 0:
@@ -93,6 +94,7 @@ def main():
         process, client, token = start(new, home)
         try:
             assert token == old_token
+            # DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables (Q3): the /facts calls and the legacy_user_facts asserts below go with the routes and tables.
             listed = client.get("/api/v1/facts")
             assert listed.status_code == 200
             fact = next(item for item in listed.json() if item["id"] == 987654)
@@ -124,6 +126,7 @@ def main():
         process, client, token = start(new, home)
         try:
             assert token == old_token
+            # DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables (Q3): /facts check below goes with the routes.
             listed = client.get("/api/v1/facts")
             assert listed.status_code == 200 and all(item["id"] != 987654 for item in listed.json())
             deleted = client.get(f"/api/v1/memory/entries/{fact['entry_id']}")

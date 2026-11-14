@@ -39,6 +39,7 @@ RULES = [
     ("remote-shell", ASK, "rsync", " a host:/b"),
     ("git-push", ASK, "git", " push"),
     ("publish", ASK, "npm", " publish"),
+    ("secret-write", ASK, "gh", " secret set ZZ"),
     ("force-kill", ASK, "pkill", " X"),
     ("login-items", ASK, "defaults", " write a b c"),
     ("keychain-write", ASK, "security", " add-generic-password -s x"),

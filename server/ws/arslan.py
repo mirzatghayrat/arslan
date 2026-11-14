@@ -16,7 +16,7 @@ from server.auth import is_ws_token_valid
 from server.db import session as db_session
 from server.db.models import ArslanMessage
 from server.orchestrator import arslan
-from server.services import approvals, background_jobs, desktop_status, permissions, steering
+from server.services import approvals, background_jobs, desktop_status, host_run, permissions, steering
 from server.services import (
     presence,
     run_registry,
@@ -163,9 +163,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     async def run_with_live_frames(coro: Coroutine[Any, Any, object]) -> None:
         outcome = "error"
         try:
-            with desktop_status.working(conversation_id):
+            with desktop_status.working(conversation_id), host_run.watching_stop() as stopped:
                 await coro
-            outcome = "ok"
+            outcome = "needs_review" if stopped else "ok"     # the loop stopped short of its answer
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
@@ -190,9 +190,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         beat = asyncio.ensure_future(_working_beats())
         try:
             # 0.1.61: every turn asks on this window's cards (permissions.decide), Hands too.
-            with desktop_status.working(conversation_id, title=title), permissions.asking_with(_window_asker):
+            with desktop_status.working(conversation_id, title=title), permissions.asking_with(_window_asker), \
+                    host_run.watching_stop() as stopped:
                 await coro
-            outcome = "ok"
+            # The work limit, the no-progress breaker or a stream cut after part of the answer: not "done".
+            outcome = "needs_review" if stopped else "ok"
         except (TaskError, MemoryError, BudgetExceeded) as exc:
             outcome = "needs_review"
             code = exc.code if isinstance(exc, (TaskError, MemoryError)) else "task_budget_exhausted"
@@ -489,11 +491,12 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                               remote_host: str | None = None,
                               fingerprints: list | None = None,
                               sandbox: str | None = None, why: str = "", network: bool = False,
-                              host: str | None = None, delete: str = "", outside: bool = False) -> bool:
+                              host: str | None = None, delete: str = "", outside: bool = False,
+                              run_later=()) -> bool:
         """See `command_confirm.Confirmations.command`."""
         return await ladder.command(command, argv, remote_host=remote_host, fingerprints=fingerprints,
                                     sandbox=sandbox, why=why, network=network, host=host, delete=delete,
-                                    outside=outside)
+                                    outside=outside, run_later=run_later)
 
     async def confirm_capability(card: dict) -> dict:
         """0.1.57 §3.1: the install-and-retry card, in THIS window only (it may carry a key);
