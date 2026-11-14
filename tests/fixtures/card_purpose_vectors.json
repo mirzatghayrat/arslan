@@ -285,6 +285,34 @@
    "unsure": false
   },
   {
+   "line": "open https://zz-user:FAKE@example.invalid/zz",
+   "purpose": {
+    "key": "open",
+    "params": {
+     "target": "https://example.invalid/zz"
+    }
+   },
+   "touches": [
+    "https://example.invalid/zz"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "open https://FAKE-token@example.invalid/zz",
+   "purpose": {
+    "key": "open",
+    "params": {
+     "target": "https://example.invalid/zz"
+    }
+   },
+   "touches": [
+    "https://example.invalid/zz"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
    "line": "osascript -e 'tell app \"Mail\" to quit'",
    "purpose": {
     "key": "appleScript",

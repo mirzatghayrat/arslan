@@ -443,15 +443,12 @@ def _step(w: dict, depth: int, work: dict) -> dict:
         own = [a for k, a in enumerate(args) if not re.match(r"^-[Cc]$", a)
                and not (k and re.match(r"^-[Cc]$", args[k - 1]))]
         sub, *rest = _plain(own) or [None]
-        # HR-3: a url typed after push, clone, pull or fetch is on the title without its userinfo (the clone's touches
-        # row too), as on the push card's destination line: the same stripper.
         if sub == "push":
-            return _reading("gitPush", {"remote": git_config_guard.without_credentials(rest[0]) if rest else "origin"})
+            return _reading("gitPush", {"remote": rest[0] if rest else "origin"})
         if sub == "clone" and rest:
-            repo = git_config_guard.without_credentials(rest[0])
-            return _reading("gitClone", {"repo": repo}, [repo])
+            return _reading("gitClone", {"repo": rest[0]}, [rest[0]])
         if sub in ("pull", "fetch"):
-            return _reading("gitFetch", {"remote": git_config_guard.without_credentials(rest[0]) if rest else "origin"})
+            return _reading("gitFetch", {"remote": rest[0] if rest else "origin"})
         return _reading("git", {"sub": sub or ""})
     if program == "open":
         if not plain:
@@ -704,6 +701,31 @@ def _summed(nodes: list[dict], depth: int, work: dict, once: dict[int, int] | No
             "unsure": any(r["unsure"] for r in real)}
 
 
+def shown(value):
+    """HR-3, the one point where a typed url's credentials come off on their way to a card: its userinfo is removed
+    (`git_config_guard.without_credentials`: a `scheme://` url's `user:pass@`, a token alone, a plain ssh user; an
+    scp-like `user@host:path` stays as written), and nothing else changes. A str is a title's param, a list a touches
+    row, and a reading is both: each text param of its purpose (an inner purpose's too) and each touches item, listed
+    once. `summarize` returns every reading through it, whichever step read the line, so a reading added later can't
+    miss it; a run-later fact names its file or git setting through it (`phrase`), and command_confirm what it puts on
+    a touches row (the push card's lines, a delete card's targets).
+    Not covered: a url the reader has already cut so that it no longer reads as one (run as the program, or given to a
+    script runner, with no path after its host: its last part, `user:pass@host`, `_base`; a path after `cd <url>`:
+    joined to it with its `//` collapsed, `_rebase`), and the command as typed, which the Mac card shows whole."""
+    if isinstance(value, str):
+        return git_config_guard.without_credentials(value)
+    if isinstance(value, list):
+        return [git_config_guard.without_credentials(item) for item in value]
+    return {**value, "purpose": _shown_purpose(value["purpose"]), "touches": _unique(shown(list(value["touches"])))}
+
+
+def _shown_purpose(purpose: dict) -> dict:
+    out = {**purpose, "params": {k: shown(v) if isinstance(v, str) else v for k, v in purpose["params"].items()}}
+    if "inner" in purpose:
+        out["inner"] = _shown_purpose(purpose["inner"])
+    return out
+
+
 def summarize(text: str, *, outside: bool = False) -> dict:
     """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...], "more": n,
     "unsure": bool}`, the frame's `summary` the Mac card shows (held to tests/fixtures/card_purpose_vectors.json).
@@ -713,7 +735,13 @@ def summarize(text: str, *, outside: bool = False) -> dict:
     cannot read (a quote never closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says
     Arslan could not read all of it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part
     not read may send local data, so its card keeps that warning. `outside`: it runs outside the sandbox, as the gate
-    read it (`_read_understood`)."""
+    read it (`_read_understood`). HR-3: returned through `shown`, the one point a typed url's userinfo comes off (what
+    it can't see: its docstring)."""
+    return shown(_summary(text, outside))
+
+
+def _summary(text: str, outside: bool) -> dict:
+    """`summarize`'s reading, before `shown`."""
     program = _base((text.strip().split() or [""])[0])
     try:
         r = _read_understood(text, outside)
@@ -816,14 +844,15 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
 
 def _run_later_fact(lang: str, shell: str, targets) -> list[str]:
     """HR-3 part 1: the card's one line for a write into a file that runs later: the file, else the git setting, else
-    (a line the reader understood) that it may; none for a line it doesn't understand, whose card says so already."""
+    (a line the reader understood) that it may; none for a line it doesn't understand, whose card says so already.
+    The file or setting is named through `shown`, before it is cut to fit."""
     file = terminal_policy.run_later_file(targets)
     if file:
-        return [_say(lang, "fact", "runsLater", {"file": untrusted.clean_name(file, 80)})]
+        return [_say(lang, "fact", "runsLater", {"file": untrusted.clean_name(shown(file), 80)})]
     setting = next((t for t in targets if t.startswith(terminal_policy.RUN_LATER_SETTING)), "")
     if setting:
         name = setting.removeprefix(terminal_policy.RUN_LATER_SETTING)
-        return [_say(lang, "fact", "runsLaterGit", {"name": untrusted.clean_name(name, 80)})]
+        return [_say(lang, "fact", "runsLaterGit", {"name": untrusted.clean_name(shown(name), 80)})]
     return [] if terminal_policy.reading(shell).refused else [_say(lang, "fact", "runsLaterUnsure", {})]
 
 

@@ -203,8 +203,11 @@ async def _pushed_ci(shell: str, cwd) -> list[str]:
 
 def _with_ci(frame: dict, lines: list[str]) -> None:
     """HR-2b, no new frame key: the lines lead the Mac card's touches row (`summary.touches`, which the Bridge doesn't
-    read) and end the `reason` the phone shows (the first 10 there)."""
+    read) and end the `reason` the phone shows (the first 10 there). HR-3: through `card_purpose.shown`, as the
+    reading's own touches."""
     if lines:
+        from server.services import card_purpose
+        lines = card_purpose.shown(lines)
         frame["summary"] = {**frame["summary"], "touches": [*lines, *frame["summary"].get("touches", [])]}
         shown = lines[:10] + ([f"and {len(lines) - 10} more"] if len(lines) > 10 else [])
         frame["reason"] = "; ".join([*([frame["reason"]] if frame.get("reason") else []), *shown])
@@ -213,10 +216,11 @@ def _with_ci(frame: dict, lines: list[str]) -> None:
 def _delete_keys(mode: str, shell: str) -> dict:
     """SMART-8: the delete card's mode and targets for the Mac card (⑤CAP's shared component), on the Mac's WS
     frame only. The Bridge's FrameMapper reads named keys (title, perm_kind, expires_at…), so neither reaches the
-    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written; [] when
-    the delete can't be read, and the card then reads rm's plain arguments itself."""
+    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written, through
+    `card_purpose.shown` (HR-3: the Mac card shows them as its touches row); [] when the delete can't be read, and
+    the card then reads rm's plain arguments itself."""
     if not mode:
         return {}
-    from server.services import delete_to_trash
+    from server.services import card_purpose, delete_to_trash
     found = delete_to_trash.plan(shell)
-    return {"delete_mode": mode, "delete_targets": list(found.targets) if found else []}
+    return {"delete_mode": mode, "delete_targets": card_purpose.shown(list(found.targets)) if found else []}
