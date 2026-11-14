@@ -256,8 +256,8 @@ async def test_a_card_whose_frame_reads_other_text_titles_from_its_own(execution
     from server.services import settings_service
 
     async def ask_all(_db):
-        return "ask_all"
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", ask_all)
+        return "ask"
+    monkeypatch.setattr(settings_service, "default_permission_mode", ask_all)
     assert await _title(cmd=("rm", ["a b"])) == card_purpose.phrase("rm 'a b'") == "Delete 1 file or folder"
 
 

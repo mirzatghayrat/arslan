@@ -213,7 +213,7 @@ def seen(monkeypatch):
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     # The card for every command, as these titles were written under (ASK1-a made unset read ask_risky, where a
     # command with no rule reaches its card only with no sandbox, and is titled so).
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_all"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask"))
     decide = _Seen()
     monkeypatch.setattr(permissions, "decide", decide)
     return decide.requests

@@ -108,7 +108,7 @@ def _enable_shell(app_client, policy: str | None = None) -> None:
 
     data = {"orchestrator_shell_enabled": "true"}
     if policy is not None:
-        data["shell_confirm_policy"] = policy
+        data["default_permission_mode"] = "ask" if policy == "ask_all" else policy     # S5a: the mode replaced it
 
     async def _do():
         async with app_client.db_maker() as db:

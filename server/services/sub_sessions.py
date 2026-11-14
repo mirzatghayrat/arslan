@@ -97,6 +97,10 @@ INHERITANCE: dict[str, str] = {
     "learns_after_message_id": "own",
     "pinned": "own",
     "sub_state": "own",
+    # S5a: the child's own choice, stored as its own; what applies is the narrower of it and the parent's, read at
+    # each step (`permissions._chosen`), so a child never widens.
+    "permission_mode": "own",
+    "previous_mode": "own",
     "version": "own",
     "created_at": "own",
     "updated_at": "own",

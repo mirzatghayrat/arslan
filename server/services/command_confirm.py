@@ -87,8 +87,7 @@ class Confirmations:
         `run_later` (HR-3 part 1): what it writes that runs later, where the kernel's hold doesn't stand (the gate's
         click-lift rule): the outside card names it, and the command's own card is this time only
         (`approvals._command_request`)."""
-        from server.db import session as db_session
-        from server.services import approvals, permissions, settings_service, terminal_policy
+        from server.services import approvals, permissions, terminal_policy
         from server.ws.arslan import effective_risk
         from server.services import card_purpose
         outside = outside or sandbox == "outside"   # S2a-3 step 5: it runs outside the sandbox, so read it that way
@@ -152,8 +151,8 @@ class Confirmations:
         if request is not None:
             with self._surface():
                 return (await permissions.decide(request, self._context())).allowed
-        async with db_session.AsyncSessionLocal() as db:
-            ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
+        from server.orchestrator.command_gate import _asks_for_everything
+        ask_all = await _asks_for_everything()       # S5a: the mode of the conversation the gate is deciding for
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words

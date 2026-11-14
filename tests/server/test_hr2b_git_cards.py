@@ -91,7 +91,7 @@ async def _push_card(monkeypatch, folder: Path | None, command: str = "git push"
     async def run_folder():
         return folder
     monkeypatch.setattr(command_gate, "run_folder", run_folder)
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asker = _Asker()
     with permissions.asking_with(asker):
         assert await command_confirm.Confirmations("c1").command(command, []) is True
