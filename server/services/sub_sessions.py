@@ -906,7 +906,8 @@ async def _promote(db, conversation_id: str) -> None:
 
     So is its permission mode (S5a): the narrowest along its chain, `permissions._chosen`'s walk read here in `db`,
     before the caller tombstones the parent. In plan, Start goes back to what the chain had before plan (each plan
-    along it read as its `previous_mode`), never wider. A chain that isn't whole reads "ask"."""
+    along it read as its `previous_mode`), never wider. A chain that isn't whole reads no wider than "ask": the
+    narrower of "ask" and what it could read (a reachable row in plan stays plan), and so does its Start."""
     from server.services import permissions, settings_service
     row = await db.get(ConversationContext, conversation_id)
     chain, whole = await _chain(db, row)
@@ -918,7 +919,7 @@ async def _promote(db, conversation_id: str) -> None:
         found = own[-1] or default
         for m in own[:-1]:
             found = permissions.narrower(m, found) if m else found
-        return found if whole else "ask"
+        return found if whole else permissions.narrower("ask", found)
     now, before = mode(False), mode(True)          # both read before `row` (the chain's first) changes
     row.permission_mode, row.previous_mode = now, before if now == "plan" else None
     effective = await effective_settings(db, row)
