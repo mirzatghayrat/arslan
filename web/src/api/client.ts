@@ -545,13 +545,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ url, compress }),
     }),
-  getPreferences: (spawnId: number) =>
-    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`),
-  deletePreference: (spawnId: number, fact: string, identity?: { entry_id: string; expected_version: number }) =>
-    request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`, {
-      method: "DELETE",
-      body: JSON.stringify({ fact, ...identity }),
-    }),
   listMcpServers: () =>
     request<
       Array<{
