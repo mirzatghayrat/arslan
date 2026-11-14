@@ -23,6 +23,7 @@ from functools import wraps
 class BudgetExceeded(RuntimeError):
     #: What a background job's turn did, what was blocked and what is left, written by the host from the turn's own
     #: records when the limit ended it with no text (`tool_loop.run_native`); the job's report carries it. "" if none.
+    #: A wall-clock stop arrives as a cancellation instead, and its closing goes on the job (`Job.wall_closing`).
     closing: str = ""
 
 
@@ -339,6 +340,12 @@ def running_clock(budget: Budget, timeout: asyncio.Timeout):
         yield
     finally:
         _clocks.reset(token)
+
+
+def wall_clock_expired() -> bool:
+    """True once a wall clock this code runs under has run out: its timeout fired and is cancelling the work
+    (a cancellation from anything else, such as the user's stop, leaves this False)."""
+    return any(clock.timeout.expired() for clock in _clocks.get())
 
 
 @contextmanager

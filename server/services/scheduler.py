@@ -52,6 +52,7 @@ recorded `dispatcher.dispatch` of the task's spawn): every fire is an Arslan tur
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -423,10 +424,12 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     bound (permissions.asking_with): that omission IS the safety property. It
     runs only what needs no card (the read-only tools, writes in Arslan's own
     folder) and refuses anything that needs a card, at once — it never waits:
-      - it runs no command at all (v0.1.63, the user's decision until S2a-3;
-        DELETE-BY: v0.1.64 with it and PR4): run_command is not offered, and
-        the tool loop refuses one before any rule, grant or "always" answer is
-        read, and lists it in the Inbox;
+      - a scheduled task's own fire (ASK1-b, `command_gate.scheduled_fire`)
+        runs the commands "ask only for risky commands" runs with no card,
+        inside the sandbox in Arslan's own folder; one that would ask, every
+        one under a stored "ask before every command", and every one with no
+        sandbox are refused and listed under the task. The heartbeat runs no
+        command: the tool loop refuses one before any rule or grant is read;
       - the tool loop refuses a write in the user's folder, a schedule and
         another machine ("no callback" means "refuse", P1), and since S1 (U14 c)
         each writes the same policy row decide() writes, which the Inbox lists;
@@ -449,20 +452,20 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 
 async def _fire(task: ScheduledTask) -> None:
     from arslan.companion.memory import MemoryError
-    from server.orchestrator import untrusted
-    from server.services import presence, task_context
+    from server.orchestrator import command_gate, untrusted
+    from server.services import heartbeat, presence, task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
     from server.services import desktop_status
 
     async def body(sink):
         return await _fire_body(task)
-    # S64-0 (②Main's F1, the user's decision 2026-10-28): every fire starts as having read outside
-    # content. Its prompt may come from a turn that had read some, and after one "this conversation"
-    # the schedule card is not shown again. DELETE-BY: v0.1.64, with S2a-3 PR4 (scheduled runs get
-    # read-only commands back): it records outside_seen on the scheduled task, read here instead.
+    # ASK1-b: the fire starts from what the turn that wrote or last changed its prompt had read (`outside_seen`,
+    # migration 0097; true for tasks from before it), and true means its commands run offline. Only a scheduled task's
+    # own fire runs commands (command_gate.scheduled_fire); the heartbeat runs none.
     # INB2: nobody is there when a stored prompt fires, also when "fire now" ran from a present turn.
+    fire = (contextlib.nullcontext() if task.name == heartbeat.TASK_NAME else command_gate.scheduled_fire(cid))
     with desktop_status.working(cid, title=task.name, kind="scheduled"), presence.not_present():   # keeps the Mac awake (0.1.41)
-        with untrusted.carried(True):
+        with untrusted.carried(bool(task.outside_seen)), fire:
             try:
                 return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
                                                         headless=True)

@@ -32,6 +32,7 @@ MESSAGES = {
         # A job's turn the limit ended with no text: the host's closing from the turn's records (answer_salvage).
         "records_header": "From this run's own records:",
         "records_done": "Done: {count} tool calls succeeded ({tools}).",
+        "records_done_one": "Done: 1 tool call succeeded ({tools}).",
         "records_done_none": "Done: no tool call succeeded.",
         "records_saved": "Saved: {files}.",
         "records_blocked": "Blocked:",
@@ -41,6 +42,7 @@ MESSAGES = {
         "records_more": "- and {count} more",
         "records_left_steps": "Left (plan steps not done):",
         "records_left_request": "Left: the request itself, {request}",
+        "records_left_done": "Left: every plan step is done; only the final answer was not written.",
         "chat_miss": "Sorry, I didn't quite catch that — could you say it another way?",
         "correction": "Correction: the answer above is my own; nothing is running in the background for it.",  # K5
         "job_interrupted": "Background work was interrupted when Arslan restarted, before it finished: {goal}. Nothing more was done. Ask me to start it again if you still want it.",
@@ -87,6 +89,7 @@ MESSAGES = {
         "findings_header": "【阶段性发现】(本轮已查到的资料,尚未成稿)",
         "records_header": "按这次运行自己的记录：",
         "records_done": "已完成：{count} 次工具调用成功（{tools}）。",
+        "records_done_one": "已完成：1 次工具调用成功（{tools}）。",
         "records_done_none": "已完成：没有成功的工具调用。",
         "records_saved": "已保存：{files}。",
         "records_blocked": "被挡住的：",
@@ -96,6 +99,7 @@ MESSAGES = {
         "records_more": "- 另外还有 {count} 项",
         "records_left_steps": "还剩（计划里没做完的步骤）：",
         "records_left_request": "还剩：请求本身，{request}",
+        "records_left_done": "还剩：计划里的步骤都做完了，只差最后的回答没写出来。",
         "chat_miss": "抱歉,我刚没接住你的意思——能再说一次或换个说法吗?",
         "correction": "更正:上面的内容是我自己作答的,没有为它在后台运行任何任务。",  # K5
         "job_interrupted": "后台作业在 Arslan 重启时中断，没有做完：{goal}。之后没有再继续。如果还需要，跟我说一声，我重新开始。",
@@ -140,6 +144,7 @@ MESSAGES = {
         "findings_header": "【これまでの調査結果】（今回収集した資料。最終回答は未作成）",
         "records_header": "この実行自身の記録より：",
         "records_done": "完了：ツール呼び出し {count} 件が成功（{tools}）。",
+        "records_done_one": "完了：ツール呼び出し 1 件が成功（{tools}）。",
         "records_done_none": "完了：成功したツール呼び出しはありません。",
         "records_saved": "保存済み：{files}。",
         "records_blocked": "止められたもの：",
@@ -149,6 +154,7 @@ MESSAGES = {
         "records_more": "- ほか {count} 件",
         "records_left_steps": "残り（計画のうち未完了の手順）：",
         "records_left_request": "残り：依頼そのもの、{request}",
+        "records_left_done": "残り：計画の手順はすべて完了。最後の回答だけが書かれていません。",
         "chat_miss": "すみません、意図を十分に理解できませんでした。別の言い方でもう一度教えていただけますか？",
         "correction": "訂正：上の回答は私自身のものです。これのためにバックグラウンドで動いている処理はありません。",  # K5
         "job_interrupted": "Arslan の再起動でバックグラウンド作業が完了前に中断されました：{goal}。その後は何も行っていません。必要なら、もう一度始めるよう伝えてください。",
@@ -193,6 +199,7 @@ MESSAGES = {
         "findings_header": "[Hallazgos hasta ahora] (recopilados en este turno, aún sin redactar)",
         "records_header": "Según los propios registros de esta ejecución:",
         "records_done": "Hecho: {count} llamadas a herramientas salieron bien ({tools}).",
+        "records_done_one": "Hecho: 1 llamada a herramientas salió bien ({tools}).",
         "records_done_none": "Hecho: ninguna llamada a herramientas salió bien.",
         "records_saved": "Guardado: {files}.",
         "records_blocked": "Bloqueado:",
@@ -202,6 +209,7 @@ MESSAGES = {
         "records_more": "- y {count} más",
         "records_left_steps": "Pendiente (pasos del plan sin hacer):",
         "records_left_request": "Pendiente: la propia petición, {request}",
+        "records_left_done": "Pendiente: todos los pasos del plan están hechos; solo falta escribir la respuesta final.",
         "chat_miss": "Lo siento, no he entendido bien lo que querías decir. ¿Puedes expresarlo de otra forma?",
         "correction": "Corrección: la respuesta anterior es mía; no hay nada ejecutándose en segundo plano para ella.",  # K5
         "job_interrupted": "El trabajo en segundo plano se interrumpió al reiniciarse Arslan, antes de terminar: {goal}. No se hizo nada más. Pídeme que lo empiece de nuevo si todavía lo necesitas.",
@@ -246,6 +254,7 @@ MESSAGES = {
         "findings_header": "[Bisherige Erkenntnisse] (in dieser Runde gesammelt, noch nicht ausgearbeitet)",
         "records_header": "Laut den eigenen Aufzeichnungen dieses Laufs:",
         "records_done": "Erledigt: {count} Werkzeugaufrufe erfolgreich ({tools}).",
+        "records_done_one": "Erledigt: 1 Werkzeugaufruf erfolgreich ({tools}).",
         "records_done_none": "Erledigt: kein Werkzeugaufruf war erfolgreich.",
         "records_saved": "Gespeichert: {files}.",
         "records_blocked": "Blockiert:",
@@ -255,6 +264,7 @@ MESSAGES = {
         "records_more": "- und {count} weitere",
         "records_left_steps": "Offen (nicht erledigte Planschritte):",
         "records_left_request": "Offen: die Anfrage selbst, {request}",
+        "records_left_done": "Offen: Alle Planschritte sind erledigt; nur die abschließende Antwort fehlt.",
         "chat_miss": "Entschuldigung, ich habe dich nicht ganz verstanden. Kannst du es anders formulieren?",
         "correction": "Korrektur: Die Antwort oben ist meine eigene; dafür läuft nichts im Hintergrund.",  # K5
         "job_interrupted": "Die Hintergrundarbeit wurde beim Neustart von Arslan unterbrochen, bevor sie fertig war: {goal}. Seitdem ist nichts weiter passiert. Sag mir, wenn ich neu anfangen soll.",
@@ -299,6 +309,7 @@ MESSAGES = {
         "findings_header": "[Résultats recueillis] (rassemblés pendant ce tour, pas encore rédigés)",
         "records_header": "D’après les propres traces de cette exécution :",
         "records_done": "Fait : {count} appels d’outils réussis ({tools}).",
+        "records_done_one": "Fait : 1 appel d’outil réussi ({tools}).",
         "records_done_none": "Fait : aucun appel d’outil n’a réussi.",
         "records_saved": "Enregistré : {files}.",
         "records_blocked": "Bloqué :",
@@ -308,6 +319,7 @@ MESSAGES = {
         "records_more": "- et {count} de plus",
         "records_left_steps": "Reste (étapes du plan non faites) :",
         "records_left_request": "Reste : la demande elle-même, {request}",
+        "records_left_done": "Reste : toutes les étapes du plan sont faites ; seule la réponse finale n’a pas été écrite.",
         "chat_miss": "Désolé, je n’ai pas bien compris. Peux-tu le reformuler ?",
         "correction": "Correction : la réponse ci-dessus est la mienne ; rien ne tourne en arrière-plan pour elle.",  # K5
         "job_interrupted": "Le travail en arrière-plan a été interrompu au redémarrage d’Arslan, avant la fin : {goal}. Rien d’autre n’a été fait. Demandez-moi de le relancer si vous en avez encore besoin.",

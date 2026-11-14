@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from arslan.llm import trajectory
 
 from server.orchestrator import on_demand, parallel_reads
-from server.orchestrator.command_gate import _nobody_to_ask
+from server.orchestrator.command_gate import refuses_commands
 from server.orchestrator.model_step import _SENT_IS_FINAL
 from server.orchestrator.tool_loop import (  # tool_loop imports this module when a batch runs, not at its own import
     FINISH_TOOLS, WRAP_UP_TOOLS, _claim_results, _link_check_note, _native_tool_schemas, _parse_arguments,
@@ -287,8 +287,8 @@ async def _unwrap(request: TurnRequest, state: TurnState, call: Call) -> Call | 
     tool_trace, convo, policy, resolve_callable = state.tool_trace, state.convo, state.policy, state.resolve_callable
     name, args, on_demand_call = call.name, call.args, call.on_demand_call
     if (name == "use_tool" and str(args.get("name") or "").strip() == "run_command"
-            and _nobody_to_ask(confirm_command)):
-        # v0.1.63: refused (and listed) as a direct call is, not "no tool named run_command".
+            and refuses_commands(confirm_command, conversation_id)):
+        # Refused (and listed) as a direct call is, not "no tool named run_command".
         inner = args.get("arguments")
         name, args = "run_command", inner if isinstance(inner, dict) else {}
     elif "use_tool" in state.wired_keys and (name == "use_tool" or name not in state.wired_keys):

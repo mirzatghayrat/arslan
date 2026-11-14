@@ -73,9 +73,10 @@ async def _at_0095_with_methods(db_path) -> None:
     assert _rows(db_path, "SELECT count(*) FROM professional_method_versions") == [(4,)]
 
 
-def test_0096_is_the_head_of_the_boot_chain():
-    assert runner.MIGRATIONS[-1] == ("0096", m0096.upgrade_sync)
-    assert runner.head() == "0096"
+def test_0096_runs_right_after_0095_in_the_boot_chain():
+    ids = [vid for vid, _ in runner.MIGRATIONS]
+    assert ids == sorted(ids)
+    assert runner.MIGRATIONS[ids.index("0095") + 1] == ("0096", m0096.upgrade_sync)
 
 
 def test_0052_no_longer_imports_the_deleted_models():

@@ -15,6 +15,7 @@ from server.orchestrator import llm_errors
 from server.services import folder_rules, ocr_fallback, phone_ids
 from server.db import session as db_session
 from server.orchestrator import (
+    command_gate,
     env_snapshot,
     memory,
     promise_guard,
@@ -564,11 +565,17 @@ async def _handle_answer(
 PHONE_NOTE = ("The user is on their iPhone: a path on this Mac is no use to them. A file they ask for "
               "(a screenshot, chart, export or document) reaches them only through attach_file (find it "
               "with find_tools), under your answer.")
-#: v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask runs no command; the model is told so
-#: up front rather than finding out from a refusal. DELETE-BY: v0.1.64, with S2a-3 and PR4.
-SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything: it runs no commands "
-                  "(run_command is not available here). Save what you make with write_file, in Arslan's own "
-                  "folder; a step that needs the user's OK is refused and listed under the task on their Scheduled page.")
+#: ASK1-b (v0.1.64): a scheduled task's own fire runs commands that need no OK, in the sandbox; the model is told up
+#: front what is refused rather than finding out from a refusal.
+SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything. run_command runs inside the "
+                  "sandbox, in Arslan's own folder, and only commands that need no OK: one that would ask (leaving "
+                  "the sandbox, a risky command, a rule that asks) is refused, never waited on. Save what you make "
+                  "with write_file, in Arslan's own folder; a step that needs the user's OK is refused and listed "
+                  "under the task on their Scheduled page.")
+#: Every other run with nobody to ask (the heartbeat, a sub-session's turn with nobody to ask) runs no command.
+UNATTENDED_NOTE = ("Nobody is there to approve anything in this run: it runs no commands (run_command is not "
+                   "available here). Save what you make with write_file, in Arslan's own folder; a step that needs "
+                   "the user's OK is refused and listed for the user.")
 
 
 BACKGROUND_SYSTEM = (
@@ -830,7 +837,8 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
             has_images=bool(images),
             # A narrowed turn that isn't quick (its kind was unreadable) gets no phone note: attach_file isn't one of the four.
             turn_notes=[*([QUICK_NOTE] if quick else [PHONE_NOTE] if source == "phone" and not narrow else []),
-                        *([SCHEDULED_NOTE] if tool_loop._nobody_to_ask(confirm_command) else [])] or None,
+                        *([SCHEDULED_NOTE] if command_gate.fire_runs_commands(conversation_id) else
+                          [UNATTENDED_NOTE] if command_gate._nobody_to_ask(confirm_command) else [])] or None,
             # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed
             # task) reads what the user sends meanwhile; never a scheduled run, a job, a worker or a
             # delegated loop on the same conversation (review of #393).
