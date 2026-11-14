@@ -961,8 +961,11 @@ def checked_driver(driver: dict | None) -> dict:
     # "recipe" (C7b-3) and "expert" (C7c-3a; C7c-5's migration marks leftover expert tasks ended) are not
     # accepted: an old task with either fails closed here with task_invalid_driver. prepare_resume calls this
     # before it starts an attempt, so the task is left exactly as it was.
+    # L7: a goal is a background task row marked `"goal": True` (exactly True: `1 == True` in a dict compare). Nothing
+    # creates one yet (L7-3 does).
     driver = {"kind": "host"} if driver is None else driver
-    if driver not in ({"kind": "host"}, {"kind": "background"}):
+    if driver not in ({"kind": "host"}, {"kind": "background"}, {"kind": "background", "goal": True}) or (
+            "goal" in driver and driver["goal"] is not True):
         raise TaskError("task_invalid_driver")
     return dict(driver)
 
