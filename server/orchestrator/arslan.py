@@ -727,6 +727,8 @@ async def _handle_answer_body(
         confirm_schedule=confirm_schedule, source=source, steerable=steerable)
     if result is _NO_REPLY:
         return None
+    from server.services import host_run
+    host_run.note_stop(result.get("stop_reason"))   # a turn stopped short ends as needs_review (host_run._turn_stop)
     compact = await _answer_clarify(conversation_id, emit, result)
     if compact is not None:
         return compact
