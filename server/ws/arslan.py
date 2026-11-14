@@ -99,6 +99,30 @@ def message_source(frame: dict) -> str | None:
     return "phone" if frame.get("source") == "phone" else None
 
 
+async def phone_view_only(conversation_id: str) -> bool:
+    """Whether a frame the phone sent (`message_source`) on this conversation's socket must do nothing. SUB5f (the
+    user, 2026-11-15): the phone views a sub-session and never talks to one. The Bridge links one for a phone only by
+    a bug (the history read it links on refuses one, `phone._off_the_phone`), and this socket can't tell the Bridge
+    from a Mac window. Read for each frame the phone sends, with that read's own lookup (`sub_sessions.sub_ids`), so a
+    side chat (SIDE-1) counts too. Fails closed: a read that fails, or a sub-session's id (`sub_sessions.CHILD_PREFIX`)
+    whose row can't say what it is now (none, or a delete's tombstone), counts as one. One that a delete's "keep"
+    promoted has a `chat` row and is an ordinary conversation, as on the phone's list. Never raises: the socket's
+    reader takes any error for a closed socket."""
+    from server.db.companion_models import ConversationContext
+    from server.services import sub_sessions
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            if await sub_sessions.sub_ids(db, [conversation_id]):
+                return True
+            if not conversation_id.startswith(sub_sessions.CHILD_PREFIX):
+                return False
+            row = await db.get(ConversationContext, conversation_id)
+            return row is None or row.kind == sub_sessions.DELETED
+    except Exception as exc:  # noqa: BLE001 — what can't be read is not the phone's to write to
+        logger.warning("a phone frame refused: its conversation's kind could not be read: %s", type(exc).__name__)
+        return True
+
+
 async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     # Reject a cross-site WebSocket open BEFORE accept (fail-closed): a browser page
     # on another origin must not drive spawn dispatch / roster edits over this socket.
@@ -284,6 +308,15 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 data = await ws.receive_json()
                 t = data.get("type") if isinstance(data, dict) else None
                 if t in ("ping", "pong"):
+                    continue
+                if isinstance(data, dict) and message_source(data) == "phone" and await phone_view_only(conversation_id):
+                    # SUB5f: on a sub-session's socket, nothing the phone sends does anything: ahead of answering a
+                    # card, reaching a running turn (steering) or starting one. Its message is told why. A child's card
+                    # asked in its commander's thread is answered on the commander's socket, as before.
+                    if t == "user_message":
+                        await _send_or_gone(protocol.error(
+                            "SUB_SESSION_VIEW_ONLY", "On the iPhone a sub-session is view-only. Continue it on the Mac.",
+                            recoverable=True))
                     continue
                 if t in approvals.ANSWERS:
                     if approvals.answer(data) or data.get("source") == "phone":
