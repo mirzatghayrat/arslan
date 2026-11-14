@@ -15,10 +15,6 @@ ALLOWED_RUN_KEYS = {
     "run_id", "spawn_id", "spawn_name", "status", "kind", "model", "provider",
     "tokens_in", "tokens_out", "started_at", "ended_at", "eval_verdict",
 }
-SPAWN_KEYS = {
-    "id", "name", "domain", "capabilities", "generation_level", "is_default",
-    "has_active_chat", "equipment",
-}
 BANNED_KEYS = {
     "final_output", "answer", "system_prompt", "injected_kb", "injected_kb_sources",
     "error_text", "user_message", "trace", "content", "body",
@@ -74,15 +70,6 @@ def _no_body(result):
     walk(result)
 
 
-async def test_list_spawns_metadata_only(maker):
-    res = await tools.list_spawns()
-    spawn = res["spawns"][0]
-    assert spawn["name"] == "Alpha" and spawn["domain"] == "research"
-    assert set(spawn.keys()) == SPAWN_KEYS           # EXACT per-item allowlist
-    assert set(spawn["equipment"].keys()) == {"toolsets", "skills"}
-    _no_body(res)
-
-
 async def test_list_capabilities_labels_only(maker):
     res = await tools.list_capabilities()
     assert set(res.keys()) == {"builtin_tools", "mcp_servers", "skills"}
@@ -118,14 +105,13 @@ async def test_get_run_status_unknown_id_is_structured_not_error(maker):
 async def test_each_tool_emits_exactly_one_audit_line(maker, caplog):
     import logging
     with caplog.at_level(logging.INFO, logger="arslan.mcp_server.audit"):
-        await tools.list_spawns()
         await tools.list_capabilities()
         await tools.get_run_status(run_id=1)
     audited = [r.getMessage() for r in caplog.records if r.name == "arslan.mcp_server.audit"]
-    assert len(audited) == 3
+    assert len(audited) == 2
     # audit.record's frozen log format is "mcp_audit tool=<name> status=..." (Task 3,
-    # server/mcp_server/audit.py) — the tool name is a substring (e.g. "tool=list_spawns"),
+    # server/mcp_server/audit.py) — the tool name is a substring (e.g. "tool=list_capabilities"),
     # never its own whitespace-split token, so this checks containment (same convention as
-    # tests/server/test_mcp_audit.py's `"list_spawns" in msg`) rather than token-set membership.
+    # tests/server/test_mcp_audit.py's `"list_capabilities" in msg`) rather than token-set membership.
     joined = " ".join(audited)
-    assert all(name in joined for name in {"list_spawns", "list_capabilities", "get_run_status"})
+    assert all(name in joined for name in {"list_capabilities", "get_run_status"})
