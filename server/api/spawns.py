@@ -1,18 +1,16 @@
 """What is left of the spawn REST endpoints. DELETE-BY: v0.1.64, with C7c-4 (the equip popover, the release check's
-login probe) and C7c-3b (the preferences routes, which are on the security surface: memory writes)."""
+login probe). C7c-3b removed the preferences routes: expert-scope memory entries are deleted through
+DELETE /memory/entries/{id}, which syncs the deletion ledger in `memory_repository.repository()`."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
-from server.db.models import Spawn
 from server.db.session import get_session
 from server.schemas import (
     EquipmentOut,
     EquipmentUpdateIn,
-    PreferenceDeleteIn,
-    PreferencesOut,
     SpawnDetailOut,
     SpawnOut,
 )
@@ -67,39 +65,3 @@ async def update_equipment(
     await _attach_equipment(detail, spawn_id, session)
     return detail
 
-
-@router.get("/spawns/{spawn_id}/preferences", response_model=PreferencesOut)
-async def get_preferences(spawn_id: int, session: AsyncSession = Depends(get_session)) -> PreferencesOut:
-    spawn = await session.get(Spawn, spawn_id)
-    if spawn is None:
-        raise HTTPException(status_code=404, detail="spawn not found")
-    from arslan.companion.memory import MemoryScope
-    from server.services.memory_repository import MemoryRepository
-    entries = await MemoryRepository(session).list_entries(scope=MemoryScope(kind="expert", id=str(spawn_id)))
-    return PreferencesOut(preferences=[row["content"] for row in entries
-                                      if row["status"] == "active" and row["content"]], entries=entries)
-
-
-@router.delete("/spawns/{spawn_id}/preferences", response_model=PreferencesOut)
-async def delete_preference(spawn_id: int, body: PreferenceDeleteIn,
-                            session: AsyncSession = Depends(get_session)) -> PreferencesOut:
-    spawn = await session.get(Spawn, spawn_id)
-    if spawn is None:
-        raise HTTPException(status_code=404, detail="spawn not found")
-    from arslan.companion.memory import MemoryActor, MemoryError
-    from server.services.memory_repository import MemoryRepository
-    if body.entry_id is None or body.expected_version is None:
-        raise HTTPException(428, detail="memory_identity_and_version_required")
-    repo = MemoryRepository(session)
-    try:
-        entry = await repo.get(body.entry_id)
-        if entry.scope_kind != "expert" or entry.scope_id != str(spawn_id):
-            raise HTTPException(403, detail="memory_scope_denied")
-        await repo.delete_entry(entry.id, body.expected_version, MemoryActor(origin="user"))
-        await session.commit()
-        from server.services.memory_deletion_ledger import sync
-        await sync(session)
-    except MemoryError as exc:
-        await session.rollback()
-        raise HTTPException(409 if exc.code == "memory_version_conflict" else 404, detail=exc.code) from exc
-    return await get_preferences(spawn_id, session)

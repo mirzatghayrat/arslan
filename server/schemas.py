@@ -752,17 +752,6 @@ class RecapOut(BaseModel):
     items: list[RecapItemOut]
 
 
-class PreferencesOut(BaseModel):
-    preferences: list[str] = []
-    entries: list[dict] = []
-
-
-class PreferenceDeleteIn(BaseModel):
-    fact: str
-    entry_id: str | None = None
-    expected_version: int | None = None
-
-
 # --- S3-M3 cost visibility (Task 5) ----------------------------------------
 # Honesty invariant across all three shapes: usd is None (never 0.0) whenever the
 # cost can't be known — unknown-price model or estimated tokens. $0.00 is reserved
