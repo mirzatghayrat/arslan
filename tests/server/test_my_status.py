@@ -55,11 +55,20 @@ async def test_no_model_configured_says_so(client):
 @pytest.mark.parametrize("sandbox, policy, lan, expected", [
     (None, None, None, {"command_sandbox": "on", "approvals": "harmless commands run, the rest ask",   # ASK1-a
                         "local_network_scan": "off"}),
-    (None, "ask_all", None, {"command_sandbox": "on", "approvals": "every command asks", "local_network_scan": "off"}),
-    ("false", "ask_risky", "true", {"command_sandbox": "off", "approvals": "harmless commands run, the rest ask", "local_network_scan": "on"}),
+    (None, "ask", None, {"command_sandbox": "on", "approvals": "every command asks", "local_network_scan": "off"}),
+    # S5a: "Ask only when risky" with the sandbox off runs as "Ask every step" (its fallback).
+    ("false", "ask_risky", "true", {"command_sandbox": "off", "approvals": "every command asks", "local_network_scan": "on"}),
+    (None, "full_access", None, {"command_sandbox": "on", "local_network_scan": "off",
+                                 "approvals": "full access: only money, sending, the network and the hard rules ask"}),
 ])
-async def test_the_safety_settings_are_the_stored_ones(client, sandbox, policy, lan, expected):
-    rows = [Setting(key=k, value=v) for k, v in (("terminal_sandbox_enabled", sandbox), ("shell_confirm_policy", policy),
+async def test_the_safety_settings_are_the_stored_ones(client, monkeypatch, tmp_path, sandbox, policy, lan, expected):
+    from server.services import command_sandbox, settings_service
+
+    async def folder(db):
+        return tmp_path
+    monkeypatch.setattr(command_sandbox, "available", lambda: True)      # a Mac whose sandbox starts
+    monkeypatch.setattr(settings_service, "workspace_dir_for_run", folder)
+    rows = [Setting(key=k, value=v) for k, v in (("terminal_sandbox_enabled", sandbox), ("default_permission_mode", policy),
                                                    ("lan_discovery_enabled", lan)) if v is not None]
     await _add(client, rows)
     assert (await self_status.snapshot())["safety"] == expected

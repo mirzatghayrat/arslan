@@ -420,6 +420,18 @@ async def ensure(run_id: int | None, roots: list[Path], written: Path | None = N
             logger.warning("checkpoints: saving for run %s failed", run_id, exc_info=True)
 
 
+async def save_blocked(run_id: int | None, folder) -> bool:
+    """S5a's fallback: whether this run's change in `folder` would have no undo: its save was skipped (over the file or
+    size cap, low disk, another volume) or failed. Saves it first (`ensure`), as the run's first change would. No run
+    or no folder: False (nothing is saved for it either way)."""
+    if run_id is None or folder is None:
+        return False
+    root = Path(folder).resolve()
+    await ensure(run_id, [root])
+    entry = _entry(manifest(run_id) or {"roots": []}, root)
+    return entry is None or entry.get("skipped") is not None
+
+
 def _ensure_sync(run_id: int, roots: list[Path], written: Path | None = None) -> None:
     with _restoring:  # a first change waits for a restore in progress; restore checks the runs under it
         _ensure_locked(run_id, roots, written)

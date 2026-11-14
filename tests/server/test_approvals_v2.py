@@ -156,10 +156,15 @@ class Windows:
                               **({"scope": words} if verb == "yes" else {"note": words})})
 
 
+def _ask_every_step(monkeypatch) -> None:
+    """S5a: "Ask only when risky" answers a write card in the work folder itself; these tests are about the card."""
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask"))
+
+
 @pytest.fixture
 def job_db(execution_db, monkeypatch):
     permission_store._reset_for_tests()
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     return execution_db
 
 
@@ -197,6 +202,7 @@ async def test_always_on_a_job_rule_card_stores_nothing_and_the_next_job_is_aske
 
 
 async def test_a_job_workspace_write_asks_through_decide_and_once_means_once(job_db, monkeypatch):
+    _ask_every_step(monkeypatch)
     windows = Windows(("yes", "once"), ("yes", "conversation"))
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: windows)
     job = approvals.JobConfirmations("conv", job_id="job-1")
@@ -272,6 +278,7 @@ async def test_two_different_asks_never_share_a_card(job_db, monkeypatch, asks):
     """One answer must never approve what its card did not show. Seen in a probe (2026-10-12):
     `rm a.txt` and `rm b.txt` from two jobs (both under the rule "delete") were one card showing
     `rm a.txt`, and one "Once" ran both."""
+    _ask_every_step(monkeypatch)
     sent = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: sent.append)
     first = asyncio.ensure_future(asks[0](approvals.JobConfirmations("conv", job_id="job-a")))
@@ -611,6 +618,7 @@ def _answering(shown: list, scope: str | None):
 async def test_the_card_ui_s_in_this_conversation_holds_for_the_conversation(job_db, monkeypatch):
     """0.1.61 PR 2b: the UI sends the scope the user chose. "In this conversation" on a write card:
     a job writing three files asks once; a schedule allowed so in one job holds for the next."""
+    _ask_every_step(monkeypatch)
     shown: list = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _answering(shown, "conversation"))
     job = approvals.JobConfirmations("conv", job_id="job-1")
@@ -626,6 +634,7 @@ async def test_a_yes_with_no_scope_on_a_write_card_holds_this_once_only(job_db, 
     """PR 2b removed the stop-gap that read a scope-less yes on a write or schedule card as "in this
     conversation": such a yes (a tab from before the update) is the card's first choice, once —
     narrower, never wider. Each write asks again."""
+    _ask_every_step(monkeypatch)
     shown: list = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _answering(shown, None))
     job = approvals.JobConfirmations("conv", job_id="job-1")

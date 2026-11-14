@@ -327,7 +327,7 @@ async def run_turn(turn, monkeypatch, database, replies, *, tools=None, later_to
     for key, answer in {**ANSWERS, **(answers or {})}.items():
         monkeypatch.setitem(executors.EXECUTORS, key, _around(turn, key, answer, own_limit.get(key)))
     async with database() as db:
-        db.add(Setting(key="shell_confirm_policy", value="ask_all"))      # a card for every command
+        db.add(Setting(key="default_permission_mode", value="ask"))      # a card for every command
         await db.commit()
     tools = RESEARCH if tools is None else tools
     saved = saved if saved is not None else {"done": False}

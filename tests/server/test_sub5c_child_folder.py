@@ -99,6 +99,11 @@ async def _held(model, brief=OUTLINE):
 
 
 async def test_a_childs_file_tools_write_only_in_its_own_folder_and_its_card_names_it(ws, monkeypatch):
+    from server.services import settings_service
+
+    async def ask(db):          # S5a: the write card is shown under "Ask every step" ("Ask only when risky" answers it)
+        return "ask"
+    monkeypatch.setattr(settings_service, "default_permission_mode", ask)
     shown = _sink(ROOT)
     model = _Model({OUTLINE: _steps(
         ("write_file", {"path": "outline.md", "content": "# Outline"}),
@@ -291,7 +296,7 @@ def test_a_turn_typed_in_a_sub_sessions_window_writes_only_in_its_folder(app_cli
         async with app_client.db_maker() as db:
             db.add(Setting(key="workspace_dir", value=str(work)))
             await settings.update_settings(db, {"orchestrator_shell_enabled": "true",
-                                                "shell_confirm_policy": "ask_risky"})
+                                                "default_permission_mode": "ask_risky"})
             await sub_sessions.create_child(db, ROOT, "sub-kid")
             await db.commit()
     app_client.portal.call(seed)

@@ -909,9 +909,9 @@ def test_an_ab_cell_sets_extra_settings_but_never_the_workspace(monkeypatch):
     from scripts.kernel_bench.arslan_driver import settings_body
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
     monkeypatch.delenv("BENCH_SHELL_POLICY", raising=False)
-    assert settings_body("/run") == {"shell_confirm_policy": "ask_risky", "workspace_dir": "/run"}
+    assert settings_body("/run") == {"default_permission_mode": "ask_risky", "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"folder_rules_enabled": "false", "workspace_dir": "/elsewhere"}')
-    assert settings_body("/run") == {"folder_rules_enabled": "false", "shell_confirm_policy": "ask_risky",
+    assert settings_body("/run") == {"folder_rules_enabled": "false", "default_permission_mode": "ask_risky",
                                      "workspace_dir": "/run"}
     monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"folder_rules_enabled": false}')
     with pytest.raises(ValueError):
@@ -926,15 +926,19 @@ def test_the_bench_pins_its_command_policy(monkeypatch):
     from scripts.kernel_bench.arslan_driver import settings_body
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
     monkeypatch.setenv("BENCH_SHELL_POLICY", "ask_all")
-    assert settings_body("/run")["shell_confirm_policy"] == "ask_all"
+    # S5a (#893 review 4): the server's old field only narrows the default, so the driver writes the mode ("ask" is
+    # ask_all).
+    body = settings_body("/run")
+    assert body["default_permission_mode"] == "ask" and "shell_confirm_policy" not in body
     for bad in ("ask_everything", "ASK_ALL"):
         monkeypatch.setenv("BENCH_SHELL_POLICY", bad)
         with pytest.raises(ValueError):
             settings_body("/run")
     monkeypatch.delenv("BENCH_SHELL_POLICY")
-    monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", '{"shell_confirm_policy": "ask_all"}')
-    with pytest.raises(ValueError):
-        settings_body("/run")
+    for key in ("shell_confirm_policy", "default_permission_mode"):
+        monkeypatch.setenv("BENCH_ARSLAN_SETTINGS", json.dumps({key: "ask"}))
+        with pytest.raises(ValueError):
+            settings_body("/run")
 
 
 def test_the_driver_counts_cards_to_leave_the_sandbox_and_hands_them_to_the_record(monkeypatch):

@@ -211,7 +211,7 @@ async def test_only_unreadable_alone_takes_the_offline_branch(monkeypatch, rules
 
     async def risky(db):
         return "ask_risky"
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", risky)
+    monkeypatch.setattr(settings_service, "default_permission_mode", risky)
     shown: list = []
 
     async def decide(request, context):

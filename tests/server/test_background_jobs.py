@@ -289,7 +289,7 @@ async def test_a_remote_job_command_always_asks(execution_db, monkeypatch):
     # S2a-2: whether a local command needs a card is decided once, in the tool loop; the job's ladder
     # shows one whenever it is called. A remote command is never skipped, even a read-only one.
     from server.services import settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "type"))
     confirm = approvals.JobConfirmations(CID)
@@ -301,7 +301,7 @@ async def test_a_job_no_longer_honours_a_stored_always(execution_db, monkeypatch
     """0.1.48–0.1.62: "don't ask again" given in a conversation held for jobs too. S2a-2: a rule is
     layer ②, this time only, and a stored `legacy_rule` is not read: the job asks."""
     from server.services import permission_store, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     async with execution_db() as db:
         await permission_store.add_rule(db, "legacy_rule", "git-push", created_from="card")
         await db.commit()
@@ -319,7 +319,7 @@ async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(execu
     assess() names only the first matching rule, so the job checks every rule. Since 0.1.62 (F4a)
     it no longer waves through osascript alone either: that card is for one time only."""
     from server.services import permission_store, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "command"))
     async with execution_db() as db:          # S6: a stray row such as 0092 deletes (nothing writes one now)
