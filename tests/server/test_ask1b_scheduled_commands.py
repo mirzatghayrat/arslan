@@ -101,14 +101,15 @@ def _own(tmp_path) -> str:
 
 # ── what a fire may run ──────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("policy", [None, "ask_risky", "ask_all"])
+@pytest.mark.parametrize("mode", [None, "ask_risky", "ask"])
 @pytest.mark.parametrize("seen", [False, True])
 async def test_a_fire_runs_a_harmless_command_in_the_sandbox_under_ask_risky_and_none_under_ask_all(
-        ran, tmp_path, policy, seen):
-    if policy is not None:
-        await _set(shell_confirm_policy=policy)
+        ran, tmp_path, mode, seen):
+    """S5a: the default mode (`default_permission_mode`) replaced the stored ask_all / ask_risky."""
+    if mode is not None:
+        await _set(default_permission_mode=mode)
     out = await _fire("ls", seen=seen)
-    if policy == "ask_all":
+    if mode == "ask":
         assert ran == [] and out["ok"] is False and "nobody to ask" in out["error"]
         assert out["note"] == command_gate.FIRE_ASK_ALL_NOTE and "Ask only for risky commands" in out["note"]
         [row] = await _rows()                                          # listed, once, as the card would have read
@@ -137,6 +138,49 @@ async def test_a_command_that_would_ask_is_refused_and_listed_not_waited_on(ran,
     assert ran == [] and out["ok"] is False and out["note"] == command_gate.FIRE_REFUSED_NOTE
     [row] = await _rows()
     assert (row.kind, row.target, row.decided_by, row.decision) == ("command", "rules:git-push", "policy", "deny")
+
+
+#: S5a (the merge of #890): what a fire's commands do in each mode. Full access is no wider than ask_risky (nobody is
+#: there, so the mode answers nothing for the run); plan runs none.
+_FIRE_BY_MODE = {"plan": "plan_mode", "ask": "ask_all_note", "ask_risky": "runs", "full_access": "runs"}
+
+
+@pytest.mark.parametrize("mode", list(_FIRE_BY_MODE))
+async def test_a_fires_outcome_in_each_of_the_four_modes(ran, tmp_path, mode):
+    await _set(default_permission_mode=mode)
+    out = await _fire("ls")
+    outcome = ("runs" if ran == [("ls", True, False, _own(tmp_path))] and out.get("ok") is not False else
+               "plan_mode" if ran == [] and out.get("code") == "plan_mode" else
+               "ask_all_note" if ran == [] and out.get("note") == command_gate.FIRE_ASK_ALL_NOTE else repr(out))
+    assert outcome == _FIRE_BY_MODE[mode]
+
+
+@pytest.mark.parametrize("mode", ["ask_risky", "full_access"])
+async def test_full_access_is_no_wider_than_ask_risky_in_a_fire(ran, monkeypatch, mode):
+    """What would ask, and leaving the sandbox, are refused and listed; where ask_risky falls back (here the work
+    folder holding home) full access falls back with it, and the note is not the "you chose ask" one."""
+    await _set(default_permission_mode=mode)
+    asked = await _fire("git push origin main")
+    out = await _fire("ls", outside_sandbox=True, why="stand-in reason")
+    assert ran == [] and asked["ok"] is False and out["ok"] is False
+    assert asked["note"] == command_gate.FIRE_REFUSED_NOTE
+    assert [(r.kind, r.decision) for r in await _rows()] == [("command", "deny"), ("outside", "deny")]
+
+    async def holds_home():
+        return True
+    monkeypatch.setattr(command_gate, "_work_folder_holds_home", holds_home)
+    out = await _fire("ls")
+    assert ran == [] and out["ok"] is False and out["note"] == command_gate.FIRE_REFUSED_NOTE
+
+
+async def test_on_linux_with_no_sandbox_ask_risky_fires_run_nothing(ran, monkeypatch):
+    """CI is Linux: no seatbelt, so ask_risky falls back to ask and a fire's harmless command is refused and listed."""
+    monkeypatch.setattr(command_sandbox, "available", lambda: False)
+    await _set(default_permission_mode="ask_risky")
+    out = await _fire("ls")
+    [row] = await _rows()
+    assert ran == [] and out["ok"] is False and out["note"] == command_gate.FIRE_REFUSED_NOTE
+    assert (row.kind, row.decision) == ("command", "deny")
 
 
 async def test_asking_to_leave_the_sandbox_is_refused_and_listed(ran):
@@ -178,6 +222,10 @@ async def test_a_sandbox_gone_between_the_gate_and_the_executor_refuses_and_list
     monkeypatch.setattr(command_sandbox, "outside_wrapper", outside)
     if how == "switched off":
         monkeypatch.setattr(command_gate, "_sandbox_enabled", on)           # what the gate read
+
+        async def no_fallback(_check_save):                                 # S5a: the mode the gate read (on too)
+            return ""
+        monkeypatch.setattr(permissions, "_fallback", no_fallback)
         await _set(terminal_sandbox_enabled="false")                        # what the executor reads
     else:
         real, gone = command_gate._own_folder_holds, []
@@ -228,6 +276,7 @@ async def test_the_cut_back_starts_a_fires_command_in_its_runs_temp_folder(ran, 
     temp = tmp_path / "run-temp"
     monkeypatch.setattr(run_temp, "folder", lambda key: temp if key == 4242 else None)
     monkeypatch.setattr(command_gate, "_FIRE_WRITES", False)
+    (tmp_path / "Arslan").mkdir()          # S5a: in a run "Ask only when risky" holds only where undo can be saved
     with execution_context.bind_run(4242):
         await _fire("ls")
     assert ran == [("ls", True, False, str(temp))]

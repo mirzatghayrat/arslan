@@ -254,9 +254,10 @@ async def _settings_out(session: AsyncSession) -> SettingsOut:
 
     from server.services import checkpoints
     data = await settings_service.get_settings(session)
-    # ASK1-a: the policy as the server reads it (unset is ask_risky, an odd spelling ask_all), so the window shows
-    # what applies and needs no copy of the rule.
-    data["shell_confirm_policy"] = await settings_service.shell_confirm_policy(session)
+    # S5a: the default mode as the server reads it, and the window's old field derived from it.
+    # DELETE-BY: S5a-2 (the derived `shell_confirm_policy`), when the window reads default_permission_mode.
+    data["default_permission_mode"] = await settings_service.default_permission_mode(session)
+    data["shell_confirm_policy"] = "ask_all" if data["default_permission_mode"] == "ask" else "ask_risky"
     # S3b: the folder as set (Arslan's own when empty), never created by reading Settings; the check reads
     # the disk, so off the event loop (⓪Plan's review 🟡10). A folder that isn't there reads False.
     raw = str(data.get("workspace_dir") or "").strip()
@@ -274,7 +275,15 @@ async def read_settings(session: AsyncSession = Depends(get_session)) -> Setting
 async def write_settings(
     body: SettingsIn, session: AsyncSession = Depends(get_session)
 ) -> SettingsOut:
-    await settings_service.update_settings(session, body.model_dump(exclude_none=True))
+    data = body.model_dump(exclude_none=True)
+    # S5a: the window's old field lands in the new key only, and never wider than the default it replaces (#893 review
+    # 4): only `default_permission_mode` itself widens. DELETE-BY: S5a-2, when the window writes the mode.
+    old = data.pop("shell_confirm_policy", None)
+    if old is not None and "default_permission_mode" not in data:
+        from server.services import permissions
+        data["default_permission_mode"] = permissions.narrower(
+            await settings_service.default_permission_mode(session), "ask" if old == "ask_all" else "ask_risky")
+    await settings_service.update_settings(session, data)
     # Keep the heartbeat's scheduled task in step with its settings. Best-effort:
     # a settings write must still succeed if the sync fails, and sync_task is
     # idempotent, so the next write (or boot) repairs it.

@@ -70,8 +70,8 @@ async def test_a_jobs_command_card_is_answered_and_not_judged(execution_db, monk
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: window)
 
     async def ask_all(db):
-        return "ask_all"
-    monkeypatch.setattr("server.services.settings_service.shell_confirm_policy", ask_all)
+        return "ask"
+    monkeypatch.setattr("server.services.settings_service.default_permission_mode", ask_all)
     job = approvals.JobConfirmations("job-c", job_id="job-1")
     assert await job.command("ls -la", [], sandbox=sandbox) is True
     assert await _settled_rows(execution_db, Judgment) == []

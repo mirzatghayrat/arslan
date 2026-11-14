@@ -8,6 +8,7 @@ import contextlib
 import contextvars
 import re
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -15,14 +16,37 @@ from server.orchestrator.tool_gates import _declined, _unattended
 from server.orchestrator.turn_state import ToolTurn
 
 
+#: S5a: the conversation whose command `check` is deciding, for `_asks_for_everything` (and the command card that
+#: `check` asks through, `command_confirm`). Set for the length of `check`; None outside it (the default mode).
+_CONVERSATION: ContextVar[str | None] = ContextVar("command_gate_conversation", default=None)
+
+
 async def _asks_for_everything() -> bool:
-    """The user chose 'ask for every command'. Unknown counts as yes (then nothing runs unasked)."""
-    from server.db import session as db_session
-    from server.services import settings_service
+    """The conversation runs in "Ask every step" (S5a): its own choice, or "Ask only when risky" falling back to it
+    (`permissions.mode_for`, which saves this run's folder first to know whether undo holds). Unknown counts as yes
+    (then nothing runs unasked).
+
+    A scheduled task's own fire (ASK1-b) reads the mode of the conversation the task runs in (its own, else the
+    default). There "Full access" is no wider than "Ask only when risky", with the same fallbacks: with nobody to ask,
+    a mode never answers for the run, so the fire's ceiling stays ASK1-b's (the merge of #890 into S5a-1)."""
+    from server.services import permissions
     try:
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.shell_confirm_policy(db) == "ask_all"
+        conversation_id = _CONVERSATION.get()
+        state = await permissions.mode_for(conversation_id, check_save=True)
+        if state.mode == "full_access" and fire_runs_commands(conversation_id):
+            return bool(await permissions._fallback(True))
+        return state.mode == "ask"
     except Exception:  # noqa: BLE001 — fails closed: unreadable means ask for every command
+        return True
+
+
+async def _chose_ask_every_step(conversation_id: str | None) -> bool:
+    """Whether "Ask every step" is the conversation's chosen mode, not "Ask only when risky" falling back to it (a
+    fire's note says where to switch only for the user's own choice). Unknown counts as yes."""
+    from server.services import permissions
+    try:
+        return (await permissions.mode_for(conversation_id)).chosen == "ask"
+    except Exception:  # noqa: BLE001 — the note only; the refusal is already decided
         return True
 
 
@@ -68,7 +92,9 @@ SCHEDULED_COMMAND_NOTE = ("This run doesn't run commands: nobody is there to app
 #: ASK1-b: what a fire is told when a command that would ask was refused and listed.
 FIRE_REFUSED_NOTE = ("A scheduled run runs only commands that need no OK, inside the sandbox; this one was refused and "
                      "listed under the task on the user's Scheduled page. Do the rest without it, or say what to run.")
-#: ASK1-b: under a stored "ask before every command" every command of a fire is refused; this says where to switch.
+#: ASK1-b: under a chosen "Ask every step" (S5a) every command of a fire is refused; this says where to switch.
+#: DELETE-BY: S5a-2 (the path): it names the window's old control, which since S5a-1 only narrows the default mode
+#: (#893 review 4); S5a-2 points it at the new mode control.
 FIRE_ASK_ALL_NOTE = ("The user chose to be asked before every command, so a scheduled run runs none. To let scheduled "
                      "runs run commands in the sandbox: Settings › What Arslan may do › Terminal › When to ask › "
                      "“Ask only for risky commands”.")
@@ -484,6 +510,14 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
 
     The stages, in the order it has always asked (LOOP1 c4): what never runs, where it runs, the card, the network
     after outside content. Each answers with the refusal to record, or None to go on."""
+    token = _CONVERSATION.set(turn.conversation_id)       # S5a: the mode `_asks_for_everything` reads
+    try:
+        return await _check(args, turn)
+    finally:
+        _CONVERSATION.reset(token)
+
+
+async def _check(args: dict, turn: ToolTurn) -> dict | CommandPlan:
     # 0.1.48: one shell string; a forbidden command is refused here, before any
     # card, so nobody is ever asked to approve wiping the disk.
     from server.services import terminal_policy
@@ -740,8 +774,9 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
                                         why=str(args.get("why") or "").strip()[:300],
                                         run_later=d.later_line if d.lift else ()),
             conversation_id)}
-        if fire_runs_commands(conversation_id):     # ASK1-b: refused and listed; a stored ask_all says where to switch
-            result["note"] = FIRE_ASK_ALL_NOTE if ask_all else FIRE_REFUSED_NOTE
+        if fire_runs_commands(conversation_id):     # ASK1-b: refused and listed; a chosen "ask" says where to switch
+            result["note"] = (FIRE_ASK_ALL_NOTE if ask_all and await _chose_ask_every_step(conversation_id) else
+                              FIRE_REFUSED_NOTE)
         return result
     from server.services import permissions
     permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below

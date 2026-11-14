@@ -1,6 +1,6 @@
 """HR-0, the absolute list (hard_rules.ABSOLUTE): what holds whatever the settings. Each test runs under every entry of
 `SETTINGS`, today the least strict ones main has: "Ask only for risky commands", this conversation's grant to run
-commands outside the sandbox, and the sandbox switched off. S5a adds full access as a second entry.
+commands outside the sandbox, and the sandbox switched off; and S5a's full access with the same grant and switch.
 
 Commands never run here: the subprocess is replaced, and the profile it would have started under is what is read
 (as on a Mac, where seatbelt can start; CI's Linux has none). Command texts come from the existing tests' own cases."""
@@ -19,9 +19,13 @@ CONV = "c1"
 STAND_IN = "zz-stand-in-word"
 _THREE = "tests/server/test_s2a2_three_layers.py::"
 
-#: The settings each absolute rule is tested under. S5a: add "full_access" here (and how to switch it on in `loosest`).
+#: The settings each absolute rule is tested under. S5a: "Ask only when risky" with the sandbox off now runs as "Ask
+#: every step" (its fallback), so its entry keeps the sandbox switch on; full access is the least strict entry.
 SETTINGS = {
-    "least_strict": {"shell_confirm_policy": "ask_risky", "terminal_sandbox_enabled": "false", "outside_grant": True},
+    "least_strict": {"default_permission_mode": "ask_risky", "terminal_sandbox_enabled": "true",
+                     "outside_grant": True},
+    "full_access": {"default_permission_mode": "full_access", "terminal_sandbox_enabled": "false",
+                    "outside_grant": True},
 }
 
 

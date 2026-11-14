@@ -38,7 +38,8 @@ def _rows(db_path) -> dict[str, str]:
     try:
         with engine.connect() as conn:
             return dict(conn.execute(sa.text(
-                "SELECT key, value FROM settings WHERE key IN ('shell_confirm_policy', :note)"), {"note": NOTE}).all())
+                "SELECT key, value FROM settings WHERE key IN ('shell_confirm_policy', 'default_permission_mode', :note)"),
+                {"note": NOTE}).all())
     finally:
         engine.dispose()
 
@@ -56,14 +57,15 @@ def _seed(db_path, **values: str | None) -> None:
 
 
 def _before_0095(db_path) -> None:
-    """An existing install from before ASK1-a: every migration but 0095 recorded."""
+    """An existing install from before ASK1-a: every migration but 0095 (and S5a's 0098, which runs after it on any
+    such upgrade) recorded."""
     engine = sa.create_engine(f"sqlite:///{db_path}")
     try:
         with engine.begin() as conn:
             Base.metadata.create_all(conn)
             runner._ensure_table(conn)
             for vid, _ in runner.MIGRATIONS:
-                if vid != "0095":
+                if vid not in ("0095", "0098"):
                     conn.execute(sa.text("INSERT INTO schema_version(version, applied_at) VALUES (:v, 'then')"),
                                  {"v": vid})
     finally:
@@ -71,12 +73,15 @@ def _before_0095(db_path) -> None:
 
 
 async def _policy(db_path) -> str:
+    """What the install reads, in the old policy's words: since S5a (migration 0098) the default mode, where "ask"
+    is ask_all and every other mode asks only for risky commands."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
     try:
         async with async_sessionmaker(engine, class_=AsyncSession)() as session:
-            return await settings_service.shell_confirm_policy(session)
+            mode = await settings_service.default_permission_mode(session)
     finally:
         await engine.dispose()
+    return "ask_all" if mode == "ask" else "ask_risky"
 
 
 # ── the default ──────────────────────────────────────────────────────────────
@@ -88,15 +93,15 @@ async def test_a_new_install_asks_only_for_risky_commands(tmp_path):
 
 
 @pytest.mark.parametrize("stored, reads", [
-    ("ask_risky", "ask_risky"), ("ask_all", "ask_all"),
+    ("ask_risky", "ask_risky"), ("ask", "ask_all"),
     ("", "ask_all"), ("garbage", "ask_all"), (" ask_risky", "ask_all"),
-    ("ASK_RISKY", "ask_all"), ("ask_risky" + chr(0xA0), "ask_all"), ("ask_everything", "ask_all"),   # NBSP spelled out
+    ("ASK_RISKY", "ask_all"), ("ask_risky" + chr(0xA0), "ask_all"), ("ask_all", "ask_all"),   # NBSP spelled out
 ])
 async def test_only_unset_and_the_exact_value_read_ask_risky(tmp_path, stored, reads):
-    """Anything unreadable stays strict: an unknown spelling reads ask_all, and a stored ask_all stays."""
+    """S5a: the default mode's reader. Anything unreadable stays strict: an unknown spelling reads "ask"."""
     db = tmp_path / "spelling.db"
     await _boot(db)
-    _seed(db, shell_confirm_policy=stored)
+    _seed(db, default_permission_mode=stored)
     assert await _policy(db) == reads
 
 
@@ -121,9 +126,12 @@ async def test_an_existing_install_is_told_once_and_its_policy_is_untouched(tmp_
     _seed(db, shell_confirm_policy=stored, **{NOTE: before})
     await _boot(db)
     rows = _rows(db)
-    assert rows.get("shell_confirm_policy") == stored                 # 0095 writes nothing to the policy
-    assert rows.get(NOTE) == after
-    assert await _policy(db) == ("ask_risky" if stored in (None, "ask_risky") else "ask_all")
+    assert rows.get(NOTE) == after                                   # 0095 reads the old key; it writes no policy
+    # S5a's 0098 then moves the old key: an exact ask_all to "ask", anything else stored to "ask_risky".
+    assert "shell_confirm_policy" not in rows
+    assert rows.get("default_permission_mode") == (None if stored is None else "ask" if stored == "ask_all"
+                                                   else "ask_risky")
+    assert await _policy(db) == ("ask_all" if stored == "ask_all" else "ask_risky")
 
 
 @pytest.mark.parametrize("stored", [None, "ask_all", "ask_risky"])
@@ -231,9 +239,9 @@ async def test_the_settings_api_sends_the_policy_as_read_and_the_note(client):
     from server.db import session as db_session
     body = (await client.get("/api/v1/settings")).json()
     assert (body["shell_confirm_policy"], body[NOTE]) == ("ask_risky", "")          # a new database: unset
-    for stored, reads in (("garbage", "ask_all"), ("ask_all", "ask_all"), ("ask_risky", "ask_risky")):
+    for stored, reads in (("garbage", "ask_all"), ("ask", "ask_all"), ("ask_risky", "ask_risky")):
         async with db_session.AsyncSessionLocal() as session:
-            await settings_service.update_settings(session, {"shell_confirm_policy": stored})
+            await settings_service.update_settings(session, {"default_permission_mode": stored})
         assert (await client.get("/api/v1/settings")).json()["shell_confirm_policy"] == reads
     async with db_session.AsyncSessionLocal() as session:
         await settings_service.update_settings(session, {NOTE: "pending"})
@@ -291,7 +299,7 @@ async def test_by_default_with_no_sandbox_it_gets_a_card(execution_db, monkeypat
 
 async def test_a_stored_ask_all_still_asks_for_every_command(execution_db, monkeypatch):
     async with execution_db() as session:
-        await settings_service.update_settings(session, {"shell_confirm_policy": "ask_all"})
+        await settings_service.update_settings(session, {"default_permission_mode": "ask"})
     assert await _run(monkeypatch, "ls") == (["ls"], [])
 
 

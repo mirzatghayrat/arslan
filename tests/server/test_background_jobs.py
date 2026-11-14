@@ -289,7 +289,7 @@ async def test_a_remote_job_command_always_asks(execution_db, monkeypatch):
     # S2a-2: whether a local command needs a card is decided once, in the tool loop; the job's ladder
     # shows one whenever it is called. A remote command is never skipped, even a read-only one.
     from server.services import settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "type"))
     confirm = approvals.JobConfirmations(CID)
@@ -301,7 +301,7 @@ async def test_a_job_no_longer_honours_a_stored_always(execution_db, monkeypatch
     """0.1.48–0.1.62: "don't ask again" given in a conversation held for jobs too. S2a-2: a rule is
     layer ②, this time only, and a stored `legacy_rule` is not read: the job asks."""
     from server.services import permission_store, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     async with execution_db() as db:
         await permission_store.add_rule(db, "legacy_rule", "git-push", created_from="card")
         await db.commit()
@@ -319,7 +319,7 @@ async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(execu
     assess() names only the first matching rule, so the job checks every rule. Since 0.1.62 (F4a)
     it no longer waves through osascript alone either: that card is for one time only."""
     from server.services import permission_store, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "command"))
     async with execution_db() as db:          # S6: a stray row such as 0092 deletes (nothing writes one now)
@@ -715,8 +715,9 @@ async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(exe
     closes from the turn's own records: one call that ran, one card nobody answered, and what is left."""
     from arslan import execution_budget
     from server.registry import executors
+    # The clock is long; the test ends it itself, at the third call (below), so no real time is raced.
     monkeypatch.setattr(execution_budget, "run_budget",
-                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=1.5)))
+                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=600)))
     monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
     seen = []
@@ -728,7 +729,11 @@ async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(exe
                 return {"ok": True, "summary": "1 note"}
             if len(seen) == 2:
                 return {"ok": False, "error": permissions._EXPIRED.format(title="Read the notes?", minutes=30)}
-            await asyncio.sleep(30)      # the step the wall clock cuts off
+            # The step the wall clock cuts off: expire the job's own timeouts now (the seam `running_clock`
+            # registers), then wait; the cancellation arrives from the timeout, not from a real elapsed time.
+            for clock in execution_budget._clocks.get():
+                clock.timeout.reschedule(asyncio.get_running_loop().time())
+            await asyncio.sleep(30)
             return {"ok": True, "summary": "never"}
     monkeypatch.setitem(executors.EXECUTORS, "recall", Recall())
     job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
@@ -740,6 +745,8 @@ async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(exe
     assert "Background work ran out of budget" in note
     assert "Done: 1 tool call succeeded (recall ×1)." in closing
     assert "Blocked:\n- nobody answered the card: recall `notes 2`" in closing
+    # INB9-a: the acceptance sheet, when the job has one, follows the closing after a blank line and a bold heading.
+    closing, _, _sheet = closing.partition("\n\n**")
     assert closing.endswith("Left: the request itself, Research everything")
 
 
