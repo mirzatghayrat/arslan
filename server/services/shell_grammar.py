@@ -16,16 +16,18 @@ Modelled, and nothing else:
   - NAME=value before a command or on its own, except the variables the shell itself reads and the
     ones programs take code or a command from (CODE_VARIABLES);
   - the builtins that only run, print or test (SAFE_BUILTINS), and set / export in their plain forms;
-  - the wrappers that only start the command they are given (sudo, env, nohup, time, nice, timeout,
-    caffeinate, command, builtin, exec, xargs, find -exec, npx / bunx), which are read through to it;
+  - the wrappers that only start the command they are given (sudo, doas, env, nohup, time, nice,
+    timeout, caffeinate, command, builtin, exec, xargs, find -exec, npx / bunx), which are read through
+    to it;
   - bash / sh -c with a literal script, read again as a command.
 
 Everything else is not understood: other quoting forms, backquotes, arithmetic, brace expansion,
 ${…} with operators, process substitution, function definitions, [[ … ]], other builtins (alias,
 eval, source, trap, declare …), a program named by an expansion or a pattern, the shell language of
-another shell, launchers that take a command line of their own, and the inline code of any other
-interpreter (python -c, node -e, an awk program, a here-document or pipe into one): what that code
-starts, the text does not say.
+another shell, launchers that take a command line of their own, an option through which a program
+runs a command (rg --pre, git -c core.pager, tar --to-command …; _RUNS_FROM_OPTIONS), git config
+writing a key git runs, and the inline code of any other interpreter (python -c, node -e, an awk
+program, expect -c, a here-document or pipe into one): what that code starts, the text does not say.
 
 Linear in the text. It reads at most MAX_COMMANDS commands and MAX_DEPTH levels of nesting; past
 either the command is not understood, which also bounds what terminal_policy builds afterwards.
@@ -35,6 +37,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from server.services import shell_text
+
 MAX_COMMANDS = 256
 MAX_DEPTH = 8
 
@@ -43,7 +47,7 @@ _HIDDEN = re.compile("[\x00-\x08\x0b-\x1f\x7f​-‏‪-‮⁠-⁤⁦-⁩﻿]")
 _META = frozenset(" \t\n;&|()<>")
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _SPECIAL_PARAMS = frozenset("0123456789#?$!@*-")
-_PROGRAM = re.compile(r"\[|[A-Za-z0-9_.+/~@%:,=-]+")
+_PROGRAM = re.compile(r"\[|[A-Za-z0-9_.+/~@%:,-]+")
 _RESERVED = frozenset({"if", "then", "elif", "else", "fi", "for", "in", "do", "done", "while", "until",
                        "case", "esac", "{", "}", "!"})
 _UNMODELLED_KEYWORDS = frozenset({"function", "select", "coproc", "[[", "]]", "(("})
@@ -103,8 +107,34 @@ _INTERPRETERS: dict[str, _Interpreter] = {
     "tclsh": _Interpreter(frozenset()),
     "swift": _Interpreter(frozenset()),
     "julia": _Interpreter(frozenset({"-e", "--eval", "-E", "--print"}), frozenset()),
+    "expect": _Interpreter(frozenset({"-c"}), frozenset({"-f"})),
 }
 _AWKS = frozenset({"awk", "gawk", "nawk", "mawk"})
+
+# Programs that run a command they are given in an option: a nested interpreter as well (S2a-3 c), so the
+# option makes the command not understood. rg / ag / sort / man are shell_text's own table. A program that
+# is not listed and runs commands from its arguments is a known residual risk: only the sandbox holds it.
+_TAR_OPTIONS = frozenset({"--use-compress-program", "-I", "--to-command", "--checkpoint-action", "--info-script",
+                          "--new-volume-script", "-F"})
+_EDITOR_OPTIONS = frozenset({"-c", "--cmd", "-S"})
+_RUNS_FROM_OPTIONS: dict[str, frozenset[str]] = {
+    **{name: frozenset(flags) for name, flags in shell_text._READ_TOOL_EXEC_FLAGS.items()},
+    "tar": _TAR_OPTIONS, "gtar": _TAR_OPTIONS, "bsdtar": _TAR_OPTIONS,
+    "rsync": frozenset({"-e", "--rsh", "--rsync-path"}),
+    "vim": _EDITOR_OPTIONS, "vi": _EDITOR_OPTIONS, "nvim": _EDITOR_OPTIONS, "view": _EDITOR_OPTIONS,
+    "ex": _EDITOR_OPTIONS, "emacs": frozenset({"--eval", "-l", "--load", "-f", "--funcall", "--script"}),
+}
+_EDITORS = frozenset({"vim", "vi", "nvim", "view", "ex"})
+
+# git -c is read only for keys that never name a command; git config writes a key that does (git runs
+# it through sh: the pager, an editor, an alias with !, a diff or merge driver, a credential helper …).
+_GIT_SAFE_KEYS = re.compile(r"(?:user|color|advice)\.[\w.-]+|core\.(?:quotepath|autocrlf)|init\.defaultbranch"
+                            r"|(?:commit|tag)\.gpgsign|pull\.rebase|push\.default", re.I)
+_GIT_COMMAND_KEYS = re.compile(
+    r"core\.(?:pager|editor|sshcommand|fsmonitor|hookspath|askpass|gitproxy)|sequence\.editor"
+    r"|gpg\.(?:[\w-]+\.)?program|credential\..*|pager\..*|alias\..*|diff\..*|merge\..*|filter\..*"
+    r"|interactive\.difffilter|uploadpack\..*|man\..*|web\.browser|browser\..*|instaweb\..*|sendemail\..*"
+    r"|remote\..*|url\..*|include\..*|includeif\..*", re.I)
 _PYTHON = re.compile(r"(?:python|pypy)[0-9.]*")
 
 
@@ -687,6 +717,10 @@ class _Reader:
                 raise _NotUnderstood("its awk program is inline code: what it starts, the text does not say")
         elif base == "find":
             self._find(argv)
+        elif base == "git":
+            _check_git(argv)
+        elif base in _RUNS_FROM_OPTIONS and _runs_from_options(base, argv):
+            raise _NotUnderstood(f"its {base} option runs a command of its own: what that starts, the text does not say")
         elif (spec := _interpreter(base)) is not None:
             if _reads_code(argv[1:], spec, redirects, index):
                 raise _NotUnderstood(f"it runs inline {base} code: what that code starts, the text does not say")
@@ -736,8 +770,19 @@ class _Reader:
             raise _NotUnderstood("it feeds shell code to a shell on its input")
 
     def _find(self, argv: list[_Word]) -> None:
+        """find -exec / -execdir / -ok starts its command once per file found, with {} in its words
+        replaced by the file's path. It is recorded once per starting path, {} written as a file under it,
+        so what judges the command sees where it acts (`find . -exec rm {} \\;` stays in the folder;
+        `find / -exec rm {} \\;` does not)."""
         words = argv[1:]
         k = 0
+        while k < len(words) and words[k].text in ("-H", "-L", "-P", "-E", "-X", "-d", "-s", "-x"):
+            k += 1
+        starts = []
+        while k < len(words) and not words[k].text.startswith("-") and words[k].text not in ("(", "!", ")"):
+            starts.append(words[k].text)
+            k += 1
+        starts = starts or ["."]
         while k < len(words):
             if words[k].text in ("-exec", "-execdir", "-ok", "-okdir"):
                 end = k + 1
@@ -745,7 +790,8 @@ class _Reader:
                     end += 1
                 if end >= len(words) or end == k + 1:
                     raise _NotUnderstood("its find -exec does not end")
-                self._started(words[k + 1:end], [], 0)
+                for start in starts:
+                    self._started([_placed(w, start) for w in words[k + 1:end]], [], 0)
                 k = end
             k += 1
 
@@ -754,6 +800,16 @@ class _Reader:
             raise _NotUnderstood("its syntax is not one Arslan reads")
         if self.heredocs:
             raise _NotUnderstood("its here-document does not end")
+
+
+def _placed(word: _Word, start: str) -> _Word:
+    """`word` with find's {} written as a file under `start`."""
+    if "{}" not in word.text:
+        return word
+    placed = _Word()
+    placed.chars = [word.text.replace("{}", start.rstrip("/") + "/found")]
+    placed.expanded, placed.globbed, placed.quoted, placed.bare = word.expanded, word.globbed, word.quoted, word.bare
+    return placed
 
 
 def _assigned_name(word: _Word) -> str | None:
@@ -840,6 +896,11 @@ def _through_wrapper(base: str, argv: list[_Word]) -> list[_Word] | None:
         return after({"-u", "--user", "-g", "--group", "-h", "--host", "-p", "--prompt", "-C", "--close-from",
                       "-U", "--other-user", "-r", "--role", "-t", "--type", "-T", "--command-timeout"},
                      flags="AbEHknPS")
+    if base == "doas":
+        if any(w.text == "-s" or (w.text.startswith("-") and "s" in w.text[1:]) for w in args
+               if w.text.startswith("-") and not w.text.startswith("--")):
+            raise _NotUnderstood("its doas runs a shell")
+        return after({"-u", "-C"}, flags="nL")
     if base == "env":
         for w in args:
             if not w.text.startswith("-"):
@@ -847,7 +908,13 @@ def _through_wrapper(base: str, argv: list[_Word]) -> list[_Word] | None:
             if w.text in ("-S", "--split-string", "-P") or w.text.startswith(("--split-string=", "-S", "-P")):
                 raise _NotUnderstood("its env splits a string into a command")
         rest = after({"-u", "--unset", "-C", "--chdir"}, flags="i0", long_flags=frozenset({"--ignore-environment"}))
-        while rest and (name := _assigned_name(rest[0])) is not None:
+        # env takes any NAME=value before its command, names the shell could not hold included
+        # (BASH_FUNC_x%%=…, an exported function): every one is checked.
+        while rest and "=" in rest[0].text[1:]:
+            name = rest[0].text.split("=", 1)[0]
+            if not _NAME.fullmatch(name):
+                _check_assigned(name)
+                raise _NotUnderstood(f"its env sets {name}, a name the shell could not hold")
             _check_assigned(name)
             rest = rest[1:]
         return rest
@@ -883,6 +950,48 @@ def _through_wrapper(base: str, argv: list[_Word]) -> list[_Word] | None:
         return after({"-p", "--package"}, flags="yq",
                      long_flags=frozenset({"--yes", "--no", "--quiet", "--no-install", "--ignore-existing"}))
     return None
+
+
+def _option_given(word: str, option: str) -> bool:
+    if word == option or word.startswith(option + "="):
+        return True
+    return len(option) == 2 and not option.startswith("--") and word.startswith(option) and len(word) > 2
+
+
+def _runs_from_options(base: str, argv: list[_Word]) -> bool:
+    for w in argv[1:]:
+        if any(_option_given(w.text, option) for option in _RUNS_FROM_OPTIONS[base]):
+            return True
+        if base in _EDITORS and w.text.startswith("+"):
+            return True                              # vi's +command
+    return False
+
+
+def _check_git(argv: list[_Word]) -> None:
+    """git's own options before its subcommand, and git config writing a key git runs as a command."""
+    args = [w.text for w in argv[1:]]
+    k = 0
+    while k < len(args):
+        t = args[k]
+        if t in ("-c",) or (t.startswith("-c") and len(t) > 2 and not t.startswith("--")):
+            pair = args[k + 1] if t == "-c" and k + 1 < len(args) else t[2:]
+            if not _GIT_SAFE_KEYS.fullmatch(pair.split("=", 1)[0]):
+                raise _NotUnderstood("its git -c sets something git may run as a command")
+            k += 2 if t == "-c" else 1
+            continue
+        if t.startswith(("--config-env", "--exec-path")):
+            raise _NotUnderstood(f"its git {t.split('=', 1)[0]} changes what git runs")
+        if t in ("-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix"):
+            k += 2
+            continue
+        if t.startswith("-"):
+            k += 1
+            continue
+        break
+    if k < len(args) and args[k] == "config":
+        operands = [a for a in args[k + 1:] if not a.startswith("-")]
+        if len(operands) >= 2 and _GIT_COMMAND_KEYS.fullmatch(operands[0]):
+            raise _NotUnderstood("its git config sets a command git runs later")
 
 
 def _code_from_input(redirects: list[_Redirect], index: int) -> bool:
