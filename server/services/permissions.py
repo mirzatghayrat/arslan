@@ -664,7 +664,7 @@ def _filled(ctx: Context) -> Context:
 
 # ── S5a: permission modes, per conversation ───────────────────────────────────
 
-#: Narrowest first: a sub-session takes the earlier of its parent's and its own (`_chosen`).
+#: Narrowest first: a sub-session takes the earlier of its parent's and its own, a side chat its parent's (`_chosen`).
 MODES = ("plan", "ask", "ask_risky", "full_access")
 
 
@@ -706,38 +706,40 @@ async def mode_for(conversation_id: str | None, *, check_save: bool = False) -> 
 
 
 async def _chosen(conversation_id: str | None) -> str:
+    """The mode before a fallback, read along this conversation's chain (`sub_sessions._chain`: it, then its parents).
+    SIDE-1 (#910 review): a side chat is on it as a sub-session is and has none of its own (`side_chat_inherits`; one
+    an older row stores is never read), so it runs in its parent's, narrowed by any sub-session between. It is known
+    by its id too (`phone_ids.kind_of`); one whose parent is out of reach (no row, a chain that can't be read whole, a
+    row that is no side chat's any more) or deleted fails closed: "ask", narrowed by what the chain did read."""
     from server.db.companion_models import ConversationContext
-    from server.services import settings_service, sub_sessions
+    from server.services import phone_ids, settings_service, sub_sessions
+
+    def side(row) -> bool:
+        return phone_ids.kind_of(row.id, row.kind) == sub_sessions.SIDE
+
+    def own(row) -> str | None:
+        # Null is unset (the default, or the parent's); any other value not a mode is "ask" (#893 review 6).
+        mode = None if side(row) else row.permission_mode
+        return None if mode is None else mode if mode in MODES else "ask"
     try:
         async with db_session.AsyncSessionLocal() as db:
             default = await settings_service.default_permission_mode(db)
-            chain: list[str | None] = []      # own modes, from this conversation up through its parents (SUB)
-            rows: list[ConversationContext] = []
-            seen: set[str] = set()
-            current = conversation_id
-            while current and current not in seen and len(seen) < sub_sessions.MAX_DEPTH:
-                seen.add(current)
-                row = await db.get(ConversationContext, current)
-                if row is None:
-                    break
-                rows.append(row)
-                # Null is unset (the default, or the parent's); any other value not a mode is "ask" (#893 review 6).
-                own = row.permission_mode
-                chain.append(None if own is None else own if own in MODES else "ask")
-                current = row.parent_id if row.kind == "sub" else None
-            # SUB2: a sub-session whose chain can't be read whole (as `sub_sessions._chain` reads it: the walk ends on
-            # a sub-session, for a parent's row gone, none named, a loop, more layers than exist) or has a deleted
-            # conversation on it fails closed: "ask" stands in for its top, and each mode it did read still narrows.
-            if rows and rows[0].kind == "sub" and (
-                    rows[-1].kind == "sub" or any(sub_sessions.is_deleted(r.id, r) for r in rows)):
-                chain.append("ask")
+            row = await db.get(ConversationContext, conversation_id) if conversation_id else None
+            if row is None:         # a new conversation; a side chat's id that nothing made has no parent to read
+                side_id = conversation_id and phone_ids.kind_of(conversation_id, None) == sub_sessions.SIDE
+                return "ask" if side_id else default
+            chain, whole = await sub_sessions._chain(db, row)
     except Exception:  # noqa: BLE001 — fails closed: an unreadable mode is "ask every step"
         return "ask"
-    # The top conversation's own mode, else the default; each sub-session below it only narrows.
-    mode = (chain[-1] if chain else None) or default
-    for own in reversed(chain[:-1]):
-        if own is not None:
-            mode = narrower(own, mode)
+    # SUB2 (#921): a sub-session whose chain can't be read whole or has a deleted conversation on it fails closed
+    # too: "ask" stands in for its top, and each mode it did read still narrows.
+    out_of_reach = (chain[0].kind == sub_sessions.SUB or any(side(r) for r in chain)) and (
+        not whole or side(chain[-1]) or any(sub_sessions.is_deleted(r.id, r) for r in chain))
+    # The top conversation's own mode, else the default; each one below it only narrows.
+    mode, below = ("ask", chain) if out_of_reach else (own(chain[-1]) or default, chain[:-1])
+    for r in reversed(below):
+        if (narrowing := own(r)) is not None:
+            mode = narrower(narrowing, mode)
     return mode
 
 

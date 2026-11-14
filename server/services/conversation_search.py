@@ -17,9 +17,10 @@ from server.db import session as db_session
 SNIPPET_CHARS = 240
 MAX_LIMIT = 20
 #: The conversations no other conversation may read, over `conversation_contexts c`: temporary and "don't use memory" ones,
-#: and sub-sessions (SUB2: a sub-session's settings live along its chain, not on this row, and no list shows one). `search`
-#: leaves them out, and so does progress_report (INB7-f, #862 review).
-HIDDEN_SQL = "c.temporary = 1 OR c.no_memory = 1 OR c.kind = 'sub'"
+#: and sub-sessions and side chats (SUB2, SIDE-1: their settings live along their chain, not on this row, and no list
+#: shows one; nothing of a side chat reaches its parent unless the user brings it back). `search` leaves them out, and so
+#: does progress_report (INB7-f, #862 review).
+HIDDEN_SQL = "c.temporary = 1 OR c.no_memory = 1 OR c.kind IN ('sub', 'side')"
 
 
 def refusal(ctx) -> dict | None:
