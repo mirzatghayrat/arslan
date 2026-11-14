@@ -460,12 +460,12 @@ async def _fire(task: ScheduledTask) -> None:
     async def body(sink):
         return await _fire_body(task)
     # ASK1-b: the fire starts from what the turn that wrote or last changed its prompt had read (`outside_seen`,
-    # migration 0097; true for tasks from before it). True: its commands run as after outside content, which with
-    # NET-a's switch on is online through the proxy that refuses a site seen only in outside content, and with it off
-    # (S2a-1's rule) offline. NET-a F5, met here: the prompt is that turn's own output, so with the mark it is carried
-    # in as outside text, and the fire's conversation records the sites it names. That turn's record lives in memory
-    # under its own conversation (a new task's is usually another: `own_conversation`), so without this a site the
-    # prompt names would be unknown at the fire, and pass.
+    # migration 0097; true for tasks from before it). True: its commands run offline, with NET-a's switch on or off
+    # (command_gate._network_after_outside_content: nobody is there to answer a site's card). NET-a F5, met here: the
+    # prompt is that turn's own output, so with the mark it is carried in as outside text, and the fire's conversation
+    # records the sites it names. That turn's record lives in memory under its own conversation (a new task's is
+    # usually another: `own_conversation`), so without this a site the prompt names would be unknown at the proxy for a
+    # later online command in this conversation (a chat's, say), and pass.
     # Only a scheduled task's own fire runs commands (command_gate.scheduled_fire); the heartbeat runs none.
     # INB2: nobody is there when a stored prompt fires, also when "fire now" ran from a present turn.
     fire = (contextlib.nullcontext() if task.name == heartbeat.TASK_NAME else command_gate.scheduled_fire(cid))

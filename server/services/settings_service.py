@@ -331,7 +331,8 @@ async def sandbox_trusted_devices(session: AsyncSession) -> str:
 async def sandbox_net_judgement(session: AsyncSession) -> bool:
     """NET-a: whether the sandbox's proxy judges each site a command reaches (one seen only in outside content is
     refused) instead of S2a-1's whole-network rule after outside content. Default ON; only an explicit 'false' turns it
-    off. DELETE-BY: v0.1.65, with S2a-1's old path (command_gate._network_after_outside_content)."""
+    off. DELETE-BY: v0.1.65, with S2a-1's old path (command_gate._network_after_outside_content), which keeps a
+    scheduled fire's offline run after outside content (ASK1-b)."""
     raw = await _get_raw(session, "sandbox_net_judgement")
     return raw is None or str(raw).strip().lower() != "false"
 

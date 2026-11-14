@@ -153,6 +153,9 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
 
     NET-a (the switch `sandbox_net_judgement`, on by default): in the sandbox a command stays online, through the
     proxy that judges each site it reaches (net_policy), with no card here; outside it, and a bare Shortcut, as above.
+    Not a scheduled task's own fire (ASK1-b, ⓪Plan's ruling): after outside content (a page its turn read, or an
+    `outside_seen` task's prompt carried in marked) it stays offline, as above with nobody to ask. Nobody is there to
+    answer a site's card, and a site the creating turn read but the prompt doesn't name would pass the proxy as unknown.
 
     Returns {"offline": bool, "note": str} or {"refused": model text}."""
     from server.orchestrator import untrusted as _untrusted
@@ -184,10 +187,12 @@ async def _network_after_outside_content(command: str, args: dict, *, sandbox_on
             "refused": decision.model_text or "the user did not allow this Shortcut to use the network"}
     wrapped = command_sandbox.available()
     inside = sandbox_on and not run_outside and wrapped
-    if inside and await net_policy.judging():
+    # NET-a: online in the sandbox, judged at the proxy; a scheduled fire stays offline below (ASK1-b, the docstring).
+    if inside and await net_policy.judging() and not fire_runs_commands(conversation_id):
         return {}
     # DELETE-BY: v0.1.65 (NET-a's switch, once it has shipped on): S2a-1's whole-network rule in the sandbox below, the
-    # offline run and its `network:*` card for this conversation; outside the sandbox it stays (this time only).
+    # `network:*` card for this conversation, for every run but a scheduled fire. Keep a fire's offline run in the
+    # sandbox (nobody to ask: `{"offline": True, ...}` below) and the rule outside the sandbox (this time only).
     if not (args.get("network") is True or _untrusted.reaches_network(command)):
         return {"offline": True} if wrapped else {}
     if wrapped and permissions.current_asker() is None:
