@@ -7,11 +7,21 @@ notes come in 6 batches (more stages, the card's remedy, at the same tool-call c
 exactly two sentences (split on `.`, `!` and `?`) holding the note's code word and date, and `summaries/index.md`
 names every note. When they pass, it drops the next batch (from the encoded `batches.dat`) into `notes/` and exits 1;
 once batch 6 passes, it exits 0. The check is stateless: the batches present are the notes on disk.
+
+Chained: batch 1 is on disk; batches 2 to 6 are sealed in `batches.dat`, each under a key derived from the name, code
+word and date of every note in the batch before (goal_tasks.SEAL). The check derives the key only once every summary of
+that batch holds its note's code word and date, so a summary that misses one opens nothing. The pilot's worker decoded
+the first draft's `batches.dat` and could read every note at once; now the data file shows no note past batch 1.
+Residual, disclosed: here stage k's correct output (the code words and dates) is also in stage k's notes, so a worker
+that re-implements the check's key derivation can open the next batch without writing the summaries. It still cannot
+read batch k+1 before batch k is on disk, so the batches still arrive in order.
 """
 from __future__ import annotations
 
 import datetime
+import json
 import random
+import secrets
 from pathlib import Path
 
 from scripts.kernel_bench import goal_tasks
@@ -33,6 +43,7 @@ TOPICS = (
 CHECK = '''"""Check the summaries of the notes present. When they pass, the next batch of notes arrives."""
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -42,6 +53,7 @@ import zlib
 sys.dont_write_bytecode = True
 
 {decoder}
+{seal}
 
 def sentences(text):
     return [s for s in re.split(r"[.!?]", text) if s.strip()]
@@ -55,13 +67,15 @@ def field(text, name):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--batches", required=True)
-    batches = _decode(ap.parse_args().batches)
+    data = _decode(ap.parse_args().batches)
+    per, total = data["per"], 1 + len(data["sealed"])
     present = sorted(n for n in os.listdir("notes") if n.endswith(".md")) if os.path.isdir("notes") else []
-    problems = []
+    problems, fields = [], {}
     index = open(os.path.join("summaries", "index.md")).read() if os.path.isfile("summaries/index.md") else None
     for name in present:
         note = open(os.path.join("notes", name)).read()
         code, day = field(note, "Code word"), field(note, "Date")
+        fields[name] = [name, code, day]
         path = os.path.join("summaries", name)
         if not os.path.isfile(path):
             problems.append("%s: no summaries/%s" % (name, name))
@@ -76,16 +90,24 @@ def main():
             problems.append("%s: not listed in summaries/index.md" % name)
     for p in problems:
         print(p)
-    done = len(present) // len(batches[0])
+    done = len(present) // per
     if problems or not present:
         print("%d problem(s) in %d note(s)." % (len(problems), len(present)))
         return 1
-    if done < len(batches):
-        for name, text in batches[done]:
+    if done < total:
+        # The next batch is sealed under the batch before's names, code words and dates (its summaries hold them).
+        batch = [fields[name] for name in present[(done - 1) * per:done * per]]
+        text = _unseal(data["sealed"][done - 1], _key(data["salt"], done, batch))
+        if text is None:
+            print("All %d notes pass, but batch %d's notes are not the ones the check sent. Restore notes/." % (
+                len(present), done))
+            return 1
+        arrived = json.loads(text)
+        for name, note in arrived:
             with open(os.path.join("notes", name), "w") as f:
-                f.write(text)
+                f.write(note)
         print("All %d notes pass. Batch %d of %d arrived: %d new notes in notes/." % (
-            len(present), done + 1, len(batches), len(batches[done])))
+            len(present), done + 1, total, len(arrived)))
         print("Run this check again.")
         return 1
     print("All %d notes pass. Every batch is done." % len(present))
@@ -94,7 +116,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-'''.replace("{decoder}", goal_tasks.DECODER)
+'''.replace("{decoder}", goal_tasks.DECODER).replace("{seal}", goal_tasks.SEAL)
 
 
 def _notes(seed: int) -> list[tuple[str, str, str, str]]:
@@ -116,8 +138,12 @@ def fixture(run: str, seed: int = 20) -> dict:
     notes = _notes(seed)
     for name, _, _, text in notes[:PER_BATCH]:
         (root / "notes" / name).write_text(text)
-    later = [[[name, text] for name, _, _, text in notes[k * PER_BATCH:(k + 1) * PER_BATCH]] for k in range(BATCHES)]
-    (root / "batches.dat").write_text(goal_tasks.encode(later) + "\n")
+    salt = secrets.token_hex(8)
+    batches = [notes[k * PER_BATCH:(k + 1) * PER_BATCH] for k in range(BATCHES)]
+    sealed = [goal_tasks.seal(json.dumps([[name, text] for name, _, _, text in batches[k]]), goal_tasks.derive_key(
+        salt, k, [[name, code, day] for name, code, day, _ in batches[k - 1]])) for k in range(1, BATCHES)]
+    data = {"salt": salt, "per": PER_BATCH, "sealed": sealed}
+    (root / "batches.dat").write_text(goal_tasks.encode(data) + "\n")
     (root / "inbox_check.py").write_text(CHECK)
     return {"sha256": {rel: goal_tasks.sha256(root / rel) for rel in ("inbox_check.py", "batches.dat")},
             "notes": {name: {"code": code, "date": day, "sha256": goal_tasks.sha256_text(text)}

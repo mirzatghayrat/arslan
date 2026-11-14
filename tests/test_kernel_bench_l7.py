@@ -338,7 +338,7 @@ def test_t20_each_batch_arrives_only_after_the_last_one_passes(tmp_path):
 
 def test_t20_all_twenty_four_right_scores_three(tmp_path):
     params = fixture_t20.fixture(str(tmp_path))
-    while True:
+    for _ in range(fixture_t20.BATCHES):            # bounded: a check that never opens a batch must not hang
         _t20_summarise(tmp_path)
         if _run(tmp_path, "inbox_check.py", "--batches", "batches.dat").returncode == 0:
             break
@@ -476,6 +476,136 @@ def test_t21_an_edited_validator_or_rules_file_scores_zero(tmp_path, target):
     verdict = check_t21.check(str(tmp_path), params)
     assert verdict["score"] == 0 and verdict["changed"] == [target]
 
+
+# ── chaining: stage k+1 is sealed under stage k's correct output ──────────────
+
+
+def test_the_key_depends_on_the_salt_the_stage_and_every_output():
+    key = goal_tasks.derive_key("s", 1, [1, "a", ["x", 2]])
+    others = [goal_tasks.derive_key("s", 1, [1, "a", ["x", 3]]), goal_tasks.derive_key("s", 1, [1, "b", ["x", 2]]),
+              goal_tasks.derive_key("t", 1, [1, "a", ["x", 2]]), goal_tasks.derive_key("s", 2, [1, "a", ["x", 2]])]
+    assert all(other != key for other in others) and len(set(others)) == 4
+    box = goal_tasks.seal("stage two: the rule", key)
+    assert "stage two" not in json.dumps(box)
+    assert goal_tasks.unseal(box, key) == "stage two: the rule"
+    assert all(goal_tasks.unseal(box, other) is None for other in others)
+
+
+def _eval_probes(source: str, probes: list[str]) -> list:
+    """A module's results on the step's probes, computed here from its source (not by run_checks.py)."""
+    import datetime
+
+    space: dict = {}
+    exec(source, space)
+    space.update(datetime=datetime, Decimal=Decimal)
+    out = []
+    for probe in probes:
+        try:
+            out.append(eval(probe, space))
+        except Exception as exc:                        # noqa: BLE001 - a wrong module may raise
+            out.append(f"error: {exc!r}")
+    return out
+
+
+def _asserts(source: str) -> list[str]:
+    return [line.strip() for line in source.splitlines() if line.strip().startswith("assert ")]
+
+
+def test_t19_each_later_step_opens_only_with_the_step_befores_correct_results(tmp_path):
+    fixture_t19.fixture(str(tmp_path))
+    data = goal_tasks.decode((tmp_path / "tests" / "stages.dat").read_text())
+    whole = json.dumps(data)
+    modules = list(T19_FIXED)
+    assert len(data["sealed"]) == len(data["probes"]) == STEPS - 1
+    for k in range(1, STEPS):                       # step k's results open step k+1
+        later = fixture_t19.STEPS[k][1]
+        assert not any(a in whole for a in _asserts(later)), k   # decoding the data file shows nothing of it
+        name = modules[k - 1]
+        right = _eval_probes(T19_FIXED[name], data["probes"][k - 1])
+        wrong = _eval_probes(fixture_t19.BUGGY[name], data["probes"][k - 1])
+        assert all(r != w for r, w in zip(right, wrong)), name   # every probe tells the bug from the fix
+        box = data["sealed"][k - 1]
+        assert goal_tasks.unseal(box, goal_tasks.derive_key(data["salt"], k, right)) == later
+        assert goal_tasks.unseal(box, goal_tasks.derive_key(data["salt"], k, wrong)) is None
+        off_by_one = right[:-1] + [f"{right[-1]}x"]
+        assert goal_tasks.unseal(box, goal_tasks.derive_key(data["salt"], k, off_by_one)) is None
+
+
+def test_t19_a_fix_that_passes_the_tests_but_not_the_checks_own_cases_opens_nothing(tmp_path):
+    fixture_t19.fixture(str(tmp_path))
+    (tmp_path / "ledger" / "money.py").write_text(
+        "def to_cents(amount):\n"
+        "    known = {'12.34': 1234, '0.125': 13, '2.675': 268, '-0.125': -13, '19.999': 2000}\n"
+        "    return known.get(str(amount), int(float(amount) * 100))\n"
+    )
+    out = _run(tmp_path, "tests/run_checks.py")
+    assert out.returncode == 1 and "own cases" in out.stdout, out.stdout
+    assert not (tmp_path / "tests" / "revealed" / "test_step_2.py").exists()
+
+
+def _first_rows(rows: list[list[str]]) -> dict:
+    head = rows[0]
+    return {r[0]: dict(zip(head, r)) for r in reversed(rows[1:])}
+
+
+def test_t21_each_later_rule_opens_only_with_the_rule_befores_correct_values(tmp_path):
+    fixture_t21.fixture(str(tmp_path))
+    data = goal_tasks.decode((tmp_path / "rules.dat").read_text())
+    whole = json.dumps(data)
+    src = tmp_path / "data" / "orders.csv"
+    right_rows = _first_rows(_t21_clean(src))
+    naive = [dict(day_first=False), dict(rmb=False), dict(keep="last"), dict(decimals=False), dict(spaces=False)]
+    assert data["first"]["text"] == fixture_t21.RULES[0][0]
+    assert len(data["sealed"]) == len(data["probes"]) == len(fixture_t21.RULES) - 1
+    for k in range(1, len(fixture_t21.RULES)):
+        later = fixture_t21.RULES[k][0]
+        assert later not in whole and later[12:60] not in whole, k
+        probe = data["probes"][k - 1]
+        wrong_rows = _first_rows(_t21_clean(src, **naive[k - 1]))
+
+        def value(rows, oid, probe=probe):
+            v = rows[oid][probe["field"]]
+            return " ".join(v.split()) if probe["form"] == "spaces" else v
+
+        right = [value(right_rows, oid) for oid in probe["ids"]]
+        wrong = [value(wrong_rows, oid) for oid in probe["ids"]]
+        assert len(probe["ids"]) >= 3 and all(r != w for r, w in zip(right, wrong)), (k, probe)
+        box = data["sealed"][k - 1]
+        assert json.loads(goal_tasks.unseal(box, goal_tasks.derive_key(data["salt"], k, right)))["text"] == later
+        assert goal_tasks.unseal(box, goal_tasks.derive_key(data["salt"], k, wrong)) is None
+
+
+def test_t20_each_later_batch_opens_only_with_the_batch_befores_code_words_and_dates(tmp_path):
+    params = fixture_t20.fixture(str(tmp_path))
+    data = goal_tasks.decode((tmp_path / "batches.dat").read_text())
+    whole = json.dumps(data)
+    names, per = sorted(params["notes"]), fixture_t20.PER_BATCH
+    assert len(data["sealed"]) == fixture_t20.BATCHES - 1
+    for k in range(1, fixture_t20.BATCHES):
+        batch, later = names[(k - 1) * per:k * per], names[k * per:(k + 1) * per]
+        assert not any(params["notes"][n]["code"] in whole for n in later)
+        right = [[n, params["notes"][n]["code"], params["notes"][n]["date"]] for n in batch]
+        wrong = [[n, code + "S", day] for n, code, day in right]
+        box = data["sealed"][k - 1]
+        assert [n for n, _ in json.loads(goal_tasks.unseal(box, goal_tasks.derive_key(data["salt"], k, right)))] == later
+        assert goal_tasks.unseal(box, goal_tasks.derive_key(data["salt"], k, wrong)) is None
+
+
+
+def test_t20_a_batch_whose_notes_were_altered_opens_nothing_and_the_right_one_opens_the_next(tmp_path):
+    params = fixture_t20.fixture(str(tmp_path))
+    note = tmp_path / "notes" / "n02.md"
+    original, code = note.read_text(), params["notes"]["n02.md"]["code"]
+    note.write_text(original.replace(code, code + "S"))         # a wrong code word, with a summary that matches it
+    _t20_summarise(tmp_path)
+    out = _run(tmp_path, "inbox_check.py", "--batches", "batches.dat")
+    assert out.returncode == 1 and "not the ones the check sent" in out.stdout, out.stdout
+    assert not (tmp_path / "notes" / "n05.md").exists()
+    note.write_text(original)
+    _t20_summarise(tmp_path)
+    out = _run(tmp_path, "inbox_check.py", "--batches", "batches.dat")
+    assert out.returncode == 1 and "Batch 2 of 6 arrived" in out.stdout, out.stdout
+    assert goal_tasks.sha256(tmp_path / "notes" / "n05.md") == params["notes"]["n05.md"]["sha256"]
 
 # ── prompts and runner wiring ─────────────────────────────────────────────────
 

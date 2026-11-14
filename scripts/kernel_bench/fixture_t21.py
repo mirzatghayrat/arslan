@@ -10,6 +10,11 @@ encoded `rules.dat`, and most hold a choice that can't be guessed from the data:
 rows of one date keep the source's order. The card's first draft had 4 rules; the L7-0 pilot's `off` arm completed
 that in every run, so it has 6 (the card: more stages).
 
+Chained: rule 1 is readable in `rules.dat`; rules 2 to 6 are sealed, each under a key derived from the cleaned values
+that the rule before asks for on a few probe order ids (goal_tasks.SEAL). The validator derives the key from the
+clean file once the rule passes. The pilot's worker decoded `rules.dat` and read all four rules at once; now the data
+file shows only rule 1, and rule k+1 opens only with rule k's own answer.
+
 The fixture returns the expected clean rows, which only the checker (check_t21.py) sees.
 """
 from __future__ import annotations
@@ -17,7 +22,9 @@ from __future__ import annotations
 import csv
 import datetime
 import io
+import json
 import random
+import secrets
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
@@ -112,6 +119,7 @@ VALIDATE = '''"""Validate a cleaned orders file against the rules revealed so fa
 import argparse
 import base64
 import csv
+import hashlib
 import json
 import sys
 import zlib
@@ -120,6 +128,17 @@ sys.dont_write_bytecode = True
 SOURCE = "data/orders.csv"
 
 {decoder}
+{seal}
+
+def probe_values(clean, probe):
+    """The cleaned values a rule's probe reads: the first row of each probe id, its field as the rule judges it."""
+    got = first(clean)
+    values = []
+    for oid in probe["ids"]:
+        value = got[oid][probe["field"]] if oid in got else ""
+        values.append(" ".join(value.split()) if probe["form"] == "spaces" else value)
+    return values
+
 
 def rows(path):
     with open(path, newline="") as f:
@@ -139,7 +158,8 @@ def main():
     ap.add_argument("--rules", required=True)
     ap.add_argument("clean")
     args = ap.parse_args()
-    rules = _decode(args.rules)
+    data = _decode(args.rules)
+    total = 1 + len(data["sealed"])
     head, src = rows(SOURCE)
     try:
         got_head, clean = rows(args.clean)
@@ -151,7 +171,8 @@ def main():
         print("The cleaned file must have the source's header (%s) and every order_id in it, and no other id."
               % ",".join(head))
         return 1
-    for n, rule in enumerate(rules, 1):
+    rule = data["first"]
+    for n in range(1, total + 1):
         space = {"first": first}
         exec(compile(rule["code"], "rule_%d" % n, "exec"), space)
         errors = space["check"](src, clean)
@@ -161,14 +182,23 @@ def main():
                 print("  " + e)
             print("%d row(s) break this rule." % len(errors))
             return 1
-        print("Rule %d of %d: passed." % (n, len(rules)))
+        print("Rule %d of %d: passed." % (n, total))
+        if n < total:
+            # The next rule is sealed under this rule's correct values (it passed, so they are).
+            probe = data["probes"][n - 1]
+            text = _unseal(data["sealed"][n - 1], _key(data["salt"], n, probe_values(clean, probe)))
+            if text is None:
+                print("Rule %d passes, but the cleaned %s of orders %s isn't what it asks." % (
+                    n, probe["field"], ", ".join(probe["ids"])))
+                return 1
+            rule = json.loads(text)
     print("Every rule passes.")
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-'''.replace("{decoder}", goal_tasks.DECODER)
+'''.replace("{decoder}", goal_tasks.DECODER).replace("{seal}", goal_tasks.SEAL)
 
 
 def _spaced(rng: random.Random, name: str) -> str:
@@ -181,6 +211,29 @@ def _spaced(rng: random.Random, name: str) -> str:
     if roll < 0.12 and " " in name:
         return name.replace(" ", "  ", 1)
     return name
+
+
+PROBE_IDS = 6
+
+
+def _probes(originals: list[list], body: list[list]) -> list[dict]:
+    """Rule k's probe for rules 1-5 (rule 6 is the last; nothing is sealed under it): order ids whose cleaned value a
+    naive reading of rule k gets wrong, so only the rule's own answer opens rule k+1. Row layout: id, the source's
+    date, customer, currency, amount, then the ISO date, currency, amount and customer the rules ask for."""
+    counts: dict = {}
+    for r in body:
+        counts[r[0]] = counts.get(r[0], 0) + 1
+
+    def ids(pick) -> list[str]:
+        return [r[0] for r in originals if pick(r)][:PROBE_IDS]
+
+    return [
+        {"field": "order_date", "form": "exact", "ids": ids(lambda r: "/" in r[1])},     # day first, not month
+        {"field": "currency", "form": "exact", "ids": ids(lambda r: r[3] == "rmb")},     # CNY, not RMB
+        {"field": "customer", "form": "spaces", "ids": ids(lambda r: counts[r[0]] > 1)},  # the first row's
+        {"field": "amount", "form": "exact", "ids": ids(lambda r: r[4] != r[7])},         # 12,50 is 12.50
+        {"field": "customer", "form": "exact", "ids": ids(lambda r: r[2] != r[8])},       # no stray spaces
+    ]
 
 
 def fixture(run: str, seed: int = 21) -> dict:
@@ -232,7 +285,15 @@ def fixture(run: str, seed: int = 21) -> dict:
     buf = io.StringIO()
     csv.writer(buf, lineterminator="\n").writerows([HEADER] + [r[:5] for r in body])
     (root / "data" / "orders.csv").write_text(buf.getvalue())
-    (root / "rules.dat").write_text(goal_tasks.encode([{"text": t, "code": c} for t, c in RULES]) + "\n")
+    salt = secrets.token_hex(8)
+    probes = _probes(originals, body)
+    sealed = []
+    for k, probe in enumerate(probes, 1):
+        values = [expected[oid][probe["field"]] for oid in probe["ids"]]
+        text = json.dumps({"text": RULES[k][0], "code": RULES[k][1]})
+        sealed.append(goal_tasks.seal(text, goal_tasks.derive_key(salt, k, values)))
+    data = {"salt": salt, "first": {"text": RULES[0][0], "code": RULES[0][1]}, "probes": probes, "sealed": sealed}
+    (root / "rules.dat").write_text(goal_tasks.encode(data) + "\n")
     (root / "validate.py").write_text(VALIDATE)
     return {"sha256": {rel: goal_tasks.sha256(root / rel) for rel in ("validate.py", "rules.dat", "data/orders.csv")},
             "expected": expected, "order": order, "header": HEADER}

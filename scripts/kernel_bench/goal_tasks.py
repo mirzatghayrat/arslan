@@ -52,6 +52,57 @@ DECODER = '''def _decode(path):
         return json.loads(zlib.decompress(base64.b64decode(f.read())).decode("utf-8"))
 '''
 
+# Chaining (L7-0, after the first pilot: the worker decoded the data file and read every stage at once). Stage k+1
+# is sealed under a key derived from stage k's CORRECT output on fixed probes: the results a correct stage-k module
+# gives (T19), the cleaned values rule k asks for (T21), the code words and dates of batch k (T20). So the data file
+# alone opens nothing past stage 1. The check scripts carry this exact source, and this module runs the same source,
+# so the fixture seals with the key the script will derive. The keystream is SHA-256 in counter mode: enough to keep a
+# stage unreadable without its key, not meant as general-purpose encryption.
+SEAL = '''def _canonical(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str, ensure_ascii=True)
+
+
+def _key(salt, stage, outputs):
+    return hashlib.sha256(("%s|%d|" % (salt, stage)).encode("ascii") + _canonical(outputs).encode("ascii")).digest()
+
+
+def _stream(key, n):
+    out, i = b"", 0
+    while len(out) < n:
+        out += hashlib.sha256(key + i.to_bytes(8, "big")).digest()
+        i += 1
+    return out[:n]
+
+
+def _tag(key):
+    return hashlib.sha256(b"tag|" + key).hexdigest()[:16]
+
+
+def _unseal(box, key):
+    """The sealed text, or None when the key is not the one it was sealed under."""
+    if _tag(key) != box["tag"]:
+        return None
+    data = base64.b64decode(box["data"])
+    return bytes(a ^ b for a, b in zip(data, _stream(key, len(data)))).decode("utf-8")
+'''
+_SEALING: dict = {"json": json, "hashlib": hashlib, "base64": base64}
+exec(compile(SEAL, "goal_tasks.SEAL", "exec"), _SEALING)
+
+
+def derive_key(salt: str, stage: int, outputs) -> bytes:
+    """The key that opens stage `stage` + 1: from the salt, the stage and stage `stage`'s correct outputs."""
+    return _SEALING["_key"](salt, stage, outputs)
+
+
+def seal(text: str, key: bytes) -> dict:
+    data = text.encode("utf-8")
+    sealed = bytes(a ^ b for a, b in zip(data, _SEALING["_stream"](key, len(data))))
+    return {"tag": _SEALING["_tag"](key), "data": base64.b64encode(sealed).decode("ascii")}
+
+
+def unseal(box: dict, key: bytes) -> str | None:
+    return _SEALING["_unseal"](box, key)
+
 
 def sha256(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
