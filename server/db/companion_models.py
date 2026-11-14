@@ -42,6 +42,10 @@ class ConversationContext(Base):
     # goes back to. Set only by PUT /conversations/{id}/permission-mode and its /start, never by the context PUT.
     permission_mode = Column(String(20), nullable=True)
     previous_mode = Column(String(20), nullable=True)
+    # 0101 (SIDE-1): a side chat's branch, the parent's message it reads up to, and whether it started as having read
+    # outside content (NULL counts as yes). Written once, when it is made (`side_chats.create`); NULL on any other row.
+    branch_message_id = Column(Integer, nullable=True)
+    outside_at_start = Column(Boolean, nullable=True)
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)

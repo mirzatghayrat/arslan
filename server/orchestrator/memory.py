@@ -105,22 +105,33 @@ async def add_message(
     run_id: int | None = None,
 ) -> int:
     """Append an arslan_messages row; return its id. `run_id` on a user message: one sent while that run
-    was working, which it read mid-turn (K9b); the turn's own first message has none."""
+    was working, which it read mid-turn (K9b); the turn's own first message has none.
+
+    Never into a deleted conversation (SIDE-1, #910 review): the row goes in by one statement that reads the
+    conversation's tombstone itself (`sub_sessions.tombstone`), and refuses with MemoryError `conversation_deleted`
+    when there is one. A delete purges the conversation's messages and writes its tombstone in one transaction, and
+    SQLite lets one writer in at a time, so whatever the timing nothing of it is left: a row committed before that
+    transaction is purged by it, and one tried after it is refused. A check and then an insert could pass just before
+    the delete and write just after it: a reply whose model answered while the conversation was being deleted."""
+    from sqlalchemy import exists, insert, literal
+
+    from server.db.companion_models import ConversationContext
+    from server.services import sub_sessions
+    row = {"conversation_id": conversation_id, "role": role, "content": content, "display_content": display_content,
+           "spawn_id": spawn_id, "job_outcome": job_outcome, "source": source, "run_id": run_id}
+    column = ArslanMessage.__table__.c
+    tombstone = select(ConversationContext.id).where(ConversationContext.id == conversation_id,
+                                                     ConversationContext.kind == sub_sessions.DELETED)
+    statement = insert(ArslanMessage).from_select(
+        list(row), select(*(literal(value, column[name].type) for name, value in row.items())).where(~exists(tombstone))
+    ).returning(ArslanMessage.id)
     async with db_session.AsyncSessionLocal() as db:
-        row = ArslanMessage(
-            conversation_id=conversation_id,
-            role=role,
-            content=content,
-            display_content=display_content,
-            spawn_id=spawn_id,
-            job_outcome=job_outcome,
-            source=source,
-            run_id=run_id,
-        )
-        db.add(row)
+        message_id = await db.scalar(statement)
         await db.commit()
-        await db.refresh(row)
-        return row.id
+    if message_id is None:
+        from arslan.companion.memory import MemoryError
+        raise MemoryError("conversation_deleted")
+    return message_id
 
 
 async def _latest_summary(db, conversation_id: str) -> ArslanSummary | None:  # noqa: ANN001
@@ -138,16 +149,19 @@ async def assemble_working_context(conversation_id: str, *, budget: int | None =
 
     `history` is the CONTEXT copy (arslan_messages.content) of turns AFTER the latest
     compaction point, newest last. `summary` is the rolling compaction summary ("" if none).
+    SIDE-1: a side chat's are its parent's summary and messages up to the branch, then its own messages.
     """
+    from server.services import side_chats
     async with db_session.AsyncSessionLocal() as db:
-        summ = await _latest_summary(db, conversation_id)
+        side = await side_chats.parent_part(db, conversation_id)
+        summ = side.summary if side is not None else await _latest_summary(db, conversation_id)
         cutoff = summ.up_to_message_id if summ else 0
         rows = await db.execute(
             eligible_messages(conversation_id)
             .where(ArslanMessage.id > cutoff)
             .order_by(ArslanMessage.id)
         )
-        msgs = rows.scalars().all()
+        msgs = [*(side.messages if side is not None else ()), *rows.scalars().all()]
     kept = _kept_start(msgs)
     history = []
     for index, m in enumerate(msgs):
@@ -172,12 +186,12 @@ async def assemble_working_context(conversation_id: str, *, budget: int | None =
     summary = clip_context(original_summary, max(1, budget // 2))
     remaining = budget - estimate_tokens(summary)
     bounded = []
-    used_ids = []
+    used = []
     for source, message in reversed(list(zip(msgs, history))):
         content = clip_context(message["content"], remaining)
         if content:
             bounded.append({**message, "content": content})
-            used_ids.append(source.id)
+            used.append(source)
             remaining -= estimate_tokens(content)
         if remaining <= 0 or content != message["content"]:
             break
@@ -186,8 +200,12 @@ async def assemble_working_context(conversation_id: str, *, budget: int | None =
     from server.services import task_service
     runtime = task_service.current()
     if runtime is not None:
-        runtime.register_history(conversation_id, used_ids,
-                                 [(summ.id, summ.updated_at)] if summ and summary else [])
+        # Each under its own conversation (SIDE-1: a side chat's parent part under the parent), so deleting what it
+        # read stops the turn.
+        summaries = [(summ.conversation_id, (summ.id, summ.updated_at))] if summ and summary else []
+        for owner in dict.fromkeys([conversation_id, *(m.conversation_id for m in used), *(c for c, _ in summaries)]):
+            runtime.register_history(owner, [m.id for m in used if m.conversation_id == owner],
+                                     [ref for c, ref in summaries if c == owner])
     return {"summary": summary, "history": bounded, "truncated": truncated,
             "budget_mode": "estimated_text_tokens"}
 
@@ -196,14 +214,19 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
     """Past three quarters of the history budget (turn_budget; without one, today's fixed budget),
     fold everything older than the latest turns into the rolling summary, once. The latest
     KEEP_TURNS user turns stay as they were while they fit in half the budget (fewer otherwise, at
-    least the last message). On any failure, leave the thread un-compacted (never drop)."""
+    least the last message). On any failure, leave the thread un-compacted (never drop). SIDE-1: never a side chat,
+    whose context starts from its parent's summary; a long one drops its oldest parent messages first."""
     try:
         from sqlalchemy import exists, insert, literal
-        from server.services import memory_snapshot_guard
+        from server.db.companion_models import ConversationContext
+        from server.services import memory_snapshot_guard, sub_sessions
         # Read-then-write is not serialized: since K2b compaction runs after the turn, outside its
         # lock. The write below lands only if no summary was written since this read, and only while
         # the last message it folds is still there (the conversation was not deleted meanwhile).
         async with db_session.AsyncSessionLocal() as db:
+            if await db.scalar(select(ConversationContext.kind).where(
+                    ConversationContext.id == conversation_id)) == sub_sessions.SIDE:
+                return
             snapshot_token = await memory_snapshot_guard.capture(db)
             summ = await _latest_summary(db, conversation_id)
             cutoff = summ.up_to_message_id if summ else 0
