@@ -55,8 +55,10 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None) 
         return _note(row, tail, say, source=source)
     if rest.lower() == "clear":
         return await _clear(conversation_id, row, say)
-    if verb == "edit" or rest.lower() in {"pause", "resume"}:
-        return say("goal_not_here")         # Edit, pause and Resume come with the card and L7-4
+    if rest.lower() == "resume":
+        return await _resume(conversation_id, row, say, source=source)
+    if verb == "edit" or rest.lower() == "pause":
+        return say("goal_not_here")         # Edit and Pause come with the goal card (L7-6)
     if row is not None and _open(row):
         return say("goal_exists")
     return await _set(conversation_id, rest, say)
@@ -233,6 +235,24 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
         return await _status(row, say)
     background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac")
     return say("goal_started", objective=spec.objective[:200])
+
+
+async def _resume(conversation_id: str, row, say, *, source: str | None) -> str:
+    """L7-4: Resume re-queues the goal's row as a background job (never `resume_turn` or the chat socket): after a
+    block, a budget stop, a pause or a restart. A goal that isn't started waits for Start (Q0); one that is queued or
+    running, or ended, answers with its status. The row's own checks run in `prepare_resume` (a changed goal, the
+    version, the state), when the job gets its slot."""
+    from server.services import background_jobs
+    if not await main_conversation(conversation_id):
+        return say("goal_main_only")
+    if row is None:
+        return say("goal_missing")
+    if row.phase not in {"waiting_user", "failed"} or row.pause_reason in {"goal_not_started", "goal_changed"} \
+            or background_jobs.goal_job(row.id):
+        return await _status(row, say)
+    spec = GoalSpec.model_validate(row.privacy["goal_spec"])
+    background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac", resume=row.version)
+    return say("goal_resumed", objective=spec.objective[:200])
 
 
 def _note(row, text: str, say, *, source: str | None) -> str:

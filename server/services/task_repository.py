@@ -23,7 +23,7 @@ from arslan.companion.contracts import (
 )
 from arslan.execution_budget import Budget
 from server.db import session as db_session
-from server.services.goal_mode import GoalProgress
+from server.services.goal_mode import GoalProgress, GoalSpec
 from server.db.models import (
     CompanionTask, Project, Run, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision,
 )
@@ -266,6 +266,29 @@ class TaskRepository:
             "phase": "waiting_user", "pause_reason": "goal_not_started",
             "privacy": {**row.privacy, "goal_spec": goal_spec}})
         return await self.present(row)
+
+    async def resume_goal(self, task_id: str, expected_version: int, *, owner_id="local") -> int:
+        """L7-4: the goal's own Resume, before its `start`. Only a goal row its rounds or a restart left waiting (or a
+        failed one), never one that isn't started (Q0: that waits for Start). It gets a fresh budget of its own tier
+        and cap, never a raised one (Q3, Q4). Returns the row's new version."""
+        from arslan.execution_budget import run_budget
+        row = await self.get(task_id, owner_id=owner_id)
+        if row.version != expected_version:
+            raise TaskError("task_version_conflict")
+        if (row.privacy or {}).get("driver") != {"kind": "background", "goal": True} or "goal_spec" not in row.privacy \
+                or row.phase not in {"waiting_user", "failed"} or row.pause_reason in {"goal_not_started", "goal_changed"}:
+            raise TaskError("task_cannot_start")
+        goal = GoalSpec.model_validate(row.privacy["goal_spec"])
+        await self._advance(row, "goal_resumed", changes={
+            "budget": run_budget(goal.tier, usd_cap=goal.usd_cap).snapshot()})
+        return row.version
+
+    async def mark_goal_posted(self, task_id: str, *, owner_id="local") -> None:
+        """L7-4: the goal's result for this attempt is posted; the boot pass posts a succeeded one that isn't."""
+        row = await self.get(task_id, owner_id=owner_id)
+        if (row.privacy or {}).get("driver") == {"kind": "background", "goal": True}:
+            await self._advance(row, "goal_posted", changes={
+                "privacy": {**row.privacy, "goal_posted": row.attempt_id}})
 
     async def link_run(self, task_id: str, attempt_id: str, run_id: int):
         row = await self._active(task_id, attempt_id)
