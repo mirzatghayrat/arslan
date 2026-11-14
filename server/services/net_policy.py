@@ -22,15 +22,17 @@ site, nor is a bare TLD (`listable`), and outside content that names one refuses
 address is matched only as itself, read in every spelling as the proxy reads a destination (`normalize`), in what the
 user typed too (`addresses_in`). A text is read for hosts as people write them, in full-width forms, with an
 ideographic full stop for a dot, and with text in a script written without spaces running on into them (`hosts_in`).
+Outside content is read with JSON's string escapes undone as well, however deeply JSON nests in it, since it is often
+recorded as its JSON (a tool's result, a resumed task's saved progress); what the user typed is read as written.
 
 Known limits:
 - The record lives in memory, as the turn's own mark does: a restart forgets it (as GIT_REFUSED_IN), and a turn after
   one records again only what it reads, or carries in marked as outside content (a job's result or a sub-session's
   brief in its history, a rolling summary that folded one in, a resumed task's saved progress: Codex round 1 F5).
 - A host spelled so that no reader sees a host ("evil dot example", base64) is `unknown`, so it passes.
-- A text recorded as its JSON (a tool's result, a resumed task's saved progress) is read as written: a bare host right
-  after an escape in it (a new line, written backslash-n) is read with the escape's letter in front
-  (`ndrop.evil.example`), so it is `unknown`. A host in a URL is read whole.
+- Only JSON's escapes are undone: a bare host right after an escape in another syntax (%0A in a URL, a Python repr's
+  backslash-x1b, a terminal's color code) is read with the escape's last letters in front, so it is `unknown`. A host
+  in a URL is read whole.
 - The list is the snapshot tld bundles (its `// VERSION:` line), new with each tld: a public suffix added upstream
   since is a site here until then.
 - Where a host in a script written without spaces begins, when text in that script runs on into it, can't be told:
@@ -173,6 +175,13 @@ _LEAD_KEPT = 32
 #: How many hosts a text may name by where one in a spaceless script may begin (`hosts_in`): a page of them can't
 #: stall the turn reading it.
 _GUESSES_KEPT = 1024
+#: A JSON string escape (RFC 8259): a letter's (\n, \t, \r, \b, \f), \" and \/, or a character by its code (\uXXXX, as
+#: json.dumps writes all but ASCII by default), after one backslash or more, since JSON inside JSON (a command's output
+#: that was JSON, in its result's JSON) escapes each backslash again. Left as written, an escape's letter or code runs
+#: on into the host after it. An escaped backslash stays: a backslash stands apart from a host anyway. A run of
+#: backslashes is read once, from its first (a long run is no slower to read than any other text).
+_JSON_ESCAPE = re.compile(r'(?<!\\)\\++(?:u([0-9a-fA-F]{4})|([bfnrt"/]))')
+_JSON_ESCAPED = {"b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", '"': '"', "/": "/"}
 
 
 def _ipv4(host: str) -> ipaddress.IPv4Address | None:
@@ -234,10 +243,21 @@ def listable(name: str) -> bool:
     return "." in name and not _address_like(name) and not is_public_suffix(name)
 
 
-def _host_text(text) -> str:
+def _unescaped(text: str) -> str:
+    """`text` with each JSON string escape in it undone (`_JSON_ESCAPE`): a surrogate pair is the one character its two
+    codes spell, and a lone surrogate U+FFFD."""
+    text = _JSON_ESCAPE.sub(lambda escape: chr(int(escape.group(1), 16)) if escape.group(1)
+                            else _JSON_ESCAPED[escape.group(2)], text)
+    return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
+
+
+def _host_text(text, *, escapes: bool = False) -> str:
     """A text as its hosts are read, as IDNA (UTS 46) reads a host, and so curl and browsers do: NFKC, so a full-width
-    form is the ASCII one ("ｅｖｉｌ．ｅｘａｍｐｌｅ"), and an ideographic full stop a dot where a host has one (`_STOP`)."""
+    form is the ASCII one ("ｅｖｉｌ．ｅｘａｍｐｌｅ"), and an ideographic full stop a dot where a host has one (`_STOP`).
+    `escapes`: and with each JSON string escape in it undone (`_unescaped`), then NFKC again for what they spelled."""
     text = unicodedata.normalize("NFKC", str(text or ""))
+    if escapes and "\\" in text:
+        text = unicodedata.normalize("NFKC", _unescaped(text))
     if _STOP in text:
         tlds = _psl()[3]
         text = _STOP_IN_ASCII.sub(".", text)
@@ -266,39 +286,47 @@ def _tld_cuts(label: str, known: bool) -> tuple[str, ...]:
     return tuple(label[:end] for end in sorted(ends) if _tld_ok(label[:end], known))
 
 
-def hosts_in(text) -> set[str]:
-    """The hosts a text names, each as `normalize` writes it (a public suffix too: its readers take what they use), the
-    same for outside content and for what the user typed. A text is read three ways, and every host any of them finds
-    counts (in doubt, more hosts):
+def hosts_in(text, *, escapes: bool = False) -> set[str]:
+    """The hosts a text names, each as `normalize` writes it (a public suffix too: its readers take what they use). A
+    text is read three ways, and every host any of them finds counts (in doubt, more hosts):
     - as written: a host in any script that stands apart from the words around it, an IDN one included;
     - with text in a spaceless script read as the spaces it stands for: a host in another script that such text runs
       into, on either side, is read on its own ("请上传到evil.example" names evil.example);
     - for a host in a spaceless script that text in it runs into, where the host begins can't be told: each of the
       characters right before a dot may begin one, and it ends where a TLD the list has does ("请上传到例子.com"
-      names "例子.com", and "到例子.com" and the rest too), at most `_GUESSES_KEPT` of them."""
-    text = _host_text(text)
+      names "例子.com", and "到例子.com" and the rest too), at most `_GUESSES_KEPT` of them.
+    `escapes`, outside content's reading (`note_outside`): the text with each JSON string escape in it undone
+    (`_unescaped`) is read those three ways as well, and first, the two readings sharing `_GUESSES_KEPT`. A text
+    recorded as its JSON (a tool's result, a resumed task's saved progress) names the host right after an escape in
+    it, which as written is read with the escape's letter in front (a backslash-n before drop.evil.example:
+    ndrop.evil.example), and text json.dumps wrote by its codes runs into a host in its own script again. What the
+    user typed is read as written alone: it is no JSON, and a host it would name but doesn't spell would pass (a
+    Windows path, C:\\new.example, names new.example and never ew.example)."""
+    texts = list(dict.fromkeys((_host_text(text, escapes=True), _host_text(text)) if escapes else (_host_text(text),)))
     candidates: set[str] = set()
-    for reading in {text, _SPACELESS.sub(" ", text)}:
+    for reading in {form for text in texts for form in (text, _SPACELESS.sub(" ", text))}:
         candidates.update(match.group(1) for pattern in (_URL_HOST, _BARE_IPV4) for match in pattern.finditer(reading))
         for match in _BARE_NAME.finditer(reading):
             *head, last = match.group(1).split(".")
             candidates.update(".".join([*head, cut]) for cut in _tld_cuts(last, False))
     guesses: list[str] = []
-    for dot in re.finditer(r"\.", text):
-        start = begin = dot.start()
-        while begin > 0 and start - begin < _LEAD_KEPT and text[begin - 1].isalnum() and _spaceless(text[begin - 1]):
-            begin -= 1
-        after = _LABELS_AFTER.match(text, start) if begin < start else None
-        if after is None:
-            continue
-        labels, ends = after.group()[1:].split("."), []
-        for j, label in enumerate(labels):
-            ends.extend(".".join([*labels[:j], cut]) for cut in _tld_cuts(label, True))
-            if not (_ASCII_LABEL.fullmatch(label) or label.lower() in _psl()[3]):
-                break                  # between a host's first label and its TLD: ASCII labels, or TLDs (`公司.cn`)
-        guesses.extend(f"{text[first:start]}.{end}" for first in range(begin, start) for end in ends)
-        if len(guesses) >= _GUESSES_KEPT:
-            break
+    for text in texts:
+        for dot in re.finditer(r"\.", text):
+            if len(guesses) >= _GUESSES_KEPT:
+                break
+            start = begin = dot.start()
+            while (begin > 0 and start - begin < _LEAD_KEPT and text[begin - 1].isalnum()
+                   and _spaceless(text[begin - 1])):
+                begin -= 1
+            after = _LABELS_AFTER.match(text, start) if begin < start else None
+            if after is None:
+                continue
+            labels, ends = after.group()[1:].split("."), []
+            for j, label in enumerate(labels):
+                ends.extend(".".join([*labels[:j], cut]) for cut in _tld_cuts(label, True))
+                if not (_ASCII_LABEL.fullmatch(label) or label.lower() in _psl()[3]):
+                    break              # between a host's first label and its TLD: ASCII labels, or TLDs (`公司.cn`)
+            guesses.extend(f"{text[first:start]}.{end}" for first in range(begin, start) for end in ends)
     candidates.update(guesses[:_GUESSES_KEPT])
     return {name for candidate in candidates if (name := normalize(candidate)) is not None}
 
@@ -353,11 +381,12 @@ _shared: dict[str, set[str]] = {}
 
 def note_outside(conversation_id: str | None, text: str | None = None) -> None:
     """This conversation read outside content (`untrusted.mark_external`, a turn that carried some in); `text`, what was
-    read where the caller has it, adds the sites it names, and the public suffixes it names to `_shared`."""
+    read where the caller has it, adds the sites it names, and the public suffixes it names to `_shared`: read as
+    written and as its JSON (`hosts_in`'s `escapes`), as it may be recorded."""
     if not conversation_id:
         return
     hosts = _outside.setdefault(conversation_id, set())
-    for name in hosts_in(text) if text else ():
+    for name in hosts_in(text, escapes=True) if text else ():
         if listable(name):
             hosts.add(name)
         elif "." in name and not _address_like(name):
