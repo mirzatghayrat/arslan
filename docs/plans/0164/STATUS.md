@@ -36,7 +36,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
 - ③Hands: S4b-0, CLS (service, model call, measurement runner), then ASK1-b fixes.
 - ②Main: HR-3 part 2, then SUB6b (migration 0096), then #298b-2, last before the release.
 - ⑤CAP: S5a (four modes: plan, ask every step, ask only when risky, full access; migration 0098), then S5b and H8a.
-- ⑥Helper: NET (moved up by the user on 2026-11-14; replaces S2a-1's network card), then H1-b, H1-c, INB9-a and SIDE-1 (migration 0099).
+- ⑥Helper: NET (moved up by the user on 2026-11-14; replaces S2a-1's network card), then H1-b, H1-c, INB9-a and SIDE-1 (migration 0101).
 - LOOP1: harness H0 (done), H1-a, and H3 (an enforced check before "done", added by the user on 2026-11-14 in the reserved sixth harness slot), then the L7 slices.
 
 **User decisions, 2026-11-13 and 11-14 (paraphrased):**
@@ -55,7 +55,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
   - Codex built a local-only adversarial set of 120 cases.
 - The working rules are in docs/sessions.md §12 and §13, with the budget by tier.
 
-**Migration numbers:** 0094 SUB7, 0095 ASK1-a (merged), 0096 SUB6b, 0097 ASK1-b (#890), 0098 S5a, 0099 SIDE-1; 0093 was released. The next free number is 0100.
+**Migration numbers:** 0094 SUB7, 0095 ASK1-a (merged), 0096 SUB6b, 0097 ASK1-b (#890), 0098 S5a, 0100 SUB7, 0101 SIDE-1; 0093 and 0099 were released. The next free number is 0102.
 
 ### 2026-11-11, evening: progress
 

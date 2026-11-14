@@ -105,22 +105,22 @@ def _capture(monkeypatch) -> dict:
     return seen
 
 
-# -- migration 0099 ----------------------------------------------------------------------------------------------
+# -- migration 0101 ----------------------------------------------------------------------------------------------
 
-def test_0099_adds_the_branch_and_the_mark_once_and_leaves_a_database_without_the_table_alone(tmp_path):
-    from server.db.migrations.versions import _0099_side_chats as m0099
+def test_0101_adds_the_branch_and_the_mark_once_and_leaves_a_database_without_the_table_alone(tmp_path):
+    from server.db.migrations.versions import _0101_side_chats as m0101
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}")
     try:
         with engine.begin() as conn:
             conn.exec_driver_sql("CREATE TABLE conversation_contexts (id VARCHAR(100) PRIMARY KEY, version INTEGER)")
             conn.exec_driver_sql("INSERT INTO conversation_contexts (id, version) VALUES ('c-1', 3)")
-            m0099.upgrade_sync(conn)
-            m0099.upgrade_sync(conn)
+            m0101.upgrade_sync(conn)
+            m0101.upgrade_sync(conn)
             columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(conversation_contexts)")]
             row = conn.exec_driver_sql("SELECT * FROM conversation_contexts").one()
         with engine.begin() as conn:
             conn.exec_driver_sql("DROP TABLE conversation_contexts")
-            m0099.upgrade_sync(conn)
+            m0101.upgrade_sync(conn)
             assert conn.exec_driver_sql("SELECT name FROM sqlite_master").all() == []
     finally:
         engine.dispose()
@@ -128,22 +128,22 @@ def test_0099_adds_the_branch_and_the_mark_once_and_leaves_a_database_without_th
     assert tuple(row) == ("c-1", 3, None, None)
 
 
-def test_0099_comes_after_0098_and_an_install_at_the_previous_head_gets_it(tmp_path, monkeypatch):
-    """0099 is the last migration, after 0098. An install whose ledger ends at the previous head gets it, and only
-    it, at its next boot."""
+def test_0101_comes_after_0100_and_an_install_at_0100_gets_it_alone(tmp_path, monkeypatch):
+    """0101 is the last migration, after 0100 (SUB7). An install whose ledger ends at 0100 gets it, and only it, at
+    its next boot."""
     from server.db.migrations import runner
     from server.db.models import Base
     versions = [version for version, _ in runner.MIGRATIONS]
-    assert versions[-2:] == ["0098", "0099"] and runner.head() == "0099"
+    assert versions[-2:] == ["0100", "0101"] and runner.head() == "0101"
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'arslan.db'}")
     try:
         Base.metadata.create_all(engine)
         with monkeypatch.context() as patched:
             patched.setattr(runner, "MIGRATIONS", runner.MIGRATIONS[:-1])
             with engine.begin() as conn:
-                assert runner.apply_pending(conn)[-1] == "0098"
+                assert runner.apply_pending(conn)[-1] == "0100"
         with engine.begin() as conn:
-            assert runner.apply_pending(conn) == ["0099"]
+            assert runner.apply_pending(conn) == ["0101"]
     finally:
         engine.dispose()
 

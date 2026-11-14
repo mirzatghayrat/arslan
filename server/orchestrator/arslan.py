@@ -651,7 +651,7 @@ async def _side_tools() -> list[dict]:
 
 async def _stored_kind(conversation_id: str) -> tuple[str | None, bool | None]:
     """What the conversation is, as stored (0071): `quick`, `chat`, `side`, or None (worked out on each read); and, for
-    a side chat, whether it started as having read outside content (0099; NULL counts as yes)."""
+    a side chat, whether it started as having read outside content (0101; NULL counts as yes)."""
     from sqlalchemy import select
 
     from server.db.companion_models import ConversationContext

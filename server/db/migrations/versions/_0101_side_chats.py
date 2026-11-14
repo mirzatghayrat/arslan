@@ -1,4 +1,4 @@
-"""0099 (SIDE-1, v0.1.64): where a side chat branches from its parent, and whether it started marked.
+"""0101 (SIDE-1, v0.1.64): where a side chat branches from its parent, and whether it started marked.
 
 A side chat is a `conversation_contexts` row of kind `side` with its parent (0071's columns). Two nullable columns there,
 written once when it is made (`side_chats.create`) and never changed:
@@ -8,8 +8,8 @@ written once when it is made (`side_chats.create`) and never changed:
 The quote the user selected is not stored: it is the side chat's first message (⓪Plan, 2026-11-14).
 
 Add-only, so reverting the code that uses them needs nothing back. Idempotent: a column already there is left alone, and
-so is a database without the table (a new install's create_all makes it with both). Numbered 0099 (docs/sessions.md
-§4; 0093 was released): it goes last in `MIGRATIONS`, after 0098.
+so is a database without the table (a new install's create_all makes it with both). Numbered 0101 (docs/sessions.md
+§4; 0093 and 0099 were released, 0100 is SUB7's): it goes last in `MIGRATIONS`, after 0100.
 """
 from __future__ import annotations
 

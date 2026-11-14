@@ -10,7 +10,7 @@
 | Depends on | SUB's base: SUB2 (child conversations with a parent id, only-inherited settings, hidden from the list) and the shared `kind` column from Q1's migration 0071 (`kind=side`). A clickable demo mock approved by the user before any product code (user, 2026-10-28). |
 | Merge position | After SUB2. Not in the strict security chain, but SIDE-1 is on the security surface (permissions inherited, outside-content mark), so it is written and reviewed at effort=max plus Codex GPT-6 Astra. |
 | Branches | `claude/0164-side-0-mock`, `claude/0164-side-1-backend`, `claude/0164-side-2-web` |
-| Migration | The branch point needs a column: a branch message id on the side conversation. If Q1's migration 0071 has not opened yet, add the column there (Q1 + SUB + SIDE share it); otherwise SIDE-1 asks ②Main for the next free number and logs it in the plan's §6. `kind=side` and the parent id come from 0071. **SIDE-1 (⓪Plan, 2026-11-14):** 0099 (renumbered from 0093, which was released) adds `branch_message_id` and `outside_at_start` only; the quote the user selected is the side chat's first message. ⓪Plan adds the §6 row. |
+| Migration | The branch point needs a column: a branch message id on the side conversation. If Q1's migration 0071 has not opened yet, add the column there (Q1 + SUB + SIDE share it); otherwise SIDE-1 asks ②Main for the next free number and logs it in the plan's §6. `kind=side` and the parent id come from 0071. **SIDE-1 (⓪Plan, 2026-11-14):** 0101 (renumbered from 0093 and then from 0099, both released; 0100 is SUB7's) adds `branch_message_id` and `outside_at_start` only; the quote the user selected is the side chat's first message. ⓪Plan adds the §6 row. |
 
 ## What the user wants (the shape of Claude desktop's side chat)
 

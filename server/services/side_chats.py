@@ -1,7 +1,7 @@
 """SIDE-1 (v0.1.64, docs/plans/0164/SIDE-side-chat.md): side chats, the backend.
 
 A side chat is a conversation of its own, `kind="side"` (migration 0071's column), under the conversation it was branched
-from (`parent_id`), at one of that conversation's messages (`branch_message_id`, migration 0099). Its id is minted here,
+from (`parent_id`), at one of that conversation's messages (`branch_message_id`, migration 0101). Its id is minted here,
 `side-` and a UUID (`phone_ids.SIDE_PREFIX`), so one with no row still reads as a side chat. Its messages are its own;
 the window talks to it over the socket as to any conversation.
 

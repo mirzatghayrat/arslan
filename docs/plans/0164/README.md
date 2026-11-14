@@ -352,7 +352,7 @@ Numbers assigned so far (②Main, 2026-10-28): 0071 Q1, 0072 INB2, 0073 C7c-2, 0
 | 0092 | S6 | Data only: deletes the old command rules (`permission_rules` of kind `legacy_rule`) and the `terminal_always_allow` settings list they were copied from (the user's decision of 2026-11-11: deleted, not listed), and every `permission_grants` row no request reads (a frozen copy of `permissions.grant_is_live`; the user's decision after #836's review); live grants and everything else untouched, no-op downgrade | ②Main |
 | 0095 | ASK1-a | Data only: writes no policy; on an existing install whose stored `shell_confirm_policy` isn't `ask_risky`, sets `shell_policy_switch_notice` to "pending" (replacing a pending 0070 notice); for a stored `ask_risky`, clears a pending one; a new install gets none; no-op downgrade | ③Hands |
 
-0094 (SUB7), 0096 (SUB6b), 0097 (ASK1-b), 0098 (S5a) and 0099 (SIDE-1) are reserved; 0093 was released. The next free number is 0100. Ask ②Main before taking it.
+0094 (SUB7), 0096 (SUB6b), 0097 (ASK1-b), 0098 (S5a), 0100 (SUB7) and 0101 (SIDE-1) are reserved; 0093 and 0099 were released. The next free number is 0102. Ask ②Main before taking it.
 
 ## 7. 门槛（R64，草稿）
 
