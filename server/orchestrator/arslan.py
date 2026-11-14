@@ -703,8 +703,10 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     # even when a chat turn started it. INB2 (#475 F2, H1, H2): its run's record counts the knowledge, the
     # project card and a note from off the list put in.
     # K10-1 (D3): a folder's rules are outside content, so a job that read them starts as having read some.
+    # NET-a (Codex round 1 F5): so is a marked rolling summary, whose sites the job's turn records too.
+    summary = untrusted.outside_summary(ctx["summary"])
     with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced), \
-            untrusted.carried(rule_files > 0, text=rules):
+            untrusted.carried(rule_files > 0 or bool(summary), text="\n".join(filter(None, (rules, summary)))):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_sub_session_tools if sub_session else _background_tools,
@@ -804,7 +806,7 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
     kb_block, card, traced, rule_files = turn.kb_block, turn.card, turn.traced, turn.rule_files
     emit({"type": "stream_start", "source": "arslan"})
 
-    async def _dispatch(user_content):
+    async def _dispatch(user_content, ocr_text=None):
         # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
@@ -812,9 +814,12 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
         # K10-1 (D3): so is a folder's rules file.
         # INB2 (#475 F2, H1, H2): so is the project knowledge found for it, for the "about you" allowlist, and
         # so are the project card and a note in view that came from a run off the list.
+        # NET-a (Codex round 1 F5): a marked rolling summary is outside content too; the turn records the sites it
+        # names, and those of the text OCR read off a refused picture (`ocr_text`, the retry below).
+        summary = untrusted.outside_summary(ctx["summary"])
         with request_policy.prompt_cache(long=True), untrusted.carried(
-                bool(attached_context or images) or rule_files > 0,
-                text="\n".join(filter(None, (attached_context, turn.rules)))), \
+                bool(attached_context or images or summary) or rule_files > 0,
+                text="\n".join(filter(None, (attached_context, turn.rules, summary, ocr_text)))), \
                 untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 
@@ -874,7 +879,7 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
             result = None
             try:
                 result = await _dispatch(_with_turn_context(context, build_user_blocks(
-                    f"{user_message}\n\n{recovered}", attached_context, None)))
+                    f"{user_message}\n\n{recovered}", attached_context, None)), ocr_text=recovered)
             except TaskError:
                 raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly

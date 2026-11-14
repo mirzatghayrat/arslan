@@ -25,9 +25,12 @@ ideographic full stop for a dot, and with text in a script written without space
 
 Known limits:
 - The record lives in memory, as the turn's own mark does: a restart forgets it (as GIT_REFUSED_IN), and a turn after
-  one records again only what it reads, or carries in framed (a job's result or a sub-session's brief in its history).
-  A rolling summary that folds outside content in marks the turn but records no host.
+  one records again only what it reads, or carries in marked as outside content (a job's result or a sub-session's
+  brief in its history, a rolling summary that folded one in, a resumed task's saved progress: Codex round 1 F5).
 - A host spelled so that no reader sees a host ("evil dot example", base64) is `unknown`, so it passes.
+- A text recorded as its JSON (a tool's result, a resumed task's saved progress) is read as written: a bare host right
+  after an escape in it (a new line, written backslash-n) is read with the escape's letter in front
+  (`ndrop.evil.example`), so it is `unknown`. A host in a URL is read whole.
 - The list is the snapshot tld bundles (its `// VERSION:` line), new with each tld: a public suffix added upstream
   since is a site here until then.
 - Where a host in a script written without spaces begins, when text in that script runs on into it, can't be told:

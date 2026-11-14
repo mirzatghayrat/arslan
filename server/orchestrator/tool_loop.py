@@ -810,7 +810,8 @@ async def run_native(**kwargs) -> dict:
     seen = _untrusted.track_turn(request.conversation_id)
     framed = _untrusted.outside_history(request.history)
     if framed or _untrusted.context_from_outside(request.user_content):
-        # S64-0b: a job's result framed as outside content, or a summary of one (NET-a: the framed texts' sites)
+        # S64-0b: a job's result framed as outside content, or a summary of one (NET-a: the framed texts' sites; a
+        # summary's are recorded by the caller that has its text, `untrusted.outside_summary`, Codex round 1 F5)
         _untrusted.mark_external("\n".join(framed))
     sent_is_final = _SENT_IS_FINAL.set(False)
     # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).

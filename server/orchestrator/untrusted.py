@@ -395,8 +395,9 @@ def carried(seen: bool, text: str | None = None):
     """Every turn started inside starts as having read outside content when `seen`. An inner
     `carried(False)` never clears what an outer one carries. Yields the run's mark, which a turn
     of the run that read outside content turns on too (end_turn; S64-0b: a background job).
-    NET-a: `text`, the outside content carried in where the caller has it (an attachment, a folder's rules), whose
-    sites a turn started inside records."""
+    NET-a: `text`, the outside content carried in where the caller has it (an attachment, a folder's rules, a marked
+    rolling summary, what OCR read off a picture, a resumed task's saved progress), whose sites a turn started inside
+    records."""
     outer = _CARRIED.get()
     run = {"seen": bool(seen) or bool(outer and outer["seen"]),
            "texts": [*(outer["texts"] if outer else ()), *([text] if seen and text else [])]}
@@ -519,6 +520,13 @@ def context_from_outside(user_content) -> bool:
     text = user_content if isinstance(user_content, str) else "\n".join(
         str(block.get("text") or "") for block in user_content or () if isinstance(block, dict))
     return SUMMARY_FROM_OUTSIDE in text
+
+
+def outside_summary(summary) -> str:
+    """NET-a (Codex round 1 F5): the conversation's rolling summary when it is marked, else "". A turn carries it in as
+    outside content (`carried`), so the turn records the sites it names, as `context_from_outside` marks the turn."""
+    text = str(summary or "")
+    return text if SUMMARY_FROM_OUTSIDE in text else ""
 
 
 def turn_so_far():
