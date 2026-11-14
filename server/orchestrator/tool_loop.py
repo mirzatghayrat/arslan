@@ -203,7 +203,7 @@ def _record_tool_result(tool_key, args, result, emit, tool_trace, assistant_cont
     if reached and (_untrusted.counts_as_external(tool_key, args)
                     or (tool_key in ("read_skill", "background_status", "find_tools")  # S64-0b/0c: per result
                         and result.get("external") is True)):
-        _untrusted.mark_external()           # 0.1.52: this turn read outside content
+        _untrusted.mark_external(raw_payload)    # 0.1.52: this turn read outside content (NET-a: its sites, as read)
     if not _untrusted.known_local_call(tool_key, result):
         _untrusted.mark_off_the_list()       # INB2 (#475 F2): any call off the user's allowlist, run or not
     # PB-3 degrade hint. Placement is deliberate: `framed` ends with its frame's close, so the
@@ -467,7 +467,7 @@ async def _unavailable(tool_key: str, live: set[str]) -> dict:
     from server.orchestrator import untrusted
     if any(untrusted.odd_mcp_key(key) for key in live if tool_names.wire(key) in near):
         # S64-0c: a key it lists carries a server's odd tool name: framed (no external: False), and marked.
-        untrusted.mark_external()
+        untrusted.mark_external(result["error"])
         del result["external"]
     return result
 
@@ -757,8 +757,8 @@ def _native_tool_schemas(wired: list[dict], *, allow_escalation: bool) -> list[d
     0.1.63 K3: sorted by name, `escalate` last. The table renders before Claude's cached system, so its
     order is part of the cache key; tools loaded later (K7) are appended after it, never sorted in."""
     from server.orchestrator import untrusted
-    if any(untrusted.odd_mcp_key(t["key"]) for t in wired):
-        untrusted.mark_external()       # S64-0c: a key in the table carries a server's odd tool name
+    if odd := [t["key"] for t in wired if untrusted.odd_mcp_key(t["key"])]:
+        untrusted.mark_external("\n".join(odd))     # S64-0c: a key in the table carries a server's odd tool name
     schemas: list[dict] = []
     resident = sorted((t for t in wired if not t.get("appended")), key=lambda tool: tool["key"])
     for t in resident + [t for t in wired if t.get("appended")]:
@@ -814,9 +814,12 @@ async def run_native(**kwargs) -> dict:
     request, state = TurnRequest(**kwargs), TurnState()
     from server.orchestrator import untrusted as _untrusted
     from server.services import tool_outputs
-    seen = _untrusted.track_turn()
-    if _untrusted.history_from_outside(request.history) or _untrusted.context_from_outside(request.user_content):
-        _untrusted.mark_external()       # S64-0b: a job's result framed as outside content, or a summary of one
+    seen = _untrusted.track_turn(request.conversation_id)
+    framed = _untrusted.outside_history(request.history)
+    if framed or _untrusted.context_from_outside(request.user_content):
+        # S64-0b: a job's result framed as outside content, or a summary of one (NET-a: the framed texts' sites; a
+        # summary's are recorded by the caller that has its text, `untrusted.outside_summary`, Codex round 1 F5)
+        _untrusted.mark_external("\n".join(framed))
     sent_is_final = _SENT_IS_FINAL.set(False)
     # S2a-1 piece 5: the saved outputs of this turn belong to its conversation (a command may read them).
     copies_of = tool_outputs.conversation.set(request.conversation_id)

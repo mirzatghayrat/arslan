@@ -11,7 +11,9 @@ the server stores exactly what "Always" on its card would have stored, as record
 row when it was refused (`permissions.ALWAYS_KEY`). A client
 never names a kind or a target: what the model wrote never becomes a rule nobody saw, and a card
 that hides "Always" (a kind never remembered, a high-reach app, a command no rule matched) gives
-nothing to allow.
+nothing to allow. NET-a (Codex round 1, F7): the only way to add a grant here is the Inbox's "In this conversation" on
+a site NET-a's card couldn't ask, or that nobody answered (`POST /permissions/grants {refused_id}`): the grants that
+card's own answer stores, read from its ledger row in the same way.
 """
 from __future__ import annotations
 
@@ -28,7 +30,7 @@ from server.auth import require_auth
 from server.db.companion_models import ConversationContext
 from server.db.models import ApprovalEvent, ArslanMessage, MCPServer, PermissionGrant, PermissionRule, Tool
 from server.db.session import get_session
-from server.services import hands_service, permission_store, permissions, sub_sessions
+from server.services import hands_service, net_policy, permission_store, permissions, sub_sessions
 
 router = APIRouter(dependencies=[Depends(require_auth)])
 
@@ -109,6 +111,27 @@ async def list_grants(kind: str | None = None, db: AsyncSession = Depends(get_se
              "parent_title": titles.get(blocks[g.conversation_id], "")} for g in grants]
 
 
+@router.post("/permissions/grants")
+async def allow_refused_site(body: AllowRefused, db: AsyncSession = Depends(get_session)) -> dict:
+    """NET-a (Codex round 1, F7): "In this conversation" on a site NET-a's card couldn't ask, or that nobody answered:
+    for that row's own conversation, the grants a click on the card stores, through the card's own path
+    (`net_policy.allow_from_inbox`). As with "Always allow", the client names the row and nothing else. 404: no such
+    row. 409: not one the Inbox lists (`permission_store.LISTED`), a scheduled run's (`decided_by` policy: a run with
+    nobody to ask reads no grant, S1, so the Inbox offers none), or no site of NET-a's card to allow in a
+    conversation (another kind, a `network:*` card, no conversation). Returns the grants, which
+    `DELETE /permissions/grants/{id}` takes back."""
+    row = await db.get(ApprovalEvent, body.refused_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="no such refusal")
+    if (row.decided_by, row.decision) not in permission_store.LISTED:
+        raise HTTPException(status_code=409, detail={"code": "not_a_refusal"})
+    if row.decided_by == "policy":
+        raise HTTPException(status_code=409, detail={"code": "unattended"})
+    if not row.conversation_id or not net_policy.listed_sites(row.kind, row.target):
+        raise HTTPException(status_code=409, detail={"code": "no_site"})
+    return {"grants": [{"id": grant.id, "target": grant.target} for grant in await net_policy.allow_from_inbox(row)]}
+
+
 @router.delete("/permissions/grants/{grant_id}")
 async def delete_grant(grant_id: int, db: AsyncSession = Depends(get_session)) -> dict:
     """S4a: take back one "in this conversation" grant. The next step it covered asks again."""
@@ -163,6 +186,7 @@ async def _names(db: AsyncSession, grants: list[PermissionGrant]) -> dict[int, d
         name = (g.target[len("text:"):] if what == "command"
                 else PurePath(g.target).name or g.target if what == "workspace_write"
                 else apps.get(g.target) or g.target if what == "app"
+                else g.target[len("network:"):] if what == "network" and g.target != "network:*"   # NET-a: one site
                 else "" if what in ("outside", "unsandboxed", "network", "schedule") else g.target)
         out[g.id] = {"name": name, "server": "", "server_gone": False}
     return out

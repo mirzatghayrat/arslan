@@ -262,6 +262,10 @@ def build_user_blocks(
     return blocks
 
 
+#: How `persisted_user_text` starts each picture's line, after the message: this, the file's name, "]".
+PICTURE_LINE = "[图片:"
+
+
 def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     """What goes into arslan_messages.
 
@@ -271,8 +275,17 @@ def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     does not imply the model can still see something it cannot."""
     if not images:
         return user_message
-    names = "\n".join(f"[图片:{i.get('name') or 'image'}]" for i in images)
+    names = "\n".join(f"{PICTURE_LINE}{i.get('name') or 'image'}]" for i in images)
     return f"{user_message}\n{names}" if user_message else names
+
+
+def typed_text(stored: str) -> str:
+    """NET-a (Codex round 1, F3): what the user typed of a stored user message, without the file names
+    `persisted_user_text` put after it. A file's name is not the user's words. Cut at the first line that starts as a
+    picture's does, so nothing of a name stays, whatever it holds (a newline too); a line the user typed so goes with
+    it."""
+    text = str(stored or "")
+    return "" if text.startswith(PICTURE_LINE) else text.partition(f"\n{PICTURE_LINE}")[0]
 
 
 @governed
@@ -710,8 +723,10 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     # even when a chat turn started it. INB2 (#475 F2, H1, H2): its run's record counts the knowledge, the
     # project card and a note from off the list put in.
     # K10-1 (D3): a folder's rules are outside content, so a job that read them starts as having read some.
+    # NET-a (Codex round 1 F5): so is a marked rolling summary, whose sites the job's turn records too.
+    summary = untrusted.outside_summary(ctx["summary"])
     with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced), \
-            untrusted.carried(rule_files > 0):
+            untrusted.carried(rule_files > 0 or bool(summary), text="\n".join(filter(None, (rules, summary)))):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_sub_session_tools if sub_session else _background_tools,
@@ -759,6 +774,7 @@ class _AnswerContext:
     card: str
     traced: bool
     rule_files: int
+    rules: str = ""         # NET-a: the folder's rules as the turn reads them, whose sites a turn records as outside
 
 
 #: The dispatch sent an error frame instead of a reply: the turn ends with nothing stored.
@@ -800,7 +816,7 @@ async def _answer_context(conversation_id: str, user_message: str, *, extra_syst
     # A plain string when there are no images; a neutral block list otherwise (providers translate it).
     llm_user = _with_turn_context(context, build_user_blocks(user_message, attached_context, images))
     return _AnswerContext(ctx=ctx, system=system, context=context, llm_user=llm_user, kb_block=kb_block, card=card,
-                          traced=traced, rule_files=rule_files)
+                          traced=traced, rule_files=rule_files, rules=rules)
 
 
 async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventSink, turn: _AnswerContext, *,
@@ -812,7 +828,7 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
     kb_block, card, traced, rule_files = turn.kb_block, turn.card, turn.traced, turn.rule_files
     emit({"type": "stream_start", "source": "arslan"})
 
-    async def _dispatch(user_content):
+    async def _dispatch(user_content, ocr_text=None):
         # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
@@ -820,7 +836,12 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
         # K10-1 (D3): so is a folder's rules file.
         # INB2 (#475 F2, H1, H2): so is the project knowledge found for it, for the "about you" allowlist, and
         # so are the project card and a note in view that came from a run off the list.
-        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images) or rule_files > 0), \
+        # NET-a (Codex round 1 F5): a marked rolling summary is outside content too; the turn records the sites it
+        # names, and those of the text OCR read off a refused picture (`ocr_text`, the retry below).
+        summary = untrusted.outside_summary(ctx["summary"])
+        with request_policy.prompt_cache(long=True), untrusted.carried(
+                bool(attached_context or images or summary) or rule_files > 0,
+                text="\n".join(filter(None, (attached_context, turn.rules, summary, ocr_text)))), \
                 untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 
@@ -881,7 +902,7 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
             result = None
             try:
                 result = await _dispatch(_with_turn_context(context, build_user_blocks(
-                    f"{user_message}\n\n{recovered}", attached_context, None)))
+                    f"{user_message}\n\n{recovered}", attached_context, None)), ocr_text=recovered)
             except TaskError:
                 raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly

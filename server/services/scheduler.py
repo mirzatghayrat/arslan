@@ -460,12 +460,17 @@ async def _fire(task: ScheduledTask) -> None:
     async def body(sink):
         return await _fire_body(task)
     # ASK1-b: the fire starts from what the turn that wrote or last changed its prompt had read (`outside_seen`,
-    # migration 0097; true for tasks from before it), and true means its commands run offline. Only a scheduled task's
-    # own fire runs commands (command_gate.scheduled_fire); the heartbeat runs none.
+    # migration 0097; true for tasks from before it). True: its commands run offline, with NET-a's switch on or off
+    # (command_gate._network_after_outside_content: nobody is there to answer a site's card). NET-a F5, met here: the
+    # prompt is that turn's own output, so with the mark it is carried in as outside text, and the fire's conversation
+    # records the sites it names. That turn's record lives in memory under its own conversation (a new task's is
+    # usually another: `own_conversation`), so without this a site the prompt names would be unknown at the proxy for a
+    # later online command in this conversation (a chat's, say), and pass.
+    # Only a scheduled task's own fire runs commands (command_gate.scheduled_fire); the heartbeat runs none.
     # INB2: nobody is there when a stored prompt fires, also when "fire now" ran from a present turn.
     fire = (contextlib.nullcontext() if task.name == heartbeat.TASK_NAME else command_gate.scheduled_fire(cid))
     with desktop_status.working(cid, title=task.name, kind="scheduled"), presence.not_present():   # keeps the Mac awake (0.1.41)
-        with untrusted.carried(bool(task.outside_seen)), fire:
+        with untrusted.carried(bool(task.outside_seen), text=task.prompt), fire:
             try:
                 return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
                                                         headless=True)

@@ -342,22 +342,18 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     env = child_environment({}, {"PATH": await asyncio.to_thread(merged_path), "TERM": "dumb", "NO_COLOR": "1",
                                  "HOMEBREW_NO_AUTO_UPDATE": "1", "TMPDIR": str(tmp),
                                  "TMPPREFIX": os.path.join(tmp, "zsh")})
-    from server.services import command_sandbox, root_pin, run_later, run_temp, sandbox_proxy
+    from server.services import command_sandbox, net_policy, root_pin, run_later, run_temp, sandbox_proxy
     if git_config_ok:       # HR-1b: no template, so clone and init make no `.git/hooks` folder (it stays held)
         env.update(GIT_CONFIG_ENV)
     prefix: list[str] = []
     mode = "off"
+    proxy_port = None
     if sandbox:
         env.update(command_sandbox.cache_environment(run_temp.cache("commands")))   # SBX-5 §1c: its own cache
         # SBX-6: online, the sandbox lets TCP out only to Arslan's local proxy, and the child is told to use
-        # it; dev servers on loopback are reached directly. No proxy means the profile is offline.
+        # it (below, with its token); dev servers on loopback are reached directly. No proxy means the profile is offline.
         proxy_port = None if offline else await sandbox_proxy.port()
         trust = proxy_port is not None and await trust_service_allowed()
-        if proxy_port is not None:
-            via = f"http://127.0.0.1:{proxy_port}"
-            env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
-                                               "http_proxy", "https_proxy", "all_proxy")})
-            env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
         # Off the event loop: a large work folder's walk takes a while (#813 review 11: about a second for 1,000 links
         # at held names). Past the link cap no profile is built and the command doesn't start.
         try:
@@ -393,11 +389,25 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     # #813 review 11: sandbox-exec has read its profile file once the command is running; it goes when the process has
     # exited, on every path (success, failure, a time limit, a cancel, a start that failed).
     profile = command_sandbox.profile_path(prefix)
+    run = None
     try:
+        if proxy_port is not None:
+            # NET-a: its own token in its proxy address, registered until it exits (whatever ended it), so the proxy
+            # judges each site it reaches for this conversation (net_policy); bound to its process as that starts.
+            run = await net_policy.start_run(command)
+            via = sandbox_proxy.proxy_url(proxy_port, run.token)
+            env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                                               "http_proxy", "https_proxy", "all_proxy")})
+            env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
+            # git hands a proxy's credentials to its credential helpers once they worked (macOS's git: the keychain,
+            # closed here, which prints "fatal: failed to store" on every fetch): none is asked about this proxy.
+            env.update({"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"credential.http://127.0.0.1:{proxy_port}.helper",
+                        "GIT_CONFIG_VALUE_0": ""})
         return await _execute(command, prefix=prefix, cwd=cwd, env=env, temp_key=temp_key, timeout_s=timeout_s,
                               offline=offline, closed=closed, mode=mode, hold_run_later=hold_run_later,
-                              git_config_ok=git_config_ok)
+                              git_config_ok=git_config_ok, net_run=run)
     finally:
+        net_policy.end_run(run)             # its connections too: none outlives it (Codex round 1, F2)
         command_sandbox.remove_profile(profile)
 
 
@@ -423,8 +433,8 @@ def _swapped(cwd: Path, mode: str, exc) -> dict:
 
 async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, temp_key: int, timeout_s: int,
                    offline: bool, closed: list[Path], mode: str, hold_run_later: bool,
-                   git_config_ok: bool = False) -> dict:
-    from server.services import command_sandbox, root_pin, run_temp
+                   git_config_ok: bool = False, net_run=None) -> dict:
+    from server.services import command_sandbox, net_policy, root_pin, run_temp
     if offline and not prefix:
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
                 "error": "commands run without network now, and this run cannot isolate the network — "
@@ -438,6 +448,8 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
         *prefix, *SHELL, "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
+    # NET-a, Codex round 1 F1: its proxy token works only for this process's run (its session, and what descends from it)
+    net_policy.bind(net_run, proc.pid)
     command_sandbox.release_pins(profile)
     run_temp.started(temp_key, proc.pid)  # §1a: the run's folder stays while this group has a process left
     # 0.1.62 F1: output is read while the command runs (it used to be read in one go at the
@@ -491,16 +503,20 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
     if left_running and not timed_out:
         result["git_config_stopped"] = True
     return explain(result, cwd=cwd, closed=closed, mode=mode, timed_out=timed_out, command=command,
-                   hold=hold_run_later, git_config=git_config_ok)
+                   hold=hold_run_later, git_config=git_config_ok,
+                   net_refused=tuple(net_run.refused) if net_run is not None else ())
 
 
 def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out: bool, command: str,
-            hold: bool = False, git_config: bool = False) -> dict:
+            hold: bool = False, git_config: bool = False, net_refused: tuple[str, ...] = ()) -> dict:
     """What the model reads beside a finished command's output: why the sandbox stopped it, if it did. Records the
     SBX-7 denial code through run_trace, never on the result, once per run. `hold`: the outside floor held the files
     that make something run later (HR-1). `git_config`: it ran under the git_config grant (HR-1b), so a refusal on the
-    repository's config doesn't offer the grant again."""
-    from server.services import command_sandbox
+    repository's config doesn't offer the grant again. `net_refused` (NET-a): the sites the proxy refused this run,
+    named in its note (no `outside_sandbox` hint: leaving the sandbox is no way to reach them) and kept on the result
+    for the tool loop's card (`net_refused`, which it takes off)."""
+    from server.services import command_sandbox, net_policy
+    net = net_policy.refusal_note(net_refused) if net_refused else ""
     # HR-1 (#813 reviews 4 and 5): git's refusal lines name a held file (in the sandbox, or under a floor that holds
     # them). A step that failed outright on the repository's own config or hooks (clone, init, remote add, a config
     # write) gets the stop note or the floor's instead: the git note is for a tree that may be partly updated, or a
@@ -533,7 +549,7 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
         if git or proxy or not trust:
             from server.orchestrator import run_trace
             run_trace.note_denial("proxy" if proxy else "eperm")
-        result["note"] = (command_sandbox.git_note(git_config=offer) if git
+        result["note"] = (command_sandbox.git_note(git_config=offer) if git else net if net and proxy
                           else command_sandbox.note(cwd, closed, trust=trust, proxy=proxy, git_config=offer))
         # SBX-5b: a command that reached another app's listed private data is told how to ask for it, once.
         named = None if git else command_sandbox.app_data_named(
@@ -549,7 +565,7 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
         # but not a failed step.
         from server.orchestrator import run_trace
         run_trace.note_denial("proxy")
-        result["note"] = command_sandbox.note(cwd, closed, proxy=True)
+        result["note"] = net or command_sandbox.note(cwd, closed, proxy=True)
     elif git:
         # HR-1 (#813 review 4): git exits 0 when the kernel refused a held file it had to change (checkout and switch:
         # HEAD moved, that file left as it was) or its config (a tracking checkout, push -u, --set-upstream-to: no
@@ -568,4 +584,8 @@ def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out
                           + ". Tell the user what you needed.")
     elif mode == "unavailable":
         result["sandbox_note"] = "ran without the sandbox: it is not available on this system"
+    if net:
+        result["net_refused"] = list(net_refused)
+        if result.get("note") != net:               # its output showed no refusal a reader above knows
+            result["network_note"] = net
     return result

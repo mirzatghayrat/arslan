@@ -306,6 +306,15 @@ def _lazy_resource_probes():
         )
         return bool(text and "illustrative examples" in text), f"{len(languages)} stoplists; local HTML extraction"
 
+    def public_suffix_list():
+        # NET-a reads the list from tld's data file, which the spec collects by name: without it every module imports,
+        # and then each connection the sandbox proxy judges fails, as does reading outside content that names a host.
+        from server.services import net_policy
+
+        ok = (net_policy.is_public_suffix("github.io") and net_policy.is_public_suffix("foo.ck")
+              and net_policy.listable("www.ck") and net_policy.listable("example.co.uk"))
+        return ok, "github.io, and the *.ck wildcard and its exception, read from the list"
+
     return [
         ("webpage extraction data", webpage_extraction_data,
          "jusText stoplists are missing, so URL attachments fail after download"),
@@ -319,6 +328,8 @@ def _lazy_resource_probes():
          "the rasteriser cannot render, so scanned PDFs silently yield nothing"),
         ("httpx TLS client", http_client_tls,
          "no provider call could be made"),
+        ("public suffix list", public_suffix_list,
+         "NET-a can't tell a public suffix from a site: every connection the sandbox proxy judges would fail"),
     ]
 
 

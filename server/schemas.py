@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -87,9 +88,21 @@ class SettingsIn(BaseModel):
     sandbox_system_certificates: str | None = None   # SBX-6a, default off
     # Not `sandbox_trusted_devices` (SBX settings): a device is added through POST /settings/sandbox/trusted-devices,
     # where the server resolves and checks it, or a card's answer, never as raw JSON here (trusted_devices).
+    sandbox_net_judgement: bool | None = None        # NET-a, default on. DELETE-BY: v0.1.65, with S2a-1's old path
+    #: NET-a: a JSON list of the sites every sandboxed command may reach, checked here and stored in one spelling.
+    sandbox_allowed_sites: str | None = None
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None
+
+    @field_validator("sandbox_allowed_sites")
+    @classmethod
+    def _sites_listable(cls, value: str | None) -> str | None:
+        """NET-a: each entry a host or an address, never a public suffix or a bare TLD (a 422 otherwise)."""
+        if value is None:
+            return value
+        from server.services import net_policy
+        return json.dumps(net_policy.parse_sites(value, strict=True))
 
 
 class SettingsOut(BaseModel):
@@ -161,6 +174,8 @@ class SettingsOut(BaseModel):
     status_route_in_prompt: str = ""        # H1-c, default on
     sandbox_system_certificates: str = ""   # SBX-6a, default off
     sandbox_trusted_devices: str = ""   # SBX-6a, JSON list, default empty
+    sandbox_net_judgement: bool = True      # NET-a, default on
+    sandbox_allowed_sites: str = ""         # NET-a, JSON list, default empty
     voice_input_locale: str = ""
     voice_mode: str = ""
     voice_endpoint_silence_ms: str = ""

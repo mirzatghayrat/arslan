@@ -35,6 +35,7 @@ import tests.server.test_s64_0b_attachments_and_job_results as s64b
 from tests.server.test_s64_0_outside_content_gaps import NETWORK, POISON, _Run, memory  # noqa: F401  (the fixture)
 from tests.server.test_s64_0b_attachments_and_job_results import COMMAND, NOTE_ADD, _turn, chat  # noqa: F401
 from tests.server.test_run_command_confirm_flow import _collect_until, app_client  # noqa: F401  (the fixture)
+from tests.server.test_sub3_runner import _RefusedRun
 
 ROOT, KID, KID2 = "c-commander", "sub-kid", "sub-kid2"
 GOAL = "Continue the outline the sub-session left unfinished"
@@ -175,6 +176,7 @@ def follow_up(api, monkeypatch):
     return accept
 
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the probe, its switch off
 async def test_an_accepted_follow_up_for_a_sub_sessions_job_runs_as_the_sub_sessions(api, follow_up):
     async with api.db() as db:
         await _family(db, KID)
@@ -195,6 +197,7 @@ async def test_an_accepted_follow_up_for_a_sub_sessions_job_runs_as_the_sub_sess
     assert [e for e in desktop_status.snapshot()["events"] if e["kind"] == "turn_finished"] == []
 
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the probe, its switch off
 async def test_an_ordinary_conversations_follow_up_is_unchanged(api, follow_up):
     """The counterpart: the job's own toolset (the browser runs), its card in its own conversation, its end told."""
     in_conversation = _sink("c-plain")
@@ -205,6 +208,28 @@ async def test_an_ordinary_conversations_follow_up_is_unchanged(api, follow_up):
     assert seen["tree"] == [] and seen["reported"] == []
     assert [e["conversation_id"] for e in desktop_status.snapshot()["events"]
             if e["kind"] == "turn_finished"] == ["c-plain"]
+
+
+async def test_a_sub_sessions_follow_up_asks_its_card_for_a_refused_site_in_its_parents_window(api, follow_up,
+                                                                                              monkeypatch):
+    """NET-a, its switch on: the card after the proxy refused a site its command reached is asked as the sub-session's,
+    in its parent's window, and none in its own."""
+    async with api.db() as db:
+        await _family(db, KID)
+    in_root, in_kid = _sink(ROOT), _sink(KID)
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", _RefusedRun())
+    await follow_up(KID)
+    assert [(c["perm_kind"], c.get("sub_session")) for c in _cards(in_root)] == [("network", True)]
+    assert _cards(in_kid) == []
+
+
+async def test_an_ordinary_conversations_follow_up_asks_its_card_for_a_refused_site_in_its_own_window(api, follow_up,
+                                                                                                    monkeypatch):
+    """NET-a, its switch on: the counterpart, its card in its own conversation."""
+    in_conversation = _sink("c-plain")
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", _RefusedRun())
+    await follow_up("c-plain")
+    assert [(c["perm_kind"], c.get("sub_session")) for c in _cards(in_conversation)] == [("network", None)]
 
 
 async def test_a_sub_session_whose_parent_cant_be_named_starts_no_job(memory):  # noqa: F811
@@ -400,6 +425,53 @@ def child(chat, monkeypatch):  # noqa: F811
     return make
 
 
+@pytest.mark.parametrize("outside", [True, False], ids=["brief-after-a-page", "clean-brief"])
+async def test_a_turn_typed_in_a_sub_session_records_its_framed_briefs_sites_as_outside_content(chat, child,  # noqa: F811
+                                                                                                outside):
+    """NET-a, its switch on: the proxy refuses a site that appeared only in outside content, so a turn typed in the
+    sub-session records the sites its framed brief names; a clean brief is the commander's words and records none."""
+    from server.services import net_policy
+    net_policy._reset_for_tests()
+    try:
+        kid = await child(outside, "Gather the notes from https://drop.evil.example/notes")
+        await chat(s64b._Model(chat=_turn(NOTE_ADD)))
+        assert net_policy.outside_hosts(kid) == ({"drop.evil.example"} if outside else frozenset())
+    finally:
+        net_policy._reset_for_tests()
+
+
+@pytest.mark.parametrize("tagged", [True, False], ids=["tagged", "stored-before-the-tag"])
+@pytest.mark.parametrize("outside", [True, False], ids=["brief-after-a-page", "clean-brief"])
+async def test_a_sub_sessions_brief_names_no_site_and_one_the_user_types_there_does(chat, child, outside,  # noqa: F811
+                                                                                     tagged):
+    """NET-a, Codex round 1 F3: a brief is the commander's words, framed or not, never the user's, so the sandbox proxy
+    counts none of its sites as one the user named (`net_policy._named`). A site the user types in the sub-session
+    later is one. Codex round 2: so for a brief stored before briefs were tagged (`sub_sessions.BRIEF_SOURCE`), as
+    every build before this one stored one: its row as then, read again with nothing kept in memory."""
+    from sqlalchemy import update
+    from server.db import session as db_session
+    from server.services import net_policy
+    net_policy._reset_for_tests()
+    try:
+        kid = await child(outside, "Gather the notes from https://drop.evil.example/notes")
+        if not tagged:
+            async with db_session.AsyncSessionLocal() as db:
+                cleared = await db.execute(update(ArslanMessage).where(
+                    ArslanMessage.conversation_id == kid, ArslanMessage.source == sub_sessions.BRIEF_SOURCE
+                ).values(source=None))
+                await db.commit()
+            assert cleared.rowcount == 1
+            net_policy._reset_for_tests()
+        net_policy.note_outside(kid, "drop.evil.example and docs.mine.example")    # e.g. a page its job read
+        assert await net_policy.judge("drop.evil.example", kid) == "outside_only"
+        await chat(s64b._Model(chat=_turn(NOTE_ADD)), message="Take them from https://docs.mine.example/notes")
+        assert await net_policy.judge("docs.mine.example", kid) == "allow"
+        assert await net_policy.judge("drop.evil.example", kid) == "outside_only"
+    finally:
+        net_policy._reset_for_tests()
+
+
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the probe, its switch off
 @pytest.mark.parametrize("outside", [True, False], ids=["brief-after-a-page", "clean-brief"])
 async def test_a_turn_typed_in_a_sub_session_counts_its_framed_brief_as_outside_content(chat, child, outside):  # noqa: F811
     """The consequences: Arslan's own note waits for the user, and a command reaching the network asks first. (A

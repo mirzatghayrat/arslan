@@ -207,7 +207,8 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
         # Told only Arslan's proxy: a proxy the server's config or this Mac set (a sign-in in its address
         # included) is replaced, since the kernel refuses it and Arslan's proxy goes upstream itself.
         # Node's fetch reads these only with NODE_USE_ENV_PROXY (Node 24, Arslan's pinned runtime).
-        via = f"http://127.0.0.1:{proxy_port}"
+        # NET-a: with the session's own token (mcp/session.py), which the proxy serves without judging its sites.
+        via = sandbox_proxy.proxy_url(proxy_port, sandbox.get("proxy_token"))
         env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
                                            "http_proxy", "https_proxy", "all_proxy")})
         env.update({"NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
