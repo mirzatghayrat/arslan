@@ -1180,15 +1180,19 @@ _SUB_CHAINS = {
 
 
 def _as_before(default: str, cid: str) -> str:
-    """`permissions._chosen` as it read before #910's round-1 fix, over `_SUB_CHAINS`: the reference here."""
-    chain, seen, current = [], set(), cid
+    """`permissions._chosen` as it read before #910's round-1 fix (with #921's "ask" on top of a sub-session's chain
+    that can't be read whole or has a deleted conversation on it), over `_SUB_CHAINS`: the reference here."""
+    chain, seen, current, kinds = [], set(), cid, []
     while current and current not in seen and len(seen) < 16:
         seen.add(current)
         if current not in _SUB_CHAINS:
             break
         kind, parent, own = _SUB_CHAINS[current]
+        kinds.append(kind)
         chain.append(None if own is None else own if own in permissions.MODES else "ask")
         current = parent if kind == "sub" else None
+    if kinds and kinds[0] == "sub" and (kinds[-1] == "sub" or "deleted" in kinds):
+        chain.append("ask")
     mode = (chain[-1] if chain else None) or default
     for own in reversed(chain[:-1]):
         if own is not None:
