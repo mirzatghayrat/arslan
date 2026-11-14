@@ -49,6 +49,7 @@ import posixpath
 import re
 import shlex
 import stat
+import urllib.parse
 from dataclasses import dataclass
 
 from server.services import run_later, shell_grammar, shell_text
@@ -155,6 +156,23 @@ def _opts(stop: str) -> str:
     (#693 review). Linear: an option starts with `-` and a value can't, so each word is read one way only."""
     word = _WORD + r"+(?<![;&|])"                           # `;`, `&` or `|` ending it ends the command
     return r"(?:" + _H + r"+-" + word + r"(?:" + _H + r"+(?!-|(?:" + stop + r")" + _END + r")" + word + r")?)*" + _H + r"+"
+
+
+def _unless_dry_run(spellings: str) -> str:
+    """Not when a registry publish's own dry-run option (`spellings`, case as written) follows its verb, read as
+    `_dry_run` reads argv but stricter (#897 review, item 3): every word before it plain (no quote, escape, expansion
+    or glob, which the text can't read), `--` not among them, and the word right before it the verb, an operand or
+    an `--option=value`, never a bare option that could take it as its value. Linear: each word is read one way.
+    Nor when the command's own span (to the next `;`, `&`, `|` or line) turns it off or gives it a value, as `_dry_run`
+    reads argv (#897 round 2): `--no-dry-run`, `--dry-run=…` or `--dry-run <boolean>`, quoted or not."""
+    plain = r"[^\s;&|'\"\\`$*?\[\]()<>]"
+    dry = (r"(?:(?:" + _H + r"+(?!--(?:" + _H + r"|$))" + plain + r"+)*" + _H + r"+(?:(?!-)" + plain + r"+|--?[\w-]+="
+           + plain + r"*))?" + _H + r"+(?-i:" + spellings + r")(?=$|[\s;&|)<>])")
+    # nopt reads an unambiguous abbreviation: `--no-dry`, `--dry=false` (the prefixes in `_DRY_ABBREVIATIONS`)
+    off = (r"[^\n;&|]*?(?<![\w-])['\"]?(?:--no-(?:d(?:r(?:y(?:-(?:r(?:un?)?)?)?)?)?)?(?=$|[\s;&|)<>=])"
+           r"|--d(?:r(?:y(?:-(?:r(?:u)?)?)?)?)?(?=$|[\s;&|)<>='\"])|(?:" + spellings + r")(?:=|['\"]?" + _H
+           + r"+['\"]?(?:true|false|yes|no|on|off|0|1)['\"]?(?=$|[\s;&|)<>])))")
+    return r"(?!(?=" + dry + r")(?!" + off + r"))"
 _HTTPIE = r"(?:https?|xhs?)"
 # Apps that run what they are given (`open -a`/`-b`): terminals, script and automation apps.
 _SCRIPT_APPS = (r"(?:terminal|iterm2?|warp|kitty|alacritty|wezterm|hyper|ghostty|script\s+editor|automator"
@@ -218,8 +236,11 @@ _ASK = [
     # bash opens the connection itself, with no program named (zsh has no such path).
     ("remote-shell", r"[<>]&?\s*/dev/(?:tcp|udp)/", "connects to another machine"),
     ("git-push", _CMD + r"git\s+(?:[^\n]*\s)?push\b", "publishes to a remote repository"),
-    ("publish", _CMD + r"(?:npm\s+publish|pnpm\s+publish|yarn\s+publish|twine\s+upload|cargo\s+publish"
-                       r"|gh\s+(?:pr|issue|release|repo|gist)\s+(?:create|delete|merge|close|edit|comment)"
+    # A registry publish with its tool's documented dry-run option publishes nothing (`_DRY_RUN`), so it runs.
+    ("publish", _CMD + r"(?:p?npm\s+publish" + _unless_dry_run(r"--dry-run") + r"|yarn\s+publish|twine\s+upload"
+                       r"|cargo\s+publish" + _unless_dry_run(r"--dry-run|-n")
+                       + r"|(?:uv|poetry)\s+publish" + _END + _unless_dry_run(r"--dry-run")
+                       + r"|gh\s+(?:pr|issue|release|repo|gist)\s+(?:create|delete|merge|close|edit|comment)"
                        r"|gh\s+api\b[^\n]*(?:\s-[a-zA-Z]*X\s*[\"']?" + _WRITE + r"\b|\s--method(?:=|\s+)[\"']?(?!GET\b)\w"
                        r"|\s(?:-f|-F|--field|--raw-field|--input)(?:[\s=]|$|\S))"
                        r"|docker\s+(?:image\s+)?push|terraform\s+(?:apply|destroy)"
@@ -229,16 +250,35 @@ _ASK = [
                        # them (`_DEPLOY_PUBLISH`). Unlike vercel, the bare program prints help, so it runs; read-only
                        # verbs (status, logs, list) run too.
                        r"|(?:netlify|ntl)\s+deploy" + _END
-                       + r"|fly(?:ctl)?\s+(?:deploy|destroy|secrets\s+set|apps?\s+(?:destroy|delete|remove|rm)"
+                       + r"|fly(?:ctl)?\s+(?:deploy|destroy|apps?\s+(?:destroy|delete|remove|rm)"
                        r"|scale\s+count)" + _END
-                       + r"|heroku\s+(?:releases:rollback|rollback|config:set|config:add|apps:destroy|apps:delete"
+                       + r"|heroku\s+(?:releases:rollback|rollback|apps:destroy|apps:delete"
                        r"|destroy|container:release)" + _END
                        + r"|railway\s+up" + _END
-                       + r"|wrangler\s+(?:deploy|publish|rollback|versions\s+deploy|pages\s+(?:deploy|publish)"
-                       r"|secret\s+put)" + _END
+                       + r"|wrangler\s+(?:deploy|publish|rollback|versions\s+deploy|pages\s+(?:deploy|publish))" + _END
                        + r"|firebase\s+(?:deploy|hosting:channel:deploy|functions:delete|database:set)" + _END
-                       + r"|helm\s+(?:install|upgrade|uninstall|delete|del|un|rollback|push)" + _END + r")",
+                       + r"|helm\s+(?:install|upgrade|uninstall|delete|del|un|rollback|push)" + _END
+                       # The deploy and publish gaps measured on 2026-11-14 (`_PUBLISH_MORE` is their word table).
+                       + r"|(?:yarn\s+npm\s+publish|gem\s+push|pulumi\s+(?:up|update)"
+                       r"|render\s+(?:deploy|deploys\s+create)|eas\s+(?:submit|build\b[^\n;&|]*\s--auto-submit)"
+                       r"|fastlane\s+(?:deliver|pilot|upload_to_\w+))" + _END
+                       + r"|gcloud" + _opts(r"alpha|beta|app|run|functions") + r"(?:(?:alpha|beta)"
+                       + _opts(r"app|run|functions") + r")?(?:app|run|functions)" + _opts(r"deploy") + r"deploy" + _END
+                       + r")",
      "publishes or changes something online"),
+    # Sets or removes a secret or setting that CI or production reads remotely (`_SECRET_WRITE` is its word table).
+    ("secret-write", _CMD + r"(?:gh" + _opts(r"secret|variable") + r"(?:secret" + _opts(r"set|delete|remove")
+                     + r"(?:set|delete|remove)|variable" + _opts(r"set|delete") + r"(?:set|delete))"
+                     r"|(?:vercel|vc)\s+env\s+(?:add|rm)|(?:netlify|ntl)\s+env:(?:set|unset)"
+                     r"|aws" + _opts(r"secretsmanager|ssm") + r"(?:secretsmanager"
+                     + _opts(r"put-secret-value|create-secret|update-secret|delete-secret")
+                     + r"(?:put-secret-value|create-secret|update-secret|delete-secret)|ssm" + _opts(r"put-parameter")
+                     + r"put-parameter)"
+                     r"|gcloud" + _opts(r"alpha|beta|secrets") + r"(?:(?:alpha|beta)" + _opts(r"secrets") + r")?secrets"
+                     + _opts(r"create|delete|versions") + r"(?:create|delete|versions" + _opts(r"add") + r"add)"
+                     r"|doppler\s+secrets\s+(?:set|delete)|fly(?:ctl)?\s+secrets\s+(?:set|unset|import)"
+                     r"|heroku\s+config:(?:set|add|unset|remove)|wrangler\s+secret\s+(?:put|delete))" + _END,
+     "sets or removes a secret that CI or production reads"),
     # deletes or stops things
     ("force-kill", _CMD + r"(?:kill" + _H + r"+(?:-[^\s]+" + _H + r"+)*-(?:9|KILL|SIGKILL)\b|killall|pkill)" + _END,
      "force-quits other programs"),
@@ -268,7 +308,8 @@ _ASK = [
 ]
 #: Layer ② by group. The names are stable: the M1 driver answers cards by them
 #: (scripts/kernel_bench/arslan_driver.py) and task_service reads the outbound ones.
-SEND_OUT_RULES = frozenset({"send-mail", "send-message", "upload", "remote-shell", "git-push", "publish"})
+SEND_OUT_RULES = frozenset({"send-mail", "send-message", "upload", "remote-shell", "git-push", "publish",
+                            "secret-write"})
 #: What may have left something behind elsewhere when it fails (task_service.known_local_failure).
 OUTBOUND_RULES = SEND_OUT_RULES | {"apple-events", "shortcuts"}
 #: The two whose approved plain call may run with no sandbox at all (U11, task_service.unwrapped_once).
@@ -647,30 +688,159 @@ def _fully_accounted(program: str, args: tuple[str, ...]) -> bool:
 # `rollback`, `config:add`, `destroy` and `apps:delete`; helm's `delete`, `del` and `un` for `uninstall`.
 _DEPLOY_PUBLISH = {
     "netlify": {("deploy",)},
-    "fly": {("deploy",), ("secrets", "set"), ("scale", "count"), ("destroy",),
+    "fly": {("deploy",), ("scale", "count"), ("destroy",),
             *((group, verb) for group in ("apps", "app") for verb in ("destroy", "delete", "remove", "rm"))},
-    "heroku": {("releases:rollback",), ("rollback",), ("config:set",), ("config:add",), ("apps:destroy",),
-               ("apps:delete",), ("destroy",), ("container:release",)},
+    "heroku": {("releases:rollback",), ("rollback",), ("apps:destroy",), ("apps:delete",), ("destroy",),
+               ("container:release",)},
     "railway": {("up",)},
     "wrangler": {("deploy",), ("publish",), ("rollback",), ("versions", "deploy"), ("pages", "deploy"),
-                 ("pages", "publish"), ("secret", "put")},
+                 ("pages", "publish")},
     "firebase": {("deploy",), ("hosting:channel:deploy",), ("functions:delete",), ("database:set",)},
     "helm": {("install",), ("upgrade",), ("uninstall",), ("delete",), ("del",), ("un",), ("rollback",), ("push",)},
 }
 _DEPLOY_PUBLISH["flyctl"] = _DEPLOY_PUBLISH["fly"]
+# The deploy and publish gaps measured on 2026-11-14 (yarn's v2+ `npm publish`, gcloud's three deploys…). Not in
+# `_DEPLOY_PROGRAMS`: uv, gem, gcloud and the rest have many other verbs, so an unplaceable one must not ask as publish.
+_PUBLISH_MORE = {
+    "yarn": {("npm", "publish")}, "uv": {("publish",)}, "gem": {("push",)}, "poetry": {("publish",)},
+    "render": {("deploy",), ("deploys", "create")}, "pulumi": {("up",), ("update",)}, "eas": {("submit",)},
+    "fastlane": {("deliver",), ("pilot",)}, "gcloud": {("app", "deploy"), ("run", "deploy"), ("functions", "deploy")},
+}
+# `secret-write`: a secret or setting that CI or production reads, set or removed remotely (fly's, heroku's and
+# wrangler's moved from `publish`, so the card says "secret").
+_SECRET_WRITE = {
+    "fly": {("secrets", "set"), ("secrets", "unset"), ("secrets", "import")},
+    "heroku": {("config:set",), ("config:add",), ("config:unset",), ("config:remove",)},
+    "wrangler": {("secret", "put"), ("secret", "delete")}, "vercel": {("env", "add"), ("env", "rm")},
+    "netlify": {("env:set",), ("env:unset",)}, "doppler": {("secrets", "set"), ("secrets", "delete")},
+    "gh": {("secret", "set"), ("secret", "delete"), ("secret", "remove"), ("variable", "set"), ("variable", "delete")},
+    "aws": {("ssm", "put-parameter"), *(("secretsmanager", verb) for verb in (
+        "put-secret-value", "create-secret", "update-secret", "delete-secret"))},
+    "gcloud": {("secrets", "create"), ("secrets", "delete"), ("secrets", "versions", "add")},
+}
+_SECRET_WRITE["flyctl"] = _SECRET_WRITE["fly"]
 # A second program name the same package installs: netlify-cli's `ntl`, the vercel package's `vc`. `_named_rules`
 # reads it as the first name, with that name's options and verbs.
 _PROGRAM_ALIASES = {"ntl": "netlify", "vc": "vercel"}
 _DEPLOY_SHELL = {"fly": {("ssh", "console")}, "flyctl": {("ssh", "console")}, "heroku": {("run",)}}
 _DEPLOY_PROGRAMS = frozenset(_DEPLOY_PUBLISH) | {"vercel"}
 _TWO_WORD_HEADS = {program: frozenset(verb[0] for verb in _DEPLOY_PUBLISH.get(program, set())
-                                      | _DEPLOY_SHELL.get(program, set()) if len(verb) == 2)
+                                      | _DEPLOY_SHELL.get(program, set()) | _SECRET_WRITE.get(program, set())
+                                      if len(verb) == 2)
                    for program in _DEPLOY_PROGRAMS}
 _HELP_WORDS = frozenset({"-h", "--help", "-help", "--version", "-version"})
+# A registry publish that only says what it would do (#897 review, item 3): each tool's own documented dry-run option
+# (npm's and pnpm's `--dry-run`; cargo's `-n, --dry-run`, uv's `--dry-run` from their `--help`; poetry's). twine's,
+# gem's and yarn's publish document none, so they still ask.
+_DRY_RUN = {"npm": frozenset({"--dry-run"}), "pnpm": frozenset({"--dry-run"}), "cargo": frozenset({"--dry-run", "-n"}),
+            "uv": frozenset({"--dry-run"}), "poetry": frozenset({"--dry-run"})}
+_BOOLEAN_WORDS = frozenset({"true", "false", "yes", "no", "on", "off", "0", "1"})
+# npm's parser (nopt) expands an unambiguous abbreviation, so `--no-dry` turns a dry run off and `--dry false` gives it a
+# value (#897 round 2): every shorter prefix of `--dry-run` from `--d`, and of `--no-dry-run` from `--no-`. Wider than
+# what nopt would expand, on the side that asks.
+_DRY_ABBREVIATIONS = frozenset({"--dry-run"[:n] for n in range(3, 9)} | {"--no-dry-run"[:n] for n in range(5, 13)})
 
 
-def _deploy_verb(table: set[tuple[str, ...]], lower: tuple[str, ...]) -> bool:
-    return lower[:1] in table or lower[:2] in table
+def _dry_run(program: str, args: tuple[str, ...]) -> bool:
+    """The program's dry-run option among its options, and only when the run is unambiguously dry (#897 round 2): before
+    any `--`, no word the shell may still change (`_expands`: `$X` could be `--` or `--no-dry-run`), right after no
+    bare option that could take it as its value (`--tag --dry-run`), and no option anywhere turning it off or giving it
+    a value (`--no-dry-run`, `--dry-run=false`, `--dry-run false`: nopt takes a boolean word as the flag's value). The
+    text floor reads it the same way (`_unless_dry_run`)."""
+    spellings = _DRY_RUN.get(program, frozenset())
+    found, before = False, ""
+    for i, word in enumerate(args):
+        if word == "--":
+            break
+        option, equals, _ = word.lower().partition("=")
+        if (_expands(word) or option in _DRY_ABBREVIATIONS or equals and option in spellings
+                or word in spellings and args[i + 1:i + 2] and args[i + 1].lower() in _BOOLEAN_WORDS):
+            return False
+        if word in spellings and not (before.startswith("-") and "=" not in before and before not in spellings):
+            found = True
+        before = word
+    return found
+
+
+def _deploy_verb(table: set[tuple[str, ...]], lower: tuple[str, ...]) -> tuple[str, ...]:
+    """The table's verb `lower` starts with, or ()."""
+    return next((verb for verb in table if lower[:len(verb)] == verb), ())
+
+
+def _track(program: str, lower: tuple[str, ...]) -> tuple[str, ...]:
+    """gcloud's verb past its `alpha` or `beta` release track."""
+    return lower[1:] if program == "gcloud" and lower[:1] in (("alpha",), ("beta",)) else lower
+
+
+_READINGS_CAP = 4096
+
+
+def _verb_readings(program: str, args: tuple[str, ...], depth: int) -> set[tuple[str, ...]] | None:
+    """The first `depth` words that are not options, lowercased, in each way the options can be read (#897 review):
+    these CLIs read an option wherever it stands, so `gcloud app --project X deploy` is `gcloud app deploy`. A known
+    option's value (`_OPTION_VALUES`) is skipped with it; an attached or `=` value, a known flag or a known cluster
+    takes no word. An unknown option may or may not take the next word, so both readings are kept. After `--` every
+    word is an operand. None: more readings than `_READINGS_CAP` (only a crafted line), which the caller asks on."""
+    values = _OPTION_VALUES.get(program, frozenset())
+    flags = _OPTION_FLAGS.get(program, frozenset())
+    out: set[tuple[str, ...]] = set()
+    seen: set[tuple[int, tuple[str, ...]]] = set()
+    todo = [(0, ())]
+    while todo:
+        if len(seen) > _READINGS_CAP:
+            return None
+        i, words = todo.pop()
+        if (i, words) in seen:
+            continue
+        seen.add((i, words))
+        if len(words) == depth or i >= len(args):
+            out.add(words)
+            continue
+        word = args[i]
+        if word == "--":
+            out.add(words + tuple(w.lower() for w in args[i + 1:i + 1 + depth - len(words)]))
+            continue
+        if not word.startswith("-") or word == "-":
+            todo.append((i + 1, words + (word.lower(),)))
+            continue
+        option, equals, _ = word.partition("=")
+        if equals or word in flags:
+            takes = (False,)
+        elif option in values:
+            takes = (True,)
+        elif word.startswith("--"):
+            takes = (False, True)
+        else:
+            takes = (False, True)
+            for offset, letter in enumerate(word[1:], 2):
+                if "-" + letter in values:
+                    takes = (offset == len(word),)
+                    break
+                if "-" + letter not in flags:
+                    break
+            else:
+                takes = (False,)
+        todo.extend((i + 1 + take, words) for take in takes)
+    return out
+
+
+def _write_verbs(program: str, args: tuple[str, ...]) -> set[str]:
+    """`publish` or `secret-write` when a reading of the verb path past its options (`_verb_readings`) is one of the
+    tables' write verbs; the stricter reading wins, so either one placing a write asks."""
+    tables = [(rule, table[program]) for rule, table in (("publish", _DEPLOY_PUBLISH), ("publish", _PUBLISH_MORE),
+                                                        ("secret-write", _SECRET_WRITE)) if program in table]
+    if not tables:
+        return set()
+    readings = _verb_readings(program, args, 4)
+    if readings is None:
+        return {rule for rule, _ in tables}
+    found = {rule for rule, table in tables for reading in readings if _deploy_verb(table, _track(program, reading))}
+    if any(program == "eas" and reading[:1] == ("build",) and any(w.lower().startswith("--auto-submit") for w in args)
+           or program == "fastlane" and reading[:1] and reading[0].startswith("upload_to_") for reading in readings):
+        found.add("publish")
+    if "publish" in found and _dry_run(program, args):    # uv's and poetry's publish, a dry run (item 3)
+        found.discard("publish")
+    return found
 
 
 def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
@@ -694,13 +864,18 @@ def _verb_unplaceable(program: str, args: tuple[str, ...]) -> bool:
 
 
 def _legacy_named_rules(words: tuple[str, ...]) -> set[str]:
-    """The original bounded flattened-tuple matcher, used only on coverage gaps."""
-    command = " ".join(words)
+    """The original bounded flattened-tuple matcher, used only on coverage gaps. `publish` also reads the words joined
+    quoted (`shlex.join`), so a value holding a blank stays one word and its dry run exempts nothing (#897 round 2:
+    `--user-agent 'audit --dry-run marker'`). Additive only: every other rule keeps the plain join it was measured on
+    (the quoted join alone let `rm '-rf /'` and `curl -H '-d x'` run)."""
+    command, quoted = " ".join(words), shlex.join(words)
     if shell_text.too_complex(command):
         command = shell_text.over_limit_forms(command)[0]
+    if shell_text.too_complex(quoted):
+        quoted = shell_text.over_limit_forms(quoted)[0]
     found = {key for key, pattern, _, masked in _FORBID_C
              if not masked and key != "arslan-keys" and pattern.match(command)}
-    found.update(key for key, pattern, _ in _ASK_C if pattern.match(command))
+    found.update(key for key, pattern, _ in _ASK_C if pattern.match(command) or key == "publish" and pattern.match(quoted))
     if ((_DELETE_LINE.match(command) or _FIND_DELETE.match(command))
             and _deletes_outside((command,))):
         found.add("delete-outside")
@@ -759,16 +934,18 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
     """
     program, args = words[0].lower(), words[1:]
     program = _PROGRAM_ALIASES.get(program, program)
+    # Deploy, publish and secret-write verbs read past options between their words, in every branch (#897 review).
+    writes = _write_verbs(program, args)
     if program in _DEPLOY_PROGRAMS and _verb_unplaceable(program, args):
-        return _legacy_named_rules(words) | {"publish"}
+        return _legacy_named_rules(words) | (writes or {"publish"})
     if not _fully_accounted(program, args):
-        return _legacy_named_rules(words)
+        return _legacy_named_rules(words) | writes
     operations = frozenset()
     if program in _GLOBAL_OPTIONS and program not in {"security", "git"}:
         args, operations = _dispatch_args(program, args)
     lower = tuple(w.lower() for w in args)
     first = lower[0] if lower else ""
-    found: set[str] = set()
+    found: set[str] = set(writes)
 
     def add(rule: str, matches: bool) -> None:
         if matches:
@@ -823,7 +1000,7 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         add("protected-write", bool(verb) and verb[0].lower() == "config"
             and bool({"--global", "--system"}.intersection(verb[1:]))
             and not any(w in {"-l", "--list"} or w.startswith(("--get", "--show-")) for w in verb[1:]))
-    add("publish", program in {"npm", "pnpm", "yarn", "cargo"} and first == "publish"
+    add("publish", program in {"npm", "pnpm", "yarn", "cargo"} and first == "publish" and not _dry_run(program, words[1:])
         or program == "twine" and first == "upload"
         or program == "gh" and (len(lower) >= 2 and first in {"pr", "issue", "release", "repo", "gist"}
                                 and lower[1] in {"create", "delete", "merge", "close", "edit", "comment"}
@@ -831,8 +1008,7 @@ def _named_rules(words: tuple[str, ...]) -> set[str]:
         or program == "docker" and (first == "push" or lower[:2] == ("image", "push"))
         or program == "terraform" and first in {"apply", "destroy"}
         or program == "kubectl" and first in {"apply", "create", "delete", "replace", "patch", "scale", "rollout"}
-        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations)
-        or program in _DEPLOY_PUBLISH and _deploy_verb(_DEPLOY_PUBLISH[program], lower))
+        or program == "vercel" and (not args or first in {"deploy", "--prod"} or "--prod" in operations))
     add("force-kill", program in {"killall", "pkill"})
     add("login-items", program == "launchctl" and first in {"load", "bootstrap", "enable", "submit"}
         or program == "defaults" and first == "write" or program == "crontab" and first != "-l")
@@ -1929,3 +2105,258 @@ def describe(rule: str) -> str:
     if rule == OUTSIDE_REACH[0]:
         return OUTSIDE_REACH[1]
     return rule.split(":", 1)[1] if rule.startswith("hermes:") else rule
+
+
+# ── the consequence a publish, deploy or secret-write card states (⓪Plan's condition on the deploy rule) ──────────
+# Filled from the command's own words where they say it, else the registry or service the program is for. Display
+# only: no verdict reads it. A word is taken for a name only before any option this can't place, and only where the
+# program's own table says that word is a name (#897 review, item 2), so an option's value (a password, a token, a
+# secret's value) is never shown as one.
+_REGISTRIES = {"npm": "npm", "pnpm": "npm", "yarn": "npm", "cargo": "crates.io", "twine": "PyPI", "uv": "PyPI",
+               "poetry": "PyPI", "gem": "RubyGems"}
+# The words each program names its package, deploy target, secret and the secret's place with: those options, and the
+# first operand after the verb where the program is listed for it. Every other option's value is dropped (twine's,
+# uv's and poetry's `-p` is a password, netlify's `-a` a token, gh's `-a` an app kind, eas's `-p` a platform, pulumi's
+# `-p` a parallelism), and a `K=v` shows `K` only.
+_PACKAGE_NAMES = {"cargo": ("-p", "--package")}
+_TARGET_NAMES = {"netlify": ("--site", "--dir"), "fly": ("-a", "--app"), "flyctl": ("-a", "--app"),
+                 "heroku": ("-a", "--app"), "railway": ("-s", "--service"), "firebase": ("-P", "--project"),
+                 "wrangler": ("--name", "--project-name"), "pulumi": ("-s", "--stack"), "gcloud": ("--project",)}
+_TARGET_OPERAND = frozenset({"vercel", "fly", "flyctl", "heroku", "railway", "wrangler", "render", "gcloud"})
+_SECRET_NAMES = {"aws": ("--secret-id", "--name")}
+_SECRET_OPERAND = frozenset(_SECRET_WRITE) - {"aws"}
+_SECRET_PLACES = {"gh": ("-R", "--repo"), "fly": ("-a", "--app"), "flyctl": ("-a", "--app"), "heroku": ("-a", "--app")}
+# Where a registry tool publishes (#897 review, item 5): the options that choose it (npm's, pnpm's and yarn's
+# `--registry`; cargo's `--registry` name and `--index` URL; twine's `-r, --repository` name and `--repository-url`;
+# uv's `--publish-url` and `--index` name; poetry's `-r, --repository`; gem's `--host`), the names and hosts its public
+# registry goes by, and the environment settings that choose one too.
+_REGISTRY_OPTIONS = {"npm": ("--registry",), "pnpm": ("--registry",), "yarn": ("--registry",),
+                     "cargo": ("--registry", "--index"), "twine": ("-r", "--repository", "--repository-url"),
+                     "uv": ("--publish-url", "--index"), "poetry": ("-r", "--repository"), "gem": ("--host",)}
+_PUBLIC_REGISTRY = {"npm": {"registry.npmjs.org"}, "pnpm": {"registry.npmjs.org"},
+                    "yarn": {"registry.npmjs.org", "registry.yarnpkg.com"}, "cargo": {"crates-io", "index.crates.io"},
+                    "twine": {"pypi", "upload.pypi.org"}, "uv": {"upload.pypi.org"}, "poetry": {"pypi"},
+                    "gem": {"rubygems.org"}}
+_REGISTRY_ENV = re.compile(r"(?<![\w$])(?:npm_config_[\w@:./-]*registry|yarn_\w*registry\w*|cargo_registr\w+"
+                           r"|twine_repository\w*|uv_publish_(?:url|index)|poetry_repositories_\w+|gem_host\w*"
+                           r"|rubygems_host)=", re.I)
+_REGISTRY_VERBS = {("publish",), ("npm", "publish"), ("upload",), ("push",)}
+_DEPLOYS = {"vercel": {("deploy",)}, "netlify": {("deploy",)}, "fly": {("deploy",)}, "flyctl": {("deploy",)},
+            "heroku": {("container:release",)}, "railway": {("up",)}, "firebase": {("deploy",), ("hosting:channel:deploy",)},
+            "wrangler": {("deploy",), ("publish",), ("versions", "deploy"), ("pages", "deploy"), ("pages", "publish")},
+            "eas": {("submit",), ("build",)}, **{p: _PUBLISH_MORE[p] for p in ("render", "pulumi", "fastlane", "gcloud")}}
+_SERVICES = {"vercel": "Vercel", "netlify": "Netlify", "fly": "Fly.io", "flyctl": "Fly.io", "heroku": "Heroku",
+             "railway": "Railway", "firebase": "Firebase", "wrangler": "Cloudflare", "render": "Render",
+             "pulumi": "Pulumi", "eas": "EAS", "fastlane": "App Store Connect", "gcloud": "Google Cloud", "gh": "GitHub",
+             "doppler": "Doppler", "aws": "AWS", "aws secretsmanager": "AWS Secrets Manager", "aws ssm": "AWS Systems Manager",
+             "gcloud secrets": "Google Secret Manager", "gcloud app": "App Engine", "gcloud run": "Cloud Run",
+             "gcloud functions": "Cloud Functions", "fastlane pilot": "TestFlight",
+             "fastlane upload_to_testflight": "TestFlight", "fastlane upload_to_play_store": "Google Play"}
+_REMOVES = frozenset({"delete", "remove", "rm", "unset", "config:unset", "config:remove", "env:unset", "delete-secret"})
+# Options that take a value in these CLIs (arity only: whether one is shown is the tables above).
+_VALUED = frozenset({"-a", "--app", "-R", "--repo", "--site", "--dir", "--project", "-P", "--service", "-s", "--stack",
+                     "--name", "--project-name", "--secret-id", "-p", "--package", "-e", "--env", "--environment", "-t",
+                     "--token", "--scope", "--cwd", "-c", "--config", "--region", "--profile", "-o", "--org",
+                     "--registry", "-r", "--repository", "--repository-url", "--publish-url", "--index", "--host",
+                     "--platform"})
+_FLAGS = frozenset({"--prod", "--yes", "-y", "--remote-only", "--detach", "--quiet", "-q", "--json", "--non-interactive",
+                    "--no-wait", "--skip-preview", "--dry-run", "--auto-submit"})
+_ARTIFACT = re.compile(r"(?P<name>[A-Za-z0-9][\w.]*?(?:-[A-Za-z_][\w.]*?)*)(?:-(?P<version>\d[\w.+]*?))?(?:-[^/]*)?"
+                       r"\.(?:tgz|gem|tar\.gz|zip|whl)")
+
+
+def _scan(words: tuple[str, ...], program: str = "") -> tuple[dict[str, str], str]:
+    """The options with values and the first operand, read up to the first option this can't place. An option's arity
+    is the program's own (`_OPTION_FLAGS`, `_OPTION_VALUES`), else these CLIs' (`_VALUED`, `_FLAGS`)."""
+    flags = _OPTION_FLAGS.get(program, frozenset())
+    values = _OPTION_VALUES.get(program, frozenset()) | _VALUED
+    named: dict[str, str] = {}
+    i = 0
+    while i < len(words):
+        word = words[i]
+        i += 1
+        if not word.startswith("-") or word == "-":
+            return named, "" if _expands(word) else word
+        option, equals, value = word.partition("=")
+        if equals or word in flags:
+            pass
+        elif option in values and i < len(words):
+            value, i = words[i], i + 1
+        elif option not in _FLAGS:
+            break                       # unknown: its value, if any, could be the next word
+        if not _expands(value):
+            named.setdefault(option, value)
+    return named, ""
+
+
+def _place(program: str, args: tuple[str, ...], table) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]] | None:
+    """(verb, options, rest): the first of `table`'s verbs `args` spells, read past the options before and between its
+    words as the rule reads them (`_write_verbs`, #897 review items 1 and 6: `gcloud app --project X deploy`), with
+    those options and the words after it. A known option's value is skipped with it; after an option this can't
+    place, the next word is the verb's when it is the one due, else that option's value. gcloud's release track may
+    lead. None: none of the verbs placed."""
+    flags = _OPTION_FLAGS.get(program, frozenset()) | _FLAGS
+    values = _OPTION_VALUES.get(program, frozenset()) | _VALUED
+    tracks = ((), ("alpha",), ("beta",)) if program == "gcloud" else ((),)
+    for verb in sorted(table, key=lambda verb: (-len(verb), verb)):
+        for path in (track + verb for track in tracks):
+            done, i, options, unknown = 0, 0, [], False
+            while i < len(args) and done < len(path) and args[i] != "--":
+                word = args[i]
+                i += 1
+                if word.startswith("-") and word != "-":
+                    options.append(word)
+                    option, equals, _ = word.partition("=")
+                    unknown = not (equals or word in flags or option in values)
+                    if not (equals or word in flags) and option in values and i < len(args):
+                        options.append(args[i])
+                        i += 1
+                elif word.lower() == path[done]:
+                    done, unknown = done + 1, False
+                elif unknown:
+                    options.append(word)
+                    unknown = False
+                else:
+                    break
+            if done == len(path):
+                return verb, tuple(options), args[i:]
+    return None
+
+
+def _registry(program: str, args: tuple[str, ...], text: str) -> str | None:
+    """Where a registry tool publishes (#897 review, item 5): None when the command proves the public registry (no
+    option or environment setting choosing another, or each naming the public one); else the host they all name; ""
+    when that can't be read (a name from the tool's config, a variable, a value that is no URL, a scope's registry,
+    two that differ). Every word is read, past options this can't place: such an option never hides `--registry`."""
+    options = _REGISTRY_OPTIONS.get(program, ())
+    chosen = [""] if _REGISTRY_ENV.search(text) else []
+    for i, word in enumerate(args):
+        if word == "--":
+            break
+        option, equals, value = word.partition("=")
+        if option in options:
+            chosen.append(value if equals else args[i + 1] if i + 1 < len(args) else "")
+        elif any(len(short) == 2 and word.startswith(short) for short in options):
+            chosen.append(word[2:])                   # an attached short value (`-rtestpypi`)
+        elif word.startswith("-") and "registry" in word.lower():
+            chosen.append("")                         # another spelling choosing one (npm's `--@scope:registry=…`)
+    hosts = {_registry_host(program, value) for value in chosen}
+    if hosts <= {None}:
+        return None
+    return hosts.pop() if len(hosts) == 1 else ""
+
+
+def _registry_host(program: str, value: str) -> str | None:
+    """None: `value` names the program's public registry; else the host of the URL it is; "" when it is no URL."""
+    if not value or _expands(value):
+        return ""
+    if value.lower() in _PUBLIC_REGISTRY[program]:
+        return None
+    try:
+        host = urllib.parse.urlsplit(value).hostname if "://" in value else None
+    except ValueError:
+        host = None
+    return "" if not host else None if host in _PUBLIC_REGISTRY[program] else host
+
+
+def _service(program: str, verb: tuple[str, ...]) -> str:
+    """The service a program's verb reaches, else the program's own, else the program's name."""
+    return _SERVICES.get(f"{program} {verb[0]}" if verb else "") or _SERVICES.get(program, program)
+
+
+def _shown(named: dict[str, str], options: tuple[str, ...], word: str = "") -> str:
+    """The first of `options` the words gave a value, else `word`; of a `K=v`, `K` only."""
+    return (next((named[o] for o in options if named.get(o)), "") or word).split("=", 1)[0]
+
+
+def _program_line(program: str, rules: set[str]) -> tuple[str, dict[str, str]] | None:
+    """The line a covered command gets when its verb isn't read (#897 review, item 4): what its rule says the program
+    does there, no more (`fly destroy` is no deploy; an unread secret verb may set or remove)."""
+    if "secret-write" in rules and program in _SECRET_WRITE:
+        return "changesASecret", {"where": _service(program, ())}
+    if "publish" in rules and program in _REGISTRIES:
+        return "publishesToARegistry", {}
+    if "publish" in rules and program in _DEPLOYS:
+        return "changesOn", {"service": _service(program, ())}
+    return None
+
+
+def _words_line(program: str, args: tuple[str, ...], rules: set[str], text: str) -> tuple[str, dict[str, str]] | None:
+    """One command's line from its own words (`consequence`), else its program's (`_program_line`)."""
+    placed = _place(program, args, _SECRET_WRITE.get(program, set()))
+    if "secret-write" in rules and placed:
+        verb, options, rest = placed
+        more, word = _scan(rest, program)
+        named = {**_scan(options, program)[0], **more}
+        name = _shown(named, _SECRET_NAMES.get(program, ()), word if program in _SECRET_OPERAND else "")
+        where = _shown(named, _SECRET_PLACES.get(program, ())) or _service(program, verb)
+        key = "removesSecret" if verb[-1] in _REMOVES else "setsSecret"
+        return (key, {"name": name, "where": where}) if name else (key.replace("Secret", "ASecret"), {"where": where})
+    if "publish" not in rules:
+        return None
+    placed = _place(program, args, _REGISTRY_VERBS) if program in _REGISTRIES else None
+    if placed:
+        _, options, rest = placed
+        more, word = _scan(rest, program)
+        found = _ARTIFACT.fullmatch(word.rsplit("/", 1)[-1])
+        package = _shown({**_scan(options, program)[0], **more}, _PACKAGE_NAMES.get(program, ())) or (
+            found and found["name"]) or ""
+        version = found["version"] if found and package == found["name"] else ""
+        package = f"{package}@{version}" if version else package
+        where = _registry(program, args, text)
+        if where is None:
+            return ("publishes", {"package": package, "registry": _REGISTRIES[program]}) if package else (
+                "publishesTo", {"registry": _REGISTRIES[program]})
+        if where:
+            return ("publishesHost", {"package": package, "host": where}) if package else (
+                "publishesToHost", {"host": where})
+        return ("publishesSomewhere", {"package": package}) if package else ("publishesToARegistry", {})
+    placed = _place(program, args, _DEPLOYS.get(program, set()))
+    first = next((word.lower() for word in args if not word.startswith("-")), "")
+    if not placed and program == "fastlane" and first.startswith("upload_to_"):
+        placed = _place(program, args, {(first,)})
+    if not placed and program == "vercel":
+        lead = _verb(args, _OPTION_VALUES["vercel"])
+        if not lead or lead[0].startswith("-"):
+            placed = ((), args[:len(args) - len(lead)], lead)     # the bare program deploys the folder it runs in
+    if not placed:
+        return _program_line(program, rules)
+    verb, options, rest = placed
+    more, word = _scan(rest, program)
+    target = _shown({**_scan(options, program)[0], **more}, _TARGET_NAMES.get(program, ()),
+                    word if program in _TARGET_OPERAND else "")
+    service = _service(program, verb)
+    return ("deploys", {"target": target, "service": service}) if target else ("deploysTo", {"service": service})
+
+
+# A covered program in command position, for a line the reader did not read (`/usr/local/bin/heroku config:add`).
+_COVERED_AT = re.compile(_CMD + r"(?P<program>" + "|".join(sorted(
+    map(re.escape, {*_REGISTRIES, *_DEPLOYS, *_SECRET_WRITE, *_PROGRAM_ALIASES}), key=len, reverse=True)) + r")" + _END,
+    re.I)
+_RULE_TEXT = {key: pattern for key, pattern, _ in _ASK_C if key in {"publish", "secret-write"}}
+_SPAN_END = re.compile(r"[;&|\n]")
+
+
+def consequence(command: str) -> tuple[str, dict[str, str]] | None:
+    """The first publish, deploy or secret write in `command` as a card line's key (card-purposes.json `fact`) and its
+    values: `publishes` (package, registry), `publishesHost` (package, host) or `publishesSomewhere` (package) by the
+    registry it goes to, `deploys` (target, service), `setsSecret` / `removesSecret` (name, where), each with an
+    `…To…`/`…A…` form when the words don't name it. A command the rule's text catches but the reader did not read gets
+    its program's line (#897 review, item 4). None: no such step."""
+    text = str(command or "")
+    for words in _command_words(text):
+        program = words[0].rsplit("/", 1)[-1].lower()
+        program = _PROGRAM_ALIASES.get(program, program)
+        found = _words_line(program, words[1:], _named_rules((program, *words[1:])), text)
+        if found:
+            return found
+    for form in _detection_texts(text):
+        for match in _COVERED_AT.finditer(form):
+            # the rules on this command's own span only (#897 round 2): `gh secret list; heroku config:unset K` is Heroku's
+            end = _SPAN_END.search(form, match.end())
+            span = form[match.start():end.start() if end else len(form)]
+            rules = {key for key, pattern in _RULE_TEXT.items() if pattern.search(span)}
+            program = match["program"].lower()
+            if found := _program_line(_PROGRAM_ALIASES.get(program, program), rules):
+                return found
+    return None

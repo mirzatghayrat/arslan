@@ -153,6 +153,39 @@ def step3_move(row):
     return (row["main"], row["fixed"], row.get("rule")) == ("run", "ask", tp.UNREADABLE)
 
 
+def heredoc_secret_write(text):
+    """A heredoc body, not a command the reader places, that writes a secret: the body's own text matches
+    `secret-write` and one of its lines starts with a program from `tp._SECRET_WRITE`."""
+    if any(words and words[0].lower() in tp._SECRET_WRITE for words in sg.read(text).commands):
+        return False
+    return any(tp._RULE_TEXT["secret-write"].search(body.group(0))
+               and any(line.split() and line.split()[0].lower() in tp._SECRET_WRITE
+                       for line in body.group(0).splitlines()[1:])
+               for body in tp._HEREDOC.finditer(text))
+
+
+# The deploy rule (2026-11-14), on purpose: layer two reads a heredoc's body as raw text, so a body that sets a secret
+# asks as `secret-write` where main ran it, as a body with `npm publish` or `git push` already asks on main (a body
+# can be fed to a shell, and the reader sees only `bash` in `bash <<EOF`). Counted apart, on the default sample.
+HEREDOC_SECRET_ROWS = {"negative": 1}
+
+
+def heredoc_secret_move(row):
+    return ((row["main"], row["fixed"], row.get("rule")) == ("run", "ask", "secret-write")
+            and row.get("heredoc_secret") is True)
+
+
+def test_heredoc_secret_move_needs_the_rule_and_a_heredoc_body():
+    assert heredoc_secret_move({"main": "run", "fixed": "ask", "rule": "secret-write", "heredoc_secret": True})
+    assert not heredoc_secret_move({"main": "run", "fixed": "ask", "rule": "secret-write", "heredoc_secret": False})
+    assert not heredoc_secret_move({"main": "run", "fixed": "ask", "rule": "publish", "heredoc_secret": True})
+    assert not heredoc_secret_move({"main": "run", "fixed": "forbid", "rule": "secret-write", "heredoc_secret": True})
+    assert heredoc_secret_write("cat <<'EOF'\ngh secret set ZZ\nEOF")
+    assert not heredoc_secret_write("cat <<'EOF'\nnotes about gh secret set\nEOF")
+    assert not heredoc_secret_write("gh secret set ZZ <<'EOF'\nvalue\nEOF")
+    assert not heredoc_secret_write("echo 'gh secret set ZZ'")
+
+
 def test_step3_move_is_only_run_to_ask_unreadable():
     assert step3_move({"main": "run", "fixed": "ask", "rule": tp.UNREADABLE})
     assert not step3_move({"main": "run", "fixed": "ask", "rule": "stand-in-rule"})
@@ -161,8 +194,14 @@ def test_step3_move_is_only_run_to_ask_unreadable():
     assert not step3_move({"main": "forbid", "fixed": "ask", "rule": tp.UNREADABLE})
 
 
+# #897 review, item 3: the rows whose cargo seed (`cargo publish --dry-run`) runs now, on the default sample.
+DRY_RUN_ROWS = {"positive": 25}
+
+
 def assert_matrix(result, *, negative=False, cautious_forbids=False):
     assert not result["toward_run"], result["toward_run"]
+    if os.environ.get("QUOTED_ARGS_EVIDENCE_FULL") != "1":
+        assert len(result.get("dry_runs", ())) == DRY_RUN_ROWS.get(result.get("kind"), 0), result.get("dry_runs")
     if negative:
         # Exactly seven accepted cautious forbids: the unsplittable cluster
         # keeps 9be27b5f's verdict. Whitespace cannot imply an operand; the
@@ -172,6 +211,10 @@ def assert_matrix(result, *, negative=False, cautious_forbids=False):
         # S2a-3 step 3: a command the reader does not understand asks as `unreadable` (offline in the sandbox, no
         # card) where main ran it. That move is set aside; every other change from main is still checked below.
         changes = [row for row in result["changed_from_main"] if not step3_move(row)]
+        heredocs = [row for row in changes if heredoc_secret_move(row)]
+        changes = [row for row in changes if not heredoc_secret_move(row)]
+        if os.environ.get("QUOTED_ARGS_EVIDENCE_FULL") != "1":
+            assert len(heredocs) == HEREDOC_SECRET_ROWS.get(result.get("kind"), 0), heredocs
         if cautious_forbids:
             assert {row["id"] for row in changes} == accepted, changes
             assert all((row["main"], row["pr"], row["fixed"]) ==
@@ -227,8 +270,10 @@ def assert_accounting(kind):
         expected = kind == "controls"
         assert tp._fully_accounted(words[0], words[1:]) == expected, case
         if not expected:
-            # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as `publish`
-            unplaceable = {"publish"} if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set()
+            # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as
+            # `publish`; heroku's seed, `config:set`, is read past the option as a secret write (#897 review, item 1)
+            unplaceable = ({"secret-write" if words[0] == "heroku" else "publish"}
+                           if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set())
             assert tp._named_rules(words) == tp._legacy_named_rules(words) | unplaceable, case
 
 
@@ -276,11 +321,16 @@ def matrix(kind, rows):
     count = 0
     loosened = []
     losses = []
+    dry_runs = []
     for case, text in rows:
         count += 1
         sg.read(text)
         head = tp.assess(text)
         verdicts = [*levels(kind, case, text), head.level]
+        if verdicts[0] != "forbid" and (verdicts[1], head.level) == ("ask", "run") and any(
+                words and tp._dry_run(words[0].lower(), words[1:]) for words in tp._command_words(text)):
+            dry_runs.append(case)       # a dry run publishes nothing, so it runs (#897 review, item 3); counted apart
+            continue
         fallback_programs = {words[0].lower() for words in tp._command_words(text)
                              if not tp._fully_accounted(words[0].lower(), words[1:])}
         if fallback_programs:
@@ -295,11 +345,12 @@ def matrix(kind, rows):
             losses.append(f"{kind}/{case}: expected >= {verdicts[1][0]}, actual {verdicts[2][0]}")
         if verdicts[0] != verdicts[2]:
             changes.append({"id": case, "main": verdicts[0], "pr": verdicts[1], "fixed": verdicts[2],
-                            "rule": head.rule, "matrix": kind, "expected": verdicts[0][0], "actual": verdicts[2][0]})
+                            "rule": head.rule, "matrix": kind, "expected": verdicts[0][0], "actual": verdicts[2][0],
+                            "heredoc_secret": heredoc_secret_write(text) and tp.ask_rules(text) == {"secret-write"}})
         if RANK[verdicts[2]] < RANK[verdicts[0]]:
             toward_run.append(f"{kind}/{case}: expected >= {verdicts[0][0]}, actual {verdicts[2][0]}")
     return dict(kind=kind, cases=count, loosened=loosened, losses=losses, transitions=dict(transitions), by_class=dict(classes),
-                changed_from_main=changes, toward_run=toward_run,
+                changed_from_main=changes, toward_run=toward_run, dry_runs=dry_runs,
                 fallback_cases=fallback_cases, fallback_programs=dict(fallbacks))
 
 

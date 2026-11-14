@@ -3,7 +3,28 @@
 v0.1.64 SUB6 deleted the helpers and the table's model, so the table is defined here, as the model's
 create_all made it (same columns, keys, constraints and index). Nothing reads or writes it any more;
 SUB7's migration drops it.
+
+v0.1.64 SUB6b deleted the professional methods and their two models, so their tables are defined here the
+same way (as the models' create_all made them). Nothing reads or writes them any more; 0096 drops them, so
+a new install creates them here and drops them later in the same boot.
 """
+
+_METHODS = (
+    """CREATE TABLE IF NOT EXISTS professional_methods (
+        "key" VARCHAR(40) NOT NULL,
+        current_revision INTEGER NOT NULL,
+        PRIMARY KEY ("key")
+    )""",
+    """CREATE TABLE IF NOT EXISTS professional_method_versions (
+        "key" VARCHAR(40) NOT NULL,
+        revision INTEGER NOT NULL,
+        name VARCHAR(120) NOT NULL,
+        instructions TEXT NOT NULL,
+        created_at DATETIME NOT NULL,
+        PRIMARY KEY ("key", revision),
+        FOREIGN KEY("key") REFERENCES professional_methods ("key")
+    )""",
+)
 
 _TASK_WORKERS = (
     """CREATE TABLE IF NOT EXISTS task_workers (
@@ -34,8 +55,5 @@ _TASK_WORKERS = (
 
 
 def upgrade_sync(connection):
-    from server.db.worker_models import ProfessionalMethod, ProfessionalMethodVersion
-    for model in (ProfessionalMethod, ProfessionalMethodVersion):
-        model.__table__.create(connection, checkfirst=True)
-    for statement in _TASK_WORKERS:
+    for statement in (*_METHODS, *_TASK_WORKERS):
         connection.exec_driver_sql(statement)

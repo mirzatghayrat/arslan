@@ -569,7 +569,10 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     lost to the depth counted from the commander's root, nor walked twice. One walk, so every cap counts over both.
     A walk root at or inside one of `folders` adds nothing. A folder a link leads to is listed once for each set of
     held names the consumer reads in it (`_below` of the link's path), not once in all: two families' aliases of one
-    folder (`.vscode -> shared`, `.claude -> shared`) each have their names mapped through it."""
+    folder (`.vscode -> shared`, `.claude -> shared`) each have their names mapped through it.
+
+    S4b-0 (#881 review 2): one of `folders` inside another is still its own start, with its own depth budget, and the
+    enclosing one skips it the same way (the work folder inside an allowed folder)."""
     from server.services.sandbox_profile import real
     max_entries = WALK_ENTRIES if max_entries is None else max_entries
     max_depth = WALK_DEPTH if max_depth is None else max_depth
@@ -584,13 +587,16 @@ def held_folders(folders: Iterable[Path], *, roots: Iterable[Path] = (), closed:
     private = _identities(private_list)
     private_inodes = {ino for _, ino in private}
     skipped: list[Path] = []
-    inner = [f for f in dict.fromkeys(folders) if not any(o != f and o in f.parents for o in folders)]
+    # S4b-0 (#881 review 2): each of `folders` is its own start with the full depth budget, one inside another too (the
+    # work folder inside an allowed folder); the enclosing one skips it, as the walk roots skip them all.
+    inner = list(dict.fromkeys(folders))
+    nested = any(o != f and o in f.parents for f in inner for o in inner)
     # SBX-10 review delta 1: the walk roots after `folders`' own, none at or inside one of those.
     outer = [w for w in dict.fromkeys(outer) if not any(o != w and o in w.parents for o in outer)
              and not any(s == w or s in w.parents for s in inner)]
     starts = [*inner, *outer]
-    inner_paths = set(map(str, inner)) if outer else set()
-    inner_ids = _identities(inner) if outer else set()
+    inner_paths = set(map(str, inner)) if outer or nested else set()
+    inner_ids = _identities(inner) if outer or nested else set()
     inner_inodes = {ino for _, ino in inner_ids}
     budget = [max_entries]
     found: list[Path] = []

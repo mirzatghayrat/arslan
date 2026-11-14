@@ -48,6 +48,7 @@ class SettingsIn(BaseModel):
     orchestrator_shell_enabled: str | None = None
     shell_confirm_policy: str | None = None
     shell_policy_switch_notice: str | None = None   # v0.1.64 ASK1-a: "pending" / "seen" (migration 0095's note)
+    scheduled_commands_note: str | None = None      # v0.1.64 ASK1-b: "pending" / "seen" (migration 0097's note)
     model_roles_reset_notice: str | None = None     # v0.1.64 ROUTE1: "pending" / "seen" (migration 0086's notice)
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
@@ -79,6 +80,7 @@ class SettingsIn(BaseModel):
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
     folder_rules_enabled: str | None = None
+    status_route_in_prompt: str | None = None        # H1-c, default on
     sandbox_system_certificates: str | None = None   # SBX-6a, default off
     # Not `sandbox_trusted_devices` (SBX settings): a device is added through POST /settings/sandbox/trusted-devices,
     # where the server resolves and checks it, or a card's answer, never as raw JSON here (trusted_devices).
@@ -124,6 +126,7 @@ class SettingsOut(BaseModel):
     orchestrator_shell_enabled: str = ""
     shell_confirm_policy: str = ""                  # ASK1-a: the API sends the policy as read (_settings_out)
     shell_policy_switch_notice: str = ""            # v0.1.64 ASK1-a: "pending" after 0095, then "seen"
+    scheduled_commands_note: str = ""               # v0.1.64 ASK1-b: "pending" after 0097, then "seen"
     model_roles_reset_notice: str = ""              # v0.1.64 ROUTE1: "pending" after 0086 cleared the old roles, then "seen"
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
@@ -149,6 +152,7 @@ class SettingsOut(BaseModel):
     ssh_enabled: str = ""
     default_read_enabled: str = ""
     folder_rules_enabled: str = ""
+    status_route_in_prompt: str = ""        # H1-c, default on
     sandbox_system_certificates: str = ""   # SBX-6a, default off
     sandbox_trusted_devices: str = ""   # SBX-6a, JSON list, default empty
     voice_input_locale: str = ""

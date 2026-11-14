@@ -130,6 +130,49 @@ async def test_a_job_turn_that_answers_keeps_its_answer_byte_for_byte(monkeypatc
     assert result["final"] == answer and streamed == answer
 
 
+def _nothing_ran_shape():
+    """Every call blocked (a refusal, two declined cards, a card nobody answered), then the cap: no call succeeded."""
+    return [_call("run_command", {"command": REFUSED}, "r1"),
+            _call("run_command", {"command": DECLINED}, "r2"),
+            _call("run_command", {"command": UNANSWERED}, "r3"),
+            _call("run_command", {"command": UNANSWERED + " --tags"}, "r4"),
+            LLMResponse(usage={}, content="", tool_calls=[])]
+
+
+async def test_a_chat_turn_the_cap_ends_with_no_successful_call_closes_in_the_chat(monkeypatch):
+    """The chat turn used to raise here (nothing had run, so there was nothing to name) and the user saw no
+    closing. It now ends with the chat's closing, then what its records show: done, blocked and left."""
+    result, streamed, model = await _turn(monkeypatch, _nothing_ran_shape(), in_job=False)
+    final = result["final"]
+    assert final == streamed, "the closing reaches the chat"
+    assert result["stop_reason"] == "task_budget_exhausted" and model.calls == 4
+    assert final.startswith("I stopped here: this turn reached its work limit (dollar limit). Nothing was saved yet")
+    records = final[final.index("From this run's own records:"):]
+    done, blocked, left = (records.index(head) for head in ("Done: no tool call succeeded.", "Blocked:", "Left"))
+    assert done < blocked < left
+    section = records[blocked:left]
+    assert f"refused by Arslan's rules: run_command `{REFUSED}`" in section
+    assert f"you said no: run_command `{DECLINED}`" in section
+    assert f"nobody answered the card: run_command `{UNANSWERED}`" in section
+    assert f"you said no: run_command `{UNANSWERED} --tags`" in section
+    assert records.endswith(f"Left: the request itself, {REQUEST}")
+
+
+async def test_a_closing_that_cannot_be_written_never_replaces_the_stop(monkeypatch, caplog):
+    """The records builder runs while a stop propagates: its own failure is logged loudly (an error, with its
+    traceback), and the stop still ends the job's turn as a budget stop, and the chat turn with its closing."""
+    def broken(*_a, **_k):
+        raise TypeError("a bug in the builder")
+    monkeypatch.setattr(answer_salvage, "_records_closing", broken)
+    with caplog.at_level("ERROR", logger=tool_loop.logger.name), pytest.raises(BudgetExceeded) as stopped:
+        await _turn(monkeypatch, _run_328_shape())
+    assert stopped.value.closing == ""
+    errors = [r for r in caplog.records if r.levelname == "ERROR" and "closing not written" in r.getMessage()]
+    assert errors and errors[0].exc_info and errors[0].exc_info[0] is TypeError
+    result, streamed, _ = await _turn(monkeypatch, _nothing_ran_shape(), in_job=False)
+    assert result["final"] == streamed and result["final"].startswith("I stopped here")
+
+
 # --- the records the closing is made of -------------------------------------------------------------------------
 
 async def _real_refusals() -> list[dict]:
@@ -178,6 +221,23 @@ async def test_left_lists_the_plan_steps_not_done_or_else_the_request():
     assert "build the report" in left and "check the tags" in left and "collect disk data" not in left
     assert REQUEST not in left
     assert REQUEST in answer_salvage._records_closing(REQUEST, [], [], locale="en")
+
+
+def test_left_says_only_the_answer_is_missing_when_every_plan_step_is_done():
+    plan = Plan()
+    plan.update({"items": [{"text": "collect disk data", "status": "done"},
+                           {"text": "build the report", "status": "done"}]})
+    text = answer_salvage._records_closing(REQUEST, [], plan.items, locale="en")
+    assert text.endswith("Left: every plan step is done; only the final answer was not written.")
+    assert REQUEST not in text and "collect disk data" not in text
+
+
+def test_one_successful_call_is_one_tool_call():
+    trace = [{"tool": "run_command", "args": {"command": "df -h"}, "result": {"ok": True, "exit_code": 0}}]
+    text = answer_salvage._records_closing(REQUEST, trace, [], locale="en")
+    assert "Done: 1 tool call succeeded (run_command ×1)." in text and "1 tool calls" not in text
+    two = answer_salvage._records_closing(REQUEST, trace * 2, [], locale="en")
+    assert "Done: 2 tool calls succeeded (run_command ×2)." in two
 
 
 async def test_unanswered_cards_are_counted_apart_from_refusals():

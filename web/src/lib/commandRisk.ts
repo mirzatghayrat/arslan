@@ -45,7 +45,7 @@ const IRREVERSIBLE = new Set(["delete-outside", "send-mail", "send-message", "pu
 /** Every rule the server's terminal policy names (server/services/terminal_policy.py `_ASK`, delete-outside,
  *  protected-write and unreadable), each with its line; tests/server/test_smart8_card_purpose.py holds the two
  *  lists together. */
-export const RULES = new Set(["delete-outside", "send-mail", "send-message", "upload", "publish", "git-push",
+export const RULES = new Set(["delete-outside", "send-mail", "send-message", "upload", "publish", "secret-write", "git-push",
   "remote-shell", "apple-events", "shortcuts", "force-kill", "login-items", "keychain-write", "system-settings",
   "open-app", "screen-clipboard", "protected-write", "unreadable"]);
 /** Why the server could not read a command (server/services/command_confirm.py `UNREADABLE`), each with its line. */

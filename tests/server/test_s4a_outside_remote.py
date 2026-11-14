@@ -629,8 +629,9 @@ async def test_a_lifted_run_later_card_never_joins_an_identical_ask(execution_db
     approvals.answer({"type": "confirm_run_command", "call_id": shown[0]["call_id"], "scope": "once"})
     for f in shown[1:]:
         approvals.answer({"type": "cancel_run_command", "call_id": f["call_id"]})
-    # One click: with two cards it runs one command; joined, the one card answers both waiters.
-    assert [await first, await second] == ([True, False] if cards == 2 else [True, True])
+    # One click: with two cards it runs one command; joined, the one card answers both waiters. The two asks race for
+    # the first card, so which waiter the confirmed card belongs to isn't fixed: compare the outcomes as a multiset.
+    assert sorted([await first, await second]) == ([False, True] if cards == 2 else [True, True])
 
 
 

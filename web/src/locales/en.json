@@ -761,6 +761,7 @@
       "waiting": "Waiting for your approval",
       "waiting_reminder": "A stopped job left you a reminder",
       "waiting_away": "A card expired",
+      "waiting_glance": "A finished job left something for you to look at",
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
       "done": "Done",
@@ -1056,6 +1057,7 @@
         "send-message": "Sends or posts in your name; it can't be taken back",
         "upload": "Sends data to a website or a cloud",
         "publish": "Publishes or changes something online",
+        "secret-write": "Sets or removes a secret that CI or production reads",
         "git-push": "Publishes to a remote repository",
         "remote-shell": "Connects to another machine",
         "apple-events": "Controls other apps; they could send, delete or buy",
@@ -1354,7 +1356,7 @@
     "every_minute": "every minute",
     "every_n_minutes": "every {{count}} minutes",
     "prompt": "What it will do each time:",
-    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is refused and listed under the task on the Scheduled page. They can look things up and write files only in Arslan's own working folder; they don't run commands.",
+    "unattended": "Scheduled runs happen on their own and never wait for you: they run commands that wouldn't need your OK, inside the sandbox, and write files only in Arslan's own working folder. Anything that would need your OK is refused and listed under the task on the Scheduled page.",
     "anyTask": "creating any scheduled task"
   },
   "enroll": {
@@ -1493,7 +1495,10 @@
     "seenNote": "Opening a task marks what its runs could not do as seen. In the task's own conversation, what expired undone clears when you open that conversation, and a card there clears only once it is answered.",
     "attention": "Needs a look",
     "changed": "Changed",
-    "failing": "Failed or paused itself"
+    "failing": "Failed or paused itself",
+    "commandsNoteTitle": "Scheduled tasks can run commands again",
+    "commandsNoteBody": "A scheduled task's run now runs commands that wouldn't need your OK, inside the sandbox, in Arslan's own working folder. Anything that would need your OK is refused and listed under its task here. Tasks set up before this update, or after reading outside content, run their commands offline. If you chose “Ask before every command”, scheduled runs run none.",
+    "commandsNoteOk": "Got it"
   },
   "remembered": {
     "title": "Remembered answers",

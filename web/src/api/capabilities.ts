@@ -17,8 +17,6 @@ export interface CapabilityRow {
   source_id: string | null;
   /** How a connection is reached (its command and arguments, or its address); the search matches it. */
   reach: string | null;
-  /** A professional method's version (`method:<key>` rows). */
-  revision?: number;
   /** on: offered now · off: switched off · setup: one step missing · na: cannot work here */
   state: "on" | "off" | "setup" | "na";
   /** The tool keys this row stands for when it is on. */

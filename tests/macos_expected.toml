@@ -128,6 +128,15 @@ markers = 1
 cases = 1
 xfail = 0
 
+# 0.1.64 S4b-0, the user's allowed folders as extra writable roots: an allowed root pinned and a swap after the build
+# refused (1 case); a link given as one refused, and a walk root still pinned in its place (1 case); `cp` into one
+# works and the folder beside it stays denied (1 case); inside one, a git hook, the `.git` folder and a hooksPath
+# target are held, as in the work folder (2 cases).
+["server/sbx/test_s4b0_allowed_roots.py"]
+markers = 4
+cases = 5
+xfail = 0
+
 # 0.1.64 SBX-10, a sub-session's walk covers the commander's workspace: its links into the child's folder (.git/hooks,
 # .vscode) and its core.hooksPath there are refused, the own-workspace control as before; a walk root that is a link
 # or doesn't hold the folder refuses with the note. Review delta 1: a link deep in the child's folder past the depth
@@ -302,6 +311,13 @@ xfail = 0
 ["server/test_artifact_store.py"]
 markers = 1
 cases = 1
+xfail = 0
+
+# v0.1.64 ASK1-b: a scheduled task's fire runs its command inside seatbelt, writing in Arslan's own folder; cut back
+# to read-only (`_FIRE_WRITES = False`), it starts in its run's temp folder.
+["server/test_ask1b_fire_seatbelt.py"]
+markers = 1
+cases = 2
 xfail = 0
 
 # v0.1.64 CAP10: verify runs a small project's tests in the commands sandbox; its network and writes outside are refused.

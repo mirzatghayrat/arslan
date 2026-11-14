@@ -761,6 +761,7 @@
       "waiting": "Wartet auf deine Freigabe",
       "waiting_reminder": "Ein angehaltener Auftrag hat dir eine Erinnerung hinterlassen",
       "waiting_away": "Eine Karte ist abgelaufen",
+      "waiting_glance": "Ein fertiger Auftrag hat dir etwas zum Ansehen hinterlassen",
       "working": "Läuft",
       "progress": "Läuft: {{done}} von {{total}}",
       "done": "Fertig",
@@ -1056,6 +1057,7 @@
         "send-message": "Sendet oder postet in deinem Namen; das lässt sich nicht zurücknehmen",
         "upload": "Sendet Daten an eine Website oder eine Cloud",
         "publish": "Veröffentlicht oder ändert etwas online",
+        "secret-write": "Setzt oder entfernt ein Secret, das CI oder Produktion liest",
         "git-push": "Veröffentlicht in einem entfernten Repository",
         "remote-shell": "Verbindet sich mit einem anderen Rechner",
         "apple-events": "Steuert andere Apps; sie könnten senden, löschen oder kaufen",
@@ -1354,7 +1356,7 @@
     "every_minute": "jede Minute",
     "every_n_minutes": "alle {{count}} Minuten",
     "prompt": "Was sie jedes Mal tut:",
-    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird abgelehnt und auf der Seite „Geplant“ unter der Aufgabe aufgeführt. Sie können nachschlagen und Dateien schreiben, aber nur in Arslans eigenem Arbeitsordner; Befehle führen sie nicht aus.",
+    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Befehle, die dein OK nicht bräuchten, führen sie in der Sandbox aus, und Dateien schreiben sie nur in Arslans eigenem Arbeitsordner. Was dein OK bräuchte, wird abgelehnt und auf der Seite „Geplant“ unter der Aufgabe aufgeführt.",
     "anyTask": "beliebige geplante Aufgaben anlegen"
   },
   "enroll": {
@@ -1493,7 +1495,10 @@
     "seenNote": "Wenn du eine Aufgabe öffnest, gilt, was ihre Läufe nicht tun konnten, als gesehen. Was in ihrer eigenen Unterhaltung abgelaufen und liegen geblieben ist, verschwindet, wenn du diese Unterhaltung öffnest; eine Karte dort erst, wenn du sie beantwortest.",
     "attention": "Bitte ansehen",
     "changed": "Geändert",
-    "failing": "Fehlgeschlagen oder selbst pausiert"
+    "failing": "Fehlgeschlagen oder selbst pausiert",
+    "commandsNoteTitle": "Geplante Aufgaben können wieder Befehle ausführen",
+    "commandsNoteBody": "Der Lauf einer geplanten Aufgabe führt jetzt Befehle aus, die dein OK nicht bräuchten, in der Sandbox, in Arslans eigenem Arbeitsordner. Was dein OK bräuchte, wird abgelehnt und hier unter der Aufgabe aufgeführt. Aufgaben von vor diesem Update oder nach dem Lesen von Inhalten von außen führen ihre Befehle ohne Netzwerk aus. Hast du „Vor jedem Befehl fragen“ gewählt, führen geplante Läufe keine aus.",
+    "commandsNoteOk": "Verstanden"
   },
   "remembered": {
     "title": "Gemerkte Antworten",

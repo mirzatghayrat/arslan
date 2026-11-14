@@ -29,7 +29,8 @@ class Offer:
     ssh: bool
     enrolled: bool              # SSH is on and a machine is enrolled
     folders_open: bool          # run_command's words follow this later read of the folder setting
-    nobody_to_ask: bool         # a task's turn with no card surface (a scheduled run). DELETE-BY: as at its read
+    nobody_to_ask: bool         # a task's turn with no card surface (a scheduled fire, the heartbeat)
+    fire: bool                  # ASK1-b: a scheduled task's own fire (command_gate.fire_runs_commands)
     shell: bool
     bottom_layer: bool          # SUB5e: this conversation is a sub-session's sub-session (or its chain can't be read)
 
@@ -67,17 +68,18 @@ async def read_offer(skill_index: Callable[[], Awaitable[str]]) -> Offer:
     async with db_session.AsyncSessionLocal() as db:
         # Read again, in this session, for the command's words only: the tools around it keep the first read.
         folders_open = await settings_service.default_read_enabled(db)
-        # v0.1.63 (the user's decision until S2a-3 lands): a turn with nobody to ask (a scheduled run) runs no
-        # command, so none is offered there; the tool loop refuses one anyway. Outside a turn (the Capabilities
-        # page) the list says what a turn is offered. DELETE-BY: v0.1.64, with S2a-3 and PR4 (scheduled runs get
-        # read-only commands back).
+        # A turn with nobody to ask runs no command, so none is offered there (the tool loop refuses one anyway),
+        # except a scheduled task's own fire (ASK1-b). Outside a turn (the Capabilities page) the list says what a
+        # turn is offered.
         nobody_to_ask = task_service.current() is not None and permissions.current_asker() is None
+        from server.orchestrator import command_gate
+        fire = nobody_to_ask and command_gate.fire_runs_commands(context.conversation_id if context else None)
         shell = await settings_service.shell_enabled(db)
     bottom_layer = await _bottom_layer(context.conversation_id if context is not None else None)
     return Offer(in_task=in_task, in_job=in_job, can_ask=can_ask, browser=browser, mac=mac, hands=hands,
                  scheduled=scheduled, skills=skills, in_project=bool(context is not None and context.project_id),
                  default_read=default_read, workspace=workspace is not None, own_folder=own_folder, lan=lan, ssh=ssh,
-                 enrolled=enrolled, folders_open=folders_open, nobody_to_ask=nobody_to_ask, shell=shell,
+                 enrolled=enrolled, folders_open=folders_open, nobody_to_ask=nobody_to_ask, fire=fire, shell=shell,
                  bottom_layer=bottom_layer)
 
 
