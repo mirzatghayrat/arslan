@@ -308,3 +308,30 @@ async def test_a_temporary_conversation_keeps_no_goal_and_drafts_nothing(executi
     monkeypatch.setattr(task_context, "load", temporary)
     assert await _say(f"/goal {PROMPT}") == "That /goal command isn't available here yet."
     assert model.requests == [] and jobs == []
+
+
+# -- round 2 of review: the generic resume never runs a goal row (Q0; Resume of a goal is L7-4's re-queued job) ------
+
+@pytest.mark.parametrize("pause_reason", [None, "goal_paused", "goal_blocked"],
+                         ids=["not started", "paused", "blocked"])
+async def test_resume_task_never_runs_a_goal_row(pause_reason, execution_db, active, model, jobs, monkeypatch):
+    from server.orchestrator import arslan
+    from server.services import task_service
+    from server.services.task_repository import TaskError, repository
+    await _say(f"/goal {PROMPT}")
+    row = await _row(execution_db)
+    if pause_reason is not None:
+        async with repository() as repo:
+            await repo._advance(await repo.get(row.id), "state_changed", changes={"pause_reason": pause_reason})
+    before = await _row(execution_db)
+    answered = []
+
+    async def answer(*args, **kwargs):
+        answered.append(args)
+    monkeypatch.setattr(arslan, "_handle_answer", answer)
+    with pytest.raises(TaskError, match="task_invalid_driver"):
+        await task_service.resume_turn(row.id, before.version, CID, lambda event: None)
+    after = await _row(execution_db)
+    assert answered == [] and jobs == []
+    assert (after.phase, after.pause_reason, after.version, after.attempt_id) == (
+        before.phase, before.pause_reason, before.version, before.attempt_id)

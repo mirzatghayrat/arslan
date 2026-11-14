@@ -7,7 +7,7 @@ XPASS is a failure, and the slice removes the marker) or fails on its assertions
 A slice that names a function otherwise renames it here. The behavioural ones (`/goal` in `handle_user_message`,
 `resume_turn` refusing a goal row) run today's code and fail on their assertions (`raises=AssertionError`) until the
 slice lands.
-DELETE-BY: v0.1.64, each marker by its slice (L7-4 and L7-5; L7-2 took its four off, L7-3 its two).
+DELETE-BY: v0.1.64, each marker by its slice (L7-5; L7-2 took its four off, L7-3 the rest, resume_turn's refusal included).
 """
 from __future__ import annotations
 
@@ -125,8 +125,6 @@ async def test_l7_3_slash_goal_is_parsed_in_handle_user_message_before_any_model
 
 # -- L7-4: resume -------------------------------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="L7-4 makes resume_turn refuse a goal row (Resume re-queues the job)")
 async def test_l7_4_resume_turn_refuses_a_goal_row(execution_db, monkeypatch):
     async def load(cid, **kwargs):
         return pc.TaskMemoryContext(task_id="goal-task", run_id="initial", conversation_id=cid, no_learning=True)

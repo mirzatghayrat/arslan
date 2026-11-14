@@ -1087,6 +1087,11 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
         if instruction is not None and spec.instruction != instruction:
             raise TaskError("task_goal_changed")
         saved_driver = checked_driver(ceiling.get("driver"))
+        if saved_driver.get("goal") is True:
+            # L7-3 (Q0): a goal row never runs through the generic resume (the socket's `resume_task`): not started,
+            # it waits for Start and its flagged-check confirm; paused or blocked, its Resume re-queues it as a job
+            # (L7-4), which must lift this refusal for its own path only.
+            raise TaskError("task_invalid_driver")
         if driver is not None and checked_driver(driver) != saved_driver:
             raise TaskError("task_goal_changed")
         saved = await repo.latest_checkpoint(task_id)
