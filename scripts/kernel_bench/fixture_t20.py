@@ -1,14 +1,18 @@
-"""T20 (v0.1.64 L7-0), a list that arrives in batches: 6 batches of 4 synthetic notes.
+"""T20 (v0.1.64 L7-0), a list that arrives in batches: 12 batches of 2 synthetic notes.
 
 The card's first draft had 4 batches of 6; the L7-0 pilot's `off` arm completed that in every run, so the same 24
-notes come in 6 batches (more stages, the card's remedy, at the same tool-call cost: about 60 of the standard tier's
-80). Each note has a unique code word and a date. Only batch 1 (`notes/n01.md` to `n04.md`) is on disk at the start.
+notes came in 6 batches of 4. With chained batches the third pilot round still completed that in 3 of 3 runs (12 to
+28 model calls, about $0.13 a run), so the same 24 notes now come in 12 batches of 2 (the card: more stages). Done by
+hand, a batch of 2 takes about 7 tool calls (read 2 notes, write 2 summaries and the index, run the check, list the
+folder), so the whole task is about 84, past the standard tier's 80 in one turn; the notes and summaries are the same
+size as before, so the tokens per run stay about the same. Each note has a unique code word and a date. Only batch 1
+(`notes/n01.md` and `n02.md`) is on disk at the start.
 `inbox_check.py --batches batches.dat` checks the summaries of the notes present: `summaries/<same name>.md` has
 exactly two sentences (split on `.`, `!` and `?`) holding the note's code word and date, and `summaries/index.md`
 names every note. When they pass, it drops the next batch (from the encoded `batches.dat`) into `notes/` and exits 1;
-once batch 6 passes, it exits 0. The check is stateless: the batches present are the notes on disk.
+once batch 12 passes, it exits 0. The check is stateless: the batches present are the notes on disk.
 
-Chained: batch 1 is on disk; batches 2 to 6 are sealed in `batches.dat`, each under a key derived from the name, code
+Chained: batch 1 is on disk; batches 2 to 12 are sealed in `batches.dat`, each under a key derived from the name, code
 word and date of every note in the batch before (goal_tasks.SEAL). The check derives the key only once every summary of
 that batch holds its note's code word and date, so a summary that misses one opens nothing. The pilot's worker decoded
 the first draft's `batches.dat` and could read every note at once; now the data file shows no note past batch 1.
@@ -26,8 +30,8 @@ from pathlib import Path
 
 from scripts.kernel_bench import goal_tasks
 
-BATCHES = 6
-PER_BATCH = 4
+BATCHES = 12
+PER_BATCH = 2
 WORDS_A = ("AMBER", "COBALT", "SILVER", "CEDAR", "ONYX", "SAFFRON", "HAZEL", "INDIGO", "COPPER", "IVORY", "JADE",
            "RUSSET", "SLATE", "TEAL", "OCHRE", "PEWTER")
 WORDS_B = ("FALCON", "HERON", "LYNX", "OTTER", "MARTEN", "BADGER", "PLOVER", "WREN", "IBEX", "ORCA", "TAPIR", "VIPER")

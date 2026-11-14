@@ -315,13 +315,13 @@ def _t20_summarise(run: Path) -> None:
     (out / "index.md").write_text("".join(f"- {n}\n" for n in names))
 
 
-def test_t20_starts_with_the_first_batch_of_six_notes_only(tmp_path):
+def test_t20_starts_with_the_first_batch_of_two_notes_only(tmp_path):
     params = fixture_t20.fixture(str(tmp_path))
-    assert (fixture_t20.BATCHES, fixture_t20.PER_BATCH) == (6, 4)
-    assert _files(tmp_path) == {"inbox_check.py", "batches.dat", *(f"notes/n{i:02d}.md" for i in range(1, 5))}
+    assert (fixture_t20.BATCHES, fixture_t20.PER_BATCH) == (12, 2)
+    assert _files(tmp_path) == {"inbox_check.py", "batches.dat", *(f"notes/n{i:02d}.md" for i in range(1, 3))}
     assert len(params["notes"]) == 24 and len({n["code"] for n in params["notes"].values()}) == 24
     readable = "".join(p.read_text() for p in tmp_path.rglob("*") if p.suffix in (".py", ".md"))
-    assert params["notes"]["n07.md"]["code"] not in readable
+    assert params["notes"]["n03.md"]["code"] not in readable
 
 
 def test_t20_each_batch_arrives_only_after_the_last_one_passes(tmp_path):
@@ -329,11 +329,12 @@ def test_t20_each_batch_arrives_only_after_the_last_one_passes(tmp_path):
     codes = []
     out = _run(tmp_path, "inbox_check.py", "--batches", "batches.dat")
     codes.append(out.returncode)
-    assert out.returncode == 1 and len(list((tmp_path / "notes").iterdir())) == 4   # nothing summarised yet
-    for _ in range(6):
+    assert out.returncode == 1 and len(list((tmp_path / "notes").iterdir())) == 2   # nothing summarised yet
+    for k in range(1, 13):
         _t20_summarise(tmp_path)
         codes.append(_run(tmp_path, "inbox_check.py", "--batches", "batches.dat").returncode)
-    assert codes == [1] * 6 + [0] and len(list((tmp_path / "notes").iterdir())) == 24
+        assert len(list((tmp_path / "notes").iterdir())) == min(2 * (k + 1), 24)   # one batch of 2 per pass
+    assert codes == [1] * 12 + [0] and len(list((tmp_path / "notes").iterdir())) == 24
 
 
 def test_t20_all_twenty_four_right_scores_three(tmp_path):
@@ -375,9 +376,42 @@ def test_t20_an_edited_check_or_batch_file_scores_zero(tmp_path):
 # ── T21: rules revealed by the validator ──────────────────────────────────────
 
 
+_T21_COUNTRY = {"germany": "DE", "france": "FR", "china": "CN", "japan": "JP", "united kingdom": "GB",
+                "united states": "US"}
+
+
+def _t21_later(raw: list[str], *, aliases=True, status_map=True, dozen=True, pad=True, bare_percent=True,
+               app=True) -> list[str]:
+    """The stand-in's own reading of the six later columns (rules 6-11), each choice a switch."""
+    country, status, qty, sku, discount, channel = (v.strip() for v in raw)
+    names = dict(_T21_COUNTRY, **({"uk": "GB", "usa": "US"} if aliases else {}))
+    country = names.get(country.lower(), country.upper())
+    status = {"dispatched": "SHIPPED", "canceled": "CANCELLED", "void": "CANCELLED", "on hold": "PENDING"}.get(
+        status.lower(), status.upper()) if status_map else status.upper()
+    if qty == "a dozen":
+        qty = "12" if dozen else qty
+    else:
+        qty = str(int(Decimal(qty)))
+    letters, digits = re.fullmatch(r"([A-Za-z]{2})-?(\d+)", sku).groups()
+    sku = f"{letters.upper()}-{int(digits):04d}" if pad else f"{letters.upper()}-{digits}"
+    if discount in ("", "none"):
+        fraction = Decimal(0)
+    elif discount.endswith("%"):
+        fraction = Decimal(discount[:-1]) / 100
+    elif discount.isdigit() and bare_percent:
+        fraction = Decimal(discount) / 100
+    else:
+        fraction = Decimal(discount)
+    discount = f"{fraction:.2f}"
+    channel = channel.lower()
+    channel = {"online": "web", "in-store": "store", "tel": "phone", **({"app": "web"} if app else {})}.get(
+        channel, channel)
+    return [country, status, qty, sku, discount, channel]
+
+
 def _t21_clean(src: Path, *, day_first=True, rmb=True, keep="first", decimals=True, spaces=True,
-               order="date") -> list[list[str]]:
-    """The stand-in's own cleaner, with each rule's choice as a switch."""
+               order="date", **later) -> list[list[str]]:
+    """The stand-in's own cleaner, with each rule's choice as a switch (`later`: _t21_later's)."""
     rows = list(csv.reader(src.open()))
     head, body = rows[0], rows[1:]
     if keep == "first":
@@ -392,7 +426,7 @@ def _t21_clean(src: Path, *, day_first=True, rmb=True, keep="first", decimals=Tr
     else:
         kept = body
     out = [head]
-    for oid, day, customer, cur, amount in kept:
+    for oid, day, customer, cur, amount, *rest in kept:
         if "/" in day:
             a, b, y = day.split("/")
             d, m = (a, b) if day_first else (b, a)
@@ -402,7 +436,7 @@ def _t21_clean(src: Path, *, day_first=True, rmb=True, keep="first", decimals=Tr
             amount = f"{Decimal(amount.replace(',', '.')).quantize(Decimal('0.01'), ROUND_HALF_UP)}"
         if spaces:
             customer = " ".join(customer.split())
-        out.append([oid, day, customer, cur, amount])
+        out.append([oid, day, customer, cur, amount, *_t21_later(rest, **later)])
     if order == "date":                                    # stable: the source's order within a date
         out[1:] = sorted(out[1:], key=lambda r: r[1])
     elif order == "date_then_id":
@@ -410,12 +444,18 @@ def _t21_clean(src: Path, *, day_first=True, rmb=True, keep="first", decimals=Tr
     return out
 
 
-def test_t21_has_three_hundred_rows_and_four_kinds_of_fault(tmp_path):
+def test_t21_has_three_hundred_rows_and_its_kinds_of_fault(tmp_path):
     params = fixture_t21.fixture(str(tmp_path))
     assert _files(tmp_path) == {"data/orders.csv", "validate.py", "rules.dat"}
     rows = list(csv.reader((tmp_path / "data" / "orders.csv").open()))
     head, body = rows[0], rows[1:]
-    assert head == ["order_id", "order_date", "customer", "currency", "amount"] and len(body) == 300
+    assert head == ["order_id", "order_date", "customer", "currency", "amount", "country", "status", "qty", "sku",
+                    "discount", "channel"] and len(body) == 300
+    later = list(zip(*(r[5:] for r in body)))                # the six later columns' planted spellings
+    for column, planted in zip(later, (("UK", "USA", "Germany", "de"), ("void", "on hold", "dispatched"),
+                                       ("a dozen", "007", "3.0"), (), ("", "none", "15"), ("app", "online", "tel"))):
+        assert len(set(column) & set(planted)) >= 2 or not planted, (planted, sorted(set(column))[:20])
+    assert any(re.fullmatch(r"[A-Z]{2}-\d{1,3}", v) for v in later[3]) and any(v.islower() for v in later[3])
     slashed = [r[1] for r in body if "/" in r[1]]
     assert slashed and all(
         int(d) <= 12 and int(m) <= 12 and d != m for d, m, _ in (s.split("/") for s in slashed)
@@ -437,15 +477,17 @@ def test_t21_each_rule_is_printed_only_after_the_rules_before_it_pass(tmp_path):
     fixture_t21.fixture(str(tmp_path))
     src, out = tmp_path / "data" / "orders.csv", tmp_path / "clean" / "orders.csv"
     check = ("validate.py", "--rules", "rules.dat", "clean/orders.csv")
-    wrong = dict(day_first=False, rmb=False, keep="all", decimals=False, spaces=False, order="date_then_id")
-    right = dict(day_first=True, rmb=True, keep="first", decimals=True, spaces=True, order="date")
+    wrong = dict(day_first=False, rmb=False, keep="all", decimals=False, spaces=False, aliases=False,
+                 status_map=False, dozen=False, pad=False, bare_percent=False, app=False, order="date_then_id")
+    right = dict(day_first=True, rmb=True, keep="first", decimals=True, spaces=True, aliases=True, status_map=True,
+                 dozen=True, pad=True, bare_percent=True, app=True, order="date")
     for n, rule in enumerate(wrong, 1):        # rules 1 to n-1 right, rule n and the rest wrong
         keys = list(wrong)
         choice = {k: (right if keys.index(k) < n - 1 else wrong)[k] for k in keys}
         _write_csv(out, _t21_clean(src, **choice))
         res = _run(tmp_path, *check)
-        assert res.returncode == 1 and f"Rule {n} of 6" in res.stdout, (rule, res.stdout)
-        assert f"Rule {n + 1} of 6" not in res.stdout
+        assert res.returncode == 1 and f"Rule {n} of 12" in res.stdout, (rule, res.stdout)
+        assert f"Rule {n + 1} of 12" not in res.stdout
     _write_csv(out, _t21_clean(src))
     res = _run(tmp_path, *check)
     assert res.returncode == 0, res.stdout
@@ -554,7 +596,9 @@ def test_t21_each_later_rule_opens_only_with_the_rule_befores_correct_values(tmp
     whole = json.dumps(data)
     src = tmp_path / "data" / "orders.csv"
     right_rows = _first_rows(_t21_clean(src))
-    naive = [dict(day_first=False), dict(rmb=False), dict(keep="last"), dict(decimals=False), dict(spaces=False)]
+    naive = [dict(day_first=False), dict(rmb=False), dict(keep="last"), dict(decimals=False), dict(spaces=False),
+             dict(aliases=False), dict(status_map=False), dict(dozen=False), dict(pad=False), dict(bare_percent=False),
+             dict(app=False)]
     assert data["first"]["text"] == fixture_t21.RULES[0][0]
     assert len(data["sealed"]) == len(data["probes"]) == len(fixture_t21.RULES) - 1
     for k in range(1, len(fixture_t21.RULES)):
@@ -600,12 +644,12 @@ def test_t20_a_batch_whose_notes_were_altered_opens_nothing_and_the_right_one_op
     _t20_summarise(tmp_path)
     out = _run(tmp_path, "inbox_check.py", "--batches", "batches.dat")
     assert out.returncode == 1 and "not the ones the check sent" in out.stdout, out.stdout
-    assert not (tmp_path / "notes" / "n05.md").exists()
+    assert not (tmp_path / "notes" / "n03.md").exists()
     note.write_text(original)
     _t20_summarise(tmp_path)
     out = _run(tmp_path, "inbox_check.py", "--batches", "batches.dat")
-    assert out.returncode == 1 and "Batch 2 of 6 arrived" in out.stdout, out.stdout
-    assert goal_tasks.sha256(tmp_path / "notes" / "n05.md") == params["notes"]["n05.md"]["sha256"]
+    assert out.returncode == 1 and "Batch 2 of 12 arrived" in out.stdout, out.stdout
+    assert goal_tasks.sha256(tmp_path / "notes" / "n03.md") == params["notes"]["n03.md"]["sha256"]
 
 # ── prompts and runner wiring ─────────────────────────────────────────────────
 

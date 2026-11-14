@@ -1,16 +1,22 @@
 """T21 (v0.1.64 L7-0), rules revealed by the validator: 300 synthetic orders with planted faults.
 
-`data/orders.csv` (order_id, order_date, customer, currency, amount) has non-ISO dates, lower-case currency codes,
-duplicate order ids, amounts without two decimals and customer names with stray spaces, and it isn't in date order.
+`data/orders.csv` (order_id, order_date, customer, currency, amount, country, status, qty, sku, discount, channel) has
+non-ISO dates, lower-case currency codes, duplicate order ids, amounts without two decimals, customer names with stray
+spaces, and mixed spellings in the six later columns, and it isn't in date order.
 `validate.py --rules rules.dat clean/orders.csv` first checks that the clean file has the source's header and every
 order id, then the rules in order, and prints only the first rule that fails, with its text and the first errors. So
 rule k is shown only once rules 1 to k-1 pass; after the last it exits 0. The rules, text and code, are only in the
 encoded `rules.dat`, and most hold a choice that can't be guessed from the data: every slash date reads both ways
 (day first is right), `rmb` is CNY, the first row of a repeated id is the one kept, `12,50` has a decimal comma, and
-rows of one date keep the source's order. The card's first draft had 4 rules; the L7-0 pilot's `off` arm completed
-that in every run, so it has 6 (the card: more stages).
+rows of one date keep the source's order, UK is GB, `void` is CANCELLED, `a dozen` is 12, AB-12 is AB-0012, a bare
+discount of 15 is 15% and `app` is the web channel. The card's first draft had 4 rules; the L7-0 pilot's `off` arm
+completed that in every run, so it got 6. With chained rules the third pilot round still completed 6 in 2 of 3 runs
+(16 to 22 model calls, $0.14-0.21 a run; the failing run stopped at rule 4), so it has 12 (the card: more stages): one
+rule for each of six more columns, before the ordering rule, which stays last. The six columns add about 30 characters
+a row (the source grows from about 13 to about 23 KB), and each new rule is one map of spellings, so a run is expected
+to stay under about $0.50 at DeepSeek's peak prices.
 
-Chained: rule 1 is readable in `rules.dat`; rules 2 to 6 are sealed, each under a key derived from the cleaned values
+Chained: rule 1 is readable in `rules.dat`; rules 2 to 12 are sealed, each under a key derived from the cleaned values
 that the rule before asks for on a few probe order ids (goal_tasks.SEAL). The validator derives the key from the
 clean file once the rule passes. The pilot's worker decoded `rules.dat` and read all four rules at once; now the data
 file shows only rule 1, and rule k+1 opens only with rule k's own answer.
@@ -30,17 +36,29 @@ from pathlib import Path
 
 from scripts.kernel_bench import goal_tasks
 
-HEADER = ["order_id", "order_date", "customer", "currency", "amount"]
+HEADER = ["order_id", "order_date", "customer", "currency", "amount", "country", "status", "qty", "sku", "discount",
+          "channel"]
+EXTRA = HEADER[5:]
 ROWS = 300
 DUPLICATES = 12
 CUSTOMERS = ("Alder & Finch", "Brightwater Ltd", "Copperline", "Dunmore Foods", "Elm Street Bikes", "Fairhaven Inn",
              "Granite Labs", "Hollow Oak Studio", "Iris Pharmacy", "Juniper Rail", "Kingsley Tools", "Lumen Optics")
 CODES = ("USD", "EUR", "GBP", "CNY")
 
+def _field_rule(field: str, norm: str) -> str:
+    """A rule on one column: the code of `norm(source value)`, and a check that every cleaned value is it."""
+    return norm + '''
+def check(src, clean):
+    want = first(src)
+    return ["order %s: FIELD should be %s, not %s" % (r["order_id"], norm(want[r["order_id"]]["FIELD"]), r["FIELD"])
+            for r in clean if r["FIELD"] != norm(want[r["order_id"]]["FIELD"])]
+'''.replace("FIELD", field)
+
+
 # Each rule: its text, and the code of `check(src, clean)` -> errors, where both are lists of row dicts and
 # `first(rows)` (validate.py) maps an id to its first row.
 RULES = [
-    ("Rule 1 of 6: order_date must be written YYYY-MM-DD. In the source, a date written with slashes is day first "
+    ("Rule 1 of 12: order_date must be written YYYY-MM-DD. In the source, a date written with slashes is day first "
      "(DD/MM/YYYY), so 03/04/2026 is 3 April 2026.", '''
 def iso(text):
     if "/" in text:
@@ -53,7 +71,7 @@ def check(src, clean):
     return ["order %s: order_date should be %s, not %s" % (r["order_id"], iso(want[r["order_id"]]["order_date"]),
             r["order_date"]) for r in clean if r["order_date"] != iso(want[r["order_id"]]["order_date"])]
 '''),
-    ("Rule 2 of 6: currency must be an upper-case ISO 4217 code. The source's `rmb` is the renminbi, CNY.", '''
+    ("Rule 2 of 12: currency must be an upper-case ISO 4217 code. The source's `rmb` is the renminbi, CNY.", '''
 def code(text):
     return "CNY" if text.strip().lower() == "rmb" else text.strip().upper()
 
@@ -62,7 +80,7 @@ def check(src, clean):
     return ["order %s: currency should be %s, not %s" % (r["order_id"], code(want[r["order_id"]]["currency"]),
             r["currency"]) for r in clean if r["currency"] != code(want[r["order_id"]]["currency"])]
 '''),
-    ("Rule 3 of 6: each order_id appears once. When the source repeats an id, keep the first row in file order and "
+    ("Rule 3 of 12: each order_id appears once. When the source repeats an id, keep the first row in file order and "
      "drop the later ones.", '''
 def check(src, clean):
     want, seen, errors = first(src), set(), []
@@ -74,7 +92,7 @@ def check(src, clean):
             errors.append("order %s: kept the wrong row (customer %s)" % (r["order_id"], r["customer"]))
     return errors
 '''),
-    ("Rule 4 of 6: amount must have exactly two decimals, with a point and nothing else (no sign of a currency, no "
+    ("Rule 4 of 12: amount must have exactly two decimals, with a point and nothing else (no sign of a currency, no "
      "thousands separator). In the source, an amount like 12,50 uses a decimal comma: it is 12.50.", '''
 import re
 from decimal import Decimal, ROUND_HALF_UP
@@ -88,13 +106,64 @@ def check(src, clean):
             r["amount"]) for r in clean
             if not re.fullmatch(r"-?[0-9]+[.][0-9]{2}", r["amount"]) or r["amount"] != amount(want[r["order_id"]]["amount"])]
 '''),
-    ("Rule 5 of 6: customer has no space before or after it, and never two spaces in a row.", '''
+    ("Rule 5 of 12: customer has no space before or after it, and never two spaces in a row.", '''
 def check(src, clean):
     want = first(src)
     return ["order %s: customer should be %r, not %r" % (r["order_id"], " ".join(r["customer"].split()),
             r["customer"]) for r in clean if r["customer"] != " ".join(want[r["order_id"]]["customer"].split())]
 '''),
-    ("Rule 6 of 6: rows are in order of order_date, oldest first; rows with the same date keep the order they have in "
+    ("Rule 6 of 12: country must be an ISO 3166-1 alpha-2 code in capitals. A full name is its code; the source's "
+     "UK is GB and USA is US.", _field_rule("country", '''
+NAMES = {"germany": "DE", "united kingdom": "GB", "uk": "GB", "france": "FR", "china": "CN", "united states": "US",
+         "usa": "US", "japan": "JP"}
+
+def norm(text):
+    return NAMES.get(text.strip().lower(), text.strip().upper())
+''')),
+    ("Rule 7 of 12: status is one of PAID, SHIPPED, CANCELLED or PENDING. In the source, dispatched is SHIPPED, "
+     "canceled and void are CANCELLED, and on hold is PENDING.", _field_rule("status", '''
+SAME = {"dispatched": "SHIPPED", "canceled": "CANCELLED", "void": "CANCELLED", "on hold": "PENDING"}
+
+def norm(text):
+    return SAME.get(text.strip().lower(), text.strip().upper())
+''')),
+    ("Rule 8 of 12: qty is a whole number of units, without decimals or leading zeros. The source's 'a dozen' is 12.",
+     _field_rule("qty", '''
+def norm(text):
+    return "12" if text.strip().lower() == "a dozen" else str(int(float(text)))
+''')),
+    ("Rule 9 of 12: sku is two capital letters, a hyphen and four digits. A shorter number is padded with zeros on the "
+     "left, so AB-12 is AB-0012.", _field_rule("sku", '''
+import re
+
+def norm(text):
+    m = re.fullmatch(r"([A-Za-z]{2})[- ]?([0-9]{1,4})", text.strip())
+    return "%s-%04d" % (m.group(1).upper(), int(m.group(2))) if m else text
+''')),
+    ("Rule 10 of 12: discount is a fraction with two decimals: 10% is 0.10. In the source, a bare whole number such as "
+     "15 is a percentage (0.15), and an empty discount or none is 0.00.", _field_rule("discount", '''
+from decimal import Decimal
+
+def norm(text):
+    t = text.strip().lower()
+    if t in ("", "none"):
+        value = Decimal(0)
+    elif t.endswith("%"):
+        value = Decimal(t[:-1]) / 100
+    elif "." in t:
+        value = Decimal(t)
+    else:
+        value = Decimal(t) / 100
+    return str(value.quantize(Decimal("0.01")))
+''')),
+    ("Rule 11 of 12: channel is web, store or phone, in lower case. In the source, online and app are web, in-store "
+     "is store, and tel is phone.", _field_rule("channel", '''
+SAME = {"online": "web", "app": "web", "in-store": "store", "tel": "phone"}
+
+def norm(text):
+    return SAME.get(text.strip().lower(), text.strip().lower())
+''')),
+    ("Rule 12 of 12: rows are in order of order_date, oldest first; rows with the same date keep the order they have in "
      "the source.", '''
 def iso(text):
     if "/" in text:
@@ -213,13 +282,54 @@ def _spaced(rng: random.Random, name: str) -> str:
     return name
 
 
+COUNTRIES = {"DE": ("Germany",), "GB": ("United Kingdom", "UK"), "FR": ("France",), "CN": ("China",),
+             "US": ("United States", "USA"), "JP": ("Japan",)}
+STATUSES = {"PAID": ("paid", "Paid", "PAID"), "SHIPPED": ("shipped", "Shipped", "dispatched"),
+            "CANCELLED": ("cancelled", "canceled", "void"), "PENDING": ("pending", "on hold")}
+CHANNELS = {"web": ("web", "Web", "online", "app"), "store": ("store", "Store", "in-store"),
+            "phone": ("phone", "Phone", "tel")}
+
+
+def _extra(rng: random.Random) -> tuple[list[str], list[str]]:
+    """One order's six later columns: as the source writes them, and as rules 6-11 ask for them."""
+    country = rng.choice(sorted(COUNTRIES))
+    roll = rng.random()
+    raw_country = country if roll < 0.5 else country.lower() if roll < 0.65 else rng.choice(COUNTRIES[country])
+    status = rng.choice(sorted(STATUSES))
+    qty = rng.randint(1, 24)
+    roll = rng.random()
+    if roll < 0.6:
+        raw_qty = str(qty)
+    elif roll < 0.75:
+        raw_qty = f"{qty}.0"
+    elif roll < 0.85:
+        raw_qty = f"{qty:03d}"
+    else:
+        qty, raw_qty = 12, "a dozen"
+    letters = "".join(rng.choice("ABCDEFGHJK") for _ in range(2))
+    roll = rng.random()
+    number = rng.randint(1, 999) if roll >= 0.8 else rng.randint(1, 9999)
+    raw_sku = (f"{letters}-{number:04d}" if roll < 0.5 else f"{letters.lower()}-{number:04d}" if roll < 0.65
+               else f"{letters}{number:04d}" if roll < 0.8 else f"{letters}-{number}")
+    percent = rng.choice((0, 5, 10, 15, 20, 25))
+    roll = rng.random()
+    if percent == 0:
+        raw_discount = "" if roll < 0.4 else "none" if roll < 0.7 else "0.00"
+    else:
+        raw_discount = f"{percent}%" if roll < 0.4 else f"0.{percent:02d}" if roll < 0.7 else str(percent)
+    channel = rng.choice(sorted(CHANNELS))
+    raw = [raw_country, rng.choice(STATUSES[status]), raw_qty, raw_sku, raw_discount, rng.choice(CHANNELS[channel])]
+    return raw, [country, status, str(qty), f"{letters}-{number:04d}", f"0.{percent:02d}", channel]
+
+
 PROBE_IDS = 6
 
 
-def _probes(originals: list[list], body: list[list]) -> list[dict]:
-    """Rule k's probe for rules 1-5 (rule 6 is the last; nothing is sealed under it): order ids whose cleaned value a
-    naive reading of rule k gets wrong, so only the rule's own answer opens rule k+1. Row layout: id, the source's
-    date, customer, currency, amount, then the ISO date, currency, amount and customer the rules ask for."""
+def _probes(originals: list[list], body: list[list], extra: dict) -> list[dict]:
+    """Rule k's probe for rules 1-11 (rule 12 is the last; nothing is sealed under it): order ids whose cleaned value
+    a naive reading of rule k gets wrong, so only the rule's own answer opens rule k+1. Row layout: id, the source's
+    date, customer, currency, amount, then the ISO date, currency, amount and customer the rules ask for; `extra`
+    maps an id to its six later columns as written and as asked for."""
     counts: dict = {}
     for r in body:
         counts[r[0]] = counts.get(r[0], 0) + 1
@@ -233,6 +343,13 @@ def _probes(originals: list[list], body: list[list]) -> list[dict]:
         {"field": "customer", "form": "spaces", "ids": ids(lambda r: counts[r[0]] > 1)},  # the first row's
         {"field": "amount", "form": "exact", "ids": ids(lambda r: r[4] != r[7])},         # 12,50 is 12.50
         {"field": "customer", "form": "exact", "ids": ids(lambda r: r[2] != r[8])},       # no stray spaces
+        {"field": "country", "form": "exact", "ids": ids(lambda r: extra[r[0]][0][0] in ("UK", "USA"))},
+        {"field": "status", "form": "exact", "ids": ids(lambda r: extra[r[0]][0][1] in ("void", "on hold"))},
+        {"field": "qty", "form": "exact", "ids": ids(lambda r: extra[r[0]][0][2] == "a dozen")},
+        {"field": "sku", "form": "exact", "ids": ids(lambda r: "-" in extra[r[0]][0][3] and len(extra[r[0]][0][3]) < 7)},  # AB-12: AB-0012
+        {"field": "discount", "form": "exact", "ids": ids(  # a bare 15 is 15%
+            lambda r: extra[r[0]][0][4].isdigit() and extra[r[0]][0][4] != "0")},
+        {"field": "channel", "form": "exact", "ids": ids(lambda r: extra[r[0]][0][5] == "app")},
     ]
 
 
@@ -240,6 +357,8 @@ def fixture(run: str, seed: int = 21) -> dict:
     rng = random.Random(seed)
     unique = ROWS - DUPLICATES
     ids = [f"A{n}" for n in rng.sample(range(10000, 99999), unique)]
+    more = random.Random(seed * 1000 + 6)                       # the later columns: own stream, the first five unchanged
+    extra = {oid: _extra(more) for oid in ids}                  # a repeated id repeats its later columns
     body = []
     for oid in ids:
         day = datetime.date(2026, 1, 1) + datetime.timedelta(days=rng.randrange(0, 330))
@@ -277,16 +396,17 @@ def fixture(run: str, seed: int = 21) -> dict:
     for r in body:
         if r[0] not in seen:
             seen.add(r[0])
-            expected[r[0]] = {"order_date": r[5], "customer": r[8], "currency": r[6], "amount": r[7]}
+            expected[r[0]] = {"order_date": r[5], "customer": r[8], "currency": r[6], "amount": r[7],
+                              **dict(zip(EXTRA, extra[r[0]][1]))}
     position = {oid: i for i, oid in enumerate(expected)}
     order = sorted(expected, key=lambda oid: (expected[oid]["order_date"], position[oid]))
     root = Path(run)
     (root / "data").mkdir(parents=True)
     buf = io.StringIO()
-    csv.writer(buf, lineterminator="\n").writerows([HEADER] + [r[:5] for r in body])
+    csv.writer(buf, lineterminator="\n").writerows([HEADER] + [r[:5] + extra[r[0]][0] for r in body])
     (root / "data" / "orders.csv").write_text(buf.getvalue())
     salt = secrets.token_hex(8)
-    probes = _probes(originals, body)
+    probes = _probes(originals, body, extra)
     sealed = []
     for k, probe in enumerate(probes, 1):
         values = [expected[oid][probe["field"]] for oid in probe["ids"]]
