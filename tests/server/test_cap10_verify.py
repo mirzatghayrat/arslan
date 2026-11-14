@@ -303,6 +303,30 @@ async def test_an_offline_network_failure_says_how_to_ask_for_the_network(tmp_pa
     assert out["needs_network"] is True and "network: true" in out["note"] and out["ok"] is False
 
 
+@pytest.mark.parametrize("exit_code, printed", [
+    (2, "curl: (56) CONNECT tunnel failed, response 403"),                     # the test failed on the refusal
+    (0, "HTTP Error 403: Forbidden by Arslan's sandbox: a site seen only in outside content"),   # it carried on
+    (1, "the fixture server didn't answer"),                                   # its output shows no refusal
+], ids=["failed", "passed", "unseen"])
+async def test_a_site_the_proxy_refused_stays_on_the_result_with_its_note(tmp_path, runs, cards, monkeypatch,
+                                                                         exit_code, printed):
+    """Codex round 1, F8: verify's run is judged at the proxy as every sandboxed run is (NET-a). The sites it refused
+    stay on the result (`net_refused`, for the tool loop's card: tests/server/test_net_a_gate.py), and so does what the
+    run was told about them (`network_note`), whatever the output showed."""
+    from server.services import net_policy
+
+    async def refused(command, *, cwd, **kw):
+        return terminal_exec.explain({"ok": exit_code == 0, "exit_code": exit_code, "stdout": "", "stderr": printed,
+                                      "cwd": str(cwd), "sandbox": "workspace",
+                                      **({"error": f"exit code {exit_code}"} if exit_code else {})},
+                                     cwd=Path(cwd), closed=[], mode="workspace", timed_out=False, command=command,
+                                     net_refused=("collect.evil.example",))
+    monkeypatch.setattr(terminal_exec, "run", refused)
+    out = await _verify(_project(tmp_path), network=True)
+    assert out["net_refused"] == ["collect.evil.example"] and out["network"] == "on, this once"
+    assert out["network_note"] == net_policy.refusal_note(["collect.evil.example"])
+
+
 async def test_a_folder_holding_a_protected_path_is_refused(tmp_path, runs, cards, monkeypatch):
     proj = _project(tmp_path)
     monkeypatch.setattr(command_sandbox, "default_protected", lambda: [proj / "secret"])

@@ -12,7 +12,9 @@ it names, before its own checks (public addresses, the user's trusted devices), 
 Only `outside_only` is refused (403), unless the user allowed that host for this conversation (a `network:<host>` grant,
 never "Always"): a site that appears nowhere was steered by nothing (⓪Plan Q1, as mainstream agents judge it). An
 address is judged apart (`judge`). The command is told why (`refusal_note`), and the user is asked once whether
-commands in this conversation may reach the site (`offer`; NET-b words that card and adds Settings' list).
+commands in this conversation may reach the site (`offer`; NET-b words that card and adds Settings' list). That card
+comes after verify's run too (Codex round 1, F8). Where it can't be asked or isn't answered, the Inbox lists it, and
+its "In this conversation" there stores what the card's would (`allow_from_inbox`, F7).
 
 Hosts are compared after IDNA (UTS 46), in lower case, with no port and no trailing dot: the exact host, or a subdomain
 of a listed, named or recorded one within that one's own site, never one a public suffix keeps apart from it
@@ -641,35 +643,72 @@ def refusal_note(hosts) -> str:
 
 def request(host: str, command: str):
     """The card for one refused site (`offer`), and what a grant's use records: only what is known, the site and the
-    command that connected, never what it would send (the proxy doesn't see it)."""
+    command that connected (none, for the Inbox's answer: `allow_from_inbox`), never what it would send (the proxy
+    doesn't see it)."""
     from server.services import permissions
     why = (f"the address {host}, which you didn't name, after this conversation read outside content"
            if _address_like(normalize(host)) else
            f"{host}, a site that appeared only in outside content this conversation read (a page, a file or a tool's "
            "output), not one you named")
+    ran = f"`{command[:300]}`" if command else "A command"
     return permissions.Request(
         kind="network", target=f"network:{host}", conversation_only=True,
         title=f"Let commands in this conversation connect to {host}?",
-        detail=f"`{command[:300]}` tried to connect to {why}. Arslan can't see what it would send.")
+        detail=f"{ran} tried to connect to {why}. Arslan can't see what it would send.")
 
 
 async def offer(hosts, command: str, conversation_id: str | None) -> str:
     """NET-a's card after a run the proxy refused sites in: one card for up to three, "In this conversation" (one
-    `network:<host>` grant each, never "Always") or no. What the model is told of the answer; "" with nobody to ask,
-    where the refusal note stands alone."""
+    `network:<host>` grant each, never "Always") or no. What the model is told of the answer. With nobody to ask (a
+    scheduled run) the card goes where every card goes there (Codex round 1, F7): refused by policy, with nothing
+    granted, and listed in the Inbox, whose "In this conversation" answers it later (`allow_from_inbox`)."""
     from server.services import background_jobs, permissions
     shown = list(dict.fromkeys(hosts))[:3]
-    if not shown or permissions.current_asker() is None:
+    if not shown:
         return ""
     names = ", ".join(shown)
-    decisions = await permissions.decide_many(
-        [request(host, command) for host in shown],
-        permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()),
-        title=f"Let commands in this conversation connect to {names}?")
+    decisions = await _card(shown, command, permissions.Context(conversation_id,
+                                                                job_id=background_jobs._inside_job.get()))
     refused = next((decision for decision in decisions if not decision.allowed), None)
     if refused is None:
         return f"The user allowed {names} for this conversation: run the command again."
     return refused.model_text or f"The user did not allow {names}."
+
+
+async def _card(sites: list[str], command: str, context) -> list:
+    """The card itself, asked after the run (`offer`) or answered from the Inbox (`allow_from_inbox`)."""
+    from server.services import permissions
+    return await permissions.decide_many([request(site, command) for site in sites], context,
+                                         title=f"Let commands in this conversation connect to {', '.join(sites)}?")
+
+
+def listed_sites(kind: str, target: str) -> list[str]:
+    """Codex round 1, F7: the sites a ledger row of NET-a's card names, in its order: `request`'s target
+    (`network:<host>`), or for a card that asked about several, theirs as `decide_many` joins them. What "In this
+    conversation" on that card allows. [] for any other row: S2a-1's, verify's and a Shortcut's `network:*` among them,
+    and a target no card of NET-a writes (a host in a spelling other than `normalize`'s)."""
+    parts = target.split("\x1e") if kind == "network" else []
+    sites = [part.removeprefix("network:") for part in parts if part.startswith("network:")]
+    return sites if parts and len(sites) == len(parts) and all(normalize(site) == site for site in sites) else []
+
+
+async def allow_from_inbox(row) -> list:
+    """Codex round 1, F7: "In this conversation", given in the Inbox to a ledger row of NET-a's card the Inbox lists
+    (asked with nobody to ask, never opened, or unanswered: `permission_store.LISTED`), for that row's own
+    conversation. Answered through the card's own path (`_card`) by that click, so it stores what a click on the card
+    stores: one `network:<host>` grant a site (`listed_sites`), and its ledger row. The grants, for Undo. The caller
+    (`POST /permissions/grants`) checked the row."""
+    from server.db import session as db_session
+    from server.services import permission_store, permissions
+    sites = listed_sites(row.kind, row.target)
+
+    async def click(frame: dict) -> dict:
+        return {"approved": True, "scope": "conversation", "by": "inbox", "call_id": f"refused:{row.id}"}
+    with permissions.asking_with(click):
+        await _card(sites, "", permissions.Context(row.conversation_id, job_id=row.job_id))
+    async with db_session.AsyncSessionLocal() as db:
+        return [await permission_store.find_grant(db, row.conversation_id, None, "network", f"network:{site}")
+                for site in sites]
 
 
 def _reset_for_tests() -> None:
