@@ -55,7 +55,7 @@ Kept by ⓪Plan; updated after each merge. The plan and cards are in [README](RE
   - Codex built a local-only adversarial set of 120 cases.
 - The working rules are in docs/sessions.md §12 and §13, with the budget by tier.
 
-**Migration numbers:** 0094 SUB7, 0095 ASK1-a (merged), 0096 SUB6b, 0097 ASK1-b (#890), 0098 S5a, 0100 SUB7, 0101 SIDE-1; 0093 and 0099 were released. The next free number is 0102.
+**Migration numbers:** 0095 ASK1-a (merged), 0096 SUB6b, 0097 ASK1-b (#890), 0098 S5a, 0100 SUB7, 0101 SIDE-1; 0093, 0094 (SUB7 took 0100) and 0099 were released. The next free number is 0102.
 
 ### 2026-11-11, evening: progress
 
