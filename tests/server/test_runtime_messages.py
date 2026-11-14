@@ -30,6 +30,7 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                        "budget_closing_unsaved": {"reason", "sources"},
                        "turn_long": {"minutes"},   # K4b
                        "records_done": {"count", "tools"}, "records_saved": {"files"},   # the job's closing
+                       "records_done_one": {"tools"},
                        "records_more": {"count"}, "records_left_request": {"request"},
                        "links_not_verified": {"links"},   # K8a
                        "image_refused_named": {"model", "provider"},   # SMART-3

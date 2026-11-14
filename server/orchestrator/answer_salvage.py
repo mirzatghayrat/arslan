@@ -109,7 +109,7 @@ def _step_target(step: dict) -> str:
 def _records_closing(user_content: str, tool_trace: list, plan_items: list, *, locale) -> str:
     """The host's closing for a turn the work limit ended with no text, from the turn's own records only (no model
     call: the limit is reached). Done: the receipts (calls that succeeded, files saved). Blocked: the refusals, the
-    cards the user declined and the cards nobody answered. Left: the plan's steps not done, or else the request."""
+    cards the user declined and the cards nobody answered. Left: the plan's steps not done, that only the answer is missing when every step is done, or else the request."""
     from server.orchestrator import agent_status
     from server.services import runtime_messages
 
@@ -122,7 +122,8 @@ def _records_closing(user_content: str, tool_trace: list, plan_items: list, *, l
         for step in ran:
             counts[str(step.get("tool"))] = counts.get(str(step.get("tool")), 0) + 1
         tools = ", ".join(f"{tool} ×{n}" for tool, n in sorted(counts.items(), key=lambda kv: -kv[1])[:6])
-        lines.append(say("records_done", count=len(ran), tools=tools))
+        lines.append(say("records_done_one", tools=tools) if len(ran) == 1
+                     else say("records_done", count=len(ran), tools=tools))
         saved = agent_status.saved_by_tools(tool_trace)
         if saved:
             lines.append(say("records_saved", files=", ".join(saved[-_LISTED:])))
@@ -144,6 +145,8 @@ def _records_closing(user_content: str, tool_trace: list, plan_items: list, *, l
     if open_steps:
         lines.append(say("records_left_steps"))
         lines.extend(f"- {text}" for text in open_steps)
+    elif any(item.get("text") for item in plan_items or ()):
+        lines.append(say("records_left_done"))     # every step is done: only the written answer is missing
     else:
         request = " ".join(str(user_content or "").split())
         lines.append(say("records_left_request", request=request if len(request) <= 300 else request[:299] + "…"))

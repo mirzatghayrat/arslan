@@ -828,18 +828,14 @@ async def run_native(**kwargs) -> dict:
         if host_turn and background_jobs.inside_job():
             # A job's turn ends with no text here (a job shows no streamed text, and nothing is returned). The job
             # records the stop and reports it; the report carries what this turn's records show (`_report`).
-            from server.orchestrator.answer_salvage import _records_closing
-            from server.services import runtime_messages
-            try:
-                stopped.closing = _records_closing(background_jobs.current_goal() or request.user_content, trace,
-                                                   state.plan.items if state.plan else [],
-                                                   locale=await runtime_messages.selected_locale())
-            except Exception:  # noqa: BLE001 — the stop is what propagates; the job's note still says it
-                logger.warning("budget closing not written", exc_info=True)
-        if not host_turn or background_jobs.inside_job() \
-                or not any((t.get("result") or {}).get("ok") for t in trace):
+            stopped.closing = await _stop_records(request, state)
+        if not host_turn or background_jobs.inside_job():
             raise                       # workers and jobs record the stop themselves
         text = await _budget_closing(trace, state.ws_root, state.started)
+        if not any((t.get("result") or {}).get("ok") for t in trace) and (records := await _stop_records(request,
+                                                                                                         state)):
+            # Nothing ran, so the closing alone names nothing: what was blocked and what is left, from the records.
+            text = f"{text}\n\n{records}"
         from server.services.task_service import current as current_task
         task = current_task()
         if task is not None:
@@ -852,6 +848,15 @@ async def run_native(**kwargs) -> dict:
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
                 "external_seen": _untrusted.external_seen()}
+    except asyncio.CancelledError:
+        # A job's wall clock ran out: its timeout cancels this turn, so no BudgetExceeded reaches here. The job's
+        # report gets the same closing as a budget stop (`background_jobs._execute`). The user's stop is not this.
+        from arslan.execution_budget import wall_clock_expired
+        from server.services import background_jobs
+        if (_host_turn(request.caller, request.progress_lane) and background_jobs.inside_job()
+                and wall_clock_expired()):
+            background_jobs.note_wall_closing(await _stop_records(request, state))
+        raise
     finally:
         # K9b: a message read after the last batch that no request carried (the turn stopped, hit its limit
         # or failed first) goes back to its sender, to run once as a turn of its own.
@@ -877,6 +882,26 @@ def _learn_after(request: TurnRequest, state: TurnState, result: dict) -> None:
         trace=list(state.tool_trace), external_seen=bool(result.get("external_seen")),
         recalled=list(state.recalled_lessons),
         ok=bool(result.get("final")) and not result.get("stop_reason"), emit=request.emit))
+
+
+async def _stop_records(request: TurnRequest, state: TurnState) -> str:
+    """Done / Blocked / Left for a turn a limit stopped, from its own records (`answer_salvage._records_closing`):
+    a job's against the goal the user gave it, a chat turn's against the user's message. "" if it failed."""
+    from server.orchestrator import answer_salvage
+    from server.services import background_jobs, personal_context, runtime_messages
+    ctx = personal_context.current()
+    request_text = (background_jobs.current_goal() or (ctx.query if ctx is not None else "")
+                    or (request.user_content if isinstance(request.user_content, str) else ""))
+    try:
+        return answer_salvage._records_closing(request_text, state.tool_trace, state.plan.items if state.plan else [],
+                                               locale=await runtime_messages.selected_locale())
+    except Exception:  # noqa: BLE001 — broad on purpose, and loud: see below
+        # This runs while a stop propagates (BudgetExceeded, or the wall clock's cancellation). Whatever it raised
+        # would replace that stop: the job would read as failed rather than out of budget, and the chat turn would
+        # lose its closing. So any failure is logged as an error with its traceback, and the stop goes on with the
+        # job's budget note (or the chat's closing) and no records.
+        logger.exception("stop closing not written")
+        return ""
 
 
 async def _budget_closing(trace: list, ws_root, started: float) -> str:
