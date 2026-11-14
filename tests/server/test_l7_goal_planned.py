@@ -7,7 +7,7 @@ XPASS is a failure, and the slice removes the marker) or fails on its assertions
 A slice that names a function otherwise renames it here. The behavioural ones (`/goal` in `handle_user_message`,
 `resume_turn` refusing a goal row) run today's code and fail on their assertions (`raises=AssertionError`) until the
 slice lands.
-DELETE-BY: v0.1.64, each marker by its slice (L7-2 to L7-5).
+DELETE-BY: v0.1.64, each marker by its slice (L7-3 to L7-5; L7-2 took its four off).
 """
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ import hashlib
 import time
 
 import pytest
-from pydantic import ValidationError
 
 from arslan.companion.contracts import AcceptanceCheck
 from arslan.execution_budget import current as budget
@@ -44,9 +43,8 @@ def _rounds(spec: GoalSpec, script) -> list[GoalProgress]:
     return out
 
 
-# -- L7-2: the goal round ------------------------------------------------------------------------------------------
+# -- L7-2: the goal round (landed: these four are permanent now) ----------------------------------------------------
 
-@pytest.mark.xfail(strict=True, raises=ValidationError, reason="L7-2 adds the file_contains rule")
 def test_l7_2_the_reply_never_counts_only_the_named_file_on_disk(tmp_path):
     check = AcceptanceCheck.model_validate({"id": "c1", "description": "Check fixture", "evaluator": "deterministic",
                                             "rule": {"kind": "file_contains", "target": "notes.md",
@@ -59,7 +57,6 @@ def test_l7_2_the_reply_never_counts_only_the_named_file_on_disk(tmp_path):
     assert task_validation.evaluate(check, "", [], [], context)["status"] == "passed"
 
 
-@pytest.mark.xfail(strict=True, raises=MISSING, reason="L7-2 adds the progress rule (after_verdict)")
 def test_l7_2_a_long_but_steady_goal_is_never_blocked():
     """Progress only from a new measure or a check first met: the measure grows in rounds 2, 4, 6, ..., met at 12."""
     spec = GoalSpec(objective="Summarise every note", checks=(_check(kind="file_saved", path="summaries",
@@ -69,7 +66,6 @@ def test_l7_2_a_long_but_steady_goal_is_never_blocked():
     assert all(r.status != "blocked" for r in rounds) and rounds[-1].status == "complete"
 
 
-@pytest.mark.xfail(strict=True, raises=MISSING, reason="L7-2 adds the progress rule (after_verdict)")
 def test_l7_2_a_busy_goal_without_progress_is_blocked_right_after_round_3():
     spec = GoalSpec(objective="Make the check pass", checks=(
         _check(kind="check", path=None, argv=("python3", "tests/run_checks.py"), by_user=True),))
@@ -79,7 +75,6 @@ def test_l7_2_a_busy_goal_without_progress_is_blocked_right_after_round_3():
     assert [r.stall for r in rounds[:3]] == [1, 2, 3]
 
 
-@pytest.mark.xfail(strict=True, raises=MISSING, reason="L7-2 adds the progress rule (after_verdict)")
 def test_l7_2_a_check_met_again_or_a_measure_seen_before_is_not_progress():
     spec = GoalSpec(objective="Keep both files right", checks=(_check(), _check(id="c2", path="b.md")))
     rounds = _rounds(spec, [(("c1",), []), ((), [_measure("c2", "x")]), (("c1",), [_measure("c2", "x")])])

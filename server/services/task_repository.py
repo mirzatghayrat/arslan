@@ -43,7 +43,7 @@ class Progress(Contract):
     continuation_ref: ResourceRef | None = None
     loop_fingerprints: tuple[Identifier, ...] = Field(default=(), max_length=256)
     validation_repairs: tuple[Identifier, ...] = Field(default=(), max_length=2)
-    # L7 goal mode: the rounds' record, written with each verdict. Nothing reads it yet (L7-2 does).
+    # L7 goal mode: the rounds' record, written with each verdict (turn_answer.finish, L7-2).
     goal: GoalProgress | None = None
 
     @model_serializer(mode="wrap")

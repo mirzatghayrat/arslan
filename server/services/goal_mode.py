@@ -1,9 +1,10 @@
-"""L7 goal mode's types (docs/plans/0164/L7-goal-mode.md). L7-1 only declares them: nothing reads them yet.
+"""L7 goal mode's types (docs/plans/0164/L7-goal-mode.md, L7-1), the goal's checks as a task's acceptance, and the
+progress rule (L7-2).
 
 A goal is a background task whose acceptance checks are the goal, run by today's `_run_native`. Its spec (`GoalSpec`)
 rides on `TurnRequest.goal`; what its rounds have recorded (`GoalProgress`) rides on `Progress.goal`, written in the
-same checkpoint as each verdict. Both are frozen: state is recorded when it happens and never worked out again from
-the transcript. A new value replaces the old one whole (`model_copy(update=...)`).
+same checkpoint as each verdict (`turn_answer.finish`). Both are frozen: state is recorded when it happens and never
+worked out again from the transcript. A new value replaces the old one whole (`model_copy(update=...)`).
 """
 from __future__ import annotations
 
@@ -134,3 +135,63 @@ class GoalProgress(Contract):
     seen: tuple[SeenMeasure, ...] = Field(default=(), max_length=1000)
     accepted: tuple[ProtectedFile, ...] = Field(default=(), max_length=PROTECTED_FILES_MAX)   # declared outputs
     last_receipt: NonnegativeInt = 0   # the trace index the last verdict read up to
+
+
+def acceptance(spec: GoalSpec) -> list[dict]:
+    """The goal's checks as its task's acceptance (L7-2), `answer-delivered` first as for every job; it is never a goal
+    check, so it never counts toward the goal. Each is met only through its own condition (`task_validation.evaluate`):
+    a mentions check is `file_contains` on its file, never a `text` rule on the reply. A user-confirmed check is the
+    user's (`human`): never judged by the model, never met by Arslan."""
+    import shlex
+    from server.services.task_service import ANSWER_DELIVERED
+    out = [dict(ANSWER_DELIVERED)]
+    for check in spec.checks:
+        item: dict = {"id": check.id, "description": check.description, "evaluator": "deterministic"}
+        if check.user_confirmed:
+            item["evaluator"] = "human"
+        elif check.kind == "file_saved":
+            item["rule"] = {"kind": "file_saved", "target": check.path, "minimum": check.minimum or 1}
+        elif check.kind == "file_contains":
+            item["rule"] = {"kind": "file_contains", "target": check.path, "contains": list(check.phrases)}
+        elif check.kind == "sources_read":
+            item["rule"] = {"kind": "sources_read", "minimum": check.minimum or 1,
+                            **({"target": check.path} if check.path else {})}
+        elif check.kind == "check":     # met only by the host's own run (L7-5), never the worker's run_command
+            item.update(critical=True, rule={"kind": "code_test", "target": shlex.join(check.argv),
+                                             "argv": list(check.argv)})
+        else:                           # judgement: the judge, over the named file as the host reads it
+            item["evaluator"] = "model"
+        out.append(item)
+    return out
+
+
+def after_verdict(spec: GoalSpec, progress: GoalProgress, *, met: frozenset[str],
+                  measures: tuple[SeenMeasure, ...]) -> GoalProgress:
+    """One round's verdict, recorded (card: "No progress"). `met`: the checks whose own condition held; `measures`:
+    each check's measure, as the host evaluated it.
+
+    A round makes progress when a check unmet at its start is met for the first time, or has a measure the seen set
+    doesn't hold (for a count or a set, also larger than every earlier one). Measures need a baseline: one Start
+    recorded in the seen set, or an earlier round; without one, round 1's measures are the baseline. Nothing else
+    counts: never the answer, never `answer-delivered` (not a goal check), never a user-confirmed check. The streak
+    of rounds without progress reaching BLOCKED_AFTER is blocked; only user-confirmed checks left is review."""
+    own = [check.id for check in spec.checks if not check.user_confirmed]
+    met = met & set(own)
+    unmet_before = set(progress.unmet)
+    progressed = any(cid in unmet_before and cid not in progress.ever_met for cid in met)
+    baseline = progress.round > 0 or bool(progress.seen)
+    seen = list(progress.seen)
+    for item in measures:
+        earlier = [old for old in seen if old.check_id == item.check_id]
+        if item.check_id not in own or any(old.digest == item.digest for old in earlier):
+            continue
+        larger = item.size is None or all(old.size is None or item.size > old.size for old in earlier)
+        progressed = progressed or (baseline and item.check_id in unmet_before and larger)
+        seen.append(item)
+    stall = 0 if progressed else min(progress.stall + 1, BLOCKED_AFTER)
+    unmet = tuple(cid for cid in own if cid not in met)
+    status = ("active" if unmet and stall < BLOCKED_AFTER else "blocked" if unmet
+              else "complete" if len(own) == len(spec.checks) else "review")
+    return progress.model_copy(update={
+        "status": status, "round": progress.round + 1, "stall": stall, "unmet": unmet,
+        "ever_met": tuple(cid for cid in own if cid in met or cid in progress.ever_met), "seen": tuple(seen)})
