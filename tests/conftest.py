@@ -22,8 +22,10 @@ from tests import real_data_dir_guard
 _SUITE_HOME = real_data_dir_guard.pin_suite_home()
 real_data_dir_guard.forbid_real_secret_folder()   # no open under the real ~/.arslan (incident 2026-10-24)
 
-import re  # noqa: E402 — after the HOME pin, on purpose
+import functools  # noqa: E402 — after the HOME pin, on purpose
+import re  # noqa: E402
 import shutil  # noqa: E402
+import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import pytest  # noqa: E402
@@ -446,6 +448,34 @@ def pytest_collection_modifyitems(config, items):
             config.hook.pytest_deselected(items=left_out)
             items[:] = [item for item in items if not item.get_closest_marker("sbx_mac")]
         config.stash[_SBX_MAC_LEFT_OUT] = len(left_out)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _runs_roots_in_pytest_temp(tmp_path_factory):
+    """Each process's runs' roots (`run_temp.root()`, and the commands cache beside each) under pytest's basetemp.
+
+    The product puts one `arslan-runs-<hash>` and one `arslan-cache-<hash>` per data folder in the per-user temp
+    folder and never removes them, as a start must find what an earlier one left. Every pytest process pins a
+    fresh data folder and many tests take one of their own, so each run left new ones there (about 6,600 of each
+    by 2026-11-14). Here they keep their names but sit under pytest's basetemp (by default inside the per-user temp
+    folder too, and outside every protected root), which pytest prunes to the last three runs. A test that points
+    `tempfile` somewhere else (TMPDIR, `tempfile.tempdir`) gets the product's own answer there. The product's
+    rule stays reachable as `run_temp.root.__wrapped__` (tests/server/sbx/test_runs_root_in_pytest_temp.py)."""
+    from server.services import run_temp
+    from server.services.sandbox_profile import real
+
+    users = real(tempfile.gettempdir())
+    base = tmp_path_factory.mktemp("runs-roots").resolve()
+    product = run_temp.root
+
+    @functools.wraps(product)
+    def root() -> Path:
+        path = product()
+        return base / path.name if path.parent == users else path
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(run_temp, "root", root)
+        yield base
 
 
 @pytest.fixture(scope="session", autouse=True)

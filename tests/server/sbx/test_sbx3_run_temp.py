@@ -57,7 +57,8 @@ def test_two_runs_get_their_own_folder_outside_every_protected_root():
     one, two = run_temp.folder(1), run_temp.folder(2)
     assert one != two and one.parent == two.parent == run_temp.root()
     assert stat.S_IMODE(one.stat().st_mode) == stat.S_IMODE(two.stat().st_mode) == 0o700
-    assert run_temp.root().parent == command_sandbox._real(tempfile.gettempdir())
+    # The product's place; the suite's is under pytest's basetemp (tests/conftest.py, `_runs_roots_in_pytest_temp`).
+    assert run_temp.root.__wrapped__().parent == command_sandbox._real(tempfile.gettempdir())
     assert not command_sandbox._inside(run_temp.root(), command_sandbox.default_protected())
     assert run_temp.folder(1) == one                                   # the same run keeps its folder
 
