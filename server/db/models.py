@@ -181,6 +181,8 @@ class ArslanSummary(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables
+# (Q3): this model and the legacy_user_facts table behind its user_facts view.
 class UserFact(Base):
     """Long-term memory (scope 3): durable user preferences / key facts."""
 
@@ -734,6 +736,8 @@ class ConversationSeen(Base):
     seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+# DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables
+# (Q3): this model and the legacy_learnings table behind its learnings view.
 class Learning(Base):
     """心得 (know-how) distilled from concrete signals (a distill event, a user
     correction, or a repeated run pattern). Always carries a traceable source_ref.

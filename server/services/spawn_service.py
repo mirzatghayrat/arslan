@@ -72,15 +72,7 @@ async def get_detail(session: AsyncSession, spawn_id: int) -> SpawnDetailOut | N
         .where(ChatMessage.spawn_id == spawn_id)
         .order_by(ChatMessage.id)
     )
-    detail = to_detail(spawn, list(msgs.scalars().all()))
-    # Resolve the seeds this spawn was composed from (config.seed_refs) for display.
-    seed_refs = (spawn.config or {}).get("seed_refs") if isinstance(spawn.config, dict) else None
-    if seed_refs:
-        from server.schemas import SeedRefOut
-        from server.services import persona_seed_service
-        resolved = await persona_seed_service.get_by_slugs([str(s) for s in seed_refs])
-        detail.seeds = [SeedRefOut(**r) for r in resolved]
-    return detail
+    return to_detail(spawn, list(msgs.scalars().all()))
 
 
 async def load_all_spawns() -> list[Spawn]:

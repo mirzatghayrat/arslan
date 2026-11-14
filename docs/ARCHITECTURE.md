@@ -206,7 +206,7 @@ graph LR
 
 ### Spawn services
 
-`spawn_service` (create/store/emit skill-pack), `spawn_drafter` + `persona_seed_service` (a persona seed library and PM-style `create`).
+`spawn_service` (create/store/emit skill-pack), `spawn_drafter` (PM-style `create`).
 
 ### Second brain (memory & knowledge)
 
@@ -227,7 +227,7 @@ graph LR
 
 ## REST API
 
-`server/api/`, all under the `/api/v1` prefix: `spawns`, `settings`, `knowledge`, `mcp`, `runs`, `evolution`, `facts`, `registry`, `create`, `seeds`, `templates`, `health`. Anything that is not the live conversation stream goes here — the frontend reads/writes config and spawn state over REST.
+`server/api/`, all under the `/api/v1` prefix: `spawns`, `settings`, `mcp`, `runs`, `evolution`, `facts`, `registry`, `create`, `seeds`, `templates`, `health`. Anything that is not the live conversation stream goes here — the frontend reads/writes config and spawn state over REST.
 
 ## Data store & data model
 
