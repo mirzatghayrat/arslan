@@ -1450,6 +1450,12 @@ _GIT_GLOBAL_FLAGS = frozenset({"-p", "--paginate", "-P", "--no-pager", "--bare",
 _GIT_HARMLESS_KEYS = re.compile(r"user\.(?:name|email)|color\.[\w.-]+|advice\.[\w.-]+|core\.quotepath"
                                 r"|init\.defaultbranch", re.I)
 #: git subcommands that write no working file by a name given on the line (their other effects are not this check's).
+#: `remote` and `branch` stay reads on purpose: adding a remote, set-url and setting an upstream write .git/config, but
+#: only keys that name no program (a url, a refspec, an upstream). A repository a url names may run its own hooks on a
+#: push; a push run here gets its once-only card (`git-push`, HR-2b's push card; it names the remote, not its url).
+#: Under this conversation's outside grant with no click, HR-1's floor holds the write (for adding a remote, pinned in
+#: tests/server/sbx/test_hr3_git_remote_floor.py); with the sandbox off, or where seatbelt can't start, it lands (a
+#: residual, `run_later_targets`).
 _GIT_READS = frozenset({"status", "log", "diff", "show", "blame", "ls-files", "ls-tree", "grep", "cat-file",
                         "rev-parse", "add", "describe", "shortlog", "reflog", "check-ignore", "check-attr", "diff-files",
                         "diff-index", "diff-tree", "rev-list", "for-each-ref", "show-ref", "name-rev", "version",
@@ -1858,8 +1864,8 @@ def run_later_targets(command: str) -> list[str]:
     Not covered (no file is read here): a link already on disk that leads to a held name; what a program writes by
     names it doesn't take on the line (a checkout, merge, pull, patch, archive or copied tree whose contents hold such
     names; a script or a Makefile); a path that reaches a held name only through a variable in a program that isn't a
-    writer above; git's other config writers (`remote add`, `branch -u`: HR-1b's); CI files and instruction files (the
-    user's rulings, run_later)."""
+    writer above; git's other config writers (`remote add`, `branch -u`: reads on purpose, see `_GIT_READS`); CI files
+    and instruction files (the user's rulings, run_later)."""
     text = str(command or "")
     if not text.strip():
         return []

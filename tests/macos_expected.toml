@@ -120,6 +120,14 @@ markers = 2
 cases = 2
 xfail = 0
 
+# 0.1.64 HR-3, a git config writer the text reader keeps as a read, under the outside floor: under this conversation's
+# outside grant with no click, adding a remote is refused with the floor's note and leaves .git/config byte-identical;
+# the same floor without the hold, as with the sandbox off, lets it land (1 case).
+["server/sbx/test_hr3_git_remote_floor.py"]
+markers = 1
+cases = 1
+xfail = 0
+
 # 0.1.64 SBX-10, a sub-session's walk covers the commander's workspace: its links into the child's folder (.git/hooks,
 # .vscode) and its core.hooksPath there are refused, the own-workspace control as before; a walk root that is a link
 # or doesn't hold the folder refuses with the note. Review delta 1: a link deep in the child's folder past the depth
