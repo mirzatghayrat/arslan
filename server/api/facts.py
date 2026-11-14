@@ -8,6 +8,8 @@ from server.orchestrator import memory
 from server.schemas import FactIn, FactOut, FactUpdate
 from arslan.companion.memory import MemoryError
 
+# DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables (Q3). Check: no web or script caller of /facts is left.
+# The four routes below (GET/POST/PUT/DELETE /facts) go with it.
 router = APIRouter(dependencies=[Depends(require_auth)])
 
 
