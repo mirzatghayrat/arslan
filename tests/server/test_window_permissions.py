@@ -488,34 +488,43 @@ def test_once_a_card_in_a_turn_goes_unanswered_the_turns_later_cards_do_not_wait
     later card opened or waited in any run: the turn is the one card's wait (the final answer's paced
     reveal, about 0.5 s for "done", went in K8c), plus 130-odd
     statements of turn overhead, 0.15 s idle and up to 1.75 s under background-QoS throttling.
-    The time bound only catches every card waiting its full time, which takes 4 x TIMEOUT_S."""
-    monkeypatch.setattr(approvals, "TIMEOUT_S", 1.5)
+    Later: a `< 4 x TIMEOUT_S` bound still failed under `-n auto` (7.90 s against 6.0 s). Wait counts
+    replace every clock: the window opens a card (`approvals.open_card`) only to wait on the person, so one
+    open in the turn means the later cards did not wait, however slow the runner."""
+    monkeypatch.setattr(approvals, "TIMEOUT_S", 0.3)
+    waits: list[str] = []                         # a card that waits on the person opens first (`open_card`);
+    real_open_card = approvals.open_card          # an "away" one returns before it
+
+    def counting_open_card(conversation_id, frame, **kwargs):
+        waits.append(frame.get("call_id"))
+        return real_open_card(conversation_id, frame, **kwargs)
+    monkeypatch.setattr(approvals, "open_card", counting_open_card)
     _enable_shell(app_client, policy="ask_all")
     monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
         *[("run_command", {"command": "git", "argv": ["log", f"-{n}"]}) for n in range(1, 5)]))
     executor = _stub_run_command_executor(monkeypatch)
     with app_client.websocket_connect("/ws/arslan/conv-u") as ws:
         ws.receive_json()
-        started = time.monotonic()
         ws.send_json({"type": "user_message", "content": "look"})
         frames = _collect_until(ws, "stream_end")
-        elapsed = time.monotonic() - started
         assert len([f for f in frames if f.get("type") == "propose_run_command"]) == 1
         results = [f["summary"] for f in frames if f.get("type") == "tool_result"]
         assert len(results) == 4 and all("NOT a refusal" in r for r in results), results
         first, *later = [(e.decided_by, e.decision, e.wait_ms) for e in _ledger(app_client, "conv-u")]
-        assert first[:2] == ("expired", "expired") and first[2] >= 1000, first   # it waited its time
+        assert first[:2] == ("expired", "expired") and first[2] is not None, first   # it waited
         assert later == [("away", "expired", None)] * 3, later                   # these never opened
-        assert elapsed < 4 * approvals.TIMEOUT_S, f"the later cards waited: {elapsed:.2f} s"
+        assert len(waits) == 1, f"the later cards waited: {waits}"               # a count, not a clock
         # A new turn: the person may be back, and is asked again.
         monkeypatch.setattr(tool_loop_mod, "_get_adapter", lambda: _Steps(
             ("run_command", {"command": "git", "argv": ["log", "-5"]})))
         monkeypatch.setattr(approvals, "TIMEOUT_S", 10)
+        waits.clear()
         ws.send_json({"type": "user_message", "content": "look again"})
         card = _collect_until(ws, "propose_run_command")[-1]
         ws.send_json({"type": "confirm_run_command", "call_id": card["call_id"]})
         later = _collect_until(ws, "stream_end")
         assert [f["ok"] for f in later if f.get("type") == "tool_result"] == [True]
+        assert len(waits) == 1                                       # the new turn asked, and waited, again
     assert len(executor.calls) == 1
     assert _judgments(app_client, 0) == [] and judge == []           # C4: no shadow judgment
 
