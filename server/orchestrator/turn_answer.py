@@ -184,7 +184,9 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
     before = runtime.progress.goal or goal_mode.GoalProgress(
         status="active", unmet=tuple(check.id for check in goal.checks if not check.user_confirmed))
     record = goal_mode.after_verdict(goal, before, met=met, measures=measures)
-    if record.status == "active" and (mode.forced or mode.finishing):
+    # Wrap-up is finish mode or the budget's soft limit (`_step_notes`): no round past either, so the soft limit
+    # stays where a goal stops and the 1.5x hard limit never becomes the real one.
+    if record.status == "active" and (mode.forced or mode.finishing or state.budget.soft_reached()):
         record = record.model_copy(update={
             "status": "blocked" if state.stop_reason == "task_no_progress" else "budget_limited"})
     record = record.model_copy(update={"last_receipt": len(state.tool_trace)})

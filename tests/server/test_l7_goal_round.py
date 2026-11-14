@@ -257,3 +257,71 @@ async def test_a_judgement_over_a_file_the_host_cant_read_is_not_met_and_never_j
     result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: CLAIM,
                                                            judge=lambda user: '{"passed": true}')
     assert calls["judge"] == [] and record.status == "blocked"
+
+
+async def test_wrap_up_past_the_soft_limit_has_no_goal_round_and_the_goal_is_budget_limited(
+        execution_db, monkeypatch, tmp_path):
+    # Card: "No goal round on a forced step or in wrap-up", so the soft limit stays where a goal stops and the 1.5x
+    # hard limit never becomes the real one. Wrap-up is `Budget.soft_reached()`, with no forced step yet.
+    from arslan.execution_budget import Budget
+    monkeypatch.setattr(Budget, "soft_reached", lambda self: True)
+    (tmp_path / "notes.md").write_text("nothing yet")
+    result, task, record, rounds, calls = await _goal_turn(_goal(), monkeypatch, tmp_path, lambda n: CLAIM)
+    assert len(calls["turn"]) == 1 and calls["step"] == []
+    assert task.phase == "waiting_user" and task.pause_reason == "task_budget_exhausted"
+    assert (record.status, record.round, rounds) == ("budget_limited", 1, 1)
+
+
+async def test_a_no_progress_stop_on_a_forced_step_ends_the_goal_blocked_not_budget_limited(
+        execution_db, monkeypatch, tmp_path):
+    from arslan.runtime_policy import ProgressPolicy
+    monkeypatch.setattr(ProgressPolicy, "stopped", property(lambda self: True))
+    (tmp_path / "notes.md").write_text("nothing yet")
+    result, task, record, rounds, calls = await _goal_turn(_goal(), monkeypatch, tmp_path, lambda n: CLAIM)
+    assert len(calls["turn"]) == 1 and len(calls["step"]) == 1
+    assert task.phase == "waiting_user" and task.pause_reason == "goal_blocked"
+    assert (record.status, record.round, rounds) == ("blocked", 1, 1)
+
+
+async def test_a_file_that_gains_a_phrase_each_round_is_progress_and_the_goal_completes(
+        execution_db, monkeypatch, tmp_path):
+    # Measures counted through a real turn: without them a steady goal would be blocked at round 3.
+    phrases = tuple(f"A{i}" for i in range(1, 7))
+    notes = tmp_path / "notes.md"
+    notes.write_text("A1")
+
+    def replies(n):
+        notes.write_text(" ".join(phrases[:n + 1]))     # round n's work: one more phrase
+        return CLAIM
+    result, task, record, rounds, calls = await _goal_turn(_goal(_check(phrases=phrases)), monkeypatch, tmp_path,
+                                                           replies)
+    assert len(calls["turn"]) == 5 and task.phase == "succeeded"
+    assert (record.status, record.round, record.stall, rounds) == ("complete", 5, 0, 5)
+
+
+def test_a_check_already_met_that_grows_is_no_progress_for_the_goal():
+    spec = _goal(_check(), _check(id="c2", kind="sources_read", path="notes/", phrases=(), minimum=1,
+                                  description="Read the notes"))
+    before = GoalProgress(status="active", round=1, stall=1, unmet=("c1",), ever_met=("c2",),
+                          seen=(_measure("c2", "n01", 1),))
+    after = _after(spec, before, met=("c2",), measures=[_measure("c2", "n01 n02", 2)])
+    assert (after.status, after.stall, after.unmet) == ("active", 2, ("c1",))
+
+
+async def test_a_goal_judges_its_judgement_checks_even_when_a_deterministic_check_fails(
+        execution_db, monkeypatch, tmp_path):
+    (tmp_path / "report.md").write_text("one line")
+    goal = _goal(_check(), _check(id="c2", kind="judgement", path="report.md", phrases=(), by_user=True,
+                                  description="The report explains every reconciled invoice"))
+    (tmp_path / "notes.md").write_text("nothing yet")
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: CLAIM,
+                                                           judge=lambda user: '{"passed": true}')
+    assert len(calls["judge"]) >= 1 and "c2" in record.ever_met and record.unmet == ("c1",)
+
+
+async def test_the_judge_gets_at_most_20000_characters_of_the_named_file(execution_db, monkeypatch, tmp_path):
+    (tmp_path / "report.md").write_text("x" * 20_000 + "TAIL-PAST-THE-CAP")
+    goal = _goal(_check(kind="judgement", path="report.md", phrases=(), by_user=True,
+                        description="The report explains every reconciled invoice"))
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: CLAIM)
+    assert calls["judge"] and all("x" * 1000 in user and "TAIL-PAST-THE-CAP" not in user for user in calls["judge"])
