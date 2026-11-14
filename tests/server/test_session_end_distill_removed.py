@@ -15,7 +15,7 @@ spawn chat's messages. With no caller, removing it changes nothing anyone can re
 import importlib.util
 
 from server.schemas import SettingsIn, SettingsOut
-from server.services import replay_safety, settings_service
+from server.services import settings_service
 
 AUTH: dict[str, str] = {}
 
@@ -24,7 +24,6 @@ def test_the_distill_chain_and_its_setting_are_gone():
     for module in ("server.services.distill_service", "server.services.chat_lifecycle",
                    "server.services.prompts.distill"):
         assert importlib.util.find_spec(module) is None, module
-    assert not hasattr(replay_safety, "should_not_curate")
     assert not hasattr(settings_service, "distill_enabled")
     assert "distill_on_session_end" not in settings_service._PLAIN_KEYS
     assert "distill_on_session_end" not in settings_service._BOOL_ACCESSORS

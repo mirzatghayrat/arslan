@@ -430,11 +430,6 @@ def test_verify_is_found_on_demand_and_never_resident():
     assert tool.schema["required"] == ["folder"] and tool.schema["additionalProperties"] is False
 
 
-def test_verify_is_never_offered_in_a_replay():
-    from server.services.replay_safety import filter_replay_tools
-    assert filter_replay_tools([{"key": "verify"}]) == []
-
-
 # ── real seatbelt ────────────────────────────────────────────────────────────────────────────
 
 _ESCAPES = '''

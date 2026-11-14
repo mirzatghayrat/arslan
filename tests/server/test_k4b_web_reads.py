@@ -3,13 +3,9 @@
 Before, a live turn had its own allowance of 25 `web_search` / `web_extract` calls: past it each read
 was refused, and with save tools wired the turn went to "finishing" and ended as
 `task_budget_exhausted`, a budget "waiting for you". Now a read is one tool call under K4a's limits.
-The eval / replay allowance (50 per attempt) is a different thing and stays.
+The eval / replay allowance (50 per attempt) went with replay_safety in v0.1.64 C7c-3b.
 """
-import pytest
-
 from server.orchestrator import tool_loop
-from server.orchestrator.turn_state import ToolTurn
-from server.services import replay_safety
 from tests.server import test_trajectory_golden as golden
 
 READS = 30
@@ -45,28 +41,3 @@ async def test_thirty_web_reads_in_one_turn_all_run(monkeypatch):
 
 def test_no_live_read_allowance_is_left():
     assert not hasattr(tool_loop, "LIVE_FETCH_BUDGET")
-
-
-async def test_the_eval_allowance_still_refuses_at_the_dispatch_after_fifty(monkeypatch):
-    sentinel = sorted(getattr(replay_safety, "_HERMETIC_CONVERSATION_IDS", ["evolution-replay"]))[0]
-    replay_safety.reset_hermetic_fetch_budget(sentinel)
-
-    async def never(*a, **k):
-        raise AssertionError("the executor must not run once the eval allowance is spent")
-
-    async def resolve():
-        return [{"key": "web_extract"}]
-    for _ in range(replay_safety.HERMETIC_FETCH_BUDGET):
-        assert await tool_loop._check_fetch_budget("web_extract", conversation_id=sentinel) is None
-    monkeypatch.setattr(tool_loop, "resolve_executor", never, raising=False)
-    out = await tool_loop._run_tool("web_extract", {"url": "https://example.test/x"}, "{}", ToolTurn(
-                                    resolve_tools=resolve, emit=lambda e: None, tool_timeout_s=5,
-                                    tool_trace=[], convo=[], conversation_id=sentinel, log_events=False))
-    assert out["ok"] is False and "evaluation fetch budget" in out["error"]
-    replay_safety.reset_hermetic_fetch_budget(sentinel)
-
-
-@pytest.mark.parametrize("tool", ["web_search", "web_extract"])
-async def test_a_live_read_is_never_refused_for_count(tool):
-    for _ in range(READS):
-        assert await tool_loop._check_fetch_budget(tool, conversation_id="conv-live") is None

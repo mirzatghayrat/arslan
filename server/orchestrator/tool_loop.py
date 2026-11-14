@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 
 from arslan.execution_budget import BudgetExceeded, governed
 from arslan.llm import tool_names, trajectory, usage_sink
@@ -23,7 +22,6 @@ from server.orchestrator.untrusted import GUARD_NOTE, wrap_external
 from server.registry import tool_defs
 from server.registry.executors import EXECUTORS, resolve_executor
 from server.services.llm_factory import build_adapter
-from server.services.replay_safety import _check_fetch_budget
 
 logger = logging.getLogger(__name__)
 
@@ -527,8 +525,8 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     """Execute one tool (gated), emit its frames, record the trace, and append one
     framed tool-result record into convo. Returns the raw result dict.
 
-    The stages, in today's order (LOOP1 c2): admit, the eval allowance, the tool's own gate (`Tool.gate`), the eval
-    backstop, execute, after."""
+    The stages, in today's order (LOOP1 c2): admit, plan mode (S5a), the tool's own gate (`Tool.gate`), execute,
+    after."""
     emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
     mcp_fail_counts, conversation_id = turn.mcp_fail_counts, turn.conversation_id
     from arslan.execution_budget import current
@@ -544,13 +542,6 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
         return _record_tool_result(tool_key, args, refusal, emit, tool_trace, assistant_content, convo,
                                    mcp_fail_counts=mcp_fail_counts)
 
-    # FU-2b: the eval/replay allowance (live reads have none since 0.1.63 K4b).
-    refusal = await _check_fetch_budget(tool_key, conversation_id=conversation_id)
-    if refusal is not None:
-        return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
-                                   assistant_content, convo,
-                                   mcp_fail_counts=mcp_fail_counts)
-
     # The tool's own gate (LOOP1 c2): the refusal to record (enrolling's card is its answer), the command gate's
     # plan, or None. One per tool, so these gates have no order among themselves.
     plan = command_gate.NOT_A_COMMAND
@@ -562,12 +553,6 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
                                        mcp_fail_counts=mcp_fail_counts)
         if gated is not None:
             plan = gated
-
-    refusal = _eval_backstop(tool_key, conversation_id)
-    if refusal is not None:
-        return _record_tool_result(tool_key, args, refusal, emit, tool_trace,
-                                   assistant_content, convo,
-                                   mcp_fail_counts=mcp_fail_counts)
 
     executor = await resolve_executor(tool_key)
     if executor is None:
@@ -582,36 +567,6 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     return await _after(tool_key, args, result, assistant_content, turn)
 
 
-def _eval_backstop(tool_key, conversation_id) -> dict | None:
-    """The last common gate, after the tool's own: in an eval or replay, only what is safe to replay runs."""
-    # Fail-closed hermetic backstop (eval sealing): in an evolution eval/replay context,
-    # refuse ANY tool that isn't read-only-safe, independent of resolve_tools() and the
-    # replay flag. This is the throat every tool call passes through (model-driven AND the
-    # force_tools pre-run), so a forgotten upstream replay=True cannot silently re-open a
-    # side-effecting tool. run_python's unsandboxed escape valve is also refused here — a
-    # networked run_python is not hermetic.
-    from server.services.replay_safety import is_hermetic_context, is_replay_safe
-    if is_hermetic_context(conversation_id):
-        # Honest, model-readable refusal: the model's behavior here is scored by the judge,
-        # so name the eval context explicitly and tell it not to retry side-effecting tools
-        # (a generic "failed" would make it flail with compensatory actions that pollute the
-        # score). The refusal itself is deterministic and identical across arms.
-        if not is_replay_safe(tool_key):
-            result = {"ok": False, "external": False,
-                      "error": f"evaluation context: '{tool_key}' is unavailable here. This "
-                               "run is a hermetic evaluation replay that exposes read-only "
-                               "tools only (no side-effecting or external tools). Do not retry "
-                               "this tool — answer with the read-only tools you have."}
-            return result
-        if tool_key == "run_python" and os.environ.get("ARSLAN_ALLOW_UNSANDBOXED_PY"):
-            result = {"ok": False, "external": False,
-                      "error": "evaluation context: run_python is unavailable because the "
-                               "unsandboxed escape valve (ARSLAN_ALLOW_UNSANDBOXED_PY) is set; "
-                               "a networked run_python is not hermetic. Answer without it."}
-            return result
-    return None
-
-
 async def _after(tool_key, args, result, assistant_content, turn: ToolTurn) -> dict:
     """The last stage: the call's one record, and the degrade hint the first time an MCP tool fails often enough."""
     emit, tool_trace, convo = turn.emit, turn.tool_trace, turn.convo
@@ -622,9 +577,9 @@ async def _after(tool_key, args, result, assistant_content, turn: ToolTurn) -> d
     if (log_events and mcp_fail_counts is not None and mcp_hint_logged is not None
             and mcp_fail_counts.get(tool_key, 0) >= _MCP_FAIL_HINT_AT
             and tool_key not in mcp_hint_logged):
-        # log_events=False (E3 hermetic replay): the degrade counter still advances (the
-        # guard runs), only the ConversationEvent write is suppressed. In replay MCP tools
-        # are filtered out anyway, so this is belt-and-suspenders against a hallucinated key.
+        # log_events=False (a temporary turn): the degrade counter still advances (the
+        # guard runs), only the ConversationEvent write is suppressed. A temporary turn has
+        # no tools, so `_admit` refuses a hallucinated key before this: belt-and-suspenders.
         mcp_hint_logged.add(tool_key)
         await _log_degrade_hint(conversation_id, tool_key, mcp_fail_counts[tool_key])
     return out
