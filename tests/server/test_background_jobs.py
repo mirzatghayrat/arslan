@@ -715,8 +715,9 @@ async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(exe
     closes from the turn's own records: one call that ran, one card nobody answered, and what is left."""
     from arslan import execution_budget
     from server.registry import executors
+    # The clock is long; the test ends it itself, at the third call (below), so no real time is raced.
     monkeypatch.setattr(execution_budget, "run_budget",
-                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=1.5)))
+                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=600)))
     monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
     seen = []
@@ -728,7 +729,11 @@ async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(exe
                 return {"ok": True, "summary": "1 note"}
             if len(seen) == 2:
                 return {"ok": False, "error": permissions._EXPIRED.format(title="Read the notes?", minutes=30)}
-            await asyncio.sleep(30)      # the step the wall clock cuts off
+            # The step the wall clock cuts off: expire the job's own timeouts now (the seam `running_clock`
+            # registers), then wait; the cancellation arrives from the timeout, not from a real elapsed time.
+            for clock in execution_budget._clocks.get():
+                clock.timeout.reschedule(asyncio.get_running_loop().time())
+            await asyncio.sleep(30)
             return {"ok": True, "summary": "never"}
     monkeypatch.setitem(executors.EXECUTORS, "recall", Recall())
     job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
@@ -740,6 +745,8 @@ async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(exe
     assert "Background work ran out of budget" in note
     assert "Done: 1 tool call succeeded (recall ×1)." in closing
     assert "Blocked:\n- nobody answered the card: recall `notes 2`" in closing
+    # INB9-a: the acceptance sheet, when the job has one, follows the closing after a blank line and a bold heading.
+    closing, _, _sheet = closing.partition("\n\n**")
     assert closing.endswith("Left: the request itself, Research everything")
 
 
