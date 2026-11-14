@@ -195,3 +195,30 @@ def after_verdict(spec: GoalSpec, progress: GoalProgress, *, met: frozenset[str]
     return progress.model_copy(update={
         "status": status, "round": progress.round + 1, "stall": stall, "unmet": unmet,
         "ever_met": tuple(cid for cid in own if cid in met or cid in progress.ever_met), "seen": tuple(seen)})
+
+
+def unverifiable(spec: GoalSpec) -> tuple[str, ...]:
+    """L7-3: the checks Arslan can't verify, flagged by the host and never by the model (card: "Checks Arslan can't
+    verify"). Verifiable: file saved or file contains with a path, sources read, the user's `check:` line, or a
+    judgement over a file the user named (`by_user`: drafting never sets it, except for a path the user's own
+    objective names). A check the user said they'll confirm themselves isn't flagged: it is theirs."""
+    def verifiable(check: GoalCheck) -> bool:
+        if check.kind in {"file_saved", "file_contains"}:
+            return check.path is not None
+        if check.kind == "judgement":
+            return check.path is not None and check.by_user
+        return True                     # sources_read, check
+    return tuple(check.id for check in spec.checks if not check.user_confirmed and not verifiable(check))
+
+
+_PHASE_STATUS = {pair: status for status, pair in STATUS_PHASE.items()}
+
+
+def status_of(phase: str, pause_reason: str | None) -> GoalStatus:
+    """L7-3: a goal row's status from its phase and pause reason (STATUS_PHASE read back). A row the goal's own
+    stops didn't park (a failed run, or a pause the task machinery chose, such as checks that didn't run) needs the
+    user: blocked when it failed, otherwise review."""
+    if phase in {"running", "verifying"}:
+        return "active"
+    return _PHASE_STATUS.get((phase, pause_reason if phase == "waiting_user" else None),
+                             "blocked" if phase == "failed" else "review")

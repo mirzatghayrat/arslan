@@ -102,6 +102,8 @@ async def run_batch(request: TurnRequest, state: TurnState, step: int, mode: Ste
     (escalate, a choice card), or None: the next step reads the results."""
     from server.orchestrator import agent_status
     emit, conversation_id, steerable = request.emit, request.conversation_id, request.steerable
+    # L7-3: a goal job reads its own box (its job id), never its conversation's, so chat messages never land in it.
+    steer_box = request.steer_key if request.steer_key is not None else conversation_id
     a, call_ids, turn_state, tool_trace = state.adapter, state.call_ids, state.recovery, state.tool_trace
     resp, stream, tool_calls = reply.resp, reply.stream, reply.tool_calls
     convo = state.convo
@@ -144,8 +146,8 @@ async def run_batch(request: TurnRequest, state: TurnState, step: int, mode: Ste
         # message is taken after the batch, right as it is read (nothing can fall between the two).
         # A reply cut off by the output limit runs none of its calls and reads nothing after them: each
         # keeps its truncation note.
-        if not steered and index and steerable and conversation_id and not cut_off \
-                and steering.waiting(conversation_id):
+        if not steered and index and steerable and steer_box and not cut_off \
+                and steering.waiting(steer_box):
             steered = True
         if steered and not (reads is not None and reads.has(index)):
             _record_tool_result(name, {}, {"ok": False, "external": False, "code": "skipped_for_message",
@@ -159,9 +161,9 @@ async def run_batch(request: TurnRequest, state: TurnState, step: int, mode: Ste
     # Gemini provider pair and the old "invocation completed" text are now
     # renderings of this trajectory (trajectory.to_legacy), not rewrites.
     _claim_results(convo, marks)
-    if steerable and conversation_id and not cut_off:
+    if steerable and steer_box and not cut_off:
         # The boundary after the batch: what waits joins the turn (no await between take and read).
-        _read_steers(steering.take(conversation_id), convo, state.steers)
+        _read_steers(steering.take(steer_box), convo, state.steers)
     # resp.content is narration — surface it as an ephemeral note ONLY, never final. K8a: unless it
     # passed the window and went out as the answer, where it stays (and in the stored answer).
     narration = agent_status.strip_echo((resp.content or "").strip())
