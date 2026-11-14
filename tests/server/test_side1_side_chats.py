@@ -644,6 +644,20 @@ async def test_its_settings_model_and_pin_cannot_be_set(client):
     assert await _row(client.db_maker, NO_ROW) is None
 
 
+async def test_its_permission_mode_cannot_be_set(client):
+    """S5a: a child conversation inherits its mode and never sets one; a side chat's is its parent's."""
+    await _talk(client.db_maker)
+    side = (await _start(client.db_maker))["conversation_id"]
+    for got in (await client.put(f"/api/v1/conversations/{side}/permission-mode", json={"mode": "plan"}),
+                await client.post(f"/api/v1/conversations/{side}/permission-mode/start")):
+        assert got.status_code == 422 and got.json()["detail"]["code"] == "side_chat_inherits"
+    row = await _row(client.db_maker, side)
+    assert row.permission_mode is None and row.previous_mode is None
+    # The parent still sets its own.
+    assert (await client.put(f"/api/v1/conversations/{PARENT}/permission-mode",
+                             json={"mode": "plan"})).status_code == 200
+
+
 async def test_it_runs_on_its_parents_model(client):
     from server.services import llm_factory
     await _talk(client.db_maker)

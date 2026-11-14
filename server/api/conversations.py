@@ -390,6 +390,7 @@ async def set_permission_mode(conversation_id: str, body: PermissionModeIn,
     """From the next step on. Entering plan keeps the mode it left (`previous_mode`, null = the default) for Start."""
     from server.db.companion_models import ConversationContext
     _checked_id(conversation_id)
+    await _no_model_of_its_own(db, conversation_id)     # SIDE-1: a side chat's permissions are its parent's, never its own
     row = await db.get(ConversationContext, conversation_id) or ConversationContext(id=conversation_id)
     if body.mode == "plan" and row.permission_mode != "plan":
         row.previous_mode = row.permission_mode
@@ -403,6 +404,7 @@ async def set_permission_mode(conversation_id: str, body: PermissionModeIn,
 async def start_from_plan(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     """Plan's "Start": back to the mode before plan (null = the default), never wider than it was."""
     from server.db.companion_models import ConversationContext
+    await _no_model_of_its_own(db, conversation_id)
     row = await db.get(ConversationContext, conversation_id)
     if row is None or row.permission_mode != "plan":
         raise HTTPException(409, detail={"code": "not_in_plan"})
@@ -412,7 +414,8 @@ async def start_from_plan(conversation_id: str, db: AsyncSession = Depends(get_s
 
 
 async def _no_model_of_its_own(db: AsyncSession, conversation_id: str) -> None:
-    """SIDE-1: a side chat runs on its parent's model (`llm_factory`); none of its own is set or cleared."""
+    """SIDE-1: a side chat runs on its parent's model (`llm_factory`) and permission mode; none of its own is set or
+    cleared."""
     from server.db.companion_models import ConversationContext
     from server.services import phone_ids, sub_sessions
     row = await db.get(ConversationContext, conversation_id)
