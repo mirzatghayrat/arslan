@@ -386,7 +386,7 @@ def test_each_of_the_five_reads_and_reading_alone_is_not_the_rule():
 
 async def test_a_member_whose_traits_stop_saying_it_reads_is_dropped(execution_db, monkeypatch):
     monkeypatch.setitem(tool_defs.TRAITS, "list_dir", Traits(
-        effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False))
+        effect="local_write", parallel=False, outside=False, saves=False))
     assert sorted(tool["key"] for tool in await arslan._side_tools()) == [k for k in FIVE if k != "list_dir"]
 
 
