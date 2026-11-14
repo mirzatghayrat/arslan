@@ -490,7 +490,9 @@ def test_what_does_not_prove_a_dry_run_still_asks(command):
 _RENDERINGS = [(family, position) for family in profiles.FAMILIES for position in profiles.POSITIONS]
 ROUND2_PUBLISH = [("npm", "publish", "--dry-run", "false"), ("npm", "publish", "--dry-run", "--dry-run=false"),
                   ("npm", "publish", "--dry-run", "--no-dry-run"),
-                  ("npm", "publish", "--user-agent", "audit --dry-run marker")]
+                  ("npm", "publish", "--user-agent", "audit --dry-run marker"),
+                  # nopt expands an unambiguous abbreviation (⓪Plan's delta review)
+                  ("npm", "publish", "--dry-run", "--no-dry"), ("npm", "publish", "--dry-run", "--dry=false")]
 ROUND2_DRY = [("npm", "publish", "--dry-run"), ("npm", "publish", "--dry-run", "pkgdir")]
 
 
@@ -505,6 +507,12 @@ def test_a_dry_run_turned_off_or_inside_a_value_asks(words, family, position):
     verdict = tp.assess(text)
     assert (verdict.level, verdict.rule) == ("ask", "publish"), text
     assert "publish" in tp.ask_rules(text), text
+
+
+@pytest.mark.parametrize("words", ROUND2_PUBLISH[:3] + ROUND2_PUBLISH[4:])
+def test_the_argv_reader_alone_sees_the_dry_run_turned_off(words):
+    """The text floor catches these too, so the end-to-end cases above can't tell whether argv reads them."""
+    assert not tp._dry_run(words[0], words[1:])
 
 
 @pytest.mark.parametrize("family, position", _RENDERINGS)

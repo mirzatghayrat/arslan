@@ -168,7 +168,9 @@ def _unless_dry_run(spellings: str) -> str:
     plain = r"[^\s;&|'\"\\`$*?\[\]()<>]"
     dry = (r"(?:(?:" + _H + r"+(?!--(?:" + _H + r"|$))" + plain + r"+)*" + _H + r"+(?:(?!-)" + plain + r"+|--?[\w-]+="
            + plain + r"*))?" + _H + r"+(?-i:" + spellings + r")(?=$|[\s;&|)<>])")
-    off = (r"[^\n;&|]*?(?<![\w-])['\"]?(?:--no-dry-run|(?:" + spellings + r")(?:=|['\"]?" + _H
+    # nopt reads an unambiguous abbreviation: `--no-dry`, `--dry=false` (the prefixes in `_DRY_ABBREVIATIONS`)
+    off = (r"[^\n;&|]*?(?<![\w-])['\"]?(?:--no-(?:d(?:r(?:y(?:-(?:r(?:un?)?)?)?)?)?)?(?=$|[\s;&|)<>=])"
+           r"|--d(?:r(?:y(?:-(?:r(?:u)?)?)?)?)?(?=$|[\s;&|)<>='\"])|(?:" + spellings + r")(?:=|['\"]?" + _H
            + r"+['\"]?(?:true|false|yes|no|on|off|0|1)['\"]?(?=$|[\s;&|)<>])))")
     return r"(?!(?=" + dry + r")(?!" + off + r"))"
 _HTTPIE = r"(?:https?|xhs?)"
@@ -733,6 +735,10 @@ _HELP_WORDS = frozenset({"-h", "--help", "-help", "--version", "-version"})
 _DRY_RUN = {"npm": frozenset({"--dry-run"}), "pnpm": frozenset({"--dry-run"}), "cargo": frozenset({"--dry-run", "-n"}),
             "uv": frozenset({"--dry-run"}), "poetry": frozenset({"--dry-run"})}
 _BOOLEAN_WORDS = frozenset({"true", "false", "yes", "no", "on", "off", "0", "1"})
+# npm's parser (nopt) expands an unambiguous abbreviation, so `--no-dry` turns a dry run off and `--dry false` gives it a
+# value (#897 round 2): every shorter prefix of `--dry-run` from `--d`, and of `--no-dry-run` from `--no-`. Wider than
+# what nopt would expand, on the side that asks.
+_DRY_ABBREVIATIONS = frozenset({"--dry-run"[:n] for n in range(3, 9)} | {"--no-dry-run"[:n] for n in range(5, 13)})
 
 
 def _dry_run(program: str, args: tuple[str, ...]) -> bool:
@@ -747,7 +753,7 @@ def _dry_run(program: str, args: tuple[str, ...]) -> bool:
         if word == "--":
             break
         option, equals, _ = word.lower().partition("=")
-        if (_expands(word) or option == "--no-dry-run" or equals and option in spellings
+        if (_expands(word) or option in _DRY_ABBREVIATIONS or equals and option in spellings
                 or word in spellings and args[i + 1:i + 2] and args[i + 1].lower() in _BOOLEAN_WORDS):
             return False
         if word in spellings and not (before.startswith("-") and "=" not in before and before not in spellings):
