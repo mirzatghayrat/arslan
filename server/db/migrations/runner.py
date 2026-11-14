@@ -112,6 +112,7 @@ from .versions._0090_mcp_sign_in_cleanup import upgrade_sync as _m0090
 from .versions._0091_sub_session_state import upgrade_sync as _m0091
 from .versions._0092_remove_legacy_command_rules import upgrade_sync as _m0092
 from .versions._0095_ask_risky_default_notice import upgrade_sync as _m0095
+from .versions._0096_drop_professional_methods import upgrade_sync as _m0096
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -201,6 +202,7 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0091", _m0091),
     ("0092", _m0092),
     ("0095", _m0095),
+    ("0096", _m0096),
 ]
 
 
