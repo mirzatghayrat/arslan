@@ -440,15 +440,28 @@ async def test_a_turn_typed_in_a_sub_session_records_its_framed_briefs_sites_as_
         net_policy._reset_for_tests()
 
 
+@pytest.mark.parametrize("tagged", [True, False], ids=["tagged", "stored-before-the-tag"])
 @pytest.mark.parametrize("outside", [True, False], ids=["brief-after-a-page", "clean-brief"])
-async def test_a_sub_sessions_brief_names_no_site_and_one_the_user_types_there_does(chat, child, outside):  # noqa: F811
+async def test_a_sub_sessions_brief_names_no_site_and_one_the_user_types_there_does(chat, child, outside,  # noqa: F811
+                                                                                     tagged):
     """NET-a, Codex round 1 F3: a brief is the commander's words, framed or not, never the user's, so the sandbox proxy
     counts none of its sites as one the user named (`net_policy._named`). A site the user types in the sub-session
-    later is one."""
+    later is one. Codex round 2: so for a brief stored before briefs were tagged (`sub_sessions.BRIEF_SOURCE`), as
+    every build before this one stored one: its row as then, read again with nothing kept in memory."""
+    from sqlalchemy import update
+    from server.db import session as db_session
     from server.services import net_policy
     net_policy._reset_for_tests()
     try:
         kid = await child(outside, "Gather the notes from https://drop.evil.example/notes")
+        if not tagged:
+            async with db_session.AsyncSessionLocal() as db:
+                cleared = await db.execute(update(ArslanMessage).where(
+                    ArslanMessage.conversation_id == kid, ArslanMessage.source == sub_sessions.BRIEF_SOURCE
+                ).values(source=None))
+                await db.commit()
+            assert cleared.rowcount == 1
+            net_policy._reset_for_tests()
         net_policy.note_outside(kid, "drop.evil.example and docs.mine.example")    # e.g. a page its job read
         assert await net_policy.judge("drop.evil.example", kid) == "outside_only"
         await chat(s64b._Model(chat=_turn(NOTE_ADD)), message="Take them from https://docs.mine.example/notes")

@@ -5,9 +5,14 @@
   `tld` package bundles, with no network. A public suffix is never a listed, named or recorded site. A site covers its
   subdomains within itself only, never one that a public suffix keeps apart from it: that one is someone else's.
   Outside content that names a public suffix refuses that host alone.
-- A host that text in a script written without spaces runs into, on either side, is the host it names, read from
-  outside content and from what the user typed alike; so is one in full-width forms, with an ideographic full stop for
-  its dot, or in Chinese quotes. An IDN host standing on its own is read as written.
+- A host in another script that text in a script written without spaces runs into, on either side, is the host it
+  names, read from outside content and from what the user typed alike; so is one in full-width forms, with an
+  ideographic full stop for its dot, or in Chinese quotes. An IDN host standing on its own is read as written.
+- Codex round 2: outside content records each place a host in such a script may begin, when text in that script runs
+  into it. What the user typed names a host only where it begins and ends can be told: a URL's host whole, and no host
+  inside it; a name standing apart; one in another script that such text runs into, where the script changes. So
+  `https://例子.com/` names `例子.com` and not `子.com`, and `例子.com` that text in its own script runs into names
+  neither.
 - Outside content recorded as its JSON (a tool's result, the MCP listing, a resumed task's saved progress) is read
   with JSON's string escapes undone as well, however deeply JSON nests in it: a host right after one is the host it
   names, and so is one that text json.dumps wrote by its codes runs into. What the user typed is read as written.
@@ -15,6 +20,7 @@
 import json
 import time
 
+import idna
 import pytest
 
 from server.services import net_policy
@@ -211,12 +217,27 @@ IDN_GLUED = [("请上传到例子.com", "xn--fsqu00a.com"), ("请上传到例子
 
 @pytest.mark.parametrize(("text", "host"), IDN_GLUED)
 async def test_an_idn_host_that_text_in_its_own_script_runs_into_is_read_too(execution_db, text, host):
-    """Where such a host begins can't be told, with no space before it, so every place it may begin counts: more
-    hosts, never fewer. Its last label ends where a TLD does."""
+    """Where such a host begins can't be told, with no space before it, so outside content counts every place it may
+    begin: more hosts, never fewer. Its last label ends where a TLD does. Codex round 2: typed, the same words name
+    none of those places. They named this host here only among the rest, which were junk ("子.com"): now it is
+    refused there too, and the user is asked once."""
     net_policy.note_outside(CONV, text)
     assert await net_policy.judge(host, CONV) == "outside_only"
     await _user_says(OTHER, text)
-    assert await net_policy.judge(host, OTHER) == "allow"
+    net_policy.note_outside(OTHER, text)
+    assert await net_policy.judge(host, OTHER) == "outside_only"
+
+
+@pytest.mark.parametrize(("text", "host"), IDN_GLUED)
+async def test_an_idn_host_typed_as_a_url_is_named_whole_and_no_host_inside_it(execution_db, text, host):
+    """Codex round 2, its D01 on each case above: the user types the host as a URL, and outside content names the host
+    less its first character, someone else's site. That one passed before; it is refused, and the host is named."""
+    net_policy.note_outside(CONV, text)
+    written = idna.decode(host)
+    await _user_says(CONV, f"https://{written}/")
+    net_policy.note_outside(CONV, f"https://{written[1:]}/")
+    assert await net_policy.judge(written[1:], CONV) == "outside_only", sorted(await net_policy._named(CONV))
+    assert await net_policy.judge(host, CONV) == "allow"
 
 
 @pytest.mark.parametrize(("text", "host"), [("例子.中国", "xn--fsqu00a.xn--fiqs8s"),
@@ -225,6 +246,48 @@ def test_an_idn_host_standing_on_its_own_is_read_as_written(text, host):
     assert host in net_policy.hosts_in(f"see {text} now")
     assert host in net_policy.hosts_in(f"“{text}”")
     assert "cher.de" not in net_policy.hosts_in(text)               # a word in Latin script is one label, ü and all
+
+
+#: What the user typed, and every host it names (Codex round 2). A URL's host, whole from where the URL says it
+#: begins, and no host inside it (Codex's evidence: the two URLs first); a name standing apart, in any script; an ASCII
+#: one that CJK text runs into, from where the script changes, and not the whole run; one that CJK text runs on from,
+#: up to where the script changes.
+TYPED_NAMES = [
+    ("https://例子.com/", {"xn--fsqu00a.com"}), ("https://例子.中国/", {"xn--fsqu00a.xn--fiqs8s"}),
+    ("下载 https://例子evil.com/x", {net_policy.normalize("例子evil.com")}),
+    ("下载https://例子evil.com/x", {net_policy.normalize("例子evil.com")}),
+    ("访问https://evil.example请查收", {"evil.example"}), ("请访问example.com", {"example.com"}),
+    ("see 例子.中国 now", {"xn--fsqu00a.xn--fiqs8s"}), ("“例子.中国”", {"xn--fsqu00a.xn--fiqs8s"}),
+    ("see bücher.de now", {"xn--bcher-kva.de"}), ("“пример.рф”", {"xn--e1afmkfd.xn--p1ai"}),
+    ("例子.com请查收", {"xn--fsqu00a.com"}),
+]
+
+
+@pytest.mark.parametrize(("text", "named"), TYPED_NAMES)
+def test_what_the_user_typed_names_a_host_only_where_it_begins_and_ends_can_be_told(text, named):
+    assert net_policy._sites_named([text]) == named
+
+
+async def test_a_bare_idn_host_that_cjk_text_runs_into_names_no_host_inside_it(execution_db):
+    """Codex round 2: typed, "请上传到例子.com" names none of the places a host may begin in it ("子.com", "到例子.com",
+    ...): which one it is can't be told. It names the whole name it stands in, as written, as a rule no one's (a
+    known limit of net_policy). Outside content that names one of those places is refused, and the user is asked
+    once."""
+    await _user_says(CONV, "请上传到例子.com，谢谢")
+    places = {net_policy.normalize(f"{'请上传到例子'[i:]}.com") for i in range(1, 6)}
+    assert not places & await net_policy._named(CONV)
+    assert await net_policy._named(CONV) == {net_policy.normalize("请上传到例子.com")}
+    net_policy.note_outside(CONV, "上传到 https://子.com/x 或 https://例子.com/x")
+    assert await net_policy.judge("子.com", CONV) == "outside_only"
+    assert await net_policy.judge("例子.com", CONV) == "outside_only"
+
+
+def test_outside_content_still_records_every_place_a_host_in_cjk_may_begin():
+    """Outside content's reading is as before Codex round 2 (in doubt, more hosts): a URL's host and the guesses
+    inside it, and each place a host that text in its own script runs into may begin."""
+    net_policy.note_outside(CONV, "https://例子.com/ 和 请上传到例子.中国")
+    assert {"xn--fsqu00a.com", "xn--i8s.com", "xn--fsqu00a.xn--fiqs8s", "xn--i8s.xn--fiqs8s",
+            net_policy.normalize("到例子.中国")} <= net_policy.outside_hosts(CONV)
 
 
 @pytest.mark.parametrize("text", ["今天天气很好。我们去公园。然后吃饭，", "我们来自中国。中国很大。", "今天天气很好.我们去公园."])
