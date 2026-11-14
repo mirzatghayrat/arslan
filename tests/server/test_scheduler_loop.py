@@ -272,7 +272,15 @@ async def test_second_due_period_during_inflight_still_records_one_skip(
     monkeypatch.setattr(arslan, "_handle_answer", _hanging_answer(started, release))
 
     await scheduler.tick()
-    await asyncio.wait_for(started.wait(), 2)
+    # The first fire is in flight once its turn has started (its in-flight row is committed before the turn runs).
+    # No fixed wait: the turn's start is an event, and the bound only limits the failure case (a fire that ended
+    # without starting its turn fails at once, not after the bound).
+    waiter = asyncio.ensure_future(started.wait())
+    try:
+        await asyncio.wait({waiter, *scheduler._tasks}, timeout=60, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        waiter.cancel()
+    assert started.is_set(), "the first fire never started its turn"
 
     async with memdb() as db:                         # the next period arrives early
         task = await db.get(ScheduledTask, task_id)
