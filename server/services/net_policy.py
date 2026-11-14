@@ -1,8 +1,9 @@
 """NET-a (v0.1.64): which sites a sandboxed command may reach, judged for each connection at Arslan's local proxy.
 
 Every sandboxed run gets a token in its proxy address (`start_run`, `sandbox_proxy.proxy_url`), registered while it
-runs. The proxy reads each connection's token and asks `admits` about the host it names, before its own checks (public
-addresses, the user's trusted devices), which still run as they did. A host is
+runs and bound to the process it was started for (`bind`): the proxy serves it only to that process's run (`owns`), and
+ends the run's connections with it (`end_run`). The proxy reads each connection's token and asks `admits` about the host
+it names, before its own checks (public addresses, the user's trusted devices), which still run as they did. A host is
 - `allow`: a package registry (`PACKAGE_HOSTS`), a site in Settings (`sandbox_allowed_sites`), or one the user named
   in their own messages in this conversation;
 - `outside_only`: seen in outside content this conversation read (recorded where that content is marked:
@@ -21,11 +22,13 @@ Known limits:
   one records again only what it reads, or carries in framed (a job's result or a sub-session's brief in its history).
   A rolling summary that folds outside content in marks the turn but records no host.
 - A host spelled so that no reader sees a host ("evil dot example", base64) is `unknown`, so it passes.
-- A token is in its command's environment: a process that can read another running command's environment could use
-  that token while that command runs, and be judged as that command's conversation.
+- A token is in its command's environment, but it works only for that run's own processes (`owns`, Codex round 1 F1):
+  a process of another run that read it, or one that left this run and lost its parent, is refused as with no token.
+  What the run's own processes do with it is the run's, as is a socket one of them hands to another process.
 """
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import json
 import re
@@ -34,6 +37,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import idna
+
+from arslan.aio import within
 
 #: Package registries and code hosts every sandboxed command may reach. github.com stays (⓪Plan Q2): a push already
 #: gets HR-2b's once-only push card, which nothing answers automatically, and the sandbox closes ~/.ssh and gh's
@@ -313,10 +318,15 @@ class Run:
     judged: bool                            # off: an MCP server (design item 7), or every run with the switch off
     refused: list[str] = field(default_factory=list)       # what the proxy refused it, for its note and card
     granted: set[str] = field(default_factory=set)         # what a grant let through (one ledger row each)
+    root: int | None = None                 # its process, once started (`bind`): the token works for its run only
+    started: asyncio.Event = field(default_factory=asyncio.Event)       # set with `root`
+    connections: set = field(default_factory=set)          # the proxy's connections of it (their tasks): `end_run`
 
 
 _runs: dict[str, Run] = {}
 _REFUSED_KEPT = 8
+#: How long a connection waits for its run's process to be named (`bind`), which happens as that process starts.
+_START_WAIT_S = 5
 
 
 async def start_run(command: str = "", *, judged: bool | None = None) -> Run:
@@ -331,14 +341,37 @@ async def start_run(command: str = "", *, judged: bool | None = None) -> Run:
     return run
 
 
+def bind(run: Run | None, pid: int | None) -> None:
+    """Codex round 1, F1: `pid` is the process `run` was started for (a command, or an MCP server), which leads a session
+    of its own. From now on its token works only for that process's run (`owns`)."""
+    if run is not None and pid:
+        run.root = pid
+        run.started.set()
+
+
 def end_run(run: Run | None) -> None:
-    """Its token ends with it: anything that outlived it (a child left running) is refused from now on."""
+    """Its token ends with it, and so does every connection the proxy holds for it, open or still being set up (Codex
+    round 1, F2): nothing it started outlives it, a child left running included, and from now on it is refused."""
     if run is not None:
         _runs.pop(run.token, None)
+        for connection in list(run.connections):
+            connection.cancel()
 
 
 def run_for(token: str | None) -> Run | None:
     return _runs.get(token) if token else None
+
+
+async def owns(run: Run, client, server) -> bool:
+    """Codex round 1, F1: whether the connection from `client` to the proxy at `server` ((host, port) each) comes from
+    `run`'s own processes (`peer_process`). A connection that comes before its run's process is named waits for it."""
+    from server.services import peer_process
+    if run.root is None:
+        try:
+            await within(run.started.wait(), _START_WAIT_S)
+        except TimeoutError:
+            return False
+    return await asyncio.to_thread(peer_process.held, run.root, client, server)
 
 
 async def admits(run: Run, host: str) -> bool:

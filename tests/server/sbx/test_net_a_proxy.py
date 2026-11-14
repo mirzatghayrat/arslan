@@ -7,6 +7,8 @@
   trusted devices; a LAN address is left to the proxy's own check, which offers its device card.
 - The proxy knows which run a connection belongs to by the token in its proxy address: none, or one whose run ended,
   is refused. Its own checks (public addresses, trusted devices) still run, after the judgement.
+- Codex round 1: a token works only for its own run's processes (F1), so another run's live token is refused too; and
+  a run's connections end with it, open or still being set up (F2).
 
 Everything here runs without seatbelt (CI's Linux has none): a real LocalProxy, socket clients and real processes.
 """
@@ -14,8 +16,13 @@ import asyncio
 import base64
 import contextlib
 import json
+import os
 import shutil
+import socket
+import struct
+import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -253,8 +260,10 @@ async def _turn(conversation: str = CONV, *, asker=None):
 
 @contextlib.asynccontextmanager
 async def _run(conversation: str = CONV, *, asker=None, judged=None):
+    """A run whose process is this test's: the clients it opens here are the run's own (F1, `net_policy.bind`)."""
     async with _turn(conversation, asker=asker):
         run = await net_policy.start_run("python3 fetch.py", judged=judged)
+        net_policy.bind(run, os.getpid())
         try:
             yield run
         finally:
@@ -306,9 +315,24 @@ async def test_a_connection_with_no_token_a_foreign_one_or_an_ended_runs_is_refu
     _pin_to(monkeypatch, port)
     none = await _connect(proxy.port, "pypi.org")
     assert none.startswith(b"HTTP/1.1 407 ") and b'Proxy-Authenticate: Basic realm="Arslan sandbox"' in none
-    assert (await _connect(proxy.port, "pypi.org", "f" * 32)).startswith(b"HTTP/1.1 407 ")       # foreign
+    assert (await _connect(proxy.port, "pypi.org", "f" * 32)).startswith(b"HTTP/1.1 407 ")       # unknown
     malformed = await _through(proxy.port, b"CONNECT pypi.org:443 HTTP/1.1\r\nProxy-Authorization: Basic !!\r\n\r\n")
     assert malformed.startswith(b"HTTP/1.1 407 ")
+    # F1: a live run's token, from a process that isn't that run's (here this test, beside another conversation's
+    # command), judged or not (an MCP server's kind)
+    other = await asyncio.create_subprocess_exec(sys.executable, "-c", "import time; time.sleep(30)",
+                                                 start_new_session=True)
+    try:
+        for judged in (True, False):
+            async with _turn(OTHER):
+                foreign = await net_policy.start_run("sleep", judged=judged)
+            net_policy.bind(foreign, other.pid)
+            assert (await _connect(proxy.port, "pypi.org", foreign.token)).startswith(b"HTTP/1.1 407 "), judged
+            assert foreign.refused == [] and net_policy.run_for(foreign.token) is foreign      # still live, never judged
+            net_policy.end_run(foreign)
+    finally:
+        other.kill()
+        await other.wait()
     async with _run() as run:
         assert (await _connect(proxy.port, "pypi.org", run.token)).endswith(b"ok")
     assert (await _connect(proxy.port, "pypi.org", run.token)).startswith(b"HTTP/1.1 407 ")       # its run ended
@@ -491,3 +515,357 @@ async def test_an_mcp_session_registers_its_servers_token_while_it_lives(monkeyp
     assert run is not None and not run.judged                     # its own token, out of NET's judgement
     assert net_policy.run_for(sandbox["proxy_token"]) is None      # gone with the session (here: its failed start)
     assert "proxy_token" not in stored                             # the stored grant is unchanged
+
+
+# ── whose connection it is, and how long it lasts (Codex round 1: F1, F2) ──
+
+async def _until(ready, timeout: float = 20) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not ready():
+        assert loop.time() < deadline, "timed out"
+        await asyncio.sleep(0.02)
+
+
+#: A client that connects to the port it is given, says which port it connected from, and holds on until its stdin ends.
+_CLIENT = """
+import socket, sys
+s = socket.create_connection(("127.0.0.1", int(sys.argv[1])))
+print(s.getsockname()[1], flush=True)
+sys.stdin.read()
+"""
+
+
+def test_the_client_end_of_a_connection_belongs_to_its_own_run_alone():
+    """F1's check, on this machine's own process table: the client end of a connection is held by the run of the process
+    that opened it (its root here; and the run of the process that started it, which its run is part of), never by
+    another run's."""
+    from server.services import peer_process
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        server, accepted = listener.getsockname(), []
+        clients = [subprocess.Popen([sys.executable, "-I", "-c", _CLIENT, str(server[1])], stdin=subprocess.PIPE,
+                                    stdout=subprocess.PIPE, text=True, start_new_session=True) for _ in range(2)]
+        try:
+            ports = [int(client.stdout.readline()) for client in clients]
+            accepted = [listener.accept()[0] for _ in clients]
+            for mine, other, port in ((clients[0], clients[1], ports[0]), (clients[1], clients[0], ports[1])):
+                assert peer_process.held(mine.pid, ("127.0.0.1", port), server)
+                assert not peer_process.held(other.pid, ("127.0.0.1", port), server)
+                assert peer_process.held(os.getpid(), ("127.0.0.1", port), server)
+        finally:
+            for client in clients:
+                client.kill()
+                client.wait()
+            for connection in accepted:
+                connection.close()
+
+
+def _hex(address: str, port: int) -> str:
+    """One end of a /proc/net/tcp row as the kernel writes it: each 32-bit word of the address in host order, and the
+    port."""
+    raw = socket.inet_pton(socket.AF_INET6 if ":" in address else socket.AF_INET, address)
+    return "".join("%08X" % struct.unpack("=I", raw[i:i + 4])[0] for i in range(0, len(raw), 4)) + f":{port:04X}"
+
+
+def _proc(root, processes: dict, sockets: list) -> str:
+    """A /proc as Linux lays it out: `processes` {pid: (comm, parent, session, {fd: socket inode})}; `sockets` rows of
+    (table, local (address, port), remote (address, port), inode)."""
+    for pid, (comm, parent, session, fds) in processes.items():
+        (root / str(pid) / "fd").mkdir(parents=True)
+        (root / str(pid) / "stat").write_text(f"{pid} ({comm}) S {parent} {session} {session} 0 -1 4194560 0 0\n")
+        for fd, inode in fds.items():
+            os.symlink(f"socket:[{inode}]", root / str(pid) / "fd" / str(fd))
+    (root / "net").mkdir()
+    for table in ("tcp", "tcp6"):
+        rows = [f"{n:4}: {_hex(*local)} {_hex(*remote)} 01 00000000:00000000 00:00000000 00000000   501        0 "
+                f"{inode} 1 0000000000000000 20 4 30 10 -1" for n, (_, local, remote, inode)
+                in enumerate(row for row in sockets if row[0] == table)]
+        (root / "net" / table).write_text("\n".join(["  sl  local_address rem_address   st tx_queue rx_queue tr "
+                                                     "tm->when retrnsmt   uid  timeout inode", *rows]) + "\n")
+    return str(root)
+
+
+def test_on_linux_whose_connection_it_is_is_read_from_proc(tmp_path):
+    """F1's check on Linux (CI's), read from a /proc laid out as the kernel writes it. A run is its root's session and
+    every descendant of a process in it: a child that started a session of its own while its parent ran (a build
+    daemon), or one that lost its parent but stayed in the session. Not one that left both (a double fork), and not
+    another run's process."""
+    from server.services import peer_process
+    proxy, arslan, mapped = ("127.0.0.1", 41000), 50, "::ffff:127.0.0.1"
+    proc = _proc(tmp_path, {
+        arslan: ("python3", 1, 40, {9: 9002}),
+        100: ("bash", arslan, 100, {}),                           # the run's command
+        101: ("java", 100, 100, {7: 9004}),                       # in its session: a dual-stack client (tcp6)
+        102: ("gradle (daemon) x", 101, 102, {3: 9001}),          # a session of its own, its parent still in the run
+        103: ("curl", 1, 100, {4: 9005}),                         # its parent gone, still in the session
+        104: ("left", 1, 104, {5: 9006}),                         # gone from both: a double fork
+        200: ("bash", arslan, 200, {}),                           # another conversation's command
+        201: ("python3", 200, 200, {6: 9003}),
+    }, [("tcp", ("127.0.0.1", 40000), proxy, 9001), ("tcp", proxy, ("127.0.0.1", 40000), 9002),
+        ("tcp", ("127.0.0.1", 40001), proxy, 9003), ("tcp6", (mapped, 40002), (mapped, proxy[1]), 9004),
+        ("tcp", ("127.0.0.1", 40003), proxy, 9005), ("tcp", ("127.0.0.1", 40004), proxy, 9006)])
+    table = peer_process._linux_table(proc)
+    assert table[102] == (101, 102) and table[arslan] == (1, 40)
+    run, other = peer_process.members(table, 100), peer_process.members(table, 200)
+    assert (run, other) == ({100, 101, 102, 103}, {200, 201})
+
+    def held(members, port):
+        return peer_process._linux_holds(members, port, proxy[1], proc)
+    assert [held(run, port) for port in (40000, 40001, 40002, 40003, 40004)] == [True, False, True, True, False]
+    assert [held(other, port) for port in (40000, 40001)] == [False, True]
+    assert not held({arslan}, 40000)                                # the proxy holds only its own end
+
+
+#: Conversation A's command: two sites through its own proxy address, which it then leaves in a file (where a command in
+#: another conversation can read it), and it waits until it's told it's done.
+_A = """
+import os, time, urllib.error, urllib.request
+def get(host):
+    try:
+        return urllib.request.urlopen(f"http://{host}/", timeout=10).status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+for host in ("collect.evil.example", "drop.evil.example"):
+    print(host, get(host))
+with open("proxy.tmp", "w") as out:
+    out.write(os.environ["HTTP_PROXY"])
+os.rename("proxy.tmp", "proxy.txt")
+deadline = time.monotonic() + 30
+while not os.path.exists("done") and time.monotonic() < deadline:
+    time.sleep(0.02)
+"""
+
+#: Conversation B's command: the same two sites through A's proxy address, then through its own.
+_B = """
+import sys, urllib.error, urllib.request
+stolen = open(sys.argv[1]).read()
+def get(host, proxy=None):
+    opener = urllib.request.build_opener(*([urllib.request.ProxyHandler({"http": proxy})] if proxy else []))
+    try:
+        return opener.open(f"http://{host}/", timeout=10).status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+for host in ("collect.evil.example", "drop.evil.example"):
+    print(host, get(host, stolen), get(host))
+"""
+
+
+async def test_a_command_in_another_conversation_cant_use_a_live_runs_token(execution_db, monkeypatch, tmp_path,
+                                                                             origin):
+    """F1: a token works only for the processes of the run it was made for. Conversation A has a grant for one site and
+    never saw the other in outside content; conversation B saw both. B's command holds A's live token (read from a file
+    A's command wrote) and is refused with it as with none, so it gets neither A's grant nor A's judgement; with its own
+    token it is judged as B's."""
+    from server.services import permission_store
+    port, got = origin
+    async with execution_db() as db:
+        await permission_store.add_grant(db, CONV, "", "network", "network:collect.evil.example", call_id="card")
+        await db.commit()
+    net_policy.note_outside(CONV, "collect.evil.example")                          # A: let through by its grant only
+    net_policy.note_outside(OTHER, "collect.evil.example and drop.evil.example")   # B: both refused
+    a, b = tmp_path / "a", tmp_path / "b"
+    for folder, script in ((a, _A), (b, _B)):
+        folder.mkdir()
+        (folder / "run.py").write_text(script)
+
+    async def in_a():
+        async with _turn(CONV, asker=_Asker()):
+            return await terminal_exec.run(f"'{sys.executable}' -I run.py", cwd=a, sandbox=True)
+    async with _online(monkeypatch, port):
+        running = asyncio.create_task(in_a())
+        try:
+            await _until(lambda: (a / "proxy.txt").exists() or running.done())
+            async with _turn(OTHER, asker=_Asker()):
+                second = await terminal_exec.run(f"'{sys.executable}' -I run.py '{a / 'proxy.txt'}'", cwd=b,
+                                                 sandbox=True)
+        finally:
+            (a / "done").write_text("")
+            first = await running
+    assert first["stdout"].splitlines() == ["collect.evil.example 200", "drop.evil.example 200"], first
+    assert second["stdout"].splitlines() == ["collect.evil.example 407 403", "drop.evil.example 407 403"], second
+    assert second["net_refused"] == ["collect.evil.example", "drop.evil.example"] and "net_refused" not in first
+    assert len(got) == 2                                                       # A's two requests, none of B's
+    async with execution_db() as db:
+        rows = [r for r in await permission_store.recent(db) if r.kind == "network"]
+    assert [(r.target, r.conversation_id) for r in rows] == [("network:collect.evil.example", CONV)]   # A's own use
+    assert net_policy._runs == {}
+
+
+#: An MCP server's stand-in (it speaks no MCP): one CONNECT through the proxy address its session gave it, the answer
+#: written down, then it waits for its stdin to close, as a server does.
+_SERVER = """
+import base64, os, socket, sys, urllib.parse
+proxy = urllib.parse.urlsplit(os.environ["HTTPS_PROXY"])
+auth = base64.b64encode(f"{proxy.username}:{proxy.password}".encode()).decode()
+with socket.create_connection((proxy.hostname, proxy.port), timeout=20) as s:
+    s.sendall(f"CONNECT pypi.org:443 HTTP/1.1\\r\\nHost: pypi.org:443\\r\\nProxy-Authorization: Basic {auth}\\r\\n\\r\\n"
+              .encode())
+    line = s.recv(65536).decode("latin-1").split("\\r\\n")[0]
+with open(sys.argv[1] + ".tmp", "w") as out:
+    out.write(line)
+os.rename(sys.argv[1] + ".tmp", sys.argv[1])
+sys.stdin.read()
+"""
+
+
+@pytest.mark.real_mcp
+async def test_an_mcp_servers_token_works_only_for_the_server_its_session_started(execution_db, monkeypatch, tmp_path,
+                                                                                   origin):
+    """F1: an MCP server's run is unjudged (design item 7), so its token would take any command past the judgement. It
+    works only for the server's own process, the one its session started."""
+    import mcp
+    from server.mcp import proxy_resolve, session
+    from server.services import capability_sandbox
+    (tmp_path / "server.py").write_text(_SERVER)
+    told, given, seen = tmp_path / "told", [], []
+
+    def wrap(command, args, env, sandbox):          # the session's wrap without seatbelt: its proxy address only
+        given.append(sandbox)
+        via = sandbox_proxy.proxy_url(sandbox["proxy_port"], sandbox["proxy_token"])
+        return sys.executable, ["-I", str(tmp_path / "server.py"), str(told)], {**env, "HTTPS_PROXY": via}, str(tmp_path)
+
+    class Stop(Exception):
+        pass
+
+    class Session:                                  # the SDK's ClientSession, here only to look at both connections
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def initialize(self):
+            await _until(told.exists)
+            seen.append(told.read_text())                                              # the server's own connection
+            seen.append(await _connect(given[0]["proxy_port"], "pypi.org", given[0]["proxy_token"]))   # this test's
+            raise Stop
+
+    async def allowed():
+        return False
+    monkeypatch.setattr(capability_sandbox, "wrap", wrap)
+    monkeypatch.setattr(mcp, "ClientSession", Session)
+    monkeypatch.setattr(terminal_exec, "trust_service_allowed", allowed)
+    monkeypatch.setattr(proxy_resolve, "_scutil_proxy", dict)
+    async with _online(monkeypatch, origin[0]):
+        with pytest.raises(Stop):
+            await session.MCPSessionManager()._open_session({
+                "id": 7, "command": "/bin/echo", "args": [], "env": {"PATH": "/usr/bin"},
+                "sandbox": {"root": str(tmp_path / "srv"), "folders": [], "network": True}})
+    assert seen[0] == "HTTP/1.1 200 Connection Established", seen
+    assert seen[1].startswith(b"HTTP/1.1 407 "), seen
+    assert net_policy._runs == {}                                                  # gone with the session
+
+
+@pytest.fixture
+async def echo():
+    """A stand-in server that answers each request it reads with ok, for as long as its connection lasts: what each
+    connection sent, one list a connection."""
+    seen: list[list[bytes]] = []
+
+    async def serve(reader, writer):
+        got: list[bytes] = []
+        seen.append(got)
+        with contextlib.suppress(OSError):
+            while data := await reader.read(65536):
+                got.append(data)
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                await writer.drain()
+        writer.close()
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    yield server.sockets[0].getsockname()[1], seen
+    server.close()
+    await server.wait_closed()
+
+
+#: A command that leaves a child holding a connection through its proxy address, and ends once the file it is given
+#: exists: its output closed, the child runs on.
+_LEAVES = """
+import os, subprocess, sys, time
+subprocess.Popen([sys.executable, "-I", "child.py"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                 stderr=subprocess.DEVNULL)
+deadline = time.monotonic() + 20
+while not os.path.exists(sys.argv[1]) and time.monotonic() < deadline:
+    time.sleep(0.02)
+print("left", os.path.exists(sys.argv[1]))
+"""
+
+#: The child: a CONNECT and its answer (`connected`); once a tunnel is open and the test says go on (`go`), what a
+#: request through it gets (`after`).
+_CHILD = """
+import base64, os, socket, time, urllib.parse
+def note(name, text):
+    with open(name + ".tmp", "w") as out:
+        out.write(text)
+    os.rename(name + ".tmp", name)
+def answer(s):
+    try:
+        data = s.recv(65536)
+    except OSError as exc:
+        return type(exc).__name__
+    return data.decode("latin-1").split("\\r\\n")[0] if data else "EOF"
+proxy = urllib.parse.urlsplit(os.environ["HTTPS_PROXY"])
+auth = base64.b64encode(f"{proxy.username}:{proxy.password}".encode()).decode()
+s = socket.create_connection((proxy.hostname, proxy.port), timeout=20)
+s.sendall(f"CONNECT pypi.org:443 HTTP/1.1\\r\\nHost: pypi.org:443\\r\\nProxy-Authorization: Basic {auth}\\r\\n\\r\\n"
+          .encode())
+connected = answer(s)
+note("connected", connected)
+if connected.startswith("HTTP/1.1 200"):
+    deadline = time.monotonic() + 20
+    while not os.path.exists("go") and time.monotonic() < deadline:
+        time.sleep(0.02)
+    try:
+        s.sendall(b"GET / HTTP/1.1\\r\\nHost: x\\r\\n\\r\\n")
+    except OSError as exc:
+        note("after", type(exc).__name__)
+    else:
+        note("after", answer(s))
+"""
+
+
+async def test_a_tunnel_a_child_left_open_is_closed_when_its_run_ends(execution_db, monkeypatch, tmp_path, echo):
+    """F2: a child left running after its command (its output closed, so the command ends) keeps no tunnel: the run's
+    end closes it, and what the child sends through it afterwards reaches nothing."""
+    port, seen = echo
+    (tmp_path / "run.py").write_text(_LEAVES)
+    (tmp_path / "child.py").write_text(_CHILD)
+    async with _online(monkeypatch, port), _turn():
+        result = await terminal_exec.run(f"'{sys.executable}' -I run.py connected", cwd=tmp_path, sandbox=True)
+        assert result["stdout"].strip() == "left True", result
+        assert (tmp_path / "connected").read_text() == "HTTP/1.1 200 Connection Established"
+        assert net_policy._runs == {}                                               # its run has ended
+        (tmp_path / "go").write_text("")
+        await _until((tmp_path / "after").exists)
+    assert (tmp_path / "after").read_text() in {"EOF", "ConnectionResetError", "BrokenPipeError"}
+    assert seen == [[]]                                 # the tunnel reached the server, and nothing went through it
+
+
+async def test_a_connection_still_being_set_up_when_its_run_ends_never_completes(execution_db, monkeypatch, tmp_path,
+                                                                                echo):
+    """F2: the run ends while the proxy is still looking up the child's destination. When the lookup comes back,
+    nothing is connected, and the child gets no tunnel."""
+    port, seen = echo
+    (tmp_path / "run.py").write_text(_LEAVES)
+    (tmp_path / "child.py").write_text(_CHILD)
+    release = threading.Event()
+
+    def lookup(url, **kw):                              # held until the run has ended
+        (tmp_path / "looking").write_text("")
+        release.wait(20)
+        return "127.0.0.1", "example.com", port
+    async with _online(monkeypatch, port), _turn():
+        monkeypatch.setattr(sandbox_proxy, "_resolve_pinned", lookup)
+        try:
+            result = await terminal_exec.run(f"'{sys.executable}' -I run.py looking", cwd=tmp_path, sandbox=True)
+            assert result["stdout"].strip() == "left True", result
+            assert net_policy._runs == {}
+        finally:
+            release.set()
+        await _until((tmp_path / "connected").exists)
+    assert (tmp_path / "connected").read_text() in {"EOF", "ConnectionResetError"}
+    assert seen == []                                   # nothing was connected

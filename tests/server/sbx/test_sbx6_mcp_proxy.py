@@ -222,7 +222,9 @@ async def _start_probe(tmp_path, *, network):
         sandbox = {"root": str(root), "folders": [], "network": network, "read": [os.path.realpath(sys.base_prefix)]}
         if network:
             sandbox["proxy_port"] = proxy_port
-            sandbox["proxy_token"] = (await net_policy.start_run("probe", judged=False)).token    # as the session does
+            run = await net_policy.start_run("probe", judged=False)            # as the session does, which binds
+            net_policy.bind(run, os.getpid())       # the server's process: here this one starts the probe, its child
+            sandbox["proxy_token"] = run.token
         command, args, env, cwd = await asyncio.to_thread(
             capability_sandbox.wrap, python,
             ["-I", str(root / "probe.py"), str(proxy_port), str(ours.getsockname()[1]), str(receiver.getsockname()[1])],

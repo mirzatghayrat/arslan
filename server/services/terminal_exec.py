@@ -386,7 +386,7 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
     try:
         if proxy_port is not None:
             # NET-a: its own token in its proxy address, registered until it exits (whatever ended it), so the proxy
-            # judges each site it reaches for this conversation (net_policy).
+            # judges each site it reaches for this conversation (net_policy); bound to its process as that starts.
             run = await net_policy.start_run(command)
             via = sandbox_proxy.proxy_url(proxy_port, run.token)
             env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
@@ -398,9 +398,9 @@ async def _run(command: str, *, cwd: Path, timeout_s: int, offline: bool, sandbo
                         "GIT_CONFIG_VALUE_0": ""})
         return await _execute(command, prefix=prefix, cwd=cwd, env=env, temp_key=temp_key, timeout_s=timeout_s,
                               offline=offline, closed=closed, mode=mode, hold_run_later=hold_run_later,
-                              git_config_ok=git_config_ok, net_refused=run.refused if run else ())
+                              git_config_ok=git_config_ok, net_run=run)
     finally:
-        net_policy.end_run(run)
+        net_policy.end_run(run)             # its connections too: none outlives it (Codex round 1, F2)
         command_sandbox.remove_profile(profile)
 
 
@@ -426,8 +426,8 @@ def _swapped(cwd: Path, mode: str, exc) -> dict:
 
 async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, temp_key: int, timeout_s: int,
                    offline: bool, closed: list[Path], mode: str, hold_run_later: bool,
-                   git_config_ok: bool = False, net_refused=()) -> dict:
-    from server.services import command_sandbox, root_pin, run_temp
+                   git_config_ok: bool = False, net_run=None) -> dict:
+    from server.services import command_sandbox, net_policy, root_pin, run_temp
     if offline and not prefix:
         return {"ok": False, "exit_code": None, "stdout": "", "stderr": "", "cwd": str(cwd),
                 "error": "commands run without network now, and this run cannot isolate the network — "
@@ -441,6 +441,8 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
         *prefix, *SHELL, "-c", command, cwd=str(cwd), env=env,
         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         start_new_session=True)          # its own process group, so a timeout can stop children too
+    # NET-a, Codex round 1 F1: its proxy token works only for this process's run (its session, and what descends from it)
+    net_policy.bind(net_run, proc.pid)
     command_sandbox.release_pins(profile)
     run_temp.started(temp_key, proc.pid)  # §1a: the run's folder stays while this group has a process left
     # 0.1.62 F1: output is read while the command runs (it used to be read in one go at the
@@ -494,7 +496,8 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
     if left_running and not timed_out:
         result["git_config_stopped"] = True
     return explain(result, cwd=cwd, closed=closed, mode=mode, timed_out=timed_out, command=command,
-                   hold=hold_run_later, git_config=git_config_ok, net_refused=tuple(net_refused))
+                   hold=hold_run_later, git_config=git_config_ok,
+                   net_refused=tuple(net_run.refused) if net_run is not None else ())
 
 
 def explain(result: dict, *, cwd: Path, closed: list[Path], mode: str, timed_out: bool, command: str,
