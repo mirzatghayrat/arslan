@@ -71,6 +71,88 @@ def _fallback_with_digest(user_content: str, tool_trace: list, *, locale=None) -
     return f"{header}\n{digest}\n\n{base}"
 
 
+# How each producer of a blocked step begins its tool result (command_gate._never_runs, executors; permissions.decide
+# and tool_gates._declined; permissions._EXPIRED and _UNATTENDED). The tests feed each producer's own text through
+# `_blocked_kind`, so a reworded producer fails there.
+_REFUSED = ("Arslan never runs this",)
+_DECLINED = ("The user said no to", "user declined", "the user declined", "the user did not let")
+_UNANSWERED = ("Nobody answered the card",)
+_UNANSWERED_IN = ("and this run has nobody to ask",)
+_LISTED = 8          # blocked steps and receipts named one by one; the rest are counted
+
+
+def _blocked_kind(result: dict) -> str | None:
+    """"refused" (Arslan's rules), "declined" (the user said no), "unanswered" (a card nobody answered, or nobody to
+    ask), or None: not a block (a step that ran and failed, or one that succeeded)."""
+    if not isinstance(result, dict) or result.get("ok"):
+        return None
+    error = str(result.get("error") or "")
+    if error.startswith(_REFUSED):
+        return "refused"
+    if error.startswith(_DECLINED):
+        return "declined"
+    if error.startswith(_UNANSWERED) or any(part in error for part in _UNANSWERED_IN):
+        return "unanswered"
+    return None
+
+
+def _step_target(step: dict) -> str:
+    """The step as the user would name it: its tool and the command, path, address or query it was given."""
+    args = step.get("args") if isinstance(step.get("args"), dict) else {}
+    head = next((str(args[k]) for k in ("command", "path", "url", "query", "app", "key", "name")
+                 if args.get(k)), "")
+    head = " ".join(head.replace("`", "'").split())
+    head = head if len(head) <= 80 else head[:79] + "…"
+    return f"{step.get('tool')} `{head}`" if head else str(step.get("tool"))
+
+
+def _records_closing(user_content: str, tool_trace: list, plan_items: list, *, locale) -> str:
+    """The host's closing for a turn the work limit ended with no text, from the turn's own records only (no model
+    call: the limit is reached). Done: the receipts (calls that succeeded, files saved). Blocked: the refusals, the
+    cards the user declined and the cards nobody answered. Left: the plan's steps not done, that only the answer is missing when every step is done, or else the request."""
+    from server.orchestrator import agent_status
+    from server.services import runtime_messages
+
+    def say(key, **values):
+        return runtime_messages.render(key, locale, **values)
+    lines = [say("records_header")]
+    ran = [step for step in tool_trace if (step.get("result") or {}).get("ok")]
+    if ran:
+        counts: dict[str, int] = {}
+        for step in ran:
+            counts[str(step.get("tool"))] = counts.get(str(step.get("tool")), 0) + 1
+        tools = ", ".join(f"{tool} ×{n}" for tool, n in sorted(counts.items(), key=lambda kv: -kv[1])[:6])
+        lines.append(say("records_done_one", tools=tools) if len(ran) == 1
+                     else say("records_done", count=len(ran), tools=tools))
+        saved = agent_status.saved_by_tools(tool_trace)
+        if saved:
+            lines.append(say("records_saved", files=", ".join(saved[-_LISTED:])))
+    else:
+        lines.append(say("records_done_none"))
+    blocked: list[str] = []
+    for step in tool_trace:
+        kind = _blocked_kind(step.get("result") or {})
+        if kind is not None:
+            line = f"- {say('records_' + kind)}: {_step_target(step)}"
+            if line not in blocked:
+                blocked.append(line)
+    if blocked:
+        lines.append(say("records_blocked"))
+        lines.extend(blocked[:_LISTED])
+        if len(blocked) > _LISTED:
+            lines.append(say("records_more", count=len(blocked) - _LISTED))
+    open_steps = [item.get("text") for item in plan_items or () if item.get("status") != "done" and item.get("text")]
+    if open_steps:
+        lines.append(say("records_left_steps"))
+        lines.extend(f"- {text}" for text in open_steps)
+    elif any(item.get("text") for item in plan_items or ()):
+        lines.append(say("records_left_done"))     # every step is done: only the written answer is missing
+    else:
+        request = " ".join(str(user_content or "").split())
+        lines.append(say("records_left_request", request=request if len(request) <= 300 else request[:299] + "…"))
+    return "\n".join(lines)
+
+
 def _clean_findings(tool_trace: list, *, limit: int = 8000) -> str:
     """Human-readable findings for the synthesis step — plain facts, NOT tool-call logs. Feeding
     the model 'web_search(q): {json}' makes it imitate and emit more tool-calls; clean prose gives

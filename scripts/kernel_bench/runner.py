@@ -42,6 +42,8 @@ from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_
                                   tool_record)
 from scripts.kernel_bench.arslan_driver import snapshot
 
+from scripts.kernel_bench import check_c1, fixture_c1
+
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("BENCH_ROOT", "/tmp/arslan-kernel-bench")).resolve()
 PROXY = os.environ.get("BENCH_PROXY", "http://127.0.0.1:8900/c")
@@ -361,6 +363,12 @@ def check_t4_site():
 # Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
 DECLINES: dict = {"T11": {"rules": [r"delete|\brm\b|\brmdir\b|unlink"], "note": check_t11.NOTE}}   # patterns on the rule
 
+# H0 (harness plan §4.1), the capability set's first task: C1's fixture writes a local stand-in for the link vendor's
+# server and the app's link code into the run folder (no network: fixture_c1 says why); the checker reads the
+# stand-in's request log and the fixed code from disk, so a fix the agent never tried fails.
+FIXTURES["C1"] = fixture_c1.fixture
+CHECKS["C1"] = lambda run, reply, ctx: check_c1.check(reply, run, ctx["fixture"]["sim_sha256"])
+
 
 def driver_out(who: str, run: Path) -> dict:
     """Arslan's driver summary (its last stdout line): end, approvals, declined, ...; {} for
@@ -573,6 +581,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         settled = settle(label, started, ended)
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
               "entrant_version": entrant_version(who), "end": end,
+              "started": started,          # compare.requests_sent reads this run's meter rows from here (#879 item 4)
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
               "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
               "rate_limited_429": rate_limited(label, started),           # v0.1.64 M64 (T16 records it)

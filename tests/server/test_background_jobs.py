@@ -659,6 +659,122 @@ async def test_a_job_that_keeps_researching_after_wrap_up_is_made_to_answer(exec
     assert "Settings → Advanced" not in message["content"]
 
 
+async def test_a_job_the_hard_limit_ends_says_what_was_done_blocked_and_left(execution_db, active, frames,
+                                                                             monkeypatch):
+    """A real run's shape: a card nobody answered, work that ran, then the hard limit with no text. The report
+    names the blocked step and what is left, from the turn's own records, after the budget note."""
+    from arslan import execution_budget
+    from server.registry import executors
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
+                        dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    seen = []
+
+    class Recall:
+        async def execute(self, args):
+            seen.append(args)
+            if len(seen) == 1:
+                return {"ok": False, "error": permissions._EXPIRED.format(title="Read the notes?", minutes=30)}
+            return {"ok": True, "summary": "1 note"}
+    monkeypatch.setitem(executors.EXECUTORS, "recall", Recall())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=20)
+    assert job.outcome == "out_of_budget"
+    await _wait(lambda: any(f.get("type") == "message" for f in frames))
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    note, closing = content.split("\n\nFrom this run's own records:\n")
+    assert "model requests (6/6)" in note and "Settings → Advanced" in note
+    assert "Done: " in closing and "recall ×" in closing
+    assert "Blocked:\n- nobody answered the card: recall `notes 1`" in closing
+    # The job's goal as the user gave it, never the instruction its turn was sent with (the host's context).
+    assert closing.endswith("Left: the request itself, Research everything")
+
+
+async def test_a_job_with_an_answer_posts_it_byte_for_byte(execution_db, active, frames, monkeypatch):
+    """The closing is only for an empty report: a job's own text is never changed, even next to a closing."""
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    for outcome in ("out_of_budget", "done", "blocked"):
+        job = background_jobs.Job(job_id=f"j-{outcome}", conversation_id=CID, goal="g", acceptance=[],
+                                  outside_seen=False)
+        job.outcome, job.closing = outcome, "From this run's own records:\nBlocked:\n- x"
+        answer = f"  The report for {outcome}.\nTwo steps were not run.  "
+        assert await background_jobs._report(job, answer) == answer.strip()
+    empty = background_jobs.Job(job_id="j-empty", conversation_id=CID, goal="g", acceptance=[], outside_seen=False)
+    empty.outcome = "out_of_budget"
+    assert "From this run's own records" not in await background_jobs._report(empty, "")
+
+
+async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(execution_db, active, frames,
+                                                                            monkeypatch):
+    """The wall clock's timeout cancels the turn mid-step (no BudgetExceeded reaches it). The report still
+    closes from the turn's own records: one call that ran, one card nobody answered, and what is left."""
+    from arslan import execution_budget
+    from server.registry import executors
+    monkeypatch.setattr(execution_budget, "run_budget",
+                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=1.5)))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    seen = []
+
+    class Recall:
+        async def execute(self, args):
+            seen.append(args)
+            if len(seen) == 1:
+                return {"ok": True, "summary": "1 note"}
+            if len(seen) == 2:
+                return {"ok": False, "error": permissions._EXPIRED.format(title="Read the notes?", minutes=30)}
+            await asyncio.sleep(30)      # the step the wall clock cuts off
+            return {"ok": True, "summary": "never"}
+    monkeypatch.setitem(executors.EXECUTORS, "recall", Recall())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=20)
+    await _wait(_spoken(frames, job))
+    assert job.outcome == "out_of_budget" and job.budget_stop["reason"] == "wall_seconds", job.budget_stop
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    note, closing = content.split("\n\nFrom this run's own records:\n")
+    assert "Background work ran out of budget" in note
+    assert "Done: 1 tool call succeeded (recall ×1)." in closing
+    assert "Blocked:\n- nobody answered the card: recall `notes 2`" in closing
+    assert closing.endswith("Left: the request itself, Research everything")
+
+
+async def test_each_tool_call_is_one_step_in_the_note(execution_db, active, frames, monkeypatch):
+    """A job's tool call passes through two of its sinks (the turn's and the task's); it is one step, not two."""
+    from arslan import execution_budget
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
+                        dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=20)
+    await _wait(_spoken(frames, job))
+    calls = [f for f in frames if f.get("type") == "tool_call"]
+    assert calls and job.tool_calls_seen == len(calls), (job.tool_calls_seen, len(calls))
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    assert f"after {len(calls)} steps" in content
+
+
+async def test_a_closing_left_from_before_is_never_carried_into_a_later_stop(execution_db, active, frames,
+                                                                           monkeypatch):
+    """Only the stop that ends the job brings a closing: one that has none of its own is never given an older
+    one that happens to be on the job."""
+    from arslan.execution_budget import BudgetExceeded
+    from server.orchestrator import arslan as arslan_mod
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+
+    async def body(conversation_id, goal, emit, confirmations, **_):
+        background_jobs._jobs[background_jobs._inside_job.get()].closing = "From an earlier stop: STALE"
+        raise BudgetExceeded("Execution budget exhausted: tokens.")
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=10)
+    await _wait(_spoken(frames, job))
+    assert job.outcome == "out_of_budget"
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    assert "Background work ran out of budget" in content and "STALE" not in content
+
+
 def test_outcome_names_a_budget_stop_apart_from_being_stuck():
     assert background_jobs.outcome_of("waiting_user", {}, "task_budget_exhausted") == "out_of_budget"
     assert background_jobs.outcome_of("waiting_user", {}, "task_validation_failed") == "blocked"

@@ -35,6 +35,21 @@ def inside_job() -> bool:
     return _inside_job.get() is not None
 
 
+def current_goal() -> str | None:
+    """The goal of the job this code runs in, as the user's turn gave it (not the instruction its turn is sent with,
+    which carries the host's context), or None."""
+    job = _jobs.get(_inside_job.get() or "")
+    return job.goal if job is not None else None
+
+
+def note_wall_closing(text: str) -> None:
+    """The closing of the job's turn its wall clock cut off (`tool_loop.run_native`): that stop arrives as the
+    timeout's cancellation, which carries nothing, so it is kept on the job this code runs in for its report."""
+    job = _jobs.get(_inside_job.get() or "")
+    if job is not None:
+        job.wall_closing = text
+
+
 @dataclass
 class Job:
     job_id: str
@@ -48,7 +63,12 @@ class Job:
     # 0.1.43: which limit ended the job, e.g. {"reason": "tool_calls", "used": 80, "limit": 80}.
     budget_stop: dict | None = None
     tool_calls_seen: int = 0
-    run_id: int | None = None         # its recorded run: the phone reviews the steps by it
+    # A turn the limit ended with no text: what its records show it did, what was blocked and what is left
+    # (`BudgetExceeded.closing`). Its report carries it after the budget note.
+    closing: str = field(default="", repr=False)
+    # The closing of a turn the wall clock cut off (`note_wall_closing`); `closing` takes it when that stop ends the job.
+    wall_closing: str = field(default="", repr=False)
+    run_id: int | None = None        # its recorded run: the phone reviews the steps by it
     origin: str = "mac"               # "phone": started from the paired iPhone
     # S64-0: whether the goal may carry outside content. A fixed answer (True: nobody knows), or the
     # starting turn's mark, asked again when the job gets its slot (start).
@@ -246,7 +266,9 @@ def _emit(job: Job) -> None:
     run_registry.make_emit(job.conversation_id)(job.frame())
 
 
-def _job_sink(job: Job, downstream):
+def _job_sink(job: Job, downstream, *, counts_steps: bool = True):
+    """`counts_steps=False` for the task's outer sink: each event of the turn also passes the turn's own sink
+    first, so counting in both made "144 steps" of 72 calls."""
     def sink(event: dict) -> None:
         kind = event.get("type")
         if kind in {"stream_start", "stream_chunk", "stream_restart", "stream_end", "task_state"}:
@@ -256,7 +278,7 @@ def _job_sink(job: Job, downstream):
         if job.run_id is None:
             from server.services import execution_context
             job.run_id = execution_context.current_run_id()
-        if kind == "tool_call":
+        if kind == "tool_call" and counts_steps:
             job.tool_calls_seen += 1
         if kind == "tool_call" and event.get("tool"):
             # "run_command npm test", not just "run_command": the phone shows this line.
@@ -380,7 +402,7 @@ def goal_missed(answer: bool | None, probability: float | None) -> bool:
 
 async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan, untrusted
-    from arslan.execution_budget import run_budget
+    from arslan.execution_budget import BudgetExceeded, run_budget
     from server.db import session as db_session
     from server.services import (approvals, host_run, permissions, personal_context, settings_service,
                                  sub_sessions, task_context, task_service)
@@ -421,7 +443,8 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             permissions.asking_with(confirmations.asker):
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
-                                                 _job_sink(job, downstream), _driver={"kind": "background"},
+                                                 _job_sink(job, downstream, counts_steps=False),
+                                                 _driver={"kind": "background"},
                                                  _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap))
         except asyncio.CancelledError:
             raise
@@ -429,6 +452,10 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             logger.exception("background job %s execution raised %s %s", job.job_id, type(exc).__name__,
                              getattr(exc, "code", ""))
             output = None
+            # Only the stop that ends the job brings its closing: a budget stop on itself, a wall-clock stop (a
+            # TimeoutError) by the turn it cut off. Anything else, or one with none, never keeps an older one.
+            job.closing = (exc.closing if isinstance(exc, BudgetExceeded)
+                           else job.wall_closing if isinstance(exc, TimeoutError) else "")
             if isinstance(exc, sub_sessions.TreeLimitReached):
                 tree_stop = {**exc.stop, "tier": tier}
     async with repository() as repo:
@@ -473,6 +500,8 @@ async def _report(job: Job, text: str) -> str:
     try:
         if not body and job.outcome == "out_of_budget":
             body = await _budget_note(job)
+            if job.closing:             # never empty of what the run did: the host's closing from its records
+                body = f"{body}\n\n{job.closing}"
         if body:   # a stopped or empty job is shown by its card alone, never by a filler message
             # S64-0b: what may carry outside content (the result, or the budget note naming the goal)
             # reaches later turns framed; the user sees it as written. Only a job known clean is not.

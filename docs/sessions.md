@@ -35,7 +35,7 @@
 | `server/orchestrator/arslan.py`、`server/orchestrator/tool_loop.py`、`server/orchestrator/memory.py` | 当轮 K 线主改。其他 PR 只做小改动，合并时排在当前打开的 K 线 PR 之后；rebase 时两边都保留 |
 | `web/src/locales/*.json`（6 种语言） | 新加的 key，6 种语言同一个 PR 一起加；不改别人的 key；`web/src/__tests__/locale-parity.test.ts` 通过才算完。Merged key by key by `scripts/dev/merge_json_keys.py`, so the place a key is added no longer matters. Set it up once per clone: `git config merge.json-keys.driver "python3 scripts/dev/merge_json_keys.py %O %A %B"`. A clone without it merges as text. A page on GitHub still shows a conflict until someone merges main locally. A branch from before the driver landed conflicts as text on its first merge of main: `git checkout -m -- web/src/locales/??.json`, then `git add`, resolves it by key. |
 | `docs/CAPABILITY_INVENTORY.md` | 生成物，不手改、不手工解冲突。rebase 后重新生成：`.venv/bin/python -m scripts.capability_inventory > docs/CAPABILITY_INVENTORY.md`（在仓库根目录、用项目的虚拟环境运行）。C5b 合并后，只在发版 PR 里生成 |
-| `server/db/migrations/**`、`server/db/models.py` | 迁移号按 §4 处理。Next free number: 0098 (0093 SIDE-1, 0094 SUB7, 0096 SUB6b and 0097 ASK1-b are reserved, 0095 is ASK1-a's; 0087 and 0088 were released; the round's README has the table) |
+| `server/db/migrations/**`、`server/db/models.py` | 迁移号按 §4 处理。Next free number: 0099 (0093 SIDE-1, 0094 SUB7, 0096 SUB6b, 0097 ASK1-b and 0098 S5a are reserved, 0095 is ASK1-a's; 0087 and 0088 were released; the round's README has the table) |
 | `server/main.py`、`web/src/App.tsx` | 只做小改动。路由和启动步骤加在末尾，不重排；rebase 时两边都留 |
 | `docs/releases/*.md` | 只有发版 PR 写。每一句对用户的承诺旁边，写出对应的测试名 |
 | `docs/plans/**`、`docs/specs/**` | 计划只由 ⓪Plan 改；任务卡的状态由 ②Main 更新；spec 只在决定变化时改，并注明日期 |
@@ -219,6 +219,19 @@ Defence there follows the security process (the user decides, a review at effort
    - **On an execution or permission path, a swallow fails closed** (the returned constant asks, sandboxes or refuses), and its comment says so, for example `# noqa: BLE001 — unreadable means the default: sandboxed`. A swallow that fails open there is a security bug, not a style issue.
    - Catching `asyncio.CancelledError` and not re-raising needs the same comment (for example, awaiting a task you just cancelled during shutdown).
 
+**Confirmation cards (user, 2026-11-14):**
+- **A card must have an answer to "what does the user's reply tell the system that it doesn't already know?"** A card with no answer shouldn't exist. Make it an automatic allow if the sandbox holds it or it can be undone, or an automatic refusal if a hard rule covers it.
+- Only something where the system doesn't know the user's intent, and that can't be taken back once done, gets a card.
+- The card states the concrete consequence: what is sent where, and what gets deleted. It never says a vague "Allow?".
+
+**Blocked is not giving up, and never silent (user, 2026-11-14):**
+1. When the sandbox or a rule blocks a step, first find another way to reach the user's goal. If there's none, tell the user three things:
+   - what was blocked;
+   - why;
+   - what they can do: one click to allow, a different approach, or concrete steps to do it themselves.
+2. Apart from a very short "never" list, every restriction is closed by default and the user can open it. Nothing outside that list is locked.
+3. The "never" list is shown in Settings. Each item says why, and how the user can do it themselves.
+
 **Reviewing (every review, by sessions and by Codex):** besides correctness and the evidence (§8), point out unnecessary defensive code, the same validation repeated in several layers, and helpers or abstractions with a single use. Name the file and line and say what to remove; the author answers each one (remove it, or state the failure mode it guards against).
 
 ## 13. Working rules from the 2026-11-13 reset (user, 2026-11-13)
@@ -247,5 +260,12 @@ Rules 1–6 and 8 are in force. Rule 7 is open. The security-surface review rule
 
    - A tier that goes over stops and reports to the user. Nothing moves to another tier automatically.
    - These are warning lines, not hard targets. Quality gates (CI, tests, benches, security-boundary reviews) are never lowered to save quota. What's needed gets spent, and an overrun is reported with its reason.
+
+**Fewer steps, smaller context (user, 2026-11-14).** Cost is roughly context size × number of steps. On 11-13, re-reading context was about 65% of it, cache writes about 24%, and output about 11%. Compacting cuts the size; these cut the steps:
+1. **Long-running work goes to a fresh subagent or a new session,** and the main session takes only the result summary. That covers bench runs, waiting for CI, repeated test runs and long investigations. The earlier "fewer subagents" advice applies only to subagents that read many files.
+2. **A session with a large context doesn't poll.** It waits for a PR merge or for CI through a notification, or hands the watching to a small session.
+3. **Before a long wait, compact first.**
+4. **Keep each subagent short.** On 11-13 one lane's coding subagents ran 76–149 steps each, re-reading about 230k tokens every step. Give a subagent one checkable piece of work, such as "this function and its tests". It ends with a summary, and the next piece starts a new subagent. One subagent doesn't carry a task from design to push.
+5. **Test loops on the cheaper model.** Running the full suite, waiting on it and rerunning flaky tests go to a Sonnet subagent. Opus does the design and the code changes.
 
 **Order is unchanged:** tier 1 first. The six harness PRs come after ASK1-a.
