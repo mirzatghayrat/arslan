@@ -236,8 +236,9 @@ async def test_a_card_reads_its_command_once(execution_db, monkeypatch, cmd, kw,
     and the title is the one it was."""
     real, texts = card_purpose.summarize, []
     monkeypatch.setattr(card_purpose, "summarize", lambda text, **kw: texts.append(text) or real(text, **kw))
-    from server.services import git_config_guard
-    monkeypatch.setattr(git_config_guard, "outgoing_ci", lambda *_a: [])     # HR-2b: no outgoing CI file to name
+    async def no_push_lines(*_a):
+        return []
+    monkeypatch.setattr(command_confirm, "_pushed_ci", no_push_lines)     # HR-2b, HR-3: no push card lines
     asker = _Asker()
     with permissions.asking_with(asker):
         await command_confirm.Confirmations("c1").command(*cmd, **kw)

@@ -395,6 +395,49 @@ def outgoing_ci(folder: Path, command: str) -> list[str] | None:
     return sorted({name for name in names if name and run_later.is_ci_file(name)})
 
 
+#: HR-3: the remote git pushes each local branch to (pushRemote, remote.pushDefault, else its upstream's), the current
+#: one marked `*` (`*` alone: none set). The push options read past (none takes a separate value or names the
+#: repository; any other: not known), and a `scheme://` url's userinfo (`user:pass@`, or a token alone).
+_PUSH_TO = ("for-each-ref", "--format=%(HEAD)%(push:remotename)", "refs/heads/")
+_PUSH_FLAGS = re.compile(r"-[46dfnquv]+|--(?:no-[\w-]+|set-upstream|force(?:-with-lease(?:=\S*)?|-if-includes)?|tags"
+                         r"|follow-tags|dry-run|quiet|verbose|all|delete|atomic|porcelain|progress|prune|mirror|thin)")
+_CREDENTIALS = re.compile(r"(?<=://)[^/?#]*@")
+
+
+def push_destination(folder: Path, command: str) -> list[str] | None:
+    """HR-3: where the one `git push` in `command`, run in `folder` itself, sends its commits, as git picks it: the
+    remote named on the line, else the one it pushes the current branch to (`_PUSH_TO`), else the only remote, else
+    origin; that remote's pushurl values, else its url values, from the repository's config as git lists it (`_LIST`,
+    includes followed; asked as `outgoing_ci` asks, `_each`); a url or path no remote is named after, as written. No
+    `user:pass@`. None: not known (not one plain `git push` run in `folder`, git failed or timed out, no url); the card
+    says so and still shows. Not applied: url rewriting (insteadOf) and the user's global config, which `_env` drops."""
+    from server.services import shell_grammar
+    reading = shell_grammar.read(command)
+    pushes = [(words[2:], where) for words, where in zip(reading.commands, reading.folders)
+              if len(words) > 1 and words[0].lower() == "git" and words[1] == "push"]
+    here = Path(os.path.realpath(folder))
+    entry = next((p / ".git" for p in (here, *here.parents) if os.path.lexists(p / ".git")), None)
+    if entry is None or len(pushes) != 1 or pushes[0][1] != ("",):
+        return None
+    word = name = next((w for w in pushes[0][0] if not _PUSH_FLAGS.fullmatch(w)), None)
+    if word is None:
+        marks = _each([entry], _PUSH_TO)[entry]
+        lines = marks.decode("utf-8", errors="surrogateescape").split("\n") if marks is not None else []
+        name = next((line[1:] for line in lines if line.startswith("*")), None)
+    listed = _each([entry], _LIST)[entry] if name is not None and (word is None or word[:1] not in ("", "-")) else None
+    items = listed.split(b"\0") if listed is not None else []
+    if items[-1:] != [b""] or len(items) % 2 != 1:
+        return None                                   # git gave no answer, or an option not read past
+    pairs = [item.decode("utf-8", errors="surrogateescape").partition("\n")[::2] for item in items[1:-1:2]]
+    pairs = [(k, v) for k, v in pairs if not k.startswith("remote./")]      # git ignores a remote named from "/"
+    remotes = {key[7:].rpartition(".")[0] for key, _ in pairs if key.startswith("remote.")} - {""}
+    name = name or (min(remotes) if len(remotes) == 1 else "origin")
+    urls = [v for k, v in pairs if k == f"remote.{name}.pushurl"] or [v for k, v in pairs if k == f"remote.{name}.url"]
+    if not urls and ("/" in name or name in (".", "..")):
+        urls = [name]                                 # not a remote's name: git takes it as a url or a path
+    return [_CREDENTIALS.sub("", url) for url in urls if url] or None
+
+
 #: Off the allowlist, by key: the (file, value) pairs reached through an included file (not a config git reads
 #: directly, which the allowlist covers). None: git couldn't list it.
 Included = dict[Key, frozenset[tuple[Path, str]]] | None

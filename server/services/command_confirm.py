@@ -178,20 +178,27 @@ class Confirmations:
 
 #: HR-2b: what the push card says when the outgoing files couldn't be read (the card still shows: fails closed).
 PUSH_UNLISTED = "Arslan couldn't list the files this push sends"
+#: HR-3: what it says when where the push goes couldn't be read (the card still shows).
+PUSH_UNKNOWN = "Push destination unknown"
 
 
 async def _pushed_ci(shell: str, cwd) -> list[str]:
     """HR-2b: the push card's lines for the CI files its outgoing commits change (`git_config_guard.outgoing_ci`, off
     the event loop): one per file, PUSH_UNLISTED when they couldn't be read (no folder, a git failure or timeout, an
-    error), [] when there are none. A CI job runs on the CI service after a push, so the push is where it is named."""
+    error), [] when there are none. A CI job runs on the CI service after a push, so the push is where it is named.
+    HR-3: led by where it pushes (`git_config_guard.push_destination`), a line per url, else PUSH_UNKNOWN."""
     import asyncio
     from pathlib import Path
     from server.services import git_config_guard
-    try:
-        found = None if cwd is None else await asyncio.to_thread(git_config_guard.outgoing_ci, Path(cwd), shell)
-    except Exception:  # noqa: BLE001 — fails closed: the card says it couldn't list them
-        found = None
-    return [PUSH_UNLISTED] if found is None else [f"CI file: {name}" for name in found]
+
+    async def read(reader):
+        try:
+            return None if cwd is None else await asyncio.to_thread(reader, Path(cwd), shell)
+        except Exception:  # noqa: BLE001 — fails closed: the card says it couldn't read it
+            return None
+    urls, found = await read(git_config_guard.push_destination), await read(git_config_guard.outgoing_ci)
+    return ([f"Push destination: {url}" for url in urls] if urls else [PUSH_UNKNOWN]) + (
+        [PUSH_UNLISTED] if found is None else [f"CI file: {name}" for name in found])
 
 
 def _with_ci(frame: dict, lines: list[str]) -> None:

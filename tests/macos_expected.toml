@@ -393,10 +393,11 @@ xfail = 0
 
 # 0.1.64 HR-2b: the push card's outgoing files are read by git in seatbelt, so these run on macOS only. A CI file in
 # the outgoing commits is listed and another file is not, against the upstream and against origin/HEAD (2 cases); a
-# push with no CI file adds nothing.
+# push with no CI file adds no CI line. HR-3: the card names where the push really goes, with no `user:pass@`: a
+# re-pointed url, a pushurl, a named remote, remote.pushDefault, a url on the line a remote is named after (5 cases).
 ["server/test_hr2b_git_cards.py"]
-markers = 2
-cases = 3
+markers = 3
+cases = 8
 xfail = 0
 
 # 2026-09-25: native manual-backup maintenance subprocess at the macOS
