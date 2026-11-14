@@ -34,6 +34,9 @@ def _changes(protected, root, **kw):
 
 # -- gate parity: a check: command is the model's command, gate for gate ---------------------------------------------
 
+_REAL_NETWORK_RULE = command_gate._network_after_outside_content
+
+
 def _settings(monkeypatch):
     """As test_gate_order: the settings read one way, so both calls reach the same gates."""
     async def no():
@@ -72,7 +75,7 @@ class _Calls:
         self.cards, self.ran, self.frames, self.answer = [], [], [], answer
 
         async def execute(args):
-            self.ran.append(args["command"])
+            self.ran.append((args["command"], terminal_exec.OFFLINE.get()))
             return {"ok": True, "exit_code": 0, "stdout": "ran", "stderr": ""}
         monkeypatch.setitem(executors.EXECUTORS, "run_command", types.SimpleNamespace(key="run_command",
                                                                                       execute=execute))
@@ -132,6 +135,31 @@ async def test_a_check_command_is_refused_or_carded_exactly_as_the_models(
     assert [f["type"] for f in host.frames] == [f["type"] for f in model.frames]
     assert bool(model.cards) is (how == "carded")
     assert bool(model.ran) is (how == "ran" or answer and how == "carded")
+
+
+@pytest.mark.parametrize("command", ["ls", "python3 -c pass"])
+async def test_after_outside_content_a_check_command_gets_the_same_network_rule_as_the_models(
+        command, _a_mac_with_a_sandbox, monkeypatch, tmp_path):
+    """The real outside-content path (`_network_after_outside_content` not stubbed): after this turn read outside
+    content, the host's run is held offline exactly as the model's is; it never starts with a clean mark."""
+    from server.orchestrator import untrusted
+    from server.services import net_policy
+    monkeypatch.setattr(command_gate, "_network_after_outside_content", _REAL_NETWORK_RULE)
+
+    async def not_judging():
+        return False
+    monkeypatch.setattr(net_policy, "judging", not_judging)
+    token = untrusted.track_turn("c1")
+    try:
+        untrusted.mark_external()
+        model = _Calls(monkeypatch, True)
+        model_result = await _as_the_model(command, model)
+        host = _Calls(monkeypatch, True)
+        host_result = await _as_the_host(command, host, tmp_path, monkeypatch)
+    finally:
+        untrusted.end_turn(token)
+    assert host_result == model_result and host.cards == model.cards
+    assert host.ran == model.ran == [(command, True)]                 # offline, as the rule says
 
 
 async def test_a_check_on_a_turn_that_cant_run_commands_is_refused_as_the_models(
@@ -272,6 +300,85 @@ def test_a_new_test_or_config_file_stops_the_goal_and_bytecode_caches_dont(tmp_p
         (root / rel).unlink()
     (root / "tests" / "linked").symlink_to(root / "app.py")
     assert _changes(protected, root) == ("tests/linked",)
+
+
+# Max review round 1: the runner config files that steer a run without being edited, each new one a change.
+PROBES = [
+    pytest.param(".pytest.ini", "[pytest]\naddopts = --co\n", {}, id="new .pytest.ini addopts"),
+    pytest.param("pytest.toml", '[pytest]\naddopts = ["--deselect", "tests/test_app.py::test_add"]\n',
+                 {"pytest.ini": "[pytest]\n"}, id="new pytest.toml over pytest.ini"),
+    pytest.param(".npmrc", "script-shell=/usr/bin/true\n", {"package.json": '{"scripts": {"test": "jest"}}'},
+                 id="new .npmrc script-shell"),
+]
+
+
+@pytest.mark.parametrize("name,body,there", PROBES)
+def test_a_new_runner_config_file_is_a_protected_change_here_and_in_a_parent(name, body, there, tmp_path):
+    root = tmp_path / "work"
+    root.mkdir()
+    _layout(root)
+    for other, text in there.items():
+        (root / other).write_text(text)
+    protected = goal_mode.record_protected(root, (_line("pytest -q"),))
+    (root / name).write_text(body)
+    assert _changes(protected, root) == (name,)
+    (root / name).unlink()
+    (tmp_path / name).write_text(body)
+    assert _changes(protected, root) == (f"../{name}",)
+
+
+@pytest.mark.parametrize("name,body,there", PROBES)
+async def test_a_new_runner_config_file_stops_the_goal_at_review(name, body, there, _a_goal_job, monkeypatch,
+                                                                  tmp_path):
+    _layout(tmp_path)
+    for other, text in there.items():
+        (tmp_path / other).write_text(text)
+
+    def replies(n):
+        if n == 2:
+            (tmp_path / name).write_text(body)
+        return "Working on it."
+    result, task, record, calls = await _check_turn(_a_goal_job, monkeypatch, tmp_path, replies,
+                                                    lambda n: _exit(1 if n == 1 else 0, "F"))
+    assert task.pause_reason == "acceptance_review_required" and record.status == "review"
+    assert name in result["final"] and calls["host"] == ["python3 tests/run_checks.py"]
+
+
+def test_swift_and_xcode_tests_are_protected_whatever_the_case(tmp_path):
+    for rel in ("Package.swift", "Sources/App/App.swift", "Tests/AppTests/AppTests.swift", "AppTests/LoginTests.swift",
+                "AppUITests/FlowUITest.swift", "App.xctestplan"):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("// x\n")
+    protected = goal_mode.record_protected(tmp_path, (_line("swift test"),))
+    files = {f.path for f in protected.files if f.sha256}
+    assert {"Tests/AppTests/AppTests.swift", "AppTests/LoginTests.swift", "AppUITests/FlowUITest.swift",
+            "App.xctestplan"} <= files
+    assert "Sources/App/App.swift" not in files and "Package.swift" not in files
+    (tmp_path / "Sources" / "App" / "App.swift").write_text("// fixed\n")
+    assert _changes(protected, tmp_path) == ()
+    (tmp_path / "Tests" / "AppTests" / "AppTests.swift").write_text("// gutted\n")
+    assert _changes(protected, tmp_path) == ("Tests/AppTests/AppTests.swift",)
+
+
+@pytest.mark.parametrize("rel", ["Test/Helpers.swift", "AppTests/Helpers.swift", "Sources/LoginTests.swift",
+                                 "Sources/Test_Login.py", "Sources/Login.Spec.ts"],
+                         ids=["Test folder", "*Tests folder", "*Tests name", "Test_ name", ".Spec. name"])
+def test_each_test_naming_rule_holds_on_its_own(rel, tmp_path):
+    for path in (rel, "Sources/latest/contest.py"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("// x\n")
+    files = {f.path for f in goal_mode.record_protected(tmp_path, (_line("swift test"),)).files if f.sha256}
+    assert files == {rel}                                  # and never `latest/contest.py`, the work
+
+
+async def test_a_check_with_nothing_protected_is_never_complete_on_its_own(_a_goal_job, monkeypatch, tmp_path):
+    """Max review round 1: an empty protected set (here `tests/run_checks.py` isn't there at Start, so it is only a
+    warning, and nothing else qualifies) stops the goal at review instead of completing."""
+    result, task, record, calls = await _check_turn(_a_goal_job, monkeypatch, tmp_path, lambda n: "Done.",
+                                                    lambda n: _exit(0, "pass"))
+    assert calls["host"] == ["python3 tests/run_checks.py"]
+    assert task.phase == "waiting_user" and task.pause_reason == "acceptance_review_required"
+    assert record.status == "review" and "nothing protected its check: lines" in result["final"]
 
 
 def test_a_new_conftest_in_a_parent_folder_stops_the_goal(tmp_path):
@@ -438,7 +545,7 @@ async def test_a_passing_check_is_run_again_by_the_host_and_a_two_check_goal_com
     assert task.phase == "succeeded" and (record.status, record.round) == ("complete", 2)
 
 
-async def _journal(execution_db, argv=("python3", "tests/run_checks.py"), args=None):
+async def _journal(execution_db, argv=("python3", "tests/run_checks.py"), args=None, finished=True):
     """A running goal row whose spec, recorded at Start, has one `check:` line, and one succeeded run of `argv`."""
     from arslan.companion.contracts import TaskSpec
     from server.services.task_repository import repository
@@ -460,7 +567,8 @@ async def _journal(execution_db, argv=("python3", "tests/run_checks.py"), args=N
     action = await prepare(host_check=True)
     async with repository() as repo:
         await repo.action_started("goal-task", attempt, action["id"], arguments=args)
-        await repo.action_finished("goal-task", attempt, action["id"], status="succeeded")
+        if finished:
+            await repo.action_finished("goal-task", attempt, action["id"], status="succeeded")
     return prepare
 
 
@@ -479,6 +587,13 @@ async def test_a_host_run_of_an_argv_not_recorded_at_start_stays_fenced(argv, ex
     prepare = await _journal(execution_db, argv)                    # one argument off the recorded line
     with pytest.raises(TaskError, match="task_action_already_completed"):
         await prepare({"command": shlex.join(argv)}, host_check=True)
+
+
+async def test_the_hosts_run_past_an_unknown_outcome_is_still_refused(execution_db):
+    from server.services.task_repository import TaskError
+    prepare = await _journal(execution_db, finished=False)        # started, never finished: the outcome is unknown
+    with pytest.raises(TaskError, match="task_reconciliation_required"):
+        await prepare(host_check=True)
 
 
 async def test_the_exemption_is_only_on_the_hosts_turn_copy_never_from_arguments(execution_db):
@@ -546,6 +661,29 @@ async def test_a_goal_jobs_commands_run_apart_and_a_plain_jobs_dont(execution_db
     assert seen == {"job-goal": True, jobs[1].job_id: False} and terminal_exec.PYCACHE_APART.get() is False
 
 
+async def test_start_says_plainly_when_nothing_protects_a_check(
+        execution_db, active, monkeypatch, tmp_path):  # noqa: F811 — the fixture
+    from server.services import settings_service
+    from tests.server import test_l7_goal_start as start
+
+    async def workspace(db):
+        return tmp_path                         # an empty working folder: nothing for the check to be protected by
+    monkeypatch.setattr(settings_service, "workspace_dir", workspace)
+    adapter, queued = start.Model(), []
+
+    async def run(job):
+        queued.append(job)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: adapter)
+    monkeypatch.setattr(start.background_jobs, "_run", run)
+    start.background_jobs._reset_for_tests()
+    try:
+        await start._say(f"/goal {start.PROMPT}\n{start.CHECK}")
+        started = await start._say("/goal start confirm")
+    finally:
+        start.background_jobs._reset_for_tests()
+    assert started.startswith("Goal started") and "nothing protects" in started and len(queued) == 1
+
+
 # -- Start records the set once; Resume reads it from the row -----------------------------------------------------
 
 async def test_start_records_the_protected_set_on_the_row_and_refuses_one_over_its_limits(
@@ -569,7 +707,8 @@ async def test_start_records_the_protected_set_on_the_row_and_refuses_one_over_i
         monkeypatch.setattr(goal_mode, "PROTECTED_FILES_MAX", 0)
         assert "couldn’t be recorded" in await start._say("/goal start confirm") and queued == []
         monkeypatch.setattr(goal_mode, "PROTECTED_FILES_MAX", 2000)
-        assert (await start._say("/goal start confirm")).startswith("Goal started") and len(queued) == 1
+        started = await start._say("/goal start confirm")
+        assert started.startswith("Goal started") and len(queued) == 1 and "nothing protects" not in started
         protected = queued[0].goal_spec.protected
         assert protected is not None and [f.path for f in protected.files if f.sha256] == ["tests/run_checks.py"]
         row = await start._row(execution_db)

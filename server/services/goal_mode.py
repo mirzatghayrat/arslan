@@ -232,11 +232,25 @@ def status_of(phase: str, pause_reason: str | None) -> GoalStatus:
 # config files (only `vitest.config.*`'s literal `include` is read), and code the check imports beyond these files.
 _SKIP = {".git", "node_modules", "__pycache__", ".tox", ".nox", ".venv", "venv", ".pytest_cache", ".mypy_cache",
          ".ruff_cache"}
+# Matched without regard to case; the CamelCase names (Swift, Xcode, JUnit) case-sensitively, so `latest/` and
+# `contest.py` stay the work.
 _TEST_DIRS = {"tests", "test", "__tests__", "spec", "__snapshots__", "testdata", "fixtures"}
-_TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*", "*_spec.*", "*.snap", "golden*")
-_CONFIG = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "Makefile", "jest.config.*", "vitest.config.*")
+_TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*", "*_spec.*", "*.snap", "golden*", "*.xctestplan")
+_CAMEL_DIRS, _CAMEL_NAMES = ("*Tests",), ("*Tests.*", "*Test.*", "*Spec.*")
+# The runner config a run reads without its argv naming it; a NEW one is a change, here and in each parent folder:
+# - pytest 9.1, `_pytest/config/findpaths.py` (`locate_config`): the first of pytest.toml, .pytest.toml, pytest.ini,
+#   .pytest.ini, pyproject.toml, tox.ini, setup.cfg, walking up from the arguments' common folder; and conftest.py
+#   in every folder from the rootdir down (`_pytest/config/__init__.py`, `_getconftestmodules`).
+# - npm 10, `@npmcli/config/lib/index.js` (`loadBuiltinConfig`, `loadGlobalConfig`, `loadUserConfig`,
+#   `loadProjectConfig`): `<npm>/npmrc`, `<prefix>/etc/npmrc`, `~/.npmrc` and `<localPrefix>/.npmrc`, where
+#   localPrefix is the nearest folder up holding package.json or node_modules (a workspace root's too). Only those
+#   inside the working folder or its parents can be seen here; any `.npmrc` or `npmrc` file counts.
+_PYTEST_CONFIG = ("pytest.toml", ".pytest.toml", "pytest.ini", ".pytest.ini", "pyproject.toml", "tox.ini",
+                  "setup.cfg", "conftest.py")
+_CONFIG = ("conftest.py", "pytest.toml", ".pytest.toml", "pytest.ini", ".pytest.ini", "tox.ini", "setup.cfg",
+           ".npmrc", "npmrc", "Makefile", "jest.config.*", "vitest.config.*")
 _SECTIONED = {"pyproject.toml", "package.json"}       # only their test sections: `section` is set
-_PARENTS = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml")
+_PARENTS = (*_PYTEST_CONFIG, ".npmrc", "package.json")
 _RUNNERS, _MAKES = {"npm", "pnpm", "yarn", "bun"}, {"make", "gmake", "$(MAKE)", "${MAKE}"}
 _SCRIPTS = {".sh", ".bash", ".zsh", ""}
 WALK_MAX = 200_000
@@ -261,7 +275,17 @@ def _walk(root):
 def _conventional(rel: str) -> bool:
     from fnmatch import fnmatchcase
     *folders, name = rel.split("/")
-    return bool(_TEST_DIRS.intersection(folders)) or any(fnmatchcase(name, p) for p in (*_TEST_NAMES, *_CONFIG))
+    return (bool(_TEST_DIRS.intersection(f.lower() for f in folders))
+            or any(fnmatchcase(f, p) for f in folders for p in _CAMEL_DIRS)
+            or any(fnmatchcase(name.lower(), p.lower()) for p in (*_TEST_NAMES, *_CONFIG))
+            or any(fnmatchcase(name, p) for p in _CAMEL_NAMES))
+
+
+def unprotected(protected: ProtectedSet | None) -> bool:
+    """Max review round 1: nothing in the working folder protects the goal's `check:` lines (no file recorded there
+    with a digest; a parent folder's config alone doesn't count). Start says so; the goal is then never complete on
+    its `check:` lines alone, it stops at review."""
+    return protected is not None and not any(f.sha256 and not f.path.startswith("../") for f in protected.files)
 
 
 def _matches(rel: str, patterns) -> bool:
@@ -534,7 +558,7 @@ def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=())
             if _digest(root / rel, True) != _EMPTY:
                 changed.add(rel)
         elif _conventional(rel) or _matches(rel, protected.patterns):
-            config = name in _PARENTS or any(fnmatchcase(name, p) for p in (*_CONFIG, "*.config.*"))
+            config = name in _PARENTS or any(fnmatchcase(name.lower(), p.lower()) for p in (*_CONFIG, "*.config.*"))
             if not config and any(fnmatchcase(rel, p) for p in outputs):
                 new.append(rel)
             else:

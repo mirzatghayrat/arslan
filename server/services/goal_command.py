@@ -245,7 +245,9 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
     if background_jobs.goal_job(row.id):    # a second Start that came in during the awaits above: no await from here
         return await _status(row, say)
     background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac")
-    return say("goal_started", objective=spec.objective[:200])
+    from server.services.goal_mode import unprotected
+    return say("goal_started", objective=spec.objective[:200]) + (
+        "\n" + say("goal_unprotected_start") if unprotected(spec.protected) else "")
 
 
 async def _protect(spec: GoalSpec):

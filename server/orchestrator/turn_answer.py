@@ -200,7 +200,8 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
             "status": "blocked" if state.stop_reason == "task_no_progress" else "budget_limited"})
     # L7-5: a protected file changed (before or during a host run): review, never complete, with the files named.
     record = record.model_copy(update={"last_receipt": len(state.tool_trace), "accepted": host.accepted,
-                                       **({"status": "review"} if host.changed else {})})
+                                       **({"status": "review"} if host.changed or (
+                                           host.unprotected and record.status == "complete") else {})})
     runtime.progress = runtime.progress.model_copy(update={"goal": record})
     state.goal_round, state.goal_stall, state.goal_unmet = record.round, record.stall, record.unmet
     await runtime.checkpoint("goal_round")
@@ -218,6 +219,8 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
         runtime.pause_reason = "acceptance_review_required"
         if host.changed:
             return False, runtime_messages.render("goal_protected", locale, files=", ".join(host.changed)[:2000])
+        if host.unprotected and all(check.id not in record.unmet for check in goal.checks):
+            return False, runtime_messages.render("goal_unprotected", locale)
         return False, runtime_messages.render("goal_review", locale, met=listed(met_ids), rest="; ".join(
             f"{check.id}: {check.description}" for check in goal.checks if check.user_confirmed))
     if record.status == "budget_limited":

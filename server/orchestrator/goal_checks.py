@@ -21,6 +21,7 @@ class HostChecks:
     changed: tuple[str, ...] = ()    # protected files that changed: the goal stops at review, never complete
     accepted: tuple = ()             # every declared output accepted so far (`GoalProgress.accepted`)
     printed: str = ""                # what the runs printed, framed as tool output, for the next round
+    unprotected: bool = False        # nothing protects the check: lines: never complete on them, review instead
 
 
 async def _working_folder():
@@ -66,4 +67,5 @@ async def run(request, state) -> HostChecks:
         printed.append(f"{check.id} ({args['command'][:200]}): " + wrap_tool_output(json.dumps(
             {key: str(result.get(key))[-2000:] for key in ("exit_code", "stdout", "stderr", "error")
              if result.get(key) not in (None, "")}, ensure_ascii=False)))
-    return HostChecks(runs=tuple(runs), accepted=accepted, printed="\n".join(printed))
+    return HostChecks(runs=tuple(runs), accepted=accepted, printed="\n".join(printed),
+                      unprotected=goal_mode.unprotected(goal.protected))
