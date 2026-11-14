@@ -145,8 +145,8 @@ class EffectiveSettings:
 
 
 async def _chain(db, row: ConversationContext) -> tuple[list[ConversationContext], bool]:
-    """`row` and its parents, nearest first, and whether the chain is whole. SIDE-1: a side chat's parent is on it;
-    its own row stores memory and learning off, so the chain's strictest values keep them off."""
+    """`row` and its parents, nearest first, and whether the chain is whole. SIDE-1: a side chat's parent is on it,
+    so it reads memory as its parent does; learning is off (`effective_settings`)."""
     chain = [row]
     while chain[-1].kind in UNDER:
         parent_id = chain[-1].parent_id
@@ -164,8 +164,8 @@ async def effective_settings(db, row: ConversationContext) -> EffectiveSettings:
     chain, whole = await _chain(db, row)
     on = {name: any(bool(getattr(r, name)) for r in chain) for name in _ON}
     off = {name: all(bool(getattr(r, name)) for r in chain) for name in _OFF}
-    if row.kind == SUB:
-        on["no_learning"] = True                # a sub-session never learns, whatever its row says
+    if row.kind in UNDER:
+        on["no_learning"] = True              # a sub-session or a side chat never learns, whatever its row says
     if not whole:
         on["no_memory"] = True
         off = dict.fromkeys(_OFF, False)

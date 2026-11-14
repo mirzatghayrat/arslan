@@ -636,7 +636,7 @@ async def _quick_tools() -> list[dict]:
 SIDE_NOTE = ("This is a side chat beside one of the user's conversations: you see that conversation up to where the "
              "user branched, then this side chat, and nothing said here reaches it unless the user brings it back. "
              "Here you can only read files, list folders, search files, search the web and read a page: no commands, "
-             "no file changes, no memory, no background work or schedules. For any of those, the user asks in the "
+             "no file changes, nothing saved to memory, no background work or schedules. For any of those, the user asks in the "
              "main conversation.")
 
 
@@ -651,7 +651,7 @@ async def _side_tools() -> list[dict]:
 
 async def _stored_kind(conversation_id: str) -> tuple[str | None, bool | None]:
     """What the conversation is, as stored (0071): `quick`, `chat`, `side`, or None (worked out on each read); and, for
-    a side chat, whether it started as having read outside content (0093; NULL counts as yes)."""
+    a side chat, whether it started as having read outside content (0099; NULL counts as yes)."""
     from sqlalchemy import select
 
     from server.db.companion_models import ConversationContext

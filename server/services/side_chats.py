@@ -1,7 +1,7 @@
 """SIDE-1 (v0.1.64, docs/plans/0164/SIDE-side-chat.md): side chats, the backend.
 
 A side chat is a conversation of its own, `kind="side"` (migration 0071's column), under the conversation it was branched
-from (`parent_id`), at one of that conversation's messages (`branch_message_id`, migration 0093). Its id is minted here,
+from (`parent_id`), at one of that conversation's messages (`branch_message_id`, migration 0099). Its id is minted here,
 `side-` and a UUID (`phone_ids.SIDE_PREFIX`), so one with no row still reads as a side chat. Its messages are its own;
 the window talks to it over the socket as to any conversation.
 
@@ -11,8 +11,10 @@ the window talks to it over the socket as to any conversation.
   (`memory.maybe_compact`): a long one drops its oldest parent messages first.
 - Read-only (card, rule 2): it is shown, and may call, `TOOLS` only (`arslan._side_tools`), and no job starts in it
   (`sub_sessions.refusal`).
-- Its settings are its parent's, read through it each turn (`sub_sessions._chain`), with memory and learning off: its
-  row stores both, and no route sets anything on it (`side_chat_inherits`). It runs on its parent's model
+- Its settings are its parent's, read through it each turn (`sub_sessions._chain`). It reads memory as its parent
+  does (the user's ruling, 2026-11-14) and writes none: learning is off, on its row and in `effective_settings` for
+  any side chat whatever its row says, so every memory or lesson write refuses (`learning_disabled`). No route sets
+  anything on it (`side_chat_inherits`). It runs on its parent's model
   (`llm_factory`), and a local-only receipt of its parent counts as its own (`task_context.load`).
 - The outside-content mark (card, rule 3): worked out once when it is made, and stored (`outside_at_start`). Every turn
   of one that started marked starts marked (`arslan._answer_dispatch`); a clean one is marked by what each turn reads.
@@ -129,9 +131,14 @@ async def create(db, parent_id: str, branch_message_id: int | None) -> dict:
                 ArslanMessage.id == branch_message_id, ArslanMessage.conversation_id == parent_id))
             if branch is None:
                 raise SideChatError(422, "invalid_branch_message")
+        if parent is None:
+            # As `sub_sessions.create_child` does: an ordinary conversation has no row until a setting changes, and a
+            # chain with a row missing fails closed (no memory), so the side chat would never read memory.
+            parent = ConversationContext(id=parent_id)
+            db.add(parent)
         row = ConversationContext(
             id=f"{phone_ids.SIDE_PREFIX}{uuid4()}", owner_id=parent.owner_id if parent else "local",
-            kind=sub_sessions.SIDE, parent_id=parent_id, no_memory=True, no_learning=True, branch_message_id=branch,
+            kind=sub_sessions.SIDE, parent_id=parent_id, no_learning=True, branch_message_id=branch,
             outside_at_start=await _started_marked(db, parent_id, branch))
         db.add(row)
         await db.flush()

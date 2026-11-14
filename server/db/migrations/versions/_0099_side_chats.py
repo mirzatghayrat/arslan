@@ -1,4 +1,4 @@
-"""0093 (SIDE-1, v0.1.64): where a side chat branches from its parent, and whether it started marked.
+"""0099 (SIDE-1, v0.1.64): where a side chat branches from its parent, and whether it started marked.
 
 A side chat is a `conversation_contexts` row of kind `side` with its parent (0071's columns). Two nullable columns there,
 written once when it is made (`side_chats.create`) and never changed:
@@ -8,9 +8,8 @@ written once when it is made (`side_chats.create`) and never changed:
 The quote the user selected is not stored: it is the side chat's first message (⓪Plan, 2026-11-14).
 
 Add-only, so reverting the code that uses them needs nothing back. Idempotent: a column already there is left alone, and
-so is a database without the table (a new install's create_all makes it with both). Numbered 0093, its reservation,
-below 0095, which merged first: `MIGRATIONS` stays in order, and the runner applies every id an install's ledger lacks,
-so an install that already ran 0095 gets this one at its next boot (as 0073 did).
+so is a database without the table (a new install's create_all makes it with both). Numbered 0099 (docs/sessions.md
+§4; 0093 was released): it goes last in `MIGRATIONS`, after 0095, while 0096-0098 stay reserved.
 """
 from __future__ import annotations
 

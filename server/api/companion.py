@@ -305,7 +305,7 @@ async def update_conversation_context(conversation_id: str, body: ConversationSe
     if row and (row.owner_id != USER.owner_id or row.kind == sub_sessions.DELETED):  # SUB5a: a tombstone stays one
         raise HTTPException(404, detail={"code": "conversation_not_found"})
     if phone_ids.kind_of(conversation_id, row.kind if row else None) == sub_sessions.SIDE:
-        # SIDE-1: a side chat's settings are its parent's, read through it each turn, with memory and learning off.
+        # SIDE-1: a side chat's settings are its parent's, read through it each turn; it reads memory, never learns.
         raise HTTPException(422, detail={"code": "side_chat_inherits"})
     if phone_ids.kind_of(conversation_id, row.kind if row else None) == "quick" and not body.no_learning:
         # #490 review, 5: a quick question learns nothing until the user turns it into a chat (phone.py, Q1 #3).

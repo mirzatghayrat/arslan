@@ -6,7 +6,8 @@ without it:
 - it is shown, and may call, five read-only tools only: a list, kept where each tool's traits still say it reads;
 - it starts marked as having read outside content unless every parent run up to the branch recorded none and nothing it
   reads is framed as outside content; one that started marked starts every turn marked;
-- no job starts in it (an Inbox item accepted into it included), it remembers and learns nothing, and none of its
+- no job starts in it (an Inbox item accepted into it included), it reads memory as its parent does but writes no
+  memory and no lesson, and none of its
   settings, its model or a pin can be set on it;
 - a local-only receipt of its parent stops a cloud model in it, as one of its own would;
 - it is in no list of conversations and not on the phone, and it goes with its parent.
@@ -104,22 +105,22 @@ def _capture(monkeypatch) -> dict:
     return seen
 
 
-# -- migration 0093 ----------------------------------------------------------------------------------------------
+# -- migration 0099 ----------------------------------------------------------------------------------------------
 
-def test_0093_adds_the_branch_and_the_mark_once_and_leaves_a_database_without_the_table_alone(tmp_path):
-    from server.db.migrations.versions import _0093_side_chats as m0093
+def test_0099_adds_the_branch_and_the_mark_once_and_leaves_a_database_without_the_table_alone(tmp_path):
+    from server.db.migrations.versions import _0099_side_chats as m0099
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'm.db'}")
     try:
         with engine.begin() as conn:
             conn.exec_driver_sql("CREATE TABLE conversation_contexts (id VARCHAR(100) PRIMARY KEY, version INTEGER)")
             conn.exec_driver_sql("INSERT INTO conversation_contexts (id, version) VALUES ('c-1', 3)")
-            m0093.upgrade_sync(conn)
-            m0093.upgrade_sync(conn)
+            m0099.upgrade_sync(conn)
+            m0099.upgrade_sync(conn)
             columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(conversation_contexts)")]
             row = conn.exec_driver_sql("SELECT * FROM conversation_contexts").one()
         with engine.begin() as conn:
             conn.exec_driver_sql("DROP TABLE conversation_contexts")
-            m0093.upgrade_sync(conn)
+            m0099.upgrade_sync(conn)
             assert conn.exec_driver_sql("SELECT name FROM sqlite_master").all() == []
     finally:
         engine.dispose()
@@ -127,22 +128,22 @@ def test_0093_adds_the_branch_and_the_mark_once_and_leaves_a_database_without_th
     assert tuple(row) == ("c-1", 3, None, None)
 
 
-def test_0093_sits_below_0095_and_still_runs_on_an_install_that_ran_0095(tmp_path, monkeypatch):
-    """0095 merged first. The chain stays in order, and the runner applies every id an install's ledger lacks, so one
-    that already ran 0095 gets 0093 at its next boot (as 0073 did)."""
+def test_0099_comes_after_0095_and_an_install_at_the_previous_head_gets_it(tmp_path, monkeypatch):
+    """0099 is the last migration, after 0095 (0096-0098 are reserved). An install whose ledger ends at the previous
+    head gets it, and only it, at its next boot."""
     from server.db.migrations import runner
     from server.db.models import Base
     versions = [version for version, _ in runner.MIGRATIONS]
-    assert versions.index("0092") + 1 == versions.index("0093") == versions.index("0095") - 1
+    assert versions[-2:] == ["0095", "0099"] and runner.head() == "0099"
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'arslan.db'}")
     try:
         Base.metadata.create_all(engine)
         with monkeypatch.context() as patched:
-            patched.setattr(runner, "MIGRATIONS", [m for m in runner.MIGRATIONS if m[0] != "0093"])
+            patched.setattr(runner, "MIGRATIONS", runner.MIGRATIONS[:-1])
             with engine.begin() as conn:
-                assert "0095" in runner.apply_pending(conn)
+                assert runner.apply_pending(conn)[-1] == "0095"
         with engine.begin() as conn:
-            assert runner.apply_pending(conn) == ["0093"]
+            assert runner.apply_pending(conn) == ["0099"]
     finally:
         engine.dispose()
 
@@ -157,8 +158,8 @@ async def test_a_side_chat_is_its_own_conversation_under_its_parent_at_its_newes
     assert (made["parent_id"], made["branch_message_id"], made["message_count"]) == (PARENT, ids[-1], 0)
     row = await _row(execution_db, made["conversation_id"])
     assert (row.kind, row.parent_id, row.branch_message_id) == ("side", PARENT, ids[-1])
-    # Memory and learning off on its own row; the rest is read through its parent, never copied.
-    assert (row.no_memory, row.no_learning, row.temporary, row.project_id) == (True, True, False, None)
+    # Learning off on its own row; memory and the rest are read through its parent, never copied.
+    assert (row.no_memory, row.no_learning, row.temporary, row.project_id) == (False, True, False, None)
     assert (row.cloud_memory_allowed, row.allow_sensitive, row.pinned) == (False, False, False)
 
 
@@ -497,23 +498,84 @@ async def test_a_local_only_receipt_of_the_parent_stops_a_cloud_model_in_the_sid
     assert (await task_context.load(side, user_message="go on")).model_is_local is True
 
 
-# -- no memory, no learning (card, rule 4) ----------------------------------------------------------------------------
+# -- reads memory, writes none (card, rule 4; the user's ruling, 2026-11-14) -----------------------------------------
 
-async def test_it_remembers_and_learns_nothing_whatever_its_parent_allows(execution_db):
-    from server.services import conversation_search, memory_import, personal_context as pc
+async def test_its_turn_reads_memory_as_its_parent_does(execution_db, monkeypatch):
+    from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
+    from server.services import llm_factory, personal_context as pc
+    from server.services.memory_migration import migrate_legacy_sync
+    from server.services.memory_repository import repository
+    async with execution_db.kw["bind"].begin() as db:
+        await db.run_sync(migrate_legacy_sync)
+
+    async def local(db):
+        return True
+    monkeypatch.setattr(llm_factory, "memory_models_are_local", local)
+    async with repository() as repo:
+        await repo.create(MemoryWrite(content="Lunch is at noon on weekdays", scope=MemoryScope(kind="global")),
+                          MemoryActor(origin="user"))
+    await _talk(execution_db)
+    side = (await _start(execution_db))["conversation_id"]
+    assert (await _row(execution_db, side)).no_memory is False
+    ctx = await task_context.load(side, user_message="when is lunch?")
+    assert (ctx.no_memory, ctx.no_learning, ctx.temporary) == (False, True, False)
+    assert pc.may_show_memory(ctx) is True
+    with pc.bind(ctx):
+        block = await pc.assemble("lunch")
+    assert block.receipt.memory_mode == "normal" and "Lunch is at noon on weekdays" in block.text
+    # Its parent turning memory off turns it off here too, at the next turn.
+    async with execution_db() as session:
+        (await session.get(ConversationContext, PARENT)).no_memory = True
+        await session.commit()
+    assert (await task_context.load(side, user_message="and now?")).no_memory is True
+
+
+async def test_it_writes_no_memory_and_no_lesson_even_were_its_row_to_allow_learning(execution_db, monkeypatch):
+    """`no_learning` is on its row, and forced for any side chat in `effective_settings`: a row turned back on by
+    hand still refuses every write."""
+    from arslan.companion.memory import MemoryScope, MemoryWrite
+    from server.db.companion_models import MemoryEntry
+    from server.orchestrator.tool_caller import ToolCaller
+    from server.services import lessons, memory_import, memory_tools_v2, personal_context as pc
+    from server.services.memory_migration import migrate_legacy_sync
+    from server.services.memory_repository import repository
+    async with execution_db.kw["bind"].begin() as db:
+        await db.run_sync(migrate_legacy_sync)
     async with execution_db() as session:
         session.add(ConversationContext(id=PARENT, kind="chat", cloud_memory_allowed=True, allow_sensitive=True))
         await session.commit()
     await _talk(execution_db)
     side = (await _start(execution_db))["conversation_id"]
+    async with execution_db() as session:
+        (await session.get(ConversationContext, side)).no_learning = False
+        await session.commit()
     ctx = await task_context.load(side, user_message="remember that lunch is at noon")
-    assert (ctx.no_memory, ctx.no_learning, ctx.temporary) == (True, True, False)
-    # What reads those: memory in its prompt, past conversations, a memory import.
-    assert pc.may_show_memory(ctx) is False and conversation_search.refusal(ctx) is not None
+    assert ctx.no_learning is True
+    learned = []
+
+    async def record(*args, **kwargs):
+        learned.append(args or kwargs)
+    for name in ("record_applied", "capture"):
+        monkeypatch.setattr(lessons, name, record)
+    monkeypatch.setattr(lessons, "detours", lambda trace: [{"tool": "read_file"}])
+    host = ToolCaller(actor="host", spawn_id=None, conversation_id=side)
     with pc.bind(ctx):
-        assert (await pc.assemble("lunch")).receipt.memory_mode == "disabled"
-        refused = await memory_import.propose({"why": "x"}, conversation_id=side, ask=None)
-    assert refused["error"] == "learning_disabled"
+        assert (await memory_tools_v2.remember(
+            {"action": "append", "kind": "preference", "content": "lunch is at noon"}, host))["code"] == \
+            "learning_disabled"
+        assert (await memory_tools_v2.note({"action": "add", "set": "about_you", "text": "lunch at noon"}, host))[
+            "code"] == "learning_disabled"
+        assert (await memory_import.propose({"why": "x"}, conversation_id=side, ask=None))["error"] == \
+            "learning_disabled"
+        with pytest.raises(MemoryError, match="learning_disabled"):
+            async with repository() as repo:
+                await repo.create(MemoryWrite(content="lunch is at noon", scope=MemoryScope(kind="global")),
+                                  ctx.actor("extractor"))
+        await lessons.after_turn(conversation_id=side, user_request="x", trace=[{"tool": "read_file"}],
+                                 external_seen=False, recalled=[{"id": 1}], ok=True)
+    assert learned == []
+    async with execution_db() as session:
+        assert await session.scalar(select(sa.func.count(MemoryEntry.id))) == 0
 
 
 async def test_after_its_turn_nothing_is_noticed_and_it_is_never_compacted(execution_db, monkeypatch):
@@ -604,7 +666,7 @@ async def test_its_project_is_its_parents_read_each_time(execution_db):
     async with execution_db() as session:
         session.add(Project(id="p1", name="P"))
         await session.commit()
-        session.add(ConversationContext(id=PARENT, kind="chat", project_id="p1"))     # moved into it after the branch
+        (await session.get(ConversationContext, PARENT)).project_id = "p1"            # moved into it after the branch
         await session.commit()
     assert (await task_context.load(side, user_message="hello")).project_id == "p1"
     assert (await _row(execution_db, side)).project_id is None          # never copied, so never in the project's list
@@ -627,12 +689,11 @@ async def test_a_side_chat_is_in_no_list_and_not_on_the_phone(client):
     assert (await client.get(f"/api/v1/phone/runs/{run}/files")).status_code == 404
     assert (await client.post(f"/api/v1/phone/conversations/{side}/update", json={"kind": "chat"})).status_code == 404
     assert [r["id"] for r in (await client.get("/api/v1/runs")).json()] == [parent_run]       # the whole app's runs
-    # What the parent's conversation_search tool reads: never a side chat, also were its memory switch ever off.
+    # What the parent's conversation_search tool reads: never a side chat, by its kind alone (its memory switch is on).
     from server.services import conversation_search
-    async with client.db_maker() as session:
-        (await session.get(ConversationContext, side)).no_memory = False
-        await session.commit()
+    assert (await _row(client.db_maker, side)).no_memory is False
     assert await conversation_search.search("side needle") == []
+    assert await conversation_search.search("first question")       # the parent's own words are still found
 
 
 async def test_the_whole_app_counts_its_work_as_its_parents(client):
