@@ -707,22 +707,30 @@ async def mode_for(conversation_id: str | None, *, check_save: bool = False) -> 
 
 async def _chosen(conversation_id: str | None) -> str:
     from server.db.companion_models import ConversationContext
-    from server.services import settings_service
+    from server.services import settings_service, sub_sessions
     try:
         async with db_session.AsyncSessionLocal() as db:
             default = await settings_service.default_permission_mode(db)
             chain: list[str | None] = []      # own modes, from this conversation up through its parents (SUB)
+            rows: list[ConversationContext] = []
             seen: set[str] = set()
             current = conversation_id
-            while current and current not in seen and len(seen) < 16:
+            while current and current not in seen and len(seen) < sub_sessions.MAX_DEPTH:
                 seen.add(current)
                 row = await db.get(ConversationContext, current)
                 if row is None:
                     break
+                rows.append(row)
                 # Null is unset (the default, or the parent's); any other value not a mode is "ask" (#893 review 6).
                 own = row.permission_mode
                 chain.append(None if own is None else own if own in MODES else "ask")
                 current = row.parent_id if row.kind == "sub" else None
+            # SUB2: a sub-session whose chain can't be read whole (as `sub_sessions._chain` reads it: the walk ends on
+            # a sub-session, for a parent's row gone, none named, a loop, more layers than exist) or has a deleted
+            # conversation on it fails closed: "ask" stands in for its top, and each mode it did read still narrows.
+            if rows and rows[0].kind == "sub" and (
+                    rows[-1].kind == "sub" or any(sub_sessions.is_deleted(r.id, r) for r in rows)):
+                chain.append("ask")
     except Exception:  # noqa: BLE001 — fails closed: an unreadable mode is "ask every step"
         return "ask"
     # The top conversation's own mode, else the default; each sub-session below it only narrows.
