@@ -116,7 +116,8 @@ async def allow_refused_site(body: AllowRefused, db: AsyncSession = Depends(get_
     """NET-a (Codex round 1, F7): "In this conversation" on a site NET-a's card couldn't ask, or that nobody answered:
     for that row's own conversation, the grants a click on the card stores, through the card's own path
     (`net_policy.allow_from_inbox`). As with "Always allow", the client names the row and nothing else. 404: no such
-    row. 409: not one the Inbox lists (`permission_store.LISTED`), or no site of NET-a's card to allow in a
+    row. 409: not one the Inbox lists (`permission_store.LISTED`), a scheduled run's (`decided_by` policy: a run with
+    nobody to ask reads no grant, S1, so the Inbox offers none), or no site of NET-a's card to allow in a
     conversation (another kind, a `network:*` card, no conversation). Returns the grants, which
     `DELETE /permissions/grants/{id}` takes back."""
     row = await db.get(ApprovalEvent, body.refused_id)
@@ -124,6 +125,8 @@ async def allow_refused_site(body: AllowRefused, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=404, detail="no such refusal")
     if (row.decided_by, row.decision) not in permission_store.LISTED:
         raise HTTPException(status_code=409, detail={"code": "not_a_refusal"})
+    if row.decided_by == "policy":
+        raise HTTPException(status_code=409, detail={"code": "unattended"})
     if not row.conversation_id or not net_policy.listed_sites(row.kind, row.target):
         raise HTTPException(status_code=409, detail={"code": "no_site"})
     return {"grants": [{"id": grant.id, "target": grant.target} for grant in await net_policy.allow_from_inbox(row)]}

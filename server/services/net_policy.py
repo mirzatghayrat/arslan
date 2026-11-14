@@ -14,7 +14,8 @@ never "Always"): a site that appears nowhere was steered by nothing (⓪Plan Q1,
 address is judged apart (`judge`). The command is told why (`refusal_note`), and the user is asked once whether
 commands in this conversation may reach the site (`offer`; NET-b words that card and adds Settings' list). That card
 comes after verify's run too (Codex round 1, F8). Where it can't be asked or isn't answered, the Inbox lists it, and
-its "In this conversation" there stores what the card's would (`allow_from_inbox`, F7).
+its "In this conversation" there stores what the card's would (`allow_from_inbox`, F7): not for a scheduled run's
+entry, since a run with nobody to ask reads no grant (S1).
 
 Hosts are compared after IDNA (UTS 46), in lower case, with no port and no trailing dot: the exact host, or a subdomain
 of a listed, named or recorded one within that one's own site, never one a public suffix keeps apart from it
@@ -661,7 +662,7 @@ async def offer(hosts, command: str, conversation_id: str | None) -> str:
     """NET-a's card after a run the proxy refused sites in: one card for up to three, "In this conversation" (one
     `network:<host>` grant each, never "Always") or no. What the model is told of the answer. With nobody to ask (a
     scheduled run) the card goes where every card goes there (Codex round 1, F7): refused by policy, with nothing
-    granted, and listed in the Inbox, whose "In this conversation" answers it later (`allow_from_inbox`)."""
+    granted, and listed in the Inbox, which offers it no grant (S1: such a run reads none)."""
     from server.services import background_jobs, permissions
     shown = list(dict.fromkeys(hosts))[:3]
     if not shown:
@@ -694,7 +695,7 @@ def listed_sites(kind: str, target: str) -> list[str]:
 
 async def allow_from_inbox(row) -> list:
     """Codex round 1, F7: "In this conversation", given in the Inbox to a ledger row of NET-a's card the Inbox lists
-    (asked with nobody to ask, never opened, or unanswered: `permission_store.LISTED`), for that row's own
+    (never opened, or unanswered: `permission_store.LISTED`, never a scheduled run's), for that row's own
     conversation. Answered through the card's own path (`_card`) by that click, so it stores what a click on the card
     stores: one `network:<host>` grant a site (`listed_sites`), and its ledger row. The grants, for Undo. The caller
     (`POST /permissions/grants`) checked the row."""

@@ -1,6 +1,6 @@
-/** NET-a, Codex round 1 F7: an entry of NET-a's card in the list of what could not be asked (a site the proxy refused where
- *  nobody could be asked, or a card that never opened) offers that card's "In this conversation" for the sites the server
- *  lists. The click sends the entry's id and nothing else, says what it allowed, and Undo deletes exactly the grants the
+/** NET-a, Codex round 1 F7: an entry of NET-a's card in the list of what could not be asked (a card that never opened, or
+ *  that nobody answered) offers that card's "In this conversation" for the sites the server lists; a scheduled run's entry
+ *  offers none (S1: such a run reads no grant). The click sends the entry's id and nothing else, says what it allowed, and Undo deletes exactly the grants the
  *  server made. The words are the card's own and the Remembered answers page's, in every language. */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor, within, act } from "@testing-library/react";
@@ -66,12 +66,15 @@ describe("NET-a: a refused site's In this conversation, from the list", () => {
     await waitFor(() => expect(req).toHaveBeenCalledWith("/permissions/grants/701", { method: "DELETE" }));
   });
 
-  it("a scheduled run's entry says beside it that the run itself never takes the step (S1)", async () => {
-    serve([{ ...site, unattended: true, unopened: undefined }]);
+  it("a scheduled run's entry offers no grant and says, once, that the run never takes the step (S1)", async () => {
+    // As the server sends it: a run with nobody to ask reads no grant, so it lists no site to allow.
+    serve([{ ...site, unattended: true, unopened: undefined, sites: [] }]);
     render(<NotDoneList conversationId="scheduled-1" unattended />);
     await screen.findAllByTestId("inbox-refused-row");
-    expect(within(row()).getByTestId("inbox-refused-unattended")).toHaveTextContent("inbox.scheduledNeverAsks");
-    expect(within(row()).getByTestId("inbox-refused-allow-here")).toBeInTheDocument();
+    expect(within(row()).queryByTestId("inbox-refused-allow-here")).toBeNull();
+    expect(within(row()).queryByTestId("inbox-refused-allow")).toBeNull();
+    expect(within(row()).getByTestId("inbox-refused-each-time")).toHaveTextContent("inbox.scheduledNeverAsks");
+    expect(within(row()).getAllByText("inbox.scheduledNeverAsks")).toHaveLength(1);
   });
 
   it("an entry with no site left to allow, or from an older server, offers no such button", async () => {

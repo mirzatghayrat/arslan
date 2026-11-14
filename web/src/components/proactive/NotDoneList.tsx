@@ -38,7 +38,8 @@ export interface Refusal {
    *  unanswered (true), or it was shown and nobody answered it in time (false). Absent from an older server. */
   unopened?: boolean;
   /** NET-a (Codex round 1, F7): the sites its card's "In this conversation" allows in the entry's conversation, not allowed
-   *  there yet (POST /permissions/grants {refused_id}). Empty for any other entry; absent from an older server. */
+   *  there yet (POST /permissions/grants {refused_id}). Empty for a scheduled run's entry (S1: a run with nobody to ask reads
+   *  no grant) and any other entry; absent from an older server. */
   sites?: string[];
 }
 
@@ -61,7 +62,7 @@ interface Allowed { row: Refusal; at: number; rules: number[]; grants: number[] 
  * INB3: `conversationId` lists one conversation's entries (the server filters before it groups, #568) over `hours` (1 to 168);
  * `unattended` keeps only a scheduled run's own, since a task may write into an ordinary conversation.
  * NET-a (Codex round 1, F7): an entry of NET-a's card offers that card's "In this conversation" for the sites it names (`sites`),
- * held and undone as "Always allow" is.
+ * held and undone as "Always allow" is. A scheduled run's entry has none (S1): it says the run never takes such a step.
  */
 export default function NotDoneList({ onCount, conversationId, hours = 24, unattended = false, awayOnly = false, title, className = "" }: {
   onCount?: (n: number) => void; conversationId?: string; hours?: number; unattended?: boolean;
@@ -218,9 +219,6 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
                 {/* S6: a card nobody answered expired; it was never refused, and the person may have been right there. */}
                 {!row.unattended && typeof row.unopened === "boolean" && <span data-testid="inbox-refused-expired"
                   className="text-[12px] text-muted-foreground">{t(row.unopened ? "inbox.expiredUnopened" : "inbox.expiredShown")}</span>}
-                {/* NET-a: the scheduled run itself still never takes the step (S1); what is allowed here counts in a chat. */}
-                {row.unattended && sites.length > 0 && !done && <span data-testid="inbox-refused-unattended"
-                  className="text-[12px] text-muted-foreground">{t("inbox.scheduledNeverAsks")}</span>}
                 {offered && !done && <div data-testid="inbox-refused-stores" className="flex flex-col gap-0.5">
                   {row.always.map((rule, i) => {
                     const label = rule.label || rule.target;
