@@ -77,6 +77,20 @@ async def _goal_row(conversation_id: str):
     return next((row for row in rows if (row.privacy or {}).get("driver") == GOAL_DRIVER), None)
 
 
+async def main_conversation(conversation_id: str) -> bool:
+    """Whether goals may run here: a main conversation. Not a side chat (its four read-only tools), a sub-session
+    (its own few tools, its parent's cards and tree limit) or a deleted conversation: a goal job is a top-level
+    background job with the background tools, which would be wider than either. A goal in a sub-session is out of
+    the card's scope, so it is refused, never placed."""
+    from server.db import session as db_session
+    from server.db.companion_models import ConversationContext
+    from server.services import phone_ids, sub_sessions
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(ConversationContext, conversation_id)
+    return not sub_sessions.is_deleted(conversation_id, row) and \
+        phone_ids.kind_of(conversation_id, row.kind if row is not None else None) in {None, "chat"}
+
+
 def _listed(spec: GoalSpec, flagged=()) -> str:
     def line(check: GoalCheck) -> str:
         mark = "⚠ " if check.id in flagged else "👤 " if check.user_confirmed else ""
@@ -140,12 +154,17 @@ async def _set(conversation_id: str, rest: str, say) -> str:
     from server.services import settings_service, task_context, task_service
     from server.services.goal_mode import acceptance, unverifiable
     from server.services.task_repository import repository
+    if not await main_conversation(conversation_id):
+        return say("goal_main_only")
     cap = CAP.match(rest)
     objective = rest[cap.end():].strip()[:OBJECTIVE_MAX] if cap else rest[:OBJECTIVE_MAX]
     try:
         own = user_checks(objective)
     except ValueError as bad:
         return say("goal_bad_check", line=str(bad))
+    ctx = await task_context.load(conversation_id, user_message=objective)
+    if ctx.temporary:                       # before drafting: a temporary conversation keeps no goal row
+        return say("goal_not_here")
     adapter = await _adapter_for_turn(has_images=False, conversation_id=conversation_id)
     response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective), tools=None)
     drafted = () if getattr(response, "tool_calls", None) else drafted_checks(response.content, objective)
@@ -158,9 +177,6 @@ async def _set(conversation_id: str, rest: str, say) -> str:
         spec = GoalSpec(objective=objective, checks=(*drafted, *own), tier=tier, usd_cap=usd_cap)
     except ValidationError:
         return say("goal_draft_failed")
-    ctx = await task_context.load(conversation_id, user_message=objective)
-    if ctx.temporary:
-        return say("goal_not_here")
     task_id = f"job-{uuid.uuid4()}"
     budget = run_budget(spec.tier, usd_cap=spec.usd_cap)
     from arslan.companion.contracts import TaskSpec
@@ -190,6 +206,8 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
     from server.services import background_jobs
     from server.services.goal_mode import acceptance, unverifiable
     from server.services.task_repository import repository
+    if not await main_conversation(conversation_id):
+        return say("goal_main_only")
     if row is None:
         return say("goal_missing")
     if row.phase != "waiting_user" or row.pause_reason != "goal_not_started" or background_jobs.goal_job(row.id):
@@ -211,6 +229,8 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
                 **task.model_dump(mode="json"), "revision": task.revision + 1, "acceptance": acceptance(spec)}),
                 owner_id=row.owner_id)
             await repo.park_goal(row.id, spec.model_dump(mode="json"), owner_id=row.owner_id)
+    if background_jobs.goal_job(row.id):    # a second Start that came in during the awaits above: no await from here
+        return await _status(row, say)
     background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac")
     return say("goal_started", objective=spec.objective[:200])
 

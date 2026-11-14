@@ -262,3 +262,49 @@ async def test_the_benchs_two_messages_set_then_start_the_goal_through_the_chat(
     (job,) = jobs
     assert job.origin == "phone" and "check-1" in {check.id for check in job.goal_spec.checks}
     assert job.job_id == (await _row(execution_db)).id
+
+
+# -- round 1 of review: goals run only from a main conversation; Start runs only a not-started goal row ------------
+
+@pytest.mark.parametrize("kind", ["quick", "sub", "deleted"], ids=["side chat", "sub-session", "deleted"])
+async def test_a_goal_is_refused_outside_a_main_conversation_and_drafts_and_starts_nothing(
+        kind, execution_db, active, model, jobs):
+    from server.db.companion_models import ConversationContext
+    async with execution_db() as db:
+        db.add(ConversationContext(id=CID, kind=kind, parent_id="main-chat" if kind == "sub" else None))
+        await db.commit()
+    assert (await _say(f"/goal {PROMPT}")).startswith("Goals run from a main conversation")
+    assert (await _say("/goal start confirm")).startswith("Goals run from a main conversation")
+    assert model.requests == [] and jobs == [] and background_jobs.active() == []
+    async with execution_db() as db:
+        assert (await db.scalars(select(CompanionTask).where(CompanionTask.conversation_id == CID))).all() == []
+
+
+@pytest.mark.parametrize("pause_reason", ["goal_paused", "goal_changed", "goal_blocked"])
+async def test_run_turn_starts_a_goal_row_only_while_it_is_not_started(pause_reason, execution_db, active, model,
+                                                                      jobs):
+    from server.services import task_service
+    from server.services.task_repository import TaskError, repository
+    await _say(f"/goal {PROMPT}")
+    row = await _row(execution_db)
+    async with repository() as repo:
+        await repo._advance(await repo.get(row.id), "state_changed", changes={"pause_reason": pause_reason})
+    ran = []
+
+    async def function(*args, **kwargs):
+        ran.append(args)
+    with pc.bind(pc.TaskMemoryContext(task_id=row.id, run_id="job", conversation_id=CID, no_memory=True,
+                                      no_learning=True)):
+        with pytest.raises(TaskError, match="task_cannot_start"):
+            await task_service.run_turn(function, CID, PROMPT, lambda event: None,
+                                        _driver={"kind": "background", "goal": True}, _goal_row=row.id)
+    assert ran == [] and (await _row(execution_db)).phase == "waiting_user"
+
+
+async def test_a_temporary_conversation_keeps_no_goal_and_drafts_nothing(execution_db, active, model, jobs,
+                                                                        monkeypatch):
+    async def temporary(cid, **kwargs):
+        return pc.TaskMemoryContext(task_id="t", run_id="t", conversation_id=cid, temporary=True)
+    monkeypatch.setattr(task_context, "load", temporary)
+    assert await _say(f"/goal {PROMPT}") == "That /goal command isn't available here yet."
+    assert model.requests == [] and jobs == []
