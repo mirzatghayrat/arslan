@@ -160,8 +160,9 @@ async def test_every_decision_is_one_ledger_row_with_its_scope_and_wait():
     assert [(e.decided_by, e.decision, e.scope) for e in events] == [
         ("user", "allow", "conversation"), ("grant", "allow", "conversation")]
     assert events[0].wait_ms is not None and events[1].wait_ms is None
-    # ASK1-a (v0.1.64): unset asks only for risky commands, which the ledger calls Standard.
-    assert events[0].conversation_id == "conv-1" and events[0].mode == "standard"
+    # S5a: the row records the mode in effect: unset is "ask_risky", or "ask" where it falls back (no sandbox on CI).
+    assert events[0].conversation_id == "conv-1"
+    assert events[0].mode == (await permissions.mode_for("conv-1")).mode in ("ask_risky", "ask")
 
 
 async def test_decide_many_asks_once_for_the_apps_not_yet_allowed():
@@ -385,12 +386,12 @@ async def test_a_rule_that_decides_is_counted():
 
 async def test_the_ledger_row_says_which_mode_was_on():
     async with db_session.AsyncSessionLocal() as db:
-        await settings_service.update_settings(db, {"shell_confirm_policy": "ask_all"})
+        await settings_service.update_settings(db, {"default_permission_mode": "ask"})
     with permissions.asking_with(Asker(yes("task"))):
         await permissions.decide(app(), CTX)
     async with db_session.AsyncSessionLocal() as db:
         [event] = await permission_store.recent(db)
-    assert event.mode == "careful"
+    assert event.mode == "ask"
 
 
 async def test_a_request_with_no_frame_of_its_own_is_a_propose_action_card():
@@ -620,17 +621,17 @@ async def test_a_task_id_the_caller_gave_wins_over_the_running_turns(monkeypatch
         assert await permission_store.find_grant(db, "conv-1", "turn-x", "app", "com.apple.Notes") is None
 
 
-async def test_an_unreadable_setting_is_the_default_careful_mode(monkeypatch):
-    """v0.1.63: the default asks before every command (Careful); an unreadable setting is that default."""
+async def test_an_unreadable_setting_is_ask_every_step(monkeypatch):
+    """S5a: a mode that can't be read is "Ask every step", the strict one."""
     async def broken(db):
         raise RuntimeError("settings table unreadable")
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", broken)
+    monkeypatch.setattr(settings_service, "default_permission_mode", broken)
     with permissions.asking_with(Asker(yes("task"))):
         d = await permissions.decide(app(), CTX)
-    assert d.allowed
+    assert d.allowed and d.by == "user"
     async with db_session.AsyncSessionLocal() as db:
         [event] = await permission_store.recent(db)
-    assert event.mode == "careful"
+    assert event.mode == "ask"
 
 
 async def test_a_ledger_that_cannot_be_written_does_not_break_a_refusal(monkeypatch):

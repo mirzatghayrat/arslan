@@ -111,8 +111,8 @@ def gate(monkeypatch):
         monkeypatch.setattr(command_gate, "_work_folder_holds_home", lambda: answer(False))
         monkeypatch.setattr(command_gate, "_outside_grant", lambda conversation_id, command: answer(grant))
         monkeypatch.setattr(command_sandbox, "available", lambda: available)
-        monkeypatch.setattr(settings_service, "shell_confirm_policy",
-                            lambda db: answer("ask_all" if ask_all else "ask_risky"))
+        monkeypatch.setattr(settings_service, "default_permission_mode",
+                            lambda db: answer("ask" if ask_all else "ask_risky"))
         # As the real one: the setting off or seatbelt unable to start, or a grant (#798 review)
         monkeypatch.setattr(approvals, "runs_unsandboxed", lambda conversation_id=None: answer(
             not (enabled and available) or grant is not None))
