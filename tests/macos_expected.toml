@@ -305,6 +305,13 @@ markers = 1
 cases = 1
 xfail = 0
 
+# v0.1.64 ASK1-b: a scheduled task's fire runs its command inside seatbelt, writing in Arslan's own folder; cut back
+# to read-only (`_FIRE_WRITES = False`), it starts in its run's temp folder.
+["server/test_ask1b_fire_seatbelt.py"]
+markers = 1
+cases = 2
+xfail = 0
+
 # v0.1.64 CAP10: verify runs a small project's tests in the commands sandbox; its network and writes outside are refused.
 ["server/test_cap10_verify.py"]
 markers = 2

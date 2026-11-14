@@ -565,17 +565,22 @@ async def _fire_with_a_note(monkeypatch, task_id: int) -> dict:
     return result
 
 
-async def test_a_scheduled_run_starts_as_having_read_outside_content(memory, monkeypatch):
+@pytest.mark.parametrize("outside_seen", [True, False])
+async def test_a_scheduled_run_starts_from_what_its_prompt_s_turn_had_read(memory, monkeypatch, outside_seen):
+    """ASK1-b: a fire starts from its task's `outside_seen` (migration 0097), no longer always as having read it."""
     from datetime import datetime
     from server.db.models import ScheduledTask
     async with db_session.AsyncSessionLocal() as db:
         task = ScheduledTask(name="setup check", prompt="Check the setup page", conversation_id=CID, target="arslan",
-                             schedule_kind="interval", interval_s=3600, enabled=True, next_due_at=datetime.utcnow())
+                             schedule_kind="interval", interval_s=3600, enabled=True, next_due_at=datetime.utcnow(),
+                             outside_seen=outside_seen)
         db.add(task)
         await db.commit()
         task_id = task.id
     result = await _fire_with_a_note(monkeypatch, task_id)
-    assert result["external_seen"] is True and _note_status(result) == "proposed"
+    assert result["external_seen"] is outside_seen
+    if outside_seen:
+        assert _note_status(result) == "proposed"
 
 
 async def test_a_schedule_made_with_no_card_after_reading_a_page_still_fires_marked(memory, monkeypatch):

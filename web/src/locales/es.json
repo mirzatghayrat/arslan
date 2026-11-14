@@ -1354,7 +1354,7 @@
     "every_minute": "cada minuto",
     "every_n_minutes": "cada {{count}} minutos",
     "prompt": "Lo que hará cada vez:",
-    "unattended": "Las ejecuciones programadas ocurren solas y nunca te esperan: un paso que necesitaría tu confirmación se rechaza y aparece bajo la tarea en la página Programadas. Pueden buscar información y escribir archivos solo en la carpeta de trabajo propia de Arslan; no ejecutan comandos.",
+    "unattended": "Las ejecuciones programadas ocurren solas y nunca te esperan: ejecutan en el entorno aislado los comandos que no necesitarían tu confirmación, y escriben archivos solo en la carpeta de trabajo propia de Arslan. Lo que necesitaría tu confirmación se rechaza y aparece bajo la tarea en la página Programadas.",
     "anyTask": "crear cualquier tarea programada"
   },
   "enroll": {
@@ -1493,7 +1493,10 @@
     "seenNote": "Abrir una tarea marca como visto lo que sus ejecuciones no pudieron hacer. Lo que caducó sin hacerse en su propia conversación se borra al abrir esa conversación; una tarjeta allí, solo cuando la respondes.",
     "attention": "Necesita tu atención",
     "changed": "Ha cambiado",
-    "failing": "Falló o se pausó sola"
+    "failing": "Falló o se pausó sola",
+    "commandsNoteTitle": "Las tareas programadas pueden volver a ejecutar comandos",
+    "commandsNoteBody": "La ejecución de una tarea programada ahora ejecuta los comandos que no necesitarían tu confirmación, en el entorno aislado, en la carpeta de trabajo propia de Arslan. Lo que necesitaría tu confirmación se rechaza y aparece aquí bajo su tarea. Las tareas creadas antes de esta actualización, o después de leer contenido externo, ejecutan sus comandos sin red. Si elegiste «Preguntar antes de cada comando», las ejecuciones programadas no ejecutan ninguno.",
+    "commandsNoteOk": "Entendido"
   },
   "remembered": {
     "title": "Respuestas recordadas",
