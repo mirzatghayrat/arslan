@@ -203,6 +203,46 @@ async def test_the_fallback_is_tried_once_and_only_for_a_refused_cap():
     assert len(sent) == 1
 
 
+async def test_a_refused_cap_is_remembered_per_endpoint_and_model():
+    """After one refusal, later requests to that endpoint and model open at 8,192: no refused round trip each time."""
+    refusal = _refusal(400, "max_tokens is too large", "max_tokens")
+    base = "http://127.0.0.1:8000/v1"
+    p, sent = _openai("custom", base, replies=[refusal])
+    await p.chat(list(_MESSAGES))
+    assert [_cap(b)[1] for b in sent] == [32_768, 8_192]
+    await p.chat(list(_MESSAGES))
+    assert [_cap(b)[1] for b in sent[2:]] == [8_192]                 # straight to 8,192, one request
+    assert [piece async for piece in p.chat_stream(list(_MESSAGES))] == ["ok"]
+    assert [_cap(b)[1] for b in sent[3:]] == [8_192]                 # the stream path too
+
+    again, sent = _openai("custom", base)                            # a new provider for the same endpoint + model
+    await again.chat(list(_MESSAGES))
+    assert [_cap(b)[1] for b in sent] == [8_192]
+
+    other_model, sent = _openai("custom-large", base)
+    await other_model.chat(list(_MESSAGES))
+    other_base, sent2 = _openai("custom", "http://127.0.0.1:9000/v1")
+    await other_base.chat(list(_MESSAGES))
+    assert [_cap(b)[1] for b in sent] == [32_768] and [_cap(b)[1] for b in sent2] == [32_768]
+
+
+async def test_gemini_refused_cap_is_remembered():
+    refusal = httpx.Response(400, json={"error": {"code": 400, "status": "INVALID_ARGUMENT", "message":
+                             "The maxOutputTokens value 65536 is out of range for this model."}})
+    p, sent = _gemini("gemini-2.5-flash", replies=[refusal])
+    await p.chat(list(_MESSAGES))
+    await p.chat(list(_MESSAGES))
+    assert [b["generationConfig"]["maxOutputTokens"] for b in sent] == [65_536, 8_192, 8_192]
+
+
+async def test_an_explicit_smaller_cap_is_kept_on_a_remembered_endpoint():
+    refusal = _refusal(400, "max_tokens is too large", "max_tokens")
+    p, sent = _openai("custom", "http://127.0.0.1:8000/v1", replies=[refusal])
+    await p.chat(list(_MESSAGES))
+    await p.chat(list(_MESSAGES), max_tokens=1_024)
+    assert [_cap(b)[1] for b in sent] == [32_768, 8_192, 1_024]
+
+
 # ---- a length stop is continued, not silently cut ------------------------------------------------------
 
 async def _run(monkeypatch, adapter):

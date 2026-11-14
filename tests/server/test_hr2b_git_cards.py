@@ -6,6 +6,10 @@ marks them, and a card after a git refusal.
    `<upstream>..HEAD`, else `<remote>/HEAD..HEAD`. A failure or timeout says Arslan couldn't list them, and the card
    still shows. No new frame key: the list goes in the frame's `reason` (the phone's text) and `summary.touches`
    (the Mac card's "touches" row).
+   HR-3: the card's first line there names where the push really goes (`git_config_guard.push_destination`): the
+   remote's pushurl, else its url, read in the push's folder as git reads it, with no `user:pass@`; "Push destination
+   unknown" when that can't be read, and the card still shows. The title names a url typed after `push` without one;
+   so do the clone, fetch and pull cards, the clone's touches row too.
 2. `checkpoints.changes` marks each CI path (`ci: true`).
 3. After git's own refusal lines named a held file in a conversation (`git_refused`), its next `git add` or `git
    commit` asks a once-only card (kind `git_refused`); the island never answers it, nobody to ask refuses it and
@@ -28,14 +32,15 @@ import pytest
 from server.db import session as db_session
 from server.orchestrator import command_gate, untrusted
 from server.orchestrator.turn_state import ToolTurn
-from server.services import (approvals, checkpoints, command_confirm, command_sandbox, git_config_guard, hard_rules,
-                             permission_store, permissions, settings_service, terminal_exec, tool_outputs)
+from server.services import (approvals, card_purpose, checkpoints, command_confirm, command_sandbox, git_config_guard,
+                             hard_rules, permission_store, permissions, settings_service, terminal_exec, tool_outputs)
 from server.services.sandbox_profile import default_deny_profile
 from tests.server.test_hr1c_git_view import _git, _init
 
 seatbelt = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                               reason="git is asked in seatbelt, which is macOS-only")
 CI, OTHER = ".github/workflows/zz-stand-in.yml", "src/zz_stand_in.py"
+DEST, SECRET = "Push destination: ", "zz-secret"
 
 
 @pytest.fixture(autouse=True)
@@ -104,18 +109,19 @@ async def test_the_push_card_lists_an_outgoing_ci_file_and_not_another(execution
         _git(repo, "checkout", "-q", "-b", "topic")       # no upstream: read against origin/HEAD
     _commit(repo, CI, OTHER)
     frame = await _push_card(monkeypatch, repo, "git push" if upstream else "git push -u origin topic")
-    assert frame["summary"]["touches"][0] == f"CI file: {CI}"
+    assert frame["summary"]["touches"][1] == f"CI file: {CI}"          # after where it pushes (HR-3)
     assert CI in frame["reason"]
     assert not any(OTHER in item for item in frame["summary"]["touches"]) and OTHER not in frame["reason"]
 
 
 @pytest.mark.macos
 @seatbelt
-async def test_a_push_with_no_ci_file_adds_nothing(execution_db, tmp_path, monkeypatch):
+async def test_a_push_with_no_ci_file_adds_no_ci_line(execution_db, tmp_path, monkeypatch):
     repo = _cloned(tmp_path)
     _commit(repo, OTHER)
     frame = await _push_card(monkeypatch, repo)
-    assert frame["reason"] == "publishes to a remote repository"
+    origin = _git(repo, "remote", "get-url", "origin").stdout.strip()
+    assert frame["reason"] == f"publishes to a remote repository; {DEST}{origin}"      # only where it pushes (HR-3)
     assert not any("CI file" in item or "couldn't" in item for item in frame["summary"]["touches"])
 
 
@@ -164,7 +170,7 @@ async def test_a_git_failure_or_timeout_says_couldnt_list_and_the_card_still_sho
         monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen(how))
     frame = await _push_card(monkeypatch, repo_dir)
     said = "Arslan couldn't list the files this push sends"
-    assert frame["summary"]["touches"][0] == said and said in frame["reason"]
+    assert frame["summary"]["touches"][:2] == [command_confirm.PUSH_UNKNOWN, said] and said in frame["reason"]
 
 
 def test_the_listing_runs_git_through_the_pinned_launcher(repo_dir, monkeypatch):
@@ -206,6 +212,185 @@ def test_a_failed_upstream_query_says_couldnt_list(repo_dir, monkeypatch):
     monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
     assert git_config_guard.outgoing_ci(repo_dir, "git push") is None
     assert _diffs(fake) == []
+
+
+# ── HR-3: where the push goes ────────────────────────────────────────────────
+
+@pytest.mark.macos
+@seatbelt
+@pytest.mark.parametrize("shape", ["url", "pushurl", "named", "push-default", "url-named"])
+async def test_the_push_card_names_where_it_really_pushes_without_credentials(execution_db, tmp_path, monkeypatch,
+                                                                             shape):
+    """The url git pushes to, read in the push's folder: a re-pointed url; a pushurl over the url; a named remote; the
+    remote git pushes the branch to (remote.pushDefault over its upstream's); a url on the line that a remote of that
+    very name re-points (git pushes there, not to the url written). No `user:pass@` anywhere on the card."""
+    repo = _cloned(tmp_path)
+    _commit(repo, OTHER)
+    to = f"https://zz-user:{SECRET}@example.invalid/zz-{shape}.git"
+    command = {"named": "git push zz-other main",
+               "url-named": "git push https://example.invalid/zz-written.git main"}.get(shape, "git push")
+    if shape == "url":
+        _git(repo, "remote", "set-url", "origin", to)
+    elif shape == "pushurl":
+        _git(repo, "remote", "set-url", "--push", "origin", to)
+    elif shape == "url-named":
+        _git(repo, "config", "remote.https://example.invalid/zz-written.git.url", to)
+    else:
+        _git(repo, "remote", "add", "zz-other", to)
+        if shape == "push-default":
+            _git(repo, "config", "remote.pushDefault", "zz-other")
+    frame = await _push_card(monkeypatch, repo, command)
+    shown = f"{DEST}https://example.invalid/zz-{shape}.git"
+    assert [item for item in frame["summary"]["touches"] if item.startswith(DEST)] == [shown]      # only that url
+    assert frame["summary"]["touches"][0] == shown and shown in frame["reason"]
+    assert SECRET not in str(frame) and "zz-user" not in str(frame)
+
+
+#: `config --list --includes --null --show-origin` as git prints it (an included file's pushurl too).
+LISTING = (b"file:.git/config\0remote.origin.url\nhttps://zz-user:zz-secret@example.invalid/zz-url.git\0"
+           b"file:.git/config\0remote.origin.pushurl\nhttps://zz-secret@example.invalid/zz-a.git\0"
+           b"file:.git/zz.inc\0remote.origin.pushurl\ngit@example.invalid:zz/b.git\0"
+           b"file:.git/config\0remote.zz-fork.url\nssh://zz-user@example.invalid/zz-fork.git\0")
+
+
+def test_the_destination_is_read_through_the_pinned_launcher(repo_dir, monkeypatch):
+    """Every pushurl over the url; a bare push's remote as git picks it (`%(push:remotename)`); a url written on the
+    line that no remote is named after, as written; never a `user:pass@`. git runs as `outgoing_ci` runs it."""
+    fake = _Popen("answers", LISTING, answers={"for-each-ref": ("answers", b" origin\n*zz-fork\n")})
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
+    read = git_config_guard.push_destination
+    assert read(repo_dir / "src", "git push -u origin main") == [
+        "https://example.invalid/zz-a.git", "git@example.invalid:zz/b.git"]
+    assert read(repo_dir, "git push --force-with-lease") == ["ssh://example.invalid/zz-fork.git"]
+    assert read(repo_dir, f"git push https://zz-user:{SECRET}@example.invalid/zz-c.git") == [
+        "https://example.invalid/zz-c.git"]
+    asked = [argv[5:] for argv, _ in fake.launched]
+    listed, ask = list(git_config_guard._LIST), list(git_config_guard._PUSH_TO)
+    assert asked == [listed, ask, listed, listed] and "--format=%(HEAD)%(push:remotename)" in ask
+    for argv, kw in fake.launched:
+        scratch = Path(kw["env"]["HOME"])
+        assert argv[:5] == ["/usr/bin/sandbox-exec", "-p", default_deny_profile(writable=[scratch]), "/usr/bin/git",
+                            f"--git-dir={repo_dir / '.git'}"]
+        assert kw["env"] == git_config_guard._env(scratch) and kw["cwd"] == repo_dir
+        assert kw["stdin"] == subprocess.DEVNULL
+
+
+@pytest.mark.parametrize("listing, shown", [
+    (LISTING, ["https://example.invalid/zz-a.git", "git@example.invalid:zz/b.git"]),
+    (b"file:.git/config\0remote.zz-only.url\nhttps://example.invalid/zz-only.git\0",
+     ["https://example.invalid/zz-only.git"]),
+], ids=["origin", "only-remote"])
+def test_a_bare_push_with_no_push_remote_goes_to_the_only_remote_else_origin(repo_dir, monkeypatch, listing, shown):
+    fake = _Popen("answers", listing, answers={"for-each-ref": ("answers", b"*\n")})
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
+    assert git_config_guard.push_destination(repo_dir, "git push") == shown
+
+
+@pytest.mark.parametrize("written, shown", [
+    ("zz/dir.git", ["https://example.invalid/zz-real.git"]),     # a remote of that very name: git pushes to its url
+    ("/zz/path.git", ["/zz/path.git"]),                          # git ignores a remote named from "/" (measured)
+    ("../zz.git", ["../zz.git"]),                                # no remote of that name: the path as written
+])
+def test_a_url_or_path_on_the_line_is_read_as_git_reads_it(repo_dir, monkeypatch, written, shown):
+    listing = (b"file:.git/config\0remote.zz/dir.git.url\nhttps://example.invalid/zz-real.git\0"
+               b"file:.git/config\0remote./zz/path.git.url\nhttps://example.invalid/zz-decoy.git\0")
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen("answers", listing))
+    assert git_config_guard.push_destination(repo_dir, f"git push {written} main") == shown
+
+
+@pytest.mark.parametrize("folder, command, how", [
+    (None, "git push", "answers"),                                        # no folder to read
+    ("repo", "git push", "fails"), ("repo", "git push origin", "times out"), ("repo", "git push", "raises"),
+    ("repo", "git push zz-none main", "answers"),                         # no remote of that name has a url
+    ("repo", "git push -o ci.skip origin", "answers"),                    # an option it doesn't read past
+    ("repo", "git push --repo=https://example.invalid/zz.git", "answers"), ("repo", "git push '' main", "answers"),
+    ("repo", "git -C zz push", "answers"), ("repo", "cd zz && git push", "answers"),     # another folder
+    ("repo", "git push origin && git push zz-fork", "answers"),            # not one push
+], ids=["no-folder", "fails", "times-out", "raises", "no-url", "option", "repo-option", "empty-name", "git-C", "cd",
+        "two-pushes"])
+async def test_where_it_pushes_unread_says_destination_unknown_and_the_card_still_shows(execution_db, repo_dir,
+                                                                                       monkeypatch, folder, command,
+                                                                                       how):
+    if how == "raises":
+        def broken(*_args):
+            raise RuntimeError("zz")
+        monkeypatch.setattr(git_config_guard, "push_destination", broken)
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen("fails" if how == "raises" else how, LISTING))
+    frame = await _push_card(monkeypatch, repo_dir if folder else None, command)
+    unknown = command_confirm.PUSH_UNKNOWN
+    assert unknown == "Push destination unknown"
+    assert frame["summary"]["touches"][0] == unknown and unknown in frame["reason"]
+    assert not any(item.startswith(DEST) for item in frame["summary"]["touches"])
+
+
+@pytest.mark.parametrize("typed, shown, secret", [
+    ("https://zz-user:FAKE@example.invalid/zz.git", "https://example.invalid/zz.git", "zz-user:FAKE"),
+    ("https://FAKE-token@example.invalid/zz.git", "https://example.invalid/zz.git", "FAKE-token"),
+    ("ssh://zz-user@example.invalid/zz.git", "ssh://example.invalid/zz.git", "zz-user"),
+    ("zz-user@example.invalid:zz/repo.git", "zz-user@example.invalid:zz/repo.git", None),
+], ids=["user-pass", "token", "ssh-user", "scp-like"])
+async def test_a_url_typed_after_push_titles_the_card_without_its_credentials(execution_db, monkeypatch, typed,
+                                                                              shown, secret):
+    """The title names what was typed after `push`, a `scheme://` url without its userinfo (`user:pass@`, a token,
+    a plain ssh user), as the destination line shows it (`git_config_guard.without_credentials`); an scp-like
+    `user@host:path` as written there and here (an ssh login: that form has no password). Nothing else on the card
+    changes: it is the card of the line typed as shown, in every language; only the command itself differs."""
+    line, plain = f"git push {typed} main", f"git push {shown} main"
+    card, other = await _push_card(monkeypatch, None, line), await _push_card(monkeypatch, None, plain)
+    assert card["title"] == f"Publish your commits to {shown}"
+    assert card["summary"]["purpose"] == {"key": "gitPush", "params": {"remote": shown}}
+    assert set(card) == set(other)
+    per_card = {"call_id", "expires_at"}                              # each card's own id and deadline
+    typed_in = {"command", "pretty", "dedupe"}       # the command as typed, and the key identical asks join by
+    assert {key for key in card if card[key] != other[key]} - per_card == (typed_in if secret else set())
+    for lang in card_purpose.TEXT:
+        assert card_purpose.phrase(line, lang=lang) == card_purpose.phrase(plain, lang=lang)
+    if secret:
+        assert secret not in card["title"] + str(card["summary"]) + card["reason"]
+
+
+async def _git_card(monkeypatch, command: str) -> dict:
+    """The card of a git command no terminal rule asks for (`clone`, `fetch`, `pull`), asked as `_push_card` asks one
+    (no folder, "ask for risky commands"): layer ③'s card, whose title says it runs with no sandbox."""
+    async def run_folder():
+        return None
+    monkeypatch.setattr(command_gate, "run_folder", run_folder)
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
+    asker = _Asker()
+    with permissions.asking_with(asker):
+        assert await command_confirm.Confirmations("c1").command(command, []) is True
+    [frame] = asker.frames
+    assert frame["type"] == "propose_run_command" and "rules" not in frame and frame["perm_kind"] == "command"
+    return frame
+
+
+@pytest.mark.parametrize("sub", ["clone", "fetch", "pull"])
+@pytest.mark.parametrize("typed, shown, secret", [
+    ("https://zz-user:FAKE@example.invalid/zz.git", "https://example.invalid/zz.git", "zz-user:FAKE"),
+    ("https://FAKE-token@example.invalid/zz.git", "https://example.invalid/zz.git", "FAKE-token"),
+    ("zz-user@example.invalid:zz/repo.git", "zz-user@example.invalid:zz/repo.git", None),
+], ids=["user-pass", "token", "scp-like"])
+async def test_a_url_typed_after_clone_fetch_or_pull_titles_the_card_without_its_credentials(execution_db, monkeypatch,
+                                                                                             sub, typed, shown, secret):
+    """As after `push`, by the same stripper (`git_config_guard.without_credentials`): the title names a `scheme://`
+    url typed after `clone`, `fetch` or `pull` without its userinfo, and so does the clone's touches row (the Mac
+    card's); an scp-like `user@host:path` stays as written. Nothing else on the card changes: it is the card of the
+    line typed as shown, in every language; only the command itself differs."""
+    line, plain = f"git {sub} {typed}", f"git {sub} {shown}"
+    card, other = await _git_card(monkeypatch, line), await _git_card(monkeypatch, plain)
+    purpose, words = (({"key": "gitClone", "params": {"repo": shown}}, "Download a copy of") if sub == "clone" else
+                      ({"key": "gitFetch", "params": {"remote": shown}}, "Get the latest changes from"))
+    assert card["title"] == f"No sandbox · {words} {shown}"
+    assert card["summary"]["purpose"] == purpose
+    assert card["summary"]["touches"] == ([shown] if sub == "clone" else [])        # the Mac card's touches row
+    assert set(card) == set(other)
+    per_card = {"call_id", "expires_at"}                              # each card's own id and deadline
+    typed_in = {"command", "pretty", "dedupe"}       # the command as typed, and the key identical asks join by
+    assert {key for key in card if card[key] != other[key]} - per_card == (typed_in if secret else set())
+    for lang in card_purpose.TEXT:
+        assert card_purpose.phrase(line, lang=lang) == card_purpose.phrase(plain, lang=lang)
+    if secret:
+        assert secret not in card["title"] + str(card["summary"]) + card["reason"]
 
 
 # ── 2. the change list ───────────────────────────────────────────────────────

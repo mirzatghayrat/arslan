@@ -104,6 +104,9 @@ async def test_each_line_counts_conversations_projects_and_tasks_from_the_record
 
 async def test_done_today_counts_only_clean_work(client, monkeypatch):
     monkeypatch.setattr(approvals, "all_pending", lambda: [])
+    # "Today" starts at local midnight; the job is stored half an hour ago, which is yesterday between 00:00 and 00:30.
+    # Pin the day's start an hour back so the test doesn't depend on the time it runs.
+    monkeypatch.setattr(progress, "today_start", lambda now=None: datetime.utcnow() - timedelta(hours=1))
     await _add(client, _task(2), _task(4))
     await _add(client, *_chat("chat-done"), _run("chat-done", "recorded"),
                *_chat("chat-err"), _run("chat-err", "recorded", error="provider_error"),

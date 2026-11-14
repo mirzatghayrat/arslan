@@ -111,6 +111,10 @@ pub struct Event {
     /// A code, only on a scheduled_paused that is not the failures in a row.
     #[serde(default)]
     pub reason: Option<String>,
+    /// INB9-a: how many items (👀) a background job's acceptance sheet left for
+    /// the user to look at. A count only; the backend sends it only when > 0.
+    #[serde(default)]
+    pub glance: Option<u32>,
 }
 
 impl Event {
@@ -202,6 +206,10 @@ pub fn status_line(locale: &str, status: &Status, holding_sleep: bool) -> String
 /// notification can be read on a locked screen, so no message content.
 pub fn notification(locale: &str, event: &Event) -> Option<(String, String)> {
     let key = match (event.kind.as_str(), event.outcome.as_deref()) {
+        // INB9-a: done, with items on its acceptance sheet left to look at.
+        ("turn_finished", Some("ok")) if event.glance.is_some_and(|n| n > 0) => {
+            "notify_done_glance"
+        }
         ("turn_finished", Some("ok")) => "notify_done",
         ("turn_finished", Some("error" | "needs_review")) => "notify_attention",
         ("approval_needed", _) => "notify_approval",
@@ -215,9 +223,12 @@ pub fn notification(locale: &str, event: &Event) -> Option<(String, String)> {
         _ => return None,
     };
     let name = event.task_name.as_deref().unwrap_or("");
+    let count = event.glance.unwrap_or(0).to_string();
     Some((
         native_locale::text(locale, &format!("{key}_title")),
-        native_locale::text(locale, &format!("{key}_body")).replace("{name}", name),
+        native_locale::text(locale, &format!("{key}_body"))
+            .replace("{name}", name)
+            .replace("{n}", &count),
     ))
 }
 
@@ -992,6 +1003,62 @@ mod tests {
         assert!(notification("en", &event(1, "unknown_kind", None)).is_none());
     }
 
+    /// INB9-a: a background job done with items left for the user to look at.
+    fn done_with_glance(glance: Option<u32>) -> Event {
+        Event {
+            glance,
+            ..event(1, "turn_finished", Some("ok"))
+        }
+    }
+
+    #[test]
+    fn a_done_job_with_items_to_look_at_says_so_with_only_the_count() {
+        for locale in ["en", "zh", "ja", "es", "de", "fr"] {
+            let (title, body) = notification(locale, &done_with_glance(Some(2))).unwrap();
+            assert_eq!(
+                title,
+                native_locale::text(locale, "notify_done_glance_title")
+            );
+            assert_ne!(title, native_locale::text(locale, "notify_done_title"));
+            assert!(
+                body.contains('2') && !body.contains('{'),
+                "{locale}: {body}"
+            );
+            assert!(!body.contains("Morning brief"));
+        }
+    }
+
+    #[test]
+    fn a_done_job_with_nothing_to_look_at_stays_plain_done() {
+        let plain = notification("en", &event(1, "turn_finished", Some("ok"))).unwrap();
+        assert_eq!(plain.0, native_locale::text("en", "notify_done_title"));
+        assert_eq!(notification("en", &done_with_glance(None)).unwrap(), plain);
+        assert_eq!(
+            notification("en", &done_with_glance(Some(0))).unwrap(),
+            plain
+        );
+    }
+
+    #[test]
+    fn a_needs_review_event_with_a_glance_still_asks_for_attention() {
+        let e = Event {
+            glance: Some(3),
+            ..event(1, "turn_finished", Some("needs_review"))
+        };
+        let (title, body) = notification("en", &e).unwrap();
+        assert_eq!(title, native_locale::text("en", "notify_attention_title"));
+        assert_eq!(body, native_locale::text("en", "notify_attention_body"));
+    }
+
+    #[test]
+    fn the_status_endpoints_glance_is_read() {
+        let raw = "HTTP/1.1 200 OK\r\n\r\n{\"cursor\":1,\"events\":[{\"id\":1,\"kind\":\"turn_finished\",\"conversation_id\":\"c1\",\"outcome\":\"ok\",\"at\":1,\"glance\":1}]}";
+        let status = parse_response(raw).unwrap();
+        assert_eq!(status.events[0].glance, Some(1));
+        let (title, _) = notification("en", &status.events[0]).unwrap();
+        assert_eq!(title, native_locale::text("en", "notify_done_glance_title"));
+    }
+
     #[test]
     fn the_menu_stop_posts_to_the_hands_endpoint_with_the_token() {
         let request = stop_hands_request(8741, Some("tok"));
@@ -1015,6 +1082,8 @@ mod tests {
             "tray_quit",
             "notify_done_title",
             "notify_done_body",
+            "notify_done_glance_title",
+            "notify_done_glance_body",
             "notify_attention_title",
             "notify_attention_body",
             "notify_approval_title",
