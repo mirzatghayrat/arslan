@@ -307,3 +307,5 @@ README 里「开工前要先想好」的另外两条：
 6. **子会话什么时候能用浏览器、Hands 和桌面？** ⓪Plan 建议 v0.1.64 不给。
 7. **和 Q1、CAP、INB 的先后**（§11 第 3 条：同一时间只做一个新子系统）。
 8. **`professional_methods`**（`research`、`apple-growth`、`product-design` 三个方法和能力页上的编辑）：SUB6 删掉帮手以后，除了能力页的编辑没有别的调用方，要不要另开一张卡删。SUB6 本身不删它们。
+
+**SUB6b (decided 2026-11-11, item 8):** the three professional methods (`research`, `apple-growth`, `product-design`) are deleted in their own PR, after SUB6: the service and its routes, the two models, the method rows on the Capabilities list (their hard-coded "not used" value goes with them; the generic last-used column on every other row stays), the sheet's version line and the editor, and their locale keys in all six languages. Migration 0052 now creates the two tables from its own SQL, as the models' create_all made them, so a new install still runs every migration; migration 0096 drops `professional_method_versions`, then `professional_methods` (the rows stay in the upgrade backup until it is pruned). `personal_context.worker_context` stays (memory_tools_v2 uses it), and so do the `addMethod` keys, which belong to skill authoring. Past runs that named a method keep their records.

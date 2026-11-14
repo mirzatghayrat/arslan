@@ -86,8 +86,9 @@ TASKS = (
          "more than about ten minutes) and doesn't need the user meanwhile; otherwise do the work in this "
          "turn. In the goal, include what is already done in this turn (files saved, findings) and what "
          "remains: the job sees the saved conversation but not this turn's tool results. Add 2-5 "
-         "completion criteria in the same language; prefer checkable kinds (file_saved, sources_read, "
-         "mentions). The result is posted to this conversation when the job ends. Acting in the browser "
+         "criteria in the same language; prefer checkable kinds (file_saved, sources_read, "
+         "mentions); glance: the user must judge, max 2. The result is posted here when it ends. "
+         "Acting in the browser "
          "(clicking, typing, submitting) or on the Mac (Shortcuts, AppleScript) happens in background "
          "work, where the user is asked before the first action.",
          {"type": "object", "properties": {
@@ -97,9 +98,10 @@ TASKS = (
                  "type": "object", "properties": {
                      "description": {"type": "string", "minLength": 1, "maxLength": 300,
                                      "description": "One check, in the user's language."},
-                     "kind": {"type": "string", "enum": ["file_saved", "sources_read", "mentions", "judgement"]},
+                     "kind": {"type": "string",
+                              "enum": ["file_saved", "sources_read", "mentions", "judgement", "glance"]},
                      "target": {"type": "string", "maxLength": 240,
-                                "description": "file_saved: the file or folder's full path (~/… or /…); "
+                                "description": "file_saved: a file or folder path (~/… or /…); "
                                                "sources_read: optional, a file name or site the sources must include; "
                                                "mentions: the phrase"},
                      "minimum": {"type": "integer", "minimum": 1, "maximum": 20}},

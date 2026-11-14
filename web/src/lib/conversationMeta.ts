@@ -31,10 +31,10 @@ export interface ConversationMeta {
 
 /** INB5b-3: what a waiting conversation waits on (the server's `waiting_on`): a card to approve (a decision), a card that went
  *  unanswered while you were away (nothing is left to approve, only the list of what was not done; ⓪Plan's review of PR 614, N2), or
- *  a stopped job's reminder (an offer). */
-export type WaitingOn = "card" | "away" | "reminder";
+ *  a 👀 a job's acceptance sheet left for you to look at (INB9-a), or a stopped job's reminder (an offer). */
+export type WaitingOn = "card" | "away" | "glance" | "reminder";
 /** Most urgent first, as the server's waiting_reasons ranks them. */
-const WAITING_ON: readonly WaitingOn[] = ["card", "away", "reminder"];
+const WAITING_ON: readonly WaitingOn[] = ["card", "away", "glance", "reminder"];
 
 /** A project row's reason: the most urgent of its waiting conversations', where one with no reason (an older server) counts as a card.
  *  So the project shows the bell only when every one of them waits on a reminder (⓪Plan's review of PR 614, N1). */
@@ -43,7 +43,8 @@ export const mostUrgent = (reasons: (WaitingOn | undefined)[]): WaitingOn =>
 
 /** The glyph's label for a waiting row, by what it waits on (sidebar.glyph.*). */
 export const waitingLabel = (waitingOn?: WaitingOn) =>
-  waitingOn === "reminder" ? "waiting_reminder" : waitingOn === "away" ? "waiting_away" : "waiting";
+  waitingOn === "reminder" ? "waiting_reminder" : waitingOn === "away" ? "waiting_away"
+    : waitingOn === "glance" ? "waiting_glance" : "waiting";
 
 const KINDS: ConversationKind[] = ["chat", "task", "scheduled"];
 const STATES: ConversationState[] = ["idle", "working", "waiting", "done", "done_unseen", "unfinished", "failed"];

@@ -535,10 +535,10 @@ class EditFileExecutor:
             return {"ok": False, "error": f"cannot read {_rel(path, root)}: {exc}"}
         hits = text.count(old)
         if hits == 0:
-            return {"ok": False, "error": f"'old' does not appear in {_rel(path, root)}"}
+            return {"ok": False, "error": f"'old_string' does not appear in {_rel(path, root)}"}
         if hits > 1:
             return {"ok": False,
-                    "error": f"'old' appears {hits} times in {_rel(path, root)}; "
+                    "error": f"'old_string' appears {hits} times in {_rel(path, root)}; "
                              "give a longer, unique snippet so the right one is edited"}
         updated = text.replace(old, new, 1)
         # 0.1.63 S3: saved once the edit is accepted; a refused one changed nothing.
