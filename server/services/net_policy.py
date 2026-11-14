@@ -15,15 +15,24 @@ address is judged apart (`judge`). The command is told why (`refusal_note`), and
 commands in this conversation may reach the site (`offer`; NET-b words that card and adds Settings' list).
 
 Hosts are compared after IDNA (UTS 46), in lower case, with no port and no trailing dot: the exact host, or a subdomain
-of a listed, named or recorded one. A bare TLD or a public suffix is never one of those (`listable`). An address is
-matched only as itself, read in every spelling as the proxy reads a destination (`normalize`), in what the user typed
-too (`addresses_in`).
+of a listed, named or recorded one within that one's own site, never one a public suffix keeps apart from it
+(`_covers`). A public suffix is a name anyone can have a site under, as the Public Suffix List says, both its sections
+and its wildcard and exception rules (`is_public_suffix`, Codex round 1 F4): it is never a listed, named or recorded
+site, nor is a bare TLD (`listable`), and outside content that names one refuses that host alone (`_shared`). An
+address is matched only as itself, read in every spelling as the proxy reads a destination (`normalize`), in what the
+user typed too (`addresses_in`). A text is read for hosts as people write them, in full-width forms, with an
+ideographic full stop for a dot, and with text in a script written without spaces running on into them (`hosts_in`).
 
 Known limits:
 - The record lives in memory, as the turn's own mark does: a restart forgets it (as GIT_REFUSED_IN), and a turn after
   one records again only what it reads, or carries in framed (a job's result or a sub-session's brief in its history).
   A rolling summary that folds outside content in marks the turn but records no host.
 - A host spelled so that no reader sees a host ("evil dot example", base64) is `unknown`, so it passes.
+- The list is the snapshot tld bundles (its `// VERSION:` line), new with each tld: a public suffix added upstream
+  since is a site here until then.
+- Where a host in a script written without spaces begins, when text in that script runs on into it, can't be told:
+  each place it may begin counts (`hosts_in`), so such a text names a few hosts it doesn't mean as well, the same
+  ones from outside content and from what the user typed.
 - A number the user typed for something else names the address it spells as the resolver reads it: a version 3.11.4
   names 3.11.0.4, an id 1572395042 names 93.184.216.34. That only opens the address itself, for someone holding it.
 - A token is in its command's environment, but it works only for that run's own processes (`owns`, Codex round 1 F1):
@@ -33,12 +42,15 @@ Known limits:
 from __future__ import annotations
 
 import asyncio
+import functools
 import ipaddress
 import json
 import re
 import secrets
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from importlib import resources
 
 import idna
 
@@ -52,28 +64,70 @@ PACKAGE_HOSTS = frozenset({
     "static.crates.io", "proxy.golang.org", "sum.golang.org", "rubygems.org", "github.com", "codeload.github.com",
     "objects.githubusercontent.com", "release-assets.githubusercontent.com"})
 
-#: Names under which anyone can get a host of their own, so none is ever a listed, named or recorded host: common
-#: public suffixes of two labels and more, and shared hosting. Built in, conservative and short, not the Public Suffix
-#: List: one missing here can be listed or named (it and its subdomains), or recorded from outside content (refusing
-#: its subdomains), like any site. A single label, a TLD, never can (`listable`).
-_SUFFIXES = frozenset({
-    "co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk", "ac.uk", "gov.uk", "sch.uk",
-    "com.au", "net.au", "org.au", "edu.au", "gov.au", "id.au", "asn.au", "co.nz", "net.nz", "org.nz", "ac.nz",
-    "co.jp", "ne.jp", "or.jp", "ac.jp", "go.jp", "ad.jp", "ed.jp", "gr.jp", "lg.jp",
-    "co.kr", "or.kr", "ne.kr", "ac.kr", "go.kr", "re.kr", "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn", "ac.cn",
-    "com.hk", "net.hk", "org.hk", "edu.hk", "gov.hk", "com.tw", "net.tw", "org.tw", "edu.tw", "gov.tw",
-    "com.sg", "net.sg", "org.sg", "edu.sg", "gov.sg", "com.my", "net.my", "org.my",
-    "co.in", "net.in", "org.in", "firm.in", "gen.in", "ind.in", "ac.in", "gov.in", "co.id", "or.id", "ac.id",
-    "go.id", "web.id", "com.br", "net.br", "org.br", "gov.br", "com.mx", "org.mx", "gob.mx", "com.ar", "org.ar",
-    "com.tr", "net.tr", "org.tr", "gen.tr", "co.za", "org.za", "net.za", "gov.za", "co.il", "org.il", "ac.il",
-    "co.th", "in.th", "ac.th", "com.ua", "com.pl", "com.es", "com.vn", "com.ph", "com.pk", "com.eg", "com.sa",
-    "com.ng", "com.co", "com.pe", "com.ve", "com.bd", "com.np", "co.ke", "co.at", "or.at",
-    "github.io", "githubusercontent.com", "gitlab.io", "bitbucket.io", "pages.dev", "workers.dev", "r2.dev",
-    "netlify.app", "vercel.app", "now.sh", "herokuapp.com", "appspot.com", "web.app", "firebaseapp.com",
-    "blogspot.com", "wordpress.com", "tumblr.com", "wixsite.com", "myshopify.com", "readthedocs.io", "surge.sh",
-    "azurewebsites.net", "cloudapp.net", "cloudfront.net", "amazonaws.com", "s3.amazonaws.com",
-    "googleusercontent.com", "onrender.com", "fly.dev", "deno.dev", "glitch.me", "repl.co", "replit.dev",
-    "ngrok.io", "ngrok.app", "ngrok-free.app", "trycloudflare.com", "loca.lt", "duckdns.org", "ddns.net"})
+#: The Public Suffix List as the `tld` package bundles it (a locked dependency: THIRD_PARTY_NOTICES.md): upstream's
+#: file at the commit its `// COMMIT:` line names, MPL-2.0. Codex round 1, F4: the whole list, not a short set kept
+#: here. Read as a file on first use, and never through tld's own lookups, which fetch the list over the network when
+#: their copy is missing: nothing here goes online. The app carries it by packaging/arslan-server.spec, and its
+#: selftest asks it (packaging/server_entry.py).
+_SUFFIX_LIST = ("tld", "res", "effective_tld_names.dat.txt")
+
+
+def _suffix_list_text() -> str:
+    package, folder, name = _SUFFIX_LIST
+    try:
+        return (resources.files(package) / folder / name).read_text(encoding="utf-8")
+    except (ImportError, OSError) as exc:
+        raise RuntimeError(f"NET-a: the Public Suffix List ({'/'.join(_SUFFIX_LIST)}) can't be read: {exc}") from exc
+
+
+@functools.cache
+def _psl() -> tuple[frozenset[str], frozenset[str], frozenset[str], frozenset[str]]:
+    """The list's rules, each name as `normalize` writes one: its rules; its wildcard rules (`*.ck`) less their `*.`;
+    its exception rules (`!www.ck`) less their `!`; and its TLDs, an IDN one both in its own script and after IDNA.
+    Read once. Both sections count, ICANN's and the PRIVATE one (F4): the private one is shared hosting (github.io,
+    blogspot.com, s3.us-east-1.amazonaws.com), where anyone gets a site, so naming or listing one of those must vouch
+    for none of its tenants. Browsers keep sites apart by both sections too."""
+    rules: set[str] = set()
+    wildcards: set[str] = set()
+    exceptions: set[str] = set()
+    tlds: set[str] = set()
+    for line in _suffix_list_text().splitlines():
+        rule = line.split(maxsplit=1)[0] if line.strip() else ""        # a rule is read up to its first space
+        if not rule or rule.startswith("//"):
+            continue
+        kind, name = ((exceptions, rule[1:]) if rule.startswith("!") else
+                      (wildcards, rule[2:]) if rule.startswith("*.") else (rules, rule))
+        tlds.add(name.rsplit(".", 1)[-1].lower())
+        try:
+            written = name.lower() if name.isascii() else idna.encode(name, uts46=True).decode("ascii")
+        except idna.IDNAError:
+            continue                     # no host is written so (`normalize` reads none), so no host is under it
+        kind.add(written)
+        tlds.add(written.rsplit(".", 1)[-1])
+    return frozenset(rules), frozenset(wildcards), frozenset(exceptions), frozenset(tlds)
+
+
+def _suffix_labels(name: str) -> int:
+    """How many of `name`'s last labels are its public suffix, by the list's own algorithm (publicsuffix.org/list): an
+    exception rule that matches prevails, and its suffix is the rule less its first label (`!www.ck`: ck); else the
+    longest rule that matches, a wildcard's `*` matching any one label in its place (`*.ck`: foo.ck); else the last
+    label alone (the implicit `*`)."""
+    rules, wildcards, exceptions, _ = _psl()
+    labels = name.split(".")
+    tails = [".".join(labels[i:]) for i in range(len(labels))]
+    for i, tail in enumerate(tails):
+        if tail in exceptions:
+            return len(labels) - i - 1
+    for i, tail in enumerate(tails):
+        if tail in rules or (i + 1 < len(tails) and tails[i + 1] in wildcards):
+            return len(labels) - i
+    return 1
+
+
+def is_public_suffix(name: str) -> bool:
+    """`name`, as `normalize` writes one, is a public suffix: a TLD, or a name anyone can have a site under."""
+    return _suffix_labels(name) >= name.count(".") + 1
+
 
 #: A name's labels, after IDNA: letters, digits, "-" and "_" (some real hosts carry one).
 _NAME = re.compile(r"[a-z0-9_-]{1,63}(?:\.[a-z0-9_-]{1,63})*")
@@ -90,6 +144,32 @@ _BARE_IPV4 = re.compile(r"(?<![\w.])(\d{1,3}(?:\.\d{1,3}){3})(?![\w-]|\.\w)")
 #: A token that may spell an address (inet_aton's IPv4 forms; IPv6, bracketed or not; with a port), never one inside a
 #: longer name or word: `normalize`, the proxy's own reading of a destination, says which one is.
 _ADDRESS = re.compile(r"(?<![\w.-])[0-9a-fx:.]+(?![\w-]|\.\w)", re.I | re.A)
+#: Scripts written without spaces between words, as code point ranges: Thai and Lao, Myanmar, Hangul's jamo, Khmer,
+#: the CJK radicals, symbols and punctuation, kana, Bopomofo, Han, Hangul, and Han's compatibility and supplementary
+#: planes. Text in them runs straight on into a host beside it: a host in another script begins or ends where they do.
+_SPACELESS_RANGES = ((0x0E00, 0x0EFF), (0x1000, 0x109F), (0x1100, 0x11FF), (0x1780, 0x17FF), (0x2E80, 0x2FDF),
+                     (0x3000, 0x31FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xA960, 0xA97F), (0xAC00, 0xD7FF),
+                     (0xF900, 0xFAFF), (0x20000, 0x3FFFF))
+_SPACELESS = re.compile("[" + "".join(f"{chr(low)}-{chr(high)}" for low, high in _SPACELESS_RANGES) + "]")
+#: The ideographic full stop, which IDNA (UTS 46), and so curl and browsers, read as a host's dot (NFKC makes the
+#: half-width one it, and the full-width one a dot). In a text it is that where a host has one: between two labels in
+#: ASCII ("evil。example"), or before a TLD the list has that ends there. Anywhere else it ends a sentence, and stays:
+#: as dots, sentences in CJK would run together into names.
+_STOP = chr(0x3002)
+_STOP_IN_ASCII = re.compile(f"(?<=[a-z0-9-]){_STOP}(?=[a-z0-9-])", re.I | re.A)
+_STOP_BEFORE_LABEL = re.compile(_STOP + r"(?=([^\W_][\w-]{0,62})(?![\w-]))")
+#: A host's last label as written in ASCII: letters, or punycode. In another script a TLD is one the list has.
+_ASCII_TLD = re.compile(r"[a-z]{2,63}|xn--[a-z0-9-]{1,59}", re.I)
+#: A label in ASCII, as one between a host's first label and its TLD.
+_ASCII_LABEL = re.compile(r"[a-z0-9_-]{1,63}", re.I | re.A)
+#: Up to four labels after a dot, in any script: the first may run on into other text (`_tld_cuts`).
+_LABELS_AFTER = re.compile(r"(?:\.[^\W_][\w-]{0,62}){1,4}")
+#: How far before a dot a host in a spaceless script may begin: a label of more such characters is past IDNA's 63
+#: bytes (20 of Han or Hangul, 31 of kana).
+_LEAD_KEPT = 32
+#: How many hosts a text may name by where one in a spaceless script may begin (`hosts_in`): a page of them can't
+#: stall the turn reading it.
+_GUESSES_KEPT = 1024
 
 
 def _ipv4(host: str) -> ipaddress.IPv4Address | None:
@@ -146,24 +226,87 @@ def _address_like(name: str | None) -> bool:
 
 
 def listable(name: str) -> bool:
-    """Whether a list, the user's words or outside content can name `name` as a site, it and its subdomains: a name
-    with a dot that is no public suffix (`_SUFFIXES`). An address is matched only as itself."""
-    return "." in name and name not in _SUFFIXES and not _address_like(name)
+    """Whether a list, the user's words or outside content can name `name` as a site, it and its subdomains in it: a
+    name with a dot that is no public suffix (`is_public_suffix`). An address is matched only as itself."""
+    return "." in name and not _address_like(name) and not is_public_suffix(name)
+
+
+def _host_text(text) -> str:
+    """A text as its hosts are read, as IDNA (UTS 46) reads a host, and so curl and browsers do: NFKC, so a full-width
+    form is the ASCII one ("ｅｖｉｌ．ｅｘａｍｐｌｅ"), and an ideographic full stop a dot where a host has one (`_STOP`)."""
+    text = unicodedata.normalize("NFKC", str(text or ""))
+    if _STOP in text:
+        tlds = _psl()[3]
+        text = _STOP_IN_ASCII.sub(".", text)
+        text = _STOP_BEFORE_LABEL.sub(lambda stop: "." if stop.group(1).lower() in tlds else stop.group(), text)
+    return text
+
+
+def _spaceless(char: str) -> bool:
+    return _SPACELESS.match(char) is not None
+
+
+def _tld_ok(label: str, known: bool) -> bool:
+    """`label` can end a host: a TLD the list has, or, unless `known`, any written in ASCII (`_ASCII_TLD`)."""
+    return label.lower() in _psl()[3] or (not known and label.isascii() and _ASCII_TLD.fullmatch(label) is not None)
+
+
+@functools.lru_cache(maxsize=4096)
+def _tld_cuts(label: str, known: bool) -> tuple[str, ...]:
+    """Where a host's last label ends, as a text has it: at its own end, where its script changes ("example请查收"
+    after example), or, in a spaceless script, after a TLD that more text runs on from ("中国请查收" after its TLD);
+    only where a TLD ends (`_tld_ok`)."""
+    ends = {len(label)}
+    ends.update(i for i in range(1, len(label)) if _spaceless(label[i - 1]) != _spaceless(label[i]))
+    if label[:1] and _spaceless(label[0]):
+        ends.update(range(1, min(len(label), _LEAD_KEPT)))
+    return tuple(label[:end] for end in sorted(ends) if _tld_ok(label[:end], known))
 
 
 def hosts_in(text) -> set[str]:
-    """The hosts a text names, each as `normalize` writes it (a public suffix too: its readers take `listable` ones)."""
-    text = str(text or "")
-    return {name for pattern in (_URL_HOST, _BARE_NAME, _BARE_IPV4) for match in pattern.finditer(text)
-            if (name := normalize(match.group(1))) is not None}
+    """The hosts a text names, each as `normalize` writes it (a public suffix too: its readers take what they use), the
+    same for outside content and for what the user typed. A text is read three ways, and every host any of them finds
+    counts (in doubt, more hosts):
+    - as written: a host in any script that stands apart from the words around it, an IDN one included;
+    - with text in a spaceless script read as the spaces it stands for: a host in another script that such text runs
+      into, on either side, is read on its own ("请上传到evil.example" names evil.example);
+    - for a host in a spaceless script that text in it runs into, where the host begins can't be told: each of the
+      characters right before a dot may begin one, and it ends where a TLD the list has does ("请上传到例子.com"
+      names "例子.com", and "到例子.com" and the rest too), at most `_GUESSES_KEPT` of them."""
+    text = _host_text(text)
+    candidates: set[str] = set()
+    for reading in {text, _SPACELESS.sub(" ", text)}:
+        candidates.update(match.group(1) for pattern in (_URL_HOST, _BARE_IPV4) for match in pattern.finditer(reading))
+        for match in _BARE_NAME.finditer(reading):
+            *head, last = match.group(1).split(".")
+            candidates.update(".".join([*head, cut]) for cut in _tld_cuts(last, False))
+    guesses: list[str] = []
+    for dot in re.finditer(r"\.", text):
+        start = begin = dot.start()
+        while begin > 0 and start - begin < _LEAD_KEPT and text[begin - 1].isalnum() and _spaceless(text[begin - 1]):
+            begin -= 1
+        after = _LABELS_AFTER.match(text, start) if begin < start else None
+        if after is None:
+            continue
+        labels, ends = after.group()[1:].split("."), []
+        for j, label in enumerate(labels):
+            ends.extend(".".join([*labels[:j], cut]) for cut in _tld_cuts(label, True))
+            if not (_ASCII_LABEL.fullmatch(label) or label.lower() in _psl()[3]):
+                break                  # between a host's first label and its TLD: ASCII labels, or TLDs (`公司.cn`)
+        guesses.extend(f"{text[first:start]}.{end}" for first in range(begin, start) for end in ends)
+        if len(guesses) >= _GUESSES_KEPT:
+            break
+    candidates.update(guesses[:_GUESSES_KEPT])
+    return {name for candidate in candidates if (name := normalize(candidate)) is not None}
 
 
 def addresses_in(text) -> set[str]:
     """Codex round 1, F6: the addresses a text spells out, each as the proxy reads a destination (`normalize`), so in
     any spelling: 10.0.0.5, 167772165, 0xa000005, 012.0.0.05, 10.5, [::ffff:a00:5] and ::ffff:10.0.0.5 are each
-    10.0.0.5 there, with a port or without. Not one inside a longer name or word (1.2.3.4.example.com, v1.2.3.4)."""
+    10.0.0.5 there, with a port or without. Not one inside a longer name or word (1.2.3.4.example.com, v1.2.3.4). The
+    text is read as `hosts_in` reads it (full-width forms, an ideographic full stop)."""
     found = set()
-    for token in _ADDRESS.findall(str(text or "")):
+    for token in _ADDRESS.findall(_host_text(text)):
         name = normalize(token)
         if _ip(name) is None:
             name = normalize(token.strip(".").rstrip(":"))  # one that ends a sentence ("at 10.0.0.5:") or follows "..."
@@ -183,26 +326,39 @@ def _sites_named(texts) -> set[str]:
 
 
 def _covers(hosts, name: str) -> bool:
-    """`name` is one of `hosts` or a subdomain of one (an address only as itself)."""
+    """`name` is one of `hosts`, or a subdomain of one within that one's site: never across a public suffix (F4), so a
+    listed amazonaws.com.cn covers none of the buckets under s3.cn-north-1.amazonaws.com.cn, each its owner's site,
+    and a public suffix covers only itself. An address only as itself."""
     if name in hosts:
         return True
+    if not hosts or _address_like(name):
+        return False
     labels = name.split(".")
-    return not _address_like(name) and any(".".join(labels[i:]) in hosts for i in range(1, len(labels) - 1))
+    site = _suffix_labels(name) + 1                      # its site's labels: its public suffix, and one more
+    return any(".".join(labels[i:]) in hosts for i in range(1, len(labels) - site + 1))
 
 
 # ── what outside content named, per conversation (in memory) ─────────────────
 
 _outside: dict[str, set[str]] = {}
+#: The public suffixes outside content named, per conversation. None is a site (`listable`): it covers no one's site
+#: under it. But each is a host as reachable as any, and refused as itself alone: a bucket endpoint that takes
+#: path-style uploads (s3.us-east-1.amazonaws.com), an EC2 instance's name (a wildcard's: *.compute-1.amazonaws.com).
+#: Unrecorded, such a host would be `unknown` and pass, where before F4 it was recorded and refused.
+_shared: dict[str, set[str]] = {}
 
 
 def note_outside(conversation_id: str | None, text: str | None = None) -> None:
     """This conversation read outside content (`untrusted.mark_external`, a turn that carried some in); `text`, what was
-    read where the caller has it, adds the sites it names."""
+    read where the caller has it, adds the sites it names, and the public suffixes it names to `_shared`."""
     if not conversation_id:
         return
     hosts = _outside.setdefault(conversation_id, set())
-    if text:
-        hosts.update(name for name in hosts_in(text) if listable(name))
+    for name in hosts_in(text) if text else ():
+        if listable(name):
+            hosts.add(name)
+        elif "." in name and not _address_like(name):
+            _shared.setdefault(conversation_id, set()).add(name)
 
 
 def outside_seen(conversation_id: str | None) -> bool:
@@ -320,7 +476,8 @@ async def judge(host: str, conversation_id: str | None, *, turn_seen: bool = Fal
                              or _covers(await _named(conversation_id), name)):
         return "allow"
     if not _address_like(name):
-        if not _covers(_outside.get(conversation_id or "", ()), name):
+        if not (_covers(_outside.get(conversation_id or "", ()), name)
+                or name in _shared.get(conversation_id or "", ())):
             return "unknown"
         return "allow" if await _trusted_device(name) else "outside_only"
     # ⓪Plan (2026-11-14), the address rule: after outside content an address in any spelling (dotted, decimal, hex,
@@ -486,4 +643,5 @@ async def offer(hosts, command: str, conversation_id: str | None) -> str:
 def _reset_for_tests() -> None:
     _runs.clear()
     _outside.clear()
+    _shared.clear()
     _named_cache.clear()
