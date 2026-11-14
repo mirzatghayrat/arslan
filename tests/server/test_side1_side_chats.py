@@ -128,20 +128,20 @@ def test_0099_adds_the_branch_and_the_mark_once_and_leaves_a_database_without_th
     assert tuple(row) == ("c-1", 3, None, None)
 
 
-def test_0099_comes_after_0095_and_an_install_at_the_previous_head_gets_it(tmp_path, monkeypatch):
-    """0099 is the last migration, after 0095 (0096-0098 are reserved). An install whose ledger ends at the previous
-    head gets it, and only it, at its next boot."""
+def test_0099_comes_after_0098_and_an_install_at_the_previous_head_gets_it(tmp_path, monkeypatch):
+    """0099 is the last migration, after 0098. An install whose ledger ends at the previous head gets it, and only
+    it, at its next boot."""
     from server.db.migrations import runner
     from server.db.models import Base
     versions = [version for version, _ in runner.MIGRATIONS]
-    assert versions[-2:] == ["0095", "0099"] and runner.head() == "0099"
+    assert versions[-2:] == ["0098", "0099"] and runner.head() == "0099"
     engine = sa.create_engine(f"sqlite:///{tmp_path / 'arslan.db'}")
     try:
         Base.metadata.create_all(engine)
         with monkeypatch.context() as patched:
             patched.setattr(runner, "MIGRATIONS", runner.MIGRATIONS[:-1])
             with engine.begin() as conn:
-                assert runner.apply_pending(conn)[-1] == "0095"
+                assert runner.apply_pending(conn)[-1] == "0098"
         with engine.begin() as conn:
             assert runner.apply_pending(conn) == ["0099"]
     finally:

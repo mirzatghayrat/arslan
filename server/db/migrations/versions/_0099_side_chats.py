@@ -9,7 +9,7 @@ The quote the user selected is not stored: it is the side chat's first message (
 
 Add-only, so reverting the code that uses them needs nothing back. Idempotent: a column already there is left alone, and
 so is a database without the table (a new install's create_all makes it with both). Numbered 0099 (docs/sessions.md
-§4; 0093 was released): it goes last in `MIGRATIONS`, after 0095, while 0096-0098 stay reserved.
+§4; 0093 was released): it goes last in `MIGRATIONS`, after 0098.
 """
 from __future__ import annotations
 
