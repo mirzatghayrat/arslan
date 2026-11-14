@@ -902,8 +902,26 @@ async def _stop_for_delete(gone: list[str], sub_session: str | None, parent_id: 
 async def _promote(db, conversation_id: str) -> None:
     """A sub-session whose parent is deleted without it becomes a top-level chat, and no looser than it was: what
     it read through its chain is written onto its own row now, the strictest of that chain (`effective_settings`,
-    which also keeps learning off). Its own sub-sessions stay under it."""
+    which also keeps learning off). Its own sub-sessions stay under it.
+
+    So is its permission mode (S5a): the narrowest along its chain, `permissions._chosen`'s walk read here in `db`,
+    before the caller tombstones the parent. In plan, Start goes back to what the chain had before plan (each plan
+    along it read as its `previous_mode`), never wider. A chain that isn't whole reads no wider than "ask": the
+    narrower of "ask" and what it could read (a reachable row in plan stays plan), and so does its Start."""
+    from server.services import permissions, settings_service
     row = await db.get(ConversationContext, conversation_id)
+    chain, whole = await _chain(db, row)
+    default = await settings_service.default_permission_mode(db)
+
+    def mode(before_plan: bool) -> str:
+        own = [r.previous_mode if before_plan and r.permission_mode == "plan" else r.permission_mode for r in chain]
+        own = [None if m is None else m if m in permissions.MODES else "ask" for m in own]
+        found = own[-1] or default
+        for m in own[:-1]:
+            found = permissions.narrower(m, found) if m else found
+        return found if whole else permissions.narrower("ask", found)
+    now, before = mode(False), mode(True)          # both read before `row` (the chain's first) changes
+    row.permission_mode, row.previous_mode = now, before if now == "plan" else None
     effective = await effective_settings(db, row)
     for field in dataclasses.fields(EffectiveSettings):
         setattr(row, field.name, getattr(effective, field.name))
