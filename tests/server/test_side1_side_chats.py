@@ -13,7 +13,10 @@ without it:
 - it is in no list of conversations and not on the phone, and it goes with its parent;
 - deleted, it is still a side chat (#910 review): off the phone, out of the whole app's lists and off the island, also
   after a restart; a delete stops the turn in flight where it deletes, and no message is ever written into a deleted
-  conversation, whatever the timing.
+  conversation, whatever the timing;
+- its permission mode is its parent's (#910 review), read at each step, the narrowest up its chain, whatever its own
+  row stores; one whose parent is out of reach or deleted runs in "Ask every step", never the default. A
+  sub-session's mode reads as it did.
 """
 import asyncio
 import re
@@ -30,7 +33,7 @@ from server.db.models import ArslanMessage, ArslanSummary, ProactiveItem, Provid
 from server.orchestrator import arslan, memory, tool_loop, untrusted
 from server.registry import tool_defs
 from server.registry.tool import Traits
-from server.services import background_jobs, phone_ids, sub_sessions, task_context
+from server.services import background_jobs, permissions, phone_ids, settings_service, sub_sessions, task_context
 from tests.server import test_trajectory_golden as golden
 from tests.server.test_q1a_quick_ask import _Model
 
@@ -1028,3 +1031,180 @@ async def test_a_restart_tells_no_deleted_conversation_of_its_cut_job_and_still_
     assert await background_jobs.report_interrupted() == 2
     async with execution_db() as session:
         assert (await session.execute(select(ArslanMessage.conversation_id))).scalars().all() == ["c-kept"]
+
+
+# -- its permission mode is its parent's, the narrowest up its chain (#910 review, round 1) --------------------------
+
+async def _own_mode(db, cid, mode) -> None:
+    """A mode on this conversation's own row, written straight to the database."""
+    async with db() as session:
+        row = await session.get(ConversationContext, cid) or ConversationContext(id=cid)
+        row.permission_mode = mode
+        session.add(row)
+        await session.commit()
+
+
+async def _default_mode(db, mode) -> None:
+    async with db() as session:
+        await settings_service.update_settings(session, {"default_permission_mode": mode})
+
+
+@pytest.mark.parametrize("mode", permissions.MODES)
+async def test_its_mode_is_its_parents_for_every_reader_and_follows_it_at_the_next_step(client, mode):
+    """Codex's round-1 repro: its parent set to plan through the window's route, and it read the default (ask_risky).
+    It runs in whatever its parent chose, for every reader of a conversation's mode: `mode_for` (the cards and full
+    access's answers, the ledger, the status, the phone's details), the window's route, plan's refusal, and the note
+    a scheduled run's refused command gets (ASK1-b). The default is never the parent's choice here, so reading it
+    would show. Read at each step, never copied: when its parent tightens, or from plan presses Start, so does it."""
+    from server.orchestrator import command_gate
+    permissions._reset_for_tests()
+    await _default_mode(client.db_maker, "plan" if mode == "full_access" else "full_access")
+    await _talk(client.db_maker)
+    side = (await _start(client.db_maker))["conversation_id"]
+    url = f"/api/v1/conversations/{PARENT}/permission-mode"
+
+    async def agreed() -> str:
+        state = await permissions.mode_for(side)
+        assert state == await permissions.mode_for(PARENT), (mode, state)
+        got = (await client.get(f"/api/v1/conversations/{side}/permission-mode")).json()
+        assert (got["own"], got["chosen"], got["mode"]) == (None, state.chosen, state.mode)
+        refused = await permissions.plan_refusal("write_file", {"path": "a.txt", "content": "x"}, side)
+        assert (refused is not None) is (state.chosen == "plan")
+        assert await command_gate._chose_ask_every_step(side) is (state.chosen == "ask")
+        return state.chosen
+    assert (await client.put(url, json={"mode": mode})).status_code == 200
+    assert await agreed() == mode
+    later = await client.post(f"{url}/start") if mode == "plan" else await client.put(url, json={"mode": "plan"})
+    assert later.status_code == 200
+    assert await agreed() == ("full_access" if mode == "plan" else "plan")
+
+
+@pytest.mark.parametrize("between, top, expected", [
+    ("full_access", "plan", "plan"), ("ask_risky", "ask", "ask"), ("ask", "full_access", "ask"),
+    (None, "plan", "plan"), ("plan", None, "plan")],
+    ids=["its-parent-wider-the-top-in-plan", "its-parent-wider-the-top-asking", "its-parent-narrower",
+         "its-parent-unset", "the-top-unset"])
+async def test_up_a_longer_chain_the_narrowest_mode_applies(execution_db, between, top, expected):
+    """Its parent in a wider mode while an ancestor is narrower, and the other way round: the narrowest along the
+    chain (`permissions.narrower`, as for a sub-session), which the sub-session between reads too. Nothing makes this
+    chain (a side chat's parent is an ordinary conversation, `side_chats.create`); written here as Codex's P04 wrote
+    it, it is read through `sub_sessions._chain`, as any chain is. The default is full access."""
+    await _default_mode(execution_db, "full_access")
+    await _talk(execution_db)
+    side = (await _start(execution_db))["conversation_id"]
+    async with execution_db() as session:
+        await sub_sessions.create_child(session, PARENT, "sub-mid")
+        (await session.get(ConversationContext, side)).parent_id = "sub-mid"
+        await session.commit()
+    await _own_mode(execution_db, PARENT, top)
+    await _own_mode(execution_db, "sub-mid", between)
+    assert [(await permissions.mode_for(cid)).chosen for cid in (side, "sub-mid")] == [expected, expected]
+
+
+#: How a side chat's parent is out of its reach: no row for its id, or one of no kind (as a route could leave); its
+#: parent's row gone, or the parent's row of a sub-session between them (a chain nothing makes, as above), the one
+#: between unset or in plan (a mode it could read still narrows); deleted with its parent through the route, after a
+#: restart too; its parent's tombstone alone; or a delete under way (this process's mark, before its commit).
+OUT_OF_REACH = [("no-row", "ask"), ("a-row-of-no-kind", "ask"), ("its-parents-row-gone", "ask"),
+                ("a-sub-session-between-whose-parent-is-gone", "ask"),
+                ("a-sub-session-between-in-plan-whose-parent-is-gone", "plan"),
+                ("deleted-with-its-parent", "ask"), ("its-parents-tombstone-alone", "ask"),
+                ("a-delete-under-way", "ask")]
+
+
+@pytest.mark.parametrize("how, expected", OUT_OF_REACH, ids=[how for how, _ in OUT_OF_REACH])
+async def test_one_whose_parent_is_out_of_reach_or_deleted_runs_in_ask_never_the_default(client, how, expected):
+    """Fails closed, as an unreadable mode does: "Ask every step", or narrower where it read a narrower mode; never
+    the default and never its parent's last (both full access here). Known by its id as well as its row
+    (`phone_ids.kind_of`): a deleted side chat's row says `deleted`, and a side chat's id with no row is still one."""
+    await _default_mode(client.db_maker, "full_access")
+    await _talk(client.db_maker)
+    side = (await _start(client.db_maker))["conversation_id"]
+    await _own_mode(client.db_maker, PARENT, "full_access")
+    cid = NO_ROW if how in ("no-row", "a-row-of-no-kind") else side
+    async with client.db_maker() as session:
+        if how == "a-row-of-no-kind":
+            session.add(ConversationContext(id=NO_ROW))
+        elif how.startswith("a-sub-session-between"):
+            mid = await sub_sessions.create_child(session, PARENT, "sub-mid")
+            mid.permission_mode = "plan" if "in-plan" in how else None
+            (await session.get(ConversationContext, side)).parent_id = "sub-mid"
+        elif how == "its-parents-tombstone-alone":
+            await sub_sessions.tombstone(session, [PARENT])
+        await session.commit()
+        if how == "its-parents-row-gone" or how.startswith("a-sub-session-between"):
+            await session.execute(sa.delete(ConversationContext).where(ConversationContext.id == PARENT))
+            await session.commit()
+    if how == "deleted-with-its-parent":
+        assert (await client.delete(f"/api/v1/conversations/{PARENT}")).status_code == 200
+    elif how == "a-delete-under-way":
+        sub_sessions._deleted.update([PARENT, side])
+    for restarted in (False, True) if how == "deleted-with-its-parent" else (False,):
+        if restarted:
+            sub_sessions._deleted.clear()            # a restart forgets this process's mark; the tombstones stay
+        assert (await permissions.mode_for(cid)).chosen == expected, (how, restarted)
+        got = (await client.get(f"/api/v1/conversations/{cid}/permission-mode")).json()
+        assert (got["own"], got["chosen"], got["mode"]) == (None, expected, expected)
+
+
+@pytest.mark.parametrize("stored, parent, expected", [
+    ("full_access", "plan", "plan"), ("plan", "full_access", "full_access"), ("not-a-mode", "ask_risky", "ask_risky")],
+    ids=["wider-than-its-parent", "narrower-than-its-parent", "not-a-mode"])
+async def test_a_mode_an_older_row_stores_for_it_is_never_read(client, stored, parent, expected):
+    """No route sets one (`side_chat_inherits`). One an older row holds, written straight to the database here, is
+    not read at all: not as the top of its chain, which would widen it past its parent; not as a narrowing, since its
+    mode is its parent's, exactly; not as a stored value that reads "ask". The window's route says it has none of its
+    own and nothing for plan's Start to go back to."""
+    await _talk(client.db_maker)
+    side = (await _start(client.db_maker))["conversation_id"]
+    async with client.db_maker() as session:
+        row = await session.get(ConversationContext, side)
+        row.permission_mode, row.previous_mode = stored, "full_access"
+        await session.commit()
+    assert (await client.put(f"/api/v1/conversations/{PARENT}/permission-mode",
+                             json={"mode": parent})).status_code == 200
+    assert (await permissions.mode_for(side)).chosen == expected
+    got = (await client.get(f"/api/v1/conversations/{side}/permission-mode")).json()
+    assert (got["own"], got["previous"], got["chosen"]) == (None, None, expected)
+
+
+#: Sub-session chains as `create_child` makes them (two and three rows, a stored value that isn't a mode), and ones
+#: that can't be read (a parent's row gone, none named, a loop, a deleted parent), each row's mode such that reading
+#: the wrong row as the top would show: id: (kind, parent_id, permission_mode).
+_SUB_CHAINS = {
+    "c-top": ("chat", None, "ask_risky"), "sub-a": ("sub", "c-top", "full_access"), "sub-b": ("sub", "sub-a", None),
+    "c-bare": (None, None, None), "sub-c": ("sub", "c-bare", "ask"), "sub-junk": ("sub", "c-top", "FULL"),
+    "sub-orphan": ("sub", "c-gone", "full_access"), "sub-unnamed": ("sub", None, None),
+    "sub-loop-1": ("sub", "sub-loop-2", "full_access"), "sub-loop-2": ("sub", "sub-loop-1", "ask_risky"),
+    "c-dead": ("deleted", None, "plan"), "sub-dead": ("sub", "c-dead", "full_access")}
+
+
+def _as_before(default: str, cid: str) -> str:
+    """`permissions._chosen` as it read before #910's round-1 fix, over `_SUB_CHAINS`: the reference here."""
+    chain, seen, current = [], set(), cid
+    while current and current not in seen and len(seen) < 16:
+        seen.add(current)
+        if current not in _SUB_CHAINS:
+            break
+        kind, parent, own = _SUB_CHAINS[current]
+        chain.append(None if own is None else own if own in permissions.MODES else "ask")
+        current = parent if kind == "sub" else None
+    mode = (chain[-1] if chain else None) or default
+    for own in reversed(chain[:-1]):
+        if own is not None:
+            mode = permissions.narrower(own, mode)
+    return mode
+
+
+@pytest.mark.parametrize("default", ["full_access", "plan"])
+async def test_a_sub_sessions_mode_reads_as_it_did(execution_db, default):
+    """The guard: walking side chats through `sub_sessions._chain` changes no sub-session's mode. On every chain
+    here, and for ids with no row, the resolver reads what the walk before it read (`_as_before`), whatever one makes
+    of each answer: how a sub-session's chain that can't be read should read is S5a's and SUB's, not this fix's."""
+    await _default_mode(execution_db, default)
+    async with execution_db() as session:
+        for cid, (kind, parent, own) in _SUB_CHAINS.items():
+            session.add(ConversationContext(id=cid, kind=kind, parent_id=parent, permission_mode=own))
+        await session.commit()
+    for cid in (*_SUB_CHAINS, "sub-no-row", "c-no-row"):
+        assert (await permissions.mode_for(cid)).chosen == _as_before(default, cid), cid

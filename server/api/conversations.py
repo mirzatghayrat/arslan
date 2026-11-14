@@ -363,13 +363,15 @@ class PermissionModeIn(BaseModel):
 
 async def _permission_mode_out(db: AsyncSession, conversation_id: str) -> dict:
     """S5a: `own` (null = the default), `chosen` (own, or the default, narrowed by a parent for a sub-session), `mode`
-    (what applies now) and `fallback` (why "ask_risky" runs as "ask": sandbox_off | home_folder | no_checkpoint)."""
+    (what applies now) and `fallback` (why "ask_risky" runs as "ask": sandbox_off | home_folder | no_checkpoint).
+    SIDE-1 (#910 review): a side chat has no `own` or `previous`, whatever its row stores; `chosen` is its parent's."""
     from server.db.companion_models import ConversationContext
-    from server.services import permissions
+    from server.services import permissions, phone_ids, sub_sessions
     row = await db.get(ConversationContext, conversation_id)
     state = await permissions.mode_for(conversation_id)
-    return {"own": row.permission_mode if row is not None else None, "chosen": state.chosen, "mode": state.mode,
-            "fallback": state.fallback, "previous": row.previous_mode if row is not None else None}
+    mine = row is not None and phone_ids.kind_of(conversation_id, row.kind) != sub_sessions.SIDE
+    return {"own": row.permission_mode if mine else None, "chosen": state.chosen, "mode": state.mode,
+            "fallback": state.fallback, "previous": row.previous_mode if mine else None}
 
 
 def _checked_id(conversation_id: str) -> None:

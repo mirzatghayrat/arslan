@@ -15,7 +15,8 @@ the window talks to it over the socket as to any conversation.
   does (the user's ruling, 2026-11-14) and writes none: learning is off, on its row and in `effective_settings` for
   any side chat whatever its row says, so every memory or lesson write refuses (`learning_disabled`). No route sets
   anything on it (`side_chat_inherits`). It runs on its parent's model
-  (`llm_factory`), and a local-only receipt of its parent counts as its own (`task_context.load`).
+  (`llm_factory`) and in its parent's permission mode, the narrowest up its chain (`permissions._chosen`), and a
+  local-only receipt of its parent counts as its own (`task_context.load`).
 - The outside-content mark (card, rule 3): worked out once when it is made, and stored (`outside_at_start`). Every turn
   of one that started marked starts marked (`arslan._answer_dispatch`); a clean one is marked by what each turn reads.
 - It is in no list of conversations (`phone_ids.in_list`), not on the phone (`sub_sessions.sub_ids`), and the whole
