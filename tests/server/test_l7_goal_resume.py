@@ -239,3 +239,34 @@ async def test_a_goal_completed_but_not_posted_is_posted_once_on_boot(execution_
     assert len(posted) == 2 and "Reconciled." in posted[-1].content
     await _boot()
     assert len(await posts()) == 2
+
+
+# -- round 1 of review: the guards in front of Resume ------------------------------------------------------------
+
+@pytest.mark.parametrize("kind", ["quick", "deleted"], ids=["side chat", "deleted"])
+async def test_resume_is_refused_outside_a_main_conversation_and_runs_nothing(kind, execution_db, active, model, disk,
+                                                                             turns):
+    from server.db.companion_models import ConversationContext
+    row = await _blocked(execution_db, model)
+    requests = len(model.requests)
+    async with execution_db() as db:
+        db.add(ConversationContext(id=CID, kind=kind))
+        await db.commit()
+    assert (await _say("/goal resume")).startswith("Goals run from a main conversation")
+    assert background_jobs.goal_job(row.id) is None and len(model.requests) == requests
+    after = await _row(execution_db)
+    assert (after.phase, after.pause_reason, after.version) == (row.phase, row.pause_reason, row.version)
+
+
+async def test_resume_refuses_a_goal_changed_row_and_runs_nothing(execution_db, active, model, disk, turns):
+    row = await _blocked(execution_db, model)
+    await _set(row.id, pause_reason="goal_changed")
+    before = await _row(execution_db)
+    requests = len(model.requests)
+    assert not (await _say("/goal resume")).startswith("Goal resumed")
+    assert background_jobs.goal_job(row.id) is None and len(model.requests) == requests
+    with pytest.raises(TaskError, match="task_cannot_start"):
+        async with repository() as repo:
+            await repo.resume_goal(row.id, before.version)
+    after = await _row(execution_db)
+    assert (after.pause_reason, after.version, after.budget) == ("goal_changed", before.version, before.budget)
