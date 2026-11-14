@@ -99,7 +99,10 @@ class ScheduleTaskExecutor:
                                  f"(the limit is {scheduler.MAX_ENABLED}) — cancel one first"}
             task = ScheduledTask(
                 name=name, prompt=prompt, spawn_id=None, target="arslan",
-                conversation_id=args.get("conversation_id") or scheduler.own_conversation(),   # SUB5a
+                # SUB5a: every task gets a conversation of its own (`scheduled-<uuid>`). C7c-3b review 1: a
+                # conversation_id in the arguments is ignored, never stored: use_tool passes on fields the tool's
+                # table doesn't list, the card shows no conversation, and a fire runs in whatever the row says.
+                conversation_id=scheduler.own_conversation(),
                 schedule_kind=kind, interval_s=interval_s, cron=cron,
                 enabled=True, consecutive_failures=0,
                 # ASK1-b: whether the turn writing this prompt had read outside content; its fires start from it.

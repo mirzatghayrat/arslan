@@ -22,7 +22,7 @@ CAPABILITY = (
          },
          offered=lambda offer: bool(offer.skills),
          # Outside content per result (`external` on the result: tool_loop._record_tool_result), not by name.
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=True, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
     # 0.1.56 §7: a project's conversation may propose a changed plan (a card; the user decides).
     Tool("propose_plan_change",
          "This conversation belongs to a project with levels (see the project card). When the user "
@@ -47,7 +47,7 @@ CAPABILITY = (
              "required": ["levels", "reason"]},
          offered=lambda offer: offer.in_project,
          host=True,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     # 0.1.57 §2: only after a wall, never as a first move; the result is outside content.
     Tool("find_capability",
          "When a step failed because none of your tools can do it (e.g. you can read an .xlsx's values "
@@ -65,7 +65,7 @@ CAPABILITY = (
                  "kinds": {"type": "array", "items": {"type": "string",
                                                       "enum": ["mcp", "skill", "plugin", "project"]}}},
              "required": ["need", "keywords"]},
-         traits=Traits(effect="external_write", parallel=False, outside=True, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=True, saves=False)),
     # 0.1.57 §3: propose one candidate find_capability returned (the card is the server's).
     Tool("propose_capability",
          "After find_capability, ask the user to add ONE candidate (not_here null; for a skill, license_verdict "
@@ -85,7 +85,7 @@ CAPABILITY = (
                              "description": "Folders it needs (e.g. the folder of the file you work on)."}},
              "required": ["candidate_id", "why"]},
          host=True,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     # v0.1.64 CAP2a: found on demand (K7), never resident; the user sees the whole SKILL.md on a card and decides
     # (skill_forge.propose).
     Tool("create_skill",
@@ -107,7 +107,7 @@ CAPABILITY = (
                                  "description": "What the user asked for, in a few words."}},
           "required": ["key", "name", "description", "body"], "additionalProperties": False},
          host=True,
-         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="local_write", parallel=False, outside=False, saves=False)),
     # v0.1.64 CAP8b: found on demand (K7), never resident. It takes no text: memory_import reads the message that started
     # this turn, and the user's ticks on the card decide what is stored.
     Tool("import_memories",
@@ -120,7 +120,7 @@ CAPABILITY = (
                                  "description": "What the user asked for, in a few words."}},
           "additionalProperties": False},
          host=True,
-         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="local_write", parallel=False, outside=False, saves=False)),
     # v0.1.64 CAP10: found on demand (K7), never resident. It runs the project's own code: only in the sandbox, on a
     # copy, offline unless the user allows the network for that run (server/services/project_verify.py).
     Tool("verify",
@@ -143,7 +143,7 @@ CAPABILITY = (
           "required": ["folder"], "additionalProperties": False},
          offered=lambda offer: offer.shell and offer.workspace and not offer.nobody_to_ask,
          # local_write: it writes only its copy, and a failed run (a failing test) may be run again after a fix.
-         traits=Traits(effect="local_write", parallel=False, outside=True, replay_safe=False, saves=False)),
+         traits=Traits(effect="local_write", parallel=False, outside=True, saves=False)),
     Tool("whats_new",
          "Your own version and the release notes of the latest versions "
          "(newest first). Call it when the user asks which version you are, "
@@ -155,7 +155,7 @@ CAPABILITY = (
                                       "description": "How many recent versions' notes (default 3)."}},
              "additionalProperties": False,
          },
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
     # v0.1.64 SMART-2: found on demand (K7), never resident.
     Tool("my_status",
          "Your own live state: version and what is new, the chat model (and this "
@@ -164,20 +164,19 @@ CAPABILITY = (
          "times, and where your own code and plans are (GitHub main). Call it when the "
          "user asks about you or your setup; answer from it, never from memory. args: {}.",
          {"type": "object", "properties": {}, "additionalProperties": False},
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
-    # v0.1.64 INB7-f: the brief of Progress (progress.brief), found on demand (K7), never resident. Not replay-safe, as
-    # my_status: it reads this Mac's live records, which a hermetic replay must not see (replay_safety's allow-list rule).
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
+    # v0.1.64 INB7-f: the brief of Progress (progress.brief), found on demand (K7), never resident.
     Tool("progress_report",
          "Overall progress across all conversations, projects and scheduled tasks: done today, running, stuck and "
          "waiting on the user, each with ids to open. Call it when the user asks how things are going overall and "
          "answer from it, never from memory.",
          {"type": "object", "properties": {}, "additionalProperties": False},
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
     Tool("list_my_capabilities",
          "List your OWN usable capabilities (built-in tools + installed "
          "MCP servers). Call this ONCE when the user asks what you can do / "
          "what tools or MCPs you have, then answer from its result in a "
          "short friendly summary — never paste the raw JSON back.",
          {"type": "object", "properties": {}, "additionalProperties": False},
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
 )

@@ -30,11 +30,11 @@ SCHEDULE = (
              "additionalProperties": False,
          },
          gate=tool_gates.schedule,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("list_my_tasks",
          "List the recurring tasks that exist, with their ids and schedules.",
          {"type": "object", "properties": {}, "additionalProperties": False},
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
     Tool("cancel_task",
          "Delete a recurring task. args: {task_id}.",
          {
@@ -44,5 +44,5 @@ SCHEDULE = (
              "required": ["task_id"],
              "additionalProperties": False,
          },
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
 )

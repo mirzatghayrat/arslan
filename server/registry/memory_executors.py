@@ -35,12 +35,10 @@ class RecallExecutor:
     🔴 What a caller may see is memory_tools_v2.recall's: the same assembly and sensitivity rules as the
     memory block (personal_context), and a missing caller gets no hits — "give less", never more.
 
-    🔴 DEBT follow-up (brain-P2 decision point 2, recorded Task 6 — see the fuller
-    note at server.services.replay_safety.REPLAY_SAFE_BUILTINS): despite being
-    read-only, `recall` deliberately does NOT enter REPLAY_SAFE_BUILTINS yet. The
-    sensitive-fact filter above is verified fail-closed on the LIVE path only; its
-    prerequisite for ever joining the replay-safe set is a test proving replay-path
-    sensitive-exclusion is byte-for-byte identical to live's — not yet written.
+    🔴 DEBT follow-up (brain-P2 decision point 2, recorded Task 6): the sensitive-fact
+    filter above is verified fail-closed on the LIVE path only. Any path that offers
+    `recall` outside a live turn first needs a test proving its sensitive-exclusion
+    is byte-for-byte identical to live's — not yet written.
     """
 
     key = "recall"

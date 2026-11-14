@@ -1,8 +1,8 @@
 """The per-tool gates (LOOP1 c2), and what a gate tells the model when a card can't be shown or says no.
 
-A tool's `Tool.gate` names its gate, and `_run_tool` calls it after the common gates and before the eval backstop. A
-gate answers with the refusal to record (enrolling, with its card's answer), or None to go on; run_command's is
-`command_gate.check`, which answers with its plan instead."""
+A tool's `Tool.gate` names its gate, and `_run_tool` calls it after the common gates and plan mode, and before the
+executor. A gate answers with the refusal to record (enrolling, with its card's answer), or None to go on; run_command's
+is `command_gate.check`, which answers with its plan instead."""
 from __future__ import annotations
 
 import uuid

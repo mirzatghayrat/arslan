@@ -14,7 +14,7 @@ WEB = (
          {"type": "object",
           "properties": {"query": {"type": "string"}},
           "required": ["query"]},
-         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=True, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=True, saves=False)),
     Tool("web_extract",
          "Fetch a URL and return its main text (SSRF-guarded). Extracting the most authoritative "
          "page beats many snippet searches. If what you gathered is incomplete, answer only the "
@@ -26,7 +26,7 @@ WEB = (
                                        "default": 12_000,
                                        "description": "Maximum extracted characters. Request a larger bounded read only when needed; check source.truncated."}},
           "required": ["url"]},
-         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=True, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=True, saves=False)),
     Tool("render_chart",
          "Render a line/bar/pie chart from structured data; the user sees the chart.",
          {"type": "object",
@@ -34,5 +34,5 @@ WEB = (
                          "x": {"type": "array"},
                          "series": {"type": "array"},
                          "title": {"type": "string"}}},
-         traits=Traits(effect="read", parallel=False, outside=False, replay_safe=True, saves=False)),
+         traits=Traits(effect="read", parallel=False, outside=False, saves=False)),
 )

@@ -37,7 +37,7 @@ START_SUB_SESSION = Tool(
     offered=_can_start_a_sub_session,
     # It returns the new sub-session's id only, nothing it read: its report reaches this conversation in SUB4's
     # summary turn, framed as outside content there. So it isn't `outside` itself.
-    traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False))
+    traits=Traits(effect="external_write", parallel=False, outside=False, saves=False))
 
 
 TASKS = (
@@ -48,7 +48,7 @@ TASKS = (
          {"type": "object", "properties": {"run_id": {"type": "integer", "minimum": 1}},
           "additionalProperties": False},
          offered=_in_task,
-         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=True, saves=False)),
     START_SUB_SESSION,
     # 0.1.50 S2: the run's checklist — host bookkeeping (turn_plan), no executor.
     Tool("update_plan",
@@ -58,7 +58,7 @@ TASKS = (
          "the current plan is shown back to you at the end of every step. "
          "Skip it for one-step requests.",
          _PLAN_PARAMS, host=True,
-         traits=Traits(effect="read", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=False, outside=False, saves=False)),
     # PA-3: structured clarification — a TERMINAL tool (no executor; the tool loop ends the turn and _handle_answer
     # emits the clarify_options card), so Arslan's answer path can offer real choice buttons instead of a text
     # counter-question.
@@ -77,7 +77,7 @@ TASKS = (
           },
           "required": ["question", "options"]},
          host=True,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("start_background_work",
          # 0.1.63 K4b (D4): one set of rules. A job is the same work in another place, chosen by the
          # user or the model; the old "do NOT do such work inline" and the one-sentence reply are gone.
@@ -108,7 +108,7 @@ TASKS = (
                  "required": ["description"], "additionalProperties": False}}},
           "required": ["goal", "criteria"], "additionalProperties": False},
          offered=_can_start_a_job,
-         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="local_write", parallel=False, outside=False, saves=False)),
     Tool("background_status",
          "Read the real state of this conversation's background jobs (running, step, outcome, which "
          "budget limit ended it). Call it FIRST whenever the user asks about work you started — "
@@ -117,11 +117,11 @@ TASKS = (
          {"type": "object", "properties": {}, "additionalProperties": False},
          offered=_can_start_a_job,
          # Outside content per result (`external` on the result: tool_loop._record_tool_result), not by name.
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
     Tool("stop_background_work",
          "Stop one running background job of this conversation by job_id when the user asks to stop it.",
          {"type": "object", "properties": {"job_id": {"type": "string", "minLength": 1}},
           "required": ["job_id"], "additionalProperties": False},
          offered=_can_start_a_job,
-         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="local_write", parallel=False, outside=False, saves=False)),
 )

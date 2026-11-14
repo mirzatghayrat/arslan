@@ -46,7 +46,7 @@ HANDS = (
          "(in the background Finder ignores keys, and clicking a file opens it).",
          {"type": "object", "properties": {}, "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="read", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=False, outside=False, saves=False)),
     Tool("desktop_access",
          "Before a task that needs several Mac apps, ask for all of "
          "them in one card instead of one card per app as each is first used: {apps, why}. Allowed apps "
@@ -57,7 +57,7 @@ HANDS = (
              "why": {"type": "string", "minLength": 1, "maxLength": 300, "description": "what you will do, in words"}},
           "required": ["apps", "why"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_look",
          "Read an app's front window as an outline of elements with "
          "refs like [@s1a2b3c4:e7] (accessibility tree; nothing is clicked), with a screenshot of that "
@@ -77,7 +77,7 @@ HANDS = (
              "window": {"type": "string", "maxLength": 200, "description": "look at the window whose title contains this"}},
           "required": ["app"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="read", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=False, outside=False, saves=False)),
     Tool("desktop_click",
          "Click an element by ref from your latest desktop_look of "
          "that app. args: {app, element (what it is, in words), ref}. The first action in each app asks "
@@ -89,7 +89,7 @@ HANDS = (
              "front": {"type": "boolean", "description": _FRONT}},
           "required": ["app", "element", "ref"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_type",
          "Set the text of a field (by ref): replaces what is there; "
          "mode=append adds to the end; submit=true presses Return after. Works without taking focus. "
@@ -103,7 +103,7 @@ HANDS = (
              "submit": {"type": "boolean"}},
           "required": ["app", "element", "ref", "text"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_select", "Choose an option in a pop-up or list (by ref).",
          {"type": "object", "properties": {
              "app": {"type": "string", "minLength": 1, "maxLength": 120},
@@ -112,7 +112,7 @@ HANDS = (
              "value": {"type": "string", "minLength": 1, "maxLength": 200}},
           "required": ["app", "element", "ref", "value"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_scroll", "Scroll an element (by ref): direction up/down/left/right.",
          {"type": "object", "properties": {
              "app": {"type": "string", "minLength": 1, "maxLength": 120},
@@ -122,7 +122,7 @@ HANDS = (
              "amount": {"type": "integer", "minimum": 1, "maximum": 20}},
           "required": ["app", "element", "ref"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_open",
          "Open a Mac app, or a file in it, in the background "
          "(behind the user's windows; it does not come to the front): {app, path?}. Asks the user once. "
@@ -135,7 +135,7 @@ HANDS = (
                       "description": "a file or folder to open in that app (optional)"}},
           "required": ["app"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_batch",
          "Several actions in one app in one call, then one look: "
          "{app, steps: [{action: click|type|select|scroll|press|menu, …that action's args}] (up to 8)}. "
@@ -157,7 +157,7 @@ HANDS = (
                  "required": ["action"], "additionalProperties": False}}},
           "required": ["app", "steps"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_menu",
          "Choose a menu-bar item of an app, in the background, by its "
          "titles: {app, path: [\"Format\", \"Font\", \"Bold\"]}. Prefer a button in the window; then a "
@@ -170,7 +170,7 @@ HANDS = (
                       "description": "the menu's titles as the app shows them, top level first: [\"Format\", \"Font\", \"Bold\"]"}},
           "required": ["app", "path"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_press", _press_words,
          {"type": "object", "properties": {
              "app": {"type": "string", "minLength": 1, "maxLength": 120},
@@ -178,7 +178,7 @@ HANDS = (
              "front": {"type": "boolean", "description": _FRONT}},
           "required": ["app", "keys"], "additionalProperties": False},
          offered=_available,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
     Tool("desktop_takeover",
          "Take the screen over for long work that only "
          "works in front (many steps where background actions did nothing): {why, minutes ≤ 30}. "
@@ -191,5 +191,5 @@ HANDS = (
              "minutes": {"type": "integer", "minimum": 1, "maximum": 30}},
           "required": ["why", "minutes"], "additionalProperties": False},
          offered=_in_a_job,
-         traits=Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False)),
+         traits=Traits(effect="external_write", parallel=False, outside=False, saves=False)),
 )
