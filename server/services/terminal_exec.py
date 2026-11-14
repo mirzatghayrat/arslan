@@ -145,7 +145,9 @@ async def _pump(stream: asyncio.StreamReader, into: _Capped) -> None:
 def _kill_group(proc) -> None:
     try:
         os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
+        # as `_group_alive` reads it: EPERM means no process left in the group that we can signal (on macOS, only
+        # zombies), so there is nothing this kill could stop; raising it broke `run` on a command that had exited
         pass
 
 
