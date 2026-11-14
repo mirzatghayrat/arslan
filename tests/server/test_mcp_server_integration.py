@@ -81,7 +81,7 @@ async def test_enabled_valid_token_initialize_and_list_tools_succeed(harness):
     tl = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
     r2 = await ac.post("/mcp-server/", json=tl, headers=auth)
     names = {t["name"] for t in r2.json()["result"]["tools"]}
-    assert names == {"list_spawns", "list_capabilities", "get_run_status"}
+    assert names == {"list_capabilities", "get_run_status"}
 
 
 async def test_foreign_origin_rejected(harness):

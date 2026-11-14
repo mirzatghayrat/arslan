@@ -13,11 +13,11 @@ What it does (real process, no network LLM, no touching your real data/):
        [persist]  arslan_messages holds the user row + an assistant/spawn_summary row
   5. (S4.1-C, permanent) asserts the inbound-MCP-server invariant against the SAME
      booted process — the door is fail-closed by default, opens when enabled+tokened,
-     serves exactly the 3 read tools, rejects a wrong token, and closes again
+     serves exactly the 2 read tools, rejects a wrong token, and closes again
      immediately on disable-restore:
        [mcp] disabled → 403
        [mcp] enabled+valid initialize → 200
-       [mcp] tools/list → 3 read tools
+       [mcp] tools/list → 2 read tools
        [mcp] wrong token → 401
        [mcp] disable-restore → 403
   6. prints a ✓/✗ report and exits 0 (all pass) / 1 (any fail)
@@ -160,14 +160,14 @@ def check_mcp_server(port: int) -> list[tuple[str, bool, str]]:
     c, _ = _mcp_post(base, "/mcp-server/", MCP_INIT, auth)
     checks.append(("[mcp] enabled+valid initialize → 200", c == 200, f"got {c}"))
 
-    # 4. tools/list exposes exactly the 3 read tools
+    # 4. tools/list exposes exactly the 2 read tools
     c, body = _mcp_post(base, "/mcp-server/", MCP_TOOLS_LIST, auth)
     try:
         names = sorted(t["name"] for t in json.loads(body)["result"]["tools"])
     except Exception:
         names = []
-    expected = ["get_run_status", "list_capabilities", "list_spawns"]
-    checks.append(("[mcp] tools/list → 3 read tools", c == 200 and names == expected,
+    expected = ["get_run_status", "list_capabilities"]
+    checks.append(("[mcp] tools/list → 2 read tools", c == 200 and names == expected,
                    f"got {c} {names}"))
 
     # 5. wrong token rejected

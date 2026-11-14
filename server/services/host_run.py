@@ -6,8 +6,8 @@ Host runs are not spawn evolution samples and never schedule an automatic judge.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
-from contextlib import nullcontext
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 
 from arslan.llm import usage_sink
@@ -30,6 +30,31 @@ def note_failure(kind: str, text: str = "") -> None:
     if holder is not None:
         holder.setdefault("kind", kind)
         holder.setdefault("text", text or kind)
+
+
+# A chat turn the tool loop stopped short of its answer (its `stop_reason`: the work limit, the no-progress breaker,
+# or a stream the model ended after part of the answer): the window's turn then ends as "needs_review", as a
+# background job does, never "ok" (`ws.arslan.run_with_confirm_frames`). A holder per turn, opened by the socket
+# around the turn: the run's child task shares the same dict. In process only.
+_turn_stop: ContextVar[dict | None] = ContextVar("host_turn_stop", default=None)
+
+
+@contextmanager
+def watching_stop() -> Iterator[dict]:
+    """The holder for one turn: it names the loop's stop reason once the turn has one, and is empty otherwise."""
+    holder: dict = {}
+    token = _turn_stop.set(holder)
+    try:
+        yield holder
+    finally:
+        _turn_stop.reset(token)
+
+
+def note_stop(reason: object) -> None:
+    """The turn's answer came back with this stop reason (None: it finished). No-op outside `watching_stop`."""
+    holder = _turn_stop.get()
+    if holder is not None and isinstance(reason, str) and reason:
+        holder.setdefault("reason", reason)
 
 
 @governed

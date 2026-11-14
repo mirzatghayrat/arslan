@@ -14,7 +14,6 @@ vi.mock("../api/client", () => ({
   api: {
     getRegistry: vi.fn(),
     listSpawns: vi.fn(),
-    ingestKnowledgeText: vi.fn(),
   },
   ApiError: class ApiError extends Error {},
   API_BASE: "",

@@ -181,26 +181,36 @@ class Confirmations:
 
 #: HR-2b: what the push card says when the outgoing files couldn't be read (the card still shows: fails closed).
 PUSH_UNLISTED = "Arslan couldn't list the files this push sends"
+#: HR-3: what it says when where the push goes couldn't be read (the card still shows).
+PUSH_UNKNOWN = "Push destination unknown"
 
 
 async def _pushed_ci(shell: str, cwd) -> list[str]:
     """HR-2b: the push card's lines for the CI files its outgoing commits change (`git_config_guard.outgoing_ci`, off
     the event loop): one per file, PUSH_UNLISTED when they couldn't be read (no folder, a git failure or timeout, an
-    error), [] when there are none. A CI job runs on the CI service after a push, so the push is where it is named."""
+    error), [] when there are none. A CI job runs on the CI service after a push, so the push is where it is named.
+    HR-3: led by where it pushes (`git_config_guard.push_destination`), a line per url, else PUSH_UNKNOWN."""
     import asyncio
     from pathlib import Path
     from server.services import git_config_guard
-    try:
-        found = None if cwd is None else await asyncio.to_thread(git_config_guard.outgoing_ci, Path(cwd), shell)
-    except Exception:  # noqa: BLE001 — fails closed: the card says it couldn't list them
-        found = None
-    return [PUSH_UNLISTED] if found is None else [f"CI file: {name}" for name in found]
+
+    async def read(reader):
+        try:
+            return None if cwd is None else await asyncio.to_thread(reader, Path(cwd), shell)
+        except Exception:  # noqa: BLE001 — fails closed: the card says it couldn't read it
+            return None
+    urls, found = await read(git_config_guard.push_destination), await read(git_config_guard.outgoing_ci)
+    return ([f"Push destination: {url}" for url in urls] if urls else [PUSH_UNKNOWN]) + (
+        [PUSH_UNLISTED] if found is None else [f"CI file: {name}" for name in found])
 
 
 def _with_ci(frame: dict, lines: list[str]) -> None:
     """HR-2b, no new frame key: the lines lead the Mac card's touches row (`summary.touches`, which the Bridge doesn't
-    read) and end the `reason` the phone shows (the first 10 there)."""
+    read) and end the `reason` the phone shows (the first 10 there). HR-3: through `card_purpose.shown`, as the
+    reading's own touches."""
     if lines:
+        from server.services import card_purpose
+        lines = card_purpose.shown(lines)
         frame["summary"] = {**frame["summary"], "touches": [*lines, *frame["summary"].get("touches", [])]}
         shown = lines[:10] + ([f"and {len(lines) - 10} more"] if len(lines) > 10 else [])
         frame["reason"] = "; ".join([*([frame["reason"]] if frame.get("reason") else []), *shown])
@@ -217,10 +227,11 @@ def with_consequence(frame: dict, line: str) -> None:
 def _delete_keys(mode: str, shell: str) -> dict:
     """SMART-8: the delete card's mode and targets for the Mac card (⑤CAP's shared component), on the Mac's WS
     frame only. The Bridge's FrameMapper reads named keys (title, perm_kind, expires_at…), so neither reaches the
-    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written; [] when
-    the delete can't be read, and the card then reads rm's plain arguments itself."""
+    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written, through
+    `card_purpose.shown` (HR-3: the Mac card shows them as its touches row); [] when the delete can't be read, and
+    the card then reads rm's plain arguments itself."""
     if not mode:
         return {}
-    from server.services import delete_to_trash
+    from server.services import card_purpose, delete_to_trash
     found = delete_to_trash.plan(shell)
-    return {"delete_mode": mode, "delete_targets": list(found.targets) if found else []}
+    return {"delete_mode": mode, "delete_targets": card_purpose.shown(list(found.targets)) if found else []}

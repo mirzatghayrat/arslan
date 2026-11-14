@@ -516,35 +516,6 @@ export const api = {
   cancelRun: (id: number) => request<{ ok: boolean }>(`/runs/${id}/cancel`, { method: "POST" }),
   /** Manually redact every run's sensitive/bulky debug detail. Returns the count touched. */
   redactAllRuns: () => request<{ redacted: number }>(`/runs/redact-all`, { method: "POST" }),
-  ingestKnowledgeText: (spawnId: number, source: string, text: string, compress = false) =>
-    request<IngestResult>(`/spawns/${spawnId}/knowledge`, {
-      method: "POST",
-      body: JSON.stringify({ source, text, compress }),
-    }),
-  ingestKnowledgeFile: async (spawnId: number, file: File, compress = false): Promise<IngestResult> => {
-    const token = useAuthStore.getState().token;
-    const form = new FormData();
-    form.append("file", file);
-    form.append("compress", String(compress));
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const resp = await fetch(`${BASE}/spawns/${spawnId}/knowledge`, {
-      method: "POST",
-      body: form,
-      headers,
-    });
-    if (!resp.ok) {
-      let detail = `HTTP ${resp.status}`;
-      try { detail = (await resp.json()).detail ?? detail; } catch { /* keep */ }
-      throw new ApiError(detail, resp.status);
-    }
-    return (await resp.json()) as IngestResult;
-  },
-  ingestKnowledgeUrl: (spawnId: number, url: string, compress = false) =>
-    request<IngestResult>(`/spawns/${spawnId}/knowledge`, {
-      method: "POST",
-      body: JSON.stringify({ url, compress }),
-    }),
   getPreferences: (spawnId: number) =>
     request<{ preferences: string[]; entries?: import("./companion").MemoryEntry[] }>(`/spawns/${spawnId}/preferences`),
   deletePreference: (spawnId: number, fact: string, identity?: { entry_id: string; expected_version: number }) =>
@@ -595,7 +566,7 @@ export const api = {
   deleteCollection: (id: number) => request<{ deleted: boolean; chunks_removed: number }>(`/collections/${id}`, { method: "DELETE" }),
   ingestCollection: (id: number, body: { source?: string; text?: string; url?: string }) =>
     request<IngestResult>(`/collections/${id}/ingest`, { method: "POST", body: JSON.stringify(body) }),
-  /** Multipart upload — mirrors ingestKnowledgeFile: build the fetch by hand so
+  /** Multipart upload: build the fetch by hand so
    *  the browser sets its own multipart Content-Type (with boundary) rather
    *  than the JSON header `request` applies by default. */
   ingestCollectionFile: async (id: number, file: File): Promise<IngestResult> => {
