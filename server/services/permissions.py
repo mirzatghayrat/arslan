@@ -23,6 +23,7 @@ is asked, stored or recorded.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import logging
 import time
@@ -708,10 +709,10 @@ async def mode_for(conversation_id: str | None, *, check_save: bool = False) -> 
 async def _chosen(conversation_id: str | None) -> str:
     from server.db.companion_models import ConversationContext
     from server.services import settings_service, sub_sessions
+    chain: list[str | None] = []      # own modes, from this conversation up through its parents (SUB)
     try:
         async with db_session.AsyncSessionLocal() as db:
             default = await settings_service.default_permission_mode(db)
-            chain: list[str | None] = []      # own modes, from this conversation up through its parents (SUB)
             rows: list[ConversationContext] = []
             seen: set[str] = set()
             current = conversation_id
@@ -732,7 +733,8 @@ async def _chosen(conversation_id: str | None) -> str:
                     rows[-1].kind == "sub" or any(sub_sessions.is_deleted(r.id, r) for r in rows)):
                 chain.append("ask")
     except Exception:  # noqa: BLE001 — fails closed: an unreadable mode is "ask every step"
-        return "ask"
+        # ...narrowed by each mode read before the error, so it never widens one (a parent's plan stays plan).
+        return functools.reduce(narrower, filter(None, chain), "ask")
     # The top conversation's own mode, else the default; each sub-session below it only narrows.
     mode = (chain[-1] if chain else None) or default
     for own in reversed(chain[:-1]):
