@@ -731,7 +731,9 @@ async def _chosen(conversation_id: str | None) -> str:
             chain, whole = await sub_sessions._chain(db, row)
     except Exception:  # noqa: BLE001 — fails closed: an unreadable mode is "ask every step"
         return "ask"
-    out_of_reach = any(side(r) for r in chain) and (
+    # SUB2 (#921): a sub-session whose chain can't be read whole or has a deleted conversation on it fails closed
+    # too: "ask" stands in for its top, and each mode it did read still narrows.
+    out_of_reach = (chain[0].kind == sub_sessions.SUB or any(side(r) for r in chain)) and (
         not whole or side(chain[-1]) or any(sub_sessions.is_deleted(r.id, r) for r in chain))
     # The top conversation's own mode, else the default; each one below it only narrows.
     mode, below = ("ask", chain) if out_of_reach else (own(chain[-1]) or default, chain[:-1])
