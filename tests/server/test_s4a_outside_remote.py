@@ -643,7 +643,7 @@ class _Runtime:
     def __init__(self, log):
         self.log = log
 
-    async def execute_tool(self, tool_key, arguments, execute):
+    async def execute_tool(self, tool_key, arguments, execute, **_own):   # L7-5: host_check
         self.log.append("admit")
         return await execute(arguments)
 
@@ -752,7 +752,7 @@ async def test_followup_b_no_grant_row_when_the_runtime_refuses_to_admit_the_com
     await _give_outside_grant("c1")
 
     class _Refuses:
-        async def execute_tool(self, tool_key, arguments, execute):
+        async def execute_tool(self, tool_key, arguments, execute, **_own):   # L7-5: host_check
             raise TaskError("task_reconciliation_required")
     monkeypatch.setattr(task_service, "current", lambda: _Refuses())
     ex = _Exec(stop=False)
