@@ -586,6 +586,23 @@ async def test_a_resumed_tasks_saved_progress_names_outside_sites_and_a_typed_on
     assert await hosts.judge("docs.mine.example", CID) == "allow"
 
 
+async def test_a_resume_with_no_saved_progress_carries_in_the_mark_and_no_text(monkeypatch, hosts):
+    """NET-a F5 beside `_launch`'s default (no progress), which main's ASK1-b test resumes with: there is nothing to
+    carry in but the mark, so the resumed turn starts as having read outside content and records no site."""
+    started = []
+
+    async def prepare(*_a, **_k):
+        return {}, None, None, None
+
+    async def launch(*_a, **_k):
+        token = untrusted.track_turn(CID)
+        started.append(untrusted.end_turn(token))
+    monkeypatch.setattr(task_service, "prepare_resume", prepare)
+    monkeypatch.setattr(task_service, "_launch", launch)
+    await task_service.resume_entry("s64-none", 1, CID, "x", lambda e: None, None, ctx=None)
+    assert started == [True] and hosts.outside_seen(CID) and hosts.outside_hosts(CID) == frozenset()
+
+
 async def test_after_reading_a_tasks_earlier_outputs_arslans_own_note_waits(memory, monkeypatch):
     result = await _host_turn(monkeypatch, _Model(**{"S64-HOST": _turn(PROGRESS, NOTE_ADD)}))
     assert result["external_seen"] is True and _note_status(result) == "proposed"

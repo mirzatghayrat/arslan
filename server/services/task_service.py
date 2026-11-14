@@ -1096,7 +1096,8 @@ async def resume_entry(task_id, expected_version, conversation_id, instruction, 
     from server.orchestrator import untrusted
     value, progress, ctx, _ = await prepare_resume(task_id, expected_version, conversation_id, ctx,
                                                   instruction=instruction, driver=driver)
-    with untrusted.carried(True, text=progress.model_dump_json()):       # S64-0 and NET-a F5: as resume_turn below
+    # S64-0 and NET-a F5: as resume_turn below. No saved progress (`_launch`'s default): only the mark is carried in.
+    with untrusted.carried(True, text=progress.model_dump_json() if progress is not None else None):
         return await _launch(value, emit, body, progress=progress, context=ctx)
 
 
