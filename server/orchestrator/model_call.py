@@ -59,6 +59,7 @@ class TurnRecovery:
     truncated_calls: int = 0
     capability_bounced: bool = False   # 0.1.50: one capability-truth correction per turn
     unverified_bounces: int = 0        # K8a: unverified-answer corrections this turn (capped)
+    finish_checked: bool = False       # H3: one "handed back" bounce per turn (finish_check)
     images_read_locally: bool = False  # Hands v2 §4.4: one retry with screenshots read as text
 
     @property

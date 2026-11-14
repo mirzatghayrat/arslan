@@ -58,6 +58,9 @@ _PLAIN_KEYS = (
                # H1-c: a plain contradiction fixed by default ("true" | "false"; only "false" brings the old behaviour
                # back). No UI. DELETE-BY: v0.1.65, once the bench shows no regression.
                "status_route_in_prompt",
+               # H3: the "handed back" check before an answer stands ("true" | "false"; default off). No UI; the bench
+               # sets it. DELETE-BY: on in the H3 build PR if the bench gates pass, else that PR is not merged.
+               "harness_finish_check",
                # SBX-6a (the user's decision, 2026-11-02): the LAN devices sandboxed commands may reach through the proxy,
                # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused). Read here; written
                # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
@@ -306,6 +309,13 @@ async def status_route_in_prompt(session: AsyncSession) -> bool:
     tool table). Default ON; only an explicit 'false' brings the old wording back. DELETE-BY: v0.1.65."""
     raw = await _get_raw(session, "status_route_in_prompt")
     return raw is None or str(raw).strip().lower() != "false"
+
+
+async def harness_finish_check(session: AsyncSession) -> bool:
+    """H3: whether `finish_check` runs before an answer stands. Default OFF; only an explicit 'true' turns it on.
+    DELETE-BY: on in the H3 build PR if the bench gates pass, else that PR is not merged."""
+    raw = await _get_raw(session, "harness_finish_check")
+    return raw is not None and str(raw).strip().lower() == "true"
 
 
 async def sandbox_system_certificates(session: AsyncSession) -> bool:

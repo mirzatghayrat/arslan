@@ -2,7 +2,8 @@
 
 `_run_native` (tool_loop.py) hands such a step here. The answer is checked in today's order: a capability it denies the
 turn had, a claim without a receipt or a promise of action (bounced back to the model, a bounded number of times), then
-a reply that can't stand (replaced from the findings, salvaged, or kept as shown), then the task's acceptance checks
+H3's "handed back" check when its switch is on (finish_check.py), then a reply that can't stand (replaced from the
+findings, salvaged, or kept as shown), then the task's acceptance checks
 (one bounded repair, or the failed checks said). `finish` returns what the turn ends with, or None when a correction or
 a repair went back to the model: the next step answers it."""
 from __future__ import annotations
@@ -12,6 +13,7 @@ import json
 
 from arslan.llm import trajectory
 
+from server.orchestrator import finish_check
 from server.orchestrator.answer_guards import _embeds_protocol, _is_deferral_stub, _unverified_claim
 from server.orchestrator.answer_salvage import (
     _chat_miss_message, _fallback_with_digest, _salvage_plain, _synthesize_from_findings)
@@ -70,6 +72,14 @@ async def finish(request: TurnRequest, state: TurnState, mode: StepMode, reply: 
              "The proposed answer only promises future action. ") +
             "Use an available native tool if needed, or give an honest answer stating the limitation. "
             "Do not claim an action or artifact exists without evidence. Do not output tool-call JSON as text."}])
+        return None
+    # H3 (`harness_finish_check`, default off): an answer that hands work back to the user, or leaves out a step that
+    # was declined or blocked, goes back once. Only the model's own answer: one the guards above would replace isn't.
+    if final_text and not (protocol_text or deferred or claimed) and (
+            note := await finish_check.check(request, state, mode, final_text)):
+        await _correct(turn_text, streamed)
+        convo.extend([trajectory.assistant(final_text, continuation=own_continuation),
+                      {"role": "user", "content": note}])
         return None
     # A clean answer is prose. Reject content that is / embeds a tool-call or escalate object
     # (DeepSeek writes "Let me search…{\"tool\":…}" when it wants to keep going but can't), or a
