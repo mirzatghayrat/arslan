@@ -163,7 +163,8 @@ async def _tasks(db: AsyncSession, rows: list[CompanionTask]) -> list[dict]:
         if row.phase == "cancelled" and row.pause_reason == "process_interrupted":
             outcome = "interrupted"
         else:
-            outcome = background_jobs.outcome_of(row.phase, results, row.pause_reason)
+            outcome = background_jobs.outcome_of(row.phase, results, row.pause_reason,
+                                                 glances=background_jobs.glances_of(spec.get("acceptance")))
         if outcome == "done" and background_jobs.goal_missed(*verdicts.get(row.id, (None, None))):
             outcome = "blocked"
         item = {"conversation_id": row.conversation_id, "title": _title(spec.get("instruction")),

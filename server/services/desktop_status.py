@@ -87,12 +87,13 @@ def _clip(text, limit: int) -> str | None:
 
 def push(kind: str, *, conversation_id: str | None = None, outcome: str | None = None,
          task_id: int | None = None, title: str | None = None, summary: str | None = None,
-         work: str | None = None, reason: str | None = None) -> dict:
+         work: str | None = None, reason: str | None = None, glance: int | None = None) -> dict:
     """`title`/`summary`/`work` reach the island feed only, never the status
     endpoint. `work` says which kind of run finished (KINDS_OF_WORK) where the
     event kind alone cannot: a chat turn and a background job both end in
     turn_finished, and the island treats them differently. `reason` (REASONS) is
-    in the event only when given."""
+    in the event only when given, and so is `glance` (INB9-a: how many 👀 a job's
+    acceptance sheet left for the user, a count only)."""
     if kind not in KINDS:
         raise ValueError(f"unknown desktop event kind: {kind}")
     if outcome is not None and outcome not in OUTCOMES:
@@ -106,6 +107,8 @@ def push(kind: str, *, conversation_id: str | None = None, outcome: str | None =
                  "outcome": outcome, "task_id": task_id, "at": int(time.time())}
         if reason is not None:
             event["reason"] = reason
+        if glance:
+            event["glance"] = int(glance)
         _events.append(event)
         if title or summary or work:
             _details[event["id"]] = {"title": _clip(title, TITLE_CHARS), "summary": _clip(summary, SUMMARY_CHARS),

@@ -761,6 +761,7 @@
       "waiting": "承認待ち",
       "waiting_reminder": "止まった作業からリマインダーがあります",
       "waiting_away": "期限切れのカードがあります",
+      "waiting_glance": "終わった作業に目を通してほしいものがあります",
       "working": "進行中",
       "progress": "進行中：{{done}} / {{total}}",
       "done": "完了",

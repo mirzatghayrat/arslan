@@ -761,6 +761,7 @@
       "waiting": "Espera tu aprobación",
       "waiting_reminder": "Un trabajo detenido te dejó un recordatorio",
       "waiting_away": "Una tarjeta caducó",
+      "waiting_glance": "Un trabajo terminado dejó algo para que lo mires",
       "working": "En curso",
       "progress": "En curso: {{done}} de {{total}}",
       "done": "Hecho",
