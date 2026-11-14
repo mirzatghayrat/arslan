@@ -407,7 +407,8 @@ _CREDENTIALS = re.compile(r"(?<=://)[^/?#]*@")
 def without_credentials(url: str) -> str:
     """`url` with a `scheme://` url's userinfo removed (`_CREDENTIALS`: `user:pass@`, a token alone, a plain ssh user
     as in `ssh://git@`); anything else as written, an scp-like `user@host:path` too (an ssh login: that form has no
-    password). What the push card shows: its destination lines, and its title's url typed after `push` (card_purpose)."""
+    password). What the cards show: the push card's destination lines, and a url typed after `push`, `clone`, `fetch`
+    or `pull` on the title, the clone's touches row too (card_purpose)."""
     return _CREDENTIALS.sub("", url)
 
 

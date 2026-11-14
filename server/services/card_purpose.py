@@ -443,14 +443,15 @@ def _step(w: dict, depth: int, work: dict) -> dict:
         own = [a for k, a in enumerate(args) if not re.match(r"^-[Cc]$", a)
                and not (k and re.match(r"^-[Cc]$", args[k - 1]))]
         sub, *rest = _plain(own) or [None]
+        # HR-3: a url typed after push, clone, pull or fetch is on the title without its userinfo (the clone's touches
+        # row too), as on the push card's destination line: the same stripper.
         if sub == "push":
-            # HR-3: a url typed here is on the title without its userinfo, as on the card's destination line.
-            # Not covered: clone, fetch and pull below still show a url as typed.
             return _reading("gitPush", {"remote": git_config_guard.without_credentials(rest[0]) if rest else "origin"})
         if sub == "clone" and rest:
-            return _reading("gitClone", {"repo": rest[0]}, [rest[0]])
+            repo = git_config_guard.without_credentials(rest[0])
+            return _reading("gitClone", {"repo": repo}, [repo])
         if sub in ("pull", "fetch"):
-            return _reading("gitFetch", {"remote": rest[0] if rest else "origin"})
+            return _reading("gitFetch", {"remote": git_config_guard.without_credentials(rest[0]) if rest else "origin"})
         return _reading("git", {"sub": sub or ""})
     if program == "open":
         if not plain:

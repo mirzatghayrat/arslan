@@ -119,6 +119,120 @@
    "unsure": false
   },
   {
+   "line": "git clone https://zz-user:FAKE@example.invalid/zz.git",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [
+    "https://example.invalid/zz.git"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git clone https://FAKE-token@example.invalid/zz.git",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [
+    "https://example.invalid/zz.git"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git clone zz-user@example.invalid:zz/repo.git",
+   "purpose": {
+    "key": "gitClone",
+    "params": {
+     "repo": "zz-user@example.invalid:zz/repo.git"
+    }
+   },
+   "touches": [
+    "zz-user@example.invalid:zz/repo.git"
+   ],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git fetch https://zz-user:FAKE@example.invalid/zz.git main",
+   "purpose": {
+    "key": "gitFetch",
+    "params": {
+     "remote": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git fetch https://FAKE-token@example.invalid/zz.git",
+   "purpose": {
+    "key": "gitFetch",
+    "params": {
+     "remote": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git fetch zz-user@example.invalid:zz/repo.git main",
+   "purpose": {
+    "key": "gitFetch",
+    "params": {
+     "remote": "zz-user@example.invalid:zz/repo.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git pull https://zz-user:FAKE@example.invalid/zz.git main",
+   "purpose": {
+    "key": "gitFetch",
+    "params": {
+     "remote": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git pull https://FAKE-token@example.invalid/zz.git",
+   "purpose": {
+    "key": "gitFetch",
+    "params": {
+     "remote": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git pull zz-user@example.invalid:zz/repo.git main",
+   "purpose": {
+    "key": "gitFetch",
+    "params": {
+     "remote": "zz-user@example.invalid:zz/repo.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
    "line": "git clone https://github.com/acme/notes.git",
    "purpose": {
     "key": "gitClone",

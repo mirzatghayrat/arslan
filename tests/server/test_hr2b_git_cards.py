@@ -8,7 +8,8 @@ marks them, and a card after a git refusal.
    (the Mac card's "touches" row).
    HR-3: the card's first line there names where the push really goes (`git_config_guard.push_destination`): the
    remote's pushurl, else its url, read in the push's folder as git reads it, with no `user:pass@`; "Push destination
-   unknown" when that can't be read, and the card still shows. The title names a url typed after `push` without one.
+   unknown" when that can't be read, and the card still shows. The title names a url typed after `push` without one;
+   so do the clone, fetch and pull cards, the clone's touches row too.
 2. `checkpoints.changes` marks each CI path (`ci: true`).
 3. After git's own refusal lines named a held file in a conversation (`git_refused`), its next `git add` or `git
    commit` asks a once-only card (kind `git_refused`); the island never answers it, nobody to ask refuses it and
@@ -338,6 +339,50 @@ async def test_a_url_typed_after_push_titles_the_card_without_its_credentials(ex
     card, other = await _push_card(monkeypatch, None, line), await _push_card(monkeypatch, None, plain)
     assert card["title"] == f"Publish your commits to {shown}"
     assert card["summary"]["purpose"] == {"key": "gitPush", "params": {"remote": shown}}
+    assert set(card) == set(other)
+    per_card = {"call_id", "expires_at"}                              # each card's own id and deadline
+    typed_in = {"command", "pretty", "dedupe"}       # the command as typed, and the key identical asks join by
+    assert {key for key in card if card[key] != other[key]} - per_card == (typed_in if secret else set())
+    for lang in card_purpose.TEXT:
+        assert card_purpose.phrase(line, lang=lang) == card_purpose.phrase(plain, lang=lang)
+    if secret:
+        assert secret not in card["title"] + str(card["summary"]) + card["reason"]
+
+
+async def _git_card(monkeypatch, command: str) -> dict:
+    """The card of a git command no terminal rule asks for (`clone`, `fetch`, `pull`), asked as `_push_card` asks one
+    (no folder, "ask for risky commands"): layer ③'s card, whose title says it runs with no sandbox."""
+    async def run_folder():
+        return None
+    monkeypatch.setattr(command_gate, "run_folder", run_folder)
+    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    asker = _Asker()
+    with permissions.asking_with(asker):
+        assert await command_confirm.Confirmations("c1").command(command, []) is True
+    [frame] = asker.frames
+    assert frame["type"] == "propose_run_command" and "rules" not in frame and frame["perm_kind"] == "command"
+    return frame
+
+
+@pytest.mark.parametrize("sub", ["clone", "fetch", "pull"])
+@pytest.mark.parametrize("typed, shown, secret", [
+    ("https://zz-user:FAKE@example.invalid/zz.git", "https://example.invalid/zz.git", "zz-user:FAKE"),
+    ("https://FAKE-token@example.invalid/zz.git", "https://example.invalid/zz.git", "FAKE-token"),
+    ("zz-user@example.invalid:zz/repo.git", "zz-user@example.invalid:zz/repo.git", None),
+], ids=["user-pass", "token", "scp-like"])
+async def test_a_url_typed_after_clone_fetch_or_pull_titles_the_card_without_its_credentials(execution_db, monkeypatch,
+                                                                                             sub, typed, shown, secret):
+    """As after `push`, by the same stripper (`git_config_guard.without_credentials`): the title names a `scheme://`
+    url typed after `clone`, `fetch` or `pull` without its userinfo, and so does the clone's touches row (the Mac
+    card's); an scp-like `user@host:path` stays as written. Nothing else on the card changes: it is the card of the
+    line typed as shown, in every language; only the command itself differs."""
+    line, plain = f"git {sub} {typed}", f"git {sub} {shown}"
+    card, other = await _git_card(monkeypatch, line), await _git_card(monkeypatch, plain)
+    purpose, words = (({"key": "gitClone", "params": {"repo": shown}}, "Download a copy of") if sub == "clone" else
+                      ({"key": "gitFetch", "params": {"remote": shown}}, "Get the latest changes from"))
+    assert card["title"] == f"No sandbox · {words} {shown}"
+    assert card["summary"]["purpose"] == purpose
+    assert card["summary"]["touches"] == ([shown] if sub == "clone" else [])        # the Mac card's touches row
     assert set(card) == set(other)
     per_card = {"call_id", "expires_at"}                              # each card's own id and deadline
     typed_in = {"command", "pretty", "dedupe"}       # the command as typed, and the key identical asks join by
