@@ -51,14 +51,14 @@ _WRAPPERS = (lambda c: c, lambda c: "sh -c " + shlex.quote(c), lambda c: "cd x &
 _DEPLOY_ASKS = [
     *[(command, "publish") for command in (
         "netlify deploy", "netlify deploy --prod", "netlify --auth t deploy",
-        "fly deploy", "fly secrets set K=V", "fly apps destroy x", "fly scale count 2", "fly -a x deploy",
-        "fly --app=x deploy", "fly deploy --remote-only", "flyctl deploy", "flyctl secrets set K=V",
+        "fly deploy", "fly apps destroy x", "fly scale count 2", "fly -a x deploy",
+        "fly --app=x deploy", "fly deploy --remote-only", "flyctl deploy",
         "flyctl apps destroy x", "flyctl scale count 2", "flyctl -t tok deploy",
-        "heroku releases:rollback", "heroku config:set K=V", "heroku apps:destroy x", "heroku container:release web",
-        "heroku releases:rollback -a x", "heroku -a x config:set K=V",
+        "heroku releases:rollback", "heroku apps:destroy x", "heroku container:release web",
+        "heroku releases:rollback -a x",
         "railway up", "railway up --detach", "railway -s svc up",
         "wrangler deploy", "wrangler publish", "wrangler versions deploy", "wrangler pages deploy dist",
-        "wrangler pages publish dist", "wrangler secret put K", "wrangler rollback", "wrangler --env prod deploy",
+        "wrangler pages publish dist", "wrangler rollback", "wrangler --env prod deploy",
         "firebase deploy", "firebase deploy --only hosting", "firebase hosting:channel:deploy x",
         "firebase functions:delete f", "firebase database:set /x f", "firebase --project prod deploy --only hosting",
         "helm install x ./c", "helm upgrade x ./c", "helm upgrade --install x ./c", "helm uninstall x",
@@ -67,11 +67,11 @@ _DEPLOY_ASKS = [
     # A verb the reader cannot place asks as `publish`, whatever the verb: a word before it that is not one of the
     # program's known options or such an option's value, or an option between the two words of a two-word verb.
     *[(command, "publish") for command in (
-        "netlify --weird deploy", "fly --weird deploy", "flyctl --weird deploy", "heroku --weird config:set K=V",
+        "netlify --weird deploy", "fly --weird deploy", "flyctl --weird deploy",
         "railway --weird up", "wrangler --weird deploy", "firebase --foo deploy", "helm --weird install x ./c",
         "vercel --foo deploy", "helm -x ns install x ./c", "fly --region iad deploy", "vercel --foo",
-        "fly secrets -a x set K=V", "flyctl apps -a x destroy x", "fly scale --app x count 2", "fly ssh -a x console",
-        "wrangler pages --env prod deploy dist", "wrangler secret -e prod put K", "wrangler versions --env x deploy",
+        "flyctl apps -a x destroy x", "fly scale --app x count 2", "fly ssh -a x console",
+        "wrangler pages --env prod deploy dist", "wrangler versions --env x deploy",
         "netlify --weird status", "fly --weird status", "flyctl --weird logs", "heroku --weird apps",
         "railway --weird status", "wrangler --weird whoami", "firebase --weird projects:list", "helm --weird list",
         "vercel --weird ls", "netlify -help deploy", "vercel -h deploy", "helm --version install x ./c",
@@ -79,7 +79,7 @@ _DEPLOY_ASKS = [
     # Each CLI's own aliases for a listed verb, and the second program name its package installs (`ntl`, `vc`).
     *[(command, "publish") for command in (
         "helm delete rel", "helm del rel", "helm un rel", "helm -n ns delete rel", "helm delete -n ns rel",
-        "heroku rollback", "heroku rollback v1 -a x", "heroku config:add K=V", "heroku -a x config:add K=V",
+        "heroku rollback", "heroku rollback v1 -a x",
         "heroku destroy x", "heroku apps:delete x",
         "fly apps delete x", "fly apps remove x", "fly apps rm x", "flyctl apps delete x", "fly -a x apps delete x",
         "fly app destroy x", "fly app delete x", "flyctl app rm x", "fly destroy x", "flyctl destroy x",
@@ -103,6 +103,13 @@ _DEPLOY_ASKS = [
         "fly -a $X", "fly -a $X status", "helm -n $X", "netlify --auth $X", "vercel $A", "fly --app=$X status",
         "heroku -a $APP config", "wrangler --env $E whoami",
     )],
+    # A secret that CI or production reads (moved from `publish` on 2026-11-14, so the card says "secret").
+    *[(command, "secret-write") for command in (
+        "fly secrets set K=V", "flyctl secrets set K=V", "heroku config:set K=V", "heroku -a x config:set K=V",
+        "wrangler secret put K", "heroku config:add K=V", "heroku -a x config:add K=V",
+        # read past an option between its words, or under either reading of an unknown one (#897 review)
+        "fly secrets -a x set K=V", "wrangler secret -e prod put K", "heroku --weird config:set K=V",
+    )],
     *[(command, "remote-shell") for command in (
         "fly ssh console", "flyctl ssh console", "fly -a x ssh console", "heroku run bash", "heroku -a x run bash",
         "heroku run:detached x", "heroku run:inside web bash", "heroku -a x run:detached x",
@@ -119,7 +126,7 @@ _SET_FIRST = (
 )
 # The aliases by a path, which the reader leaves to the text pattern (`npx` takes a package name, not a path).
 DEPLOY_ASKS += [(wrap("/usr/local/bin/" + command), "publish") for command in (
-    "helm delete rel", "helm del rel", "helm un rel", "heroku rollback", "heroku config:add K=V", "heroku destroy x",
+    "helm delete rel", "helm del rel", "helm un rel", "heroku rollback", "heroku destroy x",
     "heroku apps:delete x", "fly apps delete x", "fly apps rm x", "fly app destroy x", "fly destroy x",
     "flyctl apps remove x", "ntl deploy", "vc deploy", "vc",
 ) for wrap in _WRAPPERS[:3]]

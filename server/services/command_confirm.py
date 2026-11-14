@@ -105,6 +105,8 @@ class Confirmations:
         rules = sorted(terminal_policy.ask_rules(shell, cwd=cwd, outside=outside))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
         pushed = await _pushed_ci(shell, cwd) if "git-push" in rules and not remote_host else []     # HR-2b
+        outcome = (card_purpose.consequence(shell, lang)
+                   if {"publish", "secret-write"} & set(rules) and not remote_host else "")
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
         deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
@@ -122,6 +124,7 @@ class Confirmations:
                 sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
                 **_delete_keys(delete, shell)}
             _with_ci(frame, pushed)
+            with_consequence(frame, outcome)
             request = permissions.Request(
                 kind="outside", target="*", title=card_purpose.phrase(
                     shell, why, rules, lang=lang, outside=True, network=network, delete_mode=delete,
@@ -157,6 +160,7 @@ class Confirmations:
             rules=rules, unreadable=unreadable, outside=outside)    # LOOP1 d2b: read as the gate read it
         frame.update(_delete_keys(delete, shell))
         _with_ci(frame, pushed)
+        with_consequence(frame, outcome)
         # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
         # its rules card too; otherwise as before, "ask for every command" asks where it would run.
         unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
@@ -201,6 +205,14 @@ def _with_ci(frame: dict, lines: list[str]) -> None:
         frame["summary"] = {**frame["summary"], "touches": [*lines, *frame["summary"].get("touches", [])]}
         shown = lines[:10] + ([f"and {len(lines) - 10} more"] if len(lines) > 10 else [])
         frame["reason"] = "; ".join([*([frame["reason"]] if frame.get("reason") else []), *shown])
+
+
+def with_consequence(frame: dict, line: str) -> None:
+    """The deploy rule's condition (⓪Plan, 2026-11-14): a publish, deploy or secret-write card states what happens
+    (`card_purpose.consequence`). No new frame key: it leads the Mac card's touches row and the phone's `reason`."""
+    if line:
+        frame["summary"] = {**frame["summary"], "touches": [line, *frame["summary"].get("touches", [])]}
+        frame["reason"] = "; ".join([line, *([frame["reason"]] if frame.get("reason") else [])])
 
 
 def _delete_keys(mode: str, shell: str) -> dict:

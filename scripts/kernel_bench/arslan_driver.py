@@ -53,7 +53,7 @@ if os.environ.get("BENCH_SANDBOX") == "none":
 # only "", delete and install, and that list went stale as rules were added: "hermes:script execution via
 # heredoc" inside the sandbox was declined (K2a's T5, 2026-10-20), so a run failed on the bench's own policy.
 OUTWARD = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "upload", "remote-shell",
-                     "git-push", "publish"})
+                     "git-push", "publish", "secret-write"})
 # Kinds the seatbelt does not contain because a system daemon does the work (③Hands' review of #242):
 # launchctl/crontab hand a job to launchd/cron, which run it unsandboxed and after the turn; `defaults write`
 # goes through cfprefsd; sudo, the macOS roots, keychain secrets and Arslan's keys are never the bench's to
