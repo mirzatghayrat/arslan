@@ -23,6 +23,7 @@ is asked, stored or recorded.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import logging
 import time
@@ -721,6 +722,7 @@ async def _chosen(conversation_id: str | None) -> str:
         # Null is unset (the default, or the parent's); any other value not a mode is "ask" (#893 review 6).
         mode = None if side(row) else row.permission_mode
         return None if mode is None else mode if mode in MODES else "ask"
+    chain: list[ConversationContext] = []     # the rows read, nearest first; `_chain` fills it as it reads
     try:
         async with db_session.AsyncSessionLocal() as db:
             default = await settings_service.default_permission_mode(db)
@@ -728,9 +730,10 @@ async def _chosen(conversation_id: str | None) -> str:
             if row is None:         # a new conversation; a side chat's id that nothing made has no parent to read
                 side_id = conversation_id and phone_ids.kind_of(conversation_id, None) == sub_sessions.SIDE
                 return "ask" if side_id else default
-            chain, whole = await sub_sessions._chain(db, row)
+            chain, whole = await sub_sessions._chain(db, row, into=chain)
     except Exception:  # noqa: BLE001 — fails closed: an unreadable mode is "ask every step"
-        return "ask"
+        # ...narrowed by each mode read before the error, so it never widens one (a parent's plan stays plan).
+        return functools.reduce(narrower, filter(None, (own(r) for r in chain)), "ask")
     # SUB2 (#921): a sub-session whose chain can't be read whole or has a deleted conversation on it fails closed
     # too: "ask" stands in for its top, and each mode it did read still narrows.
     out_of_reach = (chain[0].kind == sub_sessions.SUB or any(side(r) for r in chain)) and (

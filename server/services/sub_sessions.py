@@ -148,10 +148,13 @@ class EffectiveSettings:
     allow_sensitive: bool
 
 
-async def _chain(db, row: ConversationContext) -> tuple[list[ConversationContext], bool]:
+async def _chain(db, row: ConversationContext, into: list[ConversationContext] | None = None,
+                 ) -> tuple[list[ConversationContext], bool]:
     """`row` and its parents, nearest first, and whether the chain is whole. SIDE-1: a side chat's parent is on it,
-    so it reads memory as its parent does; learning is off (`effective_settings`)."""
-    chain = [row]
+    so it reads memory as its parent does; learning is off (`effective_settings`). `into`, when given, is the list
+    filled (from empty) as rows are read, so a caller still sees what was read if a read raises (`permissions._chosen`)."""
+    chain = into if into is not None else []
+    chain.append(row)
     while chain[-1].kind in UNDER:
         parent_id = chain[-1].parent_id
         if not parent_id or parent_id in {r.id for r in chain} or len(chain) >= MAX_DEPTH:
