@@ -13,6 +13,7 @@ Here the only real-seatbelt test checks that a command can use its own TMPDIR.
 """
 import asyncio
 import os
+import shutil
 import signal
 import stat
 import subprocess
@@ -35,6 +36,17 @@ def fresh():
     for path in list(run_temp._folders.values()):
         run_temp._remove(path)
     run_temp._reset_for_tests()
+
+
+@pytest.fixture
+def own_root(tmp_path, monkeypatch):
+    """A runs' root of this test's own, as a second Arslan data folder has. For a test that counts what the
+    sweep removes: in a full run the process's shared root holds the folders earlier tests left (`fresh` drops
+    them from `_folders`, so the sweep takes them for an earlier start's and counts them too)."""
+    from server import config
+    monkeypatch.setattr(config, "data_dir", lambda: tmp_path / "own-data")
+    yield run_temp.root()
+    shutil.rmtree(run_temp.root(), ignore_errors=True)
 
 
 async def _env(command: str, cwd: Path, **kw) -> dict:
@@ -131,7 +143,7 @@ async def test_a_time_limit_or_a_cancel_leaves_nothing_behind(tmp_path):
     assert not path.exists()
 
 
-async def test_a_process_left_running_keeps_the_folder_until_the_sweep_after_it(tmp_path):
+async def test_a_process_left_running_keeps_the_folder_until_the_sweep_after_it(tmp_path, own_root):
     with execution_context.bind_run(7):
         await _env("sleep 30 >/dev/null 2>&1 &", tmp_path)
     path = run_temp.folder(7)
@@ -144,7 +156,7 @@ async def test_a_process_left_running_keeps_the_folder_until_the_sweep_after_it(
     assert run_temp.sweep() == 1 and not path.exists()
 
 
-def test_the_sweep_removes_only_what_is_over():
+def test_the_sweep_removes_only_what_is_over(own_root):
     base = run_temp.root()
     base.mkdir(mode=0o700, exist_ok=True)
     done = subprocess.Popen(["true"], start_new_session=True)
@@ -166,7 +178,7 @@ def test_the_sweep_removes_only_what_is_over():
 
 
 
-def test_the_sweep_leaves_a_link_in_the_root_and_what_it_points_to(tmp_path):
+def test_the_sweep_leaves_a_link_in_the_root_and_what_it_points_to(tmp_path, own_root):
     """A link in the runs' root is never a run's folder: the sweep neither follows nor counts it."""
     base = run_temp.root()
     base.mkdir(mode=0o700, exist_ok=True)
