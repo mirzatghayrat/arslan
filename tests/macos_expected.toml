@@ -120,6 +120,14 @@ markers = 2
 cases = 2
 xfail = 0
 
+# 0.1.64 HR-3, a git config writer the text reader keeps as a read, under the outside floor: under this conversation's
+# outside grant with no click, adding a remote is refused with the floor's note and leaves .git/config byte-identical;
+# the same floor without the hold, as with the sandbox off, lets it land (1 case).
+["server/sbx/test_hr3_git_remote_floor.py"]
+markers = 1
+cases = 1
+xfail = 0
+
 # 0.1.64 S4b-0, the user's allowed folders as extra writable roots: an allowed root pinned and a swap after the build
 # refused (1 case); a link given as one refused, and a walk root still pinned in its place (1 case); `cp` into one
 # works and the folder beside it stays denied (1 case); inside one, a git hook, the `.git` folder and a hooksPath
@@ -401,10 +409,11 @@ xfail = 0
 
 # 0.1.64 HR-2b: the push card's outgoing files are read by git in seatbelt, so these run on macOS only. A CI file in
 # the outgoing commits is listed and another file is not, against the upstream and against origin/HEAD (2 cases); a
-# push with no CI file adds nothing.
+# push with no CI file adds no CI line. HR-3: the card names where the push really goes, with no `user:pass@`: a
+# re-pointed url, a pushurl, a named remote, remote.pushDefault, a url on the line a remote is named after (5 cases).
 ["server/test_hr2b_git_cards.py"]
-markers = 2
-cases = 3
+markers = 3
+cases = 8
 xfail = 0
 
 # 2026-09-25: native manual-backup maintenance subprocess at the macOS

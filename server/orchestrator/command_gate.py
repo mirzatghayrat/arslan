@@ -715,14 +715,15 @@ async def _outside_card(d: _Draft, args: dict, confirm_command, conversation_id:
                       "running a command outside the sandbox needs the user's click, which is not "
                       "available here",
                       _outside_request(command, card_purpose.phrase(
-                          command, str(args.get("why") or "").strip()[:300],
+                          command, card_purpose.shown_name(args.get("why"), 300),
                           lang=await card_purpose.language(), outside=True)),
                       conversation_id),
                   "note": "Run it without outside_sandbox, or tell the user what you needed."}
         return result
-    # The reason as the card will show it (protocol.propose_run_command): one of invisible characters is none.
-    from server.orchestrator import untrusted as _untrusted
-    why = _untrusted.clean_name(args.get("why"), 300)
+    # The reason as the card will show it (protocol.propose_run_command): one of invisible characters is none. HR-3
+    # review round 1: a url's userinfo comes off before this cut too, so it never cuts one (`card_purpose.shown_name`).
+    from server.services import card_purpose
+    why = card_purpose.shown_name(args.get("why"), 300)
     if not why:
         # Leaving the sandbox is a deliberate request (the calibration of 2026-11-07), and the card leads with why.
         # Arslan's own words, and nothing ran: not outside content, whatever the command looks like.
@@ -771,17 +772,18 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
             _approvals._command_request(command, sorted(terminal_policy.ask_rules(command, cwd=d.cwd, outside=d.outside)),
                                         None,
                                         ask_all=ask_all, unsandboxed=bool(d.out_kw), lang=await card_purpose.language(),
-                                        why=str(args.get("why") or "").strip()[:300],
+                                        why=card_purpose.shown_name(args.get("why"), 300),
                                         run_later=d.later_line if d.lift else ()),
             conversation_id)}
         if fire_runs_commands(conversation_id):     # ASK1-b: refused and listed; a chosen "ask" says where to switch
             result["note"] = (FIRE_ASK_ALL_NOTE if ask_all and await _chose_ask_every_step(conversation_id) else
                               FIRE_REFUSED_NOTE)
         return result
-    from server.services import permissions
+    from server.services import card_purpose, permissions
     permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below
-    # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words).
-    said = str(args.get("why") or "").strip()[:300]
+    # SMART-8: the model's reason reaches the ordinary card too (its purpose line, marked as Arslan's words). HR-3 review
+    # round 1: as the card shows it, a url's userinfo off before the cut (`card_purpose.shown_name`).
+    said = card_purpose.shown_name(args.get("why"), 300)
     approved = await confirm_command(command, argv, **({"why": said} if said else {}), **d.net_kw,
                                      **_delete_kw(d, d.run_outside), **d.out_kw,
                                      **({"run_later": d.later_line} if d.lift and d.later_line else {}))
