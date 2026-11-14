@@ -708,10 +708,13 @@ def shown(value):
     row, and a reading is both: each text param of its purpose (an inner purpose's too) and each touches item, listed
     once. `summarize` returns every reading through it, whichever step read the line, so a reading added later can't
     miss it; a run-later fact names its file or git setting through it (`phrase`), and command_confirm what it puts on
-    a touches row (the push card's lines, a delete card's targets).
+    a touches row (the push card's lines, a delete card's targets). Review round 1: so do the two texts a card shows as
+    they are given, Arslan's reason and the label of the machine a command runs on, word by word (`shown_words`; for
+    the title and the frame's `why`, `shown_name`; the frame's `remote_host`, protocol.propose_run_command).
     Not covered: a url the reader has already cut so that it no longer reads as one (run as the program, or given to a
     script runner, with no path after its host: its last part, `user:pass@host`, `_base`; a path after `cd <url>`:
-    joined to it with its `//` collapsed, `_rebase`), and the command as typed, which the Mac card shows whole."""
+    joined to it with its `//` collapsed, `_rebase`); the command as typed, which the Mac card shows whole; and in a
+    reason or a label, a credential that isn't a url's userinfo (`shown_words`)."""
     if isinstance(value, str):
         return git_config_guard.without_credentials(value)
     if isinstance(value, list):
@@ -724,6 +727,28 @@ def _shown_purpose(purpose: dict) -> dict:
     if "inner" in purpose:
         out["inner"] = _shown_purpose(purpose["inner"])
     return out
+
+
+_WORD = re.compile(r"\S+")
+
+
+def shown_words(text: str) -> str:
+    """HR-3 review round 1: `shown` for a text a card shows as it is given (Arslan's reason for a step, the label of the
+    machine a command runs on), word by word: in such a text a url ends at white space, which a url can't hold, so its
+    userinfo never runs on to an `@` in a word after it (the ssh login, `user@host`, a machine's label ends with, or an
+    e-mail address), which `shown` on the whole text would take, and the words before it. White space as it is.
+    Not covered: a credential that isn't a `scheme://` url's userinfo (a token as a word of its own, a password in a
+    url's query), nor a userinfo with white space in it (no url has one)."""
+    return _WORD.sub(lambda word: shown(word.group()), text)
+
+
+def shown_name(text, limit: int) -> str:
+    """HR-3 review round 1: such a text as the title shows it (Arslan's reason, the machine's label in its fact) and the
+    frame's `why` (the Mac card's heading), and the reason the gate hands on to both: cleaned as `untrusted.clean_name`
+    cleans a name, but through `shown_words` before the cut to `limit`, so a cut never leaves part of a url's userinfo,
+    and a character the cleaning drops (a zero-width one inside `://`) can't hide one from it."""
+    whole = untrusted.clean_name(text, len(str(text or "")))
+    return untrusted.clean_name(shown_words(whole), limit)
 
 
 def summarize(text: str, *, outside: bool = False) -> dict:
@@ -796,7 +821,8 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     whether it uses the network, in a fixed form; then the code's reading of `shell`; then Arslan's reason when it
     gave one. The reason is cut first, then the reading, so the whole title fits the phone's heading (PHONE_MAX) and
     no fact is pushed off it (#689 review 1 and its second round). Cleaned as a name is, so neither the model's words
-    nor the command's carry a bidi or zero-width character into the heading.
+    nor the command's carry a bidi or zero-width character into the heading. HR-3 review round 1: the reason and the
+    machine's label (`host`) lose a url's userinfo before either is cut (`shown_name`).
     `reading`: `summarize(shell)` when the caller already has it (the card's frame `summary`, read from the same
     text), so a long command is read once per card (#817 review); it is not changed. `rules` is not read: the reading
     does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument.
@@ -819,7 +845,7 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     elif unsandboxed:
         facts.append(_say(lang, "fact", "noSandbox", {}))
     if host:
-        facts.append(_say(lang, "fact", "onHost", {"host": untrusted.clean_name(host, 80)}))
+        facts.append(_say(lang, "fact", "onHost", {"host": shown_name(host, 80)}))
     if run_later:
         facts.extend(_run_later_fact(lang, shell, run_later))
     if network and not on_network:
@@ -831,7 +857,7 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     reading = untrusted.clean_name(
         _purpose(lang, s["purpose"]) + (_say(lang, "purpose", "more", {"count": s["more"]}) if s["more"] else ""), TITLE_MAX)
     # The model's words never take the facts' form: a separator, or one that looks like it, is a comma in them.
-    said = _SEPARATORS.sub(",", untrusted.clean_name(why, TITLE_MAX)) if why else ""
+    said = _SEPARATORS.sub(",", shown_name(why, TITLE_MAX)) if why else ""
     room = PHONE_MAX - (len(lead) + len(join) if lead else 0)
     # #689 review, the second round: Arslan's words are never the only description, so the code's reading comes
     # before them; the reason is cut first, then the reading, never the facts.

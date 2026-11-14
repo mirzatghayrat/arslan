@@ -120,9 +120,9 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     if sandbox == "outside":
         frame["sandbox"] = sandbox
     # SMART-8 (the card mock the user OK'd): Arslan's reason for the step, on every command card (the card leads with
-    # it, marked as Arslan's words), cleaned as a name is (UNI1): no bidi or zero-width character, one line.
-    from server.orchestrator import untrusted
-    said = untrusted.clean_name(why, 300) if why else ""
+    # it, marked as Arslan's words), cleaned as a name is (UNI1): no bidi or zero-width character, one line. HR-3 review
+    # round 1: a url's userinfo comes off before the cut, as off the title's (`card_purpose.shown_name`).
+    said = card_purpose.shown_name(why, 300) if why else ""
     if said:
         frame["why"] = said
     if rule:
@@ -132,7 +132,10 @@ def propose_run_command(call_id: str, command: str, argv: list[str], reason: str
     if unreadable:
         frame["unreadable"] = unreadable
     if remote_host:
-        frame["remote_host"] = remote_host
+        # HR-3 review round 1: the machine's label as cards show it (an enrolled machine's free-form name, then its ssh
+        # login), without a url's userinfo and as given otherwise (`card_purpose.shown_words`); the address the command
+        # runs on is not this (command_confirm's `host`).
+        frame["remote_host"] = card_purpose.shown_words(remote_host)
         frame["fingerprints"] = list(fingerprints or [])
     return frame
 
