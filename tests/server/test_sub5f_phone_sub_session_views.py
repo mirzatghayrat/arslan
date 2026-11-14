@@ -23,7 +23,8 @@ import pytest
 from server.db import session as db_session
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, Run
-from server.services import background_jobs, phone_reads, side_chats, sub_sessions
+from server.api import phone
+from server.services import background_jobs, phone_ids, phone_reads, side_chats, sub_sessions
 
 ROOT, KID_A, KID_B, GRANDKID = "c-commander", "sub-a", "sub-b", "sub-a1"
 OTHER, OTHER_KID = "c-other", "sub-other"
@@ -159,6 +160,26 @@ async def test_a_sub_sessions_transcript_reads_view_only_text(client, monkeypatc
 async def test_a_sub_session_outside_the_commanders_tree_is_not_found(client, monkeypatch, commander, child):
     await _family(client, monkeypatch)
     got = await client.get(history(commander, SIDE["id"] if child == "side" else child))
+    assert (got.status_code, got.json()["detail"]) == (404, "not_found")
+
+
+async def test_the_retired_pocket_is_not_a_commander_even_with_a_sub_session_in_its_tree(client, monkeypatch):
+    """The retired pocket is never on the phone (`phone_ids.POCKET`), so a sub-session under it is unreadable through
+    it, though the tree itself holds the child: only the route's own pocket check refuses (the pocket is no sub-session)."""
+    await _family(client, monkeypatch)
+    child = "sub-in-pocket"
+    async with client.db_maker() as db:
+        db.add(ConversationContext(id=phone_ids.POCKET, kind="chat"))
+        await db.commit()
+    async with client.db_maker() as db:
+        await sub_sessions.create_child(db, phone_ids.POCKET, child)
+        db.add(ArslanMessage(conversation_id=child, role="user", content="brief", source=sub_sessions.BRIEF_SOURCE,
+                             timestamp=_at(50)))
+        await db.commit()
+    async with client.db_maker() as db:
+        assert child in (await sub_sessions.tree(db, phone_ids.POCKET))[1:]          # it is in the pocket's tree
+        assert not await phone._off_the_phone(db, phone_ids.POCKET)                  # and the pocket is no sub-session
+    got = await client.get(history(phone_ids.POCKET, child))
     assert (got.status_code, got.json()["detail"]) == (404, "not_found")
 
 
