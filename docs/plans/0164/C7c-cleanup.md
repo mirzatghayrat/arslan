@@ -30,6 +30,8 @@
 | **C7c-5** | Data migration, then the drops. Converts every leftover expert into a skill (bulk, what `to-skill` does one at a time; see Q1). Re-homes private knowledge (see Q2). Turns `spawn_summary` rows into plain `arslan` replies and NULLs `spawn_id`. Marks leftover expert tasks ended. Moves the quarantined `scope_kind=expert` memory entries into 待整理 (below). Clears children in foreign-key order, then drops the expert tables plus the orphans (`recipe_*`, `evolution_*`, `synthetic_tasks`). | next free number |
 | **C7c-6** | Memory v1, to the extent this version may (see Q3): `/facts` CRUD, `/facts/dedup`, `/facts/classify`, `is_active`, the legacy branches in delete/restore. Drops `legacy_user_facts` / `legacy_learnings` and their guard triggers. The views, `memory_legacy_map`, `/brain/proposals*` and `/brain/undo-supersede` stay if Q3 says v0.1.65, with `DELETE-BY: v0.1.65`. | next free number |
 
+C7c-6 markers placed: `DELETE-BY: v0.1.65` (condition: C7c-6 removes the /facts routes and the memory v1 tables, Q3) on `server/api/facts.py`, the `UserFact` and `Learning` models, `scripts/frozen_upgrade_smoke.py` and `packaging/fresh_install_check.py`.
+
 Code PRs merge before their drop PRs. C7c-1/2 can go first and alone.
 
 ## The 30 quarantined `scope_kind=expert` entries (the user's 10-28 ask: decide and say which)

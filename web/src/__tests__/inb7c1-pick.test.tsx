@@ -192,6 +192,8 @@ describe("the inspector keeps up (⓪Plan's review of PR 624)", () => {
   });
 
   it("over 7 days the header takes the ended run's outcome from its steps' read, and the read stops once it has ended", async () => {
+    // Fake timers (real time still passes), so the read's beat is stepped by exact amounts instead of waited for on the wall clock.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     useActivityStore.setState({ range: "7d" });
     render(<ActivityView waiting={waiting()} />);
     fireEvent.click(await screen.findByTestId("activity-run-14"));
@@ -200,10 +202,17 @@ describe("the inspector keeps up (⓪Plan's review of PR 624)", () => {
     act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
     await waitFor(() => expect(within(inspector()).getByRole("heading").nextElementSibling).toHaveTextContent("Done"));
     expect(within(inspector()).getByRole("heading").nextElementSibling).toHaveTextContent("30m");
-    const reads = runProcess.mock.calls.length;
+    // How many reads it took to get here depends on timing (two views may share one in flight, the header's update may re-read once
+    // more), so wait until the count has stopped moving, then count only what comes after: the run has ended, nothing may read again.
+    let reads = -1;
+    for (let still = 0, tries = 0; still < 3 && tries < 40; tries++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      still = runProcess.mock.calls.length === reads ? still + 1 : 0;
+      reads = runProcess.mock.calls.length;
+    }
     act(() => { window.dispatchEvent(new Event(PROACTIVE_CHANGED)); });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(runProcess.mock.calls.length).toBe(reads);                              // ended: no more reads
+    await act(async () => { await vi.advanceTimersByTimeAsync(31_500); });   // past the read's follow-up (1.5 s) and its beat (30 s)
+    expect(runProcess.mock.calls.length).toBe(reads);                         // ended: no more reads
   });
 
   it("clicking the marked step again shows every step, the way back with no axis", async () => {

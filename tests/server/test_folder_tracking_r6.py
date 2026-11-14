@@ -91,12 +91,39 @@ DEPLOY_PROGRAMS = profiles.DEPLOY_PROGRAMS
 # The rows that move, the same with or without FOLDER_TRACKING_EVIDENCE_FULL: 64 controls (8 per deploy CLI); 100
 # unknown-option rows (4 spellings x 3 positions on each of the 8 deploy CLIs, and the 4 before vercel's verb).
 LATER_DEPLOY_ROWS = {"controls": 64, "unknown": 100}
+# The deploy rule (2026-11-14), also on purpose: the deploy CLIs' secret verbs ask as `secret-write` (heroku's
+# `config:set` rows above among them), and the measured deploy, publish and secret-write gaps of other programs
+# (`uv publish`, `gcloud app deploy`…) ask as `publish` or `secret-write`. Counted apart, on the default sample.
+GAP_PROGRAMS = frozenset(tp._PUBLISH_MORE) | frozenset(tp._SECRET_WRITE)
+# Sweep: 28 `uv publish` rows. Named, policy and positive: every row is the quoted-word table's `secret-write` seed
+# (`gh secret set ZZ`) asking as `secret-write` where main ran it.
+LATER_GAP_ROWS = {"sweep": 28, "named": 6, "policy": 48, "positive": 28}
+# Also on purpose: a heredoc body that sets a secret asks as `secret-write` where main ran it, as a body with
+# `npm publish` or `git push` already asks on main (`evidence.HEREDOC_SECRET_ROWS`). Counted apart, on the default
+# sample.
+LATER_HEREDOC_ROWS = {"negative": 1}
 
 
-def later_deploy_rule(text, before, after):
-    return ((before.level, after.level) == ('run', 'ask') and after.rule in {'publish', 'remote-shell'}
+def later_heredoc_secret(text, before, after):
+    return ((before.level, after.level, after.rule) == ('run', 'ask', 'secret-write')
+            and tp.ask_rules(text) == {'secret-write'} and evidence.heredoc_secret_write(text))
+# Round 1 of the #897 review, also on purpose: a registry publish with its tool's documented dry-run option
+# (`tp._DRY_RUN`: `cargo publish --dry-run`) publishes nothing, so `publish` leaves its rules and every other rule
+# stays. Counted apart, on the default sample: every one is cargo's, spelled quoted, escaped or after another command.
+LATER_DRY_RUN_ROWS = {"named": 18, "positive": 25, "composition": 16, "standalone": 16}
+
+
+def later_deploy_rule(text, before, after, programs=DEPLOY_PROGRAMS):
+    return ((before.level, after.level) == ('run', 'ask') and after.rule in {'publish', 'remote-shell', 'secret-write'}
             and tp.ask_rules(text) == {after.rule}
-            and any(words and words[0].lower() in DEPLOY_PROGRAMS for words in sg.read(text).commands))
+            and any(words and words[0].lower() in programs for words in sg.read(text).commands))
+
+
+def later_dry_run(text, main_rules):
+    # Every other rule stays; with none left, a line the reader doesn't understand asks as `unreadable`.
+    rest, rules = main_rules - {'publish'}, tp.ask_rules(text)
+    return ('publish' in main_rules and (rules == rest or not rest and rules == {tp.UNREADABLE})
+            and any(words and tp._dry_run(words[0].lower(), words[1:]) for words in tp._command_words(text)))
 
 
 @pytest.mark.parametrize("corpus", ('named', 'policy', *evidence.GENERATORS))
@@ -111,13 +138,22 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
         rows = list(evidence.GENERATORS[corpus]())
         texts = (text for _, text in (rows if revisions.FULL else evidence.stratified(rows)))
     counts = Counter()
-    later = 0
+    later = gaps = dry = heredocs = 0
     for text in texts:
         before, after = baseline.assess(text), tp.assess(text)
         main_rules = baseline.ask_rules(text)
         if later_deploy_rule(text, before, after):
             later += 1
             before, main_rules = after, {after.rule}    # the cwd check below then holds the new rule
+        elif later_deploy_rule(text, before, after, GAP_PROGRAMS):
+            gaps += 1
+            before, main_rules = after, {after.rule}
+        elif later_heredoc_secret(text, before, after):
+            heredocs += 1
+            before, main_rules = after, {after.rule}
+        elif later_dry_run(text, main_rules):
+            dry += 1
+            before, main_rules = after, tp.ask_rules(text)
         assert (after.level, after.rule, after.reason) == (before.level, before.rule, before.reason), text
         assert tp.ask_rules(text) == main_rules, text
         main_read, reading = baseline.shell_grammar.read(text), sg.read(text)
@@ -129,8 +165,12 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
             assert anchored.rule == before.rule, text
         counts[before.level + '->' + anchored.level] += 1
     assert later == LATER_DEPLOY_ROWS.get(corpus, 0), (corpus, later)
-    print('R6_IDENTITY ' + json.dumps({'corpus': corpus, 'cases': sum(counts.values()),
-                                     'differences': 0, 'later_deploy_rule': later, 'with_cwd': counts}, sort_keys=True))
+    assert revisions.FULL or gaps == LATER_GAP_ROWS.get(corpus, 0), (corpus, gaps)
+    assert revisions.FULL or dry == LATER_DRY_RUN_ROWS.get(corpus, 0), (corpus, dry)
+    assert revisions.FULL or heredocs == LATER_HEREDOC_ROWS.get(corpus, 0), (corpus, heredocs)
+    print('R6_IDENTITY ' + json.dumps({'corpus': corpus, 'cases': sum(counts.values()), 'differences': 0,
+                                     'later_deploy_rule': later, 'later_dry_run': dry, 'with_cwd': counts},
+                                    sort_keys=True))
 
 
 def test_folder_corpus_identity_and_transitions(tmp_path, monkeypatch, prefix_never_tracks):

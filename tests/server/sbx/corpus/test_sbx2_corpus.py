@@ -152,7 +152,7 @@ exit(finished && ok ? 0 : 1)
 @pytest.mark.parametrize("sbx", MEASUREMENT_BASES, indirect=True)
 def test_hardlink_measurement(sbx, record_property):
     # The outside floor permits ordinary writes by design. Use scratch Arslan
-    # data, closed by both historical bases and outside the candidate's roots.
+    # data, closed by the outside floor and outside the candidate's roots.
     target = sbx.home / ".arslan" / "hardlink-target"
     target.parent.mkdir(exist_ok=True)
     target.write_text("original")

@@ -16,11 +16,18 @@ import pytest
 from server.orchestrator import run_trace
 from server.registry.net_pin import _Unresolvable
 from server.services import command_sandbox, sandbox_proxy, terminal_exec
+from tests.server.sbx import proxy_token
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
 
 DENIED_LINE = "403 Forbidden by Arslan's sandbox: local or non-public destination"
+
+
+@pytest.fixture(autouse=True)
+def _a_running_command(monkeypatch):
+    """NET-a: the proxy serves only a running command's token (tests/server/sbx/proxy_token.py)."""
+    proxy_token.register(monkeypatch)
 
 
 @pytest.fixture
@@ -38,7 +45,7 @@ async def proxy(monkeypatch):
 
 async def _ask(port: int, request: bytes) -> bytes:
     reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    writer.write(request)
+    writer.write(proxy_token.authed(request))
     await writer.drain()
     data = await asyncio.wait_for(reader.read(65536), 5)
     writer.close()
@@ -237,7 +244,9 @@ async def test_outside_the_sandbox_the_text_means_nothing(tmp_path, monkeypatch)
 
 async def test_a_real_client_through_the_real_proxy_gets_the_note(tmp_path, monkeypatch):
     """Python's own client, through the proxy terminal_exec started and pointed it at (no seatbelt here: the stand-in
-    wrapper), to a LAN literal net_pin refuses without a lookup."""
+    wrapper), to a LAN literal net_pin refuses without a lookup. NET-a: in a turn that read no outside content; after
+    some, an address the user didn't name is NET's refusal first (tests/server/sbx/test_net_a_proxy.py)."""
+    from server.orchestrator import untrusted
     monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {})
 
     async def trusted():
@@ -246,9 +255,11 @@ async def test_a_real_client_through_the_real_proxy_gets_the_note(tmp_path, monk
     sandbox_proxy._reset_for_tests()
     client = (f"{sys.executable} -I -c \"import urllib.request as u; "
               "u.urlopen('https://10.0.0.1/', timeout=5)\"")
+    turn = untrusted.track_turn()
     try:
         result, trace = await _run(tmp_path, monkeypatch, client)
     finally:
+        untrusted.end_turn(turn)
         await sandbox_proxy.shutdown()
     assert result["sandbox_denied"] is True, result["stderr"][-400:]
     _shows_the_proxy_note(result)

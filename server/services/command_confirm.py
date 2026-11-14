@@ -77,26 +77,35 @@ class Confirmations:
 
     async def command(self, command: str, argv: list, *, remote_host: str | None = None,
                       fingerprints: list | None = None, sandbox: str | None = None, why: str = "",
-                      network: bool = False, host: str | None = None, delete: str = "", outside: bool = False) -> bool:
+                      network: bool = False, host: str | None = None, delete: str = "", outside: bool = False,
+                      run_later=()) -> bool:
         """Called, a card is shown: which commands need none (layer ③ in the sandbox) is the tool loop's to
         decide, once (S2a-2). `sandbox` (0.1.51 P3): "outside" — the model asks to run this command
         outside the sandbox. `network` (S2a-2): the card also asks for the network, this time. `remote_host` is the
         machine as the card names it; `host`, its address (S4a: the ledger's `remote:<host>`). `delete` (SMART-8):
-        for a delete outside the working folder, how allow deletes (`delete_to_trash.card_mode`); the card says it."""
-        from server.db import session as db_session
-        from server.services import approvals, permissions, settings_service, terminal_policy
+        for a delete outside the working folder, how allow deletes (`delete_to_trash.card_mode`); the card says it.
+        `run_later` (HR-3 part 1): what it writes that runs later, where the kernel's hold doesn't stand (the gate's
+        click-lift rule): the outside card names it, and the command's own card is this time only
+        (`approvals._command_request`)."""
+        from server.services import approvals, permissions, terminal_policy
         from server.ws.arslan import effective_risk
         from server.services import card_purpose
         outside = outside or sandbox == "outside"   # S2a-3 step 5: it runs outside the sandbox, so read it that way
         risk = effective_risk(remote_host, command, argv, outside=outside)
         shell = terminal_policy.as_shell(command, argv)
-        verdict = terminal_policy.assess(shell, outside=outside)
+        # S2a-3 step 4b: read from the folder the gate read (another machine's folder is not known here)
+        from server.orchestrator.command_gate import run_folder
+        cwd = None if remote_host else await run_folder()
+        verdict = terminal_policy.assess(shell, cwd=cwd, outside=outside)
         # SMART-8 (#688 review 1, 3, 5): every rule it matched goes on every command card, with why it could not be
         # read when that is one of them; the card's risk row names each and takes the worst.
         # SMART-8 (#689): every card's title is its plain purpose in the user's language (the iPhone's heading).
         lang = await card_purpose.language()
-        rules = sorted(terminal_policy.ask_rules(shell, outside=outside))
+        rules = sorted(terminal_policy.ask_rules(shell, cwd=cwd, outside=outside))
         unreadable = UNREADABLE.get(verdict.reason, "") if verdict.rule == terminal_policy.UNREADABLE else ""
+        pushed = await _pushed_ci(shell, cwd) if "git-push" in rules and not remote_host else []     # HR-2b
+        outcome = (card_purpose.consequence(shell, lang)
+                   if {"publish", "secret-write"} & set(rules) and not remote_host else "")
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
         deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
@@ -113,10 +122,13 @@ class Confirmations:
                 reason=verdict.reason if verdict.level == "ask" else "",
                 sandbox=sandbox, why=why, network=network, rules=rules, unreadable=unreadable),
                 **_delete_keys(delete, shell)}
+            _with_ci(frame, pushed)
+            with_consequence(frame, outcome)
             request = permissions.Request(
                 kind="outside", target="*", title=card_purpose.phrase(
                     shell, why, rules, lang=lang, outside=True, network=network, delete_mode=delete,
-                    reading=card_purpose.frame_reading(frame, shell)),    # the frame's reading, not a second one
+                    reading=card_purpose.frame_reading(frame, shell),     # the frame's reading, not a second one
+                    run_later=run_later),
                 model_title=f"Run `{shell[:80]}` outside the sandbox?{net}", detail=shell,
                 why=why, frame=frame)
         elif remote_host:
@@ -139,33 +151,87 @@ class Confirmations:
         if request is not None:
             with self._surface():
                 return (await permissions.decide(request, self._context())).allowed
-        async with db_session.AsyncSessionLocal() as db:
-            ask_all = await settings_service.shell_confirm_policy(db) == "ask_all"
+        from server.orchestrator.command_gate import _asks_for_everything
+        ask_all = await _asks_for_everything()       # S5a: the mode of the conversation the gate is deciding for
         frame = protocol.propose_run_command(
             uuid.uuid4().hex, command, argv, reason=verdict.reason or f"risk: {risk}",
             rule=verdict.rule or None, network=network, why=why,    # SMART-8: the card's purpose, as Arslan's words
             rules=rules, unreadable=unreadable, outside=outside)    # LOOP1 d2b: read as the gate read it
         frame.update(_delete_keys(delete, shell))
+        _with_ci(frame, pushed)
+        with_consequence(frame, outcome)
         # S2a-3 step 5 (#798 review 1): a card the gate says runs outside (`outside`) is marked so in either policy,
         # its rules card too; otherwise as before, "ask for every command" asks where it would run.
         unsandboxed = outside or (ask_all and not rules and await approvals.runs_unsandboxed(self.conversation_id))
         request = approvals._command_request(shell, rules, frame, ask_all=ask_all, network=network,
                                              unsandboxed=unsandboxed, lang=lang, why=why,
-                                             delete_mode=delete)
+                                             delete_mode=delete, run_later=run_later)
         if deletes:     # the model's English text; the title and the card word `delete_mode` themselves
             request = dataclasses.replace(request, model_title=f"{request.title_for_model} {deletes}")
-        with self._surface():
-            decision = await permissions.decide(request, self._context())
+        # S2a-3 step 4b: the card keeps this folder while it waits (`approvals.open_card`), so the island reads it from
+        # the same folder, server-side (no frame key)
+        token = approvals.CARD_FOLDER.set(cwd)
+        try:
+            with self._surface():
+                decision = await permissions.decide(request, self._context())
+        finally:
+            approvals.CARD_FOLDER.reset(token)
         return decision.allowed
+
+
+#: HR-2b: what the push card says when the outgoing files couldn't be read (the card still shows: fails closed).
+PUSH_UNLISTED = "Arslan couldn't list the files this push sends"
+#: HR-3: what it says when where the push goes couldn't be read (the card still shows).
+PUSH_UNKNOWN = "Push destination unknown"
+
+
+async def _pushed_ci(shell: str, cwd) -> list[str]:
+    """HR-2b: the push card's lines for the CI files its outgoing commits change (`git_config_guard.outgoing_ci`, off
+    the event loop): one per file, PUSH_UNLISTED when they couldn't be read (no folder, a git failure or timeout, an
+    error), [] when there are none. A CI job runs on the CI service after a push, so the push is where it is named.
+    HR-3: led by where it pushes (`git_config_guard.push_destination`), a line per url, else PUSH_UNKNOWN."""
+    import asyncio
+    from pathlib import Path
+    from server.services import git_config_guard
+
+    async def read(reader):
+        try:
+            return None if cwd is None else await asyncio.to_thread(reader, Path(cwd), shell)
+        except Exception:  # noqa: BLE001 — fails closed: the card says it couldn't read it
+            return None
+    urls, found = await read(git_config_guard.push_destination), await read(git_config_guard.outgoing_ci)
+    return ([f"Push destination: {url}" for url in urls] if urls else [PUSH_UNKNOWN]) + (
+        [PUSH_UNLISTED] if found is None else [f"CI file: {name}" for name in found])
+
+
+def _with_ci(frame: dict, lines: list[str]) -> None:
+    """HR-2b, no new frame key: the lines lead the Mac card's touches row (`summary.touches`, which the Bridge doesn't
+    read) and end the `reason` the phone shows (the first 10 there). HR-3: through `card_purpose.shown`, as the
+    reading's own touches."""
+    if lines:
+        from server.services import card_purpose
+        lines = card_purpose.shown(lines)
+        frame["summary"] = {**frame["summary"], "touches": [*lines, *frame["summary"].get("touches", [])]}
+        shown = lines[:10] + ([f"and {len(lines) - 10} more"] if len(lines) > 10 else [])
+        frame["reason"] = "; ".join([*([frame["reason"]] if frame.get("reason") else []), *shown])
+
+
+def with_consequence(frame: dict, line: str) -> None:
+    """The deploy rule's condition (⓪Plan, 2026-11-14): a publish, deploy or secret-write card states what happens
+    (`card_purpose.consequence`). No new frame key: it leads the Mac card's touches row and the phone's `reason`."""
+    if line:
+        frame["summary"] = {**frame["summary"], "touches": [line, *frame["summary"].get("touches", [])]}
+        frame["reason"] = "; ".join([line, *([frame["reason"]] if frame.get("reason") else [])])
 
 
 def _delete_keys(mode: str, shell: str) -> dict:
     """SMART-8: the delete card's mode and targets for the Mac card (⑤CAP's shared component), on the Mac's WS
     frame only. The Bridge's FrameMapper reads named keys (title, perm_kind, expires_at…), so neither reaches the
-    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written; [] when
-    the delete can't be read, and the card then reads rm's plain arguments itself."""
+    phone, whose heading is the card's plain purpose (`title`, ⑤CAP). `delete_targets` are as written, through
+    `card_purpose.shown` (HR-3: the Mac card shows them as its touches row); [] when the delete can't be read, and
+    the card then reads rm's plain arguments itself."""
     if not mode:
         return {}
-    from server.services import delete_to_trash
+    from server.services import card_purpose, delete_to_trash
     found = delete_to_trash.plan(shell)
-    return {"delete_mode": mode, "delete_targets": list(found.targets) if found else []}
+    return {"delete_mode": mode, "delete_targets": card_purpose.shown(list(found.targets)) if found else []}

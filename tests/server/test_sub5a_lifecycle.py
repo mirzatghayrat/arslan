@@ -1,7 +1,7 @@
 """SUB5a (v0.1.64, card docs/plans/0164/SUB-sub-sessions.md, SUB5): what a restart, the window's stop, a delete and
 an undo do to sub-sessions. Server only.
 
-No tool table offers `start_sub_session` yet, so these tests start sub-sessions with `sub_sessions.start` and run the
+These tests start sub-sessions with `sub_sessions.start` and run the
 rest for real: their jobs and the summary turn through the background job runner with a scripted model (SUB4's
 harness), the HTTP routes, and the boot pass.
 
@@ -194,6 +194,34 @@ async def test_a_restart_interrupts_a_running_and_a_queued_sub_session_and_tells
     await _nothing_runs_again(model)
 
 
+async def test_a_restart_voids_a_sub_sessions_waiting_card_for_a_refused_site(runs, restart, monkeypatch):  # noqa: F811
+    """Row 2, NET-a's switch on: the card the cover waits on in the commander's window is the one after the proxy refused
+    a site its command reached. After the restart nobody can answer it, the command doesn't run again, the cover records
+    `interrupted`, and the commander gets one line."""
+    from tests.server.test_sub3_runner import _RefusedRun
+    runner = _RefusedRun()
+    monkeypatch.setitem(executors.EXECUTORS, "run_command", runner)
+    shown = _sink(ROOT, answer=False)
+    model = _Model({COVER: _steps(PAGE, COMMAND, final="cover ready")}, summary=_steps(final="summed up"))
+    monkeypatch.setattr("server.orchestrator.tool_loop._get_adapter", lambda: model)
+    await _start(COVER)
+    await _wait(lambda: _cards(shown))
+    [card] = _cards(shown)
+    assert (card["perm_kind"], card["sub_session"]) == ("network", True)
+    cover = _by_goal()[COVER].conversation_id
+    db = await restart()
+    assert approvals.pending_cards(ROOT) == []
+    assert approvals.answer({"type": "confirm_" + card["type"].removeprefix("propose_"), "call_id": card["call_id"],
+                             "scope": "conversation"}) is False
+    assert runner.runs == [(False, False)]                 # the refused run, before its card: nothing after it
+    assert await _states(db, [cover]) == {cover: "interrupted"}
+    assert (await _tasks(db))[cover] == ("cancelled", "process_interrupted")
+    assert await _said(db, ROOT) == [(_line(1), None)]
+    await _nothing_runs_again(model)
+    assert runner.runs == [(False, False)]
+
+
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the waiting card, its switch off
 async def test_a_restart_voids_a_sub_sessions_waiting_card(runs, restart, monkeypatch):  # noqa: F811
     """Row 2. The cover's network card waits in the commander's window. After the restart nobody can answer it, its
     command never runs, the cover records `interrupted`, and the commander gets one line."""

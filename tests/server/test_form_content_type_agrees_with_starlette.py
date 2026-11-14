@@ -36,15 +36,11 @@ earlier draft of this test asserted only "not 200", which both the broken and th
 fixed code satisfy. Every case below is also two-sided: honest multipart must keep
 working, or "reject everything" would pass.
 
-🔴 COVERAGE GAP, STATED RATHER THAN IMPLIED. Two of the three fixed call sites are
-exercised end-to-end here: ``/api/v1/extract`` and ``/api/v1/spawns/{id}/knowledge``.
-The third, ``/api/v1/collections/{id}/ingest``, is covered only INDIRECTLY — it calls
-the same ``is_multipart_form`` helper, and the helper has its own agreement tests. It
-is not driven through HTTP because its ``_get_or_404`` runs before the content-type
-branch, so the case needs a persisted collection this fixture does not build. A
-regression that changed only that endpoint's branch back to a substring test would
-therefore NOT be caught here. If that endpoint's branching is ever edited, add the
-end-to-end case rather than trusting this file.
+Both remaining call sites are exercised end-to-end here: ``/api/v1/extract`` and
+``/api/v1/collections/{id}/ingest``. The third fixed call site, the per-spawn
+``/api/v1/spawns/{id}/knowledge``, was removed in C7c (v0.1.64); its case moved to the
+collections route, which needs a persisted collection because its ``_get_or_404`` runs
+before the content-type branch.
 """
 from __future__ import annotations
 
@@ -57,7 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import server.db.session as db_session
 from server.db.migrations.versions._0009_knowledge import upgrade_sync
-from server.db.models import Base, Spawn
+from server.db.models import Base
 
 # Headers whose media type is NOT multipart, but which contain the literal string
 # somewhere a naive check will find it. Each is a real thing a client may send.
@@ -115,13 +111,10 @@ async def client(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def _spawn_id(client) -> int:
-    async with client.db_maker() as db:
-        row = Spawn(name="ct-probe", domain_category="test", system_prompt="p")
-        db.add(row)
-        await db.commit()
-        await db.refresh(row)
-        return row.id
+async def _collection_id(client) -> int:
+    r = await client.post("/api/v1/collections", json={"name": "ct-probe"})
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
 
 
 def _media_type(header: str) -> str:
@@ -208,14 +201,13 @@ class TestEndpointsDoNotEnterTheMultipartBranch:
         assert 400 <= r.status_code < 500, r.status_code
 
     @pytest.mark.parametrize("header", CRAFTED_URLENCODED)
-    async def test_knowledge_ingest_does_not_500(self, client, header):
-        sid = await _spawn_id(client)
-        # 🔴 The prefix matters and cost this test its first green: an earlier draft
-        # posted to /spawns/{id}/knowledge, got 404, and PASSED — 404 satisfies
-        # "4xx and not 500" while proving nothing at all. main.py:405 mounts this
-        # router under /api/v1. The guard below is what makes a routing miss loud.
+    async def test_collection_ingest_does_not_500(self, client, header):
+        cid = await _collection_id(client)
+        # 🔴 The prefix matters: a draft that posted without /api/v1 got 404 and PASSED —
+        # 404 satisfies "4xx and not 500" while proving nothing at all. The guard below
+        # is what makes a routing miss (or a missing collection) loud.
         r = await client.post(
-            f"/api/v1/spawns/{sid}/knowledge",
+            f"/api/v1/collections/{cid}/ingest",
             headers={"Content-Type": header},
             content=b"file=notafile&compress=true",
         )

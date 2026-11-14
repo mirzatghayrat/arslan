@@ -570,6 +570,28 @@ def test_webpage_resource_probe_rejects_missing_stoplists(entry, monkeypatch):
     assert probe()[0] is False
 
 
+def test_the_public_suffix_list_ships_and_its_probe_reads_it(entry, monkeypatch):
+    """NET-a (Codex round 1, F4): net_policy reads the list from tld's own data file, which nothing collects unless the
+    spec names it (tld comes in with courlan, and no hook collects its data). The selftest asks the list's questions;
+    without the file it fails, where the app would run and refuse to judge a site."""
+    from server.services import net_policy
+    spec = (_ENTRY.with_name("arslan-server.spec")).read_text()
+    assert 'datas += collect_data_files("tld", subdir="res")' in spec
+    probe = dict((name, check) for name, check, _ in entry._lazy_resource_probes())["public suffix list"]
+    ok, detail = probe()
+    assert ok, detail
+
+    def missing():
+        raise RuntimeError("no list here")
+    monkeypatch.setattr(net_policy, "_suffix_list_text", missing)
+    net_policy._psl.cache_clear()
+    try:
+        with pytest.raises(RuntimeError):
+            probe()
+    finally:
+        net_policy._psl.cache_clear()
+
+
 def test_the_lifeline_fires_on_eof_and_only_on_eof(entry):
     """The sidecar must outlive normal input and die on EOF — both halves.
 

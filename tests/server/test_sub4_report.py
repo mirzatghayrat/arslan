@@ -1,6 +1,6 @@
 """SUB4 (v0.1.64, card docs/plans/0164/SUB-sub-sessions.md): a sub-session's report and its commander's summary turn.
 
-No tool table offers `start_sub_session` yet (SUB5 adds it after the M64 bench), so these tests start sub-sessions with
+These tests start sub-sessions with
 `sub_sessions.start` and run everything else for real: each sub-session's job and the commander's summary turn through
 the background job runner, the real `background_body` and tool loop, real cards and the real turn lock, with a
 scripted model.
@@ -32,6 +32,9 @@ from tests.server.test_s64_0_outside_content_gaps import (  # noqa: F401  (the f
     NETWORK, NOTE, POISON, _Page, _Run, memory)
 
 ROOT = "c-commander"
+#: NET-a: a command after outside content asks through S2a-1's network card here (the mark's consequence, and a card a
+#: sub-session waits on), its switch off.
+pytestmark = pytest.mark.usefixtures("s2a1_network_rule")
 OUTLINE, COVER = "Draft the outline of the video", "Find a cover image idea"
 PAGE = ("web_extract", {"url": "https://example.test/cover"})
 NOTE_ADD = ("memory_note", {"action": "add", "set": "notes", "text": NOTE})

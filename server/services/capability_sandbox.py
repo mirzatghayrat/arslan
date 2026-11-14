@@ -17,6 +17,7 @@ protected paths from command_sandbox close last, even inside a granted folder.
 """
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from server.services.sandbox_profile import (TTY_DEVICES, NetworkMode, Profile, 
                                              subpath)
 
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+_log = logging.getLogger(__name__)
 
 #: Read-only system locations a runtime needs to start (dyld, frameworks, certificates, zones).
 SYSTEM_READ = ("/usr", "/System", "/Library/Apple", "/Library/Frameworks", "/private/etc", "/dev",
@@ -176,18 +178,37 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     bound = sandbox_proxy.listening_ports() if network and proxy_port is not None else None
     if bound is None:
         proxy_port = None                                        # no proxy, or Arslan's ports unknown: offline
-    text = profile(root=root, folders=list(sandbox.get("folders") or []), network=network,
-                   read=list(sandbox.get("read") or []), proxy_port=proxy_port, bound_ports=bound,
-                   system_proxies=None if bound is None else sandbox_proxy.system_proxies(),
-                   trust_service=bool(sandbox.get("trust_service")))
-    from server.services import command_sandbox
+    from server.services import command_sandbox, root_pin
     env = {**env, "HOME": str(root / "home"), "TMPDIR": str(root / "tmp"),
            **command_sandbox.cache_environment(root / "cache")}     # SBX-5 §1c: this server's own cache
+    # SBX-9: its own folder and cache pinned (Arslan made them), and each granted folder; the profile is built from
+    # those pinned real paths only, and the caller checks them right before the start (`command_sandbox.check_pins`).
+    # Raises `root_pin.Swapped` when its own folders can't be pinned: it doesn't start. Astra #855 P1: a grant that
+    # can't be pinned (missing, a file, a link, or swapped) is OMITTED from the profile, never passed on by its name to
+    # be resolved later: the server starts without it (logged), and writes there are refused. So is a grant whose
+    # identity can't be read (an I/O or permission error): left out, not a live write grant.
+    pins = command_sandbox._pin_all([root, root / "cache"])
+    try:
+        for grant in sandbox.get("folders") or []:
+            try:
+                pins.append(root_pin.pin(grant))
+            except OSError as exc:      # Swapped, or its identity can't be read (I/O, permission): never granted
+                _log.warning("SBX-9: an MCP server's granted folder is left out: %s: %s", grant, exc)
+        folders = [str(p.path) for p in pins[2:]]
+        with root_pin.pinned(pins):
+            text = profile(root=pins[0].path, folders=folders, network=network, read=list(sandbox.get("read") or []),
+                           proxy_port=proxy_port, bound_ports=bound, cache=pins[1].path,
+                           system_proxies=None if bound is None else sandbox_proxy.system_proxies(),
+                           trust_service=bool(sandbox.get("trust_service")))
+    except BaseException:
+        root_pin.release(pins)
+        raise
     if proxy_port is not None:
         # Told only Arslan's proxy: a proxy the server's config or this Mac set (a sign-in in its address
         # included) is replaced, since the kernel refuses it and Arslan's proxy goes upstream itself.
         # Node's fetch reads these only with NODE_USE_ENV_PROXY (Node 24, Arslan's pinned runtime).
-        via = f"http://127.0.0.1:{proxy_port}"
+        # NET-a: with the session's own token (mcp/session.py), which the proxy serves without judging its sites.
+        via = sandbox_proxy.proxy_url(proxy_port, sandbox.get("proxy_token"))
         env.update({name: via for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
                                            "http_proxy", "https_proxy", "all_proxy")})
         env.update({"NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
@@ -196,5 +217,5 @@ def wrap(command: str, args: list[str], env: dict, sandbox: dict) -> tuple[str, 
     # this server's own folders (it writes those): in Arslan's data folder, closed to it (`command_sandbox.
     # write_profile`). The caller removes it (`remove_profile(profile_path(args))`) once the server has answered, or
     # when the start fails or the session closes.
-    path = command_sandbox.write_profile(text)
+    path = command_sandbox.write_pinned(text, pins)
     return SANDBOX_EXEC, ["-f", str(path), command, *args], env, str(root / "home")

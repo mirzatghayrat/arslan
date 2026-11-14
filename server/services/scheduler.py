@@ -52,6 +52,7 @@ recorded `dispatcher.dispatch` of the task's spawn): every fire is an Arslan tur
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -86,6 +87,20 @@ def is_own_conversation(task: ScheduledTask) -> bool:
     """Whether the task writes into a conversation of its own (`own_conversation`, or `scheduled-<id>` on a row made
     before v0.1.64), not one the user chose."""
     return task.conversation_id is None or task.conversation_id.startswith("scheduled-")
+
+
+async def forget_reused_id(db, task_id: int) -> None:
+    """A new task's id, in its creating transaction (the API, the schedule tool, the heartbeat): SQLite gives it the id
+    of the newest deleted task, so what the Inbox kept under `sched:<id>` is that task's. Its reminders go, open or
+    handled: an open one would show under the new task and count it as waiting (progress), and a handled one's
+    fingerprint would hold back the new task's same problem (`ingest`). A "stop this source" mute goes too, as
+    `delete_watch` drops its watch's: it would silence the new task. Nothing else outlives a task: its runs cascade."""
+    from sqlalchemy import delete
+
+    from server.db.models import ProactiveItem, ProactiveMute
+    key = f"sched:{task_id}"
+    await db.execute(delete(ProactiveItem).where(ProactiveItem.source_key == key))
+    await db.execute(delete(ProactiveMute).where(ProactiveMute.key == key))
 
 # (lo, hi) per cron field: 分 时 日 月 周 (dow 0=Sunday..6=Saturday)
 _FIELD_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 6))
@@ -409,10 +424,12 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
     bound (permissions.asking_with): that omission IS the safety property. It
     runs only what needs no card (the read-only tools, writes in Arslan's own
     folder) and refuses anything that needs a card, at once — it never waits:
-      - it runs no command at all (v0.1.63, the user's decision until S2a-3;
-        DELETE-BY: v0.1.64 with it and PR4): run_command is not offered, and
-        the tool loop refuses one before any rule, grant or "always" answer is
-        read, and lists it in the Inbox;
+      - a scheduled task's own fire (ASK1-b, `command_gate.scheduled_fire`)
+        runs the commands "ask only for risky commands" runs with no card,
+        inside the sandbox in Arslan's own folder; one that would ask, every
+        one under a stored "ask before every command", and every one with no
+        sandbox are refused and listed under the task. The heartbeat runs no
+        command: the tool loop refuses one before any rule or grant is read;
       - the tool loop refuses a write in the user's folder, a schedule and
         another machine ("no callback" means "refuse", P1), and since S1 (U14 c)
         each writes the same policy row decide() writes, which the Inbox lists;
@@ -435,30 +452,35 @@ async def run_arslan_turn(conversation_id: str, prompt: str) -> None:
 
 async def _fire(task: ScheduledTask) -> None:
     from arslan.companion.memory import MemoryError
-    from server.orchestrator import untrusted
-    from server.services import presence, task_context
+    from server.orchestrator import command_gate, untrusted
+    from server.services import heartbeat, presence, task_context
     cid = task.conversation_id or f"scheduled-{task.id}"
     from server.services import desktop_status
 
     async def body(sink):
         return await _fire_body(task)
-    # S64-0 (②Main's F1, the user's decision 2026-10-28): every fire starts as having read outside
-    # content. Its prompt may come from a turn that had read some, and after one "this conversation"
-    # the schedule card is not shown again. DELETE-BY: v0.1.64, with S2a-3 PR4 (scheduled runs get
-    # read-only commands back): it records outside_seen on the scheduled task, read here instead.
+    # ASK1-b: the fire starts from what the turn that wrote or last changed its prompt had read (`outside_seen`,
+    # migration 0097; true for tasks from before it). True: its commands run offline, with NET-a's switch on or off
+    # (command_gate._network_after_outside_content: nobody is there to answer a site's card). NET-a F5, met here: the
+    # prompt is that turn's own output, so with the mark it is carried in as outside text, and the fire's conversation
+    # records the sites it names. That turn's record lives in memory under its own conversation (a new task's is
+    # usually another: `own_conversation`), so without this a site the prompt names would be unknown at the proxy for a
+    # later online command in this conversation (a chat's, say), and pass.
+    # Only a scheduled task's own fire runs commands (command_gate.scheduled_fire); the heartbeat runs none.
     # INB2: nobody is there when a stored prompt fires, also when "fire now" ran from a present turn.
+    fire = (contextlib.nullcontext() if task.name == heartbeat.TASK_NAME else command_gate.scheduled_fire(cid))
     with desktop_status.working(cid, title=task.name, kind="scheduled"), presence.not_present():   # keeps the Mac awake (0.1.41)
-        with untrusted.carried(True):
+        with untrusted.carried(bool(task.outside_seen), text=task.prompt), fire:
             try:
                 return await task_context.execute_entry(cid, task.prompt, run_registry.make_emit(cid), body,
                                                         headless=True)
             except MemoryError as exc:
                 if exc.code != CONVERSATION_DELETED:
                     raise
-    await _pause_deleted_conversation(task.id, cid)
+    await _pause_deleted_conversation(task.id)
 
 
-async def _pause_deleted_conversation(task_id: int, conversation_id: str) -> None:
+async def _pause_deleted_conversation(task_id: int) -> None:
     """SUB5a: the task's conversation was deleted, so its fire was refused before it ran (`task_context.load`). It
     pauses, as a task that keeps failing does, with a reason the Scheduled page words and one run row that says why;
     a tick never fires it again, and nothing is written into the deleted conversation. Resume fires it once more, and
@@ -476,7 +498,9 @@ async def _pause_deleted_conversation(task_id: int, conversation_id: str) -> Non
         task.next_due_at = None
         await db.commit()
     logger.info("scheduled task %s paused: its conversation was deleted", task_id)
-    desktop_status.push("scheduled_paused", conversation_id=conversation_id, task_id=task_id)
+    # The Mac words this pause as the Scheduled page does and opens the task there (`reason`): no conversation, so
+    # nothing opens the deleted one.
+    desktop_status.push("scheduled_paused", task_id=task_id, reason=CONVERSATION_DELETED)
 
 
 async def _fire_body(task: ScheduledTask) -> None:

@@ -26,6 +26,7 @@ from server.services import (
     personal_context,
     settings_service,
     ssh_nodes,
+    sub_sessions,
     task_service,
 )
 from tests.server.scripted_turn import booted_db_fixture, turn_db_fixture  # noqa: F401 — the fixtures
@@ -34,22 +35,23 @@ TASK = types.SimpleNamespace(closed=False)
 # A chat turn on a Mac, with everything switched on that a default install has.
 CHAT = dict(platform="darwin", task=True, job=False, asker=True, scheduled=False, browser=True, hands=True, skills=True,
             project=False, workspace=True, own_folder=True, default_read=True, lan=False, ssh=False, enrolled=False,
-            shell=True, mcp=True)
+            shell=True, mcp=True, bottom=False)
 BASES = {"chat": CHAT, "job": {**CHAT, "job": True}, "scheduled": {**CHAT, "asker": False, "scheduled": True}}
 FLIPS = {"platform": "linux", "task": False, "job": True, "asker": False, "scheduled": True, "browser": False,
          "hands": False, "skills": False, "project": True, "workspace": False, "own_folder": False,
-         "default_read": False, "lan": True, "ssh": True, "shell": False, "mcp": False}
+         "default_read": False, "lan": True, "ssh": True, "shell": False, "mcp": False, "bottom": True}
 
 HANDS = {"desktop_apps", "desktop_access", "desktop_look", "desktop_click", "desktop_type", "desktop_select",
          "desktop_scroll", "desktop_open", "desktop_batch", "desktop_menu", "desktop_press"}
 BACKGROUND = {"start_background_work", "background_status", "stop_background_work"}
+SUB = {"start_sub_session"}         # SUB5e: a turn someone can be asked in, not inside a job, above the bottom layer
 JOB_ONLY = {"browser_click", "browser_type", "browser_select", "browser_press", "mac_run_shortcut", "mac_applescript",
             "desktop_takeover"}
 CHAT_LISTED = {
     "web_search", "web_extract", "render_chart", "recall", "remember", "conversation_search", "memory_note",
-    "task_progress", "delegate_work", "update_plan", "ask_user_choice", *BACKGROUND, "browser_open", "browser_look",
+    "task_progress", "start_sub_session", "update_plan", "ask_user_choice", *BACKGROUND, "browser_open", "browser_look",
     "browser_back", "mac_list_shortcuts", *HANDS, "read_skill", "find_capability", "propose_capability", "create_skill",
-    "import_memories", "verify", "whats_new", "my_status", "list_my_capabilities", "read_file", "list_dir",
+    "import_memories", "verify", "whats_new", "my_status", "progress_report", "list_my_capabilities", "read_file", "list_dir",
     "search_files", "write_file", "edit_file", "schedule_task", "list_my_tasks", "cancel_task", "run_command",
     "attach_file", "mcp_1__lookup"}
 CHAT_SHOWN = {"web_search", "web_extract", "recall", "remember", "update_plan", "ask_user_choice",
@@ -58,13 +60,13 @@ CHAT_SHOWN = {"web_search", "web_extract", "recall", "remember", "update_plan", 
 # What a case lists and shows besides its base: (listed +, listed -, shown +, shown -)
 NONE = (set(), set(), set(), set())
 BASE_CHANGES = {
-    "job": (JOB_ONLY, BACKGROUND, {"desktop_takeover"}, {"start_background_work"}),
-    "scheduled": (set(), BACKGROUND | {"run_command", "verify"}, set(), {"run_command", "start_background_work"}),
+    "job": (JOB_ONLY, BACKGROUND | SUB, {"desktop_takeover"}, {"start_background_work"}),
+    "scheduled": (set(), BACKGROUND | SUB | {"run_command", "verify"}, set(), {"run_command", "start_background_work"}),
 }
 FLIP_CHANGES = {
     "chat": {
         "platform": (set(), {"mac_list_shortcuts"}, set(), set()),
-        "task": (set(), BACKGROUND | {"delegate_work", "task_progress"}, set(), {"start_background_work"}),
+        "task": (set(), BACKGROUND | SUB | {"task_progress"}, set(), {"start_background_work"}),
         "job": BASE_CHANGES["job"],
         "asker": BASE_CHANGES["scheduled"],
         "scheduled": NONE,
@@ -79,10 +81,11 @@ FLIP_CHANGES = {
         "ssh": ({"ssh_probe", "enroll_node"}, set(), set(), set()),
         "shell": (set(), {"run_command", "verify"}, set(), {"run_command"}),
         "mcp": (set(), {"mcp_1__lookup"}, set(), set()),
+        "bottom": (set(), SUB, set(), set()),
     },
     "job": {
         "platform": (set(), {"mac_list_shortcuts", "mac_run_shortcut", "mac_applescript"}, set(), set()),
-        "task": (set(), {"delegate_work", "task_progress"}, set(), set()),
+        "task": (set(), {"task_progress"}, set(), set()),
         "asker": (set(), {"run_command", "verify"}, set(), {"run_command"}),
         "scheduled": NONE,
         "browser": (set(), {"browser_open", "browser_look", "browser_back", "browser_click", "browser_type",
@@ -90,7 +93,7 @@ FLIP_CHANGES = {
         "hands": (set(), HANDS | {"desktop_takeover"}, set(), HANDS | {"desktop_takeover"}),
     },
     "scheduled": {
-        "task": ({"run_command", "verify"}, {"delegate_work", "task_progress"}, {"run_command"}, set()),
+        "task": ({"run_command", "verify"}, {"task_progress"}, {"run_command"}, set()),
         "job": (JOB_ONLY, set(), {"desktop_takeover"}, set()),
         "workspace": (set(), {"write_file", "edit_file"}, set(), {"write_file", "edit_file"}),
         "shell": NONE,
@@ -132,10 +135,11 @@ def _cases():
 CASES = _cases()
 # effect, then the traits that are true, then its own gate
 TRAITS = {
-    "web_search": "read parallel outside replay_safe", "web_extract": "read parallel outside replay_safe",
-    "render_chart": "read replay_safe", "recall": "read parallel outside", "remember": "local_write",
+    "web_search": "read parallel outside", "web_extract": "read parallel outside",
+    "render_chart": "read", "recall": "read parallel outside", "remember": "local_write",
     "conversation_search": "external_write outside", "memory_note": "external_write",
-    "task_progress": "read parallel outside", "delegate_work": "read outside", "update_plan": "read",
+    "task_progress": "read parallel outside", "start_sub_session": "external_write",
+    "update_plan": "read",
     "ask_user_choice": "external_write", "start_background_work": "local_write", "background_status": "read parallel",
     "stop_background_work": "local_write", "browser_open": "read outside", "browser_look": "read outside",
     "browser_back": "read outside", "browser_click": "external_write outside", "browser_type": "external_write outside",
@@ -145,11 +149,11 @@ TRAITS = {
     "desktop_click": "external_write", "desktop_type": "external_write", "desktop_select": "external_write",
     "desktop_scroll": "external_write", "desktop_open": "external_write", "desktop_batch": "external_write",
     "desktop_menu": "external_write", "desktop_press": "external_write", "desktop_takeover": "external_write",
-    "read_skill": "read parallel replay_safe", "propose_plan_change": "external_write",
+    "read_skill": "read parallel", "propose_plan_change": "external_write",
     "find_capability": "external_write outside", "propose_capability": "external_write", "create_skill": "local_write",
     "import_memories": "local_write", "verify": "local_write outside", "whats_new": "read parallel",
-    "my_status": "read parallel", "list_my_capabilities": "read parallel",
-    "read_file": "read parallel outside gate=file_arguments", "list_dir": "read parallel",
+    "my_status": "read parallel", "progress_report": "read parallel", "list_my_capabilities": "read parallel",
+    "read_file": "read parallel outside gate=file_arguments_then_app_data", "list_dir": "read parallel gate=app_data",
     "search_files": "read parallel outside", "write_file": "local_write saves gate=file_arguments_then_write",
     "edit_file": "local_write saves gate=workspace_write", "scan_local_network": "external_write",
     "ssh_probe": "external_write", "enroll_node": "external_write gate=enrol",
@@ -183,6 +187,10 @@ def _mac(monkeypatch, case):
     monkeypatch.setattr(settings_service, "shell_enabled", setting(case["shell"]))
     monkeypatch.setattr(ssh_nodes, "list_nodes", setting([object()] if case["enrolled"] else []))
     monkeypatch.setattr(supervisor, "ready_now", lambda _id, _state: case["mcp"])
+
+    async def depth(_db, _conversation_id):
+        return sub_sessions.MAX_DEPTH if case["bottom"] else 1
+    monkeypatch.setattr(sub_sessions, "depth", depth)
 
     async def skills(_limit=80):
         return "- weekly — Weekly report: every Friday" if case["skills"] else ""
@@ -223,7 +231,7 @@ async def test_each_case_offers_its_tools_with_their_traits(name, monkeypatch, _
     for tool in tool_defs.TOOLS:
         if tool.name in listed:
             traits = tool.traits
-            stated = " ".join([traits.effect, *(trait for trait in ("parallel", "outside", "replay_safe", "saves")
+            stated = " ".join([traits.effect, *(trait for trait in ("parallel", "outside", "saves")
                                                 if getattr(traits, trait)),
                                *([f"gate={tool.gate.__name__}"] if tool.gate else [])])
             assert stated == TRAITS[tool.name], f"{tool.name}: {stated}"

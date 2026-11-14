@@ -18,21 +18,6 @@ class TaskProgressExecutor:
             return {"ok": False, "error_code": exc.code}
 
 
-class DelegateWorkExecutor:
-    key = "delegate_work"
-
-    async def execute(self, args: dict) -> dict:
-        from pydantic import ValidationError
-        from server.orchestrator.arslan import _arslan_tools
-        from server.services import task_workers
-        try:
-            return await task_workers.delegate(task_workers.Batch.model_validate(args), _arslan_tools)
-        except ValidationError:
-            return {"ok": False, "error_code": "invalid_worker_arguments"}
-        except TaskError as exc:
-            return {"ok": False, "error_code": exc.code}
-
-
 def _conversation_id() -> str | None:
     from server.services import personal_context
     ctx = personal_context.current()
@@ -68,8 +53,8 @@ class StartBackgroundWorkExecutor:
 
 
 class StartSubSessionExecutor:
-    """SUB3: start a sub-session of this conversation and return at once; it works in the background. Not in
-    EXECUTORS until SUB5 (tool_defs.tasks.START_SUB_SESSION)."""
+    """SUB3: start a sub-session of this conversation and return at once; it works in the background. SUB5e: in
+    EXECUTORS, offered where tool_defs.tasks.START_SUB_SESSION says."""
     key = "start_sub_session"
 
     async def execute(self, args: dict) -> dict:

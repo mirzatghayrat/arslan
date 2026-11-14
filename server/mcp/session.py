@@ -185,6 +185,19 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _server_pid(spawned) -> int | None:
+    """The pid of the server process the SDK's `stdio_client` (entered as `spawned`) started, in a session of its own
+    (NET-a, Codex round 1 F1: its proxy token works only for that process's run). The SDK keeps the process to itself,
+    as its generator's local `process` (mcp 1.28.1); an SDK that keeps it elsewhere gives None, the run stays unbound,
+    and the proxy refuses the server's connections (tests/server/sbx/test_net_a_proxy.py's MCP test fails first)."""
+    frame = getattr(getattr(spawned, "gen", None), "ag_frame", None)
+    pid = getattr(frame.f_locals.get("process") if frame is not None else None, "pid", None)
+    if isinstance(pid, int):
+        return pid
+    logger.warning("MCP stdio: the server's process isn't known, so the sandbox proxy refuses its connections")
+    return None
+
+
 def _move_aside(server_id: int) -> Path | None:
     """Move `<data>/mcp/<id>/` to `<data>/mcp/.forgotten/<id>-<utc>/` (never deleted), so a later
     server that reuses the id starts in an empty folder with an empty log. Best effort."""
@@ -350,6 +363,7 @@ class MCPSessionManager:
                 if extra is None:
                     command = await asyncio.to_thread(spawn_env.resolve_command, server["command"])
                 args = list(server.get("args") or [])
+                run = None                      # NET-a: a server online through the sandbox proxy has a run
                 if server.get("sandbox"):
                     # 0.1.57 §5.3: an installed capability runs under its own profile, in its own home.
                     from server.services import capability_sandbox
@@ -358,11 +372,16 @@ class MCPSessionManager:
                     if sandbox.get("network"):
                         # SBX-6 MCP proxy: a declared server reaches the network only through the local proxy,
                         # and the user's certificate setting applies as for commands.
-                        from server.services import sandbox_proxy, terminal_exec
+                        from server.services import net_policy, sandbox_proxy, terminal_exec
 
                         sandbox["proxy_port"] = await sandbox_proxy.port()
                         sandbox["trust_service"] = (sandbox["proxy_port"] is not None
                                                     and await terminal_exec.trust_service_allowed())
+                        # NET-a: its own token while the session lives; the proxy doesn't judge its sites (NET's
+                        # design item 7: MCP servers are out of its scope for now).
+                        run = await net_policy.start_run(f"MCP server {sid}", judged=False)
+                        stack.callback(net_policy.end_run, run)
+                        sandbox["proxy_token"] = run.token
                     from server.services import command_sandbox
 
                     # HR-1 (#813 review 11): the profile goes to sandbox-exec as a file. It goes once the server
@@ -383,7 +402,17 @@ class MCPSessionManager:
                 errlog.write(f"\n{START_MARK}{_utc_iso()} ---\n")
                 errlog.flush()
                 self._log_marks[sid] = time.monotonic()
-                read, write = await stack.enter_async_context(stdio_client(params, errlog=errlog))
+                if profile is not None:
+                    from server.services import command_sandbox
+                    command_sandbox.check_pins(profile)     # SBX-9: its folders are still the ones the profile names
+                spawned = stdio_client(params, errlog=errlog)
+                read, write = await stack.enter_async_context(spawned)
+                if run is not None:
+                    # Codex round 1, F1: its token works only for this server's process (and what descends from it).
+                    from server.services import net_policy
+                    net_policy.bind(run, _server_pid(spawned))
+                if profile is not None:
+                    command_sandbox.release_pins(profile)
             client = await stack.enter_async_context(
                 ClientSession(read, write, message_handler=self._handler(sid)))
             await client.initialize()

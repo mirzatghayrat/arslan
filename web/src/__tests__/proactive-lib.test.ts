@@ -53,15 +53,16 @@ describe("evidence", () => {
     expect(other.text).toBe("It stopped before finishing.");
   });
 
-  it("counts in the plural and never prints a raw key or a raw placeholder", () => {
+  // INB7-e: the brief's lines were the plural ones; none of the evidence left counts, so this checks the words only.
+  it("never prints a raw key or a raw placeholder", () => {
     const lines = evidenceLines(t, "en", [
-      { key: "brief.open", params: { count: 1, kinds: { web_change: 1 } } },
-      { key: "brief.running", params: { count: 4 } },
       { key: "folder.new", params: { label: "Inbox", count: 2 } },
+      { key: "sched.state", params: { name: "Weekly", failures: 3, paused: true } },
       { key: "sched.run", params: { at: "2026-09-30T09:15:00" }, quote: "timeout" }]);
-    expect(lines.map((l) => l.text).slice(0, 3)).toEqual(["1 item open in this inbox.", "4 jobs running in the background.", "Files that appeared since the last check:"]);
+    expect(lines[0].text).toBe("Files that appeared since the last check:");
+    expect(lines[1].text).toMatch(/Weekly.* failed 3 times in a row and was paused\.$/);
     for (const line of lines) { expect(line.text).not.toMatch(/\{\{|proactive\./); }
-    expect(lines[3].text).toMatch(/^A failed run, /);
+    expect(lines[2].text).toMatch(/^A failed run, /);
   });
 });
 

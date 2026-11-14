@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -46,8 +47,12 @@ class SettingsIn(BaseModel):
     brain_usage_event_retention_days: int | None = None
     brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
+    default_permission_mode: Literal["plan", "ask", "ask_risky", "full_access"] | None = None   # S5a
+    # S5a: the window's old "when to ask" field, written into `default_permission_mode` (ask_all → ask, else
+    # ask_risky); never stored under its own key. DELETE-BY: S5a-2, when the window writes default_permission_mode.
     shell_confirm_policy: str | None = None
-    shell_policy_switch_notice: str | None = None   # v0.1.63: "pending" / "seen" (migration 0070's notice)
+    shell_policy_switch_notice: str | None = None   # v0.1.64 ASK1-a: "pending" / "seen" (migration 0095's note)
+    scheduled_commands_note: str | None = None      # v0.1.64 ASK1-b: "pending" / "seen" (migration 0097's note)
     model_roles_reset_notice: str | None = None     # v0.1.64 ROUTE1: "pending" / "seen" (migration 0086's notice)
     background_job_budget: str | None = None
     task_usd_cap: str | None = None           # K4a: the per-task dollar cap, as text ("2")
@@ -79,12 +84,25 @@ class SettingsIn(BaseModel):
     ssh_enabled: str | None = None
     default_read_enabled: str | None = None
     folder_rules_enabled: str | None = None
+    status_route_in_prompt: str | None = None        # H1-c, default on
     sandbox_system_certificates: str | None = None   # SBX-6a, default off
     # Not `sandbox_trusted_devices` (SBX settings): a device is added through POST /settings/sandbox/trusted-devices,
     # where the server resolves and checks it, or a card's answer, never as raw JSON here (trusted_devices).
+    sandbox_net_judgement: bool | None = None        # NET-a, default on. DELETE-BY: v0.1.65, with S2a-1's old path
+    #: NET-a: a JSON list of the sites every sandboxed command may reach, checked here and stored in one spelling.
+    sandbox_allowed_sites: str | None = None
     voice_input_locale: str | None = None
     voice_mode: str | None = None
     voice_endpoint_silence_ms: str | None = None
+
+    @field_validator("sandbox_allowed_sites")
+    @classmethod
+    def _sites_listable(cls, value: str | None) -> str | None:
+        """NET-a: each entry a host or an address, never a public suffix or a bare TLD (a 422 otherwise)."""
+        if value is None:
+            return value
+        from server.services import net_policy
+        return json.dumps(net_policy.parse_sites(value, strict=True))
 
 
 class SettingsOut(BaseModel):
@@ -122,8 +140,12 @@ class SettingsOut(BaseModel):
     brain_usage_event_retention_days: int = 30
     brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""
+    default_permission_mode: str = "ask_risky"      # S5a: as read (settings_service.default_permission_mode)
+    # S5a: derived from the default mode for the window's old control and note (ask → ask_all, else ask_risky); not
+    # stored. DELETE-BY: S5a-2, when the window reads default_permission_mode.
     shell_confirm_policy: str = ""
-    shell_policy_switch_notice: str = ""            # v0.1.63: "pending" after 0070 switched this user, then "seen"
+    shell_policy_switch_notice: str = ""            # v0.1.64 ASK1-a: "pending" after 0095, then "seen"
+    scheduled_commands_note: str = ""               # v0.1.64 ASK1-b: "pending" after 0097, then "seen"
     model_roles_reset_notice: str = ""              # v0.1.64 ROUTE1: "pending" after 0086 cleared the old roles, then "seen"
     background_job_budget: str = "standard"
     task_usd_cap: str = ""                    # K4a: "" = the default cap ($2)
@@ -149,8 +171,11 @@ class SettingsOut(BaseModel):
     ssh_enabled: str = ""
     default_read_enabled: str = ""
     folder_rules_enabled: str = ""
+    status_route_in_prompt: str = ""        # H1-c, default on
     sandbox_system_certificates: str = ""   # SBX-6a, default off
     sandbox_trusted_devices: str = ""   # SBX-6a, JSON list, default empty
+    sandbox_net_judgement: bool = True      # NET-a, default on
+    sandbox_allowed_sites: str = ""         # NET-a, JSON list, default empty
     voice_input_locale: str = ""
     voice_mode: str = ""
     voice_endpoint_silence_ms: str = ""
@@ -273,21 +298,11 @@ class ChatMessageOut(BaseModel):
     timestamp: str
 
 
-class SeedRefOut(BaseModel):
-    """A persona seed (one of the 249 in the library), resolved for display."""
-    slug: str
-    name: str | None = None
-    division: str | None = None
-    summary: str | None = None
-
-
 class SpawnDetailOut(SpawnOut):
     persona_role: str | None = None
     persona_tone: str | None = None
     system_prompt: str = ""
     messages: list[ChatMessageOut] = []
-    # The persona seeds this spawn was composed from (resolved from config.seed_refs).
-    seeds: list[SeedRefOut] = []
 
 
 class EquipmentUpdateIn(BaseModel):
@@ -735,17 +750,6 @@ class RecapOut(BaseModel):
 
     summary: RecapSummaryOut
     items: list[RecapItemOut]
-
-
-class PreferencesOut(BaseModel):
-    preferences: list[str] = []
-    entries: list[dict] = []
-
-
-class PreferenceDeleteIn(BaseModel):
-    fact: str
-    entry_id: str | None = None
-    expected_version: int | None = None
 
 
 # --- S3-M3 cost visibility (Task 5) ----------------------------------------

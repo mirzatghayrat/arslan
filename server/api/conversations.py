@@ -351,6 +351,61 @@ async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depe
     return {"choice": None, "effective": await llm_factory.effective_choice(db, conversation_id)}
 
 
+class PermissionModeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["plan", "ask", "ask_risky", "full_access"]
+
+
+async def _permission_mode_out(db: AsyncSession, conversation_id: str) -> dict:
+    """S5a: `own` (null = the default), `chosen` (own, or the default, narrowed by a parent for a sub-session), `mode`
+    (what applies now) and `fallback` (why "ask_risky" runs as "ask": sandbox_off | home_folder | no_checkpoint)."""
+    from server.db.companion_models import ConversationContext
+    from server.services import permissions
+    row = await db.get(ConversationContext, conversation_id)
+    state = await permissions.mode_for(conversation_id)
+    return {"own": row.permission_mode if row is not None else None, "chosen": state.chosen, "mode": state.mode,
+            "fallback": state.fallback, "previous": row.previous_mode if row is not None else None}
+
+
+def _checked_id(conversation_id: str) -> None:
+    if len(conversation_id) > 100 or not conversation_id.strip():
+        raise HTTPException(422, detail={"code": "invalid_conversation_id"})
+
+
+# S5a: set from Arslan's desktop window only. The phone reaches the backend through the Bridge's fixed calls (none sets
+# a mode) and the Island has no such request; a test reads both.
+@router.get("/conversations/{conversation_id}/permission-mode")
+async def get_permission_mode(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    return await _permission_mode_out(db, conversation_id)
+
+
+@router.put("/conversations/{conversation_id}/permission-mode")
+async def set_permission_mode(conversation_id: str, body: PermissionModeIn,
+                              db: AsyncSession = Depends(get_session)) -> dict:
+    """From the next step on. Entering plan keeps the mode it left (`previous_mode`, null = the default) for Start."""
+    from server.db.companion_models import ConversationContext
+    _checked_id(conversation_id)
+    row = await db.get(ConversationContext, conversation_id) or ConversationContext(id=conversation_id)
+    if body.mode == "plan" and row.permission_mode != "plan":
+        row.previous_mode = row.permission_mode
+    row.permission_mode = body.mode
+    db.add(row)
+    await db.commit()
+    return await _permission_mode_out(db, conversation_id)
+
+
+@router.post("/conversations/{conversation_id}/permission-mode/start")
+async def start_from_plan(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
+    """Plan's "Start": back to the mode before plan (null = the default), never wider than it was."""
+    from server.db.companion_models import ConversationContext
+    row = await db.get(ConversationContext, conversation_id)
+    if row is None or row.permission_mode != "plan":
+        raise HTTPException(409, detail={"code": "not_in_plan"})
+    row.permission_mode, row.previous_mode = row.previous_mode, None
+    await db.commit()
+    return await _permission_mode_out(db, conversation_id)
+
+
 @router.post("/conversations/{conversation_id}/seen")
 async def mark_conversation_seen(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     """INB4: the window shows this conversation, so its newest message is seen: a reply or a job done there stops reading

@@ -1,7 +1,7 @@
 """C3b: tools nobody used leave the table every request carries (card C3; ⓪Plan's Q2–Q4 and the SSH call).
 
-- **Not resident** (0 calls in 30 days): the browser's back, click, type, select and press,
-  `delegate_work` and `propose_capability`. `_arslan_tools()` no longer carries them. `_every_tool()`
+- **Not resident** (0 calls in 30 days): the browser's back, click, type, select and press, and
+  `propose_capability` (and the helpers' tool, deleted in v0.1.64 SUB6). `_arslan_tools()` no longer carries them. `_every_tool()`
   still defines them, and K7 makes them reachable on demand from there. Until K7, a job cannot act in
   the browser and `list_my_capabilities` does not list them. If K7 has not merged when R63's candidate
   is cut, C3b is reverted first.
@@ -22,7 +22,7 @@ from server.registry import hands_tools
 from server.services import agent_browser, background_jobs, capability_list, ssh_nodes, task_service
 
 DEMOTED = {"browser_back", "browser_click", "browser_type", "browser_select", "browser_press",
-           "delegate_work", "propose_capability"}
+           "propose_capability"}
 
 
 @pytest.fixture

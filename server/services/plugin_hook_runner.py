@@ -177,10 +177,18 @@ def _answer(event: str, data: dict) -> HookResult:
 
 def _prefix(temp: Path, workspace: Path, plugin_dir: Path, closed) -> list[str]:
     """sandbox-exec with the hook's profile: offline, `temp` the only place written (its cache inside it), the work
-    folder readable, the plugin's own folder readable. Raises ValueError for a folder that isn't a plugin's own."""
-    text = command_sandbox.commands_profile(temp, cache=temp, offline=True, closed=list(closed), readable=[workspace],
-                                            plugin_read=plugin_dir)
-    return [command_sandbox._SANDBOX_EXEC, "-f", str(command_sandbox.write_profile(text))]
+    folder readable, the plugin's own folder readable. Raises ValueError for a folder that isn't a plugin's own.
+    SBX-9: `temp` pinned, the profile built from its real path only (`root_pin.Swapped`, an OSError, otherwise)."""
+    from server.services import root_pin
+    pins = command_sandbox._pin_all([temp])
+    try:
+        with root_pin.pinned(pins):
+            text = command_sandbox.commands_profile(pins[0].path, cache=pins[0].path, offline=True,
+                                                    closed=list(closed), readable=[workspace], plugin_read=plugin_dir)
+    except BaseException:
+        root_pin.release(pins)
+        raise
+    return [command_sandbox._SANDBOX_EXEC, "-f", str(command_sandbox.write_pinned(text, pins))]
 
 
 async def run(row: dict, payload: dict, *, plugin_dir: Path, workspace: Path, closed=()) -> HookResult:
@@ -224,12 +232,15 @@ async def _feed(stdin: asyncio.StreamWriter, data: bytes) -> None:
 
 async def _execute(event: str, argv: list[str], payload: dict, *, cwd: Path, env: dict, key: int,
                    limit: float) -> HookResult:
+    profile = command_sandbox.profile_path(argv)
     try:
+        command_sandbox.check_pins(profile)             # SBX-9: its temp is still the folder the profile names
         proc = await asyncio.create_subprocess_exec(
             *argv, cwd=str(cwd), env=env, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE, start_new_session=True)     # its own group, killed whole at the limit
     except OSError as exc:
         return _failed(event, f"didn't start: {exc}")
+    command_sandbox.release_pins(profile)
     run_temp.started(key, proc.pid)
     out, err = terminal_exec._Capped(OUTPUT_CAP), terminal_exec._Capped(OUTPUT_CAP)
     tasks = [asyncio.ensure_future(proc.wait()), asyncio.ensure_future(terminal_exec._pump(proc.stdout, out)),

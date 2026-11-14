@@ -36,7 +36,10 @@ async def details(db: AsyncSession, conversation_id: str) -> dict:
     if (model := await _model(db, conversation_id)) is not None:
         out["model"] = shown_model(model)
     from server.services import permissions
-    out["mode"] = await permissions._mode()          # the one the cards follow (global until per-conversation modes)
+    # S5a: the conversation's mode in effect, in the two values the Bridge spec documents (§5.10 `mode?`); a new value
+    # there is a Bridge frame change, the user's to make.
+    mode = (await permissions.mode_for(conversation_id)).mode
+    out["mode"] = "careful" if mode in ("plan", "ask") else "standard"
     out["connectors"] = await _connectors(db, conversation_id)
     if (changes := await _changes(db, conversation_id)) is not None:
         out["changes"] = changes

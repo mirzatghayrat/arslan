@@ -21,12 +21,17 @@ _PLAIN_KEYS = (
                # 0.1.63 D5: how a chosen Tavily / SearXNG is used: "" or "only" (as before D5) | "backup".
                "search_provider_role",
                "orchestrator_shell_enabled",
-               "shell_confirm_policy", "background_job_budget", "task_usd_cap",
+               # S5a (migration 0098): the permission mode of a new conversation (`permissions.MODES`); it replaced
+               # `shell_confirm_policy`.
+               "default_permission_mode", "background_job_budget", "task_usd_cap",
                # K4a (v0.1.64): the dollar cap's off switch ("true" | "false"; default on).
                "task_usd_cap_enabled",
-               # v0.1.63 (R63): "pending" when migration 0070 switched this user from ask_risky; the window shows a
-               # one-time notice and writes "seen". DELETE-BY: v0.1.64, with the notice.
+               # v0.1.64 ASK1-a: "pending" when migration 0095 found an existing install whose stored policy isn't
+               # ask_risky; the window shows a one-time note and writes "seen". DELETE-BY: v0.1.65, with the note.
                "shell_policy_switch_notice",
+               # v0.1.64 ASK1-b: "pending" when migration 0097 found an existing install; the Scheduled page says
+               # once that scheduled tasks run commands in the sandbox, and writes "seen". DELETE-BY: v0.1.65.
+               "scheduled_commands_note",
                # v0.1.64 ROUTE1: "pending" when migration 0086 cleared the old model roles; Settings says so once, then
                # writes "seen".
                "model_roles_reset_notice",
@@ -50,10 +55,17 @@ _PLAIN_KEYS = (
                # macOS's certificate trust service ("true" | "false"; default off). Its switch is in Settings › What
                # Arslan can do › Terminal (SBX settings), written by PUT /settings only.
                "sandbox_system_certificates",
+               # H1-c: a plain contradiction fixed by default ("true" | "false"; only "false" brings the old behaviour
+               # back). No UI. DELETE-BY: v0.1.65, once the bench shows no regression.
+               "status_route_in_prompt",
                # SBX-6a (the user's decision, 2026-11-02): the LAN devices sandboxed commands may reach through the proxy,
                # a JSON list of {"host"?: name, "address": IP} (default empty: the LAN stays refused). Read here; written
                # only by trusted_devices (the Settings list and a card's answer), never by PUT /settings.
                "sandbox_trusted_devices",
+               # NET-a (v0.1.64): whether the sandbox's proxy judges each site ("true" | "false"; default on), and the
+               # sites every sandboxed command may reach, a JSON list of hosts (default empty), checked and kept in one
+               # spelling when PUT /settings saves it (SettingsIn). No UI yet (NET-b).
+               "sandbox_net_judgement", "sandbox_allowed_sites",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.
 _INT_KEYS = ("run_debug_retention_days",
@@ -293,6 +305,13 @@ async def folder_rules_enabled(session: AsyncSession) -> bool:
     return raw is None or str(raw).strip().lower() != "false"
 
 
+async def status_route_in_prompt(session: AsyncSession) -> bool:
+    """H1-c: whether the system prompt says how to reach my_status and whats_new (through use_tool: neither is in the
+    tool table). Default ON; only an explicit 'false' brings the old wording back. DELETE-BY: v0.1.65."""
+    raw = await _get_raw(session, "status_route_in_prompt")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
 async def sandbox_system_certificates(session: AsyncSession) -> bool:
     """SBX-6a: whether a sandboxed command online (proxy mode) may reach `com.apple.trustd.agent`, which tools that
     check certificates through Security.framework need (Swift, Xcode's tools, Go). Default OFF, like sandbox-runtime's
@@ -306,6 +325,22 @@ async def sandbox_trusted_devices(session: AsyncSession) -> str:
     """SBX-6a: the raw JSON of the user's trusted local devices; `sandbox_proxy.parse_trusted` reads it, and
     anything malformed trusts nothing. Default empty."""
     raw = await _get_raw(session, "sandbox_trusted_devices")
+    return str(raw) if raw is not None else ""
+
+
+async def sandbox_net_judgement(session: AsyncSession) -> bool:
+    """NET-a: whether the sandbox's proxy judges each site a command reaches (one seen only in outside content is
+    refused) instead of S2a-1's whole-network rule after outside content. Default ON; only an explicit 'false' turns it
+    off. DELETE-BY: v0.1.65, with S2a-1's old path (command_gate._network_after_outside_content), which keeps a
+    scheduled fire's offline run after outside content (ASK1-b)."""
+    raw = await _get_raw(session, "sandbox_net_judgement")
+    return raw is None or str(raw).strip().lower() != "false"
+
+
+async def sandbox_allowed_sites(session: AsyncSession) -> str:
+    """NET-a: the raw JSON list of the sites every sandboxed command may reach; `net_policy.parse_sites` reads it, and
+    anything malformed lists nothing. Default empty."""
+    raw = await _get_raw(session, "sandbox_allowed_sites")
     return str(raw) if raw is not None else ""
 
 
@@ -430,13 +465,14 @@ async def mcp_server_enabled(session: AsyncSession) -> bool:
     return str(raw).strip().lower() == "true" if raw is not None else False
 
 
-async def shell_confirm_policy(session: AsyncSession) -> str:
-    """'ask_all' (v0.1.63 default, user's decision): every command shows a card.
-    'ask_risky': harmless commands run, the rest show a card; only an explicit choice gives it, as its judgement
-    of what is risky is completed in v0.1.64 (S2a-3). Only the exact value counts (what Settings writes); unset
-    or anything else reads as ask_all, the same rule migration 0070 used when it moved a stored ask_risky."""
-    raw = await _get_raw(session, "shell_confirm_policy")
-    return "ask_risky" if raw == "ask_risky" else "ask_all"
+async def default_permission_mode(session: AsyncSession) -> str:
+    """S5a: the mode a conversation with none of its own runs in (`permissions.MODES`). Unset reads ask_risky
+    (ASK1-a's default); a stored mode reads as itself; anything else reads ask, so an unreadable value stays strict."""
+    from server.services.permissions import MODES
+    raw = await _get_raw(session, "default_permission_mode")
+    if raw is None:
+        return "ask_risky"
+    return raw if raw in MODES else "ask"
 
 
 async def background_job_budget(session: AsyncSession) -> str:
@@ -565,6 +601,7 @@ _BOOL_ACCESSORS = {
     "phone_bridge_enabled": phone_bridge_enabled,
     "mcp_server_enabled": mcp_server_enabled,
     "task_usd_cap_enabled": task_usd_cap_enabled,
+    "sandbox_net_judgement": sandbox_net_judgement,
 }
 
 #: The bool keys this registry is responsible for.

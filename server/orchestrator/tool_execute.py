@@ -73,8 +73,7 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
                 timeout = (max(0.0, min(float(own), budget.remaining_seconds() - _RUN_COMMAND_BACKSTOP_RESERVE_S))
                            if budget else float(own))
             else:
-                timeout = (budget.remaining_seconds() if tool_key == "delegate_work" and budget
-                           else max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s)
+                timeout = max(tool_timeout_s, float(own)) if isinstance(own, (int, float)) else tool_timeout_s
             return await within(executor.execute(admitted_args), timeout=timeout)
         runtime = current_task()
 
@@ -84,6 +83,9 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
             token = terminal_exec.OUTSIDE_SANDBOX.set(outside)
             bare = terminal_exec.UNWRAPPED.set(outside and unwrapped)
             later = terminal_exec.HOLD_RUN_LATER.set(outside and plan.holds_run_later)   # HR-1, the outside floor
+            git_config = terminal_exec.GIT_CONFIG.set(not outside and plan.git_config)   # HR-1b: the sandbox only
+            once = terminal_exec.OPEN_ONCE.set(None if outside else plan.open_once)       # SBX-5b: the sandbox only
+            only = terminal_exec.SANDBOX_ONLY.set(plan.sandbox_only)                # ASK1-b G2: a fire's command
             # SMART-8: allowed, outside the sandbox and read with certainty: its targets go to the Trash.
             trash = delete_to_trash.TRASH.set(tool_key == "run_command" and deletes_outside
                                               and (outside or not confined)
@@ -96,6 +98,9 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
                 if cut is not None:
                     terminal_exec.OFFLINE.reset(cut)
                 delete_to_trash.TRASH.reset(trash)
+                terminal_exec.SANDBOX_ONLY.reset(only)
+                terminal_exec.OPEN_ONCE.reset(once)
+                terminal_exec.GIT_CONFIG.reset(git_config)
                 terminal_exec.HOLD_RUN_LATER.reset(later)
                 terminal_exec.UNWRAPPED.reset(bare)
                 terminal_exec.OUTSIDE_SANDBOX.reset(token)
@@ -115,6 +120,17 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
             if by_grant and not ran_outside and isinstance(result, dict):
                 result["grant_note"] = ("this conversation's permission to run commands outside the sandbox was "
                                         "taken back; it ran in the sandbox")
+            if plan.git_config and isinstance(result, dict) and result.pop("git_config_held", False):
+                await command_gate.end_git_config(conversation_id)     # HR-1b review delta 2: fail closed
+            if tool_key in ("run_command", "verify") and isinstance(result, dict) and result.get("net_refused"):
+                # NET-a: the proxy refused sites this run reached (a command's, or verify's smoke test: Codex round 1,
+                # F8, named by its own command); the user is asked once whether commands in this conversation may
+                # reach them (net_policy.offer), and the model reads the answer.
+                from server.services import net_policy
+                answer = await net_policy.offer(result.pop("net_refused"), command or result.get("command", ""),
+                                                conversation_id)
+                if answer:
+                    result["network_note"] = f"{result.get('network_note') or ''} {answer}".strip()
         # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
         if tool_key == "run_command" and ran_outside and isinstance(result, dict):
             result["ran_outside_sandbox"] = True

@@ -492,16 +492,13 @@
     "labelShellConfirmPolicy": "When to ask",
     "shellPolicyAskAll": "Ask before every command",
     "shellPolicyAskAllNote": "Every new command asks first. One you allowed “In this conversation” runs again in that conversation without asking.",
-    "askRiskyConfirmTitle": "Ask only for risky commands?",
-    "askRiskyConfirmBody": "Commands Arslan judges harmless will run in the sandbox without asking. In this version, a delete written after changing folder in the same command (for example `cd folder && rm file`) is treated as inside the working folder, so it can run without a card even when that folder is somewhere else. “Undo this turn” only brings back files in the working folder. 0.1.64 fixes this.",
-    "askRiskyConfirmAction": "Ask only for risky commands",
-    "askRiskyConfirmCancel": "Keep asking before every command",
     "shellPolicyUndoPointer": "If a command changed or deleted something in the working folder that you didn't want, open ⋯ under that reply, choose “Undo this turn…”, then “Undo files”: those files go back to how they were before the turn. This works when the working folder has at most 20,000 files and 5 GB, not counting Python environments, node_modules, build output and Python caches; those are never put back.",
-    "policyNoticeTitle": "Arslan now asks before every command",
-    "policyNoticeBody": "Before 0.1.63, Arslan asked only for risky commands, because you chose it or because it was the default. Now every new command asks first. In this version, a delete written after changing folder in the same command (for example `cd folder && rm file`) is treated as inside the working folder, so with “Ask only for risky commands” it could run without a card even when that folder is somewhere else, and “Undo this turn” only brings back files in the working folder. 0.1.64 fixes this. To switch back: Settings › What Arslan may do › Terminal › When to ask › “Ask only for risky commands”.",
+    "policyNoticeRiskyTitle": "Arslan now asks only for risky commands",
+    "policyNoticeRiskyBody": "Commands now run in the sandbox without asking. A card still appears when a command needs to leave the sandbox, could do real harm, or a rule says to ask. To be asked before every command again: Settings › What Arslan may do › Terminal › When to ask › “Ask before every command”.",
+    "policyNoticeAllTitle": "Arslan asks before every command",
+    "policyNoticeAllBody": "From 0.1.64, a new install asks only for risky commands: commands run in the sandbox without asking, and a card appears when a command needs to leave the sandbox, could do real harm, or a rule says to ask. Here Arslan asks before every command, and that stays until you change it: Settings › What Arslan may do › Terminal › When to ask › “Ask only for risky commands”.",
     "policyNoticeOk": "Got it",
     "shellPolicyAskRisky": "Ask only for risky commands",
-    "shellPolicyAskRiskyNote": "Arslan's judgement of which commands are risky is still being completed (v0.1.64). Until then, asking before every command is safer.",
     "labelMcpServer": "MCP server (inbound)",
     "mcpServerDesc": "Let external MCP clients (Claude Code, Codex) call read-only tools. Off by default; requires a generated MCP token. Localhost only.",
     "mcpToken": {
@@ -764,6 +761,7 @@
       "waiting": "Waiting for your approval",
       "waiting_reminder": "A stopped job left you a reminder",
       "waiting_away": "A card expired",
+      "waiting_glance": "A finished job left something for you to look at",
       "working": "In progress",
       "progress": "In progress: {{done}} of {{total}}",
       "done": "Done",
@@ -1059,6 +1057,7 @@
         "send-message": "Sends or posts in your name; it can't be taken back",
         "upload": "Sends data to a website or a cloud",
         "publish": "Publishes or changes something online",
+        "secret-write": "Sets or removes a secret that CI or production reads",
         "git-push": "Publishes to a remote repository",
         "remote-shell": "Connects to another machine",
         "apple-events": "Controls other apps; they could send, delete or buy",
@@ -1357,7 +1356,7 @@
     "every_minute": "every minute",
     "every_n_minutes": "every {{count}} minutes",
     "prompt": "What it will do each time:",
-    "unattended": "Scheduled runs happen on their own and never wait for you: a step that would need your OK is refused and listed under the task on the Scheduled page. They can look things up and write files only in Arslan's own working folder; they don't run commands.",
+    "unattended": "Scheduled runs happen on their own and never wait for you: they run commands that wouldn't need your OK, inside the sandbox, and write files only in Arslan's own working folder. Anything that would need your OK is refused and listed under the task on the Scheduled page.",
     "anyTask": "creating any scheduled task"
   },
   "enroll": {
@@ -1443,6 +1442,7 @@
     "alwaysStores": "This will always allow: {{what}}",
     "asksEachTime": "Asks each time",
     "scheduledNeverAsks": "A scheduled run never takes a step that needs your OK. Do it in a chat.",
+    "appDataUnattended": "Not allowed. Another app's private data needs your OK each time, and this task ran while you weren't there.",
     "allowedNow": "Allowed from now on",
     "refusedTimes": "{{count}} times since {{since}}",
     "undo": "Undo"
@@ -1495,7 +1495,10 @@
     "seenNote": "Opening a task marks what its runs could not do as seen. In the task's own conversation, what expired undone clears when you open that conversation, and a card there clears only once it is answered.",
     "attention": "Needs a look",
     "changed": "Changed",
-    "failing": "Failed or paused itself"
+    "failing": "Failed or paused itself",
+    "commandsNoteTitle": "Scheduled tasks can run commands again",
+    "commandsNoteBody": "A scheduled task's run now runs commands that wouldn't need your OK, inside the sandbox, in Arslan's own working folder. Anything that would need your OK is refused and listed under its task here. Tasks set up before this update, or after reading outside content, run their commands offline. If you chose “Ask before every command”, scheduled runs run none.",
+    "commandsNoteOk": "Got it"
   },
   "remembered": {
     "title": "Remembered answers",

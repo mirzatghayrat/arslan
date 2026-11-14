@@ -314,25 +314,6 @@ async def _skill_rows() -> list[dict]:
 _FOLDER_REASONS = {"new": "skill_needs_card", "changed": "skill_changed", "gone": "skill_folder_gone"}
 
 
-async def _method_rows() -> list[dict]:
-    """The professional methods sit with the skills (v0.1.64 CAP3a; the CAP card, with SUB): built in, never
-    switched or deleted here, revised in their editor (`revision`). Named by key while unrevised (the page
-    translates it). Last used: the newest helper a task ran with it."""
-    from server.db.worker_models import TaskWorker
-    from server.services import professional_methods
-    async with db_session.AsyncSessionLocal() as db:
-        methods = await professional_methods.list_methods(db)
-        await db.commit()                          # the defaults, written on first read
-        used = dict((await db.execute(select(TaskWorker.method_key, func.max(TaskWorker.created_at))
-                                      .group_by(TaskWorker.method_key))).all())
-    rows = []
-    for m in methods:
-        row = _row(f"method:{m['key']}", "on", name=m["name"] if m["revision"] > 1 else None, section="skills")
-        row.update(revision=m["revision"], last_used=_when(used.get(m["key"])))
-        rows.append(row)
-    return rows
-
-
 # read_skill's key, from the call's stored arguments (`args_summary`: its JSON, cut at 200 characters).
 _READ_SKILL_KEY = re.compile(r'"key":\s*"([^"\\]+)"')
 
@@ -362,7 +343,7 @@ def _when(*times) -> str | None:
 
 async def capabilities() -> list[dict]:
     from server.db.models import MCPServer
-    rows = [*await _builtin_rows(), *await _mcp_rows(), *await _skill_rows(), *await _method_rows()]
+    rows = [*await _builtin_rows(), *await _mcp_rows(), *await _skill_rows()]
     tools, skills = await _last_used()
     # When each connection was added. A server id is reused once the newest one is deleted (mcp_servers.id
     # has no AUTOINCREMENT), so a call before that is the old server's (#499 review F5).
@@ -370,8 +351,6 @@ async def capabilities() -> list[dict]:
         added = dict((await db.execute(select(MCPServer.id, MCPServer.created_at))).all())
     for row in rows:
         uses, family = row.uses
-        if "last_used" in row:                                       # a method row says its own
-            continue
         if (server := _server_id(row["key"])) is not None:
             since = added.get(server)
             row["last_used"] = _when(*(when for key, when in tools.items()

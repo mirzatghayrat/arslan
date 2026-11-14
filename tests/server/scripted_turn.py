@@ -103,7 +103,7 @@ ANSWERS = {"web_search": _searched, "web_extract": extract, "write_file": _wrote
            "list_dir": {"ok": True, "entries": ["a.md"]},
            "run_command": {"ok": True, "exit_code": 0, "stdout": "done"},
            "schedule_task": {"ok": True}, "attach_file": {"ok": True, "path": "a.md"},
-           "start_background_work": {"ok": True}, "delegate_work": {"ok": True},
+           "start_background_work": {"ok": True},
            "desktop_look": {"ok": True, "text": "a window", "image_label": "the window",
                             "images": [{"mime_type": "image/png", "data": "cGl4ZWxz"}]}}
 RESEARCH = table("web_search", "web_extract", "read_file", "list_dir", "write_file", "edit_file")
@@ -327,7 +327,7 @@ async def run_turn(turn, monkeypatch, database, replies, *, tools=None, later_to
     for key, answer in {**ANSWERS, **(answers or {})}.items():
         monkeypatch.setitem(executors.EXECUTORS, key, _around(turn, key, answer, own_limit.get(key)))
     async with database() as db:
-        db.add(Setting(key="shell_confirm_policy", value="ask_all"))      # a card for every command
+        db.add(Setting(key="default_permission_mode", value="ask"))      # a card for every command
         await db.commit()
     tools = RESEARCH if tools is None else tools
     saved = saved if saved is not None else {"done": False}

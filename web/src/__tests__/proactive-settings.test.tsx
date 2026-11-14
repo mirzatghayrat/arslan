@@ -19,7 +19,7 @@ const api = vi.hoisted(() => ({
 vi.mock("../api/proactive", async (original) => ({ ...(await original<typeof import("../api/proactive")>()), proactiveApi: api }));
 
 const CONFIG: ProactiveConfig = { enabled: true, quiet_start: "22:00", quiet_end: "08:00",
-  job_followups: true, scheduled_problems: true, watches: true, brief_enabled: false, brief_time: "08:30", diagnosis_daily_usd: 0 };
+  job_followups: true, scheduled_problems: true, watches: true, diagnosis_daily_usd: 0 };
 const WATCH: ProactiveWatch = { id: 4, kind: "web", target: "https://example.com/pricing", label: "Pricing", enabled: true,
   interval_s: 21600, last_error: null, last_checked_at: null, last_changed_at: null };
 
@@ -53,7 +53,6 @@ describe("settings", () => {
   });
 
   it("offers no morning brief any more (the user's Q9: the setting goes), and keeps the pointer to the diagnosis limit", async () => {
-    api.config.mockResolvedValue({ ...CONFIG, brief_enabled: true });           // switched on before: still no switch, no time
     await ready();
     expect(screen.queryByTestId("proactive-toggle-brief")).toBeNull();
     expect(screen.queryByTestId("proactive-brief-time")).toBeNull();

@@ -28,7 +28,7 @@ async function blob(path: string): Promise<Response> {
 
 export interface ConversationChangeTurn {
   run_id: number; at: string | null; undone: boolean;
-  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted"; ci?: boolean }[];   // HR-2b: a CI file
 }
 
 /** DIFF1: one line of a change, `[op, old line number, new line number, text]` (server: checkpoints.diff). */

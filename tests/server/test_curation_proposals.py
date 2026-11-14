@@ -1,7 +1,7 @@
 """The memory proposal inbox (`/brain/proposals`) stays paginated.
 
 The web labels these items `curation` (web/src/lib/pendingMemory.ts), but they are
-memory_proposals rows: memory territory, DELETE-BY v0.1.64 with the memory v1 tables.
+memory_proposals rows: memory territory, DELETE-BY v0.1.65 with the memory v1 tables.
 The curation loop (整理层) that also wrote here was deleted in C8-3 (v0.1.63); its
 toggle test went with it (see test_curation_loop_removed.py).
 """

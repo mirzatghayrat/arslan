@@ -53,7 +53,7 @@ if os.environ.get("BENCH_SANDBOX") == "none":
 # only "", delete and install, and that list went stale as rules were added: "hermes:script execution via
 # heredoc" inside the sandbox was declined (K2a's T5, 2026-10-20), so a run failed on the bench's own policy.
 OUTWARD = frozenset({"apple-events", "shortcuts", "send-mail", "send-message", "upload", "remote-shell",
-                     "git-push", "publish"})
+                     "git-push", "publish", "secret-write"})
 # Kinds the seatbelt does not contain because a system daemon does the work (③Hands' review of #242):
 # launchctl/crontab hand a job to launchd/cron, which run it unsandboxed and after the turn; `defaults write`
 # goes through cfprefsd; sudo, the macOS roots, keychain secrets and Arslan's keys are never the bench's to
@@ -133,6 +133,14 @@ class TurnTracker:
     # post-turn review runs first): until then the run is not over (③Hands' review of #190).
     task_open: bool = False
     jobs_open: set = field(default_factory=set)
+    # SUB5e (T16): a sub-session's own frames go to its own conversation, never to this window, so
+    # the run is not over while one is at work. Its commander's summary turn is a job of this
+    # conversation: once a start_sub_session succeeded, the run waits for a job that is first seen
+    # after it to finish (that is the summary turn; the commander's own background work started
+    # meanwhile would count too). A summary turn that never comes ends at RUN_TIMEOUT_S.
+    awaiting_summary: bool = False
+    summary_jobs: set = field(default_factory=set)
+    sub_sessions_started: int = 0
     final_text: list = field(default_factory=list)
     approvals: int = 0
     leave_cards: int = 0           # SBX-7: cards to run a command outside the sandbox, whatever the answer
@@ -195,10 +203,18 @@ class TurnTracker:
                 self.end_reason = f"task_{frame.get('phase')}"
         elif t == "task_state":
             self.task_open = True
+        elif t == "tool_result" and frame.get("tool") == "start_sub_session" and frame.get("ok"):
+            self.sub_sessions_started += 1
+            self.awaiting_summary = True
         elif t == "job_update":
             job = frame.get("job_id")
+            if self.awaiting_summary and job not in self.jobs_open:
+                self.summary_jobs.add(job)
             if frame.get("phase") == "finished":
                 self.jobs_open.discard(job)
+                if job in self.summary_jobs:
+                    self.awaiting_summary = False
+                    self.summary_jobs.clear()
                 # A background job never sends task_state to the chat; how it ended is only
                 # its outcome (server/services/background_jobs.py outcome_of).
                 if frame.get("outcome") not in (None, "done"):
@@ -269,7 +285,8 @@ class TurnTracker:
         if now - started >= RUN_TIMEOUT_S:
             self.end_reason = self.end_reason or "timeout"
             return True
-        if self.turn_done and not self.task_open and not self.jobs_open and now - self.last_activity >= self.idle_after_s:
+        if (self.turn_done and not self.task_open and not self.jobs_open and not self.awaiting_summary
+                and now - self.last_activity >= self.idle_after_s):
             self.end_reason = self.end_reason or "done"
             return True
         return False
@@ -385,17 +402,19 @@ def provider_body(provider: str, model: str, base_url: str) -> dict:
 #: The bench asks only for risky commands unless a run says otherwise (BENCH_SHELL_POLICY=ask_all): v0.1.63 made
 #: "ask before every command" the app's default, and a bench round on it would no longer compare with M1B and
 #: the K rounds. The final M1 gates on ask_risky, with one ask_all run for reference.
-SHELL_POLICIES = ("ask_risky", "ask_all")
+#: S5a: each policy's default permission mode, which the driver writes itself: the settings API's old field only ever
+#: narrows the default (#893 review 4). The run's record keeps the policy's name, so records compare across the change.
+SHELL_POLICIES = {"ask_risky": "ask_risky", "ask_all": "ask"}
 
 
 def settings_body(run_dir: str) -> dict:
-    """The test instance's settings: its workspace is the run folder, its command policy BENCH_SHELL_POLICY
-    (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B cell. Values
-    must be strings, as the settings API stores them; the workspace and the policy cannot be set that way."""
+    """The test instance's settings: its workspace is the run folder, its default permission mode from
+    BENCH_SHELL_POLICY (ask_risky unless set), plus BENCH_ARSLAN_SETTINGS, a JSON object of plain settings for an A/B
+    cell. Values must be strings, as the settings API stores them; the workspace and the mode cannot be set that way."""
     extra = json.loads(os.environ.get("BENCH_ARSLAN_SETTINGS") or "{}")
     if not isinstance(extra, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in extra.items()):
         raise ValueError("BENCH_ARSLAN_SETTINGS must be a JSON object of string values")
-    if "shell_confirm_policy" in extra:
+    if {"shell_confirm_policy", "default_permission_mode"} & extra.keys():
         raise ValueError("set the command policy with BENCH_SHELL_POLICY, not BENCH_ARSLAN_SETTINGS")
     if "goal_mode" in extra:
         raise ValueError("turn goal mode on with BENCH_GOAL=1, not BENCH_ARSLAN_SETTINGS")
@@ -403,7 +422,7 @@ def settings_body(run_dir: str) -> dict:
     if policy not in SHELL_POLICIES:
         raise ValueError(f"BENCH_SHELL_POLICY must be one of {', '.join(SHELL_POLICIES)}")
     goal = {"goal_mode": "true"} if os.environ.get("BENCH_GOAL") == "1" else {}
-    return {**extra, **goal, "shell_confirm_policy": policy, "workspace_dir": run_dir}
+    return {**extra, **goal, "default_permission_mode": SHELL_POLICIES[policy], "workspace_dir": run_dir}
 
 
 def configure(api: str, run_dir: str, base_url: str, model: str, provider: str = "openai",
@@ -430,7 +449,7 @@ def configure(api: str, run_dir: str, base_url: str, model: str, provider: str =
         answer.raise_for_status()
         if "goal_mode" in settings and goal is None:
             goal = "on" if str(c.get(f"{api}/settings").json().get("goal_mode")).lower() == "true" else "absent"
-    return settings["shell_confirm_policy"], goal
+    return os.environ.get("BENCH_SHELL_POLICY") or "ask_risky", goal
 
 
 if __name__ == "__main__":

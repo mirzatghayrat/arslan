@@ -1053,7 +1053,8 @@ async def cancel_run(run_id: int, db: AsyncSession = Depends(get_session)) -> di
     executing it. When the registry misses, the DB row disambiguates 404 vs 409.
 
     SUB5a: the sub-sessions under the run's conversation stop with it, and so does one the stopped turn
-    would start afterwards (`sub_sessions.stopping`, `stop_with`).
+    would start afterwards (`sub_sessions.stopping`, `stop_with`). SUB5: also when the run has already ended, while
+    anything under its conversation is at work (`sub_sessions.stop_commander`); 409 only when nothing is.
     """
     from server.services import sub_sessions, task_service
     sub_sessions.stopping(run_id)
@@ -1064,7 +1065,9 @@ async def cancel_run(run_id: int, db: AsyncSession = Depends(get_session)) -> di
         run = await db.get(Run, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
-        raise HTTPException(status_code=409, detail=f"run is not cancellable (status={run.status})")
+        if not await sub_sessions.stop_commander(db, run.conversation_id):
+            raise HTTPException(status_code=409, detail=f"run is not cancellable (status={run.status})")
+        return {"ok": True}
     await sub_sessions.stop_with(db, run_id, task_id)
     return {"ok": True}
 

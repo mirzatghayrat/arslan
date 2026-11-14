@@ -103,13 +103,14 @@ def _changed_files(folder: Path, since: float | None) -> int:
     return count
 
 
-def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, str]:
+def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, str, str | None]:
     """Read-only: only inside the readable folders (file_reader.resolve refuses the rest, hidden and
-    credential-shaped names included), so this can tell no more than list_dir already could."""
+    credential-shaped names included), so this can tell no more than list_dir already could. INB9-a: a pass
+    also names the file or folder it found, which the acceptance sheet shows as its evidence."""
     from server.services import file_reader
     from server.services.file_reader import NotReadable
     if not rule.target:
-        return "not_run", "file_target_unresolved"
+        return "not_run", "file_target_unresolved", None
     named, guesses = _target_candidates(rule.target, trace, context)
     roots = list(context.get("roots") or [])
     readable, missing = [], False
@@ -122,19 +123,19 @@ def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, st
         if path not in readable:
             readable.append(path)
     if not readable:
-        return ("failed", "file_missing") if missing else ("not_run", "file_target_unresolved")
+        return ("failed", "file_missing", None) if missing else ("not_run", "file_target_unresolved", None)
     since, minimum = context.get("since"), max(1, rule.minimum or 1)
     for path in readable:
         try:
             if path.is_file():
                 stat = path.stat()
                 if stat.st_size > 0 and _changed_since(stat, since):
-                    return "passed", "file_saved_assertion"
+                    return "passed", "file_saved_assertion", str(path)
             elif path.is_dir() and _changed_files(path, since) >= minimum:
-                return "passed", "file_saved_assertion"
+                return "passed", "file_saved_assertion", str(path)
         except OSError:
             continue
-    return "failed", "file_unchanged"
+    return "failed", "file_unchanged", None
 
 
 def _names_artifact(item: dict, target: str | None) -> bool:
@@ -210,8 +211,8 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
                 return {**base, "status": "not_run", "code": "artifact_check_not_run"}
             passed = all(item["status"] == "passed" for item in selected)
         else:
-            status, code = _file_saved_on_disk(rule, trace, context or {})
-            return {**base, "status": status, "code": code}
+            status, code, found = _file_saved_on_disk(rule, trace, context or {})
+            return {**base, "status": status, "code": code, **({"path": found} if found else {})}
     elif rule.kind == "sources_read":
         sources = _sources_read(trace)
         passed = len(sources) >= (rule.minimum if rule.minimum is not None else 1)

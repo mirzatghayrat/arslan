@@ -110,6 +110,9 @@ async def test_outside_the_sandbox_or_under_ask_all_the_card_comes_back(executio
 
     async def cards(command, argv, **kw):
         asked.append(kw)
+        # HR-3 part 1: outside the sandbox an unread command runs only on the user's click on its own card.
+        from server.services import permissions
+        permissions.LAST_DECISION.set(permissions.Decision(True, "user", "once"))
         return True
 
     async def off():

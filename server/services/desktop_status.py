@@ -30,6 +30,9 @@ from urllib.parse import urlsplit
 KINDS = frozenset({"turn_finished", "approval_needed", "scheduled_finished", "scheduled_paused",
                    "lesson_learned"})
 OUTCOMES = frozenset({"ok", "error", "needs_review", "cancelled"})
+# Why a scheduled_paused happened, when it is not the failures in a row: a code, never text (SUB5a: the task's
+# conversation was deleted; the Mac words it as the Scheduled page does and opens the task there).
+REASONS = frozenset({"conversation_deleted"})
 MAX_EVENTS = 100
 
 logger = logging.getLogger(__name__)
@@ -84,20 +87,28 @@ def _clip(text, limit: int) -> str | None:
 
 def push(kind: str, *, conversation_id: str | None = None, outcome: str | None = None,
          task_id: int | None = None, title: str | None = None, summary: str | None = None,
-         work: str | None = None) -> dict:
+         work: str | None = None, reason: str | None = None, glance: int | None = None) -> dict:
     """`title`/`summary`/`work` reach the island feed only, never the status
     endpoint. `work` says which kind of run finished (KINDS_OF_WORK) where the
     event kind alone cannot: a chat turn and a background job both end in
-    turn_finished, and the island treats them differently."""
+    turn_finished, and the island treats them differently. `reason` (REASONS) is
+    in the event only when given, and so is `glance` (INB9-a: how many 👀 a job's
+    acceptance sheet left for the user, a count only)."""
     if kind not in KINDS:
         raise ValueError(f"unknown desktop event kind: {kind}")
     if outcome is not None and outcome not in OUTCOMES:
         raise ValueError(f"unknown desktop event outcome: {outcome}")
     if work is not None and work not in KINDS_OF_WORK:
         raise ValueError(f"unknown kind of work: {work}")
+    if reason is not None and reason not in REASONS:
+        raise ValueError(f"unknown desktop event reason: {reason}")
     with _lock:
         event = {"id": next(_event_ids), "kind": kind, "conversation_id": conversation_id,
                  "outcome": outcome, "task_id": task_id, "at": int(time.time())}
+        if reason is not None:
+            event["reason"] = reason
+        if glance:
+            event["glance"] = int(glance)
         _events.append(event)
         if title or summary or work:
             _details[event["id"]] = {"title": _clip(title, TITLE_CHARS), "summary": _clip(summary, SUMMARY_CHARS),
@@ -290,11 +301,14 @@ def conversations_in_view(feed: dict) -> set[str]:
 def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | None = None) -> dict:
     """SUB5b: an island feed or a status snapshot with each sub-session's work counted as its commander's (`tops`: a
     sub-session -> the top of its chain, the conversation the Mac lists it under). Its events and cards name the
-    commander; its work in flight is one entry for the commander, named by it (`names`) and with no Stop of its own
-    (stopping the commander stops it), and none when the commander has work of its own; `working` counts it so too.
-    A sub-session's own job ends are no event at all (background_jobs._report): the commander's summary reports once."""
+    commander; its work in flight is one entry for the commander, named by it (`names`), and none when the commander
+    has work of its own; `working` counts it so too. SUB5: that entry's Stop stops every sub-session under the
+    commander, at any depth, also while the commander is idle: its `job_id` names them all (`sub_sessions.STOP_ALL`),
+    which POST /background-jobs/{id}/stop reads. A sub-session's own job ends are no event at all
+    (background_jobs._report): the commander's summary reports once."""
     if not tops:
         return feed
+    from server.services.sub_sessions import STOP_ALL
     out = {**feed, "events": [{**e, "conversation_id": tops.get(e.get("conversation_id"), e.get("conversation_id"))}
                               for e in feed.get("events", ())]}
     if "awaiting_conversations" in feed:
@@ -309,7 +323,7 @@ def under_commanders(feed: dict, tops: dict[str, str], names: dict[str, str] | N
             elif top not in own and top not in folded:
                 folded.add(top)
                 active.append({**activity, "conversation_id": top, "title": _clip((names or {}).get(top), TITLE_CHARS),
-                               "job_id": None})
+                               "job_id": f"{STOP_ALL}{top}"})
         out["active"] = active
     if "working" in feed:
         with _lock:

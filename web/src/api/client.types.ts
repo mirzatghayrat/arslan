@@ -138,7 +138,8 @@ export interface TurnUndone {
 export interface RunChangesOut {
   state: "running" | "finishing" | "interrupted" | "kept" | "none" | "expired" | "not_saved";
   undone: boolean;
-  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  /** HR-2b: `ci`, a CI file (it runs on the CI service after a push). */
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted"; ci?: boolean }[];
   conversation_id: string;
 }
 
@@ -290,7 +291,8 @@ export interface ScheduledTaskCreateBody {
   schedule_kind: "interval" | "cron";
   interval_s?: number | null;
   cron?: string | null;
-  /** null/empty = dedicated conversation (scheduled-{id}). */
+  /** null/empty = the task's own conversation: on create the server stores a new `scheduled-<uuid>`, and on save a task keeps
+   *  its own (a row made before v0.1.64 writes into `scheduled-{id}`). */
   conversation_id?: string | null;
 }
 
@@ -354,21 +356,11 @@ export interface ChatMessage {
   timestamp?: string;
 }
 
-/** A persona "seed identity" reference (one of the 249), resolved for display. */
-export interface SeedRef {
-  slug: string;
-  name: string;
-  division: string;
-  summary: string;
-}
-
 export interface SpawnDetail extends SpawnSummary {
   persona_role: string | null;
   persona_tone: string | null;
   system_prompt: string;
   messages: ChatMessage[];
-  /** The composed persona seed identities (resolved). */
-  seeds?: SeedRef[];
 }
 
 export interface AppSettings {
@@ -384,8 +376,9 @@ export interface AppSettings {
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   orchestrator_shell_enabled?: string; // "true" | "false"
-  shell_confirm_policy?: string; // "ask_all" | "ask_risky"
-  shell_policy_switch_notice?: string; // v0.1.63: "pending" after migration 0070 switched this user, then "seen"
+  shell_confirm_policy?: string; // "ask_all" | "ask_risky", as the server reads it (ASK1-a)
+  shell_policy_switch_notice?: string; // v0.1.64 ASK1-a: "pending" after migration 0095, then "seen"
+  scheduled_commands_note?: string; // v0.1.64 ASK1-b: "pending" after migration 0097, then "seen"
   model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)

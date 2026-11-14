@@ -626,7 +626,6 @@ class TaskRuntime:
         # 0.1.62 F2 ④: a work limit (no progress, budget) reached after a deliverable was saved. It
         # holds the task only if the finish-time checks do not pass a saved file (_run). In memory only.
         self.limit_reason: str | None = None
-        self.worker_slots = asyncio.Semaphore(2)
         self.validation_results = ()
         self.validation_report = None
         self.memory_dependencies = {}
@@ -1097,7 +1096,8 @@ async def resume_entry(task_id, expected_version, conversation_id, instruction, 
     from server.orchestrator import untrusted
     value, progress, ctx, _ = await prepare_resume(task_id, expected_version, conversation_id, ctx,
                                                   instruction=instruction, driver=driver)
-    with untrusted.carried(True):              # S64-0: as resume_turn below
+    # S64-0 and NET-a F5: as resume_turn below. No saved progress (`_launch`'s default): only the mark is carried in.
+    with untrusted.carried(True, text=progress.model_dump_json() if progress is not None else None):
         return await _launch(value, emit, body, progress=progress, context=ctx)
 
 
@@ -1122,8 +1122,10 @@ async def resume_turn(task_id: str, expected_version: int, conversation_id: str,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
             confirm_schedule=confirm_schedule, steerable=True)      # K9b: inside the socket's turn lock
     # S64-0: the saved progress above is earlier output, and may carry what an earlier attempt read
-    # outside. The resumed turn starts as having read outside content.
-    with untrusted.carried(True):
+    # outside. The resumed turn starts as having read outside content. NET-a (Codex round 1 F5): and each turn of the
+    # attempt records the sites it names in the task's conversation, from the saved checkpoint, so a restart that
+    # emptied the record (it lives in memory) leaves none of them unknown.
+    with untrusted.carried(True, text=progress.model_dump_json()):
         return await _launch(value, emit, body, progress=progress, context=ctx)
 
 

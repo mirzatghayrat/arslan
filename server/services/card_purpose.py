@@ -28,7 +28,7 @@ import re
 from pathlib import Path
 
 from server.orchestrator import untrusted
-from server.services import shell_grammar, terminal_policy
+from server.services import git_config_guard, shell_grammar, terminal_policy
 
 _SERVER = Path(__file__).resolve().parent.parent
 _TEXT_PATH = _SERVER / "resources/card-purposes.json"
@@ -701,6 +701,56 @@ def _summed(nodes: list[dict], depth: int, work: dict, once: dict[int, int] | No
             "unsure": any(r["unsure"] for r in real)}
 
 
+def shown(value):
+    """HR-3, the one point where a typed url's credentials come off on their way to a card: its userinfo is removed
+    (`git_config_guard.without_credentials`: a `scheme://` url's `user:pass@`, a token alone, a plain ssh user; an
+    scp-like `user@host:path` stays as written), and nothing else changes. A str is a title's param, a list a touches
+    row, and a reading is both: each text param of its purpose (an inner purpose's too) and each touches item, listed
+    once. `summarize` returns every reading through it, whichever step read the line, so a reading added later can't
+    miss it; a run-later fact names its file or git setting through it (`phrase`), and command_confirm what it puts on
+    a touches row (the push card's lines, a delete card's targets). Review round 1: so do the two texts a card shows as
+    they are given, Arslan's reason and the label of the machine a command runs on, word by word (`shown_words`; for
+    the title and the frame's `why`, `shown_name`; the frame's `remote_host`, protocol.propose_run_command).
+    Not covered: a url the reader has already cut so that it no longer reads as one (run as the program, or given to a
+    script runner, with no path after its host: its last part, `user:pass@host`, `_base`; a path after `cd <url>`:
+    joined to it with its `//` collapsed, `_rebase`); the command as typed, which the Mac card shows whole; and in a
+    reason or a label, a credential that isn't a url's userinfo (`shown_words`)."""
+    if isinstance(value, str):
+        return git_config_guard.without_credentials(value)
+    if isinstance(value, list):
+        return [git_config_guard.without_credentials(item) for item in value]
+    return {**value, "purpose": _shown_purpose(value["purpose"]), "touches": _unique(shown(list(value["touches"])))}
+
+
+def _shown_purpose(purpose: dict) -> dict:
+    out = {**purpose, "params": {k: shown(v) if isinstance(v, str) else v for k, v in purpose["params"].items()}}
+    if "inner" in purpose:
+        out["inner"] = _shown_purpose(purpose["inner"])
+    return out
+
+
+_WORD = re.compile(r"\S+")
+
+
+def shown_words(text: str) -> str:
+    """HR-3 review round 1: `shown` for a text a card shows as it is given (Arslan's reason for a step, the label of the
+    machine a command runs on), word by word: in such a text a url ends at white space, which a url can't hold, so its
+    userinfo never runs on to an `@` in a word after it (the ssh login, `user@host`, a machine's label ends with, or an
+    e-mail address), which `shown` on the whole text would take, and the words before it. White space as it is.
+    Not covered: a credential that isn't a `scheme://` url's userinfo (a token as a word of its own, a password in a
+    url's query), nor a userinfo with white space in it (no url has one)."""
+    return _WORD.sub(lambda word: shown(word.group()), text)
+
+
+def shown_name(text, limit: int) -> str:
+    """HR-3 review round 1: such a text as the title shows it (Arslan's reason, the machine's label in its fact) and the
+    frame's `why` (the Mac card's heading), and the reason the gate hands on to both: cleaned as `untrusted.clean_name`
+    cleans a name, but through `shown_words` before the cut to `limit`, so a cut never leaves part of a url's userinfo,
+    and a character the cleaning drops (a zero-width one inside `://`) can't hide one from it."""
+    whole = untrusted.clean_name(text, len(str(text or "")))
+    return untrusted.clean_name(shown_words(whole), limit)
+
+
 def summarize(text: str, *, outside: bool = False) -> dict:
     """What a shell line is for and what it touches: `{"purpose": {key, params[, inner]}, "touches": [...], "more": n,
     "unsure": bool}`, the frame's `summary` the Mac card shows (held to tests/fixtures/card_purpose_vectors.json).
@@ -710,7 +760,13 @@ def summarize(text: str, *, outside: bool = False) -> dict:
     cannot read (a quote never closed) reads as "Run <its first word>"; one read past READ_DEPTH or READ_WORK says
     Arslan could not read all of it, still with its first word (`notAllRead`, #770 review), and is `unsure`: the part
     not read may send local data, so its card keeps that warning. `outside`: it runs outside the sandbox, as the gate
-    read it (`_read_understood`)."""
+    read it (`_read_understood`). HR-3: returned through `shown`, the one point a typed url's userinfo comes off (what
+    it can't see: its docstring)."""
+    return shown(_summary(text, outside))
+
+
+def _summary(text: str, outside: bool) -> dict:
+    """`summarize`'s reading, before `shown`."""
     program = _base((text.strip().split() or [""])[0])
     try:
         r = _read_understood(text, outside)
@@ -760,15 +816,19 @@ async def language() -> str:
 
 def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, lang: str = "en",
            outside: bool = False, unsandboxed: bool = False, host: str | None = None, shortcut_as_you: bool = False,
-           network: bool = False, delete_mode: str = "", reading: dict | None = None) -> str:
+           network: bool = False, delete_mode: str = "", reading: dict | None = None, run_later=()) -> str:
     """The card's title in `lang`: first the code's facts, where it runs when that is not this Mac's sandbox and
     whether it uses the network, in a fixed form; then the code's reading of `shell`; then Arslan's reason when it
     gave one. The reason is cut first, then the reading, so the whole title fits the phone's heading (PHONE_MAX) and
     no fact is pushed off it (#689 review 1 and its second round). Cleaned as a name is, so neither the model's words
-    nor the command's carry a bidi or zero-width character into the heading.
+    nor the command's carry a bidi or zero-width character into the heading. HR-3 review round 1: the reason and the
+    machine's label (`host`) lose a url's userinfo before either is cut (`shown_name`).
     `reading`: `summarize(shell)` when the caller already has it (the card's frame `summary`, read from the same
     text), so a long command is read once per card (#817 review); it is not changed. `rules` is not read: the reading
-    does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument."""
+    does not depend on them (#817 review). DELETE-BY: v0.1.65, with its callers' argument.
+    `run_later` (HR-3 part 1): what `terminal_policy.run_later_targets` found, on a card the gate asks because the
+    command writes a file that runs later where the kernel's hold doesn't stand; a fact names the first file (or the
+    git setting), or, for a line the reader understood but couldn't pin down, says it may."""
     facts = []
     s = dict(reading) if reading is not None else summarize(shell, outside=outside or unsandboxed)
     # SMART-8: a delete card says how allow deletes (`delete_to_trash.card_mode`), so the phone's heading never
@@ -785,7 +845,9 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     elif unsandboxed:
         facts.append(_say(lang, "fact", "noSandbox", {}))
     if host:
-        facts.append(_say(lang, "fact", "onHost", {"host": untrusted.clean_name(host, 80)}))
+        facts.append(_say(lang, "fact", "onHost", {"host": shown_name(host, 80)}))
+    if run_later:
+        facts.extend(_run_later_fact(lang, shell, run_later))
     if network and not on_network:
         facts.append(_say(lang, "fact", "network", {}))
     if s["unsure"] and not on_network:                            # a step behind the lead uses the network
@@ -795,7 +857,7 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     reading = untrusted.clean_name(
         _purpose(lang, s["purpose"]) + (_say(lang, "purpose", "more", {"count": s["more"]}) if s["more"] else ""), TITLE_MAX)
     # The model's words never take the facts' form: a separator, or one that looks like it, is a comma in them.
-    said = _SEPARATORS.sub(",", untrusted.clean_name(why, TITLE_MAX)) if why else ""
+    said = _SEPARATORS.sub(",", shown_name(why, TITLE_MAX)) if why else ""
     room = PHONE_MAX - (len(lead) + len(join) if lead else 0)
     # #689 review, the second round: Arslan's words are never the only description, so the code's reading comes
     # before them; the reason is cut first, then the reading, never the facts.
@@ -804,6 +866,30 @@ def phrase(shell: str, why: str = "", rules: str | list[str] | None = None, *, l
     else:
         text = _cut(reading, room)
     return f"{lead}{join}{text}" if lead else text
+
+
+def _run_later_fact(lang: str, shell: str, targets) -> list[str]:
+    """HR-3 part 1: the card's one line for a write into a file that runs later: the file, else the git setting, else
+    (a line the reader understood) that it may; none for a line it doesn't understand, whose card says so already.
+    The file or setting is named through `shown`, before it is cut to fit."""
+    file = terminal_policy.run_later_file(targets)
+    if file:
+        return [_say(lang, "fact", "runsLater", {"file": untrusted.clean_name(shown(file), 80)})]
+    setting = next((t for t in targets if t.startswith(terminal_policy.RUN_LATER_SETTING)), "")
+    if setting:
+        name = setting.removeprefix(terminal_policy.RUN_LATER_SETTING)
+        return [_say(lang, "fact", "runsLaterGit", {"name": untrusted.clean_name(shown(name), 80)})]
+    return [] if terminal_policy.reading(shell).refused else [_say(lang, "fact", "runsLaterUnsure", {})]
+
+
+def consequence(shell: str, lang: str = "en") -> str:
+    """A publish, deploy or secret-write card's consequence line in `lang` (`terminal_policy.consequence`): what it
+    publishes where, what it deploys where, which secret it sets where. "" when the line has no such step."""
+    found = terminal_policy.consequence(shell)
+    if found is None:
+        return ""
+    key, params = found
+    return _say(lang, "fact", key, {k: untrusted.clean_name(v, 80) for k, v in params.items()})
 
 
 def frame_reading(frame: dict | None, shell: str) -> dict | None:

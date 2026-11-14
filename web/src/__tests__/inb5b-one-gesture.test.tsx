@@ -106,13 +106,12 @@ describe("one gesture answers one thing in the conversation", () => {
     expect(send).toHaveBeenCalledWith({ type: "confirm_run_command", call_id: "a", scope: "once" });
   });
 
-  it("while the guard holds, none of a reminder's doors answers: Do it, Snooze, each Not useful, Got it", async () => {
+  it("while the guard holds, none of a reminder's doors answers: Do it, Snooze, each Not useful", async () => {
     const guard = makeAnswerGuard();
     const doors = { onDo: vi.fn(), onSnooze: vi.fn(), onDismiss: vi.fn(), onOpenConversation: vi.fn() };
     const web = { ...job(6), kind: "web_change", title_key: "title.web_change", params: { label: "Pricing" } };   // has a source to stop
-    const brief = { ...job(7), kind: "brief", title_key: "title.brief", params: {} };                            // read-only: Got it
     render(<AnswerGuardScope value={guard}>
-      {[job(5), web, brief].map((item) => <ReminderCard key={item.id} item={item as never} busy={false} language="en" {...doors} />)}
+      {[job(5), web].map((item) => <ReminderCard key={item.id} item={item as never} busy={false} language="en" {...doors} />)}
     </AnswerGuardScope>);
     const card = (id: number) => within(screen.getByTestId(`proactive-item-${id}`));
     const choose = (id: number, menu: string, choice: string) => {
@@ -127,7 +126,6 @@ describe("one gesture answers one thing in the conversation", () => {
       choose(5, "proactive.item.notUseful", "proactive.item.dismissOnly");
       choose(5, "proactive.item.notUseful", "proactive.item.stopKind");
       choose(6, "proactive.item.notUseful", "proactive.item.stopSource");
-      fireEvent.click(card(7).getByText("proactive.item.gotIt"));
     };
     act(() => { guard.hold(); });
     tryAll();
@@ -138,7 +136,7 @@ describe("one gesture answers one thing in the conversation", () => {
     tryAll();
     expect(doors.onDo).toHaveBeenCalledOnce();
     expect(doors.onSnooze).toHaveBeenCalledWith(3);
-    expect(doors.onDismiss.mock.calls).toEqual([[], ["kind"], ["source"], []]);
+    expect(doors.onDismiss.mock.calls).toEqual([[], ["kind"], ["source"]]);
   });
 
   it("a scroll that moves the away rows under a still pointer holds their 「Always allow」, and only theirs", async () => {

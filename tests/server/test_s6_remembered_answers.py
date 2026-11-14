@@ -101,10 +101,10 @@ def _toggles(monkeypatch, *, sandbox: bool, ask_all: bool):
         return ask_all
 
     async def policy(db):
-        return "ask_all" if ask_all else "ask_risky"
+        return "ask" if ask_all else "ask_risky"
     monkeypatch.setattr(command_gate, "_sandbox_enabled", sandbox_on)
     monkeypatch.setattr(command_gate, "_asks_for_everything", asks_all)
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", policy)
+    monkeypatch.setattr(settings_service, "default_permission_mode", policy)
 
 
 async def _grants(api) -> list[dict]:
@@ -232,14 +232,28 @@ def test_migration_0092_deletes_every_dead_grant(tmp_path):
         assert _grant_rows(conn) == []
 
 
+#: Kinds added to `permissions.KINDS` after 0092, each named here when it is added: 0092 runs once, before any row of
+#: them can exist, so its frozen copy (unchanged) reads them as dead, whatever today's rule says.
+LATER_KINDS = frozenset({"git_config"})        # HR-1b (v0.1.64)
+#: Likewise a target form a request first built after 0092: NET-a's one site, `network:<host>` (v0.1.64).
+LATER_TARGETS = frozenset({("network", "network:x")})
+
+
 def test_the_migrations_frozen_rule_agrees_with_todays_grant_is_live():
     """0092 carries a frozen copy of today's rule (it must not change history when the app's rule changes). A change
-    to `permissions.grant_is_live` fails here, loudly: then decide whether 0092's copy is what history was."""
+    to `permissions.grant_is_live` fails here, loudly: then decide whether 0092's copy is what history was. A kind added
+    later is named in LATER_KINDS instead, and the frozen copy keeps calling it dead."""
     from server.db.migrations.versions import _0092_remove_legacy_command_rules as m0092
-    kinds = sorted(permissions.KINDS | {"legacy_rule", "nonsense", ""})
+    assert LATER_KINDS <= permissions.KINDS
+    kinds = sorted((permissions.KINDS - LATER_KINDS) | {"legacy_rule", "nonsense", ""})
     for kind in kinds:
         for target in TARGET_FORMS:
-            assert m0092._grant_is_live(kind, target) == permissions.grant_is_live(kind, target), (kind, target)
+            if (kind, target) not in LATER_TARGETS:
+                assert m0092._grant_is_live(kind, target) == permissions.grant_is_live(kind, target), (kind, target)
+    for kind in sorted(LATER_KINDS):
+        assert not any(m0092._grant_is_live(kind, target) for target in TARGET_FORMS), kind
+    for kind, target in sorted(LATER_TARGETS):
+        assert permissions.grant_is_live(kind, target) and not m0092._grant_is_live(kind, target), (kind, target)
     for _, _, kind, target in LIVE_GRANTS:
         assert permissions.grant_is_live(kind, target), (kind, target)
     for _, _, kind, target in DEAD_GRANTS:
@@ -454,6 +468,14 @@ async def test_a_grant_no_request_reads_is_never_listed(api, kind, target):
         await permission_store.add_grant(db, "c1", "", "outside", "*", call_id="live")
         await db.commit()
     assert [(g["kind"], g["target"]) for g in await _grants(api)] == [("outside", "*")]
+
+
+async def test_a_grant_for_one_site_is_listed_by_its_site(api):
+    """NET-a: its card's "In this conversation" for one site (`network:<host>`), listed so it can be taken back."""
+    async with db_session.AsyncSessionLocal() as db:
+        await permission_store.add_grant(db, "c1", "", "network", "network:collect.evil.example", call_id="card")
+        await db.commit()
+    assert [(g["what"], g["name"]) for g in await _grants(api)] == [("network", "collect.evil.example")]
 
 
 def test_the_grants_todays_cards_store_are_live_and_a_rule_cards_is_not():
