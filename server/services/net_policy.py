@@ -57,6 +57,7 @@ Known limits:
 from __future__ import annotations
 
 import asyncio
+import bisect
 import functools
 import ipaddress
 import json
@@ -151,8 +152,10 @@ _PART = re.compile(r"0x[0-9a-f]*|0[0-7]*|[1-9][0-9]*")
 #: A last label that is a number: no TLD is, so such a name is an address in some spelling, or no host.
 _ENDS_IN_NUMBER = re.compile(r"(?:^|\.)(?:0x[0-9a-f]*|[0-9]+)$")
 #: Hosts a text names: a URL's host (after any user part), a bare name with a dot ending in letters (or punycode), and
-#: a dotted IPv4 address.
-_URL_HOST = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://(?:[^\s/?#@\[\]]*@)?(\[[^\]\s/]*\]|[^\s/?#:@\[\]<>'\"`]+)")
+#: a dotted IPv4 address. A run of a scheme's characters is read once, whole (`*+`), and names no host (group 1 None)
+#: with no "://" and host after it: a scheme can only end where the run does, so a try from a later letter of the run
+#: reads to the same end and fails too. Tried from each letter, a run of 65,536 (a.a.a...) took seconds.
+_URL_HOST = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*+(?:://(?:[^\s/?#@\[\]]*@)?(\[[^\]\s/]*\]|[^\s/?#:@\[\]<>'\"`]+))?")
 _BARE_NAME = re.compile(r"(?<![\w.-])((?:[^\W_](?:[\w-]{0,61}[^\W_])?\.)+(?:[^\W\d_]{2,63}|xn--[a-z0-9-]{1,59}))"
                         r"(?![\w-])", re.I)
 _BARE_IPV4 = re.compile(r"(?<![\w.])(\d{1,3}(?:\.\d{1,3}){3})(?![\w-]|\.\w)")
@@ -319,7 +322,8 @@ def hosts_in(text, *, escapes: bool = False) -> set[str]:
     texts = list(dict.fromkeys((_host_text(text, escapes=True), _host_text(text)) if escapes else (_host_text(text),)))
     candidates: set[str] = set()
     for reading in {form for text in texts for form in (text, _SPACELESS.sub(" ", text))}:
-        candidates.update(match.group(1) for pattern in (_URL_HOST, _BARE_IPV4) for match in pattern.finditer(reading))
+        candidates.update(match.group(1) for pattern in (_URL_HOST, _BARE_IPV4) for match in pattern.finditer(reading)
+                          if match.group(1) is not None)
         for match in _BARE_NAME.finditer(reading):
             *head, last = match.group(1).split(".")
             candidates.update(".".join([*head, cut]) for cut in _tld_cuts(last, False))
@@ -379,10 +383,17 @@ def _typed_hosts(text) -> set[str]:
     `hosts_in` reads a text (full-width forms, an ideographic full stop), and never as JSON."""
     text = _host_text(text)
     urls = [match.span(1) for match in _AFTER_SCHEME.finditer(text)]
+    starts = [start for start, _ in urls]
+
+    def in_url(at: int) -> bool:
+        """`at` is inside a URL's host, read above: the last one that begins before it, as they don't overlap (a
+        check against each URL took seconds for a paste of many)."""
+        i = bisect.bisect_left(starts, at) - 1
+        return i >= 0 and at < urls[i][1]
     found = {_typed_name(text[start:end], url=True) for start, end in urls}
     for reading in (text, _SPACELESS.sub(" ", text)):
         found.update(_typed_name(match.group(1)) for match in _BARE_NAME.finditer(reading)
-                     if not any(start < match.start(1) < end for start, end in urls))     # in a URL's host: read above
+                     if not in_url(match.start(1)))
     return {name for candidate in found if candidate and (name := normalize(candidate)) is not None}
 
 
