@@ -404,6 +404,13 @@ _PUSH_FLAGS = re.compile(r"-[46dfnquv]+|--(?:no-[\w-]+|set-upstream|force(?:-wit
 _CREDENTIALS = re.compile(r"(?<=://)[^/?#]*@")
 
 
+def without_credentials(url: str) -> str:
+    """`url` with a `scheme://` url's userinfo removed (`_CREDENTIALS`: `user:pass@`, a token alone, a plain ssh user
+    as in `ssh://git@`); anything else as written, an scp-like `user@host:path` too (an ssh login: that form has no
+    password). What the push card shows: its destination lines, and its title's url typed after `push` (card_purpose)."""
+    return _CREDENTIALS.sub("", url)
+
+
 def push_destination(folder: Path, command: str) -> list[str] | None:
     """HR-3: where the one `git push` in `command`, run in `folder` itself, sends its commits, as git picks it: the
     remote named on the line, else the one it pushes the current branch to (`_PUSH_TO`), else the only remote, else
@@ -435,7 +442,7 @@ def push_destination(folder: Path, command: str) -> list[str] | None:
     urls = [v for k, v in pairs if k == f"remote.{name}.pushurl"] or [v for k, v in pairs if k == f"remote.{name}.url"]
     if not urls and ("/" in name or name in (".", "..")):
         urls = [name]                                 # not a remote's name: git takes it as a url or a path
-    return [_CREDENTIALS.sub("", url) for url in urls if url] or None
+    return [without_credentials(url) for url in urls if url] or None
 
 
 #: Off the allowlist, by key: the (file, value) pairs reached through an included file (not a config git reads

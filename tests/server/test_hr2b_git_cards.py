@@ -8,7 +8,7 @@ marks them, and a card after a git refusal.
    (the Mac card's "touches" row).
    HR-3: the card's first line there names where the push really goes (`git_config_guard.push_destination`): the
    remote's pushurl, else its url, read in the push's folder as git reads it, with no `user:pass@`; "Push destination
-   unknown" when that can't be read, and the card still shows.
+   unknown" when that can't be read, and the card still shows. The title names a url typed after `push` without one.
 2. `checkpoints.changes` marks each CI path (`ci: true`).
 3. After git's own refusal lines named a held file in a conversation (`git_refused`), its next `git add` or `git
    commit` asks a once-only card (kind `git_refused`); the island never answers it, nobody to ask refuses it and
@@ -31,8 +31,8 @@ import pytest
 from server.db import session as db_session
 from server.orchestrator import command_gate, untrusted
 from server.orchestrator.turn_state import ToolTurn
-from server.services import (approvals, checkpoints, command_confirm, command_sandbox, git_config_guard, hard_rules,
-                             permission_store, permissions, settings_service, terminal_exec, tool_outputs)
+from server.services import (approvals, card_purpose, checkpoints, command_confirm, command_sandbox, git_config_guard,
+                             hard_rules, permission_store, permissions, settings_service, terminal_exec, tool_outputs)
 from server.services.sandbox_profile import default_deny_profile
 from tests.server.test_hr1c_git_view import _git, _init
 
@@ -320,6 +320,32 @@ async def test_where_it_pushes_unread_says_destination_unknown_and_the_card_stil
     assert unknown == "Push destination unknown"
     assert frame["summary"]["touches"][0] == unknown and unknown in frame["reason"]
     assert not any(item.startswith(DEST) for item in frame["summary"]["touches"])
+
+
+@pytest.mark.parametrize("typed, shown, secret", [
+    ("https://zz-user:FAKE@example.invalid/zz.git", "https://example.invalid/zz.git", "zz-user:FAKE"),
+    ("https://FAKE-token@example.invalid/zz.git", "https://example.invalid/zz.git", "FAKE-token"),
+    ("ssh://zz-user@example.invalid/zz.git", "ssh://example.invalid/zz.git", "zz-user"),
+    ("zz-user@example.invalid:zz/repo.git", "zz-user@example.invalid:zz/repo.git", None),
+], ids=["user-pass", "token", "ssh-user", "scp-like"])
+async def test_a_url_typed_after_push_titles_the_card_without_its_credentials(execution_db, monkeypatch, typed,
+                                                                              shown, secret):
+    """The title names what was typed after `push`, a `scheme://` url without its userinfo (`user:pass@`, a token,
+    a plain ssh user), as the destination line shows it (`git_config_guard.without_credentials`); an scp-like
+    `user@host:path` as written there and here (an ssh login: that form has no password). Nothing else on the card
+    changes: it is the card of the line typed as shown, in every language; only the command itself differs."""
+    line, plain = f"git push {typed} main", f"git push {shown} main"
+    card, other = await _push_card(monkeypatch, None, line), await _push_card(monkeypatch, None, plain)
+    assert card["title"] == f"Publish your commits to {shown}"
+    assert card["summary"]["purpose"] == {"key": "gitPush", "params": {"remote": shown}}
+    assert set(card) == set(other)
+    per_card = {"call_id", "expires_at"}                              # each card's own id and deadline
+    typed_in = {"command", "pretty", "dedupe"}       # the command as typed, and the key identical asks join by
+    assert {key for key in card if card[key] != other[key]} - per_card == (typed_in if secret else set())
+    for lang in card_purpose.TEXT:
+        assert card_purpose.phrase(line, lang=lang) == card_purpose.phrase(plain, lang=lang)
+    if secret:
+        assert secret not in card["title"] + str(card["summary"]) + card["reason"]
 
 
 # ── 2. the change list ───────────────────────────────────────────────────────

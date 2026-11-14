@@ -71,6 +71,54 @@
    "unsure": false
   },
   {
+   "line": "git push https://zz-user:FAKE@example.invalid/zz.git main",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git push https://FAKE-token@example.invalid/zz.git",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "https://example.invalid/zz.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git push ssh://zz-user@example.invalid/zz.git main",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "ssh://example.invalid/zz.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
+   "line": "git push zz-user@example.invalid:zz/repo.git main",
+   "purpose": {
+    "key": "gitPush",
+    "params": {
+     "remote": "zz-user@example.invalid:zz/repo.git"
+    }
+   },
+   "touches": [],
+   "more": 0,
+   "unsure": false
+  },
+  {
    "line": "git clone https://github.com/acme/notes.git",
    "purpose": {
     "key": "gitClone",

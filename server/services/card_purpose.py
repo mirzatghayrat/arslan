@@ -28,7 +28,7 @@ import re
 from pathlib import Path
 
 from server.orchestrator import untrusted
-from server.services import shell_grammar, terminal_policy
+from server.services import git_config_guard, shell_grammar, terminal_policy
 
 _SERVER = Path(__file__).resolve().parent.parent
 _TEXT_PATH = _SERVER / "resources/card-purposes.json"
@@ -444,7 +444,9 @@ def _step(w: dict, depth: int, work: dict) -> dict:
                and not (k and re.match(r"^-[Cc]$", args[k - 1]))]
         sub, *rest = _plain(own) or [None]
         if sub == "push":
-            return _reading("gitPush", {"remote": rest[0] if rest else "origin"})
+            # HR-3: a url typed here is on the title without its userinfo, as on the card's destination line.
+            # Not covered: clone, fetch and pull below still show a url as typed.
+            return _reading("gitPush", {"remote": git_config_guard.without_credentials(rest[0]) if rest else "origin"})
         if sub == "clone" and rest:
             return _reading("gitClone", {"repo": rest[0]}, [rest[0]])
         if sub in ("pull", "fetch"):
