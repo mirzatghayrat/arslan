@@ -82,7 +82,7 @@ def test_0096_runs_right_after_0095_in_the_boot_chain():
 def test_0052_no_longer_imports_the_deleted_models():
     source = open(m0052.__file__, encoding="utf-8").read()
     assert "worker_models" not in source and "ProfessionalMethod" not in source
-    assert m0052._TASK_WORKERS                                       # SUB7's table stays defined here
+    assert m0052._TASK_WORKERS                                       # defined here; 0100 drops it
 
 
 async def test_a_new_install_runs_every_migration_through_0096_and_ends_without_the_tables(tmp_path):
@@ -90,7 +90,7 @@ async def test_a_new_install_runs_every_migration_through_0096_and_ends_without_
     for _ in range(2):                                               # the first launch, then the next
         await _boot(db)
         assert not TABLES & _tables(db)
-        assert "capability_sources" in _tables(db) and "task_workers" in _tables(db)
+        assert "capability_sources" in _tables(db) and "task_workers" not in _tables(db)   # 0100 drops it
     assert _versions(db) == {vid for vid, _ in runner.MIGRATIONS}
     assert "0096" in _versions(db)
 
