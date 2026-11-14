@@ -97,7 +97,8 @@ async def test_a_scheduled_fire_is_not_present_even_when_started_from_a_present_
     monkeypatch.setattr(task_context, "execute_entry", body_runner)
     monkeypatch.setattr(scheduler, "_fire_body", fire_body)
     with presence.user_turn():
-        await scheduler._fire(types.SimpleNamespace(id=1, conversation_id="s-1", name="daily", prompt="go"))
+        await scheduler._fire(types.SimpleNamespace(id=1, conversation_id="s-1", name="daily", prompt="go",
+                                                    outside_seen=True))
     assert record == [False]
 
 

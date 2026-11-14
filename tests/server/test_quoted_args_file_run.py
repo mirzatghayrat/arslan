@@ -165,10 +165,12 @@ def test_named_rules_read_quoted_words(words, level, rule, family, position):
     command = spelled(words, family, position)
     reading = sg.read(command)
     assert reading.understood, reading.why
+    if tp._dry_run(words[0], words[1:]):
+        level, rule = "run", ""         # the seed is a dry run, which publishes nothing (#897 review, item 3)
     result = tp.assess(command)
     assert (result.level, result.rule) == (level, rule)
     assert tp.ask_rules(command) == ({rule} if level == "ask" else set())
-    assert tp.risk_grade(command) == ("MEDIUM" if level == "ask" else "HIGH")
+    assert tp.risk_grade(command) == {"ask": "MEDIUM", "run": "LOW"}.get(level, "HIGH")
 
 
 @pytest.mark.parametrize("words", [
@@ -335,8 +337,10 @@ def test_unknown_options_use_original_verdict(case, words):
     command = render(words, "single", "plain")
     sg.read(command)
     assert not tp._fully_accounted(words[0], words[1:]), case
-    # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as `publish`
-    unplaceable = {"publish"} if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set()
+    # #821: on a deploy CLI, an unknown option before the verb leaves the verb unplaceable, which asks as `publish`;
+    # heroku's seed, `config:set`, is read past the option as the secret write it is (#897 review, item 1)
+    unplaceable = ({"secret-write" if words[0] == "heroku" else "publish"}
+                   if words[0] in DEPLOY_PROGRAMS and case.endswith("/before") else set())
     assert tp._named_rules(words) == tp._legacy_named_rules(words) | unplaceable, case
     main, original = levels("unknown", case, command)
     assert RANK[tp.assess(command).level] >= max(RANK[main], RANK[original]), case
@@ -565,8 +569,9 @@ def test_baseline_fresh_import_validates_independent_trust(tmp_path, change):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     if expected_message is None:
-        # 37672, plus 64 controls and 96 unknown-option rows for the eight deploy CLIs on the publish rule
-        assert len(module.decode(fixture.read_text(), GENERATORS)) == 37832
+        # 37672, plus 64 controls and 96 unknown-option rows for the eight deploy CLIs on the publish rule,
+        # plus 434 rows (174 positive, 260 negative) from the `secret-write` seed `gh secret set ZZ`
+        assert len(module.decode(fixture.read_text(), GENERATORS)) == 38266
     else:
         with pytest.raises(AssertionError) as failure:
             module.decode(fixture.read_text(), GENERATORS)

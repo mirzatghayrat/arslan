@@ -54,35 +54,56 @@ def _store(db_path, value: str) -> None:
 
 
 def _before_0070(db_path) -> None:
-    """A database as v0.1.62 left it: every migration but 0070 recorded (0095 runs too, as on any upgrade)."""
+    """A database as v0.1.62 left it: every migration but 0070 recorded (0095 and S5a's 0098 run too, as on any
+    upgrade)."""
     engine = sa.create_engine(f"sqlite:///{db_path}")
     try:
         with engine.begin() as conn:
             Base.metadata.create_all(conn)
             runner._ensure_table(conn)
             for vid, _ in runner.MIGRATIONS:
-                if vid not in ("0070", "0095"):
+                if vid not in ("0070", "0095", "0098"):
                     conn.execute(sa.text("INSERT INTO schema_version(version, applied_at) VALUES (:v, 'then')"),
                                  {"v": vid})
     finally:
         engine.dispose()
 
 
+def _old_reader(raw: str | None) -> str:
+    """How v0.1.64 before S5a read the stored policy (the reader S5a deleted): unset or exactly ask_risky."""
+    return "ask_risky" if raw in (None, "ask_risky") else "ask_all"
+
+
 async def _policy(db_path) -> str:
+    """What the install reads, in the old policy's words. Before a boot the old key is still stored and read the old
+    way; after it, S5a's 0098 has moved it to the default mode ("ask" is ask_all)."""
+    raw = _stored(db_path)
+    if raw is not None:
+        return _old_reader(raw)
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
     try:
         async with async_sessionmaker(engine, class_=AsyncSession)() as session:
-            return await settings_service.shell_confirm_policy(session)
+            mode = await settings_service.default_permission_mode(session)
     finally:
         await engine.dispose()
+    return "ask_all" if mode == "ask" else "ask_risky"
+
+
+def _mode_stored(db_path) -> str | None:
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            return conn.execute(sa.text("SELECT value FROM settings WHERE key = 'default_permission_mode'")).scalar()
+    finally:
+        engine.dispose()
 
 
 async def _choose(db_path, value: str) -> None:
-    """The user's own choice, through the same write the Settings page makes."""
+    """The user's own choice, through the same write the Settings page makes (S5a: the default mode)."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
     try:
         async with async_sessionmaker(engine, class_=AsyncSession)() as session:
-            await settings_service.update_settings(session, {"shell_confirm_policy": value})
+            await settings_service.update_settings(session, {"default_permission_mode": value})
     finally:
         await engine.dispose()
 
@@ -95,19 +116,22 @@ async def test_a_stored_ask_risky_from_before_v0163_still_moves_to_ask_all_once(
         _store(db, stored)
     assert await _policy(db) == "ask_risky"                                       # what 0070 finds
     await _boot(db)
-    assert _stored(db) == ("ask_all" if stored else None)                         # unset stays unset
+    # 0070 moved it to ask_all, which S5a's 0098 then turns into "ask"; unset stays unset (and reads ask_risky).
+    assert _stored(db) is None and _mode_stored(db) == ("ask" if stored else None)
     assert await _policy(db) == ("ask_all" if stored else "ask_risky")            # ASK1-a: unset reads ask_risky
 
 
 @pytest.mark.parametrize("odd", ODD)
-async def test_no_other_spelling_ever_reads_as_asking_only_for_risky_commands(tmp_path, odd):
-    """One rule in the reader and in 0070: a spelling 0070 does not move is one the reader never counts."""
+async def test_an_odd_spelling_reads_strict_until_0098_moves_it(tmp_path, odd):
+    """One rule in the old reader and in 0070: a spelling 0070 does not move is one the reader never counted. S5a's
+    0098 (the user's decision, 2026-11-14): only an exact ask_all becomes "ask"; everything else, an odd spelling
+    too, becomes "ask_risky"."""
     db = tmp_path / "odd.db"
     _before_0070(db)
     _store(db, odd)
     assert await _policy(db) == "ask_all"
     await _boot(db)
-    assert await _policy(db) == "ask_all"
+    assert _mode_stored(db) == "ask_risky" and await _policy(db) == "ask_risky"
 
 
 async def test_asking_before_every_command_chosen_before_stays(tmp_path):
@@ -115,7 +139,7 @@ async def test_asking_before_every_command_chosen_before_stays(tmp_path):
     _before_0070(db)
     _store(db, "ask_all")
     await _boot(db)
-    assert _stored(db) == "ask_all" and await _policy(db) == "ask_all"
+    assert _mode_stored(db) == "ask" and await _policy(db) == "ask_all"       # S5a: 0098 kept it as "ask"
 
 
 async def test_a_choice_made_after_the_move_survives_restarts(tmp_path):
@@ -166,7 +190,7 @@ async def test_an_unreadable_setting_means_a_card_even_for_a_harmless_command(ex
 
     async def unreadable(_session):
         raise OSError("database is locked")
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", unreadable)
+    monkeypatch.setattr(settings_service, "default_permission_mode", unreadable)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     assert await command_gate._asks_for_everything() is True
     asked, ran = [], []
@@ -202,4 +226,7 @@ async def test_the_bench_instance_asks_as_the_run_said(client, monkeypatch):
         body = {k: v for k, v in settings_body("/run").items() if k != "workspace_dir"}
         assert (await client.put("/api/v1/settings", json=body)).status_code == 200
         async with db_session.AsyncSessionLocal() as session:
-            assert await settings_service.shell_confirm_policy(session) == (asked or "ask_risky")
+            # S5a (#893 review 4): the bench writes the default mode itself (the old field only narrows it).
+            assert "shell_confirm_policy" not in body
+            assert await settings_service.default_permission_mode(session) == (
+                "ask" if asked == "ask_all" else "ask_risky")

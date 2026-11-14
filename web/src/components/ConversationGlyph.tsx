@@ -1,4 +1,4 @@
-import { Bell, Check, Clock, MessageSquare, X } from "lucide-react";
+import { Bell, Check, Clock, Eye, MessageSquare, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { waitingLabel, type ConversationMeta } from "../lib/conversationMeta";
 
@@ -13,10 +13,12 @@ export default function ConversationGlyph({ meta, size = 15 }: { meta?: Conversa
     return <MessageSquare size={size - 1} className="shrink-0" aria-hidden />;
   }
   // INB5b-3: a stopped job's reminder is an offer, not a decision: a bell in the amber ring, so it does not read as a card (the "!").
-  if (meta.state === "waiting" && meta.waitingOn === "reminder") {
-    return <span role="img" aria-label={label("waiting_reminder")} title={label("waiting_reminder")}
+  // INB9-a: a 👀 left by a job's acceptance sheet is a look, not a decision either: an eye in the same ring.
+  if (meta.state === "waiting" && (meta.waitingOn === "reminder" || meta.waitingOn === "glance")) {
+    const key = waitingLabel(meta.waitingOn), Icon = meta.waitingOn === "glance" ? Eye : Bell;
+    return <span role="img" aria-label={label(key)} title={label(key)}
       className="flex shrink-0 items-center justify-center rounded-full border-2 border-warning text-warning"
-      style={{ width: size, height: size }}><Bell size={Math.max(7, size - 7)} strokeWidth={3} aria-hidden /></span>;
+      style={{ width: size, height: size }}><Icon size={Math.max(7, size - 7)} strokeWidth={3} aria-hidden /></span>;
   }
   // A card, or one that went unanswered while you were away: the same "!", each with its own label (⓪Plan's review of PR 614, N2).
   if (meta.state === "waiting") {

@@ -4,8 +4,11 @@ the command's own card, then the network after outside content. Since S2a-3 step
 refusal the model reads, or with what it settled for the execute stage."""
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import re
 import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -13,35 +16,105 @@ from server.orchestrator.tool_gates import _declined, _unattended
 from server.orchestrator.turn_state import ToolTurn
 
 
+#: S5a: the conversation whose command `check` is deciding, for `_asks_for_everything` (and the command card that
+#: `check` asks through, `command_confirm`). Set for the length of `check`; None outside it (the default mode).
+_CONVERSATION: ContextVar[str | None] = ContextVar("command_gate_conversation", default=None)
+
+
 async def _asks_for_everything() -> bool:
-    """The user chose 'ask for every command'. Unknown counts as yes (then nothing runs unasked)."""
-    from server.db import session as db_session
-    from server.services import settings_service
+    """The conversation runs in "Ask every step" (S5a): its own choice, or "Ask only when risky" falling back to it
+    (`permissions.mode_for`, which saves this run's folder first to know whether undo holds). Unknown counts as yes
+    (then nothing runs unasked).
+
+    A scheduled task's own fire (ASK1-b) reads the mode of the conversation the task runs in (its own, else the
+    default). There "Full access" is no wider than "Ask only when risky", with the same fallbacks: with nobody to ask,
+    a mode never answers for the run, so the fire's ceiling stays ASK1-b's (the merge of #890 into S5a-1)."""
+    from server.services import permissions
     try:
-        async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.shell_confirm_policy(db) == "ask_all"
+        conversation_id = _CONVERSATION.get()
+        state = await permissions.mode_for(conversation_id, check_save=True)
+        if state.mode == "full_access" and fire_runs_commands(conversation_id):
+            return bool(await permissions._fallback(True))
+        return state.mode == "ask"
     except Exception:  # noqa: BLE001 — fails closed: unreadable means ask for every command
         return True
 
 
+async def _chose_ask_every_step(conversation_id: str | None) -> bool:
+    """Whether "Ask every step" is the conversation's chosen mode, not "Ask only when risky" falling back to it (a
+    fire's note says where to switch only for the user's own choice). Unknown counts as yes."""
+    from server.services import permissions
+    try:
+        return (await permissions.mode_for(conversation_id)).chosen == "ask"
+    except Exception:  # noqa: BLE001 — the note only; the refusal is already decided
+        return True
+
+
 def _nobody_to_ask(confirm_command) -> bool:
-    """A run with no card callback and no card surface: a scheduled run (the heartbeat is one)."""
+    """A run with no card callback and no card surface: a scheduled fire, the heartbeat, a sub-session's turn with
+    nobody to ask."""
     from server.services import permissions
     return confirm_command is None and permissions.current_asker() is None
 
 
-#: What the model is told when a run with nobody to ask names run_command (v0.1.63; DELETE-BY: v0.1.64, with
-#: S2a-3 and PR4).
-SCHEDULED_COMMAND_NOTE = ("Scheduled runs don't run commands. Save what you found with write_file (it writes in "
-                          "Arslan's own folder), or tell the user what to run themselves.")
+#: ASK1-b (v0.1.64): the conversation of the scheduled task's fire running now, set by `scheduler._fire` only (never
+#: for the heartbeat). The gate reads it, not `_nobody_to_ask`, which is wider.
+_FIRE: contextvars.ContextVar[str | None] = contextvars.ContextVar("scheduled_fire", default=None)
+#: ASK1-b: whether a fire's commands may write in Arslan's own folder. False cuts a fire back to read-only commands:
+#: they start in the run's temp folder, the only place besides the cache they can write (`executors.RunCommand`).
+_FIRE_WRITES = True
+
+
+@contextlib.contextmanager
+def scheduled_fire(conversation_id: str):
+    token = _FIRE.set(conversation_id)
+    try:
+        yield
+    finally:
+        _FIRE.reset(token)
+
+
+def fire_runs_commands(conversation_id: str | None) -> bool:
+    """A scheduled task's own fire: its turn, in its own conversation, with nobody to ask and not a sub-session."""
+    from server.services import permissions, settings_service
+    return (conversation_id is not None and _FIRE.get() == conversation_id and permissions.current_asker() is None
+            and settings_service.run_sub_folder() == ())
+
+
+def refuses_commands(confirm_command, conversation_id: str | None) -> bool:
+    """A run with nobody to ask that isn't a scheduled task's own fire runs no command."""
+    return _nobody_to_ask(confirm_command) and not fire_runs_commands(conversation_id)
+
+
+#: What the model is told when a run with nobody to ask that isn't a scheduled task's own fire names run_command.
+SCHEDULED_COMMAND_NOTE = ("This run doesn't run commands: nobody is there to approve them. Save what you found with "
+                          "write_file (it writes in Arslan's own folder), or tell the user what to run themselves.")
+#: ASK1-b: what a fire is told when a command that would ask was refused and listed.
+FIRE_REFUSED_NOTE = ("A scheduled run runs only commands that need no OK, inside the sandbox; this one was refused and "
+                     "listed under the task on the user's Scheduled page. Do the rest without it, or say what to run.")
+#: ASK1-b: under a chosen "Ask every step" (S5a) every command of a fire is refused; this says where to switch.
+#: DELETE-BY: S5a-2 (the path): it names the window's old control, which since S5a-1 only narrows the default mode
+#: (#893 review 4); S5a-2 points it at the new mode control.
+FIRE_ASK_ALL_NOTE = ("The user chose to be asked before every command, so a scheduled run runs none. To let scheduled "
+                     "runs run commands in the sandbox: Settings › What Arslan may do › Terminal › When to ask › "
+                     "“Ask only for risky commands”.")
+
+
+async def fire_sandbox_refused(command: str) -> str:
+    """ASK1-b G2: a fire's command whose sandbox went after the gate (switched off, or seatbelt can't start or gave no
+    wrapper) is refused and listed under the fire's conversation, as the no-sandbox card would have read. What the
+    model is told."""
+    from server.services import approvals
+    return await _unattended("a scheduled run's command runs only in the sandbox, which is switched off or can't start "
+                             "now", approvals._command_request(command, [], None, unsandboxed=True), _FIRE.get())
 
 
 async def _scheduled_command_refused(args: dict, conversation_id: str | None) -> dict:
-    """The refusal of a command in a run with nobody to ask, listed in the Inbox as the card would have read under
-    "ask for every command" (U14 c): policy, deny, no "Always"."""
+    """The refusal of a command in a run with nobody to ask that isn't a scheduled task's own fire, listed as the
+    card would have read under "ask for every command" (U14 c): policy, deny, no "Always"."""
     from server.services import approvals, terminal_policy
     command = terminal_policy.as_shell(args.get("command"), args.get("argv"))
-    return {"ok": False, "error": await _unattended("a scheduled run runs no commands",
+    return {"ok": False, "error": await _unattended("this run runs no commands",
                                                     approvals._command_request(command, [], None, ask_all=True),
                                                     conversation_id),
             "note": SCHEDULED_COMMAND_NOTE}
@@ -171,16 +244,25 @@ async def _sandbox_enabled() -> bool:
         return True
 
 
+async def _folder_for_run(db):
+    """Where this run's commands start, as the executor reads it: a scheduled fire, with nobody to ask, works in Arslan's
+    own folder (`executors.RunCommand`), any other run in `workspace_dir_for_run` (SUB5c: a sub-session's own). The
+    other runs with nobody to ask never reach the gate (`refuses_commands`)."""
+    from server.services import permissions, settings_service
+    if _FIRE.get() is not None and permissions.current_asker() is None and settings_service.run_sub_folder() == ():
+        return settings_service.default_workspace().resolve()
+    return await settings_service.workspace_dir_for_run(db)
+
+
 async def _work_folder_holds_home() -> bool:
     """S2a-3 step 3 (⓪Plan's ruling 7): whether the working folder is the home folder or holds it, read on every
     call. There the sandbox may write all of home, so an unread command asks instead of running with no card. Compared
     case-insensitively (the default macOS disk ignores case). No folder, or one that cannot be read, counts as yes."""
     from pathlib import Path
     from server.db import session as db_session
-    from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            folder = await settings_service.workspace_dir_for_run(db)     # SUB5c: where this run's commands write
+            folder = await _folder_for_run(db)     # SUB5c: where this run's commands write
         if folder is None:
             return True
         home = [part.casefold() for part in Path.home().resolve().parts]
@@ -195,10 +277,9 @@ async def run_folder():
     so the policy follows a change of folder from there. The gate, its card and the island read this one folder. None
     when it can't be read: the policy then reads the text alone, as before."""
     from server.db import session as db_session
-    from server.services import settings_service
     try:
         async with db_session.AsyncSessionLocal() as db:
-            return await settings_service.workspace_dir_for_run(db)
+            return await _folder_for_run(db)
     except Exception:  # noqa: BLE001 — unknown reads as before step 4b (no folder)
         return None
 
@@ -367,6 +448,9 @@ class CommandPlan:
     #: SBX-5b: one app's listed private data folder reopened read-only for this one command in the sandbox
     #: (`commands_profile(open_once=...)`), by the user's click on its once-only `app_data` card. Never stored.
     open_once: Path | None = None
+    #: ASK1-b round 1 (G2): a scheduled fire's command. The executor runs it in the sandbox or not at all: a setting
+    #: switched off, or seatbelt gone, after this gate is a refusal listed for the user, never the outside runner.
+    sandbox_only: bool = False
 
 
 NOT_A_COMMAND = CommandPlan()
@@ -435,6 +519,14 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
 
     The stages, in the order it has always asked (LOOP1 c4): what never runs, where it runs, the card, the network
     after outside content. Each answers with the refusal to record, or None to go on."""
+    token = _CONVERSATION.set(turn.conversation_id)       # S5a: the mode `_asks_for_everything` reads
+    try:
+        return await _check(args, turn)
+    finally:
+        _CONVERSATION.reset(token)
+
+
+async def _check(args: dict, turn: ToolTurn) -> dict | CommandPlan:
     # 0.1.48: one shell string; a forbidden command is refused here, before any
     # card, so nobody is ever asked to approve wiping the disk.
     from server.services import terminal_policy
@@ -468,7 +560,7 @@ async def check(tool_key, args: dict, turn: ToolTurn) -> dict | CommandPlan:
         return refused
     _own_folder_holds(draft)
     return replace(draft.plan(), git_config=git_config, open_once=opened if draft.confined and not draft.run_outside
-                   else None)
+                   else None, sandbox_only=fire_runs_commands(turn.conversation_id))
 
 
 @dataclass(slots=True)
@@ -693,6 +785,9 @@ async def _command_card(d: _Draft, args: dict, confirm_command, conversation_id:
                                         why=str(args.get("why") or "").strip()[:300],
                                         run_later=d.later_line if d.lift else ()),
             conversation_id)}
+        if fire_runs_commands(conversation_id):     # ASK1-b: refused and listed; a chosen "ask" says where to switch
+            result["note"] = (FIRE_ASK_ALL_NOTE if ask_all and await _chose_ask_every_step(conversation_id) else
+                              FIRE_REFUSED_NOTE)
         return result
     from server.services import permissions
     permissions.LAST_DECISION.set(None)        # S2a-1: only this call's own decision counts below

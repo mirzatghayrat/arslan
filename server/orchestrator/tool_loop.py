@@ -13,7 +13,7 @@ from arslan.runtime_policy import ProgressPolicy, bounded_history
 from server.orchestrator import run_trace
 from server.orchestrator.answer_salvage import _CHAT_TIMEOUT_S
 from server.orchestrator import command_gate, on_demand, tool_execute, tool_gates, turn_answer, turn_context
-from server.orchestrator.command_gate import _nobody_to_ask, _scheduled_command_refused
+from server.orchestrator.command_gate import _scheduled_command_refused, refuses_commands
 from server.orchestrator.model_step import (
     _SENT_IS_FINAL, _SchemaDrops, _context_parts, _hiding, _model_call, _rendered_size, _server_trims)
 from server.orchestrator.turn_stream import TextShown, _StepStream, _TurnText, _streams_answer
@@ -505,11 +505,11 @@ async def _admit(tool_key, args, assistant_content, budget, turn: ToolTurn) -> d
           "target": desktop_status.step_target(tool_key, args)})
     desktop_status.note_step(tool_key, args)   # the island's "now doing" line (0.1.51)
 
-    # v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask (a scheduled run) runs no command
-    # at all, whatever rule, grant or "always" answer stands. Refused here, before whether this turn could run it
-    # is read: run_command is not offered there, and naming it anyway (or through use_tool) must still be listed in
-    # the Inbox and explained, not answered "not available". DELETE-BY: v0.1.64, with S2a-3 and PR4.
-    if tool_key == "run_command" and _nobody_to_ask(confirm_command):
+    # A run with nobody to ask runs no command at all, whatever rule, grant or "always" answer stands, unless it is a
+    # scheduled task's own fire (ASK1-b: the gate then runs what needs no card, in the sandbox). The heartbeat and a
+    # sub-session's turn with nobody to ask are refused here, before whether this turn could run it is read:
+    # run_command is not offered there, and naming it anyway (or through use_tool) is still listed and explained.
+    if tool_key == "run_command" and refuses_commands(confirm_command, conversation_id):
         return _record_tool_result(tool_key, args, await _scheduled_command_refused(args, conversation_id), emit,
                                    tool_trace, assistant_content, convo, mcp_fail_counts=mcp_fail_counts)
 
@@ -536,6 +536,13 @@ async def _run_tool(tool_key, args, assistant_content, turn: ToolTurn) -> dict:
     live = await _admit(tool_key, args, assistant_content, budget, turn)
     if isinstance(live, dict):
         return live
+
+    # S5a: plan mode runs reads only, before any card or file I/O.
+    from server.services import permissions
+    refusal = await permissions.plan_refusal(tool_key, args, conversation_id)
+    if refusal is not None:
+        return _record_tool_result(tool_key, args, refusal, emit, tool_trace, assistant_content, convo,
+                                   mcp_fail_counts=mcp_fail_counts)
 
     # FU-2b: the eval/replay allowance (live reads have none since 0.1.63 K4b).
     refusal = await _check_fetch_budget(tool_key, conversation_id=conversation_id)
@@ -822,16 +829,23 @@ async def run_native(**kwargs) -> dict:
             result["external_seen"] = _untrusted.external_seen()
             _learn_after(request, state, result)
         return result
-    except BudgetExceeded:
+    except BudgetExceeded as stopped:
         from server.services import background_jobs
         trace = state.tool_trace
         # 0.1.52: the chat path passes ToolCaller(actor="host"); checking for no caller
         # at all left this closing message unreachable from a real chat turn.
         host_turn = _host_turn(request.caller, request.progress_lane)
-        if not host_turn or background_jobs.inside_job() \
-                or not any((t.get("result") or {}).get("ok") for t in trace):
+        if host_turn and background_jobs.inside_job():
+            # A job's turn ends with no text here (a job shows no streamed text, and nothing is returned). The job
+            # records the stop and reports it; the report carries what this turn's records show (`_report`).
+            stopped.closing = await _stop_records(request, state)
+        if not host_turn or background_jobs.inside_job():
             raise                       # workers and jobs record the stop themselves
         text = await _budget_closing(trace, state.ws_root, state.started)
+        if not any((t.get("result") or {}).get("ok") for t in trace) and (records := await _stop_records(request,
+                                                                                                         state)):
+            # Nothing ran, so the closing alone names nothing: what was blocked and what is left, from the records.
+            text = f"{text}\n\n{records}"
         from server.services.task_service import current as current_task
         task = current_task()
         if task is not None:
@@ -844,6 +858,15 @@ async def run_native(**kwargs) -> dict:
         return {"final": text, "escalation": None, "tool_trace": trace,
                 "stop_reason": "task_budget_exhausted", "history_compacted": False,
                 "external_seen": _untrusted.external_seen()}
+    except asyncio.CancelledError:
+        # A job's wall clock ran out: its timeout cancels this turn, so no BudgetExceeded reaches here. The job's
+        # report gets the same closing as a budget stop (`background_jobs._execute`). The user's stop is not this.
+        from arslan.execution_budget import wall_clock_expired
+        from server.services import background_jobs
+        if (_host_turn(request.caller, request.progress_lane) and background_jobs.inside_job()
+                and wall_clock_expired()):
+            background_jobs.note_wall_closing(await _stop_records(request, state))
+        raise
     finally:
         # K9b: a message read after the last batch that no request carried (the turn stopped, hit its limit
         # or failed first) goes back to its sender, to run once as a turn of its own.
@@ -869,6 +892,26 @@ def _learn_after(request: TurnRequest, state: TurnState, result: dict) -> None:
         trace=list(state.tool_trace), external_seen=bool(result.get("external_seen")),
         recalled=list(state.recalled_lessons),
         ok=bool(result.get("final")) and not result.get("stop_reason"), emit=request.emit))
+
+
+async def _stop_records(request: TurnRequest, state: TurnState) -> str:
+    """Done / Blocked / Left for a turn a limit stopped, from its own records (`answer_salvage._records_closing`):
+    a job's against the goal the user gave it, a chat turn's against the user's message. "" if it failed."""
+    from server.orchestrator import answer_salvage
+    from server.services import background_jobs, personal_context, runtime_messages
+    ctx = personal_context.current()
+    request_text = (background_jobs.current_goal() or (ctx.query if ctx is not None else "")
+                    or (request.user_content if isinstance(request.user_content, str) else ""))
+    try:
+        return answer_salvage._records_closing(request_text, state.tool_trace, state.plan.items if state.plan else [],
+                                               locale=await runtime_messages.selected_locale())
+    except Exception:  # noqa: BLE001 — broad on purpose, and loud: see below
+        # This runs while a stop propagates (BudgetExceeded, or the wall clock's cancellation). Whatever it raised
+        # would replace that stop: the job would read as failed rather than out of budget, and the chat turn would
+        # lose its closing. So any failure is logged as an error with its traceback, and the stop goes on with the
+        # job's budget note (or the chat's closing) and no records.
+        logger.exception("stop closing not written")
+        return ""
 
 
 async def _budget_closing(trace: list, ws_root, started: float) -> str:

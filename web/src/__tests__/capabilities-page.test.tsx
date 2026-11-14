@@ -1,6 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-vi.mock("../api/professionalMethods", () => ({ professionalMethodsApi: { list: vi.fn(async () => []) } }));
 
 // i18n passthrough
 vi.mock("react-i18next", () => ({

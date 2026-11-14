@@ -922,6 +922,12 @@ class RunCommandExecutor:
             sandboxed = await settings_service.terminal_sandbox_enabled(db)
             default_read = await settings_service.default_read_enabled(db)
         from server.services import command_sandbox
+        # ASK1-b round 1 (G2): a scheduled fire's command runs in the sandbox or not at all, read again here: switched
+        # off or unable to start since the gate, it is refused and listed, never run by the outside runner.
+        if terminal_exec.SANDBOX_ONLY.get() and not (sandboxed and command_sandbox.available()
+                                                     and not terminal_exec.OUTSIDE_SANDBOX.get()):
+            from server.orchestrator import command_gate
+            return {"ok": False, "executed": False, "error": await command_gate.fire_sandbox_refused(command)}
         if in_sub and (cwd is None or not command_sandbox.available()):
             return {"ok": False, "executed": False,
                     "error": "a sub-session's commands run only in the sandbox, in its own folder, and "
@@ -933,11 +939,11 @@ class RunCommandExecutor:
             return {"ok": False, "executed": False,
                     "error": "a sub-session's command didn't start: the commander's workspace, whose run-later files "
                              "its sandbox holds, isn't known or doesn't hold this sub-session's folder; nothing ran"}
-        # S1 (U14 b): a run with nobody to ask (a scheduled run) works in Arslan's own folder, whatever
-        # folder the user chose. Its commands always run in the sandbox (#308), so they write only there
-        # and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7). Since v0.1.63 the
-        # tool loop refuses every command in such a run before it gets here; this stays as the second line.
-        from server.services import permissions
+        # S1 (U14 b): a run with nobody to ask (a scheduled fire, ASK1-b) works in Arslan's own folder, whatever
+        # folder the user chose. Its commands run in the sandbox (the gate refuses one that wouldn't), so they write
+        # only there and in temporary and cache folders, as every sandboxed command may (⓪Plan, Q7).
+        from server.orchestrator import command_gate
+        from server.services import execution_context, permissions, run_temp
         if permissions.current_asker() is None and not in_sub:
             own = settings_service.default_workspace()
             try:
@@ -945,6 +951,12 @@ class RunCommandExecutor:
             except OSError as exc:
                 return {"ok": False, "error": f"Arslan's own folder, where a scheduled run works, cannot be made: {exc}"}
             cwd = own.resolve()
+            if not command_gate._FIRE_WRITES:       # ASK1-b's cut-back: it starts in, and writes only, its run's temp
+                run_id = execution_context.current_run_id()
+                if run_id is None:
+                    return {"ok": False, "executed": False, "error": "not started: a scheduled run's command needs its "
+                                                                    "run's temp folder, and there is none"}
+                cwd = run_temp.folder(run_id)
         if cwd is None:
             return {"ok": False, "error": "the chosen workspace folder no longer exists"}
         # 0.1.59: "Desktop, Documents, Downloads: Off" closes them to commands too (only inside the
@@ -973,7 +985,8 @@ class RunCommandExecutor:
         from server.services import tool_outputs
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
-                                         sandbox=in_sub or (sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get()),
+                                         sandbox=in_sub or terminal_exec.SANDBOX_ONLY.get()
+                                         or (sandboxed and not terminal_exec.OUTSIDE_SANDBOX.get()),
                                          closed=closed, readable=readable,
                                          copies=tool_outputs.given(tool_outputs.conversation.get()),
                                          unwrapped=terminal_exec.UNWRAPPED.get() and not in_sub,

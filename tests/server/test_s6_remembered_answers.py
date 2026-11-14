@@ -101,10 +101,10 @@ def _toggles(monkeypatch, *, sandbox: bool, ask_all: bool):
         return ask_all
 
     async def policy(db):
-        return "ask_all" if ask_all else "ask_risky"
+        return "ask" if ask_all else "ask_risky"
     monkeypatch.setattr(command_gate, "_sandbox_enabled", sandbox_on)
     monkeypatch.setattr(command_gate, "_asks_for_everything", asks_all)
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", policy)
+    monkeypatch.setattr(settings_service, "default_permission_mode", policy)
 
 
 async def _grants(api) -> list[dict]:

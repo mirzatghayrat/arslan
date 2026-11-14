@@ -82,7 +82,7 @@ DIRECT: tuple[HardRule, ...] = (
                    "fork-bomb", "kill-all", "shutdown")),
     _forbid("trash", _T + "test_smart8_delete_to_trash.py::test_a_delete_from_the_trash_or_emptying_it_is_forbidden"),
     *map(_ask, ("apple-events", "shortcuts", "send-mail", "send-message", "upload", "remote-shell", "git-push",
-                "publish", "force-kill", "login-items", "keychain-write", "system-settings", "open-app",
+                "publish", "secret-write", "force-kill", "login-items", "keychain-write", "system-settings", "open-app",
                 "screen-clipboard", "delete-outside")),
     _ask(terminal_policy.OUTSIDE_REACH[0],                 # S2a-3 step 5: only when the command runs outside
          _T + "test_s2a3_outside_reach.py::test_a_gap_asks_once_outside_and_runs_inside"),
@@ -200,7 +200,7 @@ def _cut(key: str, layer: str, holder: str, test: str) -> HardRule:
 
 
 ABSOLUTE: tuple[HardRule, ...] = (
-    # Under the least strict settings (ask_risky, an outside grant, the sandbox off); S5a adds full access.
+    # Under the least strict settings (ask_risky, an outside grant, the sandbox off) and under S5a's full access.
     _absolute("forbid-floor", "gate", f"{_GATE}:check", "test_the_floor_refuses_before_any_card"),
     _absolute("arslan-data", "kernel", f"{_SANDBOX}:minimal_profile", "test_arslans_own_data_stays_closed"),
     _absolute("skills-and-plugins", "kernel", f"{_SANDBOX}:minimal_profile", "test_the_skill_and_plugin_folders_stay_closed"),

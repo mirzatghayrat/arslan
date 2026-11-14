@@ -12,6 +12,7 @@ import NotDoneList from "../proactive/NotDoneList";
 import WatchesPanel from "../proactive/WatchesPanel";
 import { ReminderCard, useReminderActions } from "../proactive/reminders";
 import ScheduledTasksCard from "../ScheduledTasksCard";
+import ScheduledCommandsNote from "./ScheduledCommandsNote";
 import { OPEN_ACTIVITY_RUN_EVENT } from "../reply/ReplyFooter";
 
 /**
@@ -71,6 +72,7 @@ export default function ScheduledPage({ attention, waitingTasks, onOpenConversat
         <button className={buttonClass} disabled={checking} onClick={() => void checkNow()}>
           <RefreshCw size={14} className={checking ? "animate-spin" : ""} />{t(checking ? "proactive.page.checking" : "proactive.page.checkNow")}</button>
       </div>
+      <ScheduledCommandsNote />
       {notice && <Notice tone={notice.kind === "error" ? "error" : "info"}
         action={notice.needsModel && onOpenModelSettings ? <button className="text-[13px] underline" onClick={onOpenModelSettings}>{t("proactive.item.errors.openModels")}</button> : undefined}>
         {notice.text}</Notice>}

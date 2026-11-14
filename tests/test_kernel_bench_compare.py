@@ -237,11 +237,41 @@ def test_a_row_carries_what_the_requests_carried():
         {"cand": "L", "model": "deepseek-v4-pro", "req": {"tools": ["a", "c"], "temperature": 0.7, "max_tokens": 8192}},
         {"cand": "other", "model": "x", "req": {"tools": ["z"]}},
     ]
-    sent = compare.requests_sent("L", usage_rows)
+    sent = compare.requests_sent("L", usage_rows, 0.0)
     assert sent["source"] == "metering proxy (as sent)"
     assert sent["tools_offered"] == ["a", "b", "c"]
     assert sent["settings"] == {"model": ["deepseek-v4-pro"], "temperature": [0.7], "max_tokens": [8192]}
-    assert compare.requests_sent("L", [{"cand": "L", "model": "m"}])["source"].startswith("not observed")
+    assert compare.requests_sent("L", [{"cand": "L", "model": "m"}], 0.0)["source"].startswith("not observed")
+
+
+def test_review_4_a_rerun_of_the_label_reads_only_its_own_requests():
+    """#879 review, later item 4: a rerun of the same --round has the same label; only requests from when this run
+    started (t >= started, as runner.usage reads them) are its own."""
+    usage_rows = [
+        {"t": 100.0, "cand": "L", "model": "old-model", "req": {"tools": ["old_tool"], "temperature": 0.2}},
+        {"t": 205.0, "cand": "L", "model": "deepseek-v4-pro", "req": {"tools": ["a"], "temperature": 0.7}},
+    ]
+    sent = compare.requests_sent("L", usage_rows, since=200.0)
+    assert sent["tools_offered"] == ["a"]
+    assert sent["settings"] == {"model": ["deepseek-v4-pro"], "temperature": [0.7]}
+    record = {"run": "L", "task": "T3", "repeat": 1, "started": 200.0, "usage": {}, "artifacts": {}}
+    row = compare.table_row(record, commit="c", dirty=False, switch="s", arm="off", value="false", round_name="r",
+                            day="d", usage_rows=usage_rows)
+    assert row["tools_offered"] == ["a"] and "old-model" not in row["request_settings"]["model"]
+
+
+def test_review_4_a_rerun_through_the_dry_run_drops_the_earlier_runs_requests(fake_bench):
+    root, _ = fake_bench
+    label = "arslan-T1-r1-h0-dry-show_technical_details-off"
+    with open(root / "usage.jsonl", "a") as f:          # the same label, from an earlier run of this round
+        f.write(json.dumps({"t": 1.0, "secs": 0.5, "cand": label, "model": "old-model", "status": 200, "hit": 1,
+                            "miss": 1, "out": 1, "usd_peak": 0.01, "req": {"tools": ["old_tool"]}}) + "\n")
+    compare.main(["run", "--tasks", "T1", "--runs", "1", "--switch", "show_technical_details",
+                  "--off", "false", "--on", "true", "--round", "h0-dry"])
+    table = [json.loads(line) for line in (root / compare.TABLE).read_text().splitlines()]
+    off = next(r for r in table if r["run"] == label)
+    assert off["tools_offered"] == ["web_search", "write_file"]
+    assert off["request_settings"]["model"] == ["deepseek-v4-pro"]
 
 
 # ── the dry run: both arms through runner.run_one with a fake driver ──────────

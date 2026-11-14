@@ -200,7 +200,8 @@ def test_a_card_after_a_refused_one_is_told_its_own_answer(app_client, monkeypat
         ws.send_json({"type": "cancel_run_command", "call_id": outside["call_id"]})
         frames += _collect_until(ws, "stream_end")
     summaries = [f["summary"] for f in frames if f.get("type") == "tool_result"]
-    assert summaries == ["The user said no to: Run `rm -rf build` outside the sandbox?. They said: keep build",
+    # S5a: with no sandbox here, "Ask only when risky" runs as "Ask every step", whose card asks the command itself.
+    assert summaries == ["The user said no to: Run `rm -rf build`?. They said: keep build",
                          "The user said no to: Run `ls` outside the sandbox?. Don't ask for it again in this turn."]
     assert executor.calls == []
 

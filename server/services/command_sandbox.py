@@ -37,6 +37,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -56,7 +57,8 @@ _DENIED = re.compile(r"operation not permitted", re.I)
 
 # SBX-3 §1b: why a root is writable. The classifier (CLS) reads only IN_SCOPE: its "yes" covers effects inside
 # the sandbox's writable area, which is the work folder plus, with SBX-3's private TMPDIR, the run's own temp.
-IN_SCOPE, SHARED_CACHE, DEVICE = "in_scope", "shared_cache", "device"
+# S4b-0: ALLOWED is one of the user's allowed folders (Settings); neither `in_scope` nor the classifier reads it.
+IN_SCOPE, SHARED_CACHE, DEVICE, ALLOWED = "in_scope", "shared_cache", "device", "allowed"
 
 
 @dataclass(frozen=True)
@@ -83,18 +85,20 @@ _DEVICES = (Root("/dev/null", DEVICE, "literal"), Root("/dev/zero", DEVICE, "lit
             Root("/dev/fd", DEVICE, "subpath"), Root(r"^/dev/ttys[0-9]+$", DEVICE, "regex"))
 
 
-def writable_roots(workspace: Path, temp: Path | None = None, cache: Path | None = None) -> list[Root]:
+def writable_roots(workspace: Path, temp: Path | None = None, cache: Path | None = None,
+                   allowed: Sequence[Path] = ()) -> list[Root]:
     """Where a command in `workspace` may write, tagged (§1b). Temp is the run's own folder (`run_temp`, §1a),
     in scope like the work folder; no longer the shared per-user /var/folders/… parent (with the cache C),
     /private/tmp or /private/var/tmp. A tool that needs one of those is stopped, and the model decides. SBX-M (#592) names none
     to reopen: a hardcoded /tmp is a cost that stands (§1a), and the Darwin temp and cache rows fail on every
     base, so they wait for a probe fix (Codex). SBX-5 (§1c): the user's shared caches are read-only now
     (`shared_caches`); the one cache a command writes is Arslan's own for commands (`run_temp.cache`, or `cache`),
-    which its tools are pointed at (`CACHE_ENV`)."""
+    which its tools are pointed at (`CACHE_ENV`). S4b-0: `allowed` (`commands_profile`) are tagged ALLOWED."""
     from server.services import run_temp
     own = _real(run_temp.cache("commands") if cache is None else cache)
     scope = [_real(workspace), *([_real(temp)] if temp is not None else [])]
-    return [*(Root(str(p), IN_SCOPE) for p in scope), Root(str(own), SHARED_CACHE), *_DEVICES]
+    return [*(Root(str(p), IN_SCOPE) for p in scope), Root(str(own), SHARED_CACHE),
+            *(Root(str(_real(p)), ALLOWED) for p in allowed), *_DEVICES]
 
 
 # SBX-5 §1c: the user's caches, read-only to the commands and MCP presets. A tampered package written there would
@@ -461,6 +465,44 @@ def _check_open_once(folder, writable: list[Path], protected: list[Path], shut: 
         raise ValueError(f"open_once: already inside a writable folder: {folder}")
 
 
+#: S4b-0 (⓪Plan, the mainstream rule): the system folders an allowed folder may be neither at, inside nor above, by
+#: real path (/etc and /var are /private/...), so `/` is refused as above them all. Elsewhere, /Volumes/... and other
+#: folders outside home included, is allowed. A module list, so tests can stand in for it (their temp is in /private).
+SYSTEM_FOLDERS = tuple(map(Path, ("/System", "/Library", "/usr", "/bin", "/sbin", "/etc", "/private", "/var",
+                                  "/Applications", "/opt", "/dev", "/cores")))
+MAX_ALLOWED = 5     # S4b (the user, 2026-11-11): at most 5 allowed folders
+
+
+def _check_allowed(allowed: list[Path], workspace: Path, protected: list[Path], closed: list[Path]) -> None:
+    """S4b-0, as `_check_open_once`: ValueError unless there are at most MAX_ALLOWED and each allowed folder is an
+    existing real folder, not the home folder, neither at, inside nor above a system folder, neither equal to, inside
+    nor holding a user's shared cache (#881 review: their write deny comes after every grant anyway; this is the early
+    "no", against poisoning packages that later run outside the sandbox), a `protected` path (the protected, CAP6b and
+    app-data folders, Arslan's data folder among them) or one of the user's `closed` folders (unlike the work folder,
+    not reopened inside one: #881 review), not in the work folder and overlapping no other allowed folder. By identity
+    as well as path (`workspace_paths._within`: another case or Unicode form is the same folder). S4b's service
+    filters first, so a raise is a bug upstream."""
+    from server.services.workspace_paths import _within
+
+    def overlap(a: Path, b: Path) -> bool:
+        return _within(a, b) or _within(b, a)
+    if len(allowed) > MAX_ALLOWED:
+        raise ValueError(f"allowed: more than {MAX_ALLOWED} folders")
+    for i, folder in enumerate(allowed):
+        if not isinstance(folder, Path) or _real(folder) != folder or not folder.is_dir():
+            raise ValueError(f"allowed: not an existing real folder: {folder}")
+        if _identity(folder) == _identity(_real(Path.home())):      # the home folder (its own check: S4b may lift it)
+            raise ValueError(f"allowed: the home folder: {folder}")
+        if any(overlap(folder, s) for s in _resolved(SYSTEM_FOLDERS)):
+            raise ValueError(f"allowed: at, inside or above a system folder: {folder}")
+        if any(overlap(folder, c) for c in shared_caches()):
+            raise ValueError(f"allowed: at, inside or holding a shared cache: {folder}")
+        if any(overlap(folder, p) for p in [*protected, *closed]):
+            raise ValueError(f"allowed: at, inside or holding a protected or closed folder: {folder}")
+        if _within(folder, workspace) or any(overlap(folder, other) for other in allowed[:i]):
+            raise ValueError(f"allowed: inside the work folder or another allowed folder: {folder}")
+
+
 def _inside(path: Path, folders: list[Path]) -> bool:
     return any(path == folder or folder in path.parents for folder in folders)
 
@@ -473,7 +515,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
                      cache: Path | None = None, peer_cache: Path | None = None,
                      plugin_folder: Path | None = None, plugin_read: Path | None = None,
                      git_config_ok: bool = False, walk_root: Path | None = None,
-                     open_once: Path | None = None) -> str:
+                     open_once: Path | None = None, allowed: Sequence[Path] = ()) -> str:
     """The profile a command in `workspace` runs under, with `temp` its run's folder, and the one `available()`
     starts (SBX-3). It is SBX-2's default-deny base (`default_deny_profile`): only the listed services, sockets,
     devices and IPC names, no listening (the user's D1, 2026-11-01), and writes only to the writable roots.
@@ -517,15 +559,24 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     root, or no profile is built (ValueError, `_check_open_once`). Seatbelt matches real paths, so a link inside it is
     judged by where it points; a hard link is that file. The rule names the path as it was when the profile was built:
     a folder swapped there afterwards is reached only through this same path, and a sandboxed command can't write
-    under it (it stays closed to writes), so a swap after the build only narrows what is read."""
+    under it (it stays closed to writes), so a swap after the build only narrows what is read.
+
+    S4b-0: `allowed`, the user's allowed folders (pinned by `wrapper`), are writable roots too, tagged ALLOWED. HR-1's
+    walk and holds cover each like the work folder (the git_config lift stays in `workspace`), and `open_once` refuses
+    a folder inside one. Unsafe ones raise ValueError (`_check_allowed`; one in a closed folder is refused, not
+    reopened): no profile is built. None leaves the profile byte for byte as it was."""
     root = PLUGIN_FOLDER if plugin_folder is None else plugin_folder
     if plugin_read is not None and (root is None or _real(plugin_read) != plugin_read or not plugin_read.is_dir()
                                     or _real(root) not in plugin_read.parents):
         raise ValueError(f"not a plugin's own folder inside the plugin root: {plugin_read}")
-    roots = writable_roots(workspace, temp, cache)
+    allowed = list(allowed)
+    roots = writable_roots(workspace, temp, cache, allowed)
     writable = [Path(r.path) for r in roots if r.tag != DEVICE]   # the base writes its own device list
     protected = [*default_protected(), *cap6b_folders(plugin_folder)]
-    shut = _resolved([*closed, *app_data(), *([peer_cache] if peer_cache is not None else [])])
+    others = _resolved([*app_data(), *([peer_cache] if peer_cache is not None else [])])
+    shut = _resolved([*closed, *others])
+    if allowed:
+        _check_allowed(allowed, _real(workspace), [*protected, *others], _resolved(closed))
     if plugin_read is not None and any(p == plugin_read or plugin_read in p.parents for p in [*protected, *shut]):
         raise ValueError(f"a plugin's folder holding a closed or protected path: {plugin_read}")
     if open_once is not None:
@@ -567,7 +618,9 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     # #813 review 8: the walk never lists the user's closed folders nor the TCC home folders (`closed` is the user's
     # list, before Arslan's own data is added); it holds the held folders inside them by name.
     walk = [walk_root] if walk_root is not None else []
-    hold = run_later_folders([workspace], closed=closed, walk_roots=walk)
+    # S4b-0: the work folder and each allowed root, each from its own root with the full depth budget, also when one
+    # holds another or the walk root holds them (#881 reviews 1 and 2, `held_folders`). One walk, one set of caps.
+    hold = run_later_folders([workspace, *allowed], closed=closed, walk_roots=walk)
     (_TOO_LARGE.discard if hold.complete else _TOO_LARGE.add)(_real(workspace))  # this walk's root only (review 7)
     if hold.aliases:                                                             # #813 review 9, for `note`
         _ALIASED[_real(workspace)] = hold.aliases
@@ -580,8 +633,9 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     after.deny("file-write-create", *run_later.symlink_filters())
     # HR-1b: under the git_config grant the repository config names are left out; at a link's target they stay held.
     # SBX-10: the walk root's hooksPath is held too, and the lift stays inside `workspace`, where the guard looks.
+    # S4b-0: so do the allowed roots: their hooksPath held and the exemption judged with them, no lift there.
     for filters in run_later.kernel_filters([workspace], aliased=hold.aliased, git_config_ok=git_config_ok,
-                                            walk_roots=walk):
+                                            walk_roots=[*walk, *allowed]):
         after.deny("file-write*", *filters)
     if git_config_ok:
         # HR-1b delta 2: no hard link to or from a config (`file-link` refuses both, measured), no flags or ACL on one.
@@ -710,7 +764,8 @@ async def in_thread(build, *args, profile_of=None, **kwargs):
 def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False, closed: list[Path] = (),
             readable: list[Path] = (), copies: list[Path] = (), proxy_port: int | None = None,
             trust_service: bool = False, git_config_ok: bool = False,
-            walk_root: Path | None = None, open_once: Path | None = None) -> list[str] | None:
+            walk_root: Path | None = None, open_once: Path | None = None,
+            allowed: Sequence[Path] = ()) -> list[str] | None:
     """The sandbox-exec prefix for a command in `workspace`, or None where seatbelt
     is missing or cannot start (then the caller runs as before and says so). #813 review 11: `-f` and a profile file
     (`write_profile`) the caller removes (`remove_profile(profile_path(prefix))`) once the process has exited.
@@ -723,22 +778,28 @@ def wrapper(workspace: Path, *, temp: Path | None = None, offline: bool = False,
     SBX-10: `walk_root` (a sub-session's commander's workspace) is pinned last and must hold the pinned work folder,
     or `root_pin.Swapped`: the command doesn't start (closed).
 
-    SBX-5b: `open_once` goes to `commands_profile` as given (its ValueError propagates: the command doesn't start)."""
+    SBX-5b: `open_once` goes to `commands_profile` as given (its ValueError propagates: the command doesn't start).
+
+    S4b-0: each of `allowed` is pinned after them, like the work folder (`root_pin.Swapped` for a link or a swap), and
+    goes to `commands_profile` by its pinned real path (its ValueError propagates)."""
     if not available():
         return None
     from server.services import run_temp
     cache = run_temp.cache("commands")
+    allowed = list(allowed)
     pins = _pin_all([workspace, *([temp] if temp is not None else [])],
-                    extra=[*([cache] if cache.exists() else []), *([walk_root] if walk_root is not None else [])])
+                    extra=[*([cache] if cache.exists() else []), *([walk_root] if walk_root is not None else []),
+                           *allowed])
+    extra = pins[len(pins) - len(allowed):]
     try:
-        walk = pins[-1].path if walk_root is not None else None
+        walk = pins[len(pins) - len(allowed) - 1].path if walk_root is not None else None
         if walk is not None and walk != pins[0].path and walk not in pins[0].path.parents:
             raise root_pin.Swapped(walk_root, "doesn't hold the sub-session's folder")
         with root_pin.pinned(pins):
             text = commands_profile(pins[0].path, temp=pins[1].path if temp is not None else None, offline=offline,
                                     closed=closed, readable=readable, copies=copies, proxy_port=proxy_port,
                                     trust_service=trust_service, git_config_ok=git_config_ok, walk_root=walk,
-                                    open_once=open_once)
+                                    open_once=open_once, allowed=[p.path for p in extra])
     except BaseException:
         root_pin.release(pins)
         raise

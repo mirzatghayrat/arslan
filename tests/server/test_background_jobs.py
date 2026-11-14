@@ -108,7 +108,8 @@ async def test_a_job_runs_as_its_own_task_and_posts_one_result(execution_db, act
         task = await db.get(CompanionTask, job.job_id)
         assert task.privacy["driver"] == {"kind": "background"} and task.phase == "succeeded"
         messages = (await db.scalars(select(ArslanMessage).where(ArslanMessage.conversation_id == CID))).all()
-    assert [m.content for m in messages] == [f"Done: {PHRASE}"]
+    # INB9-a: one message, the result and its acceptance sheet (tests/server/test_inb9_acceptance_sheet.py).
+    assert [m.content.split("\n\n**✅")[0] for m in messages] == [f"Done: {PHRASE}"]
     updates = [f for f in frames if f["type"] == "job_update" and f["job_id"] == job.job_id]
     assert [u["phase"] for u in updates][0] == "queued" and updates[-1]["outcome"] == "done"
     assert updates[-1]["criteria"] == [{"id": "criterion-1", "description": f"The result says {PHRASE}",
@@ -288,7 +289,7 @@ async def test_a_remote_job_command_always_asks(execution_db, monkeypatch):
     # S2a-2: whether a local command needs a card is decided once, in the tool loop; the job's ladder
     # shows one whenever it is called. A remote command is never skipped, even a read-only one.
     from server.services import settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "type"))
     confirm = approvals.JobConfirmations(CID)
@@ -300,7 +301,7 @@ async def test_a_job_no_longer_honours_a_stored_always(execution_db, monkeypatch
     """0.1.48–0.1.62: "don't ask again" given in a conversation held for jobs too. S2a-2: a rule is
     layer ②, this time only, and a stored `legacy_rule` is not read: the job asks."""
     from server.services import permission_store, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     async with execution_db() as db:
         await permission_store.add_rule(db, "legacy_rule", "git-push", created_from="card")
         await db.commit()
@@ -318,7 +319,7 @@ async def test_a_standing_answer_for_one_rule_does_not_carry_a_second_risk(execu
     assess() names only the first matching rule, so the job checks every rule. Since 0.1.62 (F4a)
     it no longer waves through osascript alone either: that card is for one time only."""
     from server.services import permission_store, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
     monkeypatch.setattr(run_registry, "make_emit", lambda cid: _declining(asked, "command"))
     async with execution_db() as db:          # S6: a stray row such as 0092 deletes (nothing writes one now)
@@ -657,6 +658,132 @@ async def test_a_job_that_keeps_researching_after_wrap_up_is_made_to_answer(exec
     message = next(f for f in frames if f.get("type") == "message")
     assert message["outcome"] == "blocked" and "Some checks did not pass" in message["content"]
     assert "Settings → Advanced" not in message["content"]
+
+
+async def test_a_job_the_hard_limit_ends_says_what_was_done_blocked_and_left(execution_db, active, frames,
+                                                                             monkeypatch):
+    """A real run's shape: a card nobody answered, work that ran, then the hard limit with no text. The report
+    names the blocked step and what is left, from the turn's own records, after the budget note."""
+    from arslan import execution_budget
+    from server.registry import executors
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
+                        dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    seen = []
+
+    class Recall:
+        async def execute(self, args):
+            seen.append(args)
+            if len(seen) == 1:
+                return {"ok": False, "error": permissions._EXPIRED.format(title="Read the notes?", minutes=30)}
+            return {"ok": True, "summary": "1 note"}
+    monkeypatch.setitem(executors.EXECUTORS, "recall", Recall())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=20)
+    assert job.outcome == "out_of_budget"
+    await _wait(lambda: any(f.get("type") == "message" for f in frames))
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    note, closing = content.split("\n\nFrom this run's own records:\n")
+    assert "model requests (6/6)" in note and "Settings → Advanced" in note
+    assert "Done: " in closing and "recall ×" in closing
+    assert "Blocked:\n- nobody answered the card: recall `notes 1`" in closing
+    # The job's goal as the user gave it, never the instruction its turn was sent with (the host's context).
+    # INB9-a: the acceptance sheet follows the closing note, after a blank line and its first bold heading.
+    closing, _, sheet = closing.partition("\n\n**")
+    assert closing.endswith("Left: the request itself, Research everything")
+    assert sheet.startswith("⚠️ Not verified**")
+
+
+async def test_a_job_with_an_answer_posts_it_byte_for_byte(execution_db, active, frames, monkeypatch):
+    """The closing is only for an empty report: a job's own text is never changed, even next to a closing."""
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    for outcome in ("out_of_budget", "done", "blocked"):
+        job = background_jobs.Job(job_id=f"j-{outcome}", conversation_id=CID, goal="g", acceptance=[],
+                                  outside_seen=False)
+        job.outcome, job.closing = outcome, "From this run's own records:\nBlocked:\n- x"
+        answer = f"  The report for {outcome}.\nTwo steps were not run.  "
+        assert await background_jobs._report(job, answer) == answer.strip()
+    empty = background_jobs.Job(job_id="j-empty", conversation_id=CID, goal="g", acceptance=[], outside_seen=False)
+    empty.outcome = "out_of_budget"
+    assert "From this run's own records" not in await background_jobs._report(empty, "")
+
+
+async def test_a_job_the_wall_clock_ends_says_what_was_done_blocked_and_left(execution_db, active, frames,
+                                                                            monkeypatch):
+    """The wall clock's timeout cancels the turn mid-step (no BudgetExceeded reaches it). The report still
+    closes from the turn's own records: one call that ran, one card nobody answered, and what is left."""
+    from arslan import execution_budget
+    from server.registry import executors
+    # The clock is long; the test ends it itself, at the third call (below), so no real time is raced.
+    monkeypatch.setattr(execution_budget, "run_budget",
+                        lambda tier, **_: execution_budget.Budget(execution_budget.Limits(wall_seconds=600)))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    seen = []
+
+    class Recall:
+        async def execute(self, args):
+            seen.append(args)
+            if len(seen) == 1:
+                return {"ok": True, "summary": "1 note"}
+            if len(seen) == 2:
+                return {"ok": False, "error": permissions._EXPIRED.format(title="Read the notes?", minutes=30)}
+            # The step the wall clock cuts off: expire the job's own timeouts now (the seam `running_clock`
+            # registers), then wait; the cancellation arrives from the timeout, not from a real elapsed time.
+            for clock in execution_budget._clocks.get():
+                clock.timeout.reschedule(asyncio.get_running_loop().time())
+            await asyncio.sleep(30)
+            return {"ok": True, "summary": "never"}
+    monkeypatch.setitem(executors.EXECUTORS, "recall", Recall())
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=20)
+    await _wait(_spoken(frames, job))
+    assert job.outcome == "out_of_budget" and job.budget_stop["reason"] == "wall_seconds", job.budget_stop
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    note, closing = content.split("\n\nFrom this run's own records:\n")
+    assert "Background work ran out of budget" in note
+    assert "Done: 1 tool call succeeded (recall ×1)." in closing
+    assert "Blocked:\n- nobody answered the card: recall `notes 2`" in closing
+    # INB9-a: the acceptance sheet, when the job has one, follows the closing after a blank line and a bold heading.
+    closing, _, _sheet = closing.partition("\n\n**")
+    assert closing.endswith("Left: the request itself, Research everything")
+
+
+async def test_each_tool_call_is_one_step_in_the_note(execution_db, active, frames, monkeypatch):
+    """A job's tool call passes through two of its sinks (the turn's and the task's); it is one step, not two."""
+    from arslan import execution_budget
+    monkeypatch.setitem(execution_budget.TIERS, "standard",
+                        dict(model_requests=4, tool_calls=10, tokens=600_000, wall_seconds=60))
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: ResearchAdapter(obedient=False))
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=20)
+    await _wait(_spoken(frames, job))
+    calls = [f for f in frames if f.get("type") == "tool_call"]
+    assert calls and job.tool_calls_seen == len(calls), (job.tool_calls_seen, len(calls))
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    assert f"after {len(calls)} steps" in content
+
+
+async def test_a_closing_left_from_before_is_never_carried_into_a_later_stop(execution_db, active, frames,
+                                                                           monkeypatch):
+    """Only the stop that ends the job brings a closing: one that has none of its own is never given an older
+    one that happens to be on the job."""
+    from arslan.execution_budget import BudgetExceeded
+    from server.orchestrator import arslan as arslan_mod
+    monkeypatch.setattr(runtime_messages, "selected_locale", AsyncMock(return_value="en"))
+
+    async def body(conversation_id, goal, emit, confirmations, **_):
+        background_jobs._jobs[background_jobs._inside_job.get()].closing = "From an earlier stop: STALE"
+        raise BudgetExceeded("Execution budget exhausted: tokens.")
+    monkeypatch.setattr(arslan_mod, "background_body", body)
+    job = await background_jobs.start(CID, "Research everything", _criteria(), outside_seen=False)
+    await _wait(lambda: job.phase == "finished", seconds=10)
+    await _wait(_spoken(frames, job))
+    assert job.outcome == "out_of_budget"
+    content = next(f for f in frames if f.get("type") == "message")["content"]
+    assert "Background work ran out of budget" in content and "STALE" not in content
 
 
 def test_outcome_names_a_budget_stop_apart_from_being_stuck():

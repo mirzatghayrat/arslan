@@ -4,7 +4,7 @@ The INB card's one function: the badge reads it now, and INB7's brief ("要你�
 never a count of their own. A unit is a conversation, a project or a scheduled task, never a row:
 - a conversation waits when it has a card to approve, something it could not ask while you were away that is newer than your last
   look at it (Q8, approved with the INB5 board on 2026-10-31: opening it is "handled"; the entry stays listed until it expires),
-  or an open "the job stopped" reminder. Only conversations that still exist count (a deleted one keeps its ledger rows and
+  a job's 👀 open and newer than your last look (INB9-a), or an open "the job stopped" reminder. Only conversations that still exist count (a deleted one keeps its ledger rows and
   reminders; #590 review F2), except a pending card, which is live by definition;
 - a conversation in an active project counts as its project. One in an archived project counts by itself: that project has no
   row in the sidebar, where its conversations are listed under 「最近」 (#590 review F3c). INB5b makes the sidebar show every project
@@ -79,22 +79,26 @@ async def _latest_not_asked(db: AsyncSession, decided_by: str, hours: int) -> di
 async def waiting_reasons(db: AsyncSession) -> dict[str, str]:
     """The conversations waiting on you, before projects and tasks group them, and what each waits on (INB5b-3, #590's re-check):
     "card" when a card is open, "away" when one went unanswered while you were away (nothing is left to approve, only the "not done
-    while you were away" list; ⓪Plan's review of PR 614, N2), "reminder" when a job that stopped left one. A card wins, then an away
-    entry: a card is a decision, the reminder an offer."""
+    while you were away" list; ⓪Plan's review of PR 614, N2), "glance" when a job's acceptance sheet left a 👀 newer than your last
+    look at it (INB9-a), "reminder" when a job that stopped left one. A card wins, then an away entry: a card is a decision, the
+    reminder an offer."""
     pending = {card["conversation_id"] for card in approvals.all_pending() if card.get("conversation_id")}
     away = await _latest_not_asked(db, "away", AWAY_HOURS)
+    glances = await _latest_glance(db)
+    looked = list(away.keys() | glances.keys())
     seen = dict((await db.execute(select(ConversationSeen.conversation_id, ConversationSeen.seen_at)
-                                  .where(ConversationSeen.conversation_id.in_(list(away))))).all()) if away else {}
+                                  .where(ConversationSeen.conversation_id.in_(looked)))).all()) if looked else {}
     unanswered = {cid for cid, latest in away.items() if cid not in seen or latest > seen[cid]}
+    to_look_at = {cid for cid, latest in glances.items() if cid not in seen or latest > seen[cid]}
     reminders = set((await db.execute(select(ProactiveItem.conversation_id).where(
         ProactiveItem.kind == "job_followup", ProactiveItem.status.in_(OPEN),
         ProactiveItem.conversation_id.is_not(None)))).scalars())
-    candidates = unanswered | reminders
+    candidates = unanswered | to_look_at | reminders
     existing = set((await db.execute(select(ArslanMessage.conversation_id).distinct()
                                      .where(ArslanMessage.conversation_id.in_(list(candidates))))).scalars()) if candidates else set()
     reasons = dict.fromkeys(pending, "card")
     for cid in existing:
-        reasons.setdefault(cid, "away" if cid in unanswered else "reminder")
+        reasons.setdefault(cid, "away" if cid in unanswered else "glance" if cid in to_look_at else "reminder")
     # SUB5b: a sub-session has no row of its own; it is listed under the top of its chain, which waits for it, once.
     from server.services import sub_sessions
     tops = await sub_sessions.commanders(db, reasons)
@@ -104,8 +108,25 @@ async def waiting_reasons(db: AsyncSession) -> dict[str, str]:
     return merged
 
 
-#: Which reason a conversation waiting on more than one shows: a card, then an away entry, then a reminder.
-_FIRST = ("card", "away", "reminder")
+#: Which reason a conversation waiting on more than one shows: a card, then an away entry, then a 👀, then a reminder.
+_FIRST = ("card", "away", "glance", "reminder")
+
+
+async def _latest_glance(db: AsyncSession) -> dict[str, datetime]:
+    """INB9-a: per conversation, the newest task within AWAY_HOURS that waits for the user's review with a 👀 open (a
+    human check not passed, from a job's `glance` criteria). Accepting the review passes it (`accept_review`). Only a row
+    paused for that review counts: a row paused for anything else (a check not run, one that failed) is one
+    `accept_review` refuses, so its 👀 could never be closed (#900 review). Its sheet still lists what to look at."""
+    rows = await db.execute(select(CompanionTask.conversation_id, CompanionTask.updated_at, CompanionTask.results)
+                            .where(CompanionTask.phase == "waiting_user",
+                                   CompanionTask.pause_reason == "acceptance_review_required",
+                                   CompanionTask.updated_at >= datetime.utcnow() - timedelta(hours=AWAY_HOURS)))
+    latest: dict[str, datetime] = {}
+    for cid, updated, results in rows.all():
+        if any(isinstance(item, dict) and item.get("evaluator") == "human" and item.get("status") != "passed"
+               for item in results or ()):
+            latest[cid] = max(updated, latest.get(cid, updated))
+    return latest
 
 
 async def waiting_conversations(db: AsyncSession) -> set[str]:

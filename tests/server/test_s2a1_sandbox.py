@@ -502,7 +502,7 @@ async def test_an_approved_apple_events_card_never_becomes_a_standing_grant(exec
     from unittest.mock import AsyncMock
 
     from server.services import approvals, permission_store, run_registry, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
 
     def window(frame):

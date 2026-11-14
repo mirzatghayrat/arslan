@@ -85,6 +85,7 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
             later = terminal_exec.HOLD_RUN_LATER.set(outside and plan.holds_run_later)   # HR-1, the outside floor
             git_config = terminal_exec.GIT_CONFIG.set(not outside and plan.git_config)   # HR-1b: the sandbox only
             once = terminal_exec.OPEN_ONCE.set(None if outside else plan.open_once)       # SBX-5b: the sandbox only
+            only = terminal_exec.SANDBOX_ONLY.set(plan.sandbox_only)                # ASK1-b G2: a fire's command
             # SMART-8: allowed, outside the sandbox and read with certainty: its targets go to the Trash.
             trash = delete_to_trash.TRASH.set(tool_key == "run_command" and deletes_outside
                                               and (outside or not confined)
@@ -97,6 +98,7 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
                 if cut is not None:
                     terminal_exec.OFFLINE.reset(cut)
                 delete_to_trash.TRASH.reset(trash)
+                terminal_exec.SANDBOX_ONLY.reset(only)
                 terminal_exec.OPEN_ONCE.reset(once)
                 terminal_exec.GIT_CONFIG.reset(git_config)
                 terminal_exec.HOLD_RUN_LATER.reset(later)

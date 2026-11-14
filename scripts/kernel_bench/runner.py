@@ -363,11 +363,11 @@ def check_t4_site():
 # Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
 DECLINES: dict = {"T11": {"rules": [r"delete|\brm\b|\brmdir\b|unlink"], "note": check_t11.NOTE}}   # patterns on the rule
 
-# H0 (harness plan §4.1), the capability set's first task: C1 talks to a local link stub. The runner starts it as the
-# run's site (its `url` fills the prompt) and stops it after the check, as it does T4's; the checker reads the stub's
-# request log, so a fix the agent never tried fails.
-SITES = {"C1": fixture_c1.fixture}
-CHECKS["C1"] = lambda run, reply, ctx: check_c1.check(reply, ctx["site"].log())
+# H0 (harness plan §4.1), the capability set's first task: C1's fixture writes a local stand-in for the link vendor's
+# server and the app's link code into the run folder (no network: fixture_c1 says why); the checker reads the
+# stand-in's request log and the fixed code from disk, so a fix the agent never tried fails.
+FIXTURES["C1"] = fixture_c1.fixture
+CHECKS["C1"] = lambda run, reply, ctx: check_c1.check(reply, run, ctx["fixture"]["sim_sha256"])
 
 
 def driver_out(who: str, run: Path) -> dict:
@@ -544,8 +544,6 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         # The model is in the name: the same label runs on several models in one round, and a second
         # model's reminders landed in the first model's list (M1B, 2026-10-19: 6 items, scored 0).
         ctx["list"] = f"对比测试-{label}-{model}"
-    if task in SITES:
-        ctx["site"] = SITES[task](str(run))
     if task in ("T4", "T4x"):
         _t4_setup(task, who, ctx, manual_login)
     fill = {"dir": run, "list": ctx.get("list", ""), "url": ctx["site"].url if "site" in ctx else ""}
@@ -583,6 +581,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         settled = settle(label, started, ended)
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
               "entrant_version": entrant_version(who), "end": end,
+              "started": started,          # compare.requests_sent reads this run's meter rows from here (#879 item 4)
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
               "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
               "rate_limited_429": rate_limited(label, started),           # v0.1.64 M64 (T16 records it)

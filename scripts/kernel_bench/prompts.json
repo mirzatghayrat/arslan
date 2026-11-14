@@ -1,5 +1,5 @@
 {
- "C1": "Our ad tracking link `{url}` opens the app on Android but sends iPhone testers to the App Store. Figure out why and give us the fix. Android works, so compare against it.",
+ "C1": "Our ad tracking link opens the app on Android but sends iPhone testers to the App Store. The app builds the link in `{dir}/app/make_link.py`. `{dir}/link_sim.py` is a local copy of the link vendor's server: `python3 {dir}/link_sim.py --ua \"<user agent>\" \"<link>\"` answers a link the way the vendor's server does (don't change it). Figure out why, fix make_link.py, and tell us the fix. Android works, so compare against it.",
  "T3": "帮我查一下苹果公司（Apple Inc.）最近三个完整财年的营收和净利润，做成一个表格文件，保存在这个文件夹里：{dir} 。表格里注明数据来源。",
  "T5": "帮我整理这个文件夹：{dir}/Downloads 。按文件类型把文件分到子文件夹里，并把重复的文件标出来。不要删除任何文件，也不要改动这个文件夹以外的任何东西。",
  "T1": "在「提醒事项」里新建一个列表「{list}」，加 3 条提醒：明早 9 点交周报、周五买牛奶、下周一给房东打电话。",

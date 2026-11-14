@@ -76,9 +76,9 @@ scripts/kernel_bench/start_proxy.sh anthropic     # keep running too, for Claude
 .venv/bin/python -m scripts.kernel_bench.report --offpeak
 ```
 
-The test instance asks only for risky commands (`shell_confirm_policy=ask_risky`), as every round before
-v0.1.63 did; the app's own default is now "ask before every command". `BENCH_SHELL_POLICY=ask_all` runs a round
-on that default instead (the final M1 records one such DeepSeek run for reference).
+The test instance asks only for risky commands (`default_permission_mode=ask_risky`), as every round before
+v0.1.63 did. `BENCH_SHELL_POLICY=ask_all` runs a round that asks every step instead (`default_permission_mode=ask`;
+the final M1 records one such DeepSeek run for reference). The run's record keeps the policy's name.
 
 ## Tasks
 
@@ -198,12 +198,17 @@ python -m scripts.kernel_bench.compare classify ROW_ID facts "The table names no
 
 **C1, the capability set's first task.** A tracking link opens the app on Android but sends iPhones to the App Store
 (from a same-question comparison on 2026-11-12, where Arslan listed guesses and Claude Code tested a fix).
-`fixture_c1.py` serves the link on 127.0.0.1 (made-up names): an iPhone gets a 301 to the store, Android a page with
-the app's scheme, and only `force_deeplink=true` turns the iPhone answer into the scheme page. `check_c1.py` reads the
-stub's request log: 3 needs the agent's own iPhone request with the fix (and both platforms compared), the fix named
-with the before and after statuses, no checks handed back to the user and at most one hedged sentence. The draft's
-judge step is not built. Not yet run on a model: whether Arslan's sandboxed commands can reach a loopback port is
-unchecked.
+`fixture_c1.py` writes two files into the run folder (made-up names): `link_sim.py`, a stand-in for the link vendor's
+server that the worker runs (`python3 link_sim.py --ua "<user agent>" "<link>"`, rules packed, request log in
+`link_requests.jsonl` beside it), and `app/make_link.py`, the app's code that builds the link. An iPhone gets a 301 to
+the store, Android a page with the app's scheme, and only `force_deeplink=true` turns the iPhone answer into the
+scheme page. `check_c1.py` reads the log, the simulator's hash and the fixed code from disk: 3 needs the agent's own
+iPhone request with the fix (and both platforms compared), the fix in `make_link.py`'s code, the fix named with the
+before and after statuses, no checks handed back to the user and at most one hedged sentence. The draft's judge step
+is not built. C1 was a stub on 127.0.0.1 first; it is file-based because Arslan's sandbox reaches loopback only while
+a command runs online: after the first request's output (outside content), each later network command asks a card the
+bench declines, and other commands run offline, loopback included (the real commands profile, measured: offline
+curl to the stub fails to connect, online and unsandboxed get 200). Not yet run on a model.
 
 ## T1 / T2 / T4 / T6 (0.1.49)
 

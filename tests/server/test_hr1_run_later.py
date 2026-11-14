@@ -929,7 +929,7 @@ async def _run(monkeypatch, args, *, grant, by: str | None):
     monkeypatch.setattr(command_gate, "_work_folder_holds_home", lambda: answer(False))
     monkeypatch.setattr(command_gate, "_outside_grant", lambda conversation_id, command: answer(grant))
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", lambda db: answer("ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", lambda db: answer("ask_risky"))
     asked: list = []
 
     async def card(command, argv, **kw):

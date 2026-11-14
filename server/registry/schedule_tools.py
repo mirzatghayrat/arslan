@@ -8,9 +8,10 @@ a threshold is a second thing to drift.
 
 spawn_id is always None: a task Arslan schedules runs as Arslan (P2 §1.1),
 which also means it runs with no confirm callbacks and nobody to ask: it writes
-files only in Arslan's own folder, runs no commands (v0.1.63, until S2a-3;
-DELETE-BY: v0.1.64 with it and PR4), and any step that needs an OK is refused
-and listed in the Inbox (S1, U14 b–c) —
+files only in Arslan's own folder, runs only commands that need no OK, inside
+the sandbox (ASK1-b; offline when the turn that wrote its prompt had read
+outside content, `outside_seen`), and any step that needs an OK is refused
+and listed under the task (S1, U14 b–c) —
 scheduling cannot be used to escape the interactive gates.
 """
 from __future__ import annotations
@@ -23,6 +24,7 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 from server.db.models import ScheduledTask
+from server.orchestrator import untrusted
 
 # NOTE: `server.services.scheduler` is imported inside the functions below, not
 # here. When this was written, scheduler reached tool_loop → registry.executors →
@@ -99,7 +101,9 @@ class ScheduleTaskExecutor:
                 name=name, prompt=prompt, spawn_id=None, target="arslan",
                 conversation_id=args.get("conversation_id") or scheduler.own_conversation(),   # SUB5a
                 schedule_kind=kind, interval_s=interval_s, cron=cron,
-                enabled=True, consecutive_failures=0)
+                enabled=True, consecutive_failures=0,
+                # ASK1-b: whether the turn writing this prompt had read outside content; its fires start from it.
+                outside_seen=untrusted.turn_so_far()())
             try:
                 task.next_due_at = scheduler.compute_next_due(task, datetime.utcnow())
             except ValueError as exc:

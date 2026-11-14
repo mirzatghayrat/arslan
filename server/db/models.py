@@ -139,7 +139,8 @@ class DistilledSession(Base):
 class Setting(Base):
     """Settings as key/value text. 0070 (v0.1.63): a stored shell_confirm_policy of ask_risky moved to ask_all once.
     0086 (v0.1.64 ROUTE1): the routing strategy and the old model-role pins were cleared once.
-    0095 (v0.1.64 ASK1-a): writes no policy; sets shell_policy_switch_notice once where the stored policy isn't ask_risky."""
+    0095 (v0.1.64 ASK1-a): writes no policy; sets shell_policy_switch_notice once where the stored policy isn't ask_risky.
+    0097 (v0.1.64 ASK1-b): sets scheduled_commands_note to pending once on an existing install."""
     __tablename__ = "settings"
 
     key = Column(String(100), primary_key=True)
@@ -949,6 +950,9 @@ class ScheduledTask(Base):
     # INB5 (migration 0084): when you last opened this task on the Scheduled page. Its runs' "could not ask" entries newer
     # than this wait on you (progress.waiting_on_user). The task's own column, so no conversation id can collide with it.
     seen_at = Column(DateTime, nullable=True)
+    # ASK1-b (migration 0097): whether the turn that wrote or last changed the prompt had read outside content. Sticky:
+    # set, never cleared. A fire starts from it (scheduler._fire): offline. Rows from before 0097 are true.
+    outside_seen = Column(Boolean, nullable=False, default=False, server_default="0")
 
 
 class ScheduledTaskRun(Base):
@@ -1037,9 +1041,6 @@ from server.db.companion_models import (  # noqa: E402,F401
 )
 from server.db.task_models import (  # noqa: E402,F401
     CompanionTask, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision,
-)
-from server.db.worker_models import (  # noqa: E402,F401
-    ProfessionalMethod, ProfessionalMethodVersion,
 )
 from server.db.permission_models import ActionGrantRecord, CompanionConnection  # noqa: E402,F401
 
