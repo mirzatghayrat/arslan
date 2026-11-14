@@ -236,6 +236,18 @@ async def test_a_failed_turn_records_error_outcome_and_failure_count(memdb, monk
 # Task-2 review S4: next_due advances at FIRE time — long fires never look due
 # ---------------------------------------------------------------------------
 
+async def _first_fire_started(started: asyncio.Event) -> None:
+    """Wait for the first fire's turn to start, which is when it is in flight (its in-flight row is committed
+    before the turn runs). No fixed wait: the start is an event, and the 60 s bound only limits the failure case
+    (a fire that ended without starting its turn fails at once, not after the bound)."""
+    waiter = asyncio.ensure_future(started.wait())
+    try:
+        await asyncio.wait({waiter, *scheduler._tasks}, timeout=60, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        waiter.cancel()
+    assert started.is_set(), "the first fire never started its turn"
+
+
 async def test_fire_spanning_ticks_records_zero_skip_rows(memdb, monkeypatch):
     """S4: a fire outliving one 60s tick must not leave the task looking due —
     next_due_at advances when the fire STARTS, so subsequent ticks during the
@@ -245,7 +257,7 @@ async def test_fire_spanning_ticks_records_zero_skip_rows(memdb, monkeypatch):
     monkeypatch.setattr(arslan, "_handle_answer", _hanging_answer(started, release))
 
     await scheduler.tick()
-    await asyncio.wait_for(started.wait(), 2)
+    await _first_fire_started(started)
 
     async with memdb() as db:
         task = await db.get(ScheduledTask, task_id)
@@ -272,15 +284,7 @@ async def test_second_due_period_during_inflight_still_records_one_skip(
     monkeypatch.setattr(arslan, "_handle_answer", _hanging_answer(started, release))
 
     await scheduler.tick()
-    # The first fire is in flight once its turn has started (its in-flight row is committed before the turn runs).
-    # No fixed wait: the turn's start is an event, and the bound only limits the failure case (a fire that ended
-    # without starting its turn fails at once, not after the bound).
-    waiter = asyncio.ensure_future(started.wait())
-    try:
-        await asyncio.wait({waiter, *scheduler._tasks}, timeout=60, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        waiter.cancel()
-    assert started.is_set(), "the first fire never started its turn"
+    await _first_fire_started(started)
 
     async with memdb() as db:                         # the next period arrives early
         task = await db.get(ScheduledTask, task_id)
