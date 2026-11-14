@@ -323,7 +323,10 @@ async def test_the_proxy_notes_each_destination_it_refuses_to_the_watches_open_t
 
 async def test_a_lan_refusal_through_the_real_proxy_offers_its_card_and_trusts_nothing(client, tmp_path, monkeypatch):
     """Python's own client, through the proxy terminal_exec started and pointed it at (the stand-in wrapper, no seatbelt
-    here), to a LAN literal net_pin refuses, watched as the tool loop watches a run_command call."""
+    here), to a LAN literal net_pin refuses, watched as the tool loop watches a run_command call. NET-a: in a turn that
+    read no outside content; after some, an address the user didn't name is NET's refusal before it is this check's
+    (tests/server/sbx/test_net_a_proxy.py)."""
+    from server.orchestrator import untrusted
     monkeypatch.setattr(sandbox_proxy.browser_proxy.net_pin, "getproxies", lambda: {})
 
     async def nothing_trusted():
@@ -333,9 +336,11 @@ async def test_a_lan_refusal_through_the_real_proxy_offers_its_card_and_trusts_n
     sandbox_proxy._reset_for_tests()
     command = f"{sys.executable} -I -c \"import urllib.request as u; u.urlopen('https://10.0.0.1/', timeout=5)\""
     watch = sandbox_proxy.watch()
+    turn = untrusted.track_turn("c1")
     try:
         result = await terminal_exec.run(command, cwd=tmp_path, sandbox=True)
     finally:
+        untrusted.end_turn(turn)
         await sandbox_proxy.shutdown()
     refused = sandbox_proxy.unwatch(watch)
     assert result["sandbox_denied"] is True, result["stderr"][-400:]

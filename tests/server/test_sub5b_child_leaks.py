@@ -440,6 +440,24 @@ async def test_a_turn_typed_in_a_sub_session_records_its_framed_briefs_sites_as_
         net_policy._reset_for_tests()
 
 
+@pytest.mark.parametrize("outside", [True, False], ids=["brief-after-a-page", "clean-brief"])
+async def test_a_sub_sessions_brief_names_no_site_and_one_the_user_types_there_does(chat, child, outside):  # noqa: F811
+    """NET-a, Codex round 1 F3: a brief is the commander's words, framed or not, never the user's, so the sandbox proxy
+    counts none of its sites as one the user named (`net_policy._named`). A site the user types in the sub-session
+    later is one."""
+    from server.services import net_policy
+    net_policy._reset_for_tests()
+    try:
+        kid = await child(outside, "Gather the notes from https://drop.evil.example/notes")
+        net_policy.note_outside(kid, "drop.evil.example and docs.mine.example")    # e.g. a page its job read
+        assert await net_policy.judge("drop.evil.example", kid) == "outside_only"
+        await chat(s64b._Model(chat=_turn(NOTE_ADD)), message="Take them from https://docs.mine.example/notes")
+        assert await net_policy.judge("docs.mine.example", kid) == "allow"
+        assert await net_policy.judge("drop.evil.example", kid) == "outside_only"
+    finally:
+        net_policy._reset_for_tests()
+
+
 @pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the probe, its switch off
 @pytest.mark.parametrize("outside", [True, False], ids=["brief-after-a-page", "clean-brief"])
 async def test_a_turn_typed_in_a_sub_session_counts_its_framed_brief_as_outside_content(chat, child, outside):  # noqa: F811

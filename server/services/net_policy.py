@@ -5,7 +5,7 @@ runs and bound to the process it was started for (`bind`): the proxy serves it o
 ends the run's connections with it (`end_run`). The proxy reads each connection's token and asks `admits` about the host
 it names, before its own checks (public addresses, the user's trusted devices), which still run as they did. A host is
 - `allow`: a package registry (`PACKAGE_HOSTS`), a site in Settings (`sandbox_allowed_sites`), or one the user named
-  in their own messages in this conversation;
+  in what they typed in this conversation (`_named`: not a sub-session's brief, nor a picture's file name);
 - `outside_only`: seen in outside content this conversation read (recorded where that content is marked:
   `untrusted.mark_external`, `untrusted.carried`), and none of the above;
 - `unknown`: anything else.
@@ -15,13 +15,17 @@ address is judged apart (`judge`). The command is told why (`refusal_note`), and
 commands in this conversation may reach the site (`offer`; NET-b words that card and adds Settings' list).
 
 Hosts are compared after IDNA (UTS 46), in lower case, with no port and no trailing dot: the exact host, or a subdomain
-of a listed, named or recorded one. A bare TLD or a public suffix is never one of those (`listable`).
+of a listed, named or recorded one. A bare TLD or a public suffix is never one of those (`listable`). An address is
+matched only as itself, read in every spelling as the proxy reads a destination (`normalize`), in what the user typed
+too (`addresses_in`).
 
 Known limits:
 - The record lives in memory, as the turn's own mark does: a restart forgets it (as GIT_REFUSED_IN), and a turn after
   one records again only what it reads, or carries in framed (a job's result or a sub-session's brief in its history).
   A rolling summary that folds outside content in marks the turn but records no host.
 - A host spelled so that no reader sees a host ("evil dot example", base64) is `unknown`, so it passes.
+- A number the user typed for something else names the address it spells as the resolver reads it: a version 3.11.4
+  names 3.11.0.4, an id 1572395042 names 93.184.216.34. That only opens the address itself, for someone holding it.
 - A token is in its command's environment, but it works only for that run's own processes (`owns`, Codex round 1 F1):
   a process of another run that read it, or one that left this run and lost its parent, is refused as with no token.
   What the run's own processes do with it is the run's, as is a socket one of them hands to another process.
@@ -83,6 +87,9 @@ _URL_HOST = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://(?:[^\s/?#@\[\]]*@)?(\[[^\]\s
 _BARE_NAME = re.compile(r"(?<![\w.-])((?:[^\W_](?:[\w-]{0,61}[^\W_])?\.)+(?:[^\W\d_]{2,63}|xn--[a-z0-9-]{1,59}))"
                         r"(?![\w-])", re.I)
 _BARE_IPV4 = re.compile(r"(?<![\w.])(\d{1,3}(?:\.\d{1,3}){3})(?![\w-]|\.\w)")
+#: A token that may spell an address (inet_aton's IPv4 forms; IPv6, bracketed or not; with a port), never one inside a
+#: longer name or word: `normalize`, the proxy's own reading of a destination, says which one is.
+_ADDRESS = re.compile(r"(?<![\w.-])[0-9a-fx:.]+(?![\w-]|\.\w)", re.I | re.A)
 
 
 def _ipv4(host: str) -> ipaddress.IPv4Address | None:
@@ -151,9 +158,28 @@ def hosts_in(text) -> set[str]:
             if (name := normalize(match.group(1))) is not None}
 
 
+def addresses_in(text) -> set[str]:
+    """Codex round 1, F6: the addresses a text spells out, each as the proxy reads a destination (`normalize`), so in
+    any spelling: 10.0.0.5, 167772165, 0xa000005, 012.0.0.05, 10.5, [::ffff:a00:5] and ::ffff:10.0.0.5 are each
+    10.0.0.5 there, with a port or without. Not one inside a longer name or word (1.2.3.4.example.com, v1.2.3.4)."""
+    found = set()
+    for token in _ADDRESS.findall(str(text or "")):
+        name = normalize(token)
+        if _ip(name) is None:
+            name = normalize(token.strip(".").rstrip(":"))  # one that ends a sentence ("at 10.0.0.5:") or follows "..."
+        if _ip(name) is not None:
+            found.add(name)
+    return found
+
+
 def _sites_named(texts) -> set[str]:
-    """What a list or the user's words can name: sites (`listable`) and addresses, each matched as itself."""
-    return {name for text in texts for name in hosts_in(text) if listable(name) or _ip(name) is not None}
+    """What the user's words name: sites (`listable`), and addresses in any spelling the proxy reads (`addresses_in`),
+    each address matched as itself."""
+    named: set[str] = set()
+    for text in texts:
+        named.update(name for name in hosts_in(text) if listable(name) or _ip(name) is not None)
+        named.update(addresses_in(text))
+    return named
 
 
 def _covers(hosts, name: str) -> bool:
@@ -240,14 +266,19 @@ _named_cache: dict[str, tuple[tuple[int, int], frozenset[str]]] = {}
 
 
 async def _named(conversation_id: str | None) -> frozenset[str]:
-    """The hosts the user named in this conversation: their own messages (role user), never a sub-session's brief that
-    a turn wrote after reading outside content (SUB5b stores it framed, `untrusted.BRIEF_FROM_OUTSIDE`)."""
+    """The hosts the user named in this conversation: what they typed in their own messages (role user). Codex round
+    1, F3: never a sub-session's brief, the commander's words, framed or not (`sub_sessions.BRIEF_SOURCE`; a framed one
+    also by SUB5b's header, `untrusted.BRIEF_FROM_OUTSIDE`), nor the file names of the pictures sent with a message
+    (`arslan.typed_text`). Every other user-role row is typed: in the window, on the phone (a chat message, a task's
+    goal), or while a turn ran (K9b). A choice card's pick is sent as the user's message: its label, shown in full, is
+    what they chose to send, as with a paste."""
     if not conversation_id:
         return frozenset()
     from sqlalchemy import func, select
     from server.db import session as db_session
     from server.db.models import ArslanMessage
-    from server.orchestrator import untrusted
+    from server.orchestrator import arslan, untrusted
+    from server.services import sub_sessions
     mine = (ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "user")
     try:
         async with db_session.AsyncSessionLocal() as db:
@@ -255,10 +286,12 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
             cached = _named_cache.get(conversation_id)
             if cached is not None and cached[0] == (count, last or 0):
                 return cached[1]
-            texts = (await db.scalars(select(ArslanMessage.content).where(*mine))).all()
+            rows = (await db.execute(select(ArslanMessage.content, ArslanMessage.source).where(*mine))).all()
     except Exception:  # noqa: BLE001 — fails closed: messages that can't be read name no host
         return frozenset()
-    named = frozenset(_sites_named(t for t in texts if not t.startswith(untrusted.BRIEF_FROM_OUTSIDE)))
+    named = frozenset(_sites_named(arslan.typed_text(content) for content, source in rows
+                                   if source != sub_sessions.BRIEF_SOURCE
+                                   and not content.startswith(untrusted.BRIEF_FROM_OUTSIDE)))
     _named_cache[conversation_id] = ((count, last or 0), named)
     return named
 
@@ -293,15 +326,14 @@ async def judge(host: str, conversation_id: str | None, *, turn_seen: bool = Fal
     # ⓪Plan (2026-11-14), the address rule: after outside content an address in any spelling (dotted, decimal, hex,
     # octal, short, IPv6, IPv4-mapped; and a name ending in a number, which some resolvers read as one) counts as
     # `outside_only` unless the user named that address or listed it. The named risk: the host record can't hold an
-    # address no text spells out, so an injected `curl http://1572395042/` would be `unknown` and pass. Carve-outs:
-    # loopback (a, above), and the devices the user trusted (b), which count as listed. A LAN address is left to the
-    # proxy's own check, which refuses it unless trusted and offers its device card (a grant here couldn't open it).
+    # address no text spells out, so an injected `curl http://1572395042/` would be `unknown` and pass. The only
+    # carve-outs (Codex round 1, F6): loopback (a, above), and the devices the user trusted (b), which count as listed.
+    # A LAN address is none: one the user didn't name, list or trust is refused here first, and the proxy's own check
+    # (which refuses an untrusted one and offers its device card) runs only once it is allowed here.
     # Before outside content an address is judged as today.
     if ip is not None and await _trusted_device(name):
         return "allow"
-    if not (turn_seen or outside_seen(conversation_id)) or (ip is not None and not ip.is_global):
-        return "unknown"
-    return "outside_only"
+    return "outside_only" if turn_seen or outside_seen(conversation_id) else "unknown"
 
 
 # ── the runs the proxy serves ────────────────────────────────────────────────

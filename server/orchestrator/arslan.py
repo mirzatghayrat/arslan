@@ -248,6 +248,10 @@ def build_user_blocks(
     return blocks
 
 
+#: How `persisted_user_text` starts each picture's line, after the message: this, the file's name, "]".
+PICTURE_LINE = "[图片:"
+
+
 def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     """What goes into arslan_messages.
 
@@ -257,8 +261,17 @@ def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     does not imply the model can still see something it cannot."""
     if not images:
         return user_message
-    names = "\n".join(f"[图片:{i.get('name') or 'image'}]" for i in images)
+    names = "\n".join(f"{PICTURE_LINE}{i.get('name') or 'image'}]" for i in images)
     return f"{user_message}\n{names}" if user_message else names
+
+
+def typed_text(stored: str) -> str:
+    """NET-a (Codex round 1, F3): what the user typed of a stored user message, without the file names
+    `persisted_user_text` put after it. A file's name is not the user's words. Cut at the first line that starts as a
+    picture's does, so nothing of a name stays, whatever it holds (a newline too); a line the user typed so goes with
+    it."""
+    text = str(stored or "")
+    return "" if text.startswith(PICTURE_LINE) else text.partition(f"\n{PICTURE_LINE}")[0]
 
 
 @governed
