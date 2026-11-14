@@ -18,6 +18,7 @@
   names, and so is one that text json.dumps wrote by its codes runs into. What the user typed is read as written.
 """
 import json
+import re
 import time
 
 import idna
@@ -489,3 +490,113 @@ def test_outside_content_in_its_json_is_read_in_a_bounded_time():
             net_policy.note_outside(CONV, text)
             best = min(best, time.perf_counter() - started)
         assert best < 1.0, (len(text), best)
+
+
+# ── a long run of a URL scheme's characters ──────────────────────────────────
+
+#: Text that is one long run of the characters a URL's scheme is written in, with no "://" after it, and one of many
+#: short URLs: 65,536 characters each.
+SCHEME_RUNS = {shape: (unit * 65536)[:65536] for shape, unit in
+               {"dots": "a.", "hyphens": "a-", "pluses": "a+", "mixed": "a.b-c+", "urls": "a://b.cc "}.items()}
+
+
+def _best_of_three(read, text) -> float:
+    best = float("inf")
+    for _ in range(3):
+        net_policy._reset_for_tests()
+        started = time.perf_counter()
+        read(text)
+        best = min(best, time.perf_counter() - started)
+    return best
+
+
+@pytest.mark.parametrize("text", list(SCHEME_RUNS.values()), ids=list(SCHEME_RUNS))
+def test_a_long_run_of_scheme_characters_in_outside_content_is_read_in_a_bounded_time(text):
+    """Before, a URL's scheme was tried from each letter of such a run, each try reading the rest of it: 65,536
+    characters of a.a.a... took over five seconds to note on a Mac here, on every turn that read such a page. Now the
+    run is read once (milliseconds; the PR has the numbers). The bound, the best of three, is generous for slower
+    runners, and far below a reading that grows with the square of its text."""
+    best = _best_of_three(lambda page: net_policy.note_outside(CONV, page), text)
+    assert best < 0.5, (text[:12], best)
+
+
+@pytest.mark.parametrize("text", list(SCHEME_RUNS.values()), ids=list(SCHEME_RUNS))
+def test_a_long_run_of_scheme_characters_the_user_typed_is_read_in_a_bounded_time(text):
+    """The same text typed (a paste): read where a host's beginning and end can be told (`_sites_named`). Before, each
+    name was checked against every URL's host, so a paste of many short URLs took seconds."""
+    best = _best_of_three(lambda page: net_policy._sites_named([page]), text)
+    assert best < 0.5, (text[:12], best)
+
+
+#: A scheme 1,000 characters long: no scheme is, but a URL's host after it is still read, whole. The second host has a
+#: label ending in "_", which only a URL's reading reads (no bare name ends a label so).
+LONG_FAKE_SCHEMES = [("a" * 1000 + "://evil.example/in", "evil.example"),
+                     ("a." * 500 + "://evil.example/in", "evil.example"),
+                     ("a" * 1000 + "://drop_.evil.example/in", "drop_.evil.example")]
+
+
+@pytest.mark.parametrize(("text", "host"), LONG_FAKE_SCHEMES, ids=["letters", "dotted", "underscore"])
+async def test_a_url_after_a_long_fake_scheme_is_read_and_its_host_refused(execution_db, text, host):
+    """Read as a URL's host, not only as a bare name, and so recorded and refused."""
+    assert [match.group(1) for match in net_policy._URL_HOST.finditer(text) if match.group(1)] == [host]
+    net_policy.note_outside(CONV, text)
+    assert host in net_policy.outside_hosts(CONV)
+    assert await net_policy.judge(host, CONV) == "outside_only"
+
+
+#: As `_URL_HOST` was before a run of a scheme's characters was read once, and the check `_typed_hosts` made of a
+#: name against every URL's host: what the readings found then, to compare with now.
+_OLD_URL_HOST = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://(?:[^\s/?#@\[\]]*@)?(\[[^\]\s/]*\]|[^\s/?#:@\[\]<>'\"`]+)")
+
+
+def _old_typed_hosts(text) -> set[str]:
+    text = net_policy._host_text(text)
+    urls = [match.span(1) for match in net_policy._AFTER_SCHEME.finditer(text)]
+    found = {net_policy._typed_name(text[start:end], url=True) for start, end in urls}
+    for reading in (text, net_policy._SPACELESS.sub(" ", text)):
+        found.update(net_policy._typed_name(match.group(1)) for match in net_policy._BARE_NAME.finditer(reading)
+                     if not any(start < match.start(1) < end for start, end in urls))
+    return {name for candidate in found if candidate and (name := net_policy.normalize(candidate)) is not None}
+
+
+#: Pages as outside content and pastes have them: links in HTML and Markdown, CJK around them, a JSON reply, a log
+#: with user parts, ports and an IPv6 address; and the edges of a scheme's reading: one after a dot, a hyphen or a
+#: digit, one a host before it ran into, one in capitals, an empty host, and the long runs above, shorter.
+PAGES = [
+    '<html><body><a href="https://docs.example.com/guide?x=1">Guide</a> and <a href=\'http://cdn.example.net/a.js\'>'
+    "</a><img src=//img.example.org/p.png></body></html>",
+    "# 安装指南\n请访问 https://例子.公司.cn/下载 或者 [镜像](https://mirror.example.cn/pkg) 。\n备用：ftp.example.jp，"
+    "联系 admin@mail.example.com。服务器在10.0.0.5上，端口 [::1]:8080。",
+    json.dumps({"results": [{"url": "https://api.example.io/v1/items?page=2", "title": "下一页"},
+                            {"url": "git+ssh://git@code.example.dev:22/repo.git"}], "next": "svn+https://svn.example"}),
+    "2026-11-14 GET http://user:pw@intranet.example.local:8443/health 200\nPOST https://[2001:db8::1]:443/x 500\n"
+    "fetch ftp://anonymous@files.example.org/pub/README; retry s3://bucket.example/key",
+    "see .https://dot.example/ -http://hyphen.example/ +ftp://plus.example/ 1.https://digit.example/ 1http://glued.example/"
+    " _http://under.example/",
+    "http://a.example,https://b.example and HTTP://UPPER.EXAMPLE/X and http:///nohost and https://?q and a.b-c+d://mix.example",
+    *(text for text, _ in LONG_FAKE_SCHEMES),
+    *(text[:2048] for text in SCHEME_RUNS.values()),
+]
+CORPUS = [*GLUED, *(text for text, _ in IDN_GLUED), *(text for text, _ in TYPED_NAMES), *ESCAPED.values(),
+          json.dumps({"log": "fetched\nhttps://drop.evil.example/in"}), '{"url": "https:\\/\\/drop.evil.example\\/in"}',
+          " ".join(f"https://attacker.{suffix}/in" for suffix in PRIVATE), "the share is C:\\new.example",
+          "upload to https://s3.us-east-1.amazonaws.com/drop/x, then ping ec2-198-51-100-7.compute-1.amazonaws.com",
+          *PAGES]
+
+
+def _readings(text):
+    return (net_policy.hosts_in(text), net_policy.hosts_in(text, escapes=True), net_policy._typed_hosts(text),
+            net_policy.addresses_in(text), net_policy._sites_named([text]))
+
+
+def test_reading_a_run_once_finds_the_same_hosts_as_before(monkeypatch):
+    """On each text above, the hosts outside content's reading finds (as written and as its JSON), what the user typed
+    names, and the addresses either spells are the same as with the old readings."""
+    after = [_readings(text) for text in CORPUS]
+    monkeypatch.setattr(net_policy, "_URL_HOST", _OLD_URL_HOST)
+    monkeypatch.setattr(net_policy, "_typed_hosts", _old_typed_hosts)
+    before = [_readings(text) for text in CORPUS]
+    for text, old, new in zip(CORPUS, before, after, strict=True):
+        assert new == old, text[:80]
+    assert any(reading[0] for reading in after) and any(reading[2] for reading in after)
+    assert any(reading[3] for reading in after)
