@@ -1,9 +1,9 @@
 """SUB5a follow-up to #799: a scheduled task paused because its conversation was deleted says so everywhere, and stays
 paused.
 
-#799 pauses such a task (`paused_reason="conversation_deleted"`) and gives a new task that names no conversation one of
-its own (`scheduled-<uuid>`; since C7c-3b a task the schedule tool makes posts into the conversation it was made in).
-What this pins, through the real scheduler tick, the heartbeat's sync, the create route and the Inbox:
+#799 pauses such a task (`paused_reason="conversation_deleted"`) and gives every new task a conversation of its own
+(`scheduled-<uuid>`). What this pins, through the real scheduler tick, the heartbeat's sync, the create route and the
+Inbox:
 - the Mac's event for this pause names the task and its reason, and no conversation (so a click never opens the
   deleted one), and the Inbox's reminder words the reason instead of "failed 0 times" and the bare code;
 - the heartbeat's sync, run at every settings save and every boot, never turns such a task on again; turning the
@@ -228,9 +228,9 @@ async def _left_of(db, task_id: int) -> tuple[list, object]:
 
 
 async def test_the_schedule_tool_and_the_heartbeat_start_without_the_old_tasks_reminders(runs):  # noqa: F811
-    from tests.server.test_schedule_tools import schedule
+    from server.registry import schedule_tools
     await _old_task_left(runs, 1)
-    made = await schedule({"name": "again", "prompt": "p", "when": "every: 3600"})
+    made = await schedule_tools.ScheduleTaskExecutor().execute({"name": "again", "prompt": "p", "when": "every: 3600"})
     assert made["ok"] and made["task_id"] == 1
     assert await _left_of(runs, 1) == ([], None)
     await _old_task_left(runs, 2)

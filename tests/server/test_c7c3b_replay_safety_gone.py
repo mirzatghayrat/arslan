@@ -2,11 +2,10 @@
 
 Under a conversation id of `evolution-eval` or `evolution-replay`, the eval allowance capped web reads at fifty and
 the eval backstop refused every tool but five, after the tool's own gate. The eval and replay paths that ran under
-those ids went in C7b-1, C7b-2 and C7b-4 (v0.1.63). Conversation ids are set by the host, never by tool arguments:
-the app names the conversation it opens, and a task schedule_task makes binds to the conversation it was made in,
-whatever its arguments name (test_schedule_tools). A task stored earlier keeps its id: one stored under either old id
-now gets the live gates, as a conversation under any other id does (test_gate_order's
-`test_a_former_eval_id_gets_the_live_gates`).
+those ids went in C7b-1, C7b-2 and C7b-4 (v0.1.63). Conversation ids are set by the host, never by tool arguments;
+a task made with schedule_task gets a conversation of its own and ignores any conversation_id in its arguments
+(test_schedule_tools). A task stored earlier keeps its id: one stored under either old id now gets the live gates, as
+a conversation under any other id does (test_gate_order's `test_a_former_eval_id_gets_the_live_gates`).
 """
 import ast
 import dataclasses

@@ -372,12 +372,12 @@ async def test_a_fire_starts_from_its_tasks_outside_seen(ran, monkeypatch, seen)
 
 @pytest.mark.parametrize("seen", [False, True])
 async def test_the_schedule_tool_records_whether_its_turn_had_read_outside_content(seen):
-    from tests.server.test_schedule_tools import schedule
+    from server.registry.schedule_tools import ScheduleTaskExecutor
     token = untrusted.track_turn()
     try:
         if seen:
             untrusted.mark_external()
-        out = await schedule({"name": "n", "prompt": "p", "when": "every: 3600"})
+        out = await ScheduleTaskExecutor().execute({"name": "n", "prompt": "p", "when": "every: 3600"})
     finally:
         untrusted.end_turn(token)
     async with db_session.AsyncSessionLocal() as db:

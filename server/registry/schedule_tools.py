@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 
 from server.db import session as db_session
 from server.db.models import ScheduledTask
-from server.orchestrator import tool_caller, untrusted
+from server.orchestrator import untrusted
 
 # NOTE: `server.services.scheduler` is imported inside the functions below, not
 # here. When this was written, scheduler reached tool_loop → registry.executors →
@@ -76,19 +76,10 @@ def _describe(task: ScheduledTask) -> str:
 
 
 class ScheduleTaskExecutor:
-    """Create a recurring task that runs as Arslan, in the conversation it was made in."""
+    """Create a recurring task that runs as Arslan."""
     key = "schedule_task"
 
     async def execute(self, args: dict) -> dict:
-        # C7c-3b review 1: the task posts into the conversation this call runs in, read from the caller the dispatch
-        # sets (tool_execute.run_executor), never from the arguments: use_tool passes on fields the tool's table
-        # doesn't list, and the card shows no conversation. With no conversation nothing is scheduled: a row stored
-        # with none posts into `scheduled-<id>`, which is a deleted task's conversation once SQLite reuses that id
-        # (scheduler.own_conversation).
-        caller = tool_caller.current_caller()
-        conversation_id = caller.conversation_id if caller is not None else None
-        if not conversation_id:
-            return {"ok": False, "error": "not scheduled: this call has no conversation for its runs to post into"}
         name = str(args.get("name") or "").strip()[:MAX_NAME]
         prompt = str(args.get("prompt") or "").strip()
         if not name or not prompt:
@@ -107,7 +98,11 @@ class ScheduleTaskExecutor:
                         "error": f"there are already {enabled} enabled scheduled tasks "
                                  f"(the limit is {scheduler.MAX_ENABLED}) — cancel one first"}
             task = ScheduledTask(
-                name=name, prompt=prompt, spawn_id=None, target="arslan", conversation_id=conversation_id,
+                name=name, prompt=prompt, spawn_id=None, target="arslan",
+                # SUB5a: every task gets a conversation of its own (`scheduled-<uuid>`). C7c-3b review 1: a
+                # conversation_id in the arguments is ignored, never stored: use_tool passes on fields the tool's
+                # table doesn't list, the card shows no conversation, and a fire runs in whatever the row says.
+                conversation_id=scheduler.own_conversation(),
                 schedule_kind=kind, interval_s=interval_s, cron=cron,
                 enabled=True, consecutive_failures=0,
                 # ASK1-b: whether the turn writing this prompt had read outside content; its fires start from it.
