@@ -302,9 +302,11 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
             **({"measure": measure} if goal and measure is not None else {})}
 
 
-async def validate_output(runtime, text: str, trace: list[dict], *, model_adapter=None, goal=None) -> dict:
+async def validate_output(runtime, text: str, trace: list[dict], *, model_adapter=None, goal=None,
+                          host_runs=()) -> dict:
     """Record one immutable report before a final answer is revealed. `goal` (L7, a GoalSpec): the checks are
-    the goal's, read as `evaluate` says, and the judge reads each judgement check's named file, never `text`."""
+    the goal's, read as `evaluate` says, and the judge reads each judgement check's named file, never `text`.
+    `host_runs` (L7-5): the host's own runs of the goal's `check:` lines this verdict, the only ones they read."""
     # 0.1.59: the task's own record of its tool calls, when the caller has no trace (the
     # finish-time re-check passed [] and so never saw a file read or a command).
     trace = trace or list(getattr(runtime, "trace", ()))
@@ -319,7 +321,7 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
     context = await _disk_context(min(started) if started else None) if goal is not None or any(
         check.rule is not None and check.rule.kind == "file_saved" for check in spec.acceptance) else {}
     if goal is not None:
-        context["goal"] = True
+        context["goal"], context["host_runs"] = True, list(host_runs)
     references = {ref.locator: {"expected_hash": ref.sha256, "title": ref.title, "logical_key": ref.logical_key}
                   for ref in runtime.progress.artifacts if ref.locator}
     explicit = set()

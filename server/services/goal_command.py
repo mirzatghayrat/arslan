@@ -224,6 +224,14 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
             for check in spec.checks)})
     if all(check.user_confirmed for check in spec.checks):
         return say("goal_only_yours")
+    protected = None
+    if any(check.kind == "check" for check in spec.checks):
+        # L7-5: the protected set is recorded once, here at Start, and verified before each verdict; only a user
+        # edit of the goal records a new one (Resume reads it from the row).
+        protected = await _protect(spec)
+        if protected is None:
+            return say("goal_protect_failed")
+        spec = spec.model_copy(update={"protected": protected})
     if flagged:                             # the checks changed: a revision of the row, still not started
         async with repository() as repo:
             task = await repo.spec(row)
@@ -231,10 +239,28 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
                 **task.model_dump(mode="json"), "revision": task.revision + 1, "acceptance": acceptance(spec)}),
                 owner_id=row.owner_id)
             await repo.park_goal(row.id, spec.model_dump(mode="json"), owner_id=row.owner_id)
+    elif protected is not None:
+        async with repository() as repo:
+            await repo.park_goal(row.id, spec.model_dump(mode="json"), owner_id=row.owner_id)
     if background_jobs.goal_job(row.id):    # a second Start that came in during the awaits above: no await from here
         return await _status(row, say)
     background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac")
     return say("goal_started", objective=spec.objective[:200])
+
+
+async def _protect(spec: GoalSpec):
+    """L7-5: the protected set of the goal's `check:` lines in the working folder, or None when it can't be recorded
+    (over its limits, no working folder, a file that can't be read): Start refuses then."""
+    import asyncio
+    from server.db import session as db_session
+    from server.services import settings_service
+    from server.services.goal_mode import record_protected
+    async with db_session.AsyncSessionLocal() as db:
+        root = await settings_service.workspace_dir(db)
+    try:
+        return None if root is None else await asyncio.to_thread(record_protected, root, spec.checks)
+    except (ValueError, OSError):           # ValidationError is a ValueError
+        return None
 
 
 async def _resume(conversation_id: str, row, say, *, source: str | None) -> str:
