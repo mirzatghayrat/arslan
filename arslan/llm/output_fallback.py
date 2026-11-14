@@ -7,6 +7,10 @@ or 422 whose message names the cap parameter this request sent) is answered by s
 request again, once, at output_budget.REFUSED_CAP_FALLBACK. Anything else is raised as before. A
 refused request was not generated, so it is not billed. Wraps param_heal, which still renames or
 drops what an endpoint refuses first.
+
+A refusal is remembered per endpoint fingerprint (base URL, model and key hash), in this process only:
+later requests there open at the fallback, so they are not refused once each. After a restart the first
+request learns it again with one refused (unbilled) round trip, as param_heal does.
 """
 from __future__ import annotations
 
@@ -29,6 +33,22 @@ _GEMINI = ("generationConfig", "maxOutputTokens")
 # A refusal of the parameter itself, not of its size: param_heal's to rename or drop, never resent here.
 _PARAMETER_REFUSED = re.compile(r"unsupported parameter|not supported|unknown (?:parameter|field|name)|"
                                 r"unrecognized|extra (?:inputs|fields)|cannot find field|deprecated", re.I)
+
+
+# Endpoint fingerprints (providers' endpoint_fingerprint) known to refuse a cap above REFUSED_CAP_FALLBACK.
+_refused_caps: set[str] = set()
+
+
+def forget() -> None:
+    """Tests only: drop every refusal remembered in this process."""
+    _refused_caps.clear()
+
+
+def _opened_at_fallback(fingerprint: str, payload: dict[str, Any]) -> None:
+    """A request to an endpoint known to refuse a larger cap is sent at the fallback; a smaller cap is kept."""
+    slot = _slot(payload) if fingerprint in _refused_caps else None
+    if slot is not None and isinstance(slot[0][slot[1]], int) and slot[0][slot[1]] > REFUSED_CAP_FALLBACK:
+        slot[0][slot[1]] = REFUSED_CAP_FALLBACK
 
 
 def _squashed(text: str) -> str:
@@ -70,17 +90,20 @@ def lowered(exc: httpx.HTTPStatusError, payload: dict[str, Any]) -> bool:
 async def send(fingerprint: str, payload: dict[str, Any],
                attempt: Callable[[dict[str, Any]], Awaitable[T]]) -> T:
     """param_heal.send, sent once more at the fallback cap when the cap was refused."""
+    _opened_at_fallback(fingerprint, payload)
     try:
         return await param_heal.send(fingerprint, payload, attempt)
     except httpx.HTTPStatusError as exc:
         if not lowered(exc, payload):
             raise
+    _refused_caps.add(fingerprint)
     return await param_heal.send(fingerprint, payload, attempt)
 
 
 async def stream(fingerprint: str, payload: dict[str, Any],
                  attempt: Callable[[dict[str, Any]], AsyncIterator[T]]) -> AsyncIterator[T]:
     """param_heal.stream, likewise; only a refusal before the first item is sent again."""
+    _opened_at_fallback(fingerprint, payload)
     started = False
     try:
         async for item in param_heal.stream(fingerprint, payload, attempt):
@@ -90,5 +113,6 @@ async def stream(fingerprint: str, payload: dict[str, Any],
     except httpx.HTTPStatusError as exc:
         if started or not lowered(exc, payload):
             raise
+    _refused_caps.add(fingerprint)
     async for item in param_heal.stream(fingerprint, payload, attempt):
         yield item

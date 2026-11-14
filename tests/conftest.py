@@ -505,7 +505,9 @@ def _param_heal_forgotten():
     """0.1.61: providers remember, per process, the parameters an endpoint refused.
     A test must start without another test's lessons — and a lesson must not hide
     a regression (a provider sending `temperature` again would be healed silently)."""
-    from arslan.llm import param_heal
+    from arslan.llm import output_fallback, param_heal
     param_heal.forget()
+    output_fallback.forget()      # v0.1.64: a refused output cap is remembered the same way
     yield
     param_heal.forget()
+    output_fallback.forget()

@@ -10,7 +10,8 @@ v0.1.64: every other OpenAI-compatible key and Gemini declare the model's own
 documented maximum output (for_model), as mainstream agents do, or 32,768 for
 a model whose maximum is not known. An endpoint that refuses the declared cap
 (a smaller model limit, or OpenRouter reserving it against a key's credit, the
-v0.1.25 field report) is asked once more at 8,192 (output_fallback.py).
+v0.1.25 field report) is asked once more at 8,192, and that refusal is
+remembered per endpoint and model in this process (output_fallback.py).
 """
 from __future__ import annotations
 
