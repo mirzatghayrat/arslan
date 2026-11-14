@@ -5,6 +5,13 @@ import { useTranslation } from "react-i18next";
 import { companionApi, type ConversationContext, type Project } from "../../api/companion";
 import CompanionDialog, { buttonClass, inputClass, primaryClass } from "./CompanionDialog";
 import { companionError } from "./errors";
+import { ApiError } from "../../api/client";
+
+/** The fields the user changed since `base` (the row the dialog opened on), on top of the server's current row. */
+function rebase(draft: ConversationContext, base: ConversationContext, fresh: ConversationContext): ConversationContext {
+  const mine = Object.fromEntries(Object.entries(draft).filter(([key, value]) => base[key as keyof ConversationContext] !== value));
+  return { ...fresh, ...mine, conversation_id: fresh.conversation_id, version: fresh.version };
+}
 
 export default function ConversationControls({ conversationId, running, empty, onChanged, compact = false }: {
   conversationId: string; running: boolean; empty: boolean; onChanged: (context: ConversationContext) => void; compact?: boolean;
@@ -34,7 +41,20 @@ export default function ConversationControls({ conversationId, running, empty, o
         ? { ...draft, no_memory: true, no_learning: true, cloud_memory_allowed: false, allow_sensitive: false }
         : draft);
       setContext(next); onChanged(next); setDraft(null);
-    } catch (cause) { setError(companionError(cause)); }
+    } catch (cause) {
+      // Refused as stale (SIDE-1 review 4): e.g. opening a side chat or a sub-session gave this conversation its
+      // first settings row, so the version read on open moved on. Read the current row and put the user's own
+      // changes on top of it, so Save again sends the current version and keeps what changed elsewhere for the
+      // rest (MemoryList reloads on a conflict the same way, #466 review). A failed read keeps the draft as it was.
+      if (cause instanceof ApiError && cause.message.includes("version_conflict")) {
+        try {
+          const fresh = await companionApi.context(conversationId);
+          setContext(fresh); onChanged(fresh);
+          setDraft(row => row && rebase(row, context, fresh));
+        } catch { /* the conflict below is still said */ }
+      }
+      setError(companionError(cause));
+    }
     finally { setBusy(false); }
   }
   // In the conversation header (ConversationHeader): one button, its chips inside, so every chip opens these settings
