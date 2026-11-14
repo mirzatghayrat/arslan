@@ -1,13 +1,15 @@
 """The hard rules, written once (v0.1.64 HR-0): what Arslan never does, or never does without the user's own answer.
 
-Four tables, each row naming the rule, the layer that holds it (`LAYERS`), the function that holds it there and the
+Five tables, each row naming the rule, the layer that holds it (`LAYERS`), the function that holds it there and the
 test that proves it:
 
   DIRECT      what a command's text alone decides: the parser's forbid rules (layer ①) and this-time-only rules
               (layer ②), and what the gate refuses before any card;
-  RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-2 adds the file tools);
+  RUN_LATER   writes into files that make something run later (HR-1: the kernel's holds; HR-3 part 1: a command's
+              direct forms outside the sandbox, lifted only by a click on its own card; HR-2 adds the file tools);
   NEVER_AUTO  what only the user answers, never a grant, a rule, a mode or a classifier (`never_auto`);
-  ABSOLUTE    what holds under the least strict settings Arslan has, and the network cut after outside content, by path.
+  ABSOLUTE    what holds under the least strict settings Arslan has, and the network cut after outside content, by path;
+  POST_RUN    what the check after each command undoes or names in git's own view of each repository (HR-1c).
 
 The rule keys and kinds come from the tables that decide them (terminal_policy, permissions), never copied: a row
 names a key, and tests/server/test_hard_rules.py fails when a key or a kind has no row, or a row's test is not
@@ -19,8 +21,9 @@ from dataclasses import dataclass
 
 from server.services import permissions, run_later, terminal_policy
 
-#: Where a rule is held: the command's text, the seatbelt profile, the tool loop's gate, the permission ladder.
-LAYERS = ("parser", "kernel", "gate", "permissions")
+#: Where a rule is held: the command's text, the seatbelt profile, the tool loop's gate, the permission ladder, and
+#: the check after each command (HR-1c: git's own view of each repository, `git_config_guard.restore`).
+LAYERS = ("parser", "kernel", "gate", "permissions", "post-run")
 
 #: Every key the parser's tables give a command: layer ①'s and layer ②'s (with `delete-outside` and `unreadable`).
 FORBID_KEYS = frozenset(key for key, *_ in terminal_policy._FORBID)
@@ -31,7 +34,9 @@ NEVER_AUTO_RULES = terminal_policy.ONCE_ONLY_RULES
 #: Full access still asks these (S5's table), so nothing automatic answers them either (CLS: never what full access
 #: would still ask).
 FULL_ACCESS_ASKS = frozenset({"send", "site", "shortcut"})
-NEVER_AUTO_KINDS = permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
+NEVER_AUTO_KINDS = (permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
+                    | permissions._CONVERSATION_ONLY        # HR-1b: git_config, the user's own click only
+                    | {"git_include"})                      # HR-1c: git after an include outside changed
 #: Kinds whose request decides (a command by its rules; HR-2 adds a write by its path). Written out, not derived: a
 #: kind added to permissions.KINDS is never answered automatically until it is placed here or in NEVER_AUTO_KINDS
 #: (the meta-test fails meanwhile).
@@ -77,7 +82,7 @@ DIRECT: tuple[HardRule, ...] = (
                    "fork-bomb", "kill-all", "shutdown")),
     _forbid("trash", _T + "test_smart8_delete_to_trash.py::test_a_delete_from_the_trash_or_emptying_it_is_forbidden"),
     *map(_ask, ("apple-events", "shortcuts", "send-mail", "send-message", "upload", "remote-shell", "git-push",
-                "publish", "force-kill", "login-items", "keychain-write", "system-settings", "open-app",
+                "publish", "secret-write", "force-kill", "login-items", "keychain-write", "system-settings", "open-app",
                 "screen-clipboard", "delete-outside")),
     _ask(terminal_policy.OUTSIDE_REACH[0],                 # S2a-3 step 5: only when the command runs outside
          _T + "test_s2a3_outside_reach.py::test_a_gap_asks_once_outside_and_runs_inside"),
@@ -96,6 +101,10 @@ _HR1 = _T + "test_hr1_run_later.py::"
 _HR1_KERNEL = _T + "sbx/test_hr1_run_later_kernel.py::"
 _HR1_ALIASES = _T + "sbx/test_hr1_run_later_aliases.py::"
 _HR1_LINK_TARGETS = _T + "sbx/test_hr1_run_later_link_targets.py::"
+_HR2A = _T + "test_hr2a_run_later_writes.py::"
+_HR3 = _T + "test_hr3_run_later_text.py::"
+_SBX5B = _T + "sbx/test_sbx5b_app_data.py::"
+_SBX5B_CARDS = _T + "test_sbx5b_app_data_cards.py::"
 
 
 def _later(family: str) -> HardRule:
@@ -104,7 +113,8 @@ def _later(family: str) -> HardRule:
 
 
 #: HR-1: the names (run_later.FAMILIES), held by the kernel for commands in the sandbox, MCP servers and a command
-#: let out under this conversation's grant. HR-2 adds the file tools' rows, HR-3 the direct forms outside the sandbox.
+#: let out under this conversation's grant. HR-3 part 1: the direct forms outside the sandbox, which only a click on
+#: the command's own card lets through. HR-2 adds the file tools' rows.
 RUN_LATER: tuple[HardRule, ...] = (
     *map(_later, (name for name, _ in run_later.FAMILIES)),
     HardRule("run-later/hooks-path", "run-later", "kernel", "server.services.run_later:hooks_path",
@@ -123,6 +133,20 @@ RUN_LATER: tuple[HardRule, ...] = (
     # #813 review 10: a held name or held folder that is a link has the held names at its real path held.
     HardRule("run-later/link-targets", "run-later", "kernel", "server.services.run_later:link_filters",
              _HR1_LINK_TARGETS + "test_a_held_name_or_folder_that_is_a_link_has_the_held_names_at_its_target_held"),
+    # HR-2a: the file tools, which run in Arslan's own process (no kernel on their path).
+    HardRule("run-later/file-tools", "run-later", "gate", "server.services.workspace_paths:_refuse_run_later",
+             _HR2A + "test_each_held_name_is_refused_for_a_write"),
+    HardRule("run-later/file-tools-card", "run-later", "permissions", "server.orchestrator.tool_gates:_run_later_card",
+             _HR2A + "test_in_arslans_own_folder_a_held_write_asks_its_own_card_each_time"),
+    HardRule("run-later/write-token", "run-later", "gate", "server.registry.file_tools:_write_inside",
+             _HR2A + "test_a_link_swapped_after_the_click_fails_closed"),
+    # HR-3 part 1: the direct forms, read from the command, where the kernel's hold doesn't stand (outside the sandbox).
+    HardRule("run-later/direct-forms", "run-later", "parser", f"{_TP}:run_later_targets",
+             _HR3 + "test_run_later_targets"),
+    HardRule("run-later/click-lift", "run-later", "gate", f"{_GATE}:check",
+             _HR3 + "test_under_an_outside_grant_a_run_later_write_gets_a_once_only_card"),
+    HardRule("run-later/never-auto", "run-later", "permissions", "server.services.hard_rules:never_auto",
+             _HR3 + "test_a_command_that_writes_a_file_that_runs_later_is_never_auto"),
 )
 
 NEVER_AUTO: tuple[HardRule, ...] = (
@@ -137,10 +161,33 @@ NEVER_AUTO: tuple[HardRule, ...] = (
     HardRule("outside", "always-asks", "permissions", f"{_PERMS}:decide",
              _T + "test_s4a_outside_remote.py::test_review_3_the_outside_card_is_shown_even_with_a_grant_and_writes_no_grant_row",
              kinds=permissions._ALWAYS_ASKS),
+    HardRule("git-config", "user-only", "permissions", f"{_PERMS}:options_for",
+             _T + "test_hr1b_git_config.py::test_the_card_asks_once_per_conversation_and_never_leaks_to_another",
+             kinds=permissions._CONVERSATION_ONLY),
+    HardRule("git-include", "once-only", "gate", f"{_GATE}:_git_include",
+             _T + "test_hr1c_git_include.py::test_the_marked_repositorys_next_git_command_asks_once_and_not_the_island",
+             kinds=frozenset({"git_include"})),
+    # HR-2b: its kind is once only (`once-only-kinds` above places it); this row names where it is asked.
+    HardRule("git-refused", "once-only", "gate", f"{_GATE}:_git_refused_card",
+             _T + "test_hr2b_git_cards.py::test_after_a_git_refusal_the_next_commit_asks_once_and_status_does_not"),
     HardRule("full-access-still-asks", "user-only", "permissions", "server.services.hard_rules:never_auto",
              _T + "test_hard_rules.py::test_what_full_access_still_asks_is_never_auto", kinds=FULL_ACCESS_ASKS),
     HardRule("unknown-kind", "fails-closed", "permissions", f"{_PERMS}:_check",
              _T + "test_permissions.py::test_an_unknown_kind_raises_before_anything_is_asked_stored_or_recorded"),
+    # HR-2a: the run_later kind is once only (the row above); a write request naming such a file is never auto too.
+    HardRule("run-later-write", "once-only", "permissions", "server.services.hard_rules:never_auto",
+             _HR2A + "test_a_run_later_card_or_a_write_naming_a_held_file_is_never_auto"),
+    # SBX-5b: other apps' listed private data, one list for both sides; its card is once only (the row above).
+    HardRule("app-data/commands", "app-data", "kernel", f"{_SANDBOX}:app_data_folders",
+             _SBX5B + "test_each_listed_folder_is_closed_to_a_command_and_an_unlisted_one_is_not"),
+    HardRule("app-data/open-once", "app-data", "kernel", f"{_SANDBOX}:_check_open_once",
+             _SBX5B + "test_open_once_reads_that_folder_only_and_never_writes_it"),
+    HardRule("app-data/file-tools", "app-data", "gate", "server.services.workspace_paths:_refuse_app_data",
+             _SBX5B_CARDS + "test_a_listed_folder_is_refused_for_a_read_and_a_write_with_its_own_refusal"),
+    HardRule("app-data/file-tools-card", "app-data", "permissions", "server.orchestrator.tool_gates:app_data",
+             _SBX5B_CARDS + "test_one_click_is_one_call"),
+    HardRule("app-data/command-card", "app-data", "permissions", f"{_GATE}:_app_data",
+             _SBX5B_CARDS + "test_a_command_asks_to_reopen_the_one_listed_folder_read_only"),
 )
 
 
@@ -153,7 +200,7 @@ def _cut(key: str, layer: str, holder: str, test: str) -> HardRule:
 
 
 ABSOLUTE: tuple[HardRule, ...] = (
-    # Under the least strict settings (ask_risky, an outside grant, the sandbox off); S5a adds full access.
+    # Under the least strict settings (ask_risky, an outside grant, the sandbox off) and under S5a's full access.
     _absolute("forbid-floor", "gate", f"{_GATE}:check", "test_the_floor_refuses_before_any_card"),
     _absolute("arslan-data", "kernel", f"{_SANDBOX}:minimal_profile", "test_arslans_own_data_stays_closed"),
     _absolute("skills-and-plugins", "kernel", f"{_SANDBOX}:minimal_profile", "test_the_skill_and_plugin_folders_stay_closed"),
@@ -183,7 +230,22 @@ ABSOLUTE: tuple[HardRule, ...] = (
          _T + "test_s2a2_three_layers.py::test_a_card_that_asks_for_the_network_too_says_so_and_the_island_leaves_it"),
 )
 
-ALL: tuple[HardRule, ...] = (*DIRECT, *RUN_LATER, *NEVER_AUTO, *ABSOLUTE)
+def _post_run(key: str, holder: str, test: str) -> HardRule:
+    return HardRule("post-run/" + key, "post-run", "post-run", f"server.services.git_config_guard:{holder}", _T + test)
+
+
+#: HR-1c: what the check after each command in the sandbox (and one under the outside floor that holds run-later
+#: files) undoes or names, from git's own view of each repository (terminal_exec._guarded).
+POST_RUN: tuple[HardRule, ...] = (
+    _post_run("hooks-quarantine", "_check_hooks", "test_hr1c_git_view.py::"
+              "test_a_hook_that_appeared_during_the_command_is_quarantined_and_one_from_before_is_not"),
+    _post_run("config-revert", "_revised",
+              "test_hr1c_git_view.py::test_without_the_grant_a_config_changed_through_another_name_is_put_back"),
+    _post_run("include-check", "_check_includes",
+              "test_hr1c_git_include.py::test_an_include_in_the_work_folder_given_a_program_key_is_quarantined"),
+)
+
+ALL: tuple[HardRule, ...] = (*DIRECT, *RUN_LATER, *NEVER_AUTO, *ABSOLUTE, *POST_RUN)
 
 # A row naming a key or a kind its table does not have would protect nothing (as permissions' scope sets).
 _NAMED = {r.id for r in DIRECT if r.category in ("forbid", "this-time-only")}
@@ -193,9 +255,30 @@ if not _NAMED <= FORBID_KEYS | ASK_KEYS or not (NEVER_AUTO_KINDS | MAY_AUTO_KIND
 
 
 def _writes_run_later(request) -> bool:
-    """HR-2 fills this: a file tool's write into a file that makes something run later (`run_later.matches`). A
-    command's writes are held by the kernel since HR-1 (RUN_LATER), not read from its request here."""
-    return False
+    """A write into a file that makes something run later. HR-3 part 1: a command's, by a direct form or one it can't
+    read (`terminal_policy.run_later_targets`, the same reading the gate's click-lift rule asks with).
+    HR-2a: a file tool's write request (`workspace_write`) whose file makes something run later: its detail (the
+    path the model gave) in its target (the work folder) judged by `workspace_paths.held_for_later`, the gate's own
+    test (every link on the way, #813 review 9 and 10), and its detail by name as well (a target that isn't a folder
+    on this Mac judges nothing). Not a string, or a write that can't be told (RunLaterUnknown, an OS error): True.
+    The file tools
+    ask such a write as a `run_later` card of its own (tool_gates), so this holds for a request built some other way."""
+    from pathlib import Path
+
+    from server.services import workspace_paths
+    if getattr(request, "kind", None) == "command":
+        return bool(terminal_policy.run_later_targets(request.detail))
+    if request.kind != "workspace_write":
+        return False
+    detail, target = getattr(request, "detail", None), getattr(request, "target", None)
+    if not isinstance(detail, str):
+        return True
+    try:
+        held = (isinstance(target, str) and Path(target).is_absolute()
+                and workspace_paths.held_for_later(detail, Path(target)) is not None)
+    except (workspace_paths.RunLaterUnknown, OSError, RuntimeError, ValueError):     # ValueError: a NUL in the path
+        return True
+    return held or run_later.matches(detail)
 
 
 def never_auto(request) -> bool:

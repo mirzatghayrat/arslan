@@ -1,6 +1,5 @@
 """run_command's workspace sandbox (0.1.51 P3): the profile, the stop detector,
 the conversation grant, and — on macOS — what the kernel actually refuses."""
-import json
 import socket
 import sys
 from pathlib import Path
@@ -38,39 +37,8 @@ def box(tmp_path, monkeypatch):
 
 
 # ── the profile (any platform) ────────────────────────────────────────────────
-
-def test_rule_order_denies_writes_reopens_folders_and_closes_protected_last(tmp_path):
-    ws, secret = tmp_path / "ws", tmp_path / "ws" / "secret"
-    text = command_sandbox.profile([ws], [secret])
-    lines = text.splitlines()
-    # S2a-1: no Apple Events from the sandbox (test_s2a1_sandbox).
-    assert lines[:4] == ["(version 1)", "(allow default)", "(deny appleevent-send)", '(deny file-write* (subpath "/"))']
-    assert lines[4].startswith("(allow file-write* ") and json.dumps(str(ws.resolve())) in lines[4]
-    assert lines[-2].startswith("(deny file-read* file-write* ") and json.dumps(str(secret.resolve())) in lines[-2]
-    # The protected paths are closed to sockets too; TCP and everything else stay open.
-    assert lines[-1] == lines[-2].replace("(deny file-read* file-write* ", "(deny network-outbound ", 1)
-    assert [line for line in lines if "network" in line] == [lines[-1]]
-    assert "(deny network*)" in command_sandbox.profile([ws], [secret], offline=True)
-    assert "network" not in command_sandbox.profile([ws], [])
-
-
-def test_folder_names_cannot_inject_rules(tmp_path):
-    import re
-    evil = tmp_path / 'a") (allow file-write* (subpath "/'
-    text = command_sandbox.profile([evil], [])
-    assert json.dumps(str(evil.resolve())) in text
-    # Outside quoted strings there is still exactly one allow rule.
-    bare = re.sub(r'"(?:\\.|[^"\\])*"', '""', text)
-    assert bare.count("(allow file-write*") == 1, bare
-
-
-def test_protected_files_are_literal_and_folders_subpaths(tmp_path):
-    f = tmp_path / "updater.key"
-    f.write_text("k")
-    text = command_sandbox.profile([], [f, tmp_path / "data"])
-    assert f'(literal {json.dumps(str(f.resolve()))})' in text
-    assert f'(subpath {json.dumps(str((tmp_path / "data").resolve()))})' in text
-
+# v0.1.64: the checks on the pre-SBX-3 text moved to the live profile (tests/server/sbx/test_sbx3a_commands_profile.py,
+# test_sbx2_profile.py) when it went.
 
 def test_default_writable_and_protected_cover_the_plan(tmp_path):
     home = Path.home()
@@ -354,21 +322,6 @@ async def test_the_executor_closes_the_folders_only_while_the_setting_is_off(tmp
         await db.commit()
     await RunCommandExecutor().execute({"command": "ls"})
     assert seen == [([], []), ([docs], [project])]
-
-
-def test_the_profile_closes_then_reopens_then_protects(tmp_path):
-    docs, ws, project, key = tmp_path / "Documents", tmp_path / "Documents" / "ws", tmp_path / "Documents" / "P", tmp_path / "k"
-    text = command_sandbox.profile([ws], [key], closed=[docs], readable=[project])
-    lines = text.splitlines()
-    closing = next(i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write*") and "Documents\"" in line)
-    reopen_rw = next(i for i, line in enumerate(lines) if line.startswith("(allow file-read* file-write*"))
-    reopen_r = next(i for i, line in enumerate(lines) if line.startswith("(allow file-read* ") and "file-write" not in line)
-    protect = next(i for i, line in enumerate(lines) if json.dumps(str(command_sandbox._real(key))) in line and "deny" in line)
-    assert closing < reopen_rw < protect and closing < reopen_r < protect
-    assert json.dumps(str(command_sandbox._real(ws))) in lines[reopen_rw]
-    assert json.dumps(str(command_sandbox._real(project))) in lines[reopen_r]
-    # The setting on: not a single extra rule.
-    assert command_sandbox.profile([ws], [key]) == command_sandbox.profile([ws], [key], closed=[], readable=[project])
 
 
 def test_a_stopped_command_is_told_which_folders_the_user_keeps_closed():

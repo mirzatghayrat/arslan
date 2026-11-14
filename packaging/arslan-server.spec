@@ -127,6 +127,10 @@ for pkg in (
     datas += d
     binaries += b
     hiddenimports += h
+# NET-a (v0.1.64): the Public Suffix List server/services/net_policy.py reads is tld's own data file. tld comes in with
+# courlan (trafilatura's), and no hook collects its data, so without this line the app has the module but not the list
+# (server_entry.py's selftest asks the list, and fails then).
+datas += collect_data_files("tld", subdir="res")
 
 # The built SPA. server/main.py only mounts the SPA fallback when its static
 # dir EXISTS, so a bundle without this serves 200s on /api/* and a blank window

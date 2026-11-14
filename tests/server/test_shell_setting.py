@@ -43,23 +43,24 @@ async def test_shell_enabled_when_true(maker):
 
 
 @pytest.mark.asyncio
-async def test_confirm_policy_defaults_to_asking_before_every_command(maker):
-    # v0.1.63 (the user's decision): every command shows a card unless the user chose otherwise.
+async def test_confirm_policy_defaults_to_asking_only_for_risky_commands(maker):
+    # v0.1.64 ASK1-a (the user, 2026-11-07): unset reads ask_risky again.
     from server.services import settings_service
 
-    async with maker() as s:
-        assert await settings_service.shell_confirm_policy(s) == "ask_all"
+    async with maker() as s:      # S5a: the setting is the default permission mode now
+        assert await settings_service.default_permission_mode(s) == "ask_risky"
 
 
 @pytest.mark.asyncio
-async def test_asking_only_for_risky_commands_is_an_explicit_choice_that_persists(maker):
+async def test_each_choice_persists_and_an_unknown_spelling_asks_for_everything(maker):
     from server.services import settings_service
 
+    for mode in ("plan", "ask", "full_access", "ask_risky"):
+        async with maker() as s:
+            await settings_service.update_settings(s, {"default_permission_mode": mode})
+        async with maker() as s:
+            assert await settings_service.default_permission_mode(s) == mode
     async with maker() as s:
-        await settings_service.update_settings(s, {"shell_confirm_policy": "ask_risky"})
+        await settings_service.update_settings(s, {"default_permission_mode": "garbage"})
     async with maker() as s:
-        assert await settings_service.shell_confirm_policy(s) == "ask_risky"
-    async with maker() as s:
-        await settings_service.update_settings(s, {"shell_confirm_policy": "garbage"})
-    async with maker() as s:
-        assert await settings_service.shell_confirm_policy(s) == "ask_all"
+        assert await settings_service.default_permission_mode(s) == "ask"

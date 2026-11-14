@@ -31,15 +31,15 @@ SCHEMAS = {**{t.name: t.schema for t in TOOLS},
 # request isn't shown (on_demand.py; use_tool's call is judged under the tool it names) and escalate (tool_loop).
 # MCP tools aren't here: each module judges them per call.
 UNLISTED = {
-    "run_python": Traits(effect="local_write", parallel=False, outside=False, replay_safe=True, saves=False),
-    "find_tools": Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False),
-    "use_tool": Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False),
-    "escalate": Traits(effect="external_write", parallel=False, outside=False, replay_safe=False, saves=False),
+    "run_python": Traits(effect="local_write", parallel=False, outside=False, saves=False),
+    "find_tools": Traits(effect="external_write", parallel=False, outside=False, saves=False),
+    "use_tool": Traits(effect="external_write", parallel=False, outside=False, saves=False),
+    "escalate": Traits(effect="external_write", parallel=False, outside=False, saves=False),
 }
 tool.check_traits(TOOLS, UNLISTED)
 TRAITS = {**{t.name: t.traits for t in TOOLS}, **UNLISTED}
 
 
 def named(has: Callable[[Traits], bool]) -> frozenset[str]:
-    """The keys whose traits say yes: how each module's name set (parallel_reads.READS, replay_safety's, …) is made."""
+    """The keys whose traits say yes: how each module's name set (parallel_reads.READS, untrusted._OUTSIDE_TOOLS, …) is made."""
     return frozenset(key for key, traits in TRAITS.items() if has(traits))

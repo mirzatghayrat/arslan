@@ -15,7 +15,7 @@ import importlib.util
 from server.orchestrator import answer_guards, promise_guard, tool_loop
 from server.registry import seed_catalog, seeder
 from server.registry.executors import EXECUTORS
-from server.services import replay_safety, task_service
+from server.services import task_service
 
 
 def test_render_deck_is_not_a_tool_any_more():
@@ -41,6 +41,5 @@ def test_the_deck_claim_regex_is_gone_with_the_zero_tool_tier():
 
 
 def test_no_tool_list_still_names_render_deck():
-    assert "render_deck" not in replay_safety.REPLAY_SAFE_BUILTINS
     assert "render_deck" not in task_service._LOCAL_WRITE_TOOLS
     assert "render_deck" not in answer_guards._PROMISES_ACTION_RE.pattern

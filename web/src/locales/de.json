@@ -492,16 +492,13 @@
     "labelShellConfirmPolicy": "Wann fragen",
     "shellPolicyAskAll": "Vor jedem Befehl fragen",
     "shellPolicyAskAllNote": "Jeder neue Befehl fragt zuerst. Einen Befehl, den du „In diesem Gespräch“ erlaubt hast, führt Arslan in diesem Gespräch ohne erneute Frage wieder aus.",
-    "askRiskyConfirmTitle": "Nur bei riskanten Befehlen fragen?",
-    "askRiskyConfirmBody": "Befehle, die Arslan für harmlos hält, laufen ohne Nachfrage in der Sandbox. In dieser Version gilt ein Löschen, das im selben Befehl nach einem Ordnerwechsel steht (zum Beispiel `cd folder && rm file`), als Löschen im Arbeitsordner. Es kann also ohne Karte laufen, auch wenn dieser Ordner woanders liegt, und „Diese Runde rückgängig machen“ holt nur Dateien im Arbeitsordner zurück. 0.1.64 behebt das.",
-    "askRiskyConfirmAction": "Nur bei riskanten Befehlen fragen",
-    "askRiskyConfirmCancel": "Weiter vor jedem Befehl fragen",
     "shellPolicyUndoPointer": "Hat ein Befehl im Arbeitsordner etwas geändert oder gelöscht, das du nicht wolltest, öffne ⋯ unter dieser Antwort, wähle „Diese Runde rückgängig machen…“ und dann „Dateien zurücksetzen“: Diese Dateien kommen in den Zustand vor der Runde zurück. Das geht, wenn der Arbeitsordner höchstens 20.000 Dateien und 5 GB hat, Python-Umgebungen, node_modules, Build-Ausgaben und Python-Caches nicht mitgezählt; diese werden nie zurückgeholt.",
-    "policyNoticeTitle": "Arslan fragt jetzt vor jedem Befehl",
-    "policyNoticeBody": "Vor 0.1.63 hat Arslan nur bei riskanten Befehlen gefragt, weil du es so gewählt hattest oder weil es die Voreinstellung war. Jetzt fragt jeder neue Befehl zuerst. In dieser Version gilt ein Löschen, das im selben Befehl nach einem Ordnerwechsel steht (zum Beispiel `cd folder && rm file`), als Löschen im Arbeitsordner. Mit „Nur bei riskanten Befehlen fragen“ könnte es deshalb ohne Karte laufen, auch wenn dieser Ordner woanders liegt, und „Diese Runde rückgängig machen“ holt nur Dateien im Arbeitsordner zurück. 0.1.64 behebt das. Zurückstellen: Einstellungen › Was Arslan darf › Terminal › Wann fragen › „Nur bei riskanten Befehlen fragen“.",
+    "policyNoticeRiskyTitle": "Arslan fragt jetzt nur bei riskanten Befehlen",
+    "policyNoticeRiskyBody": "Befehle laufen jetzt ohne Nachfrage in der Sandbox. Eine Karte erscheint weiterhin, wenn ein Befehl die Sandbox verlassen muss, echten Schaden anrichten könnte oder eine Regel eine Nachfrage verlangt. Wieder vor jedem Befehl fragen: Einstellungen › Was Arslan darf › Terminal › Wann fragen › „Vor jedem Befehl fragen“.",
+    "policyNoticeAllTitle": "Arslan fragt vor jedem Befehl",
+    "policyNoticeAllBody": "Ab 0.1.64 fragt eine neue Installation nur bei riskanten Befehlen: Befehle laufen ohne Nachfrage in der Sandbox, und eine Karte erscheint, wenn ein Befehl die Sandbox verlassen muss, echten Schaden anrichten könnte oder eine Regel eine Nachfrage verlangt. Hier fragt Arslan vor jedem Befehl, und das bleibt so, bis du es änderst: Einstellungen › Was Arslan darf › Terminal › Wann fragen › „Nur bei riskanten Befehlen fragen“.",
     "policyNoticeOk": "Verstanden",
     "shellPolicyAskRisky": "Nur bei riskanten Befehlen fragen",
-    "shellPolicyAskRiskyNote": "Arslans Einschätzung, welche Befehle riskant sind, wird noch vervollständigt (v0.1.64). Bis dahin ist es sicherer, vor jedem Befehl zu fragen.",
     "labelMcpServer": "MCP-Server (eingehend)",
     "mcpServerDesc": "Erlaubt externen MCP-Clients (Claude Code, Codex) den Aufruf schreibgeschützter Tools. Standardmäßig deaktiviert; erfordert ein generiertes MCP-Token. Nur localhost.",
     "mcpToken": {
@@ -764,6 +761,7 @@
       "waiting": "Wartet auf deine Freigabe",
       "waiting_reminder": "Ein angehaltener Auftrag hat dir eine Erinnerung hinterlassen",
       "waiting_away": "Eine Karte ist abgelaufen",
+      "waiting_glance": "Ein fertiger Auftrag hat dir etwas zum Ansehen hinterlassen",
       "working": "Läuft",
       "progress": "Läuft: {{done}} von {{total}}",
       "done": "Fertig",
@@ -1059,6 +1057,7 @@
         "send-message": "Sendet oder postet in deinem Namen; das lässt sich nicht zurücknehmen",
         "upload": "Sendet Daten an eine Website oder eine Cloud",
         "publish": "Veröffentlicht oder ändert etwas online",
+        "secret-write": "Setzt oder entfernt ein Secret, das CI oder Produktion liest",
         "git-push": "Veröffentlicht in einem entfernten Repository",
         "remote-shell": "Verbindet sich mit einem anderen Rechner",
         "apple-events": "Steuert andere Apps; sie könnten senden, löschen oder kaufen",
@@ -1357,7 +1356,7 @@
     "every_minute": "jede Minute",
     "every_n_minutes": "alle {{count}} Minuten",
     "prompt": "Was sie jedes Mal tut:",
-    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Ein Schritt, der dein OK bräuchte, wird abgelehnt und auf der Seite „Geplant“ unter der Aufgabe aufgeführt. Sie können nachschlagen und Dateien schreiben, aber nur in Arslans eigenem Arbeitsordner; Befehle führen sie nicht aus.",
+    "unattended": "Geplante Läufe laufen von selbst und warten nie auf dich: Befehle, die dein OK nicht bräuchten, führen sie in der Sandbox aus, und Dateien schreiben sie nur in Arslans eigenem Arbeitsordner. Was dein OK bräuchte, wird abgelehnt und auf der Seite „Geplant“ unter der Aufgabe aufgeführt.",
     "anyTask": "beliebige geplante Aufgaben anlegen"
   },
   "enroll": {
@@ -1443,6 +1442,7 @@
     "alwaysStores": "Das erlaubt künftig immer: {{what}}",
     "asksEachTime": "Fragt jedes Mal",
     "scheduledNeverAsks": "Eine geplante Aufgabe tut nichts, was dein OK braucht. Mach es in einem Chat.",
+    "appDataUnattended": "Nicht erlaubt. Private Daten einer anderen App brauchen jedes Mal dein OK, und diese Aufgabe lief, während du nicht da warst.",
     "allowedNow": "Ab jetzt erlaubt",
     "refusedTimes": "{{count}}-mal seit {{since}}",
     "undo": "Rückgängig"
@@ -1495,7 +1495,10 @@
     "seenNote": "Wenn du eine Aufgabe öffnest, gilt, was ihre Läufe nicht tun konnten, als gesehen. Was in ihrer eigenen Unterhaltung abgelaufen und liegen geblieben ist, verschwindet, wenn du diese Unterhaltung öffnest; eine Karte dort erst, wenn du sie beantwortest.",
     "attention": "Bitte ansehen",
     "changed": "Geändert",
-    "failing": "Fehlgeschlagen oder selbst pausiert"
+    "failing": "Fehlgeschlagen oder selbst pausiert",
+    "commandsNoteTitle": "Geplante Aufgaben können wieder Befehle ausführen",
+    "commandsNoteBody": "Der Lauf einer geplanten Aufgabe führt jetzt Befehle aus, die dein OK nicht bräuchten, in der Sandbox, in Arslans eigenem Arbeitsordner. Was dein OK bräuchte, wird abgelehnt und hier unter der Aufgabe aufgeführt. Aufgaben von vor diesem Update oder nach dem Lesen von Inhalten von außen führen ihre Befehle ohne Netzwerk aus. Hast du „Vor jedem Befehl fragen“ gewählt, führen geplante Läufe keine aus.",
+    "commandsNoteOk": "Verstanden"
   },
   "remembered": {
     "title": "Gemerkte Antworten",

@@ -1,4 +1,6 @@
-"""C7c-3a (v0.1.64): the expert-era routes with no caller are gone; what is in use until C7c-4 stays."""
+"""C7c-3a (v0.1.64): the expert-era routes with no caller are gone; what is in use until C7c-4 stays.
+
+The per-spawn knowledge POST joined GONE in C7c: no caller was left."""
 import pytest
 
 GONE = {
@@ -7,6 +9,7 @@ GONE = {
     ("put", "/api/v1/spawns/{spawn_id}/config"),
     ("get", "/api/v1/spawns/{spawn_id}/knowledge"),
     ("delete", "/api/v1/spawns/{spawn_id}/knowledge"),
+    ("post", "/api/v1/spawns/{spawn_id}/knowledge"),
     ("put", "/api/v1/spawns/{spawn_id}/collections/{collection_id}"),
     ("delete", "/api/v1/spawns/{spawn_id}/collections/{collection_id}"),
     ("post", "/api/v1/facts/dedup"),
@@ -15,7 +18,6 @@ GONE = {
 STAYS = {
     ("get", "/api/v1/spawns"),
     ("put", "/api/v1/spawns/{spawn_id}/equipment"),
-    ("post", "/api/v1/spawns/{spawn_id}/knowledge"),
     ("get", "/api/v1/facts"),
 }
 

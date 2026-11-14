@@ -11,6 +11,7 @@ Whether what should be denied is denied under real seatbelt is SBX-6p's (Codex).
 """
 import asyncio
 from contextlib import suppress
+import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,8 +19,15 @@ from types import SimpleNamespace
 import pytest
 
 from server.registry.net_pin import _BlockedHost
-from server.services import command_sandbox, sandbox_proxy, terminal_exec
+from server.services import command_sandbox, net_policy, sandbox_proxy, terminal_exec
 from server.services.sandbox_profile import NetworkMode
+from tests.server.sbx import proxy_token
+
+
+@pytest.fixture(autouse=True)
+def _a_running_command(monkeypatch):
+    """NET-a: the proxy serves only a running command's token (tests/server/sbx/proxy_token.py)."""
+    proxy_token.register(monkeypatch)
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt is macOS-only")
@@ -155,9 +163,13 @@ async def test_an_online_sandboxed_run_gets_the_proxy_in_its_environment(monkeyp
     result = await terminal_exec.run("env", cwd=tmp_path, sandbox=True)
     assert seen["proxy_port"] == 41000
     lines = set(result["stdout"].splitlines())
+    # NET-a: with the run's own token, which ended with it
+    [via] = {line.split("=", 1)[1] for line in lines if line.startswith("HTTP_PROXY=")}
+    assert re.fullmatch(r"http://[0-9a-f]{32}:sandbox@127\.0\.0\.1:41000", via), via
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-        assert f"{name}=http://127.0.0.1:41000" in lines, name
+        assert f"{name}={via}" in lines, name
     assert "NO_PROXY=localhost,127.0.0.1,::1" in lines
+    assert net_policy.run_for(via[len("http://"):].split(":")[0]) is None
 
 
 async def test_an_offline_run_gets_no_proxy(monkeypatch, tmp_path):
@@ -212,7 +224,7 @@ def _pin_to(monkeypatch, port, seen):
 
 async def _ask(proxy_port, request: bytes) -> bytes:
     reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
-    writer.write(request)
+    writer.write(proxy_token.authed(request))
     await writer.drain()
     data = await asyncio.wait_for(reader.read(65536), 5)
     if data.startswith(b"HTTP/1.1 200 Connection Established"):
@@ -246,7 +258,7 @@ async def test_an_idle_tunnel_is_closed(proxy, origin, monkeypatch):
     _pin_to(monkeypatch, port, [])
     monkeypatch.setattr(sandbox_proxy, "_IDLE_S", 0.2)
     reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
-    writer.write(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+    writer.write(proxy_token.authed(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n"))
     await writer.drain()
     assert (await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)).startswith(b"HTTP/1.1 200")
     assert await asyncio.wait_for(reader.read(), 5) == b""        # closed without a byte from either side
@@ -270,7 +282,7 @@ async def test_a_quiet_client_is_not_cut_off_while_the_server_talks(proxy, monke
     monkeypatch.setattr(sandbox_proxy, "_IDLE_S", 0.2)
     try:
         reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
-        writer.write(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+        writer.write(proxy_token.authed(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n"))
         await writer.drain()
         await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
         await asyncio.sleep(0.35)                                   # quiet past the limit, the server not
@@ -303,7 +315,7 @@ async def test_a_peer_that_stops_reading_loses_its_slot(proxy, monkeypatch, clie
     monkeypatch.setattr(sandbox_proxy, "_IDLE_S", 0.3)
     try:
         reader, writer = await asyncio.open_connection("127.0.0.1", proxy.port)
-        writer.write(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n")
+        writer.write(proxy_token.authed(b"CONNECT example.com:443 HTTP/1.1\r\nHost: x\r\n\r\n"))
         await writer.drain()
         await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
         if client_sends:
@@ -474,13 +486,16 @@ async def test_port_starts_one_proxy_and_reuses_it():
 @pytest.mark.macos
 @macos
 async def test_a_sandboxed_command_reaches_the_proxy_and_nothing_local_through_it(tmp_path):
-    """The proxy's port is open to a sandboxed command, and the proxy refuses a loopback destination."""
+    """The proxy's port is open to a sandboxed command, and the proxy refuses a loopback destination. NET-a: the
+    command sends the credentials of the address it was told, as an HTTP client would."""
     sandbox_proxy._reset_for_tests()
     try:
         result = await terminal_exec.run(
-            "python3 -c \"import os, socket; p = int(os.environ['HTTPS_PROXY'].rsplit(':', 1)[1]); "
+            "python3 -c \"import base64, os, socket; v = os.environ['HTTPS_PROXY']; p = int(v.rsplit(':', 1)[1]); "
+            "a = base64.b64encode(v.split('//', 1)[1].split('@', 1)[0].encode()); "
             "s = socket.create_connection(('127.0.0.1', p)); "
-            "s.sendall(b'CONNECT 127.0.0.1:22 HTTP/1.1\\r\\nHost: x\\r\\n\\r\\n'); print(s.recv(30))\"",
+            "s.sendall(b'CONNECT 127.0.0.1:22 HTTP/1.1\\r\\nHost: x\\r\\nProxy-Authorization: Basic ' + a "
+            "+ b'\\r\\n\\r\\n'); print(s.recv(30))\"",
             cwd=tmp_path, sandbox=True)
     finally:
         await sandbox_proxy.shutdown()

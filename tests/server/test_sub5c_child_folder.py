@@ -17,7 +17,9 @@ import pytest
 from server.db.models import Setting
 from server.orchestrator import arslan as arslan_mod, command_gate
 from server.registry import executors
-from server.services import command_sandbox, settings_service, sub_sessions, terminal_exec, workspace_paths
+from server.services import (
+    command_sandbox, run_registry, settings_service, sub_sessions, terminal_exec, workspace_paths)
+from tests.server import test_sub4_report
 from tests.server.test_run_command_confirm_flow import _collect_until, app_client  # noqa: F401  (the fixture)
 from tests.server.test_s2a1_sandbox import PLAIN_OSA
 from tests.server.test_s2a3_wire import STAND_IN, unread  # noqa: F401  (the fixture)
@@ -32,6 +34,21 @@ _MAC_ONLY = pytest.mark.skipif(sys.platform != "darwin", reason="seatbelt is mac
 _LOG: list = []
 #: Seconds a whole job may take: several steps, each with its card, on a loaded machine (the full suite, -n auto).
 _SLOW = 60.0
+
+
+@pytest.fixture(autouse=True)
+def _no_sink_outlives_its_test():
+    """Every window sink `_sink` attaches here goes when the test does; one left behind fails the test.
+
+    `_sink` records its sinks in SUB4's list, which only SUB4's own autouse fixture drained, so these tests left
+    auto-answering sinks on the commander for a later SUB3 or SUB4 test on the same worker (cards answered or seen
+    twice there)."""
+    before = set(run_registry._sinks.get(ROOT, ()))
+    yield
+    while test_sub4_report._SINKS:
+        run_registry.detach_sink(*test_sub4_report._SINKS.pop())
+    left = set(run_registry._sinks.get(ROOT, ())) - before
+    assert not left, f"{len(left)} window sink(s) on {ROOT} outlived the test"
 
 
 class _Recorded:
@@ -82,6 +99,11 @@ async def _held(model, brief=OUTLINE):
 
 
 async def test_a_childs_file_tools_write_only_in_its_own_folder_and_its_card_names_it(ws, monkeypatch):
+    from server.services import settings_service
+
+    async def ask(db):          # S5a: the write card is shown under "Ask every step" ("Ask only when risky" answers it)
+        return "ask"
+    monkeypatch.setattr(settings_service, "default_permission_mode", ask)
     shown = _sink(ROOT)
     model = _Model({OUTLINE: _steps(
         ("write_file", {"path": "outline.md", "content": "# Outline"}),
@@ -274,7 +296,7 @@ def test_a_turn_typed_in_a_sub_sessions_window_writes_only_in_its_folder(app_cli
         async with app_client.db_maker() as db:
             db.add(Setting(key="workspace_dir", value=str(work)))
             await settings.update_settings(db, {"orchestrator_shell_enabled": "true",
-                                                "shell_confirm_policy": "ask_risky"})
+                                                "default_permission_mode": "ask_risky"})
             await sub_sessions.create_child(db, ROOT, "sub-kid")
             await db.commit()
     app_client.portal.call(seed)

@@ -31,8 +31,8 @@ FILES = (
                         "description": "Lines to skip from the start (for paging a long file)."},
              "limit": {"type": "integer", "minimum": 1, "description": "Maximum lines to return."}},
              "required": ["path"], "additionalProperties": False},
-         offered=_readable, gate=tool_gates.file_arguments,
-         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
+         offered=_readable, gate=tool_gates.file_arguments_then_app_data,
+         traits=Traits(effect="read", parallel=True, outside=True, saves=False)),
     Tool("list_dir",
          "List one level of a folder; with no path, the folders you can "
          "see. Absolute or ~/ path in "
@@ -44,8 +44,9 @@ FILES = (
                  "the folders you can see.")}},
              "additionalProperties": False,
          },
-         offered=_readable,
-         traits=Traits(effect="read", parallel=True, outside=False, replay_safe=False, saves=False)),
+         offered=_readable, gate=tool_gates.app_data,           # SBX-5b: another app's private data asks
+
+         traits=Traits(effect="read", parallel=True, outside=False, saves=False)),
     Tool("search_files",
          "Find a literal string across the readable folders' text "
          "files (Desktop, Documents, Downloads, workspace). "
@@ -59,7 +60,7 @@ FILES = (
              "additionalProperties": False,
          },
          offered=_readable,
-         traits=Traits(effect="read", parallel=True, outside=True, replay_safe=False, saves=False)),
+         traits=Traits(effect="read", parallel=True, outside=True, saves=False)),
     # Writers stay workspace-only and gated by the session grant (P1b) —
     # except Arslan's own folder, which needs no grant (0.1.48). The text
     # says which, because "you will be asked" made models hedge or refuse.
@@ -78,7 +79,7 @@ FILES = (
              "content": {"type": "string", "description": "Complete UTF-8 text to write."}},
              "required": ["path", "content"], "additionalProperties": False},
          offered=lambda offer: offer.workspace, gate=tool_gates.file_arguments_then_write,
-         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=True)),
+         traits=Traits(effect="local_write", parallel=False, outside=False, saves=True)),
     Tool("edit_file",
          "Replace a UNIQUE occurrence of `old_string` with `new_string` in a "
          "WORKSPACE file. Read the file "
@@ -96,7 +97,7 @@ FILES = (
              "additionalProperties": False,
          },
          offered=lambda offer: offer.workspace, gate=tool_gates.workspace_write,
-         traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=True)),
+         traits=Traits(effect="local_write", parallel=False, outside=False, saves=True)),
 )
 
 # 0.1.63 D1: a file the user asked for reaches them, not just its Mac path. Offered with the read
@@ -116,4 +117,4 @@ ATTACH_FILE = Tool("attach_file",
                                  "description": "Optional name the user sees; the file's extension is kept."}},
                        "required": ["path"], "additionalProperties": False},
                    offered=_readable,
-                   traits=Traits(effect="local_write", parallel=False, outside=False, replay_safe=False, saves=False))
+                   traits=Traits(effect="local_write", parallel=False, outside=False, saves=False))

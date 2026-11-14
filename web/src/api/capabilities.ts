@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { ImportResult, ImportScan, ImportTick } from "./client.types";
+import type { HookRow, ImportResult, ImportScan, ImportTick } from "./client.types";
 
 /** One row of GET /capabilities (0.1.55 §14, server/services/capability_list.py). */
 export interface CapabilityRow {
@@ -17,8 +17,6 @@ export interface CapabilityRow {
   source_id: string | null;
   /** How a connection is reached (its command and arguments, or its address); the search matches it. */
   reach: string | null;
-  /** A professional method's version (`method:<key>` rows). */
-  revision?: number;
   /** on: offered now · off: switched off · setup: one step missing · na: cannot work here */
   state: "on" | "off" | "setup" | "na";
   /** The tool keys this row stands for when it is on. */
@@ -27,6 +25,8 @@ export interface CapabilityRow {
   switch: "setting" | "hands" | "mcp" | "skill" | "plugin" | null;
   /** CAP7b: a plugin's skills and connections, which switch and go only with it (server/services/capability_list). */
   parts?: PluginPart[];
+  /** HOOK-4: a plugin's hooks, each with its own switch (`switchHook`). */
+  hooks?: HookRow[];
   reason: string | null;
   /** What the one step is: open_settings:<section>, open_tab:<tab>, connect. */
   fix: string | null;
@@ -122,6 +122,9 @@ export const capabilitiesApi = {
   switch: (key: string, on: boolean) => request<CapabilityRow>(`/capabilities/${rowPath(key)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ on }),
   }),
+  /** HOOK-1's stored switch for one hook (`owner`: `plugin:<source id>`). 409: a hook that never runs can't go on. */
+  switchHook: (owner: string, id: string, on: boolean) => request<{ owner: string; id: string; on: boolean }>(
+    `/capability-hooks/${encodeURIComponent(owner)}/${encodeURIComponent(id)}`, json("PUT", { on })),
   /** CAP6a: the card's yes for a skill in ~/.agents/skills: exactly the files the card showed (409 when they changed). */
   approveSkillFolder: (key: string, digest: string) =>
     request<CapabilityRow>(`/skill-folder/${encodeURIComponent(key)}/approve`, json("POST", { digest })),

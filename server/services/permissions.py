@@ -14,9 +14,11 @@ back a refusal or a standing yes (it is logged); the writes after a card's answe
 grant and its row in one transaction, are part of remembering the answer and fail closed.
 
 What a request IS, and whether it is forbidden outright, is the caller's business —
-terminal_policy for commands, Hands for apps. This module remembers and asks. Approve for
-me and Full access (PR 7) slot in between 1 and 2. A request's kind is one of `KINDS`: any other
-is a caller bug, and it raises before anything is asked, stored or recorded.
+terminal_policy for commands, Hands for apps. This module remembers and asks. The conversation's
+permission mode (S5a, `mode_for`) slots in between 1 and 2: it answers only what `_widened` says,
+never money or anything `hard_rules.never_auto` keeps for the user, and only where someone can be
+asked. A request's kind is one of `KINDS`: any other is a caller bug, and it raises before anything
+is asked, stored or recorded.
 """
 from __future__ import annotations
 
@@ -45,7 +47,11 @@ logger = logging.getLogger(__name__)
 KINDS = frozenset({"command", "folder", "outside", "send", "destructive", "system", "screen",
                    "opaque", "app", "app_risky", "money", "takeover", "shortcut", "site",
                    "mcp_tool", "other_agent", "capability", "schedule", "remote",
-                   "workspace_write", "network"})
+                   "workspace_write", "network", "git_config",
+                   "run_later",    # HR-2a: a file tool's write into a file that runs later (once only)
+                   "git_include",   # HR-1c: git after an included file outside the working folder changed
+                   "git_refused",   # HR-2b: git add/commit after git's refusal left the tree half updated
+                   "app_data"})     # SBX-5b: another app's listed private data, one read or command (once only)
 #: What an answer may store (`remember_as`, `grant_as`) is one of `KINDS` or one of these: kinds
 #: of a stored rule or grant that are never a request's own. None today. (§A5 also names the rule
 #: kinds `command_prefix` and `mcp_server`: the PR that first stores one adds it here.)
@@ -57,7 +63,8 @@ _STORED_ONLY: frozenset[str] = frozenset()
 
 #: Kinds a card answers for this one time only: never a grant, never a rule.
 _ONCE_ONLY = frozenset({"money", "app_risky", "capability", "other_agent", "system", "opaque",
-                        "remote", "takeover"})
+                        "remote", "takeover",
+                        "run_later", "git_refused", "app_data"})
 #: Kinds whose first choice is "for this task": work in an app, or on a site, is many steps — and
 #: the island and the phone answer only the first choice (§A4).
 _TASK_FIRST = frozenset({"app", "shortcut", "site"})
@@ -72,7 +79,8 @@ _TASK_FIRST = frozenset({"app", "shortcut", "site"})
 # never "Always": no rule, however it was stored, lets every command out for good.
 _NEVER_ALWAYS = (_ONCE_ONLY
                  | frozenset({"destructive", "screen", "workspace_write", "schedule", "site", "shortcut", "network",
-                              "mcp_tool", "outside"}))  # S1: no "Always" for an MCP tool in this release (S6's page)
+                              "mcp_tool", "outside", "git_config",  # S1: no "Always" for an MCP tool in this release
+                              "git_include"}))   # HR-1c: its card is this time only (`once_only`, command_gate)
 # S4a (⓪Plan review, fix 1): kinds whose "In this conversation" only a Mac window may give. The Inbox lists every
 # conversation's cards, a background job's too: a click there must not let every later command of a conversation
 # the user is not looking at out of the sandbox, past a restart. Elsewhere such a yes is this time.
@@ -83,9 +91,14 @@ _WINDOW_SCOPE_ONLY = frozenset({"outside"})
 _ALWAYS_ASKS = frozenset({"outside"})
 # S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
 # card, as before S4a. One click must not run the same remote command for two jobs.
-_NEVER_JOINED = frozenset({"outside", "remote"})
+_NEVER_JOINED = frozenset({"outside", "remote",
+                           "run_later",    # HR-2a: one click is one write (the card doesn't show the content)
+                           "app_data"})    # SBX-5b: one click is one call or one command
+# HR-1b: kinds a card offers for this conversation only (and no). The island never answers it (not one of its kinds).
+_CONVERSATION_ONLY = frozenset({"git_config"})
 # The scope sets name kinds of KINDS only: a kind mistyped there would protect nothing.
-_SCOPE_SETS = _ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
+_SCOPE_SETS = (_ONCE_ONLY | _TASK_FIRST | _NEVER_ALWAYS | _WINDOW_SCOPE_ONLY | _ALWAYS_ASKS | _NEVER_JOINED
+               | _CONVERSATION_ONLY)
 if not _SCOPE_SETS <= KINDS:
     raise AssertionError(f"scope sets name unknown kinds: {sorted(_SCOPE_SETS - KINDS)}")
 
@@ -96,16 +109,19 @@ if not _SCOPE_SETS <= KINDS:
 _LIVE_GRANT_TARGETS = {
     "command": lambda t: t == "unsandboxed:*" or t.startswith("text:"),   # approvals._command_request; `rules:…` is once only since S2a-2
     "outside": lambda t: t == "*",                                         # command_gate._outside_request
-    "network": lambda t: t == "network:*",                                 # command_gate, inside the sandbox
+    # command_gate, inside the sandbox (`network:*`); NET-a's card, one site (`network:<host>`, net_policy.request)
+    "network": lambda t: t.startswith("network:") and t != "network:",
+    "git_config": lambda t: t == "*",                                      # command_gate._git_config_request (HR-1b)
     "schedule": lambda t: t == "*",
     "workspace_write": bool,                                               # the working folder's path (or "*")
     "mcp_tool": lambda t: t.startswith("mcp_"),                            # discovery.mcp_tool_key
     "app": bool, "site": bool, "shortcut": bool,                           # a bundle id, an origin, a name
 }
 #: Kinds no current request is granted for, besides `_ONCE_ONLY`: `destructive` is asked once only (the MCP card), and
-#: nothing builds a `folder`, `send` or `screen` request. A grant of one of these, of a kind outside KINDS, or of a
-#: target not above (a 0.1.61–0.1.62 rule card's `command` / `rules:<rules>`) is dead.
-_NEVER_GRANTED = frozenset({"destructive", "folder", "send", "screen"})
+#: nothing builds a `folder`, `send` or `screen` request; HR-1c's `git_include` is asked once only too. A grant of one
+#: of these, of a kind outside KINDS, or of a target not above (a 0.1.61–0.1.62 rule card's `command` /
+#: `rules:<rules>`) is dead.
+_NEVER_GRANTED = frozenset({"destructive", "folder", "send", "screen", "git_include"})
 # Every kind is classified, so a kind added later must say whether its grants are read before the page can hide them.
 if set(_LIVE_GRANT_TARGETS) | _ONCE_ONLY | _NEVER_GRANTED != KINDS or set(_LIVE_GRANT_TARGETS) & (_ONCE_ONLY | _NEVER_GRANTED):
     raise AssertionError("every kind is exactly one of: live grant targets, once only, never granted")
@@ -158,6 +174,13 @@ class Request:
     #: 0.1.62 F4a: this card answers for this one time only, whatever its kind: only "once" is
     #: offered, and no stored rule or grant answers it (S1, S2a and S5 use this name).
     once_only: bool = False
+    #: NET-a: this card offers only "In this conversation" (and no), as `_CONVERSATION_ONLY`'s kinds do, for a kind whose
+    #: other cards offer more (`network`: net_policy's card for one site; S2a-1's is this time or this conversation).
+    conversation_only: bool = False
+    #: HR-3 part 1: this card never joins an identical waiting ask (as `_NEVER_JOINED`'s kinds), so one click runs one
+    #: command. Set by `approvals._command_request` only for a lifted run-later command card (a command that writes a
+    #: file that runs later, outside the sandbox). HR-2a's `run_later` kind (#851) covers the file tools' card.
+    never_joined: bool = False
     #: TITLE1: how the texts the model reads name this step, when not as the card does. An MCP card shows
     #: the server's label as installed; the model reads it as a label (`label_of`). "" → `title`.
     model_title: str = ""
@@ -223,6 +246,8 @@ def current_asker() -> Asker | None:
 def options_for(req: Request) -> list[str]:
     if req.once_only:
         return ["once"]
+    if req.conversation_only or req.kind in _CONVERSATION_ONLY:
+        return ["conversation"]
     opts = ["task" if req.kind in _TASK_FIRST else "once"]
     if req.conversation_ok and req.kind not in _ONCE_ONLY:
         opts.append("conversation")
@@ -235,7 +260,15 @@ async def decide(req: Request, ctx: Context) -> Decision:
     _forget_last()
     _check(req)
     ctx = _filled(ctx)
-    mode = await _mode()
+    state = await mode_for(ctx.conversation_id, check_save=req.kind == "workspace_write")
+    mode = state.mode
+    # S5a: the mode answers before any standing answer, only where someone can be asked (a run with nobody to ask is
+    # unchanged: `_ask` refuses it by policy), and never money: `hard_rules.never_auto` holds it, with every other kind
+    # only the user answers (one list, not a second check here). It never touches `_ask` (S5b's).
+    if _ASKER.get() is not None and _widened(req, mode):
+        decision = Decision(True, "mode")
+        await _record(req, ctx, mode, decision)
+        return _done(decision)
     # S1 (U14 a): with nobody to ask (a scheduled run), nothing standing answers: an "Always" rule or a
     # grant let a scheduled run act with nobody there. `_ask` then refuses by policy.
     standing = (await _standing(req, ctx, mode)
@@ -262,7 +295,7 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str
     if len({r.kind for r in reqs}) > 1:
         raise ValueError("decide_many needs one kind")
     ctx = _filled(ctx)
-    mode = await _mode()
+    mode = await _mode(ctx)     # S5a: recorded only; a mode answers through `decide` alone
     # S1 (U14 a): as in `decide`, nothing standing answers when nobody can be asked.
     unattended = _ASKER.get() is None
     out: list[Decision | None] = [None if unattended or r.kind in _ALWAYS_ASKS else await _standing(r, ctx, mode)
@@ -286,6 +319,7 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str
             always_label=(", ".join(r.always_label for r in shown)
                           if all(r.always_label for r in shown) else ""),
             conversation_ok=all(r.conversation_ok for r in shown),
+            conversation_only=all(r.conversation_only for r in shown),
             extra={"items": [r.extra for r in shown]},
             # The card says every label; each rule keeps its own.
             remember_as=tuple((r.kind, r.target, r.always_label) for r in shown),
@@ -331,7 +365,7 @@ async def note_standing(req: Request, ctx: Context, found: Standing) -> None:
     """The ledger row of a standing answer `standing` found, written when its step goes ahead. A
     write that fails is logged; the step goes ahead (as `_note_standing_use`)."""
     _check(req)
-    mode = await _mode()
+    mode = await _mode(ctx)
     try:
         async with db_session.AsyncSessionLocal() as db:
             rule = await db.get(PermissionRule, found.rule_id) if found.rule_id is not None else None
@@ -354,7 +388,7 @@ async def record_standing(req: Request, ctx: Context, *, by: str = "rule") -> No
     if not isinstance(by, str) or by not in _STANDING_BY:
         raise ValueError(f"a standing answer is decided by a rule or the mode, not {by!r}")
     _check(req)
-    await _record(req, _filled(ctx), await _mode(), Decision(True, by, _STANDING_BY[by]))
+    await _record(req, _filled(ctx), await _mode(ctx), Decision(True, by, _STANDING_BY[by]))
 
 
 async def record_card_outcome(req: Request, ctx: Context, *, approved: bool, expired: bool = False) -> None:
@@ -367,7 +401,7 @@ async def record_card_outcome(req: Request, ctx: Context, *, approved: bool, exp
     _check(req)
     decision = (Decision(True, "user", "once") if approved
                 else Decision(False, "expired") if expired else Decision(False, "user"))
-    await _record(req, _filled(ctx), await _mode(), decision)
+    await _record(req, _filled(ctx), await _mode(ctx), decision)
 
 
 async def forget_task(task_id: str | None) -> int:
@@ -476,7 +510,7 @@ async def refuse_unattended(req: Request, ctx: Context) -> str:
     "Always" set (Q2), so the Inbox lists it. Returns what the model is told, as decide() would."""
     _check(req)
     decision = Decision(False, "policy", model_text=_UNATTENDED.format(title=req.title_for_model))
-    await _record(req, _filled(ctx), await _mode(), decision)
+    await _record(req, _filled(ctx), await _mode(ctx), decision)
     return decision.model_text
 
 
@@ -493,7 +527,7 @@ async def _ask(req: Request, ctx: Context, mode: str) -> Decision:
     call_id = base.get("call_id") or uuid.uuid4().hex
     frame = {**base, "call_id": call_id, "title": req.title, "options": opts,
              "always_label": req.always_label if "always" in opts else "",
-             "perm_kind": req.kind, "dedupe": call_id if req.kind in _NEVER_JOINED else _dedupe(req),
+             "perm_kind": req.kind, "dedupe": call_id if req.kind in _NEVER_JOINED or req.never_joined else _dedupe(req),
              "expires_at": time.time() + approvals.TIMEOUT_S}
     if req.why and "why" not in frame:
         frame["why"] = req.why[:300]
@@ -584,11 +618,12 @@ def _dedupe(req: Request) -> str:
     app vs that app plus another under "Always" are not identical: one answer must never approve
     or store what its card did not show. JSON with sorted keys, so no separator inside a field can
     make two different asks read the same. (The model's `why` is not in it.) A once-only ask
-    (0.1.62 F4a) adds one last item, so every other ask's key is what it was."""
+    (0.1.62 F4a) adds one last item, as does a conversation-only one (NET-a), so every other ask's key is what it was."""
     shown = {k: v for k, v in (req.frame or {}).items() if k != "call_id"}
     return json.dumps([req.kind, req.target, req.title, req.detail, shown, req.always_label,
                        req.conversation_ok, [list(e) for e in req.remember_as],
-                       [list(e) for e in req.grant_as]] + (["once_only"] if req.once_only else []),
+                       [list(e) for e in req.grant_as]] + (["once_only"] if req.once_only else [])
+                      + (["conversation_only"] if req.conversation_only else []),
                       sort_keys=True, default=str)
 
 
@@ -627,16 +662,162 @@ def _filled(ctx: Context) -> Context:
                    user_request=ctx.user_request or getattr(current, "query", "") or "")
 
 
-async def _mode() -> str:
-    """Standard (sandbox first) or Careful (the old "ask for every command"). PR 7 adds
-    Approve for me and Full access, per conversation."""
-    from server.services import settings_service
+# ── S5a: permission modes, per conversation ───────────────────────────────────
+
+#: Narrowest first: a sub-session takes the earlier of its parent's and its own (`_chosen`).
+MODES = ("plan", "ask", "ask_risky", "full_access")
+
+
+@dataclass(frozen=True)
+class Mode:
+    mode: str               # what applies now
+    chosen: str             # the conversation's mode (or the default) before a fallback
+    #: Why "ask_risky" runs as "ask" (the user's decision, 2026-11-14): sandbox_off | home_folder | no_checkpoint.
+    fallback: str = ""
+
+
+#: Conversations whose last save-checking read (`mode_for(check_save=True)` in a run: a write's `decide`, the command
+#: gate) found no checkpoint could be saved (#893 review 3, from S5a-2's ca36de82). A read that doesn't save one (the
+#: mode API, the phone's details, the status, the ledger) shows it until a later save-checking read saves one. In
+#: memory only: after a restart the next write learns it again. Only this reason: the other two are read live.
+_NO_CHECKPOINT: set[str] = set()
+
+
+def narrower(a: str, b: str) -> str:
+    return MODES[min(MODES.index(a), MODES.index(b))]
+
+
+async def mode_for(conversation_id: str | None, *, check_save: bool = False) -> Mode:
+    """The mode a step of this conversation runs in. `check_save`: also read whether this run's working folder could
+    be saved for undo (`checkpoints.save_blocked`, which saves it first, as the run's first change would)."""
+    from server.services import execution_context
+    chosen = await _chosen(conversation_id)
+    if chosen != "ask_risky":
+        return Mode(chosen, chosen)
+    reason = await _fallback(check_save)
+    if conversation_id and check_save and execution_context.current_run_id() is not None:
+        if reason == "no_checkpoint":
+            _NO_CHECKPOINT.add(conversation_id)
+        elif not reason:
+            _NO_CHECKPOINT.discard(conversation_id)
+    elif not reason and conversation_id in _NO_CHECKPOINT:
+        reason = "no_checkpoint"
+    return Mode("ask" if reason else chosen, chosen, reason)
+
+
+async def _chosen(conversation_id: str | None) -> str:
+    from server.db.companion_models import ConversationContext
+    from server.services import settings_service, sub_sessions
     try:
         async with db_session.AsyncSessionLocal() as db:
-            policy = await settings_service.shell_confirm_policy(db)
-    except Exception:  # noqa: BLE001 — an unreadable setting is the default (ask_all since v0.1.63)
-        return "careful"
-    return "careful" if policy == "ask_all" else "standard"
+            default = await settings_service.default_permission_mode(db)
+            chain: list[str | None] = []      # own modes, from this conversation up through its parents (SUB)
+            rows: list[ConversationContext] = []
+            seen: set[str] = set()
+            current = conversation_id
+            while current and current not in seen and len(seen) < sub_sessions.MAX_DEPTH:
+                seen.add(current)
+                row = await db.get(ConversationContext, current)
+                if row is None:
+                    break
+                rows.append(row)
+                # Null is unset (the default, or the parent's); any other value not a mode is "ask" (#893 review 6).
+                own = row.permission_mode
+                chain.append(None if own is None else own if own in MODES else "ask")
+                current = row.parent_id if row.kind == "sub" else None
+            # SUB2: a sub-session whose chain can't be read whole (as `sub_sessions._chain` reads it: the walk ends on
+            # a sub-session, for a parent's row gone, none named, a loop, more layers than exist) or has a deleted
+            # conversation on it fails closed: "ask" stands in for its top, and each mode it did read still narrows.
+            if rows and rows[0].kind == "sub" and (
+                    rows[-1].kind == "sub" or any(sub_sessions.is_deleted(r.id, r) for r in rows)):
+                chain.append("ask")
+    except Exception:  # noqa: BLE001 — fails closed: an unreadable mode is "ask every step"
+        return "ask"
+    # The top conversation's own mode, else the default; each sub-session below it only narrows.
+    mode = (chain[-1] if chain else None) or default
+    for own in reversed(chain[:-1]):
+        if own is not None:
+            mode = narrower(own, mode)
+    return mode
+
+
+async def _fallback(check_save: bool) -> str:
+    """Why "Ask only when risky" can't hold here, or "" (the user's decision, 2026-11-14, one test each). A check that
+    fails is its fallback (#893 review 2): the sandbox setting is read here, not through `command_gate._sandbox_enabled`,
+    which reads an unreadable setting as on."""
+    from server.orchestrator import command_gate
+    from server.services import checkpoints, command_sandbox, execution_context, settings_service
+
+    async def sandbox_on() -> bool:
+        async with db_session.AsyncSessionLocal() as db:
+            on = await settings_service.terminal_sandbox_enabled(db)
+        return on and command_sandbox.available()
+
+    async def save_blocked() -> bool:
+        return await checkpoints.save_blocked(execution_context.current_run_id(), await command_gate.run_folder())
+    for check, holds, reason in ((sandbox_on, False, "sandbox_off"),
+                                 (command_gate._work_folder_holds_home, True, "home_folder"),
+                                 (save_blocked if check_save else None, True, "no_checkpoint")):
+        if check is None:
+            continue
+        try:
+            if bool(await check()) is holds:
+                return reason
+        except Exception:  # noqa: BLE001 — fails closed: a check that can't be read is its fallback
+            logger.warning("permission mode: the %s check failed", reason, exc_info=True)
+            return reason
+    return ""
+
+
+#: What full access answers with no card: exactly the user's list (2026-11-14, #893 review 5): a schedule, an MCP tool
+#: (a destructive one too), an app, a command with no layer ② rule (leaving the sandbox too: `outside`), and "Ask only
+#: when risky"'s edit in the work folder. Written out; `hard_rules.never_auto` still holds each one.
+_FULL_ACCESS_KINDS = frozenset({"schedule", "mcp_tool", "destructive", "app", "command", "outside", "workspace_write"})
+
+
+def _widened(req: Request, mode: str) -> bool:
+    """What the mode answers with no card. Never money or anything else `hard_rules.never_auto` keeps for the user's
+    own click, whatever the mode. "ask_risky": an edit in the work folder. "full_access": `_FULL_ACCESS_KINDS`, and
+    leaving the sandbox (no outside card, the user's decision of 2026-11-14) for a command that, read outside the
+    sandbox, has no layer ② rule and writes nothing that runs later."""
+    from server.services import hard_rules
+    if mode == "full_access":
+        if req.kind not in _FULL_ACCESS_KINDS:
+            return False
+        if req.kind == "outside":
+            # #893 review 1: the rules on the server-built card, read from the run's working folder
+            # (`command_confirm`), named to `never_auto`, which also reads the text alone. No frame: not answered.
+            rules = req.frame.get("rules", []) if isinstance(req.frame, dict) else None
+            if not isinstance(rules, list):
+                return False
+            target = "rules:" + "|".join(map(str, rules)) if rules else ""
+            return not hard_rules.never_auto(replace(req, kind="command", target=target))
+        return not hard_rules.never_auto(req)
+    if mode == "ask_risky":       # the write card's target is the work folder; anything else isn't one
+        return (req.kind == "workspace_write" and req.target.startswith("/")
+                and not hard_rules.never_auto(req))
+    return False
+
+
+#: What a tool call is told in plan mode (S5a): only reads run until the user presses "Start".
+PLAN_REFUSAL = ("Plan mode: this conversation only reads and plans for now, so {tool} was not run. Finish the plan "
+                "and tell the user what you would change; they press Start to carry it out.")
+
+
+async def plan_refusal(tool_key: str, args: dict, conversation_id: str | None) -> dict | None:
+    """S5a: in plan mode a command or any tool that isn't a read is refused, with a message; None otherwise."""
+    if (await _chosen(conversation_id)) != "plan":
+        return None
+    from server.services import task_service
+    if tool_key not in ("run_command", "run_python") and await task_service.effect_of(tool_key, args) == "read":
+        return None
+    return {"ok": False, "external": False, "executed": False, "code": "plan_mode",
+            "error": PLAN_REFUSAL.format(tool=tool_key)}
+
+
+async def _mode(ctx: Context) -> str:
+    """The mode a ledger row records (`mode_for`)."""
+    return (await mode_for(ctx.conversation_id)).mode
 
 
 async def _record(req: Request, ctx: Context, mode: str, decision: Decision, **ids) -> None:
@@ -677,6 +858,7 @@ async def _record_in(db, req: Request, ctx: Context, mode: str, decision: Decisi
 
 def _reset_for_tests() -> None:
     _GRANTED_TASKS.clear()
+    _NO_CHECKPOINT.clear()
 
 
 def _extra(extra: dict) -> dict | None:

@@ -15,6 +15,7 @@ from server.orchestrator import llm_errors
 from server.services import folder_rules, ocr_fallback, phone_ids
 from server.db import session as db_session
 from server.orchestrator import (
+    command_gate,
     env_snapshot,
     memory,
     promise_guard,
@@ -32,6 +33,7 @@ from server.orchestrator.answer_rules import (  # noqa: F401
     ARSLAN_SYSTEM as _ARSLAN_SYSTEM,
     CAPABILITY_SELF as _CAPABILITY_SELF,
     CLARIFY_CHOICE_NUDGE as _CLARIFY_CHOICE_NUDGE,
+    LEGACY_ANSWER_STABLE_PREFIX as _LEGACY_ANSWER_STABLE_PREFIX,
     NO_BACKGROUND_EXEC as _NO_BACKGROUND_EXEC,
     NO_REPASTE as _NO_REPASTE,
     OUTPUT_RULES as _OUTPUT_RULES,
@@ -151,7 +153,18 @@ def _now_line() -> str:
 # LOOP1 e: the prefix is built from one piece per rule in answer_rules.py (the version line too).
 
 
-def _build_answer_system(*, route: str = ""):
+async def _status_route_named() -> bool:
+    """H1-c: whether the prompt says how to reach my_status (the `status_route_in_prompt` switch; OFF = the old wording).
+    A setting that can't be read means the default. DELETE-BY: v0.1.65, with the switch."""
+    from server.services import settings_service
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await settings_service.status_route_in_prompt(db)
+    except Exception:  # noqa: BLE001 — a prompt's wording is never a reason to fail a turn
+        return True
+
+
+def _build_answer_system(*, route: str = "", status_route: bool = True):
     """Arslan's answer system: the static guards, plus a route's fixed text (background work's).
 
     0.1.63 K3: nothing per turn is in it any more, so it is the same bytes from turn to turn and Claude
@@ -159,7 +172,8 @@ def _build_answer_system(*, route: str = ""):
     rides at the start of the turn's request (`_turn_context`). CachedSystem keeps its two parts until
     v0.1.64 (K3 card §5: merge them into one then); the provider marks the system's last block.
     """
-    return build_cached_system(_ANSWER_STABLE_PREFIX, route)
+    # H1-c: status_route=False is the old my_status wording. DELETE-BY: v0.1.65, with the switch.
+    return build_cached_system(_ANSWER_STABLE_PREFIX if status_route else _LEGACY_ANSWER_STABLE_PREFIX, route)
 
 
 def _turn_context(*, addendum: str = "", facts: str, summary: str, kb_block: str, mcp_line: str = "",
@@ -248,6 +262,10 @@ def build_user_blocks(
     return blocks
 
 
+#: How `persisted_user_text` starts each picture's line, after the message: this, the file's name, "]".
+PICTURE_LINE = "[图片:"
+
+
 def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     """What goes into arslan_messages.
 
@@ -257,8 +275,17 @@ def persisted_user_text(user_message: str, images: list[dict] | None) -> str:
     does not imply the model can still see something it cannot."""
     if not images:
         return user_message
-    names = "\n".join(f"[图片:{i.get('name') or 'image'}]" for i in images)
+    names = "\n".join(f"{PICTURE_LINE}{i.get('name') or 'image'}]" for i in images)
     return f"{user_message}\n{names}" if user_message else names
+
+
+def typed_text(stored: str) -> str:
+    """NET-a (Codex round 1, F3): what the user typed of a stored user message, without the file names
+    `persisted_user_text` put after it. A file's name is not the user's words. Cut at the first line that starts as a
+    picture's does, so nothing of a name stays, whatever it holds (a newline too); a line the user typed so goes with
+    it."""
+    text = str(stored or "")
+    return "" if text.startswith(PICTURE_LINE) else text.partition(f"\n{PICTURE_LINE}")[0]
 
 
 @governed
@@ -564,11 +591,17 @@ async def _handle_answer(
 PHONE_NOTE = ("The user is on their iPhone: a path on this Mac is no use to them. A file they ask for "
               "(a screenshot, chart, export or document) reaches them only through attach_file (find it "
               "with find_tools), under your answer.")
-#: v0.1.63 (the user's decision until S2a-3 lands): a run with nobody to ask runs no command; the model is told so
-#: up front rather than finding out from a refusal. DELETE-BY: v0.1.64, with S2a-3 and PR4.
-SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything: it runs no commands "
-                  "(run_command is not available here). Save what you make with write_file, in Arslan's own "
-                  "folder; a step that needs the user's OK is refused and listed under the task on their Scheduled page.")
+#: ASK1-b (v0.1.64): a scheduled task's own fire runs commands that need no OK, in the sandbox; the model is told up
+#: front what is refused rather than finding out from a refusal.
+SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything. run_command runs inside the "
+                  "sandbox, in Arslan's own folder, and only commands that need no OK: one that would ask (leaving "
+                  "the sandbox, a risky command, a rule that asks) is refused, never waited on. Save what you make "
+                  "with write_file, in Arslan's own folder; a step that needs the user's OK is refused and listed "
+                  "under the task on their Scheduled page.")
+#: Every other run with nobody to ask (the heartbeat, a sub-session's turn with nobody to ask) runs no command.
+UNATTENDED_NOTE = ("Nobody is there to approve anything in this run: it runs no commands (run_command is not "
+                   "available here). Save what you make with write_file, in Arslan's own folder; a step that needs "
+                   "the user's OK is refused and listed for the user.")
 
 
 BACKGROUND_SYSTEM = (
@@ -678,7 +711,7 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("background kb retrieve failed (non-fatal): %s", exc)
     asked = next((m.get("content") for m in reversed(ctx["history"]) if m.get("role") == "user"), None)
-    system = _build_answer_system(route=BACKGROUND_SYSTEM)
+    system = _build_answer_system(route=BACKGROUND_SYSTEM, status_route=await _status_route_named())
     rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(asked if isinstance(asked, str) else goal),
@@ -690,8 +723,10 @@ async def background_body(conversation_id: str, goal: str, emit: EventSink, conf
     # even when a chat turn started it. INB2 (#475 F2, H1, H2): its run's record counts the knowledge, the
     # project card and a note from off the list put in.
     # K10-1 (D3): a folder's rules are outside content, so a job that read them starts as having read some.
+    # NET-a (Codex round 1 F5): so is a marked rolling summary, whose sites the job's turn records too.
+    summary = untrusted.outside_summary(ctx["summary"])
     with request_policy.prompt_cache(long=False), untrusted.off_list_in(bool(kb_block) or bool(card) or traced), \
-            untrusted.carried(rule_files > 0):
+            untrusted.carried(rule_files > 0 or bool(summary), text="\n".join(filter(None, (rules, summary)))):
         result = await tool_loop.run_native(
             system=system, user_content=_with_turn_context(context, goal), history=ctx["history"], emit=emit,
             on_chunk=pieces.append, resolve_tools=_sub_session_tools if sub_session else _background_tools,
@@ -720,6 +755,8 @@ async def _handle_answer_body(
         confirm_schedule=confirm_schedule, source=source, steerable=steerable)
     if result is _NO_REPLY:
         return None
+    from server.services import host_run
+    host_run.note_stop(result.get("stop_reason"))   # a turn stopped short ends as needs_review (host_run._turn_stop)
     compact = await _answer_clarify(conversation_id, emit, result)
     if compact is not None:
         return compact
@@ -737,6 +774,7 @@ class _AnswerContext:
     card: str
     traced: bool
     rule_files: int
+    rules: str = ""         # NET-a: the folder's rules as the turn reads them, whose sites a turn records as outside
 
 
 #: The dispatch sent an error frame instead of a reply: the turn ends with nothing stored.
@@ -768,7 +806,7 @@ async def _answer_context(conversation_id: str, user_message: str, *, extra_syst
         kb_block = _knowledge.knowledge_block(_kb)
     except Exception as exc:  # noqa: BLE001 — retrieval is never fatal
         logger.warning("arslan kb retrieve failed (non-fatal): %s", exc)
-    system = _build_answer_system()
+    system = _build_answer_system(status_route=await _status_route_named())
     rules, rule_files = await folder_rules.for_turn(conversation_id)
     context = _turn_context(addendum=extra_system.strip(), facts=facts, summary=ctx["summary"], kb_block=kb_block,
                             language=await _turn_language_line(user_message), mcp_line=await _mcp_status_line(),
@@ -778,7 +816,7 @@ async def _answer_context(conversation_id: str, user_message: str, *, extra_syst
     # A plain string when there are no images; a neutral block list otherwise (providers translate it).
     llm_user = _with_turn_context(context, build_user_blocks(user_message, attached_context, images))
     return _AnswerContext(ctx=ctx, system=system, context=context, llm_user=llm_user, kb_block=kb_block, card=card,
-                          traced=traced, rule_files=rule_files)
+                          traced=traced, rule_files=rule_files, rules=rules)
 
 
 async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventSink, turn: _AnswerContext, *,
@@ -790,7 +828,7 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
     kb_block, card, traced, rule_files = turn.kb_block, turn.card, turn.traced, turn.rule_files
     emit({"type": "stream_start", "source": "arslan"})
 
-    async def _dispatch(user_content):
+    async def _dispatch(user_content, ocr_text=None):
         # Arslan's answer path uses the native tool-calling loop (structured tool_calls,
         # no text-protocol narration-as-answer bug). Experts use the same native loop.
         # K3: a person is chatting, so Claude keeps the system and history cache entries an hour.
@@ -798,7 +836,12 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
         # K10-1 (D3): so is a folder's rules file.
         # INB2 (#475 F2, H1, H2): so is the project knowledge found for it, for the "about you" allowlist, and
         # so are the project card and a note in view that came from a run off the list.
-        with request_policy.prompt_cache(long=True), untrusted.carried(bool(attached_context or images) or rule_files > 0), \
+        # NET-a (Codex round 1 F5): a marked rolling summary is outside content too; the turn records the sites it
+        # names, and those of the text OCR read off a refused picture (`ocr_text`, the retry below).
+        summary = untrusted.outside_summary(ctx["summary"])
+        with request_policy.prompt_cache(long=True), untrusted.carried(
+                bool(attached_context or images or summary) or rule_files > 0,
+                text="\n".join(filter(None, (attached_context, turn.rules, summary, ocr_text)))), \
                 untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 
@@ -830,7 +873,8 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
             has_images=bool(images),
             # A narrowed turn that isn't quick (its kind was unreadable) gets no phone note: attach_file isn't one of the four.
             turn_notes=[*([QUICK_NOTE] if quick else [PHONE_NOTE] if source == "phone" and not narrow else []),
-                        *([SCHEDULED_NOTE] if tool_loop._nobody_to_ask(confirm_command) else [])] or None,
+                        *([SCHEDULED_NOTE] if command_gate.fire_runs_commands(conversation_id) else
+                          [UNATTENDED_NOTE] if command_gate._nobody_to_ask(confirm_command) else [])] or None,
             # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed
             # task) reads what the user sends meanwhile; never a scheduled run, a job, a worker or a
             # delegated loop on the same conversation (review of #393).
@@ -858,7 +902,7 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
             result = None
             try:
                 result = await _dispatch(_with_turn_context(context, build_user_blocks(
-                    f"{user_message}\n\n{recovered}", attached_context, None)))
+                    f"{user_message}\n\n{recovered}", attached_context, None)), ocr_text=recovered)
             except TaskError:
                 raise
             except Exception as retry_exc:  # noqa: BLE001 — report the retry honestly
@@ -1030,7 +1074,7 @@ async def _skill_index(limit: int = 80) -> str:
 # To keep a request under 12k characters (the master plan's K7 row; ⓪Plan chose A): attach_file, the
 # browser and a job's status and stop are found on demand too. find_tools names them.
 # With Hands on, the whole desktop family is resident: a Hands task is one long turn (Q1).
-# C3b's demotions (browser back/click/type/select/press, delegate_work, propose_capability) are here.
+# C3b's demotions (browser back/click/type/select/press, propose_capability) are here.
 RESIDENT = frozenset({
     "web_search", "web_extract", "read_file", "list_dir", "search_files", "write_file", "edit_file",
     "run_command", "update_plan", "ask_user_choice", "start_background_work", "recall", "remember",

@@ -84,6 +84,7 @@ async def test_a_plain_script_the_user_clicked_runs_with_no_wrapper(monkeypatch,
     assert turn.ran[0][2] == {**CLEAR, "outside": True, "unwrapped": True}
 
 
+@pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's rule in the sandbox, its switch off
 @pytest.mark.parametrize("command,shown", [("ls", {}), ("curl https://example.test/b", {"network": True})],
                          ids=["offline", "a network card"])
 async def test_a_command_after_outside_content_runs_offline(command, shown, monkeypatch, turn_db):
@@ -94,6 +95,19 @@ async def test_a_command_after_outside_content_runs_offline(command, shown, monk
                    confirm_command=card(turn, "command"))
     assert turn.cards == [("command", [command, []], shown)]
     assert [(tool, around["offline"]) for tool, _args, around in turn.ran] == [("web_extract", False), ("run_command", True)]
+
+
+@pytest.mark.parametrize("command", ["ls", "curl https://example.test/b"], ids=["no network", "network by its text"])
+async def test_after_outside_content_a_command_in_the_sandbox_reaches_its_call_online(command, monkeypatch, turn_db):
+    """NET-a, its switch on (the default): the proxy judges each site the command reaches, so the gate leaves it online
+    and its card says nothing of the network."""
+    turn = Turn()
+    replies = [call("web_extract", {"url": "https://example.test/a"}, "c1"), call("run_command", {"command": command}, "c2"),
+               Reply("Done.")]
+    await run_turn(turn, monkeypatch, turn_db, replies, tools=table("web_extract", "run_command"),
+                   confirm_command=card(turn, "command"))
+    assert turn.cards == [("command", [command, []], {})]
+    assert [(tool, around["offline"]) for tool, _args, around in turn.ran] == [("web_extract", False), ("run_command", False)]
 
 
 async def test_a_delete_outside_the_sandbox_goes_to_the_trash(monkeypatch, turn_db):
@@ -111,10 +125,8 @@ async def test_a_delete_outside_the_sandbox_goes_to_the_trash(monkeypatch, turn_
     ([call("run_command", {"command": "ls"})], "run_command", {"run_command": 15}, [15.0]),
     ([call("web_search", {"query": "a"}, "c1"), call("read_file", {"path": "a.md"}, "c2")], "web_search read_file",
      {"web_search": 300, "read_file": 5}, [300.0, 20.0]),
-    ([call("delegate_work", {"jobs": [{"method": "research", "objective": "o"}]})], "delegate_work",
-     {"delegate_work": 300}, [100.0]),
 ], ids=["a command leaves its reserve", "a command's own limit under the default",
-        "a tool's own limit over and under the default", "delegating gets what is left"])
+        "a tool's own limit over and under the default"])
 async def test_a_calls_time_limit(replies, tools, own_limit, limits, monkeypatch, turn_db):
     turn = Turn()
     await run_turn(turn, monkeypatch, turn_db, [*replies, Reply("Done.")], tools=table(*tools.split()),

@@ -138,7 +138,9 @@ class DistilledSession(Base):
 
 class Setting(Base):
     """Settings as key/value text. 0070 (v0.1.63): a stored shell_confirm_policy of ask_risky moved to ask_all once.
-    0086 (v0.1.64 ROUTE1): the routing strategy and the old model-role pins were cleared once."""
+    0086 (v0.1.64 ROUTE1): the routing strategy and the old model-role pins were cleared once.
+    0095 (v0.1.64 ASK1-a): writes no policy; sets shell_policy_switch_notice once where the stored policy isn't ask_risky.
+    0097 (v0.1.64 ASK1-b): sets scheduled_commands_note to pending once on an existing install."""
     __tablename__ = "settings"
 
     key = Column(String(100), primary_key=True)
@@ -163,7 +165,8 @@ class ArslanMessage(Base):
     timestamp = Column(DateTime, default=datetime.utcnow)
     # 0.1.42: set on a background job's result message — done|partial|blocked|stopped.
     job_outcome = Column(String(20), nullable=True)
-    # Mobile bridge: "phone" for a user message forwarded from a paired iPhone; NULL = the window.
+    # Mobile bridge: "phone" for a user message forwarded from a paired iPhone; NULL = the window. NET-a: "brief" for a
+    # sub-session's brief, the commander's words in the user's role (sub_sessions.BRIEF_SOURCE).
     source = Column(String(20), nullable=True)
 
 
@@ -179,6 +182,8 @@ class ArslanSummary(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables
+# (Q3): this model and the legacy_user_facts table behind its user_facts view.
 class UserFact(Base):
     """Long-term memory (scope 3): durable user preferences / key facts."""
 
@@ -732,6 +737,8 @@ class ConversationSeen(Base):
     seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+# DELETE-BY: v0.1.65, when C7c-6 removes the /facts routes and the memory v1 tables
+# (Q3): this model and the legacy_learnings table behind its learnings view.
 class Learning(Base):
     """心得 (know-how) distilled from concrete signals (a distill event, a user
     correction, or a repeated run pattern). Always carries a traceable source_ref.
@@ -947,6 +954,9 @@ class ScheduledTask(Base):
     # INB5 (migration 0084): when you last opened this task on the Scheduled page. Its runs' "could not ask" entries newer
     # than this wait on you (progress.waiting_on_user). The task's own column, so no conversation id can collide with it.
     seen_at = Column(DateTime, nullable=True)
+    # ASK1-b (migration 0097): whether the turn that wrote or last changed the prompt had read outside content. Sticky:
+    # set, never cleared. A fire starts from it (scheduler._fire): offline. Rows from before 0097 are true.
+    outside_seen = Column(Boolean, nullable=False, default=False, server_default="0")
 
 
 class ScheduledTaskRun(Base):
@@ -1036,9 +1046,6 @@ from server.db.companion_models import (  # noqa: E402,F401
 from server.db.task_models import (  # noqa: E402,F401
     CompanionTask, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision,
 )
-from server.db.worker_models import (  # noqa: E402,F401
-    ProfessionalMethod, ProfessionalMethodVersion, TaskWorker,
-)
 from server.db.permission_models import ActionGrantRecord, CompanionConnection  # noqa: E402,F401
 
 
@@ -1057,9 +1064,10 @@ class ProactiveItem(Base):
     __tablename__ = "proactive_items"
 
     id = Column(Integer, primary_key=True)
-    kind = Column(String(24), nullable=False)        # job_followup|scheduled_problem|web_change|folder_change|brief
+    kind = Column(String(24), nullable=False)        # job_followup|scheduled_problem|web_change|folder_change (a stored
+                                                     # "brief" from before INB7-e is read past: proactive_service._known_kind)
     fingerprint = Column(String(200), nullable=False, unique=True)   # dedupe: same evidence, same item
-    source_key = Column(String(120), nullable=False, index=True)     # job:<id> | sched:<id> | watch:<id> | brief
+    source_key = Column(String(120), nullable=False, index=True)     # job:<id> | sched:<id> | watch:<id>
     title_key = Column(String(60), nullable=False)
     params = Column(JSON, nullable=False, default=dict)
     evidence = Column(JSON, nullable=False, default=list)            # [{key, params, quote?}] — never empty

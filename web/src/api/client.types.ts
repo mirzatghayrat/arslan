@@ -138,7 +138,8 @@ export interface TurnUndone {
 export interface RunChangesOut {
   state: "running" | "finishing" | "interrupted" | "kept" | "none" | "expired" | "not_saved";
   undone: boolean;
-  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted" }[];
+  /** HR-2b: `ci`, a CI file (it runs on the CI service after a push). */
+  paths: { folder: string; path: string; kind: "made" | "edited" | "deleted"; ci?: boolean }[];
   conversation_id: string;
 }
 
@@ -290,7 +291,8 @@ export interface ScheduledTaskCreateBody {
   schedule_kind: "interval" | "cron";
   interval_s?: number | null;
   cron?: string | null;
-  /** null/empty = dedicated conversation (scheduled-{id}). */
+  /** null/empty = the task's own conversation: on create the server stores a new `scheduled-<uuid>`, and on save a task keeps
+   *  its own (a row made before v0.1.64 writes into `scheduled-{id}`). */
   conversation_id?: string | null;
 }
 
@@ -354,21 +356,11 @@ export interface ChatMessage {
   timestamp?: string;
 }
 
-/** A persona "seed identity" reference (one of the 249), resolved for display. */
-export interface SeedRef {
-  slug: string;
-  name: string;
-  division: string;
-  summary: string;
-}
-
 export interface SpawnDetail extends SpawnSummary {
   persona_role: string | null;
   persona_tone: string | null;
   system_prompt: string;
   messages: ChatMessage[];
-  /** The composed persona seed identities (resolved). */
-  seeds?: SeedRef[];
 }
 
 export interface AppSettings {
@@ -384,8 +376,9 @@ export interface AppSettings {
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   orchestrator_shell_enabled?: string; // "true" | "false"
-  shell_confirm_policy?: string; // "ask_all" | "ask_risky"
-  shell_policy_switch_notice?: string; // v0.1.63: "pending" after migration 0070 switched this user, then "seen"
+  shell_confirm_policy?: string; // "ask_all" | "ask_risky", as the server reads it (ASK1-a)
+  shell_policy_switch_notice?: string; // v0.1.64 ASK1-a: "pending" after migration 0095, then "seen"
+  scheduled_commands_note?: string; // v0.1.64 ASK1-b: "pending" after migration 0097, then "seen"
   model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"
   background_job_budget?: string; // "lean" | "standard" | "ample" (0.1.43)
   task_usd_cap?: string; // K4a: the per-task dollar cap, as text ("" = $2)
@@ -621,7 +614,21 @@ export interface CapabilityCard {
   connections?: PluginConnection[];
   /** CAP8-2's hook rule: one event per hook that won't run (a skill's frontmatter hooks, a plugin's skills' too). */
   hooks?: string[];
+  /** HOOK-1: each hook as stored (server/services/plugin_hooks.card_rows). */
+  hook_rows?: HookRow[];
 }
+/** One hook as its card and its plugin's row show it (server/services/plugin_hooks.card_rows). `matches`: Arslan's tool
+ *  keys, "mcp:<server>:<tool>", "startup" or "*"; `matches_note` set: the matcher can't be told, so every tool. Only a
+ *  `supported` hook runs, and only one can be switched on (HOOK-3 makes hooks supported). */
+export interface HookRow {
+  id: string; event: string; when: string | null; matcher: string | null; matches: string[]; matches_note: string | null;
+  command: string | null; args: string[] | null; if: string | null; timeout: number;
+  kind: "supported" | "wont_run" | "matches_nothing" | "not_yet"; on: boolean; note: string | null;
+  /** HOOK-3's slot: what the hook did lately. Nothing records it yet, so no server sends it. */
+  last?: HookActivity | null;
+}
+/** HOOK-3's slot: today's runs and stops, and a write or connection the sandbox refused it (rule 1). */
+export interface HookActivity { ran_today: number; stopped_today: number; blocked: "network" | "write" | null }
 /** A skill inside a plugin, as its card shows it. */
 export interface PluginSkill {
   key: string; name: string; summary: string; scripts: string[]; references: string[];
@@ -713,7 +720,7 @@ export interface ImportPluginRow {
 export interface ImportPluginCard {
   name: string; summary: string; from: string | null; hooks: string[]; commit: string;
   license: { spdx: string | null; read_from: string | null }; skills: PluginSkill[]; connections: PluginConnection[];
-  keys: CapabilityCard["keys"]; folders: string[]; publisher: CapabilityCard["publisher"];
+  keys: CapabilityCard["keys"]; folders: string[]; publisher: CapabilityCard["publisher"]; hook_rows?: HookRow[];
 }
 export interface ImportScan {
   tools: { tool: ImportRow["tool"]; state: "read" | "missing" | "malformed"; count: number }[];

@@ -1,11 +1,10 @@
-/** #605 review F3: the Inbox is gone (INB5), so nothing the app shows, in any language, sends the user there. Two things may still say
- *  the word: the memory proposals' own box (another thing), and the brief's evidence, which nothing shows since the brief went (the
- *  user's Q9; INB7-e deletes it with the brief). */
+/** #605 review F3: the Inbox is gone (INB5), so nothing the app shows, in any language, sends the user there. One thing may still say
+ *  the word: the memory proposals' own box (another thing). The brief's evidence said it too, until INB7-e deleted it with the brief. */
 import { describe, expect, it } from "vitest";
 import i18n, { SUPPORTED_LANGUAGES } from "../i18n";
 
 const INBOX: Record<string, RegExp> = { en: /inbox/i, zh: /收件箱/, ja: /受信箱/, de: /Posteingang/i, es: /bandeja/i, fr: /boîte/i };
-const ALLOWED = [/^brain\.proposal_inbox$/, /^proactive\.evidence\.brief\./];
+const ALLOWED = [/^brain\.proposal_inbox$/];
 
 function strings(node: unknown, path = ""): [string, string][] {
   if (typeof node === "string") return [[path, node]];

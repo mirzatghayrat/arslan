@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence, tool_schema
+from arslan.llm import output_fallback, request_evidence, tool_schema
 
 from arslan.llm.providers.base import BaseLLMProvider
 from arslan.models import LLMResponse
@@ -81,6 +81,10 @@ class GeminiProvider(BaseLLMProvider):
     ) -> None:
         super().__init__(model=model, api_key=api_key, base_url=base_url or self.DEFAULT_BASE_URL)
         self._transport = transport
+        # v0.1.64: the model's documented maximum output, or 32,768 when unknown (output_budget.for_model);
+        # was a flat 8192. A refused cap is sent once more at 8,192 (output_fallback.py).
+        from arslan.llm.output_budget import for_model
+        self.max_output_tokens = for_model(self.base_url, model).initial
 
     @property
     def provider_name(self) -> str:
@@ -193,7 +197,7 @@ class GeminiProvider(BaseLLMProvider):
         system, contents = self._to_contents(messages)
         payload: dict[str, Any] = {
             "contents": contents,
-            "generationConfig": {"temperature": temperature, "maxOutputTokens": 8192},
+            "generationConfig": {"temperature": temperature, "maxOutputTokens": self.max_output_tokens},
         }
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
@@ -232,17 +236,17 @@ class GeminiProvider(BaseLLMProvider):
         if tool_choice == "none" and payload.get("tools"):
             # The forced wrap-up keeps the same declarations and may not call one (K1).
             payload["toolConfig"] = {"functionCallingConfig": {"mode": "NONE"}}
-        payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        payload["generationConfig"]["maxOutputTokens"] = model_request(self.max_output_tokens)
         from arslan.execution_checkpoint import save
         await save("before_model")
-        # A resend (param_heal) follows an error status, raised before any body is read: no text first.
+        # A resend (param_heal, output_fallback) follows an error status, raised before any body is read.
         if stream:
             streamed = f"{self.base_url}/models/{self.model}:streamGenerateContent?alt=sse"
-            data = await param_heal.send(self.endpoint_fingerprint(), payload,
-                                         lambda p: self._chat_streamed(streamed, p, on_text))
+            data = await output_fallback.send(self.endpoint_fingerprint(), payload,
+                                              lambda p: self._chat_streamed(streamed, p, on_text))
         else:
-            data = await param_heal.send(self.endpoint_fingerprint(), payload,
-                                         lambda p: self._post(url, p, timeout))
+            data = await output_fallback.send(self.endpoint_fingerprint(), payload,
+                                              lambda p: self._post(url, p, timeout))
         return self._parse_response(data)
 
     async def _chat_streamed(self, url: str, payload: dict[str, Any],
@@ -316,11 +320,11 @@ class GeminiProvider(BaseLLMProvider):
         self._last_stream_usage = None
         from arslan.execution_budget import model_request
         payload = self._payload(messages, temperature)
-        payload["generationConfig"]["maxOutputTokens"] = model_request(8192)
+        payload["generationConfig"]["maxOutputTokens"] = model_request(self.max_output_tokens)
         from arslan.execution_checkpoint import save
         await save("before_model")
-        async for piece in param_heal.stream(self.endpoint_fingerprint(), payload,
-                                             lambda p: self._stream_attempt(url, p, timeout)):
+        async for piece in output_fallback.stream(self.endpoint_fingerprint(), payload,
+                                                  lambda p: self._stream_attempt(url, p, timeout)):
             yield piece
 
     async def _stream_attempt(self, url: str, payload: dict[str, Any],

@@ -37,14 +37,19 @@ export interface Refusal {
   /** S6 (S4a follow-up 1): an expiry, said one of two ways: the card never opened because an earlier one went
    *  unanswered (true), or it was shown and nobody answered it in time (false). Absent from an older server. */
   unopened?: boolean;
+  /** NET-a (Codex round 1, F7): the sites its card's "In this conversation" allows in the entry's conversation, not allowed
+   *  there yet (POST /permissions/grants {refused_id}). Empty for a scheduled run's entry (S1: a run with nobody to ask reads
+   *  no grant) and any other entry; absent from an older server. */
+  sites?: string[];
 }
 
 /** What a row says, a line to a thing: the command, the file, the cadence, each app of a many-app entry (their detail is newline-joined; their target
  *  is joined by a separator). Never the raw target ("rules:send-mail"); never merged into one string. */
 const whatLines = (r: Refusal) => (r.detail || r.target).split(/[\n\u001e]+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 
-/** What "Always allow" made: the entry it was clicked on, where it stood, and the rules the server created (what Undo deletes). */
-interface Allowed { row: Refusal; at: number; rules: number[] }
+/** What "Always allow" made: the entry it was clicked on, where it stood, and the rules the server created (what Undo deletes);
+ *  for "In this conversation" (NET-a), the grants. */
+interface Allowed { row: Refusal; at: number; rules: number[]; grants: number[] }
 
 /**
  * "Not done while you were away" (0.1.61 §A4, R12, R13). A row says what "Always allow" would store
@@ -56,6 +61,8 @@ interface Allowed { row: Refusal; at: number; rules: number[] }
  * the Inbox is gone, and a conversation (WhileAway) and the Scheduled page show it. Its test ids and `inbox.*` keys keep their names.
  * INB3: `conversationId` lists one conversation's entries (the server filters before it groups, #568) over `hours` (1 to 168);
  * `unattended` keeps only a scheduled run's own, since a task may write into an ordinary conversation.
+ * NET-a (Codex round 1, F7): an entry of NET-a's card offers that card's "In this conversation" for the sites it names (`sites`),
+ * held and undone as "Always allow" is. A scheduled run's entry has none (S1): it says the run never takes such a step.
  */
 export default function NotDoneList({ onCount, conversationId, hours = 24, unattended = false, awayOnly = false, title, className = "" }: {
   onCount?: (n: number) => void; conversationId?: string; hours?: number; unattended?: boolean;
@@ -117,18 +124,21 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
     setUndoable((s) => { const n = new Set(s); n.delete(id); return n; });
   };
 
-  async function allowAlways(r: Refusal) {
+  /** "Always allow", or (`here`, NET-a) "In this conversation" for the entry's sites. */
+  async function allowAlways(r: Refusal, here = false) {
     if (guard.held()) return;
     setBusy(r.id);
     try {
       // Only the entry's id: the server stores what its card would have offered, never a kind or a target from here.
-      const made = await request<{ id?: number; rules?: { id: number }[] }>("/permissions/rules", { method: "POST", body: JSON.stringify({ refused_id: r.id }) });
+      const made = await request<{ id?: number; rules?: { id: number }[]; grants?: { id: number }[] }>(
+        here ? "/permissions/grants" : "/permissions/rules", { method: "POST", body: JSON.stringify({ refused_id: r.id }) });
       if (!alive.current) return;
-      const rules = Array.isArray(made?.rules) ? made.rules.map((rule) => rule.id) : typeof made?.id === "number" ? [made.id] : [];
-      setAllowed((m) => new Map(m).set(r.id, { row: r, at: Math.max(0, rows.findIndex((x) => x.id === r.id)), rules }));
+      const rules = here ? [] : Array.isArray(made?.rules) ? made.rules.map((rule) => rule.id) : typeof made?.id === "number" ? [made.id] : [];
+      const grants = here && Array.isArray(made?.grants) ? made.grants.map((grant) => grant.id) : [];
+      setAllowed((m) => new Map(m).set(r.id, { row: r, at: Math.max(0, rows.findIndex((x) => x.id === r.id)), rules, grants }));
       guard.hold();                                                     // Undo comes up where "Always allow" was: not for the second click
       announceProactiveChange();                                        // #605 review F4: the count on Progress follows at once
-      if (rules.length) {
+      if (rules.length || grants.length) {
         setUndoable((s) => new Set(s).add(r.id));
         timers.current.set(r.id, setTimeout(() => closeUndo(r.id), UNDO_MS));
       }
@@ -141,15 +151,15 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
     }
   }
 
-  /** Delete exactly the rules the click created. A rule that is gone already counts as undone; any other failure keeps Undo for a retry. */
+  /** Delete exactly the rules (or grants) the click created. One that is gone already counts as undone; any other failure keeps Undo for a retry. */
   async function undo(r: Refusal) {
     if (guard.held()) return;
     const made = allowed.get(r.id);
     if (!made) return;
     setBusy(r.id);
     let failed = false;
-    for (const id of made.rules) {
-      try { await request(`/permissions/rules/${id}`, { method: "DELETE" }); }
+    for (const path of [...made.rules.map((id) => `/permissions/rules/${id}`), ...made.grants.map((id) => `/permissions/grants/${id}`)]) {
+      try { await request(path, { method: "DELETE" }); }
       catch (e) { if (!(e instanceof ApiError && e.status === 404)) failed = true; }
     }
     if (!alive.current) return;
@@ -188,6 +198,10 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
           const done = allowed.has(row.id);
           // Only with something listed to store: the click is never asked for without its result in front of the person.
           const offered = !row.unattended && row.always_ok && row.always.length > 0 && !eachTime.has(row.id);
+          // NET-a: its card's "In this conversation", for the sites the server listed (their card never offers "Always").
+          const sites = eachTime.has(row.id) ? [] : row.sites ?? [];
+          const made = allowed.get(row.id);
+          const granted = made?.grants.length ? made.row.sites ?? [] : [];
           return (
             <li key={`${row.kind}\u0000${row.target}\u0000${row.unattended ? "scheduled" : "away"}`} data-testid="inbox-refused-row"
               className="flex items-center gap-3 rounded-xl bg-surface px-3.5 py-2.5">
@@ -215,17 +229,25 @@ export default function NotDoneList({ onCount, conversationId, hours = 24, unatt
               </div>
               {done
                 ? <span className="flex shrink-0 items-center gap-2">
-                    <span data-testid="inbox-refused-allowed" className="text-[12px] text-muted-foreground">{t("inbox.allowedNow")}</span>
+                    <span data-testid="inbox-refused-allowed" className="text-[12px] text-muted-foreground">
+                      {granted.length ? t("remembered.grant.other", { name: isolate(granted.join(", ")) }) : t("inbox.allowedNow")}</span>
                     {undoable.has(row.id) && <button type="button" disabled={busy === row.id} aria-disabled={held || undefined} onClick={() => void undo(row)} data-testid="inbox-refused-undo"
                       className="rounded-lg bg-fill px-2.5 py-1 text-[12px] font-semibold hover:bg-fill-strong disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50">{t("inbox.undo")}</button>}
                   </span>
+                : sites.length > 0
+                  ? <button type="button" disabled={busy === row.id} aria-disabled={held || undefined} onClick={() => void allowAlways(row, true)} data-testid="inbox-refused-allow-here"
+                      className="shrink-0 rounded-lg bg-fill px-2.5 py-1 text-[12px] font-semibold hover:bg-fill-strong disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
+                      {t("kit.scope.conversationFor", { label: isolate(sites.join(", ")) })}
+                    </button>
                 : offered
                   ? <button type="button" disabled={busy === row.id} aria-disabled={held || undefined} onClick={() => void allowAlways(row)} data-testid="inbox-refused-allow"
                       className="shrink-0 rounded-lg bg-fill px-2.5 py-1 text-[12px] font-semibold hover:bg-fill-strong disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50">
                       {t("inbox.alwaysAllow")}
                     </button>
                   : <span data-testid="inbox-refused-each-time" className="shrink-0 text-[12px] text-muted-foreground">
-                      {t(row.unattended ? "inbox.scheduledNeverAsks" : "inbox.asksEachTime")}</span>}
+                      {/* SBX-5b: another app's private data is never asked of a run with nobody there; it says so. */}
+                      {t(!row.unattended ? "inbox.asksEachTime"
+                        : row.kind === "app_data" ? "inbox.appDataUnattended" : "inbox.scheduledNeverAsks")}</span>}
             </li>
           );
         })}

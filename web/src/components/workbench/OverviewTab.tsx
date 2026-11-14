@@ -244,7 +244,9 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
               const parts = <>
                 <span className={`min-w-12 shrink-0 text-[11px] ${KIND_COLOR[p.kind]}`}>{t(`workbench.${p.kind}`)}</span>
                 <span className="min-w-0 max-w-[70%] truncate" data-testid="overview-change-name">{isolate(name)}</span>
-                {dir && <span className="min-w-0 flex-1 truncate text-[11px] text-subtle-foreground" dir="rtl">{isolate(dir)}</span>}
+                {p.ci && <span className="shrink-0 rounded bg-fill px-1 text-[10.5px] text-warning" title={t("workbench.ciFile")}
+                  data-testid="change-ci">CI</span>}
+                {dir &&<span className="min-w-0 flex-1 truncate text-[11px] text-subtle-foreground" dir="rtl">{isolate(dir)}</span>}
               </>;
               const line = "flex w-full min-w-0 items-center gap-2 text-[12.5px]";
               // DIFF1: a text path of a turn that can still be undone opens its line diff (made and deleted too).

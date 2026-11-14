@@ -6,7 +6,7 @@ const host = (url: string | null) => {
   try { return url ? new URL(url).host : ""; } catch { return url ?? ""; }
 };
 
-function Tag({ children }: { children: React.ReactNode }) {
+export function Tag({ children }: { children: React.ReactNode }) {
   return <span className="rounded-md bg-fill px-1.5 py-px text-[11px] text-muted-foreground">{children}</span>;
 }
 

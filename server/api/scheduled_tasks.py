@@ -163,6 +163,8 @@ async def create_scheduled_task(body: ScheduledTaskCreateIn) -> ScheduledTaskOut
             enabled=True, consecutive_failures=0)
         _recompute_next_due(task, datetime.utcnow())
         db.add(task)
+        await db.flush()
+        await scheduler.forget_reused_id(db, task.id)     # SUB5a: "make it again" gets the deleted task's id
         await db.commit()
         await db.refresh(task)
         return _task_out(task, spawn_name=spawn.name if spawn else None, last_outcome=None)

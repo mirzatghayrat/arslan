@@ -3,7 +3,7 @@
 Driven through the real run_native and _dispatch_tool, with executors that log when they start and end:
 - two or more allowlisted reads in a row overlap (at most 4 at once); a call that is not on the list
   (a write, anything else) runs alone, in its place (Q2);
-- every gate still runs per call, in the reply's order: a refused fetch budget lands on the same call;
+- every gate still runs per call, in the reply's order: a refusal in its gates lands on the same call;
 - the frames, the trace and the history keep the reply's order and pairing, whatever finished first (Q3);
 - two calls to one MCP server never overlap; a server that does not say it only reads is not a read;
 - stopping the turn stops every call of the group.
@@ -17,6 +17,7 @@ from arslan import execution_budget
 from arslan.models import LLMResponse
 from server.db.models import MCPServer, Tool, Toolset
 from server.orchestrator import parallel_reads, tool_loop
+from server.services import permissions
 
 
 class _Log:
@@ -111,10 +112,10 @@ async def test_at_most_four_run_at_once(monkeypatch, execution_db):
     seen_while_held: list[int] = []
     gated: list[str] = []
 
-    async def budget(tool_key, *, conversation_id):
+    async def plan_refusal(tool_key, _args, _conversation_id):
         gated.append(tool_key)
         return None
-    monkeypatch.setattr(tool_loop, "_check_fetch_budget", budget)
+    monkeypatch.setattr(permissions, "plan_refusal", plan_refusal)
 
     async def watch():
         while len(gated) < 6:
@@ -180,22 +181,22 @@ async def test_frames_trace_and_history_keep_the_replys_order_whatever_finished_
             "TOOL RESULT for list_dir" in sent[3], "result of fast" in sent[3]] == [True] * 6
 
 
-async def test_a_refused_fetch_budget_lands_on_the_same_call(monkeypatch, execution_db):
+async def test_a_refusal_in_its_gates_lands_on_the_same_call(monkeypatch, execution_db):
     log = _Log()
     read = _Read(log)
     asked: list[str] = []
 
-    async def budget(tool_key, *, conversation_id):
+    async def plan_refusal(tool_key, _args, _conversation_id):
         asked.append(tool_key)
         if len(asked) == 2:
-            return {"ok": False, "code": "fetch_budget", "error": "fetch budget used up"}
+            return {"ok": False, "code": "plan_mode", "error": "refused in its gates"}
         return None
-    monkeypatch.setattr(tool_loop, "_check_fetch_budget", budget)
+    monkeypatch.setattr(permissions, "plan_refusal", plan_refusal)
     calls = [("read_file", {"path": "a"}), ("list_dir", {"path": "b"}), ("read_file", {"path": "c"})]
     result = await _turn(monkeypatch, log, _Script(*calls),
                          {"read_file": read, "list_dir": read})
     assert asked == ["read_file", "list_dir", "read_file"]
-    assert [s["result"].get("code") for s in result["tool_trace"]] == [None, "fetch_budget", None]
+    assert [s["result"].get("code") for s in result["tool_trace"]] == [None, "plan_mode", None]
     assert ("start", "b") not in log.events
 
 
@@ -285,7 +286,7 @@ def test_the_allowlist_is_reads_only():
     assert parallel_reads.READS == {"web_search", "web_extract", "read_skill", "recall", "read_file", "list_dir",
                                     "search_files", "list_my_tasks", "list_nodes", "list_my_capabilities",
                                     "whats_new", "my_status", "task_progress", "background_status",
-                                    "mac_list_shortcuts"}
+                                    "mac_list_shortcuts", "progress_report"}
 
 
 async def test_the_run_record_has_one_step_per_call_with_its_own_arguments(monkeypatch, execution_db):
@@ -323,12 +324,12 @@ async def test_a_stop_while_a_later_call_is_in_its_gates_leaves_no_task_behind(m
     held = asyncio.Event()
     gated: list[str] = []
 
-    async def budget(tool_key, *, conversation_id):
+    async def plan_refusal(tool_key, _args, _conversation_id):
         gated.append(tool_key)
         if len(gated) == 2:
             await held.wait()                       # the second call never gets through its gates
         return None
-    monkeypatch.setattr(tool_loop, "_check_fetch_budget", budget)
+    monkeypatch.setattr(permissions, "plan_refusal", plan_refusal)
     before = set(asyncio.all_tasks())
     turn = asyncio.create_task(_turn(monkeypatch, log, _Script(("read_file", {"path": "a"}),
                                                                ("list_dir", {"path": "b"})),
@@ -352,13 +353,13 @@ async def test_each_calls_gates_finish_before_the_next_calls_start(monkeypatch, 
     log = _Log()
     gates: list[tuple[str, str]] = []
 
-    async def budget(tool_key, *, conversation_id):
+    async def plan_refusal(tool_key, _args, _conversation_id):
         gates.append(("start", tool_key))
         if tool_key == "read_file":
             await asyncio.sleep(0.1)
         gates.append(("end", tool_key))
         return None
-    monkeypatch.setattr(tool_loop, "_check_fetch_budget", budget)
+    monkeypatch.setattr(permissions, "plan_refusal", plan_refusal)
     read = _Read(log, meet=2)
     await _turn(monkeypatch, log, _Script(("read_file", {"path": "a"}), ("list_dir", {"path": "b"})),
                 {"read_file": read, "list_dir": read})

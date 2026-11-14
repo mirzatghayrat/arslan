@@ -70,11 +70,18 @@ def _run(profile: str, *argv: str) -> subprocess.CompletedProcess:
                           env={"PATH": "/usr/bin:/bin"}, timeout=30)
 
 
+def _commands(monkeypatch, ws, protected=()) -> str:
+    """The live commands profile (offline) for work folder `ws`, with `protected` as its protected paths.
+    v0.1.64: these checks ran on the pre-SBX-3 text until it went."""
+    monkeypatch.setattr(command_sandbox, "default_protected", lambda: list(protected))
+    return command_sandbox.commands_profile(ws, offline=True)
+
+
 @pytest.mark.macos
 @macos
 @pytest.mark.parametrize("name", ["plain", CJK, ACCENTED, EMOJI, CONTROL, DELETE],
                          ids=["ascii", "cjk", "accented", "emoji", "control", "delete"])
-def test_a_protected_folder_or_file_is_closed_whatever_its_name(tmp_path, name):
+def test_a_protected_folder_or_file_is_closed_whatever_its_name(tmp_path, monkeypatch, name):
     """A folder is written as a subpath and a file as a literal; both go through the encoder."""
     ws = tmp_path / "ws"
     secret = ws / name / "secret.txt"
@@ -82,7 +89,7 @@ def test_a_protected_folder_or_file_is_closed_whatever_its_name(tmp_path, name):
     secret.write_text("hush")
     key = ws / f"{name}.key"
     key.write_text("hush")
-    text = command_sandbox.profile([ws], [ws / name, key])
+    text = _commands(monkeypatch, ws, [ws / name, key])
     for closed in (secret, key):
         run = _run(text, "/bin/cat", str(closed))
         assert run.returncode != 0 and "hush" not in run.stdout, (name, closed.name, run.stdout, run.stderr)
@@ -93,23 +100,23 @@ def test_a_protected_folder_or_file_is_closed_whatever_its_name(tmp_path, name):
 
 @pytest.mark.macos
 @macos
-def test_a_rule_matches_whichever_unicode_normalization_the_folder_was_stored_in(tmp_path):
+def test_a_rule_matches_whichever_unicode_normalization_the_folder_was_stored_in(tmp_path, monkeypatch):
     stored = tmp_path / unicodedata.normalize("NFD", ACCENTED)
     stored.mkdir()
     (stored / "secret.txt").write_text("hush")
     given = tmp_path / unicodedata.normalize("NFC", ACCENTED)     # the same folder, spelt the other way
-    text = command_sandbox.profile([tmp_path], [given])
+    text = _commands(monkeypatch, tmp_path, [given])
     assert _run(text, "/bin/cat", str(stored / "secret.txt")).returncode != 0
     assert _run(text, "/bin/cat", str(given / "secret.txt")).returncode != 0
 
 
 @pytest.mark.macos
 @macos
-def test_a_working_folder_with_a_cjk_name_is_writable(tmp_path):
+def test_a_working_folder_with_a_cjk_name_is_writable(tmp_path, monkeypatch):
     ws = tmp_path / CJK
     ws.mkdir()
     (tmp_path / "outside").mkdir()
-    text = command_sandbox.profile([ws], [])
+    text = _commands(monkeypatch, ws)
     made = _run(text, "/usr/bin/touch", str(ws / "new.txt"))
     assert made.returncode == 0 and (ws / "new.txt").exists(), made.stderr
     refused = _run(text, "/usr/bin/touch", str(tmp_path / "outside" / "new.txt"))

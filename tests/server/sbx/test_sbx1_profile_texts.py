@@ -6,6 +6,9 @@ change is visible line by line in review.
 
 Every input path goes through `A`, a link to the test's folder, so the texts also pin that each
 profile resolves what it is given. The test's folder, resolved, is written as <T>.
+
+The pre-SBX-3 commands text is gone (v0.1.64); the commands profile is SBX-2's base, pinned by
+`default-deny.sb` (test_sbx2_profile.py), plus the rules test_sbx3a_commands_profile.py writes out.
 """
 import os
 from pathlib import Path
@@ -49,72 +52,6 @@ def A(T):
 
 def _shown(text: str, T: Path) -> str:
     return text.replace(os.path.realpath(T), "<T>")
-
-
-def test_commands_profile_with_every_part(T, A):
-    text = command_sandbox.profile(
-        [A / "link", A / "notes.txt", A / "missing", A / "closed/ws"], [A / "prot", A / "prot.key"], offline=True,
-        closed=[A / "closed"], readable=[A / "closed/proj", A / "other", A / "closed/ws"], copies=[A / "copy.txt"])
-    assert _shown(text, T) == """\
-(version 1)
-(allow default)
-(deny appleevent-send)
-(deny network*)
-(deny file-write* (subpath "/"))
-(allow file-write* (subpath "<T>/ws") (literal "<T>/notes.txt") (subpath "<T>/missing") (subpath "<T>/closed/ws"))
-(deny file-read* file-write* (subpath "<T>/closed"))
-(allow file-read* file-write* (subpath "<T>/closed/ws"))
-(allow file-read* (subpath "<T>/closed/proj"))
-(deny file-read* file-write* (subpath "<T>/prot") (literal "<T>/prot.key"))
-(deny network-outbound (subpath "<T>/prot") (literal "<T>/prot.key"))
-(allow file-read* (literal "<T>/copy.txt"))
-"""
-
-
-def test_a_closed_folder_with_nothing_to_reopen_stays_closed(T, A):
-    """The default case for closed folders: Desktop, Documents and Downloads closed (the setting
-    off), with no working or project folder inside them. Nothing is reopened after the deny."""
-    expected = """\
-(version 1)
-(allow default)
-(deny appleevent-send)
-(deny file-write* (subpath "/"))
-(allow file-write* (subpath "<T>/ws"))
-(deny file-read* file-write* (subpath "<T>/closed"))
-(deny file-read* file-write* (subpath "<T>/prot"))
-(deny network-outbound (subpath "<T>/prot"))
-"""
-    assert _shown(command_sandbox.profile([A / "ws"], [A / "prot"], closed=[A / "closed"]), T) == expected
-    assert _shown(command_sandbox.profile([A / "ws"], [A / "prot"], closed=[A / "closed"],
-                                          readable=[A / "other"]), T) == expected
-
-
-def test_commands_profile_plain_and_empty(T, A):
-    quoted = A / 'a") (allow default) ("'
-    assert _shown(command_sandbox.profile([A / "ws", quoted], []), T) == """\
-(version 1)
-(allow default)
-(deny appleevent-send)
-(deny file-write* (subpath "/"))
-(allow file-write* (subpath "<T>/ws") (subpath "<T>/a\\") (allow default) (\\""))
-"""
-    assert command_sandbox.profile([], []) == """\
-(version 1)
-(allow default)
-(deny appleevent-send)
-(deny file-write* (subpath "/"))
-"""
-
-
-def test_a_non_ascii_name_is_written_as_its_own_characters(T, A):
-    """SBX-1b: a CJK name is written as itself. Until SBX-1b it was `\\u5de5\\u4f5c\\u533a`
-    (json.dumps), which seatbelt does not decode, so the rule matched no real folder (#471's review)."""
-    name = "\u5de5\u4f5c\u533a"           # a working folder named in Chinese
-    (T / f"{name}.key").write_text("x")      # and a protected file named the same way: a literal
-    lines = _shown(command_sandbox.profile([A / name], [A / f"{name}.key"]), T).splitlines()
-    assert lines[-3:] == [f'(allow file-write* (subpath "<T>/{name}"))',
-                          f'(deny file-read* file-write* (literal "<T>/{name}.key"))',
-                          f'(deny network-outbound (literal "<T>/{name}.key"))']
 
 
 def test_outside_floor(T, A, monkeypatch):

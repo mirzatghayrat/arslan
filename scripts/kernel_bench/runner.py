@@ -42,6 +42,8 @@ from scripts.kernel_bench import (check_t1, check_t2, check_t3, check_t4, check_
                                   tool_record)
 from scripts.kernel_bench.arslan_driver import snapshot
 
+from scripts.kernel_bench import check_c1, fixture_c1
+
 HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("BENCH_ROOT", "/tmp/arslan-kernel-bench")).resolve()
 PROXY = os.environ.get("BENCH_PROXY", "http://127.0.0.1:8900/c")
@@ -94,15 +96,14 @@ FIXTURES = {"T7": check_t7.fixture, "T8": check_t8.fixture, "T9": check_t9.fixtu
 # Arslan's browser is isolated by design (throwaway profile, public-internet
 # proxy, no loopback: server/services/managed_browser.py), so it cannot use a
 # page the user logged into; it has no phone/messaging channel.
-# T16 (split, delegate, summarise): Arslan has no sub-session tool until the SUB card's tool lands.
-# DELETE-BY: v0.1.64 when SUB3 merges (take T16 out of both Arslan entries, and check
-# tool_record.SUB_SESSION has the tool's real name). T17, its one-step other side, runs for Arslan
-# now: delegate_work exists today and counts as a hand-off, so it has a baseline before SUB.
-UNSUPPORTED = {"arslan": {"T4", "T4x", "T6", "T16"}, "arslan-legacy": {"T4", "T4x", "T6", "T16"},
+# T16 (split, delegate, summarise) and T17, its one-step other side, run for Arslan: SUB5e puts
+# start_sub_session in its tool tables (tool_record.SUB_SESSION). delegate_work counts as a hand-off
+# in T17 until SUB6 deletes it.
+UNSUPPORTED = {"arslan": {"T4", "T4x", "T6"}, "arslan-legacy": {"T4", "T4x", "T6"},
                # No browser of its own and no phone channel; no Hands (T12 is a Hands task).
                "claude-code": {"T4", "T4x", "T6", "T12"},
                "hermes": {"T12"}}
-UNSUPPORTED_WHY = {"T16": "no sub-session tool yet (SUB card)"}
+UNSUPPORTED_WHY: dict[str, str] = {}
 # Tasks scored from the run's tool-call record, and the entrants whose record the bench reads
 # (tool_record.py); the others are recorded as unsupported for these tasks.
 NEEDS_TOOL_RECORD = {"T16", "T17"}
@@ -362,6 +363,12 @@ def check_t4_site():
 # Only Arslan's driver can answer a card that way; other entrants are recorded as unsupported.
 DECLINES: dict = {"T11": {"rules": [r"delete|\brm\b|\brmdir\b|unlink"], "note": check_t11.NOTE}}   # patterns on the rule
 
+# H0 (harness plan §4.1), the capability set's first task: C1's fixture writes a local stand-in for the link vendor's
+# server and the app's link code into the run folder (no network: fixture_c1 says why); the checker reads the
+# stand-in's request log and the fixed code from disk, so a fix the agent never tried fails.
+FIXTURES["C1"] = fixture_c1.fixture
+CHECKS["C1"] = lambda run, reply, ctx: check_c1.check(reply, run, ctx["fixture"]["sim_sha256"])
+
 
 def driver_out(who: str, run: Path) -> dict:
     """Arslan's driver summary (its last stdout line): end, approvals, declined, ...; {} for
@@ -574,6 +581,7 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
         settled = settle(label, started, ended)
     record = {"run": label, "task": task, "entrant": who, "repeat": n, "model": model, "rc": rc,
               "entrant_version": entrant_version(who), "end": end,
+              "started": started,          # compare.requests_sent reads this run's meter rows from here (#879 item 4)
               "wall_s": round(time.time() - started), "prompt": turns if len(turns) > 1 else turns[0],
               "check": verdict, "usage": usage(label, started), "settled_s": settled, "judge": JUDGE_VERSION,
               "rate_limited_429": rate_limited(label, started),           # v0.1.64 M64 (T16 records it)

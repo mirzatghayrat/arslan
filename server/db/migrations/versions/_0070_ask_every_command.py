@@ -12,18 +12,10 @@ actions write the key. Idempotent (a second run finds nothing to move); a databa
 alone. It matches exactly what the reader counts as ask_risky (settings_service.shell_confirm_policy: the exact
 value, what Settings writes); any other spelling already reads as ask_all.
 
-It also leaves `shell_policy_switch_notice = pending` for every existing install that v0.1.62 read as ask_risky,
-whether the value was stored or not: the window tells them once that they were switched, how to switch back, and
-the known issue (R63, the user's decision on 10-24: in practice, every old user). v0.1.62 read everything but
-ask_all, in any case and spacing, as ask_risky, its default, so an install that never touched the setting was on
-it too. A new install gets no notice: it was never on ask_risky. The runner says which this is
-(runner.EXISTED_BEFORE_THIS_BOOT, taken before create_all); called on its own, an install counts as existing.
-DELETE-BY: v0.1.64, with the notice, when S2a-3 and #406 land (then its text is no longer true).
+v0.1.64 (ASK1-a): an unset policy reads as ask_risky again, and 0095 sets the one-time note this migration used
+to set; the move above stays in the chain.
 """
 from __future__ import annotations
-
-#: runner.EXISTED_BEFORE_THIS_BOOT (the runner imports this module, so the name is repeated, not imported).
-_EXISTED = "database_existed_before_this_boot"
 
 
 def upgrade_sync(connection) -> None:
@@ -31,15 +23,9 @@ def upgrade_sync(connection) -> None:
         "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     if "settings" not in tables:
         return
-    before = connection.exec_driver_sql(
-        "SELECT value FROM settings WHERE key = 'shell_confirm_policy'").scalar()
     connection.exec_driver_sql(
         "UPDATE settings SET value = 'ask_all'"
         " WHERE key = 'shell_confirm_policy' AND value = 'ask_risky'")
-    was_ask_risky = str(before).strip().lower() != "ask_all"      # v0.1.62's reader, word for word
-    if was_ask_risky and connection.info.get(_EXISTED, True):
-        connection.exec_driver_sql(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('shell_policy_switch_notice', 'pending')")
 
 
 def downgrade_sync(connection) -> None:

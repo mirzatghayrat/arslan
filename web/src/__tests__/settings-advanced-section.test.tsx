@@ -92,24 +92,12 @@ describe("AdvancedSection", () => {
     await user.click(option as HTMLElement);
   }
 
-  it("fires onShellConfirmPolicyChange with ask_risky once the known-issue sheet is confirmed (R63)", async () => {
+  it("choosing to ask only for risky commands needs no sheet (ASK1-a deleted v0.1.63's known-issue sheet)", async () => {
     render(<ConfirmHost />);
     const props = setup({ orchestratorShellEnabled: true });
     await pick(/shellPolicyAskRisky$/);
-    expect(await screen.findByTestId("confirm-sheet")).toBeTruthy();
-    expect(screen.getByTestId("confirm-sheet").textContent).toContain("settings.askRiskyConfirmBody");
-    expect(props.onShellConfirmPolicyChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("confirm-action"));
-    await waitFor(() => expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_risky"));
-  });
-
-  it("cancelling the known-issue sheet keeps asking before every command (R63)", async () => {
-    render(<ConfirmHost />);
-    const props = setup({ orchestratorShellEnabled: true });
-    await pick(/shellPolicyAskRisky$/);
-    fireEvent.click(await screen.findByTestId("confirm-cancel"));
-    await waitFor(() => expect(screen.queryByTestId("confirm-sheet")).toBeNull());
-    expect(props.onShellConfirmPolicyChange).not.toHaveBeenCalled();
+    expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_risky");
+    expect(screen.queryByTestId("confirm-sheet")).toBeNull();
   });
 
   it("going back to asking before every command needs no sheet", async () => {
@@ -126,9 +114,9 @@ describe("AdvancedSection", () => {
     expect(screen.queryByTestId("shell-policy-risky-note")).toBeNull();
   });
 
-  it("the note sits beside ask_risky when it is the choice", () => {
+  it("beside ask_risky, the default again, no note says it is still being completed (ASK1-a)", () => {
     setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
-    expect(screen.getByTestId("shell-policy-risky-note").textContent).toBe("settings.shellPolicyAskRiskyNote");
+    expect(screen.queryByTestId("shell-policy-risky-note")).toBeNull();
     expect(screen.queryByTestId("shell-policy-all-note")).toBeNull();
   });
 

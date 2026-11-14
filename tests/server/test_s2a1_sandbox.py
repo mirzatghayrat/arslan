@@ -18,6 +18,9 @@ from tests.server.sbx.profile_files import with_profile_text
 
 macos = pytest.mark.skipif(sys.platform != "darwin" or not command_sandbox.available(),
                            reason="seatbelt (sandbox-exec) is macOS-only")
+#: NET-a: S2a-1 as it was, with NET-a's switch (`sandbox_net_judgement`) off; with it on (the default) the network after
+#: outside content in the sandbox is tests/server/test_net_a_gate.py's.
+pytestmark = pytest.mark.usefixtures("s2a1_network_rule")
 SANDBOX_REFUSAL = "32:43: execution error: Reminders got an error: Application isn’t running. (-600)"
 # SBX-3: the workspace sandbox is the default-deny base, where osascript fails at the app lookup, before any
 # event (measured 2026-11-02 on macOS 26.6.2). The minimal profile outside it still gives the -600 above.
@@ -50,9 +53,9 @@ def test_protected_paths_are_arslans_own_plus_the_users_secrets():
 
 # ── piece 1: no Apple Events from the sandbox, and an honest word about it ────────────
 
-def test_the_workspace_profile_denies_apple_events(tmp_path):
-    lines = command_sandbox.profile([tmp_path], []).splitlines()
-    assert lines[:3] == ["(version 1)", "(allow default)", "(deny appleevent-send)"]
+# The workspace profile's Apple Events deny: SBX-2's base writes it in every network mode
+# (test_sbx2_profile.py), the commands profile is that base (test_sbx3a_commands_profile.py), and the kernel
+# refuses the send (test_sbx2_kernel.py, sbx_mac).
 
 
 def test_a_sandboxed_apple_event_refusal_gets_an_honest_hint():
@@ -254,16 +257,8 @@ def test_saved_copies_are_remembered_for_their_conversation_newest_last(outputs)
     assert outputs.given(None) == [] and outputs.given("nobody") == []
 
 
-def test_copies_are_opened_one_by_one_after_the_protected_paths(tmp_path):
-    data = tmp_path / "data"
-    copy = data / "tool_outputs" / 'a "quoted" name.txt'
-    copy.parent.mkdir(parents=True)
-    copy.write_text("x")
-    lines = command_sandbox.profile([tmp_path / "ws"], [data], copies=[copy]).splitlines()
-    deny = next(i for i, line in enumerate(lines) if line.startswith("(deny file-read* file-write* "))
-    allow = [line for line in lines if line.startswith("(allow file-read* (literal")]
-    assert allow == ['(allow file-read* (literal ' + __import__("json").dumps(str(copy.resolve())) + '))']
-    assert lines.index(allow[0]) > deny and "subpath" not in allow[0] and "write" not in allow[0]
+# The copies opened one by one after the protected paths, on the commands profile:
+# test_sbx3a_commands_profile.py::test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_closed_again.
 
 
 async def test_the_executor_passes_this_conversations_copies(outputs, monkeypatch, tmp_path):
@@ -507,7 +502,7 @@ async def test_an_approved_apple_events_card_never_becomes_a_standing_grant(exec
     from unittest.mock import AsyncMock
 
     from server.services import approvals, permission_store, run_registry, settings_service
-    monkeypatch.setattr(settings_service, "shell_confirm_policy", AsyncMock(return_value="ask_risky"))
+    monkeypatch.setattr(settings_service, "default_permission_mode", AsyncMock(return_value="ask_risky"))
     asked = []
 
     def window(frame):
@@ -569,7 +564,7 @@ class _Asker:
         return {"approved": self.approve, "scope": self.scope, "by": "user", "call_id": frame["call_id"]}
 
 
-async def _after_outside_content(monkeypatch, command, *, asker=None, outside=False, **args):
+async def _after_outside_content(monkeypatch, command, *, asker=None, outside=False, cards=None, **args):
     from server.orchestrator import untrusted
     from server.services import permissions
     seen = untrusted.track_turn()
@@ -584,7 +579,7 @@ async def _after_outside_content(monkeypatch, command, *, asker=None, outside=Fa
             await db.commit()
     try:
         with permissions.asking_with(asker):
-            result = await _dispatch(monkeypatch, command, ex, _Cards(True), **args)
+            result = await _dispatch(monkeypatch, command, ex, cards or _Cards(True), **args)
     finally:
         untrusted.end_turn(seen)
         command_sandbox._reset_for_tests()
@@ -645,7 +640,9 @@ async def test_outside_the_sandbox_after_outside_content_a_command_runs_offline_
     """The minimal outside profile carries the offline rule (card, piece 4): a script whose network use
     its text does not show cannot reach out with the user's secrets readable."""
     asker = _Asker()                           # a stored grant stands only where someone could be asked (S1)
-    ex, result = await _after_outside_content(monkeypatch, "python3 collect.py", asker=asker, outside=True)
+    # HR-3 part 1: an unread command outside the sandbox runs only on the user's click on its own card.
+    ex, result = await _after_outside_content(monkeypatch, "python3 collect.py", asker=asker, outside=True,
+                                              cards=_UserClick(True))
     assert ex.runs == [(True, True)] and result["ok"] and asker.frames == []
 
 
@@ -668,7 +665,8 @@ async def test_asking_to_leave_after_a_stop_stays_offline_after_outside_content(
     try:
         with permissions.asking_with(_Asker()):
             await _dispatch(monkeypatch, "python3 collect.py", ex, _Cards(True, True))
-            result = await _dispatch(monkeypatch, "python3 collect.py", ex, _Cards(True, True),
+            # HR-3 part 1: outside the sandbox an unread command runs only on the user's click on its card.
+            result = await _dispatch(monkeypatch, "python3 collect.py", ex, _UserClick(True, True),
                                      outside_sandbox=True, why="it writes to the user's Library")
     finally:
         untrusted.end_turn(seen)

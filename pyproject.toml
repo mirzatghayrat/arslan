@@ -70,6 +70,12 @@ dependencies = [
     # library that replaced AGPL pymupdf.
     "pypdfium2>=4.30",
     "trafilatura>=1.12",
+    # RUNTIME, NET-a (v0.1.64): the Public Suffix List server/services/net_policy.py reads is this package's own copy,
+    # read as a file and never through tld's lookups (they fetch the list over the network when their copy is
+    # missing). courlan (trafilatura's) brings it in already; named here so the list can't go when they change. The
+    # app gets the file from packaging/arslan-server.spec, and its selftest asks it. tld is GPL-2.0, LGPL-2.1 or
+    # MPL-1.1 at the user's option (its LICENSE.rst at tag 0.13.2); the list is MPL-2.0 (THIRD_PARTY_NOTICES.md).
+    "tld>=0.13.2",
     # FLOOR IS A SECURITY FLOOR, not a preference. 6.15.0 (2026-08-06) limits
     # ToUnicode token length (#3944) and CID font width ranges (#3946); both are
     # reached by ingest.py's PdfReader over caller-supplied bytes, so a crafted

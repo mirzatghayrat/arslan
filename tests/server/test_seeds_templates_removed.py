@@ -2,13 +2,12 @@
 
 GET /seeds and GET /templates had no component caller (the web's api.getSeeds and
 api.listTemplates were unused), and arslan/templates (library, matcher, official data) had no
-other user. persona_seed_service.get_by_slugs stays: spawn detail resolves a spawn's composed
-seeds with it (the equipment reply), until C7c-4.
+other user. C7c (v0.1.64): persona_seed_service went too; its last caller, the seeds field of
+the spawn detail reply, had no reader.
 """
 import importlib.util
 from pathlib import Path
 
-from server.services import persona_seed_service
 
 ROOT = Path(__file__).resolve().parents[2]
 AUTH: dict[str, str] = {}
@@ -26,11 +25,9 @@ def _gone(module: str) -> bool:
 
 
 def test_the_modules_and_functions_are_gone():
-    for module in ("server.api.seeds", "server.api.templates", "arslan.templates"):
+    for module in ("server.api.seeds", "server.api.templates", "arslan.templates",
+                   "server.services.persona_seed_service"):
         assert _gone(module), module
-    for name in ("search", "count", "list_seeds"):
-        assert not hasattr(persona_seed_service, name), name
-    assert hasattr(persona_seed_service, "get_by_slugs")
 
 
 def test_the_packaged_self_test_no_longer_expects_the_official_templates():

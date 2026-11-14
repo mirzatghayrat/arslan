@@ -62,6 +62,8 @@ RETIRED_TOOLSET_KEYS: tuple[str, ...] = (
     # C3a (v0.1.63): render_deck had no caller (the deck skill went with C9); these three
     # toolsets' tools never had an executor.
     "deck", "session_search", "skills_management", "task_planning",
+    # SUB6 (v0.1.64): its one tool went; sub-sessions (start_sub_session) take its place.
+    "task_collaboration",
 )
 # One retired row inside a toolset that stays, named with its toolset: a row of the same key
 # anywhere else is not the seeder's and is never deleted (D7's lesson, for tools).

@@ -40,18 +40,6 @@ class _SmokeAdapter:
             if self._broken_fixture:
                 return LLMResponse(content="[Synthetic missing file](/api/v1/runs/999/artifacts/run_999_missing.pdf)",
                                    tool_calls=[], usage={})
-        if os.environ.get("ARSLAN_SMOKE_COLLABORATION") == "1":
-            if "temporary collaborator on one bounded subtask" in system:
-                return LLMResponse(content='{"result":"已核对合成参考材料，未访问真实账号或外部服务。","remaining_work":[]}',
-                                   tool_calls=[], usage={})
-            if ("UI_WORKER_CHECK" in str(user) and tools and
-                    any(item.get("function", {}).get("name") == "delegate_work" for item in tools)):
-                return LLMResponse(content="", usage={}, tool_calls=[{
-                    "id": "synthetic-collaboration", "type": "function", "function": {
-                        "name": "delegate_work", "arguments": {"jobs": [
-                            {"method": "research", "objective": "核对合成资料的事实", "context": "合成资料：两份说明均已提供。"},
-                            {"method": "product-design", "objective": "核对合成界面的可读性", "context": "合成设计说明：正文与按钮需清晰。"},
-                        ]}}}])
         if os.environ.get("ARSLAN_SMOKE_BACKGROUND") == "1" and self._role != "router":
             # 0.1.42 UI harness: "UI_BG_JOB" starts a background job; the job
             # itself takes ARSLAN_SMOKE_JOB_SECONDS so its live card can be seen.

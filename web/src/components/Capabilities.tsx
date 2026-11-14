@@ -6,8 +6,8 @@ import CapabilitySwitches from "./CapabilitySwitches";
 
 // The Capabilities page. v0.1.64 CAP3a: one list, built in / skills / connections, no tabs (the mock the user
 // approved). Connections are added by hand from the connections section, skills by pasting a link, and anything
-// new is asked for in a conversation (CAP1a removed Discover; CAP2a the "Create skill" page). The professional
-// methods are rows among the skills. Legacy experts, when there are any, keep their own section below, with the
+// new is asked for in a conversation (CAP1a removed Discover; CAP2a the "Create skill" page; SUB6b the
+// professional methods). Legacy experts, when there are any, keep their own section below, with the
 // skill catalog that equips them.
 /** The provider whose transport decides whether ANY of this page's equipping
  *  will have an effect. Passed in rather than fetched here: App already holds

@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from arslan.llm.providers import errors as provider_errors
-from arslan.llm import param_heal, request_evidence, tool_schema
+from arslan.llm import output_fallback, request_evidence, tool_schema
 from arslan.llm.locality import loopback_endpoint
 
 from arslan.llm.providers.base import BaseLLMProvider
@@ -35,15 +35,10 @@ class OpenAIProvider(BaseLLMProvider):
 
     DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
-    #: Output budget declared on every request. NOT sending one is what caused
-    #: the v0.1.25 field report: an aggregator (OpenRouter) reserves the MODEL's
-    #: ceiling when the body is silent — 65536 for Claude — and refuses a key
-    #: that could still afford 64381. Saying what we intend to use costs nothing
-    #: and lets a nearly-spent budget keep working. Generous enough for long
-    #: answers, far below any modern model's ceiling. 0.1.49: the opening
-    #: budget is now per endpoint (output_budget.py); this stays the floor
-    #: for unknown endpoints and aggregators that reserve credit.
-    DEFAULT_MAX_TOKENS = 8192
+    # Every request declares an output budget. NOT sending one is what caused the v0.1.25 field report:
+    # OpenRouter reserves the MODEL's ceiling when the body is silent and refused a key that could still
+    # afford most of it. v0.1.64: the budget is the model's documented maximum, or 32,768 for an unknown
+    # model (output_budget.for_model); a refused cap is sent once more at 8,192 (output_fallback.py).
 
     #: Assistant-message fields some compatible endpoints require back verbatim
     #: (DeepSeek/Kimi/GLM: reasoning_content; OpenRouter: reasoning,
@@ -56,10 +51,10 @@ class OpenAIProvider(BaseLLMProvider):
                  transport: httpx.BaseTransport | None = None) -> None:
         effective_base_url = base_url or self.DEFAULT_BASE_URL
         super().__init__(model=model, api_key=api_key, base_url=effective_base_url)
-        # 0.1.49 S5: per-endpoint opening budget and truncation ceiling
-        # (arslan/llm/output_budget.py); an explicit max_tokens still wins.
-        from arslan.llm.output_budget import for_endpoint
-        budget = for_endpoint(effective_base_url, model)
+        # v0.1.64: the model's documented maximum output, or 32,768 when unknown; official DeepSeek keeps
+        # its 0.1.49 S5 budget (arslan/llm/output_budget.py). An explicit max_tokens still wins.
+        from arslan.llm.output_budget import for_model
+        budget = for_model(effective_base_url, model)
         self.max_tokens = max_tokens or budget.initial
         self.output_ceiling = max(self.max_tokens, budget.ceiling)
         self._transport = transport
@@ -239,6 +234,7 @@ class OpenAIProvider(BaseLLMProvider):
             payload["max_tokens"] = max_tokens
         from arslan.execution_budget import model_request
         payload["max_tokens"] = model_request(payload["max_tokens"])
+        self._name_output_param(payload)
         from arslan.execution_checkpoint import save
         await save("before_model")
 
@@ -248,10 +244,18 @@ class OpenAIProvider(BaseLLMProvider):
 
         fingerprint = self.endpoint_fingerprint()
         if stream:
-            # A resend (param_heal) follows an error status, raised before any body is read: no text first.
-            return await param_heal.send(fingerprint, payload, lambda p: self._chat_streamed(p, headers, on_text))
+            # A resend (param_heal, output_fallback) follows an error status, raised before any body is read.
+            return await output_fallback.send(fingerprint, payload,
+                                              lambda p: self._chat_streamed(p, headers, on_text))
         return self._parse_response(
-            await param_heal.send(fingerprint, payload, lambda p: self._post(p, headers)))
+            await output_fallback.send(fingerprint, payload, lambda p: self._post(p, headers)))
+
+    def _name_output_param(self, payload: dict[str, Any]) -> None:
+        """v0.1.64: OpenAI's reasoning families take the cap as `max_completion_tokens`."""
+        from arslan.llm.output_budget import output_param
+        name = output_param(self.model)
+        if name != "max_tokens":
+            payload[name] = payload.pop("max_tokens")
 
     async def _post(self, payload: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
         """One non-streamed send; param_heal may resend a changed payload."""
@@ -366,10 +370,11 @@ class OpenAIProvider(BaseLLMProvider):
         self._last_stream_usage = None  # reset per attempt — no stale carry-over
         from arslan.execution_budget import model_request
         payload = {**payload, "max_tokens": model_request(payload["max_tokens"])}
+        self._name_output_param(payload)
         from arslan.execution_checkpoint import save
         await save("before_model")
-        async for piece in param_heal.stream(self.endpoint_fingerprint(), payload,
-                                             lambda p: self._sse_attempt(p, headers)):
+        async for piece in output_fallback.stream(self.endpoint_fingerprint(), payload,
+                                                  lambda p: self._sse_attempt(p, headers)):
             yield piece
 
     async def _sse_attempt(self, payload: dict[str, Any], headers: dict[str, str]) -> AsyncIterator[str]:

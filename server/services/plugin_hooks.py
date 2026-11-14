@@ -170,6 +170,7 @@ def _row(event: str, matcher, handler, where: str, connections: dict[str, str], 
         row["kind"] = NOT_YET
     elif row["arslan"] == []:
         row["kind"] = MATCHES_NOTHING
+    row["on"] = row["kind"] == SUPPORTED        # the user's decision (HOOK-4): a hook Arslan runs comes in on
     return row
 
 
@@ -260,7 +261,7 @@ def card_rows(found: list[dict]) -> list[dict]:
     return [{"id": row["id"], "event": row["event"], "when": WHEN.get(row["event"]), "matcher": row["matcher"],
              "matches": row["arslan"] or [], "matches_note": UNSURE if row.get("unsure") else None,
              "command": row["command"], "args": row["args"], "if": row["if"], "timeout": row["timeout"],
-             "kind": row["kind"], "on": row["on"], "note": NOTES[row["kind"]],
+             "kind": row["kind"], "on": row["on"], "note": NOTES.get(row["kind"]),       # none for one that runs
              "hidden": untrusted.hidden_summary(" ".join([row["command"] or "", *(row["args"] or [])]))}
             for row in found]
 

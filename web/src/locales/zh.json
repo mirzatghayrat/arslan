@@ -492,16 +492,13 @@
     "labelShellConfirmPolicy": "什么时候问",
     "shellPolicyAskAll": "每条命令都先问",
     "shellPolicyAskAllNote": "每条新命令都先问。选了「本对话内」允许的命令，在这个对话里再运行时不再问。",
-    "askRiskyConfirmTitle": "只在有风险时问？",
-    "askRiskyConfirmBody": "Arslan 判断为无害的命令会在沙盒里直接运行，不先问你。这一版里，同一条命令中先切换文件夹再删除（比如 `cd folder && rm file`）会被当成在工作文件夹里，所以即使那个文件夹在别处，也可能不弹卡就执行；而「撤回这一轮」只能找回工作文件夹里的文件。0.1.64 会修好。",
-    "askRiskyConfirmAction": "只在有风险时问",
-    "askRiskyConfirmCancel": "继续每条命令都先问",
     "shellPolicyUndoPointer": "如果某条命令改动或删掉了工作文件夹里你不想动的东西，在那条回复下面点「⋯」，选「撤回这一轮…」，再点「撤回文件」：这些文件会回到这一轮开始前的样子。前提是工作文件夹不超过 20,000 个文件、5 GB（Python 环境、node_modules、构建产物和 Python 缓存不算在内，这些也不会恢复）。",
-    "policyNoticeTitle": "Arslan 现在每条命令都先问",
-    "policyNoticeBody": "0.1.63 之前，Arslan 只在有风险时才问：可能是你选的，也可能是当时的默认设置。现在每条新命令都会先问你。这一版里，同一条命令中先切换文件夹再删除（比如 `cd folder && rm file`）会被当成在工作文件夹里，所以在「只在有风险时问」下，即使那个文件夹在别处也可能不弹卡就执行，而「撤回这一轮」只能找回工作文件夹里的文件。0.1.64 会修好。想切回去：设置 › Arslan 能做什么 › 终端 › 什么时候问 › 「只在有风险时问」。",
+    "policyNoticeRiskyTitle": "Arslan 现在只在有风险时问",
+    "policyNoticeRiskyBody": "现在命令会在沙盒里直接运行，不先问你。命令需要离开沙盒、可能造成真正的损害，或有规则要求先问时，仍会弹卡。想改回每条命令都先问：设置 › Arslan 能做什么 › 终端 › 什么时候问 › 「每条命令都先问」。",
+    "policyNoticeAllTitle": "Arslan 每条命令都先问",
+    "policyNoticeAllBody": "从 0.1.64 起，新安装只在有风险时问：命令在沙盒里直接运行，需要离开沙盒、可能造成真正的损害或有规则要求先问时才弹卡。这里 Arslan 每条命令都先问，在你改之前保持不变：设置 › Arslan 能做什么 › 终端 › 什么时候问 › 「只在有风险时问」。",
     "policyNoticeOk": "知道了",
     "shellPolicyAskRisky": "只在有风险时问",
-    "shellPolicyAskRiskyNote": "Arslan 判断哪些命令有风险，这部分还在补全（v0.1.64 完成）。在那之前，每条命令都问更稳妥。",
     "labelMcpServer": "MCP 服务器（入站）",
     "mcpServerDesc": "允许外部 MCP 客户端（Claude Code、Codex）调用只读工具。默认关闭；需生成 MCP 令牌。仅限本机。",
     "mcpToken": {
@@ -764,6 +761,7 @@
       "waiting": "等你批准",
       "waiting_reminder": "停下的作业给你留了提醒",
       "waiting_away": "有卡片过期了",
+      "waiting_glance": "做完的作业有一项要你看一眼",
       "working": "进行中",
       "progress": "进行中：{{done}} / {{total}}",
       "done": "已完成",
@@ -1059,6 +1057,7 @@
         "send-message": "以你的名义发消息或发帖，发出去就收不回",
         "upload": "把数据发到网站或云端",
         "publish": "在网上发布或改动东西",
+        "secret-write": "设置或删除 CI 或线上环境读取的密钥",
         "git-push": "推送到远程仓库",
         "remote-shell": "连到另一台机器",
         "apple-events": "操作别的应用（它们可能会发送、删除或购买）",
@@ -1357,7 +1356,7 @@
     "every_minute": "每分钟",
     "every_n_minutes": "每 {{count}} 分钟",
     "prompt": "每次要做的事：",
-    "unattended": "定时任务自己运行，从不等你：需要你确认的步骤会被拒绝，并列在「定时任务」页的这个任务下面。它可以查资料，只在 Arslan 自己的工作文件夹里写文件；不运行命令。",
+    "unattended": "定时任务自己运行，从不等你：不需要你确认的命令会在沙盒里运行，文件只写在 Arslan 自己的工作文件夹里。需要你确认的步骤会被拒绝，并列在「定时任务」页的这个任务下面。",
     "anyTask": "创建任何定时任务"
   },
   "enroll": {
@@ -1443,6 +1442,7 @@
     "alwaysStores": "这会始终允许：{{what}}",
     "asksEachTime": "每次都会问",
     "scheduledNeverAsks": "定时任务不做需要你确认的事，请在对话里做。",
+    "appDataUnattended": "没有执行。别的应用的私人数据每次都要你同意，而这个任务运行时你不在。",
     "allowedNow": "以后都允许",
     "refusedTimes": "自 {{since}} 起共 {{count}} 次",
     "undo": "撤销"
@@ -1495,7 +1495,10 @@
     "seenNote": "打开一个任务，就算看过它的运行没做成的事。任务自己的对话里，过期没做成的，要打开那个对话才会清掉；那里的卡片要答完才会清掉。",
     "attention": "要你看一眼",
     "changed": "有变化",
-    "failing": "没跑成或已自动暂停"
+    "failing": "没跑成或已自动暂停",
+    "commandsNoteTitle": "定时任务又可以运行命令了",
+    "commandsNoteBody": "定时任务运行时，会在沙盒里、在 Arslan 自己的工作文件夹中运行不需要你确认的命令。需要你确认的会被拒绝，并列在这里对应任务的下面。这次更新之前设的任务，以及读过外部内容之后设的任务，命令都不联网。如果你选了「每条命令都先问」，定时任务不运行命令。",
+    "commandsNoteOk": "知道了"
   },
   "remembered": {
     "title": "记住的回答",
