@@ -49,7 +49,13 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
             # SUB5a: a deleted conversation runs nothing, also after a restart (its row is a tombstone).
             from arslan.companion.memory import MemoryError
             raise MemoryError("conversation_deleted")
-        # SUB2: a sub-session's settings are read through its parents, each turn. Any other conversation reads its row.
+        side = phone_ids.kind_of(conversation_id, row.kind if row else None) == sub_sessions.SIDE
+        if side and (row is None or row.kind != sub_sessions.SIDE):
+            # SIDE-1: a side chat's id that nothing made has no parent to read: nothing runs in it.
+            from arslan.companion.memory import MemoryError
+            raise MemoryError("side_chat_parent_missing")
+        # SUB2: a sub-session's settings are read through its parents, each turn (SIDE-1: a side chat's too). Any other
+        # conversation reads its row.
         settings = await sub_sessions.effective_settings(db, row) if row else None
         from server.services import settings_service
         from server.services.llm_factory import memory_models_are_local
@@ -58,13 +64,15 @@ async def load(conversation_id: str, *, user_message="", retrieval_query: str | 
         remember = await settings_service.memory_in_conversations(db)
         if not model_is_local and not (settings and settings.temporary):
             from sqlalchemy import text
+            # SIDE-1: a side chat's history is its parent's up to the branch, so the parent's receipts count too.
             local_history = await db.scalar(text("""
-                SELECT 1 FROM context_receipts WHERE conversation_id=:cid AND owner_id=:owner
+                SELECT 1 FROM context_receipts WHERE conversation_id IN (:cid, :parent) AND owner_id=:owner
                 AND (json_extract(receipt,'$.local_only_used')=1
                   OR (json_type(receipt,'$.local_only_used') IS NULL
                       AND json_extract(receipt,'$.cloud_use')='not_sent'
                       AND json_array_length(receipt,'$.used')>0)) LIMIT 1
-            """), {"cid": conversation_id, "owner": row.owner_id if row else "local"})
+            """), {"cid": conversation_id, "parent": row.parent_id if side and row.parent_id else conversation_id,
+                   "owner": row.owner_id if row else "local"})
             if local_history:
                 from arslan.companion.memory import MemoryError
                 raise MemoryError("conversation_local_history")
