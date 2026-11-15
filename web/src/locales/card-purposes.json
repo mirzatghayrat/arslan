@@ -1,5 +1,5 @@
 {
- "about": "SMART-8: a command card's plain purpose in each language, and the code's facts that lead its title (where it runs, the network). The server reads this file for the card's title (the iPhone's heading; server/services/card_purpose.py); the Mac card's strings are runcmd.purpose in the six locale files, and a test holds them equal.",
+ "about": "SMART-8: a command card's plain purpose in each language, and the code's facts that lead its title (where it runs, the network). The server reads this file for the card's title (the iPhone's heading; server/services/card_purpose.py); the Mac card's strings are runcmd.purpose in the six locale files, and a test holds them equal. `card`: the headings of the cards that are not commands (a Hands step in an app or on a site, an AppleScript, an MCP tool, a site for commands), each naming its action and what it allows (card_purpose.heading).",
  "en": {
   "purpose": {
    "run": "Run {{program}}",
@@ -60,6 +60,30 @@
    "setsASecret": "Sets a secret in {{where}}, which CI or production will read",
    "removesSecret": "Removes secret {{name}} from {{where}}, which CI or production reads",
    "removesASecret": "Removes a secret from {{where}}, which CI or production reads"
+  },
+  "card": {
+   "appLook": "Read the window of {{app}}, and click, type and choose in it",
+   "appOpen": "Open {{app}} in the background, then click, type and choose in it",
+   "appAct": "{{step}} in {{app}}, then keep clicking, typing and choosing there",
+   "appsAccess": "Read the windows of {{apps}}, and click, type and choose in them",
+   "step_click": "Click “{{label}}”",
+   "step_type": "Type in “{{label}}”",
+   "step_select": "Choose in “{{label}}”",
+   "step_scroll": "Scroll “{{label}}”",
+   "step_press": "Press {{label}}",
+   "step_menu": "Choose the menu item {{label}}",
+   "site_click": "Click {{element}} on {{origin}}, then keep acting on this site",
+   "site_type": "Type into {{element}} on {{origin}}, then keep acting on this site",
+   "site_select": "Choose options in {{element}} on {{origin}}, then keep acting on this site",
+   "site_press": "Press {{element}} on {{origin}}, then keep acting on this site",
+   "anElement": "an element",
+   "scriptApps": "Control {{apps}} with an AppleScript, outside the sandbox",
+   "scriptMoney": "Control {{apps}} with an AppleScript that may pay or move money",
+   "scriptMoneyNoApp": "Run an AppleScript that may pay or move money",
+   "scriptNoApp": "Run an AppleScript that names no app, outside the sandbox",
+   "mcpTool": "Use {{server}}’s {{tool}}?",
+   "mcpDestructive": "Use {{server}}’s {{tool}}? It can delete or overwrite data there",
+   "netConnect": "Let commands in this conversation connect to {{host}}?"
   }
  },
  "zh": {
@@ -122,6 +146,30 @@
    "setsASecret": "在 {{where}} 设置一个密钥，CI 或线上环境会读取它",
    "removesSecret": "从 {{where}} 删除密钥 {{name}}，CI 或线上环境在用它",
    "removesASecret": "从 {{where}} 删除一个密钥，CI 或线上环境在用它"
+  },
+  "card": {
+   "appLook": "读取「{{app}}」窗口的内容，并在其中点击、输入和选择",
+   "appOpen": "在后台打开「{{app}}」，然后在其中点击、输入和选择",
+   "appAct": "在「{{app}}」里：{{step}}，之后继续在其中点击、输入和选择",
+   "appsAccess": "读取 {{apps}} 窗口的内容，并在其中点击、输入和选择",
+   "step_click": "点击「{{label}}」",
+   "step_type": "在「{{label}}」中输入",
+   "step_select": "在「{{label}}」中选择",
+   "step_scroll": "滚动「{{label}}」",
+   "step_press": "按下 {{label}}",
+   "step_menu": "选择菜单项 {{label}}",
+   "site_click": "在 {{origin}} 上点击 {{element}}，之后继续在这个网站上操作",
+   "site_type": "在 {{origin}} 上向 {{element}} 输入文字，之后继续在这个网站上操作",
+   "site_select": "在 {{origin}} 上的 {{element}} 中选择选项，之后继续在这个网站上操作",
+   "site_press": "在 {{origin}} 上按下 {{element}}，之后继续在这个网站上操作",
+   "anElement": "一个页面元素",
+   "scriptApps": "用 AppleScript 控制 {{apps}}（在沙盒外运行）",
+   "scriptMoney": "用 AppleScript 控制 {{apps}}，可能付款或转账",
+   "scriptMoneyNoApp": "运行一段可能付款或转账的 AppleScript",
+   "scriptNoApp": "运行一段没有指明 App 的 AppleScript（在沙盒外运行）",
+   "mcpTool": "使用 {{server}} 的 {{tool}}？",
+   "mcpDestructive": "使用 {{server}} 的 {{tool}}？它可能删除或覆盖其中的数据",
+   "netConnect": "允许本对话中的命令连接 {{host}}？"
   }
  },
  "ja": {
@@ -184,6 +232,30 @@
    "setsASecret": "{{where}} にシークレットを設定（CI や本番環境が読み取ります）",
    "removesSecret": "{{where}} からシークレット {{name}} を削除（CI や本番環境が使っています）",
    "removesASecret": "{{where}} からシークレットを削除（CI や本番環境が使っています）"
+  },
+  "card": {
+   "appLook": "{{app}} のウインドウを読み取り、クリック・入力・選択する",
+   "appOpen": "{{app}} をバックグラウンドで開き、クリック・入力・選択する",
+   "appAct": "{{app}} で：{{step}}（その後もここでクリック・入力・選択を続けます）",
+   "appsAccess": "{{apps}} のウインドウを読み取り、クリック・入力・選択する",
+   "step_click": "「{{label}}」をクリック",
+   "step_type": "「{{label}}」に入力",
+   "step_select": "「{{label}}」で選択",
+   "step_scroll": "「{{label}}」をスクロール",
+   "step_press": "{{label}} を押す",
+   "step_menu": "メニュー項目 {{label}} を選ぶ",
+   "site_click": "{{origin}} で {{element}} をクリック（その後もこのサイトで操作します）",
+   "site_type": "{{origin}} で {{element}} に入力（その後もこのサイトで操作します）",
+   "site_select": "{{origin}} で {{element}} の選択肢を選ぶ（その後もこのサイトで操作します）",
+   "site_press": "{{origin}} で {{element}} を押す（その後もこのサイトで操作します）",
+   "anElement": "ページ上の要素",
+   "scriptApps": "AppleScript で {{apps}} を操作（サンドボックスの外で実行）",
+   "scriptMoney": "AppleScript で {{apps}} を操作（支払いや送金をする可能性があります）",
+   "scriptMoneyNoApp": "支払いや送金をする可能性のある AppleScript を実行",
+   "scriptNoApp": "アプリを指定しない AppleScript を実行（サンドボックスの外で実行）",
+   "mcpTool": "{{server}} の {{tool}} を使いますか？",
+   "mcpDestructive": "{{server}} の {{tool}} を使いますか？そこのデータを削除または上書きする可能性があります",
+   "netConnect": "この会話のコマンドが {{host}} に接続することを許可しますか？"
   }
  },
  "es": {
@@ -246,6 +318,30 @@
    "setsASecret": "Define un secreto en {{where}}, que leerán la CI o producción",
    "removesSecret": "Elimina el secreto {{name}} de {{where}}, que usan la CI o producción",
    "removesASecret": "Elimina un secreto de {{where}}, que usan la CI o producción"
+  },
+  "card": {
+   "appLook": "Leer la ventana de {{app}} y hacer clic, escribir y elegir en ella",
+   "appOpen": "Abrir {{app}} en segundo plano y luego hacer clic, escribir y elegir en ella",
+   "appAct": "{{step}} en {{app}} y seguir haciendo clic, escribiendo y eligiendo ahí",
+   "appsAccess": "Leer las ventanas de {{apps}} y hacer clic, escribir y elegir en ellas",
+   "step_click": "Hacer clic en «{{label}}»",
+   "step_type": "Escribir en «{{label}}»",
+   "step_select": "Elegir en «{{label}}»",
+   "step_scroll": "Desplazar «{{label}}»",
+   "step_press": "Pulsar {{label}}",
+   "step_menu": "Elegir el elemento de menú {{label}}",
+   "site_click": "Hacer clic en {{element}} en {{origin}} y seguir actuando en este sitio",
+   "site_type": "Escribir en {{element}} en {{origin}} y seguir actuando en este sitio",
+   "site_select": "Elegir opciones en {{element}} en {{origin}} y seguir actuando en este sitio",
+   "site_press": "Pulsar {{element}} en {{origin}} y seguir actuando en este sitio",
+   "anElement": "un elemento",
+   "scriptApps": "Controlar {{apps}} con un AppleScript, fuera del sandbox",
+   "scriptMoney": "Controlar {{apps}} con un AppleScript que puede pagar o mover dinero",
+   "scriptMoneyNoApp": "Ejecutar un AppleScript que puede pagar o mover dinero",
+   "scriptNoApp": "Ejecutar un AppleScript que no nombra ninguna app, fuera del sandbox",
+   "mcpTool": "¿Usar {{tool}} de {{server}}?",
+   "mcpDestructive": "¿Usar {{tool}} de {{server}}? Puede borrar o sobrescribir datos ahí",
+   "netConnect": "¿Dejar que los comandos de esta conversación se conecten a {{host}}?"
   }
  },
  "de": {
@@ -308,6 +404,30 @@
    "setsASecret": "Setzt ein Secret in {{where}}, das CI oder Produktion lesen wird",
    "removesSecret": "Entfernt das Secret {{name}} aus {{where}}, das CI oder Produktion nutzt",
    "removesASecret": "Entfernt ein Secret aus {{where}}, das CI oder Produktion nutzt"
+  },
+  "card": {
+   "appLook": "Das Fenster von {{app}} lesen und darin klicken, tippen und auswählen",
+   "appOpen": "{{app}} im Hintergrund öffnen und darin klicken, tippen und auswählen",
+   "appAct": "{{step}} in {{app}}, danach dort weiter klicken, tippen und auswählen",
+   "appsAccess": "Die Fenster von {{apps}} lesen und darin klicken, tippen und auswählen",
+   "step_click": "„{{label}}“ klicken",
+   "step_type": "In „{{label}}“ tippen",
+   "step_select": "In „{{label}}“ auswählen",
+   "step_scroll": "„{{label}}“ scrollen",
+   "step_press": "{{label}} drücken",
+   "step_menu": "Menüpunkt {{label}} wählen",
+   "site_click": "{{element}} auf {{origin}} klicken, danach auf dieser Website weiter handeln",
+   "site_type": "In {{element}} auf {{origin}} tippen, danach auf dieser Website weiter handeln",
+   "site_select": "Optionen in {{element}} auf {{origin}} wählen, danach auf dieser Website weiter handeln",
+   "site_press": "{{element}} auf {{origin}} drücken, danach auf dieser Website weiter handeln",
+   "anElement": "ein Element",
+   "scriptApps": "{{apps}} mit einem AppleScript steuern, außerhalb der Sandbox",
+   "scriptMoney": "{{apps}} mit einem AppleScript steuern, das bezahlen oder Geld bewegen kann",
+   "scriptMoneyNoApp": "Ein AppleScript ausführen, das bezahlen oder Geld bewegen kann",
+   "scriptNoApp": "Ein AppleScript ohne genannte App ausführen, außerhalb der Sandbox",
+   "mcpTool": "{{tool}} von {{server}} verwenden?",
+   "mcpDestructive": "{{tool}} von {{server}} verwenden? Es kann dort Daten löschen oder überschreiben",
+   "netConnect": "Befehlen in dieser Unterhaltung erlauben, sich mit {{host}} zu verbinden?"
   }
  },
  "fr": {
@@ -370,6 +490,30 @@
    "setsASecret": "Définit un secret dans {{where}}, que la CI ou la production lira",
    "removesSecret": "Supprime le secret {{name}} de {{where}}, que la CI ou la production utilise",
    "removesASecret": "Supprime un secret de {{where}}, que la CI ou la production utilise"
+  },
+  "card": {
+   "appLook": "Lire la fenêtre de {{app}}, et y cliquer, saisir et choisir",
+   "appOpen": "Ouvrir {{app}} en arrière-plan, puis y cliquer, saisir et choisir",
+   "appAct": "{{step}} dans {{app}}, puis continuer à y cliquer, saisir et choisir",
+   "appsAccess": "Lire les fenêtres de {{apps}}, et y cliquer, saisir et choisir",
+   "step_click": "Cliquer sur « {{label}} »",
+   "step_type": "Saisir dans « {{label}} »",
+   "step_select": "Choisir dans « {{label}} »",
+   "step_scroll": "Faire défiler « {{label}} »",
+   "step_press": "Appuyer sur {{label}}",
+   "step_menu": "Choisir l'élément de menu {{label}}",
+   "site_click": "Cliquer sur {{element}} sur {{origin}}, puis continuer à agir sur ce site",
+   "site_type": "Saisir dans {{element}} sur {{origin}}, puis continuer à agir sur ce site",
+   "site_select": "Choisir des options dans {{element}} sur {{origin}}, puis continuer à agir sur ce site",
+   "site_press": "Appuyer sur {{element}} sur {{origin}}, puis continuer à agir sur ce site",
+   "anElement": "un élément",
+   "scriptApps": "Contrôler {{apps}} avec un AppleScript, hors du bac à sable",
+   "scriptMoney": "Contrôler {{apps}} avec un AppleScript qui peut payer ou déplacer de l'argent",
+   "scriptMoneyNoApp": "Exécuter un AppleScript qui peut payer ou déplacer de l'argent",
+   "scriptNoApp": "Exécuter un AppleScript qui ne nomme aucune app, hors du bac à sable",
+   "mcpTool": "Utiliser {{tool}} de {{server}} ?",
+   "mcpDestructive": "Utiliser {{tool}} de {{server}} ? Il peut supprimer ou écraser des données là-bas",
+   "netConnect": "Autoriser les commandes de cette conversation à se connecter à {{host}} ?"
   }
  }
 }

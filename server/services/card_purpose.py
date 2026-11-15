@@ -792,6 +792,18 @@ def _say(lang: str, group: str, key: str, params: dict) -> str:
     return re.sub(r"\{\{(\w+)\}\}", lambda m: str(params.get(m.group(1), "")), text)
 
 
+#: How much of one outside value (an app's, a site's, a tool's or an element's name) a heading keeps.
+HEADING_PART_MAX = 128
+
+
+def heading(key: str, lang: str = "en", **params) -> str:
+    """ACM (P2, SMART-8): the heading of a card that is not a command's, from the `card` group in `lang`: it names
+    the action and what a yes allows. Every value is cleaned as a name is (no line break, control, bidi or
+    zero-width character) and cut to HEADING_PART_MAX; the whole heading fits the phone's (PHONE_MAX)."""
+    shown = {k: untrusted.clean_name(v, HEADING_PART_MAX) for k, v in params.items()}
+    return untrusted.clean_name(_say(lang, "card", key, shown), PHONE_MAX)
+
+
 def _purpose(lang: str, purpose: dict) -> str:
     """A purpose in `lang`: a step run on another machine says that step inside its own sentence."""
     params = dict(purpose["params"])

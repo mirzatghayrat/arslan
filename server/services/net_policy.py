@@ -755,11 +755,13 @@ def refusal_note(hosts, *, asks: bool | None = None) -> str:
 SITES_HINT = "You can also add it in Settings › Sandbox › Sites."
 
 
-def request(host: str, command: str, *, before: bool = False):
+def request(host: str, command: str, *, before: bool = False, lang: str = "en"):
     """The card for one site (`offer` after a refused run, `preflight` before one: `before`), and what a grant's use
     records: only what is known, the site and the command (none, for the Inbox's answer: `allow_from_inbox`), never
-    what it would send (the proxy doesn't see it). NET-b (net-design §4, §12): what was blocked, why, what to do."""
-    from server.services import permissions
+    what it would send (the proxy doesn't see it). NET-b (net-design §4, §12): what was blocked, why, what to do.
+    ACM (SMART-8): its heading in `lang`, the user's (the web shows a `network` title as already in it); the model's
+    texts name it in English."""
+    from server.services import card_purpose, permissions
     why = (f"the address {host}, which you didn't name, after this conversation read outside content"
            if _address_like(normalize(host)) else
            f"{host}, a site that appeared only in outside content this conversation read (a page, a file or a tool's "
@@ -768,7 +770,8 @@ def request(host: str, command: str, *, before: bool = False):
     tried = "wants to send to" if before else "tried to send to"
     return permissions.Request(
         kind="network", target=f"network:{host}", conversation_only=True,
-        title=f"Let commands in this conversation connect to {host}?",
+        title=card_purpose.heading("netConnect", lang, host=host),
+        model_title=card_purpose.heading("netConnect", "en", host=host),
         detail=f"{ran} {tried} {why}. Your answer decides whether commands in this conversation may send data to "
                f"{host}. {SITES_HINT}")
 
@@ -840,9 +843,11 @@ async def offer(hosts, command: str, conversation_id: str | None) -> str:
 async def _card(sites: list[str], command: str, context, *, before: bool = False) -> list:
     """The card itself, asked before the run (`preflight`), after it (`offer`), or answered from the Inbox
     (`allow_from_inbox`)."""
-    from server.services import permissions
-    return await permissions.decide_many([request(site, command, before=before) for site in sites], context,
-                                         title=f"Let commands in this conversation connect to {', '.join(sites)}?")
+    from server.services import card_purpose, permissions
+    lang, names = await card_purpose.language(), ", ".join(sites)
+    return await permissions.decide_many([request(site, command, before=before, lang=lang) for site in sites],
+                                         context, title=card_purpose.heading("netConnect", lang, host=names),
+                                         model_title=card_purpose.heading("netConnect", "en", host=names))
 
 
 def listed_sites(kind: str, target: str) -> list[str]:

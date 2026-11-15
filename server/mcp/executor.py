@@ -275,8 +275,13 @@ class MCPProxyExecutor:
         # UNI1 (#526 review 4): the card (web and phone) shows names through the one name cleaner; the tool's
         # name comes live from the server, and a label stored before UNI1 is cleaned by migration 0082.
         from server.orchestrator import untrusted
-        title = (f"Use {untrusted.clean_name(srv.label, 80) or 'MCP'}\u2019s "
-                 f"{untrusted.clean_name(self.external_name, 128) or 'tool'}?")
+        from server.services import card_purpose
+        # ACM (P2, SMART-8): the heading in the user's language; a tool flagged destructive says it can delete or
+        # overwrite data there, so its card never reads as a harmless call's.
+        harmful = destructive(self.annotations)
+        title = card_purpose.heading("mcpDestructive" if harmful else "mcpTool", await card_purpose.language(),
+                                     server=untrusted.clean_name(srv.label, 80) or "MCP",
+                                     tool=untrusted.clean_name(self.external_name, 128) or "tool")
         # The card shows the user the label as installed; the model reads it as a label (`label_of`, #495
         # O2), so each refusal below names the server that way (S64-0c, the recheck of #498), and so do
         # permissions' own words, through the request's model title (TITLE1).
@@ -297,7 +302,7 @@ class MCPProxyExecutor:
                                  f"{len(detail)} characters, more than a card can show the user "
                                  f"({protocol.DETAIL_MAX}). Make smaller calls, or tell the user what you needed.")
         frame = protocol.propose_action(uuid.uuid4().hex, "mcp_tool", target, detail)
-        if destructive(self.annotations):     # red on the web, never from the island, "delete" on the phone
+        if harmful:     # red on the web, never from the island, "delete" on the phone
             req = permissions.Request(kind="destructive", target=self.key, title=title, model_title=model_title,
                                       detail=detail, once_only=True, extra=extra, frame=frame)
         else:
