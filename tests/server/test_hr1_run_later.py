@@ -121,6 +121,12 @@ SYMLINK_TEXT = ("(deny file-write-create "
 RUN_LATER_TEXT = SYMLINK_TEXT + KERNEL_TEXT
 
 
+def home_text() -> str:
+    """LaunchAgents and the login items at the current home (`run_later.home_filters`): the line after RUN_LATER_TEXT
+    in the commands and MCP profiles."""
+    return "(deny file-write* " + " ".join(run_later.home_filters(Path.home())) + ")\n"
+
+
 def _by_regex(path: str) -> bool:
     # The SBPL text is POSIX extended syntax that Python's re reads the same way (classes, groups, ?, *, anchors).
     return (any(re.fullmatch(r, path) and not (r in SAMPLE_REGEXES and re.fullmatch(SAMPLE_REGEXES[r], path))
@@ -768,9 +774,13 @@ def test_the_profiles_hold_the_held_folders_in_them_by_name_and_not_by_literal(h
     assert DEPENDENCY_TEXT not in by_name[0]
     held = _held_line(text)
     plain = Path(os.path.realpath(home)) / f"{STAND_IN}-plain"
+    # LaunchAgents' fixed folders above it (~/Library/Application Support) are home_filters' literals, not the walk's.
+    walked = text
+    for each in run_later.home_filters(home):
+        walked = walked.replace(each, "")
     for folder in skipped:
         assert f'(literal "{folder}")' in held, (which, folder)
-        assert f'(literal "{folder}/' not in text, (which, folder)
+        assert f'(literal "{folder}/' not in walked, (which, folder)
     assert f'(literal "{plain / ".git" / "hooks"}")' in held
     assert f'(subpath "{plain}")' not in text
     if which == "mcp":
