@@ -49,7 +49,7 @@ export default function SideChatTab({ chat }: { chat: SideChat }) {
     setSideQuote(id, null);
   };
   const bringBack = (text: string) => {
-    quoteIntoMain(text);
+    quoteIntoMain(text, { sideId: id, marked: chat.outside_at_start });
     toast(t("sideChat.broughtBack"));
   };
 

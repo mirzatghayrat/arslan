@@ -47,6 +47,7 @@ import { useWorkbench } from "../stores/workbenchStore";
 import OrchestratorChat from "../components/OrchestratorChat";
 import Workbench from "../components/workbench/Workbench";
 import { composerDrafts } from "../lib/composerDrafts";
+import { forgetBroughtBack, sideChatField } from "../lib/quote";
 
 const chat = (id: string, extra: Partial<SideChat> = {}): SideChat => ({ conversation_id: id, parent_id: "c1", branch_message_id: 42,
   outside_at_start: false, created_at: "2026-11-15T10:00:00", message_count: 0, last_at: null, ...extra });
@@ -97,6 +98,7 @@ beforeEach(() => {
   sides.list.mockImplementation(async () => [...made]);
   sides.remove.mockResolvedValue({});
   composerDrafts.clear();
+  forgetBroughtBack("c1");
   ws.handlers.clear();
   ws.sends.length = 0;
 });
@@ -280,5 +282,113 @@ describe("the client calls", () => {
       expect(u3).toMatch(/\/conversations\/side-1\?side_chat=true$/);
       expect(i3.method).toBe("DELETE");
     } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+// ── SIDE-2 follow-up ─────────────────────────────────────────────────────────
+
+/** Two side chats with a tab each, `first` selected; each tab's socket gets one reply when it is shown. */
+function twoOpen(first: SideChat, second: SideChat) {
+  sides.list.mockResolvedValue([first, second]);
+  useWorkbench.setState({ sides: { c1: [first, second] }, openSides: { c1: [first.conversation_id as never, second.conversation_id as never] },
+    tab: first.conversation_id as never });
+}
+const replyIn = (id: string, text: string) => act(() => ws.handlers.get(`/ws/arslan/${id}`)!({ type: "history", messages: [
+  { message_id: 1, role: "user", content: "Q" }, { message_id: 2, role: "arslan", content: text }] }));
+const sendMain = () => fireEvent.keyDown(mainInput(), { key: "Enter" });
+
+describe("from_side_chat on the main send (PR #952)", () => {
+  async function broughtBack() {
+    await useWorkbench.getState().startSide("c1", 42);
+    mountChat();
+    mountBench();
+    replyIn("side-1", "Snapshots are kept for a year.");
+    fireEvent.click(screen.getByTestId("side-bring-back"));
+  }
+
+  it("the frame's field is there only for a send that names a side chat", () => {
+    expect(sideChatField({ fromSideChat: "side-1" })).toEqual({ from_side_chat: "side-1" });
+    expect(sideChatField({ fromClarify: true })).toEqual({});
+    expect(sideChatField(undefined)).toEqual({});
+  });
+
+  it("a send after Bring back to main names the side chat", async () => {
+    await broughtBack();
+    fireEvent.change(mainInput(), { target: { value: `${mainInput().value}Check this?` } });
+    sendMain();
+    expect(onSendMessage).toHaveBeenCalledWith("> Snapshots are kept for a year.\n\nCheck this?", undefined, { fromSideChat: "side-1" });
+  });
+
+  it("removing the quote from the input drops it", async () => {
+    await broughtBack();
+    fireEvent.change(mainInput(), { target: { value: "Something else entirely" } });
+    sendMain();
+    expect(onSendMessage.mock.calls).toEqual([["Something else entirely", undefined]]);
+  });
+
+  it("a normal send has no side chat, and the id is gone after the send that named it", async () => {
+    await broughtBack();
+    sendMain();
+    expect(onSendMessage.mock.calls[0][2]).toEqual({ fromSideChat: "side-1" });
+    fireEvent.change(mainInput(), { target: { value: "A new question" } });
+    sendMain();
+    expect(onSendMessage.mock.calls[1]).toEqual(["A new question", undefined]);
+  });
+
+  it("with several side chats open, each bring-back fills the main input, and a marked one is the one named", async () => {
+    twoOpen(chat("side-m", { outside_at_start: true }), chat("side-n"));
+    mountChat();
+    mountBench();
+    replyIn("side-m", "From the marked one.");
+    fireEvent.click(screen.getByTestId("side-bring-back"));
+    fireEvent.click(screen.getByTestId("workbench-side-tab-side-n"));
+    replyIn("side-n", "From the clean one.");
+    fireEvent.click(screen.getByTestId("side-bring-back"));          // the more recent one, but clean
+    expect(mainInput().value).toBe("> From the marked one.\n\n> From the clean one.\n\n");
+    expect((screen.getByTestId("side-input") as HTMLTextAreaElement).value).toBe("");
+    expect(ws.sends).toEqual([]);
+    sendMain();
+    expect(onSendMessage.mock.calls[0][2]).toEqual({ fromSideChat: "side-m" });
+  });
+});
+
+describe("a side chat's frames stay in its own tab", () => {
+  it("a late stream frame for a tab not shown, or closed, is dropped", async () => {
+    twoOpen(chat("side-p"), chat("side-q"));
+    mountBench();
+    const late = ws.handlers.get("/ws/arslan/side-p")!;
+    fireEvent.click(screen.getByTestId("workbench-side-tab-side-q"));
+    act(() => { late({ type: "stream_start" }); late({ type: "stream_chunk", content: "LEAKED" }); });
+    expect(screen.getByTestId("side-chat-tab")).not.toHaveTextContent("LEAKED");
+    expect(screen.queryByTestId("side-streaming")).toBeNull();
+    fireEvent.click(screen.getByTestId("workbench-side-close-side-p"));
+    act(() => { late({ type: "stream_chunk", content: " more" }); late({ type: "stream_end", message_id: 9 }); });
+    fireEvent.click(screen.getByTestId("workbench-side-tab-side-q"));
+    expect(screen.getByTestId("side-chat-tab")).not.toHaveTextContent("LEAKED");
+    expect(screen.queryByTestId("side-reply")).toBeNull();
+  });
+});
+
+describe("a list that lands after a delete", () => {
+  it("does not bring the deleted side chat back", async () => {
+    const a = chat("side-del-a"), b = chat("side-del-b");
+    useWorkbench.setState({ sides: { c1: [a, b] } });
+    let land!: (v: SideChat[]) => void;
+    sides.list.mockReturnValueOnce(new Promise<SideChat[]>((r) => { land = r; }));
+    const loading = useWorkbench.getState().loadSides("c1");      // asked before the delete
+    await useWorkbench.getState().deleteSide("c1", "side-del-a");
+    land([a, b]);                                                   // the server's answer from before the delete
+    await loading;
+    expect(useWorkbench.getState().sides.c1.map((c) => c.conversation_id)).toEqual(["side-del-b"]);
+  });
+
+  it("a delete that fails leaves it listed", async () => {
+    const c = chat("side-del-c");
+    useWorkbench.setState({ sides: { c1: [c] } });
+    sides.remove.mockRejectedValueOnce(new Error("offline"));
+    await expect(useWorkbench.getState().deleteSide("c1", "side-del-c")).rejects.toThrow();
+    sides.list.mockResolvedValueOnce([c]);
+    await useWorkbench.getState().loadSides("c1");
+    expect(useWorkbench.getState().sides.c1.map((x) => x.conversation_id)).toEqual(["side-del-c"]);
   });
 });

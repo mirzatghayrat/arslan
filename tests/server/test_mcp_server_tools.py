@@ -4,7 +4,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db import session as db_session
-from server.db.models import Base, MCPServer, Run, Spawn
+from server.db.models import Base, MCPServer, Run
 from server.registry.seeder import seed_registry_with
 from server.mcp_server import tools
 
@@ -32,10 +32,6 @@ async def maker(tmp_path, monkeypatch):
     m = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with m() as s:
         await seed_registry_with(s)
-        # Spawn ORM columns: name, domain_category (NOT NULL), system_prompt (NOT NULL)
-        # — there is NO `domain` column (SpawnOut.domain is a computed DTO field).
-        s.add(Spawn(name="Alpha", domain_category="research", persona_role="analyst",
-                    system_prompt=BODY_MARKER, capabilities=["web_search"]))
         # Seed one MCPServer so list_capabilities' mcp_servers list is non-empty (the
         # per-item allowlist assertion is then non-vacuous). BODY_MARKER lives in url +
         # last_error — fields that must NOT surface in list_capabilities.

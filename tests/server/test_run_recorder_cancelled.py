@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from arslan.llm import usage_sink
 from server.db import session as db_session
-from server.db.models import Base, Run, RunStep, Spawn
+from server.db.models import Base, Run, RunStep
 from server.services import run_recorder
 
 
@@ -34,17 +34,8 @@ async def memdb(monkeypatch):
     yield Session
 
 
-async def _seed_spawn(Session) -> int:
-    async with Session() as db:
-        spawn = Spawn(name="S", domain_category="general", system_prompt="sp")
-        db.add(spawn)
-        await db.commit()
-        await db.refresh(spawn)
-        return spawn.id
-
-
 async def test_finalize_status_override_skips_scoring(memdb, monkeypatch):
-    spawn_id = await _seed_spawn(memdb)
+    spawn_id = None    # no Spawn model since C7c-5b
 
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c-cancel", spawn_id=spawn_id, spawn_name="S",
@@ -66,7 +57,7 @@ async def test_finalize_is_idempotent(memdb, monkeypatch):
     """Review I1: a cancel landing during a finalize await (post-commit) re-enters
     finalize via the cancel handler. The second call must short-circuit — no duplicated
     RunStep rows, and the already-written terminal status must NOT flip."""
-    spawn_id = await _seed_spawn(memdb)
+    spawn_id = None    # no Spawn model since C7c-5b
 
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c-idem", spawn_id=spawn_id, spawn_name="S",
@@ -92,7 +83,7 @@ async def test_precommit_cancel_allows_refinalize(memdb, monkeypatch):
     finalize(status_override='cancelled') runs against the rolled-back state instead
     of short-circuiting (which would rot the row at 'recording' AFTER a run_cancelled
     frame already went out)."""
-    spawn_id = await _seed_spawn(memdb)
+    spawn_id = None    # no Spawn model since C7c-5b
 
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c-precommit", spawn_id=spawn_id, spawn_name="S",
@@ -138,7 +129,7 @@ async def test_postcommit_cancel_does_not_refinalize(memdb, monkeypatch):
     release the latch — the commit already landed, so a re-entrant
     finalize(status_override='cancelled') would flip a real terminal status, duplicate
     RunStep rows, and let the cancel handler persist a duplicate 已中断 partial."""
-    spawn_id = await _seed_spawn(memdb)
+    spawn_id = None    # no Spawn model since C7c-5b
 
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c-postcommit", spawn_id=spawn_id, spawn_name="S",
@@ -183,7 +174,7 @@ async def test_postcommit_cancel_does_not_refinalize(memdb, monkeypatch):
 async def test_finalize_without_override_records(memdb, monkeypatch):
     """Regression guard: the normal live path is unchanged by the new parameter.
     (Nothing schedules scoring since C7c-5a.)"""
-    spawn_id = await _seed_spawn(memdb)
+    spawn_id = None    # no Spawn model since C7c-5b
 
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c-normal", spawn_id=spawn_id, spawn_name="S",

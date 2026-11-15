@@ -19,7 +19,6 @@ import pytest
 
 import server.orchestrator.arslan as arslan_mod
 import server.ws.arslan as ws_arslan_mod
-from server.db.models import Spawn
 from server.services import run_registry, turn_journal
 from tests.server.conftest import build_ws_client
 
@@ -41,10 +40,7 @@ def _clean_registry():
 @pytest.fixture
 def app_client(tmp_path, monkeypatch, portal):
     async def _seed(maker):
-        async with maker() as s:
-            s.add(Spawn(id=7, name="beauty-guru", domain_category="content-creator",
-                        capabilities=[], system_prompt="You are a beauty expert."))
-            await s.commit()
+        return None   # C7c-5b: no expert row to seed; nothing reads one
 
     return build_ws_client(portal, tmp_path, monkeypatch, _seed, db_name="reattach.db")
 

@@ -10,6 +10,7 @@ from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
 from server.services import memory_deletion_ledger as ledger
 from server.services.memory_deletion_manifest import decode, export_sync
 from server.services.memory_repository import repository
+from tests.server import pre_0103
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="private ledger persistence currently requires POSIX")
 
@@ -201,12 +202,11 @@ async def test_legacy_expert_preference_commit_also_updates_ledger(execution_db,
 
     from server import auth
     from server.api.companion import router
-    from server.db.models import Spawn
     from server.services.memory_activation import activate_sync
     from server.services.memory_migration import migrate_legacy_sync
 
     async with execution_db() as db:
-        db.add(Spawn(id=3, name="Synthetic expert", domain_category="content", system_prompt="Synthetic"))
+        await pre_0103.add_spawn(db, 3, "Synthetic expert", domain_category="content", system_prompt="Synthetic")
         await db.commit()
     async with execution_db.kw["bind"].begin() as connection:
         await connection.run_sync(migrate_legacy_sync)

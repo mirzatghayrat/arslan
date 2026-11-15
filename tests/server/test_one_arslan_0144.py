@@ -6,7 +6,20 @@ import pytest
 
 import server.db.session as db_session
 from server.orchestrator import arslan, tool_loop
+from tests.server import pre_0103
 from tests.server.test_promise_guard import _SeqAdapter, maker  # noqa: F401
+
+
+async def _legacy_spawns(sessions, *rows):
+    """C7c-5b: no Spawn model; an upgraded install keeps the expert tables (frozen CREATE text)."""
+    from sqlalchemy import text
+    async with sessions() as db:
+        await db.run_sync(pre_0103.load_sync_session)
+        for row in rows:
+            await db.execute(text(
+                "INSERT INTO spawns (id, name, domain_category, system_prompt, is_default) "
+                "VALUES (:id, :name, :domain_category, :system_prompt, :is_default)"), {"is_default": 0, **row})
+        await db.commit()
 
 
 
@@ -28,13 +41,15 @@ async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, monkey
     # 0.1.63 (C1c-1): phase_service is gone; park the row the way it used to write it.
     import json
 
-    from sqlalchemy import select
+    from sqlalchemy import text
 
-    from server.db.models import SpawnPhase
+    await _legacy_spawns(maker)       # spawn_phases has no model since C7c-5b
     async with db_session.AsyncSessionLocal() as db:
-        db.add(SpawnPhase(conversation_id="main", spawn_id=0, phase="inviting", direction=json.dumps(
-            {"spawn_id": 6, "task_brief": "make a deck", "user_message": "make a deck",
-             "needs_proposal": False, "announced": False})))
+        await db.execute(text(
+            "INSERT INTO spawn_phases (conversation_id, spawn_id, phase, direction, updated_at) "
+            "VALUES ('main', 0, 'inviting', :direction, '')"), {"direction": json.dumps(
+                {"spawn_id": 6, "task_brief": "make a deck", "user_message": "make a deck",
+                 "needs_proposal": False, "announced": False})})
         await db.commit()
 
     monkeypatch.setattr(tool_loop, "_get_adapter", lambda: _SeqAdapter(["Sure."]))
@@ -42,8 +57,8 @@ async def test_a_parked_invite_from_an_earlier_version_cannot_fire(maker, monkey
     # 0.1.63 (C1): the turn no longer clears the parked row (nothing reads it any more);
     # what matters is that it did not fire.
     async with db_session.AsyncSessionLocal() as db:
-        parked = (await db.execute(select(SpawnPhase).where(SpawnPhase.conversation_id == "main"))).scalar_one()
-    assert parked.phase == "inviting"
+        parked = (await db.execute(text("SELECT phase FROM spawn_phases WHERE conversation_id = 'main'"))).scalar_one()
+    assert parked == "inviting"
 
 
 def test_migration_0056_hands_every_scheduled_task_to_arslan_and_keeps_the_rest(tmp_path):
@@ -63,13 +78,12 @@ def test_migration_0056_hands_every_scheduled_task_to_arslan_and_keeps_the_rest(
 
 @pytest.mark.asyncio
 async def test_an_expert_becomes_a_skill_arslan_can_see_and_read(execution_db):
-    from server.db.models import SkillPack, Spawn
+    from server.db.models import SkillPack
     from server.registry.executors import ReadSkillExecutor
     from server.services import expert_conversion
     prompt = "You research local speech models. Always compare WER and memory, cite the model card. " * 3
-    async with execution_db() as db:
-        db.add(Spawn(id=6, name="Research Analyst", domain_category="researcher", system_prompt=prompt))
-        await db.commit()
+    await _legacy_spawns(execution_db, {"id": 6, "name": "Research Analyst", "domain_category": "researcher",
+                                        "system_prompt": prompt})
     assert await arslan._skill_index() == ""                  # no skills yet: nothing offered
     assert [e["converted"] for e in await expert_conversion.list_experts()] == [False]
     first = await expert_conversion.convert(6)
@@ -87,11 +101,8 @@ async def test_an_expert_becomes_a_skill_arslan_can_see_and_read(execution_db):
 
 @pytest.mark.asyncio
 async def test_converting_a_missing_or_empty_expert_says_why(execution_db):
-    from server.db.models import Spawn
     from server.services import expert_conversion
-    async with execution_db() as db:
-        db.add(Spawn(id=7, name="Tiny", domain_category="x", system_prompt="hi"))
-        await db.commit()
+    await _legacy_spawns(execution_db, {"id": 7, "name": "Tiny", "domain_category": "x", "system_prompt": "hi"})
     assert (await expert_conversion.convert(99))["code"] == "expert_not_found"
     assert (await expert_conversion.convert(7)) == {"ok": False, "code": "expert_prompt_too_short"}   # no method to keep
 
@@ -124,13 +135,20 @@ def test_background_evolution_has_no_automatic_entry():
 @pytest.mark.asyncio
 async def test_former_experts_lists_only_experts_the_user_made(execution_db):
     """0.1.48: the built-in examples were seeded on every install; they are not 'former experts'."""
-    from server.db.models import Spawn
     from server.services import expert_conversion
-    async with execution_db() as db:
-        db.add(Spawn(id=1, name="Seeded example", domain_category="research", system_prompt="x", is_default=True))
-        db.add(Spawn(id=2, name="My own", domain_category="writing", system_prompt="y", is_default=False))
-        await db.commit()
+    await _legacy_spawns(execution_db,
+                         {"id": 1, "name": "Seeded example", "domain_category": "research", "system_prompt": "x",
+                          "is_default": 1},
+                         {"id": 2, "name": "My own", "domain_category": "writing", "system_prompt": "y"})
     assert [e["name"] for e in await expert_conversion.list_experts()] == ["My own"]
+
+
+@pytest.mark.asyncio
+async def test_a_new_install_has_no_former_experts_to_convert(execution_db):
+    """C7c-5b: a new install has no `spawns` table at all; the converter finds nothing instead of failing."""
+    from server.services import expert_conversion
+    assert await expert_conversion.list_experts() == []
+    assert (await expert_conversion.convert(1))["code"] == "expert_not_found"
 
 
 def test_startup_no_longer_seeds_the_example_experts():
