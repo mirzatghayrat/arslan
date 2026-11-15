@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   telemetry: false,
   orchestratorShellEnabled: true,
-  shellConfirmPolicy: 'ask_all',
+  defaultPermissionMode: 'ask',   // strict until the server says what the default is
   backgroundJobBudget: 'standard',
   taskUsdCap: 2,
   runDebugRetentionDays: 30,

@@ -402,8 +402,8 @@ def provider_body(provider: str, model: str, base_url: str) -> dict:
 #: The bench asks only for risky commands unless a run says otherwise (BENCH_SHELL_POLICY=ask_all): v0.1.63 made
 #: "ask before every command" the app's default, and a bench round on it would no longer compare with M1B and
 #: the K rounds. The final M1 gates on ask_risky, with one ask_all run for reference.
-#: S5a: each policy's default permission mode, which the driver writes itself: the settings API's old field only ever
-#: narrows the default (#893 review 4). The run's record keeps the policy's name, so records compare across the change.
+#: S5a: each policy's default permission mode, which the driver writes itself (S5a-2: the settings API no longer takes
+#: the old field). The run's record keeps the policy's name, so records compare across the change.
 SHELL_POLICIES = {"ask_risky": "ask_risky", "ask_all": "ask"}
 
 
