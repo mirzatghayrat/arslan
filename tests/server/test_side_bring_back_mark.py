@@ -27,6 +27,7 @@ from server.db.models import ArslanMessage
 from server.orchestrator import arslan, tool_loop, untrusted
 from server.services import (approvals, background_jobs, net_policy, personal_context, run_registry, side_chats,
                              steering, sub_sessions, task_context, turn_facts, turn_journal)
+from server.services import personal_context as pc
 from tests.server.test_side1_side_chats import PARENT, _memory_on, _row, _run, _start, _talk
 
 OTHER = "c-other"
@@ -192,9 +193,15 @@ def _noticing(monkeypatch) -> list[str]:
     return prompts
 
 
-async def test_no_fact_is_noticed_from_it_then_or_later(execution_db, monkeypatch):
+@pytest.mark.parametrize("read", ["from-history", "from-the-database"])
+async def test_no_fact_is_noticed_from_it_then_or_later(execution_db, monkeypatch, read):
+    """`_own_words` reads the history, or the database once a turn sets where learning starts (Q1 #3, CAP8b)."""
     side = await _side(execution_db, marked=True)
     await _memory_on(execution_db)
+    if read == "from-the-database":
+        async with execution_db() as session:
+            (await session.get(ConversationContext, PARENT)).learns_after_message_id = 0
+            await session.commit()
     _real_loop(monkeypatch)
     prompts = _noticing(monkeypatch)
     with personal_context.bind(await task_context.load(PARENT)):
@@ -203,6 +210,78 @@ async def test_no_fact_is_noticed_from_it_then_or_later(execution_db, monkeypatc
     with personal_context.bind(await task_context.load(PARENT)):
         await _turn(PARENT, "Thanks, that is all for today.")
     assert prompts and not any(HOST in p for p in prompts)          # nor read back as the user's recent words
+
+
+PASTE = "> From the side chat:\n- Works mostly in Python and Swift\n- Prefers the result first\n- Has a cat called Miso"
+
+
+async def _brought_back_turn(execution_db, monkeypatch, text, *, back=True) -> pc.TaskMemoryContext:
+    """A turn sending `text` (a bring-back from a marked side chat, or typed), and the turn's context naming it."""
+    side = await _side(execution_db, marked=True)
+    await _memory_on(execution_db)
+    _real_loop(monkeypatch)
+    await _turn(PARENT, text, **({"from_side_chat": side} if back else {}))
+    async with execution_db() as session:
+        message = await session.scalar(select(ArslanMessage.id).where(
+            ArslanMessage.conversation_id == PARENT, ArslanMessage.role == "user").order_by(ArslanMessage.id.desc()))
+    return pc.TaskMemoryContext(task_id="t", run_id="r", conversation_id=PARENT, model_is_local=True,
+                                source_message_id=message)
+
+
+@pytest.mark.parametrize("back", [True, False], ids=["brought-back", "typed"])
+async def test_a_bring_back_is_nothing_to_import(execution_db, monkeypatch, back):
+    """CAP8b's rule: only a paste the user typed starts an import, never a page's (or a side chat's) words."""
+    from server.services import memory_import
+    from tests.server.test_cap8b_memory_import import _ask, _stored
+    ctx = await _brought_back_turn(execution_db, monkeypatch, PASTE, back=back)
+    cards = []
+    with pc.bind(ctx):
+        out = await memory_import.propose({"why": "they pasted it"}, conversation_id=PARENT, ask=_ask(seen=cards))
+    if back:
+        assert (out["ok"], out["nothing_to_import"], cards) == (False, True, [])
+        assert await _stored(execution_db) == {}
+    else:
+        assert len(cards) == 1 and "Has a cat called Miso" in await _stored(execution_db)
+
+
+@pytest.mark.parametrize("back", [True, False], ids=["brought-back", "typed"])
+async def test_a_bring_back_says_nothing_of_a_projects_progress(execution_db, monkeypatch, back):
+    from server.services import judgment, project_evidence
+    asked = []
+
+    async def judge(point, state, **kw):
+        asked.append(point)
+        return None
+    monkeypatch.setattr(judgment, "judge", judge)
+
+    async def level(db, project):
+        return {"name": "Prototype", "clear_condition": "Someone plays it", "checkpoints": [
+            {"id": "cp1", "text": "Three levels", "state": "open"}]}
+    monkeypatch.setattr(project_evidence, "_current_level", level)
+    from server.db.companion_models import Project
+    async with execution_db() as session:
+        session.add(Project(id="p1", name="Sample game"))
+        await session.commit()
+    ctx = await _brought_back_turn(execution_db, monkeypatch, "> From the side chat: the three levels are done.",
+                                   back=back)
+    with pc.bind(ctx):
+        out = await project_evidence.check_said("p1", PARENT, "> From the side chat: the three levels are done.")
+    assert (out["asked"], asked) == ((False, []) if back else (True, ["project.progress"]))
+
+
+async def test_a_summary_folding_it_in_stays_marked(execution_db, monkeypatch):
+    from server.db.models import ArslanSummary
+    from server.orchestrator import memory
+    from tests.server.test_s64_0b_attachments_and_job_results import _Summarizer
+    await memory.add_message(PARENT, "user", untrusted.brought_back(QUOTE * 3), display_content=QUOTE * 3,
+                             source=side_chats.BACK_SOURCE)
+    for role, content in (("arslan", "fine " * 40), ("user", "ok"), ("arslan", "fine")):
+        await memory.add_message(PARENT, role, content)
+    monkeypatch.setattr(memory, "_get_adapter", lambda *_: _Summarizer())
+    await memory.maybe_compact(PARENT, budget=40)
+    async with execution_db() as session:
+        summary = await session.scalar(select(ArslanSummary.summary).where(ArslanSummary.conversation_id == PARENT))
+    assert summary and summary.startswith(untrusted.SUMMARY_FROM_OUTSIDE)
 
 
 async def test_the_same_quote_typed_is_noticed_as_ever(execution_db, monkeypatch):
