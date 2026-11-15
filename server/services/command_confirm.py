@@ -28,7 +28,8 @@ def remote_target(host: str) -> str:
 UNREADABLE = {"it runs code it downloads, decodes or builds": "fetched-code",
               "its script reaches out, starts programs or drives apps": "script-reach",
               "its quoting does not close, so what runs cannot be read": "quoting",
-              "too complex to read before running": "complex"}
+              "too complex to read before running": "complex",
+              "it runs a command hidden in one of its options": "option-command"}     # S2a-3 interim
 
 
 class Confirmations:

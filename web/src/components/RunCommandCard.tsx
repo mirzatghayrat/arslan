@@ -33,7 +33,7 @@ interface Props {
   /** What the command is for and what it touches, read by the server from `pretty` (the frame's `summary`,
    *  card_purpose.summarize). Absent, the card names the first word and shows the whole command. */
   summary?: CommandSummary;
-  /** Why the server could not read it (fetched-code, script-reach, quoting, complex), when one of its rules is
+  /** Why the server could not read it (fetched-code, script-reach, quoting, complex, option-command), when one of its rules is
    *  `unreadable` (#688 review 5). */
   unreadable?: string;
   /** SMART-8: how Allow deletes (trash, protected, permanent, sandboxed), and the targets as written ([] when the

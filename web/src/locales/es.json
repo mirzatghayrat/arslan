@@ -1066,6 +1066,7 @@
         "unreadable-script-reach": "Su script se conecta, inicia programas o controla apps",
         "unreadable-quoting": "Sus comillas no cierran, así que no se puede leer qué se ejecuta",
         "unreadable-complex": "Demasiado complejo para leerlo antes de ejecutarlo",
+        "unreadable-option-command": "Ejecuta un comando oculto en una de sus opciones (está en el comando de arriba)",
         "unreadable-send": "Arslan no puede leer del todo lo que envía; puede enviar datos locales",
         "delete-outside-trash": "Los mueve a la Papelera; puedes recuperarlos desde allí",
         "delete-outside-protected": "Los datos y claves de Arslan se quedan donde están; el resto va a la Papelera",

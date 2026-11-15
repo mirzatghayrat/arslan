@@ -1066,6 +1066,7 @@
         "unreadable-script-reach": "スクリプトが外部に接続したり、プログラムを起動したり、アプリを操作したりします",
         "unreadable-quoting": "引用符が閉じていないため、何が実行されるか読めません",
         "unreadable-complex": "複雑すぎて実行前に読み切れません",
+        "unreadable-option-command": "オプションの中に隠れたコマンドを実行します（上のコマンドの中にあります）",
         "unreadable-send": "Arslan にはこのコマンドが何を送るか読み切れません。ローカルのデータを送る可能性があります",
         "delete-outside-trash": "ゴミ箱に移動します。そこから元に戻せます",
         "delete-outside-protected": "Arslan 自身のデータとキーはそのままで、残りはゴミ箱に移動します",
