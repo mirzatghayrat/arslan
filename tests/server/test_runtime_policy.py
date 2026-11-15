@@ -219,6 +219,52 @@ def test_the_progress_note_counts_against_the_limit_that_applies():
     assert "2 of 4" in tool_loop._progress_note(policy)
 
 
+
+# ── K4a: a failing command whose output changed is progress (edit, then rerun the same check) ──
+
+RUN = {"command": "pytest -q tests/test_x.py"}
+
+
+def _run_failed(stdout="", stderr=""):
+    return {"ok": False, "exit_code": 1, "stdout": stdout, "stderr": stderr, "error": "exit code 1"}
+
+
+def test_the_same_check_failing_with_different_output_each_time_is_not_stuck():
+    """Fix a file, rerun the same check, still red but further along: three runs, three outputs."""
+    policy = ProgressPolicy()
+    for n in range(3):
+        policy.observe("run_command", RUN, _run_failed(stdout=f"{3 - n} failed"))
+    assert not policy.stopped and policy.count == 1
+
+
+def test_a_changed_stderr_alone_is_progress_too():
+    policy = ProgressPolicy()
+    for n in range(3):
+        policy.observe("run_command", RUN, _run_failed(stdout="1 failed", stderr=f"line {n}"))
+    assert not policy.stopped
+
+
+def test_the_same_check_failing_with_the_same_output_three_times_stops():
+    policy = ProgressPolicy()
+    for _ in range(2):
+        policy.observe("run_command", RUN, _run_failed(stdout="1 failed", stderr="E assert 1 == 2"))
+        assert not policy.stopped
+    policy.observe("run_command", RUN, _run_failed(stdout="1 failed", stderr="E assert 1 == 2"))
+    assert policy.stopped and (policy.count, policy.limit) == (3, 3)
+
+
+@pytest.mark.parametrize("result", [_run_failed(), {"ok": False, "error": "exit code 1"},
+                                    {**_run_failed(), "stdout": None, "stderr": None}, FAIL])
+def test_a_failure_with_no_output_counts_exactly_as_before(result):
+    """No output: the fingerprint is the pre-fix (tool, arguments, error) hash, so it stops on the third."""
+    import hashlib
+    before = hashlib.sha256(json.dumps(["run_command", RUN, str(result.get("error"))], ensure_ascii=False,
+                                       sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+    policy = ProgressPolicy()
+    for _ in range(3):
+        policy.observe("run_command", RUN, result)
+    assert policy.failures == {before: 3} and policy.stopped
+
 # ── K4a gate (DeepSeek T2): trim the in-turn history in chunks, not one message per step ───────
 
 def _groups(n, size=1000):

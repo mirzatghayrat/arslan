@@ -70,11 +70,13 @@ def tool_failure(result: dict) -> FailureKind | None:
 @dataclass
 class ProgressPolicy:
     """Detect a loop that makes no progress (K4a, v0.1.63): the same returned evidence 4 times (a new
-    result resets that streak), or the same failing call — tool, arguments and error — 3 times.
+    result resets that streak), or the same failing call — tool, arguments, error and output — 3 times.
 
     Different failures don't add up: five blocked sites in a row are five calls, not one stuck step
-    (web_extract's errors don't carry the URL, so the error alone can't tell them apart). Before K4a any
-    4 failures in a row stopped the loop. Counters contain only hashes and structural classifications;
+    (web_extract's errors don't carry the URL, so the error alone can't tell them apart), and a check rerun
+    after an edit that prints something new is not the same failure (a failed command's error is only its exit
+    code). A failure with no output is fingerprinted as before. Before K4a any 4 failures in a row stopped
+    the loop. Counters contain only hashes and structural classifications;
     global budgets remain the ultimate bounds.
     """
     max_stalled: int = 4
@@ -90,8 +92,12 @@ class ProgressPolicy:
         self.observations += 1
         self.last_failure = tool_failure(result)
         if self.last_failure is not None:
-            call = json.dumps([tool, arguments, str(result.get("error") or result.get("code") or "")],
-                              ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+            failed = [tool, arguments, str(result.get("error") or result.get("code") or "")]
+            # A command's error is a bare "exit code 1": its output tells an edited, rerun check apart from a stuck one.
+            output = [str(result.get(key) or "") for key in ("stdout", "stderr")]
+            if any(output):
+                failed.append(hashlib.sha256(json.dumps(output, ensure_ascii=False).encode()).hexdigest())
+            call = json.dumps(failed, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
             self._failed_call = hashlib.sha256(call.encode()).hexdigest()
             self.failures[self._failed_call] = self.failures.get(self._failed_call, 0) + 1
             return False
