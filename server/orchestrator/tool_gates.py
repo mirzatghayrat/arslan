@@ -99,6 +99,8 @@ _REPLACED_MAX = 300
 _PATH_MAX = 1000
 _LINE_MAX = 400
 _RUNS = "Runs: "
+#: What each line of the text written starts with on the card, so no line of it reads as one of the card's own.
+_WRITTEN = "│ "
 
 
 def _capped(line: str, limit: int) -> str:
@@ -164,7 +166,10 @@ def _run_later_detail(path: Path, tool_key: str, args: dict) -> str:
     room_for_runs = protocol.DETAIL_MAX - 200 - sum(len(line) + 1 for line in (*head, *others))
     head[1:1] = [_capped(line, room_for_runs) if line.startswith(_RUNS) else _capped(line, _LINE_MAX)
                  for line in found]
-    text =re.sub(r"\n{3,}", "\n\n", untrusted.cap_blank_runs(untrusted.clean_body(new, shown_only=True), 8))
+    text = re.sub(r"\n{3,}", "\n\n", untrusted.cap_blank_runs(untrusted.clean_body(new, shown_only=True), 8))
+    # Review round 2: every line of the text written starts with `_WRITTEN`, so none of it (a plist <string> holding
+    # "\nRuns: /usr/bin/true", or any file that isn't a plist) can pass for one of the card's own lines.
+    text = "\n".join(_WRITTEN + line for line in text.split("\n"))
     lead = "\n".join(head) + "\n"
     room = max(protocol.DETAIL_MAX - len(lead) - 80, 0)  # 80: the note that says how much is not shown
     if len(text) <= room:
