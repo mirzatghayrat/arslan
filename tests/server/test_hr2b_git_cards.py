@@ -488,3 +488,55 @@ async def test_the_gate_asks_it_before_a_commit_runs(execution_db, tmp_path, mon
     with permissions.asking_with(asker):
         result = await command_gate.check("run_command", {"command": "git commit -m zz"}, turn)
     assert result["ok"] is False and [f["perm_kind"] for f in asker.frames] == ["git_refused"]
+
+
+# ── a push that may target another repository than the run folder's ─────────
+
+#: Each names, or may name, a repository other than the one in the folder the command runs in: the card must not list
+#: that folder's destination or CI files (both readers return None, the card's "couldn't list" lines).
+ELSEWHERE = {
+    "C-option": "git -C zz push", "git-dir-joined": "git --git-dir=zz/.git push",
+    "git-dir-separate": "git --git-dir zz/.git push", "work-tree": "git --work-tree=zz push",
+    "config-setting": "git -c core.worktree=zz push",
+    "inline-dir": "GIT_DIR=zz/.git git push", "inline-work-tree": "GIT_WORK_TREE=zz git push",
+    "env-dir": "env GIT_DIR=zz/.git git push", "env-work-tree": "env GIT_WORK_TREE=zz git push",
+    "exported": "export GIT_WORK_TREE=zz; git push", "exported-dir": "export GIT_DIR=zz/.git && git push",
+    "set-then-exported": "GIT_WORK_TREE=zz; export GIT_WORK_TREE; git push",
+    "cd": "cd zz && git push", "cd-may-fail": "cd zz; git push", "pushd": "pushd zz && git push",
+    "subshell": "( cd zz && git push )", "inner-shell": "bash -c 'cd zz && git push'",
+    "unreadable": "git push `zz`", "second-push-elsewhere": "git push && git -C zz push",
+}
+#: The run folder's own repository, named on the line: read closed as well (this reader does not resolve paths).
+SAME_FOLDER = {"C-dot": "git -C . push"}
+
+
+@pytest.mark.parametrize("command", [*ELSEWHERE.values(), *SAME_FOLDER.values()],
+                         ids=[*ELSEWHERE, *SAME_FOLDER])
+def test_a_push_that_names_another_repository_lists_neither_destination_nor_ci_files(repo_dir, monkeypatch, command):
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen",
+                        _Popen("answers", LISTING, answers={"for-each-ref": ("answers", b"*origin\n")}))
+    destination = git_config_guard.push_destination(repo_dir, command)
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen("answers", f"{CI}\0".encode()))
+    assert (destination, git_config_guard.outgoing_ci(repo_dir, command)) == (None, None)
+
+
+@pytest.mark.parametrize("command", ["git push", "git push -u origin main", "sudo git push"])
+def test_a_push_in_the_run_folder_still_lists_both(repo_dir, monkeypatch, command):
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen("answers", f"{CI}\0{OTHER}\0".encode()))
+    assert git_config_guard.outgoing_ci(repo_dir, command) == [CI]
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen",
+                        _Popen("answers", LISTING, answers={"for-each-ref": ("answers", b"*origin\n")}))
+    assert git_config_guard.push_destination(repo_dir, command) == [
+        "https://example.invalid/zz-a.git", "git@example.invalid:zz/b.git"]
+
+
+@pytest.mark.parametrize("command", ["git -C zz push", "cd zz && git push", "GIT_WORK_TREE=zz git push"],
+                         ids=["C-option", "cd", "inline-work-tree"])
+async def test_the_card_for_a_push_elsewhere_says_it_couldnt_list_them_and_shows_the_command(execution_db, repo_dir,
+                                                                                         monkeypatch, command):
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen("answers", f"{CI}\0".encode()))
+    frame = await _push_card(monkeypatch, repo_dir, command)
+    assert frame["summary"]["touches"][:2] == [command_confirm.PUSH_UNKNOWN, command_confirm.PUSH_UNLISTED]
+    assert command_confirm.PUSH_UNLISTED in frame["reason"] and CI not in str(frame)
+    assert not any(item.startswith(DEST) for item in frame["summary"]["touches"])
+    assert frame["command"] == command

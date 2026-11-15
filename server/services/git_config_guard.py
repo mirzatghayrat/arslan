@@ -368,16 +368,40 @@ _UPSTREAM = ("for-each-ref", "--format=%(HEAD)%(upstream)", "refs/heads/")
 _PUSH_REMOTE = re.compile(r"\bpush(?:\s+-\S+)*\s+([A-Za-z0-9][\w.-]*)(?=\s|$)")
 
 
+#: git reads the repository, its work tree and how it finds them from these variables; a command that names one
+#: anywhere in its text may set it for the push, inline, through `env`, or exported earlier.
+_GIT_ENVIRONMENT = re.compile(r"GIT_[A-Za-z0-9_]*")
+
+
+def _push_here(command: str) -> tuple[str, ...] | None:
+    """The words after `push` of the one `git push` in `command`, when it pushes the repository of the folder the
+    command runs in, as `shell_grammar.read` reads the text: understood, one `git push` with nothing between `git` and
+    `push` (no option that names a repository, a work tree or a setting), run in the work folder itself (no `cd` or
+    `pushd` before it, in a ( … ) or a bash -c too), and no git variable named in the text. Else None: the push card's
+    readers say they couldn't list (HR-2b, docs/sessions.md §12: the card states the real consequence or says it
+    can't). It only reads: whether the push asks is decided elsewhere."""
+    from server.services import shell_grammar
+    if _GIT_ENVIRONMENT.search(command):
+        return None
+    reading = shell_grammar.read(command)
+    pushes = [(words[2:], where) for words, where in zip(reading.commands, reading.folders)
+              if len(words) > 1 and words[0].lower() == "git" and words[1] == "push"]
+    gits = [words for words in reading.commands if words and words[0].lower() == "git" and "push" in words]
+    if len(pushes) != 1 or len(gits) != 1 or pushes[0][1] != ("",):
+        return None
+    return pushes[0][0]
+
+
 def outgoing_ci(folder: Path, command: str) -> list[str] | None:
     """HR-2b: the CI files (`run_later.is_ci_file`) the commits `command` (a `git push` run from `folder`) sends
     change, asked as `view` asks (`_each`: pinned environment, read-only seatbelt, time limit): `<upstream>..HEAD`
     when the current branch has an upstream configured, else `<remote>/HEAD..HEAD` for the remote it names (origin
     when none). None: couldn't list (no repository at or above `folder`, or git failed or timed out on any read); the
-    caller says so and the card still shows. `git -C` isn't read."""
+    caller says so and the card still shows; so it is when the push may use another repository (`_push_here`)."""
     from server.services import run_later
     here = Path(os.path.realpath(folder))
     entry = next((p / ".git" for p in (here, *here.parents) if os.path.lexists(p / ".git")), None)
-    if entry is None:
+    if entry is None or _push_here(command) is None:
         return None
     marks = _each([entry], _UPSTREAM)[entry]
     if marks is None:
@@ -421,15 +445,12 @@ def push_destination(folder: Path, command: str) -> list[str] | None:
     includes followed; asked as `outgoing_ci` asks, `_each`); a url or path no remote is named after, as written. No
     `user:pass@`. None: not known (not one plain `git push` run in `folder`, git failed or timed out, no url); the card
     says so and still shows. Not applied: url rewriting (insteadOf) and the user's global config, which `_env` drops."""
-    from server.services import shell_grammar
-    reading = shell_grammar.read(command)
-    pushes = [(words[2:], where) for words, where in zip(reading.commands, reading.folders)
-              if len(words) > 1 and words[0].lower() == "git" and words[1] == "push"]
+    args = _push_here(command)
     here = Path(os.path.realpath(folder))
     entry = next((p / ".git" for p in (here, *here.parents) if os.path.lexists(p / ".git")), None)
-    if entry is None or len(pushes) != 1 or pushes[0][1] != ("",):
+    if entry is None or args is None:
         return None
-    word = name = next((w for w in pushes[0][0] if not _PUSH_FLAGS.fullmatch(w)), None)
+    word = name = next((w for w in args if not _PUSH_FLAGS.fullmatch(w)), None)
     if word is None:
         marks = _each([entry], _PUSH_TO)[entry]
         lines = marks.decode("utf-8", errors="surrogateescape").split("\n") if marks is not None else []
