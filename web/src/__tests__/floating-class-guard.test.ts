@@ -16,7 +16,6 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** Every dropdown/popover anchored to a control, and what the sweep decided. */
 const SWEPT = [
   { file: "components/ThreadRowMenu.tsx",       portal: true,  why: "clipped by the sidebar thread list" },
-  { file: "components/EquipPopover.tsx",        portal: true,  why: "clipped by the capabilities pane" },
   { file: "components/Select.tsx",              portal: true,  why: "clipped at all ten call sites" },
   { file: "components/ModelCombobox.tsx",       portal: true,  why: "clipped inside Settings" },
   // Dismissal only — each with a reason, so 'no portal' is a judgement on the

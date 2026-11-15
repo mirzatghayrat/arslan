@@ -1,10 +1,7 @@
-from datetime import datetime, timedelta
-
 import pytest
-from sqlalchemy import select
 
-from server.db.models import Run, RunEvaluation
-from server.services import personal_context, run_eval_service, run_recorder, run_reaper
+from server.db.models import Run
+from server.services import personal_context, run_recorder
 
 
 @pytest.mark.parametrize("flags", [
@@ -13,25 +10,15 @@ from server.services import personal_context, run_eval_service, run_recorder, ru
     {"model_is_local": True, "cloud_memory_allowed": True},
     {"temporary": True, "cloud_memory_allowed": True},
 ])
-async def test_privacy_survives_detached_recording_and_background_reuse(execution_db, monkeypatch, flags):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("Private turns must never invoke a judge or scheduler")
-    monkeypatch.setattr(run_eval_service, "build_adapter", forbidden)
-    monkeypatch.setattr(run_recorder, "schedule_scoring", forbidden)
+async def test_privacy_survives_detached_recording_and_background_reuse(execution_db, flags):
+    # C7c-5a: the judge and the stuck-run reaper (the background reusers this guarded
+    # against) are gone; the immutable per-attempt ceiling is still recorded on the row.
     with personal_context.bind(personal_context.TaskMemoryContext(task_id="task", run_id="attempt", **flags)):
         recorder = await run_recorder.RunRecorder.start(
             conversation_id="private", spawn_id=None, spawn_name=None, user_message="private input")
     async with execution_db() as db:
         row = await db.get(Run, recorder.run_id)
         assert row.no_learning
-        row.status = "recorded"
-        row.created_at = datetime.utcnow() - timedelta(hours=1)
-        await db.commit()
-    assert await run_reaper._reaper_candidates() == []
-    await run_eval_service.score(recorder.run_id)
-    async with execution_db() as db:
-        assert (await db.execute(select(RunEvaluation))).scalars().all() == []
-        assert (await db.get(Run, recorder.run_id)).status == "recorded"
 
 
 async def test_restore_privacy_migration_is_idempotent_for_old_archives():

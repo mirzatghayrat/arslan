@@ -5,7 +5,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Collection, Spawn
+from server.db.models import Base, Collection
 
 
 class FakeProvider:
@@ -27,7 +27,6 @@ async def maker(tmp_path, monkeypatch):
             "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts5(text)")
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(Spawn(id=1, name="s", domain_category="c", system_prompt="p"))
         s.add(Collection(id=9, name="资料库"))
         await s.commit()
     return m

@@ -72,8 +72,7 @@ def test_every_declared_router_contributed_at_least_one_route(app):
 @pytest.mark.parametrize("path", [
     "/api/v1/health",
     "/api/v1/settings",
-    "/api/v1/spawns",
-    "/api/v1/conversations",
+    "/api/v1/conversations",   # also the release check's login probe (GET /spawns went in C7c-4)
     "/api/v1/brain",   # the knowledge router mounts here, not at /knowledge
 ])
 def test_named_endpoints_the_ui_cannot_live_without(app, path):

@@ -2338,3 +2338,132 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
     bad = sorted({p[1] for p in problems if len(p) > 1 and isinstance(p[1], int) and p[1] in events})
     timeline = "\n".join(f"  server {sid}: {event}" for sid in bad[:2] for event in events[sid][-40:])
     assert not problems, f"seed {seed}: {problems[:6]} {background}\n{timeline}"   # a string, never cut short
+
+
+async def test_a_start_that_fails_after_its_open_never_leaves_its_session_behind_a_failed_row(sup, monkeypatch):
+    """MCPF1 (the M-2 fuzz above, CI runs 41332678508 and 43705143554): server 5 ended `failed` with one open,
+    no close, and that session still cached. An error after the start's own open (here the tool write,
+    `discovery._write`, as a locked or full database does) ended `failed` without dropping the session it had
+    opened: the row said `failed` over a live process until the retry. The tool write fails once."""
+    from sqlalchemy.exc import OperationalError
+
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    monkeypatch.setattr(session.manager, "_fingerprints", {})
+    monkeypatch.setattr(session.manager, "_wakes", {})
+    await _seed(sup.maker, 1)
+    alive = []
+
+    class Live:
+        async def list_tools(self, params=None):
+            return _listing("a")
+
+    async def fake_open(server):
+        proc = SimpleNamespace(alive=True)
+        alive.append(proc)
+
+        async def aclose():
+            proc.alive = False
+        return Live(), SimpleNamespace(aclose=aclose)
+    monkeypatch.setattr(session.manager, "_open_session", fake_open)
+    real_write = discovery._write
+    failures = [OperationalError("UPDATE tools", {}, Exception("database is locked"))]
+
+    async def write_once_failing(server_id, tools, *, complete):
+        if failures:
+            raise failures.pop()
+        return await real_write(server_id, tools, complete=complete)
+    monkeypatch.setattr(discovery, "_write", write_once_failing)
+
+    result = await sup.restart(1)
+    row = await _row(sup.maker, 1)
+    running = [p for p in alive if p.alive]
+    assert result.state == row.state == "failed"
+    assert session.manager.cached(1) is None and not running, (
+        f"row `{row.state}` but {len(running)} process(es) running and a session cached")
+
+
+def _live_opens(monkeypatch):
+    """Fresh session maps and an `_open_session` whose processes say whether they still run."""
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    monkeypatch.setattr(session.manager, "_fingerprints", {})
+    monkeypatch.setattr(session.manager, "_wakes", {})
+    procs = []
+
+    class Live:
+        def __init__(self, proc):
+            self.proc = proc
+
+        async def list_tools(self, params=None):
+            return _listing("a")
+
+    async def fake_open(server):
+        proc = SimpleNamespace(alive=True)
+        procs.append(proc)
+
+        async def aclose():
+            proc.alive = False
+        return Live(proc), SimpleNamespace(aclose=aclose)
+    monkeypatch.setattr(session.manager, "_open_session", fake_open)
+    return procs
+
+
+async def test_a_drop_before_the_starts_own_open_never_fails_the_session_it_opened(sup, monkeypatch):
+    """MCPF1, the other return: a drop that lands after the start's own drop but before its open (held here
+    while the start reads the database) killed no session of this start. The start opens, lists and is
+    `ready` on that session; it used to end `failed` over it, the session still cached and running."""
+    from server.services import capability_recheck
+
+    procs = _live_opens(monkeypatch)
+    await _seed(sup.maker, 1)
+    entered, gate = asyncio.Event(), asyncio.Event()
+    real_check = capability_recheck.before_start
+
+    async def held_check(server_id):
+        entered.set()
+        await gate.wait()
+        return await real_check(server_id)
+    monkeypatch.setattr(capability_recheck, "before_start", held_check)
+
+    start = asyncio.create_task(sup.restart(1))
+    await asyncio.wait_for(entered.wait(), 5)
+    await session.manager.drop(1)                 # nothing cached yet: only the manager's generation moves
+    gate.set()
+    result = await asyncio.wait_for(start, 5)
+    row = await _row(sup.maker, 1)
+    cached = session.manager.cached(1)
+    assert len(procs) == 1
+    assert (result.state, row.state) == ("ready", "ready"), result.last_error
+    assert cached is not None and cached.proc is procs[0] and procs[0].alive
+
+
+async def test_a_failing_superseded_start_never_drops_the_newer_starts_session(sup, monkeypatch):
+    """MCPF1 guard: the cleanup of a failed start acts only for the current generation. An older start that
+    fails after a newer one is ready (here in its runtime check, outside the per-server lock) leaves the
+    newer start's session, its process and its `ready` alone."""
+    procs = _live_opens(monkeypatch)
+    await _seed(sup.maker, 1)
+    entered, gate = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def runtime(sid, server):
+        calls.append(sid)
+        if len(calls) == 1:                       # the older start's check: held, then it fails
+            entered.set()
+            await gate.wait()
+            raise RuntimeError("runtime check failed")
+        return False
+    monkeypatch.setattr(sup, "_ensure_runtime", runtime)
+
+    # The older plan's cancel was lost (the case the superseded branch of `_attempt` names): run it outside
+    # `_inflight`, so the newer plan does not cancel it.
+    older = asyncio.create_task(sup._run(1, sup._bump(1), "restart"))
+    await asyncio.wait_for(entered.wait(), 5)
+    sup._attempt_fut.pop(1, None)                 # so the newer start does not join the older attempt
+    newer = await asyncio.wait_for(sup._new_plan(1, "restart"), 5)
+    assert newer.state == "ready"
+    gate.set()
+    old = await asyncio.wait_for(older, 5)
+    row = await _row(sup.maker, 1)
+    cached = session.manager.cached(1)
+    assert old.state == "failed" and row.state == "ready"
+    assert cached is not None and cached.proc is procs[-1] and procs[-1].alive, "the newer session was dropped"

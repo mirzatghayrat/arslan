@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Activity, Folder, Globe, LayoutList, MoreHorizontal, X, type LucideIcon } from "lucide-react";
+import { Activity, Folder, Globe, LayoutList, Maximize2, Minimize2, MoreHorizontal, Plus, X, type LucideIcon } from "lucide-react";
 import { api } from "../../api/client";
 import { filesApi, type ConversationFile } from "../../api/files";
 import { backgroundJobsApi } from "../../api/tasks";
@@ -9,7 +9,10 @@ import { useDividerDrag } from "../../hooks/useDividerDrag";
 import { OPEN_ARTIFACT, validArtifact } from "../../lib/workDock";
 import { useArslanStore } from "../../stores/arslanStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { MAX_WIDTH, READER_WIDTH, useWorkbench, type WorkbenchTab } from "../../stores/workbenchStore";
+import { MAX_WIDTH, READER_WIDTH, isSideTab, useWorkbench, type FixedTab, type SideTab } from "../../stores/workbenchStore";
+import { toast } from "../kit";
+import SideChatTab from "./SideChatTab";
+import { sideName } from "./SideChatsList";
 import WorkDock from "../WorkDock";
 import FilesTab from "./FilesTab";
 import OverviewTab, { type OverviewModels } from "./OverviewTab";
@@ -19,9 +22,11 @@ import Reader from "./Reader";
 
 // WB1 (user, 2026-10-30): a fixed row, always shown, drawn as icons with a tooltip (WB1-2: four words
 // plus side chats overflow the row). Later tabs come from "+" (SIDE, SUB).
-const TABS: WorkbenchTab[] = ["overview", "files", "progress", "browser"];
-const LABEL: Record<WorkbenchTab, string> = { overview: "workbench.overview", files: "workbench.folder", progress: "workbench.progress", browser: "workbench.browser" };
-const ICON: Record<WorkbenchTab, LucideIcon> = { overview: LayoutList, files: Folder, progress: Activity, browser: Globe };
+const TABS: FixedTab[] = ["overview", "files", "progress", "browser"];
+const LABEL: Record<FixedTab, string> = { overview: "workbench.overview", files: "workbench.folder", progress: "workbench.progress", browser: "workbench.browser" };
+const ICON: Record<FixedTab, LucideIcon> = { overview: LayoutList, files: Folder, progress: Activity, browser: Globe };
+const EMPTY: never[] = [];
+const iconButton = "rounded-md p-1.5 text-muted-foreground hover:bg-foreground/5 disabled:opacity-40";
 const REFRESH_MS = 10_000;
 const JOBS_MS = 5_000;
 
@@ -65,7 +70,23 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
   models?: OverviewModels; onOpenCapabilities?: () => void; onOpenSettings?: (section: string) => void;
 }) {
   const { t } = useTranslation();
-  const { open, tab, reader, width, show, close, openReader, closeReader, setWidth } = useWorkbench();
+  const { open, tab, reader, width, show, close, openReader, closeReader, setWidth, expanded, toggleExpanded } = useWorkbench();
+  // SIDE-2: this conversation's side chats, the ones with a tab, and the one shown (a tab of another conversation's is not).
+  const sides = useWorkbench((s) => s.sides[conversationId] ?? EMPTY);
+  const openSides = useWorkbench((s) => s.openSides[conversationId] ?? EMPTY);
+  const shownTab = isSideTab(tab) && !openSides.includes(tab) ? "overview" : tab;
+  const sideChat = isSideTab(shownTab) ? sides.find((c) => c.conversation_id === shownTab) : undefined;
+  const [starting, setStarting] = useState(false);
+  useEffect(() => {
+    if (!open || temporary) return;
+    void Promise.resolve().then(() => useWorkbench.getState().loadSides(conversationId)).catch(() => { /* keep the last list */ });
+  }, [open, temporary, conversationId]);
+  // "+": a blank side chat at the newest message, in one click (the user, 2026-11-11, A).
+  const startBlank = () => {
+    if (starting) return;
+    setStarting(true);
+    useWorkbench.getState().startSide(conversationId).catch(() => toast(t("sideChat.startFailed"))).finally(() => setStarting(false));
+  };
   const items = useArslanStore((s) => s.items);
   const [files, setFiles] = useState<ConversationFile[]>([]);
   const [home, setHome] = useState<{ path: string | null; project: { id: string; name: string } | null }>({ path: null, project: null });
@@ -112,7 +133,9 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
   const drag = useDividerDrag(open, (clientX) => setWidth(window.innerWidth - clientX));
   if (!open) return null;
   // DIFF1: two columns side by side need the panel's full width.
-  const shownWidth = reader?.kind === "diff" || reader?.kind === "repo-diff" ? MAX_WIDTH : reader ? Math.max(width, READER_WIDTH) : width;
+  const shownWidth = reader?.kind === "diff" || reader?.kind === "repo-diff" || expanded ? MAX_WIDTH
+    : reader ? Math.max(width, READER_WIDTH) : width;
+  const selected = (k: string) => shownTab === k && !reader;
   return (
     <aside aria-label={t("workbench.toggle")} data-testid="workbench" style={{ width: shownWidth, maxWidth: "60vw" }}
       className="relative z-20 flex h-full min-w-0 shrink-0 flex-col border-l border-border bg-sidebar">
@@ -123,23 +146,48 @@ export default function Workbench({ conversationId, taskId, temporary, models, o
         onKeyDown={(e) => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); setWidth(width + (e.key === "ArrowLeft" ? 20 : -20)); } }}
         {...drag} />
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <span className="inline-flex rounded-lg bg-fill p-0.5 text-[12.5px]" role="tablist">
-          {TABS.map((k) => { const Icon = ICON[k]; return <button key={k} type="button" role="tab" aria-selected={tab === k && !reader}
-            data-testid={`workbench-tab-${k}`} aria-label={t(LABEL[k])} title={t(LABEL[k])} onClick={() => show(k)}
-            className={`relative inline-flex items-center rounded-md px-2.5 py-1 ${tab === k && !reader ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
-            <Icon size={15} aria-hidden />
-            {k === "progress" && jobs.length > 0 && <span data-testid="workbench-progress-count"
-              className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-info px-1 text-[9px] font-semibold leading-3.5 text-white">{jobs.length}</span>}</button>; })}
+        <div role="tablist" className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+          <span className="inline-flex shrink-0 rounded-lg bg-fill p-0.5 text-[12.5px]">
+            {TABS.map((k) => { const Icon = ICON[k]; return <button key={k} type="button" role="tab" aria-selected={selected(k)}
+              data-testid={`workbench-tab-${k}`} aria-label={t(LABEL[k])} title={t(LABEL[k])} onClick={() => show(k)}
+              className={`relative inline-flex items-center rounded-md px-2.5 py-1 ${selected(k) ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              <Icon size={15} aria-hidden />
+              {k === "progress" && jobs.length > 0 && <span data-testid="workbench-progress-count"
+                className="absolute -right-0.5 -top-0.5 min-w-3.5 rounded-full bg-info px-1 text-[9px] font-semibold leading-3.5 text-white">{jobs.length}</span>}</button>; })}
+          </span>
+          {/* SIDE-2: side chats after the fixed tabs, as words (WB1-2), each closable; closing keeps the side chat. */}
+          {openSides.length > 0 && <span className="inline-flex shrink-0 rounded-lg bg-fill p-0.5 text-[12px]">
+            {openSides.map((id: SideTab) => {
+              const n = sides.findIndex((c) => c.conversation_id === id) + 1;
+              const label = sideName(t, n > 0 ? n : sides.length + 1);
+              return <span key={id} className={`group/tab inline-flex items-center rounded-md ${selected(id) ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+                <button type="button" role="tab" aria-selected={selected(id)} data-testid={`workbench-side-tab-${id}`}
+                  onClick={() => useWorkbench.getState().openSide(conversationId, id)} className="whitespace-nowrap py-1 pl-2.5 pr-1">{label}</button>
+                <button type="button" aria-label={t("sideChat.closeTab")} title={t("sideChat.closeTab")} data-testid={`workbench-side-close-${id}`}
+                  onClick={() => useWorkbench.getState().closeSide(conversationId, id)}
+                  className={`mr-1 rounded p-0.5 text-subtle-foreground hover:text-foreground ${selected(id) ? "" : "opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100"}`}>
+                  <X size={11} /></button>
+              </span>;
+            })}
+          </span>}
+        </div>
+        <span className="flex shrink-0 items-center">
+          {!temporary && <button type="button" aria-label={t("sideChat.new")} title={t("sideChat.new")} data-testid="workbench-new-side"
+            disabled={starting} onClick={startBlank} className={iconButton}><Plus size={16} /></button>}
+          <button type="button" aria-label={t(expanded ? "sideChat.collapse" : "sideChat.expand")} title={t(expanded ? "sideChat.collapse" : "sideChat.expand")}
+            aria-pressed={expanded} data-testid="workbench-expand" onClick={toggleExpanded} className={iconButton}>
+            {expanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>
+          <MoreMenu onClose={close} />
         </span>
-        <MoreMenu onClose={close} />
       </header>
       <div className="relative min-h-0 flex-1">
         <div hidden={!!reader} className="h-full">
-          {tab === "overview" && <OverviewTab conversationId={conversationId} files={files} home={home.path} models={models}
+          {shownTab === "overview" && <OverviewTab conversationId={conversationId} files={files} home={home.path} models={models}
             onOpenCapabilities={onOpenCapabilities} onOpenSettings={onOpenSettings} />}
-          {tab === "files" && <FilesTab home={home.path} touched={touched} />}
-          {tab === "progress" && <ProgressTab jobs={jobs} reload={() => void loadJobs()} />}
-          {tab === "browser" && <WorkDock embedded open onOpen={() => {}} onClose={close} conversationId={conversationId} taskId={taskId} temporary={temporary} />}
+          {shownTab === "files" && <FilesTab home={home.path} touched={touched} />}
+          {shownTab === "progress" && <ProgressTab jobs={jobs} reload={() => void loadJobs()} />}
+          {shownTab === "browser" && <WorkDock embedded open onOpen={() => {}} onClose={close} conversationId={conversationId} taskId={taskId} temporary={temporary} />}
+          {sideChat && <SideChatTab key={sideChat.conversation_id} chat={sideChat} />}
         </div>
         {/* keyed per file: a new file starts from "reading…", never from the last file's view */}
         {reader && <div className="absolute inset-0 bg-sidebar">{reader.kind === "diff" || reader.kind === "repo-diff"

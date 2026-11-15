@@ -1,5 +1,5 @@
-import type { AppSettings, Message, Spawn, UiRun, UiRunDimension, UiRunStep } from "../types";
-import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto, SpawnSummary } from "./client.types";
+import type { AppSettings, Message, UiRun, UiRunDimension, UiRunStep } from "../types";
+import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto } from "./client.types";
 import { fromSteps, summarize } from "../lib/process";
 import { lastVersions } from "../components/reply/ReplyArtifacts";
 import { asMode } from "../components/modes/modes";
@@ -228,39 +228,6 @@ export function toBackendSettings(ui: AppSettings): Partial<BackendAppSettings> 
     (everything as Record<string, unknown>)[uiName] = (ui as unknown as Record<string, unknown>)[uiName];
   }
   return toBackendSettingsPatch(everything);
-}
-
-// ── Spawn adapters ────────────────────────────────────────────────────────────
-
-/**
- * Maps a backend SpawnSummary DTO to the UI Spawn shape used by AI Studio components.
- *
- * Key mappings:
- * - id: number  →  id: string (String(id))
- * - total_tasks: number  →  totalTasks: number
- * - capabilities: string[]  →  tools/skills (passthrough as tools; skills empty unless provided)
- * - status: backend has no status field, default to "idle"
- * - avatarEmoji: default "🤖"
- */
-export function toUiSpawn(s: SpawnSummary & {
-  status?: string;
-  tools?: string[];
-  skills?: string[];
-  total_tasks?: number;
-  description?: string;
-}): Spawn {
-  return {
-    id: String(s.id),
-    name: s.name,
-    domain: s.domain ?? "",
-    description: s.description ?? "",
-    status: (s.status as Spawn["status"]) ?? "idle",
-    avatarEmoji: "🤖",
-    tools: s.tools ?? s.capabilities ?? [],
-    skills: s.skills ?? [],
-    totalTasks: s.total_tasks ?? 0,
-    hasActiveChat: s.has_active_chat ?? false,
-  };
 }
 
 // ── Arslan thread adapters ────────────────────────────────────────────────────

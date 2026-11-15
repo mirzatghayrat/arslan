@@ -155,9 +155,12 @@ async def remember(args, caller):
                 "next_action": "open_memory_settings"}
     if args.get("kind") not in {"fact", "learning", "preference"} or action not in {"append", "supersede"}:
         return {"ok": False, "code": "unsupported_memory_action"}
-    actor = ctx.actor("worker" if caller.actor == "spawn" else "host")
-    scope = MemoryScope(kind="expert", id=ctx.expert_id) if caller.actor == "spawn" else (
-        MemoryScope(kind="project", id=ctx.project_id) if ctx.project_id else MemoryScope(kind="global"))
+    if caller.actor != "host":
+        # C7c-4: an expert's own memory (scope `expert`) takes no new writes. Refused here, never redirected to
+        # the project or global scope: that would widen what a worker may write. decide_write refuses the scope too.
+        return {"ok": False, "code": "memory_scope_denied"}
+    actor = ctx.actor("host")
+    scope = MemoryScope(kind="project", id=ctx.project_id) if ctx.project_id else MemoryScope(kind="global")
     kind = "experience" if args.get("kind") == "learning" else "preference"
     if action == "append" and caller.actor == "host" and kind == "preference":
         actor = await _about_you(actor, ctx)                  # INB2: a new "about you" entry only

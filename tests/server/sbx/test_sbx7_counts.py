@@ -119,7 +119,8 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
     absent from every outgoing payload. A whole host turn runs a command the sandbox stops, with someone to ask or
     with nobody (a scheduled run). A stop goes back to the model and opens no card either way, so nothing joins the
     Inbox's refused list. Then each payload that leaves the process today is read: the model's next
-    request, the phone's run detail and live steps, the judge's evidence and the Inbox's refused list. The
+    request, the phone's run detail and live steps and the Inbox's refused list (the judge's
+    evidence went with run scoring in C7c-5a). The
     model still sees the command's own words, and the step's `ref` keeps the code either way."""
     from datetime import datetime
     from sqlalchemy import select
@@ -129,7 +130,7 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
     from server.orchestrator.tool_caller import ToolCaller
     from server.services import command_confirm, host_run, permission_store, permissions, phone_reads
     from server.services import task_service
-    from server.services import personal_context as pc, trace_evidence
+    from server.services import personal_context as pc
     from tests.server.test_s64_0_outside_content_gaps import CID, _Asker, _Cards, _ctx, _Model, _turn
 
     class _RecordedCards(_Cards):
@@ -172,7 +173,6 @@ async def test_a_denial_reaches_the_local_record_and_no_outgoing_payload(memory,
         outgoing = {"model": seen, "phone run": await phone_reads.run_detail(db, run.id),
                     "refused": await permission_store.refused_groups(db, datetime(2000, 1, 1))}
     outgoing["phone live"] = phone_reads.live_steps([(None, event) for event in events])
-    outgoing["judge"] = await trace_evidence.build_evidence(run.id)
     assert step.ref.get("denial") == "eperm"                    # kept locally, whatever the user answered
     assert cards.calls == [] and asker.frames == [] and outgoing["refused"] == []    # a stop shows no card, to anyone
     for name, payload in outgoing.items():

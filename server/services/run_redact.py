@@ -9,44 +9,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import EvolutionProposal, Run, RunStep
+from server.db.models import Run, RunStep
 
 _BULKY_STEP_KEYS = ("args_full", "result_raw")
-
-
-def _add_id(ids: set[int], rid) -> None:
-    """Add `rid` to the exemption set iff it is a real int run id (bool is not an id)."""
-    if isinstance(rid, int) and not isinstance(rid, bool):
-        ids.add(rid)
-
-
-async def _protected_run_ids(db) -> set[int]:
-    """Run ids that must survive the retention sweep (S2 E2, audit CRITICAL-6).
-
-    A replay Run cited by a still-live proposal is the two-arm original text a promotion
-    card's win-rate traces to — redacting it would sever that traceability. The exemption set
-    is the UNION, over every non-'rejected' EvolutionProposal, of BOTH
-    `evidence.protected_run_ids` AND every baseline_run_id/candidate_run_id inside
-    `evidence.pairs` (refresh_proposal accumulates new pairs there WITHOUT re-listing them in
-    protected_run_ids, so the pairs must be swept directly). Bounded by design (each row holds
-    ≤ 2× its pair count). (v0.1.64 CAP2a: skill candidates' `samples` were never written and the
-    candidates are gone, so they no longer count.)"""
-    ids: set[int] = set()
-
-    rows = (await db.execute(
-        select(EvolutionProposal.evidence).where(EvolutionProposal.status != "rejected")
-    )).scalars().all()
-    for evidence in rows:
-        if not isinstance(evidence, dict):
-            continue
-        for rid in evidence.get("protected_run_ids") or []:
-            _add_id(ids, rid)
-        for pair in evidence.get("pairs") or []:
-            if isinstance(pair, dict):
-                _add_id(ids, pair.get("baseline_run_id"))
-                _add_id(ids, pair.get("candidate_run_id"))
-
-    return ids
 
 
 def _scrub_steps(steps: list[RunStep]) -> None:
@@ -91,11 +56,9 @@ async def sweep(retention_days: int) -> int:
         return 0
     cutoff = datetime.utcnow() - timedelta(days=retention_days)
     async with db_session.AsyncSessionLocal() as db:
-        protected = await _protected_run_ids(db)
-        runs = [
-            r for r in (await db.execute(select(Run).where(Run.created_at < cutoff))).scalars().all()
-            if r.id not in protected  # E2: exempt replay runs cited by a non-rejected proposal
-        ]
+        # C7c-5a: no run is exempt any more. The E2 exemption kept replay runs cited by an
+        # evolution proposal; nothing has written one since the evolution loop went.
+        runs = list((await db.execute(select(Run).where(Run.created_at < cutoff))).scalars().all())
         ids = [r.id for r in runs]
         for run in runs:
             run.system_prompt = None

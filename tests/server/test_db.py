@@ -4,7 +4,7 @@ import pytest_asyncio
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.db.models import Base, Spawn
+from server.db.models import Base, Toolset
 
 
 @pytest_asyncio.fixture
@@ -20,23 +20,15 @@ async def session(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_insert_and_query_spawn(session):
-    spawn = Spawn(
-        name="beauty-guru",
-        domain_category="content-creator",
-        domain_subcategory="xiaohongshu",
-        capabilities=["content-generation"],
-        system_prompt="You are a beauty expert.",
-    )
-    session.add(spawn)
+async def test_insert_and_query_a_row(session):
+    # C7c-5b: the Spawn model went; any model shows the session round-trips.
+    session.add(Toolset(key="web", name="Web", description="search", tier="safe", status="wired"))
     await session.commit()
 
-    result = await session.execute(select(Spawn).where(Spawn.name == "beauty-guru"))
+    result = await session.execute(select(Toolset).where(Toolset.key == "web"))
     fetched = result.scalar_one()
-    assert fetched.id is not None
-    assert fetched.domain_subcategory == "xiaohongshu"
-    assert fetched.capabilities == ["content-generation"]
-    assert fetched.generation_level == 1
+    assert fetched.name == "Web"
+    assert fetched.status == "wired"
 
 
 @pytest.mark.asyncio

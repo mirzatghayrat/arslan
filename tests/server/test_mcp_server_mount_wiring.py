@@ -11,7 +11,6 @@ from starlette.routing import Mount
 
 
 def _make_app(monkeypatch, tmp_path):
-    monkeypatch.setenv("ARSLAN_TEST_ROUTES", "1")
     monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
     # The SPA catch-all route (the thing the mount must precede) is only
     # registered when `static_dir.is_dir()`. This worktree has no built

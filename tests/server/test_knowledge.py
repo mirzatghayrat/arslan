@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db import session as db_session
-from server.db.models import Base, Spawn
+from server.db.models import Base, Collection
 from server.db.migrations.versions._0009_knowledge import upgrade_sync
 from server.services import ingest, knowledge
 
@@ -18,24 +18,21 @@ async def memdb(monkeypatch):
     yield Session
 
 
-async def _spawn(Session, name="S") -> int:
+async def _collection(Session) -> int:
+    """The chunks' home: a collection (an expert's own well has no model since C7c-5b)."""
     async with Session() as db:
-        s = Spawn(name=name, domain_category="x", system_prompt="p")
-        db.add(s)
+        c = Collection(name="S")
+        db.add(c)
         await db.commit()
-        await db.refresh(s)
-        return s.id
-
-
-
-
+        await db.refresh(c)
+        return c.id
 
 
 async def test_retrieve_empty_and_weird_query_no_crash(memdb):
-    sid = await _spawn(memdb)
-    assert await knowledge.retrieve_scoped("", spawn_id=sid) == []
-    await ingest.ingest_text(sid, "doc", "hello world")
-    assert isinstance(await knowledge.retrieve_scoped('"*(quote) AND foo*', spawn_id=sid), list)
+    cid = await _collection(memdb)
+    assert await knowledge.retrieve_scoped("", spawn_id=None) == []
+    await ingest.ingest_text(None, "doc", "hello world", collection_id=cid)
+    assert isinstance(await knowledge.retrieve_scoped('"*(quote) AND foo*', spawn_id=None), list)
 
 
 def test_knowledge_block_format():

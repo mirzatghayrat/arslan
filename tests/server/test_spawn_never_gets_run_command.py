@@ -1,9 +1,9 @@
-"""SAFETY-CRITICAL: the orchestrator-only run_command tool can NEVER reach a spawn.
+"""SAFETY-CRITICAL: the orchestrator-only run_command tool is never on the safe menu.
 
-run_command is an orchestrator-tier tool (whitelisted shell). Every spawn capability
-write goes through the layer-2 gate (assert_assignable), which must never let it in.
-(The layer-3 gate, wired_tools_for_spawn, went with the dispatcher in C7b-4/6, v0.1.63:
-no spawn turn calls tools any more.)
+run_command is an orchestrator-tier tool (whitelisted shell). The safe menu (what the MCP
+server lists for outside clients) must never offer it. The spawn write gate
+(assert_assignable) went in C7c-5a with its last write path; the layer-3 gate,
+wired_tools_for_spawn, went with the dispatcher in C7b-4/6, v0.1.63.
 """
 import pytest
 import pytest_asyncio
@@ -27,17 +27,17 @@ async def maker(tmp_path, monkeypatch):
 
 @pytest_asyncio.fixture
 async def seeded(maker):
-    """The real seeded registry, so assert_assignable judges run_command by its real tier."""
+    """The real seeded registry, so safe_menu judges run_command by its real tier."""
     from server.registry.seeder import seed_registry
 
     await seed_registry()
 
 
 @pytest.mark.asyncio
-async def test_run_command_toolset_is_never_assignable(seeded):
+async def test_run_command_toolset_is_never_on_the_safe_menu(seeded):
     from server.registry import service
 
-    # run_command is not a safe-tier assignable toolset; assert_assignable must reject it.
-    # (0.1.63 C1c-1: this went through grant_temporary, deleted with the escalation path.)
-    with pytest.raises(service.NotAssignableError):
-        await service.assert_assignable("toolset", "run_command")
+    menu = await service.safe_menu()
+    keys = {t["key"] for t in menu["toolsets"]}
+    assert keys, "positive control: the seeded registry has safe toolsets"
+    assert "run_command" not in keys

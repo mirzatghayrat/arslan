@@ -140,19 +140,24 @@ async def _own_words(conversation_id: str, history: list[dict]) -> list[str]:
 
     from server.db import session as db_session
     from server.db.models import ArslanMessage
-    from server.services import personal_context
+    from server.orchestrator import untrusted
+    from server.services import personal_context, side_chats
     from server.services.memory_history import eligible_messages
     turn = personal_context.current()
-    mine = turn.source_message_id if turn is not None else None
+    mine =turn.source_message_id if turn is not None else None
     after = await _learns_after(conversation_id)
     async with db_session.AsyncSessionLocal() as db:
         next_turn = None if mine is None else await db.scalar(select(func.min(ArslanMessage.id)).where(
             ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "user", ArslanMessage.id > mine,
             ArslanMessage.run_id.is_(None)))
+        # SIDE-2: never a side chat's reply brought back carrying outside content (`side_chats.BACK_SOURCE`, stored
+        # framed: `untrusted.BACK_FROM_OUTSIDE`): it is not the user's own words.
         if after is None and next_turn is None:
-            return [m["content"] for m in history if m.get("role") == "user"]
+            return [m["content"] for m in history if m.get("role") == "user"
+                    and not str(m.get("content") or "").startswith(untrusted.BACK_FROM_OUTSIDE)]
         words = eligible_messages(conversation_id).with_only_columns(ArslanMessage.content).where(
-            ArslanMessage.role == "user", ArslanMessage.id > (after or 0))
+            ArslanMessage.role == "user", ArslanMessage.id > (after or 0),
+            ArslanMessage.source.is_distinct_from(side_chats.BACK_SOURCE))
         if next_turn is not None:
             words = words.where(ArslanMessage.id < next_turn)
         rows = (await db.scalars(words.order_by(ArslanMessage.id.desc()).limit(8))).all()

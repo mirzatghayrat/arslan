@@ -225,11 +225,13 @@ async def test_a_sub_sessions_follow_up_asks_its_card_for_a_refused_site_in_its_
 
 async def test_an_ordinary_conversations_follow_up_asks_its_card_for_a_refused_site_in_its_own_window(api, follow_up,
                                                                                                     monkeypatch):
-    """NET-a, its switch on: the counterpart, its card in its own conversation."""
+    """NET-a, its switch on: the counterpart, its card in its own conversation. NET-b: the page the job opened named
+    the command's own site, so the pre-flight card for it comes first, in the same window."""
     in_conversation = _sink("c-plain")
     monkeypatch.setitem(executors.EXECUTORS, "run_command", _RefusedRun())
     await follow_up("c-plain")
-    assert [(c["perm_kind"], c.get("sub_session")) for c in _cards(in_conversation)] == [("network", None)]
+    assert [(c["perm_kind"], c.get("sub_session"), c["target"]) for c in _cards(in_conversation)] == [
+        ("network", None, "network:example.test"), ("network", None, "network:collect.evil.example")]
 
 
 async def test_a_sub_session_whose_parent_cant_be_named_starts_no_job(memory):  # noqa: F811

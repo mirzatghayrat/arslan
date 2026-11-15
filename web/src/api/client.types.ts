@@ -1,19 +1,5 @@
 import type { HtmlArtifact, MessageAttachment } from "../types";
 
-export interface EquipmentItem {
-  key: string;
-  name: string;
-  status: string;
-  grant: "permanent" | "temporary";
-  granted_by?: "create" | "user" | "escalation";
-  expires_turn?: number | null;
-}
-
-export interface Equipment {
-  toolsets: EquipmentItem[];
-  skills: EquipmentItem[];
-}
-
 export interface RegistryTool { key: string; description: string; tier: string; status: string; }
 export interface RegistryToolset {
   key: string; name: string; description: string; tier: string; status: string;
@@ -334,35 +320,6 @@ export interface StoredArtifact {
   logical_key?: string;
 }
 
-export interface SpawnSummary {
-  id: number;
-  name: string;
-  domain: string;
-  capabilities: string[];
-  template_used: string | null;
-  generation_level: number;
-  created_at: string;
-  updated_at: string;
-  equipment?: Equipment;
-  has_active_chat?: boolean;
-  /** Built-in agent shipped with the app — cannot be deleted. */
-  is_default?: boolean;
-}
-
-export interface ChatMessage {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-  timestamp?: string;
-}
-
-export interface SpawnDetail extends SpawnSummary {
-  persona_role: string | null;
-  persona_tone: string | null;
-  system_prompt: string;
-  messages: ChatMessage[];
-}
-
 export interface AppSettings {
   llm_provider: string;
   llm_model: string;
@@ -395,6 +352,7 @@ export interface AppSettings {
   goal_mode?: string; // L7: "true" turns /goal on (default off)
   folder_rules_enabled?: string; // K10-1: "true" | "false" (default-ON: absent = on)
   sandbox_system_certificates?: string; // SBX settings: "true" | "false" (default off)
+  sandbox_allowed_sites?: string; // NET-b: a JSON list of host strings ("" = none); the server refuses a public suffix
   voice_input_locale?: string;   // BCP-47, "" = follow the UI language
   voice_mode?: string;            // "off" | "push_to_talk" | "conversation" (default push_to_talk)
   voice_endpoint_silence_ms?: string; // integer ms as a string (default "900")

@@ -8,8 +8,6 @@ from server.db.models import (
     ArslanMessage,
     ArslanSummary,
     Base,
-    Feedback,
-    Spawn,
     UserFact,
 )
 
@@ -56,24 +54,3 @@ async def test_a_summary_keeps_its_cutoff(session):
     session.add(ArslanSummary(conversation_id="main", summary="...", up_to_message_id=5))
     await session.commit()
     assert (await session.execute(select(ArslanSummary))).scalar_one().up_to_message_id == 5
-
-
-@pytest.mark.asyncio
-async def test_reserved_leveling_columns(session):
-    spawn = Spawn(
-        name="beauty-guru",
-        domain_category="content-creator",
-        capabilities=["content-generation"],
-        system_prompt="You are a beauty expert.",
-    )
-    session.add(spawn)
-    await session.commit()
-    await session.refresh(spawn)
-    assert spawn.level == 1
-    assert spawn.memory_facts == []
-
-    fb = Feedback(spawn_id=spawn.id, session_id="s", user_action="thumbs_up", edits={})
-    session.add(fb)
-    await session.commit()
-    await session.refresh(fb)
-    assert fb.quality_signal is None  # reserved, unset by default
