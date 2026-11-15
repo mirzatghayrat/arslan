@@ -78,7 +78,7 @@ class Counts:
         self.families: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
         self.pregate: collections.Counter = collections.Counter()
         self.total = self.reached = self.false_allow = self.false_ask = self.approvable = self.fallbacks = 0
-        self.errors = self.unparsable = self.invalid = 0
+        self.errors = self.unparsable = self.invalid = self.kind_ignored = self.unknown_tool = 0
 
     def as_dict(self, model: tuple[str, str | None, str]) -> dict:
         """The counts, and what a MEASURED entry is keyed by (`classifier.MeasuredKey`): provider, endpoint, model
@@ -101,7 +101,20 @@ class Counts:
             "fallbacks": self.fallbacks,
             "errors": self.errors,
             "unparsable": self.unparsable,
+            "kind_ignored": self.kind_ignored,
+            "unknown_tool": self.unknown_tool,
         }
+
+
+def invalid_run(data: dict) -> str | None:
+    """Why the run measures nothing, or None. No case reached the model, or fewer than half the approvable ones
+    could have (`reached_model` counts every case past the pre-gate): a schema mismatch, not a measurement."""
+    if data["reached_model"] == 0:
+        return "no case reached the model"
+    approvable = data["false_ask"][1]
+    if approvable and data["reached_model"] * 2 < approvable:
+        return f"only {data['reached_model']} cases reached the model, fewer than half the {approvable} approvable"
+    return None
 
 
 def render(data: dict) -> str:
@@ -116,6 +129,7 @@ def render(data: dict) -> str:
     lines.append("pre-gate stops: " + (" ".join(f"{k}={v}" for k, v in data["pregate_stops"].items()) or "none"))
     lines.append(f"fallbacks (rules/never_auto not derived): {data['fallbacks']}")
     lines.append(f"errors: {data['errors']}  unparsable: {data['unparsable']}")
+    lines.append(f"record kind labels ignored: {data['kind_ignored']}  unknown tool names: {data['unknown_tool']}")
     return "\n".join(lines)
 
 
@@ -123,7 +137,10 @@ def _case(record: dict, workspace: Path) -> tuple[cls.Action, cls.Context, str]:
     """The record as CLS's Action and Context, and whether its policy derivation fell back ("fallback" or "")."""
     act, ctx = record["action"], record.get("context") or {}
     tool = tool_of(act.get("tool"), act.get("text"))
-    kind = act.get("kind") or DEFAULT_KIND.get(tool)
+    # The card kind is the one the gate builds for this tool, never the record's own label: a label outside
+    # `permissions.KINDS` made the pre-gate refuse every case as `refused_card` (the first real run: 0 of 120 reached
+    # the model). A record's label that differs is counted (`kind_ignored`), never printed.
+    kind = DEFAULT_KIND.get(tool)
     targets = tuple(Path(t) if Path(t).is_absolute() else workspace / t for t in act.get("write_targets") or ())
     fell_back = ""
     try:
@@ -160,6 +177,9 @@ async def run(lines, *, model: tuple[str, str | None, str], complete: cls.Comple
             counts.total += 1
             counts.approvable += expected == "allow"
             counts.fallbacks += bool(fell_back)
+            given = record["action"].get("kind")
+            counts.kind_ignored += given is not None and given != action.kind
+            counts.unknown_tool += action.tool not in cls.EFFECTS
             fam = counts.families[family]
             fam["n"] += 1
             gate = cls.pregate(action, ctx, workspace=workspace, tmpdir=tmpdir)
@@ -200,6 +220,10 @@ async def amain(argv: list[str] | None = None, *, complete: cls.Complete | None 
         model = ("stand-in", None, args.model or "stand-in")
     data = (await run(lines, model=model, complete=complete)).as_dict(model)
     print(json.dumps(data, ensure_ascii=True, indent=2) if args.json else render(data))
+    if why := invalid_run(data):
+        # on stdout too, so a wrapper that keeps only stdout still says why
+        print(f"INVALID RUN: {why}; these counts are not a measurement")
+        return 3
     return 0
 
 
