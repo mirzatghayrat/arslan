@@ -298,6 +298,27 @@ def test_the_same_failure_differing_only_in_volatile_tokens_stops(outputs):
 def test_real_values_in_the_output_still_count_as_different(outputs):
     assert not _three_runs(outputs).stopped
 
+
+def test_a_duration_only_in_stderr_is_masked_too_and_the_repeat_stops():
+    """The masks must run over stderr as well as stdout (a stdout-only mask would see three different hashes)."""
+    policy = ProgressPolicy()
+    for t in ("1.42s", "0.98s", "2.07s"):
+        policy.observe("run_command", RUN, _run_failed(stdout="1 failed", stderr=f"E assert 1 == 2\nran in {t}"))
+    assert policy.stopped and (policy.count, policy.limit) == (3, 3)
+
+
+def test_eslint_positions_are_real_values_not_clock_times():
+    """eslint prints `  12:34  error  ...`; runs failing at different positions are not the same stuck step."""
+    outputs = [f"/src/a.js\n  {n}:{n + 20}  error  'x' is not defined  no-undef\n\n1 problem" for n in (3, 12, 41)]
+    assert not _three_runs(outputs).stopped
+    assert not _three_runs(outputs, stream="stderr").stopped
+
+
+@pytest.mark.parametrize("text", ["failed at 12:34:56", "(0:00:02) failed", "failed at 09:15", "  09:15 failed"])
+def test_clock_times_are_still_masked(text):
+    from arslan.runtime_policy import _stable
+    assert "#" in _stable(text) and "09:15" not in _stable(text)
+
 # ── K4a gate (DeepSeek T2): trim the in-turn history in chunks, not one message per step ───────
 
 def _groups(n, size=1000):
