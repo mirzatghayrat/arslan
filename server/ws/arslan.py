@@ -548,6 +548,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
     confirm_command.ask_capability = confirm_capability
 
     try:
+        # L7-6: the goal's card when no job of it runs (not started, paused, blocked, interrupted by a restart), read
+        # before the history goes out: its database read awaits, and after the history a tab may already be asking
+        # or answering cards, which the replay below must keep exactly as it was (no new wait in it).
+        from server.services import goal_command
+        goal_frames = await goal_command.open_frames(conversation_id)
         await ws.send_json({"type": "history", "messages": await _history(conversation_id)})
 
         # Reattach (S3-M2): snapshot the run journals + attach the sink in ONE
@@ -585,14 +590,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         for job in background_jobs.jobs_for(conversation_id):
             if job.phase != "finished":
                 await ws.send_json(job.frame())
+        for frame in goal_frames:
+            await ws.send_json(frame)
         for card in approvals.pending_cards(conversation_id):
             await ws.send_json(card)
-        # L7-6: the goal's card when no job of it runs (not started, paused, blocked, interrupted by a restart). After
-        # the cards' snapshot: its database read awaits, and a card asked during that wait would otherwise be sent
-        # twice, once from the snapshot and once live.
-        from server.services import goal_command
-        for frame in await goal_command.open_frames(conversation_id):
-            await ws.send_json(frame)
 
         drainer = asyncio.create_task(_drain())
         reader = asyncio.create_task(_reader())
