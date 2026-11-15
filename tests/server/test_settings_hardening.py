@@ -206,44 +206,6 @@ def test_localhost_bind_no_exposure_warning(monkeypatch, caplog):
     assert not any("exposed to the network" in r.message for r in caplog.records)
 
 
-# --- test-route packaged gate (P0-3, C11) -------------------------------------
-# The `/api/v1/_test/seed_spawn` helper creates a spawn with NO auth. It is
-# env-gated behind ARSLAN_TEST_ROUTES=1, but if that flag ever leaks into a
-# packaged app the endpoint would let anyone forge spawns. Defense in depth:
-# refuse to register it in the desktop app's server, regardless of the flag.
-
-_SEED_ROUTE = "/api/v1/_test/seed_spawn"
-
-
-def _app_paths(monkeypatch, **env):
-    monkeypatch.setenv("ARSLAN_TEST_ROUTES", "1")
-    config = _reload_config(monkeypatch, **env)
-    # _reload_config clears ARSLAN_ENV et al but leaves ARSLAN_TEST_ROUTES.
-    import server.main as main
-
-    app = main.create_app()
-    from tests.route_introspection import iter_route_paths
-    return iter_route_paths(app), config.settings
-
-
-def test_seed_spawn_route_registered_in_dev(monkeypatch):
-    paths, cfg = _app_paths(monkeypatch)  # dev + ARSLAN_TEST_ROUTES=1
-    assert cfg.packaged is False
-    assert _SEED_ROUTE in paths
-
-
-def test_seed_spawn_route_absent_when_packaged(monkeypatch):
-    paths, cfg = _app_paths(
-        monkeypatch, ARSLAN_PACKAGED="1", ARSLAN_SECRET_KEY="x" * 32
-    )
-    assert cfg.packaged is True
-    assert _SEED_ROUTE not in paths
-
-
-def test_seed_spawn_route_absent_without_flag(monkeypatch):
-    monkeypatch.delenv("ARSLAN_TEST_ROUTES", raising=False)
-    _reload_config(monkeypatch)  # dev, no flag
-    import server.main as main
-
-    paths = {getattr(r, "path", None) for r in main.create_app().routes}
-    assert _SEED_ROUTE not in paths
+# --- test-route packaged gate (P0-3, C11): moved in C7c-5a ---------------------
+# The three seed-route gate tests became one invariant in test_c11_packaged_hardening.py
+# (test_no_test_route_is_registered_in_any_configuration): no test route exists any more.

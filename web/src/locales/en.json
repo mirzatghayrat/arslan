@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Loading registry…",
       "empty": "No capabilities registered yet",
-      "equip_hint": "Arslan can use these directly.",
       "unimplemented_note": "Not implemented — catalog placeholder only, cannot be equipped.",
       "orchestrator_note": "For safety, only Arslan itself can use these; they cannot be given to experts.",
       "degraded": "UNSANDBOXED",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Value for Arslan"
-    },
-    "equip": {
-      "action": "Equip to spawn…",
-      "loading": "Loading spawns…",
-      "empty": "No spawns yet.",
-      "error": "Equip failed — change rolled back."
     },
     "compat": {
       "full": "full",
@@ -1586,6 +1579,13 @@
     "devicesTitle": "Trusted local devices",
     "devicesDesc": "Commands in the sandbox can't reach your local network by default (your router, a NAS, a printer, other computers). A device added here can be reached, on every port. One added by name keeps the address it has now, checked again on every connection. This Mac's own addresses can't be added.",
     "devicesEmpty": "No trusted devices yet.",
+    "sitesTitle": "Sites",
+    "sitesDesc": "Commands may always connect to these sites, even after reading outside content.",
+    "sitesEmpty": "No sites listed yet.",
+    "sitesPlaceholder": "A site, such as example.com",
+    "sitesInputLabel": "Site",
+    "sitesAdd": "Add",
+    "sitesRefused": "“{{value}}” can't be listed. Use a specific site name such as example.com, not a whole domain ending like com.",
     "placeholder": "A name or LAN IP, such as nas.local or 192.168.1.20",
     "inputLabel": "Name or LAN IP",
     "add": "Trust",
@@ -1631,5 +1631,34 @@
     "start": "Start",
     "startsIn": "Starts in {{mode}}",
     "saveFailed": "Couldn’t change the mode. Try again."
+  },
+  "sideChat": {
+    "tab": "Side chat {{n}}",
+    "new": "New side chat",
+    "start": "Start a side chat",
+    "reply": "Reply",
+    "barLabel": "Selected text",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "closeTab": "Close tab (the side chat is kept)",
+    "scope": "Reads this conversation up to where it branched. Read-only: it can look things up, but can’t run commands, change files, remember anything or schedule work. Nothing reaches the main conversation unless you bring it back.",
+    "outside": "Earlier turns may have read outside content, so this side chat treats what it reads as outside content, as the main conversation does.",
+    "placeholder": "Ask about this conversation",
+    "empty": "Ask anything about this conversation. The answer stays here.",
+    "thinking": "Thinking…",
+    "send": "Send",
+    "removeQuote": "Remove quote",
+    "bringBack": "Bring back to main",
+    "broughtBack": "Added to the main input. Nothing was sent.",
+    "quoted": "Quoted in the main input.",
+    "listH": "Side chats",
+    "closed": "closed",
+    "delete": "Delete this side chat",
+    "deleteAsk": "Delete this side chat? Its messages go too. The main conversation isn’t touched.",
+    "cancel": "Cancel",
+    "confirmDelete": "Delete",
+    "deleted": "Side chat deleted.",
+    "deleteFailed": "Couldn’t delete the side chat.",
+    "startFailed": "Couldn’t start a side chat."
   }
 }

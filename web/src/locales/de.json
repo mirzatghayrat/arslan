@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Verzeichnis wird geladen…",
       "empty": "Noch keine Fähigkeiten registriert",
-      "equip_hint": "Arslan kann diese direkt nutzen.",
       "unimplemented_note": "Nicht implementiert — nur Katalog-Platzhalter, nicht ausrüstbar.",
       "orchestrator_note": "Aus Sicherheitsgründen nur von Arslan selbst nutzbar – nicht an Experten vergebbar.",
       "degraded": "OHNE SANDBOX",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Nutzen für Arslan"
-    },
-    "equip": {
-      "action": "Spawn ausrüsten…",
-      "loading": "Spawns werden geladen…",
-      "empty": "Noch keine Spawns.",
-      "error": "Ausrüsten fehlgeschlagen — Änderung zurückgesetzt."
     },
     "compat": {
       "full": "voll",
@@ -1586,6 +1579,13 @@
     "devicesTitle": "Vertrauenswürdige lokale Geräte",
     "devicesDesc": "Befehle in der Sandbox erreichen dein lokales Netzwerk standardmäßig nicht (Router, NAS, Drucker, andere Computer). Ein hier hinzugefügtes Gerät ist erreichbar, auf allen Ports. Ein per Name hinzugefügtes Gerät behält seine jetzige Adresse, die bei jeder Verbindung erneut geprüft wird. Die eigenen Adressen dieses Macs können nicht hinzugefügt werden.",
     "devicesEmpty": "Noch keine vertrauenswürdigen Geräte.",
+    "sitesTitle": "Websites",
+    "sitesDesc": "Befehle dürfen sich immer mit diesen Websites verbinden, auch nachdem sie externe Inhalte gelesen haben.",
+    "sitesEmpty": "Noch keine Websites in der Liste.",
+    "sitesPlaceholder": "Eine Website, etwa example.com",
+    "sitesInputLabel": "Website",
+    "sitesAdd": "Hinzufügen",
+    "sitesRefused": "„{{value}}“ kann nicht aufgenommen werden. Gib eine konkrete Website wie example.com an, nicht nur eine Domain-Endung wie com.",
     "placeholder": "Ein Name oder eine LAN-IP, z. B. nas.local oder 192.168.1.20",
     "inputLabel": "Name oder LAN-IP",
     "add": "Vertrauen",
@@ -1631,5 +1631,34 @@
     "start": "Starten",
     "startsIn": "Startet in {{mode}}",
     "saveFailed": "Der Modus ließ sich nicht ändern. Versuch es noch einmal."
+  },
+  "sideChat": {
+    "tab": "Nebenchat {{n}}",
+    "new": "Neuer Nebenchat",
+    "start": "Nebenchat starten",
+    "reply": "Antworten",
+    "barLabel": "Markierter Text",
+    "expand": "Vergrößern",
+    "collapse": "Verkleinern",
+    "closeTab": "Tab schließen (der Nebenchat bleibt)",
+    "scope": "Liest diese Unterhaltung bis zur Abzweigung. Nur lesend: Er kann nachschlagen, aber keine Befehle ausführen, keine Dateien ändern, sich nichts merken und nichts planen. Nichts gelangt in die Hauptunterhaltung, außer du holst es zurück.",
+    "outside": "Frühere Runden haben womöglich externe Inhalte gelesen, daher behandelt dieser Nebenchat, was er liest, wie die Hauptunterhaltung als externe Inhalte.",
+    "placeholder": "Frag etwas zu dieser Unterhaltung",
+    "empty": "Frag alles zu dieser Unterhaltung. Die Antwort bleibt hier.",
+    "thinking": "Denkt nach…",
+    "send": "Senden",
+    "removeQuote": "Zitat entfernen",
+    "bringBack": "In die Hauptunterhaltung holen",
+    "broughtBack": "Ins Eingabefeld der Hauptunterhaltung gelegt. Nichts wurde gesendet.",
+    "quoted": "Im Eingabefeld der Hauptunterhaltung zitiert.",
+    "listH": "Nebenchats",
+    "closed": "geschlossen",
+    "delete": "Diesen Nebenchat löschen",
+    "deleteAsk": "Diesen Nebenchat löschen? Seine Nachrichten gehen mit. Die Hauptunterhaltung bleibt unberührt.",
+    "cancel": "Abbrechen",
+    "confirmDelete": "Löschen",
+    "deleted": "Nebenchat gelöscht.",
+    "deleteFailed": "Der Nebenchat ließ sich nicht löschen.",
+    "startFailed": "Der Nebenchat ließ sich nicht starten."
   }
 }

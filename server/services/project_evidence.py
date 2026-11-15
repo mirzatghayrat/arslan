@@ -203,11 +203,24 @@ async def _last_user_message_id(db, conversation_id: str) -> int | None:
     ).order_by(ArslanMessage.id.desc()).limit(1))).scalar()
 
 
+async def _brought_back(conversation_id: str) -> bool:
+    """SIDE-2: this turn's message brings back a side chat's reply carrying outside content (`side_chats.BACK_SOURCE`):
+    not the user's words, so it says nothing of the project's progress."""
+    from server.services import personal_context
+    from server.services.side_chats import BACK_SOURCE
+    turn = personal_context.current()
+    if turn is None or turn.source_message_id is None:
+        return False
+    async with db_session.AsyncSessionLocal() as db:
+        return await db.scalar(select(ArslanMessage.source).where(
+            ArslanMessage.id == turn.source_message_id, ArslanMessage.conversation_id == conversation_id)) == BACK_SOURCE
+
+
 async def check_said(project_id: str, conversation_id: str, user_message: str) -> dict:
     """§4.3. Returns what it did: {"asked": bool, "ticked": [ids], "proposed": bool}."""
     from server.services import judgment
     out = {"asked": False, "ticked": [], "proposed": False}
-    if not (user_message or "").strip():
+    if not (user_message or "").strip() or await _brought_back(conversation_id):
         return out
     async with db_session.AsyncSessionLocal() as db:
         project = await db.get(Project, project_id)

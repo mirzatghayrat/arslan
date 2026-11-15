@@ -32,7 +32,7 @@ def probe():
 
 @pytest.fixture
 def packaged(monkeypatch, tmp_path):
-    for key in ("ARSLAN_ENV", "ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS", "ARSLAN_TEST_ROUTES"):
+    for key in ("ARSLAN_ENV", "ARSLAN_ALLOWED_ORIGINS", "ARSLAN_ALLOWED_HOSTS"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("ARSLAN_PACKAGED", "1")
     monkeypatch.setenv("ARSLAN_SECRET_KEY", "x" * 32)

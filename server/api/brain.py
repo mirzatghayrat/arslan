@@ -30,18 +30,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import Learning, MemoryProposal, Note, Spawn, UserFact
+from server.db.models import Learning, MemoryProposal, Note, UserFact
 from server.services import brain_usage, memory_temporal
 from server.services.memory_temporal import SupersedeError
 
 router = APIRouter(tags=["brain"], dependencies=[Depends(require_auth)])
 
-# brain-P2 Task 5: "notes" and "spawns" added — accept_proposal materializes
-# Tier2 kinds onto both (append_suspect/delete_suspect on notes;
-# delete_suspect/preference_overwrite_suspect on spawns), and list_proposals
-# needs both to render excerpts instead of silently going blank (self-check
-# MINOR: notes proposals used to always excerpt None since Note wasn't here).
-_TABLE_MODELS = {"user_facts": UserFact, "learnings": Learning, "notes": Note, "spawns": Spawn}
+# brain-P2 Task 5: "notes" added so list_proposals renders note excerpts. "spawns" left in
+# C7c-5a (the expert era is over): an old v1 card on that table lists with no excerpt, and
+# accept refuses it like every non-notes card (versioned_memory_review_required).
+_TABLE_MODELS = {"user_facts": UserFact, "learnings": Learning, "notes": Note}
 
 # Sentinel distinguishing "caller didn't pass this kwarg" from "caller passed None"
 # — valid_from/superseded_by are legitimately NULL for most rows (legacy backfill,
@@ -635,14 +633,11 @@ def _proposal_dict(p: MemoryProposal, *, new_excerpt=_UNSET, old_excerpt=_UNSET)
 def _excerpt_for(row) -> str | None:
     """Best-effort human-readable excerpt for a proposal's new/old referent —
     display-only, used by list_proposals. user_facts/learnings/notes all carry
-    the text under `.content`; a "spawns" referent (preference proposals) has
-    no free-text column, so its memory_facts array is joined instead."""
+    the text under `.content`."""
     if row is None:
         return None
     if hasattr(row, "content"):
         return (row.content or "")[:200]
-    if hasattr(row, "memory_facts"):
-        return "; ".join(row.memory_facts or [])[:200] or None
     return None
 
 

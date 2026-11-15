@@ -153,7 +153,7 @@ graph LR
 *Figure 4 — Capability layer.*
 
 - **Three libraries** — Tools, Toolsets, and SkillPacks, plus per-spawn `spawn_capabilities`, all in `server/registry/service.py`.
-- **Single-throat write gate** — `assert_assignable` is the **only** path that grants a capability, and it only lets through **safe + functional** ones. `safe_menu` lists what is assignable, and `wired_tools_for_spawn` resolves a spawn's current capabilities.
+- **Capability tiers** — `safe_menu` lists only **safe + functional** capabilities. (The spawn write gate `assert_assignable` and `wired_tools_for_spawn` went with the expert era, v0.1.63 and v0.1.64.)
 - **Built-in executors** (`server/registry/executors.py`) — `web_search`, `web_extract`, `render_chart`, `deck`, `run_python`, `run_command`, `create_skill`, `list_my_capabilities`, plus an MCP proxy executor (dispatched by the `mcp_` name prefix).
 - **Tier isolation invariant** — **orchestrator-tier** capabilities (e.g. `run_command`) are held **implicitly by Arslan only**; a spawn can never be granted one. MCP is **off by default**; the terminal is on unless switched off in Settings.
 
@@ -249,7 +249,7 @@ Third-party, outside the repo: BYOK LLM providers (OpenAI-compatible / DeepSeek,
 
 Reliability and safety here rest on a handful of load-bearing rules. Preserve them; don't weaken one without a design discussion.
 
-- **Single-throat capability gate.** All capability grants pass through `assert_assignable`; MCP off by default; **orchestrator-tier is Arslan-only** (spawns can't get it).
+- **Capability tiers.** `safe_menu` offers only safe + functional capabilities; MCP off by default; **orchestrator-tier is Arslan-only**.
 - **Untrusted tool output.** Every tool result goes through `wrap_external` and is treated as untrusted data.
 - **The Python sandbox fails closed.** No kernel sandbox → `run_python` refuses to run (the macOS seatbelt is the only kernel sandbox today). Terminal commands don't fail closed (a sub-session's do): without the sandbox a command needs a click unless this conversation's grant covers it, then runs unsandboxed and is marked so (see [Sandbox, security & the command surface](#sandbox-security--the-command-surface)).
 - **Honesty guardrails.** The framework intercepts fabricated "I already did that" claims (`promise_guard`, two-level) and keeps self-reporting tied to what actually ran. Router/synthesis lean on an LLM and can be flaky, so framework floors (timeout+retry, search-convergence cap, findings-digest floor, deferral-stub gate) guarantee it **never returns empty-handed and never leaks**.

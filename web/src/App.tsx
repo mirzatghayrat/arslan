@@ -37,7 +37,6 @@ import ProjectsSection from './components/companion/ProjectsSection';
 import { projectsApi } from './api/projects';
 import ConversationControls from './components/companion/ConversationControls';
 import TaskPanel from './components/companion/TaskPanel';
-import LegacyExperts from './components/companion/LegacyExperts';
 import { companionApi, type Project } from './api/companion';
 import { useActivityStore } from './stores/activityStore';
 import { OPEN_ACTIVITY_RUN_EVENT } from './components/reply/ReplyFooter';
@@ -52,6 +51,7 @@ import { resolveSection, type SettingsSectionId } from './components/settings/se
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
+import { sideChatField, type SendOpts } from './lib/quote';
 import { threadDisplayTitle, renameThread, applyGeneratedTitle, firstMessageMayRetitle } from './lib/threadTitles';
 import ConversationHeader from './components/conversation/ConversationHeader';
 import { useConversationIndex } from './hooks/useConversationIndex';
@@ -60,7 +60,6 @@ import ConversationStage from './components/conversation/ConversationStage';
 import ScheduledPage from './components/scheduled/ScheduledPage';
 import { useWaiting } from './hooks/useWaiting';
 import { useScheduledAttention } from './hooks/useScheduledAttention';
-import { request } from './api/client';
 
 interface ArslanThread {
   id: string;
@@ -85,11 +84,6 @@ export default function App() {
   // INB5: what is waiting on you, counted once by the server, for the badge on Progress (the Inbox and its badge are gone).
   const waiting = useWaiting();
   const scheduledAttention = useScheduledAttention(waiting.scheduled);
-  const [legacyExperts, setLegacyExperts] = useState(0);
-  useEffect(() => {
-    request<{ experts: { converted: boolean }[] }>('/experts/legacy')
-      .then((body) => setLegacyExperts(body.experts.filter((e) => !e.converted).length)).catch(() => {});
-  }, []);
 
   const [activeSection, setActiveSection] = useState<Section>('arslan');
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSectionId | string | undefined>();
@@ -290,7 +284,7 @@ export default function App() {
   }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
-  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => {
+  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: SendOpts) => {
     // display = session-only echo for the sent bubble (image thumbnails / doc chips);
     // only text-bearing attachments ride to the backend as attached_context below.
     useArslanStore.getState().addUserMessage(text, attached?.display);
@@ -303,6 +297,8 @@ export default function App() {
       // Real image blocks, not text. They participate in THIS turn only
       // (decision ③A) — history keeps a "[图片:name]" placeholder.
       ...(attached?.images?.length ? { images: attached.images } : {}),
+      // SIDE-2 follow-up (PR 952): a quote brought back from this side chat is in it.
+      ...sideChatField(opts),
     });
   }, [wsSend]);
 
@@ -633,8 +629,6 @@ export default function App() {
     setThreads(old => old.map(thread => thread.id === conversationId ? { ...thread, archived: false } : thread));
     selectConversation(conversationId);
   }
-  // 0.1.44/0.1.48: former experts can be turned into skills; the tab shows only while any remain.
-  const experts = legacyExperts > 0 ? <LegacyExperts /> : null;
 
 
 
@@ -808,7 +802,6 @@ export default function App() {
               // first is for the window before a primary is assigned, not a
               // guess about which one runs.
               <Capabilities
-                experts={experts}
                 provider={
                   (providerConfigs.find((c) => c.is_primary) ?? providerConfigs[0])?.provider
                 }

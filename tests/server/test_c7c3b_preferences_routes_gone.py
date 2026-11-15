@@ -7,8 +7,6 @@ GONE = {
     ("delete", "/api/v1/spawns/{spawn_id}/preferences"),
 }
 STAYS = {
-    ("get", "/api/v1/spawns"),
-    ("put", "/api/v1/spawns/{spawn_id}/equipment"),
     ("get", "/api/v1/memory/entries"),
     ("delete", "/api/v1/memory/entries/{entry_id}"),
 }

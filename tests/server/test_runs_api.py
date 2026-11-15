@@ -3,13 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from server.db.models import Run, RunEvaluation, RunStep, Spawn
-
-
-def _add_spawns(db, *ids: int) -> None:
-    # runs.spawn_id is a foreign key, and the tests' engines enforce it: the spawn comes first.
-    for sid in ids:
-        db.add(Spawn(id=sid, name=f"S{sid}", domain_category="g", system_prompt="sp"))
+from server.db.models import Run, RunEvaluation, RunStep
 
 
 async def test_get_run_returns_steps_and_eval(client):
@@ -65,7 +59,6 @@ async def test_get_missing_run_404(client):
 
 async def test_list_runs_returns_recent_desc_and_filters(client):
     async with client.db_maker() as db:
-        _add_spawns(db, 1, 2)
         await db.flush()
         for i, sid in enumerate([1, 1, 2]):
             db.add(Run(conversation_id="c", spawn_id=sid, spawn_name=f"S{sid}",
@@ -90,7 +83,6 @@ async def test_list_runs_returns_recent_desc_and_filters(client):
 
 async def test_list_runs_filters_by_conversation_id(client):
     async with client.db_maker() as db:
-        _add_spawns(db, 1)
         await db.flush()
         for conv, msg in [("c1", "a"), ("c1", "b"), ("c2", "c")]:
             db.add(Run(conversation_id=conv, spawn_id=1, spawn_name="S1",
@@ -112,7 +104,6 @@ async def test_list_runs_filters_by_conversation_id(client):
 
 async def test_list_runs_combines_spawn_and_conversation_filters(client):
     async with client.db_maker() as db:
-        _add_spawns(db, 1, 2)
         await db.flush()
         rows = [("c1", 1, "match"), ("c1", 2, "wrong-spawn"), ("c2", 1, "wrong-conv")]
         for conv, sid, msg in rows:
@@ -130,7 +121,6 @@ async def test_list_runs_excludes_replay_runs(client):
     """FIX 5 (E2): GET /runs lists only kind='live' runs; replay runs are the gate's internal
     two-arm evidence and never surface in the list. get_run detail stays reachable for them."""
     async with client.db_maker() as db:
-        _add_spawns(db, 1)
         await db.flush()
         live = Run(conversation_id="c", spawn_id=1, spawn_name="S1", user_message="live task",
                    status="scored", kind="live", epoch=1, task_tokens=0, total_ms=100,

@@ -6,11 +6,8 @@ Contract under test:
   - migration _0029 creates the table idempotently (repo re-applies every boot);
   - usage_ledger.scope(...) opens usage_sink.collecting() and, on exit, writes ONE
     ledger row PER (model, provider) bucket (estimate paths stay honest);
-  - a ledger/DB failure NEVER breaks the wrapped business call;
-  - NESTING SAFETY: the judge task is created (via schedule_scoring) INSIDE
-    a Run's active collecting scope and inherits its contextvars — the
-    judge's own scope() must open a FRESH bucket (stealing nothing, seeing nothing),
-    so the dispatch Run's usage is neither diminished nor is the judge row inflated.
+  - a ledger/DB failure NEVER breaks the wrapped business call.
+(The judge capture point and its nesting test went with run scoring in C7c-5a.)
 """
 
 import pytest
@@ -21,7 +18,7 @@ from arslan.llm import usage_sink
 from arslan.models import LLMResponse
 from server.db import session as db_session
 from server.db.models import Base, Run, UsageLedger
-from server.services import run_recorder, usage_ledger
+from server.services import usage_ledger
 
 
 @pytest.fixture
@@ -31,7 +28,6 @@ async def memdb(monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda run_id: None)
     yield Session
     await engine.dispose()
 
@@ -225,43 +221,6 @@ async def test_answer_path_writes_host_run_without_duplicate_ledger(memdb, monke
 # ---------------------------------------------------------------------------
 # Capture point: router (route())
 # ---------------------------------------------------------------------------
-
-
-
-# ---------------------------------------------------------------------------
-# Capture point: judge (run_eval_service.score())
-# ---------------------------------------------------------------------------
-
-_JUDGE_JSON = ('{"dimensions": {"task_completion": {"status": "yes", "score": 8, '
-               '"comment": "ok"}}, "overall": {"score": 8.0, "badge": "good"}}')
-
-
-async def test_judge_score_writes_judge_row(memdb, monkeypatch):
-    from server.services import run_eval_service
-
-    async with memdb() as db:
-        run = Run(conversation_id="c-j", user_message="do it", spawn_name="Mermer")
-        db.add(run)
-        await db.commit()
-        await db.refresh(run)
-        run_id = run.id
-
-    async def fake_build_adapter(role):
-        assert role == "judge"
-        return _ReportingAdapter(content=_JUDGE_JSON, tokens_in=70, tokens_out=25)
-
-    monkeypatch.setattr(run_eval_service, "build_adapter", fake_build_adapter)
-    await run_eval_service.score(run_id)
-
-    async with memdb() as db:
-        run = await db.get(Run, run_id)
-    assert run.status == "scored"
-    rows = await _rows(memdb)
-    assert len(rows) == 1
-    r = rows[0]
-    assert (r.scope, r.conversation_id, r.run_id) == ("judge", "c-j", run_id)
-    assert (r.tokens_in, r.tokens_out, r.tokens_total) == (70, 25, 95)
-
 
 
 

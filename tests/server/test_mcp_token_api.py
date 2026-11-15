@@ -15,7 +15,6 @@ async def local_client(tmp_path, monkeypatch):
     # loopback client so _is_direct_localhost passes.
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    monkeypatch.setenv("ARSLAN_TEST_ROUTES", "1")
     import server.config as cfg
     importlib.reload(cfg)
 
@@ -52,7 +51,6 @@ async def remote_client(tmp_path, monkeypatch):
     non-loopback client address — exercises the localhost gate's 403 path."""
     monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    monkeypatch.setenv("ARSLAN_TEST_ROUTES", "1")
     import server.config as cfg
     importlib.reload(cfg)
 

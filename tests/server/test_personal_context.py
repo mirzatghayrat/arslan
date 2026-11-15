@@ -25,6 +25,13 @@ async def memories(execution_db):
 
 
 async def create(content, *, scope="global", scope_id=None, **kwargs):
+    if scope == "expert":
+        # C7c-4: no new expert-scope writes; a leftover entry (old data) is put in that scope directly.
+        entry = await create(content, **kwargs)
+        async with repository() as repo:
+            await repo.db.execute(update(MemoryEntry).where(MemoryEntry.id == entry["id"]).values(
+                scope_kind="expert", scope_id=scope_id))
+        return entry
     async with repository() as repo:
         return await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind=scope, id=scope_id),
                                              **kwargs), MemoryActor(origin="user"))

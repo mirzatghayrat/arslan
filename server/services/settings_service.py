@@ -67,7 +67,7 @@ _PLAIN_KEYS = (
                "sandbox_trusted_devices",
                # NET-a (v0.1.64): whether the sandbox's proxy judges each site ("true" | "false"; default on), and the
                # sites every sandboxed command may reach, a JSON list of hosts (default empty), checked and kept in one
-               # spelling when PUT /settings saves it (SettingsIn). No UI yet (NET-b).
+               # spelling when PUT /settings saves it (SettingsIn). NET-b: Settings › Sandbox › Sites edits it (SandboxNetworkPanel).
                "sandbox_net_judgement", "sandbox_allowed_sites",
                "voice_input_locale", "voice_mode", "voice_endpoint_silence_ms")
 # Integer keys, handled like _PLAIN_KEYS but round-tripped through int() on read.

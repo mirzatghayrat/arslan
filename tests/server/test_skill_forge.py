@@ -64,7 +64,8 @@ async def test_register_makes_a_real_assignable_skill_marked_as_the_users(maker)
         pack = await s.get(SkillPack, "my-skill")
         assert (pack.tier, pack.status, pack.enabled, pack.body) == ("safe", "registered", True, _GOOD_BODY)
         assert pack.category == skill_forge.AUTHORED and pack.source_id is None
-    await registry_service.assert_assignable("skill", "my-skill")
+    menu = await registry_service.safe_menu()
+    assert "my-skill" in {k["key"] for k in menu["skills"]}
 
 
 @pytest.mark.asyncio
