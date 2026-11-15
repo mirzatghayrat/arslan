@@ -645,13 +645,33 @@ async def _quick_tools() -> list[dict]:
     return [tool for tool in await _every_tool() if tool["key"] in QUICK_TOOLS]
 
 
-async def _stored_kind(conversation_id: str) -> str | None:
-    """What the conversation is, as stored (0071): `quick`, `chat`, or None (worked out on each read)."""
+#: SIDE-1 (v0.1.64): a side chat's turns are told what it is; the system prompt stays byte-stable (K3).
+SIDE_NOTE = ("This is a side chat beside one of the user's conversations: you see that conversation up to where the "
+             "user branched, then this side chat, and nothing said here reaches it unless the user brings it back. "
+             "Here you can only read files, list folders, search files, search the web and read a page: no commands, "
+             "no file changes, nothing saved to memory, no background work or schedules. For any of those, the user asks in the "
+             "main conversation.")
+
+
+async def _side_tools() -> list[dict]:
+    """SIDE-1: what a side chat is shown, and all it may run: `side_chats.TOOLS`, each only while its traits say it
+    reads, with no find_tools or use_tool."""
+    from server.registry.tool_defs import TRAITS
+    from server.services import side_chats
+    return [tool for tool in await _every_tool()
+            if tool["key"] in side_chats.TOOLS and TRAITS[tool["key"]].effect == "read"]
+
+
+async def _stored_kind(conversation_id: str) -> tuple[str | None, bool | None]:
+    """What the conversation is, as stored (0071): `quick`, `chat`, `side`, or None (worked out on each read); and, for
+    a side chat, whether it started as having read outside content (0101; NULL counts as yes)."""
     from sqlalchemy import select
 
     from server.db.companion_models import ConversationContext
     async with db_session.AsyncSessionLocal() as db:
-        return await db.scalar(select(ConversationContext.kind).where(ConversationContext.id == conversation_id))
+        row = (await db.execute(select(ConversationContext.kind, ConversationContext.outside_at_start).where(
+            ConversationContext.id == conversation_id))).first()
+    return (row.kind, row.outside_at_start) if row else (None, None)
 
 
 async def _with_project_card(facts: str) -> tuple[str, str]:
@@ -838,19 +858,23 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
         # so are the project card and a note in view that came from a run off the list.
         # NET-a (Codex round 1 F5): a marked rolling summary is outside content too; the turn records the sites it
         # names, and those of the text OCR read off a refused picture (`ocr_text`, the retry below).
+        # SIDE-1 (card, rule 3): every turn of a side chat that started marked starts marked.
         summary = untrusted.outside_summary(ctx["summary"])
         with request_policy.prompt_cache(long=True), untrusted.carried(
-                bool(attached_context or images or summary) or rule_files > 0,
+                bool(attached_context or images or summary) or rule_files > 0
+                or (side and outside_at_start is not False),
                 text="\n".join(filter(None, (attached_context, turn.rules, summary, ocr_text)))), \
                 untrusted.off_list_in(bool(kb_block) or bool(card) or traced):
             return await _run_answer(user_content)
 
     try:
         # Q1b (#486 review, G1): one the phone made with no kind stored is read as quick (phone_ids.kind_of).
-        quick = phone_ids.kind_of(conversation_id, await _stored_kind(conversation_id)) == "quick"
-        narrow = quick
+        # SIDE-1: a side chat, by its row or a `side-` id with none, gets its five read-only tools whatever it is sent.
+        stored, outside_at_start = await _stored_kind(conversation_id)
+        kind = phone_ids.kind_of(conversation_id, stored)
+        quick, side, narrow = kind == "quick", kind == "side", kind == "quick"
     except Exception:  # noqa: BLE001 — an unreadable kind gets the four tools, never every tool (Q1 card, rule 4)
-        quick, narrow = False, True
+        quick, side, narrow, outside_at_start = False, False, True, None
 
     async def _run_answer(user_content):
         return await tool_loop.run_native(
@@ -859,8 +883,8 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
             history=ctx["history"][:-1],
             emit=emit,
             on_chunk=lambda c: emit({"type": "stream_chunk", "content": c}),
-            resolve_tools=_quick_tools if narrow else _arslan_tools,
-            resolve_callable=_quick_tools if narrow else _callable_tools,
+            resolve_tools=_side_tools if side else _quick_tools if narrow else _arslan_tools,
+            resolve_callable=_side_tools if side else _quick_tools if narrow else _callable_tools,
             allow_escalation=False,
             confirm_command=confirm_command, confirm_workspace_write=confirm_workspace_write,
                              confirm_schedule=confirm_schedule,
@@ -872,7 +896,8 @@ async def _answer_dispatch(conversation_id: str, user_message: str, emit: EventS
             # has to be passed rather than inferred.
             has_images=bool(images),
             # A narrowed turn that isn't quick (its kind was unreadable) gets no phone note: attach_file isn't one of the four.
-            turn_notes=[*([QUICK_NOTE] if quick else [PHONE_NOTE] if source == "phone" and not narrow else []),
+            turn_notes=[*([SIDE_NOTE] if side else [QUICK_NOTE] if quick else
+                          [PHONE_NOTE] if source == "phone" and not narrow else []),
                         *([SCHEDULED_NOTE] if command_gate.fire_runs_commands(conversation_id) else
                           [UNATTENDED_NOTE] if command_gate._nobody_to_ask(confirm_command) else [])] or None,
             # K9b: only a turn that holds the turn lock with the box open (handle_user_message, a resumed

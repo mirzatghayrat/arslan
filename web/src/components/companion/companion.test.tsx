@@ -267,3 +267,82 @@ describe("temporary conversation", () => {
     expect(screen.getByLabelText("companion.temporary")).toBeDisabled();
   });
 });
+
+// SIDE-1 review 4: opening a side chat or a sub-session gives the parent its first settings row, so the version the
+// dialog read is no longer current. The fake server below holds one row and refuses a PUT whose expected_version
+// is not its current one, as server/api/companion.py does.
+describe("conversation settings that meet a newer version", () => {
+  const other: Project = { ...project, id: "p-2", name: "Other project" };
+  function fakeServer(firstPut?: Response) {
+    let row: ConversationContext = { ...context };
+    const puts: Record<string, unknown>[] = [];
+    let gets = 0;
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      if ((init?.method ?? "GET") === "GET") { gets++; return new Response(JSON.stringify(row), { status: 200 }); }
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      puts.push(body);
+      if (firstPut && puts.length === 1) return firstPut;
+      if (body.expected_version !== row.version)
+        return new Response(JSON.stringify({ detail: { code: "conversation_version_conflict" } }), { status: 409 });
+      const { expected_version: _expected, ...settings } = body;
+      void _expected;
+      row = { ...row, ...settings, version: row.version + 1 } as ConversationContext;
+      return new Response(JSON.stringify(row), { status: 200 });
+    });
+    return { fetch, puts, gets: () => gets, row: () => row, moveOn: (changes: Partial<ConversationContext>) => {
+      row = { ...row, ...changes, version: row.version + 1 };
+    } };
+  }
+  async function openSettings(changed = vi.fn()) {
+    render(<ConversationControls conversationId="new" empty running={false} onChanged={changed} />);
+    await waitFor(() => expect(screen.getByText("companion.conversationSettings")).not.toBeDisabled());
+    fireEvent.click(screen.getByText("companion.conversationSettings"));
+    return changed;
+  }
+
+  it("reads the current version on a 409, keeps the draft, and the next save goes through", async () => {
+    const server = fakeServer();
+    const changed = await openSettings();
+    server.moveOn({});                                            // side_chats.create: the default row, version 1
+    fireEvent.click(screen.getByLabelText("companion.noLearning"));
+    fireEvent.click(screen.getByText("companion.save"));
+    expect(await within(screen.getByTestId("companion-dialog")).findByRole("alert")).toHaveTextContent("companion.conflict");
+    expect(server.gets()).toBe(2);
+    expect(screen.getByLabelText("companion.noLearning")).toBeChecked();
+    fireEvent.click(screen.getByText("companion.save"));
+    await waitFor(() => expect(screen.queryByTestId("companion-dialog")).toBeNull());
+    expect(server.puts.map(body => body.expected_version)).toEqual([0, 1]);
+    expect(server.puts[1]).toMatchObject({ no_learning: true });
+    expect(changed).toHaveBeenLastCalledWith({ ...context, no_learning: true, version: 2 });
+    expect(screen.getByText("companion.noLearning")).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps what the user changed and takes what changed elsewhere for the rest", async () => {
+    vi.spyOn(companionApi, "projects").mockResolvedValue([project, other]);
+    const server = fakeServer();
+    await openSettings();
+    server.moveOn({ project_id: "p-2", no_learning: true });     // set from another window meanwhile
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "p-1" } });
+    fireEvent.click(screen.getByText("companion.save"));
+    expect(await within(screen.getByTestId("companion-dialog")).findByRole("alert")).toHaveTextContent("companion.conflict");
+    expect(screen.getByRole("combobox")).toHaveValue("p-1");
+    expect(screen.getByLabelText("companion.noLearning")).toBeChecked();
+    fireEvent.click(screen.getByText("companion.save"));
+    await waitFor(() => expect(screen.queryByTestId("companion-dialog")).toBeNull());
+    expect(server.puts[1]).toMatchObject({ expected_version: 1, project_id: "p-1", no_learning: true, no_memory: false });
+  });
+
+  it("on any other failure shows it and reads nothing again, as before", async () => {
+    const server = fakeServer(new Response(JSON.stringify({ detail: "boom" }), { status: 500 }));
+    await openSettings();
+    fireEvent.click(screen.getByLabelText("companion.noMemory"));
+    fireEvent.click(screen.getByText("companion.save"));
+    expect(await within(screen.getByTestId("companion-dialog")).findByRole("alert")).toHaveTextContent("companion.failure");
+    expect(server.gets()).toBe(1);
+    expect(screen.getByLabelText("companion.noMemory")).toBeChecked();
+    fireEvent.click(screen.getByText("companion.save"));
+    await waitFor(() => expect(screen.queryByTestId("companion-dialog")).toBeNull());
+    expect(server.puts.map(body => body.expected_version)).toEqual([0, 0]);
+  });
+});
