@@ -7,7 +7,7 @@
 | Lane | ⑤CAP; the measurement is ③Hands' (CLS runner owner). |
 | Order | After CLS (#892, #937 on main), S5a, and CAP11a step a. Step 0 before any building. |
 | PRs | Step 0 plus eight slices (below), each ≤ about 800 product lines. Every slice merges dark. |
-| Review | effort=max for slices 1-6 (permissions, hard rules, classifier, a migration); high for 7, 8 and step 0. Codex only for what a max review can't cover (README §1.3). |
+| Review | effort=max for slices 1-6 (permissions, hard rules, classifier, a migration); high for 7 and 8; step 0's script reviewed by ⓪Plan. Codex only for what a max review can't cover (README §1.3). |
 
 ## Hard requirements (user, 2026-11-15)
 
@@ -18,8 +18,9 @@
    is a send and stays the user's. Arslan can't decide that reliably today, so **MCP stays out of auto in v0.1.64**.
 4. **git push** only to a remote that existed before this turn (same name, same push URL; none added or re-pointed in
    the turn), only to a branch that is not the remote's default, and never a force push.
-5. **Step 0:** a read-only count of the cards the user actually saw on their Mac, before building. Under 30% that auto
-   could answer → option (b), dropped from v0.1.64.
+5. **Step 0:** a read-only count of the cards the user actually saw on their Mac, before building. The lower bound
+   decides: 30% or more → build; under 30% with the upper bound at 30% or more → the user decides; both under 30% →
+   option (b), dropped from v0.1.64.
 6. **Pass lines** are re-set first for the new scope, then measured on real cards from the user's Mac, and never changed
    after.
 7. **A model "no", an error or a time-out shows the ordinary card.** Never a silent refusal.
@@ -98,7 +99,7 @@ the runner, so it can't loosen what a mode answers.
 
 | # | PR | Lines | Review |
 |---|---|---|---|
-| 0 | Step 0: a read-only count of the cards the user saw (90 days of the ledger), classified against the table. Prints counts only; the user runs it on their Mac. The upper bound decides: under 30% → option (b). | ~120 (dev script) | high |
+| 0 | Step 0: a read-only count of the cards the user saw (the last 42 days of `approval_events`, rows decided by the user, expired or away), bucketed with Arslan's real `hard_rules` / `terminal_policy` tables. A user-run script outside the repo, reviewed by ⓪Plan; it opens the database read-only and prints counts only. The lower bound decides, as in the decision above. Not a repo PR. | 0 (user-run script) | ⓪Plan review |
 | 1 | Auto in MODES; fallbacks, including `auto_off` and `auto_unmeasured`; `offered()`; the agreement key; PUT 409s; migration 0102. No review call. | ~250 | max |
 | 2 | The hard_rules table: `REVIEWER_MAY_AUTO`, `reviewer_may_answer`, the git-push form and target readers, the open-app form reader, meta-tests, the AST caller pin. | ~350 | max |
 | 3 | Gate d rewritten in `classifier.pregate`; `cls-2`. Lands with ③Hands' runner schema PR. | ~250 | max |
@@ -117,7 +118,7 @@ Every slice merges with `MEASURED` empty: the menu item is hidden, PUT `auto` re
 only when risky" (`auto_unmeasured`), and the classifier answers "off" anyway. No feature flag.
 
 **Before auto is offered**, all of:
-1. Step 0 shows 30% or more.
+1. Step 0's lower bound shows 30% or more, or the user chose to build after seeing both bounds.
 2. The user re-sets the pass lines for the widened scope.
 3. ③Hands measures on real cards from the user's Mac (the set stays on the Mac) with the schema below, and the MEASURED
    PR records a run that passes `passes()` for the configured provider, endpoint, model and `cls-2`.
@@ -165,7 +166,7 @@ without outside content, targets in and out of scope), MCP (all expected "ask").
   push time; `_widened` calling `reviewer_may_answer`; a never key moved into the table; `outside_seen` defaulting to
   false; `no_sandbox` passing any kind; `reviewable` defaulting to true; the review placed before `_standing`; an
   exception turned into an allow. Each turns a named test red.
-- **Probe:** step 0's count runs through `scripts/dev/probe.sh`, reads the ledger only, and prints counts only.
+- **Probe:** step 0's count is run by the user in their own Terminal (it refuses a Claude session's shell), opens the database with SQLite `mode=ro`, and prints counts only. Its git-push and MCP buckets are upper bounds: whether a remote existed before the turn, or whether an MCP call sent anything outward, can't be read back from the ledger. Its lower bound also slightly overcounts open-app and the outside card, whose narrower conditions above aren't all recorded in the ledger.
 
 ## External evidence
 
