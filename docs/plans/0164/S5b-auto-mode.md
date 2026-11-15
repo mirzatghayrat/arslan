@@ -3,11 +3,33 @@
 | | |
 |---|---|
 | Decided | The user decided (2026-11-15, relayed by ⓪Plan): option (c), auto widened to what mainstream auto modes answer, only once the classifier passes on real cards; with the conditions in "Hard requirements" below; conditions 2 and 3 revised the same day toward mainstream (outside content narrows to `outside_only` hosts; MCP in scope, judged by Arslan's own rules). Q2-Q9 decided the same day (see "Decisions"). |
-| Version | v0.1.64 (must), **subject to step 0**: if auto could answer under 30% of the cards the user actually saw, S5b becomes option (b) and leaves v0.1.64. |
+| Version | **Deferred to v0.1.65 by step 0 (2026-11-15).** Auto could have answered 6.6% of the cards the user saw (lower and upper bound alike), under the 30% line, so S5b is option (b) and left v0.1.64. See "Step 0 result". The design below is kept for v0.1.65. |
 | Lane | ⑤CAP; the measurement is ③Hands' (CLS runner owner). |
 | Order | After CLS (#892, #937 on main), S5a, and CAP11a step a. Step 0 before any building. |
 | PRs | Step 0 plus eight slices (below), each ≤ about 800 product lines. Every slice merges dark. |
 | Review | effort=max for slices 1-6 (permissions, hard rules, classifier, a migration); high for 7 and 8; step 0's script reviewed by ⓪Plan. Codex only for what a max review can't cover (README §1.3). |
+
+## Step 0 result (2026-11-15)
+
+The user ran the read-only count on their Mac, on main at 978b4e082, over the last 42 days: 196 cards a person
+answered (or that expired or went unanswered).
+
+| Bucket | Cards | Share |
+|---|---|---|
+| Auto's scope, lower bound (outside card 9, sandboxed command rule 4) | 13 | 6.6% |
+| Auto's scope, upper bound (git-push 0, MCP 0 added) | 13 | 6.6% |
+| Never list (never-auto kinds 25, never rules 62, MCP destructive 7) | 94 | 48.0% |
+| From a job or a sub-session (no user words for gate a) | 69 | 35.2% |
+| Other (folder, screen, app, schedule, writes) | 20 | 10.2% |
+
+Both bounds are under 30%, so by hard requirement 5 S5b is option (b) and moves to v0.1.65. The count ran before the
+network card moved into the upper bound; the never-auto kinds are 25 cards in all, so even counting every one the
+upper bound would be at most 19.4%, still under the line. The three narrowing questions ("outside" after outside
+content, open-app, MCP) are left open for v0.1.65.
+
+**For v0.1.65:** 35% of the cards come from jobs and sub-sessions, which gate a never reviews because they carry no
+words of the user's. The largest group auto could reach is there, and in the never rules (62), not in the widened
+table.
 
 ## Hard requirements (user, 2026-11-15)
 
@@ -105,14 +127,14 @@ the runner, so it can't loosen what a mode answers.
 | Ledger column (Q5) | `approval_events.reviewer.outside_seen` in the existing JSON column; no new column. |
 | Phone and Island (Q6) | No auto switch or off switch there in v0.1.64 (it would change a Bridge frame). |
 | Reason on the card (Q8) | Ledger only. |
-| Migration | 0102: `conversation_contexts.auto_since` (nullable, add-only). |
+| Migration | `conversation_contexts.auto_since` (nullable, add-only). 0102 was reserved and is released (S5b deferred); v0.1.65 takes the next free number then. |
 
 ## Slices
 
 | # | PR | Lines | Review |
 |---|---|---|---|
 | 0 | Step 0: a read-only count of the cards the user saw (the last 42 days of `approval_events`, rows decided by the user, expired or away), bucketed with Arslan's real `hard_rules` / `terminal_policy` tables. A user-run script outside the repo, reviewed by ⓪Plan; it opens the database read-only and prints counts only. The lower bound decides, as in the decision above. Not a repo PR. | 0 (user-run script) | ⓪Plan review |
-| 1 | Auto in MODES; fallbacks, including `auto_off` and `auto_unmeasured`; `offered()`; the agreement key; PUT 409s; migration 0102. No review call. | ~250 | max |
+| 1 | Auto in MODES; fallbacks, including `auto_off` and `auto_unmeasured`; `offered()`; the agreement key; PUT 409s; the `auto_since` migration. No review call. | ~250 | max |
 | 2 | The hard_rules table: `REVIEWER_MAY_AUTO`, `reviewer_may_answer`, the git-push form and target readers, the open-app form reader, the outside-content host check (`outside_only`, unreadable), the MCP outward/destructive reader and the `mcp_trusted` read, meta-tests, the AST caller pin. | ~450 | max |
 | 3 | Gate d rewritten in `classifier.pregate`; `cls-2`. Lands with ③Hands' runner schema PR. | ~250 | max |
 | 4 | Gate a source: the turn's words and the remote snapshot, `Job.user_words`, `job_kind`, canary and AST tests. | ~220 | max |
