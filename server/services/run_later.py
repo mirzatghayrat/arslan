@@ -26,8 +26,12 @@ At home (`HOME_NAMES`, `SYSTEM_NAMES`, `home_filters`): the folders launchd load
 store, anchored at the user's home (and at /Library), not at any depth. Every profile holds them: the commands and
 MCP profiles always, the outside floor with the run-later hold. They are held by path: the literal spelling and its
 real path, so a LaunchAgents that is a link elsewhere is held where launchd reads it, and the folders above them up
-to home by literal, so a rename can't move one aside and a fresh one in. An indirect writer (`git maintenance
-start`, `brew services start`) is refused there with no reader row. Residuals: with the sandbox off or unavailable
+to home by literal, so a rename can't move one aside and a fresh one in. The indirect writers named here (`git
+maintenance start` and `register`, `brew services start` and `restart`) have reader rows
+(`terminal_policy.run_later_targets`, `LAUNCH_AGENTS`), so wherever they would run outside the sandbox they get the
+once-only, never-auto run-later card, which says what keeps starting at every login, and only the user's click on it
+lifts the hold; in the sandbox, and under the outside floor without that click, the kernel refuses the write.
+Residuals: with the sandbox off or unavailable
 only the reader guards them; other indirect writers (an installer, `pm2 startup`, an app's own SMAppService) get no
 card there; /Library/LaunchDaemons needs root, which `sudo` forbids anyway. The paths are literal; another letter
 case was refused too on a case-insensitive volume, also for a fresh `mkdir ~/Library/launchagents` (measured on

@@ -106,6 +106,8 @@ class Confirmations:
         pushed = await _pushed_ci(shell, cwd) if "git-push" in rules and not remote_host else []     # HR-2b
         outcome = (card_purpose.consequence(shell, lang)
                    if {"publish", "secret-write"} & set(rules) and not remote_host else "")
+        # a LaunchAgent's indirect writer (`brew services start`): what keeps starting at every login leads the card
+        outcome = outcome or (card_purpose.launch_agent(run_later, lang) if run_later and not remote_host else "")
         net = " It will use the network, this time." if network else ""      # the model's own text keeps the command
         from server.services import delete_to_trash
         deletes = delete_to_trash.card_note(delete)       # SMART-8: how allow deletes, in the model's English text
@@ -218,7 +220,8 @@ def _with_ci(frame: dict, lines: list[str]) -> None:
 
 def with_consequence(frame: dict, line: str) -> None:
     """The deploy rule's condition (⓪Plan, 2026-11-14): a publish, deploy or secret-write card states what happens
-    (`card_purpose.consequence`). No new frame key: it leads the Mac card's touches row and the phone's `reason`."""
+    (`card_purpose.consequence`); so does a run-later card for a LaunchAgent (`card_purpose.launch_agent`). No new
+    frame key: it leads the Mac card's touches row and the phone's `reason`."""
     if line:
         frame["summary"] = {**frame["summary"], "touches": [line, *frame["summary"].get("touches", [])]}
         frame["reason"] = "; ".join([line, *([frame["reason"]] if frame.get("reason") else [])])
