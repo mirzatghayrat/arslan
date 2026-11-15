@@ -195,7 +195,11 @@ def _no_progress_receipt(state: TurnState, mode: StepMode) -> bool:
 
 def _receipts(goal, host) -> dict[str, str]:
     """L7-5b: each `check:` line's last host run, as the blocked reply names it: the exit code and the first line of
-    what it printed to stderr (else stdout, else the refusal's error), at most 200 characters."""
+    what it printed to stderr (else stdout, else the refusal's error), at most 200 characters. The reply reaches chat
+    and the history, so that line is defanged as tool output is (`_strip_injection`), and a line that looks like a
+    credential is withheld, as a task's earlier output is (`contains_credential`, `progress_for_current`)."""
+    from arslan.companion.content_policy import contains_credential
+    from server.orchestrator.untrusted import _strip_injection
     out = {}
     for check in goal.checks:
         runs = [run["result"] for run in (host.runs if host else ()) if run.get("args", {}).get("argv") == list(
@@ -205,7 +209,9 @@ def _receipts(goal, host) -> dict[str, str]:
         result = runs[-1]
         text = next((str(result[key]) for key in ("stderr", "stdout", "error") if str(result.get(key) or "").strip()),
                     "")
-        first = next((line.strip() for line in text.splitlines() if line.strip()), "")[:200]
+        first = _strip_injection(next((line.strip() for line in text.splitlines() if line.strip()), ""))
+        # Screened whole, before the cut: a token cut at 200 characters might no longer match.
+        first = "withheld: it looks like a secret" if contains_credential(first) else first[:200]
         code = result.get("exit_code")
         parts = [f"exit {code}"] * (type(code) is int) + [first] * bool(first)
         if parts:
