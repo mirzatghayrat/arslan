@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 import server.db.session as db_session
 from server.db.models import Base
 from server.registry.service import (
-    NotAssignableError,
-    assert_assignable,
     safe_menu,
     skill_is_assignable,
     toolset_is_assignable,
@@ -56,6 +54,13 @@ def test_toolset_predicate_requires_wired_tool():
 
 # ── against the seeded registry (real catalog) ────────────────────────────────
 
+# C7c-5a: the write gate (assert_assignable) went with its last write path; the same
+# honesty rules are checked on the safe menu, which applies them in its query.
+async def _menu_keys() -> tuple[set[str], set[str]]:
+    menu = await safe_menu()
+    return {t["key"] for t in menu["toolsets"]}, {s["key"] for s in menu["skills"]}
+
+
 async def test_hollow_skill_not_equippable(seeded_registry):
     # Every seeded safe skill now carries a real body (curation pass), so simulate a
     # hollow row (e.g. a stale import) — bodyless skills must still be refused.
@@ -65,24 +70,25 @@ async def test_hollow_skill_not_equippable(seeded_registry):
         s.add(SkillPack(key="hollow-skill", name="hollow", category="general",
                         description="no body", tier="safe", status="registered"))
         await s.commit()
-    with pytest.raises(NotAssignableError, match="catalog-only"):
-        await assert_assignable("skill", "hollow-skill")
+    _, skills = await _menu_keys()
+    assert "hollow-skill" not in skills
 
 
 async def test_real_skill_still_equippable(seeded_registry):
-    await assert_assignable("skill", "designed-html-report")  # real body → no raise
+    _, skills = await _menu_keys()
+    assert "designed-html-report" in skills  # real body
 
 
 async def test_unwired_toolset_not_equippable(seeded_registry):
     # 'file_operations' is safe|registered but none of its tools are wired yet
     # (wire-candidate) — until then it's decoration, refuse.
-    with pytest.raises(NotAssignableError, match="no wired tools"):
-        await assert_assignable("toolset", "file_operations")
+    toolsets, _ = await _menu_keys()
+    assert "file_operations" not in toolsets
 
 
 async def test_wired_toolset_still_equippable(seeded_registry):
-    for key in ("web_search_scraping", "charting"):
-        await assert_assignable("toolset", key)
+    toolsets, _ = await _menu_keys()
+    assert {"web_search_scraping", "charting"} <= toolsets
 
 
 async def test_safe_menu_lists_only_functional(seeded_registry):

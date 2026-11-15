@@ -8,20 +8,14 @@ C7c-4 (v0.1.64).
 """
 import importlib.util
 
-from server.services import spawn_service
-
 AUTH: dict[str, str] = {}
 
 
 def test_the_chain_is_gone():
+    # C7c-5a: spawn_service itself went (its last user was the _test/seed_spawn route).
     for module in ("server.api.create", "server.services.spawn_drafter",
-                   "server.services.equipment_service"):
+                   "server.services.equipment_service", "server.services.spawn_service"):
         assert importlib.util.find_spec(module) is None, module
-    for name in ("create_from_draft", "emit_skillpack", "reflect_equipment",
-                 "create_spawn_unique", "build_system_prompt", "normalize_capabilities"):
-        assert not hasattr(spawn_service, name), name
-    # create_spawn stays: the boot seeding in server/main.py uses it.
-    assert hasattr(spawn_service, "create_spawn")
 
 
 async def test_the_create_routes_are_gone_and_a_live_route_answers(client):

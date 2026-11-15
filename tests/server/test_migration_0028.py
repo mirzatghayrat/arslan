@@ -83,7 +83,6 @@ async def test_0028_legacy_run_backfills_epoch_zero():
 async def test_recorder_start_marks_epoch1_live(memdb, monkeypatch):
     from server.services import run_recorder
 
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda _rid: None)
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c1", spawn_id=None, spawn_name="Mermer", user_message="hi")
     async with memdb() as db:
@@ -97,7 +96,6 @@ async def test_recorder_start_marks_epoch1_live(memdb, monkeypatch):
 async def test_recorder_finalize_keeps_epoch1_and_continuation(memdb, monkeypatch):
     from server.services import run_recorder
 
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda _rid: None)
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c1", spawn_id=None, spawn_name="Mermer",
         user_message="继续", continuation=True)

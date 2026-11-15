@@ -44,8 +44,6 @@ async def _seed_spawn(Session) -> int:
 
 
 async def test_finalize_status_override_skips_scoring(memdb, monkeypatch):
-    scheduled: list[int] = []
-    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
     spawn_id = await _seed_spawn(memdb)
 
     rec = await run_recorder.RunRecorder.start(
@@ -59,7 +57,6 @@ async def test_finalize_status_override_skips_scoring(memdb, monkeypatch):
         run = (await db.execute(select(Run).where(Run.id == rec.run_id))).scalar_one()
     assert run.status == "cancelled"
     assert run.kind == "live"
-    assert scheduled == []  # cancelled runs are never judge-scored → never corpus
     # Diagnostics row-completeness contract: overridden runs still finalize fully.
     assert run.ended_at is not None
     assert run.total_ms is not None
@@ -69,8 +66,6 @@ async def test_finalize_is_idempotent(memdb, monkeypatch):
     """Review I1: a cancel landing during a finalize await (post-commit) re-enters
     finalize via the cancel handler. The second call must short-circuit — no duplicated
     RunStep rows, and the already-written terminal status must NOT flip."""
-    scheduled: list[int] = []
-    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
     spawn_id = await _seed_spawn(memdb)
 
     rec = await run_recorder.RunRecorder.start(
@@ -89,7 +84,6 @@ async def test_finalize_is_idempotent(memdb, monkeypatch):
             RunStep.run_id == rec.run_id))).scalars().all()
     assert run.status == "recorded"          # second finalize did not flip the status
     assert len(steps) == 1                   # step rows written exactly once
-    assert scheduled == [rec.run_id]         # scoring scheduled exactly once
 
 
 async def test_precommit_cancel_allows_refinalize(memdb, monkeypatch):
@@ -98,8 +92,6 @@ async def test_precommit_cancel_allows_refinalize(memdb, monkeypatch):
     finalize(status_override='cancelled') runs against the rolled-back state instead
     of short-circuiting (which would rot the row at 'recording' AFTER a run_cancelled
     frame already went out)."""
-    scheduled: list[int] = []
-    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
     spawn_id = await _seed_spawn(memdb)
 
     rec = await run_recorder.RunRecorder.start(
@@ -139,7 +131,6 @@ async def test_precommit_cancel_allows_refinalize(memdb, monkeypatch):
             RunStep.run_id == rec.run_id))).scalars().all()
     assert run.status == "cancelled"     # re-finalize landed, row is not rotting
     assert len(steps) == 1               # first attempt rolled back — no duplicates
-    assert scheduled == []               # cancelled runs are never scored
 
 
 async def test_postcommit_cancel_does_not_refinalize(memdb, monkeypatch):
@@ -147,8 +138,6 @@ async def test_postcommit_cancel_does_not_refinalize(memdb, monkeypatch):
     release the latch — the commit already landed, so a re-entrant
     finalize(status_override='cancelled') would flip a real terminal status, duplicate
     RunStep rows, and let the cancel handler persist a duplicate 已中断 partial."""
-    scheduled: list[int] = []
-    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
     spawn_id = await _seed_spawn(memdb)
 
     rec = await run_recorder.RunRecorder.start(
@@ -191,10 +180,9 @@ async def test_postcommit_cancel_does_not_refinalize(memdb, monkeypatch):
     assert rec._finalized is True        # latch held — arslan.py's handler keys off this
 
 
-async def test_finalize_without_override_still_schedules_scoring(memdb, monkeypatch):
-    """Regression guard: the normal live path is unchanged by the new parameter."""
-    scheduled: list[int] = []
-    monkeypatch.setattr(run_recorder, "schedule_scoring", scheduled.append)
+async def test_finalize_without_override_records(memdb, monkeypatch):
+    """Regression guard: the normal live path is unchanged by the new parameter.
+    (Nothing schedules scoring since C7c-5a.)"""
     spawn_id = await _seed_spawn(memdb)
 
     rec = await run_recorder.RunRecorder.start(
@@ -206,7 +194,6 @@ async def test_finalize_without_override_still_schedules_scoring(memdb, monkeypa
     async with memdb() as db:
         run = (await db.execute(select(Run).where(Run.id == rec.run_id))).scalar_one()
     assert run.status == "recorded"
-    assert scheduled == [rec.run_id]
 
 
 async def test_a_cancel_during_the_final_write_waits_for_it(tmp_path, monkeypatch):

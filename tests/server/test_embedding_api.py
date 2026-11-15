@@ -18,7 +18,6 @@ async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("ARSLAN_API_TOKEN", "")
     monkeypatch.setenv("ARSLAN_DB_PATH", str(tmp_path / "kb.db"))
     monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    monkeypatch.setenv("ARSLAN_TEST_ROUTES", "1")
 
     import server.config as config
 

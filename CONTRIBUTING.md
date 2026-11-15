@@ -179,7 +179,7 @@ For a small, self-contained fix you can skip straight to a PR — but still open
 - **Green checks.** All the [checks above](#checks-you-must-pass-before-opening-a-pr) must pass — backend ruff + pytest + smoke, and frontend lint + test + build. Note in the PR that they're green locally.
 - **Keep it focused.** One logical change per PR. Split refactors from behavior changes.
 - **Include tests** for new behavior or bug fixes (TDD).
-- **Don't weaken the guards without discussion.** The sandbox (fails-closed), the auth posture (safe-by-default), the capability write gate (single-throat `assert_assignable`, tier isolation), and the honesty guardrails (`promise_guard`, `wrap_external` on tool output) are load-bearing invariants. If your change touches one, call it out explicitly and get sign-off first. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#cross-cutting-invariants) and [SECURITY.md](SECURITY.md).
+- **Don't weaken the guards without discussion.** The sandbox (fails-closed), the auth posture (safe-by-default), the capability tiers (`safe_menu`, tier isolation), and the honesty guardrails (`promise_guard`, `wrap_external` on tool output) are load-bearing invariants. If your change touches one, call it out explicitly and get sign-off first. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#cross-cutting-invariants) and [SECURITY.md](SECURITY.md).
 - **Link the spec/issue** the PR implements.
 
 ## Reporting security issues
