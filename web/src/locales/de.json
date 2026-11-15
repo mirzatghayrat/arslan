@@ -1622,6 +1622,7 @@
     "current": "Aktuell",
     "footnote": "Nur für dieses Gespräch. Die Vorgabe für neue steht in den Einstellungen.",
     "narrowed": "Eingeschränkt durch die Sitzung, die diese gestartet hat.",
+    "inherited": "Ein Nebenchat nutzt den Modus der Unterhaltung, aus der er stammt. Dort lässt er sich ändern.",
     "askForNow": "Bei jedem Schritt fragen (vorerst)",
     "fallbackBanner": "Fragt vorerst bei jedem Schritt: {{reason}} Es kehrt von selbst zu „Nur bei Risiko fragen“ zurück.",
     "reasonSandboxOff": "Die Sandbox läuft nicht.",

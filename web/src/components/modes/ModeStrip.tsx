@@ -11,7 +11,8 @@ export default function ModeStrip({ pm }: { pm: PermissionModeControl }) {
   const { t } = useTranslation();
   const { state, defaultMode } = pm;
   if (!state) return null;
-  if (state.chosen === "plan") {
+  // A side chat's Plan is its parent's: Start is pressed there, never here (SIDE-1).
+  if (state.chosen === "plan" && !pm.inherited) {
     return (
       <div className="max-w-4xl mx-auto mb-2 flex items-center gap-3 text-[12px] text-muted-foreground">
         <button type="button" onClick={() => void pm.start()} data-testid="mode-start"

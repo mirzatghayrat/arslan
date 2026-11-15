@@ -1622,6 +1622,7 @@
     "current": "当前",
     "footnote": "只对这个对话生效。新对话的默认模式在设置里。",
     "narrowed": "启动这个会话的会话把它收窄了。",
+    "inherited": "旁聊沿用它所在对话的模式，要改请回那个对话。",
     "askForNow": "每一步都问（暂时）",
     "fallbackBanner": "暂时每一步都问：{{reason}} 之后会自己回到「只在有风险时问」。",
     "reasonSandboxOff": "沙盒没有在运行。",

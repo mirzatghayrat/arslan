@@ -1622,6 +1622,7 @@
     "current": "Current",
     "footnote": "For this conversation only. The default for new ones is in Settings.",
     "narrowed": "Narrowed by the session that started this one.",
+    "inherited": "A side chat uses the mode of the conversation it came from. Change it there.",
     "askForNow": "Ask every step (for now)",
     "fallbackBanner": "Asking every step for now: {{reason}} It goes back to Ask only when risky on its own.",
     "reasonSandboxOff": "the sandbox isn’t running.",

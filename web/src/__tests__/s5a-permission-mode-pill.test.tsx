@@ -97,6 +97,21 @@ describe("the pill", () => {
     expect(screen.getByTestId("permission-mode-narrowed").textContent).toBe("modes.narrowed");
   });
 
+  it("a side chat shows its parent's mode read-only: no menu, no pick, never a PUT or a Start", async () => {
+    api.get.mockResolvedValue(state({ chosen: "plan", mode: "plan" }));
+    render(<Harness id="side-0a1b2c3d" />);
+    await waitFor(() => expect(pill().textContent).toContain("modes.plan"));
+    expect(api.get).toHaveBeenCalledWith("side-0a1b2c3d");
+    expect(pill().getAttribute("aria-haspopup")).toBeNull();
+    expect(screen.getByTestId("permission-mode-inherited").textContent).toBe("modes.inherited");
+    fireEvent.click(pill());
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(screen.queryByTestId("mode-start")).toBeNull();
+    expect(api.set).not.toHaveBeenCalled();
+    expect(api.start).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("every control is at least 44px tall", async () => {
     api.get.mockResolvedValue(state({ chosen: "plan", mode: "plan" }));
     render(<Harness id="conv-1" />);
@@ -200,6 +215,53 @@ describe("keeping it current", () => {
     await waitFor(() => expect(pill().textContent).toContain("modes.ask"));
     await act(async () => { one.resolve(state({ own: "full_access", chosen: "full_access", mode: "full_access" })); });
     expect(pill().textContent).not.toContain("modes.fullAccess");
+  });
+
+  it("a late PUT for the last conversation never shows in the next one, nor drops its answer", async () => {
+    const put = deferred<ModeState>();
+    const two = deferred<ModeState>();
+    api.get.mockImplementation((id: string) => id === "conv-1" ? Promise.resolve(state()) : two.promise);
+    api.set.mockReturnValue(put.promise);
+    const view = render(<Harness id="conv-1" />);
+    await waitFor(() => expect(pill().textContent).toContain("modes.askRisky"));
+    open();
+    fireEvent.click(rows().find((r) => r.textContent?.includes("modes.fullAccessLine"))!);
+    expect(api.set).toHaveBeenCalledWith("conv-1", "full_access");
+    view.rerender(<Harness id="conv-2" />);
+    await act(async () => { put.resolve(state({ own: "full_access", chosen: "full_access", mode: "full_access" })); });
+    expect(pill().textContent).not.toContain("modes.fullAccess");
+    await act(async () => { two.resolve(state({ own: "plan", chosen: "plan", mode: "plan" })); });
+    expect(pill().textContent).toContain("modes.plan");               // conv-2's own answer, not dropped
+  });
+
+  it("a late Start for the last conversation never shows in the next one, nor drops its answer", async () => {
+    const post = deferred<ModeState>();
+    const two = deferred<ModeState>();
+    api.get.mockImplementation((id: string) => id === "conv-1"
+      ? Promise.resolve(state({ own: "plan", chosen: "plan", mode: "plan" })) : two.promise);
+    api.start.mockReturnValue(post.promise);
+    const view = render(<Harness id="conv-1" />);
+    await waitFor(() => expect(screen.getByTestId("mode-start")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("mode-start"));
+    view.rerender(<Harness id="conv-2" />);
+    await act(async () => { post.resolve(state({ own: "full_access", chosen: "full_access", mode: "full_access" })); });
+    expect(pill().textContent).not.toContain("modes.fullAccess");
+    await act(async () => { two.resolve(state({ own: "ask", chosen: "ask", mode: "ask" })); });
+    expect(pill().textContent).toContain("modes.ask");
+    expect(pill().className).not.toContain("opacity-60");            // conv-2's own answer, not dropped
+  });
+
+  it("the first render after a switch already shows the default, dimmed", () => {
+    api.get.mockResolvedValueOnce(state({ own: "full_access", chosen: "full_access", mode: "full_access" }))
+      .mockReturnValue(new Promise(() => {}));
+    const seen: (ModeState | null)[] = [];
+    function Probe({ id }: { id: string }) { const pm = usePermissionMode(id); seen.push(pm.state); return null; }
+    const view = render(<Probe id="conv-1" />);
+    return waitFor(() => expect(seen.at(-1)?.chosen).toBe("full_access")).then(() => {
+      const before = seen.length;
+      view.rerender(<Probe id="conv-2" />);
+      expect(seen.slice(before)).toEqual(seen.slice(before).map(() => null));
+    });
   });
 
   it("switching conversations never shows the last one's mode while the next loads", async () => {

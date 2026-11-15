@@ -1622,6 +1622,7 @@
     "current": "Actuel",
     "footnote": "Pour cette conversation seulement. Le mode par défaut des nouvelles est dans les Paramètres.",
     "narrowed": "Restreint par la session qui a lancé celle-ci.",
+    "inherited": "Une discussion annexe utilise le mode de la conversation d’où elle vient. Modifiez-le là-bas.",
     "askForNow": "Demander à chaque étape (pour l’instant)",
     "fallbackBanner": "Demande à chaque étape pour l’instant : {{reason}} Revient tout seul à « Demander seulement si risqué ».",
     "reasonSandboxOff": "le bac à sable ne tourne pas.",

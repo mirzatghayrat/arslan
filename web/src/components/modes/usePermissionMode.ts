@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { permissionModeApi, type ModeState, type PermissionMode } from "../../api/permissionMode";
 import { useArslanStore } from "../../stores/arslanStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { asMode } from "./modes";
+import { asMode, isSideChat } from "./modes";
 
 /**
  * S5a: one conversation's permission mode, for the pill and the strip above the composer. The server pushes nothing
@@ -11,8 +11,17 @@ import { asMode } from "./modes";
  * and when the window comes back into view. No polling.
  */
 export function usePermissionMode(conversationId: string) {
-  const [state, setState] = useState<ModeState | null>(null);
-  const [saveFailed, setSaveFailed] = useState(false);
+  // Each answer is kept with the conversation it is for, so the first render after a switch already shows nothing of
+  // the last one (no effect has to clear it first).
+  const [held, setHeld] = useState<{ id: string; state: ModeState } | null>(null);
+  const [failedFor, setFailedFor] = useState<string | null>(null);
+  const state = held?.id === conversationId ? held.state : null;
+  const saveFailed = failedFor === conversationId;
+  // The conversation open now: a PUT or a POST that answers after a switch is dropped, not shown on the next one.
+  const open = useRef(conversationId);
+  useLayoutEffect(() => { open.current = conversationId; }, [conversationId]);
+  // SIDE-1: a side chat runs in its parent's mode and never sets one (the server answers 422).
+  const inherited = isSideChat(conversationId);
   // Each stored change counts here, so the answer to a GET asked before it is dropped, not shown over it.
   const changes = useRef(0);
   const [asks, setAsks] = useState(0);
@@ -21,13 +30,11 @@ export function usePermissionMode(conversationId: string) {
   const settingsKey = useSettingsStore((s) =>
     `${s.settings?.terminal_sandbox_enabled}|${s.settings?.workspace_dir}|${s.settings?.default_permission_mode}`);
 
-  useEffect(() => { setState(null); setSaveFailed(false); }, [conversationId]);   // never the last conversation's
-
   useEffect(() => {
     let alive = true;
     const asked = changes.current;
     Promise.resolve().then(() => permissionModeApi.get(conversationId))
-      .then((r) => { if (alive && changes.current === asked) setState(r); })
+      .then((r) => { if (alive && changes.current === asked) setHeld({ id: conversationId, state: r }); })
       .catch(() => {});
     return () => { alive = false; };
   }, [conversationId, settingsKey, asks]);
@@ -45,28 +52,39 @@ export function usePermissionMode(conversationId: string) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [askAgain]);
 
-  const stored = (r: ModeState) => { changes.current += 1; setState(r); };
+  /** A PUT's or a POST's answer for `id`; once another conversation is open it is dropped and drops no GET. */
+  const stored = (id: string, r: ModeState) => {
+    if (open.current !== id) return;
+    changes.current += 1;
+    setHeld({ id, state: r });
+  };
+  const failed = (id: string) => { if (open.current === id) setFailedFor(id); };
 
   const pick = useCallback(async (mode: PermissionMode) => {
-    setSaveFailed(false);
+    if (inherited) return;
+    const id = conversationId;
+    setFailedFor(null);
     try {
-      stored(await permissionModeApi.set(conversationId, mode));
+      stored(id, await permissionModeApi.set(id, mode));
     } catch {
-      setSaveFailed(true);
+      failed(id);
     }
-  }, [conversationId]);
+  }, [conversationId, inherited]);
 
   const start = useCallback(async () => {
-    setSaveFailed(false);
+    if (inherited) return;
+    const id = conversationId;
+    setFailedFor(null);
     try {
-      stored(await permissionModeApi.start(conversationId));
+      stored(id, await permissionModeApi.start(id));
     } catch (e) {
       // 409: another window already pressed Start; show what the server has now.
-      if ((e as { status?: number }).status === 409) askAgain(); else setSaveFailed(true);
+      if ((e as { status?: number }).status !== 409) failed(id);
+      else if (open.current === id) askAgain();
     }
-  }, [conversationId, askAgain]);
+  }, [conversationId, inherited, askAgain]);
 
-  return { state, defaultMode, saveFailed, pick, start };
+  return { state, defaultMode, saveFailed, inherited, pick, start };
 }
 
 export type PermissionModeControl = ReturnType<typeof usePermissionMode>;

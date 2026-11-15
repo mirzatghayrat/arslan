@@ -23,12 +23,27 @@ export default function PermissionModePill({ pm }: { pm: PermissionModeControl }
   const dot = modeInfo(fallback ? "ask" : chosen).dot;
   // A sub-session never runs wider than the one that started it (Q4).
   const narrowed = state?.own != null && state.own !== state.chosen;
+  const pillClass = `flex min-h-[44px] items-center gap-1.5 rounded-full border border-border bg-background/40 px-2.5 text-[11px] text-muted-foreground${state ? "" : " opacity-60"}`;
+
+  // SIDE-1 (user decision): a side chat only inherits its parent's mode, so it shows it with no menu to change it.
+  if (pm.inherited) {
+    return (
+      <span className="relative flex items-center gap-1.5">
+        <span role="img" aria-label={t("modes.pillAria", { label })} title={t("modes.inherited")}
+          data-testid="permission-mode-pill" className={pillClass}>
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden />
+          <span className="truncate" aria-hidden>{label}</span>
+        </span>
+        <span data-testid="permission-mode-inherited" className="sr-only">{t("modes.inherited")}</span>
+      </span>
+    );
+  }
 
   return (
     <span className="relative flex items-center gap-1.5">
       <button ref={anchorRef} type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}
         aria-label={t("modes.pillAria", { label })} data-testid="permission-mode-pill"
-        className={`flex min-h-[44px] items-center gap-1.5 rounded-full border border-border bg-background/40 px-2.5 text-[11px] text-muted-foreground hover:border-primary/40${state ? "" : " opacity-60"}`}>
+        className={`${pillClass} hover:border-primary/40`}>
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden />
         <span className="truncate">{label}</span><ChevronDown className="h-2.5 w-2.5 shrink-0 opacity-60" />
       </button>

@@ -1622,6 +1622,7 @@
     "current": "Actual",
     "footnote": "Solo para esta conversación. El modo por defecto de las nuevas está en Ajustes.",
     "narrowed": "Limitado por la sesión que inició esta.",
+    "inherited": "Un chat lateral usa el modo de la conversación de la que salió. Cámbialo allí.",
     "askForNow": "Preguntar en cada paso (por ahora)",
     "fallbackBanner": "Por ahora pregunta en cada paso: {{reason}} Vuelve solo a «Preguntar solo si hay riesgo».",
     "reasonSandboxOff": "el entorno aislado no está en marcha.",

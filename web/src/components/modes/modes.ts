@@ -17,6 +17,9 @@ export const REASON: Record<Exclude<FallbackReason, "">, string> = {
   no_checkpoint: "modes.reasonNoCheckpoint",
 };
 
+/** SIDE-1: a side chat's id, as the server reads it whatever its row says (`phone_ids.kind_of`, `SIDE_PREFIX`). */
+export const isSideChat = (conversationId: string) => conversationId.startsWith("side-");
+
 /** A mode as the server sent it; anything else is "ask", the strict one (the server's own rule). */
 export function asMode(value: unknown): PermissionMode {
   return MODES.some((m) => m.mode === value) ? value as PermissionMode : "ask";
