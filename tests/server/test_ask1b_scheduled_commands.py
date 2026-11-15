@@ -686,7 +686,9 @@ async def test_a_clean_fire_reaching_a_site_an_earlier_fire_read_is_refused_at_t
     model = later
     assert got == [], got                                                    # never reached
     told = model.inputs[-1]                                                  # what the model read after the run
-    assert f"{SITE} was refused" in told and "this run has nobody to ask" in told, told
+    # NET-b: the command names the site, so its card is asked (refused by policy) before the run, which runs without it
+    assert f"{SITE} was refused" in told and "Nobody could be asked in this run" in told, told
+    assert "the user can add it in Settings" in told and "The command ran without it" in told, told   # JSON: no ›
     [row] = [r for r in await _rows() if r.kind == "network"]
     assert (row.target, row.decided_by, row.decision, row.conversation_id) == (f"network:{SITE}", "policy", "deny", CID)
     [entry] = listed
