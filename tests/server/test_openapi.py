@@ -3,7 +3,7 @@ import pytest
 
 EXPECTED_PATHS = {
     "/api/v1/health",
-    "/api/v1/spawns",
+    "/api/v1/conversations",   # GET /spawns went in C7c-4
     "/api/v1/settings",
 }
 

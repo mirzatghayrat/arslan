@@ -6,7 +6,11 @@ rename) with ids preserved verbatim — the FTS5 rowid mapping depends on them.
 Fresh DBs get the final shape from Base.metadata.create_all (runs BEFORE this
 in main.py boot), making this a no-op there. collections/spawn_collections are
 likewise created by create_all; this migration only creates them when running
-under plain alembic against an old DB."""
+under plain alembic against an old DB.
+
+v0.1.64 C7c-5b: spawn_collections is made only where `spawns` exists. A new install has no `spawns` since the
+Spawn model went, and a foreign key naming a missing table would make every delete of a collection fail (the
+cascade into spawn_collections looks the parent up)."""
 import sqlalchemy as sa
 
 revision = "0018"
@@ -48,7 +52,7 @@ def _upgrade(bind) -> None:  # noqa: ANN001
         bind.exec_driver_sql(
             "CREATE TABLE collections (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL, "
             "description TEXT, created_at DATETIME)")
-    if "spawn_collections" not in tables:
+    if "spawn_collections" not in tables and "spawns" in tables:
         bind.exec_driver_sql(
             "CREATE TABLE spawn_collections (id INTEGER PRIMARY KEY, "
             "spawn_id INTEGER NOT NULL REFERENCES spawns(id) ON DELETE CASCADE, "

@@ -4,7 +4,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Collection, KnowledgeChunk, Spawn, SpawnCollection
+from server.db.models import Base, Collection, KnowledgeChunk
 from server.services import embedding_service
 from server.services import personal_context as pc
 
@@ -40,13 +40,11 @@ async def maker(tmp_path, monkeypatch):
             "CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts USING fts5(text)")
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(Spawn(id=1, name="甲", domain_category="c", system_prompt="p"))
-        s.add(Spawn(id=2, name="乙", domain_category="c", system_prompt="p"))
         s.add(Collection(id=10, name="绑定库"))
         s.add(Collection(id=11, name="别人的库"))
-        s.add(SpawnCollection(spawn_id=1, collection_id=10))
         s.add(project([10]))                          # the turn's project holds collection 10 only
-        # spawn-1 well / bound collection-10 / unbound collection-11 / spawn-2 well
+        # spawn-1 well / collection-10 / collection-11 / spawn-2 well. The wells are rows an upgraded install
+        # still has (spawn_id set, no Spawn model or foreign key since C7c-5b; C7c-5c moves them).
         await _add_chunk(s, 100, spawn_id=1, source="well.txt", text="猫粮 深井资料", vec=[1, 0])
         await _add_chunk(s, 101, collection_id=10, source="shared.pdf", text="猫粮 共享资料", vec=[1, 0])
         await _add_chunk(s, 102, collection_id=11, source="other.pdf", text="猫粮 未绑定资料", vec=[1, 0])

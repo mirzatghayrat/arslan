@@ -19,7 +19,8 @@ const devices = (...list: object[]) => ({ devices: list });
 describe("SBX settings: the certificate switch and the trusted local devices (the mock, in Chinese)", () => {
   beforeAll(async () => { await i18n.changeLanguage("zh"); });
   afterAll(async () => { await i18n.changeLanguage("en"); });
-  beforeEach(() => request.mockReset());
+  // NET-b: the Sites section also reads GET /settings, after the devices list; a bare {} answers it.
+  beforeEach(() => { request.mockReset(); request.mockResolvedValue({}); });
 
   it("shows the switch off by default and saves it through the settings form", async () => {
     request.mockResolvedValueOnce(devices());
@@ -95,7 +96,7 @@ describe("SBX settings: the certificate switch and the trusted local devices (th
 });
 
 describe("SBX settings in English", () => {
-  beforeEach(() => request.mockReset());
+  beforeEach(() => { request.mockReset(); request.mockResolvedValue({}); });
 
   it("names the switch and the list as the model's note does", async () => {
     await i18n.changeLanguage("en");

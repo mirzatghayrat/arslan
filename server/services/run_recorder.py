@@ -3,8 +3,8 @@
 A RunRecorder is created at the start of host_run.execute (an Arslan turn; replay
 arms, the other creator, went with the expert dispatcher in C7b-4); its tee() wraps the EventSink so every
 emitted event is both forwarded live AND timestamped for step derivation.
-finalize() persists steps, links the summary message, and schedules async judge
-scoring.
+finalize() persists steps and links the summary message. (Judge scoring went in
+C7c-5a: every run is kind="host", which was never scored.)
 """
 from __future__ import annotations
 
@@ -29,18 +29,6 @@ CHECKPOINT_CHARS = 262_144
 
 logger = logging.getLogger(__name__)
 
-
-def _default_schedule(run_id: int) -> None:
-    """Fire-and-forget judge scoring (overridable in tests)."""
-    from server.services import run_eval_service
-
-    from arslan.execution_budget import governed
-    from server.services.task_service import detached_context
-    asyncio.create_task(governed(run_eval_service.score)(run_id), context=detached_context())
-
-
-# Module-level indirection so tests can stub scheduling.
-schedule_scoring: Callable[[int], None] = _default_schedule
 
 # E2: the `runs.continuation` column is now authoritative — start() persists the flag on the
 # Run row and score() reads run.continuation directly (no extra query; the row is already loaded).
@@ -312,13 +300,10 @@ class RunRecorder:
                         status_override: Literal["cancelled", "interrupted"] | None = None,
                         read_outside: bool | None = None,
                         ) -> int:
-        """Persist steps + run metadata and (for live runs only) schedule judge scoring.
+        """Persist steps + run metadata. Nothing is scored after this (C7c-5a).
 
-        replay=True (S2 E3 hermetic replay): terminal status is 'replayed' (never
-        'recorded'/'score_failed', so no scoring/reaper query ever matches it),
-        kind='replay', the arm's output is stored in final_output for judge-comparison
-        and trace, and schedule_scoring is NOT called — a replay is evaluated by the
-        paired ReplayGate (E4), not the per-run judge."""
+        replay=True (S2 E3 hermetic replay): terminal status is 'replayed',
+        kind='replay', and the arm's output is stored in final_output."""
         # S3-M1 (review I1 + residual): finalize must be idempotent — a cancel landing
         # during one of the awaits below re-enters finalize via host_run.execute's cancel
         # handler. _finalizing flips BEFORE any await (synchronously, same task context)
@@ -415,9 +400,7 @@ class RunRecorder:
                     # cancel during the POST-commit session close (__aexit__ awaits) —
                     # releasing _finalizing there must not reopen finalize once the commit
                     # landed; re-entry short-circuits on _finalized. A run cancelled in that
-                    # window stays 'recorded' with scoring scheduling skipped — the stuck-run
-                    # reaper (run_reaper.reap_stuck_runs, 'recorded' > STUCK_AFTER)
-                    # re-enqueues its scoring.
+                    # window keeps the status written above.
                     self._finalized = True
             except asyncio.CancelledError:
                 # Pre-commit cancel: the session __aexit__ rolled everything back —
@@ -450,20 +433,6 @@ class RunRecorder:
         from server.services.task_service import current as current_task
         if current_task() is not None:
             current_task().record_run_output(self.run_id)
-        if replay or status_override is not None or self.kind in {"host", "recipe", "recipe_step", "worker"}:
-            # replay → paired gate; cancelled/interrupted → never scored.
-            return self.run_id
-        async with db_session.AsyncSessionLocal() as db:
-            recorded = await db.get(Run, self.run_id)
-            if recorded is None or recorded.no_learning:
-                return self.run_id
-        try:
-            # task_tokens was already read (usage_sink.total()) and persisted above, BEFORE
-            # scheduling. The judge task inherits this context's bucket via create_task, but
-            # nothing re-reads it for this run, so its tokens never affect task_tokens.
-            schedule_scoring(self.run_id)
-        except Exception as exc:  # noqa: BLE001 — scoring is best-effort
-            logger.warning("schedule_scoring failed (non-fatal): %s", exc)
         return self.run_id
 
     def _merge_tool_trace(self, steps: list[dict]) -> None:

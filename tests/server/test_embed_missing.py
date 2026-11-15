@@ -4,7 +4,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, KnowledgeChunk, Spawn
+from server.db.models import Base, Collection, KnowledgeChunk
 
 
 class FakeProvider:
@@ -24,10 +24,11 @@ async def maker(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     async with m() as s:
-        s.add(Spawn(id=1, name="s", domain_category="c", system_prompt="p"))
+        s.add(Collection(id=1, name="notes"))
+        await s.flush()
         for i in range(3):
-            s.add(KnowledgeChunk(spawn_id=1, source="a", chunk_index=i, text=f"块{i}"))
-        s.add(KnowledgeChunk(spawn_id=1, source="b", chunk_index=0, text="旧模型",
+            s.add(KnowledgeChunk(collection_id=1, source="a", chunk_index=i, text=f"块{i}"))
+        s.add(KnowledgeChunk(collection_id=1, source="b", chunk_index=0, text="旧模型",
                              embedding=b"\x00\x00\x80?", embedding_model="stale-model"))
         await s.commit()
     return m

@@ -20,7 +20,6 @@ def _clean(monkeypatch):
     desktop_status._reset_for_tests()
     background_jobs._jobs.clear()
     run_registry._recorders.clear()
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda run_id: None)
     yield
     desktop_status._reset_for_tests()
     background_jobs._jobs.clear()

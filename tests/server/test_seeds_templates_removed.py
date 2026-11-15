@@ -36,7 +36,7 @@ def test_the_packaged_self_test_no_longer_expects_the_official_templates():
 
 
 async def test_the_routes_are_gone_and_spawn_detail_stays(client):
-    # Positive control: the deferred live endpoint still answers.
-    assert (await client.get("/api/v1/spawns", headers=AUTH)).status_code == 200
+    # Positive control: a live authed GET still answers (GET /spawns went in C7c-4).
+    assert (await client.get("/api/v1/conversations", headers=AUTH)).status_code == 200
     for path in ("/api/v1/seeds", "/api/v1/templates"):
         assert (await client.get(path, headers=AUTH)).status_code == 404, path

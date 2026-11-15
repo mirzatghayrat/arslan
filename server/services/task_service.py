@@ -35,6 +35,13 @@ _current: ContextVar[TaskRuntime | None] = ContextVar("companion_task_runtime", 
 _active: dict[str, asyncio.Task] = {}
 _runtimes: dict[str, TaskRuntime] = {}
 _run_owners: dict[int, str] = {}
+# v0.1.64: the cancel record of a turn cut short (its window closed mid-finish), by conversation, until it is
+# written. Detached, it outlives the turn (and a socket turn's lock), and until it commits the task is still "running", so the
+# next turn's start would hit the one-active-turn index (uq_companion_active_conversation) and be refused.
+_cancel_records: dict[str, asyncio.Task] = {}
+# How long a start waits for that record: SQLite's busy_timeout (server/db/session.py) plus a margin. A start waits
+# once, before its first attempt; its one retry does not wait again, so a start waits at most this long in all.
+CANCEL_RECORD_WAIT_S = 5 + 2
 
 # Unknown tools, including all MCP tools, are conservatively external writes.
 # This is an effect classification, NOT a permission grant.
@@ -851,6 +858,7 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             # which Starlette's websocket handling uses) cancels every await here too, and the task was
             # left "running", refusing every later turn in its conversation (one active task each).
             recording = _kept(_record_cancel(runtime.task_id), "cancelled task not recorded")
+            _pending_cancel(value["conversation_id"], recording)   # before the turn ends (a socket's, its lock)
             final = await asyncio.shield(recording)   # if cancelled again, the record still completes
             emit(_state_frame(final))
             raise
@@ -929,6 +937,29 @@ async def _after(first: asyncio.Task | None, then):
 async def _record_cancel(task_id: str) -> dict:
     async with repository() as repo:
         return await repo.cancel(task_id)
+
+
+def _pending_cancel(conversation_id: str, record: asyncio.Task) -> None:
+    """Note a conversation's cancel record while it is being written (see `_cancel_records`)."""
+    _cancel_records[conversation_id] = record
+
+    def done(finished: asyncio.Task) -> None:
+        if _cancel_records.get(conversation_id) is finished:
+            del _cancel_records[conversation_id]
+    record.add_done_callback(done)
+
+
+async def _cancel_recorded(conversation_id: str) -> None:
+    """Wait, bounded, for the cancel record of this conversation's last turn. The wait never cancels the record.
+
+    A socket's turn (ws/arslan.py) holds the conversation's turn lock here, so no other chat turn starts meanwhile.
+    A background job's turn and a scheduled fire (background_jobs, scheduler via task_context.execute_entry) hold no
+    turn lock, so another turn can start between this wait and their own start. The one-active-turn index is what
+    keeps one turn running either way: such a start is refused (`task_version_conflict`), not let through; this wait
+    only spares a start the refusal a cancel record still being written would cause."""
+    record = _cancel_records.get(conversation_id)
+    if record is not None and not record.done() and record.get_loop() is asyncio.get_running_loop():
+        await asyncio.wait({record}, timeout=CANCEL_RECORD_WAIT_S)
 
 
 async def _launch(value, emit, body, *, progress=None, context=None):
@@ -1020,16 +1051,28 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         # needs real acceptance runs as a background job with its own criteria.
         "acceptance": _acceptance or [ANSWER_DELIVERED],
     })
-    async with repository() as repo:
-        created = await repo.create(spec, conversation_id, budget_snapshot=budget.snapshot(), privacy={
-            "no_learning": ctx.no_learning,
-            "cloud_memory_allowed": ctx.cloud_memory_allowed and not ctx.model_is_local,
-            "cloud_memory_default": ctx.cloud_memory_default and not ctx.model_is_local,
-            "allow_sensitive": ctx.allow_sensitive,
-            "requires_local_model": ctx.model_is_local,
-            "driver": checked_driver(_driver),
-        })
-        value = await repo.start(spec.id, created["version"])
+    for attempt in (1, 2):
+        # A turn cut short just before this one may still be writing its cancel record (v0.1.64). Waited for once:
+        # the retry goes straight to the start (CANCEL_RECORD_WAIT_S).
+        if attempt == 1:
+            await _cancel_recorded(conversation_id)
+        try:
+            # One transaction: a refused start rolls the create back too, so a retry starts clean.
+            async with repository() as repo:
+                created = await repo.create(spec, conversation_id, budget_snapshot=budget.snapshot(), privacy={
+                    "no_learning": ctx.no_learning,
+                    "cloud_memory_allowed": ctx.cloud_memory_allowed and not ctx.model_is_local,
+                    "cloud_memory_default": ctx.cloud_memory_default and not ctx.model_is_local,
+                    "allow_sensitive": ctx.allow_sensitive,
+                    "requires_local_model": ctx.model_is_local,
+                    "driver": checked_driver(_driver),
+                })
+                value = await repo.start(spec.id, created["version"])
+            break
+        except TaskError as exc:
+            if exc.code != "task_version_conflict" or attempt == 2:
+                raise
+            logger.info("turn start refused once (task_version_conflict); retrying")
     async def body(sink):
         return await function(conversation_id, user_message, sink, *args, **kwargs)
     turn_run: dict = {}
@@ -1062,26 +1105,39 @@ def _project_evidence_later(project_id: str, conversation_id: str, user_message:
 async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, instruction=None, driver=None):
     if ctx.temporary:
         raise TaskError("temporary_task_not_persisted")
-    async with repository() as repo:
-        row = await repo.get(task_id)
-        if row.conversation_id != conversation_id:
-            raise TaskError("task_not_found")
-        if row.project_id != ctx.project_id:
-            raise TaskError("task_project_changed")
-        ceiling = row.privacy or {}
-        if ceiling.get("requires_local_model") and not ctx.model_is_local:
-            raise TaskError("task_local_model_required")
-        spec = await repo.spec(row)
-        if instruction is not None and spec.instruction != instruction:
-            raise TaskError("task_goal_changed")
-        saved_driver = checked_driver(ceiling.get("driver"))
-        if driver is not None and checked_driver(driver) != saved_driver:
-            raise TaskError("task_goal_changed")
-        saved = await repo.latest_checkpoint(task_id)
-        value = await repo.start(task_id, expected_version, explicit_resume=True)
-        # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
-        from server.services import permissions
-        await permissions.drop_task_grants(repo.db, task_id)
+    for attempt in (1, 2):
+        # v0.1.64: as run_turn, a Resume pressed just after a window closed on a turn waits (once, see
+        # `_cancel_recorded` for who holds the turn lock here) for that turn's cancel record, and a start refused once
+        # is tried again: the block below is one transaction, so a refusal rolls all of it back (the dropped grants
+        # too) and the retry starts clean.
+        if attempt == 1:
+            await _cancel_recorded(conversation_id)
+        try:
+            async with repository() as repo:
+                row = await repo.get(task_id)
+                if row.conversation_id != conversation_id:
+                    raise TaskError("task_not_found")
+                if row.project_id != ctx.project_id:
+                    raise TaskError("task_project_changed")
+                ceiling = row.privacy or {}
+                if ceiling.get("requires_local_model") and not ctx.model_is_local:
+                    raise TaskError("task_local_model_required")
+                spec = await repo.spec(row)
+                if instruction is not None and spec.instruction != instruction:
+                    raise TaskError("task_goal_changed")
+                saved_driver = checked_driver(ceiling.get("driver"))
+                if driver is not None and checked_driver(driver) != saved_driver:
+                    raise TaskError("task_goal_changed")
+                saved = await repo.latest_checkpoint(task_id)
+                value = await repo.start(task_id, expected_version, explicit_resume=True)
+                # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
+                from server.services import permissions
+                await permissions.drop_task_grants(repo.db, task_id)
+            break
+        except TaskError as exc:
+            if exc.code != "task_version_conflict" or attempt == 2:
+                raise
+            logger.info("resume start refused once (task_version_conflict); retrying")
     ctx = replace(ctx, task_id=task_id, no_learning=ctx.no_learning or ceiling.get("no_learning", True),
                   cloud_memory_allowed=ctx.cloud_memory_allowed and ceiling.get("cloud_memory_allowed", False),
                   # A task never gains on resume what it did not have when created (old tasks: no key = no).

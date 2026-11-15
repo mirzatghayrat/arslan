@@ -9,6 +9,9 @@ a PRAGMA table_info check and every CREATE TABLE/INDEX uses IF NOT EXISTS, so a 
 no-op. Fresh DBs get the final shape from Base.metadata.create_all (the columns/tables are on the
 ORM models), so the guards simply find everything already present.
 
+v0.1.64 C7c-5b: synthetic_tasks and evolution_attempts are made only where `spawns` exists (an upgraded
+install). A new install has no `spawns` since the Spawn model went, and both name it in a foreign key.
+
 Ruling (spec §2.1): existing runs are pre-baseline epoch=0 — the DEFAULT 0 backfills them; kind
 DEFAULT 'live' is fine because kind distinguishes replay, epoch is what quarantines the old corpus.
 
@@ -67,13 +70,13 @@ def _upgrade(connection) -> None:  # noqa: ANN001
             if name not in existing:
                 connection.exec_driver_sql(f"ALTER TABLE runs ADD COLUMN {name} {ddl}")
 
-    connection.exec_driver_sql(_SYNTHETIC_TASKS_DDL)
-    connection.exec_driver_sql(
-        "CREATE INDEX IF NOT EXISTS ix_synthetic_tasks_spawn_id ON synthetic_tasks (spawn_id)")
-
-    connection.exec_driver_sql(_EVOLUTION_ATTEMPTS_DDL)
-    connection.exec_driver_sql(
-        "CREATE INDEX IF NOT EXISTS ix_evolution_attempts_spawn_id ON evolution_attempts (spawn_id)")
+    if "spawns" in tables:
+        connection.exec_driver_sql(_SYNTHETIC_TASKS_DDL)
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_synthetic_tasks_spawn_id ON synthetic_tasks (spawn_id)")
+        connection.exec_driver_sql(_EVOLUTION_ATTEMPTS_DDL)
+        connection.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_evolution_attempts_spawn_id ON evolution_attempts (spawn_id)")
 
     if "evolution_proposals" in tables:
         evo_cols = {row[1] for row in connection.exec_driver_sql(

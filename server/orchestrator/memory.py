@@ -172,7 +172,8 @@ async def assemble_working_context(conversation_id: str, *, budget: int | None =
             # A specialist spawn's relayed output. Frame it in the third person so the answer
             # model treats it as a teammate's message and never adopts the spawn's identity
             # (otherwise Arslan continues a spawn's first-person voice, e.g. "我是 Mermer").
-            # DELETE-BY: v0.1.64, with C7c-4.
+            # Model context only, never a frame or history row. It stays while such rows exist: DELETE-BY: v0.1.64,
+            # with C7c-5 (its migration turns them into plain `arslan` replies).
             history.append(
                 {"role": "assistant", "content": f"(relayed output from a specialist spawn) {text}"}
             )
@@ -276,9 +277,9 @@ async def maybe_compact(conversation_id: str, *, budget: int | None = None) -> N
                 new_summary = clip_context(new_summary, summary_cap)
         # S64-0b (②Main's N3): a summary folding in a job's result from outside content stays marked.
         from server.orchestrator import untrusted
-        # SUB5b: and a sub-session's framed brief, its first message in the user's role.
+        # SUB5b: and a sub-session's framed brief, its first message in the user's role; SIDE-2: a framed bring-back.
         if untrusted.folds_outside([prior, *(m.content for m in to_fold if m.role == "arslan" or (
-                m.role == "user" and str(m.content or "").startswith(untrusted.BRIEF_FROM_OUTSIDE)))]):
+                m.role == "user" and str(m.content or "").startswith(untrusted.USER_FRAMES)))]):
             new_summary = f"{untrusted.SUMMARY_FROM_OUTSIDE}\n{new_summary}"
 
         newer = select(ArslanSummary.id).where(ArslanSummary.conversation_id == conversation_id)

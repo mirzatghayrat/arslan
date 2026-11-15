@@ -25,7 +25,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("../api/client", () => ({
-  api: { getRegistry: vi.fn(), listSpawns: vi.fn(), updateEquipment: vi.fn(), checkSkillHealth: vi.fn() },
+  api: { getRegistry: vi.fn(), checkSkillHealth: vi.fn() },
 }));
 import { api } from "../api/client";
 const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -67,7 +67,6 @@ const DEGRADED_HEALTH: SkillHealth = {
 beforeEach(() => {
   vi.clearAllMocks();
   m.getRegistry.mockResolvedValue(CATALOG);
-  m.listSpawns.mockResolvedValue([]);
 });
 
 describe("CapabilityCatalog — PC-5 skill health", () => {

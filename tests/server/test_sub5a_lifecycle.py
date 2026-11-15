@@ -195,9 +195,9 @@ async def test_a_restart_interrupts_a_running_and_a_queued_sub_session_and_tells
 
 
 async def test_a_restart_voids_a_sub_sessions_waiting_card_for_a_refused_site(runs, restart, monkeypatch):  # noqa: F811
-    """Row 2, NET-a's switch on: the card the cover waits on in the commander's window is the one after the proxy refused
-    a site its command reached. After the restart nobody can answer it, the command doesn't run again, the cover records
-    `interrupted`, and the commander gets one line."""
+    """Row 2, NET-a's switch on: the card the cover waits on in the commander's window is the site card for a site its
+    command names that the page named (NET-b: asked up front, before the run). After the restart nobody can answer it,
+    the command never runs, the cover records `interrupted`, and the commander gets one line."""
     from tests.server.test_sub3_runner import _RefusedRun
     runner = _RefusedRun()
     monkeypatch.setitem(executors.EXECUTORS, "run_command", runner)
@@ -208,17 +208,18 @@ async def test_a_restart_voids_a_sub_sessions_waiting_card_for_a_refused_site(ru
     await _wait(lambda: _cards(shown))
     [card] = _cards(shown)
     assert (card["perm_kind"], card["sub_session"]) == ("network", True)
+    assert " wants to send to " in card["detail"]                       # the pre-flight's card
     cover = _by_goal()[COVER].conversation_id
     db = await restart()
     assert approvals.pending_cards(ROOT) == []
     assert approvals.answer({"type": "confirm_" + card["type"].removeprefix("propose_"), "call_id": card["call_id"],
                              "scope": "conversation"}) is False
-    assert runner.runs == [(False, False)]                 # the refused run, before its card: nothing after it
+    assert runner.runs == []                             # NET-b: its card comes before the run, which never came
     assert await _states(db, [cover]) == {cover: "interrupted"}
     assert (await _tasks(db))[cover] == ("cancelled", "process_interrupted")
     assert await _said(db, ROOT) == [(_line(1), None)]
     await _nothing_runs_again(model)
-    assert runner.runs == [(False, False)]
+    assert runner.runs == []
 
 
 @pytest.mark.usefixtures("s2a1_network_rule")          # NET-a: S2a-1's network card as the waiting card, its switch off

@@ -45,7 +45,8 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Learning, MemoryProposal, Note, Spawn, UserFact
+from server.db.models import Base, Learning, MemoryProposal, Note, UserFact
+from tests.server import pre_0103
 
 
 @pytest_asyncio.fixture
@@ -123,8 +124,7 @@ async def _seed_note(client, title="旧笔记", content="旧笔记内容") -> in
 
 async def _seed_spawn(client, spawn_id, name, memory_facts=None) -> None:
     async with client.db_maker() as db:
-        db.add(Spawn(id=spawn_id, name=name, domain_category="d", system_prompt="p",
-                     memory_facts=memory_facts or []))
+        await pre_0103.add_spawn(db, spawn_id, name, memory_facts=memory_facts)   # no Spawn model since C7c-5b
         await db.commit()
 
 

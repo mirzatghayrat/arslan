@@ -164,13 +164,24 @@ def test_a_packaged_server_refuses_a_websocket_with_no_origin(monkeypatch):
     assert security.ws_origin_allowed(None, "127.0.0.1:8000") is True                       # dev
 
 
-# 5 ── no test routes ─────────────────────────────────────────────────────────────────────────────────
+# 5 ── no test routes, in any configuration ─────────────────────────────────────────────────────────
+# C7c-5a: the last test-only route (`/_test/seed_spawn`) went with spawn_service, and with it the
+# ARSLAN_TEST_ROUTES switch. The invariant replaces the three gate tests (this one, two in
+# test_settings_hardening.py, the seed case in test_c11b_token_hygiene.py): nothing under
+# `/api/v1/_test/` is served, whether or not the old flag is set, packaged or not.
 
-def test_a_packaged_server_registers_no_test_route(monkeypatch):
+@pytest.mark.parametrize("env", [
+    {"ARSLAN_TEST_ROUTES": "1"},                                                    # dev, with the flag
+    {"ARSLAN_PACKAGED": "1", "ARSLAN_TEST_ROUTES": "1", "ARSLAN_SECRET_KEY": "x" * 32},  # packaged, with it
+    {},                                                                             # dev, no flag
+], ids=["dev-flag", "packaged-flag", "no-flag"])
+def test_no_test_route_is_registered_in_any_configuration(monkeypatch, env):
     from tests.route_introspection import iter_route_paths
-    _config(monkeypatch, ARSLAN_PACKAGED="1", ARSLAN_TEST_ROUTES="1", ARSLAN_SECRET_KEY="x" * 32)
+    _config(monkeypatch, **env)
     import server.main as main
-    assert "/api/v1/_test/seed_spawn" not in iter_route_paths(main.create_app())
+    paths = iter_route_paths(main.create_app())
+    assert "/api/v1/_authcheck" in paths, "positive control: introspection sees the app's routes"
+    assert not [p for p in paths if p.startswith("/api/v1/_test/")]
 
 
 # 6 ── a new MCP token needs the current access token ─────────────────────────────────────────────────
