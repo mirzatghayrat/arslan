@@ -138,6 +138,36 @@ async def test_a_chain_that_cant_be_read_runs_in_ask(monkeypatch):
     assert await _mode(CHILD) == ("ask", "ask")
 
 
+def _fail_on_row_read(monkeypatch, n: int) -> None:
+    """The walk's `n`th row read (1 is the conversation's own) raises; the others read as usual."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+    real, reads = AsyncSession.get, []
+
+    async def get(self, model, ident, *a, **kw):
+        if model is ConversationContext:
+            reads.append(ident)
+            if len(reads) == n:
+                raise OSError("stand-in read error")
+        return await real(self, model, ident, *a, **kw)
+    monkeypatch.setattr(AsyncSession, "get", get)
+
+
+async def test_a_read_error_partway_never_widens_a_mode_already_read(monkeypatch):
+    """The parent's plan was read before the error: the error is "ask" narrowed by it, so plan."""
+    await _row(TOP, "full_access")
+    await _sub(CHILD, "plan", parent=TOP)
+    await _sub(LEAF, "full_access", parent=CHILD)
+    _fail_on_row_read(monkeypatch, 3)                     # LEAF, CHILD (plan) read; TOP raises
+    assert await _mode(LEAF) == ("plan", "plan")
+
+
+async def test_a_read_error_before_anything_is_read_is_ask(monkeypatch):
+    """Nothing read: "ask", not the conversation's own plan (it wasn't read) nor the default."""
+    await _row(TOP, "plan")
+    _fail_on_row_read(monkeypatch, 1)
+    assert await _mode(TOP) == ("ask", "ask")
+
+
 async def test_each_reader_of_the_mode_sees_ask():
     """The window's mode route, the command gate's two ask-all checks, and a card the mode would have answered."""
     from server.api.conversations import _permission_mode_out
@@ -199,3 +229,16 @@ async def test_an_ordinary_conversation_reads_as_before():
     assert await _mode("thread-new") == ("full_access", "full_access")          # no row: the default
     await _row(TOP, "plan")
     assert await _mode(TOP) == ("plan", "plan")
+
+
+async def test_the_delete_mark_on_an_ordinary_conversation_leaves_its_own_mode():
+    """The fail-closed rule is a sub-session's: an ordinary conversation whose delete began here (the in-process mark,
+    no tombstone) still reads its own mode. What runs of it is refused elsewhere (`sub_sessions.is_deleted`)."""
+    await _row(TOP, "full_access")
+    async with db_session.AsyncSessionLocal() as db:
+        assert await sub_sessions.before_delete(db, TOP, choice=None, as_sub_session=False) == ([TOP], [])
+        await db.rollback()
+    async with db_session.AsyncSessionLocal() as db:
+        row = await db.get(ConversationContext, TOP)
+        assert row.kind != sub_sessions.DELETED and sub_sessions.is_deleted(TOP, row)
+    assert await _mode(TOP) == ("full_access", "full_access")

@@ -149,12 +149,114 @@ def in_round(records: list[dict], name: str) -> list[dict]:
     return [r for r in records if str(r.get("run", "")).endswith(f"-{name}")]
 
 
+# ── L7 goal mode: the completion bar (docs/plans/0164/L7-goal-mode.md, Bench plan) ──────────────────────────────────
+# Per look: 4 goal tasks at k=6 and 13 other tasks at k=3 in each arm. The one full rerun a miss allows is pooled with
+# the first look, and both thresholds double (+16 of 48, -6 of 78).
+BAR_GAIN = 8
+BAR_LOSS = 3
+FALSE_PASS = ("False-pass rate (a goal mode with no real effect passing; exact, from the card): at most 1.47% at one "
+              "look (gate 1, every rate 0.5); with the one pooled rerun, 1.31% for the whole bar (gate 1 alone 1.49%).")
+
+
+def completed(record: dict) -> bool:
+    """Complete means checked, never claimed: the task's checker gave 3, whatever the run's end or the goal said."""
+    return (record.get("check") or {}).get("score") == 3
+
+
+def _latest(records: list[dict]) -> list[dict]:
+    """The last record of each run label (rerun.py's rule: a cell an environment fault invalidated is run again)."""
+    by_label = {}
+    for r in records:
+        by_label[r.get("run")] = r
+    return list(by_label.values())
+
+
+def _per_task(records: list[dict]) -> dict:
+    out: dict = defaultdict(int)
+    for r in records:
+        out[r["task"]] += 1
+    return dict(out)
+
+
+def completion_bar(off: list[dict], on: list[dict]) -> dict:
+    """`on` against `off`, on the same build branch: (1) on the goal tasks, `on` completes at least `off` + 8 per look;
+    (2) on the 13 other tasks, at least `off` - 3 per look. Judged only when both arms have exactly k=6 runs of each
+    goal task and k=3 of each other task per look, every `on` run went as a goal on an instance that took goal mode,
+    and no `off` run did."""
+    from scripts.kernel_bench.goal_tasks import GOAL_TASKS, GOAL_TASK_REPEATS, OTHER_TASK_REPEATS, OTHER_TASKS
+    off, on = _latest(off), _latest(on)
+    goal_runs = len(GOAL_TASKS) * GOAL_TASK_REPEATS
+    looks = len([r for r in off if r["task"] in GOAL_TASKS]) // goal_runs
+    want = {**{t: GOAL_TASK_REPEATS * looks for t in GOAL_TASKS}, **{t: OTHER_TASK_REPEATS * looks for t in OTHER_TASKS}}
+    why = None
+    if looks not in (1, 2):
+        why = f"the off arm has {looks} look(s) of goal-task runs; the bar takes one, or one pooled rerun"
+    elif _per_task(off) != want or _per_task(on) != want:
+        why = (f"each arm needs exactly {want['T18']} runs of each goal task and {want['T1']} of each of the 13 others "
+               f"(off has {len(off)}, on has {len(on)} runs)")
+    elif any((r.get("goal") or {}).get("setting") != "on" for r in on):
+        why = "some on-arm runs did not go as goals on an instance that took goal mode"
+    elif any(r.get("goal") is not None for r in off):
+        why = "some off-arm runs went as goals"
+
+    def side(tasks: tuple, margin: int) -> dict:
+        n_off = sum(completed(r) for r in off if r["task"] in tasks)
+        n_on = sum(completed(r) for r in on if r["task"] in tasks)
+        need = n_off + margin * looks
+        return {"off": n_off, "on": n_on, "runs": len(tasks) * want.get(tasks[0], 0), "need": need, "pass": n_on >= need}
+
+    goal_side, other_side = side(GOAL_TASKS, BAR_GAIN), side(OTHER_TASKS, -BAR_LOSS)
+    states = [r.get("goal") or {} for r in on]
+    claimed = sum(1 for r, g in zip(on, states)
+                  if not completed(r) and (g.get("status") == "complete" if g.get("status") else r.get("end") == "done"))
+    return {"judged": why is None, "why": why, "looks": looks, "goal": goal_side, "other": other_side,
+            "pass": why is None and goal_side["pass"] and other_side["pass"],
+            "flagged_runs": sum(1 for g in states if (g.get("flagged") or 0) > 0),
+            "flag_unseen_runs": sum(1 for g in states if g.get("setting") == "on" and g.get("flagged") is None),
+            "claimed_not_checked": claimed}
+
+
+def render_bar(bar: dict) -> str:
+    def line(name: str, s: dict, rule: str) -> str:
+        return (f"| {name} | {s['off']}/{s['runs']} | {s['on']}/{s['runs']} | {rule}: at least {s['need']} | "
+                f"{'yes' if s['pass'] else 'no'} |")
+    looks = max(bar["looks"], 1)
+    verdict = "PASS" if bar["pass"] else ("FAIL" if bar["judged"] else f"NOT JUDGED: {bar['why']}")
+    return "\n".join([
+        f"Completion bar (L7, {looks} look{'s' if looks > 1 else ''}): {verdict}",
+        "",
+        "| side | off complete | on complete | needed | met |",
+        "| --- | --- | --- | --- | --- |",
+        line("goal tasks T18-T21", bar["goal"], f"off + {BAR_GAIN * looks}"),
+        line("13 other tasks", bar["other"], f"off - {BAR_LOSS * looks}"),
+        "",
+        f"Reported, not gated: on runs with a flagged drafted check {bar['flagged_runs']} (flag not visible in the "
+        f"frames: {bar['flag_unseen_runs']}); on runs the goal or the run called complete whose checker failed "
+        f"{bar['claimed_not_checked']}.",
+        FALSE_PASS,
+    ])
+
+
+def _option(argv: list[str], name: str) -> str | None:
+    return argv[argv.index(name) + 1] if name in argv else None
+
+
+def _rounds(records: list[dict], names: str) -> list[dict]:
+    return [r for name in names.split(",") for r in in_round(records, name)]
+
+
 if __name__ == "__main__":
     argv = sys.argv[1:]
-    name = argv[argv.index("--round") + 1] if "--round" in argv else None
-    args = [a for i, a in enumerate(argv) if not a.startswith("--") and not (i and argv[i - 1] == "--round")]
+    valued = ("--round", "--off-round", "--on-round")
+    name = _option(argv, "--round")
+    args = [a for i, a in enumerate(argv) if not a.startswith("--") and not (i and argv[i - 1] in valued)]
     path = args[0] if args else str(Path(os.environ.get("BENCH_ROOT", "/tmp/arslan-kernel-bench")) / "results.jsonl")
     recs = load(path)
+    if "--bar" in argv:
+        # --off-round / --on-round: a round name, or two comma-separated for the one pooled rerun.
+        print(render_bar(completion_bar(_rounds(recs, _option(argv, "--off-round") or ""),
+                                        _rounds(recs, _option(argv, "--on-round") or ""))))
+        sys.exit(0)
     if name:
         recs = in_round(recs, name)
     rows = summarise(recs, offpeak="--offpeak" in sys.argv)
