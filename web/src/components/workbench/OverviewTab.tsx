@@ -22,6 +22,7 @@ import { opensDiff } from "./DiffReader";
 import FileIcon from "./FileIcon";
 import RepoChanges, { gitError } from "./RepoChanges";
 import { HEADING } from "./FilesTab";
+import SideChatsList from "./SideChatsList";
 
 /** What the workbench needs from App to show and change this conversation's model (the chip's own props). */
 export type OverviewModels = {
@@ -222,6 +223,8 @@ export default function OverviewTab({ conversationId, files, home, models, onOpe
               </button>
             </li>))}</ul>}
       </section>
+
+      <SideChatsList conversationId={conversationId} />
 
       {(shownTurns.length > 0 || repo) && <section data-testid="overview-changes">
         <h3 ref={heading} tabIndex={-1} className={`${HEADING} outline-none`}>{t("workbench.chH")}</h3>

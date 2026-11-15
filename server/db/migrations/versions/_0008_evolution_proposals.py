@@ -3,6 +3,9 @@
 Revision ID: 0008
 Revises: 0007
 Create Date: 2026-06-23
+
+v0.1.64 C7c-5b: the table is made only where `spawns` exists (an upgraded install). A new install has no
+`spawns` since the Spawn model went, and a table whose foreign key names a missing table refuses every write.
 """
 from __future__ import annotations
 
@@ -31,7 +34,8 @@ def _table(metadata: sa.MetaData) -> sa.Table:
 
 def _upgrade(bind) -> None:  # noqa: ANN001
     insp = sa.inspect(bind)
-    if "evolution_proposals" not in set(insp.get_table_names()):
+    tables = set(insp.get_table_names())
+    if "evolution_proposals" not in tables and "spawns" in tables:
         metadata = sa.MetaData()
         sa.Table("spawns", metadata, sa.Column("id", sa.Integer(), primary_key=True),
                  keep_existing=True)

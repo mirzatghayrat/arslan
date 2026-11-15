@@ -40,8 +40,8 @@ async def test_the_settings_api_no_longer_reports_or_stores_the_switch(client):
 
 
 async def test_the_complete_chat_route_is_gone(client):
-    # Positive control: the spawns router itself still answers.
-    assert (await client.get("/api/v1/spawns", headers=AUTH)).status_code == 200
+    # Positive control: a live authed GET still answers (the spawns router went in C7c-4).
+    assert (await client.get("/api/v1/conversations", headers=AUTH)).status_code == 200
     r = await client.post("/api/v1/spawns/1/complete-chat", headers=AUTH)
     assert r.status_code in (404, 405)
 

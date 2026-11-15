@@ -2,10 +2,9 @@
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.db.models import Base, SkillPack, Spawn, SpawnCapability, Tool, Toolset
+from server.db.models import Base, SkillPack, Tool, Toolset
 
 
 @pytest_asyncio.fixture
@@ -28,28 +27,11 @@ async def test_registry_models_roundtrip(maker):
         s.add(SkillPack(key="baoyu-infographic", name="baoyu-infographic",
                         category="creative", description="Infographics", tier="safe",
                         status="registered"))
-        s.add(Spawn(id=1, name="x", domain_category="d", system_prompt="p"))
-        await s.commit()
-        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="web_search_scraping"))
         await s.commit()
 
     async with maker() as s:
-        cap = (await s.execute(select(SpawnCapability))).scalar_one()
-        assert cap.grant == "permanent" and cap.granted_by == "create"
-        assert cap.expires_turn is None
         tool = (await s.execute(select(Tool))).scalar_one()
         assert tool.toolset_key == "web_search_scraping"
-
-
-@pytest.mark.asyncio
-async def test_spawn_capability_unique(maker):
-    async with maker() as s:
-        s.add(Spawn(id=1, name="x", domain_category="d", system_prompt="p"))
-        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="a"))
-        await s.commit()
-        s.add(SpawnCapability(spawn_id=1, kind="toolset", ref_key="a"))
-        with pytest.raises(IntegrityError):
-            await s.commit()
 
 
 def test_migration_0003_idempotent(tmp_path):

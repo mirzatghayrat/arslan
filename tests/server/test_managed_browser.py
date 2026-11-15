@@ -53,9 +53,7 @@ async def test_preview_only_static_operations_renderer_sandbox_on(monkeypatch, t
 
 
 async def test_visit_durable_idempotent_not_scored(execution_db, monkeypatch):
-    from server.services import run_recorder
-    scored = []
-    monkeypatch.setattr(run_recorder, "schedule_scoring", scored.append)
+    # "not scored": nothing schedules scoring since C7c-5a; the row carries no score.
     monkeypatch.setattr(browser, "status", lambda: {"ready": True})
 
     async def preview(url):
@@ -68,7 +66,9 @@ async def test_visit_durable_idempotent_not_scored(execution_db, monkeypatch):
     assert first == await api.start_visit(request)
     saved = await api.get_visit(first["run_id"])
     assert saved["status"] == "completed" and saved["result"]["text"] == "synthetic snapshot"
-    assert not scored
+    from server.db.models import Run
+    async with execution_db() as db:
+        assert (await db.get(Run, first["run_id"])).overall_score is None
     with pytest.raises(HTTPException) as error:
         await api.start_visit(api.Visit(url="https://other.example", request_key=request.request_key))
     assert error.value.status_code == 409

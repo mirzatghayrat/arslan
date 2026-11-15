@@ -33,6 +33,12 @@ def _json(value, fallback):
         return fallback
 
 
+def _columns(connection, table: str) -> set[str]:
+    """The table's columns; empty when it is absent. A new install has no `spawns` or `feedback` table since
+    C7c-5b (v0.1.64); an upgraded one keeps them until C7c-5c."""
+    return {row[1] for row in connection.exec_driver_sql(f"PRAGMA table_info({table})")}
+
+
 def _time(value):
     if isinstance(value, datetime):
         return value
@@ -70,10 +76,13 @@ def migrate_legacy_sync(connection, *, fault_after: int | None = None) -> dict:
     }
     counts, notes, relationships, migrated = Counter(), Counter(), [], 0
     now = datetime.utcnow()
+    spawn_columns = _columns(connection, "spawns")
     source_ids = {
         "conversation_id": set(connection.execute(text("SELECT DISTINCT conversation_id FROM arslan_messages")).scalars()),
-        "spawn_id": set(connection.execute(text("SELECT id FROM spawns")).scalars()),
-        "feedback_id": set(connection.execute(text("SELECT id FROM feedback")).scalars()),
+        "spawn_id": (set(connection.execute(text("SELECT id FROM spawns")).scalars())
+                     if "id" in spawn_columns else set()),
+        "feedback_id": (set(connection.execute(text("SELECT id FROM feedback")).scalars())
+                        if "id" in _columns(connection, "feedback") else set()),
         "run_id": set(connection.execute(text("SELECT id FROM runs")).scalars()),
     }
 
@@ -184,7 +193,9 @@ def migrate_legacy_sync(connection, *, fault_after: int | None = None) -> dict:
             sensitivity="unknown", status=status, author="assistant",
             valid_from=_time(raw.get("valid_from")), superseded_key=raw.get("superseded_by"))
 
-    for row in connection.execute(text("SELECT id, memory_facts, created_at FROM spawns ORDER BY id")).mappings():
+    spawn_rows = (connection.execute(text("SELECT id, memory_facts, created_at FROM spawns ORDER BY id")).mappings()
+                  if {"id", "memory_facts", "created_at"} <= spawn_columns else ())
+    for row in spawn_rows:
         for index, value in enumerate(_json(row["memory_facts"], [])):
             raw = {"spawn_id": row["id"], "index": index, "value": value, "created_at": row["created_at"]}
             add("spawns", f"{row['id']}:{index}", raw,

@@ -168,6 +168,16 @@ async def test_a_read_error_before_anything_is_read_is_ask(monkeypatch):
     assert await _mode(TOP) == ("ask", "ask")
 
 
+@pytest.mark.parametrize("leaf, expected", [("plan", "plan"), (None, "ask")])
+async def test_a_read_error_after_rows_with_an_unset_mode_still_fails_closed(monkeypatch, leaf, expected):
+    """An unset mode on the chain read so far is skipped (`own` is None) on the error path, not fed to `narrower`."""
+    await _row(TOP, "full_access")
+    await _sub(CHILD, None, parent=TOP)
+    await _sub(LEAF, leaf, parent=CHILD)
+    _fail_on_row_read(monkeypatch, 3)                     # LEAF, CHILD (unset) read; TOP raises
+    assert await _mode(LEAF) == (expected, expected)
+
+
 async def test_each_reader_of_the_mode_sees_ask():
     """The window's mode route, the command gate's two ask-all checks, and a card the mode would have answered."""
     from server.api.conversations import _permission_mode_out

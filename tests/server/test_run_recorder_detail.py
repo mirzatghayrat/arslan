@@ -23,7 +23,6 @@ async def test_finalize_persists_detail_and_merges_trace(memdb, monkeypatch):
     from server.orchestrator import run_trace
     from server.db.models import Run, RunStep
 
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda rid: None)
 
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c", spawn_id=None, spawn_name="S", user_message="hi")
@@ -56,7 +55,6 @@ async def test_finalize_truncates_error_text(memdb, monkeypatch):
     from server.services import run_recorder
     from server.db.models import Run
 
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda rid: None)
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c", spawn_id=None, spawn_name="S", user_message="hi")
     long_err = "E" * (run_recorder.RUN_ERR_CAP + 500)
@@ -73,7 +71,6 @@ async def test_finalize_backward_compatible_defaults(memdb, monkeypatch):
     from server.services import run_recorder
     from server.db.models import Run
 
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda rid: None)
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c", spawn_id=None, spawn_name="S", user_message="hi")
     rid = await rec.finalize(summary_message_id=None, full_output="OUT")

@@ -12,8 +12,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db import session as db_session
+from server.db.migrations.versions._0008_evolution_proposals import upgrade_sync as upgrade_0008
 from server.db.migrations.versions._0028_evolution_real import upgrade_sync
-from server.db.models import ArslanMessage, Base, Run, RunEvaluation, Spawn
+from server.db.models import ArslanMessage, Base, Run, RunEvaluation
 
 
 @pytest.fixture
@@ -34,6 +35,9 @@ async def test_0028_idempotent_columns_and_tables():
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # An install from before C7c-5b (v0.1.64): it has `spawns`, and 0008's evolution_proposals.
+            await conn.exec_driver_sql("CREATE TABLE spawns (id INTEGER PRIMARY KEY)")
+            await conn.run_sync(upgrade_0008)
             await conn.run_sync(upgrade_sync)
             await conn.run_sync(upgrade_sync)  # second run must be a no-op, not raise
 
@@ -48,6 +52,23 @@ async def test_0028_idempotent_columns_and_tables():
             evo_cols = {r[1] for r in await conn.exec_driver_sql(
                 "PRAGMA table_info(evolution_proposals)")}
             assert "base_prompt_sha" in evo_cols
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_0028_on_a_new_install_without_spawns_makes_no_expert_table():
+    """C7c-5b: both tables name `spawns` in a foreign key, and a new install has no `spawns`."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(upgrade_sync)
+            tables = {r[0] for r in await conn.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            assert not {"synthetic_tasks", "evolution_attempts"} & tables
+            run_cols = {r[1] for r in await conn.exec_driver_sql("PRAGMA table_info(runs)")}
+            assert {"kind", "epoch", "continuation", "final_output"} <= run_cols
     finally:
         await engine.dispose()
 
@@ -83,7 +104,6 @@ async def test_0028_legacy_run_backfills_epoch_zero():
 async def test_recorder_start_marks_epoch1_live(memdb, monkeypatch):
     from server.services import run_recorder
 
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda _rid: None)
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c1", spawn_id=None, spawn_name="Mermer", user_message="hi")
     async with memdb() as db:
@@ -97,7 +117,6 @@ async def test_recorder_start_marks_epoch1_live(memdb, monkeypatch):
 async def test_recorder_finalize_keeps_epoch1_and_continuation(memdb, monkeypatch):
     from server.services import run_recorder
 
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda _rid: None)
     rec = await run_recorder.RunRecorder.start(
         conversation_id="c1", spawn_id=None, spawn_name="Mermer",
         user_message="继续", continuation=True)
@@ -132,9 +151,6 @@ async def _seed_run(Session, *, kind: str, epoch: int, spawn_id: int, spawn_name
 @pytest.mark.asyncio
 async def test_replay_run_absent_from_catalog(client):
     async with client.db_maker() as db:
-        for sid, name in ((1, "LiveBot"), (2, "ReplayBot")):   # runs.spawn_id is a foreign key: spawns first
-            db.add(Spawn(id=sid, name=name, domain_category="g", system_prompt="sp"))
-        await db.flush()
         for kind, name in (("live", "LiveBot"), ("replay", "ReplayBot")):
             db.add(Run(conversation_id="c1", spawn_id=(1 if kind == "live" else 2),
                        spawn_name=name, user_message="t", status="recorded",

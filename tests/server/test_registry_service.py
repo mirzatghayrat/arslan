@@ -1,4 +1,4 @@
-"""safe_menu/assert_assignable: the permission model's hard gates (spec §2, test #4)."""
+"""safe_menu: the permission model's hard gate (spec §2, test #4; assert_assignable went in C7c-5a)."""
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -47,18 +47,15 @@ async def test_safe_menu_contains_zero_unsafe_items(seeded):
 
 
 @pytest.mark.asyncio
-async def test_assert_assignable_rejects_orchestrator_and_unknown(seeded):
+async def test_safe_menu_rejects_orchestrator_and_unknown(seeded):
+    # C7c-5a: was test_assert_assignable_rejects_orchestrator_and_unknown; the gate went
+    # with its last write path, and the safe menu applies the same rules.
     from server.registry import service
 
-    await service.assert_assignable("toolset", "web_search_scraping")  # ok
-    await service.assert_assignable("skill", "designed-html-report")   # ok
-    with pytest.raises(service.NotAssignableError):
-        await service.assert_assignable("toolset", "code_execution")
-    with pytest.raises(service.NotAssignableError):
-        await service.assert_assignable("toolset", "terminal_processes")
-    with pytest.raises(service.NotAssignableError):
-        await service.assert_assignable("skill", "claude-code")   # retired (C9): unknown now
-    with pytest.raises(service.NotAssignableError):
-        await service.assert_assignable("toolset", "no-such-key")
-    with pytest.raises(service.NotAssignableError):
-        await service.assert_assignable("toolset", "memory")  # absorbed
+    menu = await service.safe_menu()
+    toolsets = {t["key"] for t in menu["toolsets"]}
+    skills = {s["key"] for s in menu["skills"]}
+    assert "web_search_scraping" in toolsets   # ok
+    assert "designed-html-report" in skills    # ok
+    assert {"code_execution", "terminal_processes", "no-such-key", "memory"}.isdisjoint(toolsets)
+    assert "claude-code" not in skills          # retired (C9): unknown now

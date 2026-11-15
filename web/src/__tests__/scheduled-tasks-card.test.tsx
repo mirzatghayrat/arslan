@@ -30,7 +30,6 @@ vi.mock("../api/client", () => {
       resumeScheduledTask: vi.fn(),
       fireScheduledTaskNow: vi.fn(),
       getScheduledTaskRuns: vi.fn(),
-      listSpawns: vi.fn(),
     },
   };
 });
@@ -70,15 +69,9 @@ const TASKS = [
   },
 ];
 
-const SPAWNS = [
-  { id: 7, name: "Researcher", domain: "research", capabilities: [], template_used: null, generation_level: 1, created_at: "", updated_at: "" },
-  { id: 8, name: "Writer", domain: "writing", capabilities: [], template_used: null, generation_level: 1, created_at: "", updated_at: "" },
-];
-
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.listScheduledTasks).mockResolvedValue(TASKS as never);
-  vi.mocked(api.listSpawns).mockResolvedValue(SPAWNS as never);
   vi.mocked(api.getScheduledTaskRuns).mockResolvedValue([] as never);
 });
 
