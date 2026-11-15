@@ -7,7 +7,7 @@ these tables: every step is a no-op there except the expert-scope triggers (step
 
 0. An install whose memory v2 never activated maps its legacy memory first (memory_migration, as 0047 does), so
    the experts' stored preferences are not lost with `spawns`.
-1. Each expert the user made (`CONVERT_DEFAULT_EXPERTS`) becomes a skill, written as `skill_forge.register` wrote
+1. Each expert the user made (`is_default = 0`; the built-in examples seeded until 0.1.48 are not theirs) becomes a skill, written as `skill_forge.register` wrote
    it for `expert_conversion.convert` (category "authored", tier safe, on), from frozen copies of that code
    (the 0077 and 0082 rule: no async service in a migration, and a later change there never changes this). A
    taken key is never overwritten: the same body means already converted; otherwise `key-2`, `key-3`, ... A
@@ -41,7 +41,7 @@ these tables: every step is a no-op there except the expert-scope triggers (step
    table cannot be rebuilt either); the model's CHECK drops "expert" for new installs.
 
 `chat_messages` and `feedback` (the old one-to-one expert chats) drop without an export
-(`EXPORT_EXPERT_CHATS`): pending the user's confirmation, as is `CONVERT_DEFAULT_EXPERTS`.
+(the user's decision, 2026-11-15); the upgrade backup keeps them until it is pruned.
 
 Order with 0102: 0102 (another lane) may merge after this one. The runner applies every listed id missing from
 `schema_version` (a set, since 0073), so list 0102 before 0103 and an install that already has 0103 still gets 0102.
@@ -57,12 +57,6 @@ from datetime import datetime
 # Frozen in 0082 (`untrusted.clean_name` as of v0.1.64); a migration may import another's frozen helper (0069).
 from ._0082_clean_stored_names import _clean
 
-#: Q1, pending the user's confirmation: False converts only the experts the user made (`is_default = 0`), as the
-#: former-experts page listed them; the built-in examples seeded until 0.1.48 are not theirs.
-CONVERT_DEFAULT_EXPERTS = False
-#: Q2, pending the user's confirmation: False drops the old expert chats with no export (the upgrade backup keeps
-#: them until it is pruned). There is no export path yet; True stops the migration rather than lose them.
-EXPORT_EXPERT_CHATS = False
 
 RELAYED_PREFIX = "(relayed output from a former expert) "
 COLLECTION_NAME = "Former expert notes"
@@ -142,7 +136,7 @@ def _skills(connection, tables, counts) -> None:
     from arslan.companion.content_policy import contains_credential, without_credentials
     if not {"id", "name", "system_prompt", "is_default"} <= _columns(connection, "spawns") or "skill_packs" not in tables:
         return
-    where = "" if CONVERT_DEFAULT_EXPERTS else " WHERE is_default = 0"
+    where = " WHERE is_default = 0"   # only the experts the user made, as the former-experts page listed them
     rows = connection.exec_driver_sql(
         "SELECT id, name, domain_category, domain_subcategory, persona_role, system_prompt FROM spawns"
         f"{where} ORDER BY id").mappings().all()
@@ -300,8 +294,6 @@ def _memory(connection, tables, counts, now) -> None:
 
 def _drop(connection, tables, counts) -> None:
     """Step 7."""
-    if EXPORT_EXPERT_CHATS:
-        raise RuntimeError("expert_chat_export_not_implemented")
     for table in ("chat_messages", "feedback"):
         if table in tables:
             counts[f"{table}_dropped"] += connection.exec_driver_sql(f"SELECT COUNT(*) FROM {table}").scalar()
