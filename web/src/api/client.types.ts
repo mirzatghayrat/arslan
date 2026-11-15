@@ -376,7 +376,7 @@ export interface AppSettings {
   search_api_key: string; // masked on read
   github_token: string; // masked on read
   orchestrator_shell_enabled?: string; // "true" | "false"
-  shell_confirm_policy?: string; // "ask_all" | "ask_risky", as the server reads it (ASK1-a)
+  default_permission_mode?: string; // S5a: plan | ask | ask_risky | full_access, as the server reads it
   shell_policy_switch_notice?: string; // v0.1.64 ASK1-a: "pending" after migration 0095, then "seen"
   scheduled_commands_note?: string; // v0.1.64 ASK1-b: "pending" after migration 0097, then "seen"
   model_roles_reset_notice?: string; // v0.1.64 ROUTE1: "pending" after migration 0086 cleared the old model roles, then "seen"

@@ -17,7 +17,9 @@ import fr from "../locales/fr.json";
 const repo = (path: string) => readFileSync(resolve(__dirname, "../../..", path), "utf8");
 const LOCALES = { en, zh, ja, es, de, fr } as const;
 const GONE = ["askRiskyConfirmTitle", "askRiskyConfirmBody", "askRiskyConfirmAction", "askRiskyConfirmCancel",
-  "shellPolicyAskRiskyNote", "policyNoticeTitle", "policyNoticeBody"];
+  "shellPolicyAskRiskyNote", "policyNoticeTitle", "policyNoticeBody",
+  // S5a-2: the old "When to ask" control's strings.
+  "labelShellConfirmPolicy", "shellPolicyAskAll", "shellPolicyAskRisky", "shellPolicyAskAllNote"];
 
 describe("ASK1-a: the old sheet and markers are gone", () => {
   it.each([
@@ -43,9 +45,12 @@ describe.each(Object.entries(LOCALES))("ASK1-a note in %s", (_lang, data) => {
   it("drops the old strings", () => {
     for (const key of GONE) expect(s[key]).toBeUndefined();
   });
-  it("names the way to the other choice by its Settings label", () => {
-    expect(s.policyNoticeRiskyBody).toContain(s.shellPolicyAskAll);
-    expect(s.policyNoticeAllBody).toContain(s.shellPolicyAskRisky);
+  it("names the way to the other choice by its Settings label (S5a-2: the mode's name)", () => {
+    const modes = data.modes as unknown as Record<string, string>;
+    expect(s.policyNoticeRiskyBody).toContain(modes.ask);
+    expect(s.policyNoticeAllBody).toContain(modes.askRisky);
+    expect(s.policyNoticeRiskyBody).toContain(s.labelDefaultPermissionMode);
+    expect(s.policyNoticeAllBody).toContain(s.labelDefaultPermissionMode);
     expect(s.policyNoticeRiskyTitle && s.policyNoticeAllTitle).toBeTruthy();
     expect(`${s.policyNoticeRiskyBody}${s.policyNoticeAllBody}`).not.toContain("0.1.63");
   });

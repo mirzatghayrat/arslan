@@ -83,6 +83,7 @@ Full text in `docs/plans/0162/README.md` §8 (#432). In short: "complete in one 
 | **M64** | 跑分：代码审查题、拆分派汇总题、Hermes 门槛、每版一次完整的 | ⓪Plan | 必须 | 无（可以最先做） | [M64](M64-bench.md) |
 | **HPW** | Hands refuses a paste only when a password field is known to take input (role `AXSecureTextField`), or, when focus is unknown, when system-wide secure input is on; the refusal says which (added 2026-11-03, the user via ④参谋) | ③Hands | must (user, 2026-11-03) | after ③Hands' SBX items; effort=max | [HPW](HPW-hands-password-refusal.md) |
 | **ASK1** | The default goes back to asking only when a command is risky, and scheduled runs get commands back (S2a-3's unclaimed PR4). Added 2026-11-07: the user put closing this chain first | ③Hands | must | ASK1-a after S2a-3 and SBX-8; ASK1-b after ASK1-a and HR's e rule; effort=max | [ASK1](ASK1-default-ask-risky.md) |
+| **CAP11** | Capability cards on the phone. Step a: a declined capability's reason reaches the model and a plain no works from any surface (CAP11a); the Bridge frame PR shows capability cards view-only with a "don't install" decline, adds Mac-set `phone_can_approve` and optional `source` / `abilities` / `checks`. Step b (phone approval, the Mac-side opening) deferred. Added 2026-11-15 (the user, via ⓪Plan) | ⑤CAP + ①iOS | must (step a) | frame PR after #929, the user merges; step b after the rest of tier 1, effort=max, not blocking the tag | [CAP11](CAP11-capability-cards-on-phone.md) |
 
 ### 3.2 领先路线里 v0.1.64 的大卡（还没写）
 

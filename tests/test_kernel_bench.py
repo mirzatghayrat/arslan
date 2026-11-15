@@ -926,8 +926,7 @@ def test_the_bench_pins_its_command_policy(monkeypatch):
     from scripts.kernel_bench.arslan_driver import settings_body
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
     monkeypatch.setenv("BENCH_SHELL_POLICY", "ask_all")
-    # S5a (#893 review 4): the server's old field only narrows the default, so the driver writes the mode ("ask" is
-    # ask_all).
+    # S5a-2: the server no longer takes the old field, so the driver writes the mode ("ask" is ask_all).
     body = settings_body("/run")
     assert body["default_permission_mode"] == "ask" and "shell_confirm_policy" not in body
     for bad in ("ask_everything", "ASK_ALL"):

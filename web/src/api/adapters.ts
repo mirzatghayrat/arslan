@@ -2,6 +2,7 @@ import type { AppSettings, Message, Spawn, UiRun, UiRunDimension, UiRunStep } fr
 import type { AppSettings as BackendAppSettings, ArslanThreadItem, RunDetailDto, RunStepDto, SpawnSummary } from "./client.types";
 import { fromSteps, summarize } from "../lib/process";
 import { lastVersions } from "../components/reply/ReplyArtifacts";
+import { asMode } from "../components/modes/modes";
 
 // ── Settings adapters ─────────────────────────────────────────────────────────
 
@@ -70,12 +71,10 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     apiKeySearch: backend.search_api_key ?? "",
     githubToken: backend.github_token ?? "",
     language: backend.language ?? "en",
-    // Backend stores these as strings ("true"/"false", "ask_all"/"ask_risky"),
-    // both default OFF / most-cautious when absent.
-    // Mirrors settings_service.shell_enabled: unset means ON (0.1.48). The policy arrives as the server reads it
-    // (ASK1-a: unset is ask_risky, an odd spelling ask_all); a missing field stays strict.
+    // Mirrors settings_service.shell_enabled: unset means ON (0.1.48). The default mode arrives as the server reads
+    // it (S5a: unset is ask_risky, anything else odd is ask); a missing or odd value here stays strict too.
     orchestratorShellEnabled: backend.orchestrator_shell_enabled !== "false",
-    shellConfirmPolicy: backend.shell_confirm_policy === "ask_risky" ? "ask_risky" : "ask_all",
+    defaultPermissionMode: asMode(backend.default_permission_mode),
     // 0.1.43: budget tier for one background job; unknown → the server's default.
     backgroundJobBudget: backend.background_job_budget === "lean" || backend.background_job_budget === "ample"
       ? backend.background_job_budget : "standard",
@@ -144,7 +143,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   searchProviderRole: { key: "search_provider_role", to: (v) => (v as string) ?? "" },
   language: { key: "language" },
   orchestratorShellEnabled: { key: "orchestrator_shell_enabled", to: (v) => (v ? "true" : "false") },
-  shellConfirmPolicy: { key: "shell_confirm_policy" },
+  defaultPermissionMode: { key: "default_permission_mode" },
   backgroundJobBudget: { key: "background_job_budget" },
   taskUsdCap: { key: "task_usd_cap", to: (v) => String(v) },
   taskUsdCapEnabled: { key: "task_usd_cap_enabled", to: (v) => (v as boolean) ?? true },
