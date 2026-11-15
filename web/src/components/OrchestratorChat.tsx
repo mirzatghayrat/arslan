@@ -37,6 +37,8 @@ import LiveActivity from './LiveActivity';
 import ReplyArtifacts from './reply/ReplyArtifacts';
 import ReplyFooter from './reply/ReplyFooter';
 import { COMPOSER_INSERT_EVENT } from './workbench/Reader';
+import SelectionBar from './SelectionBar';
+import { MAIN_QUOTE_EVENT, addQuote } from '../lib/quote';
 import { Dialog, Notice } from './kit';
 import { useArslanStore } from '../stores/arslanStore';
 import { chatTaskErrorKey } from './companion/errors';
@@ -329,6 +331,18 @@ export default function OrchestratorChat({
     window.addEventListener(COMPOSER_INSERT_EVENT, insert);
     return () => window.removeEventListener(COMPOSER_INSERT_EVENT, insert);
   }, [setInputValue]);
+  // SIDE-2: "Reply" and a side chat's "Bring back to main" put a quote here. Nothing is sent: the user decides (card, rule 1).
+  useEffect(() => {
+    const quote = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text !== 'string' || !text.trim()) return;
+      setInputValue(addQuote(inputRef.current, text));
+      const box = (document.getElementById('chat-message-input') ?? document.getElementById('landing-message-input')) as HTMLTextAreaElement | null;
+      box?.focus();
+    };
+    window.addEventListener(MAIN_QUOTE_EVENT, quote);
+    return () => window.removeEventListener(MAIN_QUOTE_EVENT, quote);
+  }, [setInputValue]);
   const attach = useComposerAttach(() => {}, false, {
     allowUrlExtraction: !temporary,
     draft: temporary ? undefined : getAttachmentDraft(draftKey),
@@ -467,6 +481,8 @@ export default function OrchestratorChat({
           {/* Scrollable Chat Area */}
           <div ref={scrollContainerRef} onScroll={handleScrollContainerScroll} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
         {header}
+        {/* SIDE-2: the bar over a selection in a reply; a temporary conversation has no side chats (SIDE-1: 422). */}
+        <SelectionBar conversationId={conversationId ?? 'main'} canBranch={!temporary && !!conversationId} />
         {chatHistory.length === 0 ? (
           <div className="min-h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto py-10 px-4 space-y-8 select-none">
             {/* Shared product typography; wraps safely with long display names. */}
@@ -682,7 +698,7 @@ export default function OrchestratorChat({
                     )}
 
                     {/* Styled Bubble Body */}
-                    <div className={`px-4 py-3 text-[12.5px] leading-relaxed relative ${
+                    <div data-reply-id={isArslan ? msg.id : undefined} className={`px-4 py-3 text-[12.5px] leading-relaxed relative ${
                       isUser
                         ? 'bg-fill border border-border rounded-[12px_12px_4px_12px] text-foreground text-left'
                         : isArslan
@@ -766,6 +782,7 @@ export default function OrchestratorChat({
               return (
                 <div
                   key={msg.id}
+                  data-reply-id={isArslan ? msg.id : undefined}
                   className={`border-2 border-primary/60 p-4 font-mono text-[12px] bg-background shadow-[4px_4px_0px_var(--color-primary)] relative`}
                 >
                   {/* Sender Headers */}
@@ -839,7 +856,7 @@ export default function OrchestratorChat({
               }
 
               return (
-                <div key={msg.id} data-reply className="group/reply text-[12px] space-y-2">
+                <div key={msg.id} data-reply data-reply-id={isArslan ? msg.id : undefined} className="group/reply text-[12px] space-y-2">
                   {/* Sender Metadata Row */}
                   <div className="flex items-center gap-2 select-none text-[11px]">
                     {isArslan
