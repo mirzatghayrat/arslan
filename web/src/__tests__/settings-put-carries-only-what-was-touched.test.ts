@@ -97,7 +97,7 @@ describe("every settings field the UI can edit is mappable", () => {
       githubToken: "",
       language: "en",
       orchestratorShellEnabled: false,
-      shellConfirmPolicy: "ask_all",
+      defaultPermissionMode: "ask",
       mcpServerEnabled: false,
     } as never);
 
@@ -107,7 +107,7 @@ describe("every settings field the UI can edit is mappable", () => {
       search_provider_role: { searchProviderRole: "backup" },
       language: { language: "en" },
       orchestrator_shell_enabled: { orchestratorShellEnabled: false },
-      shell_confirm_policy: { shellConfirmPolicy: "ask_all" },
+      default_permission_mode: { defaultPermissionMode: "ask" },
       background_job_budget: { backgroundJobBudget: "lean" },
       task_usd_cap: { taskUsdCap: 5 },
       task_usd_cap_enabled: { taskUsdCapEnabled: false },

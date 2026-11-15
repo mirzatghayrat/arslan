@@ -30,15 +30,14 @@ afterEach(async () => { cleanup(); await i18n.changeLanguage("en"); });
 describe("actual sidebar service status in six languages", () => {
   it.each(SUPPORTED_LANGUAGES)("has explicit execution posture labels in %s", async language => {
     await i18n.changeLanguage(language);
-    for (const key of ["executionOptions", "readOnlyAutomatic", "confirmCommands", "harmlessRunUnasked"]) {
+    for (const key of ["executionOptions", "readOnlyAutomatic", "confirmCommands"]) {
       expect(String(i18n.t(`workspace.${key}`))).not.toBe(`workspace.${key}`);
     }
     expect(i18n.t('workspace.confirmCommands')).not.toBe(i18n.t('workspace.readOnlyAutomatic'));
-    // v0.1.63 (#398 re-check, F5): the chat's line under "ask only for risky" is its own, not "read-only", and
-    // says the commands run in the sandbox, in the app's own word for it.
-    const line = String(i18n.t('workspace.harmlessRunUnasked'));
-    expect(line).not.toBe(String(i18n.t('workspace.readOnlyAutomatic')));
-    expect(line).toContain(SANDBOX[language]);
+    // S5a-2: the chat's old line under "ask only for risky" is gone (the mode pill says it); the fallback banner's
+    // reason names the sandbox in the app's own word for it.
+    expect(i18n.exists('workspace.harmlessRunUnasked')).toBe(false);
+    expect(String(i18n.t('modes.reasonSandboxOff'))).toContain(SANDBOX[language]);
   });
   // 0.1.50 (user ruling): a permanent "Online" said nothing. Online shows no status
   // at all; offline and connecting show on the Progress row (Activity until v0.1.64), in every language.

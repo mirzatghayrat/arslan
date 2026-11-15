@@ -115,7 +115,7 @@ describe("toBackendSettings", () => {
     theme: "dark",
     telemetry: false,
     orchestratorShellEnabled: false,
-    shellConfirmPolicy: "ask_all", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
+    defaultPermissionMode: "ask", backgroundJobBudget: "standard", taskUsdCap: 2, workspaceDir: "", heartbeatEnabled: false, heartbeatChecklist: "", lanDiscoveryEnabled: false, sshEnabled: false, defaultReadEnabled: true, voiceInputLocale: "", voiceMode: "push_to_talk", voiceEndpointSilenceMs: 900,
     mcpServerEnabled: false,
   };
 
@@ -320,20 +320,27 @@ describe("toUiMessages", () => {
 
 describe("terminal settings follow the backend's defaults (0.1.48, v0.1.64)", () => {
   // The backend treats an unset switch as ON (0.1.48) (settings_service.shell_enabled). Reading `=== "true"`
-  // here showed a fresh install's terminal as OFF while it was working. The policy arrives as the server reads it
-  // (ASK1-a: unset is ask_risky there); anything else that arrives here stays strict.
-  const read = (enabled: string, policy: string) =>
-    toUiSettings({ orchestrator_shell_enabled: enabled, shell_confirm_policy: policy } as unknown as BackendAppSettings);
-  it("unset is on; a policy that is not exactly ask_risky asks before every command", () => {
-    expect(read("", "")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
-    expect(read("true", "garbage")).toMatchObject({ shellConfirmPolicy: "ask_all" });
-    // One rule with the server (settings_service): only the exact value Settings writes.
-    for (const odd of [" ask_risky", "ask_risky\n", "ASK_RISKY", "ask_risky\u00a0"]) {
-      expect(read("true", odd)).toMatchObject({ shellConfirmPolicy: "ask_all" });
+  // here showed a fresh install's terminal as OFF while it was working. The default mode arrives as the server reads
+  // it (S5a: unset is ask_risky there); anything else that arrives here stays strict ("ask").
+  const read = (enabled: string, mode: string | undefined) =>
+    toUiSettings({ orchestrator_shell_enabled: enabled, default_permission_mode: mode } as unknown as BackendAppSettings);
+  it("unset is on; a mode that is not exactly one of the four asks every step", () => {
+    expect(read("", "")).toMatchObject({ orchestratorShellEnabled: true, defaultPermissionMode: "ask" });
+    expect(read("true", undefined)).toMatchObject({ defaultPermissionMode: "ask" });
+    // One rule with the server (settings_service): only the exact values Settings writes.
+    for (const odd of ["garbage", "ask_all", " ask_risky", "ask_risky\n", "ASK_RISKY", "full_access\u00a0"]) {
+      expect(read("true", odd)).toMatchObject({ defaultPermissionMode: "ask" });
     }
   });
-  it("only an explicit choice turns it off or asks only for risky commands", () => {
-    expect(read("false", "ask_all")).toMatchObject({ orchestratorShellEnabled: false, shellConfirmPolicy: "ask_all" });
-    expect(read("true", "ask_risky")).toMatchObject({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
+  it.each(["plan", "ask", "ask_risky", "full_access"])("the mode %s reads as itself", (mode) => {
+    expect(read("true", mode)).toMatchObject({ defaultPermissionMode: mode });
+  });
+  it("only an explicit choice turns the terminal off", () => {
+    expect(read("false", "ask")).toMatchObject({ orchestratorShellEnabled: false });
+  });
+  it("writes default_permission_mode and never the old shell_confirm_policy", () => {
+    const out = toBackendSettings({ defaultPermissionMode: "full_access" } as never) as Record<string, unknown>;
+    expect(out.default_permission_mode).toBe("full_access");
+    expect("shell_confirm_policy" in out).toBe(false);
   });
 });

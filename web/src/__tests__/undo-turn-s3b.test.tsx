@@ -131,7 +131,7 @@ describe("settings", () => {
   type Props = React.ComponentProps<typeof AdvancedSection>;
   const props = (over: Partial<Props> = {}): Props => ({
     telemetry: false, onTelemetryChange: vi.fn(), orchestratorShellEnabled: false, onOrchestratorShellChange: vi.fn(),
-    shellConfirmPolicy: "ask_all", onShellConfirmPolicyChange: vi.fn(), workspaceDir: "/Volumes/x", onWorkspaceDirChange: vi.fn(),
+    defaultPermissionMode: "ask", onDefaultPermissionModeChange: vi.fn(), workspaceDir: "/Volumes/x", onWorkspaceDirChange: vi.fn(),
     lanDiscoveryEnabled: false, onLanDiscoveryChange: vi.fn(), sshEnabled: false, onSshChange: vi.fn(),
     defaultReadEnabled: true, onDefaultReadChange: vi.fn(), voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
     voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(), voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),

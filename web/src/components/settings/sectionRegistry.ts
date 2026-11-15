@@ -113,7 +113,7 @@ export const FIELD_HOMES: Record<string, SettingsSectionId> = {
   'access.mcp_server_enabled': 'connections',
   'advanced.telemetry': 'memory',
   'advanced.orchestrator_shell': 'abilities',
-  'advanced.shell_confirm_policy': 'abilities',
+  'abilities.default_permission_mode': 'abilities',
   'advanced.background_job_budget': 'background',
   'advanced.task_usd_cap': 'background',
   // S6: the old terminal-rules list (`advanced.terminal_rules`) and the outside-the-sandbox list fold into this one.

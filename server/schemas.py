@@ -48,9 +48,6 @@ class SettingsIn(BaseModel):
     brain_usage_event_max_rows: int | None = None
     orchestrator_shell_enabled: str | None = None
     default_permission_mode: Literal["plan", "ask", "ask_risky", "full_access"] | None = None   # S5a
-    # S5a: the window's old "when to ask" field, written into `default_permission_mode` (ask_all → ask, else
-    # ask_risky); never stored under its own key. DELETE-BY: S5a-2, when the window writes default_permission_mode.
-    shell_confirm_policy: str | None = None
     shell_policy_switch_notice: str | None = None   # v0.1.64 ASK1-a: "pending" / "seen" (migration 0095's note)
     scheduled_commands_note: str | None = None      # v0.1.64 ASK1-b: "pending" / "seen" (migration 0097's note)
     model_roles_reset_notice: str | None = None     # v0.1.64 ROUTE1: "pending" / "seen" (migration 0086's notice)
@@ -141,9 +138,6 @@ class SettingsOut(BaseModel):
     brain_usage_event_max_rows: int = 200_000
     orchestrator_shell_enabled: str = ""
     default_permission_mode: str = "ask_risky"      # S5a: as read (settings_service.default_permission_mode)
-    # S5a: derived from the default mode for the window's old control and note (ask → ask_all, else ask_risky); not
-    # stored. DELETE-BY: S5a-2, when the window reads default_permission_mode.
-    shell_confirm_policy: str = ""
     shell_policy_switch_notice: str = ""            # v0.1.64 ASK1-a: "pending" after 0095, then "seen"
     scheduled_commands_note: str = ""               # v0.1.64 ASK1-b: "pending" after 0097, then "seen"
     model_roles_reset_notice: str = ""              # v0.1.64 ROUTE1: "pending" after 0086 cleared the old roles, then "seen"

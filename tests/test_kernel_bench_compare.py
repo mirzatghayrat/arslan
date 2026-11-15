@@ -199,7 +199,7 @@ def test_runs_per_task():
         compare.runs_per_task("0", ["T1"])
 
 
-@pytest.mark.parametrize("key", ["shell_confirm_policy", "workspace_dir"])
+@pytest.mark.parametrize("key", ["shell_confirm_policy", "default_permission_mode", "workspace_dir"])
 def test_the_driver_owned_settings_cannot_be_the_switch(key, monkeypatch):
     monkeypatch.delenv("BENCH_ARSLAN_SETTINGS", raising=False)
     with pytest.raises(SystemExit):

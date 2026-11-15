@@ -29,7 +29,8 @@ describe("the schedule card says a scheduled run runs commands that need no OK, 
     expect(text).not.toContain(none);
   });
 
-  it.each(Object.entries({ en, zh, ja, de, fr, es }))("%s: the Scheduled page's note names the setting that turns it off", (_lang, d) => {
-    expect(d.scheduledPage.commandsNoteBody).toContain(d.settings.shellPolicyAskAll);
+  // S5a-2: the mode that turns it off is "Ask every step" (modes.ask), which replaced v0.1.63's "When to ask" option.
+  it.each(Object.entries({ en, zh, ja, de, fr, es }))("%s: the Scheduled page's note names the mode that turns it off", (_lang, d) => {
+    expect(d.scheduledPage.commandsNoteBody).toContain(d.modes.ask);
   });
 });
