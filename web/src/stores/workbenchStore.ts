@@ -71,6 +71,8 @@ interface WorkbenchState {
 
 /** WB1 rule 7: a selected side chat that goes falls back to Overview, and the panel stays open. */
 const FALLBACK: FixedTab = "overview";
+/** Side chats deleted from this window (ids are never reused: `side-` and a UUID). */
+const deletedSides = new Set<string>();
 
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   open: false,
@@ -103,7 +105,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     // One started while the list was on its way is kept, after the server's (it is the newest).
     const since = (get().sides[parentId] ?? []).filter((c) => !asked.has(c.conversation_id)
       && !list.some((x) => x.conversation_id === c.conversation_id));
-    set({ sides: { ...get().sides, [parentId]: [...list, ...since] } });
+    // A list asked for before a delete went through still names the deleted one: it stays gone.
+    const kept = list.filter((c) => !deletedSides.has(c.conversation_id));
+    set({ sides: { ...get().sides, [parentId]: [...kept, ...since] } });
   },
   startSide: async (parentId, branchMessageId, quote) => {
     const made = await sideChatsApi.create(parentId, branchMessageId ?? null);
@@ -124,7 +128,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     set({ openSides: { ...get().openSides, [parentId]: open }, ...(get().tab === id ? { tab: FALLBACK } : {}) });
   },
   deleteSide: async (parentId, id) => {
-    await sideChatsApi.remove(id);
+    // Marked before the request, so a list landing while it is on its way can't bring it back; unmarked if it fails.
+    deletedSides.add(id);
+    try { await sideChatsApi.remove(id); } catch (err) { deletedSides.delete(id); throw err; }
     get().closeSide(parentId, id);
     get().setSideQuote(id, null);
     set({ sides: { ...get().sides, [parentId]: (get().sides[parentId] ?? []).filter((c) => c.conversation_id !== id) } });

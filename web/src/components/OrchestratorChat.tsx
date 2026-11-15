@@ -38,7 +38,7 @@ import ReplyArtifacts from './reply/ReplyArtifacts';
 import ReplyFooter from './reply/ReplyFooter';
 import { COMPOSER_INSERT_EVENT } from './workbench/Reader';
 import SelectionBar from './SelectionBar';
-import { MAIN_QUOTE_EVENT, addQuote } from '../lib/quote';
+import { MAIN_QUOTE_EVENT, addQuote, noteBroughtBack, takeBroughtBack, type MainQuote, type SendOpts } from '../lib/quote';
 import { Dialog, Notice } from './kit';
 import { useArslanStore } from '../stores/arslanStore';
 import { chatTaskErrorKey } from './companion/errors';
@@ -100,7 +100,7 @@ interface OrchestratorChatProps {
   /** When provided, user prompts are sent via this callback (live WS) instead of the mock simulation.
    *  `display` echoes ALL attachments into the sent bubble (session-only); `context`/`names`
    *  carry only the text-bearing ones to the backend. */
-  onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => void;
+  onSendMessage?: (text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: SendOpts) => void;
   /** Not read since C1c-2: its last use was the routing brief's @-mention chips. Dropping it touches every
    *  caller (App and the tests), so that is left to a follow-up. */
   spawns: Spawn[];
@@ -149,6 +149,9 @@ export default function OrchestratorChat({
   const sendMessage: OrchestratorChatProps['onSendMessage'] = onSendMessage
     ? (text, attached, opts) => {
         rememberSend(conversationId ?? 'main', text, attached);
+        // SIDE-2 follow-up: a send holding a quote brought back from a side chat names it (PR 952's from_side_chat).
+        const fromSideChat = takeBroughtBack(conversationId ?? 'main', text);
+        if (fromSideChat) opts = { ...opts, fromSideChat };
         if (opts) onSendMessage(text, attached, opts); else onSendMessage(text, attached);
       }
     : undefined;
@@ -334,15 +337,16 @@ export default function OrchestratorChat({
   // SIDE-2: "Reply" and a side chat's "Bring back to main" put a quote here. Nothing is sent: the user decides (card, rule 1).
   useEffect(() => {
     const quote = (e: Event) => {
-      const text = (e as CustomEvent<string>).detail;
+      const { text, from } = ((e as CustomEvent<MainQuote>).detail ?? {}) as Partial<MainQuote>;
       if (typeof text !== 'string' || !text.trim()) return;
       setInputValue(addQuote(inputRef.current, text));
+      if (from) noteBroughtBack(draftKey, text, from);
       const box = (document.getElementById('chat-message-input') ?? document.getElementById('landing-message-input')) as HTMLTextAreaElement | null;
       box?.focus();
     };
     window.addEventListener(MAIN_QUOTE_EVENT, quote);
     return () => window.removeEventListener(MAIN_QUOTE_EVENT, quote);
-  }, [setInputValue]);
+  }, [setInputValue, draftKey]);
   const attach = useComposerAttach(() => {}, false, {
     allowUrlExtraction: !temporary,
     draft: temporary ? undefined : getAttachmentDraft(draftKey),

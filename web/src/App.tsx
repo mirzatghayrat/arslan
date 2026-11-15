@@ -51,6 +51,7 @@ import { resolveSection, type SettingsSectionId } from './components/settings/se
 import { getFirstRunSeen, setFirstRunSeen, firstRunShouldShow, restoreFirstRunSeen } from './lib/firstRun';
 import { threadNavAction } from './lib/threadNav';
 import type { ImagePayload } from './lib/imagePayload';
+import { sideChatField, type SendOpts } from './lib/quote';
 import { threadDisplayTitle, renameThread, applyGeneratedTitle, firstMessageMayRetitle } from './lib/threadTitles';
 import ConversationHeader from './components/conversation/ConversationHeader';
 import { useConversationIndex } from './hooks/useConversationIndex';
@@ -283,7 +284,7 @@ export default function App() {
   }, [liveOrchestratorHistory, activeThreadId]);
 
   // Send a user message to the live backend
-  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: { fromClarify?: boolean }) => {
+  const sendOrchestratorMessage = useCallback((text: string, attached?: { context: string; names: string[]; display?: MessageAttachment[]; images?: ImagePayload[] }, opts?: SendOpts) => {
     // display = session-only echo for the sent bubble (image thumbnails / doc chips);
     // only text-bearing attachments ride to the backend as attached_context below.
     useArslanStore.getState().addUserMessage(text, attached?.display);
@@ -296,6 +297,8 @@ export default function App() {
       // Real image blocks, not text. They participate in THIS turn only
       // (decision ③A) — history keeps a "[图片:name]" placeholder.
       ...(attached?.images?.length ? { images: attached.images } : {}),
+      // SIDE-2 follow-up (PR 952): a quote brought back from this side chat is in it.
+      ...sideChatField(opts),
     });
   }, [wsSend]);
 
