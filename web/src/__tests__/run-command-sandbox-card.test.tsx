@@ -63,7 +63,7 @@ describe("Advanced › Run commands in a sandbox", () => {
     sshEnabled: false, onSshChange: vi.fn(), defaultReadEnabled: true, onDefaultReadChange: vi.fn(),
     voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(), voiceMode: "push_to_talk" as const,
     onVoiceModeChange: vi.fn(), voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),
-    shellConfirmPolicy: "ask_risky" as const, onShellConfirmPolicyChange: vi.fn(),
+    defaultPermissionMode: "ask_risky" as const, onDefaultPermissionModeChange: vi.fn(),
   };
 
   it("is on unless turned off, reports changes, and hides with the terminal", () => {

@@ -144,7 +144,7 @@ describe("no control was lost in the redesign", () => {
       <AdvancedSection
         telemetry={false} onTelemetryChange={() => {}}
         orchestratorShellEnabled={false} onOrchestratorShellChange={() => {}}
-        shellConfirmPolicy="ask_all" onShellConfirmPolicyChange={() => {}}
+        defaultPermissionMode="ask" onDefaultPermissionModeChange={() => {}}
         workspaceDir="" onWorkspaceDirChange={() => {}}
         lanDiscoveryEnabled={false} onLanDiscoveryChange={() => {}}
         defaultReadEnabled={true} onDefaultReadChange={() => {}}

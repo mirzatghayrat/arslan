@@ -24,6 +24,9 @@ import ConversationModelChip from './models/ConversationModelChip';
 import { MODEL_CHANGED_EVENT, beginModelSave, isModelSaving, useModelSaving } from './models/useConversationModel';
 import { conversationModelApi } from '../api/conversationModel';
 import { withTimeout } from './models/ConversationModelChip';
+import PermissionModePill from './modes/PermissionModePill';
+import ModeStrip from './modes/ModeStrip';
+import { usePermissionMode } from './modes/usePermissionMode';
 import { lastSend, rememberSend } from '../lib/lastSend';
 import { useProfileStore } from '../stores/profileStore';
 import SFSymbol from './SFSymbol';
@@ -120,11 +123,6 @@ interface OrchestratorChatProps {
    *  with the conversation. Each renders nothing when there is nothing to show. */
   header?: React.ReactNode;
   footer?: React.ReactNode;
-  /** True when the orchestrator-shell capability is enabled (drives the policy pill). */
-  shellEnabled?: boolean;
-  /** Current shell confirmation posture, shown + flippable in the composer pill. */
-  shellPolicy?: 'ask_all' | 'ask_risky';
-  /** Called when the user flips the confirmation posture from the composer pill. */
 }
 
 export default function OrchestratorChat({
@@ -141,8 +139,6 @@ export default function OrchestratorChat({
   providerTestingIds,
   onSelectModel,
   conversationId,
-  shellEnabled = false,
-  shellPolicy = 'ask_all',
   header,
   footer,
 }: OrchestratorChatProps) {
@@ -309,6 +305,8 @@ export default function OrchestratorChat({
   // nothing) and NOT a re-render source (read once on mount).
   const draftKey = conversationId ?? 'main';
   const savingModel = useModelSaving(conversationId ?? 'main');
+  // S5a: one mode state for whichever composer shows (the empty conversation's or the thread's).
+  const permissionMode = usePermissionMode(conversationId ?? 'main');
   const temporary = activeThread?.temporary === true;
   const [inputValue, _setInputValue] = useState(() => temporary ? '' : composerDrafts.get(draftKey) ?? '');
   const setInputValue = useCallback((v: string) => {
@@ -551,6 +549,7 @@ export default function OrchestratorChat({
                   {/* 0.1.58 §6: this conversation's model — any model of any provider. */}
                   <ConversationModelChip conversationId={conversationId ?? 'main'} configs={providerConfigs ?? []}
                     llmProviders={llmProviders ?? []} onSetDefault={(id) => onSelectModel?.(id)} onManage={onOpenSettings} />
+                  <PermissionModePill pm={permissionMode} />
                 </div>
 
                 <button
@@ -977,6 +976,7 @@ export default function OrchestratorChat({
       {/* Input Message Form Panel */}
       {chatHistory.length > 0 && (
         <footer className="p-4 border-t border-border bg-background/80 backdrop-blur shrink-0 z-10 select-none">
+          <ModeStrip pm={permissionMode} />
           <form onSubmit={handleSendMessage} className="max-w-4xl mx-auto">
             <div
               className={`composer-box${attach.dragActive ? ' composer-box--drop' : ''}`}
@@ -1003,6 +1003,7 @@ export default function OrchestratorChat({
                   {/* 0.1.58 §6: the model picker sits under EVERY composer, not only the empty one. */}
                   <ConversationModelChip conversationId={conversationId ?? 'main'} configs={providerConfigs ?? []}
                     llmProviders={llmProviders ?? []} onSetDefault={(id) => onSelectModel?.(id)} onManage={onOpenSettings} />
+                  <PermissionModePill pm={permissionMode} />
                 </div>
                 {/* Right-side action group: composer-row is space-between, so stop
                     must share a wrapper with send to sit NEXT to it (not centered). */}
@@ -1037,16 +1038,6 @@ export default function OrchestratorChat({
             </div>
             {attach.error && <div className="attach-error max-w-4xl mx-auto mt-1.5" role="alert">{attach.error}</div>}
           </form>
-          {/* The command-confirmation control lives in Settings → Advanced. Only the
-              non-default posture shows here, as one line. v0.1.63 made "ask before every
-              command" the default, so the line now marks the looser "ask only for risky". */}
-          {shellEnabled && shellPolicy === 'ask_risky' && (
-            <p className="max-w-4xl mx-auto mt-1.5 text-[11px] text-muted-foreground" data-testid="execution-options">
-              {/* Not "read-only": under ask_risky, edits, installs and builds the policy rates harmless run in
-                  the sandbox unasked too (re-check of the ask-every-command PR, F5). */}
-              {t('workspace.harmlessRunUnasked')}
-            </p>
-          )}
         </footer>
       )}
     </div>

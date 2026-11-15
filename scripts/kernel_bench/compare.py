@@ -57,7 +57,7 @@ CLASSES = {
     "other": "other",
 }
 #: The driver sets these itself (arslan_driver.settings_body); a switch on them would never reach the instance.
-DRIVER_OWNED = frozenset({"shell_confirm_policy", "workspace_dir"})
+DRIVER_OWNED = frozenset({"shell_confirm_policy", "default_permission_mode", "workspace_dir"})
 KEY_FIELDS = ("commit", "switch", "arm", "model", "task", "repeat", "round")
 
 # §4.3's rules. The regression set runs each task 5 times: a task that passed every off run and lost two or more

@@ -29,7 +29,7 @@ window.fetch = async (input, init) => {
   let body: unknown = [];
   if (path === '/health') body = { status: 'ok' };
   else if (path === '/settings') body = { language, first_run_seen: 'true', orchestrator_shell_enabled: 'true',
-    shell_confirm_policy: 'ask_risky', voice_mode: 'push_to_talk' };
+    default_permission_mode: 'ask_risky', voice_mode: 'push_to_talk' };
   else if (path === '/settings/provider-configs') body = [{ id: 1, label: 'Synthetic model', provider: 'openai', model: 'fixture-only', is_primary: true }];
   else if (path === '/registry') body = { tools: [], toolsets: [], skills: [], skill_packs: [] };
   else if (path === '/conversations') body = [{ conversation_id: conversation, title: '研究计划 · 隔离界面验收', message_count: 2 }];
