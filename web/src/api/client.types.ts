@@ -1,19 +1,5 @@
 import type { HtmlArtifact, MessageAttachment } from "../types";
 
-export interface EquipmentItem {
-  key: string;
-  name: string;
-  status: string;
-  grant: "permanent" | "temporary";
-  granted_by?: "create" | "user" | "escalation";
-  expires_turn?: number | null;
-}
-
-export interface Equipment {
-  toolsets: EquipmentItem[];
-  skills: EquipmentItem[];
-}
-
 export interface RegistryTool { key: string; description: string; tier: string; status: string; }
 export interface RegistryToolset {
   key: string; name: string; description: string; tier: string; status: string;
@@ -332,35 +318,6 @@ export interface StoredArtifact {
   url: string;
   /** One file's identity across a run's versions (server artifact_store; BR2). */
   logical_key?: string;
-}
-
-export interface SpawnSummary {
-  id: number;
-  name: string;
-  domain: string;
-  capabilities: string[];
-  template_used: string | null;
-  generation_level: number;
-  created_at: string;
-  updated_at: string;
-  equipment?: Equipment;
-  has_active_chat?: boolean;
-  /** Built-in agent shipped with the app — cannot be deleted. */
-  is_default?: boolean;
-}
-
-export interface ChatMessage {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-  timestamp?: string;
-}
-
-export interface SpawnDetail extends SpawnSummary {
-  persona_role: string | null;
-  persona_tone: string | null;
-  system_prompt: string;
-  messages: ChatMessage[];
 }
 
 export interface AppSettings {

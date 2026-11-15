@@ -117,6 +117,17 @@ async def _score_captured(memdb, monkeypatch, *, output: str,
     return run_id, seen
 
 
+async def test_judge_prompt_has_no_expert_roster_or_persona(memdb, monkeypatch):
+    """C7c-4: the judge sees the request, who answered and the output; no expert roster and no expert persona
+    (role, tone, system prompt), even when the run still points at a leftover expert row."""
+    run_id, seen = await _score_captured(memdb, monkeypatch, output="今天晴")
+    user = seen["user"]
+    assert "查天气" in user and "今天晴" in user and "Mermer" in user
+    for gone in ("roster", "persona", "You research.", "(no spawns)", "role:", "tone:"):
+        assert gone not in user, gone
+    assert "roster" not in seen["system"] and "persona" not in seen["system"]
+
+
 async def _fabrication_comment(memdb, run_id: int) -> str:
     async with memdb() as db:
         row = (await db.execute(

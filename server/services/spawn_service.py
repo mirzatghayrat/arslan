@@ -1,4 +1,5 @@
-"""Spawn persistence and DTO mapping over the database. DELETE-BY: v0.1.64, with C7c-4."""
+"""Spawn persistence and DTO mapping over the database. DELETE-BY: v0.1.64, with C7c-5 (with the Spawn model; since
+C7c-4 only the test seed route and tests use it)."""
 from __future__ import annotations
 
 from sqlalchemy import exists, select

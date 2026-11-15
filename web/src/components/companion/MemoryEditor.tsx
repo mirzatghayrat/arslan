@@ -53,7 +53,10 @@ export default function MemoryEditor({ entry, projects, onClose, onSaved }: {
         </label>
         <label className="space-y-1 text-sm">{t("companion.scope")}
           <select className={inputClass} value={scope.kind} onChange={(event) => { setScope({ kind: event.target.value as MemoryScope["kind"], id: null }); setScopeConfirmed(false); }}>
-            {(["global", "project", "expert", "domain"] as const).map(value => <option key={value} value={value} disabled={referenceEnabled && value !== "project"}>{t(`companion.${value}`)}</option>)}
+            {(["global", "project", "domain"] as const).map(value => <option key={value} value={value} disabled={referenceEnabled && value !== "project"}>{t(`companion.${value}`)}</option>)}
+            {/* C7c-4: no new expert-scope memory (the server refuses it). An old entry still in that scope shows it,
+                not selectable, so editing it means moving it to another scope. DELETE-BY: v0.1.64, with C7c-5. */}
+            {entry?.scope.kind === "expert" && <option value="expert" disabled>{t("companion.expert")}</option>}
           </select>
         </label>
       </div>
@@ -63,7 +66,7 @@ export default function MemoryEditor({ entry, projects, onClose, onSaved }: {
           {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select>
       </label>}
-      {(scope.kind === "expert" || scope.kind === "domain") && <label className="block space-y-1 text-sm">{t("companion.scopeId")}
+      {scope.kind === "domain" && <label className="block space-y-1 text-sm">{t("companion.scopeId")}
         <input className={inputClass} value={scope.id ?? ""} maxLength={100} onChange={event => setScope({ ...scope, id: event.target.value || null })} required />
       </label>}
       {changedScope && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={scopeConfirmed} onChange={event => setScopeConfirmed(event.target.checked)} />{t("companion.changeScope")}</label>}

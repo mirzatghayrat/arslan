@@ -594,9 +594,12 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks, a
         c.ok(mode == 0o600, "api_token is owner-only", f"mode is {oct(mode)}")
         token = token_path.read_text().strip()
 
+        # The probe is the conversation list: a plain GET behind the router-level require_auth
+        # (server/api/conversations.py), and an empty list (200) on a fresh install. It hands back the
+        # user's own opening sentences, so it is a real privileged route, not a dedicated auth check.
         def _status(headers: dict) -> int:
             req = urllib.request.Request(
-                f"http://127.0.0.1:{port}/api/v1/spawns", headers=headers
+                f"http://127.0.0.1:{port}/api/v1/conversations", headers=headers
             )
             try:
                 with urllib.request.urlopen(req, timeout=5) as r:
@@ -606,10 +609,10 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks, a
 
         anon = _status({})
         c.ok(anon in (401, 403), "a privileged endpoint refuses without the token",
-             f"anonymous GET /api/v1/spawns returned {anon}")
+             f"anonymous GET /api/v1/conversations returned {anon}")
         authed = _status({"Authorization": f"Bearer {token}"})
         c.ok(authed == 200, "the persisted token is accepted",
-             f"authed GET /api/v1/spawns returned {authed}")
+             f"authed GET /api/v1/conversations returned {authed}")
         check_hands_runtime(port, token, c)
         if app is not None:
             check_version(app, port, token, c)

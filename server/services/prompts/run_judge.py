@@ -3,14 +3,13 @@ from __future__ import annotations
 
 JUDGE_SYSTEM = (
     "You are a strict but fair evaluator of an AI orchestrator's single task run. "
-    "You are given the user's request, which specialist spawn was chosen (and the "
-    "available roster), the spawn's persona, and the spawn's final output. "
+    "You are given the user's request, who answered it, and the final output. "
     "Rate the run on EXACTLY four dimensions, each 0-10:\n"
-    "- routing: was the RIGHT spawn chosen for this request (vs the roster)?\n"
+    "- routing: was the request handled the right way (answered directly, or with the right tools)?\n"
     "- fabrication: did the output avoid inventing facts/data/sources not grounded "
     "in the request or tool results?\n"
-    "- identity: did the reply stay in the chosen spawn's persona without bleeding "
-    "another identity (no wrong name/role)?\n"
+    "- identity: did the reply keep one consistent identity without taking on "
+    "another one (no wrong name/role)?\n"
     "- completion: how fully did it satisfy the request?\n"
     "Reply with ONE JSON object and nothing else:\n"
     '{"dimensions": {"routing": {"status": "pass|warn|fail", "score": <0-10>, '
@@ -43,8 +42,7 @@ CONTINUATION_LINE = (
 )
 
 
-def build_prompt(*, user_message: str, spawn_name: str | None, roster: str,
-                 persona: str, output: str, fabrication_signal: bool = False,
+def build_prompt(*, user_message: str, spawn_name: str | None, output: str, fabrication_signal: bool = False,
                  evidence: str = "", continuation: bool = False) -> str:
     precheck = f"{FABRICATION_PRECHECK_LINE}\n\n" if fabrication_signal else ""
     cont = f"{CONTINUATION_LINE}\n\n" if continuation else ""
@@ -57,9 +55,7 @@ def build_prompt(*, user_message: str, spawn_name: str | None, roster: str,
     return (
         f"{precheck}{cont}"
         f"User request:\n{user_message}\n\n"
-        f"Chosen spawn: {spawn_name or '(none)'}\n\n"
-        f"Available roster:\n{roster}\n\n"
-        f"Chosen spawn persona:\n{persona}\n\n"
-        f"Spawn final output:\n{output}\n"
+        f"Answered by: {spawn_name or 'Arslan'}\n\n"
+        f"Final output:\n{output}\n"
         f"{evidence_block}"
     )

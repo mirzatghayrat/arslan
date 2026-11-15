@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "正在加载注册表…",
       "empty": "还没有注册任何能力",
-      "equip_hint": "Arslan 可以直接使用这些。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
       "orchestrator_note": "出于安全，仅 Arslan 本身可用，不能交给专家使用。",
       "degraded": "裸跑·无沙箱",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "对 Arslan 的价值"
-    },
-    "equip": {
-      "action": "装备给专家…",
-      "loading": "加载专家…",
-      "empty": "还没有专家。",
-      "error": "装备失败——已回滚。"
     },
     "compat": {
       "full": "全兼容",

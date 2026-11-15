@@ -243,6 +243,7 @@ class ProviderConfigOut(BaseModel):
     last_health_at: str | None = None    # naive-UTC ISO
 
 
+# The spawn DTOs below are spawn_service's only (no route returns them since C7c-4). DELETE-BY: v0.1.64, with C7c-5.
 class EquipmentItemOut(BaseModel):
     key: str
     name: str
@@ -297,11 +298,6 @@ class SpawnDetailOut(SpawnOut):
     persona_tone: str | None = None
     system_prompt: str = ""
     messages: list[ChatMessageOut] = []
-
-
-class EquipmentUpdateIn(BaseModel):
-    toolsets: list[str] = []
-    skills: list[str] = []
 
 
 class FactIn(BaseModel):

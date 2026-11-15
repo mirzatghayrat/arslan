@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Chargement du registre…",
       "empty": "Aucune capacité enregistrée pour l'instant",
-      "equip_hint": "Arslan peut les utiliser directement.",
       "unimplemented_note": "Non implémenté — simple entrée de catalogue, ne peut pas être équipé.",
       "orchestrator_note": "Par sécurité, réservés à Arslan lui-même — non attribuables aux experts.",
       "degraded": "SANS SANDBOX",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Intérêt pour Arslan"
-    },
-    "equip": {
-      "action": "Équiper un spawn…",
-      "loading": "Chargement des spawns…",
-      "empty": "Aucun spawn pour l'instant.",
-      "error": "Échec de l'équipement — modification annulée."
     },
     "compat": {
       "full": "complète",

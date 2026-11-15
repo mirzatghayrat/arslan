@@ -10,11 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from server import config
 from server.db import session as db_session
-from server.db.models import SkillPack, SpawnCapability, Tool, Toolset
+from server.db.models import SkillPack, Tool, Toolset
 
 ASSIGNABLE_STATUSES = ("wired", "registered")
 
@@ -353,14 +352,14 @@ async def safe_menu() -> dict:
             "skills": [_skill_dict(s) for s in sk]}
 
 
+# DELETE-BY: v0.1.64, with C7c-5 (the SpawnCapability model): no caller since C7c-4 removed the equip write path.
 async def assert_assignable(kind: str, ref_key: str, *, session=None) -> None:
     """Hard server-side gate: raises unless (kind, ref_key) is safe + assignable.
 
     No bypass parameter exists by design (spec §2): the only holder of
     orchestrator-tier capabilities is Arslan itself, implicitly.
 
-    Pass session= to reuse a caller-owned AsyncSession (same pattern as
-    equipment_for_spawn); when None, opens its own via AsyncSessionLocal.
+    Pass session= to reuse a caller-owned AsyncSession; when None, opens its own via AsyncSessionLocal.
     """
     if kind not in ("toolset", "skill"):
         raise NotAssignableError(f"unknown capability kind: {kind}")
@@ -396,76 +395,3 @@ async def assert_assignable(kind: str, ref_key: str, *, session=None) -> None:
     else:
         async with db_session.AsyncSessionLocal() as db:
             await _check(db)
-
-
-async def _equipment_for_spawn_in(db, spawn_id: int) -> dict:
-    """Inner implementation reusable by both session-owning and session-borrowing callers."""
-    caps = (await db.execute(
-        select(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id)
-        .order_by(SpawnCapability.id)
-    )).scalars().all()
-    toolsets, skills = [], []
-    # NOTE: N+1 per-capability lookups; fine at v1 cap counts (<10 rows per spawn).
-    for c in caps:
-        if c.kind == "toolset":
-            row = await db.get(Toolset, c.ref_key)
-            if row is not None:
-                toolsets.append({**_toolset_dict(row), "grant": c.grant,
-                                 "granted_by": c.granted_by, "expires_turn": c.expires_turn})
-        else:
-            row = await db.get(SkillPack, c.ref_key)
-            if row is not None:
-                skills.append({**_skill_dict(row), "grant": c.grant,
-                               "granted_by": c.granted_by, "expires_turn": c.expires_turn})
-    return {"toolsets": toolsets, "skills": skills}
-
-
-async def equipment_for_spawn(spawn_id: int, *, session=None) -> dict:
-    """All equipment rows resolved against the registry (for tags/DTOs).
-
-    Pass session= to reuse a caller-owned AsyncSession (avoids bypassing the
-    dependency-injection DB override in tests and API endpoints that already
-    hold a session).  When session is None, opens its own via AsyncSessionLocal.
-    """
-    if session is not None:
-        return await _equipment_for_spawn_in(session, spawn_id)
-    async with db_session.AsyncSessionLocal() as db:
-        return await _equipment_for_spawn_in(db, spawn_id)
-
-
-async def replace_user_equipment(session: AsyncSession, spawn_id: int,
-                                 toolsets: list[str], skills: list[str]) -> None:
-    """User equipment editor write path: declarative replace of user-managed
-    permanent grants (granted_by in create/user -> new rows granted_by=user).
-    All-or-nothing: every key is validated via assert_assignable before any
-    row is written.
-
-    Promotion policy: if an incoming key is currently held as a temporary
-    grant, that temporary row is removed and the key becomes a permanent
-    granted_by="user" row. Temporary grants for keys NOT in the incoming
-    selection are left untouched."""
-    toolsets = list(dict.fromkeys(toolsets))
-    skills = list(dict.fromkeys(skills))
-    for key in toolsets:
-        await assert_assignable("toolset", key, session=session)
-    for key in skills:
-        await assert_assignable("skill", key, session=session)
-    selected = {("toolset", k) for k in toolsets} | {("skill", k) for k in skills}
-    rows = (await session.execute(
-        select(SpawnCapability).where(SpawnCapability.spawn_id == spawn_id)
-    )).scalars().all()
-    for r in rows:
-        is_user_managed = (r.grant == "permanent"
-                           and r.granted_by in ("create", "user"))
-        is_promoted_temp = (r.grant == "temporary"
-                            and (r.kind, r.ref_key) in selected)
-        if is_user_managed or is_promoted_temp:
-            await session.delete(r)
-    await session.flush()
-    for key in toolsets:
-        session.add(SpawnCapability(spawn_id=spawn_id, kind="toolset", ref_key=key,
-                                    grant="permanent", granted_by="user"))
-    for key in skills:
-        session.add(SpawnCapability(spawn_id=spawn_id, kind="skill", ref_key=key,
-                                    grant="permanent", granted_by="user"))
-    await session.commit()

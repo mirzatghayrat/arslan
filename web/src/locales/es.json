@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Cargando registro…",
       "empty": "Aún no hay capacidades registradas",
-      "equip_hint": "Arslan puede usarlos directamente.",
       "unimplemented_note": "No implementado — solo marcador de catálogo, no se puede equipar.",
       "orchestrator_note": "Por seguridad, solo el propio Arslan puede usarlos; no se pueden asignar a los expertos.",
       "degraded": "SIN SANDBOX",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Utilidad para Arslan"
-    },
-    "equip": {
-      "action": "Equipar a un spawn…",
-      "loading": "Cargando spawns…",
-      "empty": "Aún no hay spawns.",
-      "error": "Error al equipar — cambio revertido."
     },
     "compat": {
       "full": "completa",
