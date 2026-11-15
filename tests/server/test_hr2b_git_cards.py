@@ -128,15 +128,18 @@ async def test_a_push_with_no_ci_file_adds_no_ci_line(execution_db, tmp_path, mo
 class _Popen:
     """A stand-in for git under sandbox-exec: records each launch, then fails, times out or answers `out`. `answers`
     overrides that per launch, keyed by a substring of an argument; the upstream query (`for-each-ref`) answers
-    "upstream configured" unless overridden."""
+    "upstream configured", the work tree query its folder, and the config listing `out` when it is one (else an empty
+    one), unless overridden."""
 
     def __init__(self, how: str, out: bytes = b"", answers: dict[str, tuple[str, bytes]] | None = None):
         self.how, self.out, self.launched = how, out, []
-        self.answers = {"for-each-ref": (how, b"*refs/remotes/origin/main\n"), **(answers or {})}
+        self.answers = {"for-each-ref": (how, b"*refs/remotes/origin/main\n"),
+                        "--show-origin": (how, out if out.startswith(b"file:") else b""), **(answers or {})}
 
     def __call__(self, argv, **kw):
         self.launched.append((argv, kw))
-        how, out = next((v for k, v in self.answers.items() if any(k in a for a in argv)), (self.how, self.out))
+        answers = {"--show-toplevel": (self.how, f"{kw['cwd']}\n".encode()), **self.answers}
+        how, out = next((v for k, v in answers.items() if any(k in a for a in argv)), (self.how, self.out))
 
         class _Process:
             returncode = 0 if how == "answers" else 128
@@ -176,9 +179,10 @@ async def test_a_git_failure_or_timeout_says_couldnt_list_and_the_card_still_sho
 def test_the_listing_runs_git_through_the_pinned_launcher(repo_dir, monkeypatch):
     fake = _Popen("answers", f"{CI}\0{OTHER}\0".encode())
     monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
-    assert git_config_guard.outgoing_ci(repo_dir / "src", "git push") == [CI]
-    assert [a for a in fake.launched[0][0] if a == "for-each-ref"] == ["for-each-ref"]
-    [_, (argv, kw)] = fake.launched
+    assert git_config_guard.outgoing_ci(repo_dir, "git push") == [CI]
+    asked = [argv[5:] for argv, _ in fake.launched]
+    assert asked[:3] == [list(git_config_guard._TOP), list(git_config_guard._LIST), list(git_config_guard._UPSTREAM)]
+    [*_, (argv, kw)] = fake.launched
     scratch = Path(kw["env"]["HOME"])
     assert argv[:4] == ["/usr/bin/sandbox-exec", "-p", default_deny_profile(writable=[scratch]), "/usr/bin/git"]
     assert kw["env"] == git_config_guard._env(scratch) and kw["cwd"] == repo_dir
@@ -260,14 +264,14 @@ def test_the_destination_is_read_through_the_pinned_launcher(repo_dir, monkeypat
     fake = _Popen("answers", LISTING, answers={"for-each-ref": ("answers", b" origin\n*zz-fork\n")})
     monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
     read = git_config_guard.push_destination
-    assert read(repo_dir / "src", "git push -u origin main") == [
+    assert read(repo_dir, "git push -u origin main") == [
         "https://example.invalid/zz-a.git", "git@example.invalid:zz/b.git"]
     assert read(repo_dir, "git push --force-with-lease") == ["ssh://example.invalid/zz-fork.git"]
     assert read(repo_dir, f"git push https://zz-user:{SECRET}@example.invalid/zz-c.git") == [
         "https://example.invalid/zz-c.git"]
     asked = [argv[5:] for argv, _ in fake.launched]
-    listed, ask = list(git_config_guard._LIST), list(git_config_guard._PUSH_TO)
-    assert asked == [listed, ask, listed, listed] and "--format=%(HEAD)%(push:remotename)" in ask
+    top, listed, ask = list(git_config_guard._TOP), list(git_config_guard._LIST), list(git_config_guard._PUSH_TO)
+    assert asked == [top, listed, top, listed, ask, top, listed] and "--format=%(HEAD)%(push:remotename)" in ask
     for argv, kw in fake.launched:
         scratch = Path(kw["env"]["HOME"])
         assert argv[:5] == ["/usr/bin/sandbox-exec", "-p", default_deny_profile(writable=[scratch]), "/usr/bin/git",
@@ -590,3 +594,85 @@ def test_a_detached_head_with_a_refspec_says_it_couldnt_list(repo_dir, monkeypat
         "answers", f"{CI}\0".encode(), answers={"symbolic-ref": ("fails", b"")}))
     assert git_config_guard.outgoing_ci(repo_dir, "git push origin main") is None
     assert git_config_guard.outgoing_ci(repo_dir, "git push origin HEAD") == [CI]
+
+
+@pytest.mark.macos
+@seatbelt
+@pytest.mark.parametrize("value, lists", [
+    ("matching", False), ("nothing", False), ("tracking", False), ("zz-unknown", False),
+    ("simple", True), ("current", True), ("upstream", True), (None, True),
+], ids=["matching", "nothing", "not-listed", "unknown", "simple", "current", "upstream", "unset"])
+def test_a_push_default_that_may_send_other_branches_lists_neither(tmp_path, value, lists):
+    """push.default as git reads it for the repository: one that may send branches other than the current one, or one
+    not in the list (an older name git still reads, or a value git refuses), gives neither list."""
+    repo = _cloned(tmp_path)
+    _commit(repo, CI)
+    if value is not None:
+        _git(repo, "config", "push.default", value)
+    found = (git_config_guard.outgoing_ci(repo, "git push"), git_config_guard.push_destination(repo, "git push"))
+    origin = _git(repo, "remote", "get-url", "origin").stdout.strip()
+    assert found == (([CI], [origin]) if lists else (None, None))
+
+
+@pytest.mark.macos
+@seatbelt
+@pytest.mark.parametrize("where", ["top", "linked-top", "tracked-subfolder", "untracked-subfolder", "bare",
+                                   "other-work-tree", "plain-below-a-repository"])
+def test_only_the_top_of_the_run_folders_own_repository_is_read(tmp_path, where):
+    """The run folder must be its own repository's top (links resolved): a folder below a top, a bare repository, a
+    repository whose work tree is elsewhere, or a folder inside another repository give neither list."""
+    repo = _cloned(tmp_path)
+    _commit(repo, CI)
+    folder = repo
+    if where == "linked-top":
+        folder = tmp_path / "zz-link"
+        folder.symlink_to(repo)
+    elif where == "tracked-subfolder":
+        folder = repo / ".github"
+    elif where == "untracked-subfolder":
+        folder = repo / "zz-untracked"
+        folder.mkdir()
+    elif where == "bare":
+        folder = tmp_path / "remote.git"
+    elif where == "other-work-tree":
+        (tmp_path / "zz-elsewhere").mkdir()
+        _git(repo, "config", "core.worktree", str(tmp_path / "zz-elsewhere"))
+    elif where == "plain-below-a-repository":
+        outer = _init(tmp_path / "zz-outer", "-b", "main").parent
+        folder = outer / "zz-plain"
+        folder.mkdir()
+    found = (git_config_guard.outgoing_ci(folder, "git push"), git_config_guard.push_destination(folder, "git push"))
+    origin = _git(repo, "remote", "get-url", "origin").stdout.strip()
+    assert found == (([CI], [origin]) if where in ("top", "linked-top") else (None, None))
+
+
+@pytest.mark.macos
+@seatbelt
+async def test_the_card_for_a_matching_push_default_says_it_couldnt_list_them(execution_db, tmp_path, monkeypatch):
+    repo = _cloned(tmp_path)
+    _commit(repo, CI)
+    _git(repo, "config", "push.default", "matching")
+    frame = await _push_card(monkeypatch, repo)
+    assert frame["summary"]["touches"][:2] == [command_confirm.PUSH_UNKNOWN, command_confirm.PUSH_UNLISTED]
+    assert CI not in str(frame) and frame["command"] == "git push"
+
+
+@pytest.mark.parametrize("answer", [b"/zz/elsewhere\n", None], ids=["another-top", "no-top"])
+def test_a_work_tree_other_than_the_folder_lists_neither_with_the_fake_launcher(repo_dir, monkeypatch, answer):
+    fake = _Popen("answers", LISTING, answers={
+        "--show-toplevel": ("answers", answer) if answer else ("fails", b""),
+        "for-each-ref": ("answers", b"*origin\n")})
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
+    assert git_config_guard.push_destination(repo_dir, "git push") is None
+    assert git_config_guard.outgoing_ci(repo_dir, "git push") is None
+
+
+def test_a_folder_without_its_own_git_folder_lists_neither_even_when_git_names_it_the_top(repo_dir, monkeypatch):
+    folder = repo_dir / "zz-below"
+    folder.mkdir()
+    fake = _Popen("answers", LISTING, answers={"--show-toplevel": ("answers", f"{folder}\n".encode()),
+                                               "for-each-ref": ("answers", b"*origin\n")})
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
+    assert git_config_guard.push_destination(folder, "git push") is None
+    assert git_config_guard.outgoing_ci(folder, "git push") is None
+    assert fake.launched == []                          # the folder above is never asked

@@ -409,21 +409,60 @@ def _outgoing_refs(args: tuple[str, ...]) -> tuple[str | None, str | None] | Non
     return (named[0] if named else None), (named[1] if len(named) == 2 else None)
 
 
+#: Where git takes the work tree to be, asked with the repository given (`_each`): the folder itself, unless the
+#: config names another (core.worktree); it fails for a bare repository.
+_TOP = ("rev-parse", "--show-toplevel")
+#: push.default values under which a `git push` with no refspec sends the current branch only (unset too).
+_ONE_BRANCH = frozenset({"simple", "current", "upstream"})
+
+
+def _pairs(listed: bytes | None) -> list[tuple[str, str]] | None:
+    """The (key, value) pairs of a `_LIST` answer, in git's order; None when git gave none or the form is not read."""
+    items = listed.split(b"\0") if listed is not None else []
+    if items[-1:] != [b""] or len(items) % 2 != 1:
+        return None
+    return [item.decode("utf-8", errors="surrogateescape").partition("\n")[::2] for item in items[1:-1:2]]
+
+
+def _own_repository(folder: Path) -> tuple[Path, bytes] | None:
+    """The git folder of the repository whose top is `folder` itself, and its config as git lists it (`_LIST`), asked
+    as `_each` asks; None when the push card's readers can't read its push from here: `folder` has no `.git` of its
+    own (a folder below a repository's top, or below a repository it isn't part of: a parent's is never read), git's
+    work tree is not `folder` (links resolved on both sides; a bare repository has none), git gave no answer, or
+    push.default may send other branches than the current one (`_ONE_BRANCH`: `matching`, `nothing` and any other
+    value read as not known)."""
+    here = Path(os.path.realpath(folder))
+    entry = here / ".git"
+    if not os.path.lexists(entry):
+        return None
+    top = _each([entry], _TOP)[entry]
+    if top is None or Path(os.path.realpath(top.decode("utf-8", errors="surrogateescape").rstrip("\n"))) != here:
+        return None
+    listed = _each([entry], _LIST)[entry]
+    pairs = _pairs(listed)
+    if pairs is None:
+        return None
+    default = [v for k, v in pairs if k == "push.default"]
+    if default and default[-1] not in _ONE_BRANCH:
+        return None
+    return entry, listed
+
+
 def outgoing_ci(folder: Path, command: str) -> list[str] | None:
     """HR-2b: the CI files (`run_later.is_ci_file`) the commits `command` (a `git push` run from `folder`) sends
     change, asked as `view` asks (`_each`: pinned environment, read-only seatbelt, time limit): `<upstream>..HEAD`
     when the current branch has an upstream configured (on the remote named, when one is), else
     `<remote>/HEAD..HEAD` for the remote it names (origin when none). Only the current branch is read: a refspec
-    on the line must be `HEAD` or that branch. None: couldn't list (no repository at or above `folder`, a push this
+    on the line must be `HEAD` or that branch. None: couldn't list (`folder` not a repository's top (`_own_repository`), a push this
     can't read as one of the current branch from this folder's repository (`_push_here`, `_outgoing_refs`), or git
     failed or timed out on any read); the caller says so and the card still shows."""
     from server.services import run_later
-    here = Path(os.path.realpath(folder))
-    entry = next((p / ".git" for p in (here, *here.parents) if os.path.lexists(p / ".git")), None)
     args = _push_here(command)
     refs = _outgoing_refs(args) if args is not None else None
-    if entry is None or refs is None:
+    repository = _own_repository(folder) if refs is not None else None
+    if repository is None:
         return None
+    entry = repository[0]
     remote, spec = refs
     if spec is not None and spec != "HEAD":
         current = _each([entry], _CURRENT)[entry]
@@ -471,23 +510,22 @@ def push_destination(folder: Path, command: str) -> list[str] | None:
     remote named on the line, else the one it pushes the current branch to (`_PUSH_TO`), else the only remote, else
     origin; that remote's pushurl values, else its url values, from the repository's config as git lists it (`_LIST`,
     includes followed; asked as `outgoing_ci` asks, `_each`); a url or path no remote is named after, as written. No
-    `user:pass@`. None: not known (not one plain `git push` run in `folder`, git failed or timed out, no url); the card
+    `user:pass@`. None: not known (not one plain `git push` run in `folder`, the top of its own repository
+    (`_own_repository`), git failed or timed out, no url); the card
     says so and still shows. Not applied: url rewriting (insteadOf) and the user's global config, which `_env` drops."""
     args = _push_here(command)
-    here = Path(os.path.realpath(folder))
-    entry = next((p / ".git" for p in (here, *here.parents) if os.path.lexists(p / ".git")), None)
-    if entry is None or args is None:
+    repository = _own_repository(folder) if args is not None else None
+    if repository is None:
         return None
+    entry, listing = repository
     word = name = next((w for w in args if not _PUSH_FLAGS.fullmatch(w)), None)
     if word is None:
         marks = _each([entry], _PUSH_TO)[entry]
         lines = marks.decode("utf-8", errors="surrogateescape").split("\n") if marks is not None else []
         name = next((line[1:] for line in lines if line.startswith("*")), None)
-    listed = _each([entry], _LIST)[entry] if name is not None and (word is None or word[:1] not in ("", "-")) else None
-    items = listed.split(b"\0") if listed is not None else []
-    if items[-1:] != [b""] or len(items) % 2 != 1:
+    pairs = _pairs(listing) if name is not None and (word is None or word[:1] not in ("", "-")) else None
+    if pairs is None:
         return None                                   # git gave no answer, or an option not read past
-    pairs = [item.decode("utf-8", errors="surrogateescape").partition("\n")[::2] for item in items[1:-1:2]]
     pairs = [(k, v) for k, v in pairs if not k.startswith("remote./")]      # git ignores a remote named from "/"
     remotes = {key[7:].rpartition(".")[0] for key, _ in pairs if key.startswith("remote.")} - {""}
     name = name or (min(remotes) if len(remotes) == 1 else "origin")
