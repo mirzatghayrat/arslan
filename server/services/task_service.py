@@ -1094,26 +1094,37 @@ def _project_evidence_later(project_id: str, conversation_id: str, user_message:
 async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, instruction=None, driver=None):
     if ctx.temporary:
         raise TaskError("temporary_task_not_persisted")
-    async with repository() as repo:
-        row = await repo.get(task_id)
-        if row.conversation_id != conversation_id:
-            raise TaskError("task_not_found")
-        if row.project_id != ctx.project_id:
-            raise TaskError("task_project_changed")
-        ceiling = row.privacy or {}
-        if ceiling.get("requires_local_model") and not ctx.model_is_local:
-            raise TaskError("task_local_model_required")
-        spec = await repo.spec(row)
-        if instruction is not None and spec.instruction != instruction:
-            raise TaskError("task_goal_changed")
-        saved_driver = checked_driver(ceiling.get("driver"))
-        if driver is not None and checked_driver(driver) != saved_driver:
-            raise TaskError("task_goal_changed")
-        saved = await repo.latest_checkpoint(task_id)
-        value = await repo.start(task_id, expected_version, explicit_resume=True)
-        # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
-        from server.services import permissions
-        await permissions.drop_task_grants(repo.db, task_id)
+    for attempt in (1, 2):
+        # v0.1.64: as run_turn, a Resume pressed just after a window closed on a turn waits for that turn's cancel
+        # record (the caller holds the turn lock), and a start refused once is tried again: the block below is one
+        # transaction, so a refusal rolls all of it back (the dropped grants too) and the retry starts clean.
+        await _cancel_recorded(conversation_id)
+        try:
+            async with repository() as repo:
+                row = await repo.get(task_id)
+                if row.conversation_id != conversation_id:
+                    raise TaskError("task_not_found")
+                if row.project_id != ctx.project_id:
+                    raise TaskError("task_project_changed")
+                ceiling = row.privacy or {}
+                if ceiling.get("requires_local_model") and not ctx.model_is_local:
+                    raise TaskError("task_local_model_required")
+                spec = await repo.spec(row)
+                if instruction is not None and spec.instruction != instruction:
+                    raise TaskError("task_goal_changed")
+                saved_driver = checked_driver(ceiling.get("driver"))
+                if driver is not None and checked_driver(driver) != saved_driver:
+                    raise TaskError("task_goal_changed")
+                saved = await repo.latest_checkpoint(task_id)
+                value = await repo.start(task_id, expected_version, explicit_resume=True)
+                # 0.1.61 §A5: the resumed run is asked again; its old "for this task" grants go with the start.
+                from server.services import permissions
+                await permissions.drop_task_grants(repo.db, task_id)
+            break
+        except TaskError as exc:
+            if exc.code != "task_version_conflict" or attempt == 2:
+                raise
+            logger.info("resume start refused once (task_version_conflict); retrying")
     ctx = replace(ctx, task_id=task_id, no_learning=ctx.no_learning or ceiling.get("no_learning", True),
                   cloud_memory_allowed=ctx.cloud_memory_allowed and ceiling.get("cloud_memory_allowed", False),
                   # A task never gains on resume what it did not have when created (old tasks: no key = no).

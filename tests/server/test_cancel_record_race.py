@@ -82,7 +82,7 @@ def _cut_short(window_client, portal, monkeypatch, held_record):
         while not held["finish"]:
             assert time.monotonic() < deadline, "the turn never reached its finish"
             time.sleep(0.02)
-    assert portal.call(_phases) == ["running"]     # the record is not written yet
+    assert portal.call(_phases)[-1] == "running"   # the record is not written yet
 
 
 def test_the_next_turn_starts_after_the_cancel_record(window_client, portal, post_turn, monkeypatch):
@@ -155,6 +155,59 @@ def test_a_record_that_never_commits_costs_a_bounded_wait_and_a_resend(window_cl
                           "recoverable": True}, frames
     assert elapsed < 5, elapsed
     assert "What is the time?" not in portal.call(_user_messages)
+
+
+async def _paused_task(conversation_id: str) -> int:
+    """An earlier task of the conversation, paused part-way and so resumable. Returns its version."""
+    async def attempt(emit):
+        task_service.current().pause_reason = "task_no_progress"
+        return "Partial evidence, not completion"
+    await task_context.execute_entry(conversation_id, "Check the report", lambda event: None, attempt,
+                                     task_id="paused-task")
+    async with task_repository.repository() as repo:
+        row = await repo.get("paused-task")
+    assert row.phase == "waiting_user"
+    return row.version
+
+
+def test_a_resume_starts_after_the_cancel_record(window_client, portal, post_turn, monkeypatch):
+    """Resume pressed in the reopened window, on an earlier paused task, while the closed window's turn is still
+    writing its cancel record: the resume waits for it, and the resumed turn answers."""
+    _turn_on(monkeypatch, _Model("Hello.", "Checked."))
+    version = portal.call(_paused_task, "main")
+    real_record, real_load, real_start = task_service._record_cancel, task_context.load, task_repository.TaskRepository.start
+    gates, seen_at_start = {}, []
+
+    def gate(name):
+        return gates.setdefault(name, asyncio.Event())
+
+    async def held_record(task_id):
+        await gate("resume began").wait()
+        try:      # long enough for a resume that does not wait to start first
+            await asyncio.wait_for(gate("started").wait(), timeout=2)
+        except TimeoutError:
+            pass
+        return await real_record(task_id)
+    _cut_short(window_client, portal, monkeypatch, held_record)
+
+    async def load(*args, **kwargs):
+        gate("resume began").set()
+        return await real_load(*args, **kwargs)
+
+    async def start(self, task_id, *args, **kwargs):
+        if task_id == "paused-task":
+            seen_at_start.append(await _phases())
+            gate("started").set()
+        return await real_start(self, task_id, *args, **kwargs)
+    monkeypatch.setattr(task_context, "load", load)
+    monkeypatch.setattr(task_repository.TaskRepository, "start", start)
+    with window_client.websocket_connect("/ws/arslan/main") as window:
+        window.receive_json()
+        window.send_json({"type": "resume_task", "task_id": "paused-task", "expected_version": version})
+        frames, waiting = _frames_until_end(window)
+    assert not waiting, f"the resumed turn never ended: {frames}"
+    assert seen_at_start[0] == ["waiting_user", "cancelled"], seen_at_start
+    assert frames[-1]["type"] == "stream_end", frames
 
 
 def test_a_start_refused_once_is_retried(window_client, portal, post_turn, monkeypatch):
