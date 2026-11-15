@@ -94,8 +94,24 @@ class Job:
     goal_spec: object = field(default=None, repr=False)
     # L7-4: the goal row's version when the user resumed it; None for a Start (and every other job).
     goal_resume: int | None = field(default=None, repr=False)
+    # L7-6: a goal job's card state: its last verdict, that verdict's receipts, the spend and cap, its status once
+    # it ended, and a `/goal pause` waiting for the stop.
+    goal_progress: object = field(default=None, repr=False)
+    goal_items: dict = field(default_factory=dict, repr=False)
+    goal_spend: tuple = field(default=(None, None), repr=False)
+    goal_status: str | None = field(default=None, repr=False)
+    pausing: bool = field(default=False, repr=False)
 
     def frame(self) -> dict:
+        frame = self._frame()
+        if self.goal_spec is not None:      # L7-6: only a goal's frame has the key; every other job's is unchanged
+            from server.services import goal_mode
+            frame["goal_state"] = goal_mode.goal_state(
+                self.goal_spec, self.goal_progress, status=self.goal_status or "active", items=self.goal_items,
+                finished=self.phase == "finished", spend_usd=self.goal_spend[0], cap_usd=self.goal_spend[1])
+        return frame
+
+    def _frame(self) -> dict:
         return {"type": "job_update", "job_id": self.job_id, "conversation_id": self.conversation_id,
                 "goal": self.goal, "phase": self.phase, "step": self.step, "outcome": self.outcome,
                 "detail": self.detail, "budget": self.budget_stop, "run_id": self.run_id, "origin": self.origin,
@@ -288,6 +304,16 @@ def start_goal(conversation_id: str, task_id: str, spec, *, origin: str = "mac",
     return job
 
 
+def goal_round(record, items: dict, budget) -> None:
+    """L7-6: a goal round's verdict, recorded, reaches the card of the goal job this code runs in."""
+    job = _jobs.get(_inside_job.get() or "")
+    if job is None or job.goal_spec is None:
+        return
+    job.goal_progress, job.goal_items = record, dict(items)
+    job.goal_spend = (round(budget.usd, 4) if budget.usd else None, budget.usd_cap)
+    _emit(job)
+
+
 def goal_job(task_id: str) -> Job | None:
     """L7-3: the goal's job while it is queued or running, else None."""
     job = _jobs.get(task_id)
@@ -353,6 +379,12 @@ async def _run(job: Job) -> None:
     try:
         async with _slots:
             job.phase = "running"
+            if job.goal_spec is not None:   # L7-6: a resumed goal's card shows its round and receipts so far
+                from server.services import goal_command
+                try:
+                    job.goal_progress, job.goal_items, _ = await goal_command.saved(job.job_id)
+                except Exception as exc:  # noqa: BLE001 — the card shows round 0 until the first verdict
+                    logger.warning("goal %s progress not read: %s", job.job_id, type(exc).__name__)
             _emit(job)
             if callable(job.outside_seen):                # S64-0: ask the starting turn, now
                 job.outside_seen = bool(job.outside_seen())
@@ -373,6 +405,10 @@ async def _run(job: Job) -> None:
         # Judged before the job reads as finished, so nothing shows "done" in between.
         if outcome == "done" and await _goal_not_reached(job, final_text):
             outcome, reason = "blocked", "goal_not_reached"
+        if job.goal_spec is not None:
+            phase, reason = await _goal_ended(job, phase, reason)
+            from server.services import goal_mode
+            job.goal_status = goal_mode.status_of(phase, reason)
         job.phase = "finished"
         job.outcome = outcome
         job.detail = reason
@@ -395,6 +431,20 @@ async def _run(job: Job) -> None:
             # whatever the reporting raised: a job id never comes back, so the rows would only wait
             # for the next boot or the store's 24-hour prune.
             await _forget_task_grants(job)
+
+
+async def _goal_ended(job: Job, phase: str, reason: str | None) -> tuple[str, str | None]:
+    """L7-6: a goal `/goal pause` stopped waits as paused, which Resume re-queues; any other end stays as it was."""
+    if not job.pausing or phase != "cancelled":
+        return phase, reason
+    from server.services.task_repository import repository
+    try:
+        async with repository() as repo:
+            await repo.pause_goal(job.job_id)
+        return "waiting_user", "goal_paused"
+    except Exception as exc:  # noqa: BLE001 — not paused: it stays stopped, as Stop leaves it
+        logger.warning("goal %s not paused: %s", job.job_id, type(exc).__name__)
+        return phase, reason
 
 
 async def _goal_posted(task_id: str) -> None:

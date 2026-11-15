@@ -202,9 +202,12 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
     record = record.model_copy(update={"last_receipt": len(state.tool_trace), "accepted": host.accepted,
                                        **({"status": "review"} if host.changed or (
                                            host.unprotected and record.status == "complete") else {})})
+    record = record.model_copy(update={"blocker": _blocker(record, host, goal), "step": None})
     runtime.progress = runtime.progress.model_copy(update={"goal": record})
     state.goal_round, state.goal_stall, state.goal_unmet = record.round, record.stall, record.unmet
     await runtime.checkpoint("goal_round")
+    from server.services import background_jobs
+    background_jobs.goal_round(record, items, state.budget)     # L7-6: the card, after the verdict is recorded
     why = lambda ids: "; ".join(f"{cid}: {items.get(cid, {}).get('code', 'not_run')}" for cid in ids)  # noqa: E731
     if record.status == "active":
         return True, (f"Goal round {record.round}. Not met: {why(record.unmet)[:3000]}. Keep the full objective, "
@@ -229,8 +232,28 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
     runtime.pause_reason = "goal_blocked"
     step = await _one_step(state.adapter, goal, record, items) or runtime_messages.render(
         "goal_step", locale, check=record.unmet[0])
+    record = record.model_copy(update={"step": step})        # L7-6: kept for the card, after a restart too
+    runtime.progress = runtime.progress.model_copy(update={"goal": record})
+    await runtime.checkpoint("goal_step")                     # the verdict's own checkpoint went out above
+    background_jobs.goal_round(record, items, state.budget)
     return False, runtime_messages.render("goal_blocked", locale, round=record.round, met=listed(met_ids),
                                           unmet=listed(record.unmet), step=step)
+
+
+def _blocker(record, host, goal):
+    """L7-6: why the goal stopped short, as its card says it; None while it goes on or once it is complete."""
+    from server.services.goal_mode import GoalBlocker
+    if record.status == "blocked":
+        return GoalBlocker(code="no_progress")
+    if record.status == "budget_limited":
+        return GoalBlocker(code="budget")
+    if record.status != "review":
+        return None
+    if host.changed:
+        return GoalBlocker(code="protected_changed", files=tuple(host.changed)[:200])
+    if host.unprotected and all(check.id not in record.unmet for check in goal.checks):
+        return GoalBlocker(code="unprotected")
+    return GoalBlocker(code="user_checks")
 
 
 async def _one_step(adapter, goal, record, items: dict) -> str | None:

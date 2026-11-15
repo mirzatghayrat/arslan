@@ -125,6 +125,12 @@ class SeenMeasure(Contract):
     size: NonnegativeInt | None = None
 
 
+class GoalBlocker(Contract):
+    """L7-6: why a goal stopped short, for its card (`goal_state.blocker`)."""
+    code: Literal["no_progress", "protected_changed", "unprotected", "user_checks", "budget"]
+    files: tuple[RelPath, ...] = Field(default=(), max_length=200)
+
+
 class GoalProgress(Contract):
     """The rounds' record, on `Progress.goal`. Resume keeps it (the seen set included) and resets the streak; an edit
     (a spec revision) starts a fresh one."""
@@ -136,6 +142,9 @@ class GoalProgress(Contract):
     seen: tuple[SeenMeasure, ...] = Field(default=(), max_length=1000)
     accepted: tuple[ProtectedFile, ...] = Field(default=(), max_length=PROTECTED_FILES_MAX)   # declared outputs
     last_receipt: NonnegativeInt = 0   # the trace index the last verdict read up to
+    # L7-6: why it stopped short, and a blocked goal's one step for the user, for its card after a restart too.
+    blocker: GoalBlocker | None = None
+    step: Annotated[str, Field(max_length=300)] | None = None
 
 
 def acceptance(spec: GoalSpec) -> list[dict]:
@@ -223,6 +232,37 @@ def status_of(phase: str, pause_reason: str | None) -> GoalStatus:
         return "active"
     return _PHASE_STATUS.get((phase, pause_reason if phase == "waiting_user" else None),
                              "blocked" if phase == "failed" else "review")
+
+
+# -- L7-6: the goal card's state, the `goal_state` key of a goal's `job_update` (card: UI, "The frame") ---------------
+FRAME_OUTCOME = {"paused": "stopped", "cleared": "stopped", "blocked": "blocked", "budget_limited": "out_of_budget",
+                 "interrupted": "interrupted", "review": "partial", "complete": "done"}
+
+
+def goal_state(spec: GoalSpec, progress: GoalProgress | None, *, status: str, items: dict, finished: bool,
+               spend_usd: float | None, cap_usd: float | None) -> dict:
+    """The card's state, every key always present. `items`: the last validation report's check items by id (the
+    host's receipts); a check with none is pending, or not reached once the goal stopped. Never the answer text."""
+    record = progress or GoalProgress()
+    flagged = set(unverifiable(spec))
+    checks = []
+    for check in spec.checks:
+        item = items.get(check.id) or {}
+        receipt = None
+        if item.get("code"):
+            measure = item.get("measure") or {}
+            receipt = {"code": item["code"], "path": item.get("path"), "exit_code": item.get("exit_code"),
+                       "count": measure.get("size")}
+        checks.append({"id": check.id, "description": check.description, "kind": check.kind,
+                       "status": item.get("status") or ("not_reached" if finished else "pending"), "receipt": receipt,
+                       "flagged": check.id in flagged, "user_confirmed": check.user_confirmed,
+                       "outputs": list(check.outputs)})
+    files = spec.protected.files if spec.protected is not None else ()
+    return {"status": status, "round": record.round, "met": sum(c["status"] == "passed" for c in checks),
+            "total": len(checks), "spend_usd": spend_usd, "cap_usd": cap_usd, "tier": spec.tier,
+            "blocker": record.blocker.model_dump(mode="json", exclude={"schema_version"}) if record.blocker else None,
+            "step": record.step, "unprotected": unprotected(spec.protected),
+            "missing_files": [f.path for f in files if f.sha256 is None], "checks": checks}
 
 
 # -- L7-5: the protected set (card: "Check files are protected from Start") ------------------------------------------

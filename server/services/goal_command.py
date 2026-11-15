@@ -57,10 +57,14 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None) 
         return await _clear(conversation_id, row, say)
     if rest.lower() == "resume":
         return await _resume(conversation_id, row, say, source=source)
-    if verb == "edit" or rest.lower() == "pause":
-        return say("goal_not_here")         # Edit and Pause come with the goal card (L7-6)
+    if rest.lower() == "pause":
+        return await _pause(row, say)
+    if rest.split(None, 1)[0].lower() == "edit":
+        return await _edit(conversation_id, row, rest, say, source=source)
     if row is not None and _open(row):
         return say("goal_exists")
+    if verb == "from" and tail and " " not in tail:
+        return await _from_job(conversation_id, tail, say)
     return await _set(conversation_id, rest, say)
 
 
@@ -146,8 +150,9 @@ def drafted_checks(content: str | None, objective: str) -> tuple[GoalCheck, ...]
     return tuple(out)
 
 
-async def _set(conversation_id: str, rest: str, say) -> str:
-    """`/goal [$N] <objective>`: drafts the checks with one request and no tools, then writes the not-started row."""
+async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, ...] | None = None) -> str:
+    """`/goal [$N] <objective>`: drafts the checks with one request and no tools, then writes the not-started row.
+    L7-6: `given` (a finished job's checks, `/goal from`) replaces the drafting."""
     from arslan.execution_budget import MAX_USD_CAP, run_budget
     from server.db import session as db_session
     from server.orchestrator.answer_salvage import _chat_retry
@@ -167,9 +172,12 @@ async def _set(conversation_id: str, rest: str, say) -> str:
     ctx = await task_context.load(conversation_id, user_message=objective)
     if ctx.temporary:                       # before drafting: a temporary conversation keeps no goal row
         return say("goal_not_here")
-    adapter = await _adapter_for_turn(has_images=False, conversation_id=conversation_id)
-    response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective), tools=None)
-    drafted = () if getattr(response, "tool_calls", None) else drafted_checks(response.content, objective)
+    if given is not None:
+        drafted = given
+    else:
+        adapter = await _adapter_for_turn(has_images=False, conversation_id=conversation_id)
+        response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective), tools=None)
+        drafted = () if getattr(response, "tool_calls", None) else drafted_checks(response.content, objective)
     async with db_session.AsyncSessionLocal() as db:
         tier = await settings_service.background_job_budget(db)
         usd_cap = await settings_service.task_usd_cap(db)
@@ -322,3 +330,169 @@ async def _status(row, say) -> str:
     status = "active" if background_jobs.goal_job(row.id) else status_of(row.phase, row.pause_reason)
     return say("goal_status", objective=spec.objective[:200], status=status, round=record.round,
                checks=_listed(spec, unverifiable(spec) if status == "not_started" else ()))
+
+
+# -- L7-6: the goal card (card: UI, "The frame"): Pause, Edit, "Keep going until met", and the card's frames -----------
+EDIT_LINE = re.compile(r"^(new|[A-Za-z0-9][\w.-]{0,63})(\s*\(mine\))?:\s*(.+)$")
+
+
+async def _pause(row, say) -> str:
+    """`/goal pause`: the running goal's job is stopped and its row waits as paused (`background_jobs._goal_ended`)."""
+    import asyncio
+    from server.services import background_jobs
+    job = background_jobs.goal_job(row.id) if row is not None else None
+    if job is None or job.task is None:
+        return say("goal_not_running")
+    job.pausing = True
+    job.task.cancel()
+    await asyncio.wait({job.task}, timeout=15)
+    return say("goal_paused")
+
+
+def edited_spec(old: GoalSpec, text: str) -> GoalSpec:
+    """The card's form as `/goal edit` lines (card: "/goal edit") → the new spec. A kept check keeps its kind, file
+    and phrases; only its description and the "mine" mark change. An added one is a judgement over nothing, so it is
+    flagged until the user marks it as theirs. Raises ValueError for a line it can't use."""
+    objective, kept, added = "", [], []
+    commands = []
+    by_id = {check.id: check for check in old.checks if check.kind != "check"}
+    for line in text.splitlines()[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        if line.lower().startswith("objective:"):
+            objective = line.split(":", 1)[1].strip()
+        elif CHECK_LINE.fullmatch(line):
+            commands.append(line)
+        elif (match := EDIT_LINE.fullmatch(line)) and (match.group(1) == "new" or match.group(1) in by_id):
+            mine, description = bool(match.group(2)), match.group(3).strip()[:300]
+            if match.group(1) == "new":
+                added.append((description, mine))
+            else:
+                kept.append(by_id[match.group(1)].model_copy(update={"description": description, "user_confirmed": mine}))
+        else:
+            raise ValueError(line[:300])
+    objective = "\n".join([objective, *commands]).strip()[:OBJECTIVE_MAX]
+    if not objective:
+        raise ValueError("objective:")
+    used = {check.id for check in kept}
+    fresh = (f"c{n}" for n in range(1, 100) if f"c{n}" not in used)
+    added_checks = [GoalCheck(id=next(fresh), description=description, kind="judgement", user_confirmed=mine)
+                    for description, mine in added]
+    return GoalSpec(objective=objective, checks=(*kept, *added_checks, *user_checks(objective)), tier=old.tier,
+                    usd_cap=old.usd_cap)
+
+
+async def _edit(conversation_id: str, row, rest: str, say, *, source: str | None) -> str:
+    """`/goal edit` (or `/goal edit start`): a spec revision from the card's form. A running goal is paused first.
+    The goal then waits for Start again, with a fresh seen set and streak; the protected set is recorded at Start."""
+    from arslan.companion.contracts import TaskSpec
+    from server.services import background_jobs
+    from server.services.goal_mode import acceptance, unverifiable
+    from server.services.task_repository import repository
+    if not await main_conversation(conversation_id):
+        return say("goal_main_only")
+    if row is None or not _open(row):
+        return say("goal_missing")
+    if background_jobs.goal_job(row.id):
+        await _pause(row, say)
+        row = await _goal_row(conversation_id)
+        if row is None or background_jobs.goal_job(row.id):
+            return await _status(row, say) if row is not None else say("goal_missing")
+    try:
+        spec = edited_spec(GoalSpec.model_validate(row.privacy["goal_spec"]), rest)
+    except (ValueError, ValidationError) as bad:
+        return say("goal_bad_check", line=str(bad).splitlines()[0][:300])
+    async with repository() as repo:
+        task = await repo.spec(row)
+        await repo.revise(row.id, row.version, TaskSpec.model_validate({
+            **task.model_dump(mode="json"), "instruction": spec.objective, "revision": task.revision + 1,
+            "acceptance": acceptance(spec)}), owner_id=row.owner_id)
+        await repo.park_goal(row.id, spec.model_dump(mode="json"), owner_id=row.owner_id)
+    if rest.splitlines()[0].strip().lower() == "edit start":
+        return await _start(conversation_id, await _goal_row(conversation_id), say, confirm=False, source=source)
+    return say("goal_edited", objective=spec.objective[:200], checks=_listed(spec, unverifiable(spec)))
+
+
+def from_job(job) -> tuple[GoalCheck, ...]:
+    """A finished job's checks as goal checks (`criteria_from_acceptance`): file saved and sources read keep their
+    condition; a mentions check becomes file contains only when it names a file it can be read from, which a job's
+    never does, so it is a judgement (flagged); a 👀 is the user's own."""
+    from server.services.background_jobs import criteria_from_acceptance
+    out = []
+    for item in criteria_from_acceptance(job.acceptance):
+        kind, target = item["kind"], item.get("target")
+        fields = {"id": f"c{len(out) + 1}", "description": item["description"]}
+        if kind == "file_saved":
+            fields.update(kind="file_saved", path=target[:240], minimum=item.get("minimum"))
+        elif kind == "sources_read":
+            fields.update(kind="sources_read", path=target[:240] if target else None, minimum=item.get("minimum") or 1)
+        else:
+            fields.update(kind="judgement", user_confirmed=kind == "glance")
+        out.append(GoalCheck(**fields))
+    return tuple(out)
+
+
+async def _from_job(conversation_id: str, job_id: str, say) -> str:
+    """`/goal from <job id>`: the finished job card's "Keep going until met". A not-started goal with that job's
+    objective and checks, waiting for Start like any other (Q0); never a goal job, a sub-session's or a running one."""
+    from server.services import background_jobs
+    job = background_jobs._jobs.get(job_id)
+    if job is None or job.conversation_id != conversation_id or job.phase != "finished" or job.goal_spec is not None \
+            or job.parent_id or job.reports is not None:
+        return say("goal_from_missing")
+    try:
+        given = from_job(job)
+    except (ValueError, ValidationError):
+        return say("goal_draft_failed")
+    return await _set(conversation_id, job.goal, say, given=given)
+
+
+async def saved(task_id: str):
+    """A goal row's last recorded verdict, that verdict's receipts by check id, and the row (L7-6's card)."""
+    from server.services import task_validation
+    from server.services.goal_mode import GoalProgress
+    from server.services.task_repository import repository
+    async with repository() as repo:
+        row = await repo.get(task_id)
+        point = ((await repo.latest_checkpoint(row.id, owner_id=row.owner_id)) or {}).get("progress") or {}
+        report = await task_validation.latest_report(repo, row) if row.results else None
+    record = GoalProgress.model_validate(point["goal"]) if point.get("goal") else None
+    return record, {item.get("check_id"): item for item in (report or {}).get("checks") or ()}, row
+
+
+async def frame_of(row) -> dict:
+    """A goal row with no job running, as its card's `job_update`: not started is queued; anything else is finished
+    with the outcome its card shows. Read from the row and its last checkpoint, never from the transcript."""
+    from server.services.goal_mode import FRAME_OUTCOME, goal_state, status_of
+    spec = GoalSpec.model_validate(row.privacy["goal_spec"])
+    record, items, row = await saved(row.id)
+    status = status_of(row.phase, row.pause_reason)
+    started = status != "not_started"
+    spend = (row.budget or {}).get("spend") or {}
+    state = goal_state(spec, record, status=status, items=items if started else {}, finished=started,
+                       spend_usd=spend.get("usd") or None if started else None, cap_usd=spec.usd_cap)
+    return {"type": "job_update", "job_id": row.id, "conversation_id": row.conversation_id, "goal": spec.objective,
+            "phase": "finished" if started else "queued", "step": None, "outcome": FRAME_OUTCOME.get(status),
+            "detail": row.pause_reason if started else None, "budget": None, "run_id": None, "origin": "mac",
+            "criteria": [{"id": c["id"], "description": c["description"], "status": c["status"]}
+                         for c in state["checks"]],
+            "goal_state": state}
+
+
+async def open_frames(conversation_id: str) -> list[dict]:
+    """The conversation's goal card when no job of it is running: a socket that opens gets it (a not-started goal, or
+    one paused, blocked or interrupted by a restart). None without a goal row, so nothing changes without one."""
+    from server.services import background_jobs
+    row = await _goal_row(conversation_id)
+    if row is None or row.phase in {"succeeded", "cancelled"} or background_jobs.goal_job(row.id):
+        return []
+    return [await frame_of(row)]
+
+
+async def publish(conversation_id: str, emit) -> None:
+    """After a `/goal` command: the goal's card, when no job of it is running (a running job sends its own)."""
+    from server.services import background_jobs
+    row = await _goal_row(conversation_id)
+    if row is not None and not background_jobs.goal_job(row.id):
+        emit(await frame_of(row))

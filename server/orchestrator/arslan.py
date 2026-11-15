@@ -368,6 +368,7 @@ async def _goal_command(conversation_id: str, user_message: str, emit: EventSink
         line = await goal_command.handle(conversation_id, rest, source=source)
         run_emit({"type": "stream_chunk", "content": line})
         run_emit({"type": "stream_end", "message_id": await memory.add_message(conversation_id, "arslan", line)})
+        await goal_command.publish(conversation_id, run_emit)    # L7-6: the goal's card, when no job of it runs
         return line
     await host_run.execute(conversation_id, user_message, emit, body)
     return True

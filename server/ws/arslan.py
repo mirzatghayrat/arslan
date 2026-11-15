@@ -552,6 +552,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         for job in background_jobs.jobs_for(conversation_id):
             if job.phase != "finished":
                 await ws.send_json(job.frame())
+        # L7-6: the goal's card when no job of it runs (not started, paused, blocked, interrupted by a restart).
+        from server.services import goal_command
+        for frame in await goal_command.open_frames(conversation_id):
+            await ws.send_json(frame)
         for card in approvals.pending_cards(conversation_id):
             await ws.send_json(card)
 

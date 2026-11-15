@@ -296,6 +296,15 @@ class TaskRepository:
             "budget": run_budget(goal.tier, usd_cap=goal.usd_cap).snapshot()})
         return row.version
 
+    async def pause_goal(self, task_id: str, *, owner_id="local") -> None:
+        """L7-6: `/goal pause`: the goal's job was stopped (its row cancelled); the row waits as paused instead, which
+        the goal's Resume re-queues. Only a goal row, and only one that stop left cancelled."""
+        row = await self.get(task_id, owner_id=owner_id)
+        if (row.privacy or {}).get("driver") != {"kind": "background", "goal": True} or row.phase != "cancelled":
+            raise TaskError("task_cannot_pause")
+        await self._advance(row, "goal_paused", changes={
+            "phase": "waiting_user", "pause_reason": "goal_paused", "cancel_requested": False})
+
     async def mark_goal_posted(self, task_id: str, *, owner_id="local") -> None:
         """L7-4: the goal's result for this attempt is posted; the boot pass posts a succeeded one that isn't."""
         row = await self.get(task_id, owner_id=owner_id)
