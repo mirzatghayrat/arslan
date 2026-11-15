@@ -210,10 +210,22 @@ def test_a_resume_starts_after_the_cancel_record(window_client, portal, post_tur
     assert frames[-1]["type"] == "stream_end", frames
 
 
+def _counting_waits(monkeypatch) -> list[str]:
+    """Each call of `_cancel_recorded` from here on, by conversation."""
+    real, waits = task_service._cancel_recorded, []
+
+    async def counted(conversation_id):
+        waits.append(conversation_id)
+        return await real(conversation_id)
+    monkeypatch.setattr(task_service, "_cancel_recorded", counted)
+    return waits
+
+
 def test_a_start_refused_once_is_retried(window_client, portal, post_turn, monkeypatch):
     """A start refused once (the record committed just after the wait, or another writer held the lock) is tried
-    again, and the turn answers."""
+    again, and the turn answers. The retry does not wait for the record again: a start waits once at most."""
     _turn_on(monkeypatch, _Model("Hello."))
+    waits = _counting_waits(monkeypatch)
     real_start, refused = task_repository.TaskRepository.start, []
 
     async def start(self, *args, **kwargs):
@@ -228,3 +240,84 @@ def test_a_start_refused_once_is_retried(window_client, portal, post_turn, monke
         frames, waiting = _frames_until_end(window)
     assert refused and not waiting and frames[-1]["type"] == "stream_end", frames
     assert portal.call(_phases) != []
+    assert waits == ["main"], waits
+
+
+def test_a_resume_refused_once_is_retried_without_a_second_wait(window_client, portal, post_turn, monkeypatch):
+    """As a turn's start: a resume refused once is tried again straight away, and the resumed turn answers."""
+    _turn_on(monkeypatch, _Model("Checked."))
+    version = portal.call(_paused_task, "main")
+    waits = _counting_waits(monkeypatch)
+    real_start, refused = task_repository.TaskRepository.start, []
+
+    async def start(self, task_id, *args, **kwargs):
+        if task_id == "paused-task" and not refused:
+            refused.append(1)
+            raise task_repository.TaskError("task_version_conflict")
+        return await real_start(self, task_id, *args, **kwargs)
+    monkeypatch.setattr(task_repository.TaskRepository, "start", start)
+    with window_client.websocket_connect("/ws/arslan/main") as window:
+        window.receive_json()
+        window.send_json({"type": "resume_task", "task_id": "paused-task", "expected_version": version})
+        frames, waiting = _frames_until_end(window)
+    assert refused and not waiting and frames[-1]["type"] == "stream_end", frames
+    assert waits == ["main"], waits
+
+
+@pytest.mark.parametrize("ending", ["written", "raises", "cancelled"])
+def test_the_registry_forgets_a_record_once_it_is_done(monkeypatch, ending):
+    """`_cancel_records` keeps a conversation's record only while it is being written: gone once it is written, once
+    it raised, once it was cancelled, also when a start's bounded wait gave up on it first."""
+    monkeypatch.setattr(task_service, "CANCEL_RECORD_WAIT_S", 0.05)
+    monkeypatch.setattr(task_service, "_cancel_records", {})
+
+    async def scenario():
+        let_go = asyncio.Event()
+
+        async def record():
+            await let_go.wait()
+            if ending == "raises":
+                raise RuntimeError("the record failed")
+            return {"phase": "cancelled"}
+        recording = asyncio.ensure_future(record())
+        task_service._pending_cancel("leak-check", recording)
+        await task_service._cancel_recorded("leak-check")       # times out: the record is still being written
+        assert not recording.done()
+        assert task_service._cancel_records == {"leak-check": recording}
+        if ending == "cancelled":
+            recording.cancel()
+        else:
+            let_go.set()
+        await asyncio.wait({recording})
+        if not recording.cancelled():
+            recording.exception()                                # retrieved, as `_kept` does
+        await asyncio.sleep(0)                                   # its done callbacks run
+        assert task_service._cancel_records == {}
+
+        written = asyncio.ensure_future(asyncio.sleep(0, result={"phase": "cancelled"}))
+        task_service._pending_cancel("leak-check", written)
+        await task_service._cancel_recorded("leak-check")       # a normal finish, inside the wait
+        await asyncio.sleep(0)
+        assert task_service._cancel_records == {}
+    asyncio.run(scenario())
+
+
+def test_a_reused_conversation_keeps_its_newer_record(monkeypatch):
+    """A record that finishes after a newer one was noted for its conversation leaves the newer one in place."""
+    monkeypatch.setattr(task_service, "_cancel_records", {})
+
+    async def scenario():
+        older_go, newer_go = asyncio.Event(), asyncio.Event()
+        older = asyncio.ensure_future(older_go.wait())
+        newer = asyncio.ensure_future(newer_go.wait())
+        task_service._pending_cancel("leak-check", older)
+        task_service._pending_cancel("leak-check", newer)
+        older_go.set()
+        await older
+        await asyncio.sleep(0)
+        assert task_service._cancel_records == {"leak-check": newer}
+        newer_go.set()
+        await newer
+        await asyncio.sleep(0)
+        assert task_service._cancel_records == {}
+    asyncio.run(scenario())

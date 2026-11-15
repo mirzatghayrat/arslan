@@ -36,10 +36,11 @@ _active: dict[str, asyncio.Task] = {}
 _runtimes: dict[str, TaskRuntime] = {}
 _run_owners: dict[int, str] = {}
 # v0.1.64: the cancel record of a turn cut short (its window closed mid-finish), by conversation, until it is
-# written. Detached, it outlives the turn and its lock, and until it commits the task is still "running", so the
+# written. Detached, it outlives the turn (and a socket turn's lock), and until it commits the task is still "running", so the
 # next turn's start would hit the one-active-turn index (uq_companion_active_conversation) and be refused.
 _cancel_records: dict[str, asyncio.Task] = {}
-# How long a start waits for that record: SQLite's busy_timeout (server/db/session.py) plus a margin.
+# How long a start waits for that record: SQLite's busy_timeout (server/db/session.py) plus a margin. A start waits
+# once, before its first attempt; its one retry does not wait again, so a start waits at most this long in all.
 CANCEL_RECORD_WAIT_S = 5 + 2
 
 # Unknown tools, including all MCP tools, are conservatively external writes.
@@ -857,7 +858,7 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             # which Starlette's websocket handling uses) cancels every await here too, and the task was
             # left "running", refusing every later turn in its conversation (one active task each).
             recording = _kept(_record_cancel(runtime.task_id), "cancelled task not recorded")
-            _pending_cancel(value["conversation_id"], recording)   # before the turn lock is let go
+            _pending_cancel(value["conversation_id"], recording)   # before the turn ends (a socket's, its lock)
             final = await asyncio.shield(recording)   # if cancelled again, the record still completes
             emit(_state_frame(final))
             raise
@@ -949,8 +950,13 @@ def _pending_cancel(conversation_id: str, record: asyncio.Task) -> None:
 
 
 async def _cancel_recorded(conversation_id: str) -> None:
-    """Wait, bounded, for the cancel record of this conversation's last turn. The caller holds the turn lock, so
-    no other turn starts meanwhile. The wait never cancels the record."""
+    """Wait, bounded, for the cancel record of this conversation's last turn. The wait never cancels the record.
+
+    A socket's turn (ws/arslan.py) holds the conversation's turn lock here, so no other chat turn starts meanwhile.
+    A background job's turn and a scheduled fire (background_jobs, scheduler via task_context.execute_entry) hold no
+    turn lock, so another turn can start between this wait and their own start. The one-active-turn index is what
+    keeps one turn running either way: such a start is refused (`task_version_conflict`), not let through; this wait
+    only spares a start the refusal a cancel record still being written would cause."""
     record = _cancel_records.get(conversation_id)
     if record is not None and not record.done() and record.get_loop() is asyncio.get_running_loop():
         await asyncio.wait({record}, timeout=CANCEL_RECORD_WAIT_S)
@@ -1043,8 +1049,10 @@ async def run_turn(function, conversation_id: str, user_message: str, emit, *arg
         "acceptance": _acceptance or [ANSWER_DELIVERED],
     })
     for attempt in (1, 2):
-        # A turn cut short just before this one may still be writing its cancel record (v0.1.64).
-        await _cancel_recorded(conversation_id)
+        # A turn cut short just before this one may still be writing its cancel record (v0.1.64). Waited for once:
+        # the retry goes straight to the start (CANCEL_RECORD_WAIT_S).
+        if attempt == 1:
+            await _cancel_recorded(conversation_id)
         try:
             # One transaction: a refused start rolls the create back too, so a retry starts clean.
             async with repository() as repo:
@@ -1095,10 +1103,12 @@ async def prepare_resume(task_id, expected_version, conversation_id, ctx, *, ins
     if ctx.temporary:
         raise TaskError("temporary_task_not_persisted")
     for attempt in (1, 2):
-        # v0.1.64: as run_turn, a Resume pressed just after a window closed on a turn waits for that turn's cancel
-        # record (the caller holds the turn lock), and a start refused once is tried again: the block below is one
-        # transaction, so a refusal rolls all of it back (the dropped grants too) and the retry starts clean.
-        await _cancel_recorded(conversation_id)
+        # v0.1.64: as run_turn, a Resume pressed just after a window closed on a turn waits (once, see
+        # `_cancel_recorded` for who holds the turn lock here) for that turn's cancel record, and a start refused once
+        # is tried again: the block below is one transaction, so a refusal rolls all of it back (the dropped grants
+        # too) and the retry starts clean.
+        if attempt == 1:
+            await _cancel_recorded(conversation_id)
         try:
             async with repository() as repo:
                 row = await repo.get(task_id)
