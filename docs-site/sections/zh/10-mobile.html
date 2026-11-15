@@ -23,7 +23,7 @@
 <p class="evidence">{{source:desktop/bridge/Sources/BridgeCore/Mailbox.swift|序号、处理记录、ACK 与清理}}；{{source:desktop/bridge/Sources/BridgeCore/ConversationLinks.swift|业务防重与结果映射}}；{{source:desktop/bridge/Sources/BridgeCore/StatusReporter.swift|快照与心跳}}。</p>
 <h3>手机审批复用 Mac 的授权与执行链</h3>
 <p>手机展示具体 action、target 和 risk。批准需要本机生物识别，拒绝不需要；发送回答后还要等待 Mac 的 <code>approval.result</code>。Mac 检查卡片是否仍有效，映射为原来的 confirm / cancel 操作，手机不会授予命令“永远允许”。语音入口可以形成待确认的文字，不能代替批准。</p>
-<p>自 0.1.61 起，各处都是同一张审批卡（聊天窗口、收件箱、Island 和 iPhone）。手机显示卡片自己的问题（取自卡片的标题）以及它的“是”所涵盖的范围。它只回答一次，或者在卡片的第一个选项是“本任务内”时对本任务生效（针对应用、站点或快捷指令的卡片：此时标题以“（本任务内）”结尾），绝不提供“本对话内”或“始终”。卡片在 Mac 上等待 30 分钟（0.1.61 之前是 5 分钟）；超时会以 <code>expired</code> 报告，Arslan 把它当作没有人回答，而不是拒绝。要求安装新能力的卡片永远不会到达手机。当 Mac 先回答时（在窗口、收件箱或 Island 中），手机的 <code>approval.result</code> 会带上 <code>answered_on_mac</code>。</p>
+<p>自 0.1.61 起，各处都是同一张审批卡（聊天窗口、Island 和 iPhone）。手机显示卡片自己的问题（取自卡片的标题）以及它的“是”所涵盖的范围。它只回答一次，或者在卡片的第一个选项是“本任务内”时对本任务生效（针对应用、站点或快捷指令的卡片：此时标题以“（本任务内）”结尾），绝不提供“本对话内”或“始终”。卡片在 Mac 上等待 30 分钟（0.1.61 之前是 5 分钟）；超时会以 <code>expired</code> 报告，Arslan 把它当作没有人回答，而不是拒绝。要求安装新能力的卡片永远不会到达手机。当 Mac 先回答时（在窗口或 Island 中），手机的 <code>approval.result</code> 会带上 <code>answered_on_mac</code>。</p>
 <div class="note important"><strong>版本边界：</strong>自 v0.1.54 起，Mac 只在带有 <code>faceid</code> 或 <code>touchid</code> 标记（iPhone SE 用 Touch ID）时把回答算作批准，并在能力声明中告知手机；其他标记一律视为拒绝。0.1.54 之前，Touch ID 的批准会被当作取消。协议中的 <code>high_risk_mac_only</code> 在此版固定为 false，尚不是用户可配置的开关。共享协议与测试向量能验证互操作和负例，不能替代最终分发包、真实 iCloud、推送与设备认证的端到端验收。</div>
 <h3>文件、实时对话和从手机改变方向</h3>
 <p>这些是新增的协议类型（协议文档第 5.7 节）；没有它们的 Mac 会回答 <code>unknown_type</code>，而 Mac 只会把新事件发给其 <code>hello</code> 能力声明里要求了它们的手机。</p>
