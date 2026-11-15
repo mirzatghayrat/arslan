@@ -148,6 +148,27 @@ async def test_pause_stops_the_running_goal_and_it_waits_as_paused_for_resume(ex
     await resume._finish(row.id)
 
 
+async def test_stop_is_not_pause_a_stopped_goal_is_cleared(execution_db, active, model, disk, monkeypatch):
+    model.draft = resume.NOTES
+    gate = asyncio.Event()
+    answer = model.chat
+
+    async def slow(system, user, **kw):
+        if not system.startswith("Draft the acceptance checks"):
+            await gate.wait()
+        return await answer(system, user, **kw)
+    monkeypatch.setattr(model, "chat", slow)
+    await _say(f"/goal {PROMPT}")
+    await _say("/goal start")
+    row = await _row(execution_db)
+    for _ in range(50):
+        await asyncio.sleep(0.02)
+    assert background_jobs.stop(CID, row.id)
+    await asyncio.wait_for(background_jobs._jobs[row.id].task, 15)
+    assert (await _row(execution_db)).phase == "cancelled"
+    assert background_jobs._jobs[row.id].frame()["goal_state"]["status"] == "cleared"
+
+
 async def test_pause_with_no_running_goal_says_so(execution_db, active, model, jobs):
     await _say(f"/goal {PROMPT}")
     assert "No goal is running" in await _say("/goal pause")

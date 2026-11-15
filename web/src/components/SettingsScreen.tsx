@@ -178,6 +178,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onDefaultReadChange={(v) => saveField({ defaultReadEnabled: v })}
         folderRulesEnabled={localSettings.folderRulesEnabled ?? true}
         onFolderRulesChange={(v) => saveField({ folderRulesEnabled: v })}
+        goalMode={localSettings.goalMode ?? false}
+        onGoalModeChange={(v) => saveField({ goalMode: v })}
         voiceInputLocale={localSettings.voiceInputLocale ?? ''}
         onVoiceInputLocaleChange={(v) => saveField({ voiceInputLocale: v })}
         voiceMode={localSettings.voiceMode ?? 'push_to_talk'}
@@ -320,7 +322,7 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onOpenActivity={onOpenActivity}
       />
         </SettingsGroup>
-        <SettingsGroup title={t('settings.grpJobs')}>{advanced(['budget'])}</SettingsGroup>
+        <SettingsGroup title={t('settings.grpJobs')}>{advanced(['budget', 'goalMode'])}</SettingsGroup>
       </div>
     ),
     memory: (

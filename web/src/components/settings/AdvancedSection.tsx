@@ -74,6 +74,9 @@ export interface AdvancedSectionProps {
   /** K10-1 / L11-0: read a folder's AGENTS.md (or CLAUDE.md) each turn; default on. */
   folderRulesEnabled?: boolean;
   onFolderRulesChange?: (value: boolean) => void;
+  /** L7: goal mode (mock item 8); default off. */
+  goalMode?: boolean;
+  onGoalModeChange?: (value: boolean) => void;
   voiceInputLocale: string;
   onVoiceInputLocaleChange: (value: string) => void;
   /** How the microphone is used: not at all, held, or always listening. */
@@ -91,7 +94,7 @@ export interface AdvancedSectionProps {
   bare?: boolean;
 }
 
-export type AdvancedBlock = 'telemetry' | 'workspace' | 'defaultRead' | 'folderRules' | 'voice' | 'lan' | 'ssh' | 'terminal' | 'budget' | 'browser';
+export type AdvancedBlock = 'telemetry' | 'workspace' | 'defaultRead' | 'folderRules' | 'goalMode' | 'voice' | 'lan' | 'ssh' | 'terminal' | 'budget' | 'browser';
 
 // Moved out of here, deliberately, and the moves are the point of the redesign:
 //   mcpServerEnabled  → AccessTokenSettings (beside the token that guards it)
@@ -122,6 +125,8 @@ export default function AdvancedSection({
   onDefaultReadChange,
   folderRulesEnabled = true,
   onFolderRulesChange,
+  goalMode = false,
+  onGoalModeChange,
   voiceInputLocale,
   onVoiceInputLocaleChange,
   voiceMode,
@@ -220,6 +225,16 @@ export default function AdvancedSection({
             onChange={(e) => onFolderRulesChange?.(e.target.checked)}
             className="kit-switch mt-0.5"
           />
+        </div>
+    </>)],
+    ['goalMode', (<>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h4 className="text-[13px] font-medium text-foreground">{t('jobs.goal.setting')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">{t('jobs.goal.settingDesc')}</p>
+          </div>
+          <input id="settings-goal-mode" data-testid="goal-mode-toggle" type="checkbox" checked={goalMode}
+            onChange={(e) => onGoalModeChange?.(e.target.checked)} className="kit-switch mt-0.5" />
         </div>
     </>)],
     ['voice', (<>

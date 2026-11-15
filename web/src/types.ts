@@ -221,6 +221,8 @@ export interface AppSettings {
   defaultReadEnabled: boolean;
   /** K10-1: a folder's rules (AGENTS.md / CLAUDE.md) in each turn; default on. Optional until L11-0's switch. */
   folderRulesEnabled?: boolean;
+  /** L7: `/goal` and "Keep going until met"; default off. */
+  goalMode?: boolean;
   voiceInputLocale: string;
   /** How the microphone is used: not at all, held, or always listening. */
   voiceMode: VoiceMode;

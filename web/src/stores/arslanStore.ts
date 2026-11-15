@@ -311,7 +311,7 @@ function _beginReplay(get: GetState, set: SetState) {
 // A background job's card is waiting: which job is not in the frame, so the
 // notice names the running one when there is exactly one.
 function _approvalNotice(state: { jobs: Record<string, JobCard>; jobNotice: { seq: number } | null }) {
-  const running = Object.values(state.jobs).filter((j) => j.phase !== "finished");
+  const running = Object.values(state.jobs).filter((j) => j.phase !== "finished" && j.goalState?.status !== "not_started");
   return { jobNotice: { seq: (state.jobNotice?.seq ?? 0) + 1, jobId: running.length === 1 ? running[0].jobId : "",
                         kind: "needs_approval" as const, outcome: null, goal: running.length === 1 ? running[0].goal : "" } };
 }
@@ -563,6 +563,7 @@ function makeActions(set: SetState, get: GetState) {
           const card: JobCard = {
             jobId: frame.job_id, goal: frame.goal, phase: frame.phase, step: frame.step,
             outcome: frame.outcome, detail: frame.detail, budget: frame.budget ?? null, criteria: frame.criteria,
+            ...(frame.goal_state ? { goalState: frame.goal_state } : {}),   // L7-6: a goal's card only
           };
           const known = state.items.some((it) => it.kind === "job" && it.jobId === frame.job_id);
           set({
