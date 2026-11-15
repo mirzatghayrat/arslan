@@ -178,12 +178,18 @@ async def memory(execution_db, monkeypatch):
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     monkeypatch.setitem(executors.EXECUTORS, "web_extract", _Page())
     monkeypatch.setitem(executors.EXECUTORS, "task_progress", _EarlierOutput())
+    # NET-a keeps the sites outside content named per conversation in memory (net_policy._outside). Every host turn
+    # here is conversation CID, so a test that read example.test left it `outside_only` for the next test in the same
+    # worker, whose clean turn then got a network card (test_create_skill_outside under --dist loadfile).
+    from server.services import net_policy
+    net_policy._reset_for_tests()
     background_jobs._reset_for_tests()
     approvals._reset_for_tests()
     yield execution_db
     background_jobs._reset_for_tests()
     approvals._reset_for_tests()
     command_sandbox._reset_for_tests()
+    net_policy._reset_for_tests()
 
 
 async def _host_turn(monkeypatch, model, *, asker=None, ctx=None, confirm_schedule=None):
