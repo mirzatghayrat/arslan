@@ -27,6 +27,8 @@ export interface SelectProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /** Extra classes on the trigger button itself (e.g. a 44px touch height). */
+  triggerClassName?: string;
   id?: string;
   ariaLabel?: string;
 }
@@ -38,6 +40,7 @@ export default function Select({
   placeholder = "Select…",
   disabled = false,
   className = "",
+  triggerClassName = "",
   id,
   ariaLabel,
 }: SelectProps) {
@@ -177,6 +180,7 @@ export default function Select({
           "text-xs font-sans text-left",
           "focus:outline-none focus:border-primary focus:ring-1 focus:ring-ring",
           "transition-all",
+          triggerClassName,
           open ? "border-primary ring-1 ring-ring" : "",
           disabled
             ? "opacity-50 cursor-not-allowed text-subtle-foreground"

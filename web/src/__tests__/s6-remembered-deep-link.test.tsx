@@ -36,7 +36,7 @@ import { SECTION_ANCHORS, SETTINGS_SECTIONS, resolveSection } from "../component
 import { readOpenSection } from "../lib/sections";
 import type { AppSettings } from "../types";
 
-const settings = { language: "en", orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" } as AppSettings;
+const settings = { language: "en", orchestratorShellEnabled: true, defaultPermissionMode: "ask" } as AppSettings;
 const screenAt = (initialSection?: string) => render(<SettingsScreen settings={settings} setSettings={vi.fn()}
   llmProviders={[]} searchProviders={[]} backendStatus="online" initialSection={initialSection} />);
 

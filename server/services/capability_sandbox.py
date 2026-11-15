@@ -98,6 +98,7 @@ def profile(*, root: Path, folders: list[str], network: bool, read: list[str], p
     rules.deny("file-write-create", *run_later.symlink_filters())
     for filters in run_later.kernel_filters(granted, roots=[real(root), own], aliased=hold.aliased):
         rules.deny("file-write*", *filters)
+    rules.deny("file-write*", *run_later.home_filters(Path.home()))      # LaunchAgents and login items, always
     if hold.at_targets:                     # #813 review 10: the held names at a link's real path
         rules.deny("file-write*", *hold.at_targets)
     held = command_sandbox.held_ancestors(

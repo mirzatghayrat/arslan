@@ -198,8 +198,8 @@ export interface AppSettings {
   telemetry: boolean;
   /** Orchestrator (Arslan) may run whitelisted shell commands. Off by default. */
   orchestratorShellEnabled: boolean;
-  /** Confirmation posture for shell commands. */
-  shellConfirmPolicy: 'ask_all' | 'ask_risky';
+  /** S5a: the permission mode a new conversation starts in. */
+  defaultPermissionMode: import('./api/permissionMode').PermissionMode;
   /** Budget tier for one background job (0.1.43). The tier is where a job wraps up. */
   backgroundJobBudget: 'lean' | 'standard' | 'ample';
   /** K4a: the per-task dollar cap, US$ (default 2, at most 100). */

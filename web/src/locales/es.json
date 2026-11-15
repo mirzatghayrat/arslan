@@ -489,16 +489,14 @@
     "sectionLlmConfig": "Configuración LLM",
     "labelOrchestratorShell": "Terminal",
     "orchestratorShellDesc": "Arslan usa la terminal para hacer las cosas: leer, convertir, compilar, ejecutar scripts. Todo lo que envía, publica, borra, instala o controla otra app pregunta antes. Leer contraseñas del llavero, sudo y borrar carpetas del sistema nunca se permite.",
-    "labelShellConfirmPolicy": "Cuándo preguntar",
-    "shellPolicyAskAll": "Preguntar antes de cada comando",
-    "shellPolicyAskAllNote": "Cada comando nuevo pregunta primero. Uno que permitiste «En esta conversación» vuelve a ejecutarse en esa conversación sin preguntar.",
+    "labelDefaultPermissionMode": "Modo para conversaciones nuevas",
+    "defaultPermissionModeDesc": "Cada conversación puede cambiarlo con el botón junto a su campo de texto. El teléfono y la Island no pueden cambiarlo.",
     "shellPolicyUndoPointer": "Si un comando cambió o eliminó en la carpeta de trabajo algo que no querías, abre ⋯ debajo de esa respuesta, elige «Deshacer este turno…» y luego «Deshacer archivos»: esos archivos vuelven a como estaban antes del turno. Funciona cuando la carpeta de trabajo tiene como máximo 20.000 archivos y 5 GB, sin contar los entornos de Python, node_modules, los archivos de compilación ni las cachés de Python, que nunca se recuperan.",
     "policyNoticeRiskyTitle": "Arslan ahora solo pregunta en comandos arriesgados",
-    "policyNoticeRiskyBody": "Ahora los comandos se ejecutan en el entorno aislado sin preguntar. Sigue apareciendo una tarjeta cuando un comando necesita salir del entorno aislado, podría causar un daño real o una regla pide preguntar. Para que vuelva a preguntar antes de cada comando: Ajustes › Lo que Arslan puede hacer › Terminal › Cuándo preguntar › «Preguntar antes de cada comando».",
+    "policyNoticeRiskyBody": "Ahora los comandos se ejecutan en el entorno aislado sin preguntar. Sigue apareciendo una tarjeta cuando un comando necesita salir del entorno aislado, podría causar un daño real o una regla pide preguntar. Para que vuelva a preguntar en cada paso: Ajustes › Lo que Arslan puede hacer › Modo para conversaciones nuevas › «Preguntar en cada paso». Cada conversación también puede cambiarlo con el botón junto a su campo de texto.",
     "policyNoticeAllTitle": "Arslan pregunta antes de cada comando",
-    "policyNoticeAllBody": "Desde la 0.1.64, una instalación nueva solo pregunta en comandos arriesgados: los comandos se ejecutan en el entorno aislado sin preguntar, y aparece una tarjeta cuando un comando necesita salir del entorno aislado, podría causar un daño real o una regla pide preguntar. Aquí Arslan pregunta antes de cada comando, y así seguirá hasta que lo cambies: Ajustes › Lo que Arslan puede hacer › Terminal › Cuándo preguntar › «Preguntar solo en comandos arriesgados».",
+    "policyNoticeAllBody": "Desde la 0.1.64, una instalación nueva solo pregunta en comandos arriesgados: los comandos se ejecutan en el entorno aislado sin preguntar, y aparece una tarjeta cuando un comando necesita salir del entorno aislado, podría causar un daño real o una regla pide preguntar. Aquí Arslan pregunta antes de cada comando, y así seguirá hasta que lo cambies: Ajustes › Lo que Arslan puede hacer › Modo para conversaciones nuevas › «Preguntar solo si hay riesgo». Cada conversación también puede cambiarlo con el botón junto a su campo de texto.",
     "policyNoticeOk": "Entendido",
-    "shellPolicyAskRisky": "Preguntar solo en comandos arriesgados",
     "labelMcpServer": "Servidor MCP (entrante)",
     "mcpServerDesc": "Permite que clientes MCP externos (Claude Code, Codex) llamen a herramientas de solo lectura. Desactivado por defecto; requiere un token MCP generado. Solo localhost.",
     "mcpToken": {
@@ -1497,7 +1495,7 @@
     "changed": "Ha cambiado",
     "failing": "Falló o se pausó sola",
     "commandsNoteTitle": "Las tareas programadas pueden volver a ejecutar comandos",
-    "commandsNoteBody": "La ejecución de una tarea programada ahora ejecuta los comandos que no necesitarían tu confirmación, en el entorno aislado, en la carpeta de trabajo propia de Arslan. Lo que necesitaría tu confirmación se rechaza y aparece aquí bajo su tarea. Las tareas creadas antes de esta actualización, o después de leer contenido externo, ejecutan sus comandos sin red. Si elegiste «Preguntar antes de cada comando», las ejecuciones programadas no ejecutan ninguno.",
+    "commandsNoteBody": "La ejecución de una tarea programada ahora ejecuta los comandos que no necesitarían tu confirmación, en el entorno aislado, en la carpeta de trabajo propia de Arslan. Lo que necesitaría tu confirmación se rechaza y aparece aquí bajo su tarea. Las tareas creadas antes de esta actualización, o después de leer contenido externo, ejecutan sus comandos sin red. Si elegiste «Preguntar en cada paso», las ejecuciones programadas no ejecutan ningún comando.",
     "commandsNoteOk": "Entendido"
   },
   "remembered": {
@@ -1610,5 +1608,28 @@
     "trustDevice": "Confiar en este dispositivo",
     "namedDevice": "{{name}} ({{addresses}})",
     "cardGone": "Esta tarjeta ya no es válida. Puedes añadir el dispositivo en Ajustes."
+  },
+  "modes": {
+    "pillAria": "Modo de permisos: {{label}}",
+    "plan": "Planificar",
+    "planLine": "Lee y escribe un plan. No cambia nada hasta que pulses Empezar.",
+    "ask": "Preguntar en cada paso",
+    "askLine": "Te pregunta antes de cada comando y de cada cambio.",
+    "askRisky": "Preguntar solo si hay riesgo",
+    "askRiskyLine": "Las ediciones en la carpeta de trabajo y los comandos seguros siguen adelante. Lo arriesgado te pregunta antes.",
+    "fullAccess": "Acceso total",
+    "fullAccessLine": "Sigue adelante sin preguntar: comandos (también fuera del entorno aislado), ediciones, programaciones, herramientas MCP (incluso las que borran) y apps. Pagos, envíos, sitios, atajos, archivos que se ejecutan más tarde, git, los datos de otras apps, la red y las reglas fijas siguen preguntando o quedan bloqueados.",
+    "current": "Actual",
+    "footnote": "Solo para esta conversación. El modo por defecto de las nuevas está en Ajustes.",
+    "narrowed": "Limitado por la sesión que inició esta.",
+    "inherited": "Un chat lateral usa el modo de la conversación de la que salió. Cámbialo allí.",
+    "askForNow": "Preguntar en cada paso (por ahora)",
+    "fallbackBanner": "Por ahora pregunta en cada paso: {{reason}} Vuelve solo a «Preguntar solo si hay riesgo».",
+    "reasonSandboxOff": "el entorno aislado no está en marcha.",
+    "reasonNoCheckpoint": "Arslan no puede guardar un punto de control de esta carpeta (demasiados archivos o demasiado grandes), así que los cambios no se podrían deshacer.",
+    "reasonHomeFolder": "la carpeta de trabajo es toda tu carpeta personal.",
+    "start": "Empezar",
+    "startsIn": "Empieza en {{mode}}",
+    "saveFailed": "No se pudo cambiar el modo. Inténtalo de nuevo."
   }
 }
