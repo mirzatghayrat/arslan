@@ -613,6 +613,8 @@ async def report_interrupted() -> int:
 
 async def _report_interrupted_jobs() -> int:
     from sqlalchemy import select
+
+    from arslan.companion.memory import MemoryError
     from server.db import session as db_session
     from server.db.models import CompanionTask
     from server.orchestrator import memory, untrusted
@@ -633,8 +635,11 @@ async def _report_interrupted_jobs() -> int:
             await repo.cancel(task_id, owner_id=owner_id, reason="process_interrupted")   # INB7: not the user's cancel
         # S64-0b: the note names the goal, and nothing here knows whether it carries outside content.
         note = runtime_messages.render("job_interrupted", locale, goal=goal)
-        await memory.add_message(conversation_id, "arslan", untrusted.job_result(note), display_content=note,
-                                 job_outcome="interrupted")
+        try:
+            await memory.add_message(conversation_id, "arslan", untrusted.job_result(note), display_content=note,
+                                     job_outcome="interrupted")
+        except MemoryError:     # #910 review: its conversation was deleted while the job ran on; nobody to tell
+            continue
         desktop_status.push("turn_finished", conversation_id=conversation_id, outcome="needs_review", title=goal,
                             summary=note, work="job")
     return len(targets)

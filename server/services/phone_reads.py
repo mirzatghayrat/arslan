@@ -82,13 +82,16 @@ def _json_size(value) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode())
 
 
-def fit_history(conversation_id: str, messages: list[dict], details: dict | None = None) -> tuple[list[dict], bool]:
+def fit_history(conversation_id: str, messages: list[dict], details: dict | None = None,
+                extra: dict | None = None) -> tuple[list[dict], bool]:
     """The newest messages whose `chat.history.result` body fits HISTORY_BUDGET, oldest first,
     and whether any were left out (§5.7). The oldest go first; a single message bigger than
     the whole budget keeps its start, cut with "…", rather than vanishing. `details` (IPB, §5.10)
-    is counted first, whole, and the messages fit into what is left."""
+    is counted first, whole, and the messages fit into what is left. `extra`: the body's other fields (SUB5f's
+    sub-session transcript names the sub-session and says it is view-only), counted first too."""
     budget = HISTORY_BUDGET
-    shell = {"conversation_id": conversation_id, "messages": [], **({"details": details} if details is not None else {})}
+    shell = {"conversation_id": conversation_id, "messages": [], **({"details": details} if details is not None else {}),
+             **(extra or {})}
     sizes = [_json_size(m) for m in messages]
     total = _json_size(shell) + sum(sizes) + max(len(sizes) - 1, 0)
     if total <= budget:
@@ -110,6 +113,44 @@ def fit_history(conversation_id: str, messages: list[dict], details: dict | None
                 high = middle - 1
         kept[-1] = {**last, "text": text[:low] + "…"}
     return kept, True
+
+
+# ------------------------------------------------------------------ sub-sessions, view-only (SUB5f)
+
+#: SUB5f (the user, 2026-11-15): a sub-session's `state` on the phone, the window's status icon's words
+#: (web/src/lib/subTree.ts `SubStatus`) with "reporting" read as running: the phone has no icon of its own for it.
+SUB_STATES = ("running", "waiting", "done", "stopped", "failed", "interrupted", "ended")
+
+
+def sub_status(state: str | None, outcome: str | None) -> str:
+    """A sub-session's row in the window's list (`conversation_list(sub=True)`: its state and how it ended) in
+    SUB_STATES, as `subTree.subStatus` reads it:
+    - working (its job runs, or it has finished with its report not delivered yet, "reporting") -> running;
+    - waiting (a card of its own waits for the user) -> waiting;
+    - done, done_unseen -> done;
+    - outcome stopped (state failed) -> stopped; outcome interrupted (a restart, state unfinished) -> interrupted;
+    - failed, unfinished (partial, blocked, out of budget) -> failed;
+    - anything else (idle: a chat-like turn that ended with no job outcome) -> ended."""
+    if state == "working":
+        return "running"
+    if state == "waiting":
+        return "waiting"
+    if state in ("done", "done_unseen"):
+        return "done"
+    if outcome == "stopped":
+        return "stopped"
+    if outcome == "interrupted":
+        return "interrupted"
+    if state in ("failed", "unfinished"):
+        return "failed"
+    return "ended"
+
+
+def sub_counts(tree: list[dict]) -> dict:
+    """`sub` on a phone list item: how many sub-sessions are under it at every level, and of those how many run and
+    how many wait for the user."""
+    return {"total": len(tree), "running": sum(1 for s in tree if s["state"] == "running"),
+            "waiting": sum(1 for s in tree if s["state"] == "waiting")}
 
 
 # ------------------------------------------------------------------ a run, for review

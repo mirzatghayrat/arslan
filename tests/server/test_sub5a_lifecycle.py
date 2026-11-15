@@ -537,7 +537,9 @@ async def test_deleting_a_commander_with_its_sub_sessions_takes_every_row_of_the
     assert got.status_code == 200
     assert got.json()["deleted"]["conversation_contexts"] == 3 and got.json()["deleted"]["arslan_messages"] == 3
     assert set((await _left(runs, [ROOT, child, grandchild])).values()) == {(False, 0, 0, 0)}
-    await memory_mod.add_message(ROOT, "user", "a new conversation under the same id")
+    from arslan.companion.memory import MemoryError
+    with pytest.raises(MemoryError, match="conversation_deleted"):      # #910 review: no message, a "new" one included
+        await memory_mod.add_message(ROOT, "user", "a new conversation under the same id")
     async with runs() as db:
         assert await sub_sessions.tree(db, ROOT) == [ROOT]
 
