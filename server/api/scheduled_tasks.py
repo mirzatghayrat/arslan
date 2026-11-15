@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth import require_auth
 from server.db import session as db_session
-from server.db.models import ScheduledTask, ScheduledTaskRun, Spawn
+from server.db.models import ScheduledTask, ScheduledTaskRun
 from server.schemas import (
     ScheduledTaskCreateIn,
     ScheduledTaskOut,
@@ -41,11 +41,11 @@ router = APIRouter(dependencies=[Depends(require_auth)])
 RUNS_LIMIT = 50
 
 
-def _task_out(task: ScheduledTask, *, spawn_name: str | None,
-              last_outcome: str | None) -> ScheduledTaskOut:
+def _task_out(task: ScheduledTask, *, last_outcome: str | None) -> ScheduledTaskOut:
+    # spawn_name stays on the wire, always None: there is no expert left to name (C7c-5b, v0.1.64).
     return ScheduledTaskOut(
         id=task.id, name=task.name, prompt=task.prompt, spawn_id=task.spawn_id,
-        spawn_name=spawn_name, conversation_id=task.conversation_id,
+        spawn_name=None, conversation_id=task.conversation_id,
         schedule_kind=task.schedule_kind, interval_s=task.interval_s, cron=task.cron,
         enabled=task.enabled, last_fired_at=task.last_fired_at,
         next_due_at=task.next_due_at,
@@ -62,11 +62,10 @@ async def _load_task(db: AsyncSession, task_id: int) -> ScheduledTask:
     return task
 
 
-async def _require_spawn(db: AsyncSession, spawn_id: int) -> Spawn:
-    spawn = await db.get(Spawn, spawn_id)
-    if spawn is None:
-        raise _err(422, "scheduled.spawn_not_found", spawn_id=spawn_id)
-    return spawn
+def _refuse_spawn(spawn_id: int) -> None:
+    """No expert exists any more (C7c-5b, v0.1.64), so a task naming one gets the same answer an unknown
+    expert always got. The wire contract stays: 422 scheduled.spawn_not_found."""
+    raise _err(422, "scheduled.spawn_not_found", spawn_id=spawn_id)
 
 
 def _validate_schedule(kind: str, interval_s: int | None, cron: str | None) -> None:
@@ -136,14 +135,12 @@ async def list_scheduled_tasks() -> list[ScheduledTaskOut]:
             .group_by(ScheduledTaskRun.task_id).subquery()
         )
         rows = (await db.execute(
-            select(ScheduledTask, Spawn.name, ScheduledTaskRun.outcome)
-            .outerjoin(Spawn, Spawn.id == ScheduledTask.spawn_id)
+            select(ScheduledTask, ScheduledTaskRun.outcome)
             .outerjoin(latest, latest.c.task_id == ScheduledTask.id)
             .outerjoin(ScheduledTaskRun, ScheduledTaskRun.id == latest.c.latest_id)
             .order_by(ScheduledTask.id)
         )).all()
-    return [_task_out(task, spawn_name=spawn_name, last_outcome=outcome)
-            for task, spawn_name, outcome in rows]
+    return [_task_out(task, last_outcome=outcome) for task, outcome in rows]
 
 
 # ── create / update / delete ─────────────────────────────────────────────────────────
@@ -151,13 +148,13 @@ async def list_scheduled_tasks() -> list[ScheduledTaskOut]:
 @router.post("/scheduled-tasks", response_model=ScheduledTaskOut, status_code=201)
 async def create_scheduled_task(body: ScheduledTaskCreateIn) -> ScheduledTaskOut:
     async with db_session.AsyncSessionLocal() as db:
-        # 0.1.44 one Arslan: a task without an expert is run by Arslan itself.
-        spawn = await _require_spawn(db, body.spawn_id) if body.spawn_id is not None else None
+        # 0.1.44 one Arslan: a task is run by Arslan itself.
+        if body.spawn_id is not None:
+            _refuse_spawn(body.spawn_id)
         _validate_schedule(body.schedule_kind, body.interval_s, body.cron)
         await _check_enabled_quota(db)
         task = ScheduledTask(
-            name=body.name, prompt=body.prompt, spawn_id=body.spawn_id,
-            target="spawn" if spawn is not None else "arslan",
+            name=body.name, prompt=body.prompt, spawn_id=None, target="arslan",
             conversation_id=body.conversation_id or scheduler.own_conversation(), schedule_kind=body.schedule_kind,
             interval_s=body.interval_s, cron=body.cron,
             enabled=True, consecutive_failures=0)
@@ -167,7 +164,7 @@ async def create_scheduled_task(body: ScheduledTaskCreateIn) -> ScheduledTaskOut
         await scheduler.forget_reused_id(db, task.id)     # SUB5a: "make it again" gets the deleted task's id
         await db.commit()
         await db.refresh(task)
-        return _task_out(task, spawn_name=spawn.name if spawn else None, last_outcome=None)
+        return _task_out(task, last_outcome=None)
 
 
 @router.put("/scheduled-tasks/{task_id}", response_model=ScheduledTaskOut)
@@ -181,7 +178,7 @@ async def update_scheduled_task(task_id: int,
             # orphan the task (the loop can't dispatch without a spawn) — reject.
             if data["spawn_id"] is None:
                 raise _err(422, "scheduled.spawn_id_required")
-            await _require_spawn(db, data["spawn_id"])
+            _refuse_spawn(data["spawn_id"])
         # Validate the EFFECTIVE schedule (current row + patch), then recompute
         # next_due_at only when the schedule actually changed.
         kind = data.get("schedule_kind") or task.schedule_kind
@@ -202,10 +199,8 @@ async def update_scheduled_task(task_id: int,
             _recompute_next_due(task, datetime.utcnow())
         await db.commit()
         await db.refresh(task)
-        spawn = None if task.spawn_id is None else await db.get(Spawn, task.spawn_id)
         outcome = await _latest_outcome(db, task_id)
-        return _task_out(task, spawn_name=spawn.name if spawn else None,
-                         last_outcome=outcome)
+        return _task_out(task, last_outcome=outcome)
 
 
 @router.delete("/scheduled-tasks/{task_id}")
@@ -229,10 +224,8 @@ async def pause_scheduled_task(task_id: int) -> ScheduledTaskOut:
         task.next_due_at = None
         await db.commit()
         await db.refresh(task)
-        spawn = None if task.spawn_id is None else await db.get(Spawn, task.spawn_id)
         outcome = await _latest_outcome(db, task_id)
-        return _task_out(task, spawn_name=spawn.name if spawn else None,
-                         last_outcome=outcome)
+        return _task_out(task, last_outcome=outcome)
 
 
 @router.post("/scheduled-tasks/{task_id}/resume", response_model=ScheduledTaskOut)
@@ -250,10 +243,8 @@ async def resume_scheduled_task(task_id: int) -> ScheduledTaskOut:
         _recompute_next_due(task, datetime.utcnow())
         await db.commit()
         await db.refresh(task)
-        spawn = None if task.spawn_id is None else await db.get(Spawn, task.spawn_id)
         outcome = await _latest_outcome(db, task_id)
-        return _task_out(task, spawn_name=spawn.name if spawn else None,
-                         last_outcome=outcome)
+        return _task_out(task, last_outcome=outcome)
 
 
 @router.post("/scheduled-tasks/{task_id}/seen")

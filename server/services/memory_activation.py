@@ -57,6 +57,23 @@ def activate_sync(connection):
          WHERE mm.entry_id=e.superseded_by AND mm.source_table='learnings') AS superseded_by
         {common} AND m.source_table='learnings'
     """)
+    # Only where the legacy expert preferences still exist: a new install has no `spawns` table since C7c-5b
+    # (v0.1.64), and the `spawns(id)` stub C7c-5c leaves on an upgraded one has no `memory_facts`.
+    spawn_columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(spawns)")}
+    if "memory_facts" in spawn_columns:
+        _guard_spawn_preferences(connection)
+    connection.exec_driver_sql(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memory_entries_fts USING fts5(entry_id UNINDEXED, content)")
+    connection.exec_driver_sql("DELETE FROM memory_entries_fts")
+    connection.exec_driver_sql("""
+        INSERT INTO memory_entries_fts(entry_id, content)
+        SELECT e.id, r.content FROM memory_entries e JOIN memory_revisions r ON r.id=e.current_revision_id
+        WHERE e.status!='deleted' AND e.sensitivity!='secret' AND r.content IS NOT NULL
+    """)
+    connection.execute(text("UPDATE memory_store_state SET phase='active' WHERE id=1"))
+
+
+def _guard_spawn_preferences(connection):
     connection.exec_driver_sql("""
         CREATE TRIGGER guard_legacy_spawn_preferences BEFORE UPDATE OF memory_facts ON spawns
         WHEN COALESCE(NEW.memory_facts,'[]') != COALESCE(OLD.memory_facts,'[]')
@@ -69,12 +86,3 @@ def activate_sync(connection):
           AND (SELECT phase FROM memory_store_state WHERE id=1) != 'maintenance'
         BEGIN SELECT RAISE(ABORT, 'legacy_memory_is_read_only'); END
     """)
-    connection.exec_driver_sql(
-        "CREATE VIRTUAL TABLE IF NOT EXISTS memory_entries_fts USING fts5(entry_id UNINDEXED, content)")
-    connection.exec_driver_sql("DELETE FROM memory_entries_fts")
-    connection.exec_driver_sql("""
-        INSERT INTO memory_entries_fts(entry_id, content)
-        SELECT e.id, r.content FROM memory_entries e JOIN memory_revisions r ON r.id=e.current_revision_id
-        WHERE e.status!='deleted' AND e.sensitivity!='secret' AND r.content IS NOT NULL
-    """)
-    connection.execute(text("UPDATE memory_store_state SET phase='active' WHERE id=1"))

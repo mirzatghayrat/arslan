@@ -60,20 +60,18 @@ async def test_status_reports_which_models_the_existing_vectors_came_from(client
     from server.db import session as db_session
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
-    from server.db.models import Spawn
 
     async with client.db_maker() as s:
-        # the chunks' owner; knowledge_chunks.spawn_id is a foreign key
-        s.add(Spawn(id=1, name="owner", domain_category="g", system_prompt="sp"))
-        await s.flush()
+        # the chunks' owner: a collection (an expert's own well has no model since C7c-5b)
+        await s.execute(sa_text("INSERT INTO collections (id, name) VALUES (1, 'notes')"))
         for i, model in enumerate(["old-model", "old-model", "new-model"]):
             await s.execute(sa_text(
-                "INSERT INTO knowledge_chunks (spawn_id, source, chunk_index, text, "
+                "INSERT INTO knowledge_chunks (collection_id, source, chunk_index, text, "
                 "embedding, embedding_model) VALUES (1, 'x', :i, 't', :e, :m)"),
                 {"i": i, "e": b"\x00", "m": model})
         # a chunk with NO vector must not be counted as belonging to any model
         await s.execute(sa_text(
-            "INSERT INTO knowledge_chunks (spawn_id, source, chunk_index, text) "
+            "INSERT INTO knowledge_chunks (collection_id, source, chunk_index, text) "
             "VALUES (1, 'x', 99, 't')"))
         await s.commit()
 

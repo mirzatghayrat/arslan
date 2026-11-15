@@ -6,7 +6,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import ConversationEvent, Spawn
+from server.db.models import ConversationEvent
 from tests.server.conftest import MockAdapter, boot_schema
 from tests.server.test_arslan_loop import settle_after_turn
 
@@ -18,17 +18,6 @@ async def maker(tmp_path, monkeypatch):
 
     async with engine.begin() as conn:
         await conn.run_sync(boot_schema)  # as a launch leaves it: memory v2 (C2a)
-    async with m() as s:
-        s.add(
-            Spawn(
-                id=7,
-                name="beauty-guru",
-                domain_category="content-creator",
-                capabilities=["content-generation"],
-                system_prompt="You are a beauty expert.",
-            )
-        )
-        await s.commit()
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m
