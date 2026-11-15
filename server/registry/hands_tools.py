@@ -163,6 +163,9 @@ async def _decide(kind: str, target: str, title: str, detail: str, frame_kind: s
         _context())
 
 
+#: ACM review round 1: how much of the apps' names the several-apps heading keeps, so its last sentence ("Deleting,
+#: sending and paying still ask every time.") fits the phone's heading (card_purpose.PHONE_MAX) in every language.
+_ACCESS_APPS_MAX = 60
 #: ACM: the Hands steps an app card's heading names (card-purposes.json `card.step_<op>`); `set_value` reads as typing.
 _STEP_HEADINGS = {"click": "click", "set_value": "type", "type": "type", "select": "select", "scroll": "scroll",
                   "press": "press", "menu": "menu"}
@@ -280,15 +283,22 @@ def _site_heading(lang: str, action: str, element: str, origin: str) -> str:
                                 element=element or card_purpose.heading("anElement", lang))
 
 
+#: ACM: an AppleScript card's heading by `hands_service.script_kind`'s own kind (before the every-script-asks gate
+#: rewrites `app` to `app_risky`), with the apps it names and without.
+_SCRIPT_HEADINGS = {"money": ("scriptMoney", "scriptMoneyNoApp"), "app_risky": ("scriptRisky", "scriptRiskyNoApp"),
+                    "app": ("scriptApps", "scriptNoApp"), "opaque": ("scriptApps", "scriptNoApp")}
+
+
 def _script_heading(lang: str, kind: str, apps: list[str]) -> str:
-    """ACM (P2, SMART-8): an AppleScript card's heading in `lang`: the apps it names as literal strings
-    (`hands_service.script_kind`; an app chosen while it runs is refused before any card), that it runs outside the
-    sandbox, or that it may pay or move money."""
+    """ACM (P2, SMART-8): an AppleScript card's heading in `lang`, by `kind` as `hands_service.script_kind` read the
+    script: the apps it names as literal strings (an app chosen while it runs is refused before any card), that it
+    runs outside the sandbox, and, for `money`, that it may pay or move money, for `app_risky` (delete / send /
+    submit words, a step past the app, or an app that reaches every other one), that it may delete, send or run
+    commands. A kind it doesn't know is said as `app_risky`."""
     from server.services import card_purpose
     named = ", ".join(apps[:8])
-    key = ("scriptMoney" if named else "scriptMoneyNoApp") if kind == "money" else \
-        ("scriptApps" if named else "scriptNoApp")
-    return card_purpose.heading(key, lang, apps=named)
+    with_apps, without = _SCRIPT_HEADINGS.get(kind, _SCRIPT_HEADINGS["app_risky"])
+    return card_purpose.heading(with_apps if named else without, lang, apps=named)
 
 
 # ── browser ──────────────────────────────────────────────────────────────────
@@ -506,12 +516,13 @@ class MacAppleScriptExecutor:
         # (C2c, ⓪Plan 2026-10-21): that split is what lifting the gate needs. Removed when the 0.1.61
         # every-script-asks gate lifts, by its own card, together with the island's `scriptAlsoHands`
         # text coming back (C2c deletes it from the web while no `app` script card can exist).
+        read_as = kind                      # ACM: the heading says what script_kind read, before the rewrite
         if kind == "app":
             kind = "app_risky"
         decision = await _decide(kind, ", ".join(named) or "AppleScript",
-                                 _script_heading(await _language(), kind, named), script,
+                                 _script_heading(await _language(), read_as, named), script,
                                  "mac_script", "AppleScript", extra={"apps": named[:8]},
-                                 model_title=_script_heading("en", kind, named))
+                                 model_title=_script_heading("en", read_as, named))
         refused = None if decision.allowed else decision
         if refused is not None:
             return _no(refused, "this AppleScript")
@@ -1603,7 +1614,7 @@ class DesktopAccessExecutor:
         # (⓪Plan's review of #548: it was in the title, which the web showed as the heading the user approves).
         # ACM: in the user's language; the model's texts name it in English.
         from server.services import card_purpose
-        apps = ", ".join(shown)[:100]
+        apps = ", ".join(shown)[:_ACCESS_APPS_MAX]
         decisions = await permissions.decide_many(
             requests, _context(), why=why[:150], title=card_purpose.heading("appsAccess", lang, apps=apps),
             model_title=card_purpose.heading("appsAccess", "en", apps=apps))

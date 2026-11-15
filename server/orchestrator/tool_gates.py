@@ -94,6 +94,19 @@ async def _held_for_later(args) -> Path | None:
 
 #: ACM: how much of the text a run-later card quotes from one argument of edit_file (the text it replaces).
 _REPLACED_MAX = 300
+#: ACM review round 1: how much of the path, and of each plist line but the program's, a run-later card shows; the
+#: program's line (`_RUNS`) gets the rest of the card's room before the text written.
+_PATH_MAX = 1000
+_LINE_MAX = 400
+_RUNS = "Runs: "
+
+
+def _capped(line: str, limit: int) -> str:
+    """One line of a run-later card, cleaned as a name is (a line break in it can't make a line of its own) and cut
+    at `limit`, saying how much was cut."""
+    from server.orchestrator import untrusted
+    shown = untrusted.clean_name(line, len(line))
+    return shown if len(shown) <= limit else f"{shown[:limit]} … ({len(shown) - limit} more characters)"
 
 
 def _launch_lines(text: str) -> list[str]:
@@ -113,8 +126,11 @@ def _launch_lines(text: str) -> list[str]:
     args = plist.get("ProgramArguments")
     runs = " ".join(map(str, args)) if isinstance(args, list) else ""
     if plist.get("Program") or runs:
-        lines.append(f"Runs: {' '.join(filter(None, (str(plist.get('Program') or ''), runs)))}")
-    when = [label for key, label in (("RunAtLoad", "when loaded (at every login)"), ("KeepAlive", "kept running"))
+        lines.append(f"{_RUNS}{' '.join(filter(None, (str(plist.get('Program') or ''), runs)))}")
+    env = plist.get("EnvironmentVariables")
+    if isinstance(env, dict) and env:        # review round 1: DYLD_INSERT_LIBRARIES and the like change what runs
+        lines.append("Environment: " + ", ".join(f"{key}={value}" for key, value in env.items()))
+    when =[label for key, label in (("RunAtLoad", "when loaded (at every login)"), ("KeepAlive", "kept running"))
             if plist.get(key)]
     when += [f"{label}: {plist[key]}" for key, label in (("StartInterval", "every N seconds"),
                                                           ("StartCalendarInterval", "on a calendar"),
@@ -129,20 +145,26 @@ def _launch_lines(text: str) -> list[str]:
 def _run_later_detail(path: Path, tool_key: str, args: dict) -> str:
     """ACM (P2): what a run-later card shows: the path, then what this one write puts in the file (write_file's
     content, or edit_file's new text and the text it replaces), so the yes is never given blind. A plist's Label,
-    program and schedule lead (`_launch_lines`). Cleaned as shown text is (control, bidi and zero-width characters go,
-    blank runs are cut), and the whole fits a card's detail (`protocol.DETAIL_MAX`): text past it is cut, and the
-    card says how much it did not show."""
+    program, environment and schedule lead (`_launch_lines`). The path and those lines are cleaned as a name is, so
+    neither makes a line of its own (review round 1); the text as shown text is (control, bidi and zero-width
+    characters go, blank runs are cut). The whole fits a card's detail (`protocol.DETAIL_MAX`): what is cut says how
+    much it did not show, and the program's line is cut only past the room the rest leaves it."""
     from server.orchestrator import untrusted
     from server.ws import protocol
     if tool_key == "edit_file":
         new = str(args.get("new_string") or "")
         old = untrusted.clean_name(args.get("old_string"), _REPLACED_MAX)
-        head = [str(path), f"Replaces “{old}” with:"]
+        head = [_capped(str(path), _PATH_MAX), f"Replaces “{old}” with:"]
     else:
         new = str(args.get("content") or "")
-        head = [str(path), "Writes:"]
-    head[1:1] = [untrusted.clean_name(line, 300) for line in _launch_lines(new)]
-    text = re.sub(r"\n{3,}", "\n\n", untrusted.cap_blank_runs(untrusted.clean_body(new, shown_only=True), 8))
+        head = [_capped(str(path), _PATH_MAX), "Writes:"]
+    found = _launch_lines(new)
+    others = [_capped(line, _LINE_MAX) for line in found if not line.startswith(_RUNS)]
+    # 200: the room kept for the text written and its note, past the path, the other lines and their line breaks.
+    room_for_runs = protocol.DETAIL_MAX - 200 - sum(len(line) + 1 for line in (*head, *others))
+    head[1:1] = [_capped(line, room_for_runs) if line.startswith(_RUNS) else _capped(line, _LINE_MAX)
+                 for line in found]
+    text =re.sub(r"\n{3,}", "\n\n", untrusted.cap_blank_runs(untrusted.clean_body(new, shown_only=True), 8))
     lead = "\n".join(head) + "\n"
     room = max(protocol.DETAIL_MAX - len(lead) - 80, 0)  # 80: the note that says how much is not shown
     if len(text) <= room:
