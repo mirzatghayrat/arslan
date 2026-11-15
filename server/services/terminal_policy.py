@@ -2035,7 +2035,7 @@ def _brew_services_targets(args: tuple[str, ...]) -> list[str] | None:
         return [RUN_LATER_UNKNOWN]
     if verb.lower() not in ("start", "restart"):
         return []
-    service = operands[1] if len(operands) > 1 else ""
+    service = operands[1] if len(operands) == 2 else ""         # more than one service: the folder (#940 review)
     if service and _BREW_SERVICE.fullmatch(service):
         return [f"{LAUNCH_AGENTS}/homebrew.mxcl.{service}.plist"]
     return [LAUNCH_AGENTS]

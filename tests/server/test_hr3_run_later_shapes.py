@@ -401,6 +401,7 @@ for label, command, target in (
     ("brew-services-option-value", f"brew services start --max-wait 5 {WORD}",
      f"~/Library/LaunchAgents/homebrew.mxcl.{WORD}.plist"),
     ("brew-services-all", "brew services start --all", "~/Library/LaunchAgents"),
+    ("brew-services-two", f"brew services start {WORD} redis", "~/Library/LaunchAgents"),   # #940 review: not the first only
     ("brew-services-tap-path", f"brew services restart {WORD}/{WORD}/{WORD}", "~/Library/LaunchAgents"),
     ("brew-services-expanded-service", "brew services start $SERVICE", "~/Library/LaunchAgents"),
     ("brew-services-expansion", f"brew services $VERB {WORD}", tp.RUN_LATER_UNKNOWN),

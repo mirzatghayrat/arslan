@@ -99,8 +99,12 @@ CI_FILES: tuple[str, ...] = (".github/workflows/**", ".gitlab-ci.yml", ".circlec
 DEPENDENCY_FOLDERS = ("node_modules",)
 
 #: Login jobs and login items, anchored at home (not at any depth, unlike FAMILIES): launchd loads every plist in
-#: LaunchAgents at login (`git maintenance start` and `brew services start` write one), the background task manager
-#: keeps the login-items store. StartupItems is ignored by launchd since macOS 10.10; the reader lists it, so it's here.
+#: LaunchAgents at login (`git maintenance start` and `brew services start` write one). StartupItems is ignored by
+#: launchd since macOS 10.10; the reader lists it, so it's here. The per-user background task manager folder is an
+#: older layout, held in case it exists: on macOS 26 it doesn't, and the login-items store is root-owned under
+#: /private/var/db, written only by the manager's own daemon (an app's SMAppService call goes through it), which no
+#: profile here can hold or needs to (#940 review). A hard link made into a held folder before the command is not
+#: held: its other name is an ordinary file (a residual; making one during the command is refused).
 HOME_NAMES: tuple[str, ...] = ("Library/LaunchAgents", "Library/StartupItems",
                                "Library/Application Support/com.apple.backgroundtaskmanagementagent")
 #: The same, system-wide: root-owned today, so a literal costs nothing.
@@ -125,8 +129,37 @@ def home_filters(home: Path) -> tuple[str, ...]:
         ancestors = [p for p in name.parents if anchored and home in p.parents]
         if resolved != name:
             ancestors += [p for p in resolved.parents if p != p.parent]
+        # A link inside the folder (a dotfiles manager's plist, an old `ln -sfv`): launchd reads its target, so the
+        # target is held too (#940 review 1), and the folders above it by literal, as for the folder's real path.
+        for target in _linked_targets(resolved):
+            spelling = subpath(target) if target.is_dir() else literal(target)
+            if spelling not in held:
+                held.append(spelling)
+            ancestors += [p for p in target.parents if p != p.parent]
         above += [literal(p) for p in ancestors if literal(p) not in above]
     return (*held, *above)
+
+
+#: How many entries of one held folder `_linked_targets` reads; past it the rest are not looked at (a residual).
+LINK_SCAN_LIMIT = 4096
+
+
+def _linked_targets(folder: Path) -> list[Path]:
+    """The real path of each link directly in `folder` (where launchd looks), a dangling one's included: a write
+    through it lands at that path. A folder that can't be read gives none."""
+    out: list[Path] = []
+    try:
+        with os.scandir(folder) as entries:
+            for i, entry in enumerate(entries):
+                if i >= LINK_SCAN_LIMIT:
+                    break
+                if entry.is_symlink():
+                    target = Path(os.path.realpath(entry.path))
+                    if target not in out:
+                        out.append(target)
+    except OSError:
+        pass
+    return out
 
 _ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_*")
 

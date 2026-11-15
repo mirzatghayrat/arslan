@@ -145,6 +145,48 @@ async def test_a_launch_agents_link_is_held_through_the_link_and_at_its_target(h
     assert sandboxed["exit_code"] != 0 and _plists(target) == [], sandboxed
 
 
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("dangling", [False, True], ids=["existing", "dangling"])
+@pytest.mark.parametrize("sandbox", [False, True], ids=["floor", "commands"])
+async def test_a_plist_link_inside_the_folder_is_held_at_its_target(home, dangling, sandbox):
+    """A dotfiles manager's plist: a link in LaunchAgents to a file elsewhere, which launchd reads (#940 review 1).
+    Writing through the link, to the target, or renaming the target's folder aside and a fresh one in: all refused."""
+    agents = home / "Library" / "LaunchAgents"
+    dotfiles = home / f"{STAND_IN}-dotfiles"
+    dotfiles.mkdir()
+    target = dotfiles / PLIST
+    if not dangling:
+        target.write_text("old")
+    (agents / PLIST).symlink_to(target)
+    commands = (f"printf zz > '{agents / PLIST}'", f"printf zz > '{target}'",
+                f"cd '{home}' && mv '{dotfiles.name}' D2 && mkdir '{dotfiles.name}'"
+                f" && printf zz > '{dotfiles.name}/{PLIST}'")
+    for command in commands:
+        if sandbox:
+            result = await terminal_exec.run(command, cwd=home, sandbox=True, offline=True)
+        else:
+            result = await _floor(command, home)
+        assert result["exit_code"] != 0, (command, result)
+    assert (not target.exists()) if dangling else target.read_text() == "old"
+    assert dotfiles.is_dir() and not (home / "D2").exists()
+
+
+def test_home_filters_hold_a_link_targets_real_path_and_its_folders(tmp_path):
+    home = tmp_path / "home"
+    agents = home / "Library" / "LaunchAgents"
+    agents.mkdir(parents=True)
+    target = tmp_path / "dots" / "launchd" / PLIST
+    target.parent.mkdir(parents=True)
+    (agents / PLIST).symlink_to(target)                           # dangling: a write through it lands at target
+    (agents / "plain.plist").write_text("x")
+    filters = run_later.home_filters(home)
+    real = Path(os.path.realpath(target))
+    assert f'(literal "{real}")' in filters
+    assert f'(literal "{real.parent}")' in filters and f'(literal "{real.parent.parent}")' in filters
+    assert not any("plain.plist" in f for f in filters)
+
+
 #: Renames that would move a held folder (or ~/Library above it) aside and put a fresh one in its place.
 RENAMES = {
     "agents-aside": "mv Library/LaunchAgents Library/LA2 && mkdir Library/LaunchAgents"
