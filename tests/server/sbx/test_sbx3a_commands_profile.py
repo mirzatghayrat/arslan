@@ -137,9 +137,9 @@ def _base_for(home, network, **kw):
 
 def _shared_caches_read_only() -> str:
     """SBX-5 §1c: the rule 3a's preset always adds after the base, then HR-1's run-later denies."""
-    from tests.server.test_hr1_run_later import RUN_LATER_TEXT
+    from tests.server.test_hr1_run_later import RUN_LATER_TEXT, home_text
     return ("(deny file-write* " + " ".join(f'(subpath "{p}")' for p in command_sandbox.shared_caches()) + ")\n"
-            + RUN_LATER_TEXT)
+            + RUN_LATER_TEXT + home_text())
 
 
 def test_the_commands_profile_starts_with_the_base_text(home):
@@ -179,8 +179,8 @@ def test_a_work_folder_inside_a_closed_one_is_reopened_and_its_protected_paths_c
     text = command_sandbox.commands_profile(desk / "ws", closed=[desk], readable=[desk / "proj"], copies=[copy])
     base = _base_for(home, NetworkMode.NONE)
     assert not text.startswith(base)                        # the closed Desktop is part of the base's text
-    from tests.server.test_hr1_run_later import RUN_LATER_TEXT
-    later = RUN_LATER_TEXT.splitlines()
+    from tests.server.test_hr1_run_later import RUN_LATER_TEXT, home_text
+    later = (RUN_LATER_TEXT + home_text().replace(os.path.realpath(home), "<H>")).splitlines()
     shown = text.replace(os.path.realpath(home), "<H>").splitlines()
     tail = shown[len(shown) - 5 - len(later):]
     assert tail[0] == '(allow file-read* file-write* file-map-executable (subpath "<H>/Desktop/ws"))'

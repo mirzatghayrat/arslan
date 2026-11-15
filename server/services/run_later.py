@@ -22,9 +22,24 @@ the vnode by its stored name); the classes cost nothing and hold either way. Cod
 Unicode forms (`matches` folds with casefold, which the regex can't: a name only Unicode folding makes equal is
 held by the file tools and not by the kernel, if APFS folds it at all).
 
+At home (`HOME_NAMES`, `SYSTEM_NAMES`, `home_filters`): the folders launchd loads login jobs from, and the login-items
+store, anchored at the user's home (and at /Library), not at any depth. Every profile holds them: the commands and
+MCP profiles always, the outside floor with the run-later hold. They are held by path: the literal spelling and its
+real path, so a LaunchAgents that is a link elsewhere is held where launchd reads it, and the folders above them up
+to home by literal, so a rename can't move one aside and a fresh one in. The indirect writers named here (`git
+maintenance start` and `register`, `brew services start` and `restart`) have reader rows
+(`terminal_policy.run_later_targets`, `LAUNCH_AGENTS`), so wherever they would run outside the sandbox they get the
+once-only, never-auto run-later card, which says what keeps starting at every login, and only the user's click on it
+lifts the hold; in the sandbox, and under the outside floor without that click, the kernel refuses the write.
+Residuals: with the sandbox off or unavailable
+only the reader guards them; other indirect writers (an installer, `pm2 startup`, an app's own SMAppService) get no
+card there; /Library/LaunchDaemons needs root, which `sudo` forbids anyway. The paths are literal; another letter
+case was refused too on a case-insensitive volume, also for a fresh `mkdir ~/Library/launchagents` (measured on
+macOS 26, tests/server/sbx/test_hr1_launch_agents_kernel.py).
+
 Not on the list, and why: the rest of `.git` (commit, branch, checkout and stash must keep working); the user's
-home-level files (shell startup, global git config, LaunchAgents: the commands profile doesn't make them writable
-unless the work folder is ~; a separate set, not this one); a submodule's git folder deeper than one name under
+other home-level files (shell startup, global git config: the commands profile doesn't make them writable unless the
+work folder is ~; a separate set, not this one); a submodule's git folder deeper than one name under
 `.git/modules`, and a bare repository's hooks (Codex's corpus). A `.git` (or any held name or held folder) that is a
 link to a path named otherwise is held at that path (`link_filters`, #813 review 10).
 """
@@ -82,6 +97,72 @@ CI_FILES: tuple[str, ...] = (".github/workflows/**", ".gitlab-ci.yml", ".circlec
 #: consumer reads the dependency's file through it), or the walk couldn't look everywhere (`held_folders`, #813 review
 #: 9). The tool caches (.venv, uv and pip unpack folders) wait for Codex's measurement.
 DEPENDENCY_FOLDERS = ("node_modules",)
+
+#: Login jobs and login items, anchored at home (not at any depth, unlike FAMILIES): launchd loads every plist in
+#: LaunchAgents at login (`git maintenance start` and `brew services start` write one). StartupItems is ignored by
+#: launchd since macOS 10.10; the reader lists it, so it's here. The per-user background task manager folder is an
+#: older layout, held in case it exists: on macOS 26 it doesn't, and the login-items store is root-owned under
+#: /private/var/db, written only by the manager's own daemon (an app's SMAppService call goes through it), which no
+#: profile here can hold or needs to (#940 review). A hard link made into a held folder before the command is not
+#: held: its other name is an ordinary file (a residual; making one during the command is refused).
+HOME_NAMES: tuple[str, ...] = ("Library/LaunchAgents", "Library/StartupItems",
+                               "Library/Application Support/com.apple.backgroundtaskmanagementagent")
+#: The same, system-wide: root-owned today, so a literal costs nothing.
+SYSTEM_NAMES: tuple[str, ...] = ("/Library/LaunchAgents", "/Library/LaunchDaemons")
+
+
+def home_filters(home: Path) -> tuple[str, ...]:
+    """The SBPL filters a profile denies `file-write*` over for HOME_NAMES under `home` and SYSTEM_NAMES: each folder
+    and everything in it by its literal path and, when that differs, by its real path (a link elsewhere is held where
+    launchd reads it); then every folder between home and a home name by literal (~/Library, ~/Library/Application
+    Support), and every folder above a differing real path, so a rename can't move a held folder aside and a fresh one
+    in. Paths go in as SBPL strings (`sbpl_string`), never into a regex."""
+    from server.services.sandbox_profile import literal, subpath
+    home = Path(os.path.abspath(home))
+    held: list[str] = []
+    above: list[str] = []
+    for name, anchored in [*((home / n, True) for n in HOME_NAMES), *((Path(n), False) for n in SYSTEM_NAMES)]:
+        resolved = Path(os.path.realpath(name))
+        for spelling in dict.fromkeys((name, resolved)):
+            if subpath(spelling) not in held:
+                held.append(subpath(spelling))
+        ancestors = [p for p in name.parents if anchored and home in p.parents]
+        if resolved != name:
+            ancestors += [p for p in resolved.parents if p != p.parent]
+        # A link inside the folder (a dotfiles manager's plist, an old `ln -sfv`): launchd reads its target, so the
+        # target is held too (#940 review 1), and the folders above it by literal, as for the folder's real path.
+        # Always by literal: launchd loads only plist files there, and a link to a folder (~, /) held as a subpath
+        # would close the whole tree, the work folder included (#940 review 2); the literal keeps the entry itself
+        # from being renamed or replaced.
+        for target in _linked_targets(resolved):
+            spelling = literal(target)
+            if spelling not in held:
+                held.append(spelling)
+            ancestors += [p for p in target.parents if p != p.parent]
+        above += [literal(p) for p in ancestors if literal(p) not in above]
+    return (*held, *above)
+
+
+#: How many entries of one held folder `_linked_targets` reads; past it the rest are not looked at (a residual).
+LINK_SCAN_LIMIT = 4096
+
+
+def _linked_targets(folder: Path) -> list[Path]:
+    """The real path of each link directly in `folder` (where launchd looks), a dangling one's included: a write
+    through it lands at that path. A folder that can't be read gives none."""
+    out: list[Path] = []
+    try:
+        with os.scandir(folder) as entries:
+            for i, entry in enumerate(entries):
+                if i >= LINK_SCAN_LIMIT:
+                    break
+                if entry.is_symlink():
+                    target = Path(os.path.realpath(entry.path))
+                    if target not in out:
+                        out.append(target)
+    except OSError:
+        pass
+    return out
 
 _ALLOWED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_*")
 

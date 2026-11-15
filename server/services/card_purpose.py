@@ -892,6 +892,16 @@ def consequence(shell: str, lang: str = "en") -> str:
     return _say(lang, "fact", key, {k: untrusted.clean_name(v, 80) for k, v in params.items()})
 
 
+def launch_agent(targets, lang: str = "en") -> str:
+    """A run-later card's consequence line in `lang` for a LaunchAgent its indirect writers write (`brew services
+    start`, `git maintenance start`; `terminal_policy.launch_agent`): what keeps starting at every login. "" for none."""
+    found = terminal_policy.launch_agent(targets)
+    if found is None:
+        return ""
+    key, params = found
+    return _say(lang, "fact", key, {k: untrusted.clean_name(shown(v), 80) for k, v in params.items()})
+
+
 def frame_reading(frame: dict | None, shell: str) -> dict | None:
     """A `propose_run_command` frame's `summary` when it was read from `shell` itself (its `pretty` is that text), for
     `phrase(reading=…)`; else None, and the title reads `shell` on its own (#817 review)."""
