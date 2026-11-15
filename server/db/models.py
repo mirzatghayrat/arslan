@@ -166,7 +166,8 @@ class ArslanMessage(Base):
     # 0.1.42: set on a background job's result message — done|partial|blocked|stopped.
     job_outcome = Column(String(20), nullable=True)
     # Mobile bridge: "phone" for a user message forwarded from a paired iPhone; NULL = the window. NET-a: "brief" for a
-    # sub-session's brief, the commander's words in the user's role (sub_sessions.BRIEF_SOURCE).
+    # sub-session's brief, the commander's words in the user's role (sub_sessions.BRIEF_SOURCE). SIDE-2: "side_back" for
+    # a side chat's reply brought back carrying outside content (side_chats.BACK_SOURCE).
     source = Column(String(20), nullable=True)
 
 

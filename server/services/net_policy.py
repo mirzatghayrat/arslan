@@ -541,7 +541,8 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
     """The hosts the user named in this conversation: what they typed in their own messages (role user). Codex round
     1, F3: never a sub-session's brief, the commander's words, framed or not (`sub_sessions.BRIEF_SOURCE`; a framed one
     also by SUB5b's header, `untrusted.BRIEF_FROM_OUTSIDE`; one stored before either, by where it is: `_brief_id`, Codex
-    round 2), nor the file names of the pictures sent with a message (`arslan.typed_text`). Every other user-role row is
+    round 2), nor a side chat's reply brought back carrying outside content (`side_chats.BACK_SOURCE`, SIDE-2), nor the
+    file names of the pictures sent with a message (`arslan.typed_text`). Every other user-role row is
     typed: in the window, on the phone (a chat message, a task's goal), or while a turn ran (K9b). A choice card's pick
     is sent as the user's message: its label, shown in full, is what they chose to send, as with a paste."""
     if not conversation_id:
@@ -551,6 +552,7 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
     from server.db.models import ArslanMessage
     from server.orchestrator import arslan, untrusted
     from server.services import sub_sessions
+    from server.services.side_chats import BACK_SOURCE
     mine = (ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "user")
     try:
         async with db_session.AsyncSessionLocal() as db:
@@ -564,7 +566,7 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
         return frozenset()
     brief = _brief_id(conversation_id, (row_id for row_id, _, _ in rows))
     named = frozenset(_sites_named(arslan.typed_text(content) for row_id, content, source in rows
-                                   if row_id != brief and source != sub_sessions.BRIEF_SOURCE
+                                   if row_id != brief and source not in (sub_sessions.BRIEF_SOURCE, BACK_SOURCE)
                                    and not content.startswith(untrusted.BRIEF_FROM_OUTSIDE)))
     _named_cache[conversation_id] = ((count, last or 0), named)
     return named

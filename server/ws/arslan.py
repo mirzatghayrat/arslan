@@ -99,6 +99,13 @@ def message_source(frame: dict) -> str | None:
     return "phone" if frame.get("source") == "phone" else None
 
 
+def _from_side_chat(frame: dict) -> str | None:
+    """SIDE-2: the side chat whose reply the window's "Bring back to main" quoted (`from_side_chat`, a conversation id),
+    re-checked by `side_chats.brought_back`. Only the window's own frames carry it; the phone's never do."""
+    side = frame.get("from_side_chat")
+    return side if isinstance(side, str) and side and message_source(frame) is None else None
+
+
 async def phone_view_only(conversation_id: str) -> bool:
     """Whether a frame the phone sent (`message_source`) on this conversation's socket must do nothing. SUB5f (the
     user, 2026-11-15): the phone views a sub-session and never talks to one. The Bridge links one for a phone only by
@@ -681,6 +688,7 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                                                    attached_context=attached or None,
                                                    images=images or None,
                                                    source=message_source(data),
+                                                   from_side_chat=_from_side_chat(data),
                                                    confirm_command=confirm_command,
                                                    confirm_workspace_write=confirm_workspace_write,
                                                    confirm_schedule=confirm_schedule),

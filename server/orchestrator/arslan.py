@@ -299,14 +299,21 @@ async def handle_user_message(
     images: list[dict] | None = None,
     confirm_command=None, confirm_workspace_write=None, confirm_schedule=None,
     source: str | None = None,
+    from_side_chat: str | None = None,
 ) -> None:
     """Process one user turn end-to-end, emitting event dicts for the transport layer.
-    `source` is "phone" for a message the Arslan Bridge forwarded from a paired iPhone."""
+    `source` is "phone" for a message the Arslan Bridge forwarded from a paired iPhone.
+    `from_side_chat`: the window's "Bring back to main" (SIDE-2) quoted that side chat's reply. When it carries outside
+    content (`side_chats.brought_back`), the message is stored as `side_chats.BACK_SOURCE`, so the hosts it names are
+    never the user's (`net_policy._named`), and its answer starts marked, recording them as outside content's."""
+    from server.services import side_chats
+    back = bool(from_side_chat) and await side_chats.brought_back(conversation_id, from_side_chat)
     # 1. persist the user turn — the PLACEHOLDER form when images rode along
     #    (decision ③A); base64 in a Text column would bloat the DB and backups
     #    while still not surviving as an image.
     stored_text = persisted_user_text(user_message, images)
-    source_message_id = await memory.add_message(conversation_id, "user", stored_text, source=source)
+    source_message_id = await memory.add_message(conversation_id, "user", stored_text,
+                                                 source=side_chats.BACK_SOURCE if back else source)
     if source == "phone":
         # A Mac window open on this conversation did not type it — show it there live,
         # labelled "from iPhone". Raw emit, never journaled: it is in the history now.
@@ -317,7 +324,7 @@ async def handle_user_message(
     active_context = personal_context.current()
     if active_context is not None and task_context.precise_text_request(user_message):
         from dataclasses import replace
-        with personal_context.bind(replace(active_context, no_memory=True)):
+        with personal_context.bind(replace(active_context, no_memory=True)), untrusted.carried(back, text=user_message):
             await _handle_answer(conversation_id, user_message, emit, attached_context=attached_context,
                                  images=images, confirm_command=confirm_command,
                                  confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
@@ -337,10 +344,11 @@ async def handle_user_message(
         if reply["run"] is None and type(event.get("run_id")) is int:
             reply["run"] = event["run_id"]   # v0.1.64: the turn's run, which host_run puts on each of its events
         emit(event)
-    await _handle_answer(conversation_id, user_message, watch, attached_context=attached_context,
-                         images=images, confirm_command=confirm_command,
-                         confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
-                         source=source, steerable=True)
+    with untrusted.carried(back, text=user_message):
+        await _handle_answer(conversation_id, user_message, watch, attached_context=attached_context,
+                             images=images, confirm_command=confirm_command,
+                             confirm_workspace_write=confirm_workspace_write, confirm_schedule=confirm_schedule,
+                             source=source, steerable=True)
     # Durable facts, noticed after the answer (the router used to do this before it), and
     # compaction: both after the turn, outside its lock (K2b). The budget is the turn's, noted on
     # the turn's run as before.
