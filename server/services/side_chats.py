@@ -26,16 +26,20 @@ the window talks to it over the socket as to any conversation.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from uuid import uuid4
 
 from sqlalchemy import func, or_, select, true
 
+from server.db import session as db_session
 from server.db.companion_models import ConversationContext
 from server.db.models import ArslanMessage, ArslanSummary, Run
 from server.orchestrator import untrusted
 from server.services import phone_ids, sub_sessions
 from server.services.memory_history import eligible_messages
+
+logger = logging.getLogger(__name__)
 
 #: Card, rule 2: all a side chat is shown and may call. Reads are open and the defences are on writes and the network
 #: (⓪Plan, 2026-11-14, as mainstream agents do), so the web is in: the parent's turns run these two with no card in any
@@ -168,9 +172,39 @@ async def carries_outside(db, conversation_id: str) -> bool:
     """SIDE-2's seam (⓪Plan, 2026-11-14): "Bring back to main" puts a side chat's reply into the main input framed as a
     quote, and the main turn that sends it starts as having read outside content when this is true: the side chat
     started marked, or one of its runs took in outside content (NULL, a run still going, counts). No side chat's row
-    counts as yes. Not called before SIDE-2."""
+    counts as yes. Called by `brought_back`."""
     row = await db.get(ConversationContext, conversation_id)
     if row is None or row.outside_at_start is not False:
         return True
     return await db.scalar(select(Run.id).where(Run.conversation_id == conversation_id, or_(
         Run.read_outside.is_(None), Run.read_outside.is_(True))).limit(1)) is not None
+
+
+#: A user message brought back from a side chat that carries outside content (`brought_back`), as stored in
+#: `ArslanMessage.source`: what it names is never what the user named (`net_policy._named`), also after a restart.
+BACK_SOURCE = "side_back"
+
+
+async def brought_back(conversation_id: str, side_id) -> bool:
+    """SIDE-2's "Bring back to main" (⓪Plan, 2026-11-14): whether the window's message to `conversation_id`, sent with
+    `from_side_chat` = `side_id`, starts its turn marked and is stored as `BACK_SOURCE`. Yes for a side chat of this
+    conversation that carries outside content (`carries_outside`). An id that is no side chat of this one is not
+    honoured (False), quietly. Fails closed: an error is yes, and so is a deleted side chat (its tombstone keeps no
+    parent to check, and deleting it leaves the quote in the box; marking only narrows the turn)."""
+    if not isinstance(side_id, str) or not side_id.startswith(phone_ids.SIDE_PREFIX):
+        logger.debug("from_side_chat %r is no side chat's id: not honoured", side_id)
+        return False
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            row = await db.get(ConversationContext, side_id)
+            if sub_sessions.is_deleted(side_id, row):
+                return True
+            # Unlike `carries_outside` (no row: yes), no row or another parent leaves the turn unmarked: the same as
+            # a message sent without the field, which any client can send. Only a side chat of this one can vouch.
+            if row is None or row.kind != sub_sessions.SIDE or row.parent_id != conversation_id:
+                logger.debug("from_side_chat %s is no side chat of %s: not honoured", side_id, conversation_id)
+                return False
+            return await carries_outside(db, side_id)
+    except Exception:  # noqa: BLE001 — fails closed: what can't be checked carries outside content
+        logger.warning("from_side_chat %s could not be checked: treated as outside content", side_id, exc_info=True)
+        return True

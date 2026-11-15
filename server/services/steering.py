@@ -117,6 +117,7 @@ def close_box(conversation_id: str) -> None:
 
 
 def insertable(frame: dict) -> bool:
-    """Plain text only: a message with images or an attachment waits for its own turn, as before."""
+    """Plain text only: a message with images or an attachment waits for its own turn, as before. So does one bringing
+    back a side chat's reply (SIDE-2, `from_side_chat`): only its own turn checks it (`side_chats.brought_back`)."""
     return bool(str(frame.get("content") or "").strip()) and not frame.get("images") \
-        and not str(frame.get("attached_context") or "").strip()
+        and not str(frame.get("attached_context") or "").strip() and not frame.get("from_side_chat")
