@@ -25,13 +25,6 @@ async def memories(execution_db):
 
 
 async def create(content, *, scope="global", scope_id=None, **kwargs):
-    if scope == "expert":
-        # C7c-4: no new expert-scope writes; a leftover entry (old data) is put in that scope directly.
-        entry = await create(content, **kwargs)
-        async with repository() as repo:
-            await repo.db.execute(update(MemoryEntry).where(MemoryEntry.id == entry["id"]).values(
-                scope_kind="expert", scope_id=scope_id))
-        return entry
     async with repository() as repo:
         return await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind=scope, id=scope_id),
                                              **kwargs), MemoryActor(origin="user"))
@@ -45,8 +38,7 @@ async def test_scope_filter_precedes_ranking_and_budget(memories, monkeypatch):
     await create("Global preference needle")
     await create("Matched project needle", scope="project", scope_id="project-a")
     await create("Wrong project needle", scope="project", scope_id="project-b")
-    await create("Wrong expert needle", scope="expert", scope_id="expert-b")
-    await create("Matched expert needle", scope="expert", scope_id="expert-a")
+    # No expert scope since C7c-5c (0103 moved those entries to global); the context's expert_id selects nothing.
     scored = []
     original_score = pc.memory_relevance.score
     def score(query, content, **kwargs):
@@ -56,9 +48,9 @@ async def test_scope_filter_precedes_ranking_and_budget(memories, monkeypatch):
     monkeypatch.setattr(pc.memory_relevance, "score", score)
     result = await pc.assemble("needle", context=context(project_id="project-a", expert_id="expert-a"))
     assert "Global preference" in result.text and "Matched project" in result.text
-    assert "Matched expert" in result.text and "Wrong" not in result.text
-    assert len(result.receipt.used) == 3
-    assert len(scored) == 3
+    assert "Wrong" not in result.text
+    assert len(result.receipt.used) == 2
+    assert len(scored) == 2
     assert result.receipt.estimated_tokens <= 1200
 
 

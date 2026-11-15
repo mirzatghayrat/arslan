@@ -72,8 +72,13 @@ def test_legacy_contents_scopes_and_unknown_confirmation_are_preserved(store):
         assert all(r["use_policy"] == "local_only" for r in entries.values())
         for table, keys in (("learnings", ["1", "2"]), ("spawns", ["1:0", "2:0"])):
             assert mapping[table, keys[0]]["id"] != mapping[table, keys[1]]["id"]
-            assert mapping[table, keys[0]]["scope_id"] == "1"
-            assert mapping[table, keys[1]]["scope_id"] == "2"
+            # C7c-5c: the expert scope is retired; each expert's row lands in global, held for review, and keeps
+            # which expert it came from in its source.
+            for key, expert in zip(keys, (1, 2)):
+                entry = mapping[table, key]
+                assert (entry["scope_kind"], entry["scope_id"], entry["status"]) == ("global", None, "quarantined")
+                [source] = [s for s in rows(db, MemorySource) if s["entry_id"] == entry["id"]]
+                assert source["source_ref"]["spawn_id"] == expert
         assert len(rows(db, MemoryRevision)) == len(rows(db, MemorySource)) == 7
     with store.begin() as db:
         assert migrate_legacy_sync(db)["new_entries"] == 0

@@ -306,6 +306,10 @@ class MemoryRepository:
         if (entry is None or entry.owner_id != actor.owner_id or entry.version != expected_version
                 or entry.status not in ("active", "proposed", "paused")):
             return None
+        if (entry.scope_kind, entry.scope_id) != (write.scope.kind, write.scope.id):
+            # C7c-5c guard (c): never fold a write into an entry of another scope, whoever matched them
+            # (memory_merge filters by scope; memory_tools_v2 and memory_compat build their own writes).
+            return None
         decision = decide_write(write, actor)
         if decision.confirmation_kind == "explicit_user_request":
             return None
@@ -463,6 +467,10 @@ class MemoryRepository:
         if actor.origin != "user" or status not in {"active", "paused"}:
             raise MemoryError("user_confirmation_required")
         entry = await self.get(entry_id, owner_id=actor.owner_id)
+        if entry.scope_kind == "expert":
+            # C7c-5c guard (a): the expert scope is retired. 0103 moves every such entry to global and its trigger
+            # refuses the scope; this covers a row written around the trigger. DELETE-BY: with the 0103 trigger.
+            raise MemoryError("memory_scope_retired")
         if entry.status == "deleted":
             raise MemoryError("memory_deleted")
         if status == "active" and not entry.confirmation_kind:
@@ -690,7 +698,11 @@ class MemoryRepository:
                 {"name": "legacy_" + mapping.source_table}) else mapping.source_table
             await self.db.execute(text(f"DELETE FROM {table} WHERE id=:id"),
                                   {"id": int(mapping.source_key)})
-        elif mapping.source_table == "spawns":
+        elif mapping.source_table == "spawns" and "memory_facts" in {
+                row[1] for row in (await self.db.execute(text("PRAGMA table_info(spawns)"))).all()}:
+            # C7c-5c: 0103 drops `spawns` (an upgraded install may keep an empty `spawns(id)` stub). Checked by the
+            # column, not the table: the stub has no memory_facts. The pre-0103 upgrade backup still holds the
+            # value until it is pruned (the release note says so).
             spawn_id, index = map(int, mapping.source_key.split(":"))
             raw = await self.db.scalar(text("SELECT memory_facts FROM spawns WHERE id=:id"), {"id": spawn_id})
             values = json.loads(raw) if isinstance(raw, str) else list(raw or [])

@@ -486,7 +486,8 @@ class KnowledgeChunk(Base):
 
     id = Column(Integer, primary_key=True)
     # The former expert-private well. No foreign key in the model since C7c-5b; the column stays because 0018
-    # reads it on every install and the CHECK above names it. C7c-5c moves the old rows to a collection.
+    # reads it on every install and the CHECK above names it. 0103 (C7c-5c) moved the old rows to a collection;
+    # nothing writes it any more.
     spawn_id = Column(Integer, nullable=True, index=True)
     collection_id = Column(Integer, ForeignKey("collections.id", ondelete="CASCADE"), nullable=True, index=True)
     source = Column(String(200), nullable=False)
@@ -495,6 +496,8 @@ class KnowledgeChunk(Base):
     embedding = Column(LargeBinary, nullable=True)          # float32 LE bytes
     embedding_model = Column(String(80), nullable=True)     # provider model id
     created_at = Column(DateTime, default=datetime.utcnow)
+    # 0103 (C7c-5c): the former expert's name on a chunk moved out of its private well; NULL otherwise.
+    origin_label = Column(String(100), nullable=True)
 
 
 class ConversationEvent(Base):
