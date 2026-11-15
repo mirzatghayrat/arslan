@@ -124,6 +124,14 @@ def bodies(type_):
     return [e["envelope"]["body"] for e in load("messages.json")["examples"] if e["envelope"]["type"] == type_]
 
 
+def test_the_capability_perm_kind_is_the_exact_lowercase_string():
+    """§5.13 rule 7 (①iOS compares it verbatim): vectors (a)-(c) carry exactly "capability", and the Mac's own frame
+    builder stamps that same string, so no case or spacing variant can reach the phone."""
+    kinds = [b.get("perm_kind") for b in bodies("approval.request") if "perm_kind" in b]
+    assert kinds.count("capability") == 3
+    assert not [k for k in kinds if k != "capability" and k.strip().casefold() == "capability"]
+
+
 def test_the_four_capability_card_vectors():
     cards = [b for b in bodies("approval.request") if b.get("perm_kind") == "capability"]
     full = sorted((b for b in cards if {"source", "abilities", "checks"} <= set(b)), key=lambda b: b["phone_can_approve"])

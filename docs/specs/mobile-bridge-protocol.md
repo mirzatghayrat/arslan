@@ -611,6 +611,8 @@ The rules, frozen:
 4. The Mac folds `high_risk_mac_only` into `phone_can_approve`; the phone ANDs both.
 5. The Mac accepts a phone deny on a capability card; it refuses only a yes.
 6. An empty array means the same as an absent one (the Mac leaves it out).
+7. A capability card's `perm_kind` is exactly the lowercase string `"capability"`, and receivers compare it verbatim
+   (no case folding or trimming); vectors (a) to (c) use that exact string.
 
 **Sub-sessions, read only.** The Mac's `hello.capabilities` add `sub_sessions`.
 
