@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -67,15 +68,34 @@ def tool_failure(result: dict) -> FailureKind | None:
     return FailureKind.PERMANENT
 
 
+# What changes between two runs of the same stuck command without being progress: timestamps, clock times, durations
+# ("1 failed in 1.42s", "Ran 3 tests in 0.002s") and memory addresses. The lookbehinds keep a file's line:column
+# ("app.py:12:34") and a value glued to a word out of it. Timestamps first, so their time part goes with them.
+_VOLATILE = (
+    re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"),
+    re.compile(r"(?<![\w.:/-])\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b"),
+    re.compile(r"(?<![\w.:/-])\d+(?:\.\d+)?\s?(?:ms|s|secs?|seconds|m|min)\b"),
+    re.compile(r"\b0x[0-9a-fA-F]{6,}\b"),
+)
+
+
+def _stable(text: str) -> str:
+    for pattern in _VOLATILE:
+        text = pattern.sub("#", text)
+    return text
+
+
 @dataclass
 class ProgressPolicy:
     """Detect a loop that makes no progress (K4a, v0.1.63): the same returned evidence 4 times (a new
-    result resets that streak), or the same failing call — tool, arguments and error — 3 times.
+    result resets that streak), or the same failing call — tool, arguments, error and output — 3 times.
 
     Different failures don't add up: five blocked sites in a row are five calls, not one stuck step
-    (web_extract's errors don't carry the URL, so the error alone can't tell them apart). Before K4a any
-    4 failures in a row stopped the loop. Counters contain only hashes and structural classifications;
-    global budgets remain the ultimate bounds.
+    (web_extract's errors don't carry the URL, so the error alone can't tell them apart), and a check rerun
+    after an edit that prints something new is not the same failure (a failed command's error is only its exit
+    code; durations, clock times, timestamps and addresses in the output are masked). A failure with no output
+    is fingerprinted as before. Before K4a any 4 failures in a row stopped the loop. Counters contain only
+    hashes and structural classifications; global budgets remain the ultimate bounds.
     """
     max_stalled: int = 4
     max_same_failure: int = 3
@@ -90,8 +110,12 @@ class ProgressPolicy:
         self.observations += 1
         self.last_failure = tool_failure(result)
         if self.last_failure is not None:
-            call = json.dumps([tool, arguments, str(result.get("error") or result.get("code") or "")],
-                              ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+            failed = [tool, arguments, str(result.get("error") or result.get("code") or "")]
+            # A command's error is a bare "exit code 1": its output tells an edited, rerun check apart from a stuck one.
+            output = [_stable(str(result.get(key) or "")) for key in ("stdout", "stderr")]
+            if any(output):
+                failed.append(hashlib.sha256(json.dumps(output, ensure_ascii=False).encode()).hexdigest())
+            call = json.dumps(failed, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
             self._failed_call = hashlib.sha256(call.encode()).hexdigest()
             self.failures[self._failed_call] = self.failures.get(self._failed_call, 0) + 1
             return False

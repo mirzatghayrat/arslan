@@ -15,8 +15,8 @@ import ShellPolicySwitchNotice from "../components/ShellPolicySwitchNotice";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { AppSettings } from "../api/client.types";
 
-function withFlag(flag: string | undefined, policy = "ask_all") {
-  const settings = { shell_confirm_policy: policy } as AppSettings;
+function withFlag(flag: string | undefined, mode = "ask") {
+  const settings = { default_permission_mode: mode } as AppSettings;
   if (flag !== undefined) settings.shell_policy_switch_notice = flag;
   act(() => useSettingsStore.getState().setSettings(settings));
 }
@@ -30,14 +30,22 @@ describe("ShellPolicySwitchNotice", () => {
 
   it.each([
     ["ask_risky", "settings.policyNoticeRiskyTitle", "settings.policyNoticeRiskyBody"],   // was unset: moved
-    ["ask_all", "settings.policyNoticeAllTitle", "settings.policyNoticeAllBody"],         // stored ask_all: kept
-    ["", "settings.policyNoticeAllTitle", "settings.policyNoticeAllBody"],                // unknown: the strict text
-  ])("the text follows the policy as read (%s)", (policy, title, body) => {
-    withFlag("pending", policy);
+    ["ask", "settings.policyNoticeAllTitle", "settings.policyNoticeAllBody"],             // stored ask_all: kept
+  ])("the text follows the default mode as read (%s)", (mode, title, body) => {
+    withFlag("pending", mode);
     render(<ShellPolicySwitchNotice />);
     expect(screen.getByTestId("shell-policy-switch-notice").textContent).toContain(title);
     expect(screen.getByTestId("shell-policy-switch-notice-body").textContent).toBe(body);
   });
+
+  it.each([["full_access"], ["plan"]])(
+    "a default 0095 can't have left (%s, the user's own choice since) shows nothing, but is marked seen", async (mode) => {
+      withFlag("pending", mode);
+      render(<ShellPolicySwitchNotice />);
+      expect(screen.queryByTestId("shell-policy-switch-notice")).toBeNull();
+      expect(updateSettings).toHaveBeenCalledWith({ shell_policy_switch_notice: "seen" });
+      await waitFor(() => expect(useSettingsStore.getState().settings?.shell_policy_switch_notice).toBe("seen"));
+    });
 
   it("a told user sees it once, with the way to switch, and it is marked seen at once", async () => {
     withFlag("pending");

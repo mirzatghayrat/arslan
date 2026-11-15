@@ -238,11 +238,12 @@ async def test_the_note_once_seen_stays_seen_across_restarts(tmp_path):
 async def test_the_settings_api_sends_the_policy_as_read_and_the_note(client):
     from server.db import session as db_session
     body = (await client.get("/api/v1/settings")).json()
-    assert (body["shell_confirm_policy"], body[NOTE]) == ("ask_risky", "")          # a new database: unset
-    for stored, reads in (("garbage", "ask_all"), ("ask", "ask_all"), ("ask_risky", "ask_risky")):
+    assert (body["default_permission_mode"], body[NOTE]) == ("ask_risky", "")       # a new database: unset
+    assert "shell_confirm_policy" not in body                                       # S5a-2: the old field is gone
+    for stored, reads in (("garbage", "ask"), ("ask", "ask"), ("ask_risky", "ask_risky")):
         async with db_session.AsyncSessionLocal() as session:
             await settings_service.update_settings(session, {"default_permission_mode": stored})
-        assert (await client.get("/api/v1/settings")).json()["shell_confirm_policy"] == reads
+        assert (await client.get("/api/v1/settings")).json()["default_permission_mode"] == reads
     async with db_session.AsyncSessionLocal() as session:
         await settings_service.update_settings(session, {NOTE: "pending"})
     assert (await client.get("/api/v1/settings")).json()[NOTE] == "pending"

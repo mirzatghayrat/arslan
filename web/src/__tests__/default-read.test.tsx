@@ -17,7 +17,7 @@ function props(over: Partial<Props> = {}): Props {
   return {
     telemetry: false, onTelemetryChange: vi.fn(),
     orchestratorShellEnabled: false, onOrchestratorShellChange: vi.fn(),
-    shellConfirmPolicy: "ask_all", onShellConfirmPolicyChange: vi.fn(),
+    defaultPermissionMode: "ask", onDefaultPermissionModeChange: vi.fn(),
     workspaceDir: "", onWorkspaceDirChange: vi.fn(),
     lanDiscoveryEnabled: false, onLanDiscoveryChange: vi.fn(),
     sshEnabled: false, onSshChange: vi.fn(),

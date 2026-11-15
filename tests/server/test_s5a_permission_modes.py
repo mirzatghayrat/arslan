@@ -442,14 +442,13 @@ async def test_the_phones_details_keep_their_two_documented_values():
 
 # ── settings and the migration ───────────────────────────────────────────────────────────────────────────────────
 
-async def test_settings_carry_the_default_and_the_old_policy_only_as_a_derived_read(client):
+async def test_settings_carry_the_default_and_no_longer_the_old_policy(client):
     body = (await client.get("/api/v1/settings")).json()
-    assert body["default_permission_mode"] == "ask_risky" and body["shell_confirm_policy"] == "ask_risky"
+    assert body["default_permission_mode"] == "ask_risky" and "shell_confirm_policy" not in body
     assert (await client.put("/api/v1/settings", json={"default_permission_mode": "nope"})).status_code == 422
     body = (await client.put("/api/v1/settings", json={"default_permission_mode": "ask"})).json()
-    assert (body["default_permission_mode"], body["shell_confirm_policy"]) == ("ask", "ask_all")
-    # S5a-2 deletes this: the window still writes the old field until then; it lands in the new key only, and never
-    # wider than the default it replaces (#893 review 4): only the new mode endpoint and field widen.
+    assert body["default_permission_mode"] == "ask" and "shell_confirm_policy" not in body
+    # S5a-2: the window writes the mode; the old field is no longer mapped, so it changes nothing.
     body = (await client.put("/api/v1/settings", json={"shell_confirm_policy": "ask_risky"})).json()
     assert body["default_permission_mode"] == "ask"
     async with client.db_maker() as db:
@@ -458,15 +457,14 @@ async def test_settings_carry_the_default_and_the_old_policy_only_as_a_derived_r
     assert not hasattr(settings_service, "shell_confirm_policy")
 
 
-@pytest.mark.parametrize("default, old, expected", [
-    ("plan", "ask_all", "plan"), ("plan", "ask_risky", "plan"), ("ask", "ask_risky", "ask"), ("ask", "garbage", "ask"),
-    ("full_access", "ask_all", "ask"), ("full_access", "ask_risky", "ask_risky"), ("ask_risky", "ask_all", "ask"),
-])
-async def test_the_old_policy_field_only_ever_narrows_the_default(client, default, old, expected):
-    """#893 review 4: the legacy bridge (DELETE-BY: S5a-2) clamps to the narrower of the default and its mapping."""
+@pytest.mark.parametrize("default", ["plan", "ask", "ask_risky", "full_access"])
+@pytest.mark.parametrize("old", ["ask_all", "ask_risky", "garbage"])
+async def test_the_old_policy_field_changes_nothing(client, default, old):
+    """S5a-2 removed #893's legacy bridge (which only ever narrowed the default): the old field no longer moves the
+    default either way, so it can't widen it."""
     await client.put("/api/v1/settings", json={"default_permission_mode": default})
     body = (await client.put("/api/v1/settings", json={"shell_confirm_policy": old})).json()
-    assert body["default_permission_mode"] == expected
+    assert body["default_permission_mode"] == default and "shell_confirm_policy" not in body
 
 
 @pytest.mark.parametrize("stored, expected", [
