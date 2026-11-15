@@ -65,11 +65,32 @@ WINDOW_ONLY_KINDS = frozenset({"capability"})
 
 def window_only(frame: dict) -> bool:
     """Whether this card is answered only by the asking window (0.1.61 §A4, PR 2b final review M6): the capability proposal, or any card
-    that carries the `capability` permission kind (a `propose_action` frame rides it). The phone never gets one and the island refuses it;
+    that carries the `capability` permission kind (a `propose_action` frame rides it). The phone shows a capability card view-only
+    (CAP11, `phone_can_approve`) and the island refuses it;
     a yes from the phone is swallowed and a yes from the Inbox or the island is "open in Arslan". Saying no is allowed from anywhere."""
+    return capability_card(frame) or _runs_bare(frame)
+
+
+def capability_card(frame: dict) -> bool:
+    """The capability proposal, or any card carrying the `capability` permission kind (window-only, `window_only`)."""
     perm_kind = frame.get("perm_kind")
-    return (frame.get("type") in WINDOW_ONLY or (isinstance(perm_kind, str) and perm_kind in WINDOW_ONLY_KINDS)
-            or _runs_bare(frame))
+    return frame.get("type") in WINDOW_ONLY or (isinstance(perm_kind, str) and perm_kind in WINDOW_ONLY_KINDS)
+
+
+def phone_can_approve(frame: dict) -> bool:
+    """CAP11 (v0.1.64): whether a phone yes counts on this card, as the Mac says it in the card's `phone_can_approve`
+    (set on every card `open_card` registers; the Bridge sends it to the phone, spec §5.13). Not on a window-only card,
+    so false for every capability card in v0.1.64 (step b, the Mac-side opening, is deferred). `status.high_risk_mac_only`
+    folds in here once that switch exists; until then it is always false (`server/api/phone.py`), so it adds nothing.
+    `answer` refuses a phone yes by the Mac's own copy of the card, never by anything the phone sends."""
+    return not window_only(frame)
+
+
+def skips_phone(frame: dict) -> bool:
+    """S2a-1b: in a turn the iPhone started, a card only a Mac window may approve skips the Bridge's socket, so the
+    phone shows no Allow it can't use. CAP11: a capability card no longer does; the phone shows it view-only with a
+    "don't install" decline (its `phone_can_approve` is false). Only a bare-run command card still skips it."""
+    return window_only(frame) and not capability_card(frame)
 
 
 #: S2a-3 step 4b: the run's working folder while `command_confirm` decides its card (`command_gate.run_folder`, the
@@ -171,6 +192,8 @@ def open_card(conversation_id: str, frame: dict, *, broadcast: bool = True,
     pending = Pending(frame["call_id"], conversation_id, frame, asyncio.get_running_loop().create_future(),
                       private=not broadcast, folder=CARD_FOLDER.get())
     _pending[pending.call_id] = pending
+    # CAP11: registered first, so a command card's verdict reads the folder it runs in (`card_folder`).
+    frame["phone_can_approve"] = phone_can_approve(frame)
     if broadcast:
         # `skip` (S2a-1b, see ws/arslan._ask_everywhere): one socket left out, the Bridge's.
         emit = run_registry.make_emit(conversation_id) if skip is None else run_registry.make_emit(
@@ -216,7 +239,9 @@ def answer(data: dict) -> bool:
     # The Bridge marks what the phone sends; the Inbox and the island mark theirs
     # (0.1.55); anything else is a Mac window.
     by = data.get("source") if data.get("source") in SOURCES else "mac"
-    if ANSWERS[kind] and window_only(pending.frame) and by != "mac":
+    if ANSWERS[kind] and by == "phone" and not phone_can_approve(pending.frame):
+        return True                        # swallowed (CAP11): the Mac's card says a phone yes doesn't count here
+    if ANSWERS[kind] and window_only(pending.frame) and by not in ("mac", "phone"):
         return True                         # swallowed: only the asking window approves this one
     if not pending.future.done() and remaining(pending) > 0:      # none after the card's time
         options = [o for o in pending.frame.get("options") or [] if isinstance(o, str)]

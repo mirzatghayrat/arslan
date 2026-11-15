@@ -84,6 +84,63 @@ def card_for(c: dict, *, why: str, retry: str, folders: list[str]) -> dict:
     }
 
 
+#: CAP11 (spec §5.13): the limits of the phone's fields, which the Mac guarantees (the phone only clamps what it shows).
+PHONE_SOURCE_MAX, PHONE_ABILITIES_MAX, PHONE_ABILITY_MAX, PHONE_DETAIL_MAX = 200, 8, 120, 160
+
+
+def _osv_row(name: str, vulns: dict) -> dict:
+    """One OSV.dev answer (`osv_check.check`) as a phone check: a hit warns, as the card does (decision 5)."""
+    if vulns.get("state") == "checked":
+        count, whole = int(vulns.get("count") or 0), bool(vulns.get("complete", True))
+        if count:
+            return {"name": name, "result": "warn",
+                    "detail": f"{count} known advisories, highest {vulns.get('highest') or 'UNKNOWN'}"}
+        return {"name": name, "result": "pass" if whole else "warn",
+                "detail": f"No known advisories in {vulns.get('packages') or 0} packages" + ("" if whole else " (incomplete)")}
+    why = "OSV.dev did not answer" if vulns.get("state") == "not_checked" else f"not asked ({vulns.get('why') or 'n/a'})"
+    return {"name": name, "result": "not_run", "detail": why}
+
+
+def phone_fields(card: dict) -> dict:
+    """CAP11: what the phone's view-only install card shows (`approval.request`'s `source`, `abilities`, `checks`, spec
+    §5.13), from what the card already holds: where it comes from (its source URL, else its repository), what it may
+    do (the network, another machine, the folders, the keys it asks for, the shared skills folder, a plugin's parts),
+    and its checks (OSV.dev, the lock's hash, a skill's pinned commit and scan). Cut to the spec's limits here; an empty
+    list is left out (it means the same as absent)."""
+    clean = untrusted.clean_name
+    out: dict = {}
+    if source := card.get("source_url") or card.get("repo"):
+        out["source"] = clean(source, PHONE_SOURCE_MAX)
+    connections = [c for c in card.get("connections") or [] if isinstance(c, dict)]
+    abilities = (["Uses the network"] if card.get("network") else []) \
+        + ([f"Connects to {card['remote_host']}"] if card.get("remote_host") else []) \
+        + [f"Reads and writes {f}" for f in card.get("folders") or []] \
+        + [f"Needs the key {k.get('name')}" for k in card.get("keys") or [] if isinstance(k, dict)] \
+        + (["Installs into the shared skills folder"] if card.get("shared_folder") else []) \
+        + [f"Skill: {s.get('name')}" for s in card.get("skills") or [] if isinstance(s, dict)] \
+        + [f"Connection: {c.get('name')}" for c in connections] \
+        + ([f"{len(card['hooks'])} hooks (none runs)"] if card.get("hooks") else [])
+    if abilities:
+        out["abilities"] = [clean(a, PHONE_ABILITY_MAX) for a in abilities[:PHONE_ABILITIES_MAX]]
+    checks = [_osv_row("osv", card["vulns"])] if isinstance(card.get("vulns"), dict) else []
+    checks += [_osv_row(f"osv: {c.get('name')}", c["vulns"]) for c in connections if isinstance(c.get("vulns"), dict)]
+    if isinstance(card.get("lock"), dict):
+        lock = card["lock"]
+        checks.append({"name": "lock", "result": "pass",
+                       "detail": f"Locked, sha256 {str(lock.get('sha256'))[:12]}…, {lock.get('count') or 0} packages"})
+    if card.get("commit"):
+        checks.append({"name": "pinned", "result": "pass", "detail": f"{str(card['commit'])[:12]} pinned"})
+    if isinstance(card.get("scan"), dict):
+        level, found = card["scan"].get("level"), len(card["scan"].get("findings") or [])
+        checks.append({"name": "scan", **{"clean": {"result": "pass", "detail": "No findings"},
+                                          "notes": {"result": "warn", "detail": f"{found} notes"}}.get(
+            level, {"result": "fail", "detail": f"{found} findings"})})
+    if checks:
+        out["checks"] = [{**c, "name": clean(c["name"], PHONE_ABILITY_MAX), "detail": clean(c["detail"], PHONE_DETAIL_MAX)}
+                         for c in checks]
+    return out
+
+
 async def _source(source_id: str) -> CapabilitySource:
     async with db_session.AsyncSessionLocal() as db:
         return await db.get(CapabilitySource, source_id)
@@ -380,6 +437,7 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
                                                                  *(prepared.get("references") or {}).values()])))
     from server.services import approvals
     approvals.LAST_OUTCOME.set(None)          # S7 review F2: only this card's own outcome may read as expired
+    card["phone"] = phone_fields(card)        # CAP11: what the phone's view-only card shows
     try:
         decision = await ask(card)
     except BaseException:

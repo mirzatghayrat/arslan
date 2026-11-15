@@ -4,7 +4,7 @@
 import Foundation
 
 public enum CardKind: String {
-    case runCommand = "run_command", workspaceWrite = "workspace_write", schedule, action
+    case runCommand = "run_command", workspaceWrite = "workspace_write", schedule, action, capability
 }
 
 public final class FrameMapper {
@@ -42,21 +42,26 @@ public final class FrameMapper {
         let iso = ISO8601DateFormatter()
         func card(_ kind: CardKind, _ action: String, _ target: String, _ risk: String) -> [Message] {
             guard let id = frame["call_id"] as? String else { return [] }
-            // 0.1.61 §A4: installing code wants the whole card — a new capability never reaches the phone.
-            if frame["perm_kind"] as? String == "capability" { return [] }
+            // §5.13 (CAP11a): a capability card reaches the phone view-only; the Mac's own copy refuses a phone yes.
+            let permKind = kind == .capability ? "capability" : frame["perm_kind"] as? String
             cards[id] = kind
             // A card from the Mac's permission layer says its own question and when it runs out;
             // an older frame keeps the kind's words and the Mac's wait from now. The heading is one
             // line (every run of whitespace, newlines too, becomes one space) before it is cut.
             let question = Self.oneLine(frame["title"] as? String ?? "")
             let expires = Self.frameExpiry(frame["expires_at"], now: now) ?? now.addingTimeInterval(Self.cardWait)
-            return [("approval.request", ["approval_id": id,
-                                          "action": Self.heading(question.isEmpty ? Self.oneLine(action) : question, permKind: frame["perm_kind"] as? String),
-                                          // A card for several apps (permissions.decide_many) joins their ids with U+001E: one line, comma-separated.
-                                          "target": String(target.replacingOccurrences(of: "\u{1e}", with: ", ").prefix(300)),
-                                          "risk": Self.permRisk(frame["perm_kind"] as? String) ?? risk,
-                                          "task_id": conversationID, "task_title": title ?? "Arslan",
-                                          "expires_at": iso.string(from: expires)])]
+            var body: [String: Any] = ["approval_id": id,
+                                       "action": Self.heading(question.isEmpty ? Self.oneLine(action) : question, permKind: permKind),
+                                       // A card for several apps (permissions.decide_many) joins their ids with U+001E: one line, comma-separated.
+                                       "target": String(target.replacingOccurrences(of: "\u{1e}", with: ", ").prefix(300)),
+                                       "risk": Self.permRisk(permKind) ?? risk,
+                                       "task_id": conversationID, "task_title": title ?? "Arslan",
+                                       "expires_at": iso.string(from: expires),
+                                       // The Mac's word (approvals.phone_can_approve); without one, §5.13's absent rule.
+                                       "phone_can_approve": Self.flag(frame["phone_can_approve"]) ?? (permKind != "capability")]
+            if let permKind { body["perm_kind"] = permKind }
+            body.merge(Self.phoneFields(frame["phone"])) { _, new in new }
+            return [("approval.request", body)]
         }
         switch frame["type"] as? String {
         case "stream_start":
@@ -154,6 +159,11 @@ public final class FrameMapper {
         case "propose_action":
             let kind = frame["kind"] as? String ?? "action"
             return card(.action, kind, frame["target"] as? String ?? "", kind == "browser_site" ? "send" : "write")
+        case "propose_capability":
+            // §5.13: the install card (also a skill to save, a memory import), shown view-only with a "don't install" no.
+            let name = Self.oneLine(frame["name"] as? String ?? "")
+            return card(.capability, "Add “\(name)”", frame["source_url"] as? String ?? frame["repo"] as? String ?? name,
+                        "install")
         case "card_resolved":
             // The Mac decided the card — the phone's own answer, a click in a Mac window (first
             // answer wins), or the 30 minutes running out. This is the phone's business receipt (§5.3).
@@ -217,9 +227,32 @@ public final class FrameMapper {
         case "money": return "payment"
         case "send": return "send"
         case "destructive": return "delete"
-        case "outside": return "install"
+        case "outside", "capability": return "install"
         default: return nil
         }
+    }
+
+    /// A JSON boolean only (a number is an `NSNumber` too, and is not one).
+    static func flag(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
+    }
+
+    /// §5.13: the install card's `source`, `abilities` and `checks`, as the Mac built them within the spec's limits
+    /// (`capability_flow.phone_fields`). Passed on when well typed; an empty list is left out (it means absent).
+    static func phoneFields(_ value: Any?) -> [String: Any] {
+        guard let fields = value as? [String: Any] else { return [:] }
+        var out: [String: Any] = [:]
+        if let source = fields["source"] as? String, !source.isEmpty { out["source"] = source }
+        if let abilities = fields["abilities"] as? [String], !abilities.isEmpty { out["abilities"] = abilities }
+        let checks = (fields["checks"] as? [[String: Any]] ?? []).compactMap { check -> [String: Any]? in
+            guard let name = check["name"] as? String, let result = check["result"] as? String else { return nil }
+            var row: [String: Any] = ["name": name, "result": result]
+            if let detail = check["detail"] as? String { row["detail"] = detail }
+            return row
+        }
+        if !checks.isEmpty { out["checks"] = checks }
+        return out
     }
 
     /// The phone's card shows one of six risks (write, send, delete, install, payment, publish):

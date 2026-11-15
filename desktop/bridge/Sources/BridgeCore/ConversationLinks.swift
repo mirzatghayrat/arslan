@@ -387,11 +387,11 @@ public actor ConversationLinks {
     /// `chat.history.result` in one envelope (§5.7): the backend trims to 560 KB, but the slashes
     /// JSONSerialization escapes can still push the sealed record past `Wire.maxSealedBytes`; then
     /// the oldest messages go, a quarter at a time, and the phone is told (`truncated`).
-    func sendHistory(_ result: [String: Any], to peer: String) async throws {
+    func sendHistory(_ result: [String: Any], to peer: String, type: String = "chat.history.result") async throws {
         var body = result
         while true {
             do {
-                _ = try await mailbox.send(type: "chat.history.result", body: body, to: peer)
+                _ = try await mailbox.send(type: type, body: body, to: peer)
                 return
             } catch BridgeError.code("too_large") {
                 var messages = body["messages"] as? [Any] ?? []
@@ -516,6 +516,16 @@ public actor ConversationLinks {
                 let result = try await backend.json("/api/v1/phone/conversations/\(id.pathSegment)/history?limit=\(limit)")
                 try link(id, now: now)      // the phone is looking at it: its progress, cards and results come live
                 try await sendHistory(result, to: received.from)
+            case "sub_session.history":
+                // §5.13 (SUB5f): one sub-session's transcript, read through the conversation at the top of its tree. A
+                // read only: it never links (no socket, so nothing the phone sends reaches the sub-session), and there
+                // is no request that writes to one. The backend answers `not_found` outside that tree.
+                guard let id = body["conversation_id"] as? String, let child = body["sub_session_id"] as? String,
+                      !id.isEmpty, !child.isEmpty else { throw BridgeError.code("malformed") }
+                let limit = min(max(body["limit"] as? Int ?? 50, 1), 200)
+                let result = try await backend.json(
+                    "/api/v1/phone/conversations/\(id.pathSegment)/sub-sessions/\(child.pathSegment)/history?limit=\(limit)")
+                try await sendHistory(result, to: received.from, type: "sub_session.history.result")
             case "run.get":
                 guard let run = body["run_id"] as? Int else { throw BridgeError.code("malformed") }
                 let result = try await backend.json("/api/v1/phone/runs/\(run)")
@@ -580,9 +590,11 @@ public actor ConversationLinks {
     /// What this Mac does (hello). §5.7 added files_in (files from the phone), partial (answers as
     /// they are written), delete (conversation.delete), live (the newest conversations stay linked)
     /// and mac_messages (words typed on the Mac are forwarded). §5.8 added new_conversation (a chat.send may
-    /// start one) and quick (quick questions); a Mac that says quick always says new_conversation.
+    /// start one) and quick (quick questions); a Mac that says quick always says new_conversation. §5.13 added
+    /// sub_sessions (the list's counts, a conversation's tree, `sub_session.history`).
     public static let capabilities = ["chat", "approvals", "jobs", "history", "files", "status", "review", "tasks", "touchid",
-                                      "files_in", "partial", "delete", "live", "mac_messages", "new_conversation", "quick"]
+                                      "files_in", "partial", "delete", "live", "mac_messages", "new_conversation", "quick",
+                                      "sub_sessions"]
 
     static func message(_ code: String) -> String {
         switch code {

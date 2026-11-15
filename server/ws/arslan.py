@@ -405,8 +405,9 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
         # window may approve (approvals.window_only: a command that would run with no sandbox, U11) skips
         # it: the phone shows "另有 N 项只能在 Mac 上处理" from the open approvals instead of an Allow it
         # cannot use and a No the Bridge would then refuse. Every Mac window still gets the card. A job's
-        # cards still reach the Bridge (v0.1.64: the Bridge socket says what it is).
-        mac_only = sink if phone_turn["on"] and approvals.window_only(frame) else None
+        # cards still reach the Bridge (v0.1.64: the Bridge socket says what it is). CAP11: a capability card
+        # reaches the phone, view-only (`approvals.skips_phone`).
+        mac_only = sink if phone_turn["on"] and approvals.skips_phone(frame) else None
         pending = approvals.open_card(conversation_id, frame, broadcast=broadcast, skip=mac_only)
         # An ask identical to a card still waiting in this conversation joined it (0.1.61 §A4):
         # this window shows THAT card, with its own call_id, or nothing when it is on this screen

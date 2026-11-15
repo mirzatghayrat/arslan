@@ -116,3 +116,62 @@ def test_an_approval_answer_must_carry_the_right_authentication(body, ok):
     else:
         with pytest.raises(r.BridgeError):
             r.check_body(envelope)
+
+
+# ── §5.13 (CAP11a + SUB5f): capability cards view-only, the card's optional fields, read-only sub-sessions ──
+
+def bodies(type_):
+    return [e["envelope"]["body"] for e in load("messages.json")["examples"] if e["envelope"]["type"] == type_]
+
+
+def test_the_four_capability_card_vectors():
+    cards = [b for b in bodies("approval.request") if b.get("perm_kind") == "capability"]
+    full = sorted((b for b in cards if {"source", "abilities", "checks"} <= set(b)), key=lambda b: b["phone_can_approve"])
+    assert [b["phone_can_approve"] for b in full] == [False, True]                      # (a), (b)
+    a, b = full
+    assert {k: v for k, v in a.items() if k != "phone_can_approve"} == {k: v for k, v in b.items() if k != "phone_can_approve"}
+    assert a["risk"] == "install" and [r.phone_may_approve(x) for x in (a, b)] == [False, True]
+    old = [x for x in cards if "phone_can_approve" not in x]                            # (c): an old Mac's card
+    assert len(old) == 1 and r.phone_may_approve(old[0]) is False
+    others = [x for x in bodies("approval.request") if x.get("perm_kind") != "capability"]
+    assert others and all(r.phone_may_approve(x) for x in others if "phone_can_approve" not in x)
+    deny = [x for x in bodies("approval.answer") if x["approval_id"] == a["approval_id"]]   # (d): a phone no
+    assert deny == [{"approval_id": a["approval_id"], "decision": "deny", "auth": "none", "ts": make_vectors.TS}]
+
+
+CARD = {"approval_id": "c", "action": "Add x", "target": "t", "risk": "install", "task_id": "t", "task_title": "T",
+        "expires_at": "2026-10-03T00:05:00Z"}
+
+
+@pytest.mark.parametrize("extra,ok", [
+    ({"checks": [{"name": "osv", "result": "a-value-from-later"}]}, True),             # an open set: kept
+    ({"source": "s" * 200, "abilities": ["a" * 120] * 8, "checks": [{"name": "n", "result": "pass", "detail": "d" * 160}]},
+     True),
+    ({"source": "s" * 201}, False),
+    ({"abilities": ["a"] * 9}, False),
+    ({"abilities": ["a" * 121]}, False),
+    ({"checks": [{"name": "n", "result": "pass", "detail": "d" * 161}]}, False),
+    ({"checks": [{"name": "n"}]}, False),
+    ({"phone_can_approve": "false"}, False),
+    ({"risk": "capability"}, False),                                                     # `risk` stays closed
+])
+def test_a_cards_optional_fields_hold_the_macs_limits(extra, ok):
+    envelope = {"type": "approval.request", "body": {**CARD, **extra}}
+    if ok:
+        r.check_body(envelope)
+    else:
+        with pytest.raises(r.BridgeError):
+            r.check_body(envelope)
+
+
+def test_a_sub_session_is_only_ever_read_on_the_phone():
+    """No write twin: the one sub-session request reads; `view_only` is the literal true."""
+    assert {t for t in r.BODY_FIELDS if t.startswith("sub_session")} == {"sub_session.history", "sub_session.history.result"}
+    results = bodies("sub_session.history.result")
+    assert results and all(b["view_only"] is True for b in results)
+    for bad in (False, "true", 1, None):
+        with pytest.raises(r.BridgeError):
+            r.check_body({"type": "sub_session.history.result", "body": {**results[0], "view_only": bad}})
+    assert any("sub_sessions" in b["capabilities"] for b in bodies("hello"))
+    assert any("sub" in c for b in bodies("conversations.result") for c in b["conversations"])
+    assert any("sub_sessions" in (b.get("details") or {}) for b in bodies("chat.history.result"))

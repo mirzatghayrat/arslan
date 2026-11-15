@@ -194,31 +194,45 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertEqual(old.first?.body["risk"] as? String, "write")
     }
 
-    func testANewCapabilityNeverReachesThePhone() throws {
+    /// §5.13 (CAP11a): the install card reaches the phone view-only, with what the Mac built for it, and its answers go
+    /// back as the window's would: the phone's no declines it; a yes is the Mac's to refuse (approvals.answer).
+    func testTheInstallCardReachesThePhoneViewOnlyWithItsFields() throws {
         let m = FrameMapper(conversationID: "c1")
-        XCTAssertTrue(m.phoneMessages(for: ["type": "propose_action", "call_id": "cap", "kind": "capability",
-                                            "target": "rea", "perm_kind": "capability"], now: t0).isEmpty)
-        XCTAssertNil(m.cards["cap"])
-        XCTAssertThrowsError(try m.backendFrames(for: "approval.answer", body: ["approval_id": "cap", "decision": "approve",
-                                                                                "auth": "faceid"])) {
-            XCTAssertEqual(($0 as? BridgeError)?.code, "approval_expired")
-        }
+        let got = m.phoneMessages(for: ["type": "propose_capability", "call_id": "cap", "kind": "mcp", "name": "excel\nmcp",
+                                        "source_url": "https://github.com/x/excel", "phone_can_approve": false,
+                                        "phone": ["source": "https://github.com/x/excel", "abilities": ["Uses the network"],
+                                                  "checks": [["name": "osv", "result": "a-later-value"], ["name": "bad"]]]],
+                                  now: t0)
+        let body = try XCTUnwrap(got.first?.body)
+        XCTAssertEqual(got.first?.type, "approval.request")
+        XCTAssertEqual(body["action"] as? String, "Add “excel mcp”")
+        XCTAssertEqual(body["target"] as? String, "https://github.com/x/excel")
+        XCTAssertEqual(body["risk"] as? String, "install")
+        XCTAssertEqual(body["perm_kind"] as? String, "capability")
+        XCTAssertEqual(body["phone_can_approve"] as? Bool, false)
+        XCTAssertEqual(body["abilities"] as? [String], ["Uses the network"])
+        XCTAssertEqual((body["checks"] as? [[String: Any]])?.map { $0["result"] as? String }, ["a-later-value"],
+                       "an unknown result is kept; a check without one is not a check")
+        XCTAssertEqual(m.cards["cap"], .capability)
+        let no = try m.backendFrames(for: "approval.answer", body: ["approval_id": "cap", "decision": "deny", "auth": "none"])
+        XCTAssertEqual(no.first?["type"] as? String, "cancel_capability")
+        XCTAssertEqual(no.first?["source"] as? String, "phone")
     }
 
-    /// The guard keys on `perm_kind`, not on the Hands/web `kind`, and on every card type (fix round 1, M2).
-    func testACapabilityIsKeyedOnPermKindOnAnyCardType() {
-        let frames: [(String, [String: Any])] = [
-            ("a mac_script action", ["type": "propose_action", "call_id": "cap2", "kind": "mac_script", "perm_kind": "capability"]),
-            ("a run-command card", ["type": "propose_run_command", "call_id": "cap3", "pretty": "ls", "perm_kind": "capability"]),
-        ]
-        for (name, frame) in frames {
-            let m = FrameMapper(conversationID: "c1")
-            XCTAssertTrue(m.phoneMessages(for: frame, now: t0).isEmpty, "\(name): never on the phone")
-            XCTAssertTrue(m.cards.isEmpty, "\(name): and no card is registered")
+    /// The capability kind on any card type reaches the phone too, keyed on `perm_kind` (not the Hands/web `kind`), and
+    /// §5.13's absent rule holds when the Mac sends no `phone_can_approve`: not approvable for a capability card only.
+    func testTheAbsentRuleKeysOnTheCapabilityKind() {
+        func approvable(_ frame: [String: Any]) -> Bool? {
+            FrameMapper(conversationID: "c1").phoneMessages(for: frame, now: t0).first?.body["phone_can_approve"] as? Bool
         }
-        // The same frames without the capability kind are cards: the guard is not keyed on the card type.
-        XCTAssertEqual(FrameMapper(conversationID: "c").phoneMessages(for: ["type": "propose_action", "call_id": "k", "kind": "mac_script",
-                                                                          "perm_kind": "app"], now: t0).count, 1)
+        XCTAssertEqual(approvable(["type": "propose_action", "call_id": "a", "kind": "mac_script", "perm_kind": "capability"]), false)
+        XCTAssertEqual(approvable(["type": "propose_run_command", "call_id": "b", "pretty": "ls", "perm_kind": "capability"]), false)
+        XCTAssertEqual(approvable(["type": "propose_capability", "call_id": "c", "name": "x"]), false)
+        XCTAssertEqual(approvable(["type": "propose_action", "call_id": "d", "kind": "mac_script", "perm_kind": "app"]), true)
+        XCTAssertEqual(approvable(["type": "propose_workspace_write", "call_id": "e", "path": "a.md"]), true)
+        // The Mac's word wins when it gives one, and only a JSON boolean counts as one.
+        XCTAssertEqual(approvable(["type": "propose_workspace_write", "call_id": "f", "path": "a.md", "phone_can_approve": false]), false)
+        XCTAssertEqual(approvable(["type": "propose_capability", "call_id": "g", "name": "x", "phone_can_approve": 1]), false)
     }
 
     func testAQuestionIsCutAt200CharactersNeverInsideOne() {

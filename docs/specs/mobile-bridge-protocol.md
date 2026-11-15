@@ -244,10 +244,11 @@ never the content. A lock-screen alert shows generic text unless the user turned
 | `status.snapshot` | Mac → phone | `presence` (online/sleeping/offline), `mascot`, `device_name`, `last_seen`, `jobs[]` (each a `job.event` body: the jobs still running), `waiting_approvals`, `high_risk_mac_only` |
 | `conversations.list` / `conversations.result` | phone → Mac / Mac → phone | `limit?` (1–100, default 20) / `conversations[]` (`id`, `title`, `updated_at`; optional `kind`, `state`, `origin`, `preview`, `files`, `job`), most recent first |
 | `chat.history` / `chat.history.result` | phone → Mac / Mac → phone | `conversation_id`, `limit` / `conversation_id`, `messages[]` (`id`, `role`, `text`, `ts`, `attachments[]`, `run_id?`) |
+| `sub_session.history` / `sub_session.history.result` | phone → Mac / Mac → phone | `conversation_id`, `sub_session_id`, `limit?` / `conversation_id`, `sub_session_id`, `messages[]`, `truncated?`, `view_only` (always `true`) (§5.13) |
 | `chat.send` | phone → Mac | `conversation_id?` (absent: `not_found` since the pocket was retired, §5.12; a new conversation names `new_conversation_id`, §5.8), `text`, `attachments[]`, `client_msg_id` (UUID) |
 | `chat.event` | Mac → phone | `conversation_id`, `kind` (message/progress/error), `message_id`, `text`, `final`, `job_id?`, `run_id?` |
 | `job.event` | Mac → phone | `id`, `conversation_id`, `state` (running/done/partial/stuck/stopped), `title`, `current_step`, `completed`, `total`, `plan[]`, `summary?`, `files[]`, `run_id?`, `origin?`, `criteria[]?` |
-| `approval.request` | Mac → phone | `approval_id`, `action` (the card's `title` when it has one; an app, site or Shortcut card ends it with " (for this task)"), `target`, `risk` (write/send/delete/install/payment/publish; the card's `perm_kind` decides the word first, §5.3), `task_id`, `task_title`, `expires_at` (the card's own) |
+| `approval.request` | Mac → phone | `approval_id`, `action` (the card's `title` when it has one; an app, site or Shortcut card ends it with " (for this task)"), `target`, `risk` (write/send/delete/install/payment/publish; the card's `perm_kind` decides the word first, §5.3), `task_id`, `task_title`, `expires_at` (the card's own); §5.13 adds `perm_kind?`, `phone_can_approve?`, `source?`, `abilities[]?`, `checks[]?` |
 | `approval.answer` | phone → Mac | `approval_id`, `decision` (approve/deny), `auth` (`faceid` or `touchid` for approve, `none` for deny; a Mac that counts `touchid` says `touchid` in its hello capabilities, and a phone sends a Touch ID yes only to such a Mac), `ts` |
 | `approval.result` | Mac → phone | `approval_id`, `outcome` (done/denied/expired/failed), `detail?` |
 | `file.offer` / `file.get` | Mac → phone / phone → Mac | `id`, `name`, `size`, `mime_type`, `sha256` (hex of the plaintext) / `file_id` |
@@ -281,8 +282,8 @@ Settled here (open in the proposal):
   sandbox → `install`, push/publish/deploy/upload → `publish`, curl/ssh/mail or another machine →
   `send`, else `write`); writes and schedules are `write`; a website action is `send`. Since 0.1.61 a
   card's `perm_kind` decides first: `money` → `payment`, `send` → `send`, `destructive` → `delete`,
-  `outside` → `install`; any other kind keeps the rules above. A `capability` card never reaches the
-  phone. `action` is the card's `title` when it has one (the Mac's own words, in English for now),
+  `outside` → `install`; any other kind keeps the rules above. Since 2026-11-15 a `capability` card reaches
+  the phone view-only, as `install` (§5.13). `action` is the card's `title` when it has one (the Mac's own words, in English for now),
   and `expires_at` is the card's own. `action` ends with " (for this task)" on a card whose `perm_kind`
   is `app`, `site` or `shortcut`: the phone's yes takes the card's first, narrowest choice, which on
   those cards is the task (the heading is still cut at 200 characters, the words kept whole). A card for
@@ -577,6 +578,55 @@ unless marked `?`, and the Mac leaves out an optional field it doesn't know rath
 
 `details` is counted first against the history budget (§5.7), and the messages fit into what is left; the
 Bridge's own last-resort trim drops messages only, never `details`.
+
+### 5.13 Capability cards view-only, a card's fields, read-only sub-sessions (added 2026-11-15; optional fields, new types — additive within v1)
+
+CAP11 step a (docs/plans/0164/CAP11-capability-cards-on-phone.md) and SUB5f, decided by the user on 2026-11-15.
+An older phone ignores every field below and never sends the new request; an older Mac never sends a capability
+card and answers `sub_session.history` with `unknown_type`.
+
+**Capability cards reach the phone, view-only.** The install card (and any card whose `perm_kind` is `capability`)
+arrives as an `approval.request` with `risk: "install"` (no new risk value: `risk` stays one of the six) and
+`perm_kind: "capability"`. The phone shows it and offers only the no ("don't install"); a no is accepted from the
+phone with its note, as from any surface. Only the Mac window that asked approves it in v0.1.64.
+
+**`approval.request` gains optional fields:**
+
+- `perm_kind?`: the card's permission kind, when it has one.
+- `phone_can_approve?` (bool): whether a phone yes counts on this card, set by the Mac. False for every capability
+  card in v0.1.64. The Mac folds `status.snapshot.high_risk_mac_only` into it; the phone ANDs both. The Mac never
+  reads it from the phone: a phone yes on a card the Mac's own copy marks false is refused there (swallowed, the
+  card stays open), whatever the phone sends.
+- `source?`: where the capability comes from (its source URL, else its repository); at most 200 characters.
+- `abilities[]?`: what it may do, at most 8 lines of at most 120 characters.
+- `checks[]?`: `{name, result, detail?}`, `detail` at most 160 characters. `result` is an **open** set: `pass`,
+  `warn`, `fail` and `not_run` are named; a receiver keeps a value it doesn't know.
+
+The rules, frozen:
+
+1. `checks[].result` is open; `risk` is closed.
+2. The limits are the Mac's guarantees: the Mac cuts to them; the phone only clamps what it displays.
+3. **Absent rule:** `phone_can_approve` absent and `perm_kind == "capability"` → not approvable; any other card
+   without it → approvable, as before.
+4. The Mac folds `high_risk_mac_only` into `phone_can_approve`; the phone ANDs both.
+5. The Mac accepts a phone deny on a capability card; it refuses only a yes.
+6. An empty array means the same as an absent one (the Mac leaves it out).
+
+**Sub-sessions, read only.** The Mac's `hello.capabilities` add `sub_sessions`.
+
+- `conversations.result` items: `sub?` `{total, running, waiting}` over the whole tree under the conversation;
+  left out when it has none.
+- `chat.history.result.details`: `sub_sessions[]?` `{id, title, state, depth, parent_id}`, in the Mac panel's order
+  (each one followed by its own, siblings most recently active first); `depth` 1 is a direct child; `state` is one
+  of running, waiting, done, stopped, failed, interrupted, ended.
+- **`sub_session.history`** (phone → Mac): `conversation_id` (the conversation at the top of the tree),
+  `sub_session_id`, `limit?` (1–200, default 50). **`sub_session.history.result`** (Mac → phone):
+  `conversation_id`, `sub_session_id`, `messages[]` (as `chat.history.result`'s, text only: `attachments` is `[]`
+  and there is no `run_id`; the commander's brief is a user message with `source: "commander"`), `truncated?`
+  (only when the history budget, §5.7, dropped messages, never for `limit`) and `view_only`, always the literal
+  `true`. A sub-session outside that conversation's tree answers `not_found`.
+- There is no request that writes to a sub-session. The read never links it, and a `chat.send` naming a
+  sub-session's id stays `not_found`.
 
 ## 6. Mac side (summary; plan in the design doc §6)
 

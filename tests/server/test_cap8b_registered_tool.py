@@ -170,7 +170,7 @@ def test_the_click_decides_what_is_stored_and_the_model_is_told_counts(window_cl
         card = _paste_to_card(window)
         assert card["kind"] == "memory_import" and [e["text"] for e in card["entries"]] == LINES
         assert set(card) == {"type", "call_id", "kind", "name", "why", "entries", "left_out", "too_many", "lines", "keys",
-                             "folders"}                                  # MemoryImportCard in client.types.ts
+                             "folders", "phone_can_approve"}             # MemoryImportCard in client.types.ts; CAP11
         assert set(card["entries"][0]) == {"id", "text", "ticked", "same_as"}
         assert all(e["ticked"] for e in card["entries"])
         window.send_json({"type": "confirm_capability", "call_id": card["call_id"], "kept": ["e0", "e2"]})
