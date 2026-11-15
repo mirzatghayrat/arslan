@@ -13,8 +13,8 @@ it names, before its own checks (public addresses, the user's trusted devices), 
 Only `outside_only` is refused (403), unless the user allowed that host for this conversation (a `network:<host>` grant,
 never "Always"): a site that appears nowhere was steered by nothing (⓪Plan Q1, as mainstream agents judge it). An
 address is judged apart (`judge`). The command is told why (`refusal_note`), and the user is asked once whether
-commands in this conversation may reach the site (`offer`; NET-b words that card and adds Settings' list). That card
-comes after verify's run too (Codex round 1, F8). Where it can't be asked or isn't answered, the Inbox lists it, and
+commands in this conversation may reach the site (`offer`), or before the run for a site its text names (NET-b:
+`preflight`). The card after a run comes after verify's run too (Codex round 1, F8). Where it can't be asked or isn't answered, the Inbox lists it, and
 its "In this conversation" there stores what the card's would (`allow_from_inbox`, F7): not for a scheduled run's
 entry, since a run with nobody to ask reads no grant (S1).
 
@@ -697,13 +697,8 @@ async def admits(run: Run, host: str) -> bool:
 async def _granted(run: Run, name: str) -> bool:
     """This conversation's grant for `name` (its card's "In this conversation"). Its first use in a run writes the
     ledger row a standing answer writes."""
-    from server.db import session as db_session
-    from server.services import permission_store, permissions
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            grant = await permission_store.find_grant(db, run.conversation_id, None, "network", f"network:{name}")
-    except Exception:  # noqa: BLE001 — fails closed: a grant that can't be read lets nothing through
-        return False
+    from server.services import permissions
+    grant = await _grant(run.conversation_id, name)
     if grant is None:
         return False
     if name not in run.granted:
@@ -714,31 +709,95 @@ async def _granted(run: Run, name: str) -> bool:
     return True
 
 
+async def _grant(conversation_id: str | None, name: str):
+    """This conversation's `network:<name>` grant, or None (also when it can't be read: fails closed)."""
+    from server.db import session as db_session
+    from server.services import permission_store
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await permission_store.find_grant(db, conversation_id, None, "network", f"network:{name}")
+    except Exception:  # noqa: BLE001 — fails closed: a grant that can't be read lets nothing through
+        return None
+
+
 # ── what the command and the user are told ───────────────────────────────────
 
-def refusal_note(hosts) -> str:
-    """What a refused run's result says, one sentence a host (NET-b may word it again)."""
+def refusal_note(hosts, *, asks: bool | None = None) -> str:
+    """What a refused run's result says, one sentence a host. `asks`: someone can answer the card (None: this turn
+    says, `permissions.current_asker`). With nobody to ask (a scheduled run) the card was refused by policy and listed
+    in the Inbox (`offer`, `preflight`), so the model isn't told the user can allow it here."""
+    from server.services import permissions
+    if asks is None:
+        asks = permissions.current_asker() is not None
+    then = (" The user can allow it for this conversation." if asks else
+            " Nobody could be asked in this run, so it was listed in the Inbox for the user to allow.")
     return " ".join(
         f"{host} was refused: " + ("after this conversation read outside content, only an address the user named or "
                                    "listed is allowed." if _address_like(normalize(host)) else
                                    "it appeared only in outside content this conversation read, and the user didn't "
-                                   "name it.") + " The user can allow it for this conversation." for host in hosts)
+                                   "name it.") + then for host in hosts)
 
 
-def request(host: str, command: str):
-    """The card for one refused site (`offer`), and what a grant's use records: only what is known, the site and the
-    command that connected (none, for the Inbox's answer: `allow_from_inbox`), never what it would send (the proxy
-    doesn't see it)."""
+#: NET-b (net-design §12): what the user can do besides answering the card.
+SITES_HINT = "You can also add it in Settings › Sandbox › Sites."
+
+
+def request(host: str, command: str, *, before: bool = False):
+    """The card for one site (`offer` after a refused run, `preflight` before one: `before`), and what a grant's use
+    records: only what is known, the site and the command (none, for the Inbox's answer: `allow_from_inbox`), never
+    what it would send (the proxy doesn't see it). NET-b (net-design §4, §12): what was blocked, why, what to do."""
     from server.services import permissions
     why = (f"the address {host}, which you didn't name, after this conversation read outside content"
            if _address_like(normalize(host)) else
            f"{host}, a site that appeared only in outside content this conversation read (a page, a file or a tool's "
            "output), not one you named")
     ran = f"`{command[:300]}`" if command else "A command"
+    tried = "wants to send to" if before else "tried to send to"
     return permissions.Request(
         kind="network", target=f"network:{host}", conversation_only=True,
         title=f"Let commands in this conversation connect to {host}?",
-        detail=f"{ran} tried to connect to {why}. Arslan can't see what it would send.")
+        detail=f"{ran} {tried} {why}. Your answer decides whether commands in this conversation may send data to "
+               f"{host}. {SITES_HINT}")
+
+
+def command_hosts(command: str) -> set[str]:
+    """NET-b: the hosts a command's text names as a URL's host, for the gate's pre-flight (`preflight`), each as
+    `normalize` writes it. Read as what the user typed is (`_typed_hosts`' URL reading), not as outside content
+    (`hosts_in`): a command is text as written, never JSON, and `hosts_in`'s guesses at where a host in a spaceless
+    script begins name hosts no command connects to, which a card would ask about for nothing. Only a URL's host:
+    a bare name in a command is as often a file (`main.py`, `notes.md`: .py and .md are TLDs), which outside content
+    names too. An address in a URL in any spelling counts (`curl http://1572395042/`), a bare number never (a version
+    3.11.4 reads as one). What this misses the proxy still refuses, and NET-a's card follows the run (`offer`)."""
+    text, found = _host_text(command), set()
+    for match in _AFTER_SCHEME.finditer(text):
+        host = match.group(1)
+        name = normalize(host) if _ip(normalize(host)) is not None else normalize(_typed_name(host, url=True) or "")
+        if name is not None:
+            found.add(name)
+    return found
+
+
+async def preflight(command: str, conversation_id: str | None) -> str:
+    """NET-b: before a sandboxed command runs (command_gate, the switch on), NET-a's card up front for each host its
+    text names (`command_hosts`) that is `outside_only` here and not already allowed for this conversation, so a plain
+    `curl https://evil.example` asks before it runs instead of failing at the proxy. The proxy stays the enforcement:
+    this only asks earlier. "" to run the command; else it doesn't run, and this is what the model is told. With
+    nobody to ask (a scheduled fire) no grant counts (S1), and the card is refused by policy and listed in the Inbox,
+    as `offer`'s is."""
+    from server.orchestrator import untrusted
+    from server.services import background_jobs, permissions
+    asks, seen = permissions.current_asker() is not None, untrusted.external_seen()
+    due = [host for host in sorted(command_hosts(command))
+           if await judge(host, conversation_id, turn_seen=seen) == "outside_only"
+           and not (asks and await _grant(conversation_id, host) is not None)][:3]
+    if not due:
+        return ""
+    decisions = await _card(due, command, permissions.Context(conversation_id,
+                                                              job_id=background_jobs._inside_job.get()), before=True)
+    refused = next((decision for decision in decisions if not decision.allowed), None)
+    if refused is None:
+        return ""
+    return f"{refusal_note(due, asks=asks)} {refused.model_text or 'The user did not allow it.'}"
 
 
 async def offer(hosts, command: str, conversation_id: str | None) -> str:
@@ -759,10 +818,11 @@ async def offer(hosts, command: str, conversation_id: str | None) -> str:
     return refused.model_text or f"The user did not allow {names}."
 
 
-async def _card(sites: list[str], command: str, context) -> list:
-    """The card itself, asked after the run (`offer`) or answered from the Inbox (`allow_from_inbox`)."""
+async def _card(sites: list[str], command: str, context, *, before: bool = False) -> list:
+    """The card itself, asked before the run (`preflight`), after it (`offer`), or answered from the Inbox
+    (`allow_from_inbox`)."""
     from server.services import permissions
-    return await permissions.decide_many([request(site, command) for site in sites], context,
+    return await permissions.decide_many([request(site, command, before=before) for site in sites], context,
                                          title=f"Let commands in this conversation connect to {', '.join(sites)}?")
 
 
