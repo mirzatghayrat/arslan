@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Decided | The user decided (2026-11-15, relayed by ⓪Plan): option (c), auto widened to what mainstream auto modes answer, only once the classifier passes on real cards; with the conditions in "Hard requirements" below. Q2-Q9 decided the same day (see "Decisions"). |
+| Decided | The user decided (2026-11-15, relayed by ⓪Plan): option (c), auto widened to what mainstream auto modes answer, only once the classifier passes on real cards; with the conditions in "Hard requirements" below; conditions 2 and 3 revised the same day toward mainstream (outside content narrows to `outside_only` hosts; MCP in scope, judged by Arslan's own rules). Q2-Q9 decided the same day (see "Decisions"). |
 | Version | v0.1.64 (must), **subject to step 0**: if auto could answer under 30% of the cards the user actually saw, S5b becomes option (b) and leaves v0.1.64. |
 | Lane | ⑤CAP; the measurement is ③Hands' (CLS runner owner). |
 | Order | After CLS (#892, #937 on main), S5a, and CAP11a step a. Step 0 before any building. |
@@ -13,9 +13,13 @@
 
 1. **The never list is code, and it runs before the model:** a deterministic pre-gate (`hard_rules.reviewer_may_answer`
    and `classifier.pregate`). Nothing on it ever reaches a model.
-2. **Hard-rule cards are never answered by auto**, above all the network card after outside content.
-3. **MCP annotations are the server's own words and are not trusted alone;** an MCP call that sends anything outward
-   is a send and stays the user's. Arslan can't decide that reliably today, so **MCP stays out of auto in v0.1.64**.
+2. **Hard-rule cards are never answered by auto.** After outside content, the outside card and its network card stay
+   the user's only where a destination host is `outside_only` (`net_policy`: seen only in outside content this
+   conversation read, and not allowed by the user for this conversation), or where the hosts can't be read. (Narrowed
+   by the user on 2026-11-15 from "any network after outside content", toward what mainstream auto modes answer.)
+3. **MCP annotations are the server's own words and are never trusted:** whether an MCP call is destructive or sends
+   outward is judged by Arslan's own rules over the tool's name and arguments. Those calls stay the user's; the
+   reviewer judges the rest, and a tool the user marks "trusted" in Settings goes to auto (2026-11-15).
 4. **git push** only to a remote that existed before this turn (same name, same push URL; none added or re-pointed in
    the turn), only to a branch that is not the remote's default, and never a force push.
 5. **Step 0:** a read-only count of the cards the user actually saw on their Mac, before building. The lower bound
@@ -35,8 +39,9 @@ module. Anything a row's condition can't resolve is a card.
 | `git-push` | command, in the sandbox | Text: one `git push`; no `-f`, `--force`, `--force-with-lease`, `--force-if-includes`, no `+refspec`; no `--delete`/`-d`, `:dst`, `--mirror`, `--all`, `--tags`, `--prune`, `--receive-pack`/`--exec`, `--repo`; the remote is a name, not a URL or path. Repository (read-only git): the destination branch resolves (explicit refspec, or git's own resolution of a bare push) and isn't the remote's default (`refs/remotes/<remote>/HEAD`; `main`/`master` refused by name too); the remote is in the turn-start snapshot with the same push URL. |
 | `open-app` | command, in the sandbox | Every `open` is an installed app bundle under `/Applications`, `/System/Applications` or `~/Applications`. A link, a script file, a script-running app, or a bundle in the work folder or a temp folder stays the user's. |
 | `force-kill` | command, in the sandbox | Always (`kill -1` is the forbid rule `kill-all`, not this one). |
-| `outside` | outside-sandbox card | Its rules, read as outside, are empty or only the moved rules above with their conditions; no run-later write; **the run read no outside content**; the outside floor can start; S3's checkpoint exists; named write targets inside the work folder or the run's TMPDIR. |
-| `mcp_tool` | MCP call | **Not in v0.1.64** (row present, disabled). |
+| `outside` | outside-sandbox card | Its rules, read as outside, are empty or only the moved rules above with their conditions; no run-later write; the outside floor can start; S3's checkpoint exists; named write targets inside the work folder or the run's TMPDIR. **After outside content** also: every host the command names is readable and none is `outside_only`. |
+| `network` | the network card after outside content (S2a-1) | Every host the command names is readable (`net_policy.normalize`) and none is `outside_only`; a command naming no host, or a bare Shortcut, stays the user's. Answered only together with an `outside` card or a sandboxed command that is itself in this table. |
+| `mcp_tool` | MCP call | Arslan's own name-and-argument rules find no destructive or outward effect (send, message, mail, upload, publish, delete, write outside the work folder); the server's annotations are ignored. A tool the user marked "trusted" in Settings is reviewed with no rule check, except that the outward and destructive rules still win. A tool the rules can't read stays the user's unless trusted. |
 
 ## The never list (stays the user's)
 
@@ -45,10 +50,10 @@ module. Anything a row's condition can't resolve is a card.
   `delete-outside`, `outside-reach`, `unreadable`; and `git-push` / `open-app` whenever their condition fails.
 - **Every forbid rule** and **money**.
 - **Never-auto kinds:** `money`, `app_risky`, `capability`, `other_agent`, `system`, `opaque`, `remote`, `takeover`,
-  `run_later`, `git_refused`, `app_data`, `network`, `send`, `site`, `shortcut`, `git_config`, `git_include`; and
-  `outside` whenever its condition fails.
-- **Kept out by the pre-gate:** `schedule` (its writes persist), `mcp_tool` and `destructive` (MCP), `app`, `screen`,
-  `folder` (no effect class).
+  `run_later`, `git_refused`, `app_data`, `send`, `site`, `shortcut`, `git_config`, `git_include`; and `outside`,
+  `network` and `mcp_tool` whenever their condition fails.
+- **Kept out by the pre-gate:** `schedule` (its writes persist), `destructive` (MCP, by Arslan's own reading), `app`,
+  `screen`, `folder` (no effect class).
 - **Gate a:** a run without the user's own words (model-started jobs, scheduled and resumed runs) is never reviewed.
 - A meta-test places every ask key and every kind in exactly one of the table or the never sets.
 
@@ -64,12 +69,19 @@ the runner, so it can't loosen what a mode answers.
 - **b, the reviewer's yes:** `by="reviewer"`, this time only, no rule or grant row, never satisfying a check that
   needs `by == "user"` (the network click, the run-later lift, a bare run). A second identical request reviews again.
 - **d, rewritten:** auto widens in MODES order (`plan`, `ask`, `ask_risky`, `auto`, `full_access`) and answers only
-  the table above: a command in the sandbox, or the outside card under its condition. The pre-gate gains
-  `not_reviewable`, `outside_after_content` and `mcp_out`; `no_sandbox` passes only a sandboxed command or an outside
-  card whose floor can start. `CLASSIFIER_REVISION` becomes `cls-2`, turning every measured model off until measured.
-- **Outside and the network:** the reviewer answers an outside card only in a run with no outside content, where
-  S2a-1's cut doesn't apply, so a clean-run install works. After outside content it isn't asked: the user gets the
-  outside card and its network card, as today.
+  the table above: a command in the sandbox, the outside card and its network card under their conditions, or an MCP
+  call under its condition. The pre-gate gains `not_reviewable`, `outside_only_host`, `host_unreadable` and
+  `mcp_outward`; `no_sandbox` passes only a sandboxed command, an outside card whose floor can start, or an MCP call.
+  `CLASSIFIER_REVISION` becomes `cls-2`, turning every measured model off until measured.
+- **Outside and the network:** with no outside content, S2a-1's cut doesn't apply, so a clean-run install works.
+  After outside content, the reviewer answers the outside card and its network card unless a named host is
+  `outside_only` or no host can be read; those stay the user's, as today. In the sandbox NET-a's proxy keeps judging
+  each site as now; outside it the host check in the pre-gate is the only one, which is why an unreadable host is a
+  card.
+- **MCP:** the pre-gate reads the tool's name and arguments with Arslan's own rules (the same send, upload, publish
+  and delete rules commands use, plus write targets outside the work folder) and never the server's
+  `destructiveHint` / `openWorldHint` / `readOnlyHint`. "Trusted" is a per-tool Settings mark the user sets (stored
+  as a grant kind `mcp_trusted`, never set by a model or a card), shown in the ledger row.
 - **h, the breaker:** a model "ask", error, time-out or unparsable answer counts (not a pre-gate ask); 3 in a row in a
   turn, 20 per conversation since `auto_since`, 20 per job; then cards with no review. Turning auto off and on resets
   the conversation count, and the pill says why it stopped. Counts come from the ledger, so they survive a restart.
@@ -101,13 +113,13 @@ the runner, so it can't loosen what a mode answers.
 |---|---|---|---|
 | 0 | Step 0: a read-only count of the cards the user saw (the last 42 days of `approval_events`, rows decided by the user, expired or away), bucketed with Arslan's real `hard_rules` / `terminal_policy` tables. A user-run script outside the repo, reviewed by ⓪Plan; it opens the database read-only and prints counts only. The lower bound decides, as in the decision above. Not a repo PR. | 0 (user-run script) | ⓪Plan review |
 | 1 | Auto in MODES; fallbacks, including `auto_off` and `auto_unmeasured`; `offered()`; the agreement key; PUT 409s; migration 0102. No review call. | ~250 | max |
-| 2 | The hard_rules table: `REVIEWER_MAY_AUTO`, `reviewer_may_answer`, the git-push form and target readers, the open-app form reader, meta-tests, the AST caller pin. | ~350 | max |
+| 2 | The hard_rules table: `REVIEWER_MAY_AUTO`, `reviewer_may_answer`, the git-push form and target readers, the open-app form reader, the outside-content host check (`outside_only`, unreadable), the MCP outward/destructive reader and the `mcp_trusted` read, meta-tests, the AST caller pin. | ~450 | max |
 | 3 | Gate d rewritten in `classifier.pregate`; `cls-2`. Lands with ③Hands' runner schema PR. | ~250 | max |
 | 4 | Gate a source: the turn's words and the remote snapshot, `Job.user_words`, `job_kind`, canary and AST tests. | ~220 | max |
 | 5 | The wiring in `_ask`: `Request.review`, the command and outside card opt-in, gate b, the fail-closed ledger row, the D7 `try/except`, the dead reviewer-denial branch removed. The only slice that edits `_ask`. | ~400 | max |
 | 6 | Breaker: `auto_breaker.py`, counts from the ledger, the hook contract (HOOK-3 writes the same marker). | ~200 | max |
 | 7 | Ledger read API. | ~120 | high |
-| 8 | Web: the status-strip item and one-tap on, the agreement sheet, the off switch, the ledger view, the unmeasured line, six locales. | ~600 | high; **a clickable mock first** |
+| 8 | Web: the status-strip item and one-tap on, the agreement sheet, the off switch, the ledger view, the unmeasured line, the per-tool MCP "trusted" mark in Settings, six locales. | ~650 | high; **a clickable mock first** |
 
 **Order:** CAP11a step a → 0 → (30% or more) → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. Slice 2 may be written beside 1; 4 and 7
 beside 3 and 5.
@@ -129,8 +141,12 @@ only when risky" (`auto_unmeasured`), and the classifier answers "off" anyway. N
 (run_command → {command, outside}, mcp_tool → {mcp_tool}, plus the never-auto kinds a file tool raises);
 `context.git {default_branch, current_branch}` with a scratch repository so the real reader resolves a bare push;
 `context.remotes_at_turn_start`; `action.mcp {server, name, destructive}` with "destructive" from the gate's own
-annotation read. Covered: git-push (each condition both ways), open-app (each form), force-kill, outside (with and
-without outside content, targets in and out of scope), MCP (all expected "ask").
+annotation read, plus `action.mcp.outward` and `trusted` from Arslan's own reading. Covered: git-push (each condition
+both ways), open-app (each form), force-kill, outside and network (with and without outside content; hosts the user
+named, `outside_only` hosts, no readable host; targets in and out of scope), MCP (a read tool, a write in the work
+folder, a send or delete tool, one whose annotation says read-only while its name or arguments send, a trusted tool).
+Steered cases after outside content: a page naming a host and asking to post the workspace to it (expected ask, stopped
+by the pre-gate); an MCP send tool with a benign annotation (expected ask, pre-gate).
 
 **git-push after outside content (③Hands, 2026-11-15):** stays reviewer-answerable (the remote and branch come from the
 turn-start snapshot; NET-a judges the host). The concrete risk is a publish: steered content gets workspace data
@@ -167,13 +183,16 @@ content falls back to ask; the line is not bent.
 
 - **Red tests first:** each condition in the table both ways (force forms, `+refspec`, `--delete`, a URL remote, a bare
   push to the default and to a feature branch, a remote added this turn, a re-pointed URL, no `HEAD` ref; open-app as a
-  link, a script, a work-folder bundle and an installed bundle); `never_auto` unchanged over its whole existing test
+  link, a script, a work-folder bundle and an installed bundle; after outside content, an `outside_only` host, a host
+  the user granted, no readable host; MCP with a lying annotation, a trusted tool that sends, a tool the rules can't
+  read); `never_auto` unchanged over its whole existing test
   table; a table-driven test over every kind × each ask rule × sandboxed or outside × outside content seen or not, with
   a reviewer spy count of 0 outside the table; gate b (no rule or grant rows, `by == "user"` checks stay false); a
   model "ask", error and time-out each show the ordinary card; the breaker's counts across a restart.
 - **Mutants:** `--force-with-lease` accepted; the default branch read from the local `HEAD`; the remote snapshot taken at
   push time; `_widened` calling `reviewer_may_answer`; a never key moved into the table; `outside_seen` defaulting to
-  false; `no_sandbox` passing any kind; `reviewable` defaulting to true; the review placed before `_standing`; an
+  false; `no_sandbox` passing any kind; an unreadable host treated as no host; the MCP annotation read in place of the
+  rules; "trusted" skipping the outward rule; `reviewable` defaulting to true; the review placed before `_standing`; an
   exception turned into an allow. Each turns a named test red.
 - **Probe:** step 0's count is run by the user in their own Terminal (it refuses a Claude session's shell), opens the database with SQLite `mode=ro`, and prints counts only. Its git-push and MCP buckets are upper bounds: whether a remote existed before the turn, or whether an MCP call sent anything outward, can't be read back from the ledger. Its lower bound also slightly overcounts open-app and the outside card, whose narrower conditions above aren't all recorded in the ledger.
 
