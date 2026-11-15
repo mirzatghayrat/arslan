@@ -362,56 +362,84 @@ def view(entries: list[Path]) -> dict[Path, Answer | None]:
 
 #: HR-2b: the files the outgoing commits change, names only (no external diff, no textconv), NUL-separated.
 _OUTGOING = ("-c", "core.fsmonitor=false", "diff", "--name-only", "--no-ext-diff", "--no-textconv", "-z")
-#: The remote a `git push` names (its first word after `push` and its options), when it is a plain remote name.
 #: HR-2b: each local branch's upstream, the current one marked `*` (`*` alone: no upstream configured).
 _UPSTREAM = ("for-each-ref", "--format=%(HEAD)%(upstream)", "refs/heads/")
-_PUSH_REMOTE = re.compile(r"\bpush(?:\s+-\S+)*\s+([A-Za-z0-9][\w.-]*)(?=\s|$)")
-
-
-#: git reads the repository, its work tree and how it finds them from these variables; a command that names one
-#: anywhere in its text may set it for the push, inline, through `env`, or exported earlier.
-_GIT_ENVIRONMENT = re.compile(r"GIT_[A-Za-z0-9_]*")
+#: The branch HEAD names (fails when detached): a refspec on the line is listed only when it is that branch.
+_CURRENT = ("symbolic-ref", "-q", "HEAD")
+#: A plain remote name, as the diff base `refs/remotes/<name>/HEAD` reads it.
+_REMOTE_NAME = re.compile(r"[A-Za-z0-9][\w.-]*")
+#: Push options that send refs other than the current branch's commits, or none: `outgoing_ci` reads only the current
+#: branch, so with one of these it says it couldn't list. A short cluster with `d` deletes.
+_OTHER_REFS = re.compile(r"--(?:all|mirror|tags|follow-tags|prune|delete)|-[46fnquv]*d[46dfnquv]*")
 
 
 def _push_here(command: str) -> tuple[str, ...] | None:
-    """The words after `push` of the one `git push` in `command`, when it pushes the repository of the folder the
-    command runs in, as `shell_grammar.read` reads the text: understood, one `git push` with nothing between `git` and
-    `push` (no option that names a repository, a work tree or a setting), run in the work folder itself (no `cd` or
-    `pushd` before it, in a ( … ) or a bash -c too), and no git variable named in the text. Else None: the push card's
-    readers say they couldn't list (HR-2b, docs/sessions.md §12: the card states the real consequence or says it
-    can't). It only reads: whether the push asks is decided elsewhere."""
+    """The words after `push`, quotes removed, when `command` is a single `git push` of the repository in the folder it
+    runs in, as `shell_grammar.read` reads it: understood; one simple command and nothing else in the text (anything
+    run before it in the same text, a commit, a checkout or a remote change, would make a reading taken now stale);
+    no assignment before it (one may change where git finds the repository or its config); `git push` with nothing
+    between `git` and `push` (no option that names a repository, a work tree or a setting). Being the only command, it
+    runs in the work folder itself. Else None: the push card's readers say they couldn't list (HR-2b,
+    docs/sessions.md §12: the card states the real consequence or says it can't). It only reads: whether the push asks
+    is decided elsewhere."""
     from server.services import shell_grammar
-    if _GIT_ENVIRONMENT.search(command):
-        return None
     reading = shell_grammar.read(command)
-    pushes = [(words[2:], where) for words, where in zip(reading.commands, reading.folders)
-              if len(words) > 1 and words[0].lower() == "git" and words[1] == "push"]
-    gits = [words for words in reading.commands if words and words[0].lower() == "git" and "push" in words]
-    if len(pushes) != 1 or len(gits) != 1 or pushes[0][1] != ("",):
+    if len(reading.commands) != 1 or reading.effects != reading.commands:
         return None
-    return pushes[0][0]
+    [words] = reading.commands
+    if len(words) < 2 or words[0].lower() != "git" or words[1] != "push":
+        return None
+    return words[2:]
+
+
+def _outgoing_refs(args: tuple[str, ...]) -> tuple[str | None, str | None] | None:
+    """The remote and the refspec a push's words name (each None when not written), when `outgoing_ci` can read what
+    it sends: only options `_PUSH_FLAGS` reads past and none of `_OTHER_REFS`, at most a remote and one refspec, the
+    remote a plain name. Else None. The refspec is compared with the current branch by the caller, so a `:` or `+`
+    form never matches it."""
+    named = []
+    for word in args:
+        if word.startswith("-"):
+            if not _PUSH_FLAGS.fullmatch(word) or _OTHER_REFS.fullmatch(word):
+                return None
+        else:
+            named.append(word)
+    if len(named) > 2 or (named and not _REMOTE_NAME.fullmatch(named[0])):
+        return None
+    return (named[0] if named else None), (named[1] if len(named) == 2 else None)
 
 
 def outgoing_ci(folder: Path, command: str) -> list[str] | None:
     """HR-2b: the CI files (`run_later.is_ci_file`) the commits `command` (a `git push` run from `folder`) sends
     change, asked as `view` asks (`_each`: pinned environment, read-only seatbelt, time limit): `<upstream>..HEAD`
-    when the current branch has an upstream configured, else `<remote>/HEAD..HEAD` for the remote it names (origin
-    when none). None: couldn't list (no repository at or above `folder`, or git failed or timed out on any read); the
-    caller says so and the card still shows; so it is when the push may use another repository (`_push_here`)."""
+    when the current branch has an upstream configured (on the remote named, when one is), else
+    `<remote>/HEAD..HEAD` for the remote it names (origin when none). Only the current branch is read: a refspec
+    on the line must be `HEAD` or that branch. None: couldn't list (no repository at or above `folder`, a push this
+    can't read as one of the current branch from this folder's repository (`_push_here`, `_outgoing_refs`), or git
+    failed or timed out on any read); the caller says so and the card still shows."""
     from server.services import run_later
     here = Path(os.path.realpath(folder))
     entry = next((p / ".git" for p in (here, *here.parents) if os.path.lexists(p / ".git")), None)
-    if entry is None or _push_here(command) is None:
+    args = _push_here(command)
+    refs = _outgoing_refs(args) if args is not None else None
+    if entry is None or refs is None:
         return None
+    remote, spec = refs
+    if spec is not None and spec != "HEAD":
+        current = _each([entry], _CURRENT)[entry]
+        if current is None or current.decode("utf-8", errors="surrogateescape") != f"refs/heads/{spec}\n":
+            return None
     marks = _each([entry], _UPSTREAM)[entry]
     if marks is None:
         return None
     lines = marks.decode("utf-8", errors="surrogateescape").split("\n")
-    if next((line[1:] for line in lines if line.startswith("*")), ""):
+    upstream = next((line[1:] for line in lines if line.startswith("*")), "")
+    if upstream:
+        if remote is not None and not upstream.startswith(f"refs/remotes/{remote}/"):
+            return None             # its upstream is on another remote than the one named
         base = "@{upstream}"        # configured: a failed read is "couldn't list", never the remote HEAD instead
     else:
-        named = _PUSH_REMOTE.search(command)
-        base = f"refs/remotes/{named.group(1) if named else 'origin'}/HEAD"
+        base = f"refs/remotes/{remote or 'origin'}/HEAD"
     out = _each([entry], (*_OUTGOING, f"{base}..HEAD", "--"))[entry]
     if out is None:
         return None

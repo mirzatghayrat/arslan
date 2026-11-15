@@ -191,7 +191,8 @@ def _diffs(fake: _Popen) -> list[str]:
 
 
 def test_with_no_upstream_it_reads_the_named_remotes_head(repo_dir, monkeypatch):
-    fake = _Popen("answers", f"{CI}\0".encode(), answers={"for-each-ref": ("answers", b" refs/remotes/o/x\n*\n")})
+    fake = _Popen("answers", f"{CI}\0".encode(), answers={"for-each-ref": ("answers", b" refs/remotes/o/x\n*\n"),
+                                                          "symbolic-ref": ("answers", b"refs/heads/topic\n")})
     monkeypatch.setattr(git_config_guard.subprocess, "Popen", fake)
     assert git_config_guard.outgoing_ci(repo_dir, "git push -u zz-remote topic") == [CI]
     assert _diffs(fake) == ["refs/remotes/zz-remote/HEAD..HEAD"]
@@ -505,6 +506,20 @@ ELSEWHERE = {
     "cd": "cd zz && git push", "cd-may-fail": "cd zz; git push", "pushd": "pushd zz && git push",
     "subshell": "( cd zz && git push )", "inner-shell": "bash -c 'cd zz && git push'",
     "unreadable": "git push `zz`", "second-push-elsewhere": "git push && git -C zz push",
+    # a setting for the push that may change where git finds the repository or its config, however it is written
+    "inline-common-dir": "GIT_COMMON_DIR=zz git push", "inline-quoted-name": "G''IT_COMMON_DIR=zz git push",
+    "inline-backslashed-name": "G\\IT_COMMON_DIR=zz git push", "env-common-dir": "env GIT_COMMON_DIR=zz git push",
+    "env-quoted-name": "env G''IT_COMMON_DIR=zz git push", "env-backslashed-name": "env G\\IT_COMMON_DIR=zz git push",
+    "exported-quoted-name": "export 'GIT_COMMON_DIR'=zz && git push",
+    "exported-backslashed-name": "export G\\IT_COMMON_DIR=zz; git push",
+    "inline-config-home": "XDG_CONFIG_HOME=zz git push", "env-config-home": "env XDG_CONFIG_HOME=zz git push",
+    "exported-config-home": "export XDG_CONFIG_HOME=zz; git push", "inline-home": "HOME=zz git push",
+    "env-home": "env HOME=zz git push", "exported-home": "export HOME=zz && git push",
+    "unset": "unset GIT_DIR; git push", "inline-other": "ZZ_STAND_IN=1 git push",
+    # a push after another command in the same text: what it reads now may be stale when the push runs
+    "after-commit": "git add .github/workflows/zz.yml && git commit -m zz && git push",
+    "after-checkout": "git checkout zz-other && git push", "after-remote-change": "git remote set-url origin zz; git push",
+    "after-other-command": "true && git push", "in-a-pipeline": "git push | cat", "through-a-wrapper": "sudo git push",
 }
 #: The run folder's own repository, named on the line: read closed as well (this reader does not resolve paths).
 SAME_FOLDER = {"C-dot": "git -C . push"}
@@ -520,9 +535,10 @@ def test_a_push_that_names_another_repository_lists_neither_destination_nor_ci_f
     assert (destination, git_config_guard.outgoing_ci(repo_dir, command)) == (None, None)
 
 
-@pytest.mark.parametrize("command", ["git push", "git push -u origin main", "sudo git push"])
+@pytest.mark.parametrize("command", ["git push", "git push -u origin main", "git push origin HEAD"])
 def test_a_push_in_the_run_folder_still_lists_both(repo_dir, monkeypatch, command):
-    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen("answers", f"{CI}\0{OTHER}\0".encode()))
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen(
+        "answers", f"{CI}\0{OTHER}\0".encode(), answers={"symbolic-ref": ("answers", b"refs/heads/main\n")}))
     assert git_config_guard.outgoing_ci(repo_dir, command) == [CI]
     monkeypatch.setattr(git_config_guard.subprocess, "Popen",
                         _Popen("answers", LISTING, answers={"for-each-ref": ("answers", b"*origin\n")}))
@@ -540,3 +556,37 @@ async def test_the_card_for_a_push_elsewhere_says_it_couldnt_list_them_and_shows
     assert command_confirm.PUSH_UNLISTED in frame["reason"] and CI not in str(frame)
     assert not any(item.startswith(DEST) for item in frame["summary"]["touches"])
     assert frame["command"] == command
+
+
+#: A push that sends refs other than the current branch's commits, or to another remote than its upstream's:
+#: `outgoing_ci` reads only the current branch against its upstream, so it says it couldn't list.
+OTHER_REFS = {
+    "other-branch": "git push origin zz-other", "colon-refspec": "git push origin zz-other:main",
+    "delete-refspec": "git push origin :zz-other", "forced-refspec": "git push origin +main",
+    "two-refspecs": "git push origin main zz-other", "all": "git push --all", "mirror": "git push --mirror origin",
+    "tags": "git push --tags", "follow-tags": "git push --follow-tags", "prune": "git push --prune origin",
+    "delete": "git push --delete origin main", "delete-short": "git push -d origin main",
+    "delete-in-cluster": "git push -fd origin main", "url-remote": "git push https://example.invalid/zz.git main",
+    "another-remote": "git push zz-fork",
+}
+
+
+@pytest.mark.parametrize("command", OTHER_REFS.values(), ids=OTHER_REFS)
+def test_a_push_of_refs_other_than_the_current_branch_says_it_couldnt_list(repo_dir, monkeypatch, command):
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen(
+        "answers", f"{CI}\0".encode(), answers={"symbolic-ref": ("answers", b"refs/heads/main\n")}))
+    assert git_config_guard.outgoing_ci(repo_dir, command) is None
+
+
+def test_a_push_to_a_url_with_no_upstream_says_it_couldnt_list(repo_dir, monkeypatch):
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen(
+        "answers", f"{CI}\0".encode(), answers={"for-each-ref": ("answers", b"*\n")}))
+    assert git_config_guard.outgoing_ci(repo_dir, "git push https://example.invalid/zz.git") is None
+    assert git_config_guard.outgoing_ci(repo_dir, "git push zz-remote") == [CI]
+
+
+def test_a_detached_head_with_a_refspec_says_it_couldnt_list(repo_dir, monkeypatch):
+    monkeypatch.setattr(git_config_guard.subprocess, "Popen", _Popen(
+        "answers", f"{CI}\0".encode(), answers={"symbolic-ref": ("fails", b"")}))
+    assert git_config_guard.outgoing_ci(repo_dir, "git push origin main") is None
+    assert git_config_guard.outgoing_ci(repo_dir, "git push origin HEAD") == [CI]
