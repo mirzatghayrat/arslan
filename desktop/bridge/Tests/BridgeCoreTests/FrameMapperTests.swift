@@ -219,6 +219,26 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertEqual(no.first?["source"] as? String, "phone")
     }
 
+    /// #944 review: a token in the install card's URL (user, password, query, fragment) never reaches the phone's
+    /// `target`: the Mac's cleaned `phone.source` wins, and a frame without it has its URL cut the ledger's way.
+    func testATokenInTheSourceURLNeverReachesThePhone() throws {
+        let raw = "https://me:s3cret@github.com/x/excel?token=s3cret#s3cret"
+        func target(_ frame: [String: Any]) throws -> String? {
+            try XCTUnwrap(FrameMapper(conversationID: "c1").phoneMessages(for: frame, now: t0).first?.body)["target"] as? String
+        }
+        let base: [String: Any] = ["type": "propose_capability", "call_id": "cap", "name": "excel", "source_url": raw]
+        XCTAssertEqual(try target(base), "https://github.com/x/excel")
+        XCTAssertEqual(try target(base.merging(["phone": ["source": "https://github.com/x/excel"]]) { $1 }),
+                       "https://github.com/x/excel")
+        XCTAssertEqual(try target(base.merging(["source_url": "file:///etc/passwd?s3cret", "repo": "x/excel"]) { $1 }),
+                       "x/excel")
+        for frame in [base, base.merging(["phone": ["source": ""]]) { $1 }] {
+            let sent = try JSONSerialization.data(withJSONObject: try XCTUnwrap(
+                FrameMapper(conversationID: "c1").phoneMessages(for: frame, now: t0).first?.body))
+            XCTAssertFalse(String(decoding: sent, as: UTF8.self).contains("s3cret"))
+        }
+    }
+
     /// The capability kind on any card type reaches the phone too, keyed on `perm_kind` (not the Hands/web `kind`), and
     /// §5.13's absent rule holds when the Mac sends no `phone_can_approve`: not approvable for a capability card only.
     func testTheAbsentRuleKeysOnTheCapabilityKind() {

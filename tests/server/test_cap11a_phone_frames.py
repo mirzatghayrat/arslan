@@ -73,7 +73,8 @@ async def test_a_phone_yes_is_refused_by_the_cards_own_field_not_only_by_window_
         approvals.close_card(pending)
 
 
-async def test_a_phone_no_on_a_capability_card_is_accepted_with_its_note(_clean):
+async def test_a_phone_no_on_a_capability_card_is_accepted(_clean):
+    # The Bridge's cancel carries no note (approval.answer has none, §5.13); a note the frame does carry is kept.
     frame = copy.deepcopy(CARDS["install card"][0])
     pending = approvals.open_card("conv-d", frame, broadcast=False)
     try:
@@ -109,6 +110,16 @@ def test_the_phone_fields_come_from_the_card_and_are_cut_to_the_limits():
     assert checks["osv"]["result"] == "warn" and "2 known" in checks["osv"]["detail"]
     assert checks["lock"]["result"] == "pass" and ("ab" * 6) in checks["lock"]["detail"]
     assert all(len(c.get("detail", "")) <= 160 for c in out["checks"])
+
+
+def test_a_token_in_the_source_url_never_reaches_the_phone():
+    """#944 review: the phone's `source` is the URL as the ledger keeps it (`_ledger_url`), where a token can't ride."""
+    raw = "https://me:s3cret@github.com/x/excel?token=s3cret#s3cret"
+    assert capability_flow.phone_fields({"kind": "mcp", "name": "e", "source_url": raw})["source"] \
+        == "https://github.com/x/excel"
+    assert "source" not in capability_flow.phone_fields({"kind": "mcp", "name": "e", "source_url": "file:///x?s3cret"})
+    assert capability_flow.phone_fields({"kind": "skill", "name": "s", "repo": "https://t:s3cret@github.com/a/b"}) \
+        == {"source": "https://github.com/a/b"}
 
 
 def test_empty_lists_are_left_out_and_osv_not_asked_is_not_run():

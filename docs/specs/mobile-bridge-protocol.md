@@ -588,7 +588,7 @@ card and answers `sub_session.history` with `unknown_type`.
 **Capability cards reach the phone, view-only.** The install card (and any card whose `perm_kind` is `capability`)
 arrives as an `approval.request` with `risk: "install"` (no new risk value: `risk` stays one of the six) and
 `perm_kind: "capability"`. The phone shows it and offers only the no ("don't install"); a no is accepted from the
-phone with its note, as from any surface. Only the Mac window that asked approves it in v0.1.64.
+phone as an ordinary `approval.answer` deny (it carries no note; only a Mac window's no can add one). Only the Mac window that asked approves it in v0.1.64.
 
 **`approval.request` gains optional fields:**
 

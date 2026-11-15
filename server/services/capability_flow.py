@@ -109,7 +109,11 @@ def phone_fields(card: dict) -> dict:
     list is left out (it means the same as absent)."""
     clean = untrusted.clean_name
     out: dict = {}
-    if source := card.get("source_url") or card.get("repo"):
+    # #944 review: a URL goes to the phone as the ledger keeps it (`_ledger_url`: no user, password, query or
+    # fragment, where a token can ride; a scheme other than http(s) sends nothing); a bare `owner/name` as it is.
+    raw = card.get("source_url") or card.get("repo")
+    source = _ledger_url(raw) if isinstance(raw, str) and "://" in raw else raw
+    if source:
         out["source"] = clean(source, PHONE_SOURCE_MAX)
     connections = [c for c in card.get("connections") or [] if isinstance(c, dict)]
     abilities = (["Uses the network"] if card.get("network") else []) \

@@ -162,8 +162,12 @@ public final class FrameMapper {
         case "propose_capability":
             // §5.13: the install card (also a skill to save, a memory import), shown view-only with a "don't install" no.
             let name = Self.oneLine(frame["name"] as? String ?? "")
-            return card(.capability, "Add “\(name)”", frame["source_url"] as? String ?? frame["repo"] as? String ?? name,
-                        "install")
+            // #944 review: the target is the Mac's cleaned `phone.source`, else the frame's URL cut the same way
+            // (`plainURL`: no user, password, query or fragment, where a token can ride), else the repository or name.
+            let cleaned = (frame["phone"] as? [String: Any])?["source"] as? String ?? ""
+            let target = !cleaned.isEmpty ? cleaned
+                : Self.plainURL(frame["source_url"] as? String) ?? Self.oneLine(frame["repo"] as? String ?? name)
+            return card(.capability, "Add “\(name)”", target, "install")
         case "card_resolved":
             // The Mac decided the card — the phone's own answer, a click in a Mac window (first
             // answer wins), or the 30 minutes running out. This is the phone's business receipt (§5.3).
@@ -236,6 +240,16 @@ public final class FrameMapper {
     static func flag(_ value: Any?) -> Bool? {
         guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
         return number.boolValue
+    }
+
+    /// An http(s) URL as the Mac's ledger keeps it (`capability_flow._ledger_url`): scheme, host, port and path only,
+    /// at most 300 characters; anything else (another scheme, no host, unparsable) is nil.
+    static func plainURL(_ value: String?) -> String? {
+        guard let value, let parts = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = parts.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = parts.host, !host.isEmpty else { return nil }
+        let port = parts.port.map { ":\($0)" } ?? ""
+        return String(oneLine("\(scheme)://\(host)\(port)\(parts.percentEncodedPath)").prefix(300))
     }
 
     /// §5.13: the install card's `source`, `abilities` and `checks`, as the Mac built them within the spec's limits
