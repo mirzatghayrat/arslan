@@ -1,5 +1,5 @@
 /**
- * ASK1-a (v0.1.64): "Ask only for risky commands" is the default again. v0.1.63's known-issue sheet, 0070's notice and
+ * ASK1-a (v0.1.64): "Ask only when risky" (a mode, S5a) is the default again. v0.1.63's known-issue sheet, 0070's notice and
  * the markers that named "S2a-3 and #406" are gone; the one-time note has a text for each policy, in six languages,
  * and each names the other choice by the label Settings shows.
  */

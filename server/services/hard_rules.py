@@ -34,6 +34,8 @@ NEVER_AUTO_RULES = terminal_policy.ONCE_ONLY_RULES
 #: Full access still asks these (S5's table), so nothing automatic answers them either (CLS: never what full access
 #: would still ask).
 FULL_ACCESS_ASKS = frozenset({"send", "site", "shortcut"})
+# `outside` is never automatic on the reviewer/auto path only: Full access answers it by design
+# (permissions._widened), and S5b moves the outside card into auto scope.
 NEVER_AUTO_KINDS = (permissions._ONCE_ONLY | permissions._ALWAYS_ASKS | {"network"} | FULL_ACCESS_ASKS
                     | permissions._CONVERSATION_ONLY        # HR-1b: git_config, the user's own click only
                     | {"git_include"})                      # HR-1c: git after an include outside changed

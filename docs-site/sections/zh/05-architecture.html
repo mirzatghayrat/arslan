@@ -41,6 +41,6 @@
 <p class="evidence">启动细节：{{source:packaging/server_entry.py|冻结服务入口与端口策略}}；{{source:desktop/src-tauri/src/lib.rs|sidecar 握手与管道管理}}；{{source:server/ws/arslan.py|WebSocket 接入}}。</p>
 <h3>旧架构与新架构：保留复用，退役专家调度</h3>
 <div class="grid2"><div class="card"><span class="pill warn">历史</span><h3>多专家／Meta-Agent</h3><p>用户 → 前置 Router → 选择／创建 Spawn → 专家执行 → 汇总；专家提示词可进入留出评测和人工 Promote。产品需要用户理解专家身份、装备、名册和演进。</p></div><div class="card"><span class="pill">0.1.63 主路径</span><h3>One Arslan／统一循环</h3><p>用户 → 同一个 Agent loop → 按需加载 Skill 和调用工具 → 输出结果；普通事实在回答后提取。旧专家可转成 Skill，保留历史记录，由旧专家启动的任务在恢复时由 Arslan 接着做。专家路由不再是主执行路径，自 0.1.63 起，已没有回复能走到的专家时代代码、进化与整理机制以及研究审阅都已删除。</p></div></div>
-<p class="note">“统一循环”不等于“一切串行”或“永远不委派”。代码仍有受约束的只读 worker 能力；它不等于早期那套有独立人格、装备、演进与路由的专家产品系统。</p>
+<p class="note">“统一循环”不等于“一切串行”或“永远不委派”。模型可以把较大工作中相互独立的一部分交给子会话；它不等于早期那套有独立人格、装备、演进与路由的专家产品系统。</p>
 <p class="evidence">代码入口：{{source:desktop/src-tauri/src/lib.rs|桌面壳与 sidecar 生命周期}}；{{source:server/orchestrator/arslan.py|统一入口}}；{{source:server/orchestrator/tool_loop.py|执行循环}}；{{source:docs/companion/ADR-001-native-runtime.md|保留 Python 原生执行核心的决策}}；{{source:desktop/src-tauri/src/bridge.rs|Bridge 进程监督}}；{{source:server/ws/bridge.py|本地 Bridge 控制通道}}；{{source:docs/specs/mobile-bridge-protocol.md|跨设备协议}}。</p>
 </section>
