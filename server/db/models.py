@@ -518,6 +518,8 @@ class Run(Base):
     no_learning = Column(Boolean, nullable=False, default=False, server_default="0")
     status = Column(String(20), nullable=False, default="recording")
     # "recording" | "recorded" | "scored" | "score_failed" | "replayed" | "cancelled" | "interrupted"
+    # "scored"/"score_failed" and the two score columns below are historic only: nothing
+    # writes them since C7c-5a. DELETE-BY: v0.1.65, with the run-score display.
     overall_score = Column(Float, nullable=True)   # /10
     overall_badge = Column(String(10), nullable=True)  # "good" | "ok" | "bad"
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -569,7 +571,11 @@ class RunStep(Base):
 
 
 class RunEvaluation(Base):
-    """One judge dimension verdict for a Run (the 'how well it did' rows)."""
+    """One judge dimension verdict for a Run (the 'how well it did' rows).
+
+    Historic only: nothing writes these rows since C7c-5a.
+    DELETE-BY: v0.1.65, with the run-score display.
+    """
 
     __tablename__ = "run_evaluations"
 

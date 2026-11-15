@@ -445,11 +445,8 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # noqa: BLE001
         logger.warning("judgment ledger clean failed (non-fatal): %s", exc)
 
-    # E1 reaper: re-enqueue judge scoring for runs stuck in 'recorded'/'score_failed'
-    # for >10 minutes (process died around the fire-and-forget scoring task). The judge
-    # must see every live run or the evolution corpus silently starves. Best-effort.
-    # S3-M1: first sweep orphaned 'recording' rows to 'interrupted' — a run never
-    # survives a process restart (the run registry is process-local).
+    # S3-M1: sweep orphaned 'recording' rows to 'interrupted' — a run never
+    # survives a process restart (the run registry is process-local). Best-effort.
     try:
         from server.services import run_reaper
 
@@ -458,7 +455,6 @@ async def lifespan(app: FastAPI):
         await task_service.recover_interrupted()
         from server.services import background_jobs
         await background_jobs.report_interrupted()
-        await run_reaper.reap_stuck_runs()
     except Exception as exc:  # noqa: BLE001 — reaper must never block boot
         logger.warning("run reaper failed (non-fatal): %s", exc)
 
@@ -651,20 +647,6 @@ def create_app() -> FastAPI:
     from server.api import ssh_nodes as ssh_nodes_api
     app.include_router(ssh_nodes_api.router, prefix="/api/v1")
 
-    # Test-only helper to seed a spawn without going through the build socket.
-    # It creates a spawn with NO auth, so gate it twice: it must be explicitly
-    # opted in via ARSLAN_TEST_ROUTES=1 AND never register in the desktop app's
-    # server — even if the flag leaks into it (defense in depth, P0-3; C11).
-    import os
-
-    from server.config import settings as _test_route_settings
-
-    if (
-        os.environ.get("ARSLAN_TEST_ROUTES") == "1"
-        and not _test_route_settings.packaged
-    ):
-        _register_test_routes(app)
-
     from server.api import facts as facts_api
 
     app.include_router(facts_api.router, prefix="/api/v1")
@@ -785,7 +767,6 @@ def create_app() -> FastAPI:
     async def _ws_bridge(websocket: WebSocket):  # noqa: ANN202
         await bridge_endpoint(websocket)
 
-    import os
     from pathlib import Path
 
     from fastapi.responses import FileResponse
@@ -913,35 +894,6 @@ def create_app() -> FastAPI:
             return FileResponse(str(index_file), headers=_main_window_headers(request))
 
     return app
-
-
-def _register_test_routes(app: FastAPI) -> None:
-    from fastapi import Depends as _Depends
-    from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
-
-    from server.db.session import get_session as _get_session
-    from server.services import spawn_service as _spawn_service
-
-    # Behind the access token like every other route that writes (C11b, #338 review F7); with no
-    # token active (the dev harness) require_auth is a no-op, so the test fixtures are unchanged.
-    # No test seeds through it since C7c-4; its own gate tests (C11) still call it. DELETE-BY: v0.1.64, with
-    # C7c-5 (with spawn_service and the Spawn model).
-    @app.post("/api/v1/_test/seed_spawn", dependencies=[_Depends(require_auth)])
-    async def _seed_spawn(  # noqa: ANN202
-        body: dict, session: _AsyncSession = _Depends(_get_session)
-    ):
-        spawn = await _spawn_service.create_spawn(
-            session,
-            name=body.get("name", "test-spawn"),
-            domain_category="content-creator",
-            domain_subcategory="xiaohongshu",
-            capabilities=["content-generation"],
-            persona_role="beauty blogger",
-            persona_tone="friendly",
-            system_prompt="You are a beauty expert.",
-            generation_level=1,
-        )
-        return {"id": spawn.id}
 
 
 app = create_app()

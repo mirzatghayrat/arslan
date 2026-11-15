@@ -6,14 +6,12 @@ from sqlalchemy import select
 
 from arslan.llm import usage_sink
 from server.db.models import Run, RunStep
-from server.services import execution_context, host_run, run_recorder, run_registry
+from server.services import execution_context, host_run, run_registry
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_host_run_persists_trace_usage_and_output(execution_db, monkeypatch):
-    judged = []
-    monkeypatch.setattr(run_recorder, "schedule_scoring", judged.append)
     events = []
 
     async def body(emit):
@@ -36,7 +34,7 @@ async def test_host_run_persists_trace_usage_and_output(execution_db, monkeypatc
     assert (run.tokens_in, run.tokens_out) == (20, 10)
     assert len([e for e in events if e["type"] == "stream_start"]) == 1
     assert all(e["run_id"] == run.id for e in events)
-    assert steps and not judged
+    assert steps and run.overall_score is None
     assert not run_registry.active_for("host-test")
     assert execution_context.current_run_id() is None
 

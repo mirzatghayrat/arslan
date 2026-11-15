@@ -243,63 +243,6 @@ class ProviderConfigOut(BaseModel):
     last_health_at: str | None = None    # naive-UTC ISO
 
 
-# The spawn DTOs below are spawn_service's only (no route returns them since C7c-4). DELETE-BY: v0.1.64, with C7c-5.
-class EquipmentItemOut(BaseModel):
-    key: str
-    name: str
-    status: str
-    grant: str = "permanent"
-    granted_by: str = "create"
-    expires_turn: int | None = None
-
-
-class EquipmentOut(BaseModel):
-    toolsets: list[EquipmentItemOut] = []
-    skills: list[EquipmentItemOut] = []
-
-    @classmethod
-    def from_dict(cls, eq: dict) -> "EquipmentOut":
-        def items(rows):
-            return [
-                EquipmentItemOut(
-                    key=r["key"], name=r["name"], status=r["status"],
-                    grant=r.get("grant", "permanent"),
-                    granted_by=r.get("granted_by", "create"),
-                    expires_turn=r.get("expires_turn"),
-                )
-                for r in rows
-            ]
-        return cls(toolsets=items(eq.get("toolsets", [])), skills=items(eq.get("skills", [])))
-
-
-class SpawnOut(BaseModel):
-    id: int
-    name: str
-    domain: str
-    capabilities: list[str]
-    template_used: str | None = None
-    generation_level: int = 1
-    created_at: str
-    updated_at: str
-    equipment: EquipmentOut = EquipmentOut()
-    has_active_chat: bool = False
-    is_default: bool = False   # built-in agent: shipped with the app, cannot be deleted
-
-
-class ChatMessageOut(BaseModel):
-    id: int
-    role: str
-    content: str
-    timestamp: str
-
-
-class SpawnDetailOut(SpawnOut):
-    persona_role: str | None = None
-    persona_tone: str | None = None
-    system_prompt: str = ""
-    messages: list[ChatMessageOut] = []
-
-
 class FactIn(BaseModel):
     content: str
     sensitive: bool = False

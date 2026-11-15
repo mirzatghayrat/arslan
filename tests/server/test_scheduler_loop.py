@@ -52,7 +52,6 @@ async def memdb(tmp_path, monkeypatch):
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
     # No judge in these tests: finalize must not fire real scoring tasks.
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda run_id: None)
     yield Session
     for t in list(scheduler._tasks):
         t.cancel()
