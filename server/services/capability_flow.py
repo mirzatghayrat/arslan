@@ -393,8 +393,12 @@ async def propose(args: dict, *, conversation_id: str | None, ask, emit) -> dict
         capability_install.discard(locked)
         plugin_package.discard(plugin)
         outcome = approvals.LAST_OUTCOME.get() or "declined"
+        # CAP11a: the user's typed reason for the no, bounded as every card's "No" note is (permissions.decide), and
+        # in the sentence as a declined permission card's is: the model reads why in this same turn.
+        said = str(decision.get("note") or "").strip()[:500]
         return {"ok": False, "declined": True, "note": f"The user did not add it ({outcome}). Do the task another "
-                                                        "way or say what is missing; do not propose it again now."}
+                                                        "way or say what is missing; do not propose it again now."
+                                                        + (f" They said: {said}" if said else "")}
     if cand["kind"] == "plugin":
         result = await plugin_package.install(cand, plugin, decision.get("keys") or {})
     elif cand["kind"] == "mcp":
