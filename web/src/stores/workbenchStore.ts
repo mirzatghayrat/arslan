@@ -1,8 +1,13 @@
 import { create } from "zustand";
 import type { StoredArtifact } from "../api/client.types";
+import { sideChatsApi, type SideChat } from "../api/sideChats";
 
 /** WB1 (v0.1.64): a fixed row, Overview (WB1-2, the default), Working folder (id "files"), Progress and Browser. */
-export type WorkbenchTab = "overview" | "files" | "progress" | "browser";
+export type FixedTab = "overview" | "files" | "progress" | "browser";
+/** SIDE-2: a side chat's tab is its conversation id (`side-…`, SIDE-1's prefix). */
+export type SideTab = `side-${string}`;
+export type WorkbenchTab = FixedTab | SideTab;
+export const isSideTab = (tab: WorkbenchTab): tab is SideTab => tab.startsWith("side-");
 /** What the reader shows: a file Arslan delivered (its snapshot), a file on disk by path, (DIFF1) one path a
  * turn changed, as a side-by-side line diff opened from Overview's Changes, or (L11-0) a folder-rules file's text. */
 export type ReaderSource = { kind: "artifact"; file: StoredArtifact } | { kind: "path"; path: string }
@@ -46,7 +51,28 @@ interface WorkbenchState {
   takeUrl: () => string | null;
   browse: (folder: string | null) => void;
   setWidth: (w: number) => void;
+  /** SIDE-2: the panel at its widest (the side chat's expand). */
+  expanded: boolean;
+  toggleExpanded: () => void;
+  /** SIDE-2: each conversation's side chats (GET, oldest first), which of them have a tab, and the quote waiting in
+   * a side chat's input (never sent until the user sends). Open or closed is the window's to remember (SIDE-1). */
+  sides: Record<string, SideChat[]>;
+  openSides: Record<string, SideTab[]>;
+  sideQuotes: Record<string, string>;
+  loadSides: (parentId: string) => Promise<void>;
+  /** POST a side chat, branched at `branchMessageId` (none: the newest message, "+"), and select its new tab. */
+  startSide: (parentId: string, branchMessageId?: number | null, quote?: string) => Promise<SideTab>;
+  openSide: (parentId: string, id: SideTab) => void;
+  /** Only the tab closes: the side chat stays and comes back from Overview's list (the user, 2026-11-11). */
+  closeSide: (parentId: string, id: SideTab) => void;
+  deleteSide: (parentId: string, id: SideTab) => Promise<void>;
+  setSideQuote: (id: SideTab, quote: string | null) => void;
 }
+
+/** WB1 rule 7: a selected side chat that goes falls back to Overview, and the panel stays open. */
+const FALLBACK: FixedTab = "overview";
+/** Side chats deleted from this window (ids are never reused: `side-` and a UUID). */
+const deletedSides = new Set<string>();
 
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   open: false,
@@ -67,5 +93,50 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w)));
     try { localStorage.setItem(WIDTH_KEY, String(width)); } catch { /* storage off */ }
     set({ width });
+  },
+  expanded: false,
+  toggleExpanded: () => set({ expanded: !get().expanded }),
+  sides: {},
+  openSides: {},
+  sideQuotes: {},
+  loadSides: async (parentId) => {
+    const asked = new Set((get().sides[parentId] ?? []).map((c) => c.conversation_id));
+    const list = await sideChatsApi.list(parentId);
+    // One started while the list was on its way is kept, after the server's (it is the newest).
+    const since = (get().sides[parentId] ?? []).filter((c) => !asked.has(c.conversation_id)
+      && !list.some((x) => x.conversation_id === c.conversation_id));
+    // A list asked for before a delete went through still names the deleted one: it stays gone.
+    const kept = list.filter((c) => !deletedSides.has(c.conversation_id));
+    set({ sides: { ...get().sides, [parentId]: [...kept, ...since] } });
+  },
+  startSide: async (parentId, branchMessageId, quote) => {
+    const made = await sideChatsApi.create(parentId, branchMessageId ?? null);
+    const id = made.conversation_id as SideTab;
+    const list = (get().sides[parentId] ?? []).filter((c) => c.conversation_id !== id);
+    set({ sides: { ...get().sides, [parentId]: [...list, made] } });
+    if (quote?.trim()) get().setSideQuote(id, quote);
+    get().openSide(parentId, id);
+    return id;
+  },
+  openSide: (parentId, id) => {
+    const open = get().openSides[parentId] ?? [];
+    set({ open: true, tab: id, reader: null,
+      openSides: { ...get().openSides, [parentId]: open.includes(id) ? open : [...open, id] } });
+  },
+  closeSide: (parentId, id) => {
+    const open = (get().openSides[parentId] ?? []).filter((x) => x !== id);
+    set({ openSides: { ...get().openSides, [parentId]: open }, ...(get().tab === id ? { tab: FALLBACK } : {}) });
+  },
+  deleteSide: async (parentId, id) => {
+    // Marked before the request, so a list landing while it is on its way can't bring it back; unmarked if it fails.
+    deletedSides.add(id);
+    try { await sideChatsApi.remove(id); } catch (err) { deletedSides.delete(id); throw err; }
+    get().closeSide(parentId, id);
+    get().setSideQuote(id, null);
+    set({ sides: { ...get().sides, [parentId]: (get().sides[parentId] ?? []).filter((c) => c.conversation_id !== id) } });
+  },
+  setSideQuote: (id, quote) => {
+    const { [id]: _gone, ...rest } = get().sideQuotes;
+    set({ sideQuotes: quote ? { ...rest, [id]: quote } : rest });
   },
 }));

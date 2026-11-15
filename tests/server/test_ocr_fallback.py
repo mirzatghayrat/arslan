@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from server.db import session as db_session
 from server.db.migrations.versions._0009_knowledge import upgrade_sync
-from server.db.models import Base, KnowledgeChunk, Spawn
+from server.db.models import Base, KnowledgeChunk, Collection
 from server.services import ingest, ocr_fallback, ocr_vision
 
 # The exact wording a provider uses when it will not take an image. Not invented
@@ -36,13 +36,14 @@ async def memdb(monkeypatch):
     yield Session
 
 
-async def _spawn(Session) -> int:
+async def _collection(Session) -> int:
+    """The chunks' home: a collection (an expert's own well has no model since C7c-5b)."""
     async with Session() as db:
-        s = Spawn(name="S", domain_category="x", system_prompt="p")
-        db.add(s)
+        c = Collection(name="S")
+        db.add(c)
         await db.commit()
-        await db.refresh(s)
-        return s.id
+        await db.refresh(c)
+        return c.id
 
 
 def _png_with(text: str) -> bytes:
@@ -57,17 +58,17 @@ def _png_with(text: str) -> bytes:
     return buf.getvalue()
 
 
-async def _sources(Session, sid) -> list[str]:
+async def _sources(Session, cid) -> list[str]:
     async with Session() as db:
         return list((await db.execute(
-            select(KnowledgeChunk.source).where(KnowledgeChunk.spawn_id == sid)
+            select(KnowledgeChunk.source).where(KnowledgeChunk.collection_id == cid)
         )).scalars().all())
 
 
-async def _texts(Session, sid) -> list[str]:
+async def _texts(Session, cid) -> list[str]:
     async with Session() as db:
         return list((await db.execute(
-            select(KnowledgeChunk.text).where(KnowledgeChunk.spawn_id == sid)
+            select(KnowledgeChunk.text).where(KnowledgeChunk.collection_id == cid)
         )).scalars().all())
 
 
@@ -87,7 +88,7 @@ needs_vision = pytest.mark.skipif(
 async def test_a_model_that_cannot_see_hands_off_to_the_system_recogniser(
         memdb, monkeypatch):
     """The whole point of the round, asserted from the outside."""
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
 
     async def refuses(data, mime):
         raise RuntimeError(REFUSAL)
@@ -95,10 +96,10 @@ async def test_a_model_that_cannot_see_hands_off_to_the_system_recogniser(
     monkeypatch.setattr(ingest, "describe_image", refuses)
     monkeypatch.setattr(ocr_fallback, "current_ui_language", _en)
 
-    stored = await ingest.ingest_file(sid, "note.png", _png_with("tier two read this"))
+    stored = await ingest.ingest_file(None, "note.png", _png_with("tier two read this"), collection_id=cid)
 
     assert stored >= 1, "the handover produced no chunks"
-    assert "tier two read this" in " ".join(await _texts(memdb, sid))
+    assert "tier two read this" in " ".join(await _texts(memdb, cid))
 
 
 @pytest.mark.macos
@@ -109,7 +110,7 @@ async def test_an_unrelated_failure_does_not_start_an_ocr_pass(memdb, monkeypatc
     Without this, a fallback wired to `except Exception` would pass the happy
     case and quietly relabel every rate limit as a vision problem — which is the
     failure vision_errors was written to prevent in the first place."""
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
     ran = []
 
     async def refuses(data, mime):
@@ -119,7 +120,7 @@ async def test_an_unrelated_failure_does_not_start_an_ocr_pass(memdb, monkeypatc
     monkeypatch.setattr(ocr_fallback, "read_locally",
                         lambda *a, **k: ran.append(1) or ("x", ocr_vision.OK))
 
-    stored = await ingest.ingest_file(sid, "note.png", _png_with("do not read me"))
+    stored = await ingest.ingest_file(None, "note.png", _png_with("do not read me"), collection_id=cid)
 
     assert stored == 0
     assert ran == [], "a rate limit started an OCR pass"
@@ -134,22 +135,22 @@ async def test_transcription_and_description_are_labelled_differently(
     A retrieval hit renders as "[source] text", so these two strings are what
     the model is told about the trustworthiness of the words that follow. One is
     characters lifted off the picture; the other is a model's account of it."""
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
 
     async def describes(data, mime):
         return "a photograph of a whiteboard"
 
     monkeypatch.setattr(ingest, "describe_image", describes)
-    await ingest.ingest_file(sid, "described.png", _png_with("ignored"))
+    await ingest.ingest_file(None, "described.png", _png_with("ignored"), collection_id=cid)
 
     async def refuses(data, mime):
         raise RuntimeError(REFUSAL)
 
     monkeypatch.setattr(ingest, "describe_image", refuses)
     monkeypatch.setattr(ocr_fallback, "current_ui_language", _en)
-    await ingest.ingest_file(sid, "transcribed.png", _png_with("exact words here"))
+    await ingest.ingest_file(None, "transcribed.png", _png_with("exact words here"), collection_id=cid)
 
-    sources = await _sources(memdb, sid)
+    sources = await _sources(memdb, cid)
     transcribed = ocr_fallback.ocr_source("transcribed.png")
     described = ingest.described_source("described.png")
 
@@ -170,7 +171,7 @@ async def test_both_routes_go_through_the_one_degradation_helper(
     The brain-feed route and the /extract route are asserted to funnel into the
     same function; before this round they had DIFFERENT behaviour for the same
     file, which is what a second copy of the rule buys you."""
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
     seen = []
 
     def spy(data, *, ui_language=None, chosen_languages=None):
@@ -189,7 +190,7 @@ async def test_both_routes_go_through_the_one_degradation_helper(
     monkeypatch.setattr(ingest, "describe_image", refuses)
     monkeypatch.setattr(ocr_fallback, "current_ui_language", _en)
 
-    await ingest.ingest_file(sid, "brain.png", _png_with("x"))          # route 1
+    await ingest.ingest_file(None, "brain.png", _png_with("x"), collection_id=cid)          # route 1
     ingest._extract_file("chat.png", _png_with("x"), ui_language="en")              # route 2
 
     assert len(seen) == 2, "one of the two routes bypasses the shared helper"

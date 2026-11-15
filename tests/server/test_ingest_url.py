@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db import session as db_session
-from server.db.models import Base, KnowledgeChunk, Spawn
+from server.db.models import Base, KnowledgeChunk, Collection
 from server.db.migrations.versions._0009_knowledge import upgrade_sync
 from server.services import ingest
 
@@ -19,17 +19,18 @@ async def memdb(monkeypatch):
     yield Session
 
 
-async def _spawn(Session) -> int:
+async def _collection(Session) -> int:
+    """The chunks' home: a collection (an expert's own well has no model since C7c-5b)."""
     async with Session() as db:
-        s = Spawn(name="S", domain_category="x", system_prompt="p")
-        db.add(s)
+        c = Collection(name="S")
+        db.add(c)
         await db.commit()
-        await db.refresh(s)
-        return s.id
+        await db.refresh(c)
+        return c.id
 
 
 async def test_ingest_url_uses_web_extract_executor(memdb, monkeypatch):
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
     from server.registry import executors
     calls = {}
     class _Stub:
@@ -38,17 +39,17 @@ async def test_ingest_url_uses_web_extract_executor(memdb, monkeypatch):
             return {"ok": True, "url": args["url"], "text": "extracted page body about pricing"}
     monkeypatch.setitem(executors.EXECUTORS, "web_extract", _Stub())
 
-    n = await ingest.ingest_url(sid, "https://example.com/pricing")
+    n = await ingest.ingest_url(None, "https://example.com/pricing", collection_id=cid)
     assert n >= 1
     assert calls["url"] == "https://example.com/pricing"
     async with memdb() as db:
         rows = (await db.execute(select(KnowledgeChunk.text)
-                                 .where(KnowledgeChunk.spawn_id == sid))).scalars().all()
+                                 .where(KnowledgeChunk.collection_id == cid))).scalars().all()
     assert any("pricing" in t for t in rows)
 
 
 async def test_ingest_url_private_rejected(memdb, monkeypatch):
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
     from server.registry import executors
     class _Stub:
         async def execute(self, args):
@@ -56,14 +57,14 @@ async def test_ingest_url_private_rejected(memdb, monkeypatch):
     monkeypatch.setitem(executors.EXECUTORS, "web_extract", _Stub())
 
     with pytest.raises(ValueError):
-        await ingest.ingest_url(sid, "http://169.254.169.254/latest/meta-data/")
+        await ingest.ingest_url(None, "http://169.254.169.254/latest/meta-data/", collection_id=cid)
     async with memdb() as db:
-        rows = (await db.execute(select(KnowledgeChunk).where(KnowledgeChunk.spawn_id == sid))).scalars().all()
+        rows = (await db.execute(select(KnowledgeChunk).where(KnowledgeChunk.collection_id == cid))).scalars().all()
     assert rows == []   # nothing ingested
 
 
 async def test_ingest_url_passes_compress(memdb, monkeypatch):
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
     from server.registry import executors
     class _Stub:
         async def execute(self, args):
@@ -74,5 +75,5 @@ async def test_ingest_url_passes_compress(memdb, monkeypatch):
         seen["compress"] = compress
         return 1
     monkeypatch.setattr(ingest, "ingest_text", fake_ingest_text)
-    await ingest.ingest_url(sid, "https://x.com", compress=True)
+    await ingest.ingest_url(None, "https://x.com", compress=True, collection_id=cid)
     assert seen["compress"] is True

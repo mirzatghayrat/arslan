@@ -12,7 +12,7 @@ vi.mock("../api/client", () => {
   return {
     ApiError,
     request: vi.fn(),
-    api: { listScheduledTasks: vi.fn(), getScheduledTaskRuns: vi.fn(async () => []), listSpawns: vi.fn(async () => []),
+    api: { listScheduledTasks: vi.fn(), getScheduledTaskRuns: vi.fn(async () => []),
       markScheduledTaskSeen: vi.fn(async () => ({ seen_at: "2026-11-01T10:00:00" })) },
   };
 });

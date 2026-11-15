@@ -31,7 +31,6 @@ from server.db.models import (
     RunEvaluation,
     ScheduledTask,
     ScheduledTaskRun,
-    Spawn,
 )
 from server.orchestrator import arslan
 from server.services import (
@@ -52,21 +51,11 @@ async def memdb(tmp_path, monkeypatch):
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
     # No judge in these tests: finalize must not fire real scoring tasks.
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda run_id: None)
     yield Session
     for t in list(scheduler._tasks):
         t.cancel()
     scheduler._tasks.clear()
     await engine.dispose()
-
-
-async def _seed_spawn(Session, name: str = "S") -> int:
-    async with Session() as db:
-        spawn = Spawn(name=name, domain_category="general", system_prompt="sp")
-        db.add(spawn)
-        await db.commit()
-        await db.refresh(spawn)
-        return spawn.id
 
 
 async def _seed_task(Session, **overrides) -> int:
@@ -143,7 +132,7 @@ async def _wait_until(predicate, why: str, *, timeout: float = 5.0) -> None:
 async def test_tick_fires_due_task_end_to_end_ok(memdb, monkeypatch):
     # 0.1.63 (C1): rewritten from the expert fire. A row that still names a spawn
     # runs as an Arslan turn like every other.
-    spawn_id = await _seed_spawn(memdb)
+    spawn_id = 6       # a former expert's id: no Spawn row or foreign key since C7c-5b
     task_id = await _seed_task(memdb, spawn_id=spawn_id, conversation_id=None)
     cid = f"scheduled-{task_id}"
     calls: list = []

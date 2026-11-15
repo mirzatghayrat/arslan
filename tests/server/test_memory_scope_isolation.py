@@ -14,9 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import Base, Learning, MemoryProposal, Spawn, UserFact
+from server.db.models import Base, Learning, MemoryProposal, UserFact
 from server.orchestrator.tool_caller import ToolCaller, reset_caller, set_caller
 from server.registry.memory_executors import RememberExecutor
+from tests.server import pre_0103
 
 
 @pytest_asyncio.fixture
@@ -41,8 +42,7 @@ async def _no_caller_leak():
 
 async def _seed_spawn(maker, spawn_id: int, name: str, memory_facts: list | None = None) -> None:
     async with maker() as db:
-        db.add(Spawn(id=spawn_id, name=name, domain_category="d", system_prompt="p",
-                     memory_facts=memory_facts or []))
+        await pre_0103.add_spawn(db, spawn_id, name, memory_facts=memory_facts)   # no Spawn model since C7c-5b
         await db.commit()
 
 

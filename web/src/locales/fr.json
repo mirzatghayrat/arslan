@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Chargement du registre…",
       "empty": "Aucune capacité enregistrée pour l'instant",
-      "equip_hint": "Arslan peut les utiliser directement.",
       "unimplemented_note": "Non implémenté — simple entrée de catalogue, ne peut pas être équipé.",
       "orchestrator_note": "Par sécurité, réservés à Arslan lui-même — non attribuables aux experts.",
       "degraded": "SANS SANDBOX",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Intérêt pour Arslan"
-    },
-    "equip": {
-      "action": "Équiper un spawn…",
-      "loading": "Chargement des spawns…",
-      "empty": "Aucun spawn pour l'instant.",
-      "error": "Échec de l'équipement — modification annulée."
     },
     "compat": {
       "full": "complète",
@@ -1586,6 +1579,13 @@
     "devicesTitle": "Appareils locaux de confiance",
     "devicesDesc": "Les commandes du bac à sable n'atteignent pas ton réseau local par défaut (routeur, NAS, imprimante, autres ordinateurs). Un appareil ajouté ici est joignable, sur tous ses ports. Un appareil ajouté par son nom garde l'adresse qu'il a maintenant, vérifiée de nouveau à chaque connexion. Les adresses de ce Mac ne peuvent pas être ajoutées.",
     "devicesEmpty": "Aucun appareil de confiance pour l'instant.",
+    "sitesTitle": "Sites",
+    "sitesDesc": "Les commandes peuvent toujours se connecter à ces sites, même après avoir lu du contenu externe.",
+    "sitesEmpty": "Aucun site dans la liste pour l'instant.",
+    "sitesPlaceholder": "Un site, par exemple example.com",
+    "sitesInputLabel": "Site",
+    "sitesAdd": "Ajouter",
+    "sitesRefused": "« {{value}} » ne peut pas être ajouté. Indiquez un site précis, comme example.com, et non une simple fin de domaine comme com.",
     "placeholder": "Un nom ou une IP du réseau local, par exemple nas.local ou 192.168.1.20",
     "inputLabel": "Nom ou IP du réseau local",
     "add": "Faire confiance",
@@ -1631,5 +1631,34 @@
     "start": "Démarrer",
     "startsIn": "Démarre en {{mode}}",
     "saveFailed": "Impossible de changer le mode. Réessayez."
+  },
+  "sideChat": {
+    "tab": "Discussion annexe {{n}}",
+    "new": "Nouvelle discussion annexe",
+    "start": "Démarrer une discussion annexe",
+    "reply": "Répondre",
+    "barLabel": "Texte sélectionné",
+    "expand": "Agrandir",
+    "collapse": "Réduire",
+    "closeTab": "Fermer l’onglet (la discussion annexe est conservée)",
+    "scope": "Lit cette conversation jusqu’à l’embranchement. Lecture seule : elle peut chercher des informations, mais ne peut ni lancer de commandes, ni modifier de fichiers, ni retenir quoi que ce soit, ni planifier de tâches. Rien n’arrive dans la conversation principale à moins que vous ne l’y rameniez.",
+    "outside": "Des tours précédents ont peut-être lu du contenu externe : cette discussion annexe traite donc ce qu’elle lit comme du contenu externe, comme la conversation principale.",
+    "placeholder": "Posez une question sur cette conversation",
+    "empty": "Demandez ce que vous voulez sur cette conversation. La réponse reste ici.",
+    "thinking": "Réflexion…",
+    "send": "Envoyer",
+    "removeQuote": "Retirer la citation",
+    "bringBack": "Ramener dans la principale",
+    "broughtBack": "Ajouté au champ de la conversation principale. Rien n’a été envoyé.",
+    "quoted": "Cité dans le champ de la conversation principale.",
+    "listH": "Discussions annexes",
+    "closed": "fermée",
+    "delete": "Supprimer cette discussion annexe",
+    "deleteAsk": "Supprimer cette discussion annexe ? Ses messages partent aussi. La conversation principale n’est pas modifiée.",
+    "cancel": "Annuler",
+    "confirmDelete": "Supprimer",
+    "deleted": "Discussion annexe supprimée.",
+    "deleteFailed": "Impossible de supprimer la discussion annexe.",
+    "startFailed": "Impossible de démarrer une discussion annexe."
   }
 }

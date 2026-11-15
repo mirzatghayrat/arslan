@@ -22,7 +22,6 @@ async def memdb(monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(db_session, "AsyncSessionLocal", Session)
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda run_id: None)
     yield Session
 
 

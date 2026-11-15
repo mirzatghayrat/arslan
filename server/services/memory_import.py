@@ -168,6 +168,11 @@ async def propose(args: dict, *, conversation_id: str | None, ask) -> dict:
                         "Offer to import them when the user is in the conversation."}
     actor = ctx.actor("user")
     text, typed_on = await _this_turns_message(conversation_id, ctx.source_message_id)
+    from server.services.side_chats import BACK_SOURCE
+    if typed_on == BACK_SOURCE:     # SIDE-2: a side chat's reply brought back carrying outside content is no paste
+        return {"ok": False, "nothing_to_import": True, "from_side_chat": True,
+                "note": "This message brings back a side chat's reply, and that side chat read outside content, so "
+                        "nothing in it can be imported. The user can paste the lines in a message of their own."}
     entries, left_out, too_many = await _sort(text, actor)
     if not entries:
         return {"ok": False, "nothing_to_import": True, "left_out": len(left_out) + too_many,

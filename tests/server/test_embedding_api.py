@@ -18,7 +18,6 @@ async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("ARSLAN_API_TOKEN", "")
     monkeypatch.setenv("ARSLAN_DB_PATH", str(tmp_path / "kb.db"))
     monkeypatch.setenv("ARSLAN_SPAWNS_DIR", str(tmp_path / "spawns"))
-    monkeypatch.setenv("ARSLAN_TEST_ROUTES", "1")
 
     import server.config as config
 
@@ -63,15 +62,13 @@ async def test_pending_reflects_stale_model_after_switch(client, monkeypatch):
     remaining even though every row already has *some* vector."""
     from sqlalchemy import text as sa_text
 
-    from server.db.models import Spawn
     from server.services import embedding_service
 
     async with client.db_maker() as s:
-        s.add(Spawn(id=1, name="s", domain_category="c", system_prompt="p"))
-        await s.flush()
+        await s.execute(sa_text("INSERT INTO collections (id, name) VALUES (1, 'notes')"))
         # Two rows already embedded under the OLD model, one never embedded.
         await s.execute(sa_text(
-            "INSERT INTO knowledge_chunks (spawn_id, source, chunk_index, text, embedding, embedding_model) "
+            "INSERT INTO knowledge_chunks (collection_id, source, chunk_index, text, embedding, embedding_model) "
             "VALUES (1,'a',0,'x',:b,'old-model'), (1,'a',1,'y',:b,'old-model'), (1,'a',2,'z',NULL,NULL)"),
             {"b": b"\x00\x00\x80?"})
         await s.commit()

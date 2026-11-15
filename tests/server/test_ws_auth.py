@@ -21,7 +21,6 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from server.db.models import Spawn
 from tests.server.conftest import build_ws_client
 
 # (path, human name) for each of the three token-guarded WS endpoints. The
@@ -34,23 +33,13 @@ WS_ENDPOINTS = [
 def _build_client(tmp_path, monkeypatch, portal, token: str) -> TestClient:
     """Build a TestClient whose app sees ``ARSLAN_API_TOKEN=token``.
 
-    Seeds one spawn (id=1) so the chat/sandbox handlers get past their spawn
-    lookup once the token check passes. ``ARSLAN_API_TOKEN`` is passed as env so
+    Seeds nothing (the expert row it once seeded went with the Spawn model, C7c-5b).
+    ``ARSLAN_API_TOKEN`` is passed as env so
     the factory's config reload makes ``config.settings.api_token`` reflect it.
     """
 
     async def _seed(maker):
-        async with maker() as s:
-            s.add(
-                Spawn(
-                    name="beauty-guru",
-                    domain_category="content-creator",
-                    domain_subcategory="xiaohongshu",
-                    capabilities=["content-generation"],
-                    system_prompt="You are a beauty expert.",
-                )
-            )
-            await s.commit()
+        return None   # C7c-5b: no expert row to seed; nothing reads one
 
     return build_ws_client(
         portal, tmp_path, monkeypatch, _seed,

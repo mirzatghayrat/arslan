@@ -11,7 +11,6 @@ import io
 import logging
 import logging.config
 import sys
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -29,7 +28,7 @@ FAKE_TOKEN = "fake-access-token-for-c11b-tests-0123456789"
 NON_ASCII_TOKEN = "tök€n-not-ascii"
 
 _ENV = ("ARSLAN_ENV", "ARSLAN_SECRET_KEY", "ARSLAN_API_TOKEN", "ARSLAN_PACKAGED", "ARSLAN_ALLOWED_ORIGINS",
-        "ARSLAN_ALLOWED_HOSTS", "ARSLAN_TEST_ROUTES")
+        "ARSLAN_ALLOWED_HOSTS")
 
 
 def _config(monkeypatch, **env):
@@ -402,35 +401,3 @@ def test_a_packaged_server_serves_no_api_explorer(monkeypatch):
     importlib.reload(security)
     dev = TestClient(main.create_app(), base_url="http://localhost")
     assert [dev.get(path).status_code for path in API_EXPLORER] == [200, 200, 200]
-
-
-# 5 ── F7: the seed route needs the access token ──────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_the_seed_route_needs_the_access_token(monkeypatch):
-    from server.db.session import get_session
-    from server.services import spawn_service
-    monkeypatch.setattr(spawn_service, "create_spawn", AsyncMock(return_value=SimpleNamespace(id=7)))
-
-    async def _no_session():
-        yield None
-
-    _config(monkeypatch, ARSLAN_TEST_ROUTES="1", ARSLAN_API_TOKEN=FAKE_TOKEN)
-    import server.main as main
-    app = main.create_app()
-    app.dependency_overrides[get_session] = _no_session
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        bare = await client.post("/api/v1/_test/seed_spawn", json={"name": "x"})
-        wrong = await client.post("/api/v1/_test/seed_spawn", json={"name": "x"},
-                                  headers={"Authorization": "Bearer nope"})
-        right = await client.post("/api/v1/_test/seed_spawn", json={"name": "x"},
-                                  headers={"Authorization": f"Bearer {FAKE_TOKEN}"})
-    assert (bare.status_code, wrong.status_code) == (401, 401)
-    assert right.status_code == 200 and right.json() == {"id": 7}
-    assert spawn_service.create_spawn.await_count == 1
-
-    _config(monkeypatch, ARSLAN_TEST_ROUTES="1")                           # the dev harness: no token, still open
-    app = main.create_app()
-    app.dependency_overrides[get_session] = _no_session
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        assert (await client.post("/api/v1/_test/seed_spawn", json={"name": "x"})).status_code == 200

@@ -258,6 +258,8 @@ async def test_0069_through_the_real_boot_on_an_activated_database(tmp_path):
                 await conn.exec_driver_sql(f"DROP TRIGGER {name}")
             await conn.exec_driver_sql("DROP TABLE arslan_messages_fts")
             await conn.exec_driver_sql("ALTER TABLE arslan_messages RENAME TO old_messages")
+            # A pre-0069 install had `spawns`; since C7c-5b a new one has not, and the old text names it.
+            await conn.exec_driver_sql(_PRE_0069[1])
             await conn.exec_driver_sql(_PRE_0069[3])
             await conn.exec_driver_sql(f"INSERT INTO arslan_messages ({_COLUMNS}) SELECT {_COLUMNS} FROM old_messages")
             await conn.exec_driver_sql("DROP TABLE old_messages")

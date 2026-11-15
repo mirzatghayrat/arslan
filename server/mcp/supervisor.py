@@ -696,6 +696,10 @@ class Supervisor:
             return StartResult(state, last_error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
         finally:
             self._notes.pop(sid, None)
+        # The session the listing ran on, or None when it was dropped meanwhile. Read in the step
+        # connect_and_discover returned in: every open happens inside its per-server write lock,
+        # which this start held until then, so no other session can have been cached since.
+        listed_on = mcp_session.manager.cached(sid)
         if self._gen.get(sid, 0) != gen:
             # Superseded while it opened (a verb moved the generation; a replaced plan whose cancel
             # was lost lands here too): a stale plan never caches. What it opened is closed and
@@ -705,16 +709,28 @@ class Supervisor:
             if newer is None or newer.done() or newer is asyncio.current_task():
                 await mcp_session.manager.drop(sid)
             return StartResult("starting")
-        if mcp_session.manager.generation(sid) != dropped_at:
+        if mcp_session.manager.generation(sid) != dropped_at and listed_on is None:
             # The session this start listed on was dropped before the start ended — another
             # caller's tools/list failed on it: never `ready` with no session behind it (ruling 11;
-            # Task 6 fix round 1, F1).
+            # Task 6 fix round 1, F1). A drop that came before this start's own open does not count
+            # (MCPF1): the session it opened is still cached, and it is the one the tools came from.
             line = ("the connection closed during start" if (server.get("transport") or "stdio") == "http"
                     else "the server exited during start — see its log below")
             tail = mcp_session.manager.stderr_tail(sid, secrets=secrets, since=began)
             text = line if not tail else f"{line}\n{tail}"
             return StartResult("failed", last_error=spawn_env.mask(text, secrets)[:LAST_ERROR_CAP])
         return StartResult("ready", tools=tools, tool_count=len(tools))
+
+    async def _drop_own_session(self, sid: int, gen: int) -> None:
+        """A plan ending `failed` (or parked) closes the session its attempt leaves cached, through the
+        same drop a switch-off uses: the process stops and its callers wake (MCPF1). Only while it is
+        still the current generation: then whatever is cached is its attempt's own — that attempt
+        dropped every older session before its open, sessions are opened only by attempts, and no
+        newer plan exists. A superseded plan touches nothing: the newer plan (or the verb that moved
+        the generation) drops and opens afresh itself, and its session is never closed under it.
+        Not between the attempts of a first start: the next attempt drops and reopens itself."""
+        if self._gen.get(sid, 0) == gen and mcp_session.manager.cached(sid) is not None:
+            await mcp_session.manager.drop(sid)
 
     async def _ensure_runtime(self, sid: int, server: dict) -> bool:
         """Arslan's pinned Node/uv for a bare npx/node/npm/uvx/uv (spec §B1). Never inside a start
@@ -780,6 +796,11 @@ class Supervisor:
         retry_in = PROBE_EVERY_S if result.state in ("parked", "needs_auth") else None
         result.next_retry_at = await self._set(sid, gen, result.state, error=result.last_error,
                                                retry_in=retry_in)
+        # MCPF1: the plan ends `failed` (or parked, or waiting for sign-in) — never with the process
+        # its last attempt opened still running behind that row: an error after the open (the tool
+        # write, a locked or full database) returned without dropping it. The state is written first,
+        # as a give-up does: a call the drop wakes reads why it was cut.
+        await self._drop_own_session(sid, gen)
         return result
 
     async def _set(self, sid: int, gen: int, state: str, *, error: str | None = None, ok: bool = False,
