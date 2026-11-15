@@ -591,7 +591,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
             if job.phase != "finished":
                 await ws.send_json(job.frame())
         for frame in goal_frames:
-            await ws.send_json(frame)
+            # L7-5b (#938 review): read before the history; a goal started meanwhile already sent its live frame
+            # above, and its stale "not started" card would replace it until the next update.
+            if background_jobs.goal_job(frame["job_id"]) is None:
+                await ws.send_json(frame)
         for card in approvals.pending_cards(conversation_id):
             await ws.send_json(card)
 

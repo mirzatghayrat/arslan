@@ -468,12 +468,13 @@ def test_a_protected_set_over_its_limits_refuses(tmp_path, monkeypatch):
 
 # -- the verdict through a whole turn: run in place, verify before and after -------------------------------------------
 
-async def _check_turn(_gates, monkeypatch, tmp_path, replies, run, *, outputs=(), more=()):
+async def _check_turn(_gates, monkeypatch, tmp_path, replies, run, *, outputs=(), more=(),
+                      command="python3 tests/run_checks.py", **native):
     """A goal job's turn with one `check:` line whose host run `run(n)` answers (and may write files first)."""
     from arslan.companion.contracts import TaskSpec
     from server.services import task_validation
     from server.services.task_repository import repository
-    line = _line("python3 tests/run_checks.py", outputs=outputs)
+    line = _line(command, outputs=outputs)
     goal = GoalSpec(objective="Make the staged check pass", checks=(*more, line),
                     protected=goal_mode.record_protected(tmp_path, (line,)))
     calls = {"turn": [], "host": []}
@@ -500,6 +501,7 @@ async def _check_turn(_gates, monkeypatch, tmp_path, replies, run, *, outputs=()
 
     async def tools():
         return [{"key": "run_command", "description": "d"}]
+    tools = native.pop("tools", tools)
     monkeypatch.setattr(task_validation, "_disk_context", disk)
     monkeypatch.setattr(goal_checks, "_working_folder", folder)
     monkeypatch.setattr(tool_loop, "_get_adapter", Adapter)
@@ -508,7 +510,7 @@ async def _check_turn(_gates, monkeypatch, tmp_path, replies, run, *, outputs=()
     async def body(emit):
         return await tool_loop.run_native(system="Goal fixture", user_content=goal.objective, history=[],
                                           resolve_tools=tools, emit=emit, on_chunk=lambda text: None,
-                                          allow_escalation=False, goal=goal, confirm_command=card)
+                                          allow_escalation=False, goal=goal, confirm_command=card, **native)
     spec = TaskSpec.model_validate({"id": "goal-task", "instruction": goal.objective, "locale": "en",
                                     "scope": {"kind": "task", "owner_id": "local", "task_id": "goal-task"},
                                     "acceptance": goal_mode.acceptance(goal)})
@@ -594,6 +596,85 @@ async def test_a_passing_check_is_run_again_by_the_host_and_a_two_check_goal_com
     assert calls["host"] == ["python3 tests/run_checks.py"] * 2
     assert "already succeeded" not in json.dumps(calls["turn"])
     assert task.phase == "succeeded" and (record.status, record.round) == ("complete", 2)
+
+
+# -- L7-5b: a no-progress stop runs the check: lines once, so the blocked reply carries a receipt --------------------
+
+def _no_progress(monkeypatch):
+    """K4a's repeated-failure stop, from the first step: every step is forced, and the cause is no progress."""
+    from arslan.runtime_policy import ProgressPolicy
+    monkeypatch.setattr(ProgressPolicy, "stopped", property(lambda self: True))
+
+
+async def test_a_no_progress_stop_runs_the_check_once_and_the_blocked_reply_carries_its_receipt(
+        _a_goal_job, monkeypatch, tmp_path):
+    _layout(tmp_path)
+    _no_progress(monkeypatch)
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "The check should now exit 0.",
+        lambda n: _exit(1, "Rule 2 of 4: failed", "FAILED rule 2: currency codes\nmore detail"))
+    assert calls["host"] == ["python3 tests/run_checks.py"]            # the host's own run, once
+    assert task.phase == "waiting_user" and task.pause_reason == "goal_blocked"
+    assert (record.status, record.round) == ("blocked", 1)
+    assert "command_not_executed" not in result["final"]
+    assert "check-1: code_test_assertion (exit 1: FAILED rule 2: currency codes)" in result["final"]
+    assert "more detail" not in result["final"]                         # the first error line only
+
+
+@pytest.mark.parametrize("how", ["hard", "soft"])
+async def test_a_budget_forced_step_runs_no_check_even_after_a_no_progress_stop(
+        how, _a_goal_job, monkeypatch, tmp_path):
+    from arslan.execution_budget import Budget
+    _layout(tmp_path)
+    if how == "soft":                   # a no-progress stop past the soft limit: the budget is a cause too
+        _no_progress(monkeypatch)
+        monkeypatch.setattr(Budget, "soft_reached", lambda self: True)
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Out of room.", lambda n: _exit(0, "pass"),
+        **({"max_tool_calls": 0} if how == "hard" else {}))
+    assert calls["host"] == []
+    assert record.status == ("budget_limited" if how == "hard" else "blocked")
+
+
+async def test_a_wrap_up_answer_after_a_no_progress_stop_runs_no_check(_a_goal_job, monkeypatch, tmp_path):
+    """Finish mode (a save tool offered): the answer comes from a wrap-up step, not a forced one, and stays as L7-5."""
+    _layout(tmp_path)
+    _no_progress(monkeypatch)
+
+    async def tools():
+        return [{"key": "run_command", "description": "d"}, {"key": "write_file", "description": "d"}]
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(0, "pass"), tools=tools)
+    assert calls["host"] == [] and record.status == "blocked"
+
+
+async def test_the_no_progress_check_is_still_refused_by_the_command_gate(_a_goal_job, monkeypatch, tmp_path):
+    _layout(tmp_path)
+    _no_progress(monkeypatch)
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(0, "pass"), command="rm -rf /")
+    assert calls["host"] == []                                          # `_never_runs`: refused before any card
+    assert record.status == "blocked" and "command_not_executed" not in result["final"]
+    assert "Arslan never runs this" in result["final"]                 # the refusal is the receipt
+
+
+async def test_the_no_progress_check_runs_at_most_once_in_a_round(_a_goal_job, monkeypatch, tmp_path):
+    """Two forced answers in one round (the first verdict sent back, never recorded): the host runs the check once."""
+    from server.orchestrator import turn_answer
+    _layout(tmp_path)
+    _no_progress(monkeypatch)
+    real, verdicts = turn_answer._goal_round, []
+
+    async def once_more(request, state, mode, report, host):
+        verdicts.append(host)
+        if len(verdicts) == 1:
+            return True, "Goal round 1. Not met: check-1."           # the round goes on, unrecorded
+        return await real(request, state, mode, report, host)
+    monkeypatch.setattr(turn_answer, "_goal_round", once_more)
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(1, "F"))
+    assert len(verdicts) == 2 and calls["host"] == ["python3 tests/run_checks.py"]
+    assert len(verdicts[0].runs) == 1 and verdicts[1].runs == ()
 
 
 async def _journal(execution_db, argv=("python3", "tests/run_checks.py"), args=None, finished=True):

@@ -110,10 +110,14 @@ async def finish(request: TurnRequest, state: TurnState, mode: StepMode, reply: 
         host = None
         if request.goal is not None:
             # L7-5: the host runs the goal's `check:` lines through `_run_tool`, in place, the protected set verified
-            # before and after; never on a forced step or in wrap-up, where no round follows.
+            # before and after; never on a forced step or in wrap-up, where no round follows. L7-5b: except once in a
+            # round on a step forced by a no-progress stop, so the blocked reply carries a receipt.
             from server.orchestrator import goal_checks
+            receipt = _no_progress_receipt(state, mode)
+            if receipt:
+                state.goal_receipt_round = state.goal_round
             host = (goal_checks.HostChecks(accepted=getattr(acceptance_runtime.progress.goal, "accepted", ()))
-                    if forced or mode.finishing or state.budget.soft_reached() else
+                    if not receipt and (forced or mode.finishing or state.budget.soft_reached()) else
                     await goal_checks.run(request, state))
         report = await task_validation.validate_output(acceptance_runtime, answer, tool_trace, model_adapter=a,
                                                        goal=request.goal, host_runs=host.runs if host else ())
@@ -178,6 +182,37 @@ async def finish(request: TurnRequest, state: TurnState, mode: StepMode, reply: 
             "stop_reason": state.stop_reason, "history_compacted": state.history_compacted}
 
 
+def _no_progress_receipt(state: TurnState, mode: StepMode) -> bool:
+    """L7-5b (approved by ⓪Plan 2026-11-15): a step forced by K4a's repeated-failure stop, never by the budget, runs
+    the goal's `check:` lines once, through the same path as every host check, so the blocked reply carries a receipt.
+    The cause is the step's own record, `StepMode.no_progress` (the policy stopped; the truncation breaker alone never
+    sets it), so no field is added. Past the soft limit the budget is a cause too, and nothing runs. Wrap-up steps
+    (finish mode, not forced) stay as L7-5 has them. At most once in a round: the round is the verdict count, which a
+    recorded verdict advances."""
+    return (mode.forced and mode.no_progress and not state.budget.soft_reached()
+            and state.goal_receipt_round != state.goal_round)
+
+
+def _receipts(goal, host) -> dict[str, str]:
+    """L7-5b: each `check:` line's last host run, as the blocked reply names it: the exit code and the first line of
+    what it printed to stderr (else stdout, else the refusal's error), at most 200 characters."""
+    out = {}
+    for check in goal.checks:
+        runs = [run["result"] for run in (host.runs if host else ()) if run.get("args", {}).get("argv") == list(
+            check.argv or ())] if check.kind == "check" else []
+        if not runs or not isinstance(runs[-1], dict):
+            continue
+        result = runs[-1]
+        text = next((str(result[key]) for key in ("stderr", "stdout", "error") if str(result.get(key) or "").strip()),
+                    "")
+        first = next((line.strip() for line in text.splitlines() if line.strip()), "")[:200]
+        code = result.get("exit_code")
+        parts = [f"exit {code}"] * (type(code) is int) + [first] * bool(first)
+        if parts:
+            out[check.id] = f" ({': '.join(parts)})"
+    return out
+
+
 async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, report: dict,
                       host) -> tuple[bool, str]:
     """L7-2: one goal round's verdict, from each check's own condition as the report has it (never the answer),
@@ -230,6 +265,9 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
         runtime.pause_reason = "task_budget_exhausted"
         return False, runtime_messages.render("goal_budget", locale, met=listed(met_ids), unmet=listed(record.unmet))
     runtime.pause_reason = "goal_blocked"
+    receipts = _receipts(goal, host)
+    unmet = "; ".join(f"{cid}: {items.get(cid, {}).get('code', 'not_run')}{receipts.get(cid, '')}"
+                      for cid in record.unmet) or runtime_messages.render("goal_none", locale)
     step = await _one_step(state.adapter, goal, record, items) or runtime_messages.render(
         "goal_step", locale, check=record.unmet[0])
     record = record.model_copy(update={"step": step})        # L7-6: kept for the card, after a restart too
@@ -237,7 +275,7 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
     await runtime.checkpoint("goal_step")                     # the verdict's own checkpoint went out above
     background_jobs.goal_round(record, items, state.budget)
     return False, runtime_messages.render("goal_blocked", locale, round=record.round, met=listed(met_ids),
-                                          unmet=listed(record.unmet), step=step)
+                                          unmet=unmet, step=step)
 
 
 def _blocker(record, host, goal):

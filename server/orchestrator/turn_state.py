@@ -121,6 +121,7 @@ class TurnState:
     goal_round: int = 0
     goal_stall: int = 0
     goal_unmet: tuple[str, ...] = ()
+    goal_receipt_round: int = -1     # L7-5b: the round whose no-progress stop already ran the check: lines
 
 
 @dataclass(frozen=True, slots=True)
