@@ -166,7 +166,9 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
     cap = CAP.match(rest)
     objective = rest[cap.end():].strip()[:OBJECTIVE_MAX] if cap else rest[:OBJECTIVE_MAX]
     try:
-        own = user_checks(objective)
+        # L7-6: a job's goal (`/goal from`) may be the model's words: its `check:` lines are never the user's commands,
+        # so they are dropped; only the user's own `/goal` text makes a command check.
+        own = user_checks(objective) if given is None else ()
     except ValueError as bad:
         return say("goal_bad_check", line=str(bad))
     ctx = await task_context.load(conversation_id, user_message=objective)
@@ -455,8 +457,11 @@ async def saved(task_id: str):
     from server.services.task_repository import repository
     async with repository() as repo:
         row = await repo.get(task_id)
-        point = ((await repo.latest_checkpoint(row.id, owner_id=row.owner_id)) or {}).get("progress") or {}
+        saved_point = (await repo.latest_checkpoint(row.id, owner_id=row.owner_id)) or {}
         report = await task_validation.latest_report(repo, row) if row.results else None
+    if saved_point.get("spec_revision") != row.spec_revision:    # none, or before an edit: not this goal's record
+        return None, {}, row
+    point = saved_point.get("progress") or {}
     record = GoalProgress.model_validate(point["goal"]) if point.get("goal") else None
     return record, {item.get("check_id"): item for item in (report or {}).get("checks") or ()}, row
 

@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GoalState } from "../api/client.types";
 import JobCard from "../components/JobCard";
-import { GoalChip, editLines } from "../components/GoalCard";
+import { GoalChip, editLines, objectiveOf } from "../components/GoalCard";
 import { jobMessages } from "../locales/jobs";
 import { initialArslanState, useArslanStore } from "../stores/arslanStore";
 
@@ -86,6 +86,13 @@ describe("edit step", () => {
     expect(editLines("Fix it", [{ id: "check-1", text: "python3 run.py", kind: "check", mine: false, flagged: false,
       outputs: ["tests/revealed/test_step_*.py"] }], false)).toBe(
       "/goal edit\nobjective: Fix it\ncheck: python3 run.py outputs: tests/revealed/test_step_*.py");
+  });
+});
+
+describe("objective", () => {
+  it("drops the check: lines, and only those", () => {
+    expect(objectiveOf("Tidy the notes check: python3 run.py")).toBe("Tidy the notes");
+    expect(objectiveOf("Run the recheck: it must pass")).toBe("Run the recheck: it must pass");
   });
 });
 

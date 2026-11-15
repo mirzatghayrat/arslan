@@ -16,7 +16,7 @@ const input = "min-w-0 flex-1 rounded-md border border-border bg-surface px-2 py
 
 /** The objective without its `check:` lines, which the checks list shows. */
 export function objectiveOf(goal: string): string {
-  return goal.split(/\s*`?check:/i)[0].trim() || goal;
+  return goal.split(/(?:^|\s)`?check:/i)[0].trim() || goal;     // a word ending in "check:" is not one
 }
 
 function CheckIcon({ status }: { status: string }) {
