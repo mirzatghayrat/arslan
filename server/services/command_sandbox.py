@@ -637,6 +637,7 @@ def commands_profile(workspace: Path, *, temp: Path | None = None, offline: bool
     for filters in run_later.kernel_filters([workspace], aliased=hold.aliased, git_config_ok=git_config_ok,
                                             walk_roots=[*walk, *allowed]):
         after.deny("file-write*", *filters)
+    after.deny("file-write*", *run_later.home_filters(Path.home()))      # LaunchAgents and login items, always
     if git_config_ok:
         # HR-1b delta 2: no hard link to or from a config (`file-link` refuses both, measured), no flags or ACL on one.
         after.deny("file-link file-write-flags file-write-acl", *run_later.git_config_filters())
@@ -851,6 +852,7 @@ def minimal_profile(*, offline: bool = False, copies: list[Path] = (), plugin_fo
         rules.deny("file-write-create", *run_later.symlink_filters())
         for filters in run_later.kernel_filters([run_later_in], aliased=hold.aliased):
             rules.deny("file-write*", *filters)
+        rules.deny("file-write*", *run_later.home_filters(Path.home()))   # LaunchAgents and login items
         if hold.at_targets:                 # #813 review 10: the held names at a link's real path
             rules.deny("file-write*", *hold.at_targets)
     held = held_ancestors([Path("/")], arslan_protected(), planted=cap6b_spellings(plugin_folder),

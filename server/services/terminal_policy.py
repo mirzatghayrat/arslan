@@ -1660,6 +1660,16 @@ _TOOL_WRITES = {
     ("direnv", ("edit",)): ".envrc",
 }
 _TOOLS = frozenset(program for program, _ in _TOOL_WRITES) | {"husky"}
+#: Indirect writers of a LaunchAgent (the login jobs launchd starts at every login; run_later.HOME_NAMES holds the
+#: folder in the kernel): `git maintenance start` writes git's three schedule plists and registers the repository in
+#: ~/.gitconfig, `register` that only; `brew services start|restart` writes the service's plist. `brew services run`
+#: starts it for this login only, and `stop`, `list`, `info` and `cleanup` write none.
+LAUNCH_AGENTS = "~/Library/LaunchAgents"
+_GIT_MAINTENANCE_PLISTS = tuple(f"{LAUNCH_AGENTS}/org.git-scm.git.{when}.plist" for when in ("hourly", "daily", "weekly"))
+_BREW_PLIST = re.compile(re.escape(LAUNCH_AGENTS) + r"/homebrew\.mxcl\.(?P<service>[^/]+)\.plist")
+#: A service word that names its plist as is (`postgresql@16`); a tap's path, `--all` or anything else: the folder.
+_BREW_SERVICE = re.compile(r"[A-Za-z0-9][\w@.+-]*")
+_BREW_SERVICE_VALUES = frozenset({"--file", "--sudo-service-user", "--max-wait"})
 
 
 def _home_relative(path: str) -> str | None:
@@ -1936,6 +1946,14 @@ def _git_targets(args: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
         if verb in ("", "status", "summary"):
             return found
         return [*found, ".gitmodules" if verb in ("add", "set-url", "set-branch") else ".git/modules"]
+    if sub == "maintenance":                                # a LaunchAgent and ~/.gitconfig (`LAUNCH_AGENTS`)
+        verb = next((w for w in rest if not w.startswith("-")), "")
+        if _expands(verb):
+            return [*found, RUN_LATER_UNKNOWN]
+        if verb.lower() == "start":
+            return [*found, *_GIT_MAINTENANCE_PLISTS, "~/.gitconfig"]
+        if verb.lower() == "register":
+            return [*found, "~/.gitconfig"]
     if sub in _GIT_READS or not sub:
         return found
     return [*found, *(hit for word in rest for spelling in _spellings(word) if not _expands(spelling)
@@ -1995,6 +2013,48 @@ def _tool_targets(program: str, args: tuple[str, ...]) -> list[str]:
             if name == program and lowered[:len(words)] == words][:1]
 
 
+def _brew_services_targets(args: tuple[str, ...]) -> list[str] | None:
+    """`brew services start|restart <service>`: its LaunchAgent, the plist by name when the word is plain, else the
+    folder (`--all`, a tap's path). brew's global options (all flags) may come before `services`, and an option may
+    come anywhere after it. None: no `services` command here; [] for one that writes no plist."""
+    i = 0
+    while i < len(args) and args[i].startswith("-") and args[i] != "--":
+        i += 1
+    if i >= len(args) or args[i].lower() != "services":
+        return None
+    operands, rest, j = [], args[i + 1:], 0
+    while j < len(rest):
+        word = rest[j]
+        j += 1
+        if word.startswith("-") and word != "-":
+            j += word.partition("=")[0] in _BREW_SERVICE_VALUES and "=" not in word
+        else:
+            operands.append(word)
+    verb = operands[0] if operands else ""
+    if _expands(verb):
+        return [RUN_LATER_UNKNOWN]
+    if verb.lower() not in ("start", "restart"):
+        return []
+    service = operands[1] if len(operands) == 2 else ""         # more than one service: the folder (#940 review)
+    if service and _BREW_SERVICE.fullmatch(service):
+        return [f"{LAUNCH_AGENTS}/homebrew.mxcl.{service}.plist"]
+    return [LAUNCH_AGENTS]
+
+
+def launch_agent(targets) -> tuple[str, dict[str, str]] | None:
+    """The card line for a write of a LaunchAgent by its indirect writers (`run_later_targets`' `LAUNCH_AGENTS` rows),
+    as a card-purposes.json `fact` key and its values: `launchAgentService` (service) for brew's plist by name,
+    `launchAgentGit` for git maintenance's, `launchAgent` for the folder. None: no such target."""
+    for target in targets:
+        if target in _GIT_MAINTENANCE_PLISTS:
+            return "launchAgentGit", {}
+        if found := _BREW_PLIST.fullmatch(target):
+            return "launchAgentService", {"service": found["service"]}
+        if target == LAUNCH_AGENTS:
+            return "launchAgent", {}
+    return None
+
+
 def _command_targets(words: tuple[str, ...], folders: tuple[str, ...]) -> list[str]:
     program, args = words[0].lower(), words[1:]             # by name, in any case: the default disk ignores case
     if re.fullmatch(r"python(?:3(?:\.\d+)?)?", program) and args[:2] == ("-m", "pip"):
@@ -2003,6 +2063,8 @@ def _command_targets(words: tuple[str, ...], folders: tuple[str, ...]) -> list[s
         program = "pip"
     if program == "git":
         return _git_targets(args, folders)
+    if program == "brew" and (services := _brew_services_targets(args)) is not None:
+        return services
     if program == "find":
         # read-only but for its -fprint family (shell_grammar refuses its -exec family, and any expansion in it)
         return [hit for i, w in enumerate(args[:-1]) if w in ("-fprint", "-fprint0", "-fprintf", "-fls")
@@ -2032,7 +2094,9 @@ def run_later_targets(command: str) -> list[str]:
     `chown`, `chflags`, `xattr`, `dd of=`; `cp`, `mv`, `ln`, `install`, `ditto`, `rsync` (every operand, a held folder
     as one too, and the destination joined with each source's name, `-t DIR`); `sed` in place, and a `w` file in its
     script; `git config` writing (any scope; `--file` when it names a held file), `git -c` and `--config-env` with a
-    key that may start a program, `git --exec-path=`, `git init`, `git clone`, `git submodule` (but status); npm,
+    key that may start a program, `git --exec-path=`, `git init`, `git clone`, `git submodule` (but status);
+    LaunchAgents' indirect writers, `git maintenance start` and `register`, `brew services start` and `restart`
+    (`LAUNCH_AGENTS`; with git's `--scheduler=crontab` too, which writes the crontab instead); npm,
     pnpm, yarn and pip `config set`…; `pre-commit install`, husky, `direnv allow` and `edit`; and any other program
     (not one that only reads) given a held path as a word, an `=` value or a short option's value. Through the
     reader's wrappers and `bash -c` scripts.

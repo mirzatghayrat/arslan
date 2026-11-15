@@ -157,8 +157,8 @@ export default function SettingsScreen({ settings, setSettings, llmProviders, se
         onTelemetryChange={(v) => saveField({ telemetry: v })}
         orchestratorShellEnabled={localSettings.orchestratorShellEnabled ?? true}
         onOrchestratorShellChange={(v) => saveField({ orchestratorShellEnabled: v })}
-        shellConfirmPolicy={localSettings.shellConfirmPolicy}
-        onShellConfirmPolicyChange={(v) => saveField({ shellConfirmPolicy: v })}
+        defaultPermissionMode={localSettings.defaultPermissionMode}
+        onDefaultPermissionModeChange={(v) => saveField({ defaultPermissionMode: v })}
         terminalSandboxEnabled={localSettings.terminalSandboxEnabled ?? true}
         onTerminalSandboxChange={(v) => saveField({ terminalSandboxEnabled: v })}
         sandboxSystemCertificates={localSettings.sandboxSystemCertificates ?? false}

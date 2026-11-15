@@ -3,8 +3,8 @@
  *
  * Self-contained card lifted verbatim out of SettingsScreen's `advanced` slot.
  * Per spec B1 this section groups: the diagnostic-telemetry toggle, the
- * terminal toggle + its ask policy + the commands the user said never to ask
- * about again, workspace, voice input, LAN/SSH reach, background-job budget.
+ * terminal toggle + the commands the user said never to ask about again, the
+ * mode for new conversations (S5a), workspace, voice input, LAN/SSH reach, background-job budget.
  *
  * Presentational: owns NO persistence. onChange callbacks are value-based so the
  * host keeps the exact save path it had before extraction (Task 6 owns save).
@@ -22,8 +22,9 @@ import SshNodesPanel from './SshNodesPanel';
 import SandboxNetworkPanel from './SandboxNetworkPanel';
 import BrowserPanel from '../BrowserPanel';
 import type { VoiceMode } from '../../types';
+import type { PermissionMode } from '../../api/permissionMode';
+import { MODES } from '../modes/modes';
 
-export type ShellConfirmPolicy = 'ask_all' | 'ask_risky';
 export type BackgroundJobBudget = 'lean' | 'standard' | 'ample';
 // Mirrors arslan/execution_budget.TIERS (the soft limits; K4a: a chat turn's too). A backend test
 // pins the same numbers, so the two cannot drift silently.
@@ -43,9 +44,9 @@ export interface AdvancedSectionProps {
   /** Whether Arslan may use the terminal (0.1.48: on by default). */
   orchestratorShellEnabled: boolean;
   onOrchestratorShellChange: (value: boolean) => void;
-  /** Confirm policy for shell commands (only meaningful when shell is enabled). */
-  shellConfirmPolicy: ShellConfirmPolicy;
-  onShellConfirmPolicyChange: (value: ShellConfirmPolicy) => void;
+  /** S5a: the permission mode a new conversation starts in. */
+  defaultPermissionMode: PermissionMode;
+  onDefaultPermissionModeChange: (value: PermissionMode) => void;
   /** 0.1.51 P3: commands run in the workspace sandbox (on by default). Optional so older hosts still render. */
   terminalSandboxEnabled?: boolean;
   onTerminalSandboxChange?: (value: boolean) => void;
@@ -104,8 +105,8 @@ export default function AdvancedSection({
   onTelemetryChange,
   orchestratorShellEnabled,
   onOrchestratorShellChange,
-  shellConfirmPolicy,
-  onShellConfirmPolicyChange,
+  defaultPermissionMode,
+  onDefaultPermissionModeChange,
   terminalSandboxEnabled = true,
   onTerminalSandboxChange,
   sandboxSystemCertificates = false,
@@ -370,37 +371,31 @@ export default function AdvancedSection({
           />
         </div>
 
-        {orchestratorShellEnabled && (
-          <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
-            <div>
-              <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelShellConfirmPolicy')}</h4>
-              {/* R63 (user 10-24): where to take a turn back, beside the looser choice. */}
-              {shellConfirmPolicy === 'ask_risky' && (
-                <p data-testid="shell-policy-undo-pointer" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
-                  {t('settings.shellPolicyUndoPointer')}
-                </p>
-              )}
-              {/* v0.1.63 (the user's decision, F2 of its review): "In this conversation" still answers the same command text
-                  later, so "every command" means every new one, and the note says so. */}
-              {shellConfirmPolicy === 'ask_all' && (
-                <p data-testid="shell-policy-all-note" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
-                  {t('settings.shellPolicyAskAllNote')}
-                </p>
-              )}
-            </div>
-            <Select
-              id="settings-shell-policy"
-              value={shellConfirmPolicy}
-              onChange={(v) => onShellConfirmPolicyChange(v as ShellConfirmPolicy)}
-              options={[
-                { value: 'ask_all', label: t('settings.shellPolicyAskAll') },
-                { value: 'ask_risky', label: t('settings.shellPolicyAskRisky') },
-              ]}
-              className="w-56"
-              ariaLabel={t('settings.labelShellConfirmPolicy')}
-            />
+        {/* S5a: the mode a new conversation starts in, shown with the terminal off too (modes govern writes, MCP,
+            apps and schedules, not only commands). Each conversation switches its own from the composer. */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h4 className="text-[13px] font-medium text-foreground">{t('settings.labelDefaultPermissionMode')}</h4>
+            <p className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
+              {t('settings.defaultPermissionModeDesc')}
+            </p>
+            {/* R63 (user 10-24): where to take a turn back, under a default that changes files unasked. */}
+            {(defaultPermissionMode === 'ask_risky' || defaultPermissionMode === 'full_access') && (
+              <p data-testid="shell-policy-undo-pointer" className="text-[12px] leading-snug text-muted-foreground mt-0.5 max-w-xl">
+                {t('settings.shellPolicyUndoPointer')}
+              </p>
+            )}
           </div>
-        )}
+          <Select
+            id="settings-default-permission-mode"
+            value={defaultPermissionMode}
+            onChange={(v) => onDefaultPermissionModeChange(v as PermissionMode)}
+            options={MODES.map((m) => ({ value: m.mode, label: t(m.name) }))}
+            className="w-56"
+            triggerClassName="min-h-[44px]"
+            ariaLabel={t('settings.labelDefaultPermissionMode')}
+          />
+        </div>
         {orchestratorShellEnabled && (
           <div className="flex items-start justify-between gap-4 pl-4 border-l-2 border-primary/20">
             <div>

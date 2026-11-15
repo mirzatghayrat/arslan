@@ -92,12 +92,12 @@ SCHEDULED_COMMAND_NOTE = ("This run doesn't run commands: nobody is there to app
 #: ASK1-b: what a fire is told when a command that would ask was refused and listed.
 FIRE_REFUSED_NOTE = ("A scheduled run runs only commands that need no OK, inside the sandbox; this one was refused and "
                      "listed under the task on the user's Scheduled page. Do the rest without it, or say what to run.")
-#: ASK1-b: under a chosen "Ask every step" (S5a) every command of a fire is refused; this says where to switch.
-#: DELETE-BY: S5a-2 (the path): it names the window's old control, which since S5a-1 only narrows the default mode
-#: (#893 review 4); S5a-2 points it at the new mode control.
-FIRE_ASK_ALL_NOTE = ("The user chose to be asked before every command, so a scheduled run runs none. To let scheduled "
-                     "runs run commands in the sandbox: Settings › What Arslan may do › Terminal › When to ask › "
-                     "“Ask only for risky commands”.")
+#: ASK1-b: under a chosen "Ask every step" (S5a) every command of a fire is refused; this says where to switch: the
+#: default mode's control in Settings (S5a-2), or this conversation's own mode button by its input.
+FIRE_ASK_ALL_NOTE = ("The user chose to be asked before every step, so a scheduled run runs no commands. To let "
+                     "scheduled runs run commands in the sandbox: Settings › What Arslan may do › Mode for new "
+                     "conversations › “Ask only when risky” (or that mode from the mode button by this "
+                     "conversation's input).")
 
 
 async def fire_sandbox_refused(command: str) -> str:

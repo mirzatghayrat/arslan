@@ -489,16 +489,14 @@
     "sectionLlmConfig": "Configuration LLM",
     "labelOrchestratorShell": "Terminal",
     "orchestratorShellDesc": "Arslan utilise le terminal pour faire les choses : lire, convertir, compiler, lancer des scripts. Tout ce qui envoie, publie, supprime, installe ou pilote une autre app demande d’abord. Lire les mots de passe du trousseau, sudo et supprimer des dossiers système n’est jamais permis.",
-    "labelShellConfirmPolicy": "Quand demander",
-    "shellPolicyAskAll": "Demander avant chaque commande",
-    "shellPolicyAskAllNote": "Chaque nouvelle commande demande d’abord. Une commande autorisée « Dans cette conversation » s’exécute de nouveau dans cette conversation sans redemander.",
+    "labelDefaultPermissionMode": "Mode des nouvelles conversations",
+    "defaultPermissionModeDesc": "Chaque conversation peut le changer avec le bouton près de sa zone de saisie. Le téléphone et l’Island ne peuvent pas le changer.",
     "shellPolicyUndoPointer": "Si une commande a modifié ou supprimé dans le dossier de travail quelque chose que vous ne vouliez pas, ouvrez ⋯ sous cette réponse, choisissez « Annuler ce tour… », puis « Annuler les fichiers » : ces fichiers reviennent à leur état d’avant le tour. Cela fonctionne quand le dossier de travail compte au plus 20 000 fichiers et 5 Go, sans compter les environnements Python, node_modules, les fichiers de build et les caches Python, qui ne sont jamais restaurés.",
     "policyNoticeRiskyTitle": "Arslan ne demande plus que pour les commandes risquées",
-    "policyNoticeRiskyBody": "Les commandes s’exécutent désormais dans le bac à sable sans demander. Une carte apparaît encore quand une commande doit sortir du bac à sable, pourrait causer un vrai dommage ou qu’une règle demande de confirmer. Pour qu’Arslan demande de nouveau avant chaque commande : Paramètres › Ce qu’Arslan peut faire › Terminal › Quand demander › « Demander avant chaque commande ».",
+    "policyNoticeRiskyBody": "Les commandes s’exécutent désormais dans le bac à sable sans demander. Une carte apparaît encore quand une commande doit sortir du bac à sable, pourrait causer un vrai dommage ou qu’une règle demande de confirmer. Pour qu’Arslan demande de nouveau à chaque étape : Paramètres › Ce qu’Arslan peut faire › Mode des nouvelles conversations › « Demander à chaque étape ». Chaque conversation peut aussi le changer avec le bouton près de sa zone de saisie.",
     "policyNoticeAllTitle": "Arslan demande avant chaque commande",
-    "policyNoticeAllBody": "Depuis la 0.1.64, une nouvelle installation ne demande que pour les commandes risquées : les commandes s’exécutent dans le bac à sable sans demander, et une carte apparaît quand une commande doit sortir du bac à sable, pourrait causer un vrai dommage ou qu’une règle demande de confirmer. Ici, Arslan demande avant chaque commande, et cela reste ainsi tant que vous ne le changez pas : Paramètres › Ce qu’Arslan peut faire › Terminal › Quand demander › « Demander seulement pour les commandes risquées ».",
+    "policyNoticeAllBody": "Depuis la 0.1.64, une nouvelle installation ne demande que pour les commandes risquées : les commandes s’exécutent dans le bac à sable sans demander, et une carte apparaît quand une commande doit sortir du bac à sable, pourrait causer un vrai dommage ou qu’une règle demande de confirmer. Ici, Arslan demande avant chaque commande, et cela reste ainsi tant que vous ne le changez pas : Paramètres › Ce qu’Arslan peut faire › Mode des nouvelles conversations › « Demander seulement si risqué ». Chaque conversation peut aussi le changer avec le bouton près de sa zone de saisie.",
     "policyNoticeOk": "Compris",
-    "shellPolicyAskRisky": "Demander seulement pour les commandes risquées",
     "labelMcpServer": "Serveur MCP (entrant)",
     "mcpServerDesc": "Permet aux clients MCP externes (Claude Code, Codex) d'appeler des outils en lecture seule. Désactivé par défaut ; nécessite un jeton MCP généré. Localhost uniquement.",
     "mcpToken": {
@@ -1497,7 +1495,7 @@
     "changed": "Modifié",
     "failing": "Échouée ou mise en pause d'elle-même",
     "commandsNoteTitle": "Les tâches planifiées peuvent de nouveau lancer des commandes",
-    "commandsNoteBody": "L’exécution d’une tâche planifiée lance désormais les commandes qui ne demanderaient pas votre confirmation, dans le bac à sable, dans le dossier de travail d’Arslan. Ce qui demanderait votre confirmation est refusé et listé ici sous sa tâche. Les tâches créées avant cette mise à jour, ou après la lecture d’un contenu extérieur, lancent leurs commandes sans réseau. Si vous avez choisi « Demander avant chaque commande », les exécutions planifiées n’en lancent aucune.",
+    "commandsNoteBody": "L’exécution d’une tâche planifiée lance désormais les commandes qui ne demanderaient pas votre confirmation, dans le bac à sable, dans le dossier de travail d’Arslan. Ce qui demanderait votre confirmation est refusé et listé ici sous sa tâche. Les tâches créées avant cette mise à jour, ou après la lecture d’un contenu extérieur, lancent leurs commandes sans réseau. Si vous avez choisi « Demander à chaque étape », les exécutions planifiées ne lancent aucune commande.",
     "commandsNoteOk": "Compris"
   },
   "remembered": {
@@ -1610,5 +1608,28 @@
     "trustDevice": "Faire confiance à cet appareil",
     "namedDevice": "{{name}} ({{addresses}})",
     "cardGone": "Cette carte n'est plus valable. Tu peux ajouter l'appareil dans les Paramètres."
+  },
+  "modes": {
+    "pillAria": "Mode d’autorisation : {{label}}",
+    "plan": "Planifier",
+    "planLine": "Lit et écrit un plan. Ne change rien tant que vous n’appuyez pas sur Démarrer.",
+    "ask": "Demander à chaque étape",
+    "askLine": "Vous demande avant chaque commande et chaque modification.",
+    "askRisky": "Demander seulement si risqué",
+    "askRiskyLine": "Les modifications dans le dossier de travail et les commandes sûres s’exécutent. Tout ce qui est risqué vous demande d’abord.",
+    "fullAccess": "Accès complet",
+    "fullAccessLine": "Agit sans demander : commandes (y compris hors du bac à sable), modifications, planifications, outils MCP (même ceux qui suppriment) et apps. L’argent, l’envoi, les sites, les raccourcis, les fichiers exécutés plus tard, git, les données des autres apps, le réseau et les règles fixes demandent toujours ou restent bloqués.",
+    "current": "Actuel",
+    "footnote": "Pour cette conversation seulement. Le mode par défaut des nouvelles est dans les Paramètres.",
+    "narrowed": "Restreint par la session qui a lancé celle-ci.",
+    "inherited": "Une discussion annexe utilise le mode de la conversation d’où elle vient. Modifiez-le là-bas.",
+    "askForNow": "Demander à chaque étape (pour l’instant)",
+    "fallbackBanner": "Demande à chaque étape pour l’instant : {{reason}} Revient tout seul à « Demander seulement si risqué ».",
+    "reasonSandboxOff": "le bac à sable ne tourne pas.",
+    "reasonNoCheckpoint": "Arslan ne peut pas enregistrer de point de restauration de ce dossier (trop de fichiers ou trop volumineux), les modifications ne pourraient donc pas être annulées.",
+    "reasonHomeFolder": "le dossier de travail est tout votre dossier personnel.",
+    "start": "Démarrer",
+    "startsIn": "Démarre en {{mode}}",
+    "saveFailed": "Impossible de changer le mode. Réessayez."
   }
 }
