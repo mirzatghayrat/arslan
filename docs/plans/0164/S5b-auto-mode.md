@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Decided | The user decided (2026-11-15, relayed by ⓪Plan): option (c), auto widened to what mainstream auto modes answer, only once the classifier passes on real cards; with the conditions in "Hard requirements" below; conditions 2 and 3 revised the same day toward mainstream (outside content narrows to `outside_only` hosts; MCP in scope, judged by Arslan's own rules). Q2-Q9 decided the same day (see "Decisions"). |
-| Version | **Deferred to v0.1.65 by step 0 (2026-11-15).** Auto could have answered 6.6% of the cards the user saw (lower and upper bound alike), under the 30% line, so S5b is option (b) and left v0.1.64. See "Step 0 result". The design below is kept for v0.1.65. |
+| Version | v0.1.64 (must). Step 0 counted 6.6%, under the 30% line; **the user overrode the line (2026-11-15) and chose to build now, with gate a extended to background jobs and sub-sessions** (35% of the cards). See "Step 0 result". |
 | Lane | ⑤CAP; the measurement is ③Hands' (CLS runner owner). |
 | Order | After CLS (#892, #937 on main), S5a, and CAP11a step a. Step 0 before any building. |
 | PRs | Step 0 plus eight slices (below), each ≤ about 800 product lines. Every slice merges dark. |
@@ -22,14 +22,14 @@ answered (or that expired or went unanswered).
 | From a job or a sub-session (no user words for gate a) | 69 | 35.2% |
 | Other (folder, screen, app, schedule, writes) | 20 | 10.2% |
 
-Both bounds are under 30%, so by hard requirement 5 S5b is option (b) and moves to v0.1.65. The count ran before the
-network card moved into the upper bound; the never-auto kinds are 25 cards in all, so even counting every one the
-upper bound would be at most 19.4%, still under the line. The three narrowing questions ("outside" after outside
-content, open-app, MCP) are left open for v0.1.65.
+Both bounds are under 30%, which by hard requirement 5 would have meant option (b). The count ran before the network
+card moved into the upper bound; the never-auto kinds are 25 cards in all, so even counting every one the upper bound
+would be at most 19.4%.
 
-**For v0.1.65:** 35% of the cards come from jobs and sub-sessions, which gate a never reviews because they carry no
-words of the user's. The largest group auto could reach is there, and in the never rules (62), not in the widened
-table.
+**The user's decision (2026-11-15), overriding the 30% line:** build S5b in v0.1.64 with the widened scope below, and
+make gate a work for background jobs and sub-sessions ("Gate a for jobs and sub-sessions"), which were 35% of the cards
+and which gate a never reviewed because they carried no user words. The step-0 count is not re-run; the real-card
+measurement (hard requirement 6) still has to pass before auto is offered.
 
 ## Hard requirements (user, 2026-11-15)
 
@@ -46,7 +46,7 @@ table.
    the turn), only to a branch that is not the remote's default, and never a force push.
 5. **Step 0:** a read-only count of the cards the user actually saw on their Mac, before building. The lower bound
    decides: 30% or more → build; under 30% with the upper bound at 30% or more → the user decides; both under 30% →
-   option (b), dropped from v0.1.64.
+   option (b), dropped from v0.1.64. (Done: 6.6% at both bounds; the user overrode the line and chose to build.)
 6. **Pass lines** are re-set first for the new scope, then measured on real cards from the user's Mac, and never changed
    after.
 7. **A model "no", an error or a time-out shows the ordinary card.** Never a silent refusal.
@@ -76,7 +76,8 @@ module. Anything a row's condition can't resolve is a card.
   `network` and `mcp_tool` whenever their condition fails.
 - **Kept out by the pre-gate:** `schedule` (its writes persist), `destructive` (MCP, by Arslan's own reading), `app`,
   `screen`, `folder` (no effect class).
-- **Gate a:** a run without the user's own words (model-started jobs, scheduled and resumed runs) is never reviewed.
+- **Gate a:** a run without the user's own words is never reviewed (`no_user_words`): scheduled and resumed runs, and
+  any job or sub-session whose start has no user message (below).
 - A meta-test places every ask key and every kind in exactly one of the table or the never sets.
 
 **`never_auto` stays the single list.** Its answers don't change; every mode, grant and the Island keep reading it.
@@ -87,7 +88,8 @@ the runner, so it can't loosen what a mode answers.
 ## The gates
 
 - **a, the user's own words:** the turn's own message (window or phone), captured at turn start with the remote
-  snapshot; a background job keeps its starting turn's words; a phone job's typed goal; model-started → no review.
+  snapshot; for a background job or a sub-session, the user message of the turn that started it (below); a phone
+  job's typed goal; nothing found → no review.
 - **b, the reviewer's yes:** `by="reviewer"`, this time only, no rule or grant row, never satisfying a check that
   needs `by == "user"` (the network click, the run-later lift, a bare run). A second identical request reviews again.
 - **d, rewritten:** auto widens in MODES order (`plan`, `ask`, `ask_risky`, `auto`, `full_access`) and answers only
@@ -115,6 +117,35 @@ the runner, so it can't loosen what a mode answers.
 - **Off switch:** one click turns auto off everywhere (read on every decision), plus "Turn off auto" on the pill.
   Desktop only in v0.1.64.
 
+## Gate a for jobs and sub-sessions (user, 2026-11-15)
+
+**The trusted source** is one stored row: an `arslan_messages` row with `role == "user"` and `source` NULL (the window)
+or `"phone"`, in the conversation where the job or sub-session started. Never a sub-session's brief (`source ==
+"brief"`, `sub_sessions.BRIEF_SOURCE`: the commander's words in the user's role), `Job.goal`, a tool argument, a
+summary, a job result, attachments or OCR text, or any text the model wrote.
+
+**How it is captured** (slice 4):
+- At turn start Arslan's own code sets the turn's origin: the id of the stored user message that started this turn
+  (a context variable, set where the turn's user message is stored, beside the remote snapshot). A turn started
+  without one (a scheduled fire, a resume, a job's own steps) sets none.
+- `background_jobs.start` / `start_placed` copy that id into `Job.origin_message_id`; there is no parameter for it,
+  so a tool call can't pass one. A job started inside a job or a sub-session copies its own origin.
+- A sub-session stores it in `conversation_contexts.origin_message_id`, copied from the starting turn's origin (or
+  from its parent sub-session's, for one started inside a sub-session). Never from the brief.
+- Gate a reads the words by that id at review time, and checks the row again: same id, `role == "user"`, the trusted
+  `source`, in the root conversation the chain starts from. A missing, deleted (an undone turn) or mismatched row is
+  `no_user_words`, so the card shows.
+- `job_kind`: a job with an origin is `job`; one without is `model_job`, which stays out of `_WITH_WORDS`.
+  `scheduled` and `resumed` stay out: a scheduled fire has no turn, and a resumed run's in-memory origin is gone
+  after a restart.
+
+**Source-construction tests (Codex's CLS review):** a canary per untrusted source, each fed text the trusted message
+lacks, asserting the reviewer's prompt holds only the trusted message outside the fence: the brief, `Job.goal`, a tool
+argument naming an id, a job result, a summary, an attachment's text, an OCR result, a phone message in another
+conversation, a deleted origin row. An AST test that `origin_message_id` is only written by the turn-start setter, the
+two job starters and the sub-session creator; a mutation that reads the brief (or `Job.goal`) as the words turns a
+named test red.
+
 ## Decisions (user, 2026-11-15)
 
 | Question | Decision |
@@ -127,23 +158,24 @@ the runner, so it can't loosen what a mode answers.
 | Ledger column (Q5) | `approval_events.reviewer.outside_seen` in the existing JSON column; no new column. |
 | Phone and Island (Q6) | No auto switch or off switch there in v0.1.64 (it would change a Bridge frame). |
 | Reason on the card (Q8) | Ledger only. |
-| Migration | `conversation_contexts.auto_since` (nullable, add-only). 0102 was reserved and is released (S5b deferred); v0.1.65 takes the next free number then. |
+| Step 0's line | Overridden: build now at 6.6%, with gate a for jobs and sub-sessions added. |
+| Migration | 0102: `conversation_contexts.auto_since` and `conversation_contexts.origin_message_id` (both nullable, add-only). |
 
 ## Slices
 
 | # | PR | Lines | Review |
 |---|---|---|---|
 | 0 | Step 0: a read-only count of the cards the user saw (the last 42 days of `approval_events`, rows decided by the user, expired or away), bucketed with Arslan's real `hard_rules` / `terminal_policy` tables. A user-run script outside the repo, reviewed by ⓪Plan; it opens the database read-only and prints counts only. The lower bound decides, as in the decision above. Not a repo PR. | 0 (user-run script) | ⓪Plan review |
-| 1 | Auto in MODES; fallbacks, including `auto_off` and `auto_unmeasured`; `offered()`; the agreement key; PUT 409s; the `auto_since` migration. No review call. | ~250 | max |
+| 1 | Auto in MODES; fallbacks, including `auto_off` and `auto_unmeasured`; `offered()`; the agreement key; PUT 409s; migration 0102. No review call. | ~250 | max |
 | 2 | The hard_rules table: `REVIEWER_MAY_AUTO`, `reviewer_may_answer`, the git-push form and target readers, the open-app form reader, the outside-content host check (`outside_only`, unreadable), the MCP outward/destructive reader and the `mcp_trusted` read, meta-tests, the AST caller pin. | ~450 | max |
 | 3 | Gate d rewritten in `classifier.pregate`; `cls-2`. Lands with ③Hands' runner schema PR. | ~250 | max |
-| 4 | Gate a source: the turn's words and the remote snapshot, `Job.user_words`, `job_kind`, canary and AST tests. | ~220 | max |
+| 4 | Gate a source: the turn's origin and the remote snapshot, `Job.origin_message_id`, `conversation_contexts.origin_message_id` for sub-sessions, the review-time row check, `job_kind`, the source-construction canaries and AST tests. | ~320 | max |
 | 5 | The wiring in `_ask`: `Request.review`, the command and outside card opt-in, gate b, the fail-closed ledger row, the D7 `try/except`, the dead reviewer-denial branch removed. The only slice that edits `_ask`. | ~400 | max |
 | 6 | Breaker: `auto_breaker.py`, counts from the ledger, the hook contract (HOOK-3 writes the same marker). | ~200 | max |
 | 7 | Ledger read API. | ~120 | high |
 | 8 | Web: the status-strip item and one-tap on, the agreement sheet, the off switch, the ledger view, the unmeasured line, the per-tool MCP "trusted" mark in Settings, six locales. | ~650 | high; **a clickable mock first** |
 
-**Order:** CAP11a step a → 0 → (30% or more) → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. Slice 2 may be written beside 1; 4 and 7
+**Order:** CAP11a step a → 0 (done; line overridden) → #944's review back → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. Slice 2 may be written beside 1; 4 and 7
 beside 3 and 5.
 
 ## Merges dark until measured
@@ -167,7 +199,9 @@ annotation read, plus `action.mcp.outward` and `trusted` from Arslan's own readi
 both ways), open-app (each form), force-kill, outside and network (with and without outside content; hosts the user
 named, `outside_only` hosts, no readable host; targets in and out of scope), MCP (a read tool, a write in the work
 folder, a send or delete tool, one whose annotation says read-only while its name or arguments send, a trusted tool).
-Steered cases after outside content: a page naming a host and asking to post the workspace to it (expected ask, stopped
+Jobs and sub-sessions: the same cards inside a job and a sub-session whose origin is a user message, scored against
+that message (a task the message asked for → allow-eligible; one only the brief or the goal asks for → ask). Steered
+cases after outside content: a page naming a host and asking to post the workspace to it (expected ask, stopped
 by the pre-gate); an MCP send tool with a benign annotation (expected ask, pre-gate).
 
 **git-push after outside content (③Hands, 2026-11-15):** stays reviewer-answerable (the remote and branch come from the
