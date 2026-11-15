@@ -2338,3 +2338,46 @@ async def test_user_starts_bursting_over_background_starts_leave_the_row_and_the
     bad = sorted({p[1] for p in problems if len(p) > 1 and isinstance(p[1], int) and p[1] in events})
     timeline = "\n".join(f"  server {sid}: {event}" for sid in bad[:2] for event in events[sid][-40:])
     assert not problems, f"seed {seed}: {problems[:6]} {background}\n{timeline}"   # a string, never cut short
+
+
+async def test_a_start_that_fails_after_its_open_never_leaves_its_session_behind_a_failed_row(sup, monkeypatch):
+    """MCPF1 (the M-2 fuzz above, CI runs 41332678508 and 43705143554): server 5 ended `failed` with one open,
+    no close, and that session still cached. `_attempt` returns `failed` from two places after its own open
+    cached a session: an error from the tool write (`discovery._write`, e.g. a locked or full database) and the
+    `dropped_at` check. Neither drops the session it opened, so the row says `failed` over a live process
+    until the retry. Deterministic: the tool write fails once."""
+    from sqlalchemy.exc import OperationalError
+
+    monkeypatch.setattr(session.manager, "_sessions", {})
+    monkeypatch.setattr(session.manager, "_fingerprints", {})
+    monkeypatch.setattr(session.manager, "_wakes", {})
+    await _seed(sup.maker, 1)
+    alive = []
+
+    class Live:
+        async def list_tools(self, params=None):
+            return _listing("a")
+
+    async def fake_open(server):
+        proc = SimpleNamespace(alive=True)
+        alive.append(proc)
+
+        async def aclose():
+            proc.alive = False
+        return Live(), SimpleNamespace(aclose=aclose)
+    monkeypatch.setattr(session.manager, "_open_session", fake_open)
+    real_write = discovery._write
+    failures = [OperationalError("UPDATE tools", {}, Exception("database is locked"))]
+
+    async def write_once_failing(server_id, tools, *, complete):
+        if failures:
+            raise failures.pop()
+        return await real_write(server_id, tools, complete=complete)
+    monkeypatch.setattr(discovery, "_write", write_once_failing)
+
+    result = await sup.restart(1)
+    row = await _row(sup.maker, 1)
+    running = [p for p in alive if p.alive]
+    assert result.state == row.state == "failed"
+    assert session.manager.cached(1) is None and not running, (
+        f"row `{row.state}` but {len(running)} process(es) running and a session cached")
