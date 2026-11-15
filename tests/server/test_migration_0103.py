@@ -200,12 +200,30 @@ def _secret_free(db_path) -> None:
             assert SECRET not in json.dumps(row, default=repr), table
 
 
+async def _upgraded_with(tmp_path, extra) -> tuple:
+    """The install above plus `extra(info)` statements, booted once more (0103 runs)."""
+    db = tmp_path / "arslan.db"
+    info = await _before_0103(db)
+    _write(db, [("PRAGMA foreign_keys=OFF", ()), *extra(info)])
+    await _boot(db)
+    return db, info
+
+
+def _global_dedup(key: str, content: str) -> str:
+    """memory_repository's dedup_key for a user's preference in global scope."""
+    return hashlib.sha256(json.dumps(["local", "preference", "global", None, _digest(key, content)]).encode()).hexdigest()
+
+
 # -- 1. the user-shaped database ------------------------------------------------------------------------------------
 
-def test_0103_is_registered_last_and_the_runner_takes_ids_as_a_set():
+async def test_0103_is_in_the_chain_and_applied_wherever_it_sits(tmp_path):
+    """Order-independent (0102, another lane's, may land before or after): 0103 is listed with its upgrade, the
+    list stays sorted, and a boot records it."""
     ids = [vid for vid, _ in runner.MIGRATIONS]
-    assert ids == sorted(ids) and ids[-1] == "0103" and ("0103", m0103.upgrade_sync) in runner.MIGRATIONS
-    assert "0102" not in ids          # another lane's; the runner applies whatever is not recorded, in list order
+    assert ids == sorted(ids) and ("0103", m0103.upgrade_sync) in runner.MIGRATIONS
+    db = tmp_path / "arslan.db"
+    await _boot(db)
+    assert {v for (v,) in _rows(db, "SELECT version FROM schema_version")} >= {"0101", "0103"}
 
 
 async def test_experts_become_skills_and_nothing_overwrites_a_taken_key(upgraded):
@@ -221,19 +239,102 @@ async def test_experts_become_skills_and_nothing_overwrites_a_taken_key(upgraded
     held = skills["expert-5-deploy-helper"]
     assert held[2] == 0 and m0103.SECRET_NOTE.strip() in held[3] and "[secret removed]" in held[3]
     assert "Deploy the site" in held[3] and SECRET not in held[3]
-    assert [enabled for key, (_, _, enabled, _) in skills.items() if key != "expert-5-deploy-helper"] == [1] * 5
+    made = {key: enabled for key, (_, _, enabled, _) in skills.items()
+            if key not in (info["collision"], info["same"])}                   # the two that were there before
+    assert made == dict.fromkeys(made, 0) and len(made) == 4                  # every converted skill is off
+    descriptions = dict(_rows(db, "SELECT key, description FROM skill_packs WHERE key LIKE 'expert-%'"))
+    assert descriptions["expert-2-research-analyst"] == f"Method from the former expert Research Analyst. {m0103.OFF_NOTE}"
+    assert all(descriptions[key].endswith(m0103.OFF_NOTE) for key in made)
     assert not any(key.startswith("expert-4") or key.startswith("expert-1") for key in skills)   # short; built-in
     assert skills[info["same"]][0] == "Editor" and _rows(db, "SELECT description FROM skill_packs WHERE key=?",
                                                           (info["same"],)) == [("d",)]          # converted before
     _secret_free(db)
 
 
+async def test_a_prompt_with_secrets_the_screen_misses_still_becomes_a_skill_that_is_off(tmp_path):
+    """C7c-5c review: contains_credential finds neither a cloud access key id nor a URL with a password, so a skill
+    from such a prompt must start off as well as every other. Built from parts: no secret-shaped literal here."""
+    from arslan.companion.content_policy import contains_credential
+    access_key = "AK" + "IA" + "SYNTHETIC" + "0000000"                       # AKIA + 16 characters
+    url = "postgres" + "://" + "user:pw" + "@host/db"
+    prompt = f"Run the nightly report with key {access_key} against {url}. " + LONG
+    assert not contains_credential(prompt)                                   # what the screen misses
+    db, _ = await _upgraded_with(tmp_path, lambda info: [_spawn(8, "Cloud helper", prompt)])
+    [(enabled, description, body)] = _rows(
+        db, "SELECT enabled, description, body FROM skill_packs WHERE key = ?", (m0103._skill_key(8, "Cloud helper"),))
+    assert enabled == 0 and description.endswith(m0103.OFF_NOTE)
+    assert m0103.SECRET_NOTE.strip() not in body                             # nothing was found, so no note
+
+
+async def test_an_expert_name_holding_a_secret_is_not_kept_in_origin_label(tmp_path):
+    name = f"Ops password: {SECRET}"
+    db, _ = await _upgraded_with(tmp_path, lambda info: [
+        _spawn(9, name, "Keep the servers patched. " + LONG),
+        ("INSERT INTO knowledge_chunks (id, spawn_id, collection_id, source, chunk_index, text, embedding, "
+         "embedding_model) VALUES (42, 9, NULL, 'ops.md', 0, 'Synthetic ops notes', X'0000803F', 'm')", ())])
+    [(label,)] = _rows(db, "SELECT origin_label FROM knowledge_chunks WHERE id = 42")
+    assert SECRET not in label and "[secret removed]" in label
+    _secret_free(db)
+
+
+async def test_a_moved_entry_a_global_entry_already_says_is_marked_present_not_proposed(tmp_path):
+    """C7c-5c review: accepting it would take the global entry's unique dedup_key (an IntegrityError, a 500)."""
+    present = "00000000-0000-4000-8000-000000000010"
+
+    def extra(info):
+        revision = present[:-2] + "r0"
+        return [
+            ("INSERT INTO memory_revisions (id, entry_id, version, content, structured_value, previous_version, "
+             "change_reason, created_at) VALUES (?, ?, 1, 'Prefers tables', '{}', NULL, 'created', ?)",
+             (revision, present, NOW)),
+            ("INSERT INTO memory_entries (id, owner_id, kind, scope_kind, scope_id, status, current_revision_id, "
+             "normalized_hash, dedup_key, version, sensitivity, use_policy, confirmation_kind, confirmed_at, "
+             "created_at, updated_at) VALUES (?, 'local', 'preference', 'global', NULL, 'active', ?, ?, ?, 1, "
+             "'normal', 'local_only', 'user_form', ?, ?, ?)",
+             (present, revision, _digest(info["key"], "Prefers tables"),
+              _global_dedup(info["key"], "  prefers   TABLES "), NOW, NOW, NOW)),       # the same key, normalised
+        ]
+    db, _ = await _upgraded_with(tmp_path, extra)
+    assert _rows(db, "SELECT scope_kind, status, superseded_by, dedup_key FROM memory_entries WHERE id = ?", (P1,)) == [
+        ("global", "superseded", present, None)]
+    assert _rows(db, "SELECT count(*) FROM memory_proposals WHERE target_entry_id = ? AND status = 'pending'",
+                 (P1,)) == [(0,)]
+    assert _rows(db, "SELECT status FROM memory_entries WHERE id = ?", (present,)) == [("active",)]
+    report = json.loads(_rows(db, "SELECT summary FROM memory_migration_reports WHERE source_version='0103'")[0][0])
+    assert (report["already_present"], report["entries_proposed"]) == (1, 5)
+
+
+async def test_accepting_a_moved_entry_whose_words_a_later_global_entry_took_is_a_known_refusal(upgraded, monkeypatch):
+    """A global entry given the same words after 0103: the accept is a 409 with a code, never an IntegrityError."""
+    from server import auth
+    from server.api.companion import router
+    db, _ = upgraded
+    async with repository() as repo:
+        made = await repo.create(MemoryWrite(content="Prefers chess", scope=MemoryScope(kind="global")), USER)
+        await repo.revise(made["id"], made["version"],
+                          MemoryWrite(content="Prefers tables", scope=MemoryScope(kind="global")), USER)
+    monkeypatch.setattr(auth, "active_token", lambda: "synthetic-0103-token")
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    pid = dict(_rows(db, "SELECT target_entry_id, id FROM memory_proposals WHERE status='pending'"))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                 headers={"Authorization": "Bearer synthetic-0103-token"}) as api:
+        refused = await api.post(f"/api/v1/memory/proposals/{pid[P1]}/resolve", json={"accept": True})
+    assert (refused.status_code, refused.json()["detail"]) == (409, {"code": "memory_already_stored"})
+    assert _rows(db, "SELECT status, dedup_key FROM memory_entries WHERE id = ?", (P1,)) == [("proposed", None)]
+    assert _rows(db, "SELECT status FROM memory_proposals WHERE id = ?", (pid[P1],)) == [("pending",)]
+
+
 async def test_a_converted_skill_is_one_arslan_can_see_and_read(upgraded):
     """Moved from test_one_arslan_0144 (expert_conversion is gone): the skill is in the index and readable."""
     from server.orchestrator import arslan
     from server.registry.executors import ReadSkillExecutor
+    db, _ = upgraded
+    assert "expert-2-research-analyst" not in await arslan._skill_index()     # every converted skill starts off
+    assert not (await ReadSkillExecutor().execute({"key": "expert-2-research-analyst"}))["ok"]
+    _write(db, [("UPDATE skill_packs SET enabled = 1 WHERE key = 'expert-2-research-analyst'", ())])   # the user's yes
     index = await arslan._skill_index()
-    assert "expert-2-research-analyst" in index and "expert-5-deploy-helper" not in index      # off: not offered
+    assert "expert-2-research-analyst" in index and "expert-5-deploy-helper" not in index
     read = await ReadSkillExecutor().execute({"key": "expert-2-research-analyst"})
     assert read["ok"] and "local speech models" in read["body"]
 

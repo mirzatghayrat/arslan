@@ -382,6 +382,13 @@ class MemoryRepository:
             proposal_id = await self._proposal(entry, actor, write.model_dump(mode="json"))
             return {"proposal_id": proposal_id, "status": "proposed", "target_id": entry.id,
                     "target_version": entry.version}
+        dedup_key = self._dedup_key(write, actor.owner_id, digest)
+        if await self.db.scalar(select(MemoryEntry.id).where(
+                MemoryEntry.dedup_key == dedup_key, MemoryEntry.id != entry_id).limit(1)):
+            # Another entry already says these words in this scope (dedup_key is unique; deleted entries have
+            # none). C7c-5c review: accepting a moved expert entry whose words a global entry gained after 0103
+            # was an IntegrityError (a 500); it is a known refusal now, as for any edit onto another entry's words.
+            raise MemoryError("memory_already_stored")
         revision_id = _id()
         version = expected_version + 1
         now = datetime.utcnow()
@@ -390,7 +397,7 @@ class MemoryRepository:
             MemoryEntry.status != "deleted",
         ).values(
             current_revision_id=revision_id, version=version, kind=write.kind,
-            normalized_hash=digest, dedup_key=self._dedup_key(write, actor.owner_id, digest),
+            normalized_hash=digest, dedup_key=dedup_key,
             scope_kind=write.scope.kind, scope_id=write.scope.id,
             # #475 review, F3: only the user widens an entry's use (the automatic paths set it from the setting,
             # whatever the write says); its sensitivity already came in with the write (G1).

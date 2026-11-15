@@ -8,14 +8,18 @@ these tables: every step is a no-op there except the expert-scope triggers (step
 0. An install whose memory v2 never activated maps its legacy memory first (memory_migration, as 0047 does), so
    the experts' stored preferences are not lost with `spawns`.
 1. Each expert the user made (`is_default = 0`; the built-in examples seeded until 0.1.48 are not theirs) becomes a skill, written as `skill_forge.register` wrote
-   it for `expert_conversion.convert` (category "authored", tier safe, on), from frozen copies of that code
+   it for `expert_conversion.convert` (category "authored", tier safe), from frozen copies of that code
    (the 0077 and 0082 rule: no async service in a migration, and a later change there never changes this). A
    taken key is never overwritten: the same body means already converted; otherwise `key-2`, `key-3`, ... A
-   prompt too short to be a method is counted, not converted. A prompt holding a credential is converted with
-   the credential replaced (content_policy.without_credentials), switched off, and a note in the method that a
+   prompt too short to be a method is counted, not converted. Every converted skill is written switched off
+   (enabled = 0), its description saying it came from a former expert and is off until the user switches it on:
+   the credential screen misses many secrets (cloud keys, URLs with a password, Basic auth, JWTs, a secret split
+   by a line break), so no prompt is trusted to be free of one (⓪Plan's ruling, review of C7c-5c). Where the screen
+   does find one, it is also replaced (content_policy.without_credentials) and the method opens with a note that a
    secret was removed and must be added back: never skipped, never verbatim (⓪Plan's ruling, Q4).
 2. Knowledge an expert held privately moves into one "Former expert notes" collection, bound to no project
-   (so retrieval sees it no more than before), the expert's name in `origin_label`. One UPDATE sets
+   (so retrieval sees it no more than before), the expert's name in `origin_label` (with any credential the screen
+   finds replaced, as in step 1). One UPDATE sets
    collection_id and clears spawn_id, so ck_chunk_exactly_one_scope holds; ids, FTS rows and embeddings stay.
 3. An expert's stored answer (`spawn_summary`) becomes an `arslan` reply: the display copy keeps the words, the
    context copy says it was relayed (what the answer prompt added at read time until now).
@@ -24,7 +28,9 @@ these tables: every step is a no-op there except the expert-scope triggers (step
    `task_invalid_driver` (the web's "cannot resume"; task_service refuses that driver already).
 6. Every expert-scope memory entry moves to global with its id kept (a restored backup is reconciled by id).
    Deleted: the scope only. Superseded: moved, still superseded. Restricted (secret, never-use, or no content):
-   quarantined. Every other: proposed, with a pending `memory_v2` proposal (candidate NULL) and a `migration`
+   quarantined. Already present (a live global entry has the same dedup key, as MemoryRepository computes it for
+   that entry's words in global scope): superseded by that entry, with no proposal, since accepting it could only
+   collide with that entry's key. Every other: proposed, with a pending `memory_v2` proposal (candidate NULL) and a `migration`
    source, its confirmation cleared, so only the user's yes on that proposal puts it in use; never the bulk
    "noticed earlier" accept. Their stale pending proposals are dismissed, and so are v1 proposals on `spawns`.
    No tombstone is written and `deletion_epoch` is not touched; old tombstones keep scope "expert", which the
@@ -48,8 +54,11 @@ Order with 0102: 0102 (another lane) may merge after this one. The runner applie
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import re
+import unicodedata
 import uuid
 from collections import Counter
 from datetime import datetime
@@ -76,6 +85,8 @@ TRIGGERS = (
     "WHEN NEW.scope_kind = 'expert' BEGIN SELECT RAISE(ABORT, 'memory_scope_retired'); END",
 )
 
+OFF_NOTE = "Converted from a former expert; off until you switch it on."
+
 # --- frozen from skill_forge (MAX_SKILL_BYTES, validate) and expert_conversion (skill_key, skill_body), v0.1.64 ---
 _MAX_SKILL_BYTES = 15 * 1024
 _MIN_BODY_CHARS = 80
@@ -100,6 +111,14 @@ def _skill_body(row: dict, note: str = "") -> str:
 def _invalid(key: str, name: str, description: str, body: str) -> bool:
     return (not _KEY_RE.match(key) or not name.strip() or not description.strip() or "## Trigger" not in body
             or len(body) < _MIN_BODY_CHARS or len(body.encode("utf-8")) > _MAX_SKILL_BYTES)
+
+
+# --- frozen from memory_repository (digest, _dedup_key) and content_policy.normalized_memory, v0.1.64 ---
+def _dedup_key(digest_key: str, owner_id: str, kind: str, content: str) -> str:
+    """The key MemoryRepository.revise would give these words in global scope (its unique dedup_key)."""
+    normalized = " ".join(unicodedata.normalize("NFKC", content).casefold().split())
+    digest = hmac.new(bytes.fromhex(digest_key), normalized.encode(), hashlib.sha256).hexdigest()
+    return hashlib.sha256(json.dumps([owner_id, kind, "global", None, digest]).encode()).hexdigest()
 
 
 def _now() -> str:
@@ -142,15 +161,15 @@ def _skills(connection, tables, counts) -> None:
         f"{where} ORDER BY id").mappings().all()
     for raw in rows:
         row = dict(raw)
-        note, enabled = "", 1
+        note, held = "", False
         if any(contains_credential(str(value)) for value in row.values() if isinstance(value, str)):
             row = {k: without_credentials(v) if isinstance(v, str) else v for k, v in row.items()}
-            note, enabled = SECRET_NOTE, 0
+            note, held = SECRET_NOTE, True
         body = _skill_body(row, note)
         if contains_credential(body):        # what the screen still finds after the replacement: not kept at all
             body = _skill_body({**row, "system_prompt": ""}, note)
         name = _clean(row["name"], 100)
-        description = _clean(f"Method from the former expert {row['name']}"[:200], 2000)
+        description = _clean(f"Method from the former expert {row['name']}"[:200] + f". {OFF_NOTE}", 2000)
         base = _skill_key(row["id"], row["name"])
         if _invalid(base, name or base, description, body) or any(map(contains_credential, (body, name, description))):
             counts["skills_too_short"] += 1
@@ -162,10 +181,10 @@ def _skills(connection, tables, counts) -> None:
             if taken is None:
                 connection.exec_driver_sql(
                     "INSERT INTO skill_packs (key, name, category, description, tier, status, body, enabled, "
-                    "source_id) VALUES (?, ?, 'authored', ?, 'safe', 'registered', ?, ?, NULL)",
-                    (key, name or key, description, body, enabled))
+                    "source_id) VALUES (?, ?, 'authored', ?, 'safe', 'registered', ?, 0, NULL)",
+                    (key, name or key, description, body))     # always off: see the docstring, step 1
                 counts["skills_made"] += 1
-                counts["skills_held_off_credential"] += 1 - enabled
+                counts["skills_held_off_credential"] += held
                 break
             if taken[0] == body:
                 counts["skills_already"] += 1
@@ -174,6 +193,7 @@ def _skills(connection, tables, counts) -> None:
 
 def _knowledge(connection, tables, names, counts, now) -> None:
     """Step 2."""
+    from arslan.companion.content_policy import contains_credential, without_credentials
     if "knowledge_chunks" not in tables:
         return
     if "origin_label" not in _columns(connection, "knowledge_chunks"):
@@ -186,7 +206,9 @@ def _knowledge(connection, tables, names, counts, now) -> None:
         "INSERT INTO collections (name, description, created_at) VALUES (?, ?, ?) RETURNING id",
         (COLLECTION_NAME, COLLECTION_DESCRIPTION, now)).scalar()
     for sid in spawn_ids:
-        label = _clean(names.get(sid) or "", 100) or f"Expert {sid}"
+        label = _clean(without_credentials(names.get(sid) or ""), 100)
+        if not label or contains_credential(label):
+            label = f"Expert {sid}"
         moved = connection.exec_driver_sql(
             "UPDATE knowledge_chunks SET collection_id = ?, origin_label = ?, spawn_id = NULL WHERE spawn_id = ?",
             (collection, label, sid))
@@ -244,10 +266,13 @@ def _memory(connection, tables, counts, now) -> None:
     if "memory_entries" not in tables:
         return
     rows = connection.exec_driver_sql(
-        "SELECT e.id, e.status, e.version, e.sensitivity, e.use_policy, e.scope_id, r.content, r.structured_value "
+        "SELECT e.id, e.status, e.version, e.sensitivity, e.use_policy, e.scope_id, r.content, r.structured_value, "
+        "e.owner_id, e.kind "
         "FROM memory_entries e LEFT JOIN memory_revisions r ON r.id = e.current_revision_id AND r.entry_id = e.id "
         "WHERE e.scope_kind = 'expert' ORDER BY e.id").all()
-    for entry_id, status, version, sensitivity, use_policy, scope_id, content, structured in rows:
+    digest_key = (connection.exec_driver_sql("SELECT digest_key FROM memory_store_state WHERE id=1").scalar()
+                  if rows and "memory_store_state" in tables else None)
+    for entry_id, status, version, sensitivity, use_policy, scope_id, content, structured, owner_id, kind in rows:
         counts["proposals_dismissed"] += connection.exec_driver_sql(
             "UPDATE memory_proposals SET status = 'dismissed', candidate = NULL, reason = ?, resolved_at = ? "
             "WHERE target_entry_id = ? AND status = 'pending'", (REASON, now, entry_id)).rowcount
@@ -259,6 +284,14 @@ def _memory(connection, tables, counts, now) -> None:
             continue
         restricted = sensitivity == "secret" or use_policy == "never" or content is None
         new_status = "superseded" if status == "superseded" else ("quarantined" if restricted else "proposed")
+        present = None
+        if new_status == "proposed" and digest_key:
+            # A live global entry already says these words: accepting this one would take its unique dedup_key.
+            present = connection.exec_driver_sql(
+                "SELECT id FROM memory_entries WHERE dedup_key = ? AND id != ? AND status != 'deleted' LIMIT 1",
+                (_dedup_key(digest_key, owner_id, kind, content), entry_id)).scalar()
+            if present is not None:
+                new_status = "superseded"
         revision = str(uuid.uuid4())
         connection.exec_driver_sql(
             "INSERT INTO memory_revisions (id, entry_id, version, content, structured_value, previous_version, "
@@ -271,9 +304,12 @@ def _memory(connection, tables, counts, now) -> None:
              json.dumps({"migration": "0103", "from_scope": "expert", "from_scope_id": scope_id}), now))
         connection.exec_driver_sql(
             "UPDATE memory_entries SET scope_kind = 'global', scope_id = NULL, status = ?, version = ?, "
-            "current_revision_id = ?, dedup_key = NULL, confirmed_at = NULL, confirmation_kind = NULL, updated_at = ? "
-            "WHERE id = ?", (new_status, version + 1, revision, now, entry_id))
-        if new_status == "proposed":
+            "current_revision_id = ?, dedup_key = NULL, confirmed_at = NULL, confirmation_kind = NULL, updated_at = ?, "
+            "superseded_by = COALESCE(?, superseded_by) "
+            "WHERE id = ?", (new_status, version + 1, revision, now, present, entry_id))
+        if present is not None:
+            counts["already_present"] += 1
+        elif new_status == "proposed":
             connection.exec_driver_sql(
                 "INSERT INTO memory_proposals (kind, table_name, old_id, new_id, target_entry_id, target_version, "
                 "candidate, reason, status, provenance, conversation_id, created_at) "
