@@ -242,6 +242,7 @@ async def delete_conversation(
     conversation_id: str,
     sub_sessions: Literal["delete", "keep"] | None = None,
     sub_session: bool = False,
+    side_chat: bool = False,
     db: AsyncSession = Depends(get_session),
 ) -> dict:
     """Purge a conversation's OWN rows across the FK-less `conversation_id` tables.
@@ -258,11 +259,13 @@ async def delete_conversation(
     `sub_sessions.deleted`). A conversation
     with sub-sessions needs `sub_sessions`: "delete" takes its whole tree, "keep" makes its own sub-sessions
     top-level chats (`sub_sessions.before_delete`); 409 while one is at work. A sub-session is deleted only when
-    named as one (`sub_session=true`): the phone's `conversation.delete` names none, and gets its not-found."""
+    named as one (`sub_session=true`), and so is a side chat (`side_chat=true`, SIDE-1): the phone's
+    `conversation.delete` names none, and gets its not-found. A conversation's side chats go with it."""
     from server.db.companion_models import ConversationContext
     from server.services import sub_sessions as subs
     try:
-        ids, kept = await subs.before_delete(db, conversation_id, choice=sub_sessions, as_sub_session=sub_session)
+        ids, kept = await subs.before_delete(db, conversation_id, choice=sub_sessions, as_sub_session=sub_session,
+                                             as_side_chat=side_chat)
     except subs.SubSessionError as exc:
         if exc.code == "not_found":
             raise HTTPException(404, detail="not_found") from None
@@ -324,6 +327,7 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
     from server.db.models import ConversationModel, ProviderConfig
     if len(conversation_id) > 100 or not conversation_id.strip():
         raise HTTPException(422, detail={"code": "invalid_conversation_id"})
+    await _no_model_of_its_own(db, conversation_id)
     if await db.get(ProviderConfig, body.config_id) is None:
         raise HTTPException(404, detail={"code": "provider_config_not_found"})
     model = body.model.strip()
@@ -344,6 +348,7 @@ async def set_conversation_model(conversation_id: str, body: ConversationModelIn
 async def clear_conversation_model(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     from server.db.models import ConversationModel
     from server.services import llm_factory
+    await _no_model_of_its_own(db, conversation_id)
     row = await db.get(ConversationModel, conversation_id)
     if row is not None:
         await db.delete(row)
@@ -358,13 +363,15 @@ class PermissionModeIn(BaseModel):
 
 async def _permission_mode_out(db: AsyncSession, conversation_id: str) -> dict:
     """S5a: `own` (null = the default), `chosen` (own, or the default, narrowed by a parent for a sub-session), `mode`
-    (what applies now) and `fallback` (why "ask_risky" runs as "ask": sandbox_off | home_folder | no_checkpoint)."""
+    (what applies now) and `fallback` (why "ask_risky" runs as "ask": sandbox_off | home_folder | no_checkpoint).
+    SIDE-1 (#910 review): a side chat has no `own` or `previous`, whatever its row stores; `chosen` is its parent's."""
     from server.db.companion_models import ConversationContext
-    from server.services import permissions
+    from server.services import permissions, phone_ids, sub_sessions
     row = await db.get(ConversationContext, conversation_id)
     state = await permissions.mode_for(conversation_id)
-    return {"own": row.permission_mode if row is not None else None, "chosen": state.chosen, "mode": state.mode,
-            "fallback": state.fallback, "previous": row.previous_mode if row is not None else None}
+    mine = row is not None and phone_ids.kind_of(conversation_id, row.kind) != sub_sessions.SIDE
+    return {"own": row.permission_mode if mine else None, "chosen": state.chosen, "mode": state.mode,
+            "fallback": state.fallback, "previous": row.previous_mode if mine else None}
 
 
 def _checked_id(conversation_id: str) -> None:
@@ -385,6 +392,7 @@ async def set_permission_mode(conversation_id: str, body: PermissionModeIn,
     """From the next step on. Entering plan keeps the mode it left (`previous_mode`, null = the default) for Start."""
     from server.db.companion_models import ConversationContext
     _checked_id(conversation_id)
+    await _no_model_of_its_own(db, conversation_id)     # SIDE-1: a side chat's permissions are its parent's, never its own
     row = await db.get(ConversationContext, conversation_id) or ConversationContext(id=conversation_id)
     if body.mode == "plan" and row.permission_mode != "plan":
         row.previous_mode = row.permission_mode
@@ -398,12 +406,23 @@ async def set_permission_mode(conversation_id: str, body: PermissionModeIn,
 async def start_from_plan(conversation_id: str, db: AsyncSession = Depends(get_session)) -> dict:
     """Plan's "Start": back to the mode before plan (null = the default), never wider than it was."""
     from server.db.companion_models import ConversationContext
+    await _no_model_of_its_own(db, conversation_id)
     row = await db.get(ConversationContext, conversation_id)
     if row is None or row.permission_mode != "plan":
         raise HTTPException(409, detail={"code": "not_in_plan"})
     row.permission_mode, row.previous_mode = row.previous_mode, None
     await db.commit()
     return await _permission_mode_out(db, conversation_id)
+
+
+async def _no_model_of_its_own(db: AsyncSession, conversation_id: str) -> None:
+    """SIDE-1: a side chat runs on its parent's model (`llm_factory`) and permission mode; none of its own is set or
+    cleared."""
+    from server.db.companion_models import ConversationContext
+    from server.services import phone_ids, sub_sessions
+    row = await db.get(ConversationContext, conversation_id)
+    if phone_ids.kind_of(conversation_id, row.kind if row else None) == sub_sessions.SIDE:
+        raise HTTPException(422, detail={"code": "side_chat_inherits"})
 
 
 @router.post("/conversations/{conversation_id}/seen")
@@ -414,3 +433,33 @@ async def mark_conversation_seen(conversation_id: str, db: AsyncSession = Depend
     if await db.scalar(select(ArslanMessage.id).where(ArslanMessage.conversation_id == conversation_id).limit(1)) is None:
         raise HTTPException(404, detail={"code": "conversation_not_found"})
     return {"seen_message_id": await conversation_seen.mark(db, conversation_id)}
+
+
+# ── SIDE-1 (v0.1.64): side chats (`server/services/side_chats.py`) ─────────────
+
+class SideChatIn(BaseModel):
+    """Where it branches; none: at the parent's newest message. The quote the user selected is no field here: it is the
+    side chat's first message (⓪Plan, 2026-11-14)."""
+    model_config = ConfigDict(extra="forbid")
+    branch_message_id: int | None = Field(default=None, ge=1)
+
+
+@router.get("/conversations/{conversation_id}/side-chats")
+async def list_side_chats(conversation_id: str, db: AsyncSession = Depends(get_session)) -> list[dict]:
+    """This conversation's side chats, oldest first (`side_chats.listing`)."""
+    from server.services import side_chats
+    try:
+        return await side_chats.listing(db, conversation_id)
+    except side_chats.SideChatError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code}) from None
+
+
+@router.post("/conversations/{conversation_id}/side-chats", status_code=201)
+async def start_side_chat(conversation_id: str, body: SideChatIn, db: AsyncSession = Depends(get_session)) -> dict:
+    """A new side chat of this conversation (`side_chats.create`). Its messages go over the window's socket, as any
+    conversation's; DELETE /conversations/{id}?side_chat=true deletes it, and deleting its parent does too."""
+    from server.services import side_chats
+    try:
+        return await side_chats.create(db, conversation_id, body.branch_message_id)
+    except side_chats.SideChatError as exc:
+        raise HTTPException(exc.status, detail={"code": exc.code}) from None

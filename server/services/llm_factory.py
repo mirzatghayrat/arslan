@@ -83,7 +83,7 @@ async def effective_choice(db, conversation_id: str | None) -> dict | None:
     may go to the vision slot. None when no config exists."""
     if conversation_id:
         from server.db.models import ConversationModel, ProviderConfig
-        row = await db.get(ConversationModel, conversation_id)
+        row = await db.get(ConversationModel, await _model_owner(db, conversation_id))
         if row is not None and (config := await db.get(ProviderConfig, row.config_id)) is not None:
             # As _config_adapter builds it: an empty stored model (older rows) runs the config's own.
             return {"config_id": config.id, "model": row.model or config.model, "provider": config.provider}
@@ -172,10 +172,19 @@ async def build_conversation_adapter(conversation_id: str | None) -> LLMAdapter 
         return None
     from server.db.models import ConversationModel
     async with db_session.AsyncSessionLocal() as db:
-        row = await db.get(ConversationModel, conversation_id)
+        row = await db.get(ConversationModel, await _model_owner(db, conversation_id))
         if row is None:
             return None
         return await _config_adapter(db, row.config_id, row.model)
+
+
+async def _model_owner(db, conversation_id: str) -> str:
+    """Whose model choice a conversation runs on: its own, or for a side chat its parent's (SIDE-1, card rule 6; one
+    of its own can't be set: `side_chat_inherits`)."""
+    from server.db.companion_models import ConversationContext
+    from server.services import sub_sessions
+    row = await db.get(ConversationContext, conversation_id)
+    return row.parent_id if row is not None and row.kind == sub_sessions.SIDE and row.parent_id else conversation_id
 
 
 async def _legacy_build_adapter(db) -> LLMAdapter:  # noqa: ANN001
