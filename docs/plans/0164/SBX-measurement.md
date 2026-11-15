@@ -560,7 +560,7 @@ the same measurement. As built, the row is base-keyed pending MCP, just like the
 other MCP cases; registering the adapter must execute the row and retain its
 outcome in the evidence.
 
-## SBX-8: the two numbers on the merged stack (runbook; results pending)
+## SBX-8: the two numbers on the merged stack (runbook and results)
 
 What SBX-8 measures ([card](SBX-sandbox.md), "After measuring" and "The two numbers"), with no product, report or
 runner change: on the merged SBX stack and S2a-3's wire, the same tasks under "ask for every command" and "ask only
@@ -601,13 +601,34 @@ Spend stays under the proxy's caps (`BENCH_CAP_USD`, `BENCH_RUN_CAP_USD`).
 
 ### Results
 
-Filled in after the sitting: date, macOS build, model, tasks, repeats and spend.
+The sitting:
+- **Date and build:** 2026-11-15, on main `dd6b21f5c`, macOS build 25G83.
+- **Model:** `claude-sonnet-5-5`.
+- **Tasks:** T5, T7, T13 and T19, 3 repeats under each policy, so 24 runs, each with a fresh instance and Arslan's own sandbox on.
+- **Spend:** about $2.47 (the report's mean cost per task × 6 runs, summed).
 
 | Policy | Task | Runs | `run_command` calls | Cards | Cards to leave | Stopped by the sandbox |
 | --- | --- | --- | --- | --- | --- | --- |
-| ask_all | (pending) | | | | | |
-| ask_risky | (pending) | | | | | |
+| ask_all | T5 | 3 | 9 | 11 | 0 | 0 |
+| ask_all | T7 | 3 | 5 | 8 | 0 | 0 |
+| ask_all | T13 | 3 | 10 | 12 | 0 | 0 |
+| ask_all | T19 | 3 | 52 | 55 | 0 | 0 |
+| ask_risky | T5 | 3 | 7 | 0 | 0 | 1 |
+| ask_risky | T7 | 3 | 3 | 0 | 0 | 0 |
+| ask_risky | T13 | 3 | 10 | 0 | 0 | 0 |
+| ask_risky | T19 | 3 | 53 | 0 | 0 | 0 |
+| **ask_all** | all | 12 | 76 | 86 | 0 | 0 |
+| **ask_risky** | all | 12 | 73 | 0 | 0 | 1 |
 
-What asking only when risky saves per task (ask_all cards minus ask_risky cards), and the stop share, are written
-here with the run ids. Limits: the stop count is an estimate, like the weekly report's. It counts EPERM text and the
-proxy's named refusal only, so a stop that prints neither is missed.
+- **Quality:** Pass^k for every task (24 of 24 runs passed). T13 caught 24 of 24 planted issues with 0 false positives.
+- **What asking only when risky saves:** 86 cards in 12 runs, so 7.2 a run, with no loss in passes. The ask_risky
+  baseline that CLS has to beat is 0 cards a run on these tasks.
+- **Leaving the sandbox:** 0 cards in all 24 runs, a share of 0%. This is the v0.1.64 baseline. The ceiling is
+  set from it.
+- **Stops:** 1 of 149 commands, 1 of 24 instances (T5, repeat 2, ask_risky). It was a helper script written
+  to the system temporary folder outside the work folder, refused with EPERM. The task still passed.
+  Follow-up for v0.1.65: mainstream sandboxes allow that write, or send it to the per-user temporary folder.
+- **Limits:**
+  - The stop count is an estimate, like the weekly report's. It counts EPERM text and the proxy's named refusal
+    only, so a stop that prints neither is missed.
+  - 4 local tasks with one model. These tasks need no network, other apps or Hands.
