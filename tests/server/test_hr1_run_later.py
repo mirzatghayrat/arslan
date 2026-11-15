@@ -709,8 +709,13 @@ def test_the_walk_never_lists_the_closed_or_privacy_protected_home_folders(home,
     opened = _recorded(monkeypatch)
     made = make()
     assert opened, which
-    inside = [f for f in opened if any(f == s or s in f.parents for s in skipped)]
+    # Exactly the run-later home folders are listed on purpose (`home_filters` holds each link's target, #940 review
+    # 1): LaunchAgents and its siblings are not privacy-protected, and nothing under them is opened.
+    held = {Path(os.path.realpath(h / n)) for h in {home, Path.home()} for n in run_later.HOME_NAMES}
+    held |= {Path(os.path.realpath(n)) for n in run_later.SYSTEM_NAMES}
+    inside = [f for f in opened if f not in held and any(f == s or s in f.parents for s in skipped)]
     assert inside == [], which
+    assert not any(h in f.parents for f in opened for h in held), which
     assert Path(os.path.realpath(home)) / f"{STAND_IN}-plain" / STAND_IN in opened
     if which == "walk":
         assert made.complete and sorted(made.skipped) == sorted([*tcc, closed])

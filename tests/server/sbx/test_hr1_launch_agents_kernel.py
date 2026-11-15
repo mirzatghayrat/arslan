@@ -172,6 +172,27 @@ async def test_a_plist_link_inside_the_folder_is_held_at_its_target(home, dangli
     assert dotfiles.is_dir() and not (home / "D2").exists()
 
 
+@pytest.mark.macos
+@macos
+@pytest.mark.parametrize("to", ["home", "root"])
+@pytest.mark.parametrize("sandbox", [False, True], ids=["floor", "commands"])
+async def test_a_link_to_a_folder_holds_only_that_entry(home, to, sandbox):
+    """#940 review 2: a link in LaunchAgents to ~ or / is held by literal, never as a subpath, so an ordinary write in
+    the work folder still lands, while a plist write into LaunchAgents is still refused."""
+    agents = home / "Library" / "LaunchAgents"
+    (agents / f"{STAND_IN}-link").symlink_to(home if to == "home" else Path("/"))
+    work = _work(home)
+    command = f"printf zz > '{work / STAND_IN}.txt'"
+    if sandbox:
+        ok = await terminal_exec.run(command, cwd=work, sandbox=True, offline=True)
+        refused = await terminal_exec.run(f"printf zz > '{agents / PLIST}'", cwd=work, sandbox=True, offline=True)
+    else:
+        ok = await _floor(command, home)
+        refused = await _floor(f"printf zz > '{agents / PLIST}'", home)
+    assert ok["exit_code"] == 0 and (work / f"{STAND_IN}.txt").read_text() == "zz", ok
+    assert refused["exit_code"] != 0 and not (agents / PLIST).exists(), refused
+
+
 def test_home_filters_hold_a_link_targets_real_path_and_its_folders(tmp_path):
     home = tmp_path / "home"
     agents = home / "Library" / "LaunchAgents"

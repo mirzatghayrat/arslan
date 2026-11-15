@@ -131,8 +131,11 @@ def home_filters(home: Path) -> tuple[str, ...]:
             ancestors += [p for p in resolved.parents if p != p.parent]
         # A link inside the folder (a dotfiles manager's plist, an old `ln -sfv`): launchd reads its target, so the
         # target is held too (#940 review 1), and the folders above it by literal, as for the folder's real path.
+        # Always by literal: launchd loads only plist files there, and a link to a folder (~, /) held as a subpath
+        # would close the whole tree, the work folder included (#940 review 2); the literal keeps the entry itself
+        # from being renamed or replaced.
         for target in _linked_targets(resolved):
-            spelling = subpath(target) if target.is_dir() else literal(target)
+            spelling = literal(target)
             if spelling not in held:
                 held.append(spelling)
             ancestors += [p for p in target.parents if p != p.parent]
