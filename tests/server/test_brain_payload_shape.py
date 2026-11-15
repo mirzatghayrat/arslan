@@ -27,7 +27,6 @@ from server.db.models import (
     KnowledgeChunk,
     Learning,
     Note,
-    Spawn,
     UserFact,
 )
 
@@ -59,10 +58,8 @@ async def seeded(client, monkeypatch):
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", client.db_maker)
     async with client.db_maker() as s:
-        s.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp"))
-        # The spawn row goes in first: the message and the chunk below point at it, and foreign
-        # keys are enforced, so a flush that wrote them first would be refused.
-        await s.flush()
+        # The message and the chunk below keep spawn_id=1, as an upgraded install's rows do: no Spawn model or
+        # foreign key since C7c-5b (C7c-5c moves them).
         # category NON-BLANK: this is what makes brain_graph enter its fact tag loop
         # F1: valid_from is set EXPLICITLY here. Production always sets it (memory.py:245,
         # :359, learning_service.py:76 are the only three construction sites), but these

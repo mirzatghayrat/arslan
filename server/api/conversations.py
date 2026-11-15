@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import delete, func, select
+from sqlalchemy import bindparam, delete, func, select, text
 
 from server.auth import require_auth
 from server.db.session import get_session
@@ -13,10 +13,8 @@ from server.db.models import (
     ArslanMessage,
     ArslanSummary,
     ConversationEvent,
-    ConversationSpawn,
     DistilledSession,
     PermissionGrant,
-    SpawnPhase,
 )
 from server.schemas import (
     ConversationListItem,
@@ -278,15 +276,22 @@ async def delete_conversation(
     # user's real one and the listing read a temp one. `get_session` reads the
     # module global at call time, so fixtures that patch AsyncSessionLocal keep
     # working exactly as before.
-    for model in (
-        ArslanMessage,
-        ArslanSummary,
-        ConversationEvent,
-        ConversationSpawn,
-        SpawnPhase,
-        DistilledSession,
-        PermissionGrant,
-    ):
+    for model in (ArslanMessage, ArslanSummary, ConversationEvent):
+        res = await db.execute(
+            delete(model).where(model.conversation_id.in_(ids)))
+        deleted[model.__tablename__] = res.rowcount or 0
+    # The expert-era tables have no model since C7c-5b (v0.1.64): a new install has neither, an upgraded one
+    # keeps them until C7c-5c drops them. DELETE-BY: v0.1.64, with C7c-5c.
+    present = set((await db.execute(text(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name IN ('conversation_spawns', 'spawn_phases')"))).scalars())
+    for table in ("conversation_spawns", "spawn_phases"):
+        res = (await db.execute(
+            text(f"DELETE FROM {table} WHERE conversation_id IN :ids").bindparams(
+                bindparam("ids", expanding=True)), {"ids": list(ids)})
+            if table in present else None)
+        deleted[table] = (res.rowcount or 0) if res is not None else 0
+    for model in (DistilledSession, PermissionGrant):
         res = await db.execute(
             delete(model).where(model.conversation_id.in_(ids)))
         deleted[model.__tablename__] = res.rowcount or 0

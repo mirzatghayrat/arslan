@@ -18,7 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship, validates
+from sqlalchemy.orm import validates
 
 from server.db.base import Base
 
@@ -33,88 +33,6 @@ def _clean_name(value, limit: int):
         return None
     from server.orchestrator import untrusted
     return untrusted.clean_name(value, limit)
-
-
-class RecipeVersion(Base):
-    __tablename__ = "recipe_versions"
-    __table_args__ = (UniqueConstraint("key", "version"),)
-    id = Column(Integer, primary_key=True)
-    key = Column(String(60), nullable=False, index=True)
-    version = Column(Integer, nullable=False)
-    name = Column(String(100), nullable=False)
-    spec = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class RecipeExecution(Base):
-    __tablename__ = "recipe_executions"
-    id = Column(Integer, primary_key=True)
-    request_key = Column(String(80), nullable=False, unique=True)
-    recipe_id = Column(Integer, ForeignKey("recipe_versions.id"), nullable=False)
-    input = Column(Text, nullable=False)
-    status = Column(String(30), nullable=False, default="queued")
-    checkpoint = Column(JSON, nullable=False, default=dict)
-    run_id = Column(Integer, nullable=True)
-    error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
-
-
-# DELETE-BY: v0.1.64, with C7c-5 (the model, the table and what points at it; the model moved from C7c-4).
-class Spawn(Base):
-    __tablename__ = "spawns"
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String(100), unique=True, nullable=False)
-    domain_category = Column(String(50), nullable=False)
-    domain_subcategory = Column(String(50), nullable=True)
-    capabilities = Column(JSON, default=list)
-    persona_role = Column(String(200), nullable=True)
-    persona_tone = Column(String(50), nullable=True)
-    system_prompt = Column(Text, nullable=False)
-    template_used = Column(String(100), nullable=True)
-    generation_level = Column(Integer, default=1)
-    config = Column(JSON, default=dict)
-    is_default = Column(Boolean, nullable=False, default=False, server_default="0")  # built-in agent: shipped + undeletable
-    level = Column(Integer, default=1)            # 1-10; reserved for future leveling (stays 1 in v2)
-    memory_facts = Column(JSON, default=list)     # per-spawn learned preferences (reserved)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    messages = relationship(
-        "ChatMessage", back_populates="spawn", cascade="all, delete-orphan"
-    )
-    feedback_entries = relationship(
-        "Feedback", back_populates="spawn", cascade="all, delete-orphan"
-    )
-
-
-class ChatMessage(Base):
-    __tablename__ = "chat_messages"
-
-    id = Column(Integer, primary_key=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=False)
-    role = Column(String(20), nullable=False)  # "user" | "assistant"
-    content = Column(Text, nullable=False)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    archived = Column(Boolean, nullable=False, default=False, server_default="0")
-
-    spawn = relationship("Spawn", back_populates="messages")
-
-
-class Feedback(Base):
-    __tablename__ = "feedback"
-
-    id = Column(Integer, primary_key=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=False)
-    session_id = Column(String(50), nullable=False)
-    message_id = Column(Integer, nullable=True)
-    user_action = Column(String(20), nullable=False)
-    edits = Column(JSON, default=dict)
-    quality_signal = Column(Integer, nullable=True)  # -1 | 0 | +1 (reserved leveling signal)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-
-    spawn = relationship("Spawn", back_populates="feedback_entries")
 
 
 class DistilledSession(Base):
@@ -160,7 +78,9 @@ class ArslanMessage(Base):
     role = Column(String(20), nullable=False)  # "user" | "arslan" | "spawn_summary"
     content = Column(Text, nullable=False)          # CONTEXT copy fed to Arslan's LLM
     display_content = Column(Text, nullable=True)   # DISPLAY copy rendered in the UI (full spawn output)
-    spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=True)
+    # C7c-5b (v0.1.64): no foreign key in the model since the Spawn model went; an upgraded install keeps the
+    # old REFERENCES in its table text until C7c-5c. Always NULL from then on (it is in the history row).
+    spawn_id = Column(Integer, nullable=True)
     run_id = Column(Integer, ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
     # 0.1.42: set on a background job's result message — done|partial|blocked|stopped.
@@ -256,53 +176,6 @@ class SkillPack(Base):
     @validates("name", "description")
     def _clean(self, field, value):
         return _clean_name(value, 100 if field == "name" else 2000)
-
-
-class SpawnCapability(Base):
-    """Per-spawn equipment row (toolset or skill grant)."""
-
-    __tablename__ = "spawn_capabilities"
-    __table_args__ = (UniqueConstraint("spawn_id", "kind", "ref_key"),)
-
-    id = Column(Integer, primary_key=True)
-    spawn_id = Column(
-        Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    kind = Column(String(10), nullable=False)   # "toolset" | "skill"
-    ref_key = Column(String(60), nullable=False)
-    grant = Column(String(10), nullable=False, default="permanent")  # "permanent" | "temporary"
-    granted_by = Column(String(20), nullable=False, default="create")  # "create" | "escalation" | "user"
-    expires_turn = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class SpawnPhase(Base):
-    """Staged-orchestration phase state per conversation (one pending proposal at a time)."""
-
-    __tablename__ = "spawn_phases"
-
-    id = Column(Integer, primary_key=True)
-    conversation_id = Column(String(50), nullable=False, index=True)
-    spawn_id = Column(Integer, nullable=False)
-    phase = Column(String(20), nullable=False)   # 'proposing'
-    direction = Column(Text, nullable=False, default="")
-    updated_at = Column(String(50), nullable=False, default="")
-
-
-class ConversationSpawn(Base):
-    """Per-conversation spawn roster membership (conversation-workbench #2)."""
-
-    __tablename__ = "conversation_spawns"
-
-    id = Column(Integer, primary_key=True)
-    conversation_id = Column(String(50), nullable=False, index=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id"), nullable=False)
-    joined_via = Column(String(16), nullable=False)  # "routed" | "created" | "invited"
-    joined_at = Column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("conversation_id", "spawn_id", name="uq_conversation_spawn"),
-    )
 
 
 class MCPServer(Base):
@@ -505,8 +378,9 @@ class Run(Base):
 
     id = Column(Integer, primary_key=True)
     conversation_id = Column(String(50), nullable=False, index=True)
-    # nullable + SET NULL: a replay must survive spawn deletion (spawn_name kept below).
-    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="SET NULL"), nullable=True)
+    # History only: the expert a run was routed to (spawn_name kept below). No foreign key in the model since
+    # C7c-5b; an upgraded install keeps the old REFERENCES in its table text. DELETE-BY: v0.1.65.
+    spawn_id = Column(Integer, nullable=True)
     spawn_name = Column(String(100), nullable=True)
     user_message = Column(Text, nullable=False, default="")
     started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -588,71 +462,6 @@ class RunEvaluation(Base):
     comment = Column(Text, nullable=False, default="")
 
 
-class EvolutionProposal(Base):
-    """An offline-evolution candidate prompt + its gate verdict, awaiting human confirm."""
-
-    __tablename__ = "evolution_proposals"
-
-    id = Column(Integer, primary_key=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
-    candidate_prompt = Column(Text, nullable=False)
-    gate_passed = Column(Boolean, nullable=False, default=False)
-    evidence = Column(JSON, default=dict)   # aggregate + per-item summary; S2 stores protected_run_ids here
-    # S2 (0028) widens the allowed value set to: proposed|promoted|rejected|open|stale.
-    # 'open' = a living proposal accumulating evidence; 'stale' = base prompt drifted from base_prompt_sha.
-    status = Column(String(20), nullable=False, default="proposed")
-    base_prompt_sha = Column(String(64), nullable=True)  # S2: sha256 of the base prompt the gate ran against
-    created_at = Column(DateTime, default=datetime.utcnow)
-    promoted_at = Column(DateTime, nullable=True)
-
-
-class SyntheticTask(Base):
-    """A versioned synthetic evaluation task for the cold-start replay corpus (S2 E6).
-
-    source='domain' (generated from the spawn's domain profile) or 'variant' (a variant of a
-    real run's task, carrying source_run_id). split_side is inherited from the source task so a
-    holdout task's variant can never leak into the propose set. status supports E6's
-    first-replay invalid-task exclusion."""
-
-    __tablename__ = "synthetic_tasks"
-
-    id = Column(Integer, primary_key=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
-    version = Column(Integer, nullable=False, default=1)
-    task = Column(Text, nullable=False)
-    source = Column(String(20), nullable=False)          # "domain" | "variant"
-    source_run_id = Column(Integer, nullable=True)       # the real run a variant derives from
-    split_side = Column(String(10), nullable=False)      # "propose" | "holdout"
-    status = Column(String(10), nullable=False, default="active", server_default="active")  # "active" | "invalid"
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class EvolutionAttempt(Base):
-    """One background evolution attempt for a spawn (S2 E5, audit CRITICAL-4).
-
-    Records the estimate (pre-run cost) and the actual (post-run), the outcome, the resulting
-    proposal (if any), and a human-readable reason. Trigger cadence keys off the last attempt,
-    not the last proposal — so a failing gate can back off deterministically."""
-
-    __tablename__ = "evolution_attempts"
-
-    id = Column(Integer, primary_key=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
-    started_at = Column(DateTime, default=datetime.utcnow)
-    finished_at = Column(DateTime, nullable=True)
-    outcome = Column(String(20), nullable=True)  # "passed" | "failed" | "error" | "skipped_budget" | "skipped_structural"
-    # 0036. NULLABLE on purpose: NULL = "provenance unknown (predates the column)".
-    # Backfilling legacy rows to 'auto' would fabricate attribution for exactly the manual
-    # clicks this column exists to account for. Every reader must be NULL-SAFE — SQL
-    # `source != 'manual'` is NULL (not TRUE) for a NULL row and would silently drop
-    # every legacy attempt from the counters that decide when the auto loop spends.
-    source = Column(String(10), nullable=True)      # "auto" | "manual" | NULL = unknown
-    estimate = Column(JSON, default=dict)
-    actual = Column(JSON, nullable=True)
-    proposal_id = Column(Integer, nullable=True)
-    reason = Column(Text, nullable=False, default="", server_default="")
-
-
 class Collection(Base):
     """A shared, named knowledge collection (layer A). Spawn wells stay on
     knowledge_chunks.spawn_id; shared material lives under collection_id."""
@@ -663,17 +472,6 @@ class Collection(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class SpawnCollection(Base):
-    """spawn ↔ collection binding (binding IS the retrieval routing)."""
-
-    __tablename__ = "spawn_collections"
-    __table_args__ = (UniqueConstraint("spawn_id", "collection_id"),)
-
-    id = Column(Integer, primary_key=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=False, index=True)
-    collection_id = Column(Integer, ForeignKey("collections.id", ondelete="CASCADE"), nullable=False, index=True)
 
 
 class KnowledgeChunk(Base):
@@ -687,33 +485,15 @@ class KnowledgeChunk(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="CASCADE"), nullable=True, index=True)
+    # The former expert-private well. No foreign key in the model since C7c-5b; the column stays because 0018
+    # reads it on every install and the CHECK above names it. C7c-5c moves the old rows to a collection.
+    spawn_id = Column(Integer, nullable=True, index=True)
     collection_id = Column(Integer, ForeignKey("collections.id", ondelete="CASCADE"), nullable=True, index=True)
     source = Column(String(200), nullable=False)
     chunk_index = Column(Integer, nullable=False)
     text = Column(Text, nullable=False)
     embedding = Column(LargeBinary, nullable=True)          # float32 LE bytes
     embedding_model = Column(String(80), nullable=True)     # provider model id
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
-class PersonaSeed(Base):
-    """A seed persona definition (e.g. from agency-agents) used to bootstrap spawns."""
-
-    __tablename__ = "persona_seeds"
-
-    id = Column(Integer, primary_key=True)
-    slug = Column(String(120), nullable=False, unique=True)
-    division = Column(String(80), nullable=True)
-    name = Column(String(160), nullable=True)
-    identity = Column(Text, nullable=True)
-    mission = Column(Text, nullable=True)
-    rules = Column(Text, nullable=True)
-    deliverables = Column(Text, nullable=True)
-    workflow = Column(Text, nullable=True)
-    success_metrics = Column(Text, nullable=True)
-    raw = Column(Text, nullable=False)
-    source = Column(String(200), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -941,7 +721,8 @@ class ScheduledTask(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(80), nullable=False)
     prompt = Column(Text, nullable=False)
-    spawn_id = Column(Integer, ForeignKey("spawns.id", ondelete="SET NULL"), nullable=True)
+    # No foreign key in the model since C7c-5b; the API refuses a non-null one (scheduled.spawn_not_found).
+    spawn_id = Column(Integer, nullable=True)
     conversation_id = Column(String(50), nullable=True)  # None -> dedicated "scheduled-{id}"
     # P2: WHO runs this. spawn_id NULL is ambiguous on its own — it means both
     # "no spawn was ever chosen" and "the spawn was deleted" (ondelete SET NULL),

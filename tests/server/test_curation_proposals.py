@@ -7,14 +7,13 @@ toggle test went with it (see test_curation_loop_removed.py).
 """
 from __future__ import annotations
 
-from server.db.models import MemoryProposal, Spawn
+from server.db.models import MemoryProposal
 
 AUTH: dict[str, str] = {}
 
 
 async def test_list_proposals_is_paginated(client):
     async with client.db_maker() as s:
-        s.add(Spawn(id=1, name="S", domain_category="g", system_prompt="sp"))
         for i in range(7):
             s.add(MemoryProposal(kind="preference_overwrite_suspect", table_name="spawns",
                                  old_id=1, reason=f"r{i}", status="pending",
@@ -42,7 +41,6 @@ async def test_v1_spawns_card_lists_without_excerpt_and_accept_is_refused(client
 
     assert "spawns" not in brain._TABLE_MODELS
     async with client.db_maker() as s:
-        s.add(Spawn(id=2, name="S2", domain_category="g", system_prompt="sp"))
         p = MemoryProposal(kind="preference_overwrite_suspect", table_name="spawns",
                            old_id=2, reason="r", status="pending", conversation_id="c-x",
                            provenance={"target_spawn_id": 2, "new_array": ["x"]})

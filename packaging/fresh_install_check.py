@@ -564,18 +564,12 @@ def check_runtime(port: int, home: pathlib.Path, log: pathlib.Path, c: Checks, a
         # cannot hide shipped user data.
         _check_empty_user_storage(conn, c)
 
-        # ---- chat_messages: empty ----------------------------------------
-        # Until 0.1.48 every install seeded six example experts, each with a
-        # one-line greeting here. One Arslan seeds none, so this table holds
-        # nothing — which also still catches a bundle shipping someone's chats.
-        if c.ok("chat_messages" in tables, "chat_messages table exists"):
-            rows = conn.execute("SELECT role, count(*) FROM chat_messages GROUP BY role").fetchall()
-            c.ok(rows == [], "chat holds no messages (no experts are seeded)", f"got {rows}")
-
-        # ---- no example experts (0.1.48) --------------------------------
-        if c.ok("spawns" in tables, "spawns table exists"):
-            got = sorted(r[0] for r in conn.execute("SELECT name FROM spawns"))
-            c.ok(got == [], "no example experts were seeded", f"found {got}")
+        # ---- no expert tables (v0.1.64 C7c-5b) -------------------------
+        # Until 0.1.48 every install seeded six example experts, each with a one-line greeting in
+        # chat_messages. Since C7c-5b a new install creates neither table, so either one here means a
+        # bundle built from old models, or one shipping someone's experts or chats.
+        for table in ("chat_messages", "spawns"):
+            c.ok(table not in tables, f"no {table} table on a new install")
     finally:
         conn.close()
 

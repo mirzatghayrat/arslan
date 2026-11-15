@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import server.db.session as db_session
-from server.db.models import ArslanMessage, Base, ConversationEvent, Spawn
+from server.db.models import ArslanMessage, Base, ConversationEvent
 from server.orchestrator import promise_guard
 
 
@@ -152,12 +152,6 @@ async def maker(tmp_path, monkeypatch):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    async with m() as s:
-        s.add(Spawn(id=6, name="Deck Master", domain_category="content-creator",
-                    capabilities=["deck"], system_prompt="You make decks."))
-        s.add(Spawn(id=7, name="Research Analyst", domain_category="researcher",
-                    capabilities=["research"], system_prompt="You research."))
-        await s.commit()
 
     monkeypatch.setattr(db_session, "AsyncSessionLocal", m)
     return m

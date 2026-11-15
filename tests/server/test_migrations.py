@@ -5,11 +5,12 @@ from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
 EXPECTED_TABLES = {
-    "spawns",
-    "chat_messages",
-    "feedback",
     "settings",
+    "arslan_messages",
+    "runs",
 }
+# C7c-5b (v0.1.64): the expert-era models went, so 0001's create_all makes none of their tables.
+GONE_TABLES = {"spawns", "chat_messages", "feedback"}
 
 
 @pytest_asyncio.fixture
@@ -29,3 +30,4 @@ async def test_initial_migration_creates_all_tables(upgraded_engine):
     async with upgraded_engine.connect() as conn:
         tables = await conn.run_sync(lambda c: set(inspect(c).get_table_names()))
     assert EXPECTED_TABLES.issubset(tables)
+    assert not GONE_TABLES & tables
