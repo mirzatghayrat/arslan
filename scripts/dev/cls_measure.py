@@ -79,6 +79,8 @@ class Counts:
         self.pregate: collections.Counter = collections.Counter()
         self.total = self.reached = self.false_allow = self.false_ask = self.approvable = self.fallbacks = 0
         self.errors = self.unparsable = self.invalid = self.kind_ignored = self.unknown_tool = 0
+        #: Why each "error" / "off" / "expired" happened, by class only (`error_class`), never a message.
+        self.error_classes: collections.Counter = collections.Counter()
 
     def as_dict(self, model: tuple[str, str | None, str]) -> dict:
         """The counts, and what a MEASURED entry is keyed by (`classifier.MeasuredKey`): provider, endpoint, model
@@ -100,6 +102,7 @@ class Counts:
             "pregate_stops": dict(sorted(self.pregate.items())),
             "fallbacks": self.fallbacks,
             "errors": self.errors,
+            "error_classes": dict(sorted(self.error_classes.items())),
             "unparsable": self.unparsable,
             "kind_ignored": self.kind_ignored,
             "unknown_tool": self.unknown_tool,
@@ -108,9 +111,12 @@ class Counts:
 
 def invalid_run(data: dict) -> str | None:
     """Why the run measures nothing, or None. No case reached the model, or fewer than half the approvable ones
-    could have (`reached_model` counts every case past the pre-gate): a schema mismatch, not a measurement."""
+    could have (`reached_model` counts every case past the pre-gate): a schema mismatch, not a measurement. Or more
+    than half the model calls errored: a broken call path (key, endpoint, parameter, time limit), not the model."""
     if data["reached_model"] == 0:
         return "no case reached the model"
+    if data["errors"] * 2 > data["reached_model"]:
+        return f"{data['errors']} of the {data['reached_model']} model calls failed (see the error classes)"
     approvable = data["false_ask"][1]
     if approvable and data["reached_model"] * 2 < approvable:
         return f"only {data['reached_model']} cases reached the model, fewer than half the {approvable} approvable"
@@ -129,6 +135,7 @@ def render(data: dict) -> str:
     lines.append("pre-gate stops: " + (" ".join(f"{k}={v}" for k, v in data["pregate_stops"].items()) or "none"))
     lines.append(f"fallbacks (rules/never_auto not derived): {data['fallbacks']}")
     lines.append(f"errors: {data['errors']}  unparsable: {data['unparsable']}")
+    lines.append("error classes: " + (" ".join(f"{k}={v}" for k, v in data["error_classes"].items()) or "none"))
     lines.append(f"record kind labels ignored: {data['kind_ignored']}  unknown tool names: {data['unknown_tool']}")
     return "\n".join(lines)
 
@@ -153,6 +160,34 @@ def _case(record: dict, workspace: Path) -> tuple[cls.Action, cls.Context, str]:
                           job_kind=ctx.get("job_kind", "turn"), outside_seen=ctx.get("outside_seen", True),
                           checkpoint_exists=ctx.get("checkpoint_exists", False))
     return action, context, fell_back
+
+
+_CLASS_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{0,63}")
+
+
+def error_class(exc: BaseException) -> str:
+    """An exception as its type name plus the HTTP status when it carries one ("HTTPStatusError 401"): never its
+    message or a response body, which can hold the request (a case's text) or a provider's echo of the key."""
+    name = type(exc).__name__
+    name = name if _CLASS_NAME.fullmatch(name) else "unnamed"
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status is None:
+        status = getattr(exc, "status_code", None)
+    return f"{name} {status}" if type(status) is int and 100 <= status <= 599 else name
+
+
+def _watched(complete: cls.Complete, seen: list[str]) -> cls.Complete:
+    """`complete`, noting the class of what it raised. A cancel is the time limit (`classifier.within`)."""
+    async def call(messages: list[dict]) -> str:
+        try:
+            return await complete(messages)
+        except asyncio.CancelledError:
+            seen.append("timeout")
+            raise
+        except Exception as exc:
+            seen.append(error_class(exc))
+            raise
+    return call
 
 
 async def run(lines, *, model: tuple[str, str | None, str], complete: cls.Complete) -> Counts:
@@ -188,8 +223,15 @@ async def run(lines, *, model: tuple[str, str | None, str], complete: cls.Comple
                 decision = "ask"
             else:
                 counts.reached += 1
-                status, verdict = await cls.consult(action, ctx, model=model, complete=complete, measuring=True)
+                seen: list[str] = []
+                status, verdict = await cls.consult(action, ctx, model=model, complete=_watched(complete, seen),
+                                                    measuring=True)
                 counts.errors += status in ("error", "off", "expired")
+                if status in ("off", "expired"):
+                    counts.error_classes[status] += 1
+                elif status == "error":
+                    # the call's own exception when it raised one; else the fault was after it (the parse)
+                    counts.error_classes[seen[0] if seen else "after_call"] += 1
                 counts.unparsable += status == "unparsable"
                 decision = verdict.decision
             if decision == "allow" and expected == "ask":
