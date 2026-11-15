@@ -7,7 +7,10 @@ And what the Bridge reads for a paired phone (§5.3): the status the phone's hom
 SHA-256, so the reference the phone holds always matches the bytes it later fetches.
 
 And, the other way (§5.7, 2026-10-13): a file the phone sent, saved into the workspace's
-Inbox/iPhone folder; the conversations the Bridge keeps a live socket on."""
+Inbox/iPhone folder; the conversations the Bridge keeps a live socket on.
+
+And (SUB5f, the user, 2026-11-15) a conversation's sub-sessions, view-only: how many there are on its list item, the
+whole tree in its history's details, and one sub-session's transcript read through the conversation at its top."""
 from __future__ import annotations
 
 import asyncio
@@ -128,12 +131,16 @@ async def phone_conversations(limit: int = Query(20, ge=1, le=100), kind: str | 
     if len(rows) > limit and _iso(rows[limit].last_at) == _iso(page[-1].last_at):
         edge = _iso(page[-1].last_at)
         page = [r for r in page if _iso(r.last_at) != edge] or [r for r in rows if _iso(r.last_at) == edge]
+    trees = await sub_trees(db, [r.conversation_id for r in page])
     return {"conversations": [{"id": r.conversation_id, "title": r.title, "updated_at": _iso(r.last_at),
                                "kind": r.kind,
                                # INB4: phones keep the state without "done, not seen" until the Bridge frame lets a phone say it
                                # knows done_unseen (INB4's phone half, the user's nod). DELETE-BY: INB4's phone half.
                                "state": r.phone_state or r.state, "origin": r.origin, "preview": r.preview,
-                               "files": r.files, **({"job": r.job} if r.job else {})}
+                               "files": r.files, **({"job": r.job} if r.job else {}),
+                               # SUB5f: the whole tree under it; left out when it has none.
+                               **({"sub": phone_reads.sub_counts(trees[r.conversation_id])}
+                                  if trees.get(r.conversation_id) else {})}
                               for r in page],
             "has_more": len(rows) > len(page)}
 
@@ -243,18 +250,109 @@ async def phone_history(conversation_id: str, limit: int = Query(50, ge=1, le=20
     rows = (await db.execute(
         select(ArslanMessage).where(ArslanMessage.conversation_id == conversation_id)
         .order_by(ArslanMessage.id.desc()).limit(limit))).scalars().all()
-    messages = [
-        {"id": str(m.id), "role": "user" if m.role == "user" else "assistant",
-         "text": m.display_content or m.content, "ts": _iso(m.timestamp),
-         "attachments": run_files(m.run_id), **({"run_id": m.run_id} if m.run_id else {}),
-         # §5.7: who typed it — the phone ("from iPhone") or a Mac window.
-         **({"source": "phone" if m.source == "phone" else "mac"} if m.role == "user" else {})}
-        for m in reversed(rows)]
+    messages = [_phone_message(m) for m in reversed(rows)]
     # §5.7: one envelope holds it all; the oldest go first, and the phone is told. §5.10: `details` first.
     details = await phone_details.details(db, conversation_id)
+    if tree := (await sub_trees(db, [conversation_id])).get(conversation_id):
+        details["sub_sessions"] = tree                    # SUB5f: a commander's whole tree, as the Mac's panel lists it
     messages, truncated = phone_reads.fit_history(conversation_id, messages, details)
     return {"conversation_id": conversation_id, "messages": messages, "details": details,
             **({"truncated": True} if truncated else {})}
+
+
+def _phone_message(m: ArslanMessage, *, view_only: bool = False) -> dict:
+    """One message as `chat.history.result` has it. `view_only` (SUB5f, a sub-session's transcript): text only, with
+    no files and no run (a sub-session's runs and files stay `not_found` on the phone, SUB3), and its brief, the
+    commander's words in the user's role, says so (`source: "commander"`)."""
+    out = {"id": str(m.id), "role": "user" if m.role == "user" else "assistant",
+           "text": m.display_content or m.content, "ts": _iso(m.timestamp),
+           "attachments": [] if view_only else run_files(m.run_id),
+           **({"run_id": m.run_id} if m.run_id and not view_only else {})}
+    if m.role == "user":
+        # §5.7: who typed it — the phone ("from iPhone") or a Mac window.
+        out["source"] = ("commander" if view_only and m.source == sub_sessions.BRIEF_SOURCE
+                         else "phone" if m.source == "phone" else "mac")
+    return out
+
+
+@router.get("/phone/conversations/{conversation_id}/sub-sessions/{sub_session_id}/history")
+async def phone_sub_session_history(conversation_id: str, sub_session_id: str, limit: int = Query(50, ge=1, le=200),
+                                    db: AsyncSession = Depends(get_session)):
+    """SUB5f (the user, 2026-11-15): one sub-session's transcript for the phone, view-only. The latest `limit`
+    messages, oldest first, in the phone history's shape, limit and envelope budget (`phone_history`), text only
+    (`_phone_message`). Read only through the conversation at the top of its tree, itself one the phone may read:
+    anything else is `not_found` (another conversation's sub-session, an unknown id, a deleted one's tombstone, a side
+    chat, the commander itself, or a commander that is itself a sub-session).
+
+    It never links. The Bridge links a conversation for a phone only after `phone_history` answers for that id (its
+    `linkNamed` probe), and that still refuses a sub-session; this read writes nothing, so the phone can't write to
+    what it read: a message the phone marks on the sub-session's socket is refused there too
+    (`ws.arslan.phone_view_only`)."""
+    if conversation_id == phone_ids.POCKET or await _off_the_phone(db, conversation_id) \
+            or sub_session_id not in (await sub_sessions.tree(db, conversation_id))[1:]:
+        raise HTTPException(404, "not_found")
+    rows = (await db.execute(
+        select(ArslanMessage).where(ArslanMessage.conversation_id == sub_session_id)
+        .order_by(ArslanMessage.id.desc()).limit(limit))).scalars().all()
+    messages = [_phone_message(m, view_only=True) for m in reversed(rows)]
+    named = {"sub_session_id": sub_session_id, "view_only": True}
+    messages, truncated = phone_reads.fit_history(conversation_id, messages, extra=named)
+    return {"conversation_id": conversation_id, **named, "messages": messages,
+            **({"truncated": True} if truncated else {})}
+
+
+async def sub_trees(db: AsyncSession, roots: list[str]) -> dict[str, list[dict]]:
+    """SUB5f: the sub-sessions under each of these conversations, at every level, as `details.sub_sessions` lists
+    them: `{id, title, state, depth, parent_id}`, depth 1 a child of the root. In the Mac panel's order
+    (`SubSessionBar`): each one followed by its own, siblings most recently active first. A root with none is left
+    out. Only sub-sessions (`sub_sessions.tree`'s rule, kind `sub`): never a side chat or a deleted one's tombstone.
+
+    `state` is the window's (`phone_reads.sub_status` over `conversation_list(sub=True)`'s row). One with no message
+    yet (between its row's commit and its brief's) has no row there; its stored `sub_state` says: working or summing
+    is running, interrupted is interrupted, else ended. `title` is its first user message (its brief), as the list
+    names a conversation, in the words shown (a framed brief's own)."""
+    from server.api.conversations import _TITLE_CHARS, conversation_list
+    edges = (await db.execute(select(ConversationContext.id, ConversationContext.parent_id,
+                                     ConversationContext.sub_state).where(
+        ConversationContext.kind == sub_sessions.SUB, ConversationContext.parent_id.isnot(None)))).all()
+    below: dict[str, list[str]] = {}
+    for cid, parent, _ in edges:
+        below.setdefault(parent, []).append(cid)
+    if not any(root in below for root in roots):
+        return {}
+    stored = {cid: state for cid, _, state in edges}
+    listed = {r.conversation_id: (n, r) for n, r in enumerate(await conversation_list(db, sub=True))}
+    trees: dict[str, list[tuple[str, int, str]]] = {}
+    for root in roots:
+        found: list[tuple[str, int, str]] = []
+        seen = {root}
+
+        def walk(parent: str, depth: int) -> None:
+            for cid in sorted(below.get(parent, ()), key=lambda c: (c not in listed, listed.get(c, (0,))[0], c)):
+                if cid in seen:
+                    continue
+                seen.add(cid)
+                found.append((cid, depth, parent))
+                walk(cid, depth + 1)
+        walk(root, 1)
+        if found:
+            trees[root] = found
+    ids = [cid for tree in trees.values() for cid, _, _ in tree]
+    first = dict((await db.execute(select(ArslanMessage.conversation_id, func.min(ArslanMessage.id)).where(
+        ArslanMessage.conversation_id.in_(ids), ArslanMessage.role == "user")
+        .group_by(ArslanMessage.conversation_id))).all())
+    words = {m.conversation_id: m.display_content or m.content for m in (await db.execute(
+        select(ArslanMessage).where(ArslanMessage.id.in_(list(first.values()))))).scalars()}
+
+    def state(cid: str) -> str:
+        if cid in listed:
+            row = listed[cid][1]
+            return phone_reads.sub_status(row.state, row.outcome)
+        return {sub_sessions.WORKING: "running", sub_sessions.SUMMING: "running",
+                sub_sessions.INTERRUPTED: "interrupted"}.get(stored.get(cid) or "", "ended")
+    return {root: [{"id": cid, "title": " ".join((words.get(cid) or "").split())[:_TITLE_CHARS], "state": state(cid),
+                    "depth": depth, "parent_id": parent} for cid, depth, parent in tree]
+            for root, tree in trees.items()}
 
 
 @router.get("/phone/runs/{run_id}/files")
