@@ -105,6 +105,31 @@ async def test_resume_after_a_block_requeues_the_row_with_a_fresh_streak_and_the
     assert (await _row(execution_db)).phase == "succeeded" and job.outcome == "done"
 
 
+async def test_a_goal_resume_refused_once_retries_from_the_callers_version(
+        execution_db, active, model, disk, turns, monkeypatch):
+    """`prepare_resume` runs in main's one-transaction retry loop (#961): a start refused once rolls back
+    `resume_goal`'s version bump too, so the retry must start again from the caller's version, not the bumped one."""
+    from server.services import task_repository
+    row = await _blocked(execution_db, model)
+    (disk / "notes.md").write_text("Reconciled INV-07")
+    asked, start, resume_goal = [], task_repository.TaskRepository.start, task_repository.TaskRepository.resume_goal
+
+    async def counted(self, task_id, expected_version):
+        asked.append(expected_version)
+        return await resume_goal(self, task_id, expected_version)
+
+    async def refused_once(self, *args, **kwargs):
+        if len(asked) == 1 and kwargs.get("explicit_resume"):
+            raise task_repository.TaskError("task_version_conflict")
+        return await start(self, *args, **kwargs)
+    monkeypatch.setattr(task_repository.TaskRepository, "resume_goal", counted)
+    monkeypatch.setattr(task_repository.TaskRepository, "start", refused_once)
+    assert (await _say("/goal resume")).startswith("Goal resumed")
+    job = await _finish(row.id)
+    assert len(asked) == 2 and asked[0] == asked[1]
+    assert (await _row(execution_db)).phase == "succeeded" and job.outcome == "done"
+
+
 async def test_resume_without_progress_keeps_the_seen_set_so_an_old_measure_is_not_new(
         execution_db, active, model, disk, turns):
     row = await _blocked(execution_db, model)
