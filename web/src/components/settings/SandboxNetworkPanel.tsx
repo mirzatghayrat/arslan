@@ -81,17 +81,22 @@ function AllowedSites() {
   const [text, setText] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  /** The saved list was read: until then a PUT of the whole list would overwrite the saved one with what is shown. */
+  const [loaded, setLoaded] = useState(false);
+  const [unread, setUnread] = useState(false);
 
   useEffect(() => {
     let alive = true;
     request<{ sandbox_allowed_sites?: string }>('/settings')
-      .then((body) => { if (alive) setSites(parseSites(body?.sandbox_allowed_sites)); })
-      .catch(() => { if (alive) setSites([]); });
+      .then((body) => { if (alive) { setSites(parseSites(body?.sandbox_allowed_sites)); setLoaded(true); } })
+      .catch(() => { if (alive) { setSites([]); setUnread(true); } });
     return () => { alive = false; };
   }, []);
 
-  /** Saves the whole list through PUT /settings; the list shown changes only once the server took it. */
+  /** Saves the whole list through PUT /settings; the list shown changes only once the server took it. Never before
+   * the saved list was read (`loaded`). */
   const save = async (next: string[], typed: string): Promise<boolean> => {
+    if (!loaded) return false;
     setBusy(true);
     setError('');
     try {
@@ -108,7 +113,7 @@ function AllowedSites() {
 
   const add = async () => {
     const typed = text.trim().toLowerCase();
-    if (!typed || busy || !sites) return;
+    if (!typed || busy || !sites || !loaded) return;
     if (sites.includes(typed)) { setError(t('sandboxNet.listed')); return; }
     if (await save([...sites, typed], typed)) setText('');
   };
@@ -129,7 +134,7 @@ function AllowedSites() {
               className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border px-2.5 py-1.5 text-[12px]">
               <span className="min-w-0 truncate font-medium text-foreground">{site}</span>
               <span className="flex-1" />
-              <button type="button" data-testid={`allowed-site-remove-${site}`} disabled={busy}
+              <button type="button" data-testid={`allowed-site-remove-${site}`} disabled={busy || !loaded}
                 onClick={() => void save(sites.filter((s) => s !== site), site)}
                 className="shrink-0 text-[12px] text-muted-foreground hover:text-foreground">
                 {t('sandboxNet.remove')}
@@ -143,12 +148,13 @@ function AllowedSites() {
           aria-label={t('sandboxNet.sitesInputLabel')} placeholder={t('sandboxNet.sitesPlaceholder')}
           onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(); }}
           className="min-w-[180px] flex-1 rounded-lg border border-border-strong bg-surface px-2.5 py-1.5 text-[12px] text-foreground focus:border-primary focus:outline-none" />
-        <button type="button" data-testid="allowed-site-add" disabled={busy} onClick={() => void add()}
+        <button type="button" data-testid="allowed-site-add" disabled={busy || !loaded} onClick={() => void add()}
           className="shrink-0 rounded-lg border border-border-strong px-3 py-1.5 text-[12px] text-foreground hover:bg-foreground/5 disabled:opacity-50">
           {t('sandboxNet.sitesAdd')}
         </button>
       </div>
-      {error && <p role="alert" className="text-[12px] text-danger" data-testid="allowed-site-error">{error}</p>}
+      {(error || unread) && <p role="alert" className="text-[12px] text-danger" data-testid="allowed-site-error">
+        {error || t('sandboxNet.failed')}</p>}
     </div>
   );
 }

@@ -724,13 +724,13 @@ async def _grant(conversation_id: str | None, name: str):
 
 def refusal_note(hosts, *, asks: bool | None = None) -> str:
     """What a refused run's result says, one sentence a host. `asks`: someone can answer the card (None: this turn
-    says, `permissions.current_asker`). With nobody to ask (a scheduled run) the card was refused by policy and listed
-    in the Inbox (`offer`, `preflight`), so the model isn't told the user can allow it here."""
+    says, `permissions.current_asker`). With nobody to ask (a scheduled run) the card was refused by policy, and a
+    scheduled run's Inbox entry offers no grant (S1), so the model is pointed to Settings' list instead."""
     from server.services import permissions
     if asks is None:
         asks = permissions.current_asker() is not None
     then = (" The user can allow it for this conversation." if asks else
-            " Nobody could be asked in this run, so it was listed in the Inbox for the user to allow.")
+            " Nobody could be asked in this run; the user can add it in Settings › Sandbox › Sites.")
     return " ".join(
         f"{host} was refused: " + ("after this conversation read outside content, only an address the user named or "
                                    "listed is allowed." if _address_like(normalize(host)) else
@@ -770,20 +770,22 @@ def command_hosts(command: str) -> set[str]:
     3.11.4 reads as one). What this misses the proxy still refuses, and NET-a's card follows the run (`offer`)."""
     text, found = _host_text(command), set()
     for match in _AFTER_SCHEME.finditer(text):
-        host = match.group(1)
+        host = match.group(1).rstrip(".")           # a trailing dot names the same host (`normalize`)
         name = normalize(host) if _ip(normalize(host)) is not None else normalize(_typed_name(host, url=True) or "")
         if name is not None:
             found.add(name)
     return found
 
 
-async def preflight(command: str, conversation_id: str | None) -> str:
+async def preflight(command: str, conversation_id: str | None) -> dict:
     """NET-b: before a sandboxed command runs (command_gate, the switch on), NET-a's card up front for each host its
     text names (`command_hosts`) that is `outside_only` here and not already allowed for this conversation, so a plain
     `curl https://evil.example` asks before it runs instead of failing at the proxy. The proxy stays the enforcement:
-    this only asks earlier. "" to run the command; else it doesn't run, and this is what the model is told. With
-    nobody to ask (a scheduled fire) no grant counts (S1), and the card is refused by policy and listed in the Inbox,
-    as `offer`'s is."""
+    this only asks earlier. {} when every such host is allowed. Else (a no, or with nobody to ask: a scheduled fire,
+    where no grant counts, S1, and the card is refused by policy and listed, as `offer`'s is) the command still runs,
+    without the grant (#949 review 1: a command that only mentions the URL, an `echo` or a commit message, must run;
+    a connection to the host is refused at the proxy): {"hosts": the hosts refused, "note": what the model is told}.
+    The tool loop doesn't ask again after the run for those hosts (`offer`)."""
     from server.orchestrator import untrusted
     from server.services import background_jobs, permissions
     asks, seen = permissions.current_asker() is not None, untrusted.external_seen()
@@ -791,13 +793,17 @@ async def preflight(command: str, conversation_id: str | None) -> str:
            if await judge(host, conversation_id, turn_seen=seen) == "outside_only"
            and not (asks and await _grant(conversation_id, host) is not None)][:3]
     if not due:
-        return ""
+        return {}
     decisions = await _card(due, command, permissions.Context(conversation_id,
                                                               job_id=background_jobs._inside_job.get()), before=True)
     refused = next((decision for decision in decisions if not decision.allowed), None)
     if refused is None:
-        return ""
-    return f"{refusal_note(due, asks=asks)} {refused.model_text or 'The user did not allow it.'}"
+        return {}
+    # With nobody to ask the decision's own text says the step "was not done": here the command runs, so it isn't used.
+    said = f" {refused.model_text or 'The user did not allow it.'}" if asks else ""
+    names = ", ".join(due)
+    return {"hosts": due, "note": f"{refusal_note(due, asks=asks)}{said} The command ran without it: any connection "
+                                  f"it makes to {names} is refused."}
 
 
 async def offer(hosts, command: str, conversation_id: str | None) -> str:

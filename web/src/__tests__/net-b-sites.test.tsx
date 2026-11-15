@@ -54,6 +54,23 @@ describe("Settings > Sandbox > Sites", () => {
     await waitFor(() => expect(screen.getAllByTestId("allowed-site")).toHaveLength(1));
   });
 
+  it("never PUTs a list it couldn't read first: add and remove stay off", async () => {
+    request.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (init?.method === "PUT") return {};
+      if (path === "/settings") throw new ApiError("HTTP 500", 500, "boom");
+      return { devices: [] };
+    });
+    render(<SandboxNetworkPanel systemCertificates={false} />);
+    expect(await screen.findByTestId("allowed-site-error")).toHaveTextContent("sandboxNet.failed");
+    const add = screen.getByTestId("allowed-site-add");
+    expect(add).toBeDisabled();
+    fireEvent.change(screen.getByTestId("allowed-site-input"), { target: { value: "docs.example.org" } });
+    fireEvent.click(add);
+    fireEvent.keyDown(screen.getByTestId("allowed-site-input"), { key: "Enter" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(puts()).toHaveLength(0);
+  });
+
   it("shows the server's refusal and keeps the list as it was", async () => {
     serve(["example.com"], () => { throw new ApiError("HTTP 422", 422, [{ msg: "Value error, not a site Arslan can list: com" }]); });
     render(<SandboxNetworkPanel systemCertificates={false} />);

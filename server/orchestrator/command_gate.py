@@ -833,13 +833,16 @@ async def _network(d: _Draft, args: dict, conversation_id: str | None) -> dict |
     # NET-b: the pre-flight, beside NET-a's judging() checks above (`_network_after_outside_content`, `_where_it_runs`):
     # a command that will run online in the sandbox, through the proxy that judges each site (not offline, not let out
     # of the sandbox, not bare), asks NET-a's card up front for a site its text names that only outside content named.
-    # Here, after the command's own card, so a command refused anyway asks nothing more. The proxy stays the enforcement.
+    # Here, after the command's own card, so a command refused anyway asks nothing more. The proxy stays the enforcement:
+    # on a no (or with nobody to ask) the command still runs without the grant, told so (`network["note"]`), and the
+    # card after the run isn't asked again for those hosts (`preflight_refused`, tool_execute).
     from server.services import command_sandbox, net_policy
     if (not d.network.get("offline") and not d.offline_reason and d.sandbox_on and command_sandbox.available()
             and not d.run_outside and not d.unwrapped and await net_policy.judging()):
         refused = await net_policy.preflight(d.command, conversation_id)
         if refused:
-            return {"ok": False, "error": refused}
+            d.network = {**d.network, "note": " ".join(filter(None, (d.network.get("note"), refused["note"]))),
+                         "preflight_refused": refused["hosts"]}
     return None
 
 

