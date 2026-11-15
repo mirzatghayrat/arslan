@@ -338,7 +338,10 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                     # 0.1.61 §A4: typing while this window's card waits answers it No, the message
                     # being the note; the message itself is queued below and runs next. The phone
                     # types on this socket during its turn: the card says the phone answered.
-                    _answered_by_typing(str(data.get("content") or ""), message_source(data) or "mac")
+                    # SIDE-2: a bring-back of a side chat's reply answers it too, but never as the note: what it quotes
+                    # may be outside content, and the note reaches the turn waiting on the card.
+                    _answered_by_typing("" if data.get("from_side_chat") else str(data.get("content") or ""),
+                                        message_source(data) or "mac")
                 if t == "user_message" and _turn_lock(conversation_id).locked():
                     data = {**data, "_queued": True}
                     await _send_or_gone({"type": "queued"})

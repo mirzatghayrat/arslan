@@ -199,6 +199,8 @@ async def brought_back(conversation_id: str, side_id) -> bool:
             row = await db.get(ConversationContext, side_id)
             if sub_sessions.is_deleted(side_id, row):
                 return True
+            # Unlike `carries_outside` (no row: yes), no row or another parent leaves the turn unmarked: the same as
+            # a message sent without the field, which any client can send. Only a side chat of this one can vouch.
             if row is None or row.kind != sub_sessions.SIDE or row.parent_id != conversation_id:
                 logger.debug("from_side_chat %s is no side chat of %s: not honoured", side_id, conversation_id)
                 return False

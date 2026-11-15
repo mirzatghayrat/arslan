@@ -567,7 +567,7 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
     brief = _brief_id(conversation_id, (row_id for row_id, _, _ in rows))
     named = frozenset(_sites_named(arslan.typed_text(content) for row_id, content, source in rows
                                    if row_id != brief and source not in (sub_sessions.BRIEF_SOURCE, BACK_SOURCE)
-                                   and not content.startswith(untrusted.BRIEF_FROM_OUTSIDE)))
+                                   and not content.startswith(untrusted.USER_FRAMES)))
     _named_cache[conversation_id] = ((count, last or 0), named)
     return named
 
