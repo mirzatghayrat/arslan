@@ -261,7 +261,6 @@ async def client(tmp_path, monkeypatch, request):
     """Async HTTP client with an isolated temp-file SQLite DB."""
     import os
 
-    os.environ["ARSLAN_TEST_ROUTES"] = "1"
     # Put back afterwards: it is one of the suite's pinned data-dir keys
     # (tests/real_data_dir_guard.py), and set here outside monkeypatch.
     previous_spawns_dir = os.environ.get("ARSLAN_SPAWNS_DIR")

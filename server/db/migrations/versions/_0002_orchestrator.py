@@ -101,13 +101,14 @@ def _upgrade(bind) -> None:  # noqa: ANN001
         if name not in existing:
             table.create(bind)
 
-    spawn_cols = {c["name"] for c in insp.get_columns("spawns")}
+    # Guarded like the downgrade: since C7c-5b (v0.1.64) the models make no `spawns` or `feedback` table.
+    spawn_cols = {c["name"] for c in insp.get_columns("spawns")} if "spawns" in existing else {"level", "memory_facts"}
     if "level" not in spawn_cols:
         _add_column(bind, "spawns", sa.Column("level", sa.Integer(), nullable=True))
     if "memory_facts" not in spawn_cols:
         _add_column(bind, "spawns", sa.Column("memory_facts", sa.JSON(), nullable=True))
 
-    fb_cols = {c["name"] for c in insp.get_columns("feedback")}
+    fb_cols = {c["name"] for c in insp.get_columns("feedback")} if "feedback" in existing else {"quality_signal"}
     if "quality_signal" not in fb_cols:
         _add_column(bind, "feedback", sa.Column("quality_signal", sa.Integer(), nullable=True))
 

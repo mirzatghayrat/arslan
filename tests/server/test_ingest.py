@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.db import session as db_session
-from server.db.models import Base, KnowledgeChunk, Spawn
+from server.db.models import Base, KnowledgeChunk, Collection
 from server.db.migrations.versions._0009_knowledge import upgrade_sync
 from server.services import ingest
 
@@ -19,46 +19,47 @@ async def memdb(monkeypatch):
     yield Session
 
 
-async def _spawn(Session) -> int:
+async def _collection(Session) -> int:
+    """The chunks' home: a collection (an expert's own well has no model since C7c-5b)."""
     async with Session() as db:
-        s = Spawn(name="S", domain_category="x", system_prompt="p")
-        db.add(s)
+        c = Collection(name="S")
+        db.add(c)
         await db.commit()
-        await db.refresh(s)
-        return s.id
+        await db.refresh(c)
+        return c.id
 
 
 async def test_ingest_text_stores_chunks(memdb):
-    sid = await _spawn(memdb)
-    n = await ingest.ingest_text(sid, "doc1", "alpha beta. " * 200)
+    cid = await _collection(memdb)
+    n = await ingest.ingest_text(None, "doc1", "alpha beta. " * 200, collection_id=cid)
     assert n >= 1
     async with memdb() as db:
         cnt = (await db.execute(select(func.count()).select_from(KnowledgeChunk)
-                                .where(KnowledgeChunk.spawn_id == sid))).scalar_one()
+                                .where(KnowledgeChunk.collection_id == cid))).scalar_one()
     assert cnt == n
 
 
 async def test_ingest_strips_private(memdb):
-    sid = await _spawn(memdb)
-    await ingest.ingest_text(sid, "doc", "public stuff <private>SECRET TOKEN</private> more public")
+    cid = await _collection(memdb)
+    await ingest.ingest_text(None, "doc", "public stuff <private>SECRET TOKEN</private> more public", collection_id=cid)
     async with memdb() as db:
         rows = (await db.execute(select(KnowledgeChunk.text)
-                                 .where(KnowledgeChunk.spawn_id == sid))).scalars().all()
+                                 .where(KnowledgeChunk.collection_id == cid))).scalars().all()
     joined = "\n".join(rows)
     assert "SECRET TOKEN" not in joined
     assert "public stuff" in joined
 
 
 async def test_ingest_file_txt(memdb):
-    sid = await _spawn(memdb)
-    n = await ingest.ingest_file(sid, "notes.txt", "hello knowledge base".encode("utf-8"))
+    cid = await _collection(memdb)
+    n = await ingest.ingest_file(None, "notes.txt", "hello knowledge base".encode("utf-8"), collection_id=cid)
     assert n == 1
 
 
 async def test_ingest_file_unknown_ext_raises(memdb):
-    sid = await _spawn(memdb)
+    cid = await _collection(memdb)
     with pytest.raises(ValueError):
-        await ingest.ingest_file(sid, "archive.zip", b"PK\x03\x04")
+        await ingest.ingest_file(None, "archive.zip", b"PK\x03\x04", collection_id=cid)
 
 
 def test_extract_file_html_strips_tags():
@@ -82,8 +83,8 @@ async def test_ingest_survives_orphan_fts_rowid(memdb):
         await db.execute(sa_text(
             "INSERT INTO knowledge_chunks_fts (rowid, text) VALUES (1, 'orphan leftover')"))
         await db.commit()
-    sid = await _spawn(memdb)
-    n = await ingest.ingest_text(sid, "doc", "gamma delta. " * 200)  # first chunk reuses rowid 1
+    cid = await _collection(memdb)
+    n = await ingest.ingest_text(None, "doc", "gamma delta. " * 200, collection_id=cid)  # first chunk reuses rowid 1
     assert n >= 1
     async with memdb() as db:
         fts = (await db.execute(sa_text(

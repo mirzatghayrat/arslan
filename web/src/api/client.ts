@@ -30,8 +30,6 @@ import type { RunProcessOut, RunCheckpoint, TurnUndone, PhoneCode, PhoneStatus,
   ScheduledTaskDto,
   ScheduledTaskRunDto,
   ScheduledTaskUpdateBody,
-  SpawnDetail,
-  SpawnSummary,
   UsageSummary,
   UserFact,
   SshAuditEntry,
@@ -326,7 +324,6 @@ export const api = {
   suggestNoteLinks: (id: number) => request<NoteSuggestDto>(`/brain/notes/${id}/suggest`, { method: "POST" }),
   generateNotes: (topic: string) =>
     request<{ created: NoteDto[] }>("/brain/notes/generate", { method: "POST", body: JSON.stringify({ topic }) }),
-  listSpawns: () => request<SpawnSummary[]>("/spawns"),
   getSettings: () => request<AppSettings>("/settings"),
   /** Why stored secrets cannot be read. Verdict key + counts; never plaintext. */
   getCryptoHealth: () => request<CryptoHealth>("/settings/crypto-health"),
@@ -399,8 +396,6 @@ export const api = {
    * server; never executes skill code). */
   checkSkillHealth: (key: string) =>
     request<SkillHealth>(`/registry/skills/${encodeURIComponent(key)}/health`, { method: "POST" }),
-  updateEquipment: (id: number, body: { toolsets: string[]; skills: string[] }) =>
-    request<SpawnDetail>(`/spawns/${id}/equipment`, { method: "PUT", body: JSON.stringify(body) }),
   listFacts: () => request<UserFact[]>("/facts"),
   addFact: (body: { content: string; sensitive?: boolean }) =>
     request<UserFact>("/facts", { method: "POST", body: JSON.stringify(body) }),

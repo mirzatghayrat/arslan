@@ -126,9 +126,11 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
                 # NET-a: the proxy refused sites this run reached (a command's, or verify's smoke test: Codex round 1,
                 # F8, named by its own command); the user is asked once whether commands in this conversation may
                 # reach them (net_policy.offer), and the model reads the answer.
+                # NET-b: a host the pre-flight card already asked about (and was refused) isn't asked again.
                 from server.services import net_policy
-                answer = await net_policy.offer(result.pop("net_refused"), command or result.get("command", ""),
-                                                conversation_id)
+                asked = set(network.get("preflight_refused") or ())
+                answer = await net_policy.offer([host for host in result.pop("net_refused") if host not in asked],
+                                                command or result.get("command", ""), conversation_id)
                 if answer:
                     result["network_note"] = f"{result.get('network_note') or ''} {answer}".strip()
         # A stop goes back to the model with its note, to find another way (the calibration of 2026-11-07).
@@ -137,7 +139,7 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
         if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
             result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
         if tool_key == "run_command" and network.get("note") and isinstance(result, dict):
-            result["network_note"] = network["note"]
+            result["network_note"] = " ".join(filter(None, (network["note"], result.get("network_note"))))
         if tool_key == "run_command" and plan.offline_reason and isinstance(result, dict):
             # S2a-3 step 3: an unread command ran offline with no card. SBX-8 counts these from the run step (run_trace),
             # never from this result.

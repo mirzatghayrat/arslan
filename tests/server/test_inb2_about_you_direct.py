@@ -18,8 +18,7 @@ from server.db.companion_models import MemoryEntry
 from server.db.models import MemoryProposal, Run
 from server.orchestrator import run_trace, untrusted
 from server.orchestrator.tool_caller import ToolCaller
-from server.services import (background_jobs, host_run, memory_tools_v2, presence, proactive_service, run_recorder,
-                             run_registry)
+from server.services import (background_jobs, host_run, memory_tools_v2, presence, proactive_service, run_registry)
 from server.services import personal_context as pc
 from server.services.memory_activation import activate_sync
 from server.services.memory_migration import migrate_legacy_sync
@@ -40,7 +39,6 @@ async def memory(execution_db, monkeypatch):
         await db.run_sync(activate_sync)
     frames = []
     monkeypatch.setattr(run_registry, "make_emit", lambda conversation_id: frames.append)
-    monkeypatch.setattr(run_recorder, "schedule_scoring", lambda run_id: None)
     background_jobs._reset_for_tests()
     execution_db.frames = frames
     yield execution_db

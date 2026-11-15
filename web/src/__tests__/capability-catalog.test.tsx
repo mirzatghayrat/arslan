@@ -11,7 +11,7 @@ vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: vi.fn() },
 }));
 
-vi.mock("../api/client", () => ({ api: { getRegistry: vi.fn(), listSpawns: vi.fn(), updateEquipment: vi.fn() } }));
+vi.mock("../api/client", () => ({ api: { getRegistry: vi.fn() } }));
 import { api } from "../api/client";
 const m = api as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
@@ -34,7 +34,6 @@ const CATALOG = {
 beforeEach(() => {
   vi.clearAllMocks();
   m.getRegistry.mockResolvedValue(CATALOG);
-  m.listSpawns.mockResolvedValue([]);
 });
 
 const chipBtn = (re: RegExp) => screen.getByRole("button", { name: re });
@@ -79,11 +78,11 @@ describe("CapabilityCatalog — usable-first availability chips", () => {
     expect(screen.getByText("Airtable")).toBeInTheDocument();
   });
 
-  it("assignable rows carry the equip affordance", async () => {
+  it("C7c-4: assignable rows no longer carry the equip-to-expert affordance", async () => {
     render(<CapabilityCatalog />);
     await screen.findByText("Writer");
-    // both usable skills expose the equip action
-    expect(screen.getAllByText("capabilities.equip.action")).toHaveLength(2);
+    expect(screen.queryByText("capabilities.equip.action")).not.toBeInTheDocument();
+    expect(screen.queryByText("capabilities.catalog.equip_hint")).not.toBeInTheDocument();
   });
 
   it("hides infeasible everywhere and keeps counts honest", async () => {
@@ -110,7 +109,6 @@ describe("CapabilityCatalog — PC-4 compatibility pill", () => {
 
   beforeEach(() => {
     m.getRegistry.mockResolvedValue(COMPAT_CATALOG);
-    m.listSpawns.mockResolvedValue([]);
   });
 
   it("renders the right pill label + testid for each compatibility value", async () => {

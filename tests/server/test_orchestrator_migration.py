@@ -60,9 +60,18 @@ async def test_0002_downgrade_roundtrip(engine):
 
 def _create_0001_only(connection):
     """Build only the original 0001 tables (spawns/chat_messages/feedback/settings/build_sessions)
-    WITHOUT the new orchestrator models, by selecting them from metadata by name."""
+    WITHOUT the new orchestrator models. The expert-era models went in C7c-5b, so spawns and feedback are
+    written out as 0001 had them (before 0002's columns); the rest come from metadata by name."""
+    from sqlalchemy import text
+
     from server.db.models import Base
 
-    original = {"spawns", "chat_messages", "feedback", "settings", "build_sessions"}
+    original = {"settings", "build_sessions"}
     tables = [t for t in Base.metadata.sorted_tables if t.name in original]
     Base.metadata.create_all(connection, tables=tables)
+    connection.execute(text(
+        "CREATE TABLE spawns (id INTEGER PRIMARY KEY, name VARCHAR(100) NOT NULL UNIQUE, "
+        "domain_category VARCHAR(50) NOT NULL, system_prompt TEXT NOT NULL)"))
+    connection.execute(text(
+        "CREATE TABLE feedback (id INTEGER PRIMARY KEY, spawn_id INTEGER NOT NULL REFERENCES spawns (id), "
+        "session_id VARCHAR(50) NOT NULL, user_action VARCHAR(20) NOT NULL)"))

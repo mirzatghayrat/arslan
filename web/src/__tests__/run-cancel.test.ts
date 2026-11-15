@@ -108,6 +108,16 @@ describe("run cancel wiring (S3-M1)", () => {
     // Unlinked row: null run_id degrades to undefined (no replay entry).
     expect(st.items[0].runId).toBeUndefined();
   });
+
+  it("C7c-4: a stored spawn_summary row renders as a plain Arslan reply, not an expert bubble", () => {
+    useArslanStore.getState().handleFrame({
+      type: "history",
+      messages: [{ message_id: 3, role: "spawn_summary", content: "old answer", spawn_id: 7, run_id: 9 }],
+    } as never);
+    const [item] = useArslanStore.getState().items;
+    expect(item).toMatchObject({ kind: "message", role: "arslan", content: "old answer", runId: 9 });
+    expect(item).not.toHaveProperty("spawnId");
+  });
 });
 
 describe("run_in_progress reattach (S3-M2)", () => {

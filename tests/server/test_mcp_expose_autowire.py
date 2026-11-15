@@ -2,7 +2,7 @@
 
 Before this round the checkbox was half-fake: it lifted the Toolset to safe,
 but the spawn choke point requires TOOL-level tier=safe ∧ status=wired
-(service.py's assert_assignable), so a checked box still handed spawns
+(service.py's safe_menu), so a checked box still handed spawns
 nothing. Now expose wires every tool whose suggested tier is safe — via
 suggested_tier_for, so a hand-graded table (Playwright) wins over the verb
 heuristic — and write-graded tools stay unwired: spawns never get write verbs

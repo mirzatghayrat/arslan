@@ -6,9 +6,10 @@ from sqlalchemy.exc import IntegrityError
 
 from server.db.models import (
     Base, Learning, MemoryEntry, MemoryLegacyMap, MemoryMigrationReport,
-    MemoryRevision, MemorySource, MemoryStoreState, Spawn, UserFact,
+    MemoryRevision, MemorySource, MemoryStoreState, UserFact,
 )
 from server.services.memory_migration import migrate_legacy_sync
+from tests.server import pre_0103
 
 
 @pytest.fixture
@@ -20,6 +21,7 @@ def store(tmp_path):
         connection.execute("PRAGMA journal_mode=WAL")
     with engine.begin() as db:
         Base.metadata.create_all(db)
+        pre_0103.load(db)        # an upgraded install's expert tables (no Spawn model since C7c-5b)
     yield engine
     engine.dispose()
 
@@ -29,11 +31,10 @@ def rows(db, model):
 
 
 def seed(db):
-    db.execute(insert(Spawn), [
-        {"id": 1, "name": "A", "domain_category": "test", "system_prompt": "test",
-         "memory_facts": ["same preference"]},
-        {"id": 2, "name": "B", "domain_category": "test", "system_prompt": "test",
-         "memory_facts": ["same preference"]},
+    db.execute(text("INSERT INTO spawns (id, name, domain_category, system_prompt, is_default, memory_facts) "
+                    "VALUES (:id, :name, 'test', 'test', 0, :facts)"), [
+        {"id": 1, "name": "A", "facts": json.dumps(["same preference"])},
+        {"id": 2, "name": "B", "facts": json.dumps(["same preference"])},
     ])
     db.execute(insert(UserFact), [
         {"id": 1, "content": "Known manual", "source": "manual", "sensitive": False,

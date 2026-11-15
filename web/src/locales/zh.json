@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "正在加载注册表…",
       "empty": "还没有注册任何能力",
-      "equip_hint": "Arslan 可以直接使用这些。",
       "unimplemented_note": "未实装——仅目录占位,不可装备。",
       "orchestrator_note": "出于安全，仅 Arslan 本身可用，不能交给专家使用。",
       "degraded": "裸跑·无沙箱",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "对 Arslan 的价值"
-    },
-    "equip": {
-      "action": "装备给专家…",
-      "loading": "加载专家…",
-      "empty": "还没有专家。",
-      "error": "装备失败——已回滚。"
     },
     "compat": {
       "full": "全兼容",
@@ -1586,6 +1579,13 @@
     "devicesTitle": "信任的本地设备",
     "devicesDesc": "沙盒里的命令默认连不了局域网（路由器、NAS、打印机、别的电脑）。加进这里的设备可以连，它的所有端口都能连。用名字加的，会记下现在的地址，每次连都再核对一次。这台 Mac 自己的地址不能加。",
     "devicesEmpty": "还没有信任的设备。",
+    "sitesTitle": "网站",
+    "sitesDesc": "命令随时可以连接这些网站，即使读过外部内容之后也一样。",
+    "sitesEmpty": "还没有列出网站。",
+    "sitesPlaceholder": "一个网站，比如 example.com",
+    "sitesInputLabel": "网站",
+    "sitesAdd": "添加",
+    "sitesRefused": "不能列入“{{value}}”。请填具体的网站名，比如 example.com，不要只填 com 这样的域名后缀。",
     "placeholder": "名称或局域网 IP，比如 nas.local 或 192.168.1.20",
     "inputLabel": "名称或局域网 IP",
     "add": "信任",
@@ -1631,5 +1631,34 @@
     "start": "开始",
     "startsIn": "以「{{mode}}」开始",
     "saveFailed": "没能切换模式，请再试一次。"
+  },
+  "sideChat": {
+    "tab": "旁聊 {{n}}",
+    "new": "新旁聊",
+    "start": "开始旁聊",
+    "reply": "引用回复",
+    "barLabel": "选中的文字",
+    "expand": "展开",
+    "collapse": "收起",
+    "closeTab": "关掉标签（旁聊会保留）",
+    "scope": "读这段对话到分叉处为止。只读：能查资料，不能运行命令、改文件、记东西或排定任务。除非你带回主对话，什么都不会进主对话。",
+    "outside": "前面的回合可能读过外部内容，所以这个旁聊和主对话一样，把读到的内容当外部内容对待。",
+    "placeholder": "就这段对话问点什么",
+    "empty": "就这段对话随便问。回答只留在这里。",
+    "thinking": "思考中…",
+    "send": "发送",
+    "removeQuote": "去掉引用",
+    "bringBack": "带回主对话",
+    "broughtBack": "已放进主对话的输入框，没有发送。",
+    "quoted": "已引用到主对话的输入框。",
+    "listH": "旁聊",
+    "closed": "已关",
+    "delete": "删除这个旁聊",
+    "deleteAsk": "删除这个旁聊？里面的消息也会删掉，主对话不受影响。",
+    "cancel": "取消",
+    "confirmDelete": "删除",
+    "deleted": "旁聊已删除。",
+    "deleteFailed": "没能删除这个旁聊。",
+    "startFailed": "没能开始旁聊。"
   }
 }

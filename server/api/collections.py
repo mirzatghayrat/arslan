@@ -31,6 +31,12 @@ async def create_collection(body: CollectionIn) -> CollectionOut:
         return CollectionOut(id=row.id, name=row.name, description=row.description)
 
 
+async def _has_spawn_collections(db) -> bool:
+    """The expert bindings table: an upgraded install keeps it until C7c-5c, a new one never has it (C7c-5b)."""
+    return (await db.execute(sa_text(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='spawn_collections'"))).first() is not None
+
+
 @router.get("/collections", response_model=list[CollectionOut])
 async def list_collections() -> list[CollectionOut]:
     async with db_session.AsyncSessionLocal() as db:
@@ -40,8 +46,10 @@ async def list_collections() -> list[CollectionOut]:
             "SELECT collection_id, COUNT(*), COUNT(DISTINCT source) FROM knowledge_chunks "
             "WHERE collection_id IS NOT NULL GROUP BY collection_id"))).all()}
         binds: dict[int, list[int]] = {}
-        for cid, sid in (await db.execute(sa_text(
-                "SELECT collection_id, spawn_id FROM spawn_collections ORDER BY spawn_id"))).all():
+        bound = ((await db.execute(sa_text(
+            "SELECT collection_id, spawn_id FROM spawn_collections ORDER BY spawn_id"))).all()
+            if await _has_spawn_collections(db) else [])
+        for cid, sid in bound:
             binds.setdefault(cid, []).append(sid)
         return [CollectionOut(id=c[0], name=c[1], description=c[2],
                               chunks=stats.get(c[0], (0, 0))[0],
@@ -79,8 +87,9 @@ async def delete_collection(collection_id: int) -> dict:
         # foreign_keys=OFF and this engine does not opt in, so cascade would not fire.
         await db.execute(sa_text(
             "DELETE FROM knowledge_chunks WHERE collection_id = :cid"), {"cid": collection_id})
-        await db.execute(sa_text(
-            "DELETE FROM spawn_collections WHERE collection_id = :cid"), {"cid": collection_id})
+        if await _has_spawn_collections(db):
+            await db.execute(sa_text(
+                "DELETE FROM spawn_collections WHERE collection_id = :cid"), {"cid": collection_id})
         await db.delete(row)
         await db.commit()
     return {"deleted": True, "chunks_removed": len(ids)}
