@@ -102,6 +102,7 @@ LATER_GAP_ROWS = {"sweep": 28, "named": 6, "policy": 48, "positive": 28}
 # `npm publish` or `git push` already asks on main (`evidence.HEREDOC_SECRET_ROWS`). Counted apart, on the default
 # sample.
 LATER_HEREDOC_ROWS = {"negative": 1}
+LATER_OPTION_ROWS = {"sweep": 24, "controls": 6, "unknown": 3}     # S2a-3 interim (#964): rows that add `unreadable` for a command in an option
 
 
 def later_heredoc_secret(text, before, after):
@@ -126,6 +127,15 @@ def later_dry_run(text, main_rules):
             and any(words and tp._dry_run(words[0].lower(), words[1:]) for words in tp._command_words(text)))
 
 
+def later_option_command(text, before, after, main_rules):
+    # S2a-3 interim (#964): a tool given a command in an option's value adds `unreadable`; nothing else changes.
+    if not tp._option_command(tp._command_words(text)):
+        return False
+    same = (after.level, after.rule, after.reason) == (before.level, before.rule, before.reason)
+    new = (before.level, after.level, after.rule, after.reason) == ('run', 'ask', tp.UNREADABLE, tp.HIDDEN_OPTION)
+    return (same or new) and tp.ask_rules(text) == main_rules | {tp.UNREADABLE}
+
+
 @pytest.mark.parametrize("corpus", ('named', 'policy', *evidence.GENERATORS))
 def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
     baseline = load_revision(MAIN, monkeypatch)
@@ -138,7 +148,7 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
         rows = list(evidence.GENERATORS[corpus]())
         texts = (text for _, text in (rows if revisions.FULL else evidence.stratified(rows)))
     counts = Counter()
-    later = gaps = dry = heredocs = 0
+    later = gaps = dry = heredocs = options = 0
     for text in texts:
         before, after = baseline.assess(text), tp.assess(text)
         main_rules = baseline.ask_rules(text)
@@ -154,6 +164,9 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
         elif later_dry_run(text, main_rules):
             dry += 1
             before, main_rules = after, tp.ask_rules(text)
+        elif later_option_command(text, before, after, main_rules):
+            options += 1
+            before, main_rules = after, tp.ask_rules(text)
         assert (after.level, after.rule, after.reason) == (before.level, before.rule, before.reason), text
         assert tp.ask_rules(text) == main_rules, text
         main_read, reading = baseline.shell_grammar.read(text), sg.read(text)
@@ -168,6 +181,7 @@ def test_no_cwd_equals_main(corpus, monkeypatch, prefix_never_tracks, tmp_path):
     assert revisions.FULL or gaps == LATER_GAP_ROWS.get(corpus, 0), (corpus, gaps)
     assert revisions.FULL or dry == LATER_DRY_RUN_ROWS.get(corpus, 0), (corpus, dry)
     assert revisions.FULL or heredocs == LATER_HEREDOC_ROWS.get(corpus, 0), (corpus, heredocs)
+    assert revisions.FULL or options == LATER_OPTION_ROWS.get(corpus, 0), (corpus, options)
     print('R6_IDENTITY ' + json.dumps({'corpus': corpus, 'cases': sum(counts.values()), 'differences': 0,
                                      'later_deploy_rule': later, 'later_dry_run': dry, 'with_cwd': counts},
                                     sort_keys=True))

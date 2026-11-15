@@ -1191,7 +1191,7 @@ def _option_command(commands: tuple[tuple[str, ...], ...]) -> str:
     for words in commands:
         if not words:
             continue
-        program = os.path.basename(words[0]).lower()
+        program = words[0].rsplit("/", 1)[-1].lower()
         if program not in _OPTION_COMMANDS:
             continue
         longs, shorts = _OPTION_COMMANDS[program]
