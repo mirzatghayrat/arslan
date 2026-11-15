@@ -6,7 +6,7 @@ import logging
 from sqlalchemy import select
 
 from server.db import session as db_session
-from server.db.models import ArslanMessage, Run, RunEvaluation, RunStep, Spawn
+from server.db.models import ArslanMessage, Run, RunEvaluation, RunStep
 from server.orchestrator import promise_guard
 from server.orchestrator.json_protocol import parse_json_object
 from server.services import trace_evidence, usage_ledger
@@ -16,19 +16,6 @@ from server.services.prompts.run_judge import JUDGE_SYSTEM, build_prompt
 logger = logging.getLogger(__name__)
 
 _DIMENSIONS = ("routing", "fabrication", "identity", "completion")
-
-
-async def _roster_text() -> str:
-    async with db_session.AsyncSessionLocal() as db:
-        spawns = (await db.execute(select(Spawn))).scalars().all()
-    if not spawns:
-        return "(no spawns)"
-    return "\n".join(
-        f"- {s.name} ({s.domain_category}"
-        + (f".{s.domain_subcategory}" if s.domain_subcategory else "")
-        + (f") — {s.persona_role}" if s.persona_role else ")")
-        for s in spawns
-    )
 
 
 def _coerce_dim(raw) -> tuple[str, float, str]:
@@ -53,7 +40,6 @@ async def score(run_id: int) -> None:
         run = await db.get(Run, run_id)
         if run is None or run.no_learning:
             return
-        spawn = await db.get(Spawn, run.spawn_id) if run.spawn_id else None
         out_row = (await db.execute(
             select(ArslanMessage).where(
                 ArslanMessage.run_id == run_id,
@@ -64,9 +50,6 @@ async def score(run_id: int) -> None:
             select(RunStep.kind).where(RunStep.run_id == run_id)
         )).scalars().all()
     output = (out_row.display_content or out_row.content) if out_row else ""
-    persona = ""
-    if spawn is not None:
-        persona = f"role: {spawn.persona_role or ''}\ntone: {spawn.persona_tone or ''}\n{spawn.system_prompt or ''}"
 
     # HX-5 A4 deterministic pre-check: the final output claims in-progress/handed-off
     # work (promise_guard.PROMISE_RE) but the run recorded ZERO tool_call steps — any
@@ -79,8 +62,9 @@ async def score(run_id: int) -> None:
     )
 
     prompt = build_prompt(
-        user_message=run.user_message, spawn_name=run.spawn_name,
-        roster=await _roster_text(), persona=persona, output=output,
+        # C7c-4: no expert roster or persona any more (one Arslan); the judge sees the request, who answered and
+        # the output.
+        user_message=run.user_message, spawn_name=run.spawn_name, output=output,
         fabrication_signal=fabrication_signal,
         # E1: the judge sees the actual recorded steps — fabrication is judged as the
         # diff between claimed deliverables and real tool_calls, and a continuation

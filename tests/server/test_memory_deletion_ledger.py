@@ -213,7 +213,14 @@ async def test_legacy_expert_preference_commit_also_updates_ledger(execution_db,
         await connection.run_sync(activate_sync)
     content = "Synthetic expert preference"
     async with repository() as repo:
-        entry = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="expert", id="3")), MemoryActor(origin="user"))
+        entry = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
+    # C7c-4: no new expert-scope writes, so the leftover entry is put in that scope directly, as old data is.
+    from sqlalchemy import update
+
+    from server.db.models import MemoryEntry
+    async with execution_db() as db:
+        await db.execute(update(MemoryEntry).where(MemoryEntry.id == entry["id"]).values(scope_kind="expert", scope_id="3"))
+        await db.commit()
     monkeypatch.setattr(auth, "active_token", lambda: "synthetic-ledger-token")
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")

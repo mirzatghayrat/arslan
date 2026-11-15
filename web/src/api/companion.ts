@@ -1,5 +1,6 @@
 import { request } from "./client";
 
+// "expert": read only since C7c-4 (old entries are listed and deleted; the server refuses new writes). DELETE-BY: v0.1.64, with C7c-5.
 export type MemoryScope = { kind: "global" | "project" | "domain" | "expert"; id: string | null };
 export type MemoryStatus = "proposed" | "active" | "paused" | "superseded" | "expired" | "deleted" | "quarantined";
 export interface StyleReference {

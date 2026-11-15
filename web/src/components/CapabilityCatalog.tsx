@@ -1,11 +1,11 @@
 // Capability catalog (TOOLS & SKILLS tabs) — usable-first visibility.
 // Availability chips derived from the real registry flags:
-//   可用 (default)  = assignable items only — what a spawn can actually equip
+//   可用 (default)  = assignable items only — what Arslan can actually use
 //   未实装          = catalog-only placeholders (no body / no wired tool), muted + honest note
 //   仅 Arslan       = orchestrator-tier items (real, but security-gated to the orchestrator)
 //   全部            = everything with badges
 // Infeasible items stay hidden entirely (existing behavior).
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Stethoscope, Boxes } from "lucide-react";
 import { api } from "../api/client";
@@ -13,7 +13,6 @@ import type { RegistryCatalog, RegistrySkill, RegistryToolset, SkillHealth } fro
 import FilterChips from "./FilterChips";
 import CapabilityFilter from "./CapabilityFilter";
 import { filterItems, matchedChildren } from "../lib/capabilitySearch";
-import EquipPopover from "./EquipPopover";
 import EmptyState, { EmptyStateAction } from "./EmptyState";
 import { catalogText } from "../lib/catalogDisplay";
 
@@ -26,9 +25,7 @@ function classify(it: { tier: string; assignable: boolean }): AvailClass {
   return "unimplemented"; // safe-tier but not functional yet (honesty gate)
 }
 
-/** `assign`: show "assign to an expert" — only for people who still have legacy experts
- * (0.1.55 §14: the page no longer speaks of equipping). */
-export default function CapabilityCatalog({ assign = true }: { assign?: boolean }) {
+export default function CapabilityCatalog() {
   const { t } = useTranslation();
   const [cat, setCat] = useState<RegistryCatalog | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,17 +46,11 @@ export default function CapabilityCatalog({ assign = true }: { assign?: boolean 
     );
 
   return (
-    <AssignContext.Provider value={assign}>
     <div>
-      {assign && <p className="text-[10px] text-subtle-foreground font-sans mb-3">{t("capabilities.catalog.equip_hint")}</p>}
       <SkillsView skills={cat.skills.filter((s) => s.status !== "infeasible")} />
     </div>
-    </AssignContext.Provider>
   );
 }
-
-/** Whether rows offer "assign to an expert" (only while legacy experts exist). */
-const AssignContext = createContext(true);
 
 /** The shared availability chip row: 可用 (default) | 未实装 | 仅 Arslan | 全部. */
 function availabilityChips(
@@ -171,7 +162,6 @@ function SkillsView({ skills }: { skills: RegistrySkill[] }) {
 
 function SkillRow({ s }: { s: RegistrySkill }) {
   const { t } = useTranslation();
-  const assign = useContext(AssignContext);
   const avail = classify(s);
   // PC-5 health: probe on demand (mirrors RailMcpList's 体检). null = never checked.
   const [health, setHealth] = useState<SkillHealth | null>(null);
@@ -231,11 +221,6 @@ function SkillRow({ s }: { s: RegistrySkill }) {
           <Stethoscope className="w-2.5 h-2.5" />
           {t("capabilities.skill_health.check")}
         </button>
-        {avail === "usable" && (
-          <span className="ml-auto">
-            {assign && <EquipPopover kind="skill" capKey={s.key} />}
-          </span>
-        )}
       </div>
       {avail === "unimplemented" && (
         <span className="w-full text-[10px] text-muted-foreground font-mono">

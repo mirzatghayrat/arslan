@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Verzeichnis wird geladen…",
       "empty": "Noch keine Fähigkeiten registriert",
-      "equip_hint": "Arslan kann diese direkt nutzen.",
       "unimplemented_note": "Nicht implementiert — nur Katalog-Platzhalter, nicht ausrüstbar.",
       "orchestrator_note": "Aus Sicherheitsgründen nur von Arslan selbst nutzbar – nicht an Experten vergebbar.",
       "degraded": "OHNE SANDBOX",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Nutzen für Arslan"
-    },
-    "equip": {
-      "action": "Spawn ausrüsten…",
-      "loading": "Spawns werden geladen…",
-      "empty": "Noch keine Spawns.",
-      "error": "Ausrüsten fehlgeschlagen — Änderung zurückgesetzt."
     },
     "compat": {
       "full": "voll",

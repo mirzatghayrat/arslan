@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Loading registry…",
       "empty": "No capabilities registered yet",
-      "equip_hint": "Arslan can use these directly.",
       "unimplemented_note": "Not implemented — catalog placeholder only, cannot be equipped.",
       "orchestrator_note": "For safety, only Arslan itself can use these; they cannot be given to experts.",
       "degraded": "UNSANDBOXED",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Value for Arslan"
-    },
-    "equip": {
-      "action": "Equip to spawn…",
-      "loading": "Loading spawns…",
-      "empty": "No spawns yet.",
-      "error": "Equip failed — change rolled back."
     },
     "compat": {
       "full": "full",

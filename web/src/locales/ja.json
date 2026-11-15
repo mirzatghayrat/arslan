@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "一覧を読み込み中…",
       "empty": "登録された能力がまだありません",
-      "equip_hint": "Arslan はこれらを直接使えます。",
       "unimplemented_note": "未実装——カタログ上の項目のみで、装備できません。",
       "orchestrator_note": "安全のため Arslan 本体専用です。専門家には渡せません。",
       "degraded": "サンドボックス無効",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Arslan での用途"
-    },
-    "equip": {
-      "action": "エキスパートに装備…",
-      "loading": "エキスパートを読み込み中…",
-      "empty": "エキスパートはまだいません。",
-      "error": "装備に失敗しました——変更を元に戻しました。"
     },
     "compat": {
       "full": "完全",

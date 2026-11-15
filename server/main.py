@@ -651,10 +651,6 @@ def create_app() -> FastAPI:
     from server.api import ssh_nodes as ssh_nodes_api
     app.include_router(ssh_nodes_api.router, prefix="/api/v1")
 
-    from server.api import spawns as spawns_api
-
-    app.include_router(spawns_api.router, prefix="/api/v1")
-
     # Test-only helper to seed a spawn without going through the build socket.
     # It creates a spawn with NO auth, so gate it twice: it must be explicitly
     # opted in via ARSLAN_TEST_ROUTES=1 AND never register in the desktop app's
@@ -740,8 +736,6 @@ def create_app() -> FastAPI:
     app.include_router(proactive_api.router, prefix="/api/v1")
     from server.api import workspace as workspace_api
     app.include_router(workspace_api.router, prefix="/api/v1")
-    from server.api import expert_conversion as expert_conversion_api
-    app.include_router(expert_conversion_api.router, prefix="/api/v1")
 
     from server.api import notes as notes_api
 
@@ -930,6 +924,8 @@ def _register_test_routes(app: FastAPI) -> None:
 
     # Behind the access token like every other route that writes (C11b, #338 review F7); with no
     # token active (the dev harness) require_auth is a no-op, so the test fixtures are unchanged.
+    # No test seeds through it since C7c-4; its own gate tests (C11) still call it. DELETE-BY: v0.1.64, with
+    # C7c-5 (with spawn_service and the Spawn model).
     @app.post("/api/v1/_test/seed_spawn", dependencies=[_Depends(require_auth)])
     async def _seed_spawn(  # noqa: ANN202
         body: dict, session: _AsyncSession = _Depends(_get_session)

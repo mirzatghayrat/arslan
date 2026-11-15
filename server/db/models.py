@@ -60,7 +60,7 @@ class RecipeExecution(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
-# DELETE-BY: v0.1.64, with C7c-4 (the model) and C7c-5 (the table and what points at it).
+# DELETE-BY: v0.1.64, with C7c-5 (the model, the table and what points at it; the model moved from C7c-4).
 class Spawn(Base):
     __tablename__ = "spawns"
 
