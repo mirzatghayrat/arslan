@@ -42,6 +42,9 @@ these tables: every step is a no-op there except the expert-scope triggers (step
 
 `chat_messages` and `feedback` (the old one-to-one expert chats) drop without an export
 (`EXPORT_EXPERT_CHATS`): pending the user's confirmation, as is `CONVERT_DEFAULT_EXPERTS`.
+
+Order with 0102: 0102 (another lane) may merge after this one. The runner applies every listed id missing from
+`schema_version` (a set, since 0073), so list 0102 before 0103 and an install that already has 0103 still gets 0102.
 """
 from __future__ import annotations
 
