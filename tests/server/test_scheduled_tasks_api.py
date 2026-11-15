@@ -3,10 +3,10 @@
 Contract under test (validation delegates to server/services/scheduler.py's
 primitives — parse_cron / MIN_INTERVAL_S / MAX_ENABLED / compute_next_due — the
 API never re-implements scheduling rules):
-  - GET /scheduled-tasks lists tasks with spawn_name (join), schedule display
+  - GET /scheduled-tasks lists tasks with spawn_name (always None since C7c-5b), schedule display
     fields, last_fired/next_due/paused_reason/consecutive_failures and the latest
     run outcome (per-task latest scheduled_task_run);
-  - POST validates: name/prompt non-blank (422), spawn exists (422),
+  - POST validates: name/prompt non-blank (422), any spawn_id (422: no expert exists since C7c-5b),
     interval_s >= MIN_INTERVAL_S (422), cron parses (422 carrying the parse_cron
     ValueError message), enabled count < MAX_ENABLED (409); on create the task is
     enabled and next_due_at = compute_next_due(...) is persisted;
@@ -36,7 +36,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import server.db.session as db_session
-from server.db.models import Base, ScheduledTask, ScheduledTaskRun, Spawn
+from server.db.models import Base, ScheduledTask, ScheduledTaskRun
 from server.services import scheduler
 
 AUTH = {"Authorization": "Bearer test-token"}
@@ -72,16 +72,7 @@ async def client(tmp_path, monkeypatch):
     await engine.dispose()
 
 
-async def _seed_spawn(name: str = "调研员") -> int:
-    async with db_session.AsyncSessionLocal() as db:
-        spawn = Spawn(name=name, domain_category="general", system_prompt="sp")
-        db.add(spawn)
-        await db.commit()
-        await db.refresh(spawn)
-        return spawn.id
-
-
-async def _seed_task(spawn_id: int, **overrides) -> int:
+async def _seed_task(spawn_id: int | None = None, **overrides) -> int:
     fields = dict(name="早报", prompt="做每日早报", spawn_id=spawn_id,
                   schedule_kind="interval", interval_s=3600, enabled=True,
                   consecutive_failures=0)
@@ -110,7 +101,7 @@ async def _get_task(task_id: int) -> ScheduledTask | None:
         return await db.get(ScheduledTask, task_id)
 
 
-def _body(spawn_id: int, **overrides) -> dict:
+def _body(spawn_id: int | None = None, **overrides) -> dict:
     body = {"name": "早报", "prompt": "做每日早报", "spawn_id": spawn_id,
             "schedule_kind": "interval", "interval_s": 3600}
     body.update(overrides)
@@ -135,15 +126,13 @@ async def test_scheduled_tasks_requires_auth(client):
 # ---------------------------------------------------------------------------
 
 async def test_create_interval_round_trip(client):
-    spawn_id = await _seed_spawn()
     before = datetime.utcnow()
-    r = await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id), headers=AUTH)
+    r = await client.post("/api/v1/scheduled-tasks", json=_body(), headers=AUTH)
     assert r.status_code == 201
     body = r.json()
     assert body["name"] == "早报"
     assert body["prompt"] == "做每日早报"
-    assert body["spawn_id"] == spawn_id
-    assert body["spawn_name"] == "调研员"
+    assert body["spawn_id"] is None and body["spawn_name"] is None   # run by Arslan (C7c-5b: no expert)
     assert body["schedule_kind"] == "interval"
     assert body["interval_s"] == 3600
     assert body["enabled"] is True
@@ -159,14 +148,13 @@ async def test_create_interval_round_trip(client):
     r = await client.get("/api/v1/scheduled-tasks", headers=AUTH)
     assert r.status_code == 200
     listed = {t["id"]: t for t in r.json()}
-    assert listed[body["id"]]["spawn_name"] == "调研员"
+    assert listed[body["id"]]["spawn_name"] is None
     assert listed[body["id"]]["next_due_at"] == body["next_due_at"]
 
 
 async def test_create_cron_persists_next_due(client):
-    spawn_id = await _seed_spawn()
     r = await client.post("/api/v1/scheduled-tasks",
-                          json=_body(spawn_id, schedule_kind="cron", cron="0 9 * * *",
+                          json=_body(schedule_kind="cron", cron="0 9 * * *",
                                      interval_s=None),
                           headers=AUTH)
     assert r.status_code == 201
@@ -176,8 +164,7 @@ async def test_create_cron_persists_next_due(client):
 
 
 async def test_list_includes_latest_outcome(client):
-    spawn_id = await _seed_spawn()
-    tid = await _seed_task(spawn_id)
+    tid = await _seed_task()
     now = datetime.utcnow()
     await _seed_run(tid, outcome="error", reason="boom",
                     finished_at=now - timedelta(hours=2),
@@ -193,44 +180,41 @@ async def test_list_includes_latest_outcome(client):
 # ---------------------------------------------------------------------------
 
 async def test_create_rejects_blank_name_and_prompt(client):
-    spawn_id = await _seed_spawn()
-    r = await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id, name=""),
+    r = await client.post("/api/v1/scheduled-tasks", json=_body(name=""),
                           headers=AUTH)
     assert r.status_code == 422
-    r = await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id, prompt="   "),
+    r = await client.post("/api/v1/scheduled-tasks", json=_body(prompt="   "),
                           headers=AUTH)
     assert r.status_code == 422
 
 
 async def test_create_rejects_short_interval(client):
-    spawn_id = await _seed_spawn()
-    r = await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id, interval_s=899),
+    r = await client.post("/api/v1/scheduled-tasks", json=_body(interval_s=899),
                           headers=AUTH)
     assert r.status_code == 422
     assert str(scheduler.MIN_INTERVAL_S) in r.text
     # interval kind without interval_s at all is equally invalid
     r = await client.post("/api/v1/scheduled-tasks",
-                          json=_body(spawn_id, interval_s=None), headers=AUTH)
+                          json=_body(interval_s=None), headers=AUTH)
     assert r.status_code == 422
 
 
 async def test_create_rejects_bad_cron_with_parse_message(client):
-    spawn_id = await _seed_spawn()
     r = await client.post("/api/v1/scheduled-tasks",
-                          json=_body(spawn_id, schedule_kind="cron", cron="61 * * * *",
+                          json=_body(schedule_kind="cron", cron="61 * * * *",
                                      interval_s=None),
                           headers=AUTH)
     assert r.status_code == 422
     assert "out of range" in r.text          # parse_cron's ValueError message surfaces
     r = await client.post("/api/v1/scheduled-tasks",
-                          json=_body(spawn_id, schedule_kind="cron", cron="* * *",
+                          json=_body(schedule_kind="cron", cron="* * *",
                                      interval_s=None),
                           headers=AUTH)
     assert r.status_code == 422
     assert "5 fields" in r.text
     # cron kind without a cron expression is invalid too
     r = await client.post("/api/v1/scheduled-tasks",
-                          json=_body(spawn_id, schedule_kind="cron", interval_s=None),
+                          json=_body(schedule_kind="cron", interval_s=None),
                           headers=AUTH)
     assert r.status_code == 422
 
@@ -241,15 +225,31 @@ async def test_create_rejects_missing_spawn(client):
     assert "spawn" in r.text
 
 
+async def test_any_spawn_id_is_refused_as_not_found_and_an_old_one_still_lists(client):
+    """C7c-5b (v0.1.64): the Spawn model went, so a task can no longer name an expert. The wire contract stays:
+    a non-null spawn_id is 422 scheduled.spawn_not_found on create and update, whatever the id. A task an
+    upgraded install made for a former expert keeps its spawn_id and lists with no name."""
+    for spawn_id in (1, 7):
+        r = await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id), headers=AUTH)
+        assert r.status_code == 422
+        assert r.json()["detail"] == {"code": "scheduled.spawn_not_found", "params": {"spawn_id": spawn_id}}
+    old = await _seed_task(7, target="spawn")          # spawn_id no longer has a foreign key
+    r = await client.put(f"/api/v1/scheduled-tasks/{old}", json={"spawn_id": 7}, headers=AUTH)
+    assert r.status_code == 422 and r.json()["detail"]["code"] == "scheduled.spawn_not_found"
+    listed = {t["id"]: t for t in (await client.get("/api/v1/scheduled-tasks", headers=AUTH)).json()}
+    assert listed[old]["spawn_id"] == 7 and listed[old]["spawn_name"] is None
+    r = await client.post(f"/api/v1/scheduled-tasks/{old}/pause", headers=AUTH)
+    assert r.status_code == 200 and r.json()["spawn_name"] is None
+
+
 async def test_create_caps_enabled_tasks_and_resume_respects_quota(client):
-    spawn_id = await _seed_spawn()
     for i in range(scheduler.MAX_ENABLED):
-        await _seed_task(spawn_id, name=f"t{i}")
+        await _seed_task(name=f"t{i}")
     r = await client.post("/api/v1/scheduled-tasks",
-                          json=_body(spawn_id, name="第11个"), headers=AUTH)
+                          json=_body(name="第11个"), headers=AUTH)
     assert r.status_code == 409
     # resume on a disabled task while the quota is full is the same 409
-    disabled = await _seed_task(spawn_id, name="停用", enabled=False)
+    disabled = await _seed_task(name="停用", enabled=False)
     r = await client.post(f"/api/v1/scheduled-tasks/{disabled}/resume", headers=AUTH)
     assert r.status_code == 409
 
@@ -259,8 +259,7 @@ async def test_create_caps_enabled_tasks_and_resume_respects_quota(client):
 # ---------------------------------------------------------------------------
 
 async def test_put_non_schedule_change_keeps_next_due(client):
-    spawn_id = await _seed_spawn()
-    created = (await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id),
+    created = (await client.post("/api/v1/scheduled-tasks", json=_body(),
                                  headers=AUTH)).json()
     r = await client.put(f"/api/v1/scheduled-tasks/{created['id']}",
                          json={"name": "晚报", "prompt": "做每日晚报"}, headers=AUTH)
@@ -272,8 +271,7 @@ async def test_put_non_schedule_change_keeps_next_due(client):
 
 
 async def test_put_schedule_change_recomputes_next_due(client):
-    spawn_id = await _seed_spawn()
-    created = (await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id),
+    created = (await client.post("/api/v1/scheduled-tasks", json=_body(),
                                  headers=AUTH)).json()
     before = datetime.utcnow()
     r = await client.put(f"/api/v1/scheduled-tasks/{created['id']}",
@@ -291,8 +289,7 @@ async def test_put_schedule_change_recomputes_next_due(client):
 
 
 async def test_put_validation_and_404(client):
-    spawn_id = await _seed_spawn()
-    tid = await _seed_task(spawn_id)
+    tid = await _seed_task()
     r = await client.put(f"/api/v1/scheduled-tasks/{tid}", json={"interval_s": 10},
                          headers=AUTH)
     assert r.status_code == 422
@@ -315,8 +312,7 @@ async def test_put_explicit_null_spawn_id_rejected(client):
     """M4 final review I-2: an explicit spawn_id: null in the patch must 422 —
     silently nulling the FK would orphan the task (the loop can't dispatch it).
     Omitting spawn_id in a partial PUT stays fine."""
-    spawn_id = await _seed_spawn()
-    tid = await _seed_task(spawn_id)
+    tid = await _seed_task()
     r = await client.put(f"/api/v1/scheduled-tasks/{tid}", json={"spawn_id": None},
                          headers=AUTH)
     assert r.status_code == 422
@@ -327,7 +323,7 @@ async def test_put_explicit_null_spawn_id_rejected(client):
     r = await client.put(f"/api/v1/scheduled-tasks/{tid}", json={"name": "改名"},
                          headers=AUTH)
     assert r.status_code == 200
-    assert r.json()["spawn_id"] == spawn_id
+    assert r.json()["spawn_id"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -335,8 +331,7 @@ async def test_put_explicit_null_spawn_id_rejected(client):
 # ---------------------------------------------------------------------------
 
 async def test_manual_pause_leaves_reason_none(client):
-    spawn_id = await _seed_spawn()
-    created = (await client.post("/api/v1/scheduled-tasks", json=_body(spawn_id),
+    created = (await client.post("/api/v1/scheduled-tasks", json=_body(),
                                  headers=AUTH)).json()
     r = await client.post(f"/api/v1/scheduled-tasks/{created['id']}/pause", headers=AUTH)
     assert r.status_code == 200
@@ -349,12 +344,11 @@ async def test_manual_pause_leaves_reason_none(client):
 
 
 async def test_resume_clears_failures_and_fires_soon(client):
-    spawn_id = await _seed_spawn()
     # An auto-paused, long-stale interval task: resume must clear the pause
     # bookkeeping AND recompute next_due forward from now — which for a stale
     # interval task means ~immediately (DELIBERATE, review S7).
     tid = await _seed_task(
-        spawn_id, enabled=False, paused_reason="连续失败 3 次:boom",
+        enabled=False, paused_reason="连续失败 3 次:boom",
         consecutive_failures=3, last_fired_at=datetime.utcnow() - timedelta(days=10),
         next_due_at=None)
     before = datetime.utcnow()
@@ -380,8 +374,7 @@ async def test_pause_resume_404(client):
 # ---------------------------------------------------------------------------
 
 async def test_fire_now_dispatches_supervised_fire(client, monkeypatch):
-    spawn_id = await _seed_spawn()
-    tid = await _seed_task(spawn_id)
+    tid = await _seed_task()
     fired: list[int] = []
 
     async def fake_fire(task):
@@ -395,8 +388,7 @@ async def test_fire_now_dispatches_supervised_fire(client, monkeypatch):
 
 
 async def test_fire_now_single_flight_409(client, monkeypatch):
-    spawn_id = await _seed_spawn()
-    tid = await _seed_task(spawn_id)
+    tid = await _seed_task()
     await _seed_run(tid)                      # in-flight: outcome IS NULL
     fired: list[int] = []
 
@@ -421,8 +413,7 @@ async def test_fire_now_missing_task_404(client):
 # ---------------------------------------------------------------------------
 
 async def test_delete_cascades_runs_rows(client):
-    spawn_id = await _seed_spawn()
-    tid = await _seed_task(spawn_id)
+    tid = await _seed_task()
     now = datetime.utcnow()
     await _seed_run(tid, outcome="ok", finished_at=now)
     await _seed_run(tid, outcome="error", reason="boom", finished_at=now)
@@ -445,8 +436,7 @@ async def test_delete_cascades_runs_rows(client):
 # ---------------------------------------------------------------------------
 
 async def test_runs_history_newest_first_limit_50(client):
-    spawn_id = await _seed_spawn()
-    tid = await _seed_task(spawn_id)
+    tid = await _seed_task()
     now = datetime.utcnow()
     run_ids = []
     async with db_session.AsyncSessionLocal() as db:

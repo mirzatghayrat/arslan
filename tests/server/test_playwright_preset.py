@@ -78,7 +78,7 @@ def test_other_servers_are_untouched_by_the_manual_table():
 
 def test_at_least_one_safe_tool_exists_so_a_spawn_can_be_assigned():
     """The acceptance condition from the brief, stated as the thing it protects:
-    assert_assignable requires a safe, wired tool, and without one this whole
+    safe_menu requires a safe, wired tool, and without one this whole
     connector gives a spawn nothing."""
     safe = [t for t, tier in catalog.PLAYWRIGHT_TOOL_TIERS.items() if tier == "safe"]
     assert safe, "no safe tool — the toolset could not be assigned to any spawn"

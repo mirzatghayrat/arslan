@@ -13,8 +13,8 @@ it names, before its own checks (public addresses, the user's trusted devices), 
 Only `outside_only` is refused (403), unless the user allowed that host for this conversation (a `network:<host>` grant,
 never "Always"): a site that appears nowhere was steered by nothing (⓪Plan Q1, as mainstream agents judge it). An
 address is judged apart (`judge`). The command is told why (`refusal_note`), and the user is asked once whether
-commands in this conversation may reach the site (`offer`; NET-b words that card and adds Settings' list). That card
-comes after verify's run too (Codex round 1, F8). Where it can't be asked or isn't answered, the Inbox lists it, and
+commands in this conversation may reach the site (`offer`), or before the run for a site its text names (NET-b:
+`preflight`). The card after a run comes after verify's run too (Codex round 1, F8). Where it can't be asked or isn't answered, the Inbox lists it, and
 its "In this conversation" there stores what the card's would (`allow_from_inbox`, F7): not for a scheduled run's
 entry, since a run with nobody to ask reads no grant (S1).
 
@@ -57,6 +57,7 @@ Known limits:
 from __future__ import annotations
 
 import asyncio
+import bisect
 import functools
 import ipaddress
 import json
@@ -151,8 +152,10 @@ _PART = re.compile(r"0x[0-9a-f]*|0[0-7]*|[1-9][0-9]*")
 #: A last label that is a number: no TLD is, so such a name is an address in some spelling, or no host.
 _ENDS_IN_NUMBER = re.compile(r"(?:^|\.)(?:0x[0-9a-f]*|[0-9]+)$")
 #: Hosts a text names: a URL's host (after any user part), a bare name with a dot ending in letters (or punycode), and
-#: a dotted IPv4 address.
-_URL_HOST = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://(?:[^\s/?#@\[\]]*@)?(\[[^\]\s/]*\]|[^\s/?#:@\[\]<>'\"`]+)")
+#: a dotted IPv4 address. A run of a scheme's characters is read once, whole (`*+`), and names no host (group 1 None)
+#: with no "://" and host after it: a scheme can only end where the run does, so a try from a later letter of the run
+#: reads to the same end and fails too. Tried from each letter, a run of 65,536 (a.a.a...) took seconds.
+_URL_HOST = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*+(?:://(?:[^\s/?#@\[\]]*@)?(\[[^\]\s/]*\]|[^\s/?#:@\[\]<>'\"`]+))?")
 _BARE_NAME = re.compile(r"(?<![\w.-])((?:[^\W_](?:[\w-]{0,61}[^\W_])?\.)+(?:[^\W\d_]{2,63}|xn--[a-z0-9-]{1,59}))"
                         r"(?![\w-])", re.I)
 _BARE_IPV4 = re.compile(r"(?<![\w.])(\d{1,3}(?:\.\d{1,3}){3})(?![\w-]|\.\w)")
@@ -319,7 +322,8 @@ def hosts_in(text, *, escapes: bool = False) -> set[str]:
     texts = list(dict.fromkeys((_host_text(text, escapes=True), _host_text(text)) if escapes else (_host_text(text),)))
     candidates: set[str] = set()
     for reading in {form for text in texts for form in (text, _SPACELESS.sub(" ", text))}:
-        candidates.update(match.group(1) for pattern in (_URL_HOST, _BARE_IPV4) for match in pattern.finditer(reading))
+        candidates.update(match.group(1) for pattern in (_URL_HOST, _BARE_IPV4) for match in pattern.finditer(reading)
+                          if match.group(1) is not None)
         for match in _BARE_NAME.finditer(reading):
             *head, last = match.group(1).split(".")
             candidates.update(".".join([*head, cut]) for cut in _tld_cuts(last, False))
@@ -379,10 +383,17 @@ def _typed_hosts(text) -> set[str]:
     `hosts_in` reads a text (full-width forms, an ideographic full stop), and never as JSON."""
     text = _host_text(text)
     urls = [match.span(1) for match in _AFTER_SCHEME.finditer(text)]
+    starts = [start for start, _ in urls]
+
+    def in_url(at: int) -> bool:
+        """`at` is inside a URL's host, read above: the last one that begins before it, as they don't overlap (a
+        check against each URL took seconds for a paste of many)."""
+        i = bisect.bisect_left(starts, at) - 1
+        return i >= 0 and at < urls[i][1]
     found = {_typed_name(text[start:end], url=True) for start, end in urls}
     for reading in (text, _SPACELESS.sub(" ", text)):
         found.update(_typed_name(match.group(1)) for match in _BARE_NAME.finditer(reading)
-                     if not any(start < match.start(1) < end for start, end in urls))     # in a URL's host: read above
+                     if not in_url(match.start(1)))
     return {name for candidate in found if candidate and (name := normalize(candidate)) is not None}
 
 
@@ -541,7 +552,8 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
     """The hosts the user named in this conversation: what they typed in their own messages (role user). Codex round
     1, F3: never a sub-session's brief, the commander's words, framed or not (`sub_sessions.BRIEF_SOURCE`; a framed one
     also by SUB5b's header, `untrusted.BRIEF_FROM_OUTSIDE`; one stored before either, by where it is: `_brief_id`, Codex
-    round 2), nor the file names of the pictures sent with a message (`arslan.typed_text`). Every other user-role row is
+    round 2), nor a side chat's reply brought back carrying outside content (`side_chats.BACK_SOURCE`, SIDE-2), nor the
+    file names of the pictures sent with a message (`arslan.typed_text`). Every other user-role row is
     typed: in the window, on the phone (a chat message, a task's goal), or while a turn ran (K9b). A choice card's pick
     is sent as the user's message: its label, shown in full, is what they chose to send, as with a paste."""
     if not conversation_id:
@@ -551,6 +563,7 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
     from server.db.models import ArslanMessage
     from server.orchestrator import arslan, untrusted
     from server.services import sub_sessions
+    from server.services.side_chats import BACK_SOURCE
     mine = (ArslanMessage.conversation_id == conversation_id, ArslanMessage.role == "user")
     try:
         async with db_session.AsyncSessionLocal() as db:
@@ -564,8 +577,8 @@ async def _named(conversation_id: str | None) -> frozenset[str]:
         return frozenset()
     brief = _brief_id(conversation_id, (row_id for row_id, _, _ in rows))
     named = frozenset(_sites_named(arslan.typed_text(content) for row_id, content, source in rows
-                                   if row_id != brief and source != sub_sessions.BRIEF_SOURCE
-                                   and not content.startswith(untrusted.BRIEF_FROM_OUTSIDE)))
+                                   if row_id != brief and source not in (sub_sessions.BRIEF_SOURCE, BACK_SOURCE)
+                                   and not content.startswith(untrusted.USER_FRAMES)))
     _named_cache[conversation_id] = ((count, last or 0), named)
     return named
 
@@ -697,13 +710,8 @@ async def admits(run: Run, host: str) -> bool:
 async def _granted(run: Run, name: str) -> bool:
     """This conversation's grant for `name` (its card's "In this conversation"). Its first use in a run writes the
     ledger row a standing answer writes."""
-    from server.db import session as db_session
-    from server.services import permission_store, permissions
-    try:
-        async with db_session.AsyncSessionLocal() as db:
-            grant = await permission_store.find_grant(db, run.conversation_id, None, "network", f"network:{name}")
-    except Exception:  # noqa: BLE001 — fails closed: a grant that can't be read lets nothing through
-        return False
+    from server.services import permissions
+    grant = await _grant(run.conversation_id, name)
     if grant is None:
         return False
     if name not in run.granted:
@@ -714,31 +722,101 @@ async def _granted(run: Run, name: str) -> bool:
     return True
 
 
+async def _grant(conversation_id: str | None, name: str):
+    """This conversation's `network:<name>` grant, or None (also when it can't be read: fails closed)."""
+    from server.db import session as db_session
+    from server.services import permission_store
+    try:
+        async with db_session.AsyncSessionLocal() as db:
+            return await permission_store.find_grant(db, conversation_id, None, "network", f"network:{name}")
+    except Exception:  # noqa: BLE001 — fails closed: a grant that can't be read lets nothing through
+        return None
+
+
 # ── what the command and the user are told ───────────────────────────────────
 
-def refusal_note(hosts) -> str:
-    """What a refused run's result says, one sentence a host (NET-b may word it again)."""
+def refusal_note(hosts, *, asks: bool | None = None) -> str:
+    """What a refused run's result says, one sentence a host. `asks`: someone can answer the card (None: this turn
+    says, `permissions.current_asker`). With nobody to ask (a scheduled run) the card was refused by policy, and a
+    scheduled run's Inbox entry offers no grant (S1), so the model is pointed to Settings' list instead."""
+    from server.services import permissions
+    if asks is None:
+        asks = permissions.current_asker() is not None
+    then = (" The user can allow it for this conversation." if asks else
+            " Nobody could be asked in this run; the user can add it in Settings › Sandbox › Sites.")
     return " ".join(
         f"{host} was refused: " + ("after this conversation read outside content, only an address the user named or "
                                    "listed is allowed." if _address_like(normalize(host)) else
                                    "it appeared only in outside content this conversation read, and the user didn't "
-                                   "name it.") + " The user can allow it for this conversation." for host in hosts)
+                                   "name it.") + then for host in hosts)
 
 
-def request(host: str, command: str):
-    """The card for one refused site (`offer`), and what a grant's use records: only what is known, the site and the
-    command that connected (none, for the Inbox's answer: `allow_from_inbox`), never what it would send (the proxy
-    doesn't see it)."""
+#: NET-b (net-design §12): what the user can do besides answering the card.
+SITES_HINT = "You can also add it in Settings › Sandbox › Sites."
+
+
+def request(host: str, command: str, *, before: bool = False):
+    """The card for one site (`offer` after a refused run, `preflight` before one: `before`), and what a grant's use
+    records: only what is known, the site and the command (none, for the Inbox's answer: `allow_from_inbox`), never
+    what it would send (the proxy doesn't see it). NET-b (net-design §4, §12): what was blocked, why, what to do."""
     from server.services import permissions
     why = (f"the address {host}, which you didn't name, after this conversation read outside content"
            if _address_like(normalize(host)) else
            f"{host}, a site that appeared only in outside content this conversation read (a page, a file or a tool's "
            "output), not one you named")
     ran = f"`{command[:300]}`" if command else "A command"
+    tried = "wants to send to" if before else "tried to send to"
     return permissions.Request(
         kind="network", target=f"network:{host}", conversation_only=True,
         title=f"Let commands in this conversation connect to {host}?",
-        detail=f"{ran} tried to connect to {why}. Arslan can't see what it would send.")
+        detail=f"{ran} {tried} {why}. Your answer decides whether commands in this conversation may send data to "
+               f"{host}. {SITES_HINT}")
+
+
+def command_hosts(command: str) -> set[str]:
+    """NET-b: the hosts a command's text names as a URL's host, for the gate's pre-flight (`preflight`), each as
+    `normalize` writes it. Read as what the user typed is (`_typed_hosts`' URL reading), not as outside content
+    (`hosts_in`): a command is text as written, never JSON, and `hosts_in`'s guesses at where a host in a spaceless
+    script begins name hosts no command connects to, which a card would ask about for nothing. Only a URL's host:
+    a bare name in a command is as often a file (`main.py`, `notes.md`: .py and .md are TLDs), which outside content
+    names too. An address in a URL in any spelling counts (`curl http://1572395042/`), a bare number never (a version
+    3.11.4 reads as one). What this misses the proxy still refuses, and NET-a's card follows the run (`offer`)."""
+    text, found = _host_text(command), set()
+    for match in _AFTER_SCHEME.finditer(text):
+        host = match.group(1).rstrip(".")           # a trailing dot names the same host (`normalize`)
+        name = normalize(host) if _ip(normalize(host)) is not None else normalize(_typed_name(host, url=True) or "")
+        if name is not None:
+            found.add(name)
+    return found
+
+
+async def preflight(command: str, conversation_id: str | None) -> dict:
+    """NET-b: before a sandboxed command runs (command_gate, the switch on), NET-a's card up front for each host its
+    text names (`command_hosts`) that is `outside_only` here and not already allowed for this conversation, so a plain
+    `curl https://evil.example` asks before it runs instead of failing at the proxy. The proxy stays the enforcement:
+    this only asks earlier. {} when every such host is allowed. Else (a no, or with nobody to ask: a scheduled fire,
+    where no grant counts, S1, and the card is refused by policy and listed, as `offer`'s is) the command still runs,
+    without the grant (#949 review 1: a command that only mentions the URL, an `echo` or a commit message, must run;
+    a connection to the host is refused at the proxy): {"hosts": the hosts refused, "note": what the model is told}.
+    The tool loop doesn't ask again after the run for those hosts (`offer`)."""
+    from server.orchestrator import untrusted
+    from server.services import background_jobs, permissions
+    asks, seen = permissions.current_asker() is not None, untrusted.external_seen()
+    due = [host for host in sorted(command_hosts(command))
+           if await judge(host, conversation_id, turn_seen=seen) == "outside_only"
+           and not (asks and await _grant(conversation_id, host) is not None)][:3]
+    if not due:
+        return {}
+    decisions = await _card(due, command, permissions.Context(conversation_id,
+                                                              job_id=background_jobs._inside_job.get()), before=True)
+    refused = next((decision for decision in decisions if not decision.allowed), None)
+    if refused is None:
+        return {}
+    # With nobody to ask the decision's own text says the step "was not done": here the command runs, so it isn't used.
+    said = f" {refused.model_text or 'The user did not allow it.'}" if asks else ""
+    names = ", ".join(due)
+    return {"hosts": due, "note": f"{refusal_note(due, asks=asks)}{said} The command ran without it: any connection "
+                                  f"it makes to {names} is refused."}
 
 
 async def offer(hosts, command: str, conversation_id: str | None) -> str:
@@ -759,10 +837,11 @@ async def offer(hosts, command: str, conversation_id: str | None) -> str:
     return refused.model_text or f"The user did not allow {names}."
 
 
-async def _card(sites: list[str], command: str, context) -> list:
-    """The card itself, asked after the run (`offer`) or answered from the Inbox (`allow_from_inbox`)."""
+async def _card(sites: list[str], command: str, context, *, before: bool = False) -> list:
+    """The card itself, asked before the run (`preflight`), after it (`offer`), or answered from the Inbox
+    (`allow_from_inbox`)."""
     from server.services import permissions
-    return await permissions.decide_many([request(site, command) for site in sites], context,
+    return await permissions.decide_many([request(site, command, before=before) for site in sites], context,
                                          title=f"Let commands in this conversation connect to {', '.join(sites)}?")
 
 

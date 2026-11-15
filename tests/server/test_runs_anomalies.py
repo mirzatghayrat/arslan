@@ -4,17 +4,11 @@ from __future__ import annotations
 
 import re
 
-from server.db.models import Run, RunEvaluation, Spawn
-
-
-def _add_spawn(db, spawn_id: int, name: str) -> None:
-    # runs.spawn_id is a foreign key, and the tests' engines enforce it: the spawn comes first.
-    db.add(Spawn(id=spawn_id, name=name, domain_category="g", system_prompt="sp"))
+from server.db.models import Run, RunEvaluation
 
 
 async def test_anomalies_flags_high_error_and_fabrication(client):
     async with client.db_maker() as db:
-        _add_spawn(db, 1, "Bad")
         await db.flush()
         # spawn "Bad": 4 runs, 2 errored (50% > ERR_RED=0.15), and the last two
         # runs each have a failing "fabrication" RunEvaluation (streak >= 2).
@@ -60,7 +54,6 @@ async def test_anomalies_flags_high_error_and_fabrication(client):
 
 async def test_anomalies_empty_when_healthy(client):
     async with client.db_maker() as db:
-        _add_spawn(db, 2, "Good")
         await db.flush()
         for i in range(3):
             db.add(Run(

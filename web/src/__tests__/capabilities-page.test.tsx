@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // i18n passthrough
@@ -13,7 +13,6 @@ vi.mock("react-i18next", () => ({
 vi.mock("../api/client", () => ({
   api: {
     getRegistry: vi.fn(),
-    listSpawns: vi.fn(),
   },
   ApiError: class ApiError extends Error {},
   API_BASE: "",
@@ -48,7 +47,6 @@ import Capabilities from "../components/Capabilities";
 beforeEach(() => {
   vi.clearAllMocks();
   (api.getRegistry as ReturnType<typeof vi.fn>).mockResolvedValue({ toolsets: [], skills: [] });
-  (api.listSpawns as ReturnType<typeof vi.fn>).mockResolvedValue([]);
   (mcp.listMcpServers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 });
 
@@ -61,19 +59,19 @@ describe("Capabilities page: one list (v0.1.64 CAP3a)", () => {
     expect(screen.getByTestId("cap-add-link")).toBeInTheDocument();
   });
 
-  it("legacy experts keep their own section below the list, with the catalog that equips them, only when there are any", async () => {
-    const { unmount } = render(<Capabilities />);
+  it("C7c-4: no legacy experts section and no expert skill catalog", async () => {
+    // The old `experts` slot is gone: passing it (as App used to) renders nothing extra.
+    const old = { experts: <div>Expert workspace</div> } as Record<string, unknown>;
+    render(<Capabilities {...old} />);
+    expect(await screen.findByText("capabilityList.intro")).toBeInTheDocument();
     expect(screen.queryByTestId("legacy-experts")).toBeNull();
-    unmount();
-    render(<Capabilities experts={<div>Expert workspace</div>} />);
-    const section = screen.getByTestId("legacy-experts");
-    expect(section).toHaveTextContent("workspace.legacyExperts");
-    expect(section).toHaveTextContent("Expert workspace");
-    await waitFor(() => expect(api.getRegistry).toHaveBeenCalled());
+    expect(screen.queryByText("workspace.legacyExperts")).not.toBeInTheDocument();
+    expect(screen.queryByText("Expert workspace")).not.toBeInTheDocument();
+    expect(api.getRegistry).not.toHaveBeenCalled();
   });
 
   it("CAP1a: no Discover, no search hero, no saved candidates; no official-directory row", () => {
-    render(<Capabilities experts={<div>Expert workspace</div>} />);
+    render(<Capabilities />);
     expect(screen.queryByPlaceholderText("capabilities.hero.placeholder")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "capabilities.tabs.saved" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("cap-add-discover")).toBeNull();

@@ -46,12 +46,18 @@ async def test_explicit_save_is_bound_to_exact_user_content(active_memory):
 
 
 async def test_worker_cannot_reuse_host_confirmation(active_memory):
+    # C7c-4: a worker (expert) write is refused outright, with the host's confirmation in view too, and is never
+    # redirected to the project or global scope: nothing is written.
+    from server.services.memory_repository import repository
     content = "Use examples"
-    ctx = pc.TaskMemoryContext(task_id="task-a", run_id="run-a", explicit_save_ref="message:1",
+    ctx = pc.TaskMemoryContext(task_id="task-a", run_id="run-a", project_id="project-a", explicit_save_ref="message:1",
         allow_global_save=True, explicit_save_digest=hashlib.sha256(normalized_memory(content).encode()).hexdigest())
-    result = await execute({"kind": "preference", "action": "append", "content": content},
-                           actor="spawn", spawn_id=3, context=ctx)
-    assert result["status"] == "proposed" and result["scope"] == {"kind": "expert", "id": "3"}
+    for action in ("append", "supersede"):
+        result = await execute({"kind": "preference", "action": action, "content": content, "target_id": 1,
+                                "expected_version": 1}, actor="spawn", spawn_id=3, context=ctx)
+        assert result == {"ok": False, "code": "memory_scope_denied"}, action
+    async with repository() as repo:
+        assert await repo.list_entries() == []
 
 
 @pytest.mark.parametrize("action", ["delete", "mark_stale"])

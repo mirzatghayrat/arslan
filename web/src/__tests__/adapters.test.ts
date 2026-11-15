@@ -1,39 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { toUiSpawn, toUiSettings, toUiMessages, toBackendSettings, toBackendSettingsPatch } from "../api/adapters";
+import { toUiSettings, toUiMessages, toBackendSettings, toBackendSettingsPatch } from "../api/adapters";
 import type { ArslanThreadItem } from "../api/client.types";
 import type { AppSettings as BackendAppSettings } from "../api/client.types";
-
-// ── toUiSpawn ─────────────────────────────────────────────────────────────────
-
-describe("toUiSpawn", () => {
-  it("maps a backend spawn to the UI Spawn shape", () => {
-    const api = { id: 7, name: "Aletheia", domain: "finance", description: "d", status: "idle", tools: ["web_search"], skills: ["financial-res"], total_tasks: 42 };
-    const ui = toUiSpawn(api as never);
-    expect(ui).toMatchObject({ id: "7", name: "Aletheia", status: "idle", totalTasks: 42 });
-    expect(ui.tools).toContain("web_search");
-  });
-
-  it("stringifies numeric id", () => {
-    const api = { id: 1, name: "X", domain: "general", capabilities: [], template_used: null, generation_level: 0, created_at: "", updated_at: "" };
-    expect(toUiSpawn(api).id).toBe("1");
-  });
-
-  it("falls back to capabilities when tools absent", () => {
-    const api = { id: 2, name: "Y", domain: "ops", capabilities: ["cap_a", "cap_b"], template_used: null, generation_level: 0, created_at: "", updated_at: "" };
-    const ui = toUiSpawn(api);
-    expect(ui.tools).toEqual(["cap_a", "cap_b"]);
-  });
-
-  it("defaults status to idle", () => {
-    const api = { id: 3, name: "Z", domain: "ops", capabilities: [], template_used: null, generation_level: 0, created_at: "", updated_at: "" };
-    expect(toUiSpawn(api).status).toBe("idle");
-  });
-
-  it("defaults totalTasks to 0", () => {
-    const api = { id: 4, name: "W", domain: "ops", capabilities: [], template_used: null, generation_level: 0, created_at: "", updated_at: "" };
-    expect(toUiSpawn(api).totalTasks).toBe(0);
-  });
-});
 
 // ── toUiSettings ─────────────────────────────────────────────────────────────
 

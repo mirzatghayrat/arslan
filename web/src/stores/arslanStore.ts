@@ -496,32 +496,18 @@ function makeActions(set: SetState, get: GetState) {
         process?: ProcessSummary;
         files?: StoredArtifact[];
       }): ArslanThreadItem => {
-        if (row.role === "spawn_summary") {
-          // An old expert's answer, kept so old conversations still show it. Delete this branch in
-          // the same change that drops the expert tables (C1 card): before that, turn the stored
-          // answers into plain replies, or confirm none are left. No frame names an expert any
-          // more (C1c-2), so the bubble shows the neutral label (adapters: "Spawn"). DELETE-BY: v0.1.64, with C7c-4.
-          return {
-            id: row.message_id,
-            kind: "message",
-            role: "spawn",
-            content: row.content,
-            spawnId: row.spawn_id ?? null,
-            spawnName: null,
-            // S3-M2: run linkage from the history row — the RunReplay entry
-            // point survives a reload. null/absent degrades to undefined.
-            runId: row.run_id ?? undefined,
-            ...(row.process ? { processSummary: row.process } : {}),
-          };
-        }
+        // C7c-4: an old expert's stored answer (`spawn_summary`, still in some databases until C7c-5's
+        // migration turns those rows into plain `arslan` replies) renders as an Arslan reply now, as it will
+        // after the migration. The row's fields are unchanged. DELETE-BY: v0.1.64, with C7c-5 (the migration).
+        const reply = row.role === "arslan" || row.role === "spawn_summary";
         return {
           id: row.message_id,
           kind: "message",
-          role: row.role === "arslan" ? "arslan" : "user",
+          role: reply ? "arslan" : "user",
           content: row.content,
           runId: row.run_id ?? undefined,
-          ...(row.process && row.role === "arslan" ? { processSummary: row.process } : {}),
-          ...(row.files?.length && row.role === "arslan" ? { files: row.files } : {}),
+          ...(row.process && reply ? { processSummary: row.process } : {}),
+          ...(row.files?.length && reply ? { files: row.files } : {}),
           // 0.1.42: a background job's result keeps its label across reloads.
           ...(row.job_outcome ? { jobId: `message-${row.message_id}`, jobOutcome: row.job_outcome } : {}),
           ...(row.role === "user" && row.source === "phone" ? { fromPhone: true } : {}),

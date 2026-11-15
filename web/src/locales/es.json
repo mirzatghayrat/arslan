@@ -890,7 +890,6 @@
     "catalog": {
       "loading": "Cargando registro…",
       "empty": "Aún no hay capacidades registradas",
-      "equip_hint": "Arslan puede usarlos directamente.",
       "unimplemented_note": "No implementado — solo marcador de catálogo, no se puede equipar.",
       "orchestrator_note": "Por seguridad, solo el propio Arslan puede usarlos; no se pueden asignar a los expertos.",
       "degraded": "SIN SANDBOX",
@@ -912,12 +911,6 @@
     },
     "dossier": {
       "value_label": "Utilidad para Arslan"
-    },
-    "equip": {
-      "action": "Equipar a un spawn…",
-      "loading": "Cargando spawns…",
-      "empty": "Aún no hay spawns.",
-      "error": "Error al equipar — cambio revertido."
     },
     "compat": {
       "full": "completa",
@@ -1586,6 +1579,13 @@
     "devicesTitle": "Dispositivos locales de confianza",
     "devicesDesc": "Los comandos del entorno aislado no pueden conectarse a tu red local por defecto (el router, un NAS, una impresora, otros ordenadores). Un dispositivo que añadas aquí sí, en todos sus puertos. Uno añadido por nombre guarda la dirección que tiene ahora, que se comprueba de nuevo en cada conexión. Las direcciones de este Mac no se pueden añadir.",
     "devicesEmpty": "Aún no hay dispositivos de confianza.",
+    "sitesTitle": "Sitios",
+    "sitesDesc": "Los comandos pueden conectarse siempre a estos sitios, incluso después de leer contenido externo.",
+    "sitesEmpty": "Aún no hay sitios en la lista.",
+    "sitesPlaceholder": "Un sitio, como example.com",
+    "sitesInputLabel": "Sitio",
+    "sitesAdd": "Añadir",
+    "sitesRefused": "No se puede añadir «{{value}}». Usa el nombre de un sitio concreto, como example.com, no solo una terminación de dominio como com.",
     "placeholder": "Un nombre o una IP de la red local, como nas.local o 192.168.1.20",
     "inputLabel": "Nombre o IP de la red local",
     "add": "Confiar",
@@ -1631,5 +1631,34 @@
     "start": "Empezar",
     "startsIn": "Empieza en {{mode}}",
     "saveFailed": "No se pudo cambiar el modo. Inténtalo de nuevo."
+  },
+  "sideChat": {
+    "tab": "Chat lateral {{n}}",
+    "new": "Nuevo chat lateral",
+    "start": "Empezar un chat lateral",
+    "reply": "Responder",
+    "barLabel": "Texto seleccionado",
+    "expand": "Ampliar",
+    "collapse": "Reducir",
+    "closeTab": "Cerrar pestaña (el chat lateral se conserva)",
+    "scope": "Lee esta conversación hasta donde se separó. Solo lectura: puede buscar información, pero no ejecutar comandos, cambiar archivos, recordar nada ni programar trabajo. Nada llega a la conversación principal salvo que lo lleves tú.",
+    "outside": "Puede que turnos anteriores leyeran contenido externo, así que este chat lateral trata lo que lee como contenido externo, igual que la conversación principal.",
+    "placeholder": "Pregunta sobre esta conversación",
+    "empty": "Pregunta lo que quieras sobre esta conversación. La respuesta se queda aquí.",
+    "thinking": "Pensando…",
+    "send": "Enviar",
+    "removeQuote": "Quitar la cita",
+    "bringBack": "Llevar a la principal",
+    "broughtBack": "Añadido al campo de la conversación principal. No se ha enviado nada.",
+    "quoted": "Citado en el campo de la conversación principal.",
+    "listH": "Chats laterales",
+    "closed": "cerrado",
+    "delete": "Eliminar este chat lateral",
+    "deleteAsk": "¿Eliminar este chat lateral? Sus mensajes también se borran. La conversación principal no cambia.",
+    "cancel": "Cancelar",
+    "confirmDelete": "Eliminar",
+    "deleted": "Chat lateral eliminado.",
+    "deleteFailed": "No se pudo eliminar el chat lateral.",
+    "startFailed": "No se pudo empezar un chat lateral."
   }
 }
