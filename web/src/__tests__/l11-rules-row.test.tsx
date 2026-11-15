@@ -123,7 +123,7 @@ describe("Settings → Advanced", () => {
     const onChange = vi.fn();
     const props = {
       telemetry: false, onTelemetryChange: vi.fn(), orchestratorShellEnabled: false, onOrchestratorShellChange: vi.fn(),
-      shellConfirmPolicy: "ask_all", onShellConfirmPolicyChange: vi.fn(), workspaceDir: "", onWorkspaceDirChange: vi.fn(),
+      defaultPermissionMode: "ask", onDefaultPermissionModeChange: vi.fn(), workspaceDir: "", onWorkspaceDirChange: vi.fn(),
       lanDiscoveryEnabled: false, onLanDiscoveryChange: vi.fn(), sshEnabled: false, onSshChange: vi.fn(),
       defaultReadEnabled: true, onDefaultReadChange: vi.fn(), voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
       voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(), voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),

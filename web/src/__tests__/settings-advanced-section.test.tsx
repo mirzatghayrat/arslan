@@ -11,7 +11,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("react-i18next", () => ({
@@ -43,8 +43,8 @@ function setup(overrides: Partial<Props> = {}) {
     voiceInputLocale: "", onVoiceInputLocaleChange: vi.fn(),
     voiceMode: "push_to_talk", onVoiceModeChange: vi.fn(),
     voiceEndpointSilenceMs: 900, onVoiceEndpointSilenceChange: vi.fn(),
-    shellConfirmPolicy: "ask_all",
-    onShellConfirmPolicyChange: vi.fn(),
+    defaultPermissionMode: "ask_risky",
+    onDefaultPermissionModeChange: vi.fn(),
     ...overrides,
   };
   render(<AdvancedSection {...props} />);
@@ -64,12 +64,12 @@ describe("AdvancedSection", () => {
     expect(screen.queryByTestId("voice-output-toggle")).toBeNull();
   });
 
-  it("shows the confirm-policy Select only when the shell is enabled", () => {
+  it("shows the mode for new conversations whether or not the terminal is on (S5a-2: modes govern writes too)", () => {
     setup({ orchestratorShellEnabled: false });
-    expect(document.getElementById("settings-shell-policy")).toBeNull();
-    // Re-render with shell enabled.
-    setup({ orchestratorShellEnabled: true });
-    expect(document.getElementById("settings-shell-policy")).not.toBeNull();
+    expect(document.getElementById("settings-default-permission-mode")).not.toBeNull();
+    expect(screen.getByText("settings.labelDefaultPermissionMode")).toBeInTheDocument();
+    expect(screen.getByText("settings.defaultPermissionModeDesc")).toBeInTheDocument();
+    expect(screen.queryByText("settings.labelShellConfirmPolicy")).toBeNull();
   });
 
   it("fires onTelemetryChange when the telemetry toggle is flipped", () => {
@@ -84,51 +84,34 @@ describe("AdvancedSection", () => {
     expect(props.onOrchestratorShellChange).toHaveBeenCalledWith(true);
   });
 
-  async function pick(label: RegExp) {
+  async function openModes() {
     const user = userEvent.setup();
-    await user.click(document.getElementById("settings-shell-policy") as HTMLButtonElement);
-    const option = screen.getAllByRole("option").find((o) => label.test(o.textContent ?? ""));
-    expect(option).toBeTruthy();
-    await user.click(option as HTMLElement);
+    await user.click(document.getElementById("settings-default-permission-mode") as HTMLButtonElement);
+    return user;
   }
 
-  it("choosing to ask only for risky commands needs no sheet (ASK1-a deleted v0.1.63's known-issue sheet)", async () => {
+  it("offers the four modes in the demo's order, and picking Plan needs no sheet", async () => {
     render(<ConfirmHost />);
-    const props = setup({ orchestratorShellEnabled: true });
-    await pick(/shellPolicyAskRisky$/);
-    expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_risky");
+    const props = setup();
+    const user = await openModes();
+    const options = within(screen.getByRole("listbox")).getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["modes.askRisky", "modes.ask", "modes.plan", "modes.fullAccess"]);
+    await user.click(options[2]);
+    expect(props.onDefaultPermissionModeChange).toHaveBeenCalledWith("plan");
     expect(screen.queryByTestId("confirm-sheet")).toBeNull();
   });
 
-  it("going back to asking before every command needs no sheet", async () => {
-    render(<ConfirmHost />);
-    const props = setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
-    await pick(/shellPolicyAskAll$/);
-    expect(props.onShellConfirmPolicyChange).toHaveBeenCalledWith("ask_all");
-    expect(screen.queryByTestId("confirm-sheet")).toBeNull();
+  it("the control is 44px tall", () => {
+    setup();
+    expect(document.getElementById("settings-default-permission-mode")!.className).toContain("min-h-[44px]");
   });
 
-  it("asking before every command says it means every new command (#398 F2), and no risky note", () => {
-    setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
-    expect(screen.getByTestId("shell-policy-all-note").textContent).toBe("settings.shellPolicyAskAllNote");
-    expect(screen.queryByTestId("shell-policy-risky-note")).toBeNull();
-  });
-
-  it("beside ask_risky, the default again, no note says it is still being completed (ASK1-a)", () => {
-    setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
-    expect(screen.queryByTestId("shell-policy-risky-note")).toBeNull();
-    expect(screen.queryByTestId("shell-policy-all-note")).toBeNull();
-  });
-
-  it("beside ask_risky, one sentence says where to undo a turn (R63); not beside ask_all", () => {
-    setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_risky" });
-    expect(screen.getByTestId("shell-policy-undo-pointer").textContent).toBe("settings.shellPolicyUndoPointer");
-  });
-
-  it("asking before every command shows no undo pointer", () => {
-    setup({ orchestratorShellEnabled: true, shellConfirmPolicy: "ask_all" });
-    expect(screen.queryByTestId("shell-policy-undo-pointer")).toBeNull();
-  });
+  it.each([["ask_risky", true], ["full_access", true], ["ask", false], ["plan", false]] as const)(
+    "the undo pointer (R63) shows under a default that runs unasked (%s: %s)", (mode, shown) => {
+      setup({ defaultPermissionMode: mode });
+      expect(screen.queryByTestId("shell-policy-undo-pointer")?.textContent ?? null)
+        .toBe(shown ? "settings.shellPolicyUndoPointer" : null);
+    });
 
   it("offers the three voice modes and reports the pick", () => {
     const props = setup({ voiceMode: "push_to_talk" });

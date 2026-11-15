@@ -797,8 +797,6 @@ export default function App() {
                   usdCap={settings.taskUsdCap} usdCapEnabled={settings.taskUsdCapEnabled !== false}
                   onOpen={(id) => openCardConversation(id, false)} />{header}</>}
                 footer={footer}
-                shellEnabled={settings.orchestratorShellEnabled}
-                shellPolicy={settings.shellConfirmPolicy}
               />
               </div>
               )}

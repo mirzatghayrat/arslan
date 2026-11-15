@@ -155,7 +155,9 @@ async def test_a_fire_runs_a_harmless_command_in_the_sandbox_under_ask_risky_and
     out = await _fire("ls", seen=seen)
     if mode == "ask":
         assert ran == [] and out["ok"] is False and "nobody to ask" in out["error"]
-        assert out["note"] == command_gate.FIRE_ASK_ALL_NOTE and "Ask only for risky commands" in out["note"]
+        assert out["note"] == command_gate.FIRE_ASK_ALL_NOTE
+        # S5a-2: it names the new default-mode control and its mode, not v0.1.63's "When to ask".
+        assert "Mode for new conversations › “Ask only when risky”" in out["note"] and "When to ask" not in out["note"]
         [row] = await _rows()                                          # listed, once, as the card would have read
         assert (row.kind, row.target, row.decided_by, row.decision) == ("command", "text:ls", "policy", "deny")
         assert permission_store.could_not_ask(row)

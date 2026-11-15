@@ -27,6 +27,17 @@ markers = 2
 cases = 3
 xfail = 0
 
+# 0.1.64 run-later at home: LaunchAgents, StartupItems and the login-items store, in a scratch HOME, under the outside
+# floor and in the commands preset. A plist write is refused (control: it lands without the hold), for each home name
+# and another letter case; a LaunchAgents that is a link is held through it and at its target; a plist link inside the
+# folder is held at its target, existing or dangling, and its folder can't be renamed aside (4 cases); a link to ~ or /
+# holds only that entry, so a work-folder write lands (4 cases); renames aside leave no plist (6 cases); `git
+# maintenance start` leaves no plist (control: it writes one) (22 cases).
+["server/sbx/test_hr1_launch_agents_kernel.py"]
+markers = 9
+cases = 22
+xfail = 0
+
 # 0.1.64 HR-1 review delta 12, the profile folder (`sandbox-profiles/` in Arslan's data folder) closed, in the commands
 # preset, an MCP server's and the outside floor, from a profile delivered by `-f`: its own profile read, rewritten or
 # removed, another rewritten or renamed, a new one added and the folder listed are each refused and the files

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from server.services import command_sandbox, hard_rules, permissions, terminal_policy as tp
+from server.services import card_purpose, command_sandbox, hard_rules, permissions, terminal_policy as tp
 from server.services.permissions import Request
 from tests.server.test_hr3_run_later_text import _dispatch, _store, gate as gate
 
@@ -377,6 +377,52 @@ for label, command in (
 ):
     add("parser", label, command, False)
 
+# LaunchAgents' indirect writers (HR-1 at home): they name no held path on the line, so each is a row of its own.
+GIT_PLIST = "~/Library/LaunchAgents/org.git-scm.git.hourly.plist"
+for label, command, target in (
+    ("git-maintenance-start", "git maintenance start", GIT_PLIST),
+    ("git-maintenance-start-gitconfig", "git maintenance start", "~/.gitconfig"),
+    ("git-maintenance-start-C", f"git -C {WORD} maintenance start", GIT_PLIST),
+    ("git-maintenance-start-git-dir", f"git --git-dir={WORD} maintenance start", GIT_PLIST),
+    ("git-maintenance-start-git-dir-space", f"git --git-dir {WORD} --no-pager maintenance start", GIT_PLIST),
+    ("git-maintenance-start-c", f"git -c user.name={WORD} maintenance start", GIT_PLIST),
+    ("git-maintenance-start-case", "git Maintenance START --scheduler=launchctl", GIT_PLIST),
+    ("git-maintenance-start-cd", f"cd {WORD} && git maintenance start", GIT_PLIST),
+    ("git-maintenance-register", "git maintenance register", "~/.gitconfig"),
+    ("git-maintenance-register-C", f"git -C {WORD} maintenance register --config-file {WORD}", "~/.gitconfig"),
+    ("git-maintenance-expansion", "git maintenance $VERB", tp.RUN_LATER_UNKNOWN),
+    ("brew-services-start", f"brew services start {WORD}", f"~/Library/LaunchAgents/homebrew.mxcl.{WORD}.plist"),
+    ("brew-services-restart", "brew services restart postgresql@16",
+     "~/Library/LaunchAgents/homebrew.mxcl.postgresql@16.plist"),
+    ("brew-services-global-option", f"brew --verbose services start {WORD}",
+     f"~/Library/LaunchAgents/homebrew.mxcl.{WORD}.plist"),
+    ("brew-services-option-before-verb", f"brew services --file={WORD}.plist start {WORD}",
+     f"~/Library/LaunchAgents/homebrew.mxcl.{WORD}.plist"),
+    ("brew-services-option-value", f"brew services start --max-wait 5 {WORD}",
+     f"~/Library/LaunchAgents/homebrew.mxcl.{WORD}.plist"),
+    ("brew-services-all", "brew services start --all", "~/Library/LaunchAgents"),
+    ("brew-services-two", f"brew services start {WORD} redis", "~/Library/LaunchAgents"),   # #940 review: not the first only
+    ("brew-services-tap-path", f"brew services restart {WORD}/{WORD}/{WORD}", "~/Library/LaunchAgents"),
+    ("brew-services-expanded-service", "brew services start $SERVICE", "~/Library/LaunchAgents"),
+    ("brew-services-expansion", f"brew services $VERB {WORD}", tp.RUN_LATER_UNKNOWN),
+):
+    add("parser", label, command, target=target)
+
+for label, command in (
+    ("git-maintenance-run", "git maintenance run --auto"),
+    ("git-maintenance-stop", "git maintenance stop"),
+    ("git-maintenance-unregister", "git maintenance unregister"),
+    ("brew-services-run", f"brew services run {WORD}"),
+    ("brew-services-stop", f"brew services stop {WORD}"),
+    ("brew-services-list", "brew services list"),
+    ("brew-services-info", f"brew services info {WORD}"),
+    ("brew-services-cleanup", "brew services cleanup"),
+    ("brew-services-bare", "brew services"),
+    ("brew-install", f"brew install {WORD}"),
+    ("brew-start-not-services", f"brew {WORD} start {WORD}"),
+):
+    add("parser", label, command, False)
+
 
 def params(shapes):
     return [pytest.param(s, id=s.id) for s in shapes]
@@ -415,6 +461,9 @@ GATE_IDS = (
     "links-0-ln-s", "git-setting-0", "git-config-env-10", "git-set",
     "writers-0-find-exec", "writers-1-sed-cluster", "config-tools-npm",
     "folders-0-popd", "folders-1-expansion",
+    "parser-git-maintenance-start", "parser-git-maintenance-start-C", "parser-git-maintenance-start-git-dir",
+    "parser-git-maintenance-register", "parser-brew-services-start", "parser-brew-services-restart",
+    "parser-brew-services-global-option", "parser-brew-services-all",
 ) + tuple(sorted(FIXED_WRITES))
 GATE_SHAPES = [s for key in GATE_IDS for s in SHAPES if s.id == key]
 # The forms the reader refuses, whose answer is unknown: the gate once cleared that unknown before checking for the
@@ -513,3 +562,67 @@ def test_existing_link_is_a_pure_text_residual(tmp_path, monkeypatch):
     link = tmp_path / f"{WORD}-link"
     link.symlink_to(tmp_path / ".git" / "hooks", target_is_directory=True)
     assert tp.run_later_targets(f"echo {WORD} > {WORD}-link/pre-commit") == []
+
+
+# ── LaunchAgents' indirect writers: the card's consequence line (HR-1 at home, piece 2) ──────────────────────────────
+LAUNCH_AGENT_LINES = (
+    ("brew services start redis", "Keeps redis starting at every login (a LaunchAgent)"),
+    ("brew --verbose services restart postgresql@16",
+     "Keeps postgresql@16 starting at every login (a LaunchAgent)"),
+    ("brew services start --all", "Keeps a service starting at every login (a LaunchAgent)"),
+    ("git maintenance start", "Keeps git maintenance running at every login (a LaunchAgent)"),
+    (f"git -C {WORD} maintenance start", "Keeps git maintenance running at every login (a LaunchAgent)"),
+)
+
+
+@pytest.mark.parametrize("command, line", LAUNCH_AGENT_LINES)
+def test_a_launch_agent_writer_says_what_keeps_starting(command, line):
+    assert card_purpose.launch_agent(tp.run_later_targets(command)) == line
+
+
+@pytest.mark.parametrize("command, key, params", [
+    ("brew services start redis", "launchAgentService", {"service": "redis"}),
+    ("git maintenance start", "launchAgentGit", {}),
+    (f"brew services restart {WORD}/{WORD}", "launchAgent", {}),
+    ("git maintenance register", None, None),
+    ("touch .envrc", None, None),
+    (f"brew services run {WORD}", None, None),
+])
+def test_the_launch_agent_key_and_its_values(command, key, params):
+    found = tp.launch_agent(tp.run_later_targets(command))
+    assert found == (None if key is None else (key, params))
+
+
+def test_every_language_has_the_launch_agent_lines_naming_the_service():
+    for lang in ("en", "zh", "ja", "es", "de", "fr"):
+        facts = card_purpose.TEXT[lang]["fact"]
+        assert {"launchAgentService", "launchAgentGit", "launchAgent"} <= set(facts), lang
+        assert "{{service}}" in facts["launchAgentService"], lang
+        assert len({facts[k] for k in ("launchAgentService", "launchAgentGit", "launchAgent")}) == 3, lang
+        assert WORD in card_purpose.launch_agent([f"~/Library/LaunchAgents/homebrew.mxcl.{WORD}.plist"], lang), lang
+
+
+@pytest.mark.parametrize("command, line", LAUNCH_AGENT_LINES)
+@pytest.mark.parametrize("mode", ("outside-grant", "sandbox-off-grant"))
+async def test_the_launch_agent_card_leads_with_its_line(execution_db, gate, monkeypatch, command, line, mode):
+    if mode == "outside-grant":
+        await _store("outside", "*")
+    else:
+        gate["sandbox"] = False
+        await _store("command", "unsandboxed:*")
+    runs, frames, _ = await _dispatch(monkeypatch, {"command": command})
+    assert len(frames) == 1 and frames[0]["options"] == ["once"], frames
+    assert frames[0]["summary"]["touches"][0] == line and frames[0]["reason"].startswith(line), frames[0]
+    assert "Writes a file that runs later: ~/Library/LaunchAgents" in frames[0]["title"]
+    assert len(runs) == 1
+
+
+@pytest.mark.parametrize("command", [f"brew services run {WORD}", f"brew services stop {WORD}", "brew services list",
+                                     f"brew services info {WORD}", "brew services cleanup", "git maintenance run"])
+async def test_what_writes_no_launch_agent_runs_as_before(execution_db, gate, monkeypatch, command):
+    verdict = tp.assess(command)
+    assert (verdict.level, verdict.rule) == ("run", "") and tp.assess(command, outside=True).level == "run"
+    assert not hard_rules.never_auto(Request(kind="command", target="text:" + command, title=WORD, detail=command))
+    await _store("outside", "*")
+    runs, frames, _ = await _dispatch(monkeypatch, {"command": command})
+    assert frames == [] and runs == [(True, True)], (frames, runs)

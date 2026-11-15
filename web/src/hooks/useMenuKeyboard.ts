@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, type KeyboardEvent, type RefObject } from "react";
 
-/** The items a key can reach: the menu's menuitems that are displayed (the header's ⋯ hides one by CSS). */
+/** The items a key can reach: the menu's menuitems (and S5a's menuitemradio rows) that are displayed (the header's ⋯
+ *  hides one by CSS). */
 function menuItems(menu: HTMLElement | null): HTMLElement[] {
   if (!menu) return [];
-  return Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+  return Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]'))
     .filter((el) => !(el as HTMLButtonElement).disabled && getComputedStyle(el).display !== "none");
 }
 
