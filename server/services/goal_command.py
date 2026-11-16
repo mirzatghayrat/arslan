@@ -163,7 +163,7 @@ def earlier_files(conversation_id: str) -> tuple[str, ...]:
 
 
 def resolved(checks: tuple[GoalCheck, ...], earlier: tuple[str, ...]) -> tuple[GoalCheck, ...]:
-    """L7-5f (L7-7 T8): a follow-up's check that names "the report" (报告) with no folder and no extension means the
+    """L7-5f (L7-7 T8): a follow-up's check that names "the report" (「报告」) with no folder and no extension means the
     file the earlier work saved, when that work saved exactly one. A path, a file name or a folder is kept, and with
     no or several earlier files nothing is guessed (the check stays as drafted)."""
     from pathlib import PurePath
