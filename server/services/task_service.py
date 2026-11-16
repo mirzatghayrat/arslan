@@ -487,12 +487,13 @@ def _apple_events_refused(arguments: dict, result: dict) -> bool:
 #   set <var> to make new <class> [at <location>] [with properties {<key>:<value>, …}]
 #   make new <class> [at <location>] [with properties {…}]
 #   set <property> of <spec> to <value>   get <property> of (<spec> | every <class>)   count <class> [of <spec>]
+#   get <property>  (directly inside a `tell <spec>`; <property> is a phrase from _OSA_BODY_PROPERTIES)
 #   tell <spec>  …  end tell                     tell <spec> to <one of these>
 #   if <condition> then  …  [else if <condition> then …]  [else …]  end if,  if <condition> then <one of these>
 # <spec>: [the] <class> ("…" | <integer> | id ("…" | <integer>)), [the] (first|last) <class>, or <var>, chained with
 # `of`, in one pair of parentheses at most. <class> is from _OSA_BODY_CLASSES only. <var> is a name every binding of
 # which in the whole script is the first form, never a predefined name. <value>: a literal, a number, true, false,
-# missing value, date "…", or a name that isn't predefined. A one-line `tell application "…" to …` at the top is read
+# missing value, date "…", or a name the script sets (`set <name> to …`) that isn't predefined. A one-line `tell application "…" to …` at the top is read
 # the same way.
 _OSA_BODY_CLASSES = frozenset({"list", "reminder", "account", "note", "folder", "calendar", "event"})
 _OSA_BODY_PLURALS = frozenset({c + "s" for c in _OSA_BODY_CLASSES})
@@ -506,6 +507,12 @@ _OSA_PREDEFINED = frozenset({
     "number", "integer", "real", "record", "class", "name", "do", "shell", "load", "store", "considering",
     "ignoring", "using", "terms", "from", "timeout", "transaction", "exit", "log", "display", "say", "beep",
     "delay", "activate", "launch", "quit", "open", "close", "save", "delete", "duplicate", "move", "exists"})
+# #985 review: a property is a phrase from this list, never any word (`get say of list 1` compiles to `say (list 1)`,
+# and so would display, quit, open location…). Also the record keys of `with properties {…}`.
+_OSA_BODY_PROPERTIES = frozenset(tuple(phrase.split()) for phrase in (
+    "name", "body", "due date", "remind me date", "allday due date", "completed", "completion date", "priority",
+    "flagged", "id", "creation date", "modification date", "color", "emblem", "container", "description",
+    "summary", "location", "start date", "end date", "allday event", "url", "status"))
 _OSA_BODY_TOKEN = re.compile(r'"[ ]*"|\d+|[A-Za-z_][A-Za-z0-9_]*|<=|>=|\S')
 _OSA_COMPARE_WORDS = {"=", "≠", "<", ">", "≤", "≥", "<=", ">="}
 
@@ -513,9 +520,10 @@ _OSA_COMPARE_WORDS = {"=", "≠", "<", ">", "≤", "≥", "<=", ">="}
 class _OsaBody:
     """One body statement's tokens (string literals blanked), read against the grammar above."""
 
-    def __init__(self, text: str, bound: frozenset):
+    def __init__(self, text: str, bound: frozenset, variables: frozenset = frozenset()):
         self.t = [token.lower() for token in _OSA_BODY_TOKEN.findall(text)]
         self.bound = bound
+        self.variables = variables           # names the script sets somewhere: the only bare names a value may be
 
     def at(self, i: int, *words: str) -> bool:
         return i < len(self.t) and self.t[i] in words
@@ -560,16 +568,19 @@ class _OsaBody:
             return i + 2
         if self.at(i, "date") and self.literal(i + 1):
             return i + 2
-        if self.name(i) and self.t[i] not in _OSA_PREDEFINED:
+        # A bare name is a variable only if the script sets it; otherwise AppleScript reads it as a command
+        # (`{name:summarize}`, `… to reopen`), Standard Additions' included (#985 review).
+        if self.name(i) and self.t[i] not in _OSA_PREDEFINED and self.t[i] in self.variables:
             return i + 1
         return None
 
-    def words(self, i: int, stop: str) -> int | None:
-        """One to three plain words (a property or record key), up to `stop`."""
-        j = i
-        while j < len(self.t) and j - i < 3 and self.name(j) and self.t[j] != stop:
-            j += 1
-        return j if j > i and self.at(j, stop) else None
+    def words(self, i: int, stop: str | None) -> int | None:
+        """A property phrase from _OSA_BODY_PROPERTIES starting at `i`, followed by `stop` (None: the end)."""
+        for n in (3, 2, 1):
+            if tuple(self.t[i:i + n]) in _OSA_BODY_PROPERTIES and (
+                    self.at(i + n, stop) if stop is not None else i + n == len(self.t)):
+                return i + n
+        return None
 
     def make(self, i: int) -> int | None:
         if not (self.at(i, "make") and self.at(i + 1, "new") and self.at(i + 2, *_OSA_BODY_CLASSES)):
@@ -631,8 +642,9 @@ class _OsaBody:
             return None
         return self.operand(i)
 
-    def statement(self, i: int = 0) -> bool:
-        """One whole statement, to the end of the tokens."""
+    def statement(self, i: int = 0, in_spec: bool = False) -> bool:
+        """One whole statement, to the end of the tokens. `in_spec`: directly inside a `tell <spec>` (block or one
+        line), where a plain `get <property>` reads that object's."""
         end = None
         if self.at(i, "set") and self.name(i + 1) and self.t[i + 1] not in _OSA_PREDEFINED and self.at(i + 2, "to"):
             end = self.make(i + 3)
@@ -650,18 +662,18 @@ class _OsaBody:
                 end = prop + 3                   # `get name of every list`: a readback, never a tell target
             elif prop is not None:
                 end = self.spec(prop + 1)
-            elif all(self.name(j) and self.t[j] not in _OSA_PREDEFINED - {"name"} for j in range(i + 1, len(self.t))):
-                end = len(self.t) if 1 <= len(self.t) - i - 1 <= 3 else None     # `get name` inside `tell <spec>`
+            elif in_spec:
+                end = self.words(i + 1, None)    # `get name` directly inside `tell <spec>`
         elif self.at(i, "count"):
             end = self.count(i)
         elif self.at(i, "tell"):
             spec = self.spec(i + 1)
             if spec is not None and self.at(spec, "to"):
-                return self.statement(spec + 1)
+                return self.statement(spec + 1, in_spec=True)
         elif self.at(i, "if"):
             cond = self.condition(i + 1)
             if cond is not None and self.at(cond, "then"):
-                return self.statement(cond + 1)
+                return self.statement(cond + 1, in_spec)
         return end is not None and end == len(self.t)
 
     def block_line(self) -> str | None:
@@ -697,15 +709,17 @@ def _tell_bodies_ok(script: str) -> bool:
     codes = [code[1] for code in (_osa_code(raw[:-1] if raw.endswith("\r") else raw) for raw in script.split("\n"))
              if code is not None and code[1]]
     bound = _osa_made(codes)
+    variables = frozenset(name.lower() for line in codes
+                          for name in re.findall(r"\bset\s+([A-Za-z_][A-Za-z0-9_]*)\s+to\b", line, re.I))
     stack: list[str] = []
     for line in codes:
-        body = _OsaBody(line, bound)
+        body = _OsaBody(line, bound, variables)
         if not stack:
             if _OSA_TELL_BLOCK.match(line):
-                stack.append("tell")
+                stack.append("app")              # the app's own tell: not a `tell <spec>`
             elif _OSA_TELL_TO.match(line):
                 to = re.match(r'tell\s+application\s+"[^"]*"\s+to\s+', line, re.I)
-                if to is None or not _OsaBody(line[to.end():], bound).statement():
+                if to is None or not _OsaBody(line[to.end():], bound, variables).statement():
                     return False
             continue                         # other top-level lines: _only_tells judged them
         kind = body.block_line()
@@ -715,10 +729,10 @@ def _tell_bodies_ok(script: str) -> bool:
             if stack[-1] != "if":
                 return False
         elif kind in {"end tell", "end if"}:
-            if stack[-1] != kind.split()[1]:
+            if stack[-1] not in ({"tell", "app"} if kind == "end tell" else {"if"}):
                 return False
             stack.pop()
-        elif not body.statement():
+        elif not body.statement(in_spec=stack[-1] == "tell"):
             return False
     return not stack
 

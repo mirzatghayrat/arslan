@@ -176,7 +176,8 @@ def heredoc(script):
     return "osascript <<'EOF'\n" + script + "\nEOF"
 
 
-TELL = 'tell application "Reminders"\n    make new reminder with properties {name:listName}\nend tell'
+# #985: a bare value must be a name the script sets (else AppleScript may read it as a command), so a literal here.
+TELL = 'tell application "Reminders"\n    make new reminder with properties {name:"Today"}\nend tell'
 
 
 @pytest.mark.parametrize("prelude", [
@@ -676,7 +677,7 @@ def test_round_985_shapes_stay_unknown(body, stderr, compiles):
 
 @pytest.mark.parametrize("name", PREDEFINED_BOUND)
 def test_a_predefined_name_is_never_bound(name, compiles):
-    body = f'    if false then set {name} to make new list\n    tell {name} to display dialog "x"'
+    body = f'    if 1 is 1 then set {name} to make new list\n    tell {name} to make new reminder'
     assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)
 
 
@@ -684,7 +685,7 @@ def test_a_predefined_name_is_never_bound(name, compiles):
     '    make new list with properties {name:"Bench list"}',
     '    set newList to make new list with properties {name:"Bench list"}\n'
     '    make new reminder at end of reminders of newList with properties {name:"Call", due date:date "1/1/2027"}\n'
-    '    make new reminder at end of newList with properties {name:"Milk", remind me date:dueDay, priority:1}',
+    '    make new reminder at end of newList with properties {name:"Milk", remind me date:date "1/2/2027", priority:1}',
     '    set name of list "Today" to "Bench"\n    get name of list "Today"\n    count reminders of list "Today"',
     '    set newList to make new list\n    if (count reminders of newList) is 0 then\n'
     '        make new reminder at end of reminders of newList with properties {name:"x"}\n'
@@ -692,6 +693,9 @@ def test_a_predefined_name_is_never_bound(name, compiles):
     '        count reminders\n    end if',
     '    if missing value is missing value then make new list',
     '    get name of every list',                                         # a readback of every list
+    '    tell list "Today" to get name',                                  # a plain get, directly in a tell <spec>
+    '    set newList to make new list\n    set name of list 1 to newList',  # a value the script sets
+    '    get due date of reminder 1 of list "Today"\n    get remind me date of reminder 1 of list "Today"',
 ])
 def test_allowed_body_statements_are_known(body, compiles):
     assert mac_applescript(_in_reminders(body), OWN_REFUSAL)
@@ -703,8 +707,8 @@ def test_allowed_body_statements_are_known(body, compiles):
     _in_reminders('    tell date "Monday, 1 January 2027" to make new list'),       # a class outside the list
     _in_reminders('    tell file "x" to make new list'),
     _in_reminders('    tell count "abc" to make new list'),
-    _in_reminders('    if false then set result to make new list\n    tell result to make new list'),   # predefined
-    _in_reminders('    if false then set pi to make new list\n    tell pi to make new list'),
+    _in_reminders('    if 1 is 1 then set result to make new list\n    tell result to make new list'),  # predefined
+    _in_reminders('    if 1 is 1 then set pi to make new list\n    tell pi to make new list'),
     _in_reminders('    set result to make new list\n    tell result to make new list'),
     _in_reminders('    set space to make new list\n    tell space to make new list'),
     _in_reminders('    make new list with properties {name:me}'),                  # a predefined value
@@ -716,6 +720,24 @@ def test_allowed_body_statements_are_known(body, compiles):
     _in_reminders('    make new list then display dialog "x"'),                   # words after a whole statement
     _in_reminders('    tell every list to make new reminder'),                      # `every` only in a readback
     _in_reminders('    get name of every window'),                                 # and of a listed class only
+    _in_reminders('    get say of list 1'),                                        # a property from the list only
+    _in_reminders('    set display of list 1 to 1'),
+    _in_reminders('    get quit of list 1'),
+    _in_reminders('    make new list with properties {say:"x"}'),                  # record keys too
+    _in_reminders('    make new list with properties {name:summarize}'),           # a bare value is a command
+    _in_reminders('    set name of list 1 to reopen'),
+    _in_reminders('    if show is 1 then make new list'),
+    _in_reminders('    get name'),                                                 # a plain get: not in the app tell
+    _in_reminders('    if 1 is 1 then get name'),
+    _in_reminders('    tell list 1\n        if 1 is 1 then\n            get name\n        end if\n    end tell'),
 ])
 def test_each_body_rule_refuses_on_its_own(script, compiles):
     assert not mac_applescript(script, OWN_REFUSAL)
+
+
+
+def test_a_value_set_at_the_top_is_a_variable(compiles):
+    script = 'set dueDay to date "1/1/2027"\n' + _in_reminders('    make new reminder with properties {due date:dueDay}')
+    assert mac_applescript(script, OWN_REFUSAL)
+    unset = _in_reminders('    make new reminder with properties {due date:dueDay}')    # never set: maybe a command
+    assert not mac_applescript(unset, OWN_REFUSAL)
