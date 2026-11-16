@@ -984,8 +984,8 @@ class RunCommandExecutor:
         # S2a-1 piece 5: the saved tool outputs this conversation was given stay readable, file by file.
         from server.services import move_report, tool_outputs
         import asyncio
-        moves = move_report.destinations(command, cwd)     # what an `mv` moved, read from its folder (L7-7 T11)
-        before = await asyncio.to_thread(move_report.snapshot, moves) if moves else {}
+        # what is new in a folder an `mv` names, read from the folder (L7-7 T11); never a folder outside `cwd`
+        before = await asyncio.to_thread(move_report.snapshot, command, cwd) if "mv" in command else {}
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
                                          sandbox=in_sub or terminal_exec.SANDBOX_ONLY.get()
