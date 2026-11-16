@@ -107,6 +107,16 @@ async def test_the_review_survivors(client):
     assert today["spent_usd"] == 2.0
 
 
+async def test_a_noted_verdict_counts_like_the_plain_one(client):
+    # L7-5f: a job the user steered on its cards is judged as job.accomplished.noted; its confident no is "unfinished"
+    rows = [*task("noted", NOON),
+            Judgment(point="job.accomplished.noted", mode="active", state={}, state_hash="h", verdict=False,
+                     probability=0.95, ref="noted")]
+    await _add(client, rows)
+    today = (await _blocks(client))["outcomes"]["today"]
+    assert _ids(today["tasks"]) == ["conv-noted"] and today["tasks"][0]["state"] == "unfinished"
+
+
 # ------------------------------------------------------------------ F4: a time zone that isn't UTC, across DST
 
 @pytest.fixture

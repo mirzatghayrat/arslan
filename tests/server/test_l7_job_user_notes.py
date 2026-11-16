@@ -58,25 +58,46 @@ def test_notes_are_bounded(job):
     assert job.user_notes[-1].startswith("note 11") and all(len(n) <= 500 for n in job.user_notes)
 
 
-async def test_the_judge_reads_the_users_notes_with_the_goal_and_answer(job, monkeypatch):
+OLD_QUESTION = ("Does the assistant's final answer say the task's goal was achieved, rather than that it "
+                "was blocked, refused, expired, is waiting on the user, or was only partly done?")
+
+
+async def _judged(job, monkeypatch, answer=ANSWER):
     seen = []
 
     async def judge(point, state, **kwargs):
-        seen.append(state)
+        seen.append((point, state))
         return judgment.Verdict(True, 0.9, 1)
     monkeypatch.setattr(judgment, "judge", judge)
+    await background_jobs._goal_not_reached(job, answer)
+    return seen
+
+
+async def test_a_job_with_notes_is_judged_on_the_noted_point_with_them(job, monkeypatch):
     job.user_notes.append(NOTE)
-    assert await background_jobs._goal_not_reached(job, ANSWER) is False
-    assert seen == [{"goal": job.goal, "answer": ANSWER, "user_notes": [NOTE]}]
-    seen.clear()
-    job.user_notes.clear()                  # no note: the judge's facts are what they were
-    await background_jobs._goal_not_reached(job, ANSWER)
-    assert seen == [{"goal": job.goal, "answer": ANSWER}]
+    assert await _judged(job, monkeypatch) == [("job.accomplished.noted",
+                                                {"goal": job.goal, "answer": ANSWER, "user_notes": [NOTE]})]
 
 
-def test_the_question_takes_the_users_notes_as_changing_the_goal():
+async def test_a_job_without_notes_asks_exactly_as_before(job, monkeypatch):
+    assert await _judged(job, monkeypatch) == [("job.accomplished", {"goal": job.goal, "answer": ANSWER})]
     point = judgment.REGISTRY["job.accomplished"]
-    assert "user_notes" in point.fields
-    assert "user_notes" in point.question
+    assert (point.question, point.fields, point.threshold) == (OLD_QUESTION, ("goal", "answer"), 0.7)
+
+
+async def test_a_note_that_only_refuses_goes_to_the_noted_point_which_never_counts_it_as_a_new_goal(job, monkeypatch):
+    refuse_only = "别删，先别动"
+    job.user_notes.append(refuse_only)
+    (point, facts), = await _judged(job, monkeypatch, answer="没有删除，文件都还在。")
+    assert point == "job.accomplished.noted" and facts["user_notes"] == [refuse_only]
+    question = judgment.REGISTRY[point].question
+    assert question.startswith(OLD_QUESTION)
+    assert "only refuses a step or says to stop or wait does not change the goal" in question
+    assert "asks for the work to be done another way changes the goal" in question
+
+
+def test_the_noted_point_keeps_the_threshold_and_reads_the_notes():
+    point = judgment.REGISTRY["job.accomplished.noted"]
+    assert (point.fields, point.threshold, point.mode) == (("goal", "answer", "user_notes"), 0.7, "active")
     kept = judgment.minimal_state(point, {"goal": "g", "answer": "a", "user_notes": [NOTE], "other": "dropped"})
     assert kept == {"goal": "g", "answer": "a", "user_notes": [NOTE]}
