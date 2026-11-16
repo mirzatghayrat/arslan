@@ -258,7 +258,8 @@ def _safe_statement(line: str, variables: set[str]) -> bool:
 def _set_statement(tokens: list[str], variables: set[str]) -> bool:
     if len(tokens) < 4 or tokens[0].lower() != "set":
         return False
-    if tokens[2].lower() == "to" and re.fullmatch(r"[A-Za-z_]\w*", tokens[1]):
+    if tokens[2].lower() == "to" and re.fullmatch(r"[A-Za-z_]\w*", tokens[1]) and \
+            tokens[1].lower() not in _OSA_NOT_VARIABLE:    # #985: a command term or predefined name is no variable
         target, start = tokens[1].lower(), 3
     elif (len(tokens) > 5 and tokens[1].lower() in _OSA_DATE_PROPS and tokens[2].lower() == "of"
           and tokens[3].lower() in variables and tokens[4].lower() == "to"):
@@ -513,6 +514,15 @@ _OSA_BODY_PROPERTIES = frozenset(tuple(phrase.split()) for phrase in (
     "name", "body", "due date", "remind me date", "allday due date", "completed", "completion date", "priority",
     "flagged", "id", "creation date", "modification date", "color", "emblem", "container", "description",
     "summary", "location", "start date", "end date", "allday event", "url", "status"))
+# #985: never a variable. A `set <name> to` with one of these compiles to the command (`set beep to 1` beeps), runs it
+# locally, and would make the name pass as a body value. Standard Additions' and AppleScript's own command terms.
+_OSA_COMMAND_TERMS = frozenset({
+    "beep", "say", "summarize", "display", "choose", "open", "reopen", "print", "show", "activate", "quit", "run",
+    "launch", "delay", "log", "offset", "random", "round", "info", "path", "mount", "read", "write", "close", "store",
+    "load", "do", "clipboard", "localized", "scripting", "system", "volume", "ascii", "time", "list", "folder", "files",
+    "alias", "eof", "access", "start", "stop", "copy", "count", "get", "set", "error", "exists", "make", "delete",
+    "duplicate", "move", "save", "select", "data", "dialog", "alert", "notification", "location", "url", "speak"})
+_OSA_NOT_VARIABLE = _OSA_PREDEFINED | _OSA_COMMAND_TERMS
 _OSA_BODY_TOKEN = re.compile(r'"[ ]*"|\d+|[A-Za-z_][A-Za-z0-9_]*|<=|>=|\S')
 _OSA_COMPARE_WORDS = {"=", "≠", "<", ">", "≤", "≥", "<=", ">="}
 
@@ -646,7 +656,7 @@ class _OsaBody:
         """One whole statement, to the end of the tokens. `in_spec`: directly inside a `tell <spec>` (block or one
         line), where a plain `get <property>` reads that object's."""
         end = None
-        if self.at(i, "set") and self.name(i + 1) and self.t[i + 1] not in _OSA_PREDEFINED and self.at(i + 2, "to"):
+        if self.at(i, "set") and self.name(i + 1) and self.t[i + 1] not in _OSA_NOT_VARIABLE and self.at(i + 2, "to"):
             end = self.make(i + 3)
         elif self.at(i, "set"):
             prop = self.words(i + 1, "of")
@@ -710,7 +720,8 @@ def _tell_bodies_ok(script: str) -> bool:
              if code is not None and code[1]]
     bound = _osa_made(codes)
     variables = frozenset(name.lower() for line in codes
-                          for name in re.findall(r"\bset\s+([A-Za-z_][A-Za-z0-9_]*)\s+to\b", line, re.I))
+                          for name in re.findall(r"\bset\s+([A-Za-z_][A-Za-z0-9_]*)\s+to\b", line, re.I)
+                          if name.lower() not in _OSA_NOT_VARIABLE)
     stack: list[str] = []
     for line in codes:
         body = _OsaBody(line, bound, variables)

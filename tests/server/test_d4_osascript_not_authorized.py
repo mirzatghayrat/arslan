@@ -741,3 +741,15 @@ def test_a_value_set_at_the_top_is_a_variable(compiles):
     assert mac_applescript(script, OWN_REFUSAL)
     unset = _in_reminders('    make new reminder with properties {due date:dueDay}')    # never set: maybe a command
     assert not mac_applescript(unset, OWN_REFUSAL)
+
+
+
+@pytest.mark.parametrize("name", ["summarize", "beep", "reopen", "result"])
+def test_a_command_term_is_never_a_variable(name, compiles):
+    # `set summarize to "x"` at the top compiles to the command and runs it locally; it must not pass as a value
+    script = f'set {name} to "x"\n' + _in_reminders(f'    make new list with properties {{name:{name}}}')
+    assert not task_service._only_tells(script)
+    assert not mac_applescript(script, OWN_REFUSAL)
+    assert not mac_applescript(_in_reminders(f'    make new list with properties {{name:{name}}}'), OWN_REFUSAL)
+    body = f'    set {name} to make new list\n    tell {name} to make new reminder'   # nor a list it made
+    assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)
