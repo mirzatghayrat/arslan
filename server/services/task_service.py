@@ -291,7 +291,6 @@ def _only_tells(script: str) -> bool:
         elif re.match(r"tell\b", line, re.I) and not re.search(r"\sto\s", line, re.I):
             depth += 1                       # a nested tell block (to an object of the app)
     return depth == 0
-_OSA_TELLS = re.compile(r"\bapplication\s+\"([^\"]+)\"", re.I)
 
 
 def _inline_osascript(command: str) -> str | None:
@@ -437,7 +436,11 @@ def _osascript_refused(script: str, stderr: str, *, minimal_profile: bool = Fals
         return False
     if _OSA_ELSEWHERE.search(script) or not _only_tells(script):
         return False
-    apps = {name.lower() for name in _OSA_TELLS.findall(script)}
+    # #983 review: every app, however spelled (`application"Finder"`, `application ("Finder")`): any `application` or
+    # `app` not followed by a literal, strings blanked, keeps it unknown; the literals are read with `\s*`.
+    if _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script)):
+        return False
+    apps = {name.lower() for name in _OSA_APP_LITERAL.findall(script)}
     if len(apps) != 1 or not re.search(r"\btell\s+application\s+\"", script, re.I):
         return False
     if _OSA_SYNTAX.search(lines[-1]):

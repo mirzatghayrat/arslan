@@ -383,3 +383,29 @@ def test_an_escaped_quote_cannot_hide_a_substitution():
 
 def test_a_date_property_reads_before_its_unit_meaning():
     assert known(heredoc('set now to current date\nset h to hours of now\n' + TELL), refused(PRIVILEGE))
+
+
+# -- a second app however it is spelled (#983 review, a later item ⓪Plan wants in 0.1.64) ------------------------------
+# The app set was read with `application\s+"…"` only, so a second app written `application"Finder"`, `app "Finder"` or
+# `application ("Finder")` inside the Reminders tell wasn't counted, and a Reminders refusal was judged known after
+# that app may have acted. Benign payloads.
+REMINDERS_REFUSED = "0:58: execution error: Not authorized to send Apple events to Reminders. (-1743)"
+
+
+@pytest.mark.parametrize("second", ['tell application"Finder" to count windows',
+                                    'tell app "Finder" to count windows',
+                                    'tell app"Finder" to count windows',
+                                    'tell application ("Finder") to count windows',
+                                    'set f to application "Fin" & "der"',
+                                    'tell application f to count windows'])
+def test_a_second_app_spelled_any_way_keeps_it_unknown(second, compiles):
+    script = 'tell application "Reminders"\n    ' + second + '\n    make new list\nend tell'
+    assert not mac_applescript(script, REMINDERS_REFUSED)
+    assert not mac_applescript(script, PRIVILEGE)
+    assert not known(heredoc(script), refused(REMINDERS_REFUSED))
+
+
+def test_one_app_however_spelled_is_still_known(compiles):
+    for script in ('tell application "Reminders"\n    make new list with properties {name:"application x"}\nend tell',
+                   'tell application "Reminders" to make new list'):
+        assert mac_applescript(script, REMINDERS_REFUSED), script
