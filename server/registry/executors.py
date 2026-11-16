@@ -982,7 +982,10 @@ class RunCommandExecutor:
             result["summary"] = f"moved {len(result.get('trashed') or [])} item(s) to the Trash"
             return result
         # S2a-1 piece 5: the saved tool outputs this conversation was given stay readable, file by file.
-        from server.services import tool_outputs
+        from server.services import move_report, tool_outputs
+        import asyncio
+        moves = move_report.destinations(command, cwd)     # what an `mv` moved, read from its folder (L7-7 T11)
+        before = await asyncio.to_thread(move_report.snapshot, moves) if moves else {}
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
                                          sandbox=in_sub or terminal_exec.SANDBOX_ONLY.get()
@@ -999,6 +1002,9 @@ class RunCommandExecutor:
                              else f"`{head}` → {result['error']}")
         if result.get("git_config_note"):
             result["summary"] += f" · {result['git_config_note']}"    # HR-1b: the user sees it on the step
+        if moved := (await asyncio.to_thread(move_report.report, before) if before else ""):
+            result["moved"] = moved
+            result["summary"] += f" · {moved}"
         return result
 
 
