@@ -1052,3 +1052,76 @@ def test_goal_task_helpers_round_trip_and_find_python3(tmp_path):
     assert goal_tasks.decode(goal_tasks.encode(data)) == data
     assert Path(PY).name.startswith("python3")
     shutil.which(PY)
+
+
+# -- L7-5f: a goal's answer is its job's last message, not the host's "Goal started" line ---------------------------
+
+START_LINE = "Goal started as a background job: find the first cause"
+JOB_ANSWER = "第一个原因在第 2486 行：connection refused by replica-2 (ECONNREFUSED)"
+
+
+def test_a_goal_start_turn_answers_with_its_jobs_message_not_the_host_line():
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0, goal_quiet_s=60)
+    t.start_turn(0.0, goal_turn=True, expect_job=True)
+    t.on_frame({"type": "stream_chunk", "content": START_LINE}, 1.0)
+    t.on_frame({"type": "stream_end"}, 1.5)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "running"}, 2.0)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"}, 50.0)
+    t.on_frame({"type": "message", "job_id": "j", "role": "assistant", "content": JOB_ANSWER}, 50.1)
+    assert t.finished(51.0, 0.0)
+    assert t.next_turn(51.0) == JOB_ANSWER
+    # the next turn starts clean: a later goal turn with no job message answers with its own text
+    t.start_turn(52.0, goal_turn=True)
+    t.on_frame({"type": "stream_chunk", "content": "Goal set, not started"}, 53.0)
+    assert t.next_turn(54.0) == "Goal set, not started"
+
+
+def test_a_plain_turn_keeps_its_streamed_answer_even_when_a_job_speaks():
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0)
+    t.start_turn(0.0)
+    t.on_frame({"type": "stream_chunk", "content": "answer"}, 1.0)
+    t.on_frame({"type": "message", "job_id": "j", "content": "a job's message"}, 2.0)
+    assert t.next_turn(3.0) == "answer"
+
+
+def _goal_record(run: Path, goal: dict | None, frames: list[dict] | None) -> None:
+    record = {"end": "done", "final": START_LINE, **({"goal": goal} if goal is not None else {})}
+    Path(f"{run}.stdout").write_text("progress line\n" + json.dumps(record, ensure_ascii=False) + "\n")
+    if frames is not None:
+        Path(f"{run}.frames.jsonl").write_text("".join(json.dumps(f, ensure_ascii=False) + "\n" for f in frames))
+
+
+def test_reply_text_of_a_goal_run_already_benched_is_its_jobs_last_message(tmp_path):
+    run = tmp_path / "arslan-T10-r1"
+    run.mkdir()
+    frames = [{"type": "stream_chunk", "content": START_LINE},
+              {"type": "message", "job_id": "j", "content": "an earlier job's message"},
+              {"type": "message", "content": "a host note with no job"},
+              {"type": "message", "job_id": "j2", "content": JOB_ANSWER}]
+    _goal_record(run, {"setting": "on", "status": "review"}, frames)
+    assert runner.reply_text("arslan", run) == JOB_ANSWER
+    # goal mode off (or main's /goal as plain text): the driver's final stands
+    _goal_record(run, {"setting": "absent"}, frames)
+    assert runner.reply_text("arslan", run) == START_LINE
+    _goal_record(run, None, frames)
+    assert runner.reply_text("arslan", run) == START_LINE
+    # goal on but the job never spoke (or no frames file): the final stands
+    _goal_record(run, {"setting": "on"}, [{"type": "message", "content": "host only"}])
+    assert runner.reply_text("arslan", run) == START_LINE
+    Path(f"{run}.frames.jsonl").unlink()
+    assert runner.reply_text("arslan", run) == START_LINE
+
+
+def test_rescore_scores_t10_from_the_jobs_answer_and_the_recorded_cause_line(tmp_path):
+    from scripts.kernel_bench import rescore
+    run = tmp_path / "arslan-T10-r1"
+    run.mkdir()
+    _goal_record(run, {"setting": "on"}, [{"type": "message", "job_id": "j", "content": JOB_ANSWER}])
+    before = {"score": 0, "line_ok": False, "cause_ok": False, "cause_line": 2486}
+    record = {"task": "T10", "entrant": "arslan", "end": "done", "check": before,
+              "artifacts": {"folder": str(run)}, "passed": False}
+    after = rescore.rescore_one(record)
+    assert after["check"]["score"] == 3 and after["check"]["cause_line"] == 2486
+    assert after["passed"] is True and after["check_before"] == before
+    wrong = rescore.rescore_one({**record, "check": {**before, "cause_line": 3100}})
+    assert wrong["check"]["score"] == 1 and wrong["passed"] is False      # the line must still match

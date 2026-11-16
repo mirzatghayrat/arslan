@@ -263,6 +263,26 @@ def entrant_version(who: str) -> str | None:
         return None
 
 
+def goal_job_reply(run: Path) -> str | None:
+    """L7-5f: the last message a background job sent (it carries a job_id) in a goal run's frames, else None.
+
+    With goal mode on, Start hands the work to a job and the turn's own text is only the host's "Goal started as a
+    background job" line; the answer is the job's message when it finishes. The driver scores that since L7-5f; this
+    reads it for runs benched before (rescore.py)."""
+    path = Path(f"{str(run).rstrip('/')}.frames.jsonl")
+    if not path.is_file():
+        return None
+    spoken = None
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        try:
+            frame = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(frame, dict) and frame.get("type") == "message" and frame.get("job_id"):
+            spoken = frame.get("content") or ""
+    return spoken
+
+
 def reply_text(who: str, run: Path) -> str:
     out = Path(f"{run}.stdout")
     text = out.read_text(encoding="utf-8", errors="ignore") if out.exists() else ""
@@ -275,9 +295,14 @@ def reply_text(who: str, run: Path) -> str:
         return text
     if who in ARSLAN:
         try:
-            return json.loads(text.strip().splitlines()[-1]).get("final", "")
+            record = json.loads(text.strip().splitlines()[-1])
         except Exception:
             return text
+        if (record.get("goal") or {}).get("setting") == "on":
+            spoken = goal_job_reply(run)
+            if spoken is not None:
+                return spoken
+        return record.get("final", "")
     if who == "openclaw":
         try:
             data = json.loads(text[text.index("{"):])

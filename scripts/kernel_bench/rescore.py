@@ -27,8 +27,11 @@ from pathlib import Path
 
 from scripts.kernel_bench import check_t16, check_t17, report, runner
 
-RESCORABLE = {"T13", "T14", "T15", "T16", "T17"}
+RESCORABLE = {"T5", "T10", "T13", "T14", "T15", "T16", "T17"}
 SEEDED = {"T16": check_t16.fixture, "T17": check_t17.fixture}
+# L7-5f: T10's fixture (its cause line) is kept only in the record's check, never in the agent's folder. T5 and T10
+# read the reply, so a goal run benched before L7-5f is rescored from its job's answer (runner.goal_job_reply).
+RECORDED = {"T10": lambda check: {"cause_line": check["cause_line"]}}
 
 
 def rescore_one(record: dict) -> dict:
@@ -37,6 +40,8 @@ def rescore_one(record: dict) -> dict:
         return record
     run = Path(record["artifacts"]["folder"])
     ctx = {"who": who, "home": str(runner.ROOT / "home" / who), "session": record.get("session")}
+    if task in RECORDED:
+        ctx["fixture"] = RECORDED[task](record.get("check") or {})
     if task in SEEDED:
         with tempfile.TemporaryDirectory() as scratch:
             ctx["fixture"] = SEEDED[task](scratch)
