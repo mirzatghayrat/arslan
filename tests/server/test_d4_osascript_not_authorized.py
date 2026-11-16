@@ -409,3 +409,41 @@ def test_one_app_however_spelled_is_still_known(compiles):
     for script in ('tell application "Reminders"\n    make new list with properties {name:"application x"}\nend tell',
                    'tell application "Reminders" to make new list'):
         assert mac_applescript(script, REMINDERS_REFUSED), script
+
+
+# -- #984 review round 1: a remote app, and a nested tell to osascript itself ----------------------------------------
+REMOTE = 'tell application "Reminders" of machine "eppc://example.invalid" to make new list'
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    ' + REMOTE + '\nend tell',
+    REMOTE,
+    'tell application "Reminders" of  machine "eppc://example.invalid"\n    make new list\nend tell',
+])
+@pytest.mark.parametrize("stderr", [REMINDERS_REFUSED, PRIVILEGE, SYNTAX])
+def test_a_remote_app_stays_unknown_and_is_never_compiled(script, stderr, compiles):
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+    assert compiles["checked"] == []                  # osacompile may contact the host: never asked
+
+
+def test_a_remote_app_never_runs_bare():
+    assert not task_service.unwrapped_once("osascript -e '" + REMOTE + "'")
+    assert not task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" of machine \"Studio\" to count lists'")
+    assert task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" to count lists'")
+
+
+@pytest.mark.parametrize("nested", ['tell me to display dialog "x"', 'tell it to display dialog "x"',
+                                    'tell "abc" to display dialog "x"', 'tell AppleScript to display dialog "x"',
+                                    'tell parent to display dialog "x"', 'tell (me) to display dialog "x"',
+                                    'tell me\n        display dialog "x"\n    end tell'])
+def test_a_nested_tell_back_to_osascript_itself_stays_unknown(nested, compiles):
+    script = 'tell application "Reminders"\n    ' + nested + '\n    make new list\nend tell'
+    assert not mac_applescript(script, REMINDERS_REFUSED)
+    assert not known(heredoc(script), refused(REMINDERS_REFUSED))
+
+
+def test_a_nested_tell_to_an_app_object_is_still_known(compiles):
+    script = ('tell application "Reminders"\n    tell list "Today" to make new reminder\n'
+              '    tell (first list) to count reminders\nend tell')
+    assert mac_applescript(script, REMINDERS_REFUSED)

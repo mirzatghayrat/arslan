@@ -169,6 +169,8 @@ _OSA_APP_NOT_LITERAL = re.compile(r'\b(?:application|app)\b(?!\s*"")', re.I)
 # script_apps needs a space, so the gate reads every literal app name itself and checks each against the
 # list. A `--` or `#` comment anywhere keeps a script wrapped: a quote inside one shifts which quotes pair
 # up, and a variable app target could hide in what looked like a string (`(*` is D4's).
+_OSA_REMOTE = re.compile(r"\bmachine\b", re.I)
+_OSA_SELF_TELL = re.compile(r'\btell\s*(?:\(\s*)*(?:"|(?:me|it|my|its|applescript|parent)\b)', re.I)
 _OSA_APP_LITERAL = re.compile(r'\b(?:application|app)\s*"((?:[^"\\]|\\.)*)"', re.I)
 _OSA_COMMENT = re.compile(r"--|#")
 _OSA_TELL_TO = re.compile(r'tell\s+application\s+"[^"]+"\s+to\s+\S', re.I)
@@ -365,6 +367,7 @@ def unwrapped_once(command: str) -> bool:
         return (bool(script.strip()) and kind == "app" and not _OSA_ELSEWHERE.search(script)
                 and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script)
                 and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script))
+                and not _OSA_REMOTE.search(_OSA_STRING.sub('""', script))           # #984 review: another Mac's app
                 and not _OSA_COMMENT.search(script)
                 and all(_runs_bare_for(name) for name in _OSA_APP_LITERAL.findall(script)))
     if _shell_expands(command):
@@ -438,7 +441,11 @@ def _osascript_refused(script: str, stderr: str, *, minimal_profile: bool = Fals
         return False
     # #983 review: every app, however spelled (`application"Finder"`, `application ("Finder")`): any `application` or
     # `app` not followed by a literal, strings blanked, keeps it unknown; the literals are read with `\s*`.
-    if _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script)):
+    # #984 review: an app `of machine "…"` is another Mac's (and compiling it may reach that host), and a nested tell to
+    # osascript itself (`me`, `it`, a string, `AppleScript`, `parent`) runs Standard Additions before the app refuses.
+    # Both keep it unknown, checked before anything is compiled.
+    code = _OSA_STRING.sub('""', script)
+    if _OSA_APP_NOT_LITERAL.search(code) or _OSA_REMOTE.search(code) or _OSA_SELF_TELL.search(code):
         return False
     apps = {name.lower() for name in _OSA_APP_LITERAL.findall(script)}
     if len(apps) != 1 or not re.search(r"\btell\s+application\s+\"", script, re.I):
