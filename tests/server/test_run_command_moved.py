@@ -207,3 +207,54 @@ def test_a_glob_is_expanded_only_so_far(tmp_path, monkeypatch):
         (tmp_path / f"f{i}.txt").write_text("x")
     move = move_report.Move(tmp_path / "t", ["f*.txt"], tmp_path.resolve())
     assert len(move_report._identities(move, tmp_path.resolve())) == 3
+
+
+
+# -- identity, not spelling: a case- and normalization-insensitive volume (⓪Plan's check of round 2) -------------------
+
+def _casefold_volume(folder: Path) -> bool:
+    probe = folder / "CaseProbe"
+    probe.mkdir()
+    try:
+        return (folder / "caseprobe").exists()
+    finally:
+        probe.rmdir()
+
+
+async def test_a_closed_folder_spelled_another_way_is_never_listed(work, monkeypatch):
+    if not _casefold_volume(work):
+        pytest.skip("a case-sensitive volume: `downloads` is another folder there")
+    from server.services import move_report, settings_service, workspace_paths
+    downloads = work / "Downloads"
+    downloads.mkdir()
+    monkeypatch.setattr(workspace_paths, "green_roots", lambda: [downloads])
+
+    async def closed_reads(*a, **k):
+        return False
+    monkeypatch.setattr(settings_service, "default_read_enabled", closed_reads, raising=False)
+    listed = []
+    real = move_report._open_below
+    monkeypatch.setattr(move_report, "_open_below",
+                        lambda root, folder, denied=frozenset(): (lambda fd: listed.append(fd is not None) or fd)(
+                            real(root, folder, denied)))
+    r = await run({"command": f"cd '{work}' && touch n.pdf && mv n.pdf downloads/ && mv x.bak DOWNLOADS/sub/"})
+    assert "moved" not in r and not any(listed)
+
+
+def test_identity_refuses_any_spelling_a_parent_and_the_root(tmp_path):
+    from server.services import move_report
+    import unicodedata
+    if not _casefold_volume(tmp_path):
+        pytest.skip("a case-sensitive volume")
+    root = tmp_path.resolve()
+    (root / "Downloads" / "sub").mkdir(parents=True)
+    nfc = unicodedata.normalize("NFC", "Caf\u00e9")
+    (root / nfc).mkdir()
+    ids = move_report.denied_identities([root / "Downloads", root / nfc, root / "missing"])
+    assert len(ids) == 2
+    for spelled in ("downloads", "DOWNLOADS/sub", unicodedata.normalize("NFD", nfc)):
+        assert move_report._open_below(root, root / spelled, ids) is None, spelled
+    assert move_report._open_below(root, root, move_report.denied_identities([root])) is None
+    fd = move_report._open_below(root, root / "Downloads" / "sub")          # nothing denied: reached
+    assert fd is not None
+    os.close(fd)

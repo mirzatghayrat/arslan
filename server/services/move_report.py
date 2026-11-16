@@ -101,29 +101,51 @@ def destinations(command: str, cwd: Path) -> list[Path]:
     return [move.folder for move in moves(command, cwd)]
 
 
-def _open_below(root: Path, folder: Path) -> int | None:
+def _open_below(root: Path, folder: Path, denied: frozenset = frozenset()) -> int | None:
     """An fd on `folder`, reached from `root` one name at a time without following a symlink; None if any step is not a
-    real folder (a symlink, a file, gone)."""
+    real folder (a symlink, a file, gone) or is one of the `denied` folders by (device, inode). Identity, not the
+    spelling: on a case- and normalization-insensitive volume `downloads` opens Downloads (#982 review)."""
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
         fd = os.open(root, flags)
     except OSError:
         return None
     try:
+        if _identity(fd) in denied:
+            raise ValueError("a closed folder")
         for name in folder.relative_to(root).parts:
             next_fd = os.open(name, flags, dir_fd=fd)
             os.close(fd)
             fd = next_fd
+            if _identity(fd) in denied:
+                raise ValueError("a closed folder")
     except (OSError, ValueError):
         os.close(fd)
         return None
     return fd
 
 
-def _listing(root: Path, folder: Path) -> tuple[set[str], tuple[int, int]] | None:
+def _identity(fd: int) -> tuple[int, int]:
+    stat = os.fstat(fd)
+    return stat.st_dev, stat.st_ino
+
+
+def denied_identities(denied) -> frozenset:
+    """(device, inode) of each denied folder that is there; one that isn't can't be reached either."""
+    out = set()
+    for path in denied:
+        try:
+            stat = os.stat(path)
+        except (OSError, ValueError):
+            continue
+        out.add((stat.st_dev, stat.st_ino))
+    return frozenset(out)
+
+
+def _listing(root: Path, folder: Path, denied: frozenset = frozenset()) -> tuple[set[str], tuple[int, int]] | None:
     """The folder's entry names and its (device, inode); None when it holds too many. One that can't be reached safely
     lists as empty with no identity: before the run that is a folder still to be made; after it, nothing is new."""
-    fd = _open_below(root, folder)
+    fd = _open_below(root, folder, denied)
     if fd is None:
         return set(), (-1, -1)
     try:
@@ -178,9 +200,10 @@ def _closed(folder: Path, denied) -> bool:
 def snapshot(command: str, cwd: Path, denied=()) -> dict:
     """Before the run: each destination's listing and the identities of its sources. `denied`: the folders the
     command's sandbox closes to reads; a destination at or under one is never listed."""
-    root = cwd.resolve()
-    return {"root": root, "moves": [(move.folder, _listing(root, move.folder), _identities(move, root))
-                                    for move in moves(command, cwd) if not _closed(move.folder, denied)]}
+    root, ids = cwd.resolve(), denied_identities(denied)
+    return {"root": root, "denied": ids,
+            "moves": [(move.folder, _listing(root, move.folder, ids), _identities(move, root))
+                      for move in moves(command, cwd) if not _closed(move.folder, denied)]}   # spelling: a first pass
 
 
 def _shown(text: str) -> str:
@@ -195,7 +218,7 @@ def report(before: dict) -> str:
     for folder, old, sources in before.get("moves", ()):
         if old is None:
             continue
-        now = _listing(before["root"], folder)
+        now = _listing(before["root"], folder, before.get("denied", frozenset()))
         if now is None or now[1] in sources:     # too many entries, or the source folder itself (a rename)
             continue
         new = sorted(now[0] - old[0])
