@@ -84,4 +84,6 @@ async def test_an_mcp_card_nobody_answered_is_named_by_the_cleaned_label(memory,
         refusal = await (await executors.resolve_executor(key)).execute({"text": "plan"})
     assert refusal["code"] == "no_answer" and refusal["executed"] is False
     assert f"Nobody answered the card for {MODEL}" in refusal["error"] and "\n" not in refusal["error"]
-    assert [frame["title"] for frame in asker.frames] == [SHOWN]       # the card keeps its own title (#526's)
+    # The card keeps its own title (#526's); ACM: a destructive tool's says it can delete or overwrite data.
+    assert [frame["title"] for frame in asker.frames] == [
+        f"{SHOWN} It can delete or overwrite data there" if hints else SHOWN]
