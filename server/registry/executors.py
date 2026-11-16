@@ -982,7 +982,13 @@ class RunCommandExecutor:
             result["summary"] = f"moved {len(result.get('trashed') or [])} item(s) to the Trash"
             return result
         # S2a-1 piece 5: the saved tool outputs this conversation was given stay readable, file by file.
-        from server.services import tool_outputs
+        from server.services import move_report, tool_outputs
+        import asyncio
+        # what is new in a folder an `mv` names, read from the folder (L7-7 T11); never a folder outside `cwd`
+        # never a folder the sandbox closes to reads (#982 review round 2): this server runs outside it
+        from server.services import command_sandbox
+        denied = [*closed, *command_sandbox.default_protected(), *command_sandbox.app_data()]
+        before = await asyncio.to_thread(move_report.snapshot, command, cwd, denied) if "mv" in command else {}
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
                                          sandbox=in_sub or terminal_exec.SANDBOX_ONLY.get()
@@ -999,6 +1005,9 @@ class RunCommandExecutor:
                              else f"`{head}` → {result['error']}")
         if result.get("git_config_note"):
             result["summary"] += f" · {result['git_config_note']}"    # HR-1b: the user sees it on the step
+        if moved := (await asyncio.to_thread(move_report.report, before) if before else ""):
+            result["moved"] = moved
+            result["summary"] += f" · {moved}"
         return result
 
 
