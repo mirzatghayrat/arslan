@@ -1066,6 +1066,7 @@
         "unreadable-script-reach": "Sein Skript greift nach außen, startet Programme oder steuert Apps",
         "unreadable-quoting": "Seine Anführungszeichen schließen nicht, daher ist nicht lesbar, was läuft",
         "unreadable-complex": "Zu komplex, um ihn vor dem Ausführen zu lesen",
+        "unreadable-option-command": "Führt einen Befehl aus, der in einer seiner Optionen versteckt ist (er steht im Befehl oben)",
         "unreadable-send": "Arslan kann nicht ganz lesen, was das sendet; es kann lokale Daten senden",
         "delete-outside-trash": "Legt sie in den Papierkorb; von dort kannst du sie wiederherstellen",
         "delete-outside-protected": "Arslans eigene Daten und Schlüssel bleiben, wo sie sind; der Rest kommt in den Papierkorb",

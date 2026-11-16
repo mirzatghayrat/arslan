@@ -302,6 +302,7 @@ async def _runs_offline_unread(command: str, args: dict, verdict, *, confined: b
     conversation has no grant to leave the sandbox (⓪Plan's ruling 2: then it gets a card). A background job with no
     card callback takes this branch too (ruling 5)."""
     from server.services import terminal_policy
+    # Hidden option commands intentionally share this shortcut: the sandbox kernel bounds their offline run.
     return (verdict.level == "ask" and terminal_policy.ask_rules(command, cwd=cwd) == {terminal_policy.UNREADABLE}
             and confined and outside_grant is None and args.get("network") is not True
             and not await _asks_for_everything() and not await _work_folder_holds_home())

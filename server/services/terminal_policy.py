@@ -1165,6 +1165,67 @@ def _hidden_code(texts: tuple[str, ...]) -> str:
     return ""
 
 
+#: S2a-3 interim (0.1.64 release blocker): a tool whose option value is a command it runs (`tar --to-command`,
+#: `rsync -e`, `vim -c`, `emacs --eval`). The reader treated the value as data, so a never-list command there ran with
+#: no card. Until Codex's payload reading reads the value itself (0.1.65; delete this table when it lands), the option
+#: alone asks as `unreadable`, inside the sandbox and outside, and never forbids. Long names also match GNU-style
+#: abbreviations (`--to-com`); short letters match inside a cluster (`-avze`).
+_VIM = ("vi", "vim", "nvim", "vimdiff", "nvimdiff", "view", "rview", "rvim", "gvim", "gview", "mvim", "evim", "ex",
+        "gvimdiff", "gex")
+_OPTION_COMMANDS: dict[str, tuple[tuple[str, ...], str]] = {
+    "tar": (("to-command", "use-compress-program", "checkpoint-action", "info-script", "new-volume-script",
+             "rsh-command", "rmt-command"), "IF"),
+    "gtar": (("to-command", "use-compress-program", "checkpoint-action", "info-script", "new-volume-script",
+              "rsh-command", "rmt-command"), "IF"),
+    "rsync": (("rsh", "rsync-path"), "e"),
+    "emacs": (("eval", "execute", "load", "funcall", "script"), "lfx"),
+    "emacsclient": (("eval", "alternate-editor"), "ea"),
+    **{name: (("cmd", "remote-expr", "remote-send"), "cSusU" + ("l" if name in ("nvim", "nvimdiff") else ""))
+       for name in _VIM},
+}
+#: Real options that are also a prefix of a command option's name (`--checkpoint` alone runs nothing).
+_OPTION_COMMAND_EXACT = frozenset({"checkpoint"})
+HIDDEN_OPTION = "it runs a command hidden in one of its options"
+
+
+def _option_command(commands: tuple[tuple[str, ...], ...]) -> str:
+    """HIDDEN_OPTION when a command of the text gives a tool a command to run in an option's value, or ""."""
+    for words in commands:
+        if not words:
+            continue
+        program = words[0].rsplit("/", 1)[-1].lower()
+        if program not in _OPTION_COMMANDS:
+            continue
+        longs, shorts = _OPTION_COMMANDS[program]
+        args = words[1:]
+        old_tar = program in ("tar", "gtar") and args and re.fullmatch(r"[A-Za-z]+", args[0])
+        if old_tar and set(args[0]) & set(shorts):
+            return HIDDEN_OPTION                # old-style bundled letters (`tar xIf …`)
+        for index, word in enumerate(args):
+            if word == "--":
+                # A required option value can itself be `--`. Without a complete arity table, conservatively
+                # keep scanning after any option-shaped predecessor. Traditional tar bundles can consume several
+                # later values, so their `--` is ambiguous too. False positives stay for payload reading to fix.
+                previous = args[index - 1] if index else ""
+                if old_tar or (previous.startswith("-") and previous != "--"):
+                    continue
+                break
+            if program in _VIM and word.startswith("+") and not re.fullmatch(r"\+\d*", word):
+                return HIDDEN_OPTION            # `+cmd` runs an Ex command; `+` and `+N` only move the cursor
+            # emacs also takes its long options with one dash (`-eval`)
+            single = program == "emacs" and word.startswith("-") and not word.startswith("--")
+            if word.startswith("--") or single:
+                name = word.lstrip("-").split("=", 1)[0].lower()
+                minimum = 1 if program == "emacsclient" else 2  # getopt_long_only accepts unique `--e` / `--a`
+                if len(name) >= minimum and name not in _OPTION_COMMAND_EXACT and any(n.startswith(name) for n in longs):
+                    return HIDDEN_OPTION
+            letters = r"[A-Za-z0-9]*" if program in _VIM else r"[A-Za-z]*"
+            if word.startswith("-") and not word.startswith("--") \
+                    and set(re.match(letters, word[1:]).group()) & set(shorts):
+                return HIDDEN_OPTION            # editor count digits do not end a cluster (`-o2c`)
+    return ""
+
+
 # rm and its kin at a command start, and their operands; a target outside the working folder (the
 # command's cwd), or one the text cannot pin down, asks.
 _DELETE_LINE = re.compile(_ONCE_POS + _LAUNCHED + r"(rm|rmdir|unlink|trash|srm)" + _END + r"([^\n;&|)`]*)", re.I)
@@ -1543,7 +1604,7 @@ def assess(command: str, *, cwd: str | os.PathLike[str] | None = None, outside: 
     found = _layer_two(texts, _command_words(text), text=text, cwd=cwd, outside=outside)
     if found:
         return Assessment("ask", found[0][0], found[0][1])     # the named rule first: its card says what it is
-    hidden = _hidden_code(texts)
+    hidden = _hidden_code(texts) or _option_command(_command_words(text))
     if hidden:
         return Assessment("ask", UNREADABLE, hidden)
     not_read = _not_understood(text)
@@ -1572,7 +1633,8 @@ def ask_rules(command: str, *, cwd: str | os.PathLike[str] | None = None, outsid
     texts = _detection_texts(text)
     named = {key for key, _why in _layer_two(texts, _command_words(text), text=text, cwd=cwd, outside=outside)}
     # With no named rule, what asks is unreadable: its code is hidden, or the reader does not understand it (`assess`).
-    return named | ({UNREADABLE} if not named or _hidden_code(texts) else set())
+    hidden = _hidden_code(texts) or _option_command(_command_words(text))
+    return named | ({UNREADABLE} if not named or hidden else set())
 
 
 # ── HR-3 part 1: the direct forms of a write into a file that runs later ─────

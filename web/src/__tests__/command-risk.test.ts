@@ -46,7 +46,7 @@ describe("commandRisk", () => {
     expect(commandRisk({ rule: "git-push" }).keys).toEqual([{ key: "rule.git-push" }]);
   });
 
-  it.each(["fetched-code", "script-reach", "quoting", "complex"])("why it can't be read is said plainly: %s (#688 review 5)",
+  it.each(["fetched-code", "script-reach", "quoting", "complex", "option-command"])("why it can't be read is said plainly: %s (#688 review 5)",
     (kind) => {
       expect(commandRisk({ rules: ["unreadable"], unreadable: kind }).keys).toEqual([{ key: `rule.unreadable-${kind}` }]);
     });
