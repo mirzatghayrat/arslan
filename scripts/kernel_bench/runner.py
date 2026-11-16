@@ -635,6 +635,17 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     return record
 
 
+def root_problem(root: Path) -> str | None:
+    """Why BENCH_ROOT would skew the bench, else None. Arslan asks before a move into a protected folder (its command
+    policy's `protected-write`: Claude's own data, agents' `.claude/` folders, ...), and the driver declines those
+    cards, so every mv / rm in the run folders failed there (④参谋, 11-17: T5 -2 and T11 -1 in the L7 arms)."""
+    from server.services import terminal_policy
+    rules = terminal_policy.ask_rules(f"mv a.txt '{root}/runs/x/a.txt'")
+    return (f"BENCH_ROOT {root} is a folder Arslan protects ({', '.join(sorted(rules))}): every move there asks, and "
+            "the driver declines it; use a folder such as ~/Documents/<repo>/bench-runs/<round>") \
+        if "protected-write" in rules else None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tasks", required=True)
@@ -644,6 +655,8 @@ def main() -> None:
     ap.add_argument("--manual-login", action="store_true", help="T4: a person logs in once per entrant")
     ap.add_argument("--models", default="", help="per entrant, e.g. arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5")
     args = ap.parse_args()
+    if problem := root_problem(ROOT):
+        raise SystemExit(problem)
     (ROOT / "tmp").mkdir(parents=True, exist_ok=True)
     prompts = json.loads((HERE / "prompts.json").read_text())
     sb = sandbox_profile()

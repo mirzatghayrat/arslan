@@ -3,6 +3,7 @@ driver, per-task repeats and the completion bar in the report. No model calls: e
 hand-written stand-in, independently of the fixture's own code, and the staged checks are run for real."""
 
 import asyncio
+import datetime as dt
 import csv
 import io
 import json
@@ -1126,3 +1127,27 @@ def test_rescore_scores_t10_from_the_jobs_answer_and_the_recorded_cause_line(tmp
     assert after["passed"] is True and after["check_before"] == before
     wrong = rescore.rescore_one({**record, "check": {**before, "cause_line": 3100}})
     assert wrong["check"]["score"] == 1 and wrong["passed"] is False      # the line must still match
+
+
+# -- the plain-mode drop (④参谋, 11-17): a protected bench root, and T1's "next Monday" said on a Sunday -------------
+
+@pytest.mark.parametrize("root", ["/Users/someone/Library/Application Support/Claude/notes/l7-bench",
+                                  "/Users/someone/.claude/bench"])
+def test_a_bench_root_where_arslan_asks_before_every_move_is_refused(root):
+    problem = runner.root_problem(Path(root))
+    assert problem and "protected-write" in problem
+
+
+@pytest.mark.parametrize("root", ["/Users/someone/Documents/aralem_dev/Arslan/bench-runs/l7-r2", "/tmp/arslan-kernel-bench"])
+def test_an_ordinary_bench_root_is_fine(root):
+    assert runner.root_problem(Path(root)) is None
+
+
+def test_t1_next_monday_said_on_a_sunday_accepts_both_mondays():
+    from scripts.kernel_bench import check_t1
+    sunday = check_t1.expected_dates(dt.date(2026, 11, 15))
+    assert sunday["landlord"] == {dt.date(2026, 11, 16), dt.date(2026, 11, 23)}
+    monday = check_t1.expected_dates(dt.date(2026, 11, 16))
+    assert monday["landlord"] == {dt.date(2026, 11, 23)}                 # any other day: the Monday of next week
+    saturday = check_t1.expected_dates(dt.date(2026, 11, 14))
+    assert saturday["landlord"] == {dt.date(2026, 11, 16)}
