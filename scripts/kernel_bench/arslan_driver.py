@@ -175,7 +175,7 @@ class TurnTracker:
 
     def start_turn(self, now: float, *, goal_turn: bool = False, expect_job: bool = False) -> None:
         self.turn_started, self.first_chunk_at, self.stream_end_at = now, None, None
-        self.goal_turn, self.heard, self.job_reply = goal_turn, False, None
+        self.goal_turn, self.heard = goal_turn, False
         if expect_job:
             self.jobs_open.add(GOAL_PENDING)
 
@@ -319,7 +319,7 @@ class TurnTracker:
 
     def next_turn(self, now: float) -> str:
         """Close this turn and start the next; returns this turn's answer."""
-        answer = self.job_reply if self.goal_turn and self.job_reply is not None else "".join(self.final_text)
+        answer = self.job_reply if self.job_reply is not None else "".join(self.final_text)
         self.timings.append({key: None if at is None else round(at - self.turn_started, 2)
                              for key, at in (("first_chunk_s", self.first_chunk_at), ("stream_end_s", self.stream_end_at))})
         self.final_text, self.turn_done, self.last_activity, self.job_reply = [], False, now, None

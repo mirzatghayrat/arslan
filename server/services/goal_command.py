@@ -152,6 +152,30 @@ def drafted_checks(content: str | None, objective: str) -> tuple[GoalCheck, ...]
     return tuple(out)
 
 
+def earlier_files(conversation_id: str) -> tuple[str, ...]:
+    """L7-5f: the files the last finished job of this conversation that wrote any saved (write_file / edit_file, as its
+    tools name them). In memory: after a restart there are none, and a follow-up drafts as a first goal does."""
+    from server.services import background_jobs
+    for job in reversed(background_jobs.jobs_for(conversation_id)):
+        if job.phase == "finished" and job.files:
+            return tuple(dict.fromkeys(job.files))
+    return ()
+
+
+def resolved(checks: tuple[GoalCheck, ...], earlier: tuple[str, ...]) -> tuple[GoalCheck, ...]:
+    """L7-5f (L7-7 T8): a follow-up's check that names "the report" (报告) with no folder and no extension means the
+    file the earlier work saved, when that work saved exactly one. A path, a file name or a folder is kept, and with
+    no or several earlier files nothing is guessed (the check stays as drafted)."""
+    from pathlib import PurePath
+    if len(earlier) != 1:
+        return checks
+
+    def bare(path: str | None) -> bool:
+        return bool(path) and not any(c in path for c in "/\\") and not path.startswith("~") \
+            and PurePath(path).suffix == ""
+    return tuple(check.model_copy(update={"path": earlier[0]}) if bare(check.path) else check for check in checks)
+
+
 async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, ...] | None = None) -> str:
     """`/goal [$N] <objective>`: drafts the checks with one request and no tools, then writes the not-started row.
     L7-6: `given` (a finished job's checks, `/goal from`) replaces the drafting."""
@@ -180,8 +204,14 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
         drafted = given
     else:
         adapter = await _adapter_for_turn(has_images=False, conversation_id=conversation_id)
-        response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective), tools=None)
-        drafted = () if getattr(response, "tool_calls", None) else drafted_checks(response.content, objective)
+        earlier = earlier_files(conversation_id)
+        # L7-5f: a follow-up ("shorten section 2 of the report") names the file the earlier work saved.
+        listed = ("\n\nFiles this conversation's earlier work saved (when the goal means one of them, use its exact "
+                  "path):\n" + wrap_external("\n".join(earlier))) if earlier else ""
+        response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective) + listed,
+                                     tools=None)
+        drafted = () if getattr(response, "tool_calls", None) else resolved(
+            drafted_checks(response.content, objective), earlier)
     async with db_session.AsyncSessionLocal() as db:
         tier = await settings_service.background_job_budget(db)
         usd_cap = await settings_service.task_usd_cap(db)

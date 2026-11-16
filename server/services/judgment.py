@@ -96,8 +96,11 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
     # only when a job with no checks of its own ended "done" because it answered at all.
     DecisionPoint("job.accomplished",
                   "Does the assistant's final answer say the task's goal was achieved, rather than that it "
-                  "was blocked, refused, expired, is waiting on the user, or was only partly done?",
-                  ("goal", "answer"), "active", 0.7, after_turn=True),
+                  "was blocked, refused, expired, is waiting on the user, or was only partly done? If user_notes "
+                  "are given, they are what the user told the assistant during the work and change the goal: doing "
+                  "what they ask instead counts as achieving it.",
+                  # L7-5f (L7-7 T11 r2): "don't delete, move them to trash" made "moved, not deleted" the goal.
+                  ("goal", "answer", "user_notes"), "active", 0.7, after_turn=True),
     # 0.1.56 §4.3 "you said": active, after the user's own turn in a project conversation. The
     # gate runs once per turn; only on its yes is each open checkpoint (and the condition) asked.
     # A yes ticks a checkpoint (undoable) or proposes the level clear (the user decides).

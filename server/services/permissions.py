@@ -648,6 +648,9 @@ def _forget_last() -> None:
 
 def _done(decision: Decision) -> Decision:
     LAST_DECISION.set(decision)
+    if not decision.allowed and decision.by == "user" and decision.note:
+        from server.services import background_jobs     # L7-5f: the job's goal judge reads what the user said
+        background_jobs.note_user_said(decision.note)
     approvals.LAST_OUTCOME.set("approved" if decision.allowed
                                else "expired" if decision.by == "expired" else "declined")
     return decision

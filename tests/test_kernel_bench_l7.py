@@ -1073,6 +1073,7 @@ def test_a_goal_start_turn_answers_with_its_jobs_message_not_the_host_line():
     # the next turn starts clean: a later goal turn with no job message answers with its own text
     t.start_turn(52.0, goal_turn=True)
     t.on_frame({"type": "stream_chunk", "content": "Goal set, not started"}, 53.0)
+    t.on_frame({"type": "message", "content": "a host note, no job"}, 53.5)       # only a job's message answers
     assert t.next_turn(54.0) == "Goal set, not started"
 
 

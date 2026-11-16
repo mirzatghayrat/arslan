@@ -101,6 +101,9 @@ class Job:
     goal_spend: tuple = field(default=(None, None), repr=False)
     goal_status: str | None = field(default=None, repr=False)
     pausing: bool = field(default=False, repr=False)
+    # L7-5f: what the user said when they declined one of this job's cards ("don't delete, move them to trash"), last
+    # USER_NOTES_MAX. The "was the goal reached" judge reads them: the user changed the goal on the way (L7-7 T11 r2).
+    user_notes: list[str] = field(default_factory=list, repr=False)
 
     def frame(self) -> dict:
         frame = self._frame()
@@ -122,6 +125,14 @@ class Job:
 
 
 _jobs: dict[str, Job] = {}
+USER_NOTES_MAX = 5
+
+
+def note_user_said(note: str) -> None:
+    """L7-5f: keep a declined card's note on the job this runs in (`permissions._done`); outside a job, nothing."""
+    job = _jobs.get(_inside_job.get() or "")
+    if job is not None and note.strip():
+        job.user_notes = [*job.user_notes, note.strip()[:500]][-USER_NOTES_MAX:]
 
 
 def criteria_to_acceptance(criteria: list[dict]) -> list[dict]:
@@ -496,13 +507,15 @@ async def _sub_session_ended(job: Job, text: str) -> None:
 async def _goal_not_reached(job: Job, text: str) -> bool:
     """A job with no checks of its own is "done" as soon as it answers, also when the answer says
     it could not do it (seen 2026-10-04: "复制没做成" under a green check). The judge reads the goal
-    and the answer; only a confident "no" changes the word, and no answer leaves it as it was.
+    and the answer, and what the user said on the job's cards (L7-5f); only a confident "no" changes the word, and no
+    answer leaves it as it was.
     A job with its own checks was judged by them already."""
     if any(check.get("id") != "answer-delivered" for check in job.acceptance) or not text.strip():
         return False
     from server.services import judgment
     # The job's own run; None for a job whose run took no step, which never noted one (`_job_sink`).
-    verdict = await judgment.judge("job.accomplished", {"goal": job.goal, "answer": text},
+    facts = {"goal": job.goal, "answer": text, **({"user_notes": list(job.user_notes)} if job.user_notes else {})}
+    verdict = await judgment.judge("job.accomplished", facts,
                                    ref=job.job_id, conversation_id=job.conversation_id, run_id=job.run_id)
     return verdict is not None and goal_missed(verdict.answer, verdict.probability)
 
