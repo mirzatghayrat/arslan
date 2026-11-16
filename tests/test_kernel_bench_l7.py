@@ -124,7 +124,8 @@ def test_t18_a_right_ledger_scores_three_and_the_reply_plays_no_part(tmp_path):
     assert "reply" not in check_t18.check.__code__.co_varnames
 
 
-@pytest.mark.parametrize("damage", ["order", "status", "total_row", "cents", "missing_row"])
+@pytest.mark.parametrize("damage", ["order", "status", "total_row", "cents", "missing_row", "extra_cell",
+                                    "extra_cell_total"])
 def test_t18_one_wrong_thing_in_the_ledger_is_not_complete(tmp_path, damage):
     params = check_t18.fixture(str(tmp_path))
     rows = _t18_ledger(tmp_path)
@@ -137,6 +138,11 @@ def test_t18_one_wrong_thing_in_the_ledger_is_not_complete(tmp_path, damage):
         rows = rows[:-1]
     elif damage == "cents":
         rows[3][3] = f"{Decimal(rows[3][3]) + Decimal('0.01'):.2f}"
+    elif damage == "extra_cell":
+        rows[3] = [*rows[3], ""]                     # a row longer than the header: csv puts the rest under None
+    elif damage == "extra_cell_total":
+        # L7-7 ON rerun, T18 r1: the TOTAL row had 7 cells, its sum under stated_total; the checker crashed the arm
+        rows[-1] = ["TOTAL", "", "", "", rows[-1][3], "", ""]
     else:
         del rows[5]
     _write_csv(tmp_path / "ledger.csv", rows)

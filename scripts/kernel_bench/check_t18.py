@@ -110,8 +110,11 @@ def check(run: str, params: dict) -> dict:
     want = sorted((read_invoice((Path(run) / rel).read_text()) for rel in params["sha256"]),
                   key=lambda r: (r["date"], r["invoice"]))
     with ledger.open(newline="", encoding="utf-8", errors="ignore") as f:
-        rows = [{(k or "").strip().lower(): (v or "").strip() for k, v in row.items()} for row in csv.DictReader(f)]
-    problems = []
+        read = list(csv.DictReader(f))
+    # A row longer than the header keeps its extra cells under None, as a list (L7-7 ON rerun, T18 r1: a 7-cell TOTAL
+    # row crashed the checker and ended the arm). It is a wrong ledger, not a crash.
+    rows = [{k.strip().lower(): (v or "").strip() for k, v in row.items() if k is not None} for row in read]
+    problems = [f"row {n} has more cells than the header" for n, row in enumerate(read, start=2) if None in row]
     if not rows or not set(COLUMNS) <= set(rows[0]):
         return {"score": 1, "ledger": True, "invoices_changed": [], "problems": ["missing columns"]}
     body = [r for r in rows if r["invoice"].upper() != "TOTAL"]
