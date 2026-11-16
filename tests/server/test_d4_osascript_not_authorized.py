@@ -443,16 +443,6 @@ def test_a_newline_inside_quotes_is_still_one_e_script():
     assert known(command, refused(PRIVILEGE))
 
 
-@pytest.mark.parametrize("command,breaks", [
-    ('osascript -e "a \\" b"\necho x', True),          # an escaped quote does not close the string
-    ("osascript -e 'a \\'\necho x", True),              # no escape inside single quotes: the quote closes
-    ('osascript -e "a\nb"', False),
-    ("osascript -e 'a\nb'", False),
-    ("osascript -e 'a' \\\n -e 'b'", True),
-])
-def test_shell_breaks_follows_bash_quoting(command, breaks):
-    assert task_service._shell_breaks(command) is breaks
-
 
 # One guard each: with that guard gone, the shape below would be judged known.
 @pytest.mark.parametrize("script", [
@@ -473,3 +463,78 @@ def test_each_structure_guard_refuses_on_its_own(script):
 ])
 def test_strings_and_crlf_keep_the_count_right(script):
     assert task_service._only_tells(script)
+
+
+# -- #983 max review, round 1: allowlists, not more shapes refused one by one ----------------------------------------
+BOM = "\ufeff"
+R = 'tell application "Reminders"'
+BLOCK_TAIL = '\ntell (a reference to me)\nend tell' + TAIL
+ROUND_983 = {
+    "a quote then to": R + '\ntell "abc"to get length\nend tell\n' + ACTS + BLOCK_TAIL,
+    "to then a parenthesis": R + '\ntell "abc" to(get length)\nend tell\n' + ACTS + BLOCK_TAIL,
+    "a bar identifier holding #": R + '\nset |#| to "abc"\ntell |#| to get length\nend tell\n' + ACTS + BLOCK_TAIL,
+    "a bar identifier holding --": R + '\nset |--| to "abc"\ntell |--| to get length\nend tell\n' + ACTS + BLOCK_TAIL,
+    "U+FEFF before end tell": R + '\n' + BOM + 'end tell\n' + ACTS + BLOCK_TAIL,
+    "U+FEFF before a bare end": R + '\n' + BOM + 'end\n' + ACTS + '\n' + BOM + 'tell "abc"\nend tell' + TAIL,
+    "U+FEFF inside end tell": R + '\nend' + BOM + 'tell\n' + ACTS + BLOCK_TAIL,
+}
+
+
+@pytest.mark.parametrize("name", sorted(ROUND_983))
+def test_round_983_shapes_stay_unknown(name, compiles):
+    script = ROUND_983[name]
+    assert not task_service._only_tells(script)
+    assert not mac_applescript(script, PRIVILEGE) and not mac_applescript(script, NOT_ALLOWED)
+    assert not known(heredoc(script), refused(PRIVILEGE))
+
+
+@pytest.mark.parametrize("script,ok", [
+    (R + '\n    tell "abc"to get length\nend tell', True),                  # one line: to right after the string
+    (R + '\n    tell x to(get length)\nend tell', True),                     # one line: to before a parenthesis
+    (R + '\n    tell (a reference to me)\n        count lists\n    end tell\nend tell', True),   # a block
+    (R + '\n    make new list with properties {name:"对比测试 ✓"}\nend tell', True),   # any language inside a string
+    (R + '\n    make new list with properties {name:"a\u00a0b"}\nend tell', False),   # but no odd space
+    (R + '\n    make new list with properties {name:"a\u200bb"}\nend tell', False),   # or format character
+    (R + '\n    make new list with properties {name:"a|b"}\nend tell', False),       # `|` refused anywhere
+    (R + '\n    make new list \u00ac\n        with properties {name:"x"}\nend tell', False),
+])
+def test_the_character_and_to_rules(script, ok):
+    assert task_service._only_tells(script) is ok
+
+
+@pytest.mark.parametrize("command", [
+    # bash keeps a mid-word `#`; shlex took it as a comment
+    "osascript -e 'tell application \"Reminders\"' -e 'end tell'#x -e 'display dialog \"x\"' "
+    "-e 'tell application \"Reminders\" to make new list'",
+    # brace expansion makes more words in bash
+    "osascript -e 'tell application \"Reminders\"' -e {'end tell',-e,'display dialog \"x\"',-e,"
+    "'tell application \"Reminders\"'} -e 'end tell' -e 'tell application \"Reminders\" to make new list'",
+    # an escape inside double quotes
+    "osascript -e 'tell application \"Reminders\"' -e \"count lists \\$\" -e 'end tell'",
+    "osascript -e $'tell application \"Reminders\"\\nend\\ndisplay dialog \"x\"'",       # ANSI-C quoting
+    "osascript -e \"$(printf x)\" -e 'tell application \"Reminders\" to make new list'",
+    "osascript -e 'tell application \"Reminders\"'\\\n' to make new list'",               # backslash-newline
+    "osascript -e 'tell application \"Reminders\" to make new list'\necho done",           # a newline ends it
+    "osascript -e \"tell application \\\"Reminders\\\" to make new list\"",           # double quotes at all
+    "osascript -e'tell application \"Reminders\" to make new list'",                     # no space after -e
+])
+def test_only_single_quoted_e_words_are_judged(command, compiles):
+    assert task_service._inline_osascript(command) is None
+    assert not known(command, refused(PRIVILEGE)) and not known(command, refused(SYNTAX))
+
+
+def test_single_quoted_e_words_are_read_as_bash_reads_them():
+    command = ("/usr/bin/osascript -e 'tell application \"Reminders\"'  -e '    make new list with properties "
+               "{name:\"a#b -- c\"}'\t-e 'end tell'")
+    assert task_service._inline_osascript(command) == ('tell application "Reminders"\n    make new list with '
+                                                        'properties {name:"a#b -- c"}\nend tell')
+    assert known(command, refused(PRIVILEGE))
+
+
+def test_a_mid_word_hash_hides_nothing_from_the_bare_run_gate():
+    # U11: bash passes `-e 'do shell script …'` as a word; the gate must see it or refuse the command
+    hidden = "osascript -e 'tell application \"Reminders\" to count lists'#x -e 'do shell script \"true\"'"
+    assert task_service._inline_osascript(hidden) is None and not task_service.unwrapped_once(hidden)
+    assert task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" to count lists'")
+    # and the shortcuts form reads every word bash does: an output path after a mid-word `#` is still checked
+    assert not task_service.unwrapped_once("shortcuts run 'My Shortcut'#x -o /etc/elsewhere")

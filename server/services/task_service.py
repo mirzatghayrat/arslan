@@ -272,16 +272,32 @@ def _set_statement(tokens: list[str], variables: set[str]) -> bool:
     return True
 
 
-# #979 max review: the line-by-line depth count must split lines as AppleScript does. Refused outright: a line break
-# Python splits on and AppleScript may not (or the reverse), a no-break space, and `¬` (a statement continued on the
-# next line).
-_OSA_ODD_BREAKS = re.compile("[\x0b\x0c\x1c\x1d\x1e\x85\u00a0\u2028\u2029\u00ac]")
+# #979 / #983 max reviews: the line-by-line depth count holds only if lines and words split as AppleScript splits them.
+# So the characters are an allowlist: outside string literals printable ASCII and tab only (no `¬`, no `|identifier|`,
+# no invisible or odd break such as U+FEFF, NBSP, VT, LS); inside a closed string literal also letters, marks, digits,
+# punctuation, symbols and the plain space (a name in any language), never a control, format or other space character.
+_OSA_CODE_CHARS = frozenset(chr(c) for c in range(0x20, 0x7F)) | {"\t"}
+_OSA_TEXT_CLASSES = ("L", "M", "N", "P", "S")
+
+
+def _osa_plain(raw: str) -> bool:
+    import unicodedata
+    if "|" in raw:
+        return False                         # a `|name|` identifier can hold `--`, `#` or ` to `
+    outside = _OSA_STRING.sub('""', raw)
+    if not set(outside) <= _OSA_CODE_CHARS:
+        return False
+    return all(c == " " or unicodedata.category(c)[0] in _OSA_TEXT_CLASSES
+               for literal in _OSA_STRING.findall(raw) for c in literal)
 
 
 def _osa_code(raw: str) -> tuple[str, str] | None:
     """One line's code with its comment cut off, as written and with every string literal blanked (same length), or
-    None when the line holds an unclosed string (a string across lines: its other lines are text, not code). `--` and
-    `#` inside a string start no comment."""
+    None when the line can't be read as AppleScript reads it: an unclosed string (a string across lines: its other
+    lines are text, not code) or a character outside the allowlist (_osa_plain). `--` and `#` inside a string start
+    no comment."""
+    if not _osa_plain(raw):
+        return None
     blank = _OSA_STRING.sub(lambda m: '"' + " " * (len(m.group(0)) - 2) + '"', raw)
     if '"' in _OSA_STRING.sub("", raw):
         return None
@@ -289,16 +305,26 @@ def _osa_code(raw: str) -> tuple[str, str] | None:
     return raw[:cut].strip(), blank[:cut].strip()
 
 
+def _tells_to(blank: str) -> bool:
+    """A nested `tell … to …` on one line: a standalone `to` word outside strings (blanked) and parentheses.
+    `tell (a reference to me)` is a block; `tell "x"to get length` and `tell x to(get length)` are one line."""
+    depth, top = 0, []
+    for char in blank:
+        depth += char == "("
+        top.append(char if depth == 0 else " ")
+        depth -= char == ")" and depth > 0
+    return "to" in (word.lower() for word in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", "".join(top)))
+
+
 def _only_tells(script: str) -> bool:
     """Every line outside a tell-application block is that kind of tell (one line or a block), a
-    side-effect-free statement (_safe_statement), or a comment. #979 max review: the depth follows AppleScript's own
-    block structure, or the script isn't judged: no bare `end`, no `¬`, no string across lines, comments cut outside
-    strings only, one-line vs block told with strings blanked (a `to` inside a name is not one)."""
-    if _OSA_ODD_BREAKS.search(script) or "\r" in script.replace("\r\n", "\n"):
-        return False
+    side-effect-free statement (_safe_statement), or a comment. #979 / #983 max reviews: the depth follows AppleScript's
+    own block structure, or the script isn't judged: lines split on \\n only (CRLF is fine), characters from an
+    allowlist (_osa_plain), no bare `end`, no string across lines, comments cut outside strings only, and one-line vs
+    block told by a standalone `to` outside strings and parentheses (_tells_to)."""
     depth, variables = 0, set()
     for raw in script.split("\n"):
-        code = _osa_code(raw)                 # strip() takes a CRLF's \r with the rest
+        code = _osa_code(raw[:-1] if raw.endswith("\r") else raw)
         if code is None:
             return False
         line, blank = code
@@ -314,34 +340,29 @@ def _only_tells(script: str) -> bool:
             depth = 1
         elif re.match(r"end\s+tell\Z", line, re.I):
             depth -= 1
-        elif re.match(r"tell\b", blank, re.I) and not re.search(r"\sto\s", blank, re.I):
+        elif re.match(r"tell\b", blank, re.I) and not _tells_to(blank):
             depth += 1                       # a nested tell block (to an object of the app)
     return depth == 0
 _OSA_TELLS = re.compile(r"\bapplication\s+\"([^\"]+)\"", re.I)
 
 
 def _inline_osascript(command: str) -> str | None:
-    """The AppleScript of a command that is exactly one osascript with its script inline, else None."""
+    """The AppleScript of a command that is exactly one osascript with its script inline, else None. #983 max review:
+    the `-e` form is an allowlist, `osascript` and then only `-e '<single-quoted word>'` pairs, which bash and shlex
+    read alike (no expansion, escape, comment, brace or word joining inside single quotes); anything else is never
+    judged."""
     heredoc = _OSA_HEREDOC.match(command)
     if heredoc:
         quoted, delimiter, body = heredoc.groups()
         if any(line.strip() == delimiter for line in body.splitlines()):
             return None                      # it ended at that line; what follows ran as shell
         return None if not quoted and any(c in body for c in "$`\\") else body
-    if _shell_expands(command):
-        return None                          # what the shell ran first is not in the script
-    if _shell_breaks(command):
-        return None                          # bash would read other words than shlex (#979 max review)
-    try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-        lexer.whitespace_split = True
-        words = list(lexer)
-    except ValueError:
-        return None
-    if len(words) < 3 or words[0] not in ("osascript", "/usr/bin/osascript") or len(words) % 2 == 0:
-        return None
-    pairs = list(zip(words[1::2], words[2::2]))
-    return "\n".join(script for flag, script in pairs) if all(flag == "-e" for flag, _ in pairs) else None
+    match = _OSA_E_ONLY.fullmatch(command)
+    return "\n".join(_OSA_E_WORD.findall(match.group(1))) if match else None
+
+
+_OSA_E_ONLY = re.compile(r"[ \t]*(?:/usr/bin/)?osascript((?:[ \t]+-e[ \t]+'[^']*')+)[ \t]*")
+_OSA_E_WORD = re.compile(r"-e[ \t]+'([^']*)'")
 
 
 # S2a-1 piece 4, decision U11 (scope reviewed by ③Hands): an approved Apple Events or Shortcuts card
@@ -401,6 +422,7 @@ def unwrapped_once(command: str) -> bool:
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
+        lexer.commenters = ""                # bash keeps a mid-word `#` (#983 max review): no comment either way
         words = list(lexer)
     except ValueError:
         return False
@@ -429,26 +451,6 @@ def _fails_to_compile(script: str) -> bool:
     except (OSError, subprocess.SubprocessError):
         return False
     return done.returncode != 0
-
-
-def _shell_breaks(command: str) -> bool:
-    """A backslash-newline (bash joins the lines; shlex keeps them apart), or a newline outside quotes (it ends the
-    command; what follows runs as shell)."""
-    if "\\\n" in command:
-        return True
-    quote, escaped = None, False
-    for char in command:
-        if escaped:
-            escaped = False
-        elif char == "\\" and quote != "'":
-            escaped = True                   # \" inside double quotes is a quote, not the end of them
-        elif char == "'" and quote != '"':
-            quote = None if quote == "'" else "'"
-        elif char == '"' and quote != "'":
-            quote = None if quote == '"' else '"'
-        elif char == "\n" and quote is None:
-            return True
-    return False
 
 
 def _shell_expands(command: str) -> bool:
