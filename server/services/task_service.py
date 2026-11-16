@@ -480,99 +480,247 @@ def _apple_events_refused(arguments: dict, result: dict) -> bool:
                                                      minimal_profile=result.get("sandbox") == "outside")
 
 
-# #984 review round 2: a nested tell target is an expression, so a word list after `tell` (me, it, …) is dodged by
-# `(get me)`, `the me`, `item 1 of {me}`, a variable set to me, or `result`, and the app tell then sends Standard
-# Additions back to osascript itself before the app refuses. Targets are an allowlist of the app's own object
-# specifiers: `[the] <class> "<name>" | <integer> | id <integer|"…">`, `(first|last) <class>`, chained with `of`, in one
-# pair of parentheses at most; or a name every binding of which in the script is `make new …` or such a specifier.
-_OSA_NOT_CLASS = frozenset({"me", "my", "it", "its", "parent", "applescript", "result", "current", "get", "a", "an",
-                            "reference", "every", "some", "whose", "where", "the", "of", "id", "first", "last", "to"})
-_OSA_TARGET_TOKEN = re.compile(r'"[ ]*"|\d+|[A-Za-z_][A-Za-z0-9_]*|\S')
-_OSA_SELF = re.compile(r"\b(?:set\s+[A-Za-z_]\w*\s+to|copy)\s*\(?\s*(?:me|my|result)\b", re.I)
-_OSA_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
+# #984 / #985 reviews: scanning tell targets and bindings kept leaking (`tell me` one tell deep, `set s to"x"`,
+# `put … into`, `date "…"` and `file "…"` as targets, a never-run `set result to …`), and any of them sends Standard
+# Additions back to osascript itself before the app refuses. So the body of the app's tell is an allowlist of WHOLE
+# statements (_OsaBody), every line of it, else the outcome stays unknown:
+#   set <var> to make new <class> [at <location>] [with properties {<key>:<value>, …}]
+#   make new <class> [at <location>] [with properties {…}]
+#   set <property> of <spec> to <value>   get <property> of (<spec> | every <class>)   count <class> [of <spec>]
+#   tell <spec>  …  end tell                     tell <spec> to <one of these>
+#   if <condition> then  …  [else if <condition> then …]  [else …]  end if,  if <condition> then <one of these>
+# <spec>: [the] <class> ("…" | <integer> | id ("…" | <integer>)), [the] (first|last) <class>, or <var>, chained with
+# `of`, in one pair of parentheses at most. <class> is from _OSA_BODY_CLASSES only. <var> is a name every binding of
+# which in the whole script is the first form, never a predefined name. <value>: a literal, a number, true, false,
+# missing value, date "…", or a name that isn't predefined. A one-line `tell application "…" to …` at the top is read
+# the same way.
+_OSA_BODY_CLASSES = frozenset({"list", "reminder", "account", "note", "folder", "calendar", "event"})
+_OSA_BODY_PLURALS = frozenset({c + "s" for c in _OSA_BODY_CLASSES})
+_OSA_PREDEFINED = frozenset({
+    "me", "my", "it", "its", "parent", "applescript", "result", "space", "tab", "return", "linefeed", "quote", "pi",
+    "minutes", "hours", "days", "weeks", "current", "missing", "value", "true", "false", "text", "string", "date", "file",
+    "alias", "application", "app", "every", "some", "the", "of", "id", "first", "last", "whose", "where", "to", "in",
+    "at", "with", "without", "properties", "new", "make", "tell", "end", "set", "get", "count", "if", "then", "else",
+    "not", "is", "and", "or", "a", "an", "reference", "put", "into", "copy", "script", "run", "on", "error", "repeat",
+    "try", "global", "local", "property", "beginning", "front", "back", "before", "after", "contents", "item", "items",
+    "number", "integer", "real", "record", "class", "name", "do", "shell", "load", "store", "considering",
+    "ignoring", "using", "terms", "from", "timeout", "transaction", "exit", "log", "display", "say", "beep",
+    "delay", "activate", "launch", "quit", "open", "close", "save", "delete", "duplicate", "move", "exists"})
+_OSA_BODY_TOKEN = re.compile(r'"[ ]*"|\d+|[A-Za-z_][A-Za-z0-9_]*|<=|>=|\S')
+_OSA_COMPARE_WORDS = {"=", "≠", "<", ">", "≤", "≥", "<=", ">="}
 
 
-def _osa_target_ok(text: str, bound: set[str]) -> bool:
-    tokens = [t.lower() for t in _OSA_TARGET_TOKEN.findall(text)]
-    if tokens[:1] == ["("]:
-        if tokens[-1:] != [")"]:
-            return False
-        tokens = tokens[1:-1]
-    at = 0
+class _OsaBody:
+    """One body statement's tokens (string literals blanked), read against the grammar above."""
 
-    def element(i: int) -> int | None:
-        if i < len(tokens) and tokens[i] in bound:
+    def __init__(self, text: str, bound: frozenset):
+        self.t = [token.lower() for token in _OSA_BODY_TOKEN.findall(text)]
+        self.bound = bound
+
+    def at(self, i: int, *words: str) -> bool:
+        return i < len(self.t) and self.t[i] in words
+
+    def name(self, i: int) -> bool:
+        return i < len(self.t) and re.fullmatch(r"[a-z_][a-z0-9_]*", self.t[i]) is not None
+
+    def literal(self, i: int) -> bool:
+        return i < len(self.t) and (self.t[i].startswith('"') or self.t[i].isdigit())
+
+    def element(self, i: int) -> int | None:
+        if self.at(i, *self.bound):
             return i + 1
-        if i < len(tokens) and tokens[i] == "the":
+        if self.at(i, "the"):
             i += 1
-        if i < len(tokens) and tokens[i] in {"first", "last"}:
-            return i + 2 if i + 1 < len(tokens) and _osa_class(tokens[i + 1]) else None
-        if not (i < len(tokens) and _osa_class(tokens[i])):
+        if self.at(i, "first", "last"):
+            return i + 2 if self.at(i + 1, *_OSA_BODY_CLASSES) else None
+        if not self.at(i, *_OSA_BODY_CLASSES):
             return None
-        i += 1
-        if i < len(tokens) and (tokens[i].startswith('"') or tokens[i].isdigit()):
-            return i + 1
-        if i + 1 < len(tokens) and tokens[i] == "id" and (tokens[i + 1].startswith('"') or tokens[i + 1].isdigit()):
+        if self.literal(i + 1):
             return i + 2
+        if self.at(i + 1, "id") and self.literal(i + 2):
+            return i + 3
         return None
-    while True:
-        at = element(at)
-        if at is None:
-            return False
-        if at == len(tokens):
-            return True
-        if tokens[at] != "of":
-            return False
-        at += 1
+
+    def spec(self, i: int) -> int | None:
+        if self.at(i, "("):
+            end = self.chain(i + 1)
+            return end + 1 if end is not None and self.at(end, ")") else None
+        return self.chain(i)
+
+    def chain(self, i: int) -> int | None:
+        i = self.element(i)
+        while i is not None and self.at(i, "of"):
+            i = self.element(i + 1)
+        return i
+
+    def value(self, i: int) -> int | None:
+        if self.literal(i) or self.at(i, "true", "false"):
+            return i + 1
+        if self.at(i, "missing") and self.at(i + 1, "value"):
+            return i + 2
+        if self.at(i, "date") and self.literal(i + 1):
+            return i + 2
+        if self.name(i) and self.t[i] not in _OSA_PREDEFINED:
+            return i + 1
+        return None
+
+    def words(self, i: int, stop: str) -> int | None:
+        """One to three plain words (a property or record key), up to `stop`."""
+        j = i
+        while j < len(self.t) and j - i < 3 and self.name(j) and self.t[j] != stop:
+            j += 1
+        return j if j > i and self.at(j, stop) else None
+
+    def make(self, i: int) -> int | None:
+        if not (self.at(i, "make") and self.at(i + 1, "new") and self.at(i + 2, *_OSA_BODY_CLASSES)):
+            return None
+        i += 3
+        if self.at(i, "at"):
+            if self.at(i + 1, "end", "beginning") and self.at(i + 2, "of"):
+                j = i + 3
+                if self.at(j, *_OSA_BODY_PLURALS) and self.at(j + 1, "of"):
+                    j += 2
+                i = self.spec(j)
+            else:
+                i = self.spec(i + 1)
+            if i is None:
+                return None
+        if self.at(i, "with") and self.at(i + 1, "properties") and self.at(i + 2, "{"):
+            i += 3
+            while True:
+                key = self.words(i, ":")
+                if key is None:
+                    return None
+                i = self.value(key + 1)
+                if i is None:
+                    return None
+                if self.at(i, "}"):
+                    return i + 1
+                if not self.at(i, ","):
+                    return None
+                i += 1
+        return i
+
+    def operand(self, i: int) -> int | None:
+        if self.at(i, "("):
+            end = self.operand(i + 1)
+            return end + 1 if end is not None and self.at(end, ")") else None
+        if self.at(i, "count"):
+            return self.count(i)
+        prop = self.words(i, "of")
+        if prop is not None:
+            return self.spec(prop + 1)
+        return self.value(i)
+
+    def count(self, i: int) -> int | None:
+        if not self.at(i, "count"):
+            return None
+        if self.at(i + 1, *_OSA_BODY_CLASSES, *_OSA_BODY_PLURALS):
+            return self.spec(i + 3) if self.at(i + 2, "of") else i + 2
+        return None
+
+    def condition(self, i: int) -> int | None:
+        i = self.operand(i)
+        if i is None:
+            return None
+        if self.at(i, "is"):
+            i += 2 if self.at(i + 1, "not") else 1
+        elif self.at(i, *_OSA_COMPARE_WORDS):
+            i += 1
+        else:
+            return None
+        return self.operand(i)
+
+    def statement(self, i: int = 0) -> bool:
+        """One whole statement, to the end of the tokens."""
+        end = None
+        if self.at(i, "set") and self.name(i + 1) and self.t[i + 1] not in _OSA_PREDEFINED and self.at(i + 2, "to"):
+            end = self.make(i + 3)
+        elif self.at(i, "set"):
+            prop = self.words(i + 1, "of")
+            if prop is not None:
+                spec = self.spec(prop + 1)
+                if spec is not None and self.at(spec, "to"):
+                    end = self.value(spec + 1)
+        elif self.at(i, "make"):
+            end = self.make(i)
+        elif self.at(i, "get"):
+            prop = self.words(i + 1, "of")
+            if prop is not None and self.at(prop + 1, "every") and self.at(prop + 2, *_OSA_BODY_CLASSES):
+                end = prop + 3                   # `get name of every list`: a readback, never a tell target
+            elif prop is not None:
+                end = self.spec(prop + 1)
+            elif all(self.name(j) and self.t[j] not in _OSA_PREDEFINED - {"name"} for j in range(i + 1, len(self.t))):
+                end = len(self.t) if 1 <= len(self.t) - i - 1 <= 3 else None     # `get name` inside `tell <spec>`
+        elif self.at(i, "count"):
+            end = self.count(i)
+        elif self.at(i, "tell"):
+            spec = self.spec(i + 1)
+            if spec is not None and self.at(spec, "to"):
+                return self.statement(spec + 1)
+        elif self.at(i, "if"):
+            cond = self.condition(i + 1)
+            if cond is not None and self.at(cond, "then"):
+                return self.statement(cond + 1)
+        return end is not None and end == len(self.t)
+
+    def block_line(self) -> str | None:
+        """'tell' (a block opened on a spec), 'if', 'else', 'end tell', 'end if', or None for a statement line."""
+        t = self.t
+        if t == ["end", "tell"] or t == ["end", "if"] or t == ["else"]:
+            return " ".join(t)
+        if self.at(0, "tell"):
+            spec = self.spec(1)
+            return "tell" if spec is not None and spec == len(t) else None
+        for start, kind in ((1, "if"), (2, "else")):
+            if (kind == "if" and self.at(0, "if")) or (kind == "else" and self.at(0, "else") and self.at(1, "if")):
+                cond = self.condition(start)
+                return kind if cond is not None and self.at(cond, "then") and cond + 1 == len(t) else None
+        return None
 
 
-def _osa_class(token: str) -> bool:
-    return bool(re.fullmatch(_OSA_NAME, token)) and token not in _OSA_NOT_CLASS
-
-
-def _osa_bound(codes: list[str]) -> set[str]:
-    """The names every binding of which, anywhere in the script, is `make new …` or an object specifier."""
+def _osa_made(codes: list[str]) -> frozenset:
+    """The names every `set <name> to …` of which, anywhere in the script, is `make new <class> …`."""
     good, bad = set(), set()
     for line in codes:
-        for match in re.finditer(rf"\bset\s+({_OSA_NAME})\s+to\s+(.*)", line, re.I):   # also `if … then set …`
-            name, value = match.group(1).lower(), match.group(2)
-            (good if re.match(r"make\s+new\s+[A-Za-z_]", value, re.I) or _osa_target_ok(value, set()) else bad).add(name)
-        for pattern in (rf"\bcopy\b.*?\bto\s+({_OSA_NAME})", rf"\brepeat\s+with\s+({_OSA_NAME})",
-                        rf"\bset\s+({_OSA_NAME})\s*'s\b"):
-            bad.update(name.lower() for name in re.findall(pattern, line, re.I))
-        for pattern in (r"\bset\s*\{([^}]*)\}", r"\bon\s+error\b(.*)", r"^\s*(?:on|to)\s+\w+\s*[({](.*)",
-                        r"^\s*script\s+(.*)", r"\bproperty\s+(.*)", r"^\s*(?:global|local)\s+(.*)"):
-            for found in re.findall(pattern, line, re.I):
-                bad.update(name.lower() for name in re.findall(_OSA_NAME, found))
-    return good - bad
+        for match in re.finditer(r"\bset\s+([A-Za-z_][A-Za-z0-9_]*)\s+to\b(.*)", line, re.I):
+            name = match.group(1).lower()
+            # `make new <class>` binds; the rest of that line is the body allowlist's to judge (the line's statement)
+            made = _OsaBody(match.group(2), frozenset()).make(0) is not None
+            (good if made else bad).add(name)    # a predefined name never passes as a statement's target (statement)
+    return frozenset(good - bad)
 
 
-def _tell_targets_ok(script: str) -> bool:
-    """Every tell's target is an app object specifier, or a name bound only to one (see above); and nothing sets or
-    copies me, my or result. Read from the code each line yields (_osa_code: strings blanked, comments cut)."""
+def _tell_bodies_ok(script: str) -> bool:
+    """Every line inside the app's tell, and the statement of a one-line app tell at the top, is an allowed whole
+    statement or block line (see above). Blocks close in order."""
     codes = [code[1] for code in (_osa_code(raw[:-1] if raw.endswith("\r") else raw) for raw in script.split("\n"))
-             if code is not None]
-    if any(_OSA_SELF.search(line) for line in codes):
-        return False
-    bound = _osa_bound(codes)
+             if code is not None and code[1]]
+    bound = _osa_made(codes)
+    stack: list[str] = []
     for line in codes:
-        if not re.match(r"tell\b", line, re.I):
-            continue
-        rest = line[4:]
-        if _tells_to(line):
-            depth, cut = 0, None
-            for found in re.finditer(r"[()]|\bto\b", rest, re.I):
-                if found.group(0) == "(":
-                    depth += 1
-                elif found.group(0) == ")":
-                    depth -= 1
-                elif depth == 0:
-                    cut = found.start()
-                    break
-            rest = rest[:cut] if cut is not None else rest
-        if not _osa_target_ok(rest, bound):
+        body = _OsaBody(line, bound)
+        if not stack:
+            if _OSA_TELL_BLOCK.match(line):
+                stack.append("tell")
+            elif _OSA_TELL_TO.match(line):
+                to = re.match(r'tell\s+application\s+"[^"]*"\s+to\s+', line, re.I)
+                if to is None or not _OsaBody(line[to.end():], bound).statement():
+                    return False
+            continue                         # other top-level lines: _only_tells judged them
+        kind = body.block_line()
+        if kind in {"tell", "if"}:
+            stack.append(kind)
+        elif kind == "else":
+            if stack[-1] != "if":
+                return False
+        elif kind in {"end tell", "end if"}:
+            if stack[-1] != kind.split()[1]:
+                return False
+            stack.pop()
+        elif not body.statement():
             return False
-    return True
+    return not stack
 
 
 def _osascript_refused(script: str, stderr: str, *, minimal_profile: bool = False) -> bool:
@@ -580,14 +728,17 @@ def _osascript_refused(script: str, stderr: str, *, minimal_profile: bool = Fals
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not script.strip() or not lines:
         return False
-    if _OSA_ELSEWHERE.search(script) or not _only_tells(script) or not _tell_targets_ok(script):
+    if _OSA_ELSEWHERE.search(script) or not _only_tells(script):
         return False
     apps = {name.lower() for name in _OSA_TELLS.findall(script)}
     if len(apps) != 1 or not re.search(r"\btell\s+application\s+\"", script, re.I):
         return False
     if _OSA_SYNTAX.search(lines[-1]):
-        # Compiled first, so nothing ran, if it really did not compile: the script controls its stderr.
+        # Compiled first, so nothing ran, if it really did not compile: the script controls its stderr. Whatever its
+        # body says, a script that doesn't compile never ran any of it (#985: the body allowlist is for the refusals).
         return not any(c in next(iter(apps)) for c in "/:") and _fails_to_compile(script)
+    if not _tell_bodies_ok(script):
+        return False                         # #985: the refusals hold only for a body that can't reach osascript itself
     if (match := _OSA_NOT_ALLOWED.search(lines[-1])) is not None:
         return match.group(1).lower() in apps
     if minimal_profile and (match := _OSA_MINIMAL_PROFILE_DENIED.search(lines[-1])):
