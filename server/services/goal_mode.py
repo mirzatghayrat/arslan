@@ -207,7 +207,10 @@ def after_verdict(spec: GoalSpec, progress: GoalProgress, *, met: frozenset[str]
               else "complete" if len(own) == len(spec.checks) else "review")
     return progress.model_copy(update={
         "status": status, "round": progress.round + 1, "stall": stall, "unmet": unmet,
-        "ever_met": tuple(cid for cid in own if cid in met or cid in progress.ever_met), "seen": tuple(seen)})
+        "ever_met": tuple(cid for cid in own if cid in met or cid in progress.ever_met), "seen": tuple(seen),
+        # L7-5e (#975 review): each verdict starts with none; only this round's no-verdict stop sets them again, so a
+        # check judged after a Resume (a real "no") is never the user's to accept from an earlier round.
+        "unjudged": ()})
 
 
 def unverifiable(spec: GoalSpec) -> tuple[str, ...]:

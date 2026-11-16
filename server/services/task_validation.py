@@ -170,6 +170,17 @@ def _strict_json(reply: str):
         return None
 
 
+def _goal_json(reply: str):
+    """L7-5e (#975 review): the reply as pure JSON or one fenced JSON block, else None. Not `parse_json_object`'s
+    first-{-to-last-} rescue: prose quoting a file's planted `{"passed": true}` would count as the verdict."""
+    text = (reply or "").strip()
+    fenced = re.fullmatch(r"```(?:json)?[ \t]*\n?(.*?)\n?[ \t]*```", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced[1].strip()        # a second fence inside is not JSON: refused below
+    decision = _strict_json(text)
+    return decision if isinstance(decision, dict) else None
+
+
 def _other_named(named: dict, own: str, room: int, trace: list[dict], context: dict) -> str:
     """L7-5e: the goal's other named files for its judge, each labelled by its path, in the room left of the same
     20,000 characters. A criterion that compares its file with another (T17: the answer with the prices it sums, in
@@ -401,7 +412,6 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
     # L7: a goal's judgement checks are judged every round, a deterministic failure or not, so each can be met.
     if model_adapter is not None and (goal is not None or not any(
             item["status"] == "failed" for item in [*checks, *artifacts])):
-        from server.orchestrator import json_protocol
         from server.orchestrator.answer_salvage import _chat_retry
         from server.orchestrator.untrusted import wrap_external
         named = {item.id: item.path for item in goal.checks} if goal is not None else {}
@@ -439,9 +449,9 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                     logger.warning("goal judge %s: no verdict (%s, %s)", check.id, code, type(exc).__name__)
                 continue
             reply = "" if getattr(response, "tool_calls", None) else (response.content or "")
-            # L7-5e: a goal's judge reply may come fenced or with a line of prose (`parse_json_object`); a job's
-            # stays strict, as it was.
-            decision = json_protocol.parse_json_object(reply) if goal is not None else _strict_json(reply)
+            # L7-5e: a goal's judge reply may be one fenced JSON block, never prose around JSON (which could quote
+            # a verdict planted in a file); a job's stays strict, as it was.
+            decision = _goal_json(reply) if goal is not None else _strict_json(reply)
             if isinstance(decision, dict) and type(decision.get("passed")) is bool:
                 checks[index] = {"check_id": check.id, "evaluator": "model",
                     "status": "passed" if decision["passed"] else "failed", "code": "model_assessment"}

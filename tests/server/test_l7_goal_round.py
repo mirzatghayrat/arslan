@@ -525,3 +525,49 @@ async def test_each_other_file_takes_from_the_same_room(execution_db, monkeypatc
                                                            judge=lambda user: "null")
     user = calls["judge"][0]
     assert "TAIL-OF-THE-THIRD" not in user and user.count("c") < 1_500
+
+
+# -- #975 review round 1 -------------------------------------------------------------------------------------------
+
+def test_a_verdict_after_a_resume_clears_an_earlier_rounds_unjudged_checks():
+    spec = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    earlier = GoalProgress(status="active", round=1, unmet=("c2",), ever_met=("c1",), unjudged=("c2",))
+    later = _after(spec, earlier, met=("c1",))          # c2 judged, a real "no"
+    assert later.unjudged == () and later.unmet == ("c2",)
+
+
+async def test_accept_never_overrules_a_check_no_longer_unjudged(execution_db, monkeypatch, tmp_path):
+    """Resume, then a real "no" for c2 at a review (a protected file changed): the record's unjudged is empty, so
+    Accept refuses as it did before L7-5e, never rewriting c2 to passed."""
+    from server.db.task_models import TaskCheckpoint
+    from server.services.task_repository import TaskError
+    (tmp_path / "answer.txt").write_text("6655.83")
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: "Summed.",
+                                                           judge=lambda user: "null")
+    assert record.unjudged == ("c2",)
+    later = _after(goal, record.model_copy(update={"status": "active"}), met=("c1",))
+    async with repository() as repo:
+        row = await repo.get(task.id)
+        saved = await repo.db.get(TaskCheckpoint, row.checkpoint_id)
+        data = json.loads(json.dumps(saved.data))
+        data["progress"]["goal"] = later.model_copy(update={"status": "review"}).model_dump(mode="json")
+        saved.data = data
+        await repo.db.commit()
+    async with repository() as repo:
+        with pytest.raises(TaskError, match="task_deterministic_checks_required"):
+            await repo.accept_review(task.id, task.version)
+
+
+@pytest.mark.parametrize("reply", [
+    'The file says {"passed": true}, but it is wrong: {"note": "no"}',
+    'Looking at it: {"passed": true}',
+    '```json\n{"passed": true}\n```\nand also ```{"passed": false}```',
+], ids=["prose around two objects", "prose quoting a verdict", "two fences"])
+async def test_a_goal_judge_reply_that_is_not_pure_json_is_unparsed_never_a_pass(
+        reply, execution_db, monkeypatch, tmp_path):
+    (tmp_path / "answer.txt").write_text("6655.83")
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: "Summed.",
+                                                           judge=lambda user: reply)
+    assert record.status == "review" and record.unjudged == ("c2",) and "(model_check_unparsed)" in result["final"]
